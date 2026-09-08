@@ -6,9 +6,9 @@ SDCARD_DIR := $(BUILD_DIR)/sdcard
 VENV_DIR := $(BUILD_DIR)/venv
 VENV_STAMP := $(VENV_DIR)/.requirements-installed
 SIMULATOR_FIXTURE := simulator/sdcard
-WIDGET_SOURCE := WIDGETS/AeroGrid
+WIDGET_SOURCE := src/WIDGETS/AeroGrid
 WIDGET_DESTINATION := $(SDCARD_DIR)/WIDGETS/AeroGrid
-LUA_FILES := $(shell find WIDGETS tests -type f -name '*.lua' | sort)
+LUA_FILES := $(shell find src/WIDGETS tests -type f -name '*.lua' | sort)
 LUA_COMPILER ?= $(shell command -v edgetx-luac 2>/dev/null || command -v luac5.3 2>/dev/null || command -v luac 2>/dev/null)
 
 .PHONY: help setup test check build clean

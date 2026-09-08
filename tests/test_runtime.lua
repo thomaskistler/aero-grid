@@ -3,7 +3,7 @@
 local root = (... and ... ~= "" and ...) or "."
 
 local function loadModule(relative)
-  local chunk, err = loadfile(root .. "/WIDGETS/AeroGrid/" .. relative)
+  local chunk, err = loadfile(root .. "/src/WIDGETS/AeroGrid/" .. relative)
   assert(chunk, err)
   return chunk()
 end

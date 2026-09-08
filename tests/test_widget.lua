@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 local root = assert(..., "repository root argument is required")
-local widgetPath = root .. "/WIDGETS/AeroGrid/"
+local widgetPath = root .. "/src/WIDGETS/AeroGrid/"
 local hostIo = io
 
 STRING = 3

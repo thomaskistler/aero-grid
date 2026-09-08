@@ -17,7 +17,7 @@ The on-radio editor and production telemetry components are intentionally not pa
 
 ## Install on an SD card
 
-Copy `WIDGETS/AeroGrid/` into the radio's `/WIDGETS/` directory, then select **AeroGrid** in an App mode screen. The ordinary `1 x 1` layout is also supported.
+Copy `src/WIDGETS/AeroGrid/` into the radio's `/WIDGETS/` directory, then select **AeroGrid** in an App mode screen. The ordinary `1 x 1` layout is also supported.
 
 Each widget instance has a native **Dashboard ID** setting (`DashID` in Lua). AeroGrid combines that value with `model.getInfo().filename` and loads:
 
@@ -34,12 +34,12 @@ Phase one never writes layout files.
 Open the repository folder in VS Code. The repository includes a TX16S/EdgeTX 2.12 profile. Set **EdgeTX: SD Card Path** to the absolute path of the ignored `build/sdcard/` directory in your checkout.
 
 1. Run `make build` or the **AeroGrid: Build Simulator SD** task once to create the complete image.
-2. Open `WIDGETS/AeroGrid/main.lua`.
+2. Open `src/WIDGETS/AeroGrid/main.lua`.
 3. Run **EdgeTX: Toggle EdgeTX Mode** if EdgeTX mode is not already active.
 4. Run **EdgeTX: Simulate Script** (`Cmd+Alt+S`) or **EdgeTX: Watch Script** (`Cmd+Alt+W`).
 5. Open **Logs** in the simulator when the dashboard reports an error.
 
-The build starts from the tracked baseline in `simulator/sdcard/`, then overlays the current `WIDGETS/AeroGrid/` sources. The baseline contains the fixed radio and model configuration needed to boot directly into AeroGrid. The generated `build/sdcard/` image is ignored and may be changed by the simulator. Run `make build` again after source changes or whenever you want to reset the image to the checked-in baseline.
+The build starts from the tracked baseline in `simulator/sdcard/`, then overlays the current `src/WIDGETS/AeroGrid/` sources. The baseline contains the fixed radio and model configuration needed to boot directly into AeroGrid. The generated `build/sdcard/` image is ignored and may be changed by the simulator. Run `make build` again after source changes or whenever you want to reset the image to the checked-in baseline.
 
 ## Development
 
