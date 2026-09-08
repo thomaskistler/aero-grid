@@ -6,6 +6,8 @@
 - Date: 2026-09-07
 - EdgeTX source: `../edgetx`
 - Project root: `aero-grid/`
+- Implementation: Phase 1 in progress
+- Current checkpoint: YAML-driven placeholder dashboard and reproducible simulator image
 
 ## Summary
 
@@ -820,6 +822,25 @@ A later EdgeTX firmware contribution could implement a native flexible grid layo
 This would allow independently registered EdgeTX widgets to occupy configurable grid spans. It is outside the first implementation because the composite host can deliver the desired dashboard with a smaller blast radius.
 
 ## Proposed Release Phases
+
+### Implementation status
+
+Status last verified on 2026-09-07:
+
+| Work item | Status | Implemented | Remaining |
+| --- | --- | --- | --- |
+| Build and test foundation | Complete | Make targets, isolated Python environment, unit/integration suites, EdgeTX Lua parsing, tracked simulator fixture, and reproducible `build/sdcard` assembly | Add CI when a hosted workflow is selected |
+| Milestone 1: Runtime skeleton | Complete | LVGL host, integer 4 x 4 geometry, gutters, nested containers, responsive reflow, placeholder rendering, App mode fixture, and `1 x 1`-sized mocked tests | Additional physical-radio verification belongs to hardening |
+| Milestone 2: Read-only YAML loader | In progress | Constrained parser, schema version check, model/Dashboard ID resolution, default fallback, ID/type/bounds/span/overlap validation, read-only loading, and visible errors | Preserve unknown top-level data, broaden malformed-input tests, and verify multiple real model filenames in the simulator |
+| Milestone 3: Component runtime | In progress | Referenced-module loading, safe component type names, API-version check, create-time isolation, and repeated placeholder instances | Final metadata/settings/span contract, lifecycle dispatch, refresh/background failure isolation, and a second independently authored component |
+| Milestone 4: Design system | Not started | Initial placeholder colors only | Semantic tokens, primitives, theme modes, states, responsive typography, and hardware review |
+| Milestone 5: Shared data services | Not started | None | Telemetry, model, control, extrema, and navigation services |
+| Milestones 6–7: Production components | Not started | Placeholder component only | Complete ten-component catalog and metric presets |
+| Milestone 8: Status rail and multiple screens | In progress | Dashboard ID option and per-model/per-dashboard filename resolution | Status rail and multi-instance simulator verification |
+| Milestone 9: Hardening | In progress | Unit/integration tests, firmware-like string behavior tests, simulator fixture, exact Lua 5.3 parsing, and component load diagnostics | Corruption matrix, target-radio matrix, runtime diagnostics view, performance budgets, and physical-radio testing |
+| Milestone 10: On-radio editor | Not started | None | Entire phase 2 editor and write/recovery workflow |
+
+The first architecture checkpoint is not yet complete because Milestone 2 still has remaining compatibility work and Milestone 3 has only one component implementation. The current runtime is suitable for continued simulator development, not normal flight use.
 
 ### Phase 1: YAML-configured dashboard
 

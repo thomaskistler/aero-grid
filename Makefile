@@ -15,6 +15,7 @@ LUA_COMPILER ?= $(shell command -v edgetx-luac 2>/dev/null || command -v luac5.3
 
 help:
 	@printf '%s\n' \
+	  'make help    List the supported Make targets' \
 	  'make setup   Install development dependencies into build/venv' \
 	  'make test    Run pure Lua and mocked EdgeTX behavior tests' \
 	  'make check   Run behavior tests and syntax validation' \

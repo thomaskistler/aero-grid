@@ -43,15 +43,29 @@ The build starts from the tracked baseline in `tests/fixtures/sdcard/`, then ove
 
 ## Development
 
-Runtime modules target EdgeTX's Lua 5.3 environment. The Makefile provides the standard development entry points:
+Runtime modules target EdgeTX's Lua 5.3 environment.
+
+### Make targets
+
+| Target | Purpose |
+| --- | --- |
+| `make help` | List the supported Make targets. |
+| `make setup` | Create `build/venv` and install `requirements-dev.txt`. |
+| `make test` | Run unit and mocked EdgeTX integration suites in normal and firmware-like string modes. |
+| `make check` | Run `make test`, then parse every source and test Lua file with an EdgeTX/Lua compiler. |
+| `make build` | Recreate `build/sdcard` from `tests/fixtures/sdcard`, then overlay `src/WIDGETS/AeroGrid`. |
+| `make clean` | Remove all generated `build/` output, including the virtual environment and simulator SD image. |
+
+Typical workflow:
 
 ```sh
 make setup
 make test
 make check LUA_COMPILER=/path/to/edgetx-luac
+make build
 ```
 
-`make setup` installs development-only Python dependencies under ignored `build/venv/`. `make check` runs the behavior tests and parses every Lua file with `edgetx-luac`, `luac5.3`, or `luac` when one is on `PATH`; `LUA_COMPILER` overrides detection.
+`make test` and `make check` run `make setup` automatically when the development environment is missing or `requirements-dev.txt` changed. `make check` looks for `edgetx-luac`, `luac5.3`, then `luac` on `PATH`; `LUA_COMPILER` overrides detection. Use EdgeTX's `edgetx-luac` when available because it validates the firmware's exact Lua 5.3 configuration.
 
 The tests cover grid rounding, gutters, overlap validation, constrained YAML parsing, layout-path sanitization, component loading, zone reflow, and Dashboard ID reload behavior. Each Lua behavior suite runs once with normal string methods and once with the string metatable removed to match EdgeTX firmware behavior.
 
@@ -65,7 +79,7 @@ tests/fixtures/sdcard/
 │   ├── labels.yml
 │   └── model1.yml
 └── RADIO/
-	└── radio.yml
+    └── radio.yml
 ```
 
 Do not check generated `.luac` files, logs, screenshots, or mutable `build/sdcard/` state into source control. When a deliberate model or radio configuration change should become the new baseline, update the corresponding fixture file explicitly and verify a clean `make build` before committing it.
