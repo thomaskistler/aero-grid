@@ -533,7 +533,7 @@ The YAML may also record `sourceName` as optional human-readable and recovery me
 
 Settings that apply to the dashboard as a whole, such as a global theme or diagnostic mode, may remain native options declared by `main.lua`. EdgeTX will generate their settings UI and persist them in the model. Placement and dynamic per-component settings must remain in the dashboard YAML.
 
-Each widget instance also declares a native string option named `Dashboard ID`, defaulting to `main`. The host combines the sanitized current model filename and Dashboard ID to select:
+Each widget instance also declares a native string option keyed `DashID` and displayed as `Dashboard ID`, defaulting to `main`. The host combines the sanitized current model filename and Dashboard ID to select:
 
 ```text
 /WIDGETS/AeroGrid/layouts/<model-identifier>--<dashboard-id>.yaml

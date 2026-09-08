@@ -1,0 +1,25 @@
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: primary
+    type: placeholder
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      title: AEROGRID
+      subtitle: PRIMARY 2 x 2
+      accent: cyan
+  - id: secondary
+    type: placeholder
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 4
+    config:
+      title: PHASE 1
+      subtitle: SECONDARY 2 x 4
+      accent: green
