@@ -11,16 +11,14 @@ WIDGET_DESTINATION := $(SDCARD_DIR)/WIDGETS/AeroGrid
 LUA_FILES := $(shell find WIDGETS tests -type f -name '*.lua' | sort)
 LUA_COMPILER ?= $(shell command -v edgetx-luac 2>/dev/null || command -v luac5.3 2>/dev/null || command -v luac 2>/dev/null)
 
-.PHONY: help setup test syntax check build sync clean
+.PHONY: help setup test check build clean
 
 help:
 	@printf '%s\n' \
 	  'make setup   Install development dependencies into build/venv' \
 	  'make test    Run pure Lua and mocked EdgeTX behavior tests' \
-	  'make syntax  Parse all Lua files with edgetx-luac or Lua 5.3 luac' \
 	  'make check   Run behavior tests and syntax validation' \
 	  'make build   Recreate build/sdcard from fixture and widget sources' \
-	  'make sync    Update only AeroGrid in the existing simulator image' \
 	  'make clean   Remove generated build output'
 
 setup: $(VENV_STAMP)
@@ -34,7 +32,7 @@ $(VENV_STAMP): requirements-dev.txt
 test: $(VENV_STAMP)
 	@"$(VENV_DIR)/bin/python" tests/run.py
 
-syntax:
+check: test
 	@test -n "$(LUA_COMPILER)" || { \
 	  printf '%s\n' 'error: install edgetx-luac or Lua 5.3 luac, or set LUA_COMPILER=/path/to/compiler'; \
 	  exit 1; \
@@ -43,23 +41,12 @@ syntax:
 	  "$(LUA_COMPILER)" -p "$$file"; \
 	done
 
-check: test syntax
-
 build:
 	@mkdir -p "$(SDCARD_DIR)"
 	@rsync -a --delete "$(SIMULATOR_FIXTURE)/" "$(SDCARD_DIR)/"
 	@mkdir -p "$(dir $(WIDGET_DESTINATION))"
 	@rsync -a --delete "$(WIDGET_SOURCE)/" "$(WIDGET_DESTINATION)/"
 	@printf 'Built simulator SD image at %s\n' "$(SDCARD_DIR)"
-
-sync:
-	@if test ! -f "$(SDCARD_DIR)/RADIO/radio.yml"; then \
-	  $(MAKE) build; \
-	else \
-	  mkdir -p "$(dir $(WIDGET_DESTINATION))"; \
-	  rsync -a --delete "$(WIDGET_SOURCE)/" "$(WIDGET_DESTINATION)/"; \
-	  printf 'Synchronized AeroGrid to %s\n' "$(WIDGET_DESTINATION)"; \
-	fi
 
 clean:
 	@rm -rf "$(BUILD_DIR)"

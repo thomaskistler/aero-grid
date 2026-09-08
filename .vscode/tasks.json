@@ -2,15 +2,6 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "AeroGrid: Sync Simulator SD",
-      "type": "shell",
-      "command": "make sync",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
       "label": "AeroGrid: Build Simulator SD",
       "type": "shell",
       "command": "make build",

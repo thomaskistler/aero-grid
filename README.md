@@ -39,9 +39,7 @@ Open the repository folder in VS Code. The repository includes a TX16S/EdgeTX 2.
 4. Run **EdgeTX: Simulate Script** (`Cmd+Alt+S`) or **EdgeTX: Watch Script** (`Cmd+Alt+W`).
 5. Open **Logs** in the simulator when the dashboard reports an error.
 
-The build starts from the tracked baseline in `simulator/sdcard/`, then overlays the current `WIDGETS/AeroGrid/` sources. The baseline contains the fixed radio and model configuration needed to boot directly into AeroGrid. The generated `build/sdcard/` image is ignored and may be changed by the simulator.
-
-During normal iteration, run `make sync` or the **AeroGrid: Sync Simulator SD** task. It updates only the widget directory and preserves simulator-modified radio and model state. Run `make build` again whenever you want to reset the entire image to the checked-in baseline.
+The build starts from the tracked baseline in `simulator/sdcard/`, then overlays the current `WIDGETS/AeroGrid/` sources. The baseline contains the fixed radio and model configuration needed to boot directly into AeroGrid. The generated `build/sdcard/` image is ignored and may be changed by the simulator. Run `make build` again after source changes or whenever you want to reset the image to the checked-in baseline.
 
 ## Development
 
@@ -50,11 +48,10 @@ Runtime modules target EdgeTX's Lua 5.3 environment. The Makefile provides the s
 ```sh
 make setup
 make test
-make syntax LUA_COMPILER=/path/to/edgetx-luac
 make check LUA_COMPILER=/path/to/edgetx-luac
 ```
 
-`make setup` installs development-only Python dependencies under ignored `build/venv/`. `make syntax` automatically uses `edgetx-luac`, `luac5.3`, or `luac` when one is on `PATH`; `LUA_COMPILER` overrides detection.
+`make setup` installs development-only Python dependencies under ignored `build/venv/`. `make check` runs the behavior tests and parses every Lua file with `edgetx-luac`, `luac5.3`, or `luac` when one is on `PATH`; `LUA_COMPILER` overrides detection.
 
 The tests cover grid rounding, gutters, overlap validation, constrained YAML parsing, layout-path sanitization, component loading, zone reflow, and Dashboard ID reload behavior. Each Lua behavior suite runs once with normal string methods and once with the string metatable removed to match EdgeTX firmware behavior.
 
