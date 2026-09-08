@@ -39,7 +39,7 @@ Open the repository folder in VS Code. The repository includes a TX16S/EdgeTX 2.
 4. Run **EdgeTX: Simulate Script** (`Cmd+Alt+S`) or **EdgeTX: Watch Script** (`Cmd+Alt+W`).
 5. Open **Logs** in the simulator when the dashboard reports an error.
 
-The build starts from the tracked baseline in `simulator/sdcard/`, then overlays the current `src/WIDGETS/AeroGrid/` sources. The baseline contains the fixed radio and model configuration needed to boot directly into AeroGrid. The generated `build/sdcard/` image is ignored and may be changed by the simulator. Run `make build` again after source changes or whenever you want to reset the image to the checked-in baseline.
+The build starts from the tracked baseline in `tests/fixtures/sdcard/`, then overlays the current `src/WIDGETS/AeroGrid/` sources. The baseline contains the fixed radio and model configuration needed to boot directly into AeroGrid. The generated `build/sdcard/` image is ignored and may be changed by the simulator. Run `make build` again after source changes or whenever you want to reset the image to the checked-in baseline.
 
 ## Development
 
@@ -57,10 +57,10 @@ The tests cover grid rounding, gutters, overlap validation, constrained YAML par
 
 ## Simulator fixture convention
 
-`simulator/sdcard/` is version-controlled test and development input. Keep only deterministic files required to reproduce simulator startup there:
+`tests/fixtures/sdcard/` is version-controlled test and development input. Keep only deterministic files required to reproduce simulator startup there:
 
 ```text
-simulator/sdcard/
+tests/fixtures/sdcard/
 ├── MODELS/
 │   ├── labels.yml
 │   └── model1.yml
@@ -69,5 +69,7 @@ simulator/sdcard/
 ```
 
 Do not check generated `.luac` files, logs, screenshots, or mutable `build/sdcard/` state into source control. When a deliberate model or radio configuration change should become the new baseline, update the corresponding fixture file explicitly and verify a clean `make build` before committing it.
+
+Pure module tests live under `tests/unit/`. Tests that exercise the AeroGrid host through mocked EdgeTX APIs live under `tests/integration/`. `tests/run.py` executes both groups in normal Lua mode and with method-style string lookup disabled to match EdgeTX firmware behavior.
 
 See [plans/aerogrid-spec.md](plans/aerogrid-spec.md) for the complete project specification and implementation milestones.

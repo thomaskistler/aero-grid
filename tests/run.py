@@ -15,7 +15,7 @@ def run_test(path: Path, remove_string_metatable: bool = False) -> None:
     lua.execute(path.read_text(encoding="ascii"), str(ROOT))
 
 
-for test_name in ("test_runtime.lua", "test_widget.lua"):
+for test_name in ("unit/test_runtime.lua", "integration/test_widget.lua"):
     test_path = ROOT / "tests" / test_name
     run_test(test_path)
     run_test(test_path, remove_string_metatable=True)
