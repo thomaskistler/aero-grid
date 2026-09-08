@@ -4,11 +4,31 @@
     {
       "label": "AeroGrid: Sync Simulator SD",
       "type": "shell",
-      "command": "mkdir -p build/sdcard/WIDGETS && rsync -a --delete WIDGETS/AeroGrid/ build/sdcard/WIDGETS/AeroGrid/",
+      "command": "make sync",
       "options": {
         "cwd": "${workspaceFolder}"
       },
       "problemMatcher": []
+    },
+    {
+      "label": "AeroGrid: Build Simulator SD",
+      "type": "shell",
+      "command": "make build",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "group": "build"
+    },
+    {
+      "label": "AeroGrid: Test",
+      "type": "shell",
+      "command": "make test",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "group": "test"
     }
   ]
 }
