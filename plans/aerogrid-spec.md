@@ -7,7 +7,7 @@
 - EdgeTX source: `../edgetx`
 - Project root: `aero-grid/`
 - Implementation: Phase 1 in progress
-- Current checkpoint: YAML-driven placeholder dashboard and reproducible simulator image
+- Current checkpoint: first architecture checkpoint reached; two independently authored components load from YAML under a stable host contract
 
 ## Summary
 
@@ -825,22 +825,40 @@ This would allow independently registered EdgeTX widgets to occupy configurable 
 
 ### Implementation status
 
-Status last verified on 2026-09-07:
+Status last verified on 2026-09-15:
 
 | Work item | Status | Implemented | Remaining |
 | --- | --- | --- | --- |
 | Build and test foundation | Complete | Make targets, isolated Python environment, unit/integration suites, EdgeTX Lua parsing, tracked simulator fixture, and reproducible `build/sdcard` assembly | Add CI when a hosted workflow is selected |
 | Milestone 1: Runtime skeleton | Complete | LVGL host, integer 4 x 4 geometry, gutters, nested containers, responsive reflow, placeholder rendering, App mode fixture, and `1 x 1`-sized mocked tests | Additional physical-radio verification belongs to hardening |
-| Milestone 2: Read-only YAML loader | In progress | Constrained parser, schema version check, model/Dashboard ID resolution, default fallback, ID/type/bounds/span/overlap validation, read-only loading, and visible errors | Preserve unknown top-level data, broaden malformed-input tests, and verify multiple real model filenames in the simulator |
-| Milestone 3: Component runtime | In progress | Referenced-module loading, safe component type names, API-version check, create-time isolation, and repeated placeholder instances | Final metadata/settings/span contract, lifecycle dispatch, refresh/background failure isolation, and a second independently authored component |
-| Milestone 4: Design system | Not started | Initial placeholder colors only | Semantic tokens, primitives, theme modes, states, responsive typography, and hardware review |
+| Milestone 2: Read-only YAML loader | Complete | Constrained parser, schema version check, model/Dashboard ID resolution, default fallback, ID/type/bounds/span/overlap validation, sequence-shape rejection, preserved unknown top-level and per-component keys, read-only loading, visible errors, and a malformed-input matrix | Physical-radio verification belongs to hardening |
+| Milestone 3: Component runtime | Complete | Referenced-module loading, safe component type names, module contract validation, declared settings with typed defaults, `supportedSpans` enforcement, and isolated create/resize/refresh/background/destroy dispatch across two independently authored components | Production components arrive in milestones 6 and 7 |
+| Milestone 4: Design system | Not started | Initial component-local colors only | Semantic tokens, primitives, theme modes, states, responsive typography, and hardware review |
 | Milestone 5: Shared data services | Not started | None | Telemetry, model, control, extrema, and navigation services |
-| Milestones 6–7: Production components | Not started | Placeholder component only | Complete ten-component catalog and metric presets |
+| Milestones 6–7: Production components | Not started | Development `placeholder` and `heartbeat` components only | Complete ten-component catalog and metric presets |
 | Milestone 8: Status rail and multiple screens | In progress | Dashboard ID option and per-model/per-dashboard filename resolution | Status rail and multi-instance simulator verification |
-| Milestone 9: Hardening | In progress | Unit/integration tests, firmware-like string behavior tests, simulator fixture, exact Lua 5.3 parsing, and component load diagnostics | Corruption matrix, target-radio matrix, runtime diagnostics view, performance budgets, and physical-radio testing |
+| Milestone 9: Hardening | In progress | Unit/integration tests, firmware-like string behavior tests, simulator fixture, exact Lua 5.3 parsing, corrupt-layout and contract-rejection coverage, and component failure isolation | Target-radio matrix, runtime diagnostics view, performance budgets, and physical-radio testing |
 | Milestone 10: On-radio editor | Not started | None | Entire phase 2 editor and write/recovery workflow |
 
-The first architecture checkpoint is not yet complete because Milestone 2 still has remaining compatibility work and Milestone 3 has only one component implementation. The current runtime is suitable for continued simulator development, not normal flight use.
+The first architecture checkpoint is complete: `placeholder` and `heartbeat` are separately authored modules loaded from YAML, and both render with correct, non-overlapping geometry in App mode and ordinary `1 x 1`. The current runtime is suitable for continued simulator development, not normal flight use.
+
+### Component module contract
+
+A component file under `components/<type>.lua` returns a table describing itself:
+
+| Field | Required | Purpose |
+| --- | --- | --- |
+| `id` | Yes | Must equal the `type` name used in YAML, so a renamed file cannot load silently. |
+| `apiVersion` | Yes | Must equal the host component API version. Anything else is rejected visibly. |
+| `create(parent, rect, settings)` | Yes | Builds LVGL objects and returns the component's own context. |
+| `supportedSpans` | No | Span strings such as `"2x1"`, or `"any"`. Absent means every span is accepted. |
+| `settings` | No | Declared `{key, type, default}` entries. Absent and mistyped YAML values fall back to the default. |
+| `resize(instance, rect)` | No | Repositions an existing instance after a zone change. |
+| `refresh(instance)` | No | Runs once per visible host cycle. |
+| `background(instance)` | No | Runs while the dashboard screen is not visible. |
+| `destroy(instance)` | No | Runs before the host tears the component down. |
+
+Every callback is dispatched under `pcall`. The first failure permanently disables that one component and reports it, so a broken module cannot repeatedly raise or disable the surrounding dashboard.
 
 ### Phase 1: YAML-configured dashboard
 

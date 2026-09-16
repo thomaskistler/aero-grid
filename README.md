@@ -67,7 +67,11 @@ make build
 
 `make test` and `make check` run `make setup` automatically when the development environment is missing or `requirements-dev.txt` changed. `make check` looks for `edgetx-luac`, `luac5.3`, then `luac` on `PATH`; `LUA_COMPILER` overrides detection. Use EdgeTX's `edgetx-luac` when available because it validates the firmware's exact Lua 5.3 configuration.
 
-The tests cover grid rounding, gutters, overlap validation, constrained YAML parsing, layout-path sanitization, component loading, zone reflow, and Dashboard ID reload behavior. Each Lua behavior suite runs once with normal string methods and once with the string metatable removed to match EdgeTX firmware behavior.
+The tests cover grid rounding, gutters, overlap validation, constrained YAML parsing, malformed and corrupt layout handling, forward-compatible unknown keys, layout-path sanitization across real model filenames, the component module contract, declared settings and spans, component lifecycle failure isolation, zone reflow, and Dashboard ID reload behavior. Each Lua behavior suite runs once with normal string methods and once with the string metatable removed to match EdgeTX firmware behavior.
+
+## Components
+
+AeroGrid loads each component from `src/WIDGETS/AeroGrid/components/<type>.lua`, where `<type>` is the `type` named in the layout YAML. Two development components ship today: `placeholder`, which verifies placement and resizing, and `heartbeat`, which verifies the lifecycle callbacks and span restrictions. See the component module contract in [plans/aerogrid-spec.md](plans/aerogrid-spec.md) for the fields a component declares.
 
 ## Simulator fixture convention
 

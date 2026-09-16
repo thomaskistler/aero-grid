@@ -11,6 +11,7 @@
 ---@field version integer
 ---@field grid table
 ---@field components table[] Only valid, non-overlapping components.
+--- Unrecognized top-level keys from the source document are preserved verbatim.
 
 local layout = {}
 
@@ -19,6 +20,19 @@ local layout = {}
 ---@return boolean
 local function isSafeIdentifier(value)
   return type(value) == "string" and string.match(value, "^[%w_-]+$") ~= nil
+end
+
+--- Report whether a value is a pure array, so a mapping written where a
+--- sequence is required is rejected instead of silently loading nothing.
+---@param value any
+---@return boolean
+local function isSequence(value)
+  if type(value) ~= "table" then return false end
+
+  local count = 0
+  for _ in pairs(value) do count = count + 1 end
+
+  return count == #value
 end
 
 --- Validate a parsed phase-one document while retaining valid components.
@@ -33,11 +47,16 @@ function layout.validate(document, grid)
   end
 
   local errors = {}
-  local normalized = {
-    version = document.version,
-    grid = document.grid,
-    components = {},
-  }
+  local normalized = {}
+
+  -- Unknown top-level keys are carried through so a newer authoring tool's
+  -- additions survive a round trip in memory.
+  for key, value in pairs(document) do
+    normalized[key] = value
+  end
+  normalized.version = document.version
+  normalized.grid = document.grid
+  normalized.components = {}
 
   if document.version ~= 1 then
     errors[#errors + 1] = "unsupported layout version"
@@ -47,7 +66,7 @@ function layout.validate(document, grid)
       or document.grid.rows ~= 4 then
     errors[#errors + 1] = "phase 1 requires a 4 x 4 grid"
   end
-  if type(document.components) ~= "table" then
+  if not isSequence(document.components) then
     errors[#errors + 1] = "components must be a sequence"
     return normalized, errors
   end
@@ -55,24 +74,28 @@ function layout.validate(document, grid)
   local identifiers = {}
   for index, component in ipairs(document.components) do
     local prefix = "component " .. index .. ": "
-    local valid = true
+    local valid = type(component) == "table"
 
-    if not isSafeIdentifier(component.id) then
-      errors[#errors + 1] = prefix .. "invalid id"
-      valid = false
-    elseif identifiers[component.id] then
-      errors[#errors + 1] = prefix .. "duplicate id " .. component.id
-      valid = false
-    end
-    if not isSafeIdentifier(component.type) then
-      errors[#errors + 1] = prefix .. "invalid type"
-      valid = false
-    end
+    if not valid then
+      errors[#errors + 1] = prefix .. "entry must be a mapping"
+    else
+      if not isSafeIdentifier(component.id) then
+        errors[#errors + 1] = prefix .. "invalid id"
+        valid = false
+      elseif identifiers[component.id] then
+        errors[#errors + 1] = prefix .. "duplicate id " .. component.id
+        valid = false
+      end
+      if not isSafeIdentifier(component.type) then
+        errors[#errors + 1] = prefix .. "invalid type"
+        valid = false
+      end
 
-    local placementValid, placementError = grid.validatePlacement(component, 4, 4)
-    if not placementValid then
-      errors[#errors + 1] = prefix .. placementError
-      valid = false
+      local placementValid, placementError = grid.validatePlacement(component, 4, 4)
+      if not placementValid then
+        errors[#errors + 1] = prefix .. placementError
+        valid = false
+      end
     end
 
     if valid then

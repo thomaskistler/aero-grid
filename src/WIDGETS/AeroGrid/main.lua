@@ -13,11 +13,6 @@
 ---@class AeroGridWidgetOptions
 ---@field DashID string
 
----@class AeroGridComponentEntry
----@field placement table Validated YAML component placement.
----@field module table Loaded component module.
----@field instance table Component-owned runtime context.
-
 ---@class AeroGridContext
 ---@field zone AeroGridZone Live zone table maintained by EdgeTX.
 ---@field path string Absolute widget directory path.
@@ -31,6 +26,7 @@
 ---@field yaml table
 ---@field layoutValidator table
 ---@field layoutStore table
+---@field componentHost table
 ---@field layoutPath? string
 ---@field errorLabel? any
 ---@field reloadState? "clear"|"build"
@@ -38,8 +34,6 @@
 local options = {
   {"DashID", STRING, "main"},
 }
-
-local COMPONENT_API_VERSION = 1
 
 --- Join a widget directory and package-relative path.
 ---@param base string
@@ -82,19 +76,47 @@ local function addError(context, message)
 end
 
 --- Render accumulated runtime errors over the dashboard.
+--- Reuses the existing label so failures raised after creation stay visible.
 ---@param context AeroGridContext
 local function showErrors(context)
   if #context.errors == 0 then return end
+
+  local text = table.concat(context.errors, "\n")
+  if context.errorLabel then
+    context.errorLabel:set({text = text})
+    return
+  end
 
   context.errorLabel = lvgl.label(context.root, {
       x = 8,
       y = 8,
       w = math.max(1, context.zone.w - 16),
       h = 0,
-      text = table.concat(context.errors, "\n"),
+      text = text,
       color = lcd.RGB(240, 82, 82),
       font = function() return SMLSIZE end,
   })
+end
+
+--- Dispatch one lifecycle callback to every live component in isolation.
+--- A component that raises is disabled and reported without affecting the others.
+---@param context AeroGridContext
+---@param event string
+---@param ... any
+local function dispatchAll(context, event, ...)
+  local failures = false
+
+  for _, entry in ipairs(context.components) do
+    if not entry.failed then
+      local ok, dispatchError = context.componentHost.dispatch(entry, event, ...)
+      if not ok and dispatchError then
+        addError(context, entry.placement.id .. ": " .. event .. ": " .. dispatchError)
+        failures = true
+      end
+    end
+  end
+
+  if failures then showErrors(context) end
 end
 
 --- Load, validate, and instantiate every component in the selected layout.
@@ -116,27 +138,40 @@ local function loadComponents(context)
     return
   end
 
+  local host = context.componentHost
   for _, placement in ipairs(document.components) do
     local component, componentError = loadModule(
       context.path, "components/" .. placement.type .. ".lua")
+    local contractValid, contractError
+
+    if component then
+      contractValid, contractError = host.validateModule(component, placement.type)
+    end
+
     if not component then
       addError(context, placement.id .. ": " .. tostring(componentError))
-    elseif component.apiVersion ~= COMPONENT_API_VERSION then
-      addError(context, placement.id .. ": incompatible component API")
-    elseif type(component.create) ~= "function" then
-      addError(context, placement.id .. ": component has no create function")
+    elseif not contractValid then
+      addError(context, placement.id .. ": " .. tostring(contractError))
+    elseif not host.supportsSpan(component, placement.colSpan, placement.rowSpan) then
+      addError(context, placement.id .. ": component does not support span "
+        .. host.spanName(placement.colSpan, placement.rowSpan))
     else
       local rect, rectError = context.grid.rect(context.zone, placement, 4, 4, 4)
       if not rect then
         addError(context, placement.id .. ": " .. tostring(rectError))
       else
-        local ok, instance = pcall(
-          component.create, context.root, rect, placement.config)
+        local settings, warnings = host.resolveSettings(component, placement.config)
+        for _, warning in ipairs(warnings) do
+          addError(context, placement.id .. ": " .. warning)
+        end
+
+        local ok, instance = pcall(component.create, context.root, rect, settings)
         if ok then
           context.components[#context.components + 1] = {
             placement = placement,
             module = component,
             instance = instance,
+            settings = settings,
           }
         else
           addError(context, placement.id .. ": " .. tostring(instance))
@@ -168,6 +203,7 @@ local function create(zone, widgetOptions, path)
   context.yaml = select(1, loadModule(path, "lib/yaml.lua"))
   context.layoutValidator = select(1, loadModule(path, "lib/layout.lua"))
   context.layoutStore = select(1, loadModule(path, "lib/layout_store.lua"))
+  context.componentHost = select(1, loadModule(path, "lib/component_host.lua"))
 
   context.root = lvgl.box({
     x = 0,
@@ -177,8 +213,8 @@ local function create(zone, widgetOptions, path)
     color = lcd.RGB(16, 19, 22),
   })
 
-  if not context.grid or not context.yaml
-      or not context.layoutValidator or not context.layoutStore then
+  if not context.grid or not context.yaml or not context.layoutValidator
+      or not context.layoutStore or not context.componentHost then
     addError(context, "AeroGrid runtime module failed to load")
     showErrors(context)
   else
@@ -194,15 +230,21 @@ local function reflow(context)
   context.root:set({w = context.zone.w, h = context.zone.h})
 
   for _, entry in ipairs(context.components) do
-    local rect = context.grid.rect(context.zone, entry.placement, 4, 4, 4)
-    if rect and type(entry.module.resize) == "function" then
-      entry.module.resize(entry.instance, rect)
+    if not entry.failed then
+      local rect = context.grid.rect(context.zone, entry.placement, 4, 4, 4)
+      if rect then
+        local ok, dispatchError = context.componentHost.dispatch(entry, "resize", rect)
+        if not ok and dispatchError then
+          addError(context, entry.placement.id .. ": resize: " .. dispatchError)
+        end
+      end
     end
   end
 
   if context.errorLabel then
     context.errorLabel:set({w = math.max(1, context.zone.w - 16)})
   end
+  showErrors(context)
 
   context.width = context.zone.w
   context.height = context.zone.h
@@ -231,6 +273,7 @@ end
 ---@param context AeroGridContext
 local function refresh(context)
   if context.reloadState == "clear" then
+    dispatchAll(context, "destroy")
     context.root:clear()
     context.components = {}
     context.errors = {}
@@ -245,6 +288,15 @@ local function refresh(context)
   if context.width ~= context.zone.w or context.height ~= context.zone.h then
     reflow(context)
   end
+
+  dispatchAll(context, "refresh")
+end
+
+--- Keep components updated while the dashboard screen is not visible.
+---@param context AeroGridContext
+local function background(context)
+  if context.reloadState then return end
+  dispatchAll(context, "background")
 end
 
 return {
@@ -253,6 +305,7 @@ return {
   create = create,
   update = update,
   refresh = refresh,
+  background = background,
   translate = translate,
   useLvgl = true,
 }

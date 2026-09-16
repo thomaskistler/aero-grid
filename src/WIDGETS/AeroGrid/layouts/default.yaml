@@ -23,3 +23,12 @@ components:
       title: PHASE 1
       subtitle: SECONDARY 2 x 4
       accent: green
+  - id: pulse
+    type: heartbeat
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: HEARTBEAT
+      accent: amber

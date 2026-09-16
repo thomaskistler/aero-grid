@@ -17,6 +17,12 @@
 local placeholder = {
   id = "placeholder",
   apiVersion = 1,
+  supportedSpans = {"any"},
+  settings = {
+    {key = "title", type = "string", default = "PLACEHOLDER"},
+    {key = "subtitle", type = "string", default = ""},
+    {key = "accent", type = "string", default = "cyan"},
+  },
 }
 
 local colors = {
@@ -43,10 +49,10 @@ end
 --- Create a placeholder panel inside an LVGL parent container.
 ---@param parent any Parent LVGL object supplied by the AeroGrid host.
 ---@param rect AeroGridRect Pixel bounds relative to the parent.
----@param config AeroGridPlaceholderConfig
+---@param settings AeroGridPlaceholderConfig Host-resolved settings with defaults applied.
 ---@return AeroGridPlaceholderContext
-function placeholder.create(parent, rect, config)
-  local accentColor = accents[config.accent] or colors.muted
+function placeholder.create(parent, rect, settings)
+  local accentColor = accents[settings.accent] or colors.muted
   local panel = lvgl.box(parent, {
     x = rect.x,
     y = rect.y,
@@ -81,7 +87,7 @@ function placeholder.create(parent, rect, config)
     y = 6,
     w = contentWidth(rect),
     h = 0,
-    text = tostring(config.title or "PLACEHOLDER"),
+    text = tostring(settings.title),
     color = colors.text,
     font = function() return BOLD end,
   })
@@ -91,7 +97,7 @@ function placeholder.create(parent, rect, config)
     y = 28,
     w = contentWidth(rect),
     h = 0,
-    text = tostring(config.subtitle or ""),
+    text = tostring(settings.subtitle),
     color = colors.muted,
     font = function() return SMLSIZE end,
   })
