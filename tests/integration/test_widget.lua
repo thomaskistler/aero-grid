@@ -107,6 +107,19 @@ model = {
   end,
 }
 
+-- EdgeTX's monotonic clock, in 10ms ticks. Controllable so scheduling is
+-- deterministic rather than dependent on wall time.
+local clock = 0
+
+function getTime()
+  return clock
+end
+
+--- Advance the simulated clock.
+local function tick(amount)
+  clock = clock + (amount or 1)
+end
+
 function loadScript(filename)
   return loadfile(filename)
 end
@@ -172,6 +185,14 @@ assert(type(definition.event) == "function", "host must expose event")
 assertEqual(definition.translate("Theme"), "Theme")
 
 local DEFAULT_OPTIONS = {DashID = "main", Theme = "modern"}
+
+--- Advance the clock and refresh, so rate-limited components fall due.
+local function pump(context, count, step)
+  for _ = 1, count do
+    tick(step or 20)
+    definition.refresh(context)
+  end
+end
 
 --- Create a host and pump refresh until the staged loader finishes.
 --- EdgeTX budgets instructions per callback, so loading is spread over
@@ -389,8 +410,7 @@ local function testReflowAndLifecycle()
 
   local pulse = entryById(appContext, "pulse")
   local ticksBefore = pulse.instance.ticks
-  definition.refresh(appContext)
-  definition.refresh(appContext)
+  pump(appContext, 2)
   assertEqual(pulse.instance.ticks, ticksBefore + 2, "refresh was not dispatched")
 
   definition.background(appContext)
@@ -532,8 +552,10 @@ local function testDemoCycle()
   local seen = {}
   local badges = {}
 
-  -- One full cycle is five phases of forty-five refreshes.
-  for _ = 1, 235 do
+  -- One full cycle is five phases of DEMO_TICKS refreshes, and a refresh only
+  -- happens once the component's interval has elapsed.
+  for _ = 1, 60 do
+    tick(20)
     definition.refresh(context)
     seen[pack.stateName] = true
     badges[pack.stateName] = pack.badge.properties.text
@@ -677,7 +699,7 @@ return exploder
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
   assertEqual(#context.components, 2)
 
-  definition.refresh(context)
+  pump(context, 1)
 
   local boom = entryById(context, "boom")
   local safe = entryById(context, "safe")
@@ -688,8 +710,7 @@ return exploder
   assert(context.errorLabel, "failure was not shown")
 
   -- Further refreshes must stay quiet and keep the healthy component running.
-  definition.refresh(context)
-  definition.refresh(context)
+  pump(context, 2)
   assertEqual(#context.errors, 1, "failure was reported repeatedly")
   assertEqual(#context.components, 2)
 end
@@ -833,12 +854,13 @@ local function testInstructionBudget()
   end
 
   --- Build a layout that fills the grid with single-cell metrics.
-  local function fullGridLayout(count)
+  local function fullGridLayout(count, componentType)
+    componentType = componentType or "metric"
     local lines = {"version: 1", "grid:", "  columns: 4", "  rows: 4", "components:"}
     for i = 1, count do
       local col, row = (i - 1) % 4, math.floor((i - 1) / 4)
       lines[#lines + 1] = "  - id: m" .. i
-      lines[#lines + 1] = "    type: metric"
+      lines[#lines + 1] = "    type: " .. componentType
       lines[#lines + 1] = "    col: " .. col
       lines[#lines + 1] = "    row: " .. row
       lines[#lines + 1] = "    colSpan: 1"
@@ -859,12 +881,18 @@ local function testInstructionBudget()
   end
 
   local worst, worstName = 0, "none"
+  local worstSteady, worstSteadyName = 0, "none"
 
   local function record(name, cost)
     assert(cost < CEILING, string.format(
       "%s used %d instructions, over the %d ceiling (firmware limit %d)",
       name, cost, CEILING, BUDGET))
     if cost > worst then worst = cost; worstName = name end
+    -- Steady state runs on every frame, so track it separately.
+    if string.find(name, "steady", 1, true) and cost > worstSteady then
+      worstSteady = cost
+      worstSteadyName = name
+    end
   end
 
   --- Load one widget package end to end, measuring every callback.
@@ -886,7 +914,27 @@ local function testInstructionBudget()
     assertEqual(#context.components, expectedComponents, label .. ": component count")
     assertEqual(#context.errors, 0, label .. ": " .. table.concat(context.errors, "\n"))
 
-    record(label .. " refresh/steady", measure(definition.refresh, context))
+    -- Steady state must be measured across real frames, advancing the clock,
+    -- or rate limiting makes every sampled frame trivially cheap and the
+    -- measurement meaningless. Sample enough frames to include the worst.
+    local before = {}
+    for index, entry in ipairs(context.components) do
+      before[index] = entry.nextRefresh
+    end
+
+    for _ = 1, 60 do
+      tick(1)
+      record(label .. " refresh/steady", measure(definition.refresh, context))
+    end
+
+    -- Prove the sampled frames actually did work. A scheduling bug that
+    -- silently stopped dispatching would otherwise make this test pass by
+    -- measuring nothing at all.
+    for index, entry in ipairs(context.components) do
+      assert(entry.nextRefresh ~= before[index], label .. ": "
+        .. entry.placement.id .. " was never refreshed during the sample")
+    end
+
     record(label .. " background", measure(definition.background, context))
     record(label .. " event", measure(definition.event, context, 32))
 
@@ -904,8 +952,36 @@ local function testInstructionBudget()
   exercise("shipped", sourcePath, 5)
   exercise("full grid", makeWidget("budget-16", fullGridLayout(16)), 16)
 
+  -- A layout whose components all demand every frame defeats staggering, so
+  -- the per-frame cap is the only thing bounding cost. Prove it holds.
+  local greedyPath = makeWidget("budget-greedy", fullGridLayout(16, "greedy"), {
+    ["greedy.lua"] = [==[
+local greedy = {
+  id = "greedy",
+  apiVersion = 1,
+  supportedSpans = {"any"},
+  refreshInterval = 0,
+}
+function greedy.create(parent, rect, settings, services)
+  local panel = services.primitives.panel(parent, rect, services.theme,
+    services.state("normal", "cyan"))
+  return {panel = panel, ticks = 0, label = services.primitives.label(
+    panel.root, services.theme, {x = 4, y = 4, w = 40, text = "0",
+    font = services.fonts.label})}
+end
+function greedy.refresh(context)
+  context.ticks = context.ticks + 1
+  context.label:set({text = tostring(context.ticks)})
+end
+return greedy
+]==],
+  })
+  exercise("greedy", greedyPath, 16)
+
   print(string.format("  budget headroom: worst callback %s used %d of %d",
     worstName, worst, BUDGET))
+  print(string.format("  steady state:    worst frame %s used %d of %d",
+    worstSteadyName, worstSteady, BUDGET))
 end
 
 --- A component created large and then shrunk must hide what no longer fits,

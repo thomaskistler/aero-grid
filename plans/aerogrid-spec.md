@@ -880,6 +880,16 @@ The regression test measures every callback with a 200-instruction count hook, m
 
 Component authors must respect the same ceiling: `create`, `update`, `refresh`, `background`, and `event` each run inside the host's callback and share its allowance. Avoid per-character string loops, which are the most common way to exhaust it.
 
+##### Refresh scheduling
+
+EdgeTX refreshes widgets on every main loop pass, so steady-state cost is paid tens of times per second and is shared by every component on the dashboard. Two mechanisms keep it bounded.
+
+A component declares `refreshInterval`, in 10ms ticks, stating how often it actually needs servicing. A numeric telemetry readout is indistinguishable at 5 Hz and 50 Hz in flight, so `metric` declares 20 ticks and `heartbeat`, which animates, declares 10. Absent or zero means every frame.
+
+Components that share an interval are then **phase staggered**: each is assigned an offset derived from its position in the layout, so they fall due on different frames instead of all at once. Staggering preserves each component's exact declared rate, which simple batching would not.
+
+A per-frame dispatch cap is retained as a guarantee for layouts that defeat staggering, such as many components all asking to refresh every frame. The cap serves components in rotation so none is starved, and a component delayed by the cap does not accumulate a backlog of missed deadlines.
+
 ### Painting backgrounds
 
 EdgeTX's `lvgl.box` accepts a `color` parameter and silently ignores it: `LvglWidgetBox::build` creates a bare `lv_obj` and, unlike `LvglWidgetBorderedObject`, never applies the color as a background. A box therefore keeps the radio theme's own styling, so a dashboard drawn on boxes renders in EdgeTX's palette rather than its own, and the radio's screen background, including its logo, remains visible behind it.

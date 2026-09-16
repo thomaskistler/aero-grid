@@ -749,6 +749,44 @@ local function testContentFitsPanel()
     "a short panel did not reduce its primary font")
 end
 
+--- Components sharing an interval must not all fall due on the same frame.
+local function testRefreshScheduling()
+  assertEqual(componentHost.refreshInterval({refreshInterval = 20}), 20)
+  assertEqual(componentHost.refreshInterval({}), 0)
+  assertEqual(componentHost.refreshInterval({refreshInterval = -5}), 0)
+
+  -- An interval of zero or one cannot be staggered.
+  assertEqual(componentHost.phaseOffset(0, 7), 0)
+  assertEqual(componentHost.phaseOffset(1, 7), 0)
+
+  -- Sixteen components sharing a 20 tick interval must land on distinct
+  -- frames, so the host never pays for all of them at once.
+  local used = {}
+  for ordinal = 1, 16 do
+    local offset = componentHost.phaseOffset(20, ordinal)
+    assert(offset >= 0 and offset < 20, "offset outside the interval: " .. offset)
+    assert(not used[offset], "two components share phase " .. offset)
+    used[offset] = true
+  end
+
+  -- More components than frames must wrap rather than fail.
+  assertEqual(componentHost.phaseOffset(4, 5), 0)
+  assertEqual(componentHost.phaseOffset(4, 6), 1)
+
+  -- The contract rejects a nonsensical interval rather than misscheduling.
+  local function rejects(interval)
+    local ok = componentHost.validateModule(
+      {id = "d", apiVersion = 1, create = function() end,
+       refreshInterval = interval}, "d")
+    assertEqual(ok, false, "accepted interval " .. tostring(interval))
+  end
+  rejects(-1)
+  rejects(1.5)
+  rejects("fast")
+  assert(componentHost.validateModule(
+    {id = "d", apiVersion = 1, create = function() end, refreshInterval = 0}, "d"))
+end
+
 testGridGeometry()
 testValidation()
 testOverlapIsRejected()
@@ -773,6 +811,7 @@ testLayoutTheme()
 testDerivedThemesStayLegible()
 testStaleOverridesAccent()
 testHostileModule()
+testRefreshScheduling()
 testMetricDirection()
 testDemoDriver()
 testContentFitsPanel()

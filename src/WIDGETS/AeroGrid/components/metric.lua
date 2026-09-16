@@ -28,6 +28,9 @@ local metric = {
   id = "metric",
   apiVersion = 1,
   supportedSpans = {"1x1", "2x1", "2x2"},
+  -- A numeric readout is indistinguishable at 5 Hz and 50 Hz in flight, and
+  -- the host pays every component's refresh inside one instruction budget.
+  refreshInterval = 20,
   settings = {
     {key = "label", label = "Label", type = "string", default = "METRIC"},
     {key = "unit", label = "Unit", type = "string", default = ""},
@@ -47,8 +50,9 @@ local metric = {
 
 --- Phases walked by the demo driver, in order.
 local DEMO_PHASES = {"normal", "warning", "critical", "stale", "unavailable"}
---- Host refresh cycles spent in each demo phase.
-local DEMO_TICKS = 45
+--- Refreshes spent in each demo phase. At the declared 5 Hz interval this is
+--- roughly two seconds per phase.
+local DEMO_TICKS = 10
 
 --- Describe how the component presents itself at a given span.
 --- Unsupported spans are rejected by metadata, so each entry here is deliberate.

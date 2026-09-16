@@ -13,6 +13,9 @@
 ---@field id string Must equal the component type name used in YAML.
 ---@field apiVersion integer Must equal the host component API version.
 ---@field supportedSpans? string[] Span strings such as "2x1", or "any".
+---@field refreshInterval? integer Ticks of 10ms between refreshes. 0 or absent
+---  means every frame. Telemetry rarely needs more than a few hertz, and the
+---  host pays every component's cost inside one instruction budget.
 ---@field settings? AeroGridComponentSetting[]
 ---@field create fun(parent: any, rect: table, settings: table, services: table): any
 ---@field update? fun(instance: any, rect: table, settings: table)
@@ -26,6 +29,8 @@
 ---@field module AeroGridComponentModule
 ---@field instance any Component-owned runtime context.
 ---@field settings table Resolved configuration passed to create.
+---@field interval integer Resolved refresh interval in 10ms ticks.
+---@field nextRefresh integer Tick at which this component is next due.
 ---@field failed? boolean Set after a lifecycle failure disables the component.
 ---@field error? string First lifecycle failure message.
 
@@ -99,7 +104,34 @@ function componentHost.validateModule(module, typeName)
     return false, "settings must be a sequence"
   end
 
+  local interval = field(module, "refreshInterval")
+  if interval ~= nil
+      and (type(interval) ~= "number" or interval < 0 or interval ~= math.floor(interval)) then
+    return false, "refreshInterval must be a non-negative whole number of ticks"
+  end
+
   return true
+end
+
+--- Resolve a module's refresh interval in 10ms ticks.
+---@param module AeroGridComponentModule
+---@return integer
+function componentHost.refreshInterval(module)
+  local interval = field(module, "refreshInterval")
+  if type(interval) ~= "number" or interval < 0 then return 0 end
+  return math.floor(interval)
+end
+
+--- Spread components that share an interval across different frames.
+--- Without this, every component with the same rate falls due on the same
+--- frame and the host pays their whole cost at once. The offset is derived
+--- from the component's ordinal so it is deterministic and evenly spread.
+---@param interval integer
+---@param ordinal integer Position of the component in the layout, from 1.
+---@return integer offset Ticks to delay this component's first refresh.
+function componentHost.phaseOffset(interval, ordinal)
+  if interval <= 1 then return 0 end
+  return (ordinal - 1) % interval
 end
 
 --- Format a placement span as the string used in supportedSpans declarations.

@@ -104,10 +104,13 @@ EdgeTX aborts a widget callback that exceeds 20000 Lua VM instructions with `CPU
 `make test` measures every callback the firmware can invoke, against the largest layout the schema permits, and fails if one exceeds 75% of the budget, printing the worst case:
 
 ```text
-budget headroom: worst callback full grid refresh/steady used 6600 of 20000
+budget headroom: worst callback shipped refresh/components used 3600 of 20000
+steady state:    worst frame shipped refresh/steady used 1000 of 20000
 ```
 
 Component callbacks share this allowance. Per-character string loops are the usual way to exhaust it.
+
+Because EdgeTX refreshes widgets on every main loop pass, components declare a `refreshInterval` in 10ms ticks rather than being serviced every frame, and components sharing an interval are phase staggered so they fall due on different frames. A per-frame cap bounds the worst case for layouts that defeat staggering.
 
 ## Simulator fixture convention
 

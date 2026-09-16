@@ -211,12 +211,18 @@ local function buildComponent(context, placement)
     {x = 0, y = 0, w = rect.w, h = rect.h}, settings, services)
 
   if ok then
+    local interval = host.refreshInterval(component)
     context.components[#context.components + 1] = {
       placement = placement,
       module = component,
       instance = instance,
       settings = settings,
       container = container,
+      interval = interval,
+      -- Stagger components that share an interval so they do not all fall
+      -- due on the same frame.
+      nextRefresh = getTime()
+        + host.phaseOffset(interval, #context.components + 1),
     }
   else
     -- Discard whatever the failed component managed to build.
@@ -552,6 +558,54 @@ local function event(context, widgetEvent)
   return false
 end
 
+--- Components refreshed per frame at most, regardless of how many fall due.
+--- Phase staggering normally keeps the number well below this; the cap is a
+--- guarantee for layouts that defeat staggering, such as many components all
+--- asking to refresh every frame.
+local REFRESH_CAP = 6
+
+--- Dispatch `refresh` to the components that are due, newest cursor first.
+--- Returns the number dispatched so tests can observe the scheduling.
+---@param context AeroGridContext
+---@return integer dispatched
+local function dispatchDue(context)
+  local components = context.components
+  local count = #components
+  if count == 0 then return 0 end
+
+  local now = getTime()
+  local cursor = context.refreshCursor or 1
+  if cursor > count then cursor = 1 end
+
+  local dispatched, failures, examined = 0, false, 0
+
+  while examined < count and dispatched < REFRESH_CAP do
+    local entry = components[cursor]
+    examined = examined + 1
+
+    if entry and not entry.failed and now >= (entry.nextRefresh or 0) then
+      -- Advance from now, so a component starved by the cap does not
+      -- accumulate a backlog of missed deadlines.
+      entry.nextRefresh = now + entry.interval
+      dispatched = dispatched + 1
+
+      local ok, dispatchError = context.componentHost.dispatch(entry, "refresh")
+      if not ok and dispatchError then
+        addError(context, entry.placement.id .. ": refresh: " .. dispatchError)
+        failures = true
+      end
+    end
+
+    cursor = cursor % count + 1
+  end
+
+  -- Resume from where we stopped so every component is served in turn.
+  context.refreshCursor = cursor
+  if failures then showErrors(context) end
+
+  return dispatched
+end
+
 --- Advance the staged loader, then keep geometry and components synchronized.
 --- At most one loading step runs per call, so the instruction budget is never
 --- exceeded no matter how large the layout is.
@@ -590,7 +644,7 @@ local function refresh(context)
     return
   end
 
-  dispatchAll(context, "refresh")
+  dispatchDue(context)
 end
 
 --- Keep components updated while the dashboard screen is not visible.
