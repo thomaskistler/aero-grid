@@ -1725,6 +1725,513 @@ local function testIdentityPresentation()
   end
 end
 
+--- EdgeTX returns a table of cell voltages, and every part of that sentence
+--- can fail: it may not be a table, it may be empty, and its entries may not
+--- be voltages. Each failure needs its own answer, because each needs a
+--- different fix from the pilot.
+local function testCellShapes()
+  local cellBattery = loadModule("components/cell-battery.lua")
+  local out = {}
+
+  assertEqual(cellBattery.summarize(nil, out).shape, "none")
+  -- "Cels-" carries the cells unit but returns a plain number, so a layout
+  -- can very easily point this component at one.
+  assertEqual(cellBattery.summarize(4.09, out).shape, "number")
+  assertEqual(cellBattery.summarize("4.09", out).shape, "invalid")
+  assertEqual(cellBattery.summarize({}, out).shape, "empty")
+
+  local pack = cellBattery.summarize({4.11, 4.13, 4.09, 4.12}, out)
+  assertEqual(pack.shape, "cells")
+  assertEqual(pack.count, 4)
+  assertEqual(pack.lowest, 4.09)
+  assertEqual(pack.highest, 4.13)
+  assert(math.abs(pack.pack - 16.45) < 0.001, tostring(pack.pack))
+  assert(math.abs(pack.spread - 0.04) < 0.001, tostring(pack.spread))
+
+  -- Entries that cannot be cell voltages are rejected rather than folded in,
+  -- because an average dragged down by a zero hides the cell that matters.
+  local mixed = cellBattery.summarize({4.11, 0, 4.12, 99}, out)
+  assertEqual(mixed.shape, "cells")
+  assertEqual(mixed.count, 2)
+  assertEqual(mixed.rejected, 2)
+  assertEqual(mixed.lowest, 4.11)
+
+  assertEqual(cellBattery.summarize({0, -1, 99}, out).shape, "invalid")
+  -- A NaN is excluded by the bounds test rather than becoming the lowest cell.
+  local nan = cellBattery.summarize({4.11, 0 / 0, 4.12}, out)
+  assertEqual(nan.count, 2)
+  assertEqual(nan.lowest, 4.11)
+
+  -- The walk is bounded, because the table comes from the firmware and runs
+  -- inside the host's instruction budget.
+  local long = {}
+  for index = 1, cellBattery.CELL_LIMIT + 8 do long[index] = 4.0 end
+  assertEqual(cellBattery.summarize(long, out).count, cellBattery.CELL_LIMIT)
+
+  -- A hole ends the walk: EdgeTX reports contiguous cells.
+  assertEqual(cellBattery.summarize({4.1, 4.2, nil, 4.3}, out).count, 2)
+end
+
+--- The lowest cell is the safety reading, and the bar is scaled over the
+--- usable range rather than from zero volts.
+local function testCellReadings()
+  local cellBattery = loadModule("components/cell-battery.lua")
+  local out = {}
+  local summary = cellBattery.summarize({4.11, 3.25, 4.09, 4.12}, out)
+  local settings = {reading = "lowest", min = 3.3, max = 4.2,
+    warning = 3.5, critical = 3.3}
+
+  assertEqual(cellBattery.primaryValue(settings, summary), 3.25)
+  -- An explicitly configured lowest-cell source wins: the receiver has seen
+  -- samples between our polls that this component never will.
+  assertEqual(cellBattery.primaryValue(settings, summary, 3.11), 3.11)
+
+  local pack = {reading = "pack", min = 3.3, max = 4.2}
+  assert(math.abs(cellBattery.primaryValue(pack, summary) - 15.57) < 0.001)
+  local average = {reading = "average"}
+  assert(math.abs(cellBattery.primaryValue(average, summary) - 3.8925) < 0.001)
+  -- An explicit lowest source must not be mistaken for a pack reading.
+  assert(math.abs(cellBattery.primaryValue(pack, summary, 3.11) - 15.57) < 0.001)
+
+  -- The bar runs from the critical voltage to full. Scaled from zero, a cell
+  -- at 3.3 V would read four fifths full.
+  assertEqual(cellBattery.fraction(settings, 3.3, 4), 0)
+  assertEqual(cellBattery.fraction(settings, 4.2, 4), 1)
+  assert(math.abs(cellBattery.fraction(settings, 3.75, 4) - 0.5) < 0.001)
+  assertEqual(cellBattery.fraction(settings, 2.0, 4), 0, "the drawing clamps")
+  assertEqual(cellBattery.fraction(settings, 0 / 0, 4), 0)
+  -- A pack reading is divided by its own cell count before being scaled.
+  assert(math.abs(cellBattery.fraction(pack, 15.0, 4) - 0.5) < 0.001)
+  assertEqual(cellBattery.fraction(pack, 15.0, 0), 0,
+    "a pack with no known cell count cannot be scaled")
+
+  -- Thresholds judge the worst cell even when the panel shows the pack sum.
+  assertEqual(cellBattery.resolveState(settings, 15.57, 3.25, false), "critical")
+  assertEqual(cellBattery.resolveState(settings, 3.45, 3.45, false), "warning")
+  assertEqual(cellBattery.resolveState(settings, 3.9, 3.9, false), "normal")
+  assertEqual(cellBattery.resolveState(settings, 3.9, 3.9, true), "stale")
+  assertEqual(cellBattery.resolveState(settings, nil, nil, false), "unavailable")
+
+  -- A shape problem and a missing sensor need different words.
+  assertEqual(cellBattery.badgeText({shape = "number"}, "unavailable", "NO SOURCE"),
+    "NOT CELLS")
+  assertEqual(cellBattery.badgeText({shape = "invalid"}, "unavailable", "NO SOURCE"),
+    "BAD CELLS")
+  assertEqual(cellBattery.badgeText({shape = "none"}, "unavailable", "NO SOURCE"),
+    "NO SOURCE")
+  assertEqual(cellBattery.badgeText({shape = "cells"}, "warning", "WARN"), "WARN")
+end
+
+--- Three situations look like a zero and must not: a dead link, a protocol
+--- with no RSSI sensor, and a reading that really is zero.
+local function testLinkClassification()
+  local linkStatus = loadModule("components/link-status.lua")
+
+  assertEqual(linkStatus.classify(nil), "none")
+  assertEqual(linkStatus.classify({name = ""}), "none")
+  assertEqual(linkStatus.classify({name = "RSSI", known = false}), "absent")
+  assertEqual(linkStatus.classify({name = "RSSI", known = true}), "waiting")
+  assertEqual(linkStatus.classify(
+    {name = "RSSI", known = true, available = true, stale = true}), "stale")
+  assertEqual(linkStatus.classify(
+    {name = "RSSI", known = true, available = true}), "live")
+
+  -- Auto prefers quality, because a percentage means the same thing on every
+  -- protocol where RSSI does not, but never at the cost of an empty panel.
+  assertEqual(linkStatus.primaryFor({primary = "auto"}, "live", "live"), "quality")
+  assertEqual(linkStatus.primaryFor({primary = "auto"}, "live", "absent"), "rssi")
+  assertEqual(linkStatus.primaryFor({primary = "auto"}, "live", "none"), "rssi")
+  assertEqual(linkStatus.primaryFor({primary = "auto"}, "absent", "live"), "quality")
+  -- An explicit choice is never overridden, however bad the source looks.
+  assertEqual(linkStatus.primaryFor({primary = "rssi"}, "absent", "live"), "rssi")
+  assertEqual(linkStatus.primaryFor({primary = "quality"}, "live", "absent"),
+    "quality")
+
+  local thresholds = {warning = 50, critical = 30}
+  local function state(reading)
+    local name = linkStatus.resolveState(thresholds, reading)
+    local _, badge = linkStatus.resolveState(thresholds, reading)
+    return name, badge
+  end
+
+  -- A protocol with no RSSI sensor is a permanent property of the link, not a
+  -- fade, and it must never be reported as a dead link.
+  local name, badge = state({sourceState = "absent", linkDown = false})
+  assertEqual(name, "unavailable")
+  assertEqual(badge, "NO SENSOR")
+
+  -- A dead link is the measurement this panel exists to report.
+  name, badge = state({sourceState = "live", linkDown = true, available = true,
+    value = 96})
+  assertEqual(name, "critical")
+  assertEqual(badge, "NO LINK")
+
+  -- Never powered up is not an alarm.
+  name, badge = state({sourceState = "waiting", linkDown = true, available = false})
+  assertEqual(name, "unavailable")
+  assertEqual(badge, "NO LINK")
+
+  -- Thresholds count downward, and a genuine zero on a live link is a
+  -- reading, not a missing one.
+  assertEqual(state({sourceState = "live", value = 96}), "normal")
+  assertEqual(state({sourceState = "live", value = 44}), "warning")
+  assertEqual(state({sourceState = "live", value = 0}), "critical")
+  assertEqual(state({sourceState = "stale", value = 96}), "stale")
+
+  -- A source the radio has never heard of reads N/A, never zero.
+  assertEqual(linkStatus.sourceText(nil, "none"), "--")
+  assertEqual(linkStatus.sourceText({}, "absent"), "N/A")
+  assertEqual(linkStatus.sourceText(
+    {value = 78, precision = 0, unitText = "dB"}, "live"), "78dB")
+  assertEqual(linkStatus.sourceText(
+    {value = -72.4, precision = 1, unitText = "dBm"}, "live"), "-72.4dBm")
+
+  -- The bar clamps its drawing without altering the reading, including for a
+  -- dBm range that is entirely negative.
+  local dbm = {min = -110, max = -30}
+  assertEqual(linkStatus.fraction(dbm, -110), 0)
+  assertEqual(linkStatus.fraction(dbm, -30), 1)
+  assert(math.abs(linkStatus.fraction(dbm, -70) - 0.5) < 0.001)
+  assertEqual(linkStatus.fraction(dbm, -200), 0)
+  assertEqual(linkStatus.fraction({min = 0, max = 0}, 5), 0)
+end
+
+--- The link view is the only thing that can tell a dead link from a protocol
+--- that never populates an RSSI sensor, so it has to say both.
+local function testTelemetryLinkView()
+  local harness = telemetryHarness()
+  local service = harness.service
+  local link = service:link()
+  local pack = service:subscribe("RxBt")
+
+  -- Subscribing to the link is itself a reason to run the service.
+  assert(service.count >= 2, "the link subscription was not counted")
+
+  service:update(0)
+  assertEqual(link.live, true)
+  assertEqual(link.rssi, 80)
+  assertEqual(link.indicator, true)
+
+  harness.rssi = 0
+  harness.values[100] = 0
+  service:update(1)
+  assertEqual(link.live, false, "a dead link was reported as live")
+  assertEqual(link.indicator, true)
+  assertEqual(pack.state, "stale")
+
+  -- A protocol with no RSSI sensor: values keep arriving while getRSSI reads
+  -- zero. The indicator is wrong, and the service must say so rather than
+  -- pinning every reading stale.
+  local other = telemetryHarness()
+  local otherLink = other.service:link()
+  local reading = other.service:subscribe("RxBt")
+  other.rssi = 0
+  other.service:update(0)
+  assertEqual(reading.value, 24.4, "a live reading was discarded as stale")
+  assertEqual(otherLink.live, true,
+    "the link view still trusted an indicator a reading had disproved")
+  assertEqual(otherLink.indicator, false, "a broken indicator was not reported")
+  assertEqual(otherLink.rssi, 0)
+
+  -- The view is immutable like every other snapshot.
+  local ok = pcall(function() otherLink.live = false end)
+  assertEqual(ok, false, "the link view accepted a write")
+end
+
+--- A compass is north-up and says nothing when there is nothing to say.
+local function testCompassGeometry()
+  -- LVGL measures zero at three o'clock; a compass measures zero at twelve.
+  assertEqual(primitives.arcAngle(0), 270)
+  assertEqual(primitives.arcAngle(90), 0)
+  assertEqual(primitives.arcAngle(180), 90)
+  assertEqual(primitives.arcAngle(270), 180)
+  assertEqual(primitives.arcAngle(359.6), 270)
+
+  local compass = {
+    ring = {set = function(self, changes) self.last = changes end},
+  }
+
+  primitives.setCompass(compass, 90)
+  assertEqual(compass.bearing, 90)
+  assertEqual(compass.ring.last.opacity, 255)
+  assertEqual(compass.ring.last.startAngle, 345)
+  assertEqual(compass.ring.last.endAngle, 15)
+
+  -- A withheld bearing hides the pointer rather than resting it at north,
+  -- which would read as a valid due-north fix.
+  primitives.setCompass(compass, nil)
+  assertEqual(compass.bearing, nil)
+  assertEqual(compass.ring.last.opacity, 0)
+  primitives.setCompass(compass, 0 / 0)
+  assertEqual(compass.ring.last.opacity, 0)
+
+  -- EdgeTX positions an arc by its centre: LvglWidgetRoundObject::setPos
+  -- stores x - radius, so a component laying out in corner coordinates has to
+  -- convert, and this is where that conversion lives.
+  local box = primitives.arcBounds(100, 60, 20)
+  assertEqual(box.x, 80)
+  assertEqual(box.y, 40)
+  assertEqual(box.w, 40)
+  assertEqual(box.h, 40)
+  assertEqual(primitives.arcBounds(100, 60, 20, 6).x, 77)
+end
+
+--- Navigation presentations, and the three degraded states that each need
+--- their own words.
+local function testNavigationPresentation()
+  local navigation = loadModule("components/navigation.lua")
+
+  assertEqual(navigation.cardinal(0), "N")
+  assertEqual(navigation.cardinal(44), "NE")
+  assertEqual(navigation.cardinal(350), "N")
+  assertEqual(navigation.cardinal(270), "W")
+  assertEqual(navigation.cardinal(nil), "")
+
+  -- Auto spends space on direction only once there is room for it.
+  assertEqual(navigation.presentation("auto", 1, 1), "distance")
+  assertEqual(navigation.presentation("auto", 2, 1), "bearing")
+  assertEqual(navigation.presentation("auto", 2, 2), "compass")
+  assertEqual(navigation.presentation("auto", 3, 2), "detailed")
+  -- A stated presentation always wins, and nonsense falls back to the span.
+  assertEqual(navigation.presentation("distance", 4, 4), "distance")
+  assertEqual(navigation.presentation("nonsense", 1, 1), "distance")
+
+  local contents = navigation.presentationFor("detailed")
+  assertEqual(contents.showCompass, true)
+  assertEqual(contents.showCoordinates, true)
+  assertEqual(navigation.presentationFor("distance").showDetail, false)
+  assertEqual(navigation.presentationFor("bearing").showCompass, false)
+
+  local fix = {source = "GPS", known = true, fix = true, home = true,
+    state = "normal", latitude = 47.3769, longitude = 8.5417,
+    distance = 778, bearing = 9.47}
+
+  assertEqual(navigation.bearingText(fix), "BRG 009 N")
+  assertEqual(navigation.originText(fix), "NORTH UP FROM HOME")
+  assertEqual(navigation.coordinateText(fix), "47.37690 8.54170")
+  assertEqual(navigation.resolveState({}, fix), "normal")
+
+  -- Distance thresholds count upward: further away is worse.
+  assertEqual(navigation.resolveState({warning = 500}, fix), "warning")
+  assertEqual(navigation.resolveState({critical = 700}, fix), "critical")
+
+  -- A fix with no home position is not a broken fix. The position is still
+  -- known; only the two values measured from home are withheld.
+  local noHome = {source = "GPS", known = true, fix = true, home = false,
+    state = "normal", latitude = 47.3769, longitude = 8.5417}
+  local state, badge = navigation.resolveState({}, noHome)
+  assertEqual(state, "normal")
+  assertEqual(badge, "NO HOME")
+  assertEqual(navigation.bearingText(noHome), "BRG --")
+  assertEqual(navigation.originText(noHome), "NO HOME POSITION")
+  assertEqual(navigation.coordinateText(noHome), "47.37690 8.54170")
+
+  -- No fix is reported as such, never as a distance of zero.
+  local noFix = {source = "GPS", known = true, fix = false, home = false,
+    state = "unavailable"}
+  state, badge = navigation.resolveState({}, noFix)
+  assertEqual(state, "unavailable")
+  assertEqual(badge, "NO FIX")
+  assertEqual(navigation.coordinateText(noFix), "-- , --")
+
+  -- A source the radio does not have is a different problem again.
+  state, badge = navigation.resolveState({},
+    {source = "GPS", known = false, fix = false, home = false})
+  assertEqual(state, "unavailable")
+  assertEqual(badge, "NO SOURCE")
+  assertEqual(navigation.originText({source = "GPS", known = false}),
+    "NO GPS SOURCE")
+
+  -- Stale keeps the last known position visible and marked.
+  local stale = {source = "GPS", known = true, fix = true, home = true,
+    state = "stale", distance = 778, bearing = 9.47}
+  assertEqual(navigation.resolveState({}, stale), "stale")
+  assertEqual(navigation.originText(stale), "LAST KNOWN")
+end
+
+--- A dial that cannot be read is not worth the pixels, so it is dropped
+--- before the dominant reading is shrunk.
+local function testNavigationRegions()
+  local navigation = loadModule("components/navigation.lua")
+  local resolved = theme.build("modern")
+  local fonts = theme.typography(2, 2)
+  local layout = navigation.presentationFor("detailed")
+
+  local large = navigation.regionsFor(resolved, theme,
+    {x = 0, y = 0, w = 238, h = 134}, layout, fonts, "888.88km")
+  assertEqual(large.showCompass, true)
+  assertEqual(large.showCoordinates, true)
+  -- The dial sits inside its own panel, measured from its centre.
+  local box = primitives.arcBounds(large.centreX, large.centreY, large.radius)
+  assert(box.x >= 0 and box.y >= 0, "the dial was placed off the panel")
+  assert(box.x + box.w <= 238, "the dial overflowed the panel")
+  assert(box.y + box.h <= 134, "the dial overflowed the panel")
+  -- And never over the reading beside it.
+  assert(large.pad + large.valueWidth <= box.x, "the dial overlaps the value")
+
+  -- A panel that cannot afford everything sheds the coordinates first and the
+  -- dial next, and never the distance.
+  local short = navigation.regionsFor(resolved, theme,
+    {x = 0, y = 0, w = 238, h = 62}, layout, fonts, "888.88km")
+  assertEqual(short.showCoordinates, false)
+
+  local tiny = navigation.regionsFor(resolved, theme,
+    {x = 0, y = 0, w = 58, h = 40}, layout, fonts, "888.88km")
+  assertEqual(tiny.showCompass, false, "an unreadable dial was kept")
+  assertEqual(tiny.radius, 0)
+  assertEqual(tiny.valueWidth, tiny.content, "the reading did not reclaim the room")
+end
+
+--- Every region of the three telemetry components, at every span they claim,
+--- must clear every other region. Two rows resolved onto the same line draw
+--- over each other on the radio and look like one unreadable smear, and
+--- nothing about the resolved numbers says so unless it is asserted.
+local function testTelemetryContentFitsPanel()
+  local cellBattery = loadModule("components/cell-battery.lua")
+  local linkStatus = loadModule("components/link-status.lua")
+  local navigationComponent = loadModule("components/navigation.lua")
+  local resolved = theme.build("modern")
+  local heightOf = theme.fontHeight
+
+  -- Panel sizes for spans at 480 x 272 with 4 px gutters, plus tight cases.
+  local cases = {
+    {name = "2x2", w = 238, h = 134, colSpan = 2, rowSpan = 2},
+    {name = "2x1", w = 238, h = 65, colSpan = 2, rowSpan = 1},
+    {name = "1x1", w = 117, h = 65, colSpan = 1, rowSpan = 1},
+    {name = "shrunk", w = 158, h = 68, colSpan = 2, rowSpan = 2},
+    {name = "tiny", w = 60, h = 40, colSpan = 1, rowSpan = 1},
+  }
+
+  for _, case in ipairs(cases) do
+    local rect = {x = 0, y = 0, w = case.w, h = case.h}
+    local fonts = theme.typography(case.colSpan, case.rowSpan)
+    local labelHeight = heightOf(fonts.label)
+
+    --- Shared assertions: the reading fits its own region in both axes, and
+    --- clears the header above it and whatever row sits below it.
+    local function assertReading(what, area, valueFont, valueWidth, sample)
+      local bottom = area.valueY + heightOf(valueFont)
+      assert(bottom <= case.h, what .. " " .. case.name
+        .. ": the reading overflows the panel, ends at " .. bottom)
+      assert(area.valueY >= labelHeight, what .. " " .. case.name
+        .. ": the reading overlaps the header")
+      assert(area.pad + valueWidth <= case.w, what .. " " .. case.name
+        .. ": the reading runs past the right edge")
+
+      -- Width matters as much as height: the widest string this component can
+      -- ever print has to fit the column it was given, or it clips sideways.
+      -- The smallest font is the honest answer when nothing fits.
+      assert(theme.textWidth(valueFont, sample) <= valueWidth
+        or valueFont == SMLSIZE, what .. " " .. case.name
+        .. ": the reading was fitted by height alone and clips at "
+        .. theme.textWidth(valueFont, sample) .. " in " .. valueWidth)
+
+      if area.showDetail then
+        assert(bottom <= area.detailY, what .. " " .. case.name
+          .. ": the reading overlaps the supporting row below it")
+      end
+    end
+
+    --- A two-column supporting row: neither half may touch the other.
+    local function assertColumns(what, area, leftWidth, rightX, rightWidth)
+      assert(area.pad + leftWidth <= rightX, what .. " " .. case.name
+        .. ": supporting columns overlap")
+      assert(rightX + rightWidth <= case.w, what .. " " .. case.name
+        .. ": a supporting column runs past the right edge")
+    end
+
+    local cellLayout = cellBattery.presentationFor(case.colSpan, case.rowSpan)
+    cellLayout.visual = "bar"
+    local cells = cellBattery.regionsFor(
+      resolved, theme, rect, cellLayout, fonts, "4.44V")
+    assertReading("cell-battery", cells, cells.value, cells.content, "4.44V")
+    if cells.showDetail then
+      assert(cells.detailY + labelHeight <= cells.barY, "cell-battery "
+        .. case.name .. ": the detail row overlaps the bar")
+      assertColumns("cell-battery", cells,
+        cells.detailWidth, cells.packX, cells.detailWidth)
+    end
+    if cells.showVisual then
+      assert(cells.barY + resolved.spacing.barHeight <= case.h,
+        "cell-battery " .. case.name .. ": the bar overflows the panel")
+    end
+
+    local linkLayout = linkStatus.presentationFor(case.colSpan, case.rowSpan)
+    linkLayout.visual = "bar"
+    local link = linkStatus.regionsFor(
+      resolved, theme, rect, linkLayout, fonts, "-100dBm")
+    assertReading("link-status", link, link.value, link.content, "-100dBm")
+    if link.showDetail then
+      assert(link.detailY + labelHeight <= link.barY, "link-status "
+        .. case.name .. ": the detail row overlaps the bar")
+      assertColumns("link-status", link,
+        link.detailWidth, link.linkX, link.linkWidth)
+    end
+
+    for _, presentation in ipairs({"distance", "bearing", "compass", "detailed"}) do
+      local navLayout = navigationComponent.presentationFor(presentation)
+      local nav = navigationComponent.regionsFor(
+        resolved, theme, rect, navLayout, fonts, "888.88km")
+      local what = "navigation/" .. presentation
+      assertReading(what, nav, nav.value, nav.valueWidth, "888.88km")
+
+      if nav.showDetail then
+        assert(nav.detailY + labelHeight <= case.h,
+          what .. " " .. case.name .. ": the bearing row overflows the panel")
+        assertColumns(what, nav, nav.detailWidth, nav.originX, nav.originWidth)
+      end
+      if nav.showCoordinates then
+        -- The coordinates sit below the bearing row, not on top of it.
+        assert(nav.detailY + labelHeight <= nav.coordinatesY, what .. " "
+          .. case.name .. ": the coordinates row overlaps the bearing row")
+        assert(nav.coordinatesY + labelHeight <= case.h, what .. " "
+          .. case.name .. ": the coordinates row overflows the panel")
+      end
+      if nav.showCompass then
+        local box = primitives.arcBounds(nav.centreX, nav.centreY, nav.radius)
+        assert(box.x >= 0 and box.y >= 0,
+          what .. " " .. case.name .. ": the dial was placed off the panel")
+        assert(box.x + box.w <= case.w and box.y + box.h <= case.h,
+          what .. " " .. case.name .. ": the dial overflows the panel")
+        assert(nav.pad + nav.valueWidth <= box.x,
+          what .. " " .. case.name .. ": the dial overlaps the reading")
+      end
+    end
+  end
+
+  -- Shedding exists to protect the dominant reading, not merely to avoid an
+  -- overlap. A 2 x 1 panel could fit its supporting row and a small value at
+  -- the same time; the specification says to drop the row instead, so the
+  -- reading a pilot glances at stays large.
+  local squeezed = {x = 0, y = 0, w = 238, h = 65}
+  local wideFonts = theme.typography(2, 1)
+
+  local cellLayout = cellBattery.presentationFor(2, 1)
+  cellLayout.visual = "bar"
+  local shedCells = cellBattery.regionsFor(
+    resolved, theme, squeezed, cellLayout, wideFonts, "4.44V")
+  assertEqual(shedCells.showDetail, false,
+    "cell-battery kept a supporting row a short panel could not afford")
+  assert(heightOf(shedCells.value) >= heightOf(MIDSIZE),
+    "cell-battery shed a row without buying its reading any size")
+
+  local linkLayout = linkStatus.presentationFor(2, 1)
+  linkLayout.visual = "bar"
+  local shedLink = linkStatus.regionsFor(
+    resolved, theme, squeezed, linkLayout, wideFonts, "-100dBm")
+  assertEqual(shedLink.showDetail, false,
+    "link-status kept a supporting row a short panel could not afford")
+  assert(heightOf(shedLink.value) >= heightOf(MIDSIZE),
+    "link-status shed a row without buying its reading any size")
+
+  local shedNav = navigationComponent.regionsFor(resolved, theme, squeezed,
+    navigationComponent.presentationFor("detailed"), wideFonts, "888.88km")
+  assertEqual(shedNav.showCoordinates, false,
+    "navigation kept a coordinates row a short panel could not afford")
+  assert(heightOf(shedNav.value) >= heightOf(MIDSIZE),
+    "navigation shed a row without buying its reading any size")
+end
+
 testSnapshotsAreImmutable()
 testServiceScheduling()
 testTelemetryFreshness()
@@ -1742,5 +2249,13 @@ testTxBatteryEstimate()
 testVariableNormalization()
 testTrimPresentation()
 testIdentityPresentation()
+testCellShapes()
+testCellReadings()
+testLinkClassification()
+testTelemetryLinkView()
+testCompassGeometry()
+testNavigationPresentation()
+testNavigationRegions()
+testTelemetryContentFitsPanel()
 
 print("AeroGrid runtime tests passed")

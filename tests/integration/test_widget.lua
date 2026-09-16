@@ -186,6 +186,43 @@ radio.fields.VSpd = {id = 120, name = "VSpd", desc = "Vertical speed", unit = 5}
 radio.values[120] = 2.5
 radio.sensors[19] = {name = "VSpd", prec = 1}
 
+-- A flight pack. EdgeTX returns a table of individual cell voltages for the
+-- base cells source, and a plain number for its extremes, which is exactly the
+-- shape mismatch cell-battery has to survive.
+radio.fields.Cels = {id = 130, name = "Cels", desc = "Cells", unit = 38}
+radio.fields["Cels-"] = {id = 131, name = "Cels-", desc = "Cell min", unit = 38}
+radio.fields["Cels+"] = {id = 132, name = "Cels+", desc = "Cell max", unit = 38}
+radio.values[130] = {4.11, 4.13, 4.09, 4.12}
+radio.values[131] = 4.09
+radio.values[132] = 4.13
+radio.sensors[20] = {name = "Cels", prec = 2}
+
+-- Link sensors. FrSky populates RSSI in dB; ELRS populates 1RSS in dBm
+-- alongside RQly as a percentage, and the two protocols never both apply.
+radio.fields.RSSI = {id = 140, name = "RSSI", desc = "RSSI", unit = 17}
+radio.fields.RQly = {id = 141, name = "RQly", desc = "Link quality", unit = 13}
+radio.fields["RQly-"] = {id = 142, name = "RQly-", desc = "Link quality min", unit = 13}
+radio.fields["1RSS"] = {id = 143, name = "1RSS", desc = "Antenna 1", unit = 29}
+radio.values[140] = 78
+radio.values[141] = 96
+radio.values[142] = 62
+radio.values[143] = -72
+radio.sensors[21] = {name = "RSSI", prec = 0}
+radio.sensors[22] = {name = "RQly", prec = 0}
+
+-- Further GPS sources, so a layout that fills the grid with navigation panels
+-- really does carry more than one subscription.
+radio.fields.GPS3 = {id = 119, name = "GPS3", desc = "GPS 3", unit = 40}
+radio.fields.GPS4 = {id = 121, name = "GPS4", desc = "GPS 4", unit = 40}
+radio.values[119] = radio.values[109]
+radio.values[121] = radio.values[109]
+
+--- Does this radio's protocol populate an RSSI sensor at all?
+--- Some do not, and EdgeTX's getRSSI() then reads zero on a perfectly live
+--- link. That is a different situation from a dead link and the two must not
+--- be simulated by the same flag, or a test cannot tell them apart either.
+radio.rssiAbsent = false
+
 --- Files the radio reports through `fstat`, keyed by absolute path.
 --- Model bitmaps live under /IMAGES/ on the SD card, which the host running
 --- these tests does not have, so the mock answers for them directly.
@@ -208,10 +245,19 @@ indexFields()
 local function resetRadio()
   indexFields()
   radio.rssi = 80
+  radio.rssiAbsent = false
   radio.values[100] = 24.0
   radio.values[103] = 10
   radio.values[106] = 100
   radio.values[300] = 1024
+  radio.values[130] = {4.11, 4.13, 4.09, 4.12}
+  radio.values[131] = 4.09
+  radio.values[140] = 78
+  radio.values[141] = 96
+  radio.values[109].lat = 47.3769
+  radio.values[109].lon = 8.5417
+  radio.values[109]["pilot-lat"] = 47.3700
+  radio.values[109]["pilot-lon"] = 8.5400
 end
 
 function getValue(source)
@@ -227,7 +273,13 @@ function getValue(source)
   -- EdgeTX returns integer zero for every telemetry source while telemetry is
   -- not streaming. A mock that kept reporting real values instead would let a
   -- freshness bug pass, because nothing would ever look like a dead link.
-  if field and field.unit and radio.rssi == 0 then return 0 end
+  --
+  -- The RSSI indicator is not the same thing as the telemetry stream: on a
+  -- protocol that populates no RSSI sensor, getRSSI() reads zero while values
+  -- keep arriving. `rssiAbsent` simulates that, and nothing else does.
+  if field and field.unit and radio.rssi == 0 and not radio.rssiAbsent then
+    return 0
+  end
 
   return radio.values[source]
 end
@@ -334,6 +386,7 @@ end
 local widgetChunk = assert(loadfile(sourcePath .. "main.lua"))
 local definition = widgetChunk()
 local themeModule = assert(loadfile(sourcePath .. "lib/theme.lua"))()
+local primitivesModule = assert(loadfile(sourcePath .. "lib/primitives.lua"))()
 
 assertEqual(definition.name, "AeroGrid")
 assertEqual(definition.useLvgl, true)
@@ -510,18 +563,19 @@ end
 local appContext = testRendersInBothModes("app mode", {x = 0, y = 0, w = 480, h = 272})
 testRendersInBothModes("1 x 1", {x = 0, y = 0, w = 480, h = 232})
 
---- Milestone 6's deliverable: the shipped dashboard must demonstrate every
---- production component, loading each from its own module without error and
---- keeping each one inside the container the host gave it.
+--- Milestone 7's deliverable: the shipped dashboard must demonstrate the
+--- complete ten-component catalogue, loading each from its own module without
+--- error and keeping each one inside the container the host gave it.
 local SHIPPED_TYPES = {
   "metric", "flight-timer", "flight-mode", "tx-battery",
   "variable-indicator", "trim-panel", "model-identity",
+  "cell-battery", "link-status", "navigation",
 }
 
 local function testShippedLayout()
   resetRadio()
   local zone = {x = 0, y = 0, w = 480, h = 272}
-  local context = testRendersInBothModes("shipped", zone, sourcePath, 8)
+  local context = testRendersInBothModes("shipped", zone, sourcePath, 10)
   assertEqual(context.layoutPath, sourcePath .. "layouts/default.yaml")
 
   local types = {}
@@ -532,7 +586,7 @@ local function testShippedLayout()
   end
 
   -- Every component must survive real radio state, not merely construction.
-  for _ = 1, 60 do
+  for _ = 1, 80 do
     tick(20)
     definition.refresh(context)
   end
@@ -546,8 +600,6 @@ local function testShippedLayout()
   assertEqual(altitude.extremeFeed.name, "Alt+", "the preset lost its extrema")
   assertEqual(altitude.secondaryFeed.name, "VSpd")
   assertEqual(altitude.value.properties.text, "100")
-  assertEqual(altitude.range.properties.text, "MAX 180")
-  assertEqual(altitude.secondary.properties.text, "VS 2.5m/s")
 
   -- And the components that read the radio rather than the link.
   assertEqual(entryById(context, "flight-clock").instance.text, "1:30")
@@ -556,6 +608,23 @@ local function testShippedLayout()
   assertEqual(entryById(context, "rates").instance.text, "4.5")
   assertEqual(entryById(context, "identity").instance.text, "Test Model")
   assertEqual(entryById(context, "trims").instance.indicators[1].valueText, "+23%")
+
+  -- The three telemetry components, reading what the radio really reports.
+  local pack = entryById(context, "pack").instance
+  assertEqual(pack.text, "4.09V", "the lowest cell is the safety reading")
+  assertEqual(pack.countText, "4S")
+  assertEqual(pack.packText, "16.4V PACK")
+
+  local link = entryById(context, "link").instance
+  assertEqual(link.primaryName, "quality", "auto must prefer link quality")
+  assertEqual(link.text, "96%")
+  assertEqual(link.stateName, "normal")
+
+  local nav = entryById(context, "nav").instance
+  assertEqual(nav.text, "778m")
+  assertEqual(nav.detail, "BRG 009 N")
+  assertEqual(nav.origin, "NORTH UP FROM HOME")
+  assert(nav.compass, "the shipped dashboard must demonstrate the dial")
 end
 
 --- The host owns the palette: every panel uses the resolved surface token.
@@ -763,14 +832,20 @@ components:
   local dial = entryById(context, "dial")
   assert(dial.instance.radial, "radial visualization was not created")
 
+  -- EdgeTX positions an arc by its centre: LvglWidgetArc::build calls setPos,
+  -- and LvglWidgetRoundObject::setPos stores x - radius. A test that read x
+  -- as a corner would pass while the arc was drawn a radius off the panel.
   local arc = dial.instance.radial.arc.properties
   local bounds = boundsOf(dial)
   local firstRadius = arc.radius
-  assert(arc.x + arc.radius * 2 <= bounds.w, "radial overflows its panel")
+  local box = primitivesModule.arcBounds(arc.x, arc.y, arc.radius)
+  assert(box.x >= 0 and box.y >= 0, "radial was drawn off its own panel")
+  assert(box.x + box.w <= bounds.w, "radial overflows its panel")
+  assert(box.y + box.h <= bounds.h, "radial overflows its panel")
 
   -- The value must not sit underneath the arc.
   local value = dial.instance.value.properties
-  assert(value.x + value.w <= arc.x, "value overlaps the radial")
+  assert(value.x + value.w <= box.x, "value overlaps the radial")
 
   zone.w = 240
   zone.h = 160
@@ -778,9 +853,11 @@ components:
 
   local resized = dial.instance.radial.arc.properties
   local newBounds = boundsOf(dial)
+  local newBox = primitivesModule.arcBounds(resized.x, resized.y, resized.radius)
   assert(resized.radius < firstRadius, "radial did not shrink with the panel")
-  assert(resized.x + resized.radius * 2 <= newBounds.w,
-    "radial overflowed after reflow")
+  assert(newBox.x >= 0 and newBox.y >= 0, "radial left its panel after reflow")
+  assert(newBox.x + newBox.w <= newBounds.w, "radial overflowed after reflow")
+  assert(newBox.y + newBox.h <= newBounds.h, "radial overflowed after reflow")
 end
 
 --- A component that fails during create must leave no partial drawing behind.
@@ -1362,6 +1439,47 @@ local function testInstructionBudget()
       services = {"model"},
       config = function() return {"presentation: both", "showLabels: true"} end,
     },
+    {
+      -- Every panel walks a cells table on every refresh, so sixteen of them
+      -- is the worst case for the one component that does per-entry work.
+      type = "cell-battery",
+      services = {"telemetry"},
+      config = function(index)
+        return {
+          "source: Cels",
+          "lowestSource: Cels-",
+          "cells: 4",
+          "warning: 3.5",
+          "critical: " .. (index % 2 == 0 and "3.3" or "3.4"),
+        }
+      end,
+    },
+    {
+      type = "link-status",
+      services = {"telemetry", "extrema"},
+      config = function(index)
+        return {
+          "rssiSource: " .. (index % 2 == 0 and "RSSI" or "1RSS"),
+          "qualitySource: RQly",
+          "primary: " .. (index % 2 == 0 and "auto" or "rssi"),
+          "extrema: flight",
+          "armSource: sa",
+        }
+      end,
+    },
+    {
+      -- Four distinct GPS sources, so the navigation service really carries
+      -- more than one subscription and pays for its trigonometry.
+      type = "navigation",
+      services = {"navigation", "telemetry"},
+      config = function(index)
+        local sources = {"GPS", "GPS2", "GPS3", "GPS4"}
+        return {
+          "source: " .. sources[(index - 1) % 4 + 1],
+          "presentation: detailed",
+        }
+      end,
+    },
   }
 
   local worst, worstName = 0, "none"
@@ -1452,8 +1570,8 @@ local function testInstructionBudget()
     return context
   end
 
-  exercise("shipped", sourcePath, 8,
-    {"telemetry", "model", "control"})
+  exercise("shipped", sourcePath, 10,
+    {"telemetry", "model", "control", "extrema", "navigation"})
   exercise("full grid", makeWidget("budget-16", fullGridLayout(16)), 16,
     {"telemetry"})
 
@@ -2180,6 +2298,603 @@ local function testCoreComponentsReflow()
   resetRadio()
 end
 
+--- A layout carrying the three telemetry-specialized components at spans that
+--- exercise every part of them: a cells table, both link source styles, and
+--- navigation both computing a distance and preferring a native one.
+local TELEMETRY_LAYOUT = [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: pack
+    type: cell-battery
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      source: Cels
+      lowestSource: Cels-
+      label: Pack
+      cells: 4
+      warning: 3.5
+      critical: 3.3
+  - id: link
+    type: link-status
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      rssiSource: RSSI
+      qualitySource: RQly
+      primary: auto
+      warning: 50
+      critical: 30
+      extrema: source
+      extremaSource: RQly-
+  - id: elrs
+    type: link-status
+    col: 2
+    row: 1
+    colSpan: 2
+    rowSpan: 1
+    config:
+      rssiSource: 1RSS
+      qualitySource: RQly
+      primary: rssi
+      min: -110
+      max: -30
+      warning: -90
+      critical: -100
+  - id: nav
+    type: navigation
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      source: GPS
+      label: Nav
+      presentation: detailed
+  - id: native
+    type: navigation
+    col: 2
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      source: GPS2
+      distanceSource: Dist
+      label: Native
+      presentation: compass
+]]
+
+--- Each telemetry component must render what the radio reports, in the state
+--- the radio's own values imply.
+local function testTelemetryComponents()
+  resetRadio()
+  local widgetPath = makeWidget("telemetry", TELEMETRY_LAYOUT)
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  assertEqual(#context.components, 5)
+  settle(context)
+
+  -- The pack is judged by its worst cell, and the summed pack voltage is
+  -- supporting detail rather than the headline.
+  local pack = entryById(context, "pack").instance
+  assertEqual(pack.text, "4.09V")
+  assertEqual(pack.countText, "4S")
+  assertEqual(pack.packText, "16.4V PACK")
+  assertEqual(pack.stateName, "normal")
+  assertEqual(pack.summary.count, 4)
+  assertEqual(pack.summary.shape, "cells")
+
+  -- One sagging cell must take the panel critical even though the pack sum
+  -- barely moves: 15.6 V across four cells still looks healthy.
+  radio.values[130] = {4.11, 3.25, 4.09, 4.12}
+  radio.values[131] = 3.25
+  settle(context, 12)
+  assertEqual(pack.text, "3.25V")
+  assertEqual(pack.stateName, "critical")
+  assertEqual(pack.badge.properties.text, "CRIT")
+
+  -- A cell that stops reporting is called out against the configured count.
+  radio.values[130] = {4.11, 4.13, 4.09}
+  radio.values[131] = 4.09
+  settle(context, 12)
+  assertEqual(pack.countText, "3S OF 4", "a lost cell was not reported")
+  assertEqual(pack.stateName, "normal")
+
+  -- Link quality leads under `auto`, because a percentage means the same
+  -- thing on every protocol where RSSI does not.
+  local link = entryById(context, "link").instance
+  assertEqual(link.primaryName, "quality")
+  assertEqual(link.text, "96%")
+  assertEqual(link.stateName, "normal")
+  -- EdgeTX's own minimum for the leading source, explicitly named.
+  assertEqual(link.detail, "MIN 62")
+  assertEqual(link.linkDetail, "RSSI 78dB")
+
+  radio.values[141] = 44
+  settle(context, 12)
+  assertEqual(link.stateName, "warning")
+  assertEqual(link.badge.properties.text, "WARN")
+  radio.values[141] = 22
+  settle(context, 12)
+  assertEqual(link.stateName, "critical")
+
+  -- A dBm source keeps its own unit and its own thresholds; nothing converts
+  -- one protocol's numbers into another's.
+  local elrs = entryById(context, "elrs").instance
+  assertEqual(elrs.primaryName, "rssi")
+  assertEqual(elrs.text, "-72dBm")
+  assertEqual(elrs.stateName, "normal")
+  radio.values[143] = -95
+  settle(context, 12)
+  assertEqual(elrs.stateName, "warning", "a dBm threshold must count downward")
+  radio.values[143] = -72
+
+  -- Navigation computes distance and bearing from the pilot position EdgeTX
+  -- recorded, and says in words what the direction means.
+  local nav = entryById(context, "nav").instance
+  assertEqual(nav.text, "778m")
+  assertEqual(nav.detail, "BRG 009 N")
+  assertEqual(nav.origin, "NORTH UP FROM HOME")
+  assertEqual(nav.coordinates, "47.37690 8.54170")
+  assertEqual(nav.stateName, "normal")
+  assert(nav.compass, "the detailed presentation must carry the dial")
+  -- The pointer is a real direction, not a ring resting at north.
+  assertEqual(nav.compass.ring.properties.opacity, 255)
+
+  -- A configured native distance sensor wins over the computed one, because
+  -- the receiver may compute it from data this dashboard never sees.
+  local native = entryById(context, "native").instance
+  assertEqual(native.text, "812.0m")
+  assertEqual(native.feed.distanceSource, "source")
+
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  resetRadio()
+end
+
+--- Telemetry degradation, which is what milestone 7 is actually about: a link
+--- that drops and returns, a fix that never arrives, a home position EdgeTX
+--- never recorded, a cells source that answers with the wrong shape, and a
+--- protocol that populates no RSSI sensor at all.
+local function testTelemetryDegrades()
+  resetRadio()
+  local widgetPath = makeWidget("telemetry-degrade", TELEMETRY_LAYOUT)
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  settle(context)
+
+  local pack = entryById(context, "pack").instance
+  local link = entryById(context, "link").instance
+  local nav = entryById(context, "nav").instance
+
+  assertEqual(pack.stateName, "normal")
+  assertEqual(nav.stateName, "normal")
+
+  -- Disconnect. Every reading keeps its last value, marked, and the link
+  -- panel says so in the one place a pilot will look.
+  radio.rssi = 0
+  settle(context, 40)
+
+  assertEqual(pack.stateName, "stale", "a dropped link hid the last cells")
+  assertEqual(pack.text, "4.09V", "a stale poll overwrote the reading")
+  assertEqual(pack.badge.properties.text, "STALE")
+
+  assertEqual(link.stateName, "critical", "a dead link is the measurement")
+  assertEqual(link.badge.properties.text, "NO LINK")
+  assertEqual(link.linkDetail, "LINK DOWN")
+
+  assertEqual(nav.stateName, "stale")
+  assertEqual(nav.text, "778m", "the last known position was discarded")
+  assertEqual(nav.origin, "LAST KNOWN")
+
+  -- Reconnect. Nothing may be left marked once readings arrive again.
+  radio.rssi = 80
+  settle(context, 40)
+  assertEqual(pack.stateName, "normal")
+  assertEqual(link.stateName, "normal")
+  assertEqual(link.badge.properties.text, "")
+  assertEqual(nav.stateName, "normal")
+  assertEqual(nav.origin, "NORTH UP FROM HOME")
+
+  -- A fix EdgeTX has not acquired reports zero for both axes, which is a real
+  -- place off the coast of Africa and must never be shown as one.
+  radio.values[109].lat = 0
+  radio.values[109].lon = 0
+  settle(context, 40)
+  assertEqual(nav.stateName, "unavailable")
+  assertEqual(nav.badge.properties.text, "NO FIX")
+  assertEqual(nav.text, "--", "a missing fix was shown as a distance")
+  assertEqual(nav.coordinates, "-- , --")
+  -- The dial must not point anywhere when there is nowhere to point.
+  assertEqual(nav.compass.ring.properties.opacity, 0)
+
+  -- A fix without a home position: the position is perfectly good, but a
+  -- distance and a bearing would be measured from nowhere.
+  radio.values[109].lat = 47.3769
+  radio.values[109].lon = 8.5417
+  radio.values[109]["pilot-lat"] = 0
+  radio.values[109]["pilot-lon"] = 0
+  settle(context, 40)
+  assertEqual(nav.stateName, "normal", "a missing home is not a broken fix")
+  assertEqual(nav.badge.properties.text, "NO HOME")
+  assertEqual(nav.text, "--")
+  assertEqual(nav.detail, "BRG --", "a bearing was invented without a home")
+  assertEqual(nav.origin, "NO HOME POSITION")
+  assertEqual(nav.coordinates, "47.37690 8.54170",
+    "the position itself is still known")
+
+  -- A table whose entries cannot be cell voltages. The explicit lowest-cell
+  -- source keeps the reading alive, and the count row says the table is gone.
+  radio.values[130] = {0, -1, 99}
+  settle(context, 40)
+  assertEqual(pack.summary.shape, "invalid")
+  assertEqual(pack.text, "4.09V")
+  assertEqual(pack.countText, "NO CELLS")
+  assertEqual(pack.packText, "", "a pack sum was computed from nonsense")
+
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  resetRadio()
+end
+
+--- A cells source that is not a cells source.
+---
+--- "Cels-" carries the cells unit but returns a plain number, which milestone
+--- 5 found and normalized, so a layout naming it here resolves to a numeric
+--- reading rather than a table. That is a configuration mistake, not a failed
+--- link, and it reads differently: "NOT CELLS" says which fix is needed.
+local function testCellSourceShapes()
+  resetRadio()
+  local widgetPath = makeWidget("cell-shapes", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: extreme
+    type: cell-battery
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      source: Cels-
+      label: Wrong
+  - id: voltage
+    type: cell-battery
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      source: RxBt
+      label: Pack voltage
+  - id: absent
+    type: cell-battery
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      source: NoSuchSensor
+      label: Missing
+]])
+
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  settle(context, 40)
+
+  for _, id in ipairs({"extreme", "voltage"}) do
+    local instance = entryById(context, id).instance
+    assertEqual(instance.summary.shape, "number",
+      id .. " read a plain number as a cells table")
+    assertEqual(instance.stateName, "unavailable")
+    assertEqual(instance.badge.properties.text, "NOT CELLS",
+      id .. " reported a shape problem as a missing source")
+    assertEqual(instance.text, "--", "a number was shown as a cell voltage")
+  end
+
+  -- A sensor the radio has never heard of is a different problem again, and
+  -- keeps the ordinary wording.
+  local absent = entryById(context, "absent").instance
+  assertEqual(absent.summary.shape, "none")
+  assertEqual(absent.stateName, "unavailable")
+  assertEqual(absent.badge.properties.text, "NO SOURCE")
+
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  resetRadio()
+end
+
+--- A refresh short-circuit is a cache, and a cache that misses a change shows
+--- the pilot an old number with a straight face. Each of these is a change
+--- that leaves the primary reading exactly where it was.
+local function testRefreshSeesEverythingItDraws()
+  resetRadio()
+  local widgetPath = makeWidget("stale-rows", TELEMETRY_LAYOUT)
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  settle(context)
+
+  -- Three of four cells sagging moves the pack sum by 0.6 V without moving
+  -- the lowest cell, which is the reading the panel leads with.
+  local pack = entryById(context, "pack").instance
+  radio.values[130] = {3.80, 4.10, 4.10, 4.10}
+  radio.values[131] = 3.80
+  settle(context, 20)
+  assertEqual(pack.text, "3.80V")
+  assertEqual(pack.packText, "16.1V PACK")
+
+  radio.values[130] = {3.80, 3.90, 3.90, 3.90}
+  settle(context, 20)
+  assertEqual(pack.text, "3.80V", "the lowest cell should not have moved")
+  assertEqual(pack.packText, "15.5V PACK", "the pack row froze on an old sum")
+
+  -- Link quality sits pinned at 100 for most of a flight while RSSI falls
+  -- away, so the supporting RSSI row is exactly the one that must keep up.
+  local link = entryById(context, "link").instance
+  radio.values[141] = 100
+  radio.values[140] = 70
+  settle(context, 20)
+  assertEqual(link.text, "100%")
+  assertEqual(link.linkDetail, "RSSI 70dB")
+
+  radio.values[140] = 41
+  settle(context, 20)
+  assertEqual(link.text, "100%", "link quality should not have moved")
+  assertEqual(link.linkDetail, "RSSI 41dB", "the RSSI row froze during a fade")
+
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  resetRadio()
+end
+
+--- A GPS sensor only becomes known once telemetry has delivered it, and until
+--- a fix arrives nothing else about the reading changes. A panel that started
+--- before the sensor appeared must stop saying the source is missing.
+local function testNavigationSeesItsSensorAppear()
+  resetRadio()
+  local widgetPath = makeWidget("late-gps", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: nav
+    type: navigation
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      source: LateGps
+      presentation: detailed
+]])
+
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  settle(context, 20)
+
+  local nav = entryById(context, "nav").instance
+  assertEqual(nav.stateName, "unavailable")
+  assertEqual(nav.badge.properties.text, "NO SOURCE")
+  assertEqual(nav.origin, "NO GPS SOURCE")
+
+  -- The sensor arrives, but without a position yet: this is the cold start,
+  -- and it is a different message from a layout naming a sensor that is not
+  -- there. Nothing else in the snapshot moves, so only `known` says so.
+  radio.fields.LateGps = {id = 150, name = "LateGps", desc = "Late GPS", unit = 40}
+  radio.values[150] = {lat = 0, lon = 0, ["pilot-lat"] = 0, ["pilot-lon"] = 0}
+  indexFields()
+  settle(context, 60)
+
+  assertEqual(nav.stateName, "unavailable")
+  assertEqual(nav.badge.properties.text, "NO FIX",
+    "a sensor that appeared was still reported as a missing source")
+  assertEqual(nav.origin, "NO FIX")
+
+  -- And then a real position.
+  radio.values[150] = {
+    lat = 47.3769, lon = 8.5417,
+    ["pilot-lat"] = 47.3700, ["pilot-lon"] = 8.5400,
+  }
+  settle(context, 60)
+  assertEqual(nav.stateName, "normal")
+  assertEqual(nav.text, "778m")
+
+  radio.fields.LateGps = nil
+  radio.values[150] = nil
+  indexFields()
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  resetRadio()
+end
+
+--- A protocol that populates no RSSI sensor reads zero from getRSSI() on a
+--- perfectly live link. Reporting that as a dead link pinned every reading
+--- stale in milestone 5, and it is exactly as wrong here: the panel must say
+--- the sensor is absent, keep the quality reading, and stay out of alarm.
+local function testProtocolWithoutRssi()
+  resetRadio()
+  local widgetPath = makeWidget("no-rssi", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: link
+    type: link-status
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      rssiSource: RSSI
+      qualitySource: RQly
+      primary: auto
+      warning: 50
+      critical: 30
+  - id: rssionly
+    type: link-status
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      rssiSource: RSSI
+      primary: rssi
+]])
+
+  -- A live link whose protocol has no RSSI sensor: values keep arriving while
+  -- the indicator reads zero, and no RSSI sensor exists to be resolved.
+  local realRssi = radio.fields.RSSI
+  radio.rssi = 0
+  radio.rssiAbsent = true
+  radio.fields.RSSI = nil
+  indexFields()
+
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  settle(context, 60)
+
+  local link = entryById(context, "link").instance
+  assertEqual(link.primaryName, "quality",
+    "auto must fall back to the source the protocol actually has")
+  assertEqual(link.text, "96%", "a live reading was discarded as a dead link")
+  assertEqual(link.stateName, "normal")
+  assertEqual(link.badge.properties.text, "")
+  assertEqual(link.linkDetail, "NO RSSI SENSOR")
+
+  -- A panel configured for RSSI alone on such a protocol has nothing to show,
+  -- and must say the sensor is missing rather than report zero or claim the
+  -- link is down.
+  local rssiOnly = entryById(context, "rssionly").instance
+  assertEqual(rssiOnly.stateName, "unavailable")
+  assertEqual(rssiOnly.badge.properties.text, "NO SENSOR")
+  assertEqual(rssiOnly.text, "N/A", "an absent sensor was reported as zero")
+
+  radio.fields.RSSI = realRssi
+  resetRadio()
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+end
+
+--- Every telemetry component must survive a zone change and stay inside its
+--- own container, at a size that sheds most of its optional content.
+local function testTelemetryComponentsReflow()
+  resetRadio()
+  local widgetPath = makeWidget("telemetry-reflow", TELEMETRY_LAYOUT)
+  local zone = {x = 0, y = 0, w = 480, h = 272}
+  local context = createLoaded(zone, DEFAULT_OPTIONS, widgetPath)
+  settle(context, 20)
+
+  local function drain()
+    local passes = 0
+    repeat
+      definition.refresh(context)
+      passes = passes + 1
+      assert(passes < 200, "reflow never finished")
+    until not context.reflowIndex
+  end
+
+  --- Assert every visible object sits inside the container it belongs to.
+  --- An arc is positioned by its centre, so its bounds are derived rather
+  --- than read straight from x and y.
+  local function assertContained(what)
+    for _, entry in ipairs(context.components) do
+      local bounds = boundsOf(entry)
+      local instance = entry.instance
+
+      for _, object in ipairs(objects) do
+        if object.parent == instance.panel.root and not object.hidden then
+          local properties = object.properties
+          local right, bottom
+          if object.kind == "arc" then
+            local box = primitivesModule.arcBounds(
+              properties.x, properties.y, properties.radius)
+            assert(box.x >= -1 and box.y >= -1, what .. ": " .. entry.placement.id
+              .. " drew an arc off its top or left edge")
+            right = box.x + box.w
+            bottom = box.y + box.h
+          else
+            right = (properties.x or 0) + (properties.w or 0)
+            bottom = (properties.y or 0) + (properties.h or 0)
+          end
+          assert(right <= bounds.w + 1, what .. ": " .. entry.placement.id
+            .. " drew past its right edge, " .. right .. " in " .. bounds.w)
+          assert(bottom <= bounds.h + 1, what .. ": " .. entry.placement.id
+            .. " drew past its bottom edge, " .. bottom .. " in " .. bounds.h)
+        end
+      end
+    end
+  end
+
+  assertContained("full size")
+  local nav = entryById(context, "nav").instance
+  assertEqual(nav.compass.ring.hidden, false, "the dial was never shown")
+  assertEqual(nav.coordinatesLabel.hidden, false, "coordinates were never shown")
+  local firstRadius = nav.compass.ring.properties.radius
+
+  zone.w = 320
+  zone.h = 140
+  drain()
+  settle(context, 10)
+  assertContained("shrunk")
+  -- Supporting rows are shed before the dominant reading is touched, and the
+  -- dial shrinks with the panel rather than overflowing it.
+  assertEqual(nav.coordinatesLabel.hidden, true, "shed coordinates stayed visible")
+  assert(nav.compass.ring.properties.radius < firstRadius,
+    "the dial did not shrink with its panel")
+
+  zone.w = 480
+  zone.h = 272
+  drain()
+  settle(context, 10)
+  assertContained("restored")
+  assertEqual(nav.compass.ring.hidden, false, "the dial was not restored")
+  assertEqual(nav.compass.ring.properties.radius, firstRadius,
+    "the dial was not restored to its full size")
+  assertEqual(nav.coordinatesLabel.hidden, false, "coordinates were not restored")
+
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  resetRadio()
+end
+
+--- A metric large enough to carry its supporting row, so the altitude
+--- preset's extrema source and secondary reading are proven somewhere the
+--- shipped dashboard's span cannot take away.
+local function testMetricPresetDetail()
+  resetRadio()
+  local widgetPath = makeWidget("preset-detail", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: altitude
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      preset: altitude
+]])
+
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  settle(context)
+
+  local altitude = entryById(context, "altitude").instance
+  assertEqual(altitude.extremeFeed.name, "Alt+", "the preset lost its extrema")
+  assertEqual(altitude.range.properties.text, "MAX 180")
+  assertEqual(altitude.secondary.properties.text, "VS 2.5m/s")
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+end
+
+
 testEdgeTxTheme()
 testCustomTheme()
 testRadialReflow()
@@ -2197,6 +2912,14 @@ testMissingServiceModule()
 testCoreComponents()
 testComponentsDegrade()
 testCoreComponentsReflow()
+testMetricPresetDetail()
+testTelemetryComponents()
+testTelemetryDegrades()
+testCellSourceShapes()
+testRefreshSeesEverythingItDraws()
+testNavigationSeesItsSensorAppear()
+testProtocolWithoutRssi()
+testTelemetryComponentsReflow()
 testInstructionBudget()
 
 print("AeroGrid widget integration test passed")
