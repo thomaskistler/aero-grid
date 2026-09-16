@@ -642,6 +642,39 @@ local function testMetricDirection()
   assertEqual(metric.format(1.239, 2), "1.24")
 end
 
+--- The demo driver must actually reach every state it claims to demonstrate.
+local function testDemoDriver()
+  local metric = loadModule("components/metric.lua")
+
+  local configs = {
+    falling = {min = 18, max = 25.2, warning = 21.0, critical = 19.8},
+    rising = {min = 0, max = 120, warning = 90, critical = 110},
+    unbounded = {min = 0, max = 400},
+  }
+
+  for name, settings in pairs(configs) do
+    for _, phase in ipairs({"normal", "warning", "critical"}) do
+      if settings.warning or phase == "normal" then
+        for step = 0, 9 do
+          local value = metric.demoValue(settings, phase, step / 10)
+          local state = metric.resolveState(settings, value, false)
+          local expected = settings.warning and phase or "normal"
+          assertEqual(state, expected,
+            name .. " " .. phase .. " at step " .. step .. " gave " .. value)
+          -- Synthetic readings must stay inside the configured range.
+          assert(value >= settings.min - 0.001 and value <= settings.max + 0.001,
+            name .. " " .. phase .. " left the range: " .. value)
+        end
+      end
+    end
+  end
+
+  -- The driver is inert unless a layout opts in.
+  local inert = {settings = {demo = false}}
+  metric.refresh(inert)
+  assertEqual(inert.demoTick, nil, "demo ran without being enabled")
+end
+
 testGridGeometry()
 testValidation()
 testOverlapIsRejected()
@@ -667,5 +700,6 @@ testDerivedThemesStayLegible()
 testStaleOverridesAccent()
 testHostileModule()
 testMetricDirection()
+testDemoDriver()
 
 print("AeroGrid runtime tests passed")

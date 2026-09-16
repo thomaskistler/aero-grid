@@ -39,8 +39,16 @@ local metric = {
     {key = "direction", label = "Threshold direction", type = "string", default = "auto"},
     {key = "precision", label = "Decimal places", type = "number", default = 0},
     {key = "visual", label = "Visualization", type = "string", default = "bar"},
+    -- Temporary: drives synthetic readings until milestone 5 supplies real
+    -- telemetry. Remove this setting once telemetryService exists.
+    {key = "demo", label = "Demo readings", type = "boolean", default = false},
   },
 }
+
+--- Phases walked by the demo driver, in order.
+local DEMO_PHASES = {"normal", "warning", "critical", "stale", "unavailable"}
+--- Host refresh cycles spent in each demo phase.
+local DEMO_TICKS = 45
 
 --- Describe how the component presents itself at a given span.
 --- Unsupported spans are rejected by metadata, so each entry here is deliberate.
@@ -76,6 +84,18 @@ function metric.format(value, precision)
   return string.format("%." .. digits .. "f", value)
 end
 
+--- Report whether thresholds count downward for this metric.
+---@param settings AeroGridMetricSettings
+---@return boolean
+local function isFalling(settings)
+  local warning = type(settings.warning) == "number" and settings.warning or nil
+  local critical = type(settings.critical) == "number" and settings.critical or nil
+
+  if settings.direction == "falling" then return true end
+  if settings.direction == "rising" then return false end
+  return warning ~= nil and critical ~= nil and critical < warning
+end
+
 --- Resolve the component state from thresholds and reading availability.
 --- Direction may be stated explicitly. When left on `auto` it can only be
 --- inferred from two thresholds; a single threshold alone is ambiguous, so it
@@ -90,15 +110,7 @@ function metric.resolveState(settings, value, stale)
 
   local warning = type(settings.warning) == "number" and settings.warning or nil
   local critical = type(settings.critical) == "number" and settings.critical or nil
-  local falling
-
-  if settings.direction == "falling" then
-    falling = true
-  elseif settings.direction == "rising" then
-    falling = false
-  else
-    falling = warning ~= nil and critical ~= nil and critical < warning
-  end
+  local falling = isFalling(settings)
 
   if critical ~= nil then
     if falling and value <= critical then return "critical" end
@@ -110,6 +122,60 @@ function metric.resolveState(settings, value, stale)
   end
 
   return "normal"
+end
+
+--- Produce a synthetic reading that lands inside a requested state band.
+--- This exists only so the design system can be reviewed on a radio before
+--- milestone 5 delivers real telemetry.
+---@param settings AeroGridMetricSettings
+---@param phase string
+---@param progress number Position within the phase, from 0 to 1.
+---@return number
+function metric.demoValue(settings, phase, progress)
+  local low = type(settings.min) == "number" and settings.min or 0
+  local high = type(settings.max) == "number" and settings.max or 100
+  local warning = type(settings.warning) == "number" and settings.warning or nil
+  local critical = type(settings.critical) == "number" and settings.critical or nil
+  local falling = isFalling(settings)
+
+  local function lerp(from, to, amount)
+    return from + (to - from) * amount
+  end
+
+  if phase == "critical" and critical ~= nil then
+    return lerp(critical, falling and low or high, progress)
+  end
+  if phase == "warning" and warning ~= nil then
+    local bound = critical or (falling and low or high)
+    -- Stop short of the critical bound so this phase stays a warning.
+    return lerp(warning, bound, progress * 0.8)
+  end
+
+  if warning ~= nil then
+    -- Approach the warning threshold without reaching it.
+    return lerp(falling and high or low, warning, progress * 0.9)
+  end
+  return lerp(low, high, progress)
+end
+
+--- Advance the demo driver. Inert unless the layout opts in.
+---@param context AeroGridMetricContext
+function metric.refresh(context)
+  if not context.settings.demo then return end
+
+  local tick = (context.demoTick or 0) + 1
+  context.demoTick = tick
+
+  local phase = DEMO_PHASES[math.floor(tick / DEMO_TICKS) % #DEMO_PHASES + 1]
+  local progress = (tick % DEMO_TICKS) / DEMO_TICKS
+
+  if phase == "unavailable" then
+    metric.setValue(context, nil)
+  elseif phase == "stale" then
+    metric.setValue(context, metric.demoValue(context.settings, "normal", progress), true)
+  else
+    metric.setValue(context, metric.demoValue(context.settings, phase, progress), false)
+  end
 end
 
 --- Convert a reading into a 0..1 fraction of the configured range.

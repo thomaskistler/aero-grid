@@ -81,6 +81,10 @@ AeroGrid loads each component from `src/WIDGETS/AeroGrid/components/<type>.lua`,
 
 See the component module contract in [plans/aerogrid-spec.md](plans/aerogrid-spec.md) for the fields a component declares and the services it receives.
 
+### Demo readings
+
+Telemetry services arrive in milestone 5, so `metric` accepts a temporary `demo: true` setting that drives synthetic readings through every state: normal, warning, critical, stale, and unavailable. The shipped `layouts/default.yaml` enables it so the design system can be reviewed on a radio. Remove the setting once real telemetry exists.
+
 ## Theming
 
 The host owns every color; components never define palettes. Three modes are available through the native **Theme** widget option or a layout's optional `theme` block, which takes precedence:

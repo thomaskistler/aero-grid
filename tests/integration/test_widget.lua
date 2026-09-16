@@ -466,10 +466,38 @@ return halfbuilt
   assert(string.match(table.concat(context.errors, "\n"), "failed after drawing"))
 end
 
+--- The demo driver must cycle visible states through the host refresh loop.
+local function testDemoCycle()
+  local context = definition.create({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, sourcePath)
+  local pack = entryById(context, "pack").instance
+  local seen = {}
+  local badges = {}
+
+  -- One full cycle is five phases of forty-five refreshes.
+  for _ = 1, 235 do
+    definition.refresh(context)
+    seen[pack.stateName] = true
+    badges[pack.stateName] = pack.badge.properties.text
+  end
+
+  for _, state in ipairs({"normal", "warning", "critical", "stale", "unavailable"}) do
+    assert(seen[state], "demo never reached " .. state)
+  end
+
+  assertEqual(badges.normal, "")
+  assertEqual(badges.warning, "WARN")
+  assertEqual(badges.critical, "CRIT")
+  assertEqual(badges.stale, "STALE")
+  assertEqual(badges.unavailable, "NO SOURCE")
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+end
+
 testThemeReachesComponents()
 testResponsiveSpans()
 testBadgeGeometry()
 testMetricStates()
+testDemoCycle()
 testReflowAndLifecycle()
 testOptionReload()
 

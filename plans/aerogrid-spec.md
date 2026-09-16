@@ -842,6 +842,8 @@ Status last verified on 2026-09-15:
 
 The design system is in place: the host owns every color, resolves one theme per dashboard, and hands each component a `services` table carrying the theme, shared primitives, span-appropriate typography, and a state resolver. The `metric` component is the reference implementation. Milestone 4's remaining item is a physical readability review, which requires hardware.
 
+Until milestone 5 supplies telemetry, `metric` accepts a temporary `demo` setting that drives synthetic readings through every state so the design system can be reviewed on a radio. That setting is removed once `telemetryService` exists.
+
 ### Component module contract
 
 A component file under `components/<type>.lua` returns a table describing itself:

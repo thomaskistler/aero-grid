@@ -27,6 +27,7 @@ components:
       critical: 19.8
       precision: 1
       visual: bar
+      demo: true
   - id: current
     type: metric
     col: 2
@@ -43,6 +44,7 @@ components:
       critical: 110
       precision: 0
       visual: bar
+      demo: true
   - id: altitude
     type: metric
     col: 2
@@ -55,8 +57,11 @@ components:
       accent: green
       min: 0
       max: 400
+      warning: 250
+      critical: 350
       precision: 0
-      visual: none
+      visual: radial
+      demo: true
   - id: pulse
     type: heartbeat
     col: 0
