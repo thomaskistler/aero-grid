@@ -19,7 +19,7 @@ The on-radio editor and production telemetry components are intentionally not pa
 
 Copy `src/WIDGETS/AeroGrid/` into the radio's `/WIDGETS/` directory, then select **AeroGrid** in an App mode screen. The ordinary `1 x 1` layout is also supported.
 
-Each widget instance has a native **Dashboard ID** setting (`DashID` in Lua). AeroGrid combines that value with `model.getInfo().filename` and loads:
+Each widget instance has two native settings: **Dashboard ID** (`DashID` in Lua) and **Theme**. AeroGrid combines the Dashboard ID with `model.getInfo().filename` and loads:
 
 ```text
 /WIDGETS/AeroGrid/layouts/<model-identifier>--<dashboard-id>.yaml
@@ -27,7 +27,7 @@ Each widget instance has a native **Dashboard ID** setting (`DashID` in Lua). Ae
 
 If that file does not exist, AeroGrid loads `/WIDGETS/AeroGrid/layouts/default.yaml`.
 
-Phase one never writes layout files.
+Changing either setting rebuilds the dashboard safely. Phase one never writes layout files.
 
 ## EdgeTX Dev Kit simulator
 
@@ -67,11 +67,31 @@ make build
 
 `make test` and `make check` run `make setup` automatically when the development environment is missing or `requirements-dev.txt` changed. `make check` looks for `edgetx-luac`, `luac5.3`, then `luac` on `PATH`; `LUA_COMPILER` overrides detection. Use EdgeTX's `edgetx-luac` when available because it validates the firmware's exact Lua 5.3 configuration.
 
-The tests cover grid rounding, gutters, overlap validation, constrained YAML parsing, malformed and corrupt layout handling, forward-compatible unknown keys, layout-path sanitization across real model filenames, the component module contract, declared settings and spans, component lifecycle failure isolation, zone reflow, and Dashboard ID reload behavior. Each Lua behavior suite runs once with normal string methods and once with the string metatable removed to match EdgeTX firmware behavior.
+The tests cover grid rounding, gutters, overlap validation, constrained YAML parsing, malformed and corrupt layout handling, forward-compatible unknown keys, layout-path sanitization across real model filenames, the component module contract, declared settings and spans, component lifecycle failure isolation, hostile modules, theme derivation and legibility, component states, zone reflow, and Dashboard ID reload behavior. Each Lua behavior suite runs once with normal string methods and once with the string metatable removed to match EdgeTX firmware behavior.
 
 ## Components
 
-AeroGrid loads each component from `src/WIDGETS/AeroGrid/components/<type>.lua`, where `<type>` is the `type` named in the layout YAML. Two development components ship today: `placeholder`, which verifies placement and resizing, and `heartbeat`, which verifies the lifecycle callbacks and span restrictions. See the component module contract in [plans/aerogrid-spec.md](plans/aerogrid-spec.md) for the fields a component declares.
+AeroGrid loads each component from `src/WIDGETS/AeroGrid/components/<type>.lua`, where `<type>` is the `type` named in the layout YAML. The host creates one LVGL container per placement, so a component receives container-local coordinates and cannot draw over its neighbours.
+
+| Component | Purpose |
+| --- | --- |
+| `metric` | Reference telemetry metric with thresholds, states, and `1 x 1`, `2 x 1`, and `2 x 2` presentations. |
+| `placeholder` | Verifies placement and resizing at any span. |
+| `heartbeat` | Verifies the lifecycle callbacks and span restrictions. |
+
+See the component module contract in [plans/aerogrid-spec.md](plans/aerogrid-spec.md) for the fields a component declares and the services it receives.
+
+## Theming
+
+The host owns every color; components never define palettes. Three modes are available through the native **Theme** widget option or a layout's optional `theme` block, which takes precedence:
+
+| Mode | Behavior |
+| --- | --- |
+| `modern` | The designed dark instrument palette. Used verbatim. |
+| `edgetx` | Derives tokens from the radio's active EdgeTX theme via `lcd.getColor()`. |
+| `custom` | Modern plus a limited override set: `canvas`, `surface`, `text`, and `accent`. |
+
+Both derived modes pass through a legibility pass that enforces minimum contrast for text, panel elevation, borders, and every semantic accent, so a hostile or pale source theme cannot produce an unreadable dashboard. Critical red is never theme-derived, and AeroGrid never calls `lcd.setColor()`.
 
 ## Simulator fixture convention
 

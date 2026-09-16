@@ -59,7 +59,7 @@ end
 
 --- Parse a scalar supported by the constrained AeroGrid schema.
 ---@param value string
----@return string|number|boolean|nil
+---@return string|number|boolean|table|nil
 local function parseScalar(value)
   value = trim(value)
 
@@ -69,6 +69,9 @@ local function parseScalar(value)
   if string.sub(value, 1, 1) == "'" and string.sub(value, -1) == "'" then
     return (string.gsub(string.sub(value, 2, -2), "''", "'"))
   end
+  -- Flow collections are otherwise unsupported, but the empty forms are the
+  -- natural way to write "no entries" and must not become plain strings.
+  if value == "[]" or value == "{}" then return {} end
   if value == "true" then return true end
   if value == "false" then return false end
   if value == "null" or value == "~" then return nil end

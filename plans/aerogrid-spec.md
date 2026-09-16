@@ -7,7 +7,7 @@
 - EdgeTX source: `../edgetx`
 - Project root: `aero-grid/`
 - Implementation: Phase 1 in progress
-- Current checkpoint: first architecture checkpoint reached; two independently authored components load from YAML under a stable host contract
+- Current checkpoint: design system complete; themed components render from YAML under a stable host contract
 
 ## Summary
 
@@ -830,17 +830,17 @@ Status last verified on 2026-09-15:
 | Work item | Status | Implemented | Remaining |
 | --- | --- | --- | --- |
 | Build and test foundation | Complete | Make targets, isolated Python environment, unit/integration suites, EdgeTX Lua parsing, tracked simulator fixture, and reproducible `build/sdcard` assembly | Add CI when a hosted workflow is selected |
-| Milestone 1: Runtime skeleton | Complete | LVGL host, integer 4 x 4 geometry, gutters, nested containers, responsive reflow, placeholder rendering, App mode fixture, and `1 x 1`-sized mocked tests | Additional physical-radio verification belongs to hardening |
-| Milestone 2: Read-only YAML loader | Complete | Constrained parser, schema version check, model/Dashboard ID resolution, default fallback, ID/type/bounds/span/overlap validation, sequence-shape rejection, preserved unknown top-level and per-component keys, read-only loading, visible errors, and a malformed-input matrix | Physical-radio verification belongs to hardening |
-| Milestone 3: Component runtime | Complete | Referenced-module loading, safe component type names, module contract validation, declared settings with typed defaults, `supportedSpans` enforcement, and isolated create/resize/refresh/background/destroy dispatch across two independently authored components | Production components arrive in milestones 6 and 7 |
-| Milestone 4: Design system | Not started | Initial component-local colors only | Semantic tokens, primitives, theme modes, states, responsive typography, and hardware review |
+| Milestone 1: Runtime skeleton | Complete | LVGL host, integer 4 x 4 geometry, gutters, per-component containers, responsive reflow, App mode fixture, and `1 x 1`-sized mocked tests | Additional physical-radio verification belongs to hardening |
+| Milestone 2: Read-only YAML loader | Complete | Constrained parser, empty flow collections, schema version check, model/Dashboard ID resolution, default fallback, fail-closed document validation, per-entry validation, preserved unknown keys, optional theme block, and a malformed-input matrix | Physical-radio verification belongs to hardening |
+| Milestone 3: Component runtime | Complete | Referenced-module loading, metatable-safe contract validation, declared settings with typed defaults, `supportedSpans` enforcement, host-owned containers, and isolated create/update/refresh/background/event/destroy dispatch | Production components arrive in milestones 6 and 7 |
+| Milestone 4: Design system | Complete | Semantic tokens, panel/typography/bar/radial/badge primitives, Modern, Follow EdgeTX, and Custom modes, guaranteed-legible derived palettes, all seven states, and responsive `1 x 1`, `2 x 1`, and `2 x 2` presentations | Physical readability review at 480 x 272 on a TX16S-class display |
 | Milestone 5: Shared data services | Not started | None | Telemetry, model, control, extrema, and navigation services |
-| Milestones 6–7: Production components | Not started | Development `placeholder` and `heartbeat` components only | Complete ten-component catalog and metric presets |
+| Milestones 6–7: Production components | Not started | Reference `metric` plus development `placeholder` and `heartbeat` components | Complete ten-component catalog and metric presets |
 | Milestone 8: Status rail and multiple screens | In progress | Dashboard ID option and per-model/per-dashboard filename resolution | Status rail and multi-instance simulator verification |
-| Milestone 9: Hardening | In progress | Unit/integration tests, firmware-like string behavior tests, simulator fixture, exact Lua 5.3 parsing, corrupt-layout and contract-rejection coverage, and component failure isolation | Target-radio matrix, runtime diagnostics view, performance budgets, and physical-radio testing |
+| Milestone 9: Hardening | In progress | Unit/integration tests, firmware-like string behavior tests, simulator fixture, corrupt-layout, contract-rejection, hostile-module, and legibility coverage, plus component failure isolation | Target-radio matrix, runtime diagnostics view, performance budgets, and physical-radio testing |
 | Milestone 10: On-radio editor | Not started | None | Entire phase 2 editor and write/recovery workflow |
 
-The first architecture checkpoint is complete: `placeholder` and `heartbeat` are separately authored modules loaded from YAML, and both render with correct, non-overlapping geometry in App mode and ordinary `1 x 1`. The current runtime is suitable for continued simulator development, not normal flight use.
+The design system is in place: the host owns every color, resolves one theme per dashboard, and hands each component a `services` table carrying the theme, shared primitives, span-appropriate typography, and a state resolver. The `metric` component is the reference implementation. Milestone 4's remaining item is a physical readability review, which requires hardware.
 
 ### Component module contract
 
@@ -850,15 +850,43 @@ A component file under `components/<type>.lua` returns a table describing itself
 | --- | --- | --- |
 | `id` | Yes | Must equal the `type` name used in YAML, so a renamed file cannot load silently. |
 | `apiVersion` | Yes | Must equal the host component API version. Anything else is rejected visibly. |
-| `create(parent, rect, settings)` | Yes | Builds LVGL objects and returns the component's own context. |
+| `create(parent, rect, settings, services)` | Yes | Builds LVGL objects and returns the component's own context. |
 | `supportedSpans` | No | Span strings such as `"2x1"`, or `"any"`. Absent means every span is accepted. |
-| `settings` | No | Declared `{key, type, default}` entries. Absent and mistyped YAML values fall back to the default. |
-| `resize(instance, rect)` | No | Repositions an existing instance after a zone change. |
+| `settings` | No | Declared `{key, label, type, default}` entries. Absent and mistyped YAML values fall back to the default. |
+| `update(instance, rect, settings)` | No | Applies changed geometry or configuration. |
 | `refresh(instance)` | No | Runs once per visible host cycle. |
 | `background(instance)` | No | Runs while the dashboard screen is not visible. |
+| `event(instance, event)` | No | Returns true when the event is consumed, which stops propagation. |
 | `destroy(instance)` | No | Runs before the host tears the component down. |
 
-Every callback is dispatched under `pcall`. The first failure permanently disables that one component and reports it, so a broken module cannot repeatedly raise or disable the surrounding dashboard.
+The host creates one LVGL container per placement and passes it as `parent`, with a container-local rectangle starting at the origin. A component therefore cannot draw over a neighbour or reach the dashboard root. Contract fields are read with `rawget`, so a module with a raising `__index` cannot break the host.
+
+Every callback is dispatched under `pcall`. The first failure permanently disables that one component and reports it, so a broken module cannot repeatedly raise or disable the surrounding dashboard. A component that fails during `create` has its container cleared, leaving no partial drawing behind.
+
+### Services passed to components
+
+| Key | Purpose |
+| --- | --- |
+| `theme` | Resolved theme with `rgb` (24-bit), `color` (display values), and `spacing`. |
+| `primitives` | Shared panel, label, value, bar, radial, and badge builders. |
+| `fonts` | Typography roles chosen for this component's span. |
+| `span` | The component's `colSpan` and `rowSpan`. |
+| `state(name, accent)` | Resolves a state name into concrete colors, border weight, and badge text. |
+
+### Theme resolution
+
+Modern uses the specified palette verbatim. Follow EdgeTX derives tokens from `lcd.getColor()` (which returns RGB565) and Custom applies a limited override set over Modern. Both derived modes then pass through a legibility pass that guarantees minimum contrast for body, muted, and faint text, for panel elevation and borders, and for every semantic accent. Critical red is never theme-derived. The dashboard never calls `lcd.setColor()`.
+
+A layout file may carry an optional `theme` block, which takes precedence over the native Theme widget option:
+
+```yaml
+theme:
+  mode: custom
+  overrides:
+    canvas: 0x000000
+    surface: 0x101010
+    accent: green
+```
 
 ### Phase 1: YAML-configured dashboard
 

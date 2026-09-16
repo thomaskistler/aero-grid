@@ -10,16 +10,14 @@
 ---@field accent? "cyan"|"green"|"amber"|"orange"
 
 ---@class AeroGridHeartbeatContext
----@field panel any
----@field border any
+---@field panel table
 ---@field label any
 ---@field counter any
----@field bar any
----@field width integer Current panel width in pixels.
+---@field bar table
 ---@field ticks integer Foreground refresh callbacks received.
 ---@field backgroundTicks integer Background callbacks received.
+---@field events integer Input events consumed.
 ---@field phase integer Current activity-bar phase.
----@field text string Last rendered counter text.
 
 local heartbeat = {
   id = "heartbeat",
@@ -27,41 +25,19 @@ local heartbeat = {
   -- Restricted on purpose: the host must reject unsupported spans visibly.
   supportedSpans = {"1x1", "2x1", "2x2", "4x1"},
   settings = {
-    {key = "label", type = "string", default = "HEARTBEAT"},
-    {key = "accent", type = "string", default = "amber"},
+    {key = "label", label = "Label", type = "string", default = "HEARTBEAT"},
+    {key = "accent", label = "Accent", type = "string", default = "amber"},
   },
 }
 
 local PHASES = 8
 
-local colors = {
-  surface = lcd.RGB(24, 29, 34),
-  border = lcd.RGB(52, 59, 64),
-  track = lcd.RGB(40, 46, 52),
-  text = lcd.RGB(244, 246, 247),
-  muted = lcd.RGB(167, 176, 182),
-}
-
-local accents = {
-  cyan = lcd.RGB(112, 214, 243),
-  green = lcd.RGB(85, 217, 144),
-  amber = lcd.RGB(242, 184, 75),
-  orange = lcd.RGB(255, 118, 46),
-}
-
---- Return the content width inside a panel with fixed horizontal padding.
----@param width integer
+--- Vertical position of the bottom-aligned activity bar.
+---@param theme AeroGridTheme
+---@param height integer
 ---@return integer
-local function contentWidth(width)
-  return math.max(1, width - 16)
-end
-
---- Return the activity-bar width for the current phase.
----@param width integer
----@param phase integer
----@return integer
-local function barWidth(width, phase)
-  return math.max(1, math.floor(contentWidth(width) * phase / PHASES))
+local function barY(theme, height)
+  return math.max(1, height - theme.spacing.padding - theme.spacing.barHeight)
 end
 
 --- Compose the counter line shown under the label.
@@ -74,69 +50,55 @@ end
 --- Create a heartbeat panel inside an LVGL parent container.
 ---@param parent any Parent LVGL object supplied by the AeroGrid host.
 ---@param rect AeroGridRect Pixel bounds relative to the parent.
----@param settings AeroGridHeartbeatSettings Host-resolved settings with defaults applied.
+---@param settings AeroGridHeartbeatSettings Host-resolved settings.
+---@param services table Host-provided shared objects.
 ---@return AeroGridHeartbeatContext
-function heartbeat.create(parent, rect, settings)
-  local accentColor = accents[settings.accent] or colors.muted
+function heartbeat.create(parent, rect, settings, services)
+  local theme = services.theme
+  local primitives = services.primitives
+  local fonts = services.fonts
+  local spacing = theme.spacing
+  local presentation = services.state("normal", settings.accent)
 
-  local panel = lvgl.box(parent, {
-    x = rect.x,
-    y = rect.y,
-    w = rect.w,
-    h = rect.h,
-    color = colors.surface,
-  })
+  local panel = primitives.panel(parent, rect, theme, presentation)
+  local width = primitives.contentWidth(theme, rect.w)
 
-  local border = lvgl.rectangle(panel, {
-    x = 0,
-    y = 0,
-    w = rect.w,
-    h = rect.h,
-    color = colors.border,
-    filled = false,
-    rounded = 4,
-    thickness = 1,
-  })
-
-  local label = lvgl.label(panel, {
-    x = 8,
-    y = 6,
-    w = contentWidth(rect.w),
-    h = 0,
+  local label = primitives.value(panel.root, theme, {
+    x = spacing.padding,
+    y = spacing.paddingCompact,
+    w = width,
     text = tostring(settings.label),
-    color = colors.text,
-    font = function() return BOLD end,
+    color = presentation.value,
+    font = fonts.label,
   })
 
-  local counter = lvgl.label(panel, {
-    x = 8,
-    y = 28,
-    w = contentWidth(rect.w),
-    h = 0,
+  local counter = primitives.label(panel.root, theme, {
+    x = spacing.padding,
+    y = spacing.paddingCompact + 22,
+    w = width,
     text = "0 / 0",
-    color = colors.muted,
-    font = function() return SMLSIZE end,
+    color = presentation.label,
+    font = fonts.label,
   })
 
-  local bar = lvgl.rectangle(panel, {
-    x = 8,
-    y = 50,
-    w = barWidth(rect.w, 1),
-    h = 4,
-    color = accentColor,
-    filled = true,
-    rounded = 2,
+  local bar = primitives.bar(panel.root, theme, {
+    x = spacing.padding,
+    y = barY(theme, rect.h),
+    w = width,
+    fraction = 1 / PHASES,
+    color = presentation.accent,
   })
 
   return {
     panel = panel,
-    border = border,
+    theme = theme,
+    primitives = primitives,
     label = label,
     counter = counter,
     bar = bar,
-    width = rect.w,
     ticks = 0,
     backgroundTicks = 0,
+    events = 0,
     phase = 1,
     text = "0 / 0",
   }
@@ -145,13 +107,17 @@ end
 --- Reposition an existing heartbeat without recreating LVGL objects.
 ---@param context AeroGridHeartbeatContext
 ---@param rect AeroGridRect
-function heartbeat.resize(context, rect)
-  context.width = rect.w
-  context.panel:set({x = rect.x, y = rect.y, w = rect.w, h = rect.h})
-  context.border:set({w = rect.w, h = rect.h})
-  context.label:set({w = contentWidth(rect.w)})
-  context.counter:set({w = contentWidth(rect.w)})
-  context.bar:set({w = barWidth(rect.w, context.phase)})
+function heartbeat.update(context, rect)
+  local theme = context.theme
+  local width = context.primitives.contentWidth(theme, rect.w)
+
+  context.primitives.resizePanel(context.panel, rect)
+  context.label:set({w = width})
+  context.counter:set({w = width})
+  context.bar.width = width
+  context.bar.track:set({w = width, y = barY(theme, rect.h)})
+  context.bar.fill:set({y = barY(theme, rect.h)})
+  context.primitives.setBar(context.bar, context.phase / PHASES)
 end
 
 --- Advance the visible activity indicator once per host refresh.
@@ -159,7 +125,7 @@ end
 function heartbeat.refresh(context)
   context.ticks = context.ticks + 1
   context.phase = context.phase % PHASES + 1
-  context.bar:set({w = barWidth(context.width, context.phase)})
+  context.primitives.setBar(context.bar, context.phase / PHASES)
 
   -- Only touch the label when its rendered text actually changes.
   local text = counterText(context)
@@ -173,6 +139,14 @@ end
 ---@param context AeroGridHeartbeatContext
 function heartbeat.background(context)
   context.backgroundTicks = context.backgroundTicks + 1
+end
+
+--- Count input events without consuming them, so host routing stays observable.
+---@param context AeroGridHeartbeatContext
+---@return boolean consumed
+function heartbeat.event(context)
+  context.events = context.events + 1
+  return false
 end
 
 return heartbeat

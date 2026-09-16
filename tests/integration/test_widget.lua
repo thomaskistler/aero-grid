@@ -6,11 +6,57 @@ local hostIo = io
 
 STRING = 3
 SMLSIZE = 3
+MIDSIZE = 4
+DBLSIZE = 5
+XXLSIZE = 6
+TINSIZE = 2
 BOLD = 1
 
+COLOR_THEME_PRIMARY1 = 101
+COLOR_THEME_PRIMARY2 = 102
+COLOR_THEME_PRIMARY3 = 103
+COLOR_THEME_SECONDARY1 = 104
+COLOR_THEME_SECONDARY2 = 105
+COLOR_THEME_SECONDARY3 = 106
+COLOR_THEME_FOCUS = 107
+COLOR_THEME_EDIT = 108
+COLOR_THEME_ACTIVE = 109
+COLOR_THEME_WARNING = 110
+COLOR_THEME_DISABLED = 111
+
+--- Pack a 24-bit color into RGB565, matching EdgeTX's display format.
+local function toRgb565(rgb)
+  local red = math.floor(rgb / 65536) % 256
+  local green = math.floor(rgb / 256) % 256
+  local blue = rgb % 256
+  return math.floor(red * 31 / 255) * 2048
+    + math.floor(green * 63 / 255) * 32
+    + math.floor(blue * 31 / 255)
+end
+
+-- A deliberately light EdgeTX theme, so contrast correction must engage.
+local edgeTxRoles = {
+  [COLOR_THEME_PRIMARY1] = 0x000000,
+  [COLOR_THEME_PRIMARY2] = 0xFFFFFF,
+  [COLOR_THEME_PRIMARY3] = 0x9E9E9E,
+  [COLOR_THEME_SECONDARY1] = 0x1B3A57,
+  [COLOR_THEME_SECONDARY2] = 0x3F7CA8,
+  [COLOR_THEME_SECONDARY3] = 0xC8D8E4,
+  [COLOR_THEME_FOCUS] = 0x1E88E5,
+  [COLOR_THEME_EDIT] = 0xFF8F00,
+  [COLOR_THEME_ACTIVE] = 0x43A047,
+  [COLOR_THEME_WARNING] = 0xF9A825,
+  [COLOR_THEME_DISABLED] = 0x757575,
+}
+
 lcd = {
+  -- EdgeTX accepts lcd.RGB(r, g, b) or a single packed lcd.RGB(rgb).
   RGB = function(red, green, blue)
+    if green == nil and blue == nil then return red end
     return red * 65536 + green * 256 + blue
+  end,
+  getColor = function(role)
+    return toRgb565(edgeTxRoles[role] or 0x000000)
   end,
 }
 
@@ -47,6 +93,7 @@ lvgl = {
   box = constructor("box"),
   rectangle = constructor("rectangle"),
   label = constructor("label"),
+  arc = constructor("arc"),
 }
 
 local modelFilename = "test-model.yml"
@@ -113,10 +160,15 @@ end
 
 local widgetChunk = assert(loadfile(sourcePath .. "main.lua"))
 local definition = widgetChunk()
+local themeModule = assert(loadfile(sourcePath .. "lib/theme.lua"))()
 
 assertEqual(definition.name, "AeroGrid")
 assertEqual(definition.useLvgl, true)
 assert(type(definition.background) == "function", "host must expose background")
+assert(type(definition.event) == "function", "host must expose event")
+assertEqual(definition.translate("Theme"), "Theme")
+
+local DEFAULT_OPTIONS = {DashID = "main", Theme = "modern"}
 
 --- Find a loaded component entry by its layout id.
 local function entryById(context, id)
@@ -126,41 +178,58 @@ local function entryById(context, id)
   return nil
 end
 
---- Report whether two rendered panels share any pixel.
-local function panelsOverlap(first, second)
-  local a, b = first.properties, second.properties
-  return a.x < b.x + b.w and b.x < a.x + a.w
-    and a.y < b.y + b.h and b.y < a.y + a.h
+--- Every shipped component exposes its panel through the shared primitive.
+local function panelOf(entry)
+  return entry.instance.panel.root.properties
 end
 
---- Architecture checkpoint: the shipped layout must load two separately authored
+--- The host owns placement, so bounds come from the component's container.
+local function boundsOf(entry)
+  return entry.container.properties
+end
+
+--- Report whether two rendered panels share any pixel.
+local function panelsOverlap(first, second)
+  return first.x < second.x + second.w and second.x < first.x + first.w
+    and first.y < second.y + second.h and second.y < first.y + first.h
+end
+
+--- Architecture checkpoint: the shipped layout must load separately authored
 --- component modules and render them correctly in App mode and ordinary 1 x 1.
-local function testCheckpointRendersInBothModes(label, zone)
-  local context = definition.create(zone, {DashID = "main"}, sourcePath)
+local function testRendersInBothModes(label, zone)
+  local context = definition.create(zone, DEFAULT_OPTIONS, sourcePath)
 
   assertEqual(#context.errors, 0, label .. ": " .. table.concat(context.errors, "\n"))
-  assertEqual(#context.components, 3, label .. ": component count")
+  assertEqual(#context.components, 5, label .. ": component count")
   assertEqual(context.layoutPath, sourcePath .. "layouts/default.yaml")
 
   local types = {}
   for _, entry in ipairs(context.components) do
     types[entry.module.id] = true
   end
-  assert(types.placeholder and types.heartbeat,
-    label .. ": expected two independently authored component modules")
+  assert(types.metric and types.placeholder and types.heartbeat,
+    label .. ": expected three independently authored component modules")
 
   for _, entry in ipairs(context.components) do
-    local panel = entry.instance.panel.properties
-    assert(panel.x >= 0 and panel.y >= 0, label .. ": panel outside zone origin")
-    assert(panel.x + panel.w <= zone.w, label .. ": panel exceeds zone width")
-    assert(panel.y + panel.h <= zone.h, label .. ": panel exceeds zone height")
-    assert(panel.w > 0 and panel.h > 0, label .. ": panel collapsed")
+    local bounds = boundsOf(entry)
+    assert(bounds.x >= 0 and bounds.y >= 0, label .. ": container outside zone origin")
+    assert(bounds.x + bounds.w <= zone.w, label .. ": container exceeds zone width")
+    assert(bounds.y + bounds.h <= zone.h, label .. ": container exceeds zone height")
+    assert(bounds.w > 0 and bounds.h > 0, label .. ": container collapsed")
+
+    -- Components are handed container-local coordinates, so their panel must
+    -- start at the origin and never exceed the container it was given.
+    local panel = panelOf(entry)
+    assertEqual(panel.x, 0, label .. ": " .. entry.placement.id .. " left its container")
+    assertEqual(panel.y, 0, label .. ": " .. entry.placement.id .. " left its container")
+    assert(panel.w <= bounds.w and panel.h <= bounds.h,
+      label .. ": " .. entry.placement.id .. " overflowed its container")
   end
 
   for first = 1, #context.components do
     for second = first + 1, #context.components do
-      assert(not panelsOverlap(context.components[first].instance.panel,
-        context.components[second].instance.panel),
+      assert(not panelsOverlap(boundsOf(context.components[first]),
+        boundsOf(context.components[second])),
         label .. ": rendered panels overlap")
     end
   end
@@ -169,41 +238,318 @@ local function testCheckpointRendersInBothModes(label, zone)
 end
 
 -- App mode occupies the full TX16S-class display; 1 x 1 loses the top bar.
-local appContext = testCheckpointRendersInBothModes("app mode", {x = 0, y = 0, w = 480, h = 272})
-testCheckpointRendersInBothModes("1 x 1", {x = 0, y = 0, w = 480, h = 232})
+local appContext = testRendersInBothModes("app mode", {x = 0, y = 0, w = 480, h = 272})
+testRendersInBothModes("1 x 1", {x = 0, y = 0, w = 480, h = 232})
 
-assertEqual(appContext.components[1].instance.panel.properties.w, 238)
-assertEqual(appContext.components[2].instance.panel.properties.h, 272)
+--- The host owns the palette: every panel uses the resolved surface token.
+local function testThemeReachesComponents()
+  local modern = themeModule.modern()
+  assertEqual(appContext.theme.mode, "modern")
+  assertEqual(appContext.root.properties.color, modern.canvas)
 
---- Settings defaults declared by the module reach the component instance.
-assertEqual(appContext.components[1].settings.title, "AEROGRID")
-assertEqual(entryById(appContext, "pulse").settings.label, "HEARTBEAT")
+  for _, entry in ipairs(appContext.components) do
+    assertEqual(panelOf(entry).color, modern.surface,
+      entry.placement.id .. " did not use the theme surface")
+  end
 
---- Zone changes reflow every component through the isolated resize dispatch.
-local zone = appContext.zone
-zone.w = 320
-zone.h = 240
-definition.refresh(appContext)
-assertEqual(appContext.root.properties.w, 320)
-assertEqual(appContext.root.properties.h, 240)
-assertEqual(appContext.components[1].instance.panel.properties.w, 158)
+  -- Components receive span-appropriate typography from the host.
+  local pack = entryById(appContext, "pack")
+  local current = entryById(appContext, "current")
+  assertEqual(pack.instance.fonts.primary, XXLSIZE)
+  assertEqual(current.instance.fonts.primary, DBLSIZE)
+end
 
---- Foreground and background lifecycle callbacks reach live components.
-local pulse = entryById(appContext, "pulse")
-local ticksBefore = pulse.instance.ticks
-definition.refresh(appContext)
-definition.refresh(appContext)
-assertEqual(pulse.instance.ticks, ticksBefore + 2, "refresh was not dispatched")
+--- Responsive presentation must differ across the baseline spans.
+local function testResponsiveSpans()
+  local metricModule = assert(loadfile(sourcePath .. "components/metric.lua"))()
 
-definition.background(appContext)
-assertEqual(pulse.instance.backgroundTicks, 1, "background was not dispatched")
+  local small = metricModule.presentationFor(1, 1)
+  local wide = metricModule.presentationFor(2, 1)
+  local large = metricModule.presentationFor(2, 2)
 
---- Changing Dashboard ID tears down and rebuilds without leaking components.
-definition.update(appContext, {DashID = "alternate"})
-definition.refresh(appContext)
-assertEqual(appContext.root.cleared, true)
-definition.refresh(appContext)
-assertEqual(#appContext.components, 3)
+  assertEqual(small.showUnit, false, "1 x 1 must stay minimal")
+  assertEqual(small.showVisual, false)
+  assertEqual(wide.showUnit, true, "2 x 1 adds units")
+  assertEqual(wide.showRange, false)
+  assertEqual(large.showRange, true, "2 x 2 adds the range")
+
+  -- A 2 x 2 metric renders its range and bar; a 2 x 1 renders neither range.
+  assert(entryById(appContext, "pack").instance.range, "2 x 2 metric lost its range")
+  assertEqual(entryById(appContext, "current").instance.range, nil)
+  -- The altitude metric disables its visualization through configuration.
+  assertEqual(entryById(appContext, "altitude").instance.bar, nil)
+end
+
+--- Every state must restyle the panel and publish a text badge where required.
+local function testMetricStates()
+  local pack = entryById(appContext, "pack").instance
+  local metricModule = assert(loadfile(sourcePath .. "components/metric.lua"))()
+  local modern = themeModule.modern()
+
+  metricModule.setValue(pack, 24.0)
+  assertEqual(pack.stateName, "normal")
+  assertEqual(pack.value.properties.text, "24.0")
+  assertEqual(pack.badge.properties.text, "")
+  assertEqual(pack.panel.accent.properties.color, modern.cyan)
+
+  -- Falling thresholds: warning at 21.0, critical at 19.8.
+  metricModule.setValue(pack, 20.5)
+  assertEqual(pack.stateName, "warning")
+  assertEqual(pack.badge.properties.text, "WARN")
+  assertEqual(pack.panel.accent.properties.color, modern.amber)
+
+  metricModule.setValue(pack, 19.0)
+  assertEqual(pack.stateName, "critical")
+  assertEqual(pack.badge.properties.text, "CRIT")
+  assertEqual(pack.panel.accent.properties.color, modern.critical)
+
+  metricModule.setValue(pack, 24.0, true)
+  assertEqual(pack.stateName, "stale")
+  assertEqual(pack.badge.properties.text, "STALE")
+
+  metricModule.setValue(pack, nil)
+  assertEqual(pack.stateName, "unavailable")
+  assertEqual(pack.badge.properties.text, "NO SOURCE")
+  assertEqual(pack.value.properties.text, "--")
+
+  -- Rising thresholds must be inferred in the opposite direction.
+  local current = entryById(appContext, "current").instance
+  metricModule.setValue(current, 10)
+  assertEqual(current.stateName, "normal")
+  metricModule.setValue(current, 95)
+  assertEqual(current.stateName, "warning")
+  metricModule.setValue(current, 115)
+  assertEqual(current.stateName, "critical")
+
+  -- Geometry must stay stable as values and states change.
+  local before = pack.value.properties.w
+  metricModule.setValue(pack, 22.5)
+  assertEqual(pack.value.properties.w, before, "value width shifted")
+end
+
+--- Zone changes reflow every component through the renamed update callback.
+local function testReflowAndLifecycle()
+  local zone = appContext.zone
+  zone.w = 320
+  zone.h = 240
+  definition.refresh(appContext)
+  assertEqual(appContext.root.properties.w, 320)
+  assertEqual(appContext.root.properties.h, 240)
+  assertEqual(panelOf(entryById(appContext, "pack")).w, 158)
+  local pulse = entryById(appContext, "pulse")
+  local ticksBefore = pulse.instance.ticks
+  definition.refresh(appContext)
+  definition.refresh(appContext)
+  assertEqual(pulse.instance.ticks, ticksBefore + 2, "refresh was not dispatched")
+
+  definition.background(appContext)
+  assertEqual(pulse.instance.backgroundTicks, 1, "background was not dispatched")
+
+  -- Events reach components; an unconsumed event is reported as unconsumed.
+  assertEqual(definition.event(appContext, 32), false)
+  assertEqual(pulse.instance.events, 1, "event was not dispatched")
+end
+
+--- Changing Dashboard ID or Theme tears down and rebuilds without leaking.
+local function testOptionReload()
+  definition.update(appContext, {DashID = "alternate", Theme = "modern"})
+  definition.refresh(appContext)
+  assertEqual(appContext.root.cleared, true)
+  definition.refresh(appContext)
+  assertEqual(#appContext.components, 5)
+
+  -- Switching only the theme must also trigger a rebuild.
+  local context = definition.create({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, sourcePath)
+  definition.update(context, {DashID = "main", Theme = "custom"})
+  assertEqual(context.reloadState, "clear")
+end
+
+--- The state badge must never be drawn on top of the label it accompanies.
+local function testBadgeGeometry()
+  local entry = entryById(appContext, "pack")
+  local instance = entry.instance
+  local label = instance.label.properties
+  local badge = instance.badge.properties
+  local bounds = boundsOf(entry)
+
+  assert(label.x + label.w <= badge.x,
+    "badge overlaps the label: label ends at " .. (label.x + label.w)
+      .. ", badge starts at " .. badge.x)
+  assert(badge.x + badge.w <= bounds.w, "badge extends past the panel")
+  assert(label.w > 0 and badge.w > 0, "label or badge collapsed")
+end
+
+--- A radial visualization must be repositioned and resized on reflow.
+local function testRadialReflow()
+  local widgetPath = makeWidget("radial", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: dial
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: Dial
+      visual: radial
+      min: 0
+      max: 100
+]])
+
+  local zone = {x = 0, y = 0, w = 480, h = 272}
+  local context = definition.create(zone, DEFAULT_OPTIONS, widgetPath)
+  local dial = entryById(context, "dial")
+  assert(dial.instance.radial, "radial visualization was not created")
+
+  local arc = dial.instance.radial.arc.properties
+  local bounds = boundsOf(dial)
+  local firstRadius = arc.radius
+  assert(arc.x + arc.radius * 2 <= bounds.w, "radial overflows its panel")
+
+  -- The value must not sit underneath the arc.
+  local value = dial.instance.value.properties
+  assert(value.x + value.w <= arc.x, "value overlaps the radial")
+
+  zone.w = 240
+  zone.h = 160
+  definition.refresh(context)
+
+  local resized = dial.instance.radial.arc.properties
+  local newBounds = boundsOf(dial)
+  assert(resized.radius < firstRadius, "radial did not shrink with the panel")
+  assert(resized.x + resized.radius * 2 <= newBounds.w,
+    "radial overflowed after reflow")
+end
+
+--- A component that fails during create must leave no partial drawing behind.
+local function testCreateFailureIsCleaned()
+  local widgetPath = makeWidget("halfbuilt", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: broken
+    type: halfbuilt
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+  - id: safe
+    type: placeholder
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+]], {
+    ["halfbuilt.lua"] = [==[
+local halfbuilt = {id = "halfbuilt", apiVersion = 1, supportedSpans = {"any"}}
+function halfbuilt.create(parent, rect, settings, services)
+  services.primitives.panel(parent, rect, services.theme,
+    services.state("normal", "cyan"))
+  error("failed after drawing", 0)
+end
+return halfbuilt
+]==],
+  })
+
+  local context = definition.create({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+
+  assertEqual(#context.components, 1, "failed component must not be kept")
+  assertEqual(context.components[1].placement.id, "safe")
+  assert(string.match(table.concat(context.errors, "\n"), "failed after drawing"))
+end
+
+testThemeReachesComponents()
+testResponsiveSpans()
+testBadgeGeometry()
+testMetricStates()
+testReflowAndLifecycle()
+testOptionReload()
+
+--- A layout may select the EdgeTX-derived theme, which must stay readable.
+local function testEdgeTxTheme()
+  local widgetPath = makeWidget("edgetx-theme", [[
+version: 1
+theme:
+  mode: edgetx
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: only
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: Derived
+]])
+
+  local context = definition.create({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+
+  assertEqual(context.theme.mode, "edgetx")
+  assertEqual(#context.components, 1)
+
+  local modern = themeModule.modern()
+  local tokens = context.theme.rgb
+
+  -- Derived from COLOR_THEME_SECONDARY1, so it must not be the Modern surface.
+  assert(tokens.canvas ~= modern.canvas, "EdgeTX canvas was not derived")
+  -- Critical red stays dashboard-owned so alarms remain recognizable.
+  assertEqual(tokens.critical, modern.critical)
+  -- Contrast correction must keep body text readable on the derived surface.
+  assert(themeModule.contrast(tokens.surface, tokens.text) >= 4.5,
+    "derived text failed contrast correction")
+  assert(themeModule.contrast(tokens.surface, tokens.canvas) >= 1.0)
+end
+
+--- Custom mode accepts a small override set and rejects the rest.
+local function testCustomTheme()
+  local widgetPath = makeWidget("custom-theme", [[
+version: 1
+theme:
+  mode: custom
+  overrides:
+    canvas: 0x000000
+    surface: 0x101010
+    accent: green
+    border: 0xFF00FF
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: only
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: Custom
+]])
+
+  local context = definition.create({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+
+  assertEqual(context.theme.mode, "custom")
+  assertEqual(context.theme.rgb.canvas, 0x000000)
+  assertEqual(context.theme.rgb.surface, 0x101010)
+  assertEqual(context.theme.accent, "green")
+  -- border is outside the customizable set and must be reported, not applied.
+  assertEqual(context.theme.rgb.border, themeModule.modern().border)
+
+  local joined = table.concat(context.errors, "\n")
+  assert(string.match(joined, "border is not customizable"), joined)
+end
 
 --- A component that raises must be disabled without affecting its neighbours.
 local function testFailureIsolation()
@@ -228,8 +574,9 @@ components:
 ]], {
     ["exploder.lua"] = [==[
 local exploder = {id = "exploder", apiVersion = 1, supportedSpans = {"any"}}
-function exploder.create(parent, rect)
-  return {panel = lvgl.box(parent, {x = rect.x, y = rect.y, w = rect.w, h = rect.h})}
+function exploder.create(parent, rect, settings, services)
+  return {panel = services.primitives.panel(parent, rect, services.theme,
+    services.state("normal", "cyan"))}
 end
 function exploder.refresh()
   error("exploder failed", 0)
@@ -239,7 +586,7 @@ return exploder
   })
 
   local context = definition.create({x = 0, y = 0, w = 480, h = 272},
-    {DashID = "main"}, widgetPath)
+    DEFAULT_OPTIONS, widgetPath)
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
   assertEqual(#context.components, 2)
 
@@ -258,6 +605,51 @@ return exploder
   definition.refresh(context)
   assertEqual(#context.errors, 1, "failure was reported repeatedly")
   assertEqual(#context.components, 2)
+end
+
+--- An event consumed by one component must stop propagating.
+local function testEventConsumption()
+  local widgetPath = makeWidget("consumer", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: eater
+    type: eater
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+  - id: pulse
+    type: heartbeat
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+]], {
+    ["eater.lua"] = [==[
+local eater = {id = "eater", apiVersion = 1, supportedSpans = {"any"}}
+function eater.create(parent, rect, settings, services)
+  return {panel = services.primitives.panel(parent, rect, services.theme,
+    services.state("normal", "cyan")), seen = 0}
+end
+function eater.event(context)
+  context.seen = context.seen + 1
+  return true
+end
+return eater
+]==],
+  })
+
+  local context = definition.create({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  assertEqual(#context.components, 2)
+
+  assertEqual(definition.event(context, 32), true, "event was not consumed")
+  assertEqual(entryById(context, "eater").instance.seen, 1)
+  -- The later component must never see a consumed event.
+  assertEqual(entryById(context, "pulse").instance.events, 0)
 end
 
 --- Contract, span, and module-resolution failures are visible and survivable.
@@ -308,7 +700,7 @@ return {id = "somethingelse", apiVersion = 1, create = function() return {} end}
   })
 
   local context = definition.create({x = 0, y = 0, w = 480, h = 272},
-    {DashID = "main"}, widgetPath)
+    DEFAULT_OPTIONS, widgetPath)
 
   assertEqual(#context.components, 1, "only the valid component should load")
   assertEqual(context.components[1].placement.id, "good")
@@ -325,7 +717,7 @@ end
 local function testCorruptLayout()
   local widgetPath = makeWidget("corrupt", "version: 1\n\tcomponents: []\n")
   local context = definition.create({x = 0, y = 0, w = 480, h = 272},
-    {DashID = "main"}, widgetPath)
+    DEFAULT_OPTIONS, widgetPath)
 
   assertEqual(#context.components, 0)
   assert(#context.errors > 0, "corrupt layout reported no error")
@@ -338,16 +730,21 @@ local function testModelFilenames()
   for _, name in ipairs({"model1.yml", "Kavan Sonic.yml", "FPV-7in.yml"}) do
     modelFilename = name
     local context = definition.create({x = 0, y = 0, w = 480, h = 272},
-      {DashID = "main"}, sourcePath)
+      DEFAULT_OPTIONS, sourcePath)
     assertEqual(context.layoutPath, sourcePath .. "layouts/default.yaml",
       "unexpected layout for " .. name)
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-    assertEqual(#context.components, 3)
+    assertEqual(#context.components, 5)
   end
   modelFilename = previous
 end
 
+testEdgeTxTheme()
+testCustomTheme()
+testRadialReflow()
+testCreateFailureIsCleaned()
 testFailureIsolation()
+testEventConsumption()
 testContractRejections()
 testCorruptLayout()
 testModelFilenames()

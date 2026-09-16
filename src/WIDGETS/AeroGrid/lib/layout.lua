@@ -35,6 +35,39 @@ local function isSequence(value)
   return count == #value
 end
 
+--- Validate the optional layout-level theme block.
+--- Phase 1 has no editor, so the layout file is the only way to select a theme
+--- mode or supply custom overrides.
+---@param value any
+---@param errors string[]
+---@return table? theme
+local function validateTheme(value, errors)
+  if value == nil then return nil end
+  if type(value) ~= "table" then
+    errors[#errors + 1] = "theme must be a mapping"
+    return nil
+  end
+
+  local result = {}
+  if value.mode ~= nil then
+    if type(value.mode) ~= "string" then
+      errors[#errors + 1] = "theme mode must be a string"
+    else
+      result.mode = value.mode
+    end
+  end
+
+  if value.overrides ~= nil then
+    if type(value.overrides) ~= "table" then
+      errors[#errors + 1] = "theme overrides must be a mapping"
+    else
+      result.overrides = value.overrides
+    end
+  end
+
+  return result
+end
+
 --- Validate a parsed phase-one document while retaining valid components.
 --- Invalid components are reported and omitted so they cannot block the dashboard.
 ---@param document AeroGridLayoutDocument
@@ -57,15 +90,19 @@ function layout.validate(document, grid)
   normalized.version = document.version
   normalized.grid = document.grid
   normalized.components = {}
+  normalized.theme = validateTheme(document.theme, errors)
 
+  -- A document this loader cannot interpret must fail closed. Rendering its
+  -- components under phase-one assumptions would silently misplace them.
   if document.version ~= 1 then
-    errors[#errors + 1] = "unsupported layout version"
+    return nil, {"unsupported layout version"}
   end
   if type(document.grid) ~= "table"
       or document.grid.columns ~= 4
       or document.grid.rows ~= 4 then
-    errors[#errors + 1] = "phase 1 requires a 4 x 4 grid"
+    return nil, {"phase 1 requires a 4 x 4 grid"}
   end
+
   if not isSequence(document.components) then
     errors[#errors + 1] = "components must be a sequence"
     return normalized, errors

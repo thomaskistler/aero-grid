@@ -14,10 +14,11 @@
 ---@field apiVersion integer Must equal the host component API version.
 ---@field supportedSpans? string[] Span strings such as "2x1", or "any".
 ---@field settings? AeroGridComponentSetting[]
----@field create fun(parent: any, rect: table, settings: table): any
----@field resize? fun(instance: any, rect: table)
+---@field create fun(parent: any, rect: table, settings: table, services: table): any
+---@field update? fun(instance: any, rect: table, settings: table)
 ---@field refresh? fun(instance: any)
 ---@field background? fun(instance: any)
+---@field event? fun(instance: any, event: any): boolean
 ---@field destroy? fun(instance: any)
 
 ---@class AeroGridComponentEntry
@@ -34,13 +35,26 @@ local componentHost = {}
 componentHost.API_VERSION = 1
 
 --- Optional lifecycle callbacks, in a fixed order so errors stay deterministic.
-local OPTIONAL_CALLBACKS = {"resize", "refresh", "background", "destroy"}
+local OPTIONAL_CALLBACKS = {"update", "refresh", "background", "event", "destroy"}
 
 --- Restrict module identifiers to the same path-safe characters as layout types.
 ---@param value any
 ---@return boolean
 local function isSafeIdentifier(value)
   return type(value) == "string" and string.match(value, "^[%w_-]+$") ~= nil
+end
+
+--- Read a contract field without triggering a module's metamethods.
+--- A hostile or buggy `__index` must not be able to raise inside the host.
+---@param module any
+---@param key string
+---@return any
+local function field(module, key)
+  if type(module) ~= "table" then return nil end
+
+  local ok, value = pcall(rawget, module, key)
+  if not ok then return nil end
+  return value
 end
 
 --- Verify a loaded module satisfies the component contract.
@@ -52,31 +66,36 @@ function componentHost.validateModule(module, typeName)
   if type(module) ~= "table" then
     return false, "component module must return a table"
   end
-  if module.apiVersion ~= componentHost.API_VERSION then
+  if field(module, "apiVersion") ~= componentHost.API_VERSION then
     return false, "incompatible component API"
   end
-  if not isSafeIdentifier(module.id) then
+
+  local id = field(module, "id")
+  if not isSafeIdentifier(id) then
     return false, "component module declares an invalid id"
   end
-  if module.id ~= typeName then
-    return false, "component module id " .. module.id
+  if id ~= typeName then
+    return false, "component module id " .. id
       .. " does not match type " .. typeName
   end
-  if type(module.create) ~= "function" then
+  if type(field(module, "create")) ~= "function" then
     return false, "component has no create function"
   end
 
   for _, name in ipairs(OPTIONAL_CALLBACKS) do
-    local callback = module[name]
+    local callback = field(module, name)
     if callback ~= nil and type(callback) ~= "function" then
       return false, name .. " must be a function"
     end
   end
 
-  if module.supportedSpans ~= nil and type(module.supportedSpans) ~= "table" then
+  local spans = field(module, "supportedSpans")
+  if spans ~= nil and type(spans) ~= "table" then
     return false, "supportedSpans must be a sequence"
   end
-  if module.settings ~= nil and type(module.settings) ~= "table" then
+
+  local settings = field(module, "settings")
+  if settings ~= nil and type(settings) ~= "table" then
     return false, "settings must be a sequence"
   end
 
@@ -150,23 +169,24 @@ end
 ---@param ... any Additional callback arguments.
 ---@return boolean ok
 ---@return string? error Set only on the call that first fails.
+---@return any result First value returned by the callback.
 function componentHost.dispatch(entry, event, ...)
   if type(entry) ~= "table" or entry.failed then
     return false
   end
 
-  local callback = entry.module and entry.module[event]
+  local callback = field(entry.module, event)
   if type(callback) ~= "function" then
     return true
   end
 
-  local ok, callbackError = pcall(callback, entry.instance, ...)
+  local ok, resultOrError = pcall(callback, entry.instance, ...)
   if ok then
-    return true
+    return true, nil, resultOrError
   end
 
   entry.failed = true
-  entry.error = tostring(callbackError)
+  entry.error = tostring(resultOrError)
   return false, entry.error
 end
 

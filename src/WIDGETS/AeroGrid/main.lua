@@ -12,6 +12,7 @@
 
 ---@class AeroGridWidgetOptions
 ---@field DashID string
+---@field Theme string
 
 ---@class AeroGridContext
 ---@field zone AeroGridZone Live zone table maintained by EdgeTX.
@@ -27,12 +28,18 @@
 ---@field layoutValidator table
 ---@field layoutStore table
 ---@field componentHost table
+---@field themeBuilder table
+---@field primitives table
+---@field theme AeroGridTheme Active resolved theme passed to every component.
+---@field themeMode string Mode selected in native widget settings.
+---@field services table Shared objects handed to components.
 ---@field layoutPath? string
 ---@field errorLabel? any
 ---@field reloadState? "clear"|"build"
 
 local options = {
   {"DashID", STRING, "main"},
+  {"Theme", STRING, "modern"},
 }
 
 --- Join a widget directory and package-relative path.
@@ -87,13 +94,16 @@ local function showErrors(context)
     return
   end
 
+  -- Errors can precede theme resolution, so fall back to the Modern critical red.
+  local color = context.theme and context.theme.color.critical or lcd.RGB(0xF05252)
+
   context.errorLabel = lvgl.label(context.root, {
       x = 8,
       y = 8,
       w = math.max(1, context.zone.w - 16),
       h = 0,
       text = text,
-      color = lcd.RGB(240, 82, 82),
+      color = color,
       font = function() return SMLSIZE end,
   })
 end
@@ -119,6 +129,27 @@ local function dispatchAll(context, event, ...)
   if failures then showErrors(context) end
 end
 
+--- Assemble the shared objects handed to one component.
+--- Typography depends on the component's span, so services are built per
+--- placement rather than shared across the dashboard.
+---@param context AeroGridContext
+---@param placement table
+---@return table services
+local function buildServices(context, placement)
+  local builder = context.themeBuilder
+  local theme = context.theme
+
+  return {
+    theme = theme,
+    primitives = context.primitives,
+    fonts = builder.typography(placement.colSpan, placement.rowSpan),
+    span = {colSpan = placement.colSpan, rowSpan = placement.rowSpan},
+    state = function(name, accentName)
+      return builder.state(theme, name, accentName)
+    end,
+  }
+end
+
 --- Load, validate, and instantiate every component in the selected layout.
 ---@param context AeroGridContext
 local function loadComponents(context)
@@ -137,6 +168,15 @@ local function loadComponents(context)
     showErrors(context)
     return
   end
+
+  -- A layout may pin its own theme; otherwise the native option decides.
+  local themeConfig = document.theme or {}
+  context.theme = context.themeBuilder.build(
+    themeConfig.mode or context.themeMode, themeConfig.overrides)
+  for _, warning in ipairs(context.theme.warnings) do
+    addError(context, "theme: " .. warning)
+  end
+  context.root:set({color = context.theme.color.canvas})
 
   local host = context.componentHost
   for _, placement in ipairs(document.components) do
@@ -165,15 +205,31 @@ local function loadComponents(context)
           addError(context, placement.id .. ": " .. warning)
         end
 
-        local ok, instance = pcall(component.create, context.root, rect, settings)
+        -- Each component draws inside its own container, so it cannot reach
+        -- the dashboard root or paint over a neighbour.
+        local container = lvgl.box(context.root, {
+          x = rect.x,
+          y = rect.y,
+          w = rect.w,
+          h = rect.h,
+          color = context.theme.color.canvas,
+        })
+        local localRect = {x = 0, y = 0, w = rect.w, h = rect.h}
+
+        local services = buildServices(context, placement)
+        local ok, instance = pcall(
+          component.create, container, localRect, settings, services)
         if ok then
           context.components[#context.components + 1] = {
             placement = placement,
             module = component,
             instance = instance,
             settings = settings,
+            container = container,
           }
         else
+          -- Discard whatever the failed component managed to build.
+          container:clear()
           addError(context, placement.id .. ": " .. tostring(instance))
         end
       end
@@ -193,6 +249,7 @@ local function create(zone, widgetOptions, path)
     zone = zone,
     path = path,
     dashboardId = widgetOptions.DashID,
+    themeMode = widgetOptions.Theme,
     components = {},
     errors = {},
     width = zone.w,
@@ -204,17 +261,20 @@ local function create(zone, widgetOptions, path)
   context.layoutValidator = select(1, loadModule(path, "lib/layout.lua"))
   context.layoutStore = select(1, loadModule(path, "lib/layout_store.lua"))
   context.componentHost = select(1, loadModule(path, "lib/component_host.lua"))
+  context.themeBuilder = select(1, loadModule(path, "lib/theme.lua"))
+  context.primitives = select(1, loadModule(path, "lib/primitives.lua"))
 
   context.root = lvgl.box({
     x = 0,
     y = 0,
     w = zone.w,
     h = zone.h,
-    color = lcd.RGB(16, 19, 22),
+    color = lcd.RGB(0x101316),
   })
 
   if not context.grid or not context.yaml or not context.layoutValidator
-      or not context.layoutStore or not context.componentHost then
+      or not context.layoutStore or not context.componentHost
+      or not context.themeBuilder or not context.primitives then
     addError(context, "AeroGrid runtime module failed to load")
     showErrors(context)
   else
@@ -233,9 +293,11 @@ local function reflow(context)
     if not entry.failed then
       local rect = context.grid.rect(context.zone, entry.placement, 4, 4, 4)
       if rect then
-        local ok, dispatchError = context.componentHost.dispatch(entry, "resize", rect)
+        entry.container:set({x = rect.x, y = rect.y, w = rect.w, h = rect.h})
+        local ok, dispatchError = context.componentHost.dispatch(
+          entry, "update", {x = 0, y = 0, w = rect.w, h = rect.h}, entry.settings)
         if not ok and dispatchError then
-          addError(context, entry.placement.id .. ": resize: " .. dispatchError)
+          addError(context, entry.placement.id .. ": update: " .. dispatchError)
         end
       end
     end
@@ -250,13 +312,16 @@ local function reflow(context)
   context.height = context.zone.h
 end
 
---- Apply native host options; changing Dashboard ID schedules a safe rebuild.
+--- Apply native host options; changing Dashboard ID or Theme rebuilds safely.
 ---@param context AeroGridContext
 ---@param widgetOptions AeroGridWidgetOptions
 local function update(context, widgetOptions)
   local dashboardId = widgetOptions.DashID
-  if dashboardId ~= context.dashboardId then
+  local themeMode = widgetOptions.Theme
+
+  if dashboardId ~= context.dashboardId or themeMode ~= context.themeMode then
     context.dashboardId = dashboardId
+    context.themeMode = themeMode
     context.reloadState = "clear"
   end
 end
@@ -266,7 +331,29 @@ end
 ---@return string
 local function translate(name)
   if name == "DashID" then return "Dashboard ID" end
+  if name == "Theme" then return "Theme" end
   return name
+end
+
+--- Offer an input event to components until one consumes it.
+---@param context AeroGridContext
+---@param widgetEvent any
+---@return boolean consumed
+local function event(context, widgetEvent)
+  for _, entry in ipairs(context.components) do
+    if not entry.failed then
+      local ok, dispatchError, consumed = context.componentHost.dispatch(
+        entry, "event", widgetEvent)
+      if not ok and dispatchError then
+        addError(context, entry.placement.id .. ": event: " .. dispatchError)
+        showErrors(context)
+      elseif consumed then
+        return true
+      end
+    end
+  end
+
+  return false
 end
 
 --- Advance deferred reloads and keep component geometry synchronized.
@@ -306,6 +393,7 @@ return {
   update = update,
   refresh = refresh,
   background = background,
+  event = event,
   translate = translate,
   useLvgl = true,
 }

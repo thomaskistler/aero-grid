@@ -1,28 +1,62 @@
 version: 1
+
+# Theme mode may be modern, edgetx, or custom. When present this overrides the
+# native Theme widget option. Custom mode accepts canvas, surface, text, and
+# accent overrides only.
+theme:
+  mode: modern
+
 grid:
   columns: 4
   rows: 4
+
 components:
-  - id: primary
-    type: placeholder
+  - id: pack
+    type: metric
     col: 0
     row: 0
     colSpan: 2
     rowSpan: 2
     config:
-      title: AEROGRID
-      subtitle: PRIMARY 2 x 2
+      label: Pack
+      unit: V
       accent: cyan
-  - id: secondary
-    type: placeholder
+      min: 18
+      max: 25.2
+      warning: 21.0
+      critical: 19.8
+      precision: 1
+      visual: bar
+  - id: current
+    type: metric
     col: 2
     row: 0
     colSpan: 2
-    rowSpan: 4
+    rowSpan: 1
     config:
-      title: PHASE 1
-      subtitle: SECONDARY 2 x 4
+      label: Current
+      unit: A
+      accent: orange
+      min: 0
+      max: 120
+      warning: 90
+      critical: 110
+      precision: 0
+      visual: bar
+  - id: altitude
+    type: metric
+    col: 2
+    row: 1
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: Altitude
+      unit: m
       accent: green
+      min: 0
+      max: 400
+      precision: 0
+      visual: none
   - id: pulse
     type: heartbeat
     col: 0
@@ -32,3 +66,13 @@ components:
     config:
       label: HEARTBEAT
       accent: amber
+  - id: secondary
+    type: placeholder
+    col: 2
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      title: PHASE 1
+      subtitle: DESIGN SYSTEM
+      accent: green

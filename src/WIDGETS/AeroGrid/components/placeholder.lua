@@ -1,16 +1,15 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 --- Development component used to verify AeroGrid placement and resizing.
+--- All colors come from host theme tokens; components never define palettes.
 
----@class AeroGridPlaceholderConfig
+---@class AeroGridPlaceholderSettings
 ---@field title? string
 ---@field subtitle? string
 ---@field accent? "cyan"|"green"|"amber"|"orange"
 
 ---@class AeroGridPlaceholderContext
----@field panel any
----@field border any
----@field accent any
+---@field panel table
 ---@field title any
 ---@field subtitle any
 
@@ -19,107 +18,64 @@ local placeholder = {
   apiVersion = 1,
   supportedSpans = {"any"},
   settings = {
-    {key = "title", type = "string", default = "PLACEHOLDER"},
-    {key = "subtitle", type = "string", default = ""},
-    {key = "accent", type = "string", default = "cyan"},
+    {key = "title", label = "Title", type = "string", default = "PLACEHOLDER"},
+    {key = "subtitle", label = "Subtitle", type = "string", default = ""},
+    {key = "accent", label = "Accent", type = "string", default = "cyan"},
   },
 }
-
-local colors = {
-  surface = lcd.RGB(29, 35, 40),
-  border = lcd.RGB(52, 59, 64),
-  text = lcd.RGB(244, 246, 247),
-  muted = lcd.RGB(167, 176, 182),
-}
-
-local accents = {
-  cyan = lcd.RGB(112, 214, 243),
-  green = lcd.RGB(85, 217, 144),
-  amber = lcd.RGB(242, 184, 75),
-  orange = lcd.RGB(255, 118, 46),
-}
-
---- Return the label width inside a panel with fixed horizontal padding.
----@param rect AeroGridRect
----@return integer
-local function contentWidth(rect)
-  return math.max(1, rect.w - 16)
-end
 
 --- Create a placeholder panel inside an LVGL parent container.
 ---@param parent any Parent LVGL object supplied by the AeroGrid host.
 ---@param rect AeroGridRect Pixel bounds relative to the parent.
----@param settings AeroGridPlaceholderConfig Host-resolved settings with defaults applied.
+---@param settings AeroGridPlaceholderSettings Host-resolved settings.
+---@param services table Host-provided shared objects.
 ---@return AeroGridPlaceholderContext
-function placeholder.create(parent, rect, settings)
-  local accentColor = accents[settings.accent] or colors.muted
-  local panel = lvgl.box(parent, {
-    x = rect.x,
-    y = rect.y,
-    w = rect.w,
-    h = rect.h,
-    color = colors.surface,
-  })
+function placeholder.create(parent, rect, settings, services)
+  local theme = services.theme
+  local primitives = services.primitives
+  local fonts = services.fonts
+  local spacing = theme.spacing
+  local presentation = services.state("normal", settings.accent)
 
-  local border = lvgl.rectangle(panel, {
-    x = 0,
-    y = 0,
-    w = rect.w,
-    h = rect.h,
-    color = colors.border,
-    filled = false,
-    rounded = 4,
-    thickness = 1,
-  })
+  local panel = primitives.panel(parent, rect, theme, presentation)
+  local width = primitives.contentWidth(theme, rect.w)
 
-  local accent = lvgl.rectangle(panel, {
-    x = 0,
-    y = 0,
-    w = 4,
-    h = rect.h,
-    color = accentColor,
-    filled = true,
-    rounded = 2,
-  })
-
-  local title = lvgl.label(panel, {
-    x = 8,
-    y = 6,
-    w = contentWidth(rect),
-    h = 0,
+  local title = primitives.value(panel.root, theme, {
+    x = spacing.padding,
+    y = spacing.paddingCompact,
+    w = width,
     text = tostring(settings.title),
-    color = colors.text,
-    font = function() return BOLD end,
+    color = presentation.value,
+    font = fonts.label,
   })
 
-  local subtitle = lvgl.label(panel, {
-    x = 8,
-    y = 28,
-    w = contentWidth(rect),
-    h = 0,
+  local subtitle = primitives.label(panel.root, theme, {
+    x = spacing.padding,
+    y = spacing.paddingCompact + 22,
+    w = width,
     text = tostring(settings.subtitle),
-    color = colors.muted,
-    font = function() return SMLSIZE end,
+    color = presentation.label,
+    font = fonts.label,
   })
 
   return {
     panel = panel,
-    border = border,
-    accent = accent,
+    theme = theme,
+    primitives = primitives,
     title = title,
     subtitle = subtitle,
   }
 end
 
---- Resize and reposition an existing placeholder without recreating LVGL objects.
+--- Resize and reposition without recreating LVGL objects.
 ---@param context AeroGridPlaceholderContext
 ---@param rect AeroGridRect
-function placeholder.resize(context, rect)
-  context.panel:set({x = rect.x, y = rect.y, w = rect.w, h = rect.h})
-  context.border:set({w = rect.w, h = rect.h})
-  context.accent:set({h = rect.h})
-  context.title:set({w = contentWidth(rect)})
-  context.subtitle:set({w = contentWidth(rect)})
+function placeholder.update(context, rect)
+  local width = context.primitives.contentWidth(context.theme, rect.w)
+
+  context.primitives.resizePanel(context.panel, rect)
+  context.title:set({w = width})
+  context.subtitle:set({w = width})
 end
 
 return placeholder
