@@ -16,6 +16,10 @@ end
 
 --- Create a component panel with a border and a narrow semantic accent.
 --- The accent stripe carries state, so it is never purely decorative.
+---
+--- The background is a filled rectangle rather than a colored box: EdgeTX's
+--- `lvgl.box` parses `color` but never paints it, so a box keeps the radio
+--- theme's own styling and the dashboard would render in EdgeTX's palette.
 ---@param parent any
 ---@param rect AeroGridRect
 ---@param theme AeroGridTheme
@@ -29,7 +33,16 @@ function primitives.panel(parent, rect, theme, presentation)
     y = rect.y,
     w = rect.w,
     h = rect.h,
+  })
+
+  local background = lvgl.rectangle(root, {
+    x = 0,
+    y = 0,
+    w = rect.w,
+    h = rect.h,
     color = theme.color.surface,
+    filled = true,
+    rounded = spacing.radius,
   })
 
   local border = lvgl.rectangle(root, {
@@ -53,7 +66,7 @@ function primitives.panel(parent, rect, theme, presentation)
     rounded = spacing.radius,
   })
 
-  return {root = root, border = border, accent = accent}
+  return {root = root, background = background, border = border, accent = accent}
 end
 
 --- Resize a panel without recreating its LVGL objects.
@@ -61,6 +74,7 @@ end
 ---@param rect AeroGridRect
 function primitives.resizePanel(panel, rect)
   panel.root:set({x = rect.x, y = rect.y, w = rect.w, h = rect.h})
+  panel.background:set({w = rect.w, h = rect.h})
   panel.border:set({w = rect.w, h = rect.h})
   panel.accent:set({h = rect.h})
 end

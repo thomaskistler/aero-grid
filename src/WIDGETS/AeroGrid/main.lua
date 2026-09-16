@@ -196,13 +196,13 @@ local function buildComponent(context, placement)
   end
 
   -- Each component draws inside its own container, so it cannot reach the
-  -- dashboard root or paint over a neighbour.
+  -- dashboard root or paint over a neighbour. The container is deliberately
+  -- unpainted; the component's own panel fills it.
   local container = lvgl.box(context.root, {
     x = rect.x,
     y = rect.y,
     w = rect.w,
     h = rect.h,
-    color = context.theme.color.canvas,
   })
 
   local services = buildServices(context, placement)
@@ -294,7 +294,7 @@ local function advanceLoad(context)
     for _, warning in ipairs(context.theme.warnings) do
       addError(context, "theme: " .. warning)
     end
-    context.root:set({color = context.theme.color.canvas})
+    context.canvas:set({color = context.theme.color.canvas})
 
     context.pending = validated.components
     context.pendingIndex = 1
@@ -361,7 +361,17 @@ local function create(zone, widgetOptions, path)
     y = 0,
     w = zone.w,
     h = zone.h,
+  })
+
+  -- The canvas must be a filled rectangle. A box ignores `color`, leaving the
+  -- radio's own screen background, including its logo, visible behind us.
+  context.canvas = lvgl.rectangle(context.root, {
+    x = 0,
+    y = 0,
+    w = zone.w,
+    h = zone.h,
     color = lcd.RGB(0x101316),
+    filled = true,
   })
 
   if not context.grid or not context.yaml or not context.layoutValidator
@@ -382,6 +392,7 @@ end
 ---@param context AeroGridContext
 local function reflow(context)
   context.root:set({w = context.zone.w, h = context.zone.h})
+  context.canvas:set({w = context.zone.w, h = context.zone.h})
 
   for _, entry in ipairs(context.components) do
     if not entry.failed then
@@ -457,6 +468,16 @@ local function refresh(context)
   if context.reloadState == "clear" then
     dispatchAll(context, "destroy")
     context.root:clear()
+    -- Clearing the root also destroys the canvas, which must be recreated
+    -- first so it sits behind every component container.
+    context.canvas = lvgl.rectangle(context.root, {
+      x = 0,
+      y = 0,
+      w = context.zone.w,
+      h = context.zone.h,
+      color = context.theme and context.theme.color.canvas or lcd.RGB(0x101316),
+      filled = true,
+    })
     context.reloadState = nil
     beginLoad(context)
     return

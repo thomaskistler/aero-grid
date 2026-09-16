@@ -259,10 +259,10 @@ testRendersInBothModes("1 x 1", {x = 0, y = 0, w = 480, h = 232})
 local function testThemeReachesComponents()
   local modern = themeModule.modern()
   assertEqual(appContext.theme.mode, "modern")
-  assertEqual(appContext.root.properties.color, modern.canvas)
+  assertEqual(appContext.canvas.properties.color, modern.canvas)
 
   for _, entry in ipairs(appContext.components) do
-    assertEqual(panelOf(entry).color, modern.surface,
+    assertEqual(entry.instance.panel.background.properties.color, modern.surface,
       entry.placement.id .. " did not use the theme surface")
   end
 
@@ -271,6 +271,30 @@ local function testThemeReachesComponents()
   local current = entryById(appContext, "current")
   assertEqual(pack.instance.fonts.primary, XXLSIZE)
   assertEqual(current.instance.fonts.primary, DBLSIZE)
+end
+
+--- EdgeTX's lvgl.box parses `color` but never paints it, so any background
+--- drawn with a box silently inherits the radio's own theme instead of ours.
+--- Every visible surface must therefore be a filled rectangle.
+local function testBackgroundsArePainted()
+  local function assertPainted(object, what)
+    assertEqual(object.kind, "rectangle", what .. " must be a rectangle")
+    assertEqual(object.properties.filled, true, what .. " must be filled")
+    assert(object.properties.color ~= nil, what .. " has no color")
+  end
+
+  assertPainted(appContext.canvas, "dashboard canvas")
+
+  for _, entry in ipairs(appContext.components) do
+    local panel = entry.instance.panel
+    assertPainted(panel.background, entry.placement.id .. " panel background")
+    -- Containers and panel roots are boxes, so they must never carry a color.
+    assertEqual(entry.container.kind, "box")
+    assertEqual(entry.container.properties.color, nil,
+      entry.placement.id .. " container relies on an unpainted box color")
+    assertEqual(panel.root.properties.color, nil,
+      entry.placement.id .. " panel root relies on an unpainted box color")
+  end
 end
 
 --- Responsive presentation must differ across the baseline spans.
@@ -515,6 +539,7 @@ local function testDemoCycle()
 end
 
 testThemeReachesComponents()
+testBackgroundsArePainted()
 testResponsiveSpans()
 testBadgeGeometry()
 testMetricStates()
