@@ -225,65 +225,102 @@ local function buildComponent(context, placement)
   end
 end
 
+--- Lines tokenized per widget callback.
+local TOKENIZE_LINES = 24
+
 --- Advance the staged loader by exactly one step.
 --- EdgeTX allows roughly 20000 VM instructions per widget callback, and a
 --- whole dashboard costs far more than that, so loading is spread over
---- consecutive calls: read, tokenize, build and validate, then one component
---- per call. Each step stays well inside the budget regardless of layout size.
+--- consecutive calls. Every stage is bounded by a fixed amount of work rather
+--- than by the size of the layout: the file is tokenized a fixed number of
+--- lines at a time, and each component is parsed, validated, and built in its
+--- own callback. A layout that fills the grid therefore costs more callbacks,
+--- never a larger callback.
 ---@param context AeroGridContext
 ---@return boolean busy True while more work remains.
 local function advanceLoad(context)
   local stage = context.stage
 
+  --- Abandon the load, reporting why.
+  local function fail(message)
+    addError(context, message)
+    context.stage = nil
+    context.tokens = nil
+    context.source = nil
+    showErrors(context)
+    return false
+  end
+
   if stage == "read" then
+    -- The runtime may have failed to load; refuse rather than index nil.
+    if not context.layoutStore then
+      return fail("AeroGrid runtime module failed to load")
+    end
+
     local modelInfo = model.getInfo()
     local content, readError, filename = context.layoutStore.read(
       context.path, modelInfo and modelInfo.filename or "default",
       context.dashboardId)
 
     context.layoutPath = filename
-    if not content then
-      addError(context, readError)
-      context.stage = nil
-      showErrors(context)
-      return false
-    end
+    if not content then return fail(readError) end
 
     context.source = content
+    context.tokens = {}
+    context.readPosition = 1
+    context.readLine = 1
     context.stage = "tokenize"
     return true
   end
 
   if stage == "tokenize" then
-    local tokens, tokenError = context.yaml.tokenize(context.source)
-    context.source = nil
-    if not tokens then
-      addError(context, tokenError)
-      context.stage = nil
-      showErrors(context)
-      return false
+    local position, line, tokenError = context.yaml.tokenizeChunk(
+      context.source, context.readPosition, context.readLine,
+      TOKENIZE_LINES, context.tokens)
+
+    if tokenError then return fail(tokenError) end
+
+    context.readLine = line
+    if position then
+      context.readPosition = position
+      return true
     end
 
-    context.tokens = tokens
-    context.stage = "parse"
+    context.source = nil
+    context.stage = "header"
     return true
   end
 
-  if stage == "parse" then
-    local document, parseError = context.yaml.build(context.tokens)
-    context.tokens = nil
-    if not document then
-      addError(context, parseError)
-      context.stage = nil
-      showErrors(context)
-      return false
+  if stage == "header" then
+    local tokens = context.tokens
+    -- Split the component sequence out so the document itself stays small.
+    local header, componentsIndex, componentsIndent = {}, nil, nil
+    local index = 1
+
+    while index <= #tokens do
+      local token = tokens[index]
+      if token.indent == 0 and string.match(token.content, "^components:") then
+        componentsIndex = index + 1
+        index = index + 1
+        -- Skip the sequence body; it is parsed one entry at a time later.
+        while index <= #tokens and tokens[index].indent > 0 do
+          componentsIndent = componentsIndent or tokens[index].indent
+          index = index + 1
+        end
+      else
+        header[#header + 1] = token
+        index = index + 1
+      end
     end
 
-    local validated, layoutErrors = context.layoutValidator.validate(
-      document, context.grid)
-    for _, layoutError in ipairs(layoutErrors or {}) do addError(context, layoutError) end
+    local document, buildError = context.yaml.build(header)
+    if not document then return fail(buildError) end
+
+    local validated, headerErrors = context.layoutValidator.validateDocument(document)
+    for _, headerError in ipairs(headerErrors or {}) do addError(context, headerError) end
     if not validated then
       context.stage = nil
+      context.tokens = nil
       showErrors(context)
       return false
     end
@@ -297,23 +334,45 @@ local function advanceLoad(context)
     end
     context.canvas:set({color = context.theme.color.canvas})
 
-    context.pending = validated.components
-    context.pendingIndex = 1
+    context.document = validated
+    context.itemIndex = componentsIndex
+    context.itemIndent = componentsIndent or 2
+    context.itemNumber = 0
+    context.identifiers = {}
     context.stage = "components"
     return true
   end
 
   if stage == "components" then
-    local placement = context.pending[context.pendingIndex]
-    if not placement then
-      context.pending = nil
+    local tokens = context.tokens
+    local index = context.itemIndex
+
+    if not index or index > #tokens or tokens[index].indent < context.itemIndent then
+      context.tokens = nil
       context.stage = nil
       showErrors(context)
       return false
     end
 
-    context.pendingIndex = context.pendingIndex + 1
-    buildComponent(context, placement)
+    local placement, nextIndex, itemError = context.yaml.itemAt(
+      tokens, index, context.itemIndent)
+    if itemError then return fail(itemError) end
+
+    context.itemIndex = nextIndex
+    context.itemNumber = context.itemNumber + 1
+
+    local valid, componentError = context.layoutValidator.validateComponent(
+      placement, context.itemNumber, context.grid,
+      context.document.components, context.identifiers)
+
+    if valid then
+      context.identifiers[placement.id] = true
+      context.document.components[#context.document.components + 1] = placement
+      buildComponent(context, placement)
+    else
+      addError(context, componentError)
+    end
+
     return true
   end
 
@@ -326,9 +385,12 @@ local function beginLoad(context)
   context.components = {}
   context.errors = {}
   context.errorLabel = nil
-  context.pending = nil
   context.tokens = nil
   context.source = nil
+  context.document = nil
+  context.identifiers = nil
+  context.itemIndex = nil
+  context.itemNumber = 0
   context.stage = "read"
 end
 
@@ -378,6 +440,9 @@ local function create(zone, widgetOptions, path)
   if not context.grid or not context.yaml or not context.layoutValidator
       or not context.layoutStore or not context.componentHost
       or not context.themeBuilder or not context.primitives then
+    -- Nothing can be loaded without the runtime, and an option change must not
+    -- be able to restage a load that would then index a missing module.
+    context.runtimeFailed = true
     addError(context, "AeroGrid runtime module failed to load")
     showErrors(context)
   else
@@ -389,14 +454,36 @@ local function create(zone, widgetOptions, path)
   return context
 end
 
---- Recalculate component rectangles after EdgeTX changes the host zone.
+--- Components repositioned per widget callback during a reflow.
+local REFLOW_BATCH = 4
+
+--- Begin repositioning after EdgeTX changes the host zone.
+--- Like loading, this is spread over callbacks: a full grid costs more than
+--- the instruction budget allows in one call.
 ---@param context AeroGridContext
-local function reflow(context)
+local function beginReflow(context)
   context.root:set({w = context.zone.w, h = context.zone.h})
   context.canvas:set({w = context.zone.w, h = context.zone.h})
 
-  for _, entry in ipairs(context.components) do
-    if not entry.failed then
+  if context.errorLabel then
+    context.errorLabel:set({w = math.max(1, context.zone.w - 16)})
+  end
+
+  context.width = context.zone.w
+  context.height = context.zone.h
+  context.reflowIndex = 1
+end
+
+--- Reposition the next batch of components.
+---@param context AeroGridContext
+---@return boolean busy True while more components remain.
+local function advanceReflow(context)
+  local index = context.reflowIndex
+  local last = math.min(index + REFLOW_BATCH - 1, #context.components)
+
+  for position = index, last do
+    local entry = context.components[position]
+    if entry and not entry.failed then
       local rect = context.grid.rect(context.zone, entry.placement, 4, 4, 4)
       if rect then
         entry.container:set({x = rect.x, y = rect.y, w = rect.w, h = rect.h})
@@ -409,13 +496,14 @@ local function reflow(context)
     end
   end
 
-  if context.errorLabel then
-    context.errorLabel:set({w = math.max(1, context.zone.w - 16)})
+  if last >= #context.components then
+    context.reflowIndex = nil
+    showErrors(context)
+    return false
   end
-  showErrors(context)
 
-  context.width = context.zone.w
-  context.height = context.zone.h
+  context.reflowIndex = last + 1
+  return true
 end
 
 --- Apply native host options; changing Dashboard ID or Theme rebuilds safely.
@@ -424,6 +512,9 @@ end
 local function update(context, widgetOptions)
   local dashboardId = widgetOptions.DashID
   local themeMode = widgetOptions.Theme
+
+  -- Without a runtime there is nothing to rebuild, and restaging would fail.
+  if context.runtimeFailed then return end
 
   if dashboardId ~= context.dashboardId or themeMode ~= context.themeMode then
     context.dashboardId = dashboardId
@@ -489,8 +580,14 @@ local function refresh(context)
     return
   end
 
+  -- A zone change repositions every component, which a full grid cannot
+  -- afford in one callback, so it is batched like loading.
   if context.width ~= context.zone.w or context.height ~= context.zone.h then
-    reflow(context)
+    beginReflow(context)
+  end
+  if context.reflowIndex then
+    advanceReflow(context)
+    return
   end
 
   dispatchAll(context, "refresh")
@@ -499,7 +596,7 @@ end
 --- Keep components updated while the dashboard screen is not visible.
 ---@param context AeroGridContext
 local function background(context)
-  if context.stage or context.reloadState then return end
+  if context.stage or context.reloadState or context.reflowIndex then return end
   dispatchAll(context, "background")
 end
 

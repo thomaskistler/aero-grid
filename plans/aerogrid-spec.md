@@ -874,7 +874,9 @@ EdgeTX aborts any widget callback that exceeds **20000 Lua VM instructions**, ra
 3. `parse` — build the document, validate it, and resolve the theme.
 4. `components` — instantiate exactly one component, repeated until done.
 
-The dashboard therefore populates over several frames rather than blocking one. Because each step is bounded, layout size cannot push any single callback over the limit. A regression test measures every callback with a 200-instruction count hook, mirroring the firmware, and fails if any exceeds 75% of the budget.
+Every stage is bounded by a fixed amount of work rather than by the size of the layout: the file is tokenized a fixed number of lines per call, and each component is parsed, validated, and built in its own call. A zone change is batched the same way. A layout that fills the grid therefore costs more callbacks, never a larger callback.
+
+The regression test measures every callback with a 200-instruction count hook, mirroring the firmware, and fails if any exceeds 75% of the budget. It exercises **the largest layout the schema permits**, sixteen single-cell components, not just the shipped one. Measuring only the shipped layout previously hid a loader that passed on five components and failed on twelve.
 
 Component authors must respect the same ceiling: `create`, `update`, `refresh`, `background`, and `event` each run inside the host's callback and share its allowance. Avoid per-character string loops, which are the most common way to exhaust it.
 

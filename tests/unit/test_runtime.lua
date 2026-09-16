@@ -562,11 +562,18 @@ local function testDerivedThemesStayLegible()
     assert(theme.contrast(tokens.surface, tokens.border) >= 1.25,
       label .. ": border vanished")
 
-    -- Every state accent must remain visible, including the fixed critical red.
-    for _, key in ipairs({"cyan", "green", "amber", "orange", "critical"}) do
+    -- Every decorative accent must remain visible on the panel surface.
+    for _, key in ipairs({"cyan", "green", "amber", "orange"}) do
       assert(theme.contrast(tokens.surface, tokens[key]) >= 2.5,
         label .. ": accent " .. key .. " vanished")
     end
+
+    -- Critical red is an alarm: it must look identical on every radio, so it
+    -- is never adjusted. The surface moves instead to keep it visible.
+    assertEqual(tokens.critical, theme.modern().critical,
+      label .. ": critical red was altered")
+    assert(theme.contrast(tokens.surface, tokens.critical) >= 2.5,
+      label .. ": critical red vanished into the surface")
 
     -- The unavailable state must stay readable against its own panel.
     local unavailable = theme.state(resolved, "unavailable")

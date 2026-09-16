@@ -68,6 +68,7 @@ local function newObject(kind, parent, properties)
     parent = parent,
     properties = properties,
     cleared = false,
+    hidden = false,
   }
 
   function object:set(changes)
@@ -94,6 +95,8 @@ lvgl = {
   rectangle = constructor("rectangle"),
   label = constructor("label"),
   arc = constructor("arc"),
+  hide = function(object) object.hidden = true end,
+  show = function(object) object.hidden = false end,
 }
 
 local modelFilename = "test-model.yml"
@@ -370,10 +373,20 @@ local function testReflowAndLifecycle()
   local zone = appContext.zone
   zone.w = 320
   zone.h = 240
-  definition.refresh(appContext)
+
+  -- Reflow is batched across callbacks, so drain it before asserting.
+  local passes = 0
+  repeat
+    definition.refresh(appContext)
+    passes = passes + 1
+    assert(passes < 100, "reflow never finished")
+  until not appContext.reflowIndex
+
   assertEqual(appContext.root.properties.w, 320)
   assertEqual(appContext.root.properties.h, 240)
+  assertEqual(appContext.canvas.properties.w, 320)
   assertEqual(panelOf(entryById(appContext, "pack")).w, 158)
+
   local pulse = entryById(appContext, "pulse")
   local ticksBefore = pulse.instance.ticks
   definition.refresh(appContext)
@@ -801,6 +814,10 @@ end
 --- EdgeTX aborts any widget callback exceeding 20000 VM instructions with
 --- "CPU limit". That ceiling is invisible to ordinary assertions, so measure
 --- every callback the firmware can invoke and keep real headroom.
+---
+--- This must be measured against the largest layout the schema permits, not
+--- the shipped one: a 4 x 4 grid admits sixteen single-cell components, and an
+--- earlier staged loader passed comfortably on five while failing on sixteen.
 local function testInstructionBudget()
   local BUDGET = 20000
   local CEILING = BUDGET * 0.75
@@ -815,9 +832,33 @@ local function testInstructionBudget()
     return ticks * 200
   end
 
-  local zone = {x = 0, y = 0, w = 480, h = 272}
-  local worst = 0
-  local worstName = "none"
+  --- Build a layout that fills the grid with single-cell metrics.
+  local function fullGridLayout(count)
+    local lines = {"version: 1", "grid:", "  columns: 4", "  rows: 4", "components:"}
+    for i = 1, count do
+      local col, row = (i - 1) % 4, math.floor((i - 1) / 4)
+      lines[#lines + 1] = "  - id: m" .. i
+      lines[#lines + 1] = "    type: metric"
+      lines[#lines + 1] = "    col: " .. col
+      lines[#lines + 1] = "    row: " .. row
+      lines[#lines + 1] = "    colSpan: 1"
+      lines[#lines + 1] = "    rowSpan: 1"
+      lines[#lines + 1] = "    config:"
+      lines[#lines + 1] = "      label: Metric " .. i
+      lines[#lines + 1] = "      unit: V"
+      lines[#lines + 1] = "      accent: cyan"
+      lines[#lines + 1] = "      min: 0"
+      lines[#lines + 1] = "      max: 100"
+      lines[#lines + 1] = "      warning: 80"
+      lines[#lines + 1] = "      critical: 90"
+      lines[#lines + 1] = "      precision: 1"
+      lines[#lines + 1] = "      visual: bar"
+      lines[#lines + 1] = "      demo: true"
+    end
+    return table.concat(lines, "\n") .. "\n"
+  end
+
+  local worst, worstName = 0, "none"
 
   local function record(name, cost)
     assert(cost < CEILING, string.format(
@@ -826,34 +867,136 @@ local function testInstructionBudget()
     if cost > worst then worst = cost; worstName = name end
   end
 
-  local context
-  record("create", measure(function()
-    context = definition.create(zone, DEFAULT_OPTIONS, sourcePath)
-  end))
+  --- Load one widget package end to end, measuring every callback.
+  local function exercise(label, path, expectedComponents)
+    local zone = {x = 0, y = 0, w = 480, h = 272}
+    local context
+    record(label .. " create", measure(function()
+      context = definition.create(zone, DEFAULT_OPTIONS, path)
+    end))
 
-  local steps = 0
-  while context.stage do
-    local stage = context.stage
-    record("refresh/" .. stage, measure(definition.refresh, context))
-    steps = steps + 1
-    assert(steps < 200, "staged load never finished")
+    local steps = 0
+    while context.stage do
+      local stage = context.stage
+      record(label .. " refresh/" .. stage, measure(definition.refresh, context))
+      steps = steps + 1
+      assert(steps < 400, label .. ": staged load never finished")
+    end
+
+    assertEqual(#context.components, expectedComponents, label .. ": component count")
+    assertEqual(#context.errors, 0, label .. ": " .. table.concat(context.errors, "\n"))
+
+    record(label .. " refresh/steady", measure(definition.refresh, context))
+    record(label .. " background", measure(definition.background, context))
+    record(label .. " event", measure(definition.event, context, 32))
+
+    zone.w = 320
+    zone.h = 240
+    local passes = 0
+    repeat
+      record(label .. " refresh/reflow", measure(definition.refresh, context))
+      passes = passes + 1
+      assert(passes < 400, label .. ": reflow never finished")
+    until not context.reflowIndex
+    return context
   end
-  assertEqual(#context.components, 5)
-  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 
-  -- Steady state runs on every screen redraw, so it matters most.
-  record("refresh/steady", measure(definition.refresh, context))
-  record("background", measure(definition.background, context))
-  record("event", measure(definition.event, context, 32))
-
-  -- A zone change reflows every component in one callback.
-  zone.w = 320
-  zone.h = 240
-  record("refresh/reflow", measure(definition.refresh, context))
+  exercise("shipped", sourcePath, 5)
+  exercise("full grid", makeWidget("budget-16", fullGridLayout(16)), 16)
 
   print(string.format("  budget headroom: worst callback %s used %d of %d",
     worstName, worst, BUDGET))
 end
+
+--- A component created large and then shrunk must hide what no longer fits,
+--- and regain it when the panel grows again.
+local function testMetricReconcilesOnResize()
+  local widgetPath = makeWidget("reconcile", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: big
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: Pack
+      unit: V
+      min: 18
+      max: 25
+      precision: 1
+      visual: bar
+]])
+
+  local zone = {x = 0, y = 0, w = 480, h = 272}
+  local context = createLoaded(zone, DEFAULT_OPTIONS, widgetPath)
+  local instance = entryById(context, "big").instance
+
+  assert(instance.unit, "unit was never created")
+  assert(instance.range, "range was never created")
+  assertEqual(instance.unit.hidden, false)
+  assertEqual(instance.range.hidden, false)
+
+  --- Drain a batched reflow.
+  local function settle()
+    local passes = 0
+    repeat
+      definition.refresh(context)
+      passes = passes + 1
+      assert(passes < 100, "reflow never finished")
+    until not context.reflowIndex
+  end
+
+  -- Shrink until the panel can no longer afford the optional rows.
+  zone.w = 320
+  zone.h = 140
+  settle()
+
+  local bounds = boundsOf(entryById(context, "big"))
+  assertEqual(instance.unit.hidden, true, "shed unit was left visible")
+  assertEqual(instance.range.hidden, true, "shed range was left visible")
+
+  for _, object in ipairs({instance.label, instance.value, instance.badge}) do
+    assert(object.properties.y < bounds.h, "visible content escaped the panel")
+  end
+
+  -- Growing again must restore what was shed rather than leave it hidden.
+  zone.w = 480
+  zone.h = 272
+  settle()
+  assertEqual(instance.unit.hidden, false, "unit was not restored")
+  assertEqual(instance.range.hidden, false, "range was not restored")
+end
+
+--- A failed runtime module must never lead to an error inside a callback.
+local function testRuntimeFailureIsContained()
+  local widgetPath = makeWidget("brokenruntime")
+  os.execute("rm -f '" .. widgetPath .. "lib/layout_store.lua'")
+
+  local context = definition.create({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+
+  assertEqual(context.runtimeFailed, true)
+  assertEqual(context.stage, nil, "a broken runtime must not stage a load")
+  assert(string.match(table.concat(context.errors, "\n"), "runtime module failed"))
+
+  -- Changing an option previously restaged a load that indexed a nil module.
+  definition.update(context, {DashID = "other", Theme = "modern"})
+  assertEqual(context.reloadState, nil, "a broken runtime must not restage")
+
+  for _ = 1, 5 do
+    local ok, err = pcall(definition.refresh, context)
+    assert(ok, "refresh raised after a runtime failure: " .. tostring(err))
+  end
+  local ok, err = pcall(definition.background, context)
+  assert(ok, "background raised after a runtime failure: " .. tostring(err))
+  assertEqual(#context.components, 0)
+end
+
 local function testModelFilenames()
   local previous = modelFilename
   for _, name in ipairs({"model1.yml", "Kavan Sonic.yml", "FPV-7in.yml"}) do
@@ -877,6 +1020,8 @@ testEventConsumption()
 testContractRejections()
 testCorruptLayout()
 testModelFilenames()
+testMetricReconcilesOnResize()
+testRuntimeFailureIsContained()
 testInstructionBudget()
 
 print("AeroGrid widget integration test passed")

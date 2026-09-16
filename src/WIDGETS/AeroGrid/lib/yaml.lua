@@ -90,9 +90,68 @@ local function parseScalar(value)
   return value
 end
 
+--- Append tokens for a bounded number of lines, so a large layout can be
+--- tokenized across several widget callbacks without exceeding EdgeTX's
+--- per-callback instruction budget.
+---@param text string
+---@param position integer Byte offset to resume from, 1 to start.
+---@param lineNumber integer Line number of that offset, 1 to start.
+---@param maxLines integer Lines to process in this call.
+---@param tokens AeroGridYamlToken[] Accumulator, appended in place.
+---@return integer? position Next offset, or nil when the text is exhausted.
+---@return integer lineNumber Next line number.
+---@return string? error
+function yaml.tokenizeChunk(text, position, lineNumber, maxLines, tokens)
+  if type(text) ~= "string" then
+    return nil, lineNumber, "YAML input must be a string"
+  end
+
+  local length = #text
+  local processed = 0
+
+  while position <= length and processed < maxLines do
+    local stop = string.find(text, "\n", position, true)
+    local rawLine
+    if stop then
+      rawLine = string.sub(text, position, stop - 1)
+      position = stop + 1
+    else
+      rawLine = string.sub(text, position)
+      position = length + 1
+    end
+
+    -- Tolerate CRLF without a second scan of the line.
+    if string.sub(rawLine, -1) == "\r" then
+      rawLine = string.sub(rawLine, 1, -2)
+    end
+
+    if string.find(rawLine, "\t", 1, true) then
+      return nil, lineNumber, "line " .. lineNumber .. ": tabs are not supported"
+    end
+
+    local line = stripComment(rawLine)
+    if string.find(line, "%S") then
+      local spaces = #(string.match(line, "^( *)") or "")
+      if spaces % 2 ~= 0 then
+        return nil, lineNumber, "line " .. lineNumber .. ": indentation must use two spaces"
+      end
+      tokens[#tokens + 1] = {
+        indent = spaces,
+        content = trim(line),
+        line = lineNumber,
+      }
+    end
+
+    lineNumber = lineNumber + 1
+    processed = processed + 1
+  end
+
+  if position > length then return nil, lineNumber end
+  return position, lineNumber
+end
+
 --- Convert source text into significant indentation-aware tokens.
---- Exposed separately from `build` so the host can spread a large layout over
---- more than one widget callback and stay inside EdgeTX's instruction budget.
+--- Convenience wrapper; the host tokenizes in chunks.
 ---@param text string
 ---@return AeroGridYamlToken[]? tokens
 ---@return string? error
@@ -102,26 +161,13 @@ function yaml.tokenize(text)
   end
 
   local tokens = {}
-  local lineNumber = 0
+  local position, lineNumber = 1, 1
 
-  for rawLine in string.gmatch(text .. "\n", "(.-)\r?\n") do
-    lineNumber = lineNumber + 1
-    if string.find(rawLine, "\t", 1, true) then
-      return nil, "line " .. lineNumber .. ": tabs are not supported"
-    end
-
-    local line = stripComment(rawLine)
-    if string.find(line, "%S") then
-      local spaces = #(string.match(line, "^( *)") or "")
-      if spaces % 2 ~= 0 then
-        return nil, "line " .. lineNumber .. ": indentation must use two spaces"
-      end
-      tokens[#tokens + 1] = {
-        indent = spaces,
-        content = trim(line),
-        line = lineNumber,
-      }
-    end
+  while position do
+    local nextPosition, nextLine, err = yaml.tokenizeChunk(
+      text, position, lineNumber, 4096, tokens)
+    if err then return nil, err end
+    position, lineNumber = nextPosition, nextLine
   end
 
   return tokens
@@ -197,6 +243,66 @@ local function parseMap(tokens, index, indent, result)
   return result, index
 end
 
+--- Parse exactly one sequence entry.
+--- Exposed through `yaml.itemAt` so the host can consume a long sequence one
+--- entry per widget callback instead of all at once.
+---@param tokens AeroGridYamlToken[]
+---@param index integer
+---@param indent integer
+---@return any item
+---@return integer nextIndex
+---@return string? error
+local function parseListItem(tokens, index, indent)
+  local token = tokens[index]
+  local remainder = string.match(token.content, "^-%s*(.*)$")
+  if remainder == nil then
+    return nil, index, "line " .. token.line .. ": expected a sequence entry"
+  end
+  index = index + 1
+
+  if remainder == "" then
+    local nextToken = tokens[index]
+    if not nextToken or nextToken.indent ~= indent + 2 then
+      return nil, index, "line " .. token.line .. ": list item requires an indented value"
+    end
+    local child, nextIndex, childError = parseBlock(tokens, index, indent + 2)
+    if childError then return nil, nextIndex, childError end
+    return child, nextIndex
+  end
+
+  if string.match(remainder, "^[%a_][%w_-]*:") then
+    local item = {}
+    local key, value, splitError = splitMapping(token, remainder)
+    if splitError then return nil, index, splitError end
+    if not key or value == nil then
+      return nil, index, "line " .. token.line .. ": missing mapping key"
+    end
+    if value == "" then
+      item[key] = {}
+    else
+      local scalar = parseScalar(value)
+      if scalar ~= nil then item[key] = scalar end
+    end
+
+    local nextToken = tokens[index]
+    if nextToken and nextToken.indent > indent then
+      if nextToken.indent ~= indent + 2 then
+        return nil, index, "line " .. nextToken.line .. ": indentation jumped more than one level"
+      end
+      local parsedItem, nextIndex, mapError = parseMap(tokens, index, indent + 2, item)
+      if mapError then return nil, nextIndex, mapError end
+      if not parsedItem then
+        return nil, nextIndex, "line " .. nextToken.line .. ": invalid mapping"
+      end
+      return parsedItem, nextIndex
+    end
+
+    return item, index
+  end
+
+  return parseScalar(remainder), index
+end
+
 --- Parse sequence entries at one indentation level.
 ---@param tokens AeroGridYamlToken[]
 ---@param index integer
@@ -213,51 +319,12 @@ local function parseList(tokens, index, indent)
     if token.indent > indent then
       return nil, index, "line " .. token.line .. ": unexpected indentation"
     end
+    if not string.match(token.content, "^-") then break end
 
-    local remainder = string.match(token.content, "^-%s*(.*)$")
-    if remainder == nil then break end
-    index = index + 1
-
-    if remainder == "" then
-      local nextToken = tokens[index]
-      if not nextToken or nextToken.indent ~= indent + 2 then
-        return nil, index, "line " .. token.line .. ": list item requires an indented value"
-      end
-      local child, nextIndex, childError = parseBlock(tokens, index, indent + 2)
-      if childError then return nil, nextIndex, childError end
-      result[#result + 1] = child
-      index = nextIndex
-    elseif string.match(remainder, "^[%a_][%w_-]*:") then
-      local item = {}
-      local key, value, splitError = splitMapping(token, remainder)
-      if splitError then return nil, index, splitError end
-      if not key or value == nil then
-        return nil, index, "line " .. token.line .. ": missing mapping key"
-      end
-      if value == "" then
-        item[key] = {}
-      else
-        local scalar = parseScalar(value)
-        if scalar ~= nil then item[key] = scalar end
-      end
-
-      local nextToken = tokens[index]
-      if nextToken and nextToken.indent > indent then
-        if nextToken.indent ~= indent + 2 then
-          return nil, index, "line " .. nextToken.line .. ": indentation jumped more than one level"
-        end
-        local parsedItem, nextIndex, mapError = parseMap(tokens, index, indent + 2, item)
-        if mapError then return nil, nextIndex, mapError end
-        if not parsedItem then
-          return nil, nextIndex, "line " .. nextToken.line .. ": invalid mapping"
-        end
-        item = parsedItem
-        index = nextIndex
-      end
-      result[#result + 1] = item
-    else
-      result[#result + 1] = parseScalar(remainder)
-    end
+    local item, nextIndex, itemError = parseListItem(tokens, index, indent)
+    if itemError then return nil, nextIndex, itemError end
+    result[#result + 1] = item
+    index = nextIndex
   end
 
   return result, index
@@ -277,6 +344,31 @@ parseBlock = function(tokens, index, indent)
     return parseList(tokens, index, indent)
   end
   return parseMap(tokens, index, indent)
+end
+
+--- Parse one block starting at a token index and indentation level.
+---@param tokens AeroGridYamlToken[]
+---@param index integer
+---@param indent integer
+---@return any value
+---@return integer nextIndex
+---@return string? error
+function yaml.buildAt(tokens, index, indent)
+  return parseBlock(tokens, index, indent)
+end
+
+--- Parse exactly one sequence entry at a token index.
+---@param tokens AeroGridYamlToken[]
+---@param index integer
+---@param indent integer
+---@return any item
+---@return integer nextIndex
+---@return string? error
+function yaml.itemAt(tokens, index, indent)
+  if type(tokens) ~= "table" or type(tokens[index]) ~= "table" then
+    return nil, index, "no sequence entry at this position"
+  end
+  return parseListItem(tokens, index, indent)
 end
 
 --- Build a document from previously produced tokens.

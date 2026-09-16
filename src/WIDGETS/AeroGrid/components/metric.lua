@@ -331,7 +331,10 @@ function metric.create(parent, rect, settings, services)
     font = area.primary,
   })
 
-  if area.showUnit and settings.unit ~= "" then
+  -- Optional elements are created whenever the span could ever want them, and
+  -- hidden when the current size cannot fit them, so a later enlargement can
+  -- simply reveal them instead of needing a rebuild.
+  if layout.showUnit and settings.unit ~= "" then
     context.unit = primitives.label(panel.root, theme, {
       x = area.pad,
       y = area.unitY,
@@ -342,7 +345,7 @@ function metric.create(parent, rect, settings, services)
     })
   end
 
-  if area.showVisual and settings.visual == "radial" then
+  if layout.showVisual and settings.visual == "radial" then
     context.radial = primitives.radial(panel.root, theme, {
       x = area.radialX,
       y = area.radialY,
@@ -350,7 +353,7 @@ function metric.create(parent, rect, settings, services)
       color = presentation.accent,
       fraction = 0,
     })
-  elseif area.showVisual then
+  elseif layout.showVisual and settings.visual ~= "none" then
     context.bar = primitives.bar(panel.root, theme, {
       x = area.pad,
       y = area.barY,
@@ -360,7 +363,7 @@ function metric.create(parent, rect, settings, services)
     })
   end
 
-  if area.showRange then
+  if layout.showRange then
     context.range = primitives.label(panel.root, theme, {
       x = area.pad,
       y = area.rangeY,
@@ -381,6 +384,16 @@ function metric.create(parent, rect, settings, services)
     color = theme.color.amber,
     font = fonts.badge,
   })
+
+  if context.unit and not area.showUnit then lvgl.hide(context.unit) end
+  if context.range and not area.showRange then lvgl.hide(context.range) end
+  if not area.showVisual then
+    if context.bar then
+      lvgl.hide(context.bar.track)
+      lvgl.hide(context.bar.fill)
+    end
+    if context.radial then lvgl.hide(context.radial.arc) end
+  end
 
   return context
 end
@@ -413,6 +426,10 @@ function metric.setValue(context, value, stale)
 end
 
 --- Reposition after a zone or configuration change.
+--- The resolved region set can differ from the one `create` used, because a
+--- smaller panel sheds optional detail. Objects whose region disappeared are
+--- hidden rather than left at coordinates the new layout does not reserve,
+--- and objects whose region returned are shown again.
 ---@param context AeroGridMetricContext
 ---@param rect AeroGridRect
 function metric.update(context, rect)
@@ -421,8 +438,9 @@ function metric.update(context, rect)
     theme, context.themeBuilder, rect, context.layout, context.fonts)
 
   context.primitives.resizePanel(context.panel, rect)
-  context.label:set({y = area.compact, w = area.labelWidth})
+  context.label:set({x = area.pad, y = area.compact, w = area.labelWidth})
   context.value:set({
+    x = area.pad,
     y = area.valueY,
     w = area.valueWidth,
     -- LVGL takes the font as a callback, matching how it was created.
@@ -430,22 +448,37 @@ function metric.update(context, rect)
   })
   context.badge:set({y = area.compact, x = area.badgeX, w = area.badgeWidth})
 
-  if context.unit then
-    context.unit:set({y = area.unitY, w = area.valueWidth})
+  --- Show or hide an optional element, positioning it only when visible.
+  local function reconcile(object, visible, changes)
+    if not object then return end
+    if visible then
+      object:set(changes)
+      lvgl.show(object)
+    else
+      lvgl.hide(object)
+    end
   end
-  if context.range then
-    context.range:set({w = area.content, y = area.rangeY})
-  end
+
+  reconcile(context.unit, area.showUnit,
+    {x = area.pad, y = area.unitY, w = area.valueWidth})
+  reconcile(context.range, area.showRange,
+    {x = area.pad, y = area.rangeY, w = area.content})
+
   if context.bar then
-    context.bar.width = area.content
-    context.bar.track:set({w = area.content, y = area.barY})
-    context.bar.fill:set({y = area.barY})
-    context.primitives.setBar(
-      context.bar, metric.fraction(context.settings, context.reading))
+    reconcile(context.bar.track, area.showVisual,
+      {x = area.pad, y = area.barY, w = area.content})
+    reconcile(context.bar.fill, area.showVisual, {x = area.pad, y = area.barY})
+    if area.showVisual then
+      context.bar.width = area.content
+      context.primitives.setBar(
+        context.bar, metric.fraction(context.settings, context.reading))
+    end
   end
+
   if context.radial then
     -- The arc must shrink with the panel or it will overflow a smaller zone.
-    context.radial.arc:set({x = area.radialX, radius = area.radius})
+    reconcile(context.radial.arc, area.showVisual,
+      {x = area.radialX, y = area.radialY, radius = area.radius})
   end
 end
 

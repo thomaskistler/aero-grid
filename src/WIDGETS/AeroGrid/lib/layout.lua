@@ -68,13 +68,13 @@ local function validateTheme(value, errors)
   return result
 end
 
---- Validate a parsed phase-one document while retaining valid components.
---- Invalid components are reported and omitted so they cannot block the dashboard.
----@param document AeroGridLayoutDocument
----@param grid table Grid module implementing placement validation and overlap checks.
----@return AeroGridValidatedLayout? layout
+--- Validate the document's own fields, excluding its components.
+--- A document this loader cannot interpret fails closed, because rendering its
+--- components under phase-one assumptions would silently misplace them.
+---@param document table
+---@return table? header
 ---@return string[] errors
-function layout.validate(document, grid)
+function layout.validateDocument(document)
   if type(document) ~= "table" then
     return nil, {"layout document must be a table"}
   end
@@ -92,8 +92,6 @@ function layout.validate(document, grid)
   normalized.components = {}
   normalized.theme = validateTheme(document.theme, errors)
 
-  -- A document this loader cannot interpret must fail closed. Rendering its
-  -- components under phase-one assumptions would silently misplace them.
   if document.version ~= 1 then
     return nil, {"unsupported layout version"}
   end
@@ -103,6 +101,63 @@ function layout.validate(document, grid)
     return nil, {"phase 1 requires a 4 x 4 grid"}
   end
 
+  return normalized, errors
+end
+
+--- Validate one component against the grid and the entries already accepted.
+--- Returning the outcome per entry lets the host validate and build components
+--- one at a time, rather than holding the whole layout in one callback.
+---@param component any
+---@param index integer Position in the sequence, for error messages.
+---@param grid table
+---@param accepted table[] Components already accepted.
+---@param identifiers table<string, boolean> Ids already used.
+---@return boolean valid
+---@return string? error
+function layout.validateComponent(component, index, grid, accepted, identifiers)
+  local prefix = "component " .. index .. ": "
+
+  if type(component) ~= "table" then
+    return false, prefix .. "entry must be a mapping"
+  end
+
+  if not isSafeIdentifier(component.id) then
+    return false, prefix .. "invalid id"
+  end
+  if identifiers[component.id] then
+    return false, prefix .. "duplicate id " .. component.id
+  end
+  if not isSafeIdentifier(component.type) then
+    return false, prefix .. "invalid type"
+  end
+
+  local placementValid, placementError = grid.validatePlacement(component, 4, 4)
+  if not placementValid then
+    return false, prefix .. placementError
+  end
+
+  for _, existing in ipairs(accepted) do
+    if grid.overlaps(existing, component) then
+      return false, prefix .. "overlaps " .. existing.id
+    end
+  end
+
+  component.config = type(component.config) == "table" and component.config or {}
+  return true
+end
+
+--- Validate a parsed phase-one document while retaining valid components.
+--- Invalid components are reported and omitted so they cannot block the
+--- dashboard. The host loads incrementally instead; this remains for callers
+--- that can afford to validate a whole document at once.
+---@param document AeroGridLayoutDocument
+---@param grid table Grid module implementing placement validation and overlap checks.
+---@return AeroGridValidatedLayout? layout
+---@return string[] errors
+function layout.validate(document, grid)
+  local normalized, errors = layout.validateDocument(document)
+  if not normalized then return nil, errors end
+
   if not isSequence(document.components) then
     errors[#errors + 1] = "components must be a sequence"
     return normalized, errors
@@ -110,45 +165,13 @@ function layout.validate(document, grid)
 
   local identifiers = {}
   for index, component in ipairs(document.components) do
-    local prefix = "component " .. index .. ": "
-    local valid = type(component) == "table"
-
-    if not valid then
-      errors[#errors + 1] = prefix .. "entry must be a mapping"
-    else
-      if not isSafeIdentifier(component.id) then
-        errors[#errors + 1] = prefix .. "invalid id"
-        valid = false
-      elseif identifiers[component.id] then
-        errors[#errors + 1] = prefix .. "duplicate id " .. component.id
-        valid = false
-      end
-      if not isSafeIdentifier(component.type) then
-        errors[#errors + 1] = prefix .. "invalid type"
-        valid = false
-      end
-
-      local placementValid, placementError = grid.validatePlacement(component, 4, 4)
-      if not placementValid then
-        errors[#errors + 1] = prefix .. placementError
-        valid = false
-      end
-    end
-
-    if valid then
-      for _, existing in ipairs(normalized.components) do
-        if grid.overlaps(existing, component) then
-          errors[#errors + 1] = prefix .. "overlaps " .. existing.id
-          valid = false
-          break
-        end
-      end
-    end
-
+    local valid, componentError = layout.validateComponent(
+      component, index, grid, normalized.components, identifiers)
     if valid then
       identifiers[component.id] = true
-      component.config = type(component.config) == "table" and component.config or {}
       normalized.components[#normalized.components + 1] = component
+    else
+      errors[#errors + 1] = componentError
     end
   end
 

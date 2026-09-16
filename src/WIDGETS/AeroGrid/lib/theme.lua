@@ -253,9 +253,42 @@ local function enforceLegibility(tokens, warnings)
   correctContrast(tokens, "textMuted", tokens.surface, MIN_MUTED_CONTRAST, warnings)
   correctContrast(tokens, "textFaint", tokens.surface, MIN_FAINT_CONTRAST, warnings)
 
-  -- Accents carry state, so each one must remain visible on the panel surface.
-  for _, key in ipairs({"cyan", "green", "amber", "orange", "critical"}) do
+  -- Decorative accents may be nudged to stay visible on the panel surface.
+  for _, key in ipairs({"cyan", "green", "amber", "orange"}) do
     correctAccent(tokens, key, tokens.surface, MIN_ACCENT_CONTRAST, warnings)
+  end
+
+  -- Critical red is never adjusted: an alarm must look the same on every
+  -- radio. If the surface would swallow it, shift the surface's lightness
+  -- instead, keeping its hue, since surface is a token we may choose.
+  if theme.contrast(tokens.surface, tokens.critical) < MIN_ACCENT_CONTRAST then
+    local replacement = betterContrast(tokens.critical, 0x000000, 0xFFFFFF)
+
+    for _, amount in ipairs({0.1, 0.2, 0.3, 0.45, 0.6, 0.75, 0.9}) do
+      local darker = theme.shade(tokens.surface, -amount)
+      if theme.contrast(darker, tokens.critical) >= MIN_ACCENT_CONTRAST then
+        replacement = darker
+        break
+      end
+      local lighter = theme.shade(tokens.surface, amount)
+      if theme.contrast(lighter, tokens.critical) >= MIN_ACCENT_CONTRAST then
+        replacement = lighter
+        break
+      end
+    end
+
+    tokens.surface = replacement
+    warnings[#warnings + 1] = "surface was shifted to keep critical visible"
+
+    -- The surface moved, so everything measured against it must be rechecked.
+    tokens.surfaceRaised = separated(tokens.surface, 1.08)
+    tokens.border = separated(tokens.surface, 1.25)
+    correctContrast(tokens, "text", tokens.surface, MIN_TEXT_CONTRAST, warnings)
+    correctContrast(tokens, "textMuted", tokens.surface, MIN_MUTED_CONTRAST, warnings)
+    correctContrast(tokens, "textFaint", tokens.surface, MIN_FAINT_CONTRAST, warnings)
+    for _, key in ipairs({"cyan", "green", "amber", "orange"}) do
+      correctAccent(tokens, key, tokens.surface, MIN_ACCENT_CONTRAST, warnings)
+    end
   end
 end
 

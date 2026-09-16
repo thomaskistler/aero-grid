@@ -99,12 +99,12 @@ Both derived modes pass through a legibility pass that enforces minimum contrast
 
 ## Instruction budget
 
-EdgeTX aborts a widget callback that exceeds 20000 Lua VM instructions with `CPU limit`. AeroGrid therefore loads in stages: `create` only prepares the runtime, and each `refresh` performs one step (read, tokenize, parse, then one component at a time). The dashboard fills in over a few frames instead of blocking a single callback, and layout size cannot push any one call over the limit.
+EdgeTX aborts a widget callback that exceeds 20000 Lua VM instructions with `CPU limit`. AeroGrid therefore loads in stages: `create` only prepares the runtime, and each `refresh` performs one bounded step (a fixed number of lines tokenized, or one component parsed, validated, and built). Zone changes are batched the same way. The dashboard fills in over a few frames instead of blocking a single callback, and a layout that fills the grid costs more callbacks rather than larger ones.
 
-`make test` measures every callback the firmware can invoke and fails if one exceeds 75% of the budget, printing the worst case:
+`make test` measures every callback the firmware can invoke, against the largest layout the schema permits, and fails if one exceeds 75% of the budget, printing the worst case:
 
 ```text
-budget headroom: worst callback refresh/parse used 7200 of 20000
+budget headroom: worst callback full grid refresh/steady used 6600 of 20000
 ```
 
 Component callbacks share this allowance. Per-character string loops are the usual way to exhaust it.
