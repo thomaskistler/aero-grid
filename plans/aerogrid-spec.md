@@ -836,7 +836,7 @@ Status last verified on 2026-09-15:
 | Milestone 4: Design system | Complete | Semantic tokens, panel/typography/bar/radial/badge primitives, Modern, Follow EdgeTX, and Custom modes, guaranteed-legible derived palettes, all seven states, and responsive `1 x 1`, `2 x 1`, and `2 x 2` presentations | Physical readability review at 480 x 272 on a TX16S-class display |
 | Milestone 5: Shared data services | Not started | None | Telemetry, model, control, extrema, and navigation services |
 | Milestones 6–7: Production components | Not started | Reference `metric` plus development `placeholder` and `heartbeat` components | Complete ten-component catalog and metric presets |
-| Milestone 8: Status rail and multiple screens | In progress | Dashboard ID option and per-model/per-dashboard filename resolution | Status rail and multi-instance simulator verification |
+| Milestone 8: Status rail and multiple screens | In progress | Dashboard ID option and per-model/per-dashboard filename resolution | Status rail, reserving the App mode menu button, and multi-instance simulator verification |
 | Milestone 9: Hardening | In progress | Unit/integration tests, firmware-like string behavior tests, simulator fixture, corrupt-layout, contract-rejection, hostile-module, and legibility coverage, plus component failure isolation | Target-radio matrix, runtime diagnostics view, performance budgets, and physical-radio testing |
 | Milestone 10: On-radio editor | Not started | None | Entire phase 2 editor and write/recovery workflow |
 
@@ -1004,8 +1004,15 @@ Deliverable: the full ten-component catalog with graceful telemetry degradation.
 - Verify that enabling the rail recalculates the complete grid rectangle.
 - Verify separate Dashboard IDs for multiple screens on one model.
 - Verify model switching reloads the correct layout and that each instance remains one page.
+- Reserve the EdgeTX App mode menu button described below, so the rail's left edge starts clear of it.
 
 Deliverable: multiple independent, model-scoped dashboards with a stable compact status rail.
+
+##### Reserved App mode menu button
+
+In App mode EdgeTX always draws its own menu button over the top-left corner of the screen. `ViewMain` sets `setEdgeTxButtonVisible(hasTopbar(view) || isAppMode(view))`, and the button opens the quick menu, so in App mode it is the only route to the radio's menus and must not be hidden. It occupies roughly `MENU_HEADER_HEIGHT` square, 45 px on a 480 x 272 display, drawn above the widget.
+
+The dashboard currently lets the top-left component's header row sit underneath it, which obscures that component's label. This is accepted until the status rail exists, because the rail occupies the same strip and can reserve the region once for the whole dashboard rather than every component compensating individually. Until then, avoid placing a component whose label matters in the top-left cell of an App mode layout.
 
 #### Milestone 9: Phase 1 hardening
 
