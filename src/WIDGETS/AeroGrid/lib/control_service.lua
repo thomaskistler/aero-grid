@@ -223,7 +223,7 @@ function controlService:trim(name, scale)
   return entry.view
 end
 
---- Read one global variable for the active flight mode.
+--- Read one global variable for the active or a pinned flight mode.
 ---@param entry table
 function controlService:readVariable(entry)
   local state = entry.state
@@ -234,11 +234,15 @@ function controlService:readVariable(entry)
     return
   end
 
-  local flightMode = 0
-  local modeReader = self.env.getFlightMode
-  if modeReader then
-    local index = modeReader()
-    if type(index) == "number" then flightMode = index end
+  -- A pinned flight mode reads that mode's own value. Otherwise EdgeTX is
+  -- asked for the active mode, so it resolves global variable inheritance.
+  local flightMode = entry.pinnedMode or 0
+  if not entry.pinnedMode then
+    local modeReader = self.env.getFlightMode
+    if modeReader then
+      local index = modeReader()
+      if type(index) == "number" then flightMode = index end
+    end
   end
 
   local raw = read(state.index, flightMode)
@@ -273,14 +277,22 @@ function controlService:readVariable(entry)
 end
 
 --- Subscribe to one global variable.
+--- A pinned flight mode yields its own subscription, because two components
+--- may legitimately show the same variable for different modes.
 ---@param index any Zero-based global variable index.
+---@param flightMode? integer Pin to this flight mode instead of the active one.
 ---@return AeroGridGlobalVariable
-function controlService:globalVariable(index)
+function controlService:globalVariable(index, flightMode)
   if type(index) ~= "number" or index < 0 or index ~= math.floor(index) then
     index = 0
   end
+  if type(flightMode) ~= "number" or flightMode < 0
+      or flightMode ~= math.floor(flightMode) then
+    flightMode = nil
+  end
 
-  local existing = self.variables[index]
+  local key = flightMode and (index .. ":" .. flightMode) or index
+  local existing = self.variables[key]
   if existing then return existing end
 
   local entry = self:add({
@@ -294,11 +306,12 @@ function controlService:globalVariable(index)
     max = 0,
     precision = 0,
     unitText = "",
-    flightMode = 0,
+    flightMode = flightMode or 0,
     state = "unavailable",
   }, controlService.readVariable)
 
-  self.variables[index] = entry.view
+  entry.pinnedMode = flightMode
+  self.variables[key] = entry.view
   return entry.view
 end
 
@@ -324,6 +337,17 @@ function controlService:update(now)
   self.cursor = cursor
 end
 
+--- Round a signed percentage half away from zero.
+--- Flooring a negative value plus a negative half rounds -23.4 to -24, which
+--- reads as more deflection than the trim actually has.
+---@param fraction number
+---@return integer
+local function percentOf(fraction)
+  local percent = fraction * 100
+  if percent < 0 then return -math.floor(-percent + 0.5) end
+  return math.floor(percent + 0.5)
+end
+
 --- Describe the subscribed trims and variables as diagnostic rows.
 ---@param rows table Reusable row array.
 ---@return integer count
@@ -335,8 +359,7 @@ function controlService:describe(rows)
     local state = entry.state
     if state.name and state.fraction ~= nil then
       local text = state.available
-        and string.format("%d %d%%", state.value,
-          math.floor(state.fraction * 100 + (state.fraction < 0 and -0.5 or 0.5)))
+        and string.format("%d %d%%", state.value, percentOf(state.fraction))
         or "N/A"
       if state.threePosition then text = text .. " 3P" end
       index = row(rows, index, string.upper(state.name), text)

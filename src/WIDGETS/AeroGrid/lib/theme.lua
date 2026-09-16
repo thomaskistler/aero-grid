@@ -506,6 +506,87 @@ function theme.fitPrimary(available)
   return SMLSIZE
 end
 
+--- Mean character advance as a fraction of a font's line height.
+--- EdgeTX's fonts are proportional and the Lua API offers no text measurement
+--- outside a draw callback, so width has to be estimated. The ratio is
+--- deliberately generous: overestimating shrinks a reading that would have
+--- fit, while underestimating clips it, and the specification requires text to
+--- abbreviate or reduce before it clips.
+local ADVANCE_RATIO = 0.58
+
+--- Estimate the rendered width of a string in a given font.
+---@param font any
+---@param text any
+---@return integer
+function theme.textWidth(font, text)
+  local length = #tostring(text == nil and "" or text)
+  return math.floor(length * theme.fontHeight(font) * ADVANCE_RATIO + 0.5)
+end
+
+--- Choose the largest font in which a string fits both a width and a height.
+--- `fitPrimary` only answers the vertical question, which leaves a long value
+--- in a narrow cell overflowing sideways. Callers pass the widest string the
+--- component can ever display, not the current one, so the chosen size stays
+--- stable as values change.
+---@param text any Widest string the caller will render.
+---@param width integer Horizontal pixels available.
+---@param height integer Vertical pixels available.
+---@return any font
+function theme.fitText(text, width, height)
+  local ordered = {XXLSIZE, DBLSIZE, MIDSIZE, SMLSIZE}
+
+  for _, font in ipairs(ordered) do
+    if theme.fontHeight(font) <= height and theme.textWidth(font, text) <= width then
+      return font
+    end
+  end
+
+  return SMLSIZE
+end
+
+--- Width reserved for a panel's state badge on its header row.
+local BADGE_WIDTH = 56
+
+--- Resolve the padded content geometry every component panel shares.
+---
+--- Components derive their regions from this rather than repeating the same
+--- arithmetic, so a header row sits in the same place on every panel and a
+--- state badge never lands on top of the label it accompanies. Every
+--- measurement comes from a real font line height, because EdgeTX's fonts are
+--- far taller than they look and fixed offsets overflow on the radio.
+---@param resolved AeroGridTheme
+---@param rect AeroGridRect
+---@param fonts table Typography roles for this component's span.
+---@return table frame
+function theme.frame(resolved, rect, fonts)
+  local spacing = resolved.spacing
+  -- Short panels cannot afford the standard padding.
+  local tight = rect.h < 80
+  local pad = tight and 4 or spacing.padding
+  local compact = tight and 2 or spacing.paddingCompact
+
+  local content = math.max(1, rect.w - pad * 2)
+  -- The badge may never take so much of a narrow panel that the label beside
+  -- it is squeezed to nothing: both have to be readable at once, which is the
+  -- whole reason the badge is not drawn over the label.
+  local badgeWidth = math.min(BADGE_WIDTH, math.max(1, math.floor(content / 2)))
+  local labelHeight = theme.fontHeight(fonts.label)
+
+  return {
+    width = rect.w,
+    height = rect.h,
+    pad = pad,
+    compact = compact,
+    content = content,
+    labelHeight = labelHeight,
+    badgeWidth = badgeWidth,
+    badgeX = math.max(pad, rect.w - pad - badgeWidth),
+    labelWidth = math.max(1, content - badgeWidth - 4),
+    top = compact + labelHeight + 2,
+    bottom = 4,
+  }
+end
+
 --- Font roles for a component span.
 --- Sizes are EdgeTX globals, read at call time so tests can install mocks.
 ---@param colSpan integer

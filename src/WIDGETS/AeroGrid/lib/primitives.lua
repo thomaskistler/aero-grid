@@ -6,12 +6,57 @@
 
 local primitives = {}
 
+--- Width reserved for a panel's state badge on its header row.
+primitives.BADGE_WIDTH = 56
+
 --- Return the usable content width inside a padded panel.
 ---@param theme AeroGridTheme
 ---@param width integer
 ---@return integer
 function primitives.contentWidth(theme, width)
   return math.max(1, width - theme.spacing.padding * 2)
+end
+
+--- Create a panel's header row: a quiet label beside a state badge.
+--- The badge sits next to the label rather than over it, because the source
+--- name and the state must be readable at the same time.
+---@param parent any
+---@param theme AeroGridTheme
+---@param frame table Result of theme.frame.
+---@param fonts table
+---@param text any Label text; upper-cased for the quiet label style.
+---@param presentation table Result of theme.state.
+---@return any label
+---@return any badge
+function primitives.header(parent, theme, frame, fonts, text, presentation)
+  local label = primitives.label(parent, theme, {
+    x = frame.pad,
+    y = frame.compact,
+    w = frame.labelWidth,
+    text = string.upper(tostring(text == nil and "" or text)),
+    color = presentation.label,
+    font = fonts.label,
+  })
+
+  local badge = primitives.badge(parent, theme, {
+    x = frame.badgeX,
+    y = frame.compact,
+    w = frame.badgeWidth,
+    text = "",
+    color = theme.color.amber,
+    font = fonts.badge,
+  })
+
+  return label, badge
+end
+
+--- Reposition an existing header row after a geometry change.
+---@param label any
+---@param badge any
+---@param frame table
+function primitives.placeHeader(label, badge, frame)
+  label:set({x = frame.pad, y = frame.compact, w = frame.labelWidth})
+  badge:set({x = frame.badgeX, y = frame.compact, w = frame.badgeWidth})
 end
 
 --- Create a component panel with a border and a narrow semantic accent.
@@ -125,6 +170,8 @@ function primitives.value(parent, theme, options)
 end
 
 --- Create a horizontal progress bar with a muted track.
+--- An optional marker fraction draws a persistent tick, which a range that
+--- crosses zero needs so the reader can see which side of zero a value is on.
 ---@param parent any
 ---@param theme AeroGridTheme
 ---@param options table
@@ -153,7 +200,49 @@ function primitives.bar(parent, theme, options)
     rounded = 2,
   })
 
-  return {track = track, fill = fill, width = options.w}
+  local bar = {
+    track = track,
+    fill = fill,
+    width = options.w,
+    height = height,
+    markerX = options.x,
+  }
+
+  -- Created last so it stays above the fill: a marker the fill can hide is
+  -- not a reference point.
+  if options.marker ~= nil then
+    local fraction = type(options.marker) == "number" and options.marker or 0
+    bar.marker = primitives.marker(parent, theme, {
+      x = options.x + primitives.barFill(options.w, fraction),
+      y = options.y,
+      h = height,
+    })
+    bar.markerFraction = fraction
+    -- A marker requested without a position yet is created hidden, so a bound
+    -- that only arrives later can reveal it without a rebuild.
+    if type(options.marker) ~= "number" then
+      bar.markerFraction = nil
+      lvgl.hide(bar.marker)
+    end
+  end
+
+  return bar
+end
+
+--- Create the thin neutral tick used by bars and bipolar bars.
+---@param parent any
+---@param theme AeroGridTheme
+---@param options table
+---@return any
+function primitives.marker(parent, theme, options)
+  return lvgl.rectangle(parent, {
+    x = options.x,
+    y = options.y,
+    w = options.w or 2,
+    h = options.h or 2,
+    color = options.color or theme.color.textMuted,
+    filled = true,
+  })
 end
 
 --- Convert a 0..1 fraction into a pixel width inside a bar.
@@ -176,6 +265,165 @@ function primitives.setBar(bar, fraction, color)
   local changes = {w = primitives.barFill(bar.width, fraction)}
   if color then changes.color = color end
   bar.fill:set(changes)
+end
+
+--- Reposition an existing bar without recreating it.
+---@param bar table
+---@param x integer
+---@param y integer
+---@param width integer
+---@param fraction number Refilled against the new width.
+function primitives.placeBar(bar, x, y, width, fraction)
+  bar.width = width
+  bar.track:set({x = x, y = y, w = width})
+  bar.fill:set({x = x, y = y, w = primitives.barFill(width, fraction)})
+  if bar.marker and bar.markerFraction then
+    bar.markerX = x
+    bar.marker:set({
+      x = x + primitives.barFill(width, bar.markerFraction),
+      y = y,
+    })
+  elseif bar.marker then
+    bar.markerX = x
+    bar.marker:set({y = y})
+  end
+end
+
+--- Move a bar's marker to a new fraction of its track.
+--- Bounds are often unknown when a panel is built, because a global variable's
+--- range only arrives once EdgeTX has been asked for its details, so the tick
+--- has to be placeable after the fact.
+---@param bar table
+---@param fraction? number Nil hides the marker.
+function primitives.setBarMarker(bar, fraction)
+  local marker = bar.marker
+  if not marker then return end
+
+  if type(fraction) ~= "number" then
+    lvgl.hide(marker)
+    bar.markerFraction = nil
+    return
+  end
+
+  bar.markerFraction = fraction
+  marker:set({x = (bar.markerX or bar.x or 0) + primitives.barFill(bar.width, fraction)})
+  lvgl.show(marker)
+end
+
+--- Create a centered bipolar bar with a persistent neutral marker.
+---
+--- Trims and signed global variables are read against their own centre, so the
+--- fill grows outward from the middle and the neutral tick stays visible at
+--- every deflection. The bar may run horizontally or vertically, because a
+--- trim's axis is not exposed by EdgeTX and the layout has to state it.
+---@param parent any
+---@param theme AeroGridTheme
+---@param options table
+---@return table bar
+function primitives.bipolarBar(parent, theme, options)
+  local vertical = options.vertical == true
+  local thickness = options.thickness or theme.spacing.barHeight
+  local width = vertical and thickness or options.w
+  local height = vertical and options.h or thickness
+
+  local track = lvgl.rectangle(parent, {
+    x = options.x,
+    y = options.y,
+    w = width,
+    h = height,
+    color = theme.color.surfaceRaised,
+    filled = true,
+    rounded = 2,
+  })
+
+  local fill = lvgl.rectangle(parent, {
+    x = options.x,
+    y = options.y,
+    w = width,
+    h = height,
+    color = options.color or theme.color.cyan,
+    filled = true,
+    rounded = 2,
+  })
+
+  local bar = {
+    track = track,
+    fill = fill,
+    x = options.x,
+    y = options.y,
+    w = width,
+    h = height,
+    vertical = vertical,
+  }
+
+  -- The marker is created after the fill so the fill can never hide it.
+  bar.marker = primitives.marker(parent, theme, {
+    x = vertical and options.x or (options.x + math.floor(width / 2) - 1),
+    y = vertical and (options.y + math.floor(height / 2) - 1) or options.y,
+    w = vertical and width or 2,
+    h = vertical and 2 or height,
+  })
+
+  primitives.setBipolarBar(bar, options.fraction, options.color)
+  return bar
+end
+
+--- Update a bipolar bar from a signed -1..1 fraction.
+---@param bar table
+---@param fraction any
+---@param color? integer
+function primitives.setBipolarBar(bar, fraction, color)
+  if type(fraction) ~= "number" or fraction ~= fraction then fraction = 0 end
+  if fraction > 1 then fraction = 1 end
+  if fraction < -1 then fraction = -1 end
+
+  local magnitude = fraction < 0 and -fraction or fraction
+  local changes
+
+  if bar.vertical then
+    local centre = math.floor(bar.h / 2)
+    -- At least one pixel, so a centred trim still reads as a bar rather than
+    -- as nothing at all.
+    local length = math.max(1, math.floor(magnitude * centre + 0.5))
+    -- Positive deflection grows upward, matching a stick's own direction.
+    changes = {
+      x = bar.x,
+      w = bar.w,
+      h = length,
+      y = bar.y + (fraction >= 0 and (centre - length) or centre),
+    }
+  else
+    local centre = math.floor(bar.w / 2)
+    local length = math.max(1, math.floor(magnitude * centre + 0.5))
+    changes = {
+      y = bar.y,
+      h = bar.h,
+      w = length,
+      x = bar.x + (fraction >= 0 and centre or (centre - length)),
+    }
+  end
+
+  if color then changes.color = color end
+  bar.fill:set(changes)
+end
+
+--- Reposition an existing bipolar bar without recreating it.
+---@param bar table
+---@param x integer
+---@param y integer
+---@param width integer
+---@param height integer
+---@param fraction any Refilled against the new geometry.
+function primitives.placeBipolarBar(bar, x, y, width, height, fraction)
+  bar.x, bar.y, bar.w, bar.h = x, y, width, height
+  bar.track:set({x = x, y = y, w = width, h = height})
+  bar.marker:set({
+    x = bar.vertical and x or (x + math.floor(width / 2) - 1),
+    y = bar.vertical and (y + math.floor(height / 2) - 1) or y,
+    w = bar.vertical and width or 2,
+    h = bar.vertical and 2 or height,
+  })
+  primitives.setBipolarBar(bar, fraction)
 end
 
 --- Create a radial arc gauge with a background track.
@@ -244,6 +492,44 @@ function primitives.badge(parent, theme, options)
     color = options.color or theme.color.amber,
     font = function() return font end,
   })
+end
+
+--- Create an image loaded from an SD-card path.
+---
+--- EdgeTX's `lvgl.image` wraps `StaticImage`, which clears its source when the
+--- file cannot be decoded and reports nothing back to Lua. A component must
+--- therefore decide on a fallback before creating one, rather than after.
+---@param parent any
+---@param options table
+---@return any
+function primitives.image(parent, options)
+  return lvgl.image(parent, {
+    x = options.x,
+    y = options.y,
+    w = options.w,
+    h = options.h,
+    file = tostring(options.file or ""),
+    fill = options.fill == true,
+  })
+end
+
+--- Convert a value into a signed -1..1 fraction of a bipolar range.
+--- Each side is measured against its own bound, so an asymmetric range such as
+--- -20 to 100 still reads as centred at zero.
+---@param value any
+---@param low any
+---@param high any
+---@return number
+function primitives.signedFraction(value, low, high)
+  if type(value) ~= "number" or value ~= value then return 0 end
+
+  local bound = value >= 0 and high or low
+  if type(bound) ~= "number" or bound == 0 then return 0 end
+
+  local fraction = value / (bound < 0 and -bound or bound)
+  if fraction > 1 then return 1 end
+  if fraction < -1 then return -1 end
+  return fraction
 end
 
 return primitives
