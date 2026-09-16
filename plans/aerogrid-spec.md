@@ -4,10 +4,12 @@
 
 - Draft specification
 - Date: 2026-09-07
+- Status last updated: 2026-09-15
 - EdgeTX source: `../edgetx`
 - Project root: `aero-grid/`
-- Implementation: Phase 1 in progress
-- Current checkpoint: design system complete; themed components render from YAML under a stable host contract
+- Implementation: Phase 1, milestones 1 to 4 complete
+- Next work: Milestone 5, shared data services
+- See [Resuming work](#resuming-work) for the current branch stack and the exact next steps.
 
 ## Summary
 
@@ -821,6 +823,55 @@ A later EdgeTX firmware contribution could implement a native flexible grid layo
 
 This would allow independently registered EdgeTX widgets to occupy configurable grid spans. It is outside the first implementation because the composite host can deliver the desired dashboard with a smaller blast radius.
 
+## Resuming Work
+
+State as of 2026-09-15. This section is the entry point after a break: it records where the code lives, what is proven, and what to do next.
+
+### Branch stack
+
+Three stacked pull requests, none merged. They must land bottom to top.
+
+| PR | Branch | Base | Contents |
+| --- | --- | --- | --- |
+| #1 | `feature/phase-1-runtime` | `main` | Milestone 1 runtime skeleton and the original YAML loader |
+| #2 | `thomaskistler-finish-yaml-loader-and-component-runtime` | #1 | Milestones 2 and 3 completed |
+| #3 | `thomaskistler-design-system` | #2 | Milestone 4, plus firmware fixes, refresh scheduling, and CI |
+
+`main` contains only this specification. All implementation is in the stack.
+
+### Verification state
+
+- `make test` and `make build` pass from a clean tree.
+- CI (`.github/workflows/ci.yml`) runs on every pull request: `make check` under Lua 5.3, the SD image build, and two integrity assertions. Green on #3.
+- The dashboard has been confirmed running in the EdgeTX simulator on a TX16S profile.
+- CI currently exists only on #3's branch, because #1 and #2 predate it. Propagating it down, or merging the stack, gives every pull request its own check.
+
+### Immediate next steps
+
+1. Land the stack, or at least #1, so the tree stops being three deep.
+2. Begin Milestone 5, shared data services. This is the milestone that replaces the temporary `demo` setting with real telemetry.
+3. Remove the `demo` setting from `metric` and from `layouts/default.yaml` once `telemetryService` supplies readings.
+
+### Open items carried forward
+
+| Item | Where | Note |
+| --- | --- | --- |
+| Physical readability review at 480 x 272 | Milestone 4 | Needs hardware; the only thing keeping milestone 4 from being fully closed |
+| EdgeTX App mode menu button overlaps the top-left component | Milestone 8 | Deliberately deferred; the status rail reserves that strip |
+| Steady-state refresh cost scales with component count | Milestone 5 | Now 1000 of 20000 instructions; watch it as real telemetry components replace the demo driver |
+| `actions/checkout@v4` and `setup-python@v5` target Node 20 | CI | Non-blocking deprecation warning |
+| A `1 x 1` metric fits its value vertically but width is unchecked | Milestone 6 | Long values may clip; the specification asks for abbreviation before clipping |
+
+### Hard-won constraints
+
+Three firmware behaviours cost real debugging time and are invisible to the mocked tests. Each now has a regression test, and each is documented in full further down.
+
+1. **A widget callback may not exceed 20000 Lua VM instructions.** Loading, reflow, and refresh are all bounded work per callback as a result.
+2. **`lvgl.box` accepts a `color` and silently ignores it.** Only a filled `lvgl.rectangle` paints a background.
+3. **EdgeTX fonts are much taller than they look.** `XXL` is a 69 px line height at 480 x 272. Lay out from measured heights, never fixed offsets.
+
+A fourth lesson came from the tests rather than the firmware: a budget test that measured only the shipped layout could not fail, and hid a loader that broke on any layout larger than twelve components. Measure the worst case the schema permits, and assert that the measured work actually happened.
+
 ## Proposed Release Phases
 
 ### Implementation status
@@ -830,19 +881,21 @@ Status last verified on 2026-09-15:
 | Work item | Status | Implemented | Remaining |
 | --- | --- | --- | --- |
 | Build and test foundation | Complete | Make targets, isolated Python environment, unit/integration suites, EdgeTX Lua parsing, tracked simulator fixture, reproducible `build/sdcard` assembly, and GitHub Actions CI running `make check` against Lua 5.3 | None |
-| Milestone 1: Runtime skeleton | Complete | LVGL host, integer 4 x 4 geometry, gutters, per-component containers, responsive reflow, App mode fixture, and `1 x 1`-sized mocked tests | Additional physical-radio verification belongs to hardening |
+| Milestone 1: Runtime skeleton | Complete | LVGL host, integer 4 x 4 geometry, gutters, per-component containers, batched reflow, App mode fixture, and `1 x 1`-sized mocked tests | Additional physical-radio verification belongs to hardening |
 | Milestone 2: Read-only YAML loader | Complete | Constrained parser, empty flow collections, schema version check, model/Dashboard ID resolution, default fallback, fail-closed document validation, per-entry validation, preserved unknown keys, optional theme block, and a malformed-input matrix | Physical-radio verification belongs to hardening |
-| Milestone 3: Component runtime | Complete | Referenced-module loading, metatable-safe contract validation, declared settings with typed defaults, `supportedSpans` enforcement, host-owned containers, and isolated create/update/refresh/background/event/destroy dispatch | Production components arrive in milestones 6 and 7 |
+| Milestone 3: Component runtime | Complete | Referenced-module loading, metatable-safe contract validation, declared settings with typed defaults, `supportedSpans` enforcement, host-owned containers, declared refresh intervals with phase staggering, and isolated create/update/refresh/background/event/destroy dispatch | Production components arrive in milestones 6 and 7 |
 | Milestone 4: Design system | Complete | Semantic tokens, panel/typography/bar/radial/badge primitives, Modern, Follow EdgeTX, and Custom modes, guaranteed-legible derived palettes, all seven states, and responsive `1 x 1`, `2 x 1`, and `2 x 2` presentations | Physical readability review at 480 x 272 on a TX16S-class display |
 | Milestone 5: Shared data services | Not started | None | Telemetry, model, control, extrema, and navigation services |
 | Milestones 6–7: Production components | Not started | Reference `metric` plus development `placeholder` and `heartbeat` components | Complete ten-component catalog and metric presets |
 | Milestone 8: Status rail and multiple screens | In progress | Dashboard ID option and per-model/per-dashboard filename resolution | Status rail, reserving the App mode menu button, and multi-instance simulator verification |
-| Milestone 9: Hardening | In progress | Unit/integration tests, firmware-like string behavior tests, simulator fixture, corrupt-layout, contract-rejection, hostile-module, and legibility coverage, plus component failure isolation | Target-radio matrix, runtime diagnostics view, performance budgets, and physical-radio testing |
+| Milestone 9: Hardening | In progress | Unit/integration tests, firmware-like string behavior tests, CI running Lua 5.3 parsing, simulator fixture, corrupt-layout, contract-rejection, hostile-module, and legibility coverage, component failure isolation, and an enforced instruction budget measured at the largest legal layout | Target-radio matrix, runtime diagnostics view, and physical-radio testing |
 | Milestone 10: On-radio editor | Not started | None | Entire phase 2 editor and write/recovery workflow |
 
 The design system is in place: the host owns every color, resolves one theme per dashboard, and hands each component a `services` table carrying the theme, shared primitives, span-appropriate typography, and a state resolver. The `metric` component is the reference implementation. Milestone 4's remaining item is a physical readability review, which requires hardware.
 
 Until milestone 5 supplies telemetry, `metric` accepts a temporary `demo` setting that drives synthetic readings through every state so the design system can be reviewed on a radio. That setting is removed once `telemetryService` exists.
+
+Measured cost on the largest layout the schema permits, sixteen single-cell components: worst callback 3600 of 20000 instructions, worst steady frame 1000. Both are asserted by the test suite.
 
 ### Component module contract
 
