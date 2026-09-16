@@ -7,8 +7,8 @@
 - Status last updated: 2026-09-16
 - EdgeTX source: `../edgetx`
 - Project root: `aero-grid/`
-- Implementation: Phase 1, milestones 1 to 6 complete
-- Next work: Milestone 7, telemetry-specialized components
+- Implementation: Phase 1, milestones 1 to 7 complete
+- Next work: Milestone 8, status rail and multiple screens
 - See [Resuming work](#resuming-work) for the current branch stack and the exact next steps.
 
 ## Summary
@@ -156,6 +156,9 @@ A preset cannot be expressed as a settings default, because the host fills decla
 - Support warning, critical, stale, and unavailable states.
 - Optionally show cell count and summed pack voltage.
 - Do not estimate remaining battery percentage unless a future component explicitly defines and labels its estimation model.
+- Validate the table rather than trusting it. Entries that are not plausible cell voltages are rejected instead of folded into a lowest or an average, the walk is bounded because the table comes from the firmware, and a value that is not a table at all is reported as a configuration mistake rather than as a missing source.
+- Judge the thresholds on the worst cell even when the panel shows the pack sum, because a sum is exactly what hides one sagging cell.
+- Allow an explicitly configured lowest-cell source, such as `Cels-`, to win for that reading. The receiver maintaining it has seen samples between the dashboard's polls, and it keeps the component useful when the table itself is unreadable.
 
 #### Metric
 
@@ -180,6 +183,9 @@ A preset cannot be expressed as a settings default, because the host fills decla
 - Support an explicitly selected EdgeTX minimum-quality source and dashboard flight-minimum tracking.
 - Treat stale or unavailable telemetry separately from a valid low reading.
 - Allow protocol-specific multi-antenna values to be selected as ordinary sources without hard-coding a protocol.
+- Distinguish three situations that all look like a zero: a link that is down, a protocol that populates no RSSI sensor, and a reading that genuinely is zero. The first is reported as critical with its own badge, because on this panel a dead link is the measurement rather than merely stale data. The second keeps whichever source the protocol does have and says the sensor is absent. The third is shown as the reading it is.
+- Read that distinction from `telemetryService:link()` rather than inferring it again. Only the telemetry service knows whether a source has ever contradicted `getRSSI()`.
+- Default no thresholds. What counts as a bad link depends entirely on the unit, and a default would warn constantly on dBm or never on a percentage.
 
 #### Navigation
 
@@ -188,7 +194,9 @@ A preset cannot be expressed as a settings default, because the host fills decla
 - Prefer an explicitly selected native distance source when configured.
 - Render direction as an absolute north-up bearing or compass arrow from home to model. Aircraft heading and transmitter orientation are not required and must not rotate this arrow.
 - Provide responsive modes: compact distance, distance and bearing, north-up compass/bearing arrow, and detailed navigation with coordinates.
-- Surface missing fix, stale GPS, and unavailable home-position states explicitly.
+- Surface missing fix, stale GPS, and unavailable home-position states explicitly. A missing home position is not a broken fix: the coordinates stay visible and only the two values measured from home are withheld.
+- Hide the dial's pointer when there is no bearing. A pointer resting at north reads as a real due-north fix.
+- State in words that the direction is north-up and measured from home, because an arrow on a dial is exactly the thing a pilot would otherwise read as aircraft heading.
 
 #### Flight mode
 
@@ -847,22 +855,25 @@ Milestones 1 to 4 are merged. Milestones 5 and 6 are a stack of two branches on 
 | --- | --- | --- | --- |
 | #1 to #3 | merged | `main` | Milestones 1 to 4, firmware fixes, refresh scheduling, and CI |
 | #5 | `thomaskistler/shared-data-services` | `main` | Milestone 5, the five shared data services and their diagnostic views |
-| current | `thomaskistler/core-components` | `thomaskistler/shared-data-services` | Milestone 6, the seven core components |
+| #6 | `thomaskistler/core-components` | `thomaskistler/shared-data-services` | Milestone 6, the seven core components |
+| current | `thomaskistler/telemetry-components` | `thomaskistler/core-components` | Milestone 7, the three telemetry-specialized components |
 
-Milestone 6 is stacked, not rebased. If #5 gains further commits, merge them into the milestone 6 branch rather than rebasing it.
+Every branch above `main` is stacked, not rebased. If a parent gains further
+commits, merge them into the branch below rather than rebasing it.
 
 ### Verification state
 
 - `make test`, `make check`, and `make build` pass from a clean tree. `make check` was also run against a real Lua 5.3 `luac`, and both suites were executed under a real Lua 5.3 interpreter, not only under whichever Lua `lupa` provides.
 - CI (`.github/workflows/ci.yml`) runs `make check` under Lua 5.3 on every pull request, plus the SD image build and two integrity assertions.
-- The dashboard has been confirmed running in the EdgeTX simulator on a TX16S profile through milestone 4. Milestones 5 and 6 have not yet been run on hardware or in the simulator.
+- The dashboard has been confirmed running in the EdgeTX simulator on a TX16S profile through milestone 6. Milestone 7 has not yet been run in the simulator or on hardware, and three of its behaviours can only be judged there: whether a cells source on the actual receiver returns the table shape assumed here, whether a protocol without an RSSI sensor is recognized as such rather than as a dead link, and whether the compass dial reads as a direction at 480 x 272.
 
 ### Immediate next steps
 
-1. Run the shipped dashboard on a radio. It now demonstrates all seven core components, so one screen exercises telemetry, model timers, flight mode, transmitter voltage, a global variable, trims, and the model bitmap at once. Two things can only be judged there: whether the estimated text widths behind `theme.fitText` hold against the real fonts, and whether an `lvgl.image` of a model bitmap scales the way `StaticImage` is expected to.
+1. Run the shipped dashboard on a radio. It now demonstrates the complete ten-component catalogue, so one screen exercises telemetry, cells, link, GPS, model timers, flight mode, transmitter voltage, a global variable, trims, and the model bitmap at once. Four things can only be judged there: whether the estimated text widths behind `theme.fitText` hold against the real fonts, whether an `lvgl.image` of a model bitmap scales the way `StaticImage` is expected to, whether the corrected arc centring places the radial and compass dials where they are meant to go, and whether the compass pointer reads as a direction at arm's length.
 2. Run the two diagnostics layouts on a radio. Set the widget's Dashboard ID to `services` or `services2`; they load on any model without a model-specific file. This is the check that milestone 5's normalization is right against real sensors rather than mocks.
-3. Begin Milestone 7, the telemetry-specialized components: `cell-battery`, `link-status`, and `navigation`. All three depend on value shapes the services already normalize, so start by confirming those shapes on hardware.
-4. Decide the extrema reset policy beyond arm switch. The specification names manual, timer, and switch; switch and manual are implemented, timer is not.
+3. Confirm the value shapes on real hardware, on more than one protocol. `cell-battery` assumes a cells source returns a contiguous array of per-cell voltages, and `link-status` assumes a protocol without an RSSI sensor is detected by a source contradicting `getRSSI()`. Both are mocked faithfully but neither has met a receiver.
+4. Begin Milestone 8, the status rail and multiple screens. It also closes the App mode menu-button overlap, which the shipped dashboard currently works around by putting `navigation` in the top-left cell.
+5. Decide the extrema reset policy beyond arm switch. The specification names manual, timer, and switch; switch and manual are implemented, timer is not.
 
 ### Open items carried forward
 
@@ -873,12 +884,15 @@ Milestone 6 is stacked, not rebased. If #5 gains further commits, merge them int
 | Staleness is link-wide, not per sensor | Milestone 5 | EdgeTX exposes no per-sensor age except for GPS, so a sensor that stops arriving, or was never received, while the link holds still reads as live. See below |
 | Extrema reset policy covers switch and manual only | Milestone 5 | Timer-based reset is specified but not implemented |
 | EdgeTX App mode menu button overlaps the top-left component | Milestone 8 | Deliberately deferred; the status rail reserves that strip |
-| Steady-state refresh cost scales with component count | Milestone 6 | Still 2000 of 20000 at sixteen components with live services, unchanged by the seven new components; watch it as the catalog grows |
+| Steady-state refresh cost scales with component count | Milestone 6 | 2200 of 20000 on the shipped ten-component dashboard, up from 2000; watch it as the catalog grows |
+| A cells source's real shape is unverified | Milestone 7 | `cell-battery` assumes a contiguous array of per-cell voltages and validates every entry, but no receiver has produced one yet |
+| A protocol without an RSSI sensor is detected indirectly | Milestone 7 | `link-status` relies on `telemetryService` observing a source contradict `getRSSI()`. Until something contradicts it, a genuinely dead link and a missing RSSI sensor are indistinguishable, and both read as no link |
 | Text width is estimated, not measured | Milestone 6 | The Lua API exposes no text measurement outside a draw callback, so `theme.textWidth` assumes a mean advance of 0.58 of the line height. Deliberately generous, so it shrinks text that would have fitted rather than clipping text that does not. Needs a hardware check |
 | A trim's axis is unknown to the dashboard | Milestone 6 | EdgeTX exposes no axis metadata for a trim source, so `trim-panel` takes an orientation with a per-indicator override instead of matching on trim names |
 | `lvgl.image` cannot report a failed decode | Milestone 6 | `StaticImage` clears its source silently, so `model-identity` checks the file with `fstat` beforehand and keeps the model name visible when `fstat` is unavailable |
 | `actions/checkout@v4` and `setup-python@v5` target Node 20 | CI | Non-blocking deprecation warning |
 | ~~A `1 x 1` metric fits its value vertically but width is unchecked~~ | Milestone 6 | Closed. `theme.fitText` fits a value by measured width as well as height, choosing the font from the widest string the component can ever produce so geometry stays stable |
+| ~~`lvgl.arc` is positioned by its top-left corner~~ | Milestone 7 | Closed, and it never was. EdgeTX positions an arc by its **centre**, so every radial drawn before this milestone was one radius up and to the left of its intended place. See below |
 
 ### Hard-won constraints
 
@@ -895,10 +909,16 @@ Milestone 6 added three more, all of them about what the Lua API refuses to tell
 6. **A trim source carries no axis.** Nothing in `getFieldInfo` says whether a trim is a roll trim or a pitch trim, and the specification forbids assuming fixed trim names. `trim-panel` therefore takes an orientation, with a per-indicator override.
 7. **`lvgl.image` cannot report a failed decode.** `StaticImage::setSource` clears its own source and traces the error when a file will not load, and tells Lua nothing. The decision has to be made before the object exists, so `model-identity` asks `fstat` first and keeps the model name visible when `fstat` is absent.
 
+Milestone 7 added one more, and it invalidated work already shipped:
+
+8. **`lvgl.arc` is positioned by its centre, not its corner.** `LvglWidgetArc::build` calls `setPos(x, y)`, and `LvglWidgetRoundObject::setPos` stores `x - radius, y - radius`. Every radial written in milestone 6 passed a top-left corner, so on real hardware each one was drawn a full radius up and to the left of where the layout intended, overlapping the panel header and the reading beside it. Nothing in the mocked tests could see it, because the mock stores whatever coordinates it is handed. `primitives.radial` now takes a centre, `primitives.arcBounds` converts between the two in one place, and the tests assert containment against the converted box rather than against `x` and `y`.
+
 Two more lessons came from the tests rather than the firmware:
 
 - A budget test that measured only the shipped layout could not fail, and hid a loader that broke on any layout larger than twelve components. Measure the worst case the schema permits, and assert that the measured work actually happened.
 - An assertion can be vacuous without being wrong. A test that a missing model bitmap falls back to the model name passed while the panel was too short to have shown an image at all. It now asserts first that the panel could have shown one.
+- A geometry test that only checks the right and bottom edges cannot see two rows resolved onto the same line. Milestone 7's region tests assert that every supporting row clears the one above it and every column clears the one beside it, and that shedding a row actually buys the dominant reading a larger font, which is the reason for shedding it.
+- A refresh short-circuit is a cache, and a cache that misses a change shows an old number with a straight face. Three of milestone 7's components compared only their dominant reading and so froze a supporting row: the pack sum when three of four cells sagged, the RSSI readout while link quality sat pinned at 100, and the whole navigation panel when its GPS sensor appeared but had no fix yet. Every field a component draws has to be part of the comparison, and each of the three now has a regression test that changes exactly the field the primary reading does not move with.
 
 ## Proposed Release Phases
 
@@ -915,14 +935,21 @@ Status last verified on 2026-09-16:
 | Milestone 4: Design system | Complete | Semantic tokens, panel/typography/bar/radial/badge primitives, Modern, Follow EdgeTX, and Custom modes, guaranteed-legible derived palettes, all seven states, and responsive `1 x 1`, `2 x 1`, and `2 x 2` presentations | Physical readability review at 480 x 272 on a TX16S-class display |
 | Milestone 5: Shared data services | Complete | Registry with per-service intervals, staggering, and subscription caps; telemetry, model, control, extrema, and navigation services; immutable snapshots; graceful degradation for missing sources, unseen sensors, absent firmware APIs, and stale telemetry; `service-probe` diagnostic views and two shipped diagnostics layouts | Hardware verification, and timer-based extrema reset |
 | Milestone 6: Core components | Complete | `metric` with `custom`/`altitude`/`speed` presets, source and flight extrema, and a secondary reading; `flight-timer`, `flight-mode`, `tx-battery`, `variable-indicator`, `trim-panel`, and `model-identity`; width-aware font fitting, shared panel frame and header geometry, bipolar bars with neutral markers, and images; a shipped dashboard demonstrating all seven | Physical-radio verification of estimated text widths and of model bitmap scaling |
-| Milestone 7: Telemetry-specialized components | Not started | Development `placeholder`, `heartbeat`, and `service-probe` components remain for diagnostics | `cell-battery`, `link-status`, and `navigation` |
+| Milestone 7: Telemetry-specialized components | Complete | `cell-battery` with cells-table validation and a usable-range bar; `link-status` with independent RSSI and quality sources, a published link view, and explicit no-sensor/no-link states; `navigation` with four responsive presentations and a north-up dial; centre-positioned arcs, the `compass` primitive, and a shipped dashboard demonstrating all ten components | Hardware confirmation of the cells shape and of no-RSSI-sensor detection |
 | Milestone 8: Status rail and multiple screens | In progress | Dashboard ID option, per-model/per-dashboard filename resolution, and dashboard-scoped layouts shared by every model | Status rail, reserving the App mode menu button, and multi-instance simulator verification |
 | Milestone 9: Hardening | In progress | Unit/integration tests, firmware-like string behavior tests, CI running Lua 5.3 parsing, simulator fixture, corrupt-layout, contract-rejection, hostile-module, and legibility coverage, component failure isolation, an enforced instruction budget measured at the largest legal layout for both components and services, and diagnostic views over every service | Target-radio matrix, a host-level diagnostics view for versions and layout paths, and physical-radio testing |
 | Milestone 10: On-radio editor | Not started | None | Entire phase 2 editor and write/recovery workflow |
 
 The design system is in place: the host owns every color, resolves one theme per dashboard, and hands each component a `services` table carrying the theme, shared primitives, span-appropriate typography, a state resolver, and the five shared data services. The `metric` component is the reference implementation and now reads real telemetry; the temporary `demo` setting is gone. Milestone 4's remaining item is a physical readability review, which requires hardware.
 
-Measured cost on the largest layout the schema permits, sixteen single-cell components: worst callback 7800 of 20000 instructions, worst steady frame 2000. Both are asserted by the test suite. Eleven sixteen-component layouts are measured: metrics with sixteen distinct live sources, sixteen diagnostic panels spanning all five services, sixteen components that demand a refresh every frame, and one layout per core component type. The worst callback is a `trim-panel` reflow, which repositions four indicators for each of the four components in a reflow batch; the worst steady frame is unchanged by the seven new components, because a component's declared refresh interval, not its size, is what decides steady-state cost. Removing the services' subscription caps raises the worst steady frame to 6200, which is what the caps are for.
+Measured cost on the largest layout the schema permits, sixteen single-cell components: worst callback 7800 of 20000 instructions, worst steady frame 2400. Both are asserted by the test suite. Fourteen sixteen-component layouts are measured: metrics with sixteen distinct live sources, sixteen diagnostic panels spanning all five services, sixteen components that demand a refresh every frame, and one layout per catalogue component type. The worst callback is a `trim-panel` reflow, which repositions four indicators for each of the four components in a reflow batch; the three telemetry components cost 3800, 4000, and 4200 at sixteen cells, and their worst steady frames are 1800, 2400, and 1600. Removing the services' subscription caps raises the worst steady frame to 6200, which is what the caps are for.
+
+The worst steady frame rose from 2000 to 2400 with milestone 7, on sixteen
+`link-status` panels, which is the component that reads the most per refresh:
+two sources, a minimum, and the link view. A component's declared refresh
+interval, not its size, is what decides steady-state cost: `cell-battery`
+walks its cells table on every refresh and declares 20 ticks for it, and
+`navigation` declares 25 because telemetry GPS never arrives faster.
 
 ### Component module contract
 
@@ -1016,7 +1043,7 @@ Subscribing in `create` is not a convention, it is the mechanism: a source nothi
 
 | Service | Subscription | Snapshot highlights |
 | --- | --- | --- |
-| `telemetry` | `subscribe(name)` | `value`, `raw`, `kind`, `unit`, `unitText`, `precision`, `state`, `available`, `fresh`, `stale`, `age` |
+| `telemetry` | `subscribe(name)`, `link()` | `value`, `raw`, `kind`, `unit`, `unitText`, `precision`, `state`, `available`, `fresh`, `stale`, `age`; `live`, `rssi`, `indicator` |
 | `model` | `identity()`, `timer(index)`, `flightMode()`, `txVoltage()` | `name`/`bitmapPath`; `value`, `countdown`, `elapsed`, `remaining`, `expired`, `text`; `index`/`name`; a telemetry-shaped reading |
 | `control` | `trim(name, scale)`, `globalVariable(index, flightMode)` | `raw`, `value`, `fraction`, `scale`, `centered`, `threePosition`; `name`, `value`, `min`, `max`, `precision`, `unitText`, `flightMode` |
 | `extrema` | `sourceExtreme(name, mode)`, `sessionExtrema(name)`, `flight(armSource)` | an ordinary reading of `<name>-`/`<name>+`; `min`, `max`, `samples`, `session`; `armed`, `active`, `count`, `duration` |
@@ -1147,6 +1174,11 @@ Three shared additions came out of the work rather than being planned:
 - `theme.textWidth` and `theme.fitText` fit a reading by measured width as well as height. This closes milestone 6's carried-forward item about a `1 x 1` metric whose value was only checked vertically.
 - `primitives.bipolarBar`, an optional centre marker on `primitives.bar`, and `primitives.image` cover the three shapes the new components needed and the earlier catalog did not.
 
+Milestone 7 added two more, both about arcs:
+
+- `primitives.compass` draws a north-up bearing dial. The ring is the arc's background and the pointer is its indicator, so one LVGL object carries both, and a bearing that does not exist hides the pointer by setting its opacity to zero rather than resting it at north, which would read as a real due-north fix.
+- `primitives.arcBounds` converts an arc's centre into the rectangle it occupies. Components lay out in corner coordinates and EdgeTX positions arcs by their centre, so the conversion lives in one place instead of in every caller, and the tests assert containment through it.
+
 Two specification details were corrected by the implementation, and both are recorded where they belong: model bitmaps cannot use `Bitmap.open()` under LVGL, and a `metric` preset cannot be expressed as a settings default.
 
 #### Milestone 7: Telemetry-specialized components
@@ -1162,6 +1194,41 @@ Implement these components in order:
 - Test telemetry disconnect, reconnect, stale data, missing GPS fix, and unavailable home position.
 
 Deliverable: the full ten-component catalog with graceful telemetry degradation.
+
+Delivered. All three ship, and `layouts/default.yaml` now demonstrates the
+complete ten-component catalogue on one screen.
+
+Value shapes are validated rather than assumed. `cellBattery.summarize`
+classifies what EdgeTX actually returned as `none`, `number`, `empty`,
+`invalid`, or `cells`, rejecting entries that are not plausible cell voltages
+and bounding its walk, because the table comes from the firmware and the walk
+is charged to the widget's instruction budget. A `number` shape means the
+layout named `Cels-` or an ordinary voltage sensor as its cells source, which
+is a configuration mistake rather than a failed link, so it reads
+`NOT CELLS` rather than `NO SOURCE`. GPS tables are validated by
+`navigationService`, which already refuses a null-island position, and
+`navigation` reports no source, no fix, and no home position as three
+different states because each has a different cause and a different fix.
+
+Protocol-dependent source selection is a component setting, not a heuristic.
+`link-status` takes independent RSSI and link-quality source names, never
+infers one from the other, and its `auto` primary reading prefers quality
+because a percentage means the same thing on every protocol where RSSI does
+not. An explicitly chosen primary is never overridden, however bad that source
+looks, so a dBm antenna reading can be the headline where a layout says so.
+
+The three situations that all look like a zero are now separated by the
+telemetry service rather than guessed at again. `telemetryService:link()`
+publishes `live`, `rssi`, and `indicator`, where `indicator` goes false once a
+source has returned a non-zero value while `getRSSI()` read zero. A dead link
+is reported as `critical` with a `NO LINK` badge, because on this panel a dead
+link is the measurement rather than merely stale data; a protocol with no RSSI
+sensor keeps the quality reading, stays out of alarm, and says
+`NO RSSI SENSOR`; and a genuine zero on a live link is shown as a reading.
+
+One specification detail was corrected by the implementation: `lvgl.arc` is
+positioned by its centre, which invalidated every radial milestone 6 shipped.
+It is recorded under the hard-won constraints.
 
 #### Milestone 8: Status rail and multiple screens
 
