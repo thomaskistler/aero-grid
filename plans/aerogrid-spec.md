@@ -7,8 +7,8 @@
 - Status last updated: 2026-09-16
 - EdgeTX source: `../edgetx`
 - Project root: `aero-grid/`
-- Implementation: Phase 1, milestones 1 to 5 complete
-- Next work: Milestone 6, core components
+- Implementation: Phase 1, milestones 1 to 6 complete
+- Next work: Milestone 7, telemetry-specialized components
 - See [Resuming work](#resuming-work) for the current branch stack and the exact next steps.
 
 ## Summary
@@ -144,6 +144,8 @@ The `metric` component provides built-in presets without creating separate imple
 
 Presets establish labels, semantic accents, likely source defaults, and supported presentations. Every source remains user-selectable so the dashboard does not depend on protocol-specific sensor names.
 
+A preset cannot be expressed as a settings default, because the host fills declared defaults in before the component runs and a filled default is indistinguishable from a value the layout stated. Preset-overridable keys therefore declare an empty or absent default, and the component applies the preset to any key the layout left empty. Anything the layout states always wins.
+
 ### Component requirements
 
 #### Cell battery
@@ -196,9 +198,10 @@ Presets establish labels, semantic accents, likely source defaults, and supporte
 #### Model identity
 
 - Read name and bitmap metadata through `model.getInfo()`.
-- Load the assigned image once with `Bitmap.open()` and retain the bitmap object.
-- Fall back to the model name when the image is missing or cannot be loaded.
-- Support name-only, image-only, and combined presentations subject to component span.
+- Create the assigned image once, with `lvgl.image`, and retain the object. `Bitmap.open()` belongs to the legacy `lcd.drawBitmap` drawing model and cannot be rendered by an LVGL widget, so it is not used.
+- Fall back to the model name when the image is missing or cannot be loaded. EdgeTX's `StaticImage` clears its source and reports nothing to Lua when a file will not decode, so the file must be checked with `fstat` before the image object is created. Where `fstat` is unavailable the name stays visible alongside the image rather than being hidden behind a picture that may never appear.
+- Resolve the path as `/IMAGES/<bitmap>`, matching the firmware's own model bitmap widget.
+- Support name-only, image-only, and combined presentations subject to component span. An automatic choice must not spend space on a picture that a single cell cannot show.
 
 #### Transmitter battery
 
@@ -221,7 +224,7 @@ Presets establish labels, semantic accents, likely source defaults, and supporte
 #### Variable indicator
 
 - Bind to either an EdgeTX global-variable index or a numeric EdgeTX source.
-- For a global variable, read the value for the current or explicitly selected flight mode with `model.getGlobalVariable(index, flightMode)`.
+- For a global variable, read the value for the current or explicitly selected flight mode with `model.getGlobalVariable(index, flightMode)`. `controlService:globalVariable(index, flightMode)` pins a mode when one is given and follows the active mode otherwise; a pinned mode is its own subscription, because two components may legitimately show the same variable for different modes.
 - Use `model.getGlobalVariableDetails(index)` where available to obtain the configured name, minimum, maximum, precision, and unit.
 - Rely on EdgeTX to resolve global-variable flight-mode inheritance.
 - Support `value`, `horizontal-bar`, `bipolar-bar`, and `radial` presentations.
@@ -838,37 +841,44 @@ State as of 2026-09-16. This section is the entry point after a break: it record
 
 ### Branch stack
 
-Milestones 1 to 4 are merged. Milestone 5 is one branch on top of `main`.
+Milestones 1 to 4 are merged. Milestones 5 and 6 are a stack of two branches on top of `main`.
 
 | PR | Branch | Base | Contents |
 | --- | --- | --- | --- |
 | #1 to #3 | merged | `main` | Milestones 1 to 4, firmware fixes, refresh scheduling, and CI |
-| current | `thomaskistler/shared-data-services` | `main` | Milestone 5, the five shared data services and their diagnostic views |
+| #5 | `thomaskistler/shared-data-services` | `main` | Milestone 5, the five shared data services and their diagnostic views |
+| current | `thomaskistler/core-components` | `thomaskistler/shared-data-services` | Milestone 6, the seven core components |
+
+Milestone 6 is stacked, not rebased. If #5 gains further commits, merge them into the milestone 6 branch rather than rebasing it.
 
 ### Verification state
 
 - `make test`, `make check`, and `make build` pass from a clean tree. `make check` was also run against a real Lua 5.3 `luac`, and both suites were executed under a real Lua 5.3 interpreter, not only under whichever Lua `lupa` provides.
 - CI (`.github/workflows/ci.yml`) runs `make check` under Lua 5.3 on every pull request, plus the SD image build and two integrity assertions.
-- The dashboard has been confirmed running in the EdgeTX simulator on a TX16S profile through milestone 4. Milestone 5 has not yet been run on hardware or in the simulator.
+- The dashboard has been confirmed running in the EdgeTX simulator on a TX16S profile through milestone 4. Milestones 5 and 6 have not yet been run on hardware or in the simulator.
 
 ### Immediate next steps
 
-1. Run the two diagnostics layouts on a radio. Set the widget's Dashboard ID to `services` or `services2`; they load on any model without a model-specific file. This is the check that milestone 5's normalization is right against real sensors rather than mocks.
-2. Begin Milestone 6, core components, starting with `metric` presets. Every component now reads through the services rather than EdgeTX directly.
-3. Decide the extrema reset policy beyond arm switch. The specification names manual, timer, and switch; switch and manual are implemented, timer is not.
+1. Run the shipped dashboard on a radio. It now demonstrates all seven core components, so one screen exercises telemetry, model timers, flight mode, transmitter voltage, a global variable, trims, and the model bitmap at once. Two things can only be judged there: whether the estimated text widths behind `theme.fitText` hold against the real fonts, and whether an `lvgl.image` of a model bitmap scales the way `StaticImage` is expected to.
+2. Run the two diagnostics layouts on a radio. Set the widget's Dashboard ID to `services` or `services2`; they load on any model without a model-specific file. This is the check that milestone 5's normalization is right against real sensors rather than mocks.
+3. Begin Milestone 7, the telemetry-specialized components: `cell-battery`, `link-status`, and `navigation`. All three depend on value shapes the services already normalize, so start by confirming those shapes on hardware.
+4. Decide the extrema reset policy beyond arm switch. The specification names manual, timer, and switch; switch and manual are implemented, timer is not.
 
 ### Open items carried forward
 
 | Item | Where | Note |
 | --- | --- | --- |
 | Physical readability review at 480 x 272 | Milestone 4 | Needs hardware; the only thing keeping milestone 4 from being fully closed |
-| Milestone 5 has not been run on hardware | Milestone 5 | The diagnostics layouts exist precisely to make that check quick |
+| Milestones 5 and 6 have not been run on hardware | Milestones 5 and 6 | The diagnostics layouts exist precisely to make that check quick, and the shipped dashboard now exercises all seven core components at once |
 | Staleness is link-wide, not per sensor | Milestone 5 | EdgeTX exposes no per-sensor age except for GPS, so a sensor that stops arriving, or was never received, while the link holds still reads as live. See below |
 | Extrema reset policy covers switch and manual only | Milestone 5 | Timer-based reset is specified but not implemented |
 | EdgeTX App mode menu button overlaps the top-left component | Milestone 8 | Deliberately deferred; the status rail reserves that strip |
-| Steady-state refresh cost scales with component count | Milestone 6 | Now 2000 of 20000 at sixteen components with live services; watch it as the catalog grows |
+| Steady-state refresh cost scales with component count | Milestone 6 | Still 2000 of 20000 at sixteen components with live services, unchanged by the seven new components; watch it as the catalog grows |
+| Text width is estimated, not measured | Milestone 6 | The Lua API exposes no text measurement outside a draw callback, so `theme.textWidth` assumes a mean advance of 0.58 of the line height. Deliberately generous, so it shrinks text that would have fitted rather than clipping text that does not. Needs a hardware check |
+| A trim's axis is unknown to the dashboard | Milestone 6 | EdgeTX exposes no axis metadata for a trim source, so `trim-panel` takes an orientation with a per-indicator override instead of matching on trim names |
+| `lvgl.image` cannot report a failed decode | Milestone 6 | `StaticImage` clears its source silently, so `model-identity` checks the file with `fstat` beforehand and keeps the model name visible when `fstat` is unavailable |
 | `actions/checkout@v4` and `setup-python@v5` target Node 20 | CI | Non-blocking deprecation warning |
-| A `1 x 1` metric fits its value vertically but width is unchecked | Milestone 6 | Long values may clip; the specification asks for abbreviation before clipping |
+| ~~A `1 x 1` metric fits its value vertically but width is unchecked~~ | Milestone 6 | Closed. `theme.fitText` fits a value by measured width as well as height, choosing the font from the widest string the component can ever produce so geometry stays stable |
 
 ### Hard-won constraints
 
@@ -879,7 +889,16 @@ Four firmware behaviours cost real debugging time and are invisible to the mocke
 3. **EdgeTX fonts are much taller than they look.** `XXL` is a 69 px line height at 480 x 272. Lay out from measured heights, never fixed offsets.
 4. **`getValue` returns integer zero for a telemetry source whose link is down.** That is indistinguishable from a genuine zero reading, so only a zero may be judged: a non-zero value is proof of life whatever `getRSSI()` says, and `getRSSI()` itself reads zero on a live link whose protocol has no RSSI sensor.
 
-A fifth lesson came from the tests rather than the firmware: a budget test that measured only the shipped layout could not fail, and hid a loader that broke on any layout larger than twelve components. Measure the worst case the schema permits, and assert that the measured work actually happened.
+Milestone 6 added three more, all of them about what the Lua API refuses to tell a component:
+
+5. **Lua cannot measure text.** `lcd.sizeText` is only meaningful inside a draw callback, which an LVGL widget does not have, so width has to be estimated. `theme.textWidth` assumes a mean advance of 0.58 of the line height and `theme.fitText` chooses a font from the widest string a component can ever produce, never from the current one, so a reading does not resize as it changes.
+6. **A trim source carries no axis.** Nothing in `getFieldInfo` says whether a trim is a roll trim or a pitch trim, and the specification forbids assuming fixed trim names. `trim-panel` therefore takes an orientation, with a per-indicator override.
+7. **`lvgl.image` cannot report a failed decode.** `StaticImage::setSource` clears its own source and traces the error when a file will not load, and tells Lua nothing. The decision has to be made before the object exists, so `model-identity` asks `fstat` first and keeps the model name visible when `fstat` is absent.
+
+Two more lessons came from the tests rather than the firmware:
+
+- A budget test that measured only the shipped layout could not fail, and hid a loader that broke on any layout larger than twelve components. Measure the worst case the schema permits, and assert that the measured work actually happened.
+- An assertion can be vacuous without being wrong. A test that a missing model bitmap falls back to the model name passed while the panel was too short to have shown an image at all. It now asserts first that the panel could have shown one.
 
 ## Proposed Release Phases
 
@@ -895,14 +914,15 @@ Status last verified on 2026-09-16:
 | Milestone 3: Component runtime | Complete | Referenced-module loading, metatable-safe contract validation, declared settings with typed defaults, `supportedSpans` enforcement, host-owned containers, declared refresh intervals with phase staggering, and isolated create/update/refresh/background/event/destroy dispatch | Production components arrive in milestones 6 and 7 |
 | Milestone 4: Design system | Complete | Semantic tokens, panel/typography/bar/radial/badge primitives, Modern, Follow EdgeTX, and Custom modes, guaranteed-legible derived palettes, all seven states, and responsive `1 x 1`, `2 x 1`, and `2 x 2` presentations | Physical readability review at 480 x 272 on a TX16S-class display |
 | Milestone 5: Shared data services | Complete | Registry with per-service intervals, staggering, and subscription caps; telemetry, model, control, extrema, and navigation services; immutable snapshots; graceful degradation for missing sources, unseen sensors, absent firmware APIs, and stale telemetry; `service-probe` diagnostic views and two shipped diagnostics layouts | Hardware verification, and timer-based extrema reset |
-| Milestones 6–7: Production components | Not started | Reference `metric`, now telemetry driven, plus development `placeholder`, `heartbeat`, and `service-probe` components | Complete ten-component catalog and metric presets |
+| Milestone 6: Core components | Complete | `metric` with `custom`/`altitude`/`speed` presets, source and flight extrema, and a secondary reading; `flight-timer`, `flight-mode`, `tx-battery`, `variable-indicator`, `trim-panel`, and `model-identity`; width-aware font fitting, shared panel frame and header geometry, bipolar bars with neutral markers, and images; a shipped dashboard demonstrating all seven | Physical-radio verification of estimated text widths and of model bitmap scaling |
+| Milestone 7: Telemetry-specialized components | Not started | Development `placeholder`, `heartbeat`, and `service-probe` components remain for diagnostics | `cell-battery`, `link-status`, and `navigation` |
 | Milestone 8: Status rail and multiple screens | In progress | Dashboard ID option, per-model/per-dashboard filename resolution, and dashboard-scoped layouts shared by every model | Status rail, reserving the App mode menu button, and multi-instance simulator verification |
 | Milestone 9: Hardening | In progress | Unit/integration tests, firmware-like string behavior tests, CI running Lua 5.3 parsing, simulator fixture, corrupt-layout, contract-rejection, hostile-module, and legibility coverage, component failure isolation, an enforced instruction budget measured at the largest legal layout for both components and services, and diagnostic views over every service | Target-radio matrix, a host-level diagnostics view for versions and layout paths, and physical-radio testing |
 | Milestone 10: On-radio editor | Not started | None | Entire phase 2 editor and write/recovery workflow |
 
 The design system is in place: the host owns every color, resolves one theme per dashboard, and hands each component a `services` table carrying the theme, shared primitives, span-appropriate typography, a state resolver, and the five shared data services. The `metric` component is the reference implementation and now reads real telemetry; the temporary `demo` setting is gone. Milestone 4's remaining item is a physical readability review, which requires hardware.
 
-Measured cost on the largest layout the schema permits, sixteen single-cell components: worst callback 4200 of 20000 instructions, worst steady frame 2000. Both are asserted by the test suite, at three separate sixteen-component layouts: metrics with sixteen distinct live sources, sixteen diagnostic panels spanning all five services, and sixteen components that demand a refresh every frame. Removing the services' subscription caps raises the worst steady frame to 6200, which is what the caps are for.
+Measured cost on the largest layout the schema permits, sixteen single-cell components: worst callback 7800 of 20000 instructions, worst steady frame 2000. Both are asserted by the test suite. Eleven sixteen-component layouts are measured: metrics with sixteen distinct live sources, sixteen diagnostic panels spanning all five services, sixteen components that demand a refresh every frame, and one layout per core component type. The worst callback is a `trim-panel` reflow, which repositions four indicators for each of the four components in a reflow batch; the worst steady frame is unchanged by the seven new components, because a component's declared refresh interval, not its size, is what decides steady-state cost. Removing the services' subscription caps raises the worst steady frame to 6200, which is what the caps are for.
 
 ### Component module contract
 
@@ -998,7 +1018,7 @@ Subscribing in `create` is not a convention, it is the mechanism: a source nothi
 | --- | --- | --- |
 | `telemetry` | `subscribe(name)` | `value`, `raw`, `kind`, `unit`, `unitText`, `precision`, `state`, `available`, `fresh`, `stale`, `age` |
 | `model` | `identity()`, `timer(index)`, `flightMode()`, `txVoltage()` | `name`/`bitmapPath`; `value`, `countdown`, `elapsed`, `remaining`, `expired`, `text`; `index`/`name`; a telemetry-shaped reading |
-| `control` | `trim(name, scale)`, `globalVariable(index)` | `raw`, `value`, `fraction`, `scale`, `centered`, `threePosition`; `name`, `value`, `min`, `max`, `precision`, `unitText`, `flightMode` |
+| `control` | `trim(name, scale)`, `globalVariable(index, flightMode)` | `raw`, `value`, `fraction`, `scale`, `centered`, `threePosition`; `name`, `value`, `min`, `max`, `precision`, `unitText`, `flightMode` |
 | `extrema` | `sourceExtreme(name, mode)`, `sessionExtrema(name)`, `flight(armSource)` | an ordinary reading of `<name>-`/`<name>+`; `min`, `max`, `samples`, `session`; `armed`, `active`, `count`, `duration` |
 | `navigation` | `subscribe(name, distanceSource)` | `fix`, `home`, `latitude`, `longitude`, `pilotLatitude`, `pilotLongitude`, `distance`, `distanceUnit`, `distanceSource`, `bearing`, `age` |
 
@@ -1118,6 +1138,16 @@ Implement these components in order:
 This order establishes value formatting, source access, model APIs, bars, radial indicators, trim semantics, GV formatting, and bitmap handling before the more protocol-sensitive components.
 
 Deliverable: seven responsive components operating from YAML configuration.
+
+Delivered. All seven ship, every one of them driven entirely by YAML and by the shared services, and the shipped `layouts/default.yaml` demonstrates all of them on one screen.
+
+Three shared additions came out of the work rather than being planned:
+
+- `theme.frame` resolves the padded content geometry, header row, and badge column that every panel shares, so a badge cannot land on the label it accompanies and two components cannot disagree about where a header sits. Widening a narrow panel's badge past half its content width was a real defect this found.
+- `theme.textWidth` and `theme.fitText` fit a reading by measured width as well as height. This closes milestone 6's carried-forward item about a `1 x 1` metric whose value was only checked vertically.
+- `primitives.bipolarBar`, an optional centre marker on `primitives.bar`, and `primitives.image` cover the three shapes the new components needed and the earlier catalog did not.
+
+Two specification details were corrected by the implementation, and both are recorded where they belong: model bitmaps cannot use `Bitmap.open()` under LVGL, and a `metric` preset cannot be expressed as a settings default.
 
 #### Milestone 7: Telemetry-specialized components
 
