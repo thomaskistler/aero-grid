@@ -19,6 +19,7 @@ components:
     rowSpan: 2
     config:
       label: Pack
+      source: RxBt
       unit: V
       accent: cyan
       min: 18
@@ -27,7 +28,6 @@ components:
       critical: 19.8
       precision: 1
       visual: bar
-      demo: true
   - id: current
     type: metric
     col: 2
@@ -36,15 +36,13 @@ components:
     rowSpan: 1
     config:
       label: Current
-      unit: A
+      source: Curr
       accent: orange
       min: 0
       max: 120
       warning: 90
       critical: 110
-      precision: 0
       visual: bar
-      demo: true
   - id: altitude
     type: metric
     col: 2
@@ -53,15 +51,13 @@ components:
     rowSpan: 1
     config:
       label: Altitude
-      unit: m
+      source: Alt
       accent: green
       min: 0
       max: 400
       warning: 250
       critical: 350
-      precision: 0
       visual: radial
-      demo: true
   - id: pulse
     type: heartbeat
     col: 0
