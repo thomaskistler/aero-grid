@@ -1,0 +1,55 @@
+version: 1
+
+# Service diagnostics, page 2: model, control, and extrema.
+#
+# Set the widget's Dashboard ID to `services2` to load this screen on any
+# model. See layouts/services.yaml for how Dashboard ID resolution works.
+#
+# `index` selects the model timer for the model service and the global
+# variable for the control service. `extra` names the arm switch the extrema
+# service uses to decide where one flight ends and the next begins; leave it
+# out to track one open-ended session instead.
+
+theme:
+  mode: modern
+
+grid:
+  columns: 4
+  rows: 4
+
+components:
+  - id: model
+    type: service-probe
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 4
+    config:
+      service: model
+      label: Model
+      index: 0
+      accent: amber
+  - id: control
+    type: service-probe
+    col: 2
+    row: 0
+    colSpan: 1
+    rowSpan: 4
+    config:
+      service: control
+      label: Control
+      source: trim-ail
+      index: 0
+      accent: orange
+  - id: extrema
+    type: service-probe
+    col: 3
+    row: 0
+    colSpan: 1
+    rowSpan: 4
+    config:
+      service: extrema
+      label: Extrema
+      source: Alt
+      extra: sa
+      accent: cyan

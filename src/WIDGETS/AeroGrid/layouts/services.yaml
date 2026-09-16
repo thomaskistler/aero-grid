@@ -1,0 +1,45 @@
+version: 1
+
+# Service diagnostics, page 1: telemetry and navigation.
+#
+# Set the widget's Dashboard ID to `services` to load this screen on any model.
+# AeroGrid tries <model>--<dashboard>.yaml, then <dashboard>.yaml, then
+# default.yaml, so a layout named after a Dashboard ID alone is shared by every
+# model. Page 2 is `services2`.
+#
+# Each panel prints one shared service's normalized output as plain rows, so a
+# wrong unit, a missing precision, a stale classification, or a bearing taken
+# from the wrong end is visible before any component depends on it. Change the
+# source names below to sensors your model actually has.
+
+theme:
+  mode: modern
+
+grid:
+  columns: 4
+  rows: 4
+
+components:
+  - id: telemetry
+    type: service-probe
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 4
+    config:
+      service: telemetry
+      label: Telemetry
+      source: RxBt
+      accent: cyan
+  - id: navigation
+    type: service-probe
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 4
+    config:
+      service: navigation
+      label: Navigation
+      source: GPS
+      extra: Dist
+      accent: green
