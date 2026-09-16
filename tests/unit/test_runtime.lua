@@ -675,6 +675,73 @@ local function testDemoDriver()
   assertEqual(inert.demoTick, nil, "demo ran without being enabled")
 end
 
+--- Content must stack inside the panel using real font heights, never
+--- overlapping and never running past the bottom edge.
+local function testContentFitsPanel()
+  local metric = loadModule("components/metric.lua")
+  local heightOf = theme.fontHeight
+
+  -- Panel heights for spans at 480 x 272 with 4 px gutters, plus tight cases.
+  local cases = {
+    {name = "2x2", w = 238, h = 134, colSpan = 2, rowSpan = 2},
+    {name = "2x1", w = 238, h = 65, colSpan = 2, rowSpan = 1},
+    {name = "1x1", w = 117, h = 65, colSpan = 1, rowSpan = 1},
+    {name = "tiny", w = 60, h = 40, colSpan = 1, rowSpan = 1},
+  }
+
+  for _, case in ipairs(cases) do
+    local layout = metric.presentationFor(case.colSpan, case.rowSpan)
+    layout.visual = "bar"
+    local fonts = theme.typography(case.colSpan, case.rowSpan)
+    local area = metric.regionsFor(
+      theme.build("modern"), theme, {x = 0, y = 0, w = case.w, h = case.h},
+      layout, fonts)
+
+    local valueBottom = area.valueY + heightOf(area.primary)
+    assert(valueBottom <= case.h, case.name
+      .. ": value overflows the panel, ends at " .. valueBottom
+      .. " in " .. case.h)
+
+    -- Assertions use the resolved flags: a short panel sheds optional detail.
+    if area.showUnit then
+      assert(area.unitY >= valueBottom, case.name
+        .. ": unit overlaps the value, unit at " .. area.unitY
+        .. ", value ends at " .. valueBottom)
+      assert(area.unitY + heightOf(fonts.unit) <= case.h, case.name
+        .. ": unit overflows the panel")
+    end
+
+    if area.showVisual then
+      local unitBottom = area.showUnit
+        and (area.unitY + heightOf(fonts.unit)) or valueBottom
+      assert(area.barY >= unitBottom, case.name
+        .. ": bar overlaps content above it")
+      assert(area.barY + 4 <= case.h, case.name .. ": bar overflows the panel")
+    end
+
+    if area.showRange then
+      assert(area.rangeY + heightOf(fonts.label) <= area.barY, case.name
+        .. ": range overlaps the bar")
+    end
+
+    -- The label row must clear the value.
+    assert(area.valueY >= heightOf(fonts.label), case.name
+      .. ": value overlaps the label")
+  end
+
+  -- A short panel must reduce the primary font rather than overflow.
+  local short = metric.regionsFor(
+    theme.build("modern"), theme, {x = 0, y = 0, w = 238, h = 65},
+    {showUnit = true, showVisual = true, showRange = false, visual = "bar"},
+    theme.typography(2, 1))
+  local tall = metric.regionsFor(
+    theme.build("modern"), theme, {x = 0, y = 0, w = 238, h = 134},
+    {showUnit = true, showVisual = true, showRange = true, visual = "bar"},
+    theme.typography(2, 2))
+  assert(heightOf(short.primary) < heightOf(tall.primary),
+    "a short panel did not reduce its primary font")
+end
+
 testGridGeometry()
 testValidation()
 testOverlapIsRejected()
@@ -701,5 +768,6 @@ testStaleOverridesAccent()
 testHostileModule()
 testMetricDirection()
 testDemoDriver()
+testContentFitsPanel()
 
 print("AeroGrid runtime tests passed")

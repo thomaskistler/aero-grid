@@ -147,6 +147,7 @@ local function buildServices(context, placement)
   return {
     theme = theme,
     primitives = context.primitives,
+    themeBuilder = builder,
     fonts = builder.typography(placement.colSpan, placement.rowSpan),
     span = {colSpan = placement.colSpan, rowSpan = placement.rowSpan},
     state = function(name, accentName)

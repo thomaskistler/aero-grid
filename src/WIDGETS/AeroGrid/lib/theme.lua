@@ -444,6 +444,35 @@ function theme.accentColor(resolved, name)
   return resolved.color[name]
 end
 
+--- Line heights of EdgeTX's 480 x 272 "std" font set, in pixels.
+--- Other display classes ship shorter or taller sets, so these are a
+--- calibrated approximation; callers must still clamp content to the panel.
+---@param font any One of the EdgeTX size constants.
+---@return integer
+function theme.fontHeight(font)
+  if font == XXLSIZE then return 69 end
+  if font == DBLSIZE then return 40 end
+  if font == MIDSIZE then return 29 end
+  if font == SMLSIZE then return 17 end
+  if font == TINSIZE then return 12 end
+  return 21
+end
+
+--- Choose the largest primary font whose line height fits the space available.
+--- The specification asks for the largest value that fits at every span, which
+--- depends on the panel's real height rather than on its cell count alone.
+---@param available integer Vertical pixels the value may occupy.
+---@return any font
+function theme.fitPrimary(available)
+  local ordered = {XXLSIZE, DBLSIZE, MIDSIZE, SMLSIZE}
+
+  for _, font in ipairs(ordered) do
+    if theme.fontHeight(font) <= available then return font end
+  end
+
+  return SMLSIZE
+end
+
 --- Font roles for a component span.
 --- Sizes are EdgeTX globals, read at call time so tests can install mocks.
 ---@param colSpan integer

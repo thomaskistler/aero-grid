@@ -200,36 +200,84 @@ local BADGE_WIDTH = 56
 
 --- Compute every content region from the current rectangle.
 --- Regions are derived in one place so `create` and `update` cannot disagree,
---- and so the badge, value, and visualization never share pixels.
+--- and so the badge, value, unit, and visualization never share pixels.
+---
+--- Content is stacked using real EdgeTX font line heights rather than fixed
+--- offsets. When the panel is too short, optional detail is shed before the
+--- dominant reading is shrunk, and the value is finally clamped inside the
+--- panel so it can never overflow.
 ---@param theme AeroGridTheme
+---@param themeBuilder table
 ---@param rect AeroGridRect
 ---@param layout table
+---@param fonts table
 ---@return table
-local function regions(theme, rect, layout)
+function metric.regionsFor(theme, themeBuilder, rect, layout, fonts)
   local spacing = theme.spacing
-  local pad = spacing.padding
+  -- Short panels cannot afford the standard padding.
+  local tight = rect.h < 80
+  local pad = tight and 4 or spacing.padding
+  local compact = tight and 2 or spacing.paddingCompact
+  local bottomPad = 4
+
   local content = math.max(1, rect.w - pad * 2)
   local badgeWidth = math.min(BADGE_WIDTH, content)
+  local labelHeight = themeBuilder.fontHeight(fonts.label)
+  local unitHeight = themeBuilder.fontHeight(fonts.unit)
+  local top = compact + labelHeight + 2
+
+  local showUnit = layout.showUnit
+  local showVisual = layout.showVisual and layout.visual ~= "none"
+  local showRange = layout.showRange
+
+  local function room()
+    local below = bottomPad
+    if showVisual then below = below + spacing.barHeight + 2 end
+    if showRange then below = below + labelHeight + 2 end
+    return rect.h - top - (showUnit and unitHeight or 0) - below
+  end
+
+  -- The dominant reading wins: shed optional detail before shrinking it.
+  local comfortable = themeBuilder.fontHeight(MIDSIZE)
+  if room() < comfortable and showRange then showRange = false end
+  if room() < comfortable and showUnit then showUnit = false end
+  if room() < comfortable and showVisual then showVisual = false end
+
+  local primary = themeBuilder.fitPrimary(math.max(1, room()))
+  local primaryHeight = themeBuilder.fontHeight(primary)
+
+  if top + primaryHeight > rect.h then
+    top = math.max(0, rect.h - primaryHeight)
+  end
+
   local radius = math.max(6, math.floor(math.min(rect.w, rect.h) / 5))
   local radialX = math.max(pad, rect.w - pad - radius * 2)
-  local barY = math.max(1, rect.h - pad - spacing.barHeight)
+  local barY = math.max(1, rect.h - bottomPad - spacing.barHeight)
 
   local valueWidth = content
-  if layout.showVisual and layout.visual == "radial" then
+  if showVisual and layout.visual == "radial" then
     valueWidth = math.max(1, radialX - pad - 4)
   end
 
   return {
     pad = pad,
+    compact = compact,
     content = content,
     labelWidth = math.max(1, content - badgeWidth - 4),
     badgeWidth = badgeWidth,
     badgeX = math.max(pad, rect.w - pad - badgeWidth),
+    valueY = top,
     valueWidth = valueWidth,
+    primary = primary,
+    unitY = math.max(1, top + primaryHeight),
     barY = barY,
-    rangeY = math.max(1, barY - 18),
+    rangeY = math.max(1, barY - labelHeight - 2),
     radius = radius,
     radialX = radialX,
+    radialY = top,
+    showUnit = showUnit,
+    showVisual = showVisual,
+    showRange = showRange,
   }
 end
 
@@ -248,7 +296,7 @@ function metric.create(parent, rect, settings, services)
   local layout = metric.presentationFor(span.colSpan, span.rowSpan)
   layout.visual = settings.visual
   local presentation = services.state("normal", settings.accent)
-  local area = regions(theme, rect, layout)
+  local area = metric.regionsFor(theme, services.themeBuilder, rect, layout, fonts)
 
   local panel = primitives.panel(parent, rect, theme, presentation)
 
@@ -257,6 +305,7 @@ function metric.create(parent, rect, settings, services)
     theme = theme,
     primitives = primitives,
     state = services.state,
+    themeBuilder = services.themeBuilder,
     layout = layout,
     fonts = fonts,
     settings = settings,
@@ -266,7 +315,7 @@ function metric.create(parent, rect, settings, services)
 
   context.label = primitives.label(panel.root, theme, {
     x = area.pad,
-    y = spacing.paddingCompact,
+    y = area.compact,
     w = area.labelWidth,
     text = string.upper(tostring(settings.label or "")),
     color = presentation.label,
@@ -275,17 +324,17 @@ function metric.create(parent, rect, settings, services)
 
   context.value = primitives.value(panel.root, theme, {
     x = area.pad,
-    y = layout.valueY,
+    y = area.valueY,
     w = area.valueWidth,
     text = "--",
     color = presentation.value,
-    font = fonts.primary,
+    font = area.primary,
   })
 
-  if layout.showUnit and settings.unit ~= "" then
+  if area.showUnit and settings.unit ~= "" then
     context.unit = primitives.label(panel.root, theme, {
       x = area.pad,
-      y = layout.valueY + 24,
+      y = area.unitY,
       w = area.valueWidth,
       text = tostring(settings.unit),
       color = theme.color.textFaint,
@@ -293,15 +342,15 @@ function metric.create(parent, rect, settings, services)
     })
   end
 
-  if layout.showVisual and settings.visual == "radial" then
+  if area.showVisual and settings.visual == "radial" then
     context.radial = primitives.radial(panel.root, theme, {
       x = area.radialX,
-      y = layout.valueY,
+      y = area.radialY,
       radius = area.radius,
       color = presentation.accent,
       fraction = 0,
     })
-  elseif layout.showVisual and settings.visual ~= "none" then
+  elseif area.showVisual then
     context.bar = primitives.bar(panel.root, theme, {
       x = area.pad,
       y = area.barY,
@@ -311,7 +360,7 @@ function metric.create(parent, rect, settings, services)
     })
   end
 
-  if layout.showRange then
+  if area.showRange then
     context.range = primitives.label(panel.root, theme, {
       x = area.pad,
       y = area.rangeY,
@@ -326,7 +375,7 @@ function metric.create(parent, rect, settings, services)
   -- readable at the same time as the source name.
   context.badge = primitives.badge(panel.root, theme, {
     x = area.badgeX,
-    y = spacing.paddingCompact,
+    y = area.compact,
     w = area.badgeWidth,
     text = "",
     color = theme.color.amber,
@@ -368,14 +417,22 @@ end
 ---@param rect AeroGridRect
 function metric.update(context, rect)
   local theme = context.theme
-  local area = regions(theme, rect, context.layout)
+  local area = metric.regionsFor(
+    theme, context.themeBuilder, rect, context.layout, context.fonts)
 
   context.primitives.resizePanel(context.panel, rect)
-  context.label:set({w = area.labelWidth})
-  context.value:set({w = area.valueWidth})
-  context.badge:set({x = area.badgeX, w = area.badgeWidth})
+  context.label:set({y = area.compact, w = area.labelWidth})
+  context.value:set({
+    y = area.valueY,
+    w = area.valueWidth,
+    -- LVGL takes the font as a callback, matching how it was created.
+    font = function() return area.primary end,
+  })
+  context.badge:set({y = area.compact, x = area.badgeX, w = area.badgeWidth})
 
-  if context.unit then context.unit:set({w = area.valueWidth}) end
+  if context.unit then
+    context.unit:set({y = area.unitY, w = area.valueWidth})
+  end
   if context.range then
     context.range:set({w = area.content, y = area.rangeY})
   end
