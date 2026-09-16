@@ -865,6 +865,19 @@ The host creates one LVGL container per placement and passes it as `parent`, wit
 
 Every callback is dispatched under `pcall`. The first failure permanently disables that one component and reports it, so a broken module cannot repeatedly raise or disable the surrounding dashboard. A component that fails during `create` has its container cleared, leaving no partial drawing behind.
 
+### Instruction budget
+
+EdgeTX aborts any widget callback that exceeds **20000 Lua VM instructions**, raising `CPU limit` (`radio/src/lua/widgets.cpp`). Building a full dashboard costs far more than that, so the host never loads in one call. `create` only loads runtime modules and the root container, then `refresh` advances a staged loader one step per call:
+
+1. `read` — resolve and read the layout file.
+2. `tokenize` — convert the text into indentation tokens.
+3. `parse` — build the document, validate it, and resolve the theme.
+4. `components` — instantiate exactly one component, repeated until done.
+
+The dashboard therefore populates over several frames rather than blocking one. Because each step is bounded, layout size cannot push any single callback over the limit. A regression test measures every callback with a 200-instruction count hook, mirroring the firmware, and fails if any exceeds 75% of the budget.
+
+Component authors must respect the same ceiling: `create`, `update`, `refresh`, `background`, and `event` each run inside the host's callback and share its allowance. Avoid per-character string loops, which are the most common way to exhaust it.
+
 ### Services passed to components
 
 | Key | Purpose |

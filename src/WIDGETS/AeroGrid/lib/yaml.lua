@@ -19,24 +19,32 @@ local function trim(value)
 end
 
 --- Strip an unquoted YAML comment while preserving hashes inside strings.
+--- Most lines contain no hash at all, so the expensive scan is skipped unless
+--- one is present. EdgeTX budgets 20000 VM instructions per widget callback,
+--- which a per-character loop over a whole layout file would exhaust.
 ---@param line string
 ---@return string
 local function stripComment(line)
+  if not string.find(line, "#", 1, true) then return line end
+
   local quote = nil
   local escaped = false
 
   for index = 1, #line do
-    local char = string.sub(line, index, index)
+    local char = string.byte(line, index)
     if escaped then
       escaped = false
-    elseif quote == '"' and char == "\\" then
+    elseif quote == 34 and char == 92 then
       escaped = true
     elseif quote then
       if char == quote then quote = nil end
-    elseif char == '"' or char == "'" then
+    elseif char == 34 or char == 39 then
       quote = char
-    elseif char == "#" and (index == 1 or string.match(string.sub(line, index - 1, index - 1), "%s")) then
-      return string.sub(line, 1, index - 1)
+    elseif char == 35 then
+      local previous = index > 1 and string.byte(line, index - 1) or nil
+      if previous == nil or previous == 32 or previous == 9 then
+        return string.sub(line, 1, index - 1)
+      end
     end
   end
 
@@ -83,21 +91,27 @@ local function parseScalar(value)
 end
 
 --- Convert source text into significant indentation-aware tokens.
+--- Exposed separately from `build` so the host can spread a large layout over
+--- more than one widget callback and stay inside EdgeTX's instruction budget.
 ---@param text string
 ---@return AeroGridYamlToken[]? tokens
 ---@return string? error
-local function tokenize(text)
+function yaml.tokenize(text)
+  if type(text) ~= "string" then
+    return nil, "YAML input must be a string"
+  end
+
   local tokens = {}
   local lineNumber = 0
 
   for rawLine in string.gmatch(text .. "\n", "(.-)\r?\n") do
     lineNumber = lineNumber + 1
-    if string.find(rawLine, "\t") then
+    if string.find(rawLine, "\t", 1, true) then
       return nil, "line " .. lineNumber .. ": tabs are not supported"
     end
 
     local line = stripComment(rawLine)
-    if string.match(line, "%S") then
+    if string.find(line, "%S") then
       local spaces = #(string.match(line, "^( *)") or "")
       if spaces % 2 ~= 0 then
         return nil, "line " .. lineNumber .. ": indentation must use two spaces"
@@ -112,6 +126,8 @@ local function tokenize(text)
 
   return tokens
 end
+
+local tokenize = yaml.tokenize
 
 local parseBlock
 
@@ -263,17 +279,14 @@ parseBlock = function(tokens, index, indent)
   return parseMap(tokens, index, indent)
 end
 
---- Parse constrained YAML text into Lua mappings and sequences.
----@param text string
+--- Build a document from previously produced tokens.
+---@param tokens AeroGridYamlToken[]
 ---@return table? document
 ---@return string? error
-function yaml.parse(text)
-  if type(text) ~= "string" then
-    return nil, "YAML input must be a string"
+function yaml.build(tokens)
+  if type(tokens) ~= "table" then
+    return nil, "YAML tokens must be a table"
   end
-
-  local tokens, tokenError = tokenize(text)
-  if not tokens then return nil, tokenError end
   if #tokens == 0 then return {}, nil end
   if tokens[1].indent ~= 0 then
     return nil, "line " .. tokens[1].line .. ": document must start at column one"
@@ -286,6 +299,18 @@ function yaml.parse(text)
   end
 
   return result
+end
+
+--- Parse constrained YAML text into Lua mappings and sequences.
+--- Convenience wrapper; the host stages `tokenize` and `build` separately.
+---@param text string
+---@return table? document
+---@return string? error
+function yaml.parse(text)
+  local tokens, tokenError = tokenize(text)
+  if not tokens then return nil, tokenError end
+
+  return yaml.build(tokens)
 end
 
 return yaml

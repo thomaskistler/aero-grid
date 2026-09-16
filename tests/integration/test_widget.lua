@@ -170,6 +170,20 @@ assertEqual(definition.translate("Theme"), "Theme")
 
 local DEFAULT_OPTIONS = {DashID = "main", Theme = "modern"}
 
+--- Create a host and pump refresh until the staged loader finishes.
+--- EdgeTX budgets instructions per callback, so loading is spread over
+--- consecutive refreshes rather than completed inside create().
+local function createLoaded(zone, options, path)
+  local context = definition.create(zone, options or DEFAULT_OPTIONS, path)
+  local guard = 0
+  while context.stage do
+    definition.refresh(context)
+    guard = guard + 1
+    assert(guard < 200, "staged load never finished")
+  end
+  return context
+end
+
 --- Find a loaded component entry by its layout id.
 local function entryById(context, id)
   for _, entry in ipairs(context.components) do
@@ -197,7 +211,7 @@ end
 --- Architecture checkpoint: the shipped layout must load separately authored
 --- component modules and render them correctly in App mode and ordinary 1 x 1.
 local function testRendersInBothModes(label, zone)
-  local context = definition.create(zone, DEFAULT_OPTIONS, sourcePath)
+  local context = createLoaded(zone, DEFAULT_OPTIONS, sourcePath)
 
   assertEqual(#context.errors, 0, label .. ": " .. table.concat(context.errors, "\n"))
   assertEqual(#context.components, 5, label .. ": component count")
@@ -350,16 +364,23 @@ local function testReflowAndLifecycle()
   assertEqual(pulse.instance.events, 1, "event was not dispatched")
 end
 
---- Changing Dashboard ID or Theme tears down and rebuilds without leaking.
+--- Changing Dashboard ID or Theme tears down and restages without leaking.
 local function testOptionReload()
   definition.update(appContext, {DashID = "alternate", Theme = "modern"})
   definition.refresh(appContext)
   assertEqual(appContext.root.cleared, true)
-  definition.refresh(appContext)
+  assert(appContext.stage, "reload did not restage a load")
+
+  local guard = 0
+  while appContext.stage do
+    definition.refresh(appContext)
+    guard = guard + 1
+    assert(guard < 200, "reload never finished")
+  end
   assertEqual(#appContext.components, 5)
 
   -- Switching only the theme must also trigger a rebuild.
-  local context = definition.create({x = 0, y = 0, w = 480, h = 272},
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
     DEFAULT_OPTIONS, sourcePath)
   definition.update(context, {DashID = "main", Theme = "custom"})
   assertEqual(context.reloadState, "clear")
@@ -402,7 +423,7 @@ components:
 ]])
 
   local zone = {x = 0, y = 0, w = 480, h = 272}
-  local context = definition.create(zone, DEFAULT_OPTIONS, widgetPath)
+  local context = createLoaded(zone, DEFAULT_OPTIONS, widgetPath)
   local dial = entryById(context, "dial")
   assert(dial.instance.radial, "radial visualization was not created")
 
@@ -458,7 +479,7 @@ return halfbuilt
 ]==],
   })
 
-  local context = definition.create({x = 0, y = 0, w = 480, h = 272},
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
     DEFAULT_OPTIONS, widgetPath)
 
   assertEqual(#context.components, 1, "failed component must not be kept")
@@ -468,7 +489,7 @@ end
 
 --- The demo driver must cycle visible states through the host refresh loop.
 local function testDemoCycle()
-  local context = definition.create({x = 0, y = 0, w = 480, h = 272},
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
     DEFAULT_OPTIONS, sourcePath)
   local pack = entryById(context, "pack").instance
   local seen = {}
@@ -521,7 +542,7 @@ components:
       label: Derived
 ]])
 
-  local context = definition.create({x = 0, y = 0, w = 480, h = 272},
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
     DEFAULT_OPTIONS, widgetPath)
 
   assertEqual(context.theme.mode, "edgetx")
@@ -565,7 +586,7 @@ components:
       label: Custom
 ]])
 
-  local context = definition.create({x = 0, y = 0, w = 480, h = 272},
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
     DEFAULT_OPTIONS, widgetPath)
 
   assertEqual(context.theme.mode, "custom")
@@ -613,7 +634,7 @@ return exploder
 ]==],
   })
 
-  local context = definition.create({x = 0, y = 0, w = 480, h = 272},
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
     DEFAULT_OPTIONS, widgetPath)
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
   assertEqual(#context.components, 2)
@@ -670,7 +691,7 @@ return eater
 ]==],
   })
 
-  local context = definition.create({x = 0, y = 0, w = 480, h = 272},
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
     DEFAULT_OPTIONS, widgetPath)
   assertEqual(#context.components, 2)
 
@@ -727,7 +748,7 @@ return {id = "somethingelse", apiVersion = 1, create = function() return {} end}
 ]==],
   })
 
-  local context = definition.create({x = 0, y = 0, w = 480, h = 272},
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
     DEFAULT_OPTIONS, widgetPath)
 
   assertEqual(#context.components, 1, "only the valid component should load")
@@ -744,7 +765,7 @@ end
 --- A corrupt layout must report an error instead of raising.
 local function testCorruptLayout()
   local widgetPath = makeWidget("corrupt", "version: 1\n\tcomponents: []\n")
-  local context = definition.create({x = 0, y = 0, w = 480, h = 272},
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
     DEFAULT_OPTIONS, widgetPath)
 
   assertEqual(#context.components, 0)
@@ -752,12 +773,67 @@ local function testCorruptLayout()
   assert(context.errorLabel, "corrupt layout was not shown")
 end
 
---- Several real model filenames must each resolve and fall back cleanly.
+--- EdgeTX aborts any widget callback exceeding 20000 VM instructions with
+--- "CPU limit". That ceiling is invisible to ordinary assertions, so measure
+--- every callback the firmware can invoke and keep real headroom.
+local function testInstructionBudget()
+  local BUDGET = 20000
+  local CEILING = BUDGET * 0.75
+
+  local function measure(fn, ...)
+    local ticks = 0
+    -- Count exactly as the firmware does: a hook every 200 instructions.
+    debug.sethook(function() ticks = ticks + 1 end, "", 200)
+    local ok, err = pcall(fn, ...)
+    debug.sethook()
+    assert(ok, "callback raised: " .. tostring(err))
+    return ticks * 200
+  end
+
+  local zone = {x = 0, y = 0, w = 480, h = 272}
+  local worst = 0
+  local worstName = "none"
+
+  local function record(name, cost)
+    assert(cost < CEILING, string.format(
+      "%s used %d instructions, over the %d ceiling (firmware limit %d)",
+      name, cost, CEILING, BUDGET))
+    if cost > worst then worst = cost; worstName = name end
+  end
+
+  local context
+  record("create", measure(function()
+    context = definition.create(zone, DEFAULT_OPTIONS, sourcePath)
+  end))
+
+  local steps = 0
+  while context.stage do
+    local stage = context.stage
+    record("refresh/" .. stage, measure(definition.refresh, context))
+    steps = steps + 1
+    assert(steps < 200, "staged load never finished")
+  end
+  assertEqual(#context.components, 5)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+
+  -- Steady state runs on every screen redraw, so it matters most.
+  record("refresh/steady", measure(definition.refresh, context))
+  record("background", measure(definition.background, context))
+  record("event", measure(definition.event, context, 32))
+
+  -- A zone change reflows every component in one callback.
+  zone.w = 320
+  zone.h = 240
+  record("refresh/reflow", measure(definition.refresh, context))
+
+  print(string.format("  budget headroom: worst callback %s used %d of %d",
+    worstName, worst, BUDGET))
+end
 local function testModelFilenames()
   local previous = modelFilename
   for _, name in ipairs({"model1.yml", "Kavan Sonic.yml", "FPV-7in.yml"}) do
     modelFilename = name
-    local context = definition.create({x = 0, y = 0, w = 480, h = 272},
+    local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
       DEFAULT_OPTIONS, sourcePath)
     assertEqual(context.layoutPath, sourcePath .. "layouts/default.yaml",
       "unexpected layout for " .. name)
@@ -776,5 +852,6 @@ testEventConsumption()
 testContractRejections()
 testCorruptLayout()
 testModelFilenames()
+testInstructionBudget()
 
 print("AeroGrid widget integration test passed")

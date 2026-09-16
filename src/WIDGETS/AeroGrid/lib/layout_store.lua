@@ -71,7 +71,30 @@ function layoutStore.path(widgetPath, modelFilename, dashboardId)
     .. sanitize(dashboardId) .. ".yaml"
 end
 
+--- Resolve and read the layout file, without parsing it.
+--- Reading, tokenizing, parsing, and validating are separate steps so the host
+--- can spend one widget callback on each and stay inside EdgeTX's budget.
+---@param widgetPath string Absolute AeroGrid widget directory.
+---@param modelFilename string Current EdgeTX model filename.
+---@param dashboardId string Native Dashboard ID option.
+---@return string? content
+---@return string? error
+---@return string filename Selected specific or fallback layout path.
+function layoutStore.read(widgetPath, modelFilename, dashboardId)
+  local filename = layoutStore.path(widgetPath, modelFilename, dashboardId)
+  local content, readError = readFile(filename)
+
+  if not content then
+    filename = (string.sub(widgetPath, -1) == "/" and widgetPath or widgetPath .. "/")
+      .. "layouts/default.yaml"
+    content, readError = readFile(filename)
+  end
+
+  return content, readError, filename
+end
+
 --- Read, parse, and validate a layout, falling back to default.yaml.
+--- Retained for tests and callers that can afford the whole cost at once.
 ---@param widgetPath string Absolute AeroGrid widget directory.
 ---@param modelFilename string Current EdgeTX model filename.
 ---@param dashboardId string Native Dashboard ID option.
@@ -82,14 +105,8 @@ end
 ---@return string[] errors
 ---@return string filename Selected specific or fallback layout path.
 function layoutStore.load(widgetPath, modelFilename, dashboardId, yaml, layout, grid)
-  local filename = layoutStore.path(widgetPath, modelFilename, dashboardId)
-  local content, readError = readFile(filename)
-
-  if not content then
-    filename = (string.sub(widgetPath, -1) == "/" and widgetPath or widgetPath .. "/")
-      .. "layouts/default.yaml"
-    content, readError = readFile(filename)
-  end
+  local content, readError, filename = layoutStore.read(
+    widgetPath, modelFilename, dashboardId)
   if not content then return nil, {readError}, filename end
 
   local document, parseError = yaml.parse(content)

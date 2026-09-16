@@ -35,7 +35,12 @@
 ---@field services table Shared objects handed to components.
 ---@field layoutPath? string
 ---@field errorLabel? any
----@field reloadState? "clear"|"build"
+---@field reloadState? "clear"
+---@field stage? "read"|"tokenize"|"parse"|"components" Staged loader position.
+---@field source? string Layout text held between the read and tokenize steps.
+---@field tokens? table Tokens held between the tokenize and parse steps.
+---@field pending? table[] Validated placements still awaiting construction.
+---@field pendingIndex? integer Next placement to build.
 
 local options = {
   {"DashID", STRING, "main"},
@@ -152,91 +157,178 @@ end
 
 --- Load, validate, and instantiate every component in the selected layout.
 ---@param context AeroGridContext
-local function loadComponents(context)
-  local modelInfo = model.getInfo()
-  local document, layoutErrors, filename = context.layoutStore.load(
-    context.path,
-    modelInfo and modelInfo.filename or "default",
-    context.dashboardId,
-    context.yaml,
-    context.layoutValidator,
-    context.grid)
+--- Instantiate one validated placement.
+---@param context AeroGridContext
+---@param placement table
+local function buildComponent(context, placement)
+  local host = context.componentHost
+  local component, componentError = loadModule(
+    context.path, "components/" .. placement.type .. ".lua")
+  local contractValid, contractError
 
-  context.layoutPath = filename
-  for _, layoutError in ipairs(layoutErrors or {}) do addError(context, layoutError) end
-  if not document then
-    showErrors(context)
+  if component then
+    contractValid, contractError = host.validateModule(component, placement.type)
+  end
+
+  if not component then
+    addError(context, placement.id .. ": " .. tostring(componentError))
+    return
+  end
+  if not contractValid then
+    addError(context, placement.id .. ": " .. tostring(contractError))
+    return
+  end
+  if not host.supportsSpan(component, placement.colSpan, placement.rowSpan) then
+    addError(context, placement.id .. ": component does not support span "
+      .. host.spanName(placement.colSpan, placement.rowSpan))
     return
   end
 
-  -- A layout may pin its own theme; otherwise the native option decides.
-  local themeConfig = document.theme or {}
-  context.theme = context.themeBuilder.build(
-    themeConfig.mode or context.themeMode, themeConfig.overrides)
-  for _, warning in ipairs(context.theme.warnings) do
-    addError(context, "theme: " .. warning)
-  end
-  context.root:set({color = context.theme.color.canvas})
-
-  local host = context.componentHost
-  for _, placement in ipairs(document.components) do
-    local component, componentError = loadModule(
-      context.path, "components/" .. placement.type .. ".lua")
-    local contractValid, contractError
-
-    if component then
-      contractValid, contractError = host.validateModule(component, placement.type)
-    end
-
-    if not component then
-      addError(context, placement.id .. ": " .. tostring(componentError))
-    elseif not contractValid then
-      addError(context, placement.id .. ": " .. tostring(contractError))
-    elseif not host.supportsSpan(component, placement.colSpan, placement.rowSpan) then
-      addError(context, placement.id .. ": component does not support span "
-        .. host.spanName(placement.colSpan, placement.rowSpan))
-    else
-      local rect, rectError = context.grid.rect(context.zone, placement, 4, 4, 4)
-      if not rect then
-        addError(context, placement.id .. ": " .. tostring(rectError))
-      else
-        local settings, warnings = host.resolveSettings(component, placement.config)
-        for _, warning in ipairs(warnings) do
-          addError(context, placement.id .. ": " .. warning)
-        end
-
-        -- Each component draws inside its own container, so it cannot reach
-        -- the dashboard root or paint over a neighbour.
-        local container = lvgl.box(context.root, {
-          x = rect.x,
-          y = rect.y,
-          w = rect.w,
-          h = rect.h,
-          color = context.theme.color.canvas,
-        })
-        local localRect = {x = 0, y = 0, w = rect.w, h = rect.h}
-
-        local services = buildServices(context, placement)
-        local ok, instance = pcall(
-          component.create, container, localRect, settings, services)
-        if ok then
-          context.components[#context.components + 1] = {
-            placement = placement,
-            module = component,
-            instance = instance,
-            settings = settings,
-            container = container,
-          }
-        else
-          -- Discard whatever the failed component managed to build.
-          container:clear()
-          addError(context, placement.id .. ": " .. tostring(instance))
-        end
-      end
-    end
+  local rect, rectError = context.grid.rect(context.zone, placement, 4, 4, 4)
+  if not rect then
+    addError(context, placement.id .. ": " .. tostring(rectError))
+    return
   end
 
-  showErrors(context)
+  local settings, warnings = host.resolveSettings(component, placement.config)
+  for _, warning in ipairs(warnings) do
+    addError(context, placement.id .. ": " .. warning)
+  end
+
+  -- Each component draws inside its own container, so it cannot reach the
+  -- dashboard root or paint over a neighbour.
+  local container = lvgl.box(context.root, {
+    x = rect.x,
+    y = rect.y,
+    w = rect.w,
+    h = rect.h,
+    color = context.theme.color.canvas,
+  })
+
+  local services = buildServices(context, placement)
+  local ok, instance = pcall(component.create, container,
+    {x = 0, y = 0, w = rect.w, h = rect.h}, settings, services)
+
+  if ok then
+    context.components[#context.components + 1] = {
+      placement = placement,
+      module = component,
+      instance = instance,
+      settings = settings,
+      container = container,
+    }
+  else
+    -- Discard whatever the failed component managed to build.
+    container:clear()
+    addError(context, placement.id .. ": " .. tostring(instance))
+  end
+end
+
+--- Advance the staged loader by exactly one step.
+--- EdgeTX allows roughly 20000 VM instructions per widget callback, and a
+--- whole dashboard costs far more than that, so loading is spread over
+--- consecutive calls: read, tokenize, build and validate, then one component
+--- per call. Each step stays well inside the budget regardless of layout size.
+---@param context AeroGridContext
+---@return boolean busy True while more work remains.
+local function advanceLoad(context)
+  local stage = context.stage
+
+  if stage == "read" then
+    local modelInfo = model.getInfo()
+    local content, readError, filename = context.layoutStore.read(
+      context.path, modelInfo and modelInfo.filename or "default",
+      context.dashboardId)
+
+    context.layoutPath = filename
+    if not content then
+      addError(context, readError)
+      context.stage = nil
+      showErrors(context)
+      return false
+    end
+
+    context.source = content
+    context.stage = "tokenize"
+    return true
+  end
+
+  if stage == "tokenize" then
+    local tokens, tokenError = context.yaml.tokenize(context.source)
+    context.source = nil
+    if not tokens then
+      addError(context, tokenError)
+      context.stage = nil
+      showErrors(context)
+      return false
+    end
+
+    context.tokens = tokens
+    context.stage = "parse"
+    return true
+  end
+
+  if stage == "parse" then
+    local document, parseError = context.yaml.build(context.tokens)
+    context.tokens = nil
+    if not document then
+      addError(context, parseError)
+      context.stage = nil
+      showErrors(context)
+      return false
+    end
+
+    local validated, layoutErrors = context.layoutValidator.validate(
+      document, context.grid)
+    for _, layoutError in ipairs(layoutErrors or {}) do addError(context, layoutError) end
+    if not validated then
+      context.stage = nil
+      showErrors(context)
+      return false
+    end
+
+    -- A layout may pin its own theme; otherwise the native option decides.
+    local themeConfig = validated.theme or {}
+    context.theme = context.themeBuilder.build(
+      themeConfig.mode or context.themeMode, themeConfig.overrides)
+    for _, warning in ipairs(context.theme.warnings) do
+      addError(context, "theme: " .. warning)
+    end
+    context.root:set({color = context.theme.color.canvas})
+
+    context.pending = validated.components
+    context.pendingIndex = 1
+    context.stage = "components"
+    return true
+  end
+
+  if stage == "components" then
+    local placement = context.pending[context.pendingIndex]
+    if not placement then
+      context.pending = nil
+      context.stage = nil
+      showErrors(context)
+      return false
+    end
+
+    context.pendingIndex = context.pendingIndex + 1
+    buildComponent(context, placement)
+    return true
+  end
+
+  return false
+end
+
+--- Begin a staged load, discarding anything already on screen.
+---@param context AeroGridContext
+local function beginLoad(context)
+  context.components = {}
+  context.errors = {}
+  context.errorLabel = nil
+  context.pending = nil
+  context.tokens = nil
+  context.source = nil
+  context.stage = "read"
 end
 
 --- Create one AeroGrid host instance for an EdgeTX custom-screen zone.
@@ -278,7 +370,9 @@ local function create(zone, widgetOptions, path)
     addError(context, "AeroGrid runtime module failed to load")
     showErrors(context)
   else
-    loadComponents(context)
+    -- Loading is deliberately deferred to refresh(). Doing it here would
+    -- exceed EdgeTX's per-callback instruction budget on a full dashboard.
+    beginLoad(context)
   end
 
   return context
@@ -325,7 +419,6 @@ local function update(context, widgetOptions)
     context.reloadState = "clear"
   end
 end
-
 --- Translate compact native option keys into user-facing labels.
 ---@param name string
 ---@return string
@@ -356,20 +449,22 @@ local function event(context, widgetEvent)
   return false
 end
 
---- Advance deferred reloads and keep component geometry synchronized.
+--- Advance the staged loader, then keep geometry and components synchronized.
+--- At most one loading step runs per call, so the instruction budget is never
+--- exceeded no matter how large the layout is.
 ---@param context AeroGridContext
 local function refresh(context)
   if context.reloadState == "clear" then
     dispatchAll(context, "destroy")
     context.root:clear()
-    context.components = {}
-    context.errors = {}
-    context.errorLabel = nil
-    context.reloadState = "build"
-    return
-  elseif context.reloadState == "build" then
     context.reloadState = nil
-    loadComponents(context)
+    beginLoad(context)
+    return
+  end
+
+  if context.stage then
+    advanceLoad(context)
+    return
   end
 
   if context.width ~= context.zone.w or context.height ~= context.zone.h then
@@ -382,7 +477,7 @@ end
 --- Keep components updated while the dashboard screen is not visible.
 ---@param context AeroGridContext
 local function background(context)
-  if context.reloadState then return end
+  if context.stage or context.reloadState then return end
   dispatchAll(context, "background")
 end
 

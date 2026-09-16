@@ -97,6 +97,18 @@ The host owns every color; components never define palettes. Three modes are ava
 
 Both derived modes pass through a legibility pass that enforces minimum contrast for text, panel elevation, borders, and every semantic accent, so a hostile or pale source theme cannot produce an unreadable dashboard. Critical red is never theme-derived, and AeroGrid never calls `lcd.setColor()`.
 
+## Instruction budget
+
+EdgeTX aborts a widget callback that exceeds 20000 Lua VM instructions with `CPU limit`. AeroGrid therefore loads in stages: `create` only prepares the runtime, and each `refresh` performs one step (read, tokenize, parse, then one component at a time). The dashboard fills in over a few frames instead of blocking a single callback, and layout size cannot push any one call over the limit.
+
+`make test` measures every callback the firmware can invoke and fails if one exceeds 75% of the budget, printing the worst case:
+
+```text
+budget headroom: worst callback refresh/parse used 7200 of 20000
+```
+
+Component callbacks share this allowance. Per-character string loops are the usual way to exhaust it.
+
 ## Simulator fixture convention
 
 `tests/fixtures/sdcard/` is version-controlled test and development input. Keep only deterministic files required to reproduce simulator startup there:
