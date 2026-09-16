@@ -95,6 +95,7 @@ lvgl = {
   rectangle = constructor("rectangle"),
   label = constructor("label"),
   arc = constructor("arc"),
+  image = constructor("image"),
   hide = function(object) object.hidden = true end,
   show = function(object) object.hidden = false end,
 }
@@ -177,6 +178,18 @@ for index = 1, 3 do
     name = "GV" .. (index + 1), min = -100, max = 100, prec = 0, unit = 1,
   }
 end
+
+-- Vertical speed, which the metric's altitude preset takes as its secondary
+-- reading. It is never derived from altitude; an absent sensor simply leaves
+-- the secondary row unavailable.
+radio.fields.VSpd = {id = 120, name = "VSpd", desc = "Vertical speed", unit = 5}
+radio.values[120] = 2.5
+radio.sensors[19] = {name = "VSpd", prec = 1}
+
+--- Files the radio reports through `fstat`, keyed by absolute path.
+--- Model bitmaps live under /IMAGES/ on the SD card, which the host running
+--- these tests does not have, so the mock answers for them directly.
+radio.files = {["/IMAGES/plane.png"] = 4096}
 
 --- Reverse index from source id to field, rebuilt whenever a test adds one.
 --- It exists so the mock costs a table lookup rather than a scan: getValue is
@@ -264,9 +277,14 @@ function loadScript(filename)
 end
 
 function fstat(filename)
+  -- The radio's own SD card comes first, so a test can describe a model
+  -- bitmap that the host filesystem does not have.
+  local size = radio.files[filename]
+  if size then return {size = size} end
+
   local handle = hostIo.open(filename, "rb")
   if not handle then return nil end
-  local size = handle:seek("end")
+  size = handle:seek("end")
   handle:close()
   return {size = size}
 end
@@ -371,21 +389,95 @@ local function panelsOverlap(first, second)
     and first.y < second.y + second.h and second.y < first.y + first.h
 end
 
---- Architecture checkpoint: the shipped layout must load separately authored
---- component modules and render them correctly in App mode and ordinary 1 x 1.
-local function testRendersInBothModes(label, zone)
-  local context = createLoaded(zone, DEFAULT_OPTIONS, sourcePath)
+--- The design-system tests need an arrangement they control: the shipped
+--- dashboard is free to change as the catalog grows, and a test that asserted
+--- its exact contents would break every time it did. This layout pins the
+--- spans and configurations those tests measure.
+local REFERENCE_LAYOUT = [[
+version: 1
+theme:
+  mode: modern
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: pack
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: Pack
+      source: RxBt
+      unit: V
+      accent: cyan
+      min: 18
+      max: 25.2
+      warning: 21.0
+      critical: 19.8
+      precision: 1
+      visual: bar
+  - id: current
+    type: metric
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: Current
+      source: Curr
+      accent: orange
+      min: 0
+      max: 120
+      warning: 90
+      critical: 110
+      visual: bar
+  - id: altitude
+    type: metric
+    col: 2
+    row: 1
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: Altitude
+      source: Alt
+      accent: green
+      min: 0
+      max: 400
+      warning: 250
+      critical: 350
+      visual: radial
+  - id: pulse
+    type: heartbeat
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: HEARTBEAT
+      accent: amber
+  - id: secondary
+    type: placeholder
+    col: 2
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      title: PHASE 1
+      subtitle: DESIGN SYSTEM
+      accent: green
+]]
+
+local referencePath = makeWidget("reference", REFERENCE_LAYOUT)
+
+--- Architecture checkpoint: a layout must load separately authored component
+--- modules and render them correctly in App mode and ordinary 1 x 1.
+local function testRendersInBothModes(label, zone, path, expected)
+  local context = createLoaded(zone, DEFAULT_OPTIONS, path or referencePath)
 
   assertEqual(#context.errors, 0, label .. ": " .. table.concat(context.errors, "\n"))
-  assertEqual(#context.components, 5, label .. ": component count")
-  assertEqual(context.layoutPath, sourcePath .. "layouts/default.yaml")
-
-  local types = {}
-  for _, entry in ipairs(context.components) do
-    types[entry.module.id] = true
-  end
-  assert(types.metric and types.placeholder and types.heartbeat,
-    label .. ": expected three independently authored component modules")
+  assertEqual(#context.components, expected or 5, label .. ": component count")
 
   for _, entry in ipairs(context.components) do
     local bounds = boundsOf(entry)
@@ -417,6 +509,54 @@ end
 -- App mode occupies the full TX16S-class display; 1 x 1 loses the top bar.
 local appContext = testRendersInBothModes("app mode", {x = 0, y = 0, w = 480, h = 272})
 testRendersInBothModes("1 x 1", {x = 0, y = 0, w = 480, h = 232})
+
+--- Milestone 6's deliverable: the shipped dashboard must demonstrate every
+--- production component, loading each from its own module without error and
+--- keeping each one inside the container the host gave it.
+local SHIPPED_TYPES = {
+  "metric", "flight-timer", "flight-mode", "tx-battery",
+  "variable-indicator", "trim-panel", "model-identity",
+}
+
+local function testShippedLayout()
+  resetRadio()
+  local zone = {x = 0, y = 0, w = 480, h = 272}
+  local context = testRendersInBothModes("shipped", zone, sourcePath, 8)
+  assertEqual(context.layoutPath, sourcePath .. "layouts/default.yaml")
+
+  local types = {}
+  for _, entry in ipairs(context.components) do types[entry.module.id] = true end
+  for _, wanted in ipairs(SHIPPED_TYPES) do
+    assert(types[wanted],
+      "the shipped dashboard does not demonstrate " .. wanted)
+  end
+
+  -- Every component must survive real radio state, not merely construction.
+  for _ = 1, 60 do
+    tick(20)
+    definition.refresh(context)
+  end
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+
+  -- The preset metric takes its label, bounds, and sources from the preset.
+  local altitude = entryById(context, "altitude").instance
+  assertEqual(altitude.settings.label, "ALT")
+  assertEqual(altitude.settings.source, "Alt")
+  assertEqual(altitude.feed.name, "Alt")
+  assertEqual(altitude.extremeFeed.name, "Alt+", "the preset lost its extrema")
+  assertEqual(altitude.secondaryFeed.name, "VSpd")
+  assertEqual(altitude.value.properties.text, "100")
+  assertEqual(altitude.range.properties.text, "MAX 180")
+  assertEqual(altitude.secondary.properties.text, "VS 2.5m/s")
+
+  -- And the components that read the radio rather than the link.
+  assertEqual(entryById(context, "flight-clock").instance.text, "1:30")
+  assertEqual(entryById(context, "mode").instance.text, "Sport")
+  assertEqual(entryById(context, "radio-battery").instance.text, "7.9V")
+  assertEqual(entryById(context, "rates").instance.text, "4.5")
+  assertEqual(entryById(context, "identity").instance.text, "Test Model")
+  assertEqual(entryById(context, "trims").instance.indicators[1].valueText, "+23%")
+end
 
 --- The host owns the palette: every panel uses the resolved surface token.
 local function testThemeReachesComponents()
@@ -577,7 +717,7 @@ local function testOptionReload()
 
   -- Switching only the theme must also trigger a rebuild.
   local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
-    DEFAULT_OPTIONS, sourcePath)
+    DEFAULT_OPTIONS, referencePath)
   definition.update(context, {DashID = "main", Theme = "custom"})
   assertEqual(context.reloadState, "clear")
 end
@@ -689,7 +829,7 @@ end
 local function testTelemetryDrivesComponents()
   resetRadio()
   local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
-    DEFAULT_OPTIONS, sourcePath)
+    DEFAULT_OPTIONS, referencePath)
   local pack = entryById(context, "pack").instance
   local current = entryById(context, "current").instance
 
@@ -758,7 +898,7 @@ local function testOnlyReferencedSourcesArePolled()
   end
 
   local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
-    DEFAULT_OPTIONS, sourcePath)
+    DEFAULT_OPTIONS, referencePath)
   for _ = 1, 40 do
     tick(20)
     definition.refresh(context)
@@ -778,6 +918,7 @@ local function testOnlyReferencedSourcesArePolled()
   assertEqual(byId.model.revision, 0, "an idle service was scheduled")
 end
 
+testShippedLayout()
 testThemeReachesComponents()
 testBackgroundsArePainted()
 testResponsiveSpans()
@@ -1136,6 +1277,93 @@ local function testInstructionBudget()
     return table.concat(lines, "\n") .. "\n"
   end
 
+  --- Build a layout that fills the grid with one component type.
+  --- Every core component has to be measured at the largest layout the schema
+  --- permits, not at the span the shipped dashboard happens to use.
+  ---@param componentType string
+  ---@param configFor fun(index: integer): string[] Config lines for one cell.
+  local function typedGridLayout(componentType, configFor)
+    local lines = {"version: 1", "grid:", "  columns: 4", "  rows: 4", "components:"}
+    for i = 1, 16 do
+      local col, row = (i - 1) % 4, math.floor((i - 1) / 4)
+      lines[#lines + 1] = "  - id: c" .. i
+      lines[#lines + 1] = "    type: " .. componentType
+      lines[#lines + 1] = "    col: " .. col
+      lines[#lines + 1] = "    row: " .. row
+      lines[#lines + 1] = "    colSpan: 1"
+      lines[#lines + 1] = "    rowSpan: 1"
+      lines[#lines + 1] = "    config:"
+      for _, line in ipairs(configFor(i)) do
+        lines[#lines + 1] = "      " .. line
+      end
+    end
+    return table.concat(lines, "\n") .. "\n"
+  end
+
+  --- Every core component, at sixteen single cells, with the services each one
+  --- must genuinely drive while it is measured.
+  local CORE_EXERCISES = {
+    {
+      type = "metric",
+      services = {"telemetry", "extrema"},
+      config = function(index)
+        return {
+          "preset: " .. (index % 2 == 0 and "altitude" or "speed"),
+          "source: S" .. index,
+          "extrema: flight",
+          "armSource: sa",
+        }
+      end,
+    },
+    {
+      type = "flight-timer",
+      services = {"model"},
+      config = function(index)
+        return {"timer: " .. ((index - 1) % 3), "warning: 60", "critical: 20"}
+      end,
+    },
+    {
+      type = "flight-mode",
+      services = {"model"},
+      config = function() return {"showIndex: true"} end,
+    },
+    {
+      type = "tx-battery",
+      services = {"model"},
+      config = function()
+        return {"min: 6.6", "max: 8.4", "warning: 7.0", "showPercent: true"}
+      end,
+    },
+    {
+      type = "variable-indicator",
+      services = {"control"},
+      config = function(index)
+        local presentations = {
+          "value", "horizontal-bar", "bipolar-bar", "radial",
+        }
+        return {
+          "binding: global",
+          "index: " .. ((index - 1) % 4),
+          "presentation: " .. presentations[(index - 1) % 4 + 1],
+        }
+      end,
+    },
+    {
+      type = "trim-panel",
+      services = {"control"},
+      config = function()
+        -- Four indicators each, so the panel builds and drives the most
+        -- objects it ever can.
+        return {"mode: all", "display: percent", "scale: auto"}
+      end,
+    },
+    {
+      type = "model-identity",
+      services = {"model"},
+      config = function() return {"presentation: both", "showLabels: true"} end,
+    },
+  }
+
   local worst, worstName = 0, "none"
   local worstSteady, worstSteadyName = 0, "none"
 
@@ -1224,9 +1452,19 @@ local function testInstructionBudget()
     return context
   end
 
-  exercise("shipped", sourcePath, 5, {"telemetry"})
+  exercise("shipped", sourcePath, 8,
+    {"telemetry", "model", "control"})
   exercise("full grid", makeWidget("budget-16", fullGridLayout(16)), 16,
     {"telemetry"})
+
+  -- Every core component, one type at a time, at sixteen single cells. A
+  -- component measured only at the span the shipped dashboard uses would hide
+  -- exactly the cost that matters: sixteen of it on one screen.
+  for _, spec in ipairs(CORE_EXERCISES) do
+    exercise(spec.type .. " x16",
+      makeWidget("budget-" .. spec.type, typedGridLayout(spec.type, spec.config)),
+      16, spec.services)
+  end
 
   -- Sixteen diagnostic panels spanning all five services: the worst case the
   -- schema permits for the service layer itself.
@@ -1359,8 +1597,8 @@ local function testModelFilenames()
   for _, name in ipairs({"model1.yml", "Kavan Sonic.yml", "FPV-7in.yml"}) do
     modelFilename = name
     local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
-      DEFAULT_OPTIONS, sourcePath)
-    assertEqual(context.layoutPath, sourcePath .. "layouts/default.yaml",
+      DEFAULT_OPTIONS, referencePath)
+    assertEqual(context.layoutPath, referencePath .. "layouts/default.yaml",
       "unexpected layout for " .. name)
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
     assertEqual(#context.components, 5)
@@ -1562,6 +1800,386 @@ components:
   assert(ok, "background raised without a service")
 end
 
+--- A layout carrying one of each core component, at a span each one supports.
+--- Every component reads real radio state, so the assertions below are about
+--- what the radio actually says rather than about mocked component internals.
+local CORE_LAYOUT = [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: countdown
+    type: flight-timer
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      timer: 0
+      warning: 120
+      critical: 30
+  - id: countup
+    type: flight-timer
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      timer: 1
+  - id: mode
+    type: flight-mode
+    col: 0
+    row: 1
+    colSpan: 1
+    rowSpan: 1
+    config:
+      showIndex: true
+  - id: battery
+    type: tx-battery
+    col: 1
+    row: 1
+    colSpan: 1
+    rowSpan: 1
+    config:
+      min: 6.6
+      max: 8.4
+      warning: 7.0
+      critical: 6.8
+      showPercent: true
+  - id: gv
+    type: variable-indicator
+    col: 2
+    row: 1
+    colSpan: 2
+    rowSpan: 1
+    config:
+      binding: global
+      index: 1
+      presentation: horizontal-bar
+  - id: identity
+    type: model-identity
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      presentation: both
+      showLabels: true
+  - id: trims
+    type: trim-panel
+    col: 2
+    row: 2
+    colSpan: 2
+    rowSpan: 1
+    config:
+      mode: all
+      orientation: horizontal
+      display: raw
+  - id: dial
+    type: variable-indicator
+    col: 2
+    row: 3
+    colSpan: 1
+    rowSpan: 1
+    config:
+      binding: source
+      source: Curr
+      label: Current
+      presentation: radial
+      min: 0
+      max: 120
+  - id: swing
+    type: variable-indicator
+    col: 3
+    row: 3
+    colSpan: 1
+    rowSpan: 1
+    config:
+      binding: global
+      index: 0
+      presentation: bipolar-bar
+]]
+
+--- Advance a context far enough for every service and component to settle.
+local function settle(context, count)
+  for _ = 1, (count or 60) do
+    tick(20)
+    definition.refresh(context)
+  end
+end
+
+--- Each core component must render what the radio reports, in the state the
+--- radio's own values imply.
+local function testCoreComponents()
+  resetRadio()
+  local widgetPath = makeWidget("core", CORE_LAYOUT)
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  assertEqual(#context.components, 9)
+  settle(context)
+
+  -- A countdown shows what EdgeTX's timer says, takes its name from the
+  -- model, and states the total it is counting down from.
+  local countdown = entryById(context, "countdown").instance
+  assertEqual(countdown.text, "1:30")
+  assertEqual(countdown.labelValue, "FLIGHT", "the timer's own name was ignored")
+  assertEqual(countdown.detail, "OF 5:00")
+  assertEqual(countdown.stateName, "warning", "90s left is inside the warning")
+  assertEqual(countdown.badge.properties.text, "WARN")
+
+  -- A count-up timer has no total and therefore no progress to draw.
+  local countup = entryById(context, "countup").instance
+  assertEqual(countup.text, "1:04")
+  assertEqual(countup.detail, "COUNTING UP")
+  assertEqual(countup.stateName, "normal")
+
+  -- An expired countdown must never read like a healthy timer.
+  radio.timers[0] = {value = -15, start = 300, name = "Flight", persistent = 1}
+  settle(context, 12)
+  assertEqual(countdown.text, "-0:15", "an expired countdown lost its sign")
+  assertEqual(countdown.detail, "ELAPSED PAST ZERO")
+  assertEqual(countdown.stateName, "critical")
+  radio.timers[0] = {value = 90, start = 300, name = "Flight", persistent = 1}
+
+  local mode = entryById(context, "mode").instance
+  assertEqual(mode.text, "Sport")
+  assertEqual(mode.detail, "MODE 1")
+
+  -- The transmitter pack: voltage is authoritative, the percentage is an
+  -- estimate and says so.
+  local battery = entryById(context, "battery").instance
+  assertEqual(battery.text, "7.9V")
+  assertEqual(battery.detail, "72% EST")
+  assertEqual(battery.stateName, "normal")
+  radio.values[320] = 6.7
+  settle(context, 12)
+  assertEqual(battery.stateName, "critical")
+  assertEqual(battery.badge.properties.text, "CRIT")
+  radio.values[320] = 7.9
+
+  -- A global variable takes its name, bounds, precision, and unit from
+  -- EdgeTX, and AeroGrid never writes one.
+  local gv = entryById(context, "gv").instance
+  assertEqual(gv.text, "10%")
+  assertEqual(gv.labelValue, "GV2")
+  assertEqual(gv.detail, "GV2 FM1", "the flight mode the value was read for")
+  -- -100 to 100 crosses zero, so the bar carries a tick at its centre.
+  assert(gv.bar.markerFraction, "a bar over a signed range lost its zero tick")
+  assertEqual(gv.bar.marker.hidden, false)
+
+  -- EdgeTX resolves global variable inheritance, so the value read for two
+  -- flight modes is frequently identical. The row that names the mode has to
+  -- follow the mode anyway, or it reports the wrong one with a straight face.
+  radio.flightMode, radio.flightModeName = 2, "Land"
+  settle(context, 12)
+  assertEqual(gv.text, "10%", "the inherited value should not have moved")
+  assertEqual(gv.detail, "GV2 FM2", "the flight mode row went stale")
+  radio.flightMode, radio.flightModeName = 1, "Sport"
+  settle(context, 12)
+
+  -- The same component bound to a telemetry source instead.
+  local dial = entryById(context, "dial").instance
+  assertEqual(dial.text, "10.0A")
+  assert(dial.radial, "the radial presentation was not built")
+  -- 10 of 0..120 is a small part of a 270 degree sweep.
+  assertEqual(dial.radial.arc.properties.endAngle, 135 + 23)
+
+  -- Trims are read through EdgeTX's own sources, in stored trim units.
+  local trims = entryById(context, "trims").instance
+  assertEqual(#trims.indicators, 4)
+  assertEqual(trims.indicators[1].valueText, "+30", "240 raw is 30 trim units")
+  assertEqual(trims.indicators[2].valueText, "-15")
+  assertEqual(trims.indicators[3].valueText, "+8")
+  assertEqual(trims.indicators[4].valueText, "0")
+  assertEqual(trims.indicators[1].caption.properties.text, "AIL")
+  -- A positive trim fills rightward from the centre of its own bar.
+  local fill = trims.indicators[1].bar.fill.properties
+  assert(fill.x >= trims.indicators[1].bar.x + math.floor(trims.indicators[1].bar.w / 2),
+    "a positive trim filled the wrong side of centre")
+
+  local identity = entryById(context, "identity").instance
+  assertEqual(identity.text, "Test Model")
+  assertEqual(identity.labelsText, "fpv")
+  assert(identity.image, "a model bitmap that exists was not shown")
+  assertEqual(identity.image.properties.file, "/IMAGES/plane.png")
+
+  -- A bipolar bar measures each side against its own bound.
+  local swing = entryById(context, "swing").instance
+  assertEqual(swing.text, "4.5")
+  assert(swing.bipolar, "the bipolar presentation was not built")
+
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  resetRadio()
+end
+
+--- Every component must degrade visibly rather than raise when the radio
+--- cannot answer: a firmware without the API, a source that does not exist, a
+--- timer index out of range, and a model bitmap that is not on the card.
+local function testComponentsDegrade()
+  resetRadio()
+  local widgetPath = makeWidget("degrade", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: timer
+    type: flight-timer
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      timer: 7
+  - id: gv
+    type: variable-indicator
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      binding: source
+      source: NoSuchSensor
+  - id: trims
+    type: trim-panel
+    col: 0
+    row: 1
+    colSpan: 2
+    rowSpan: 1
+    config:
+      mode: pair
+      trim1: not-a-trim
+      trim2: also-not-a-trim
+  - id: identity
+    type: model-identity
+    col: 2
+    row: 1
+    colSpan: 2
+    rowSpan: 2
+    config:
+      presentation: both
+  - id: mode
+    type: flight-mode
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 1
+  - id: battery
+    type: tx-battery
+    col: 0
+    row: 3
+    colSpan: 2
+    rowSpan: 1
+]])
+
+  -- A firmware without a flight mode API, and a model with no bitmap.
+  local realFlightMode = getFlightMode
+  local realGetInfo = model.getInfo
+  getFlightMode = nil
+  model.getInfo = function()
+    return {filename = modelFilename, name = "No Picture", bitmap = "gone.png"}
+  end
+
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  local ok, err = pcall(settle, context)
+  getFlightMode = realFlightMode
+  model.getInfo = realGetInfo
+  assert(ok, "a component raised inside a callback: " .. tostring(err))
+
+  local function assertUnavailable(id)
+    local instance = entryById(context, id).instance
+    assertEqual(instance.stateName, "unavailable", id .. " hid a missing source")
+    assertEqual(instance.badge.properties.text, "NO SOURCE",
+      id .. " reported its state by colour alone")
+  end
+
+  assertUnavailable("timer")
+  assertUnavailable("gv")
+  assertUnavailable("trims")
+  assertUnavailable("mode")
+
+  assertEqual(entryById(context, "timer").instance.text, "--:--")
+  assertEqual(entryById(context, "timer").instance.detail, "NO TIMER")
+  assertEqual(entryById(context, "trims").instance.indicators[1].valueText, "--")
+
+  -- A bitmap the card does not have falls back to the model name rather than
+  -- leaving an empty hole where the picture would be.
+  local identity = entryById(context, "identity").instance
+  assert(identity.area.showImage,
+    "the degradation test must run on a panel that could show an image")
+  assertEqual(identity.text, "No Picture")
+  assertEqual(identity.image, nil, "a missing bitmap was still opened")
+  assertEqual(identity.value.hidden, false, "the name fallback was hidden")
+
+  -- The transmitter voltage does not depend on any of that, so it stays live.
+  assertEqual(entryById(context, "battery").instance.stateName, "normal")
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  resetRadio()
+end
+
+--- Every core component must survive a zone change and stay inside its own
+--- container afterwards, at a size that sheds most of its optional content.
+local function testCoreComponentsReflow()
+  resetRadio()
+  local widgetPath = makeWidget("core-reflow", CORE_LAYOUT)
+  local zone = {x = 0, y = 0, w = 480, h = 272}
+  local context = createLoaded(zone, DEFAULT_OPTIONS, widgetPath)
+  settle(context, 20)
+
+  local function drain()
+    local passes = 0
+    repeat
+      definition.refresh(context)
+      passes = passes + 1
+      assert(passes < 200, "reflow never finished")
+    until not context.reflowIndex
+  end
+
+  --- Assert every visible object sits inside the container it belongs to.
+  local function assertContained(what)
+    for _, entry in ipairs(context.components) do
+      local bounds = boundsOf(entry)
+      local panel = panelOf(entry)
+      assertEqual(panel.w, bounds.w, what .. ": " .. entry.placement.id
+        .. " did not follow its container width")
+      assertEqual(panel.h, bounds.h, what .. ": " .. entry.placement.id
+        .. " did not follow its container height")
+
+      for _, object in ipairs(objects) do
+        if object.parent == entry.instance.panel.root and not object.hidden then
+          local properties = object.properties
+          local right = (properties.x or 0) + (properties.w or 0)
+          local bottom = (properties.y or 0) + (properties.h or 0)
+          assert(right <= bounds.w + 1, what .. ": " .. entry.placement.id
+            .. " drew past its right edge, " .. right .. " in " .. bounds.w)
+          assert(bottom <= bounds.h + 1, what .. ": " .. entry.placement.id
+            .. " drew past its bottom edge, " .. bottom .. " in " .. bounds.h)
+        end
+      end
+    end
+  end
+
+  assertContained("full size")
+
+  zone.w = 320
+  zone.h = 140
+  drain()
+  settle(context, 10)
+  assertContained("shrunk")
+
+  zone.w = 480
+  zone.h = 272
+  drain()
+  settle(context, 10)
+  assertContained("restored")
+
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  resetRadio()
+end
+
 testEdgeTxTheme()
 testCustomTheme()
 testRadialReflow()
@@ -1576,6 +2194,9 @@ testRuntimeFailureIsContained()
 testServiceDiagnostics()
 testDiagnosticsFitTheirPanels()
 testMissingServiceModule()
+testCoreComponents()
+testComponentsDegrade()
+testCoreComponentsReflow()
 testInstructionBudget()
 
 print("AeroGrid widget integration test passed")
