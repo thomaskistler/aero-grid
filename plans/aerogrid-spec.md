@@ -4,8 +4,12 @@
 
 - Draft specification
 - Date: 2026-09-07
+- Status last updated: 2026-09-15
 - EdgeTX source: `../edgetx`
 - Project root: `aero-grid/`
+- Implementation: Phase 1, milestones 1 to 4 complete
+- Next work: Milestone 5, shared data services
+- See [Resuming work](#resuming-work) for the current branch stack and the exact next steps.
 
 ## Summary
 
@@ -533,7 +537,7 @@ The YAML may also record `sourceName` as optional human-readable and recovery me
 
 Settings that apply to the dashboard as a whole, such as a global theme or diagnostic mode, may remain native options declared by `main.lua`. EdgeTX will generate their settings UI and persist them in the model. Placement and dynamic per-component settings must remain in the dashboard YAML.
 
-Each widget instance also declares a native string option named `Dashboard ID`, defaulting to `main`. The host combines the sanitized current model filename and Dashboard ID to select:
+Each widget instance also declares a native string option keyed `DashID` and displayed as `Dashboard ID`, defaulting to `main`. The host combines the sanitized current model filename and Dashboard ID to select:
 
 ```text
 /WIDGETS/AeroGrid/layouts/<model-identifier>--<dashboard-id>.yaml
@@ -819,7 +823,156 @@ A later EdgeTX firmware contribution could implement a native flexible grid layo
 
 This would allow independently registered EdgeTX widgets to occupy configurable grid spans. It is outside the first implementation because the composite host can deliver the desired dashboard with a smaller blast radius.
 
+## Resuming Work
+
+State as of 2026-09-15. This section is the entry point after a break: it records where the code lives, what is proven, and what to do next.
+
+### Branch stack
+
+Three stacked pull requests, none merged. They must land bottom to top.
+
+| PR | Branch | Base | Contents |
+| --- | --- | --- | --- |
+| #1 | `feature/phase-1-runtime` | `main` | Milestone 1 runtime skeleton and the original YAML loader |
+| #2 | `thomaskistler-finish-yaml-loader-and-component-runtime` | #1 | Milestones 2 and 3 completed |
+| #3 | `thomaskistler-design-system` | #2 | Milestone 4, plus firmware fixes, refresh scheduling, and CI |
+
+`main` contains only this specification. All implementation is in the stack.
+
+### Verification state
+
+- `make test` and `make build` pass from a clean tree.
+- CI (`.github/workflows/ci.yml`) runs on every pull request: `make check` under Lua 5.3, the SD image build, and two integrity assertions. Green on #3.
+- The dashboard has been confirmed running in the EdgeTX simulator on a TX16S profile.
+- CI currently exists only on #3's branch, because #1 and #2 predate it. Propagating it down, or merging the stack, gives every pull request its own check.
+
+### Immediate next steps
+
+1. Land the stack, or at least #1, so the tree stops being three deep.
+2. Begin Milestone 5, shared data services. This is the milestone that replaces the temporary `demo` setting with real telemetry.
+3. Remove the `demo` setting from `metric` and from `layouts/default.yaml` once `telemetryService` supplies readings.
+
+### Open items carried forward
+
+| Item | Where | Note |
+| --- | --- | --- |
+| Physical readability review at 480 x 272 | Milestone 4 | Needs hardware; the only thing keeping milestone 4 from being fully closed |
+| EdgeTX App mode menu button overlaps the top-left component | Milestone 8 | Deliberately deferred; the status rail reserves that strip |
+| Steady-state refresh cost scales with component count | Milestone 5 | Now 1000 of 20000 instructions; watch it as real telemetry components replace the demo driver |
+| `actions/checkout@v4` and `setup-python@v5` target Node 20 | CI | Non-blocking deprecation warning |
+| A `1 x 1` metric fits its value vertically but width is unchecked | Milestone 6 | Long values may clip; the specification asks for abbreviation before clipping |
+
+### Hard-won constraints
+
+Three firmware behaviours cost real debugging time and are invisible to the mocked tests. Each now has a regression test, and each is documented in full further down.
+
+1. **A widget callback may not exceed 20000 Lua VM instructions.** Loading, reflow, and refresh are all bounded work per callback as a result.
+2. **`lvgl.box` accepts a `color` and silently ignores it.** Only a filled `lvgl.rectangle` paints a background.
+3. **EdgeTX fonts are much taller than they look.** `XXL` is a 69 px line height at 480 x 272. Lay out from measured heights, never fixed offsets.
+
+A fourth lesson came from the tests rather than the firmware: a budget test that measured only the shipped layout could not fail, and hid a loader that broke on any layout larger than twelve components. Measure the worst case the schema permits, and assert that the measured work actually happened.
+
 ## Proposed Release Phases
+
+### Implementation status
+
+Status last verified on 2026-09-15:
+
+| Work item | Status | Implemented | Remaining |
+| --- | --- | --- | --- |
+| Build and test foundation | Complete | Make targets, isolated Python environment, unit/integration suites, EdgeTX Lua parsing, tracked simulator fixture, reproducible `build/sdcard` assembly, and GitHub Actions CI running `make check` against Lua 5.3 | None |
+| Milestone 1: Runtime skeleton | Complete | LVGL host, integer 4 x 4 geometry, gutters, per-component containers, batched reflow, App mode fixture, and `1 x 1`-sized mocked tests | Additional physical-radio verification belongs to hardening |
+| Milestone 2: Read-only YAML loader | Complete | Constrained parser, empty flow collections, schema version check, model/Dashboard ID resolution, default fallback, fail-closed document validation, per-entry validation, preserved unknown keys, optional theme block, and a malformed-input matrix | Physical-radio verification belongs to hardening |
+| Milestone 3: Component runtime | Complete | Referenced-module loading, metatable-safe contract validation, declared settings with typed defaults, `supportedSpans` enforcement, host-owned containers, declared refresh intervals with phase staggering, and isolated create/update/refresh/background/event/destroy dispatch | Production components arrive in milestones 6 and 7 |
+| Milestone 4: Design system | Complete | Semantic tokens, panel/typography/bar/radial/badge primitives, Modern, Follow EdgeTX, and Custom modes, guaranteed-legible derived palettes, all seven states, and responsive `1 x 1`, `2 x 1`, and `2 x 2` presentations | Physical readability review at 480 x 272 on a TX16S-class display |
+| Milestone 5: Shared data services | Not started | None | Telemetry, model, control, extrema, and navigation services |
+| Milestones 6–7: Production components | Not started | Reference `metric` plus development `placeholder` and `heartbeat` components | Complete ten-component catalog and metric presets |
+| Milestone 8: Status rail and multiple screens | In progress | Dashboard ID option and per-model/per-dashboard filename resolution | Status rail, reserving the App mode menu button, and multi-instance simulator verification |
+| Milestone 9: Hardening | In progress | Unit/integration tests, firmware-like string behavior tests, CI running Lua 5.3 parsing, simulator fixture, corrupt-layout, contract-rejection, hostile-module, and legibility coverage, component failure isolation, and an enforced instruction budget measured at the largest legal layout | Target-radio matrix, runtime diagnostics view, and physical-radio testing |
+| Milestone 10: On-radio editor | Not started | None | Entire phase 2 editor and write/recovery workflow |
+
+The design system is in place: the host owns every color, resolves one theme per dashboard, and hands each component a `services` table carrying the theme, shared primitives, span-appropriate typography, and a state resolver. The `metric` component is the reference implementation. Milestone 4's remaining item is a physical readability review, which requires hardware.
+
+Until milestone 5 supplies telemetry, `metric` accepts a temporary `demo` setting that drives synthetic readings through every state so the design system can be reviewed on a radio. That setting is removed once `telemetryService` exists.
+
+Measured cost on the largest layout the schema permits, sixteen single-cell components: worst callback 3600 of 20000 instructions, worst steady frame 1000. Both are asserted by the test suite.
+
+### Component module contract
+
+A component file under `components/<type>.lua` returns a table describing itself:
+
+| Field | Required | Purpose |
+| --- | --- | --- |
+| `id` | Yes | Must equal the `type` name used in YAML, so a renamed file cannot load silently. |
+| `apiVersion` | Yes | Must equal the host component API version. Anything else is rejected visibly. |
+| `create(parent, rect, settings, services)` | Yes | Builds LVGL objects and returns the component's own context. |
+| `supportedSpans` | No | Span strings such as `"2x1"`, or `"any"`. Absent means every span is accepted. |
+| `settings` | No | Declared `{key, label, type, default}` entries. Absent and mistyped YAML values fall back to the default. |
+| `update(instance, rect, settings)` | No | Applies changed geometry or configuration. |
+| `refresh(instance)` | No | Runs once per visible host cycle. |
+| `background(instance)` | No | Runs while the dashboard screen is not visible. |
+| `event(instance, event)` | No | Returns true when the event is consumed, which stops propagation. |
+| `destroy(instance)` | No | Runs before the host tears the component down. |
+
+The host creates one LVGL container per placement and passes it as `parent`, with a container-local rectangle starting at the origin. A component therefore cannot draw over a neighbour or reach the dashboard root. Contract fields are read with `rawget`, so a module with a raising `__index` cannot break the host.
+
+Every callback is dispatched under `pcall`. The first failure permanently disables that one component and reports it, so a broken module cannot repeatedly raise or disable the surrounding dashboard. A component that fails during `create` has its container cleared, leaving no partial drawing behind.
+
+### Instruction budget
+
+EdgeTX aborts any widget callback that exceeds **20000 Lua VM instructions**, raising `CPU limit` (`radio/src/lua/widgets.cpp`). Building a full dashboard costs far more than that, so the host never loads in one call. `create` only loads runtime modules and the root container, then `refresh` advances a staged loader one step per call:
+
+1. `read` — resolve and read the layout file.
+2. `tokenize` — convert the text into indentation tokens.
+3. `parse` — build the document, validate it, and resolve the theme.
+4. `components` — instantiate exactly one component, repeated until done.
+
+Every stage is bounded by a fixed amount of work rather than by the size of the layout: the file is tokenized a fixed number of lines per call, and each component is parsed, validated, and built in its own call. A zone change is batched the same way. A layout that fills the grid therefore costs more callbacks, never a larger callback.
+
+The regression test measures every callback with a 200-instruction count hook, mirroring the firmware, and fails if any exceeds 75% of the budget. It exercises **the largest layout the schema permits**, sixteen single-cell components, not just the shipped one. Measuring only the shipped layout previously hid a loader that passed on five components and failed on twelve.
+
+Component authors must respect the same ceiling: `create`, `update`, `refresh`, `background`, and `event` each run inside the host's callback and share its allowance. Avoid per-character string loops, which are the most common way to exhaust it.
+
+##### Refresh scheduling
+
+EdgeTX refreshes widgets on every main loop pass, so steady-state cost is paid tens of times per second and is shared by every component on the dashboard. Two mechanisms keep it bounded.
+
+A component declares `refreshInterval`, in 10ms ticks, stating how often it actually needs servicing. A numeric telemetry readout is indistinguishable at 5 Hz and 50 Hz in flight, so `metric` declares 20 ticks and `heartbeat`, which animates, declares 10. Absent or zero means every frame.
+
+Components that share an interval are then **phase staggered**: each is assigned an offset derived from its position in the layout, so they fall due on different frames instead of all at once. Staggering preserves each component's exact declared rate, which simple batching would not.
+
+A per-frame dispatch cap is retained as a guarantee for layouts that defeat staggering, such as many components all asking to refresh every frame. The cap serves components in rotation so none is starved, and a component delayed by the cap does not accumulate a backlog of missed deadlines.
+
+### Painting backgrounds
+
+EdgeTX's `lvgl.box` accepts a `color` parameter and silently ignores it: `LvglWidgetBox::build` creates a bare `lv_obj` and, unlike `LvglWidgetBorderedObject`, never applies the color as a background. A box therefore keeps the radio theme's own styling, so a dashboard drawn on boxes renders in EdgeTX's palette rather than its own, and the radio's screen background, including its logo, remains visible behind it.
+
+Every visible surface must be a **filled `lvgl.rectangle`**. Boxes are used only as unpainted containers for grouping and clipping. A regression test asserts that the dashboard canvas and every component panel background is a filled rectangle, and that no box relies on a `color` parameter.
+
+### Services passed to components
+
+| Key | Purpose |
+| --- | --- |
+| `theme` | Resolved theme with `rgb` (24-bit), `color` (display values), and `spacing`. |
+| `primitives` | Shared panel, label, value, bar, radial, and badge builders. |
+| `fonts` | Typography roles chosen for this component's span. |
+| `span` | The component's `colSpan` and `rowSpan`. |
+| `state(name, accent)` | Resolves a state name into concrete colors, border weight, and badge text. |
+
+### Theme resolution
+
+Modern uses the specified palette verbatim. Follow EdgeTX derives tokens from `lcd.getColor()` (which returns RGB565) and Custom applies a limited override set over Modern. Both derived modes then pass through a legibility pass that guarantees minimum contrast for body, muted, and faint text, for panel elevation and borders, and for every semantic accent. Critical red is never theme-derived. The dashboard never calls `lcd.setColor()`.
+
+A layout file may carry an optional `theme` block, which takes precedence over the native Theme widget option:
+
+```yaml
+theme:
+  mode: custom
+  overrides:
+    canvas: 0x000000
+    surface: 0x101010
+    accent: green
+```
 
 ### Phase 1: YAML-configured dashboard
 
@@ -916,8 +1069,15 @@ Deliverable: the full ten-component catalog with graceful telemetry degradation.
 - Verify that enabling the rail recalculates the complete grid rectangle.
 - Verify separate Dashboard IDs for multiple screens on one model.
 - Verify model switching reloads the correct layout and that each instance remains one page.
+- Reserve the EdgeTX App mode menu button described below, so the rail's left edge starts clear of it.
 
 Deliverable: multiple independent, model-scoped dashboards with a stable compact status rail.
+
+##### Reserved App mode menu button
+
+In App mode EdgeTX always draws its own menu button over the top-left corner of the screen. `ViewMain` sets `setEdgeTxButtonVisible(hasTopbar(view) || isAppMode(view))`, and the button opens the quick menu, so in App mode it is the only route to the radio's menus and must not be hidden. It occupies roughly `MENU_HEADER_HEIGHT` square, 45 px on a 480 x 272 display, drawn above the widget.
+
+The dashboard currently lets the top-left component's header row sit underneath it, which obscures that component's label. This is accepted until the status rail exists, because the rail occupies the same strip and can reserve the region once for the whole dashboard rather than every component compensating individually. Until then, avoid placing a component whose label matters in the top-left cell of an App mode layout.
 
 #### Milestone 9: Phase 1 hardening
 
