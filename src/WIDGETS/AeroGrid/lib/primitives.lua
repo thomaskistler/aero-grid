@@ -427,6 +427,12 @@ function primitives.placeBipolarBar(bar, x, y, width, height, fraction)
 end
 
 --- Create a radial arc gauge with a background track.
+---
+--- `x` and `y` are the arc's **centre**, not its top-left corner. EdgeTX's
+--- `LvglWidgetArc::build` calls `setPos(x, y)` on a round object, and
+--- `LvglWidgetRoundObject::setPos` stores `x - radius, y - radius`, so a
+--- caller passing a corner draws the arc one radius up and to the left of
+--- where it meant to. Use `primitives.arcBounds` to place one inside a panel.
 ---@param parent any
 ---@param theme AeroGridTheme
 ---@param options table
@@ -449,7 +455,40 @@ function primitives.radial(parent, theme, options)
     rounded = true,
   })
 
-  return {arc = arc, startAngle = startAngle, sweep = sweep}
+  return {
+    arc = arc,
+    startAngle = startAngle,
+    sweep = sweep,
+    centreX = options.x,
+    centreY = options.y,
+    radius = options.radius,
+  }
+end
+
+--- Reposition a radial gauge, keeping centre coordinates in one place.
+---@param radial table
+---@param centreX integer
+---@param centreY integer
+---@param radius integer
+function primitives.placeRadial(radial, centreX, centreY, radius)
+  radial.centreX = centreX
+  radial.centreY = centreY
+  radial.radius = radius
+  radial.arc:set({x = centreX, y = centreY, radius = radius})
+end
+
+--- Report the rectangle an arc of a given centre and radius occupies.
+--- Components lay out in corner coordinates, so this is the translation
+--- between the two, in one place rather than in every caller.
+---@param centreX integer
+---@param centreY integer
+---@param radius integer
+---@param thickness? integer Stroke width, when the painted box is wanted.
+---@return table rect
+function primitives.arcBounds(centreX, centreY, radius, thickness)
+  local half = math.floor((thickness or 0) / 2)
+  local extent = radius + half
+  return {x = centreX - extent, y = centreY - extent, w = extent * 2, h = extent * 2}
 end
 
 --- Convert a 0..1 fraction into arc degrees.
@@ -474,6 +513,119 @@ function primitives.setRadial(radial, fraction, color)
   }
   if color then changes.color = color end
   radial.arc:set(changes)
+end
+
+--- Angular width of the compass pointer, in degrees.
+--- Wide enough to read at arm's length on a 480 x 272 display without
+--- implying more precision than a telemetry bearing carries.
+primitives.POINTER_SWEEP = 30
+
+--- Convert a compass bearing into the angle LVGL's arc uses.
+--- LVGL measures zero at three o'clock and increases clockwise; a compass
+--- measures zero at twelve o'clock and also increases clockwise, so the two
+--- differ by a quarter turn.
+---@param bearing number Degrees clockwise from north.
+---@return integer
+function primitives.arcAngle(bearing)
+  return math.floor((bearing + 270) % 360 + 0.5) % 360
+end
+
+--- Create a north-up bearing dial.
+---
+--- The ring is the arc's background and the pointer is its indicator, so one
+--- LVGL object carries both. Nothing here rotates with the aircraft: EdgeTX
+--- reports neither model heading nor transmitter orientation, so the dial is
+--- always north-up and the tick at twelve o'clock is north.
+---@param parent any
+---@param theme AeroGridTheme
+---@param options table
+---@return table compass
+function primitives.compass(parent, theme, options)
+  local radius = options.radius
+  local thickness = options.thickness or 6
+
+  local ring = lvgl.arc(parent, {
+    x = options.x,
+    y = options.y,
+    radius = radius,
+    thickness = thickness,
+    color = options.color or theme.color.cyan,
+    startAngle = 0,
+    endAngle = 0,
+    -- The indicator is the pointer, so it starts invisible: a dial with no
+    -- bearing must show a ring and nothing that looks like a direction.
+    opacity = 0,
+    bgColor = theme.color.surfaceRaised,
+    bgOpacity = 255,
+    bgStartAngle = 0,
+    bgEndAngle = 359,
+    rounded = true,
+  })
+
+  local compass = {
+    ring = ring,
+    centreX = options.x,
+    centreY = options.y,
+    radius = radius,
+    thickness = thickness,
+  }
+
+  -- Drawn inside the ring rather than outside it, so the dial's footprint is
+  -- exactly the arc's own bounds and the tick cannot be hidden by the pointer.
+  compass.north = primitives.marker(parent, theme, {
+    x = options.x - 1,
+    y = options.y - radius + thickness,
+    w = 2,
+    h = math.max(3, math.floor(radius / 4)),
+    color = theme.color.textMuted,
+  })
+
+  primitives.setCompass(compass, options.bearing, options.color)
+  return compass
+end
+
+--- Point a compass at a bearing, or at nothing when there is none.
+--- A withheld bearing hides the pointer instead of resting it at north, which
+--- would read as a valid due-north fix.
+---@param compass table
+---@param bearing any Degrees clockwise from north.
+---@param color? integer
+function primitives.setCompass(compass, bearing, color)
+  local changes = {}
+  if color then changes.color = color end
+
+  if type(bearing) ~= "number" or bearing ~= bearing then
+    changes.opacity = 0
+    changes.startAngle = 0
+    changes.endAngle = 0
+    compass.bearing = nil
+  else
+    local half = math.floor(primitives.POINTER_SWEEP / 2)
+    local centre = primitives.arcAngle(bearing)
+    changes.opacity = 255
+    changes.startAngle = (centre - half) % 360
+    changes.endAngle = (centre + half) % 360
+    compass.bearing = bearing
+  end
+
+  compass.ring:set(changes)
+end
+
+--- Reposition a compass without recreating it.
+---@param compass table
+---@param centreX integer
+---@param centreY integer
+---@param radius integer
+function primitives.placeCompass(compass, centreX, centreY, radius)
+  compass.centreX = centreX
+  compass.centreY = centreY
+  compass.radius = radius
+  compass.ring:set({x = centreX, y = centreY, radius = radius})
+  compass.north:set({
+    x = centreX - 1,
+    y = centreY - radius + compass.thickness,
+    h = math.max(3, math.floor(radius / 4)),
+  })
 end
 
 --- Create the short state badge shown when color alone is insufficient.

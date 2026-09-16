@@ -171,6 +171,32 @@ function telemetryService:subscribe(name)
   return entry.view
 end
 
+--- Subscribe to the link indicator itself.
+---
+--- `link-status` needs to tell three situations apart that all look like a
+--- zero: a link that is genuinely down, a protocol that populates no RSSI
+--- sensor at all, and a reading that really is zero. Only this service knows
+--- the difference, because only it watches whether a telemetry source ever
+--- contradicted `getRSSI()`.
+---@return table view
+function telemetryService:link()
+  if not self.linkView then
+    self.linkState = {
+      live = false,
+      rssi = 0,
+      -- Believed until a telemetry source proves otherwise.
+      indicator = true,
+      updatedAt = nil,
+    }
+    self.linkView = self.support.snapshot(self.linkState)
+    -- A component referencing the link is a reason to run the service, even
+    -- when it subscribed to no source the radio happens to recognize.
+    self.count = self.count + 1
+  end
+
+  return self.linkView
+end
+
 --- Look up an existing subscription without creating one.
 ---@param name any
 ---@return AeroGridReading?
@@ -324,6 +350,18 @@ function telemetryService:poll(entry, now)
   if changed then state.revision = state.revision + 1 end
 end
 
+--- Copy the current link belief into the published snapshot.
+---@param now integer
+function telemetryService:publishLink(now)
+  local link = self.linkState
+  if not link then return end
+
+  link.rssi = self.rssi
+  link.live = self.linkLive
+  link.indicator = self.linkTrusted ~= false
+  if self.linkLive then link.updatedAt = now end
+end
+
 --- Poll a bounded slice of the subscriptions.
 ---@param now integer
 function telemetryService:update(now)
@@ -335,6 +373,7 @@ function telemetryService:update(now)
   -- only link-liveness signal the Lua API offers.
   self.rssi = rssi
   self.linkLive = rssi > 0 or self.linkTrusted == false
+  self:publishLink(now)
 
   local entries = self.entries
   local total = #entries
@@ -354,6 +393,10 @@ function telemetryService:update(now)
     if entry then self:poll(entry, now) end
   end
   self.cursor = cursor
+
+  -- Republished after the polls, because a live reading can prove the
+  -- indicator wrong part way through this very update.
+  self:publishLink(now)
 
   -- Advance at most one precision search per update, in rotation, so a
   -- dashboard of sixteen sources never pays sixteen table scans at once.

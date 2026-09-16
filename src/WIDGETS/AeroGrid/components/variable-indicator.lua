@@ -234,6 +234,9 @@ function variableIndicator.regionsFor(
     radius = radius,
     radialX = radialX,
     radialY = top,
+    -- EdgeTX positions an arc by its centre; the corner only reserves space.
+    radialCentreX = radialX + radius,
+    radialCentreY = top + radius,
     showVisual = showVisual,
     showDetail = showDetail,
   }
@@ -327,8 +330,8 @@ function variableIndicator.create(parent, rect, settings, services)
 
   if presentationName == "radial" then
     context.radial = primitives.radial(panel.root, theme, {
-      x = area.radialX,
-      y = area.radialY,
+      x = area.radialCentreX,
+      y = area.radialCentreY,
       radius = area.radius,
       color = presentation.accent,
       fraction = 0,
@@ -548,8 +551,8 @@ function variableIndicator.update(context, rect)
       area.content, context.bipolar.h, fraction)
   end
   if context.radial then
-    context.radial.arc:set(
-      {x = area.radialX, y = area.radialY, radius = area.radius})
+    primitives.placeRadial(context.radial, area.radialCentreX,
+      area.radialCentreY, area.radius)
   end
 
   variableIndicator.showVisual(context)
