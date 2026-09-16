@@ -1,0 +1,399 @@
+-- SPDX-License-Identifier: GPL-2.0-only
+
+--- One EdgeTX model timer, presented for the dashboard.
+---
+--- AeroGrid does not implement a second timer engine. EdgeTX already owns the
+--- count direction, the start value, persistence, the configured name, and
+--- whether the timer shows elapsed or remaining time, and it keeps counting
+--- while this widget is not even visible. The component reads
+--- `model.getTimer(index)` through `modelService` and renders what the radio
+--- reports.
+---
+--- The one thing that genuinely needs presenting rather than reporting is a
+--- countdown that has run past zero. EdgeTX keeps counting into negative
+--- numbers there, which is easy to misread as a healthy timer, so the
+--- component states it explicitly as well as showing the minus sign.
+
+---@class AeroGridTimerSettings
+---@field timer? number Zero-based EdgeTX timer index.
+---@field label? string Panel label; the timer's own name is used when empty.
+---@field accent? string
+---@field display? "model"|"elapsed"|"remaining"
+---@field warning? number Seconds at which the timer becomes a caution.
+---@field critical? number Seconds at which the timer becomes critical.
+
+---@class AeroGridTimerContext
+---@field panel table
+---@field feed? AeroGridModelTimer
+---@field stateName string
+---@field text string Last rendered clock reading.
+
+local flightTimer = {
+  id = "flight-timer",
+  apiVersion = 1,
+  supportedSpans = {
+    "1x1", "2x1", "3x1", "4x1",
+    "1x2", "2x2", "3x2", "4x2",
+  },
+  -- A clock advances once a second, so anything faster is wasted work charged
+  -- to the same instruction budget as every other component on the dashboard.
+  refreshInterval = 100,
+  settings = {
+    {key = "timer", label = "Model timer", type = "number", default = 0},
+    {key = "label", label = "Label", type = "string", default = ""},
+    {key = "accent", label = "Accent", type = "string", default = "cyan"},
+    -- `model` follows the timer's own configured elapsed/remaining choice.
+    {key = "display", label = "Show", type = "string", default = "model"},
+    {key = "warning", label = "Warning seconds", type = "number"},
+    {key = "critical", label = "Critical seconds", type = "number"},
+  },
+}
+
+--- Describe how the component presents itself at a given span.
+---@param colSpan integer
+---@param rowSpan integer
+---@return table
+function flightTimer.presentationFor(colSpan, rowSpan)
+  local cells = (colSpan or 1) * (rowSpan or 1)
+
+  -- A countdown's progress bar needs a known total, so it appears only on
+  -- panels large enough to carry it without crowding the clock.
+  if cells >= 4 then
+    return {showDetail = true, showVisual = true}
+  end
+  if cells >= 2 then
+    return {showDetail = true, showVisual = false}
+  end
+  return {showDetail = false, showVisual = false}
+end
+
+--- Choose which of the timer's readings to display.
+--- EdgeTX records the pilot's own elapsed/remaining preference on the timer,
+--- so `model` honours it and the other choices override it deliberately.
+---@param settings AeroGridTimerSettings
+---@param feed AeroGridModelTimer
+---@return number seconds
+function flightTimer.displayValue(settings, feed)
+  local display = settings.display
+
+  if display == "elapsed" then return feed.elapsed end
+  if display == "remaining" then
+    return feed.countdown and feed.remaining or feed.elapsed
+  end
+
+  -- EdgeTX's own presentation: `value` already counts the right way, and
+  -- showElapsed flips a countdown to count up instead.
+  if feed.showElapsed then return feed.elapsed end
+  return feed.value
+end
+
+--- Resolve the component state from the timer's own reading.
+---
+--- A countdown is judged on the time it has left and a count-up timer on the
+--- time it has used, because those are the two numbers a pilot actually flies
+--- to. An expired countdown is always critical: it is the one state that must
+--- not be mistaken for a healthy timer.
+---@param settings AeroGridTimerSettings
+---@param feed? AeroGridModelTimer
+---@return string
+function flightTimer.resolveState(settings, feed)
+  if type(feed) ~= "table" or not feed.available then return "unavailable" end
+  if feed.countdown and feed.expired then return "critical" end
+
+  local measured = feed.countdown and feed.remaining or feed.elapsed
+  local warning = type(settings.warning) == "number" and settings.warning or nil
+  local critical = type(settings.critical) == "number" and settings.critical or nil
+
+  if feed.countdown then
+    if critical and measured <= critical then return "critical" end
+    if warning and measured <= warning then return "warning" end
+  else
+    if critical and measured >= critical then return "critical" end
+    if warning and measured >= warning then return "warning" end
+  end
+
+  return "normal"
+end
+
+--- Describe the timer beneath the clock.
+---@param feed? AeroGridModelTimer
+---@param formatTime fun(seconds: any): string
+---@return string
+function flightTimer.detailText(feed, formatTime)
+  if type(feed) ~= "table" or not feed.available then return "NO TIMER" end
+
+  if feed.countdown then
+    if feed.expired then return "ELAPSED PAST ZERO" end
+    return "OF " .. formatTime(feed.start)
+  end
+
+  return "COUNTING UP"
+end
+
+--- Fraction of a countdown that has been used, for the optional bar.
+--- A count-up timer has no total, so it has no fraction and no bar.
+---@param feed? AeroGridModelTimer
+---@return number
+function flightTimer.fraction(feed)
+  if type(feed) ~= "table" or not feed.available then return 0 end
+  if not feed.countdown or type(feed.start) ~= "number" or feed.start <= 0 then
+    return 0
+  end
+
+  local used = feed.elapsed / feed.start
+  if used < 0 then return 0 end
+  if used > 1 then return 1 end
+  return used
+end
+
+--- Compute the content regions for the current rectangle.
+---@param theme AeroGridTheme
+---@param themeBuilder table
+---@param rect AeroGridRect
+---@param layout table
+---@param fonts table
+---@return table
+function flightTimer.regionsFor(theme, themeBuilder, rect, layout, fonts)
+  local spacing = theme.spacing
+  local frame = themeBuilder.frame(theme, rect, fonts)
+  local labelHeight = frame.labelHeight
+  local top = frame.top
+
+  local showDetail = layout.showDetail
+  local showVisual = layout.showVisual
+
+  local function room()
+    local below = frame.bottom
+    if showVisual then below = below + spacing.barHeight + 2 end
+    if showDetail then below = below + labelHeight + 2 end
+    return rect.h - top - below
+  end
+
+  -- The clock is the dominant reading: shed the supporting rows first.
+  local comfortable = themeBuilder.fontHeight(MIDSIZE)
+  if room() < comfortable and showVisual then showVisual = false end
+  if room() < comfortable and showDetail then showDetail = false end
+
+  -- "-88:88:88" is the widest clock this component can produce, so the font is
+  -- chosen from that rather than from the current reading; otherwise the
+  -- digits would resize the first time an hour or a minus sign appeared.
+  local clock = themeBuilder.fitText(
+    "-88:88:88", frame.content, math.max(1, room()))
+  local clockHeight = themeBuilder.fontHeight(clock)
+
+  if top + clockHeight > rect.h then
+    top = math.max(0, rect.h - clockHeight)
+  end
+
+  local barY = math.max(1, rect.h - frame.bottom - spacing.barHeight)
+
+  return {
+    frame = frame,
+    pad = frame.pad,
+    content = frame.content,
+    clockY = top,
+    clock = clock,
+    detailY = math.max(1, barY - labelHeight - 2),
+    barY = barY,
+    showDetail = showDetail,
+    showVisual = showVisual,
+  }
+end
+
+--- Build the component's LVGL objects.
+---@param parent any
+---@param rect AeroGridRect
+---@param settings AeroGridTimerSettings
+---@param services table
+---@return AeroGridTimerContext
+function flightTimer.create(parent, rect, settings, services)
+  local theme = services.theme
+  local primitives = services.primitives
+  local fonts = services.fonts
+  local span = services.span
+  local layout = flightTimer.presentationFor(span.colSpan, span.rowSpan)
+  local presentation = services.state("normal", settings.accent)
+  local area = flightTimer.regionsFor(
+    theme, services.themeBuilder, rect, layout, fonts)
+
+  local context = {
+    theme = theme,
+    themeBuilder = services.themeBuilder,
+    primitives = primitives,
+    state = services.state,
+    fonts = fonts,
+    layout = layout,
+    settings = settings,
+    stateName = "normal",
+    text = "--:--",
+    detail = "",
+  }
+
+  -- Subscribing in create is what tells the model service that this timer is
+  -- referenced; a timer nothing references is never read.
+  local modelService = services.model
+  if modelService then
+    context.feed = modelService:timer(settings.timer)
+    -- Formatting lives with the service so every timer reading agrees.
+    context.formatTime = modelService.formatTime
+  end
+  if not context.formatTime then
+    context.formatTime = function() return "--:--" end
+  end
+
+  local panel = primitives.panel(parent, rect, theme, presentation)
+  context.panel = panel
+
+  -- The timer's configured name is the most useful label there is, so it wins
+  -- unless the layout states one. It is only known once the service has read
+  -- the timer, which is why refresh revisits it.
+  context.label, context.badge = primitives.header(
+    panel.root, theme, area.frame, fonts, flightTimer.labelText(context),
+    presentation)
+  context.labelValue = string.upper(flightTimer.labelText(context))
+
+  context.value = primitives.value(panel.root, theme, {
+    x = area.pad,
+    y = area.clockY,
+    w = area.content,
+    text = context.text,
+    color = presentation.value,
+    font = area.clock,
+  })
+
+  context.detailLabel = primitives.label(panel.root, theme, {
+    x = area.pad,
+    y = area.detailY,
+    w = area.content,
+    text = "",
+    color = theme.color.textFaint,
+    font = fonts.label,
+  })
+
+  if layout.showVisual then
+    context.bar = primitives.bar(panel.root, theme, {
+      x = area.pad,
+      y = area.barY,
+      w = area.content,
+      fraction = 0,
+      color = presentation.accent,
+    })
+  end
+
+  if not area.showDetail then lvgl.hide(context.detailLabel) end
+  if context.bar and not area.showVisual then
+    lvgl.hide(context.bar.track)
+    lvgl.hide(context.bar.fill)
+  end
+
+  flightTimer.apply(context)
+  return context
+end
+
+--- Resolve the panel label, preferring the timer's own configured name.
+---@param context AeroGridTimerContext
+---@return string
+function flightTimer.labelText(context)
+  local stated = context.settings.label
+  if type(stated) == "string" and stated ~= "" then return stated end
+
+  local feed = context.feed
+  if type(feed) == "table" and type(feed.name) == "string" and feed.name ~= "" then
+    return feed.name
+  end
+
+  return "TIMER " .. tostring(context.settings.timer)
+end
+
+--- Repaint the component from its current subscription.
+---@param context AeroGridTimerContext
+function flightTimer.apply(context)
+  local feed = context.feed
+  local settings = context.settings
+  local stateName = flightTimer.resolveState(settings, feed)
+  local presentation = context.state(stateName, settings.accent)
+
+  local text = "--:--"
+  if type(feed) == "table" and feed.available then
+    text = context.formatTime(flightTimer.displayValue(settings, feed))
+  end
+
+  context.stateName = stateName
+  context.text = text
+  context.value:set({text = text, color = presentation.value})
+  context.label:set({color = presentation.label})
+  context.badge:set({text = presentation.badge or "", color = presentation.accent})
+  context.primitives.stylePanel(context.panel, presentation)
+
+  local detail = flightTimer.detailText(feed, context.formatTime)
+  if detail ~= context.detail then
+    context.detail = detail
+    context.detailLabel:set({text = detail})
+  end
+
+  if context.bar then
+    context.primitives.setBar(
+      context.bar, flightTimer.fraction(feed), presentation.accent)
+  end
+end
+
+--- Advance the component, repainting only when something changed.
+---@param context AeroGridTimerContext
+function flightTimer.refresh(context)
+  local feed = context.feed
+  if not feed then return end
+
+  local settings = context.settings
+  local value = feed.available and flightTimer.displayValue(settings, feed) or nil
+
+  if context.applied and value == context.reading then return end
+  context.applied = true
+  context.reading = value
+  flightTimer.apply(context)
+
+  -- The timer's name arrives with the first successful read, so the label is
+  -- resolved again rather than fixed when the panel was built.
+  local label = string.upper(flightTimer.labelText(context))
+  if label ~= context.labelValue then
+    context.labelValue = label
+    context.label:set({text = label})
+  end
+end
+
+--- Reposition after a zone change, shedding or restoring optional rows.
+---@param context AeroGridTimerContext
+---@param rect AeroGridRect
+function flightTimer.update(context, rect)
+  local area = flightTimer.regionsFor(context.theme, context.themeBuilder,
+    rect, context.layout, context.fonts)
+
+  context.primitives.resizePanel(context.panel, rect)
+  context.primitives.placeHeader(context.label, context.badge, area.frame)
+  context.value:set({
+    x = area.pad,
+    y = area.clockY,
+    w = area.content,
+    font = function() return area.clock end,
+  })
+
+  if area.showDetail then
+    context.detailLabel:set({x = area.pad, y = area.detailY, w = area.content})
+    lvgl.show(context.detailLabel)
+  else
+    lvgl.hide(context.detailLabel)
+  end
+
+  if context.bar then
+    if area.showVisual then
+      context.primitives.placeBar(context.bar, area.pad, area.barY,
+        area.content, flightTimer.fraction(context.feed))
+      lvgl.show(context.bar.track)
+      lvgl.show(context.bar.fill)
+    else
+      lvgl.hide(context.bar.track)
+      lvgl.hide(context.bar.fill)
+    end
+  end
+end
+
+return flightTimer
