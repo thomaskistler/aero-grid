@@ -41,6 +41,12 @@ Open the repository folder in VS Code. The repository includes a TX16S/EdgeTX 2.
 
 The build starts from the tracked baseline in `tests/fixtures/sdcard/`, then overlays the current `src/WIDGETS/AeroGrid/` sources. The baseline contains the fixed radio and model configuration needed to boot directly into AeroGrid. The generated `build/sdcard/` image is ignored and may be changed by the simulator. Run `make build` again after source changes or whenever you want to reset the image to the checked-in baseline.
 
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request and on pushes to `main`. It installs Lua 5.3, runs `make check` (the behaviour suites in both string modes, then parses every Lua file with `luac5.3`), builds the SD image, and verifies the packaged image matches its sources and that the build leaves no untracked output.
+
+The Lua 5.3 parse is the part that cannot be reproduced locally on every machine: the test suites execute under whichever Lua `lupa` provides, so CI is what actually validates the sources against the language version the radio runs.
+
 ## Development
 
 Runtime modules target EdgeTX's Lua 5.3 environment.

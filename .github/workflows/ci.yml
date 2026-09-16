@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A superseded run tells us nothing, so cancel it.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Test and validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      # EdgeTX runs Lua 5.3. The behaviour tests execute under whichever Lua
+      # lupa provides, so this compiler is what actually validates the sources
+      # against the language version the radio uses.
+      - name: Install Lua 5.3
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.3
+
+      - name: Report toolchain
+        run: |
+          python3 --version
+          lua5.3 -v
+          luac5.3 -v
+
+      # `check` depends on `test`, so this runs the behaviour suites in both
+      # string modes and then parses every Lua file with the 5.3 compiler.
+      - name: Test and syntax check
+        run: make check LUA_COMPILER=luac5.3
+
+      - name: Build the simulator SD image
+        run: make build
+
+      # The packaged image must match the sources it was built from, so a
+      # broken build target cannot ship a stale dashboard.
+      - name: Verify the built image matches sources
+        run: |
+          diff -r src/WIDGETS/AeroGrid build/sdcard/WIDGETS/AeroGrid
+
+      # Generated output must never be committed.
+      - name: Verify the tree is clean
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Working tree is dirty after build:"
+            git status --porcelain
+            exit 1
+          fi
