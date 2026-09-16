@@ -955,6 +955,58 @@ local function testTelemetryFreshness()
   assertEqual(telemetryService.format(pack, 0), "24")
 end
 
+--- The link indicator is not reliable everywhere, and a sensor's extremes are
+--- not always shaped like the sensor itself. Both mistakes look like a dead
+--- reading on the radio, and neither is visible from a mocked value alone.
+local function testTelemetryLinkHeuristics()
+  local harness = telemetryHarness()
+  local service = harness.service
+  local pack = service:subscribe("RxBt")
+
+  -- Some protocols never populate an RSSI sensor, so getRSSI reads zero on a
+  -- perfectly live link. A telemetry source cannot return a non-zero value
+  -- when EdgeTX has nothing, so that value proves the indicator is wrong.
+  harness.rssi = 0
+  service:update(0)
+  assertEqual(pack.value, 24.4, "a live reading was discarded as stale")
+  assertEqual(pack.state, "normal")
+
+  -- Having learned that, a genuine zero from the same radio is a reading too.
+  harness.values[100] = 0
+  service:update(1)
+  assertEqual(pack.value, 0)
+  assertEqual(pack.state, "normal")
+
+  -- A radio whose indicator does work still withholds the ambiguous zero.
+  local other = telemetryHarness()
+  local reading = other.service:subscribe("RxBt")
+  other.service:update(0)
+  assertEqual(reading.value, 24.4)
+  other.rssi = 0
+  other.values[100] = 0
+  other.service:update(1)
+  assertEqual(reading.state, "stale")
+  assertEqual(reading.value, 24.4, "a stale poll overwrote the cached reading")
+
+  -- EdgeTX returns the cells table only for the base source; "Cels-" and
+  -- "Cels+" carry the same unit but return a plain number.
+  harness.fields.Cels = {id = 130, name = "Cels", unit = 38}
+  harness.fields["Cels-"] = {id = 131, name = "Cels-", unit = 38}
+  harness.values[130] = {4.11, 4.13, 4.09}
+  harness.values[131] = 4.09
+  harness.rssi = 80
+
+  local cells = service:subscribe("Cels")
+  local lowest = service:subscribe("Cels-")
+  service:update(2)
+
+  assertEqual(cells.kind, "cells")
+  assertEqual(type(cells.raw), "table")
+  assertEqual(lowest.kind, "number", "a cells extremum was read as a table")
+  assertEqual(lowest.value, 4.09)
+  assertEqual(lowest.state, "normal")
+end
+
 --- Polling must stay bounded no matter how many sources a layout references.
 local function testTelemetryPollingIsBounded()
   local harness = telemetryHarness()
@@ -1104,21 +1156,30 @@ local function testControlService()
   assertEqual(trim.fraction, 0)
 
   -- EdgeTX reports eight times the stored trim.
-  raw = 500
+  raw = 512
   service:update(1)
-  assertEqual(trim.raw, 500)
-  assertEqual(trim.value, 62)
+  assertEqual(trim.raw, 512)
+  assertEqual(trim.value, 64)
   assertEqual(trim.fraction, 0.5)
   assertEqual(trim.centered, false)
 
-  -- Auto widens once a reading leaves the standard range, and stays widened,
-  -- because EdgeTX never tells Lua whether extended trims are enabled.
-  raw = 2000
+  -- A standard trim held at its own end stop reads exactly 1024, because
+  -- EdgeTX clamps the stored value to TRIM_MAX of 128. That must not be read
+  -- as leaving the standard range.
+  raw = 1024
   service:update(2)
+  assertEqual(trim.scale, "standard", "an end stop widened the scale")
+  assertEqual(trim.fraction, 1)
+  assertEqual(trim.value, 128)
+
+  -- Auto widens once a reading really does leave the standard range, and stays
+  -- widened, because EdgeTX never tells Lua whether extended trims are enabled.
+  raw = 2048
+  service:update(3)
   assertEqual(trim.scale, "extended")
   assertEqual(trim.fraction, 0.5)
-  raw = -500
-  service:update(3)
+  raw = -512
+  service:update(4)
   assertEqual(trim.scale, "extended", "the scale narrowed again")
   assertEqual(trim.fraction, -0.125)
 
@@ -1129,15 +1190,28 @@ local function testControlService()
   assertEqual(variable.max, 10)
   assertEqual(variable.flightMode, 1)
 
-  -- A trim wired as a three-position toggle reports full deflection only.
+  -- A three-position toggle and a standard trim at its end stop report the
+  -- same number, so one sample can never tell them apart. A trim parked at its
+  -- stop must not be mistaken for a toggle.
+  local parked = controlService.new(env, services)
+  local parkedTrim = parked:trim("trim-thr")
+  raw = 1024
+  parked:update(0)
+  assertEqual(parkedTrim.threePosition, false, "an end stop was read as a toggle")
+
+  -- A toggle only ever reports centre or full deflection, with nothing between.
   local toggle = controlService.new(env, services)
   local switchTrim = toggle:trim("trim-thr")
-  raw = 1024
+  raw = 0
   toggle:update(0)
+  raw = 1024
+  toggle:update(1)
   assertEqual(switchTrim.threePosition, true)
   assertEqual(switchTrim.fraction, 1)
+
+  -- An ordinary trim passes through intermediate positions on its way.
   raw = 300
-  toggle:update(1)
+  toggle:update(2)
   assertEqual(switchTrim.threePosition, false, "an ordinary trim stayed a toggle")
 
   -- An unknown trim source and a radio without global variables degrade.
@@ -1312,6 +1386,7 @@ end
 testSnapshotsAreImmutable()
 testServiceScheduling()
 testTelemetryFreshness()
+testTelemetryLinkHeuristics()
 testTelemetryPollingIsBounded()
 testModelService()
 testControlService()

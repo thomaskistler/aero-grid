@@ -56,11 +56,16 @@ controlService.RESOLVE_RETRY = 500
 controlService.TRIM_SCALE = 8
 
 --- Standard and extended trim travel, already multiplied by TRIM_SCALE.
-controlService.STANDARD_RANGE = 1000
-controlService.EXTENDED_RANGE = 4000
+--- EdgeTX clamps a stored trim to TRIM_MAX (128) or TRIM_EXTENDED_MAX (512),
+--- so the raw span is 1024 and 4096. Using the round numbers here instead
+--- would make every standard trim held at its own end stop widen the scale
+--- permanently and then report a quarter of its real deflection.
+controlService.STANDARD_RANGE = 1024
+controlService.EXTENDED_RANGE = 4096
 
 --- EdgeTX's full stick deflection, returned by a trim configured as a
---- three-position toggle.
+--- three-position toggle. It is also exactly a standard trim's end stop, which
+--- is why one sample can never tell the two apart.
 controlService.RESX = 1024
 
 --- Create the service.
@@ -130,15 +135,20 @@ function controlService:readTrim(entry, now)
 
   local magnitude = raw < 0 and -raw or raw
 
-  -- A three-position trim reports exactly full deflection, which a stored
-  -- trim can also reach, so classify it only while every non-zero value seen
-  -- so far has been full deflection.
+  -- A three-position trim reports full deflection or nothing, and a standard
+  -- trim's end stop is exactly the same number, so a single sample can never
+  -- tell them apart. Claim a toggle only after seeing both a centre and a full
+  -- deflection with nothing in between: a real trim moved to its stop passes
+  -- through intermediate values, and one parked at the stop never reads zero.
   if magnitude == controlService.RESX then
     entry.sawExtreme = true
-  elseif raw ~= 0 then
+  elseif raw == 0 then
+    entry.sawCentre = true
+  else
     entry.sawOrdinary = true
   end
-  state.threePosition = entry.sawExtreme == true and not entry.sawOrdinary
+  state.threePosition = entry.sawExtreme == true and entry.sawCentre == true
+    and not entry.sawOrdinary
 
   -- Auto widens once, permanently: a trim that has reached the extended range
   -- must not shrink its own scale again when it returns toward centre.

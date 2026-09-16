@@ -215,8 +215,8 @@ Presets establish labels, semantic accents, likely source defaults, and supporte
 - Read effective current-flight-mode values through selectable EdgeTX trim sources so EdgeTX resolves trim inheritance.
 - Persist the selected trim source for each indicator rather than assuming fixed trim names or stick-mode mappings.
 - Remain read-only in the initial release; changing trims remains the responsibility of EdgeTX trim controls.
-- Support `standard`, `extended`, and `auto` display scales. Auto may expand after observing a value outside the standard range, but cannot reliably detect the model's extended-trim setting because EdgeTX does not expose that flag to Lua.
-- Clearly represent centered, positive, negative, unavailable, and unsupported three-position trim states.
+- Support `standard`, `extended`, and `auto` display scales. Auto may expand after observing a value outside the standard range, but cannot reliably detect the model's extended-trim setting because EdgeTX does not expose that flag to Lua. A trim source returns eight times the stored trim, and EdgeTX clamps that to `TRIM_MAX` or `TRIM_EXTENDED_MAX`, so the raw spans are 1024 and 4096, not 1000 and 4000. Rounding those down makes a standard trim held at its own end stop widen the scale permanently.
+- Clearly represent centered, positive, negative, unavailable, and unsupported three-position trim states. A three-position trim returns full deflection or nothing, which is exactly what a standard trim at its end stop returns, so one sample can never distinguish them. `controlService` claims a toggle only after seeing both a centre and a full deflection with no intermediate position between them.
 
 #### Variable indicator
 
@@ -863,7 +863,7 @@ Milestones 1 to 4 are merged. Milestone 5 is one branch on top of `main`.
 | --- | --- | --- |
 | Physical readability review at 480 x 272 | Milestone 4 | Needs hardware; the only thing keeping milestone 4 from being fully closed |
 | Milestone 5 has not been run on hardware | Milestone 5 | The diagnostics layouts exist precisely to make that check quick |
-| Per-sensor staleness is link-wide, not per sensor | Milestone 5 | EdgeTX exposes no per-sensor age except for GPS, so a single sensor that stops arriving while the link stays up still reads as live. See below |
+| Staleness is link-wide, not per sensor | Milestone 5 | EdgeTX exposes no per-sensor age except for GPS, so a sensor that stops arriving, or was never received, while the link holds still reads as live. See below |
 | Extrema reset policy covers switch and manual only | Milestone 5 | Timer-based reset is specified but not implemented |
 | EdgeTX App mode menu button overlaps the top-left component | Milestone 8 | Deliberately deferred; the status rail reserves that strip |
 | Steady-state refresh cost scales with component count | Milestone 6 | Now 2000 of 20000 at sixteen components with live services; watch it as the catalog grows |
@@ -877,7 +877,7 @@ Four firmware behaviours cost real debugging time and are invisible to the mocke
 1. **A widget callback may not exceed 20000 Lua VM instructions.** Loading, reflow, refresh, and service updates are all bounded work per callback as a result.
 2. **`lvgl.box` accepts a `color` and silently ignores it.** Only a filled `lvgl.rectangle` paints a background.
 3. **EdgeTX fonts are much taller than they look.** `XXL` is a 69 px line height at 480 x 272. Lay out from measured heights, never fixed offsets.
-4. **`getValue` returns integer zero for a telemetry source whose link is down.** That is indistinguishable from a genuine zero reading, so a service must not store it. `telemetryService` keeps the last live value and marks it stale instead, using `getRSSI() > 0` as the only link-liveness signal the Lua API offers.
+4. **`getValue` returns integer zero for a telemetry source whose link is down.** That is indistinguishable from a genuine zero reading, so only a zero may be judged: a non-zero value is proof of life whatever `getRSSI()` says, and `getRSSI()` itself reads zero on a live link whose protocol has no RSSI sensor.
 
 A fifth lesson came from the tests rather than the firmware: a budget test that measured only the shipped layout could not fail, and hid a loader that broke on any layout larger than twelve components. Measure the worst case the schema permits, and assert that the measured work actually happened.
 
@@ -1008,14 +1008,21 @@ Every snapshot is a read-only view over state the service mutates in place. Writ
 
 Freshness is the subtlest part of EdgeTX telemetry. `getValue` returns integer zero for a telemetry source both when the sensor genuinely reads zero and when telemetry is not streaming, and the Lua API exposes no per-sensor age except for GPS, which carries a `delay` field.
 
-`telemetryService` therefore:
+Only a zero is ambiguous, so `telemetryService` judges only a zero:
 
-- Treats `getRSSI() > 0` as the link-liveness signal, because it is the only one available.
-- Never stores a value read while the link is down. The last live value is kept and classified `stale`; a zero read while the link is up is a valid zero and is stored as one.
-- Classifies a source the radio does not recognize as `unavailable`, and retries resolution periodically, because a sensor only appears once telemetry has delivered it.
-- Reads precision from the model's sensor table, searched by name a bounded number of entries per update.
+- A non-zero value is always stored, whatever the link indicator says, because EdgeTX returns exactly zero when it has nothing.
+- A zero is stored only while the link is believed up. Otherwise the last live value is kept and classified `stale`.
+- The link indicator is `getRSSI() > 0`, the only liveness signal the Lua API offers. It is not universally reliable: a protocol that never populates an RSSI sensor reads zero on a live link. A telemetry source returning a non-zero value while the indicator says otherwise proves the indicator wrong, so the service learns that once and stops trusting it.
+- A source the radio does not recognize is `unavailable`, and resolution is retried periodically, because a sensor only appears once telemetry has delivered it.
+- Precision comes from the model's sensor table, searched by name a bounded number of entries per update.
+- A sensor's extremes, `<name>-` and `<name>+`, report the base sensor's unit but not always its value shape. `Cels-` and `Cels+` return a plain number where `Cels` returns a table, and the service normalizes that.
 
-The known limitation: staleness is link-wide, not per sensor. A single sensor that stops arriving while the link stays up still reads as live. Closing that gap needs either a per-sensor age from the firmware or a heuristic this specification is not willing to guess at.
+Two limitations remain, and neither is solvable from Lua:
+
+- Staleness is link-wide, not per sensor. A single sensor that stops arriving while the link stays up still reads as live.
+- A sensor that is configured but has never been received reads as a valid zero while the link is up, because EdgeTX exposes no per-sensor availability.
+
+Closing either needs a per-sensor age from the firmware, or a heuristic this specification is not willing to guess at.
 
 Every service degrades the same way. A missing firmware API, an out-of-range timer index, a radio without global variables, a GPS source that has never produced a position, and a source name that is simply wrong all produce an `unavailable` snapshot rather than an error, and no service raises inside a widget callback. A service whose update does raise is reported once and then retired.
 

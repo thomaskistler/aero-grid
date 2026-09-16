@@ -9,13 +9,26 @@
 ---
 --- Freshness deserves its own note, because EdgeTX makes it subtle. `getValue`
 --- returns integer zero for a telemetry source whenever telemetry is not
---- streaming or the sensor has not been received, which is indistinguishable
---- from a genuine zero reading. This service therefore never overwrites a
---- cached reading with a value taken while the link is down: it keeps the last
---- live value and marks it stale. A zero received while the link is up is a
---- valid zero and is stored as one. Non-telemetry sources such as the
+--- streaming *or* the sensor has never been received, and that is
+--- indistinguishable from a genuine zero reading.
+---
+--- Only a zero is ambiguous, so only a zero is judged. A non-zero value is
+--- proof of life whatever the link indicator says, and is always stored. A
+--- zero is stored only while the link is believed up; otherwise the last live
+--- value is kept and marked stale. Non-telemetry sources such as the
 --- transmitter voltage, timers, trims, and global variables do not depend on
 --- the link and are always live once resolved.
+---
+--- The link indicator is `getRSSI() > 0`, which is the only liveness signal
+--- the Lua API offers, and it is not reliable everywhere: a protocol that
+--- never populates an RSSI sensor reads zero on a perfectly live link. The
+--- service detects that case and stops trusting the indicator, because a
+--- telemetry source cannot return a non-zero value when EdgeTX has nothing.
+---
+--- What remains unsolvable from Lua: a sensor that is configured but has never
+--- been received reads as a valid zero while the link is up, because EdgeTX
+--- exposes no per-sensor availability. GPS is the exception; it carries its
+--- own age, which `navigationService` uses.
 
 ---@class AeroGridReading
 ---@field name string Source name as configured in the layout.
@@ -195,6 +208,12 @@ function telemetryService:resolve(entry, now)
     state.unit = info.unit
     state.unitText = UNIT_TEXT[info.unit] or ""
     state.kind = UNIT_KIND[info.unit] or "number"
+    -- EdgeTX returns the cells table only for the base source. "Cels-" and
+    -- "Cels+" carry the same unit but return a plain number, so the lowest
+    -- and highest cell would otherwise never be readable.
+    if state.kind == "cells" and entry.base ~= state.name then
+      state.kind = "number"
+    end
     entry.scanIndex = 0
   else
     state.telemetry = false
@@ -259,18 +278,6 @@ function telemetryService:poll(entry, now)
   local read = self.env.getValue
   local raw = read and read(state.id)
 
-  -- A telemetry source reports zero while the link is down, so that result is
-  -- not a reading. Keep the last live value and mark it stale instead.
-  if state.telemetry and not self.linkLive then
-    state.fresh = false
-    state.stale = state.available
-    state.state = state.available and "stale" or "unavailable"
-    if state.updatedAt then
-      state.age = self.support.age(now, state.updatedAt)
-    end
-    return
-  end
-
   local kind = state.kind
   local value
 
@@ -285,10 +292,23 @@ function telemetryService:poll(entry, now)
     value = raw ~= nil and raw or nil
   end
 
-  if value == nil then
+  -- A telemetry source returns exactly integer zero when EdgeTX has nothing
+  -- for it, so a non-zero value proves the link is alive no matter what the
+  -- indicator says. Learn that once and stop trusting a broken indicator.
+  if state.telemetry and value ~= nil and value ~= 0 and not self.linkLive then
+    self.linkTrusted = false
+    self.linkLive = true
+  end
+
+  -- Only the ambiguous case is withheld: a zero read while the link is down is
+  -- not a reading, so the last live value is kept and marked stale.
+  if value == nil or (state.telemetry and value == 0 and not self.linkLive) then
     state.fresh = false
     state.stale = state.available
     state.state = state.available and "stale" or "unavailable"
+    if state.updatedAt then
+      state.age = self.support.age(now, state.updatedAt)
+    end
     return
   end
 
@@ -314,7 +334,7 @@ function telemetryService:update(now)
   -- EdgeTX reports zero RSSI whenever telemetry is not streaming, which is the
   -- only link-liveness signal the Lua API offers.
   self.rssi = rssi
-  self.linkLive = rssi > 0
+  self.linkLive = rssi > 0 or self.linkTrusted == false
 
   local entries = self.entries
   local total = #entries

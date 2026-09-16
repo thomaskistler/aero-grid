@@ -110,7 +110,9 @@ end
 
 Subscribing in `create` is the mechanism, not a convention: a source nothing subscribed to is never read, and a service nothing subscribed to is never scheduled. Two components naming the same source share one poll. Snapshots are read-only views over state the service mutates in place, so they cost no allocation per cycle and cannot be corrupted by the components reading them.
 
-Freshness deserves care. EdgeTX returns integer zero for a telemetry source both when the sensor reads zero and when telemetry is not streaming, so `telemetry` never stores a value read while `getRSSI()` is zero: it keeps the last live reading and marks it stale. A zero read while the link is up is a valid zero. Staleness is currently link-wide, because the Lua API exposes no per-sensor age except for GPS.
+Freshness deserves care. EdgeTX returns integer zero for a telemetry source both when the sensor reads zero and when telemetry is not streaming, so only a zero is ambiguous and only a zero is judged: a non-zero value is always a reading, and a zero is stored only while the link is believed up, otherwise the last live value is kept and marked stale. The link indicator is `getRSSI() > 0`, which reads zero on a live link whose protocol has no RSSI sensor, so the service stops trusting it once a source proves it wrong.
+
+Two limitations remain, and neither is solvable from Lua: staleness is link-wide rather than per sensor, and a sensor that is configured but has never been received reads as a valid zero while the link is up.
 
 Every service degrades rather than raising. A missing firmware API, an unknown source name, a sensor never received, an out-of-range timer, or a GPS source with no fix all produce an `unavailable` snapshot.
 

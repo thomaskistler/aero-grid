@@ -178,8 +178,22 @@ for index = 1, 3 do
   }
 end
 
+--- Reverse index from source id to field, rebuilt whenever a test adds one.
+--- It exists so the mock costs a table lookup rather than a scan: getValue is
+--- a C function in the firmware and costs no VM instructions at all, so a
+--- mock that searched would show up in the instruction budget measurement.
+local fieldsById = {}
+
+local function indexFields()
+  fieldsById = {}
+  for _, field in pairs(radio.fields) do fieldsById[field.id] = field end
+end
+
+indexFields()
+
 --- Reset the radio to the state every test starts from.
 local function resetRadio()
+  indexFields()
   radio.rssi = 80
   radio.values[100] = 24.0
   radio.values[103] = 10
@@ -188,11 +202,20 @@ local function resetRadio()
 end
 
 function getValue(source)
+  local field
   if type(source) == "string" then
-    local field = radio.fields[source]
+    field = radio.fields[source]
     source = field and field.id or nil
+  else
+    field = fieldsById[source]
   end
   if source == nil then return nil end
+
+  -- EdgeTX returns integer zero for every telemetry source while telemetry is
+  -- not streaming. A mock that kept reporting real values instead would let a
+  -- freshness bug pass, because nothing would ever look like a dead link.
+  if field and field.unit and radio.rssi == 0 then return 0 end
+
   return radio.values[source]
 end
 
@@ -707,13 +730,14 @@ local function testTelemetryDrivesComponents()
   settle()
   assertEqual(pack.stateName, "normal")
   radio.rssi = 0
-  radio.values[100] = 0
   settle()
   assertEqual(pack.stateName, "stale")
   assertEqual(pack.badge.properties.text, "STALE")
   assertEqual(pack.value.properties.text, "24.0", "a stale poll overwrote the value")
 
+  -- With the link back, a zero really is a reading and must be shown as one.
   radio.rssi = 80
+  radio.values[100] = 0
   settle()
   assertEqual(pack.value.properties.text, "0.0", "a valid zero was not shown")
   assertEqual(pack.stateName, "critical")
@@ -1412,7 +1436,7 @@ local function testServiceDiagnostics()
   assertEqual(modelRows.T0, "1:30")
 
   local control = probeRows(entryById(second, "control").instance)
-  assertEqual(control["TRIM-AIL"], "30 24%")
+  assertEqual(control["TRIM-AIL"], "30 23%")
   assertEqual(control.RATES, "4.5")
 
   local extrema = probeRows(entryById(second, "extrema").instance)
