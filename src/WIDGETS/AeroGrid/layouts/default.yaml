@@ -1,5 +1,11 @@
 version: 1
 
+# The shipped dashboard. It demonstrates every component milestone 6 delivers,
+# at a mixture of spans, so a fresh install shows real behaviour rather than
+# placeholders. Change the source names to sensors your own model has; a source
+# the radio does not recognize degrades to an explicit unavailable state rather
+# than pretending to read zero.
+#
 # Theme mode may be modern, edgetx, or custom. When present this overrides the
 # native Theme widget option. Custom mode accepts canvas, surface, text, and
 # accent overrides only.
@@ -11,12 +17,25 @@ grid:
   rows: 4
 
 components:
-  - id: pack
+  # A preset metric: label, accent, bounds, the maximum-altitude source, and
+  # the vertical-speed secondary all come from the preset, and any of them may
+  # be overridden here.
+  - id: altitude
     type: metric
     col: 0
     row: 0
     colSpan: 2
     rowSpan: 2
+    config:
+      preset: altitude
+      warning: 250
+      critical: 350
+  - id: pack
+    type: metric
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 1
     config:
       label: Pack
       source: RxBt
@@ -28,52 +47,81 @@ components:
       critical: 19.8
       precision: 1
       visual: bar
-  - id: current
-    type: metric
-    col: 2
-    row: 0
-    colSpan: 2
-    rowSpan: 1
-    config:
-      label: Current
-      source: Curr
-      accent: orange
-      min: 0
-      max: 120
-      warning: 90
-      critical: 110
-      visual: bar
-  - id: altitude
-    type: metric
+  # Timer 1 exactly as EdgeTX configured it. AeroGrid never runs a timer of
+  # its own; it only presents the one the model already owns.
+  - id: flight-clock
+    type: flight-timer
     col: 2
     row: 1
     colSpan: 2
     rowSpan: 1
     config:
-      label: Altitude
-      source: Alt
+      timer: 0
       accent: green
-      min: 0
-      max: 400
-      warning: 250
-      critical: 350
-      visual: radial
-  - id: pulse
-    type: heartbeat
+      warning: 60
+      critical: 20
+  - id: identity
+    type: model-identity
     col: 0
     row: 2
-    colSpan: 2
+    colSpan: 1
     rowSpan: 2
     config:
-      label: HEARTBEAT
-      accent: amber
-  - id: secondary
-    type: placeholder
+      presentation: auto
+      accent: cyan
+  - id: mode
+    type: flight-mode
+    col: 1
+    row: 2
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: Mode
+      accent: green
+  # The transmitter pack. The estimate below is calibrated for a 2S Li-ion
+  # TX16S; a radio with different cells needs its own range, which is why the
+  # component ships without one.
+  - id: radio-battery
+    type: tx-battery
+    col: 1
+    row: 3
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: TX
+      min: 6.6
+      max: 8.4
+      warning: 7.0
+      critical: 6.8
+      accent: green
+  # Global variable 1, read only. A flight counter kept in a global variable is
+  # displayed exactly the same way; AeroGrid never increments one.
+  - id: rates
+    type: variable-indicator
     col: 2
     row: 2
     colSpan: 2
-    rowSpan: 2
+    rowSpan: 1
     config:
-      title: PHASE 1
-      subtitle: DESIGN SYSTEM
-      accent: green
+      binding: global
+      index: 0
+      label: Rates
+      presentation: horizontal-bar
+      accent: cyan
+  # Trim sources are named for the radio's hardware axes, not for the pilot's
+  # stick mode, and their orientation is stated because EdgeTX does not report
+  # which axis a trim source belongs to.
+  - id: trims
+    type: trim-panel
+    col: 2
+    row: 3
+    colSpan: 2
+    rowSpan: 1
+    config:
+      mode: pair
+      trim1: trim-ail
+      trim2: trim-ele
+      orientation: horizontal
+      scale: auto
+      display: percent
+      accent: cyan
