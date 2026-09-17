@@ -30,7 +30,7 @@ end
 ---@return any badge
 function primitives.header(parent, theme, frame, fonts, text, presentation)
   local label = primitives.label(parent, theme, {
-    x = frame.pad,
+    x = frame.labelX,
     y = frame.compact,
     w = frame.labelWidth,
     text = string.upper(tostring(text == nil and "" or text)),
@@ -47,6 +47,8 @@ function primitives.header(parent, theme, frame, fonts, text, presentation)
     font = fonts.badge,
   })
 
+  if frame.labelHidden then lvgl.hide(label) end
+
   return label, badge
 end
 
@@ -55,8 +57,9 @@ end
 ---@param badge any
 ---@param frame table
 function primitives.placeHeader(label, badge, frame)
-  label:set({x = frame.pad, y = frame.compact, w = frame.labelWidth})
+  label:set({x = frame.labelX, y = frame.compact, w = frame.labelWidth})
   badge:set({x = frame.badgeX, y = frame.compact, w = frame.badgeWidth})
+  if frame.labelHidden then lvgl.hide(label) else lvgl.show(label) end
 end
 
 --- Create a component panel with a border and a narrow semantic accent.

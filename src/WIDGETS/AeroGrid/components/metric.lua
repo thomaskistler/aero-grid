@@ -498,6 +498,7 @@ function metric.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     and math.max(1, math.floor((content - 4) / 2)) or content
 
   return {
+    frame = frame,
     pad = pad,
     compact = compact,
     content = content,
@@ -593,7 +594,7 @@ function metric.create(parent, rect, settings, services)
   context.panel = panel
 
   context.label, context.badge = primitives.header(
-    panel.root, theme, area, fonts, settings.label, presentation)
+    panel.root, theme, area.frame, fonts, settings.label, presentation)
 
   context.value = primitives.value(panel.root, theme, {
     x = area.pad,
@@ -723,7 +724,7 @@ function metric.update(context, rect)
     context.layout, context.fonts, context.sample)
 
   context.primitives.resizePanel(context.panel, rect)
-  context.primitives.placeHeader(context.label, context.badge, area)
+  context.primitives.placeHeader(context.label, context.badge, area.frame)
   context.value:set({
     x = area.pad,
     y = area.valueY,

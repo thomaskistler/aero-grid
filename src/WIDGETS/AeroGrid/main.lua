@@ -248,6 +248,43 @@ local function dispatchAll(context, event, ...)
   if failures then showErrors(context) end
 end
 
+--- The rectangle one placement occupies inside the host zone.
+--- Both building and reflow go through this, so the two cannot drift apart.
+---@param context AeroGridContext
+---@param placement table
+---@return AeroGridRect? rect
+---@return string? error
+local function componentRect(context, placement)
+  return context.grid.rect(context.zone, placement, 4, 4, 4)
+end
+
+--- The part of one placement's own rectangle the menu button covers.
+---
+--- Expressed in the component's coordinates, because a component is handed a
+--- container-local rectangle and can neither see nor reach the zone. On a
+--- 480 x 272 display only a placement at column zero, row zero can overlap,
+--- but that is a property of the arithmetic rather than a rule, so the
+--- intersection is computed rather than assumed.
+---@param context AeroGridContext
+---@param placement table
+---@return table? reserved
+local function reservedFor(context, placement)
+  local reserved = context.reserved
+  if not reserved then return nil end
+
+  local rect = componentRect(context, placement)
+  if not rect then return nil end
+
+  local width = reserved.w - rect.x
+  local height = reserved.h - rect.y
+  if width <= 0 or height <= 0 then return nil end
+
+  return {
+    w = width < rect.w and width or rect.w,
+    h = height < rect.h and height or rect.h,
+  }
+end
+
 --- Assemble the shared objects handed to one component.
 --- Typography depends on the component's span, so services are built per
 --- placement rather than shared across the dashboard. The data services
@@ -261,6 +298,21 @@ local function buildServices(context, placement)
   local theme = context.theme
   local registry = context.serviceRuntime
   local byId = registry and registry.byId or {}
+
+  -- Where the radio paints over us, the theme builder this component sees
+  -- resolves its panel frame around that corner. Binding it here rather than
+  -- adding an argument to every component means a component written by
+  -- someone else is laid out correctly too, without knowing any of this
+  -- exists. The reservation is read on each call, not captured, so a zone
+  -- that moves is picked up by the update that follows it.
+  if context.reserved then
+    builder = setmetatable({
+      frame = function(resolved, rect, fonts)
+        return context.themeBuilder.frame(resolved, rect, fonts,
+          reservedFor(context, placement))
+      end,
+    }, {__index = context.themeBuilder})
+  end
 
   return {
     theme = theme,
@@ -310,7 +362,7 @@ local function buildComponent(context, placement)
     return
   end
 
-  local rect, rectError = context.grid.rect(context.zone, placement, 4, 4, 4)
+  local rect, rectError = componentRect(context, placement)
   if not rect then
     addError(context, placement.id .. ": " .. tostring(rectError))
     return
@@ -695,7 +747,7 @@ local function advanceReflow(context)
   for position = index, last do
     local entry = context.components[position]
     if entry and not entry.failed then
-      local rect = context.grid.rect(context.zone, entry.placement, 4, 4, 4)
+      local rect = componentRect(context, entry.placement)
       if rect then
         entry.container:set({x = rect.x, y = rect.y, w = rect.w, h = rect.h})
         local ok, dispatchError = context.componentHost.dispatch(

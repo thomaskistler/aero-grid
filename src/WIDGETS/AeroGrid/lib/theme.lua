@@ -582,6 +582,10 @@ end
 --- Width reserved for a panel's state badge on its header row.
 local BADGE_WIDTH = 56
 
+--- Narrowest header label worth drawing, about two characters at SMLSIZE.
+--- A label squeezed below this says nothing and only clips, so it is dropped.
+local MIN_LABEL_WIDTH = 24
+
 --- Resolve the padded content geometry every component panel shares.
 ---
 --- Components derive their regions from this rather than repeating the same
@@ -589,11 +593,19 @@ local BADGE_WIDTH = 56
 --- state badge never lands on top of the label it accompanies. Every
 --- measurement comes from a real font line height, because EdgeTX's fonts are
 --- far taller than they look and fixed offsets overflow on the radio.
+---
+--- A panel may also be handed a corner the dashboard does not own. In App mode
+--- EdgeTX paints its menu button over the top-left of the screen, above
+--- everything the widget draws, and it cannot be hidden because it is the only
+--- route to the radio's menus. Laying the header and the content start out
+--- around that corner here means the one shared helper handles it once,
+--- instead of ten components each compensating and disagreeing about how.
 ---@param resolved AeroGridTheme
 ---@param rect AeroGridRect
 ---@param fonts table Typography roles for this component's span.
+---@param reserved? table Width and height of an obstructed top-left corner.
 ---@return table frame
-function theme.frame(resolved, rect, fonts)
+function theme.frame(resolved, rect, fonts, reserved)
   local spacing = resolved.spacing
   -- Short panels cannot afford the standard padding.
   local tight = rect.h < 80
@@ -605,7 +617,21 @@ function theme.frame(resolved, rect, fonts)
   -- it is squeezed to nothing: both have to be readable at once, which is the
   -- whole reason the badge is not drawn over the label.
   local badgeWidth = math.min(BADGE_WIDTH, math.max(1, math.floor(content / 2)))
+  local badgeX = math.max(pad, rect.w - pad - badgeWidth)
   local labelHeight = theme.fontHeight(fonts.label)
+  local labelX = pad
+  local top = compact + labelHeight + 2
+
+  if reserved then
+    -- The header shares the obstructed band, so it moves along to its right
+    -- rather than below it, which would cost the panel a whole row.
+    if compact < reserved.h then labelX = reserved.w + 4 end
+    -- Content starts below the obstruction. This is the only space the panel
+    -- actually loses, and it loses it once rather than per element.
+    if top < reserved.h then top = reserved.h end
+  end
+
+  local labelWidth = math.max(1, badgeX - labelX - 4)
 
   return {
     width = rect.w,
@@ -615,10 +641,16 @@ function theme.frame(resolved, rect, fonts)
     content = content,
     labelHeight = labelHeight,
     badgeWidth = badgeWidth,
-    badgeX = math.max(pad, rect.w - pad - badgeWidth),
-    labelWidth = math.max(1, content - badgeWidth - 4),
-    top = compact + labelHeight + 2,
+    badgeX = badgeX,
+    labelX = labelX,
+    labelWidth = labelWidth,
+    -- A panel narrow enough that the obstruction leaves no room beside it
+    -- drops its label rather than clipping one glyph of it. The reading is
+    -- what a pilot needs; the label is the part that can be given up.
+    labelHidden = reserved ~= nil and labelWidth < MIN_LABEL_WIDTH,
+    top = top,
     bottom = 4,
+    reserved = reserved,
   }
 end
 

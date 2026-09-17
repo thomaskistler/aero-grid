@@ -1518,6 +1518,125 @@ return exploder
   appMode = false
 end
 
+--- Nothing a pilot has to read may sit under the EdgeTX menu button.
+---
+--- This is the defect that hid the shipped dashboard's distance reading: the
+--- compass dial squeezed navigation's value down to SMLSIZE, which left it
+--- 39 x 17 at (8, 25), entirely inside the 47 x 45 corner the button covers.
+--- Nothing failed and nothing was reported; the number was simply painted over.
+--- A layout author cannot predict that, because it depends on which font
+--- fitText chose, so it has to be a checked invariant rather than advice.
+local function testNothingReadableUnderTheMenuButton()
+  --- Every label a component actually draws, with its rendered box.
+  local function readableLabels(entry)
+    local found = {}
+
+    local function walk(object, offsetX, offsetY)
+      for _, child in ipairs(object.children) do
+        local x = offsetX + (child.properties.x or 0)
+        local y = offsetY + (child.properties.y or 0)
+        local text = tostring(child.properties.text or "")
+        if child.kind == "label" and not child.hidden and text ~= "" then
+          local font = child.properties.font
+          local size = type(font) == "function" and font() or font
+          found[#found + 1] = {
+            text = text,
+            x = x,
+            y = y,
+            w = themeModule.textWidth(size, text),
+            h = themeModule.fontHeight(size),
+          }
+        end
+        walk(child, x, y)
+      end
+    end
+
+    local bounds = boundsOf(entry)
+    walk(entry.container, bounds.x, bounds.y)
+    return found
+  end
+
+  local function check(label, context)
+    local reserved = assert(context.reserved, label .. ": nothing was reserved")
+    for _, entry in ipairs(context.components) do
+      for _, drawn in ipairs(readableLabels(entry)) do
+        assert(drawn.x >= reserved.w or drawn.y >= reserved.h
+            or drawn.x + drawn.w <= 0 or drawn.y + drawn.h <= 0,
+          label .. ": " .. entry.placement.id .. ' draws "' .. drawn.text
+            .. '" at (' .. drawn.x .. "," .. drawn.y
+            .. "), under the EdgeTX menu button")
+      end
+    end
+  end
+
+  -- Every shipped layout, because the directory is the list. A new layout is
+  -- covered the moment it is added, exactly like the load coverage.
+  local listingPath = root .. "/build/appmode-layouts.txt"
+  os.execute("ls '" .. sourcePath .. "layouts' > '" .. listingPath .. "'")
+  local listing = assert(hostIo.open(listingPath, "r"))
+  local names = {}
+  for name in listing:lines() do
+    local stem = string.match(name, "^(.+)%.yaml$")
+    if stem then names[#names + 1] = stem end
+  end
+  listing:close()
+  os.remove(listingPath)
+  assert(#names > 1, "no shipped layouts were found to check")
+
+  for _, stem in ipairs(names) do
+    resetRadio()
+    local source = assert(hostIo.open(sourcePath .. "layouts/" .. stem .. ".yaml", "r"))
+    local yaml = source:read("a")
+    source:close()
+
+    local widget = makeWidget("appmode-" .. stem, yaml)
+    local context = createLoaded(appZone(), DEFAULT_OPTIONS, widget)
+    pump(context, 60)
+    assertEqual(#context.errors, 0, stem .. ": " .. table.concat(context.errors, "\n"))
+    check("layout " .. stem, context)
+  end
+
+  -- The worst case the grid permits: a single cell in the corner, where the
+  -- button covers 40% of the width and 69% of the height. The reading has to
+  -- survive even though the label cannot.
+  local cramped = makeWidget("appmode-cramped", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: tight
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: Pack
+      source: RxBt
+      precision: 1
+]])
+  resetRadio()
+  local context = createLoaded(appZone(), DEFAULT_OPTIONS, cramped)
+  pump(context, 60)
+  check("1 x 1 corner", context)
+
+  local tight = entryById(context, "tight").instance
+  assertEqual(tight.value.properties.text, "24.0",
+    "the reading was lost rather than moved")
+  assert(tight.label.hidden,
+    "a label with no room left beside the button was drawn anyway")
+
+  -- Outside App mode nothing is taken away, so the same layout keeps the
+  -- geometry it has always had.
+  local plain = createLoaded(fullScreenZone(), DEFAULT_OPTIONS, cramped)
+  pump(plain, 60)
+  local plainLabel = entryById(plain, "tight").instance.label
+  assertEqual(plainLabel.hidden, false, "a Full screen panel lost its label")
+  assertEqual(plainLabel.properties.x, 4, "a Full screen panel moved its label")
+  appMode = false
+end
+
 --- The host adapting as designed must not be reported as a failure.
 ---
 --- The legibility pass corrects derived palettes by design, and every
@@ -3381,6 +3500,7 @@ testRadialReflow()
 testCreateFailureIsCleaned()
 testFailureIsolation()
 testErrorsClearTheMenuButton()
+testNothingReadableUnderTheMenuButton()
 testNoticesAreNotErrors()
 testEventConsumption()
 testContractRejections()
