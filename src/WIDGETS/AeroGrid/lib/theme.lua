@@ -25,9 +25,24 @@
 ---@field color table<string, integer> Display values produced by lcd.RGB.
 ---@field spacing table
 ---@field accent string Default semantic accent token name.
----@field warnings string[] Non-fatal problems encountered while resolving.
+---@field warnings string[] Things the layout asked for that cannot be honoured.
+---@field notices table[] `{severity, text}` records of the host adapting.
 
 local theme = {}
+
+--- Record something the host did on its own behalf, rather than a failure.
+---
+--- A contrast correction is the legibility pass doing its job, not a problem,
+--- and reporting it as an error would put a permanent banner on the screen of
+--- every radio using a derived palette. Severity separates a routine
+--- adjustment from the radio refusing to answer at all, which is still not a
+--- failure but is worth knowing about.
+---@param notices table[]
+---@param severity "info"|"warning"
+---@param text string
+function theme.notice(notices, severity, text)
+  notices[#notices + 1] = {severity = severity, text = text}
+end
 
 --- The designed instrument palette from the project specification.
 local MODERN = {
@@ -186,8 +201,8 @@ end
 ---@param key string
 ---@param background integer
 ---@param minimum number
----@param warnings string[]
-local function correctContrast(tokens, key, background, minimum, warnings)
+---@param notices table[]
+local function correctContrast(tokens, key, background, minimum, notices)
   if theme.contrast(background, tokens[key]) >= minimum then return end
 
   local candidate = betterContrast(background, MODERN[key], theme.shade(background, 0.85))
@@ -196,7 +211,7 @@ local function correctContrast(tokens, key, background, minimum, warnings)
   end
 
   tokens[key] = candidate
-  warnings[#warnings + 1] = key .. " was corrected for contrast"
+  theme.notice(notices, "info", key .. " was corrected for contrast")
 end
 
 --- Find a color separated from a base by at least a minimum contrast ratio.
@@ -221,8 +236,8 @@ end
 ---@param key string
 ---@param background integer
 ---@param minimum number
----@param warnings string[]
-local function correctAccent(tokens, key, background, minimum, warnings)
+---@param notices table[]
+local function correctAccent(tokens, key, background, minimum, notices)
   if theme.contrast(background, tokens[key]) >= minimum then return end
 
   -- Lighten on dark surfaces and darken on light ones so the hue survives.
@@ -231,20 +246,20 @@ local function correctAccent(tokens, key, background, minimum, warnings)
     local candidate = theme.shade(tokens[key], direction * amount)
     if theme.contrast(background, candidate) >= minimum then
       tokens[key] = candidate
-      warnings[#warnings + 1] = key .. " was corrected for contrast"
+      theme.notice(notices, "info", key .. " was corrected for contrast")
       return
     end
   end
 
   tokens[key] = betterContrast(background, 0xFFFFFF, 0x000000)
-  warnings[#warnings + 1] = key .. " was replaced for contrast"
+  theme.notice(notices, "info", key .. " was replaced for contrast")
 end
 
 --- Guarantee that a derived palette is structurally visible and legible.
 --- Modern is exempt because its values are specified directly.
 ---@param tokens table
----@param warnings string[]
-local function enforceLegibility(tokens, warnings)
+---@param notices table[]
+local function enforceLegibility(tokens, notices)
   -- Structural separation: panels, elevation, and borders must be visible.
   if theme.contrast(tokens.canvas, tokens.surface) < 1.10 then
     tokens.surface = separated(tokens.canvas, 1.10)
@@ -257,13 +272,13 @@ local function enforceLegibility(tokens, warnings)
     tokens.track = separated(tokens.surface, MIN_TRACK_CONTRAST)
   end
 
-  correctContrast(tokens, "text", tokens.surface, MIN_TEXT_CONTRAST, warnings)
-  correctContrast(tokens, "textMuted", tokens.surface, MIN_MUTED_CONTRAST, warnings)
-  correctContrast(tokens, "textFaint", tokens.surface, MIN_FAINT_CONTRAST, warnings)
+  correctContrast(tokens, "text", tokens.surface, MIN_TEXT_CONTRAST, notices)
+  correctContrast(tokens, "textMuted", tokens.surface, MIN_MUTED_CONTRAST, notices)
+  correctContrast(tokens, "textFaint", tokens.surface, MIN_FAINT_CONTRAST, notices)
 
   -- Decorative accents may be nudged to stay visible on the panel surface.
   for _, key in ipairs({"cyan", "green", "amber", "orange"}) do
-    correctAccent(tokens, key, tokens.surface, MIN_ACCENT_CONTRAST, warnings)
+    correctAccent(tokens, key, tokens.surface, MIN_ACCENT_CONTRAST, notices)
   end
 
   -- Critical red is never adjusted: an alarm must look the same on every
@@ -286,17 +301,17 @@ local function enforceLegibility(tokens, warnings)
     end
 
     tokens.surface = replacement
-    warnings[#warnings + 1] = "surface was shifted to keep critical visible"
+    theme.notice(notices, "info", "surface was shifted to keep critical visible")
 
     -- The surface moved, so everything measured against it must be rechecked.
     tokens.surfaceRaised = separated(tokens.surface, 1.08)
     tokens.border = separated(tokens.surface, 1.25)
     tokens.track = separated(tokens.surface, MIN_TRACK_CONTRAST)
-    correctContrast(tokens, "text", tokens.surface, MIN_TEXT_CONTRAST, warnings)
-    correctContrast(tokens, "textMuted", tokens.surface, MIN_MUTED_CONTRAST, warnings)
-    correctContrast(tokens, "textFaint", tokens.surface, MIN_FAINT_CONTRAST, warnings)
+    correctContrast(tokens, "text", tokens.surface, MIN_TEXT_CONTRAST, notices)
+    correctContrast(tokens, "textMuted", tokens.surface, MIN_MUTED_CONTRAST, notices)
+    correctContrast(tokens, "textFaint", tokens.surface, MIN_FAINT_CONTRAST, notices)
     for _, key in ipairs({"cyan", "green", "amber", "orange"}) do
-      correctAccent(tokens, key, tokens.surface, MIN_ACCENT_CONTRAST, warnings)
+      correctAccent(tokens, key, tokens.surface, MIN_ACCENT_CONTRAST, notices)
     end
   end
 end
@@ -343,16 +358,17 @@ end
 --- Derive dashboard tokens from the active EdgeTX theme.
 --- Roles without a suitable EdgeTX equivalent keep their Modern values, and
 --- critical red stays dashboard-controlled so alarms remain recognizable.
----@param warnings string[]
+---@param notices table[]
 ---@param env? table
 ---@return table tokens
-local function deriveFromEdgeTx(warnings, env)
+local function deriveFromEdgeTx(notices, env)
   local resolved = resolveEnv(env)
   local tokens = {}
   for key, value in pairs(MODERN) do tokens[key] = value end
 
   if not resolved then
-    warnings[#warnings + 1] = "EdgeTX colors unavailable; using Modern palette"
+    theme.notice(notices, "warning",
+      "EdgeTX colors unavailable; using Modern palette")
     return tokens
   end
 
@@ -380,7 +396,8 @@ local function deriveFromEdgeTx(warnings, env)
   end
 
   if not found then
-    warnings[#warnings + 1] = "EdgeTX theme roles unreadable; using Modern palette"
+    theme.notice(notices, "warning",
+      "EdgeTX theme roles unreadable; using Modern palette")
     return tokens
   end
 
@@ -435,12 +452,20 @@ local function toDisplay(tokens)
 end
 
 --- Resolve the active theme.
+---
+--- Two outcomes are kept apart. A warning is something the layout or the
+--- widget option asked for that cannot be honoured, such as a theme mode that
+--- does not exist or an override key that is not customizable: an authoring
+--- mistake whose author needs to see it. A notice is the host adapting exactly
+--- as designed, such as the legibility pass nudging a token, or the radio
+--- declining to hand over its palette.
 ---@param mode? string One of modern, edgetx, or custom.
 ---@param overrides? table Custom mode overrides.
 ---@param env? table Optional injected EdgeTX color environment.
 ---@return AeroGridTheme
 function theme.build(mode, overrides, env)
   local warnings = {}
+  local notices = {}
   local accent = "cyan"
   local tokens
 
@@ -451,7 +476,7 @@ function theme.build(mode, overrides, env)
   mode = mode or "modern"
 
   if mode == "edgetx" then
-    tokens = deriveFromEdgeTx(warnings, env)
+    tokens = deriveFromEdgeTx(notices, env)
   elseif mode == "custom" then
     tokens, accent = applyCustom(overrides, warnings)
   else
@@ -464,7 +489,7 @@ function theme.build(mode, overrides, env)
 
   -- Derived palettes are guaranteed legible; Modern is specified directly.
   if mode ~= "modern" then
-    enforceLegibility(tokens, warnings)
+    enforceLegibility(tokens, notices)
   end
 
   return {
@@ -474,6 +499,7 @@ function theme.build(mode, overrides, env)
     spacing = SPACING,
     accent = accent,
     warnings = warnings,
+    notices = notices,
   }
 end
 

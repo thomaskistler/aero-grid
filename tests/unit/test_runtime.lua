@@ -344,6 +344,7 @@ local function testModernTheme()
 
   assertEqual(resolved.mode, "modern")
   assertEqual(#resolved.warnings, 0)
+  assertEqual(#resolved.notices, 0)
   assertEqual(resolved.rgb.canvas, 0x101316)
   assertEqual(resolved.rgb.critical, 0xF05252)
   assertEqual(resolved.color.canvas, 0x101316)
@@ -395,10 +396,23 @@ local function testEdgeTxTheme()
   assert(theme.contrast(resolved.rgb.surface, resolved.rgb.surfaceRaised) > 1,
     "surfaces were not separated")
 
-  -- A radio without color support falls back with a warning.
+  -- Correcting a token for contrast is the legibility pass working, so it is
+  -- a notice rather than a warning. Reporting it as a failure would put a
+  -- permanent banner on every radio running a derived palette.
+  assertEqual(#resolved.warnings, 0,
+    "a derived palette reported its own legibility pass as a problem")
+  assert(#resolved.notices > 0, "the legibility pass recorded nothing at all")
+  for _, notice in ipairs(resolved.notices) do
+    assertEqual(notice.severity, "info", notice.text)
+  end
+
+  -- A radio without color support falls back. Still not a failure, but the
+  -- radio declined to answer, which is worth more than a contrast nudge.
   local missing = theme.build("edgetx", nil, {getColor = false})
   assertEqual(missing.rgb.canvas, theme.modern().canvas)
-  assert(string.match(missing.warnings[1], "unavailable"), missing.warnings[1])
+  assertEqual(#missing.warnings, 0)
+  assertEqual(missing.notices[1].severity, "warning")
+  assert(string.match(missing.notices[1].text, "unavailable"), missing.notices[1].text)
 
   -- Unreadable roles also fall back rather than producing an invisible theme.
   local broken = theme.build("edgetx", nil, {
@@ -406,7 +420,9 @@ local function testEdgeTxTheme()
     getColor = function() error("no colors", 0) end,
   })
   assertEqual(broken.rgb.canvas, theme.modern().canvas)
-  assert(string.match(table.concat(broken.warnings, "\n"), "unreadable"))
+  local brokenText = {}
+  for index, notice in ipairs(broken.notices) do brokenText[index] = notice.text end
+  assert(string.match(table.concat(brokenText, "\n"), "unreadable"))
 end
 
 --- Custom mode accepts only the documented override set.

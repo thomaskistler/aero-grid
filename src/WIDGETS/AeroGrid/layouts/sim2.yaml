@@ -12,9 +12,15 @@ version: 1
 # Two things here are deliberately unexercised elsewhere: the metric without a
 # visualization, which has only ever been tested carrying a bar or a radial,
 # and its secondary reading.
+#
+# This screen also carries the Follow EdgeTX palette while sim.yaml keeps
+# Modern, so paging between the two screens compares the designed palette
+# against one derived from the radio's own theme without opening any settings.
+# A layout's theme block beats the native Theme option, so the two screens can
+# disagree while both widgets keep whatever that option says.
 
 theme:
-  mode: modern
+  mode: edgetx
 
 grid:
   columns: 4

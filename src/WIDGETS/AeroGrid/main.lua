@@ -21,7 +21,8 @@
 ---@field path string Absolute widget directory path.
 ---@field dashboardId string Layout identity selected in native widget settings.
 ---@field components AeroGridComponentEntry[]
----@field errors string[]
+---@field errors string[] Failures, shown on the overlay.
+---@field notices table[] `{severity, text}` records of the host adapting.
 ---@field width integer Last rendered zone width.
 ---@field height integer Last rendered zone height.
 ---@field left integer Last rendered absolute zone left edge.
@@ -94,6 +95,30 @@ end
 ---@param message any
 local function addError(context, message)
   context.errors[#context.errors + 1] = tostring(message)
+end
+
+--- Notices retained for diagnostics; older ones are dropped rather than grown.
+local NOTICE_LIMIT = 16
+
+--- Record the host adapting as designed, which is not a failure.
+---
+--- An error is something that did not work: a module that would not load, a
+--- layout key that is invalid, a component that raised. Those belong on the
+--- overlay, because the dashboard is not doing what it was told. A notice is
+--- the host doing its job: correcting a token for contrast, or falling back to
+--- the Modern palette when the radio will not hand over its own. Putting those
+--- on the overlay would leave a permanent banner on every radio running a
+--- derived theme, reporting that the legibility pass worked.
+---
+--- They are kept rather than discarded because milestone 9's diagnostics view
+--- is where they belong.
+---@param context AeroGridContext
+---@param severity "info"|"warning"
+---@param message any
+local function addNotice(context, severity, message)
+  local notices = context.notices
+  if #notices >= NOTICE_LIMIT then table.remove(notices, 1) end
+  notices[#notices + 1] = {severity = severity, text = tostring(message)}
 end
 
 --- Menu button height on a 480 x 272 display, used when the radio will not say.
@@ -438,6 +463,9 @@ local function advanceLoad(context)
     for _, warning in ipairs(context.theme.warnings) do
       addError(context, "theme: " .. warning)
     end
+    for _, notice in ipairs(context.theme.notices) do
+      addNotice(context, notice.severity, "theme: " .. notice.text)
+    end
     context.canvas:set({color = context.theme.color.canvas})
 
     context.document = validated
@@ -542,6 +570,7 @@ end
 local function beginLoad(context)
   context.components = {}
   context.errors = {}
+  context.notices = {}
   context.errorLabel = nil
   context.tokens = nil
   context.source = nil
@@ -569,6 +598,7 @@ local function create(zone, widgetOptions, path)
     themeMode = widgetOptions.Theme,
     components = {},
     errors = {},
+    notices = {},
     width = zone.w,
     height = zone.h,
     left = zone.xabs or 0,
@@ -826,6 +856,7 @@ local function refresh(context)
     context.canvas = nil
     context.components = {}
     context.errors = {}
+    context.notices = {}
     context.errorLabel = nil
     context.reloadState = "rebuild"
     return

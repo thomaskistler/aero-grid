@@ -1518,6 +1518,79 @@ return exploder
   appMode = false
 end
 
+--- The host adapting as designed must not be reported as a failure.
+---
+--- The legibility pass corrects derived palettes by design, and every
+--- correction used to be promoted to an error. Now that the overlay is
+--- actually visible, that would leave a permanent banner on the screen of
+--- every radio running the EdgeTX or Custom theme, announcing that the
+--- dashboard had done its job.
+local function testNoticesAreNotErrors()
+  local derived = makeWidget("derived-theme", [[
+version: 1
+theme:
+  mode: edgetx
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: pack
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: Pack
+      source: RxBt
+  - id: boom
+    type: exploder
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+]], {
+    ["exploder.lua"] = [==[
+local exploder = {id = "exploder", apiVersion = 1, supportedSpans = {"any"}}
+function exploder.create(parent, rect, settings, services)
+  return {panel = services.primitives.panel(parent, rect, services.theme,
+    services.state("normal", "cyan"))}
+end
+function exploder.refresh()
+  error("exploder failed", 0)
+end
+return exploder
+]==],
+  })
+
+  resetRadio()
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, derived)
+  assertEqual(context.theme.mode, "edgetx")
+
+  -- The deliberately light mock roles guarantee the legibility pass engages,
+  -- so a test that saw no notices would not be testing anything.
+  assert(#context.notices > 0, "the legibility pass recorded nothing")
+  local corrected = false
+  for _, notice in ipairs(context.notices) do
+    assert(notice.severity == "info" or notice.severity == "warning",
+      "notice carried no usable severity: " .. tostring(notice.severity))
+    if string.match(notice.text, "corrected for contrast") then corrected = true end
+  end
+  assert(corrected, "no contrast correction was recorded on a derived palette")
+  assertEqual(#context.errors, 0,
+    "the legibility pass was reported as a failure: "
+      .. table.concat(context.errors, "\n"))
+  assertEqual(context.errorLabel, nil, "a notice put a banner on the screen")
+
+  -- A component that genuinely fails must still reach the overlay, so the
+  -- fix cannot have been "stop reporting things".
+  pump(context, 1)
+  assertEqual(#context.errors, 1, "a real failure stopped being reported")
+  assert(string.match(context.errors[1], "exploder failed"), context.errors[1])
+  assert(context.errorLabel, "a real failure was not shown")
+end
+
 --- An event consumed by one component must stop propagating.
 local function testEventConsumption()
   local widgetPath = makeWidget("consumer", [[
@@ -3308,6 +3381,7 @@ testRadialReflow()
 testCreateFailureIsCleaned()
 testFailureIsolation()
 testErrorsClearTheMenuButton()
+testNoticesAreNotErrors()
 testEventConsumption()
 testContractRejections()
 testCorruptLayout()
