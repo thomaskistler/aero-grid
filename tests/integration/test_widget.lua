@@ -90,6 +90,56 @@ local function settleLvgl()
   end
 end
 
+--- Model how the firmware actually places a round object.
+---
+--- EdgeTX positions an arc by its centre but stores a corner, and
+--- `LvglWidgetRoundObject::refresh` subtracts the radius twice: once inside
+--- `setRadius`, and again through the inherited `setPos`, which receives
+--- members that already hold a corner. Every update therefore walks an arc up
+--- and to the left by its own radius. A mock that simply records the
+--- coordinates it was handed cannot see that, which is why dials drifted off
+--- the radio while these tests stayed green.
+local function newRoundGeometry(properties)
+  local fwX = properties.x or 0
+  local fwY = properties.y or 0
+  local fwRadius = properties.radius or 0
+  local drawn = {x = 0, y = 0}
+
+  -- LvglWidgetRoundObject::setPos, which subtracts the radius before
+  -- delegating to LvglWidgetObject::setPos.
+  local function setPos(nx, ny)
+    fwX = nx - fwRadius
+    fwY = ny - fwRadius
+    drawn.x, drawn.y = fwX, fwY
+  end
+
+  local function setRadius(r)
+    fwX = fwX + fwRadius
+    fwY = fwY + fwRadius
+    fwRadius = r
+    setPos(fwX, fwY)
+  end
+
+  -- build() runs setPos then setRadius and never calls refresh, which is why
+  -- a dial is only ever misplaced after its first update.
+  setPos(fwX, fwY)
+  setRadius(fwRadius)
+
+  return {
+    drawn = drawn,
+    radius = function() return fwRadius end,
+    -- update(): getParams overwrites only the supplied members, then refresh()
+    -- runs setRadius followed by the inherited setPos.
+    refresh = function(changes)
+      if changes.x ~= nil then fwX = changes.x end
+      if changes.y ~= nil then fwY = changes.y end
+      if changes.radius ~= nil then fwRadius = changes.radius end
+      setRadius(fwRadius)
+      setPos(fwX, fwY)
+    end,
+  }
+end
+
 local function newObject(kind, parent, properties)
   local object = {
     kind = kind,
@@ -110,6 +160,7 @@ local function newObject(kind, parent, properties)
   function object:set(changes)
     assertUsable(self)
     for key, value in pairs(changes) do self.properties[key] = value end
+    if self.round then self.round.refresh(changes) end
   end
 
   function object:clear()
@@ -120,6 +171,8 @@ local function newObject(kind, parent, properties)
       pendingClears[#pendingClears + 1] = self
     end
   end
+
+  if kind == "arc" then object.round = newRoundGeometry(properties) end
 
   if parent then parent.children[#parent.children + 1] = object end
   objects[#objects + 1] = object
@@ -2238,6 +2291,24 @@ local function testCoreComponents()
   -- 10 of 0..120 is a small part of a 270 degree sweep.
   assertEqual(dial.radial.arc.properties.endAngle, 135 + 23)
 
+  -- A dial that is redrawn has to stay where it was put. The firmware offsets
+  -- a round object by its radius on every update, so a gauge whose value moves
+  -- crept up and to the left until it left its panel entirely -- once per
+  -- reading, which on a live telemetry feed is a few seconds.
+  local arc = dial.radial.arc
+  local expectedX = dial.radial.centreX - dial.radial.radius
+  local expectedY = dial.radial.centreY - dial.radial.radius
+  assertEqual(arc.round.drawn.x, expectedX, "an arc was not built at its centre")
+  assertEqual(arc.round.drawn.y, expectedY, "an arc was not built at its centre")
+  for reading = 1, 8 do
+    radio.values[103] = 10 + reading * 5
+    settle(context, 12)
+  end
+  assert(arc.properties.endAngle ~= 135 + 23,
+    "the dial never moved, so this proves nothing")
+  assertEqual(arc.round.drawn.x, expectedX, "the dial drifted horizontally")
+  assertEqual(arc.round.drawn.y, expectedY, "the dial drifted vertically")
+
   -- Trims are read through EdgeTX's own sources, in stored trim units.
   local trims = entryById(context, "trims").instance
   assertEqual(#trims.indicators, 4)
@@ -2952,12 +3023,16 @@ local function testTelemetryComponentsReflow()
           local properties = object.properties
           local right, bottom
           if object.kind == "arc" then
-            local box = primitivesModule.arcBounds(
-              properties.x, properties.y, properties.radius)
-            assert(box.x >= -1 and box.y >= -1, what .. ": " .. entry.placement.id
-              .. " drew an arc off its top or left edge")
-            right = box.x + box.w
-            bottom = box.y + box.h
+            -- Where the firmware would actually paint it, not the centre the
+            -- caller asked for: the two part company as soon as an arc is
+            -- updated without restating its centre.
+            local drawn = object.round.drawn
+            local diameter = object.round.radius() * 2
+            assert(drawn.x >= -1 and drawn.y >= -1, what .. ": " .. entry.placement.id
+              .. " drew an arc off its top or left edge, at "
+              .. drawn.x .. "," .. drawn.y)
+            right = drawn.x + diameter
+            bottom = drawn.y + diameter
           else
             right = (properties.x or 0) + (properties.w or 0)
             bottom = (properties.y or 0) + (properties.h or 0)

@@ -465,6 +465,27 @@ function primitives.radial(parent, theme, options)
   }
 end
 
+--- Apply changes to an arc, always restating its centre.
+---
+--- An arc is positioned by its centre, but the firmware stores the corner as
+--- `centre - radius`, and `LvglWidgetRoundObject::refresh` subtracts the radius
+--- twice: once inside `setRadius`, and again through the inherited
+--- `setPos(x, y)` that follows it, which is handed members already holding a
+--- corner. Every `set` call therefore walks an arc up and to the left by its
+--- own radius, whatever keys it carries, until it leaves the panel. Restating
+--- the centre replaces the drifted members with absolute coordinates, so the
+--- doubled subtraction lands where it should. `build` does not call `refresh`,
+--- which is why a dial is only ever wrong after its first update.
+---@param object any
+---@param centreX integer
+---@param centreY integer
+---@param changes table
+local function setRound(object, centreX, centreY, changes)
+  changes.x = centreX
+  changes.y = centreY
+  object:set(changes)
+end
+
 --- Reposition a radial gauge, keeping centre coordinates in one place.
 ---@param radial table
 ---@param centreX integer
@@ -474,7 +495,7 @@ function primitives.placeRadial(radial, centreX, centreY, radius)
   radial.centreX = centreX
   radial.centreY = centreY
   radial.radius = radius
-  radial.arc:set({x = centreX, y = centreY, radius = radius})
+  setRound(radial.arc, centreX, centreY, {radius = radius})
 end
 
 --- Report the rectangle an arc of a given centre and radius occupies.
@@ -512,7 +533,7 @@ function primitives.setRadial(radial, fraction, color)
     endAngle = radial.startAngle + primitives.arcSweep(radial.sweep, fraction),
   }
   if color then changes.color = color end
-  radial.arc:set(changes)
+  setRound(radial.arc, radial.centreX, radial.centreY, changes)
 end
 
 --- Angular width of the compass pointer, in degrees.
@@ -609,7 +630,7 @@ function primitives.setCompass(compass, bearing, color)
     compass.bearing = bearing
   end
 
-  compass.ring:set(changes)
+  setRound(compass.ring, compass.centreX, compass.centreY, changes)
 end
 
 --- Reposition a compass without recreating it.
@@ -621,7 +642,9 @@ function primitives.placeCompass(compass, centreX, centreY, radius)
   compass.centreX = centreX
   compass.centreY = centreY
   compass.radius = radius
-  compass.ring:set({x = centreX, y = centreY, radius = radius})
+
+  setRound(compass.ring, centreX, centreY, {radius = radius})
+
   compass.north:set({
     x = centreX - 1,
     y = centreY - radius + compass.thickness,
