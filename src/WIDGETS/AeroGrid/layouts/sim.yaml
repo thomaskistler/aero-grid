@@ -34,7 +34,7 @@ components:
     rowSpan: 1
     config:
       label: Altitude
-      source: Alt
+      source: GAlt
       unit: m
       accent: green
       min: 0
@@ -99,7 +99,7 @@ components:
     rowSpan: 1
     config:
       label: Battery
-      source: "Batt%"
+      source: "Bat%"
       unit: "%"
       accent: amber
       min: 0
