@@ -679,7 +679,58 @@ local SHIPPED_TYPES = {
   "cell-battery", "link-status", "navigation",
 }
 
+--- Every layout that ships must load, whatever it is for.
+---
+--- The shipped default is covered above, but the simulator layouts are only
+--- ever exercised by running the simulator, so a component type that does not
+--- exist, a span a component refuses, or a grid that overflows would not
+--- surface until a radio drew it. They are read from disk rather than listed
+--- here, so a new layout is covered the moment it is added.
+local function testShippedLayoutsLoad()
+  local listingPath = root .. "/build/shipped-layouts.txt"
+  os.execute("ls '" .. sourcePath .. "layouts' > '" .. listingPath .. "'")
+  local listing = assert(hostIo.open(listingPath, "r"))
+  local names = {}
+  for name in listing:lines() do
+    local stem = string.match(name, "^(.+)%.yaml$")
+    if stem and stem ~= "default" then names[#names + 1] = stem end
+  end
+  listing:close()
+  os.remove(listingPath)
+  assert(#names > 0, "no shipped layouts were found to check")
+
+  for _, stem in ipairs(names) do
+    resetRadio()
+
+    -- The host loads layouts/default.yaml unless a dashboard is named, so each
+    -- candidate takes that name inside its own copy of the package.
+    local source = assert(hostIo.open(sourcePath .. "layouts/" .. stem .. ".yaml", "r"))
+    local yaml = source:read("a")
+    source:close()
+
+    local widget = makeWidget("layout-" .. stem, yaml)
+    local declared = 0
+    for _ in string.gmatch(yaml, "\n  %- id:") do declared = declared + 1 end
+    assert(declared > 0, stem .. ": no components were declared")
+
+    local zone = {x = 0, y = 0, w = 480, h = 272}
+    local context = testRendersInBothModes("layout " .. stem, zone, widget, declared)
+
+    -- Construction is not the bar: a component that fails on its first real
+    -- reading is still a broken layout.
+    for _ = 1, 60 do
+      tick(20)
+      definition.refresh(context)
+    end
+    assertEqual(#context.errors, 0, stem .. ": " .. table.concat(context.errors, "\n"))
+    for _, entry in ipairs(context.components) do
+      assert(not entry.failed, stem .. ": " .. entry.placement.id .. " failed")
+    end
+  end
+end
+
 local function testShippedLayout()
+testShippedLayoutsLoad()
   resetRadio()
   local zone = {x = 0, y = 0, w = 480, h = 272}
   local context = testRendersInBothModes("shipped", zone, sourcePath, 10)

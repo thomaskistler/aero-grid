@@ -649,6 +649,22 @@ screenData:
                         type: String
                         value: 
                            stringValue: 
+   1:
+      LayoutId: Layout1x1AM
+      layoutData: 
+         zones: 
+            0:
+               widgetName: AeroGrid
+               widgetData: 
+                  options: 
+                     0:
+                        type: String
+                        value: 
+                           stringValue: sim2
+                     1:
+                        type: String
+                        value: 
+                           stringValue: 
 topbarData: 
    zones: 
       3:
