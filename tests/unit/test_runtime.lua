@@ -1163,6 +1163,16 @@ local function testControlService()
   assertEqual(trim.fraction, 0.5)
   assertEqual(trim.centered, false)
 
+  -- A negative trim must round toward zero like a positive one. Flooring a
+  -- negative percentage reports more deflection than the trim actually has.
+  raw = -240
+  service:update(1)
+  local rows = {}
+  assert(service:describe(rows) > 0)
+  assertEqual(rows[1].text, "-30 -23%", "a negative trim rounded the wrong way")
+  raw = 512
+  service:update(1)
+
   -- A standard trim held at its own end stop reads exactly 1024, because
   -- EdgeTX clamps the stored value to TRIM_MAX of 128. That must not be read
   -- as leaving the standard range.
@@ -1383,6 +1393,338 @@ local function testNavigationService()
   assertEqual(navigationService.formatDistance(12345), "12.3km")
 end
 
+
+--- Text must be fitted by measured width as well as height, because a long
+--- reading in a narrow cell clips sideways where a short one would not.
+local function testTextFitting()
+  assert(theme.textWidth(XXLSIZE, "1234") > theme.textWidth(SMLSIZE, "1234"),
+    "a larger font must measure wider")
+  assertEqual(theme.textWidth(SMLSIZE, ""), 0)
+  assertEqual(theme.textWidth(SMLSIZE, nil), 0)
+
+  -- Height alone would choose the biggest font that fits vertically, which is
+  -- exactly the defect this exists to prevent.
+  assertEqual(theme.fitPrimary(80), XXLSIZE)
+  assertEqual(theme.fitText("-1234.5", 60, 80), SMLSIZE,
+    "a narrow cell must reduce the font rather than clip")
+  assertEqual(theme.fitText("9", 400, 80), XXLSIZE,
+    "a short value in a wide cell must keep the largest font")
+  -- Nothing fits, so the smallest font is the honest answer.
+  assertEqual(theme.fitText("123456789012", 10, 10), SMLSIZE)
+
+  -- A panel frame must keep its badge clear of its label at every width.
+  local resolved = theme.build("modern")
+  for _, width in ipairs({60, 117, 238, 480}) do
+    local frame = theme.frame(resolved, {x = 0, y = 0, w = width, h = 134},
+      theme.typography(1, 1))
+    assert(frame.pad + frame.labelWidth <= frame.badgeX,
+      "badge overlaps the label at width " .. width)
+    assert(frame.badgeX + frame.badgeWidth <= width,
+      "badge runs past the panel at width " .. width)
+  end
+end
+
+--- A bipolar bar grows outward from its own centre and keeps its neutral
+--- marker visible at every deflection.
+local function testBipolarGeometry()
+  assertEqual(primitives.signedFraction(50, -100, 100), 0.5)
+  assertEqual(primitives.signedFraction(-50, -100, 100), -0.5)
+  -- Each side is measured against its own bound, so an asymmetric range is
+  -- still centred at zero rather than at the middle of its span.
+  assertEqual(primitives.signedFraction(-10, -20, 100), -0.5)
+  assertEqual(primitives.signedFraction(500, -100, 100), 1)
+  assertEqual(primitives.signedFraction(0 / 0, -100, 100), 0)
+  assertEqual(primitives.signedFraction(5, -100, 0), 0,
+    "a bound of zero cannot produce a fraction")
+
+  -- setBipolarBar is pure geometry, so it is checked against a recording stub
+  -- rather than against a live LVGL object.
+  local bar = {
+    x = 10, y = 20, w = 100, h = 8, vertical = false,
+    fill = {set = function(self, changes) self.last = changes end},
+  }
+
+  primitives.setBipolarBar(bar, 0.5)
+  assertEqual(bar.fill.last.x, 60, "a positive fill must start at the centre")
+  assertEqual(bar.fill.last.w, 25)
+
+  primitives.setBipolarBar(bar, -0.5)
+  assertEqual(bar.fill.last.x, 35, "a negative fill must end at the centre")
+  assertEqual(bar.fill.last.w, 25)
+
+  primitives.setBipolarBar(bar, 0)
+  assertEqual(bar.fill.last.w, 1, "a centred bar must still be visible")
+
+  local upright = {
+    x = 0, y = 0, w = 6, h = 100, vertical = true,
+    fill = {set = function(self, changes) self.last = changes end},
+  }
+  primitives.setBipolarBar(upright, 1)
+  assertEqual(upright.fill.last.y, 0, "positive deflection must grow upward")
+  assertEqual(upright.fill.last.h, 50)
+  primitives.setBipolarBar(upright, -1)
+  assertEqual(upright.fill.last.y, 50, "negative deflection must grow downward")
+end
+
+--- Presets supply defaults without overriding anything the layout states.
+local function testMetricPresets()
+  local metric = loadModule("components/metric.lua")
+
+  local preset = {preset = "altitude"}
+  metric.applyPreset(preset)
+  assertEqual(preset.label, "ALT")
+  assertEqual(preset.source, "Alt")
+  assertEqual(preset.accent, "green")
+  assertEqual(preset.max, 400)
+  assertEqual(preset.extrema, "source")
+  assertEqual(preset.secondarySource, "VSpd")
+
+  -- Anything stated in the layout wins over the preset.
+  local overridden = {preset = "altitude", label = "HEIGHT", max = 1200,
+    source = "GAlt", extrema = "flight"}
+  metric.applyPreset(overridden)
+  assertEqual(overridden.label, "HEIGHT")
+  assertEqual(overridden.max, 1200)
+  assertEqual(overridden.source, "GAlt")
+  assertEqual(overridden.extrema, "flight")
+
+  -- An unknown preset and an unknown extrema mode both fall back safely.
+  local unknown = {preset = "nonsense", extrema = "sometimes"}
+  metric.applyPreset(unknown)
+  assertEqual(unknown.label, "METRIC")
+  assertEqual(unknown.extrema, "none")
+  assertEqual(unknown.extremaMode, "max")
+
+  -- The widest sample decides the font, so it must come from the bounds
+  -- rather than from whichever value happens to be showing.
+  assertEqual(metric.widestSample({min = 0, max = 1200}, 1), "1200.0")
+  assertEqual(metric.widestSample({min = -50, max = 10}, 0), "-50")
+end
+
+--- Timer semantics belong to EdgeTX; the component only presents them.
+local function testTimerSemantics()
+  local timer = loadModule("components/flight-timer.lua")
+
+  local countdown = {
+    available = true, countdown = true, value = 90, start = 300,
+    elapsed = 210, remaining = 90, expired = false, showElapsed = false,
+  }
+
+  assertEqual(timer.displayValue({display = "model"}, countdown), 90)
+  assertEqual(timer.displayValue({display = "elapsed"}, countdown), 210)
+  -- EdgeTX's own showElapsed preference is honoured by `model`.
+  countdown.showElapsed = true
+  assertEqual(timer.displayValue({display = "model"}, countdown), 210)
+  countdown.showElapsed = false
+
+  assertEqual(timer.resolveState({}, countdown), "normal")
+  assertEqual(timer.resolveState({warning = 120}, countdown), "warning")
+  assertEqual(timer.resolveState({critical = 120}, countdown), "critical")
+
+  -- A countdown past zero is always critical, whatever the thresholds say.
+  local expired = {
+    available = true, countdown = true, value = -12, start = 300,
+    elapsed = 312, remaining = -12, expired = true,
+  }
+  assertEqual(timer.resolveState({}, expired), "critical")
+  assertEqual(timer.detailText(expired, tostring), "ELAPSED PAST ZERO")
+
+  -- A count-up timer is judged on time used, and has no total to draw.
+  local up = {available = true, countdown = false, value = 200, start = 0,
+    elapsed = 200, remaining = 0, expired = false}
+  assertEqual(timer.resolveState({warning = 180}, up), "warning")
+  assertEqual(timer.resolveState({warning = 300}, up), "normal")
+  assertEqual(timer.fraction(up), 0, "a count-up timer has no progress")
+  assertEqual(timer.fraction(countdown), 0.7)
+  assertEqual(timer.fraction(nil), 0)
+
+  assertEqual(timer.resolveState({}, nil), "unavailable")
+  assertEqual(timer.resolveState({}, {available = false}), "unavailable")
+  assertEqual(timer.detailText(nil, tostring), "NO TIMER")
+end
+
+--- The transmitter estimate is optional and must stay off until a layout
+--- states the voltage range it should be measured against.
+local function testTxBatteryEstimate()
+  local battery = loadModule("components/tx-battery.lua")
+
+  assertEqual(battery.hasRange({}), false)
+  assertEqual(battery.hasRange({min = 6.6}), false)
+  assertEqual(battery.hasRange({min = 8.4, max = 6.6}), false,
+    "an inverted range is not a range")
+  assertEqual(battery.hasRange({min = 6.6, max = 8.4}), true)
+
+  assertEqual(battery.fraction({}, 7.5), 0, "no range means no estimate")
+  assertEqual(battery.fraction({min = 6.6, max = 8.6}, 7.6), 0.5)
+  assertEqual(battery.fraction({min = 6.6, max = 8.6}, 9.0), 1)
+  assertEqual(battery.fraction({min = 6.6, max = 8.6}, 6.0), 0)
+
+  -- Voltage thresholds always count downward.
+  local limits = {warning = 7.0, critical = 6.8}
+  assertEqual(battery.resolveState(limits, 7.9, false), "normal")
+  assertEqual(battery.resolveState(limits, 6.9, false), "warning")
+  assertEqual(battery.resolveState(limits, 6.7, false), "critical")
+  assertEqual(battery.resolveState(limits, 7.9, true), "stale")
+  assertEqual(battery.resolveState(limits, nil, false), "unavailable")
+end
+
+--- Bar and radial geometry is normalized from bounds, but the displayed value
+--- is never clamped: a value outside its bounds is still the real value.
+local function testVariableNormalization()
+  local indicator = loadModule("components/variable-indicator.lua")
+  local signed = primitives.signedFraction
+
+  assertEqual(indicator.presentation("radial"), "radial")
+  assertEqual(indicator.presentation("sparkline"), "value")
+  assertEqual(indicator.presentation(nil), "value")
+
+  local range = {value = 150, min = 0, max = 100}
+  assertEqual(indicator.fraction("horizontal-bar", range, signed), 1,
+    "the drawing is clamped")
+  assertEqual(indicator.format(range.value, 0), "150",
+    "the value is not clamped")
+
+  local bipolar = {value = -25, min = -50, max = 100}
+  assertEqual(indicator.fraction("bipolar-bar", bipolar, signed), -0.5)
+  assertEqual(indicator.fraction("horizontal-bar", {value = 25, min = 0, max = 100},
+    signed), 0.25)
+  assertEqual(indicator.fraction("radial", {value = nil, min = 0, max = 100},
+    signed), 0)
+  assertEqual(indicator.fraction("horizontal-bar", {value = 5, min = 5, max = 5},
+    signed), 0, "a collapsed range cannot produce a fraction")
+
+  assertEqual(indicator.crossesZero({min = -100, max = 100}), true)
+  assertEqual(indicator.crossesZero({min = 0, max = 100}), false)
+  assertEqual(indicator.crossesZero({min = -100, max = 0}), false)
+
+  assertEqual(indicator.format(4.5, 1), "4.5")
+  assertEqual(indicator.format(nil, 1), "--")
+  assertEqual(indicator.format(0 / 0, 1), "--")
+end
+
+--- Trim presentation has to survive the two firmware behaviours the service
+--- normalizes: an eight-times scale, and a three-position trim that cannot be
+--- told from an end stop in a single sample.
+local function testTrimPresentation()
+  local trims = loadModule("components/trim-panel.lua")
+
+  assertEqual(trims.indicatorCount("single"), 1)
+  assertEqual(trims.indicatorCount("pair"), 2)
+  assertEqual(trims.indicatorCount("all"), 4)
+  assertEqual(trims.indicatorCount("everything"), 1)
+
+  assertEqual(trims.captionFor("trim-ail"), "AIL")
+  assertEqual(trims.captionFor("trim-t5"), "T5")
+  assertEqual(trims.captionFor("sa"), "SA")
+  assertEqual(trims.captionFor(nil), "--")
+
+  local right = {available = true, raw = 240, value = 30, fraction = 0.234375,
+    centered = false, threePosition = false}
+  assertEqual(trims.valueText({display = "percent"}, right), "+23%")
+  assertEqual(trims.valueText({display = "raw"}, right), "+30")
+  assertEqual(trims.valueText({display = "none"}, right), "")
+
+  local left = {available = true, raw = -240, value = -30, fraction = -0.234375,
+    centered = false, threePosition = false}
+  assertEqual(trims.valueText({display = "percent"}, left), "-23%")
+  assertEqual(trims.valueText({display = "raw"}, left), "-30")
+
+  local centred = {available = true, raw = 0, value = 0, fraction = 0,
+    centered = true, threePosition = false}
+  assertEqual(trims.valueText({display = "percent"}, centred), "0%")
+
+  -- A three-position trim reports full deflection or nothing, so naming its
+  -- position is honest where a percentage would not be.
+  local toggle = {available = true, raw = 1024, value = 128, fraction = 1,
+    centered = false, threePosition = true}
+  assertEqual(trims.valueText({display = "percent"}, toggle), "3P HI")
+  toggle.raw, toggle.centered, toggle.fraction = 0, true, 0
+  assertEqual(trims.valueText({display = "percent"}, toggle), "3P MID")
+  toggle.raw, toggle.centered, toggle.fraction = -1024, false, -1
+  assertEqual(trims.valueText({display = "raw"}, toggle), "3P LO")
+
+  assertEqual(trims.valueText({display = "percent"}, nil), "--")
+  assertEqual(trims.valueText({display = "percent"}, {available = false}), "--")
+
+  -- EdgeTX exposes no axis metadata for a trim source, so `auto` follows the
+  -- panel's shape and an explicit override always wins.
+  local wide = {x = 0, y = 0, w = 200, h = 60}
+  local tall = {x = 0, y = 0, w = 60, h = 200}
+  assertEqual(trims.isVertical({orientation = "auto"}, 1, wide), false)
+  assertEqual(trims.isVertical({orientation = "auto"}, 1, tall), true)
+  assertEqual(trims.isVertical({orientation = "vertical"}, 1, wide), true)
+  assertEqual(trims.isVertical(
+    {orientation = "vertical", orientation2 = "horizontal"}, 2, wide), false)
+end
+
+--- Identity presentation, and the file check that stands in for a decode the
+--- LVGL image object never reports back to Lua.
+local function testIdentityPresentation()
+  local identity = loadModule("components/model-identity.lua")
+
+  assertEqual(identity.presentationFor({presentation = "name"}, 4, 4).showImage, false)
+  assertEqual(identity.presentationFor({presentation = "image"}, 1, 1).showName, false)
+  assertEqual(identity.presentationFor({presentation = "both"}, 1, 1).showImage, true)
+  -- `auto` spends space on a picture only when there is space to spend.
+  assertEqual(identity.presentationFor({presentation = "auto"}, 1, 1).showImage, false)
+  assertEqual(identity.presentationFor({presentation = "auto"}, 2, 2).showImage, true)
+
+  local exists, checked = identity.fileExists("")
+  assertEqual(exists, false)
+  assertEqual(checked, true, "an empty path is answered without the filesystem")
+
+  local previous = fstat
+  fstat = nil
+  local _, unchecked = identity.fileExists("/IMAGES/plane.png")
+  assertEqual(unchecked, false,
+    "without fstat nothing can be proven, so the fallback must stay")
+
+  -- A firmware whose fstat raises must not take the component with it.
+  fstat = function() error("no filesystem") end
+  assertEqual(identity.fileExists("/IMAGES/plane.png"), false)
+
+  fstat = function(path) return path == "/IMAGES/plane.png" and {size = 10} or nil end
+  assertEqual(identity.fileExists("/IMAGES/plane.png"), true)
+  assertEqual(identity.fileExists("/IMAGES/gone.png"), false)
+  fstat = previous
+
+  -- The image is created after the text and painted with `fill`, so anything
+  -- it is allowed to overlap simply disappears. Every row that will be drawn
+  -- has to come out of the height the image is given.
+  local resolved = theme.build("modern")
+  local sizes = {{234, 130}, {472, 264}, {117, 130}, {117, 60}}
+  local cases = {
+    {showName = true, showImage = true, showLabels = true},
+    {showName = false, showImage = true, showLabels = true},
+    {showName = true, showImage = true, showLabels = false},
+    {showName = false, showImage = true, showLabels = false},
+  }
+
+  for _, layout in ipairs(cases) do
+    for _, size in ipairs(sizes) do
+      local width, height = size[1], size[2]
+      local area = identity.regionsFor(resolved, theme,
+        {x = 0, y = 0, w = width, h = height}, layout, theme.typography(2, 2))
+      local where = width .. "x" .. height
+
+      if area.showImage then
+        local bottom = area.imageY + area.imageHeight
+        assert(bottom <= height, where .. ": the image ran past the panel")
+        if area.showName then
+          assert(bottom <= area.nameY,
+            where .. ": the image covered the model name, image ends at "
+              .. bottom .. ", name starts at " .. area.nameY)
+        end
+        if area.showLabels then
+          assert(bottom <= area.labelsY,
+            where .. ": the image covered the labels row, image ends at "
+              .. bottom .. ", labels start at " .. area.labelsY)
+        end
+      end
+    end
+  end
+end
+
 testSnapshotsAreImmutable()
 testServiceScheduling()
 testTelemetryFreshness()
@@ -1392,5 +1734,13 @@ testModelService()
 testControlService()
 testExtremaService()
 testNavigationService()
+testTextFitting()
+testBipolarGeometry()
+testMetricPresets()
+testTimerSemantics()
+testTxBatteryEstimate()
+testVariableNormalization()
+testTrimPresentation()
+testIdentityPresentation()
 
 print("AeroGrid runtime tests passed")
