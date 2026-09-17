@@ -760,6 +760,46 @@ local function testRefreshScheduling()
     {id = "d", apiVersion = 1, create = function() end, refreshInterval = 0}, "d"))
 end
 
+--- Every origin wording must fit the width it is given, and must step down
+--- through phrasings that still read as sentences rather than being clipped.
+local function testOriginCaptionFits()
+  local navigation = loadModule("components/navigation.lua")
+  local fix = {known = true, fix = true, home = true, state = "normal"}
+  local noHome = {known = true, fix = true, home = false, state = "normal"}
+  local noSource = {known = false}
+
+  -- With no layout context the caller gets the full wording.
+  assertEqual(navigation.originText(fix), "NORTH UP FROM HOME")
+
+  -- The caption row on a 2 x 2 panel is about 131px.
+  assertEqual(navigation.originText(fix, theme, SMLSIZE, 131), "NORTH UP")
+  assertEqual(navigation.originText(noHome, theme, SMLSIZE, 131), "NO HOME POS")
+  assertEqual(navigation.originText(noSource, theme, SMLSIZE, 131), "NO GPS SOURCE")
+
+  -- Generous width keeps the full wording.
+  assertEqual(navigation.originText(fix, theme, SMLSIZE, 400), "NORTH UP FROM HOME")
+
+  -- Whatever the width, the chosen wording must fit it, or be the shortest
+  -- available when nothing does. Nothing may simply be clipped.
+  for _, view in ipairs({fix, noHome, noSource, {known = true, fix = false}}) do
+    local variants = navigation.originVariants(view)
+    local shortest = variants[#variants]
+    for width = 10, 400, 7 do
+      local text = navigation.originText(view, theme, SMLSIZE, width)
+      local fitted = theme.textWidth(SMLSIZE, text) <= width
+      assert(fitted or text == shortest,
+        "caption '" .. text .. "' neither fits " .. width .. "px nor is shortest")
+      -- A wording must never be a truncation of a longer one with a dangling
+      -- word; each rung is checked to be one of the declared phrasings.
+      local declared = false
+      for _, candidate in ipairs(variants) do
+        if candidate == text then declared = true end
+      end
+      assert(declared, "caption '" .. text .. "' is not a declared wording")
+    end
+  end
+end
+
 testGridGeometry()
 testValidation()
 testOverlapIsRejected()
@@ -784,6 +824,7 @@ testLayoutTheme()
 testDerivedThemesStayLegible()
 testStaleOverridesAccent()
 testHostileModule()
+testOriginCaptionFits()
 testRefreshScheduling()
 testMetricDirection()
 testContentFitsPanel()

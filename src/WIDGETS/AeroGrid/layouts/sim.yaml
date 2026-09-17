@@ -1,0 +1,120 @@
+version: 1
+
+# Tuned to the sensors an ELRS or Crossfire link exposes in the EdgeTX
+# simulator: GPS, Alt, RXBt, Batt%, 1RSS, 2RSS and RQly. The shipped
+# default.yaml stays generic; this layout exists so the dashboard can be
+# exercised against live values without a receiver.
+#
+# Two metrics deliberately use the radial visualization, because the arc
+# geometry is the one thing the mocked tests cannot check.
+
+theme:
+  mode: modern
+
+grid:
+  columns: 4
+  rows: 4
+
+components:
+  - id: nav
+    type: navigation
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: NAV
+      source: GPS
+
+  - id: alt-dial
+    type: metric
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: Altitude
+      source: Alt
+      unit: m
+      accent: green
+      min: 0
+      max: 500
+      precision: 0
+      visual: radial
+
+  - id: link-dial
+    type: metric
+    col: 2
+    row: 1
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: Quality
+      source: RQly
+      unit: "%"
+      accent: cyan
+      min: 0
+      max: 100
+      warning: 50
+      critical: 30
+      direction: falling
+      precision: 0
+      visual: radial
+
+  - id: pack
+    type: metric
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: Pack
+      source: RxBt
+      unit: V
+      accent: cyan
+      min: 6.0
+      max: 8.4
+      warning: 7.0
+      critical: 6.6
+      direction: falling
+      precision: 2
+      visual: bar
+
+  - id: link
+    type: link-status
+    col: 2
+    row: 2
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: LINK
+      rssiSource: 1RSS
+      qualitySource: RQly
+
+  - id: capacity
+    type: metric
+    col: 0
+    row: 3
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: Battery
+      source: "Batt%"
+      unit: "%"
+      accent: amber
+      min: 0
+      max: 100
+      warning: 40
+      critical: 20
+      direction: falling
+      precision: 0
+      visual: bar
+
+  - id: trims
+    type: trim-panel
+    col: 2
+    row: 3
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: TRIM

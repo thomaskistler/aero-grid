@@ -170,18 +170,41 @@ function navigation.bearingText(view)
   return string.format("BRG %03d %s", bearing, navigation.cardinal(bearing))
 end
 
---- Format the row that says what the direction actually means.
+--- Wordings for the origin caption, longest first.
+--- The caption shares a row with the bearing, so the space it gets depends on
+--- the panel. Each state offers progressively shorter phrasings rather than
+--- being clipped, which the specification requires and which silently lost the
+--- final word of "NORTH UP FROM HOME" on a 2 x 2 panel.
 ---@param view any
----@return string
-function navigation.originText(view)
-  if type(view) ~= "table" then return "NO GPS" end
-  if not view.known then return "NO GPS SOURCE" end
-  if not view.fix then return "NO FIX" end
-  if not view.home then return "NO HOME POSITION" end
-  if view.state == "stale" then return "LAST KNOWN" end
+---@return string[]
+function navigation.originVariants(view)
+  if type(view) ~= "table" then return {"NO GPS"} end
+  if not view.known then return {"NO GPS SOURCE", "NO GPS SRC", "NO GPS"} end
+  if not view.fix then return {"NO FIX"} end
+  if not view.home then return {"NO HOME POSITION", "NO HOME POS", "NO HOME"} end
+  if view.state == "stale" then return {"LAST KNOWN", "LAST"} end
   -- Stated in words, because an arrow on a dial is exactly the thing a pilot
   -- would otherwise read as aircraft heading.
-  return "NORTH UP FROM HOME"
+  return {"NORTH UP FROM HOME", "NORTH UP", "N UP"}
+end
+
+--- Choose the longest wording that fits the width it will be given.
+---@param view any
+---@param themeBuilder table
+---@param font any
+---@param width integer
+---@return string
+function navigation.originText(view, themeBuilder, font, width)
+  local variants = navigation.originVariants(view)
+
+  -- Callers without layout context get the full wording.
+  if not themeBuilder or not width then return variants[1] end
+
+  for _, text in ipairs(variants) do
+    if themeBuilder.textWidth(font, text) <= width then return text end
+  end
+
+  return variants[#variants]
 end
 
 --- Format the coordinates row.
@@ -352,6 +375,8 @@ function navigation.create(parent, rect, settings, services)
     font = fonts.label,
   })
 
+  -- The wording is chosen against this width, so remember it.
+  context.originWidth = area.originWidth
   context.originLabel = primitives.label(panel.root, theme, {
     x = area.originX,
     y = area.detailY,
@@ -446,7 +471,8 @@ function navigation.apply(context)
     context.detailLabel:set({text = detail})
   end
 
-  local origin = navigation.originText(view)
+  local origin = navigation.originText(view, context.themeBuilder,
+    context.fonts.label, context.originWidth)
   if origin ~= context.origin then
     context.origin = origin
     context.originLabel:set({text = origin})
@@ -531,6 +557,11 @@ function navigation.update(context, rect)
 
   reconcile(context.detailLabel, area.showDetail,
     {x = area.pad, y = area.detailY, w = area.detailWidth})
+  -- A resize changes how much room the caption has, so let it be re-chosen.
+  if area.originWidth ~= context.originWidth then
+    context.originWidth = area.originWidth
+    context.origin = nil
+  end
   reconcile(context.originLabel, area.showDetail,
     {x = area.originX, y = area.detailY, w = area.originWidth})
   reconcile(context.coordinatesLabel, area.showCoordinates,

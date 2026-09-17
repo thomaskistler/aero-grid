@@ -677,7 +677,10 @@ local function testShippedLayout()
   local nav = entryById(context, "nav").instance
   assertEqual(nav.text, "778m")
   assertEqual(nav.detail, "BRG 009 N")
-  assertEqual(nav.origin, "NORTH UP FROM HOME")
+  -- The caption shares its row with the bearing, so on a 2 x 2 panel the full
+  -- wording does not fit and must abbreviate rather than clip. It read
+  -- "NORTH UP FROM" on a radio before this was handled.
+  assertEqual(nav.origin, "NORTH UP")
   assert(nav.compass, "the shipped dashboard must demonstrate the dial")
 end
 
@@ -2573,7 +2576,7 @@ local function testTelemetryComponents()
   local nav = entryById(context, "nav").instance
   assertEqual(nav.text, "778m")
   assertEqual(nav.detail, "BRG 009 N")
-  assertEqual(nav.origin, "NORTH UP FROM HOME")
+  assertEqual(nav.origin, "NORTH UP")
   assertEqual(nav.coordinates, "47.37690 8.54170")
   assertEqual(nav.stateName, "normal")
   assert(nav.compass, "the detailed presentation must carry the dial")
@@ -2632,7 +2635,7 @@ local function testTelemetryDegrades()
   assertEqual(link.stateName, "normal")
   assertEqual(link.badge.properties.text, "")
   assertEqual(nav.stateName, "normal")
-  assertEqual(nav.origin, "NORTH UP FROM HOME")
+  assertEqual(nav.origin, "NORTH UP")
 
   -- A fix EdgeTX has not acquired reports zero for both axes, which is a real
   -- place off the coast of Africa and must never be shown as one.
@@ -2657,7 +2660,7 @@ local function testTelemetryDegrades()
   assertEqual(nav.badge.properties.text, "NO HOME")
   assertEqual(nav.text, "--")
   assertEqual(nav.detail, "BRG --", "a bearing was invented without a home")
-  assertEqual(nav.origin, "NO HOME POSITION")
+  assertEqual(nav.origin, "NO HOME POS")
   assertEqual(nav.coordinates, "47.37690 8.54170",
     "the position itself is still known")
 
