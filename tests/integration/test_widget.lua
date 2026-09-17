@@ -71,7 +71,12 @@ local pendingClears = {}
 --- children created after the clear but within the same callback. Modelling
 --- clear() as an immediate flag hid a real defect, so this mirrors the
 --- firmware's ordering instead.
+-- When true, deferred cleanup is withheld, exactly as the firmware withholds
+-- it while the widget is off screen or once an error has been reported.
+local deferCleanup = false
+
 local function settleLvgl()
+  if deferCleanup then return end
   if #pendingClears == 0 then return end
 
   local pending = pendingClears
@@ -822,17 +827,21 @@ end
 local function testOptionReload()
   definition.update(appContext, {DashID = "alternate", Theme = "modern"})
 
-  -- A reload deliberately spans two callbacks. EdgeTX defers the cleanup that
-  -- follows clear() until after the callback returns, and that cleanup
-  -- invalidates anything created after the clear in the same callback. The
-  -- first callback clears, the second rebuilds.
+  -- A reload discards the whole page and builds the next generation as a
+  -- fresh child of the root, which is never cleared. The clearing callback
+  -- must create nothing, because EdgeTX may collect the clear much later.
+  local discarded = appContext.page
   definition.refresh(appContext)
-  assertEqual(appContext.root.cleared, true, "first callback did not clear")
+  assertEqual(discarded.cleared, true, "first callback did not discard the page")
+  assertEqual(appContext.root.cleared, false, "the root must never be cleared")
   assertEqual(appContext.reloadState, "rebuild", "reload did not defer its rebuild")
+  assertEqual(appContext.page, nil, "page was recreated in the clearing callback")
   assertEqual(appContext.canvas, nil, "canvas was recreated in the clearing callback")
   assertEqual(appContext.stage, nil, "loading started before the rebuild")
 
   definition.refresh(appContext)
+  assert(appContext.page, "rebuild did not create a new page")
+  assert(appContext.page ~= discarded, "rebuild reused the discarded page")
   assert(appContext.canvas, "rebuild did not recreate the canvas")
   assert(appContext.stage, "reload did not restage a load")
 
@@ -867,6 +876,49 @@ local function testOptionReload()
     DEFAULT_OPTIONS, referencePath)
   definition.update(context, {DashID = "main", Theme = "custom"})
   assertEqual(context.reloadState, "clear")
+end
+
+--- A reload must not depend on when EdgeTX collects a pending clear.
+--- callRefs is skipped while the widget is off screen, such as behind the
+--- settings dialog, and once an error has been reported, so the cleanup that
+--- follows clear() can land several callbacks later. Rebuilding into a fresh
+--- page keeps the new generation out of its reach.
+local function testReloadSurvivesLateCleanup()
+  local zone = {x = 0, y = 0, w = 480, h = 272}
+  local context = createLoaded(zone, DEFAULT_OPTIONS, referencePath)
+  local firstPage = context.page
+
+  definition.update(context, {DashID = "alternate", Theme = "modern"})
+
+  -- Withhold cleanup across the entire reload, the worst case.
+  deferCleanup = true
+  local guard = 0
+  repeat
+    definition.refresh(context)
+    guard = guard + 1
+    assert(guard < 300, "reload never finished while cleanup was withheld")
+  until not context.stage and not context.reloadState
+
+  assert(context.page ~= firstPage, "reload reused the discarded page")
+  assertEqual(#context.components, 5)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+
+  -- Now let the withheld cleanup land, all at once and late.
+  deferCleanup = false
+  settleLvgl()
+
+  -- The rebuilt dashboard must still be alive and usable.
+  assertEqual(context.canvas.invalid, false, "canvas was swept by late cleanup")
+  assertEqual(context.page.invalid, false, "page was swept by late cleanup")
+  for _, entry in ipairs(context.components) do
+    assertEqual(entry.container.invalid, false,
+      entry.placement.id .. " was swept by late cleanup")
+  end
+
+  context.canvas:set({color = context.theme.color.canvas})
+  definition.refresh(context)
+  definition.refresh(context)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 end
 
 --- The state badge must never be drawn on top of the label it accompanies.
@@ -1083,6 +1135,7 @@ testTelemetryDrivesComponents()
 testOnlyReferencedSourcesArePolled()
 testReflowAndLifecycle()
 testOptionReload()
+testReloadSurvivesLateCleanup()
 
 --- A layout may select the EdgeTX-derived theme, which must stay readable.
 local function testEdgeTxTheme()

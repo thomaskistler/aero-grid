@@ -35,6 +35,7 @@
 ---@field services table Shared objects handed to components.
 ---@field layoutPath? string
 ---@field errorLabel? any
+---@field page any Container holding one generation of the dashboard.
 ---@field reloadState? "clear"|"rebuild"
 ---@field stage? "read"|"tokenize"|"header"|"services"|"components" Staged loader position.
 ---@field servicesModule? table Loaded lib/services.lua registry module.
@@ -105,7 +106,7 @@ local function showErrors(context)
   -- Errors can precede theme resolution, so fall back to the Modern critical red.
   local color = context.theme and context.theme.color.critical or lcd.RGB(0xF05252)
 
-  context.errorLabel = lvgl.label(context.root, {
+  context.errorLabel = lvgl.label(context.page or context.root, {
       x = 8,
       y = 8,
       w = math.max(1, context.zone.w - 16),
@@ -213,7 +214,7 @@ local function buildComponent(context, placement)
   -- Each component draws inside its own container, so it cannot reach the
   -- dashboard root or paint over a neighbour. The container is deliberately
   -- unpainted; the component's own panel fills it.
-  local container = lvgl.box(context.root, {
+  local container = lvgl.box(context.page, {
     x = rect.x,
     y = rect.y,
     w = rect.w,
@@ -504,7 +505,12 @@ local function create(zone, widgetOptions, path)
 
   -- The canvas must be a filled rectangle. A box ignores `color`, leaving the
   -- radio's own screen background, including its logo, visible behind us.
-  context.canvas = lvgl.rectangle(context.root, {
+  -- Everything the dashboard draws lives inside a page, so a reload can
+  -- discard the page wholesale and build the next one somewhere the discarded
+  -- one's deferred cleanup cannot reach. The root itself is never cleared.
+  context.page = lvgl.box(context.root, {x = 0, y = 0, w = zone.w, h = zone.h})
+
+  context.canvas = lvgl.rectangle(context.page, {
     x = 0,
     y = 0,
     w = zone.w,
@@ -539,6 +545,7 @@ local REFLOW_BATCH = 4
 ---@param context AeroGridContext
 local function beginReflow(context)
   context.root:set({w = context.zone.w, h = context.zone.h})
+  context.page:set({w = context.zone.w, h = context.zone.h})
   context.canvas:set({w = context.zone.w, h = context.zone.h})
 
   if context.errorLabel then
@@ -708,18 +715,32 @@ local function refresh(context)
   -- would therefore be swept before it was ever drawn.
   if context.reloadState == "clear" then
     dispatchAll(context, "destroy")
-    context.root:clear()
+
+    -- Discard the whole page. EdgeTX collects the clear whenever it next runs
+    -- callRefs, which is not guaranteed to be this callback: it is skipped
+    -- while the widget is off screen, such as behind the settings dialog, and
+    -- once an error has been reported. The next page is therefore built as a
+    -- fresh child of the root, where this pending cleanup cannot reach it.
+    context.page:clear()
+    lvgl.hide(context.page)
+
+    context.page = nil
+    context.canvas = nil
     context.components = {}
     context.errors = {}
     context.errorLabel = nil
-    context.canvas = nil
     context.reloadState = "rebuild"
     return
   end
 
   if context.reloadState == "rebuild" then
-    -- The deferred cleanup has now run, so new objects survive.
-    context.canvas = lvgl.rectangle(context.root, {
+    context.page = lvgl.box(context.root, {
+      x = 0,
+      y = 0,
+      w = context.zone.w,
+      h = context.zone.h,
+    })
+    context.canvas = lvgl.rectangle(context.page, {
       x = 0,
       y = 0,
       w = context.zone.w,
