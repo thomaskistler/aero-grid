@@ -35,7 +35,7 @@
 ---@field services table Shared objects handed to components.
 ---@field layoutPath? string
 ---@field errorLabel? any
----@field reloadState? "clear"
+---@field reloadState? "clear"|"rebuild"
 ---@field stage? "read"|"tokenize"|"header"|"services"|"components" Staged loader position.
 ---@field servicesModule? table Loaded lib/services.lua registry module.
 ---@field serviceRuntime? table Registry holding every constructed service.
@@ -701,11 +701,24 @@ end
 --- exceeded no matter how large the layout is.
 ---@param context AeroGridContext
 local function refresh(context)
+  -- A reload takes two callbacks on purpose. EdgeTX defers the cleanup that
+  -- follows `clear()` until after the callback returns, and that cleanup
+  -- invalidates every object in the cleared object's child list, including
+  -- ones created after the clear in the same callback. Anything rebuilt here
+  -- would therefore be swept before it was ever drawn.
   if context.reloadState == "clear" then
     dispatchAll(context, "destroy")
     context.root:clear()
-    -- Clearing the root also destroys the canvas, which must be recreated
-    -- first so it sits behind every component container.
+    context.components = {}
+    context.errors = {}
+    context.errorLabel = nil
+    context.canvas = nil
+    context.reloadState = "rebuild"
+    return
+  end
+
+  if context.reloadState == "rebuild" then
+    -- The deferred cleanup has now run, so new objects survive.
     context.canvas = lvgl.rectangle(context.root, {
       x = 0,
       y = 0,

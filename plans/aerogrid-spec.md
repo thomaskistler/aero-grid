@@ -896,7 +896,7 @@ commits, merge them into the branch below rather than rebasing it.
 
 ### Hard-won constraints
 
-Four firmware behaviours cost real debugging time and are invisible to the mocked tests. Each now has a regression test, and each is documented in full further down.
+Nine firmware behaviours cost real debugging time and were invisible to the mocked tests until each mock was made faithful. Each now has a regression test, and each is documented in full further down.
 
 1. **A widget callback may not exceed 20000 Lua VM instructions.** Loading, reflow, refresh, and service updates are all bounded work per callback as a result.
 2. **`lvgl.box` accepts a `color` and silently ignores it.** Only a filled `lvgl.rectangle` paints a background.
@@ -912,6 +912,8 @@ Milestone 6 added three more, all of them about what the Lua API refuses to tell
 Milestone 7 added one more, and it invalidated work already shipped:
 
 8. **`lvgl.arc` is positioned by its centre, not its corner.** `LvglWidgetArc::build` calls `setPos(x, y)`, and `LvglWidgetRoundObject::setPos` stores `x - radius, y - radius`. Every radial written in milestone 6 passed a top-left corner, so on real hardware each one was drawn a full radius up and to the left of where the layout intended, overlapping the panel header and the reading beside it. Nothing in the mocked tests could see it, because the mock stores whatever coordinates it is handed. `primitives.radial` now takes a centre, `primitives.arcBounds` converts between the two in one place, and the tests assert containment against the converted box rather than against `x` and `y`.
+
+9. **A `clear()` is cleaned up after the callback returns, not during it.** `LvglWidgetObjectBase::clear` only destroys windows and sets `clearRequest`; EdgeTX runs `callRefs` after the widget callback returns, and `clearChildRefs` then invalidates every reference in that object's child list. Anything created after the clear but inside the same callback is therefore swept before it is ever drawn, and the next callback that touches it fails with `Invalid object (it has been probably been cleared)`. Reloading the dashboard after a Dashboard ID or Theme change hit exactly this: the canvas was recreated immediately after `root:clear()` and died silently. A reload now spans two callbacks, one to clear and one to rebuild. The mock modelled `clear()` as an immediate flag, so no test could see it; the mock now defers the cleanup exactly where the firmware does.
 
 Two more lessons came from the tests rather than the firmware:
 

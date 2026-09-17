@@ -62,23 +62,61 @@ lcd = {
 
 local objects = {}
 
+-- Objects whose clear() is still awaiting EdgeTX's deferred cleanup.
+local pendingClears = {}
+
+--- Emulate the firmware's post-callback ref cleanup.
+--- EdgeTX runs callRefs() AFTER a widget callback returns, and a pending
+--- clear() then invalidates every ref in that object's child list, including
+--- children created after the clear but within the same callback. Modelling
+--- clear() as an immediate flag hid a real defect, so this mirrors the
+--- firmware's ordering instead.
+local function settleLvgl()
+  if #pendingClears == 0 then return end
+
+  local pending = pendingClears
+  pendingClears = {}
+  for _, object in ipairs(pending) do
+    object.clearRequest = false
+    for _, child in ipairs(object.children) do
+      child.invalid = true
+    end
+    object.children = {}
+  end
+end
+
 local function newObject(kind, parent, properties)
   local object = {
     kind = kind,
     parent = parent,
     properties = properties,
+    children = {},
     cleared = false,
     hidden = false,
+    invalid = false,
   }
 
+  local function assertUsable(object)
+    if object.invalid then
+      error("Invalid object (it has been probably been cleared).", 0)
+    end
+  end
+
   function object:set(changes)
+    assertUsable(self)
     for key, value in pairs(changes) do self.properties[key] = value end
   end
 
   function object:clear()
+    assertUsable(self)
     self.cleared = true
+    if not self.clearRequest then
+      self.clearRequest = true
+      pendingClears[#pendingClears + 1] = self
+    end
   end
 
+  if parent then parent.children[#parent.children + 1] = object end
   objects[#objects + 1] = object
   return object
 end
@@ -385,6 +423,17 @@ end
 
 local widgetChunk = assert(loadfile(sourcePath .. "main.lua"))
 local definition = widgetChunk()
+
+-- Wrap every host callback so the deferred cleanup runs exactly where the
+-- firmware runs it: after the callback returns, not during it.
+for _, name in ipairs({"create", "update", "refresh", "background", "event"}) do
+  local original = definition[name]
+  definition[name] = function(...)
+    local first, second = original(...)
+    settleLvgl()
+    return first, second
+  end
+end
 local themeModule = assert(loadfile(sourcePath .. "lib/theme.lua"))()
 local primitivesModule = assert(loadfile(sourcePath .. "lib/primitives.lua"))()
 
@@ -772,8 +821,19 @@ end
 --- Changing Dashboard ID or Theme tears down and restages without leaking.
 local function testOptionReload()
   definition.update(appContext, {DashID = "alternate", Theme = "modern"})
+
+  -- A reload deliberately spans two callbacks. EdgeTX defers the cleanup that
+  -- follows clear() until after the callback returns, and that cleanup
+  -- invalidates anything created after the clear in the same callback. The
+  -- first callback clears, the second rebuilds.
   definition.refresh(appContext)
-  assertEqual(appContext.root.cleared, true)
+  assertEqual(appContext.root.cleared, true, "first callback did not clear")
+  assertEqual(appContext.reloadState, "rebuild", "reload did not defer its rebuild")
+  assertEqual(appContext.canvas, nil, "canvas was recreated in the clearing callback")
+  assertEqual(appContext.stage, nil, "loading started before the rebuild")
+
+  definition.refresh(appContext)
+  assert(appContext.canvas, "rebuild did not recreate the canvas")
   assert(appContext.stage, "reload did not restage a load")
 
   local guard = 0
@@ -783,6 +843,24 @@ local function testOptionReload()
     assert(guard < 200, "reload never finished")
   end
   assertEqual(#appContext.components, 5)
+
+  -- The rebuilt dashboard must still be usable, which is what the deferred
+  -- cleanup broke: the canvas survived creation and then died silently.
+  definition.refresh(appContext)
+  definition.refresh(appContext)
+  assertEqual(#appContext.errors, 0, table.concat(appContext.errors, "\n"))
+  appContext.canvas:set({color = appContext.theme.color.canvas})
+
+  -- Reloading a second time must behave identically.
+  definition.update(appContext, {DashID = "main", Theme = "modern"})
+  local rounds = 0
+  repeat
+    definition.refresh(appContext)
+    rounds = rounds + 1
+    assert(rounds < 200, "second reload never finished")
+  until not appContext.stage and not appContext.reloadState
+  assertEqual(#appContext.components, 5)
+  assertEqual(#appContext.errors, 0, table.concat(appContext.errors, "\n"))
 
   -- Switching only the theme must also trigger a rebuild.
   local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
