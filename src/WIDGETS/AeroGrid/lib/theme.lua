@@ -9,6 +9,7 @@
 ---@field surface integer
 ---@field surfaceRaised integer
 ---@field border integer
+---@field track integer
 ---@field text integer
 ---@field textMuted integer
 ---@field textFaint integer
@@ -34,6 +35,7 @@ local MODERN = {
   surface = 0x1A1F23,
   surfaceRaised = 0x22282D,
   border = 0x343B40,
+  track = 0x48515A,
   text = 0xF4F6F7,
   textMuted = 0xA7B0B6,
   textFaint = 0x69737A,
@@ -74,6 +76,9 @@ local MIN_MUTED_CONTRAST = 3.0
 local MIN_FAINT_CONTRAST = 1.8
 --- Accents and state colors must remain visible as shapes and badges.
 local MIN_ACCENT_CONTRAST = 2.5
+--- A track is read against the value drawn on it, so it must be seen. Panel
+--- elevation may be subtle; a dial someone navigates by may not.
+local MIN_TRACK_CONTRAST = 2.0
 
 --- Split a 24-bit color into channels.
 ---@param rgb integer
@@ -248,6 +253,9 @@ local function enforceLegibility(tokens, warnings)
   if theme.contrast(tokens.surface, tokens.border) < 1.25 then
     tokens.border = separated(tokens.surface, 1.25)
   end
+  if theme.contrast(tokens.surface, tokens.track) < MIN_TRACK_CONTRAST then
+    tokens.track = separated(tokens.surface, MIN_TRACK_CONTRAST)
+  end
 
   correctContrast(tokens, "text", tokens.surface, MIN_TEXT_CONTRAST, warnings)
   correctContrast(tokens, "textMuted", tokens.surface, MIN_MUTED_CONTRAST, warnings)
@@ -283,6 +291,7 @@ local function enforceLegibility(tokens, warnings)
     -- The surface moved, so everything measured against it must be rechecked.
     tokens.surfaceRaised = separated(tokens.surface, 1.08)
     tokens.border = separated(tokens.surface, 1.25)
+    tokens.track = separated(tokens.surface, MIN_TRACK_CONTRAST)
     correctContrast(tokens, "text", tokens.surface, MIN_TEXT_CONTRAST, warnings)
     correctContrast(tokens, "textMuted", tokens.surface, MIN_MUTED_CONTRAST, warnings)
     correctContrast(tokens, "textFaint", tokens.surface, MIN_FAINT_CONTRAST, warnings)

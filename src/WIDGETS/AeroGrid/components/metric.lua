@@ -515,6 +515,10 @@ function metric.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     radius = radius,
     radialX = radialX,
     radialY = top,
+    -- EdgeTX positions an arc by its centre, so the corner above is only ever
+    -- used to reserve space; the arc itself is placed from here.
+    radialCentreX = radialX + radius,
+    radialCentreY = top + radius,
     showUnit = showUnit,
     showVisual = showVisual,
     showRange = showRange,
@@ -619,8 +623,8 @@ function metric.create(parent, rect, settings, services)
 
   if layout.showVisual and settings.visual == "radial" then
     context.radial = primitives.radial(panel.root, theme, {
-      x = area.radialX,
-      y = area.radialY,
+      x = area.radialCentreX,
+      y = area.radialCentreY,
       radius = area.radius,
       color = presentation.accent,
       fraction = 0,
@@ -760,7 +764,12 @@ function metric.update(context, rect)
   if context.radial then
     -- The arc must shrink with the panel or it will overflow a smaller zone.
     reconcile(context.radial.arc, area.showVisual,
-      {x = area.radialX, y = area.radialY, radius = area.radius})
+      {x = area.radialCentreX, y = area.radialCentreY, radius = area.radius})
+    if area.showVisual then
+      context.radial.centreX = area.radialCentreX
+      context.radial.centreY = area.radialCentreY
+      context.radial.radius = area.radius
+    end
   end
 end
 

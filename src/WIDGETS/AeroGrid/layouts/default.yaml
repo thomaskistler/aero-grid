@@ -1,10 +1,10 @@
 version: 1
 
-# The shipped dashboard. It demonstrates every component milestone 6 delivers,
-# at a mixture of spans, so a fresh install shows real behaviour rather than
-# placeholders. Change the source names to sensors your own model has; a source
-# the radio does not recognize degrades to an explicit unavailable state rather
-# than pretending to read zero.
+# The shipped dashboard. It demonstrates the complete phase 1 catalogue, all
+# ten components, at a mixture of spans, so a fresh install shows real
+# behaviour rather than placeholders. Change the source names to sensors your
+# own model has; a source the radio does not recognize degrades to an explicit
+# unavailable state rather than pretending to read zero.
 #
 # Theme mode may be modern, edgetx, or custom. When present this overrides the
 # native Theme widget option. Custom mode accepts canvas, surface, text, and
@@ -17,55 +17,95 @@ grid:
   rows: 4
 
 components:
-  # A preset metric: label, accent, bounds, the maximum-altitude source, and
-  # the vertical-speed secondary all come from the preset, and any of them may
-  # be overridden here.
-  - id: altitude
-    type: metric
+  # Navigation takes the top-left quarter deliberately. In App mode EdgeTX
+  # draws its own menu button over that corner, and this is the component
+  # whose reading sits furthest below its label.
+  #
+  # The dial is north-up and measured from the pilot position EdgeTX recorded
+  # when the fix was acquired. It is not aircraft heading, which EdgeTX cannot
+  # report. Set distanceSource when your receiver computes a distance itself.
+  - id: nav
+    type: navigation
     col: 0
     row: 0
     colSpan: 2
     rowSpan: 2
     config:
-      preset: altitude
-      warning: 250
-      critical: 350
+      source: GPS
+      label: Nav
+      presentation: compass
+      accent: cyan
+      warning: 500
+      critical: 900
+  # The flight pack, judged by its worst cell. The bar runs from the critical
+  # voltage to full rather than from zero, and no remaining-capacity
+  # percentage is shown: voltage under load does not support one.
   - id: pack
-    type: metric
+    type: cell-battery
     col: 2
     row: 0
     colSpan: 2
     rowSpan: 1
     config:
+      source: Cels
       label: Pack
-      source: RxBt
-      unit: V
+      reading: lowest
+      warning: 3.5
+      critical: 3.3
       accent: cyan
-      min: 18
-      max: 25.2
-      warning: 21.0
-      critical: 19.8
-      precision: 1
-      visual: bar
+  # RSSI and link quality are named separately because protocols disagree.
+  # FrSky populates RSSI; ELRS populates 1RSS in dBm alongside RQly as a
+  # percentage. Either source may be absent, and an absent one reads N/A
+  # rather than zero.
+  - id: link
+    type: link-status
+    col: 2
+    row: 1
+    colSpan: 2
+    rowSpan: 1
+    config:
+      rssiSource: RSSI
+      qualitySource: RQly
+      primary: auto
+      label: Link
+      min: 0
+      max: 100
+      warning: 50
+      critical: 30
+      extrema: flight
+      accent: green
   # Timer 1 exactly as EdgeTX configured it. AeroGrid never runs a timer of
   # its own; it only presents the one the model already owns.
   - id: flight-clock
     type: flight-timer
-    col: 2
-    row: 1
-    colSpan: 2
+    col: 0
+    row: 2
+    colSpan: 1
     rowSpan: 1
     config:
       timer: 0
       accent: green
       warning: 60
       critical: 20
+  # A preset metric: label, accent, bounds, the maximum-altitude source, and
+  # the vertical-speed secondary all come from the preset, and any of them may
+  # be overridden here.
+  - id: altitude
+    type: metric
+    col: 2
+    row: 2
+    colSpan: 2
+    rowSpan: 1
+    config:
+      preset: altitude
+      warning: 250
+      critical: 350
   - id: identity
     type: model-identity
     col: 0
-    row: 2
+    row: 3
     colSpan: 1
-    rowSpan: 2
+    rowSpan: 1
     config:
       presentation: auto
       accent: cyan
@@ -99,8 +139,8 @@ components:
   - id: rates
     type: variable-indicator
     col: 2
-    row: 2
-    colSpan: 2
+    row: 3
+    colSpan: 1
     rowSpan: 1
     config:
       binding: global
@@ -113,14 +153,13 @@ components:
   # which axis a trim source belongs to.
   - id: trims
     type: trim-panel
-    col: 2
+    col: 3
     row: 3
-    colSpan: 2
+    colSpan: 1
     rowSpan: 1
     config:
-      mode: pair
+      mode: single
       trim1: trim-ail
-      trim2: trim-ele
       orientation: horizontal
       scale: auto
       display: percent

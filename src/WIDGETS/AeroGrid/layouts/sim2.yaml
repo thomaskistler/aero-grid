@@ -1,0 +1,126 @@
+version: 1
+
+# The second half of the simulator coverage. sim.yaml fills its grid with the
+# telemetry components, so the radio-local ones had nowhere to go: model
+# identity, flight mode, the model timer, the transmitter pack and a global
+# variable all read radio state rather than a receiver, and none of them had
+# ever been seen against live values.
+#
+# The model is configured with both layouts as separate screens, so paging
+# between them switches dashboards without opening widget settings.
+#
+# Two things here are deliberately unexercised elsewhere: the metric without a
+# visualization, which has only ever been tested carrying a bar or a radial,
+# and its secondary reading.
+
+theme:
+  mode: modern
+
+grid:
+  columns: 4
+  rows: 4
+
+components:
+  # Identity needs the room: at 2x2 it earns the model bitmap rather than
+  # falling back to the name on its own.
+  - id: identity
+    type: model-identity
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      presentation: auto
+      label: MODEL
+      showLabels: true
+
+  - id: timer
+    type: flight-timer
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      timer: 0
+      label: TIMER
+      accent: cyan
+      warning: 60
+      critical: 20
+
+  - id: mode
+    type: flight-mode
+    col: 2
+    row: 1
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: MODE
+      accent: green
+      showIndex: true
+
+  # A transmitter pack only estimates a charge once a layout states the range
+  # it should be read against, so the bar and the percentage stay dark without
+  # these. A 2S pack is flat at 6.6 V and full at 8.4 V.
+  - id: tx
+    type: tx-battery
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: TX
+      accent: green
+      min: 6.6
+      max: 8.4
+      warning: 7.2
+      critical: 6.8
+      visual: bar
+      showPercent: true
+
+  - id: rates
+    type: variable-indicator
+    col: 2
+    row: 2
+    colSpan: 2
+    rowSpan: 1
+    config:
+      binding: global
+      index: 0
+      label: GVAR
+      showName: true
+      accent: amber
+
+  # No visualization and a second reading beside the first: ground speed
+  # carrying heading, both of which the simulator's GPS publishes.
+  - id: speed
+    type: metric
+    col: 0
+    row: 3
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: Speed
+      source: GSpd
+      unit: km/h
+      accent: cyan
+      precision: 0
+      visual: none
+      secondarySource: Hdg
+      secondaryLabel: HDG
+
+  # Nothing on an ELRS link publishes a cells sensor, so this one stays empty
+  # on purpose: it is the only way to see how a component reports a source the
+  # radio does not have.
+  - id: cells
+    type: cell-battery
+    col: 2
+    row: 3
+    colSpan: 2
+    rowSpan: 1
+    config:
+      source: Cels
+      label: CELLS
+      reading: lowest
+      showPack: true
+      showCount: true
+      visual: bar

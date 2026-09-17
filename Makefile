@@ -47,6 +47,13 @@ build:
 	@rsync -a --delete "$(SIMULATOR_FIXTURE)/" "$(SDCARD_DIR)/"
 	@mkdir -p "$(dir $(WIDGET_DESTINATION))"
 	@rsync -a --delete "$(WIDGET_SOURCE)/" "$(WIDGET_DESTINATION)/"
+# EdgeTX compiles each script to .luac beside it and prefers the bytecode.
+# rsync preserves source timestamps, so a freshly copied .lua can look older
+# than bytecode the radio compiled from the previous build, and the radio then
+# keeps running code that is no longer on disk. Drop the bytecode and stamp the
+# sources as new so the radio always recompiles what was just built.
+	@find "$(SDCARD_DIR)" -name '*.luac' -delete
+	@find "$(SDCARD_DIR)" -name '*.lua' -exec touch {} +
 	@printf 'Built simulator SD image at %s\n' "$(SDCARD_DIR)"
 
 clean:

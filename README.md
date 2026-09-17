@@ -12,10 +12,10 @@ The phase-one runtime currently provides:
 - Per-model and per-screen layout selection through `Dashboard ID`.
 - Dynamically loaded component modules with API-version checks.
 - Five shared data services covering telemetry, model, control, extrema, and navigation.
-- Seven core components, configured entirely from YAML.
+- The complete ten-component catalogue, configured entirely from YAML.
 - Diagnostic views that print each service's normalized output.
 
-The on-radio editor and the three telemetry-specialized components (`cell-battery`, `link-status`, and `navigation`) are intentionally not part of this checkpoint.
+The status rail, multiple screens, and the on-radio editor are intentionally not part of this checkpoint.
 
 ## Install on an SD card
 
@@ -42,6 +42,12 @@ Open the repository folder in VS Code. The repository includes a TX16S/EdgeTX 2.
 5. Open **Logs** in the simulator when the dashboard reports an error.
 
 The build starts from the tracked baseline in `tests/fixtures/sdcard/`, then overlays the current `src/WIDGETS/AeroGrid/` sources. The baseline contains the fixed radio and model configuration needed to boot directly into AeroGrid. The generated `build/sdcard/` image is ignored and may be changed by the simulator. Run `make build` again after source changes or whenever you want to reset the image to the checked-in baseline.
+
+### Stale bytecode
+
+EdgeTX compiles each script to a `.luac` beside it on the SD card and then prefers the bytecode. `rsync` preserves source timestamps, so a freshly copied `.lua` can look older than bytecode the radio compiled from the previous build, and the radio keeps running code that is no longer on disk. The symptom is a fix that visibly does nothing, including error messages citing line numbers that no longer exist in the source.
+
+`make build` therefore deletes every `.luac` from the image and stamps the sources as new. If you copy an image somewhere by hand, do the same.
 
 ## Continuous integration
 
@@ -75,7 +81,7 @@ make build
 
 `make test` and `make check` run `make setup` automatically when the development environment is missing or `requirements-dev.txt` changed. `make check` looks for `edgetx-luac`, `luac5.3`, then `luac` on `PATH`; `LUA_COMPILER` overrides detection. Use EdgeTX's `edgetx-luac` when available because it validates the firmware's exact Lua 5.3 configuration.
 
-The tests cover grid rounding, gutters, overlap validation, constrained YAML parsing, malformed and corrupt layout handling, forward-compatible unknown keys, layout-path sanitization across real model filenames, the component module contract, declared settings and spans, component lifecycle failure isolation, hostile modules, theme derivation and legibility, component states, zone reflow, Dashboard ID reload behavior, snapshot immutability, service scheduling and subscription caps, telemetry freshness against a dropped link and a valid zero, trim scaling, global variable bounds, arm-switch flight sessions, GPS distance and bearing, graceful degradation when a firmware API or a whole service module is missing, metric preset resolution, timer count-up and expired-countdown semantics, the optional transmitter charge estimate, global variable and bar normalization, trim rounding and three-position handling, model bitmap fallback, and width-aware font fitting. Each Lua behavior suite runs once with normal string methods and once with the string metatable removed to match EdgeTX firmware behavior.
+The tests cover grid rounding, gutters, overlap validation, constrained YAML parsing, malformed and corrupt layout handling, forward-compatible unknown keys, layout-path sanitization across real model filenames, the component module contract, declared settings and spans, component lifecycle failure isolation, hostile modules, theme derivation and legibility, component states, zone reflow, Dashboard ID reload behavior, snapshot immutability, service scheduling and subscription caps, telemetry freshness against a dropped link and a valid zero, trim scaling, global variable bounds, arm-switch flight sessions, GPS distance and bearing, graceful degradation when a firmware API or a whole service module is missing, metric preset resolution, timer count-up and expired-countdown semantics, the optional transmitter charge estimate, global variable and bar normalization, trim rounding and three-position handling, model bitmap fallback, width-aware font fitting, cells-table shape validation, protocol-dependent link source selection, a link that drops and returns, a missing GPS fix, an unavailable home position, and a protocol that populates no RSSI sensor at all. Each Lua behavior suite runs once with normal string methods and once with the string metatable removed to match EdgeTX firmware behavior.
 
 ## Components
 
@@ -90,19 +96,29 @@ AeroGrid loads each component from `src/WIDGETS/AeroGrid/components/<type>.lua`,
 | `variable-indicator` | A global variable or bounded source as a value, bar, bipolar bar, or radial. |
 | `trim-panel` | One, two, or four effective trim positions as centred bipolar bars. |
 | `model-identity` | Model name, model bitmap, or both. |
+| `cell-battery` | Flight-pack cells: the lowest cell, a usable-range bar, and an optional cell count and pack sum. |
+| `link-status` | RSSI and link quality from independently named sources, with an explicit minimum and link freshness. |
+| `navigation` | Distance to home, a north-up bearing from home to the model, a compass dial, and coordinates. |
 | `service-probe` | Prints one shared service's normalized output as diagnostic rows. |
 | `placeholder` | Verifies placement and resizing at any span. |
 | `heartbeat` | Verifies the lifecycle callbacks and span restrictions. |
 
-Each component declares the spans it supports and a typed settings schema with labels and defaults, so `layouts/default.yaml` is the only thing that needs editing to rearrange or reconfigure the dashboard. The shipped layout demonstrates all seven core components on one screen.
+Each component declares the spans it supports and a typed settings schema with labels and defaults, so `layouts/default.yaml` is the only thing that needs editing to rearrange or reconfigure the dashboard. The shipped layout demonstrates all ten components on one screen.
 
-Every component degrades rather than raising: a source the radio does not recognize, a timer index that does not exist, a radio without global variables, a firmware without a flight-mode API, and a model bitmap that is not on the card each produce a clear unavailable state with a text badge, because colour alone is not enough to communicate one.
+Every component degrades rather than raising: a source the radio does not recognize, a timer index that does not exist, a radio without global variables, a firmware without a flight-mode API, a model bitmap that is not on the card, a cells source that answers with the wrong shape, a GPS sensor with no fix, and a link that has dropped each produce a clear state with a text badge, because colour alone is not enough to communicate one.
 
-Three things the Lua API will not tell a component are worth knowing before writing another one:
+The three telemetry components exist because these distinctions are easy to get wrong and dangerous to get wrong:
+
+- **A pack is only as good as its worst cell.** `cell-battery` leads with the lowest cell, validates every entry of the cells table before using it, judges its thresholds on that cell even when the panel shows the pack sum, and scales its bar from the critical voltage to full rather than from zero. It estimates no remaining capacity, because voltage under load does not support one.
+- **A zero can mean three different things.** `link-status` separates a dead link, a protocol with no RSSI sensor, and a reading that genuinely is zero, reading the distinction from the telemetry service rather than guessing it again. RSSI and link quality are named independently and one is never inferred from the other.
+- **A direction needs somewhere to measure from.** `navigation` reports no source, no fix, and no home position as three different states, withholds a bearing rather than resting the dial at north, and says in words that the dial is north-up and measured from home. EdgeTX reports neither aircraft heading nor transmitter orientation, so nothing here may be read as either.
+
+Four things the Lua API will not tell a component are worth knowing before writing another one:
 
 - **Text cannot be measured.** `theme.fitText` estimates width from the font's line height and picks a size from the widest string a component can ever produce, so a reading never resizes as it changes.
 - **A trim source carries no axis.** `trim-panel` takes an orientation, with a per-indicator override, instead of guessing from trim names.
 - **`lvgl.image` cannot report a failed decode.** `model-identity` checks the file with `fstat` first and falls back to the model name.
+- **`lvgl.arc` is positioned by its centre, not its corner.** `LvglWidgetRoundObject::setPos` stores `x - radius`, so every radial written before milestone 7 was drawn a full radius up and to the left of where it was meant to be. `primitives.arcBounds` converts between the two conventions, and the tests assert containment through it.
 
 See the component module contract in [plans/aerogrid-spec.md](plans/aerogrid-spec.md) for the fields a component declares and the services it receives.
 
@@ -124,6 +140,8 @@ end
 | `control` | Effective trim positions and read-only global variables, for the active or a pinned flight mode. |
 | `extrema` | EdgeTX sensor extrema and dashboard flight sessions. |
 | `navigation` | GPS fix, pilot position, distance, and north-up home-to-model bearing. |
+
+`telemetry:link()` publishes the link itself: whether it is live, the raw `getRSSI()` reading, and whether that indicator can be trusted at all. It is what lets `link-status` tell a dead link from a protocol that populates no RSSI sensor.
 
 Subscribing in `create` is the mechanism, not a convention: a source nothing subscribed to is never read, and a service nothing subscribed to is never scheduled. Two components naming the same source share one poll. Snapshots are read-only views over state the service mutates in place, so they cost no allocation per cycle and cannot be corrupted by the components reading them.
 
@@ -157,14 +175,14 @@ EdgeTX aborts a widget callback that exceeds 20000 Lua VM instructions with `CPU
 
 ```text
 budget headroom: worst callback trim-panel x16 refresh/reflow used 7800 of 20000
-steady state:    worst frame full grid refresh/steady used 2000 of 20000
+steady state:    worst frame link-status x16 refresh/steady used 2400 of 20000
 ```
 
 Component callbacks and service updates share this allowance. Per-character string loops are the usual way to exhaust it.
 
-Eleven sixteen-component layouts are measured: metrics with sixteen distinct live telemetry sources, sixteen diagnostic panels spanning all five services, sixteen components demanding a refresh every frame, and one layout per core component type. Each declares which services it must actually run, and the test fails if one never updated during the sampled frames, so a layout that subscribed to nothing cannot make the service layer measure zero. The test also asserts that every component really was refreshed during the sampled frames, so a scheduling bug cannot make the measurement pass by measuring an idle dashboard.
+Fourteen sixteen-component layouts are measured: metrics with sixteen distinct live telemetry sources, sixteen diagnostic panels spanning all five services, sixteen components demanding a refresh every frame, and one layout per catalogue component type. Each declares which services it must actually run, and the test fails if one never updated during the sampled frames, so a layout that subscribed to nothing cannot make the service layer measure zero. The test also asserts that every component really was refreshed during the sampled frames, so a scheduling bug cannot make the measurement pass by measuring an idle dashboard.
 
-Services are bounded the same way components are: at most one service is updated per host cycle, services are phase staggered, an unsubscribed service is never scheduled, and each service caps how many subscriptions it refreshes in one update. Removing those caps raises the worst steady frame from 2000 to 6200.
+Services are bounded the same way components are: at most one service is updated per host cycle, services are phase staggered, an unsubscribed service is never scheduled, and each service caps how many subscriptions it refreshes in one update. Removing those caps raises the worst steady frame to 6200.
 
 Because EdgeTX refreshes widgets on every main loop pass, components declare a `refreshInterval` in 10ms ticks rather than being serviced every frame, and components sharing an interval are phase staggered so they fall due on different frames. A per-frame cap bounds the worst case for layouts that defeat staggering.
 
