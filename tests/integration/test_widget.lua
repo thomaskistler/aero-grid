@@ -2581,7 +2581,11 @@ local function testTelemetryComponents()
   assertEqual(nav.stateName, "normal")
   assert(nav.compass, "the detailed presentation must carry the dial")
   -- The pointer is a real direction, not a ring resting at north.
-  assertEqual(nav.compass.ring.properties.opacity, 255)
+  -- Visibility is the arc's sweep, not its opacity: passing opacity stopped
+  -- the whole ring rendering on a radio.
+  assert(nav.compass.ring.properties.startAngle
+    ~= nav.compass.ring.properties.endAngle,
+    "a known bearing must sweep a visible pointer")
 
   -- A configured native distance sensor wins over the computed one, because
   -- the receiver may compute it from data this dashboard never sees.
@@ -2647,7 +2651,9 @@ local function testTelemetryDegrades()
   assertEqual(nav.text, "--", "a missing fix was shown as a distance")
   assertEqual(nav.coordinates, "-- , --")
   -- The dial must not point anywhere when there is nowhere to point.
-  assertEqual(nav.compass.ring.properties.opacity, 0)
+  assertEqual(nav.compass.ring.properties.startAngle,
+    nav.compass.ring.properties.endAngle,
+    "an unknown bearing must draw a zero length pointer")
 
   -- A fix without a home position: the position is perfectly good, but a
   -- distance and a bearing would be measured from nowhere.

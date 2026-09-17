@@ -550,15 +550,16 @@ function primitives.compass(parent, theme, options)
     radius = radius,
     thickness = thickness,
     color = options.color or theme.color.cyan,
+    -- The pointer is the foreground arc and starts with no length, so a dial
+    -- without a bearing shows a ring and nothing resembling a direction.
+    -- Opacity is deliberately not used to hide it: the compass ring did not
+    -- render on a radio while the identically shaped radial did, and passing
+    -- `opacity` was the only difference between them.
     startAngle = 0,
     endAngle = 0,
-    -- The indicator is the pointer, so it starts invisible: a dial with no
-    -- bearing must show a ring and nothing that looks like a direction.
-    opacity = 0,
-    bgColor = theme.color.track,
+    bgColor = theme.color.textFaint,
     bgOpacity = 255,
     bgStartAngle = 0,
-    bgEndAngle = 359,
     rounded = true,
   })
 
@@ -595,14 +596,14 @@ function primitives.setCompass(compass, bearing, color)
   if color then changes.color = color end
 
   if type(bearing) ~= "number" or bearing ~= bearing then
-    changes.opacity = 0
+    -- A zero length arc draws nothing, which hides the pointer without
+    -- touching opacity.
     changes.startAngle = 0
     changes.endAngle = 0
     compass.bearing = nil
   else
     local half = math.floor(primitives.POINTER_SWEEP / 2)
     local centre = primitives.arcAngle(bearing)
-    changes.opacity = 255
     changes.startAngle = (centre - half) % 360
     changes.endAngle = (centre + half) % 360
     compass.bearing = bearing

@@ -1999,7 +1999,8 @@ local function testCompassGeometry()
 
   primitives.setCompass(compass, 90)
   assertEqual(compass.bearing, 90)
-  assertEqual(compass.ring.last.opacity, 255)
+  assert(compass.ring.last.startAngle ~= compass.ring.last.endAngle,
+    "a known bearing must sweep a visible pointer")
   assertEqual(compass.ring.last.startAngle, 345)
   assertEqual(compass.ring.last.endAngle, 15)
 
@@ -2007,9 +2008,11 @@ local function testCompassGeometry()
   -- which would read as a valid due-north fix.
   primitives.setCompass(compass, nil)
   assertEqual(compass.bearing, nil)
-  assertEqual(compass.ring.last.opacity, 0)
+  assertEqual(compass.ring.last.startAngle, compass.ring.last.endAngle,
+    "an unknown bearing must draw a zero length pointer")
   primitives.setCompass(compass, 0 / 0)
-  assertEqual(compass.ring.last.opacity, 0)
+  assertEqual(compass.ring.last.startAngle, compass.ring.last.endAngle,
+    "an unknown bearing must draw a zero length pointer")
 
   -- EdgeTX positions an arc by its centre: LvglWidgetRoundObject::setPos
   -- stores x - radius, so a component laying out in corner coordinates has to
