@@ -1710,6 +1710,189 @@ return exploder
   assert(context.errorLabel, "a real failure was not shown")
 end
 
+--- Several independent dashboards, on one model and across a model change.
+---
+--- EdgeTX runs every Lua widget in one interpreter state, so two AeroGrid
+--- instances on two custom screens share a Lua state, a set of loaded modules
+--- and a set of globals. Anything a module keeps at its own scope is therefore
+--- shared between dashboards that are supposed to know nothing about each
+--- other, and the tracked simulator model has exactly this arrangement: two
+--- App mode screens whose widgets select the sim and sim2 dashboards.
+---
+--- A model change needs no handling at all, and that is worth recording
+--- rather than rediscovering. LayoutFactory::deleteCustomScreens runs before
+--- loadModel and loadCustomScreens after it, so every widget is destroyed and
+--- rebuilt; the host is never asked to notice that the model moved underneath
+--- it. The firmware comment there says loadModel can re-enter the UI refresh
+--- loop, so a widget that tried to survive one would read torn-down data.
+local function testMultipleScreens()
+  local previous = modelFilename
+  local widgetPath = makeWidget("screens", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: fallback
+    type: placeholder
+    col: 0
+    row: 0
+    colSpan: 4
+    rowSpan: 4
+]])
+
+  writeFile(widgetPath .. "layouts/model1--alpha.yaml", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: alt
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: Alt
+      source: Alt
+      precision: 0
+]])
+
+  writeFile(widgetPath .. "layouts/model1--beta.yaml", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: pack
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: Pack
+      source: RxBt
+      precision: 1
+  - id: mode
+    type: flight-mode
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+]])
+
+  writeFile(widgetPath .. "layouts/other--alpha.yaml", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: speed
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 4
+    rowSpan: 2
+    config:
+      label: Speed
+      source: GSpd
+      precision: 0
+]])
+
+  --- Ids of the components an instance actually built.
+  local function idsOf(context)
+    local ids = {}
+    for index, entry in ipairs(context.components) do ids[index] = entry.placement.id end
+    table.sort(ids)
+    return table.concat(ids, ",")
+  end
+
+  --- An instance renders one page, not a stack of them it could swap.
+  local function visiblePages(context)
+    local count = 0
+    for _, child in ipairs(context.root.children) do
+      if not child.hidden then count = count + 1 end
+    end
+    return count
+  end
+
+  resetRadio()
+  modelFilename = "model1.yml"
+
+  -- Two Dashboard IDs, one model: two separate screens of the same radio.
+  local alpha = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    {DashID = "alpha", Theme = "modern"}, widgetPath)
+  local beta = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    {DashID = "beta", Theme = "modern"}, widgetPath)
+
+  assertEqual(alpha.layoutPath, widgetPath .. "layouts/model1--alpha.yaml")
+  assertEqual(beta.layoutPath, widgetPath .. "layouts/model1--beta.yaml")
+  assertEqual(idsOf(alpha), "alt")
+  assertEqual(idsOf(beta), "mode,pack")
+
+  -- Nothing may be shared but the modules themselves. A service registry held
+  -- at module scope would hand one dashboard the other's subscriptions.
+  assert(alpha.root ~= beta.root, "two instances share a root")
+  assert(alpha.page ~= beta.page, "two instances share a page")
+  assert(alpha.serviceRuntime ~= beta.serviceRuntime,
+    "two instances share a service registry")
+  assert(alpha.serviceRuntime.byId.telemetry
+    ~= beta.serviceRuntime.byId.telemetry,
+    "two instances share a telemetry service, and so share subscriptions")
+
+  -- Running them together must not let either disturb the other.
+  for _ = 1, 60 do
+    tick(20)
+    definition.refresh(alpha)
+    definition.refresh(beta)
+  end
+
+  assertEqual(#alpha.errors, 0, table.concat(alpha.errors, "\n"))
+  assertEqual(#beta.errors, 0, table.concat(beta.errors, "\n"))
+  assertEqual(idsOf(alpha), "alt", "an instance changed what it rendered")
+  assertEqual(idsOf(beta), "mode,pack", "an instance changed what it rendered")
+  assertEqual(entryById(alpha, "alt").instance.value.properties.text, "100")
+  assertEqual(entryById(beta, "pack").instance.value.properties.text, "24.0")
+
+  -- Each instance renders exactly one page and offers no way to turn it.
+  -- Paging between dashboards is EdgeTX sliding between custom screens, not
+  -- anything this host does, so an event must not be able to change the page.
+  assertEqual(visiblePages(alpha), 1, "an instance rendered more than one page")
+  assertEqual(visiblePages(beta), 1, "an instance rendered more than one page")
+  assertEqual(definition.event(alpha, 34), false,
+    "the host consumed an event it has no page to turn with")
+  assertEqual(alpha.layoutPath, widgetPath .. "layouts/model1--alpha.yaml",
+    "an event changed which layout an instance was showing")
+  assertEqual(visiblePages(alpha), 1, "an event added a page")
+
+  -- A different model resolves a different file for the same Dashboard ID.
+  -- EdgeTX rebuilds every widget across a model change, so this is what the
+  -- radio really does rather than a reload the host would have to detect.
+  modelFilename = "other.yml"
+  local switched = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    {DashID = "alpha", Theme = "modern"}, widgetPath)
+  assertEqual(switched.layoutPath, widgetPath .. "layouts/other--alpha.yaml")
+  assertEqual(idsOf(switched), "speed")
+  assertEqual(#switched.errors, 0, table.concat(switched.errors, "\n"))
+
+  -- A model with no file of its own falls back to the dashboard-wide layout,
+  -- then to the shipped default, rather than failing to load.
+  modelFilename = "third.yml"
+  local fallback = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    {DashID = "gamma", Theme = "modern"}, widgetPath)
+  assertEqual(fallback.layoutPath, widgetPath .. "layouts/default.yaml")
+  assertEqual(idsOf(fallback), "fallback")
+
+  -- The instances created before the switch are untouched by it, because
+  -- nothing about them was keyed on a global.
+  assertEqual(idsOf(alpha), "alt", "a later instance disturbed an earlier one")
+  assertEqual(alpha.layoutPath, widgetPath .. "layouts/model1--alpha.yaml")
+
+  modelFilename = previous
+end
+
 --- An event consumed by one component must stop propagating.
 local function testEventConsumption()
   local widgetPath = makeWidget("consumer", [[
@@ -3502,6 +3685,7 @@ testFailureIsolation()
 testErrorsClearTheMenuButton()
 testNothingReadableUnderTheMenuButton()
 testNoticesAreNotErrors()
+testMultipleScreens()
 testEventConsumption()
 testContractRejections()
 testCorruptLayout()
