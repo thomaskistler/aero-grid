@@ -565,6 +565,11 @@ local function testDerivedThemesStayLegible()
     -- Structural separation must be visible in either direction.
     assert(theme.contrast(tokens.surface, tokens.surfaceRaised) >= 1.08,
       label .. ": elevation vanished")
+    -- A track carries meaning: the filled portion is read against it, so it
+    -- needs far more separation than panel elevation does. Reusing
+    -- surfaceRaised for a compass dial made the dial invisible on a radio.
+    assert(theme.contrast(tokens.surface, tokens.track) >= 2.0,
+      label .. ": track vanished into the surface")
     assert(theme.contrast(tokens.surface, tokens.border) >= 1.25,
       label .. ": border vanished")
 

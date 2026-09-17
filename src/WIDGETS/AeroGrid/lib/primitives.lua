@@ -185,7 +185,7 @@ function primitives.bar(parent, theme, options)
     y = options.y,
     w = options.w,
     h = height,
-    color = theme.color.surfaceRaised,
+    color = theme.color.track,
     filled = true,
     rounded = 2,
   })
@@ -331,7 +331,7 @@ function primitives.bipolarBar(parent, theme, options)
     y = options.y,
     w = width,
     h = height,
-    color = theme.color.surfaceRaised,
+    color = theme.color.track,
     filled = true,
     rounded = 2,
   })
@@ -449,7 +449,7 @@ function primitives.radial(parent, theme, options)
     color = options.color or theme.color.cyan,
     startAngle = startAngle,
     endAngle = startAngle + primitives.arcSweep(sweep, options.fraction),
-    bgColor = theme.color.surfaceRaised,
+    bgColor = theme.color.track,
     bgOpacity = 255,
     bgStartAngle = startAngle,
     rounded = true,
@@ -555,7 +555,7 @@ function primitives.compass(parent, theme, options)
     -- The indicator is the pointer, so it starts invisible: a dial with no
     -- bearing must show a ring and nothing that looks like a direction.
     opacity = 0,
-    bgColor = theme.color.surfaceRaised,
+    bgColor = theme.color.track,
     bgOpacity = 255,
     bgStartAngle = 0,
     bgEndAngle = 359,
