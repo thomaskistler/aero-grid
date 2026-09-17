@@ -4,11 +4,11 @@
 
 - Draft specification
 - Date: 2026-09-07
-- Status last updated: 2026-09-15
+- Status last updated: 2026-09-16
 - EdgeTX source: `../edgetx`
 - Project root: `aero-grid/`
-- Implementation: Phase 1, milestones 1 to 4 complete
-- Next work: Milestone 5, shared data services
+- Implementation: Phase 1, milestones 1 to 5 complete
+- Next work: Milestone 6, core components
 - See [Resuming work](#resuming-work) for the current branch stack and the exact next steps.
 
 ## Summary
@@ -215,8 +215,8 @@ Presets establish labels, semantic accents, likely source defaults, and supporte
 - Read effective current-flight-mode values through selectable EdgeTX trim sources so EdgeTX resolves trim inheritance.
 - Persist the selected trim source for each indicator rather than assuming fixed trim names or stick-mode mappings.
 - Remain read-only in the initial release; changing trims remains the responsibility of EdgeTX trim controls.
-- Support `standard`, `extended`, and `auto` display scales. Auto may expand after observing a value outside the standard range, but cannot reliably detect the model's extended-trim setting because EdgeTX does not expose that flag to Lua.
-- Clearly represent centered, positive, negative, unavailable, and unsupported three-position trim states.
+- Support `standard`, `extended`, and `auto` display scales. Auto may expand after observing a value outside the standard range, but cannot reliably detect the model's extended-trim setting because EdgeTX does not expose that flag to Lua. A trim source returns eight times the stored trim, and EdgeTX clamps that to `TRIM_MAX` or `TRIM_EXTENDED_MAX`, so the raw spans are 1024 and 4096, not 1000 and 4000. Rounding those down makes a standard trim held at its own end stop widen the scale permanently.
+- Clearly represent centered, positive, negative, unavailable, and unsupported three-position trim states. A three-position trim returns full deflection or nothing, which is exactly what a standard trim at its end stop returns, so one sample can never distinguish them. `controlService` claims a toggle only after seeing both a centre and a full deflection with no intermediate position between them.
 
 #### Variable indicator
 
@@ -247,7 +247,12 @@ The host provides shared services so components do not duplicate polling, conver
 - `controlService`: current flight mode, resolved trim-source values, global-variable values, bounds, precision, and units.
 - `themeService`: resolved semantic colors, contrast correction, and state precedence.
 
-Services are updated once per host cycle. Components consume immutable snapshots for that cycle.
+Two rules keep that affordable, because every service update is charged to the same per-callback instruction budget as component refreshes:
+
+- A service only reads what a loaded component subscribed to. A service nothing references is skipped entirely, so a dashboard of metrics never pays for GPS, trims, or global variables.
+- At most one service is updated per host cycle, chosen round robin among those due, and each service caps how many subscriptions it refreshes in one update. Per-callback cost follows the caps, not the layout.
+
+Components consume immutable snapshots. A service mutates its own state table in place, which allocates nothing per cycle, and publishes a proxy whose writes raise. Services update before component refreshes, so every component rendering a cycle sees one consistent set of readings.
 
 ## Proposed SD-Card Structure
 
@@ -269,16 +274,20 @@ Services are updated once per host cycle. Components consume immutable snapshots
 │   ├── tx-battery.lua
 │   ├── trim-panel.lua
 │   └── variable-indicator.lua
-├── services/
-│   ├── telemetry.lua
-│   ├── extrema.lua
-│   ├── navigation.lua
-│   ├── model.lua
-│   ├── control.lua
-│   └── theme.lua
+├── lib/
+│   ├── services.lua
+│   ├── telemetry_service.lua
+│   ├── model_service.lua
+│   ├── control_service.lua
+│   ├── extrema_service.lua
+│   ├── navigation_service.lua
+│   ├── theme.lua
+│   └── ...
 └── layouts/
     ├── default.yaml
-  └── <model-identifier>--<dashboard-id>.yaml
+    ├── services.yaml
+    ├── services2.yaml
+    └── <model-identifier>--<dashboard-id>.yaml
 ```
 
 EdgeTX automatically registers `/WIDGETS/AeroGrid/main.lua`. Files under `components/` are loaded by the dashboard and are not independently registered widgets.
@@ -825,58 +834,58 @@ This would allow independently registered EdgeTX widgets to occupy configurable 
 
 ## Resuming Work
 
-State as of 2026-09-15. This section is the entry point after a break: it records where the code lives, what is proven, and what to do next.
+State as of 2026-09-16. This section is the entry point after a break: it records where the code lives, what is proven, and what to do next.
 
 ### Branch stack
 
-Three stacked pull requests, none merged. They must land bottom to top.
+Milestones 1 to 4 are merged. Milestone 5 is one branch on top of `main`.
 
 | PR | Branch | Base | Contents |
 | --- | --- | --- | --- |
-| #1 | `feature/phase-1-runtime` | `main` | Milestone 1 runtime skeleton and the original YAML loader |
-| #2 | `thomaskistler-finish-yaml-loader-and-component-runtime` | #1 | Milestones 2 and 3 completed |
-| #3 | `thomaskistler-design-system` | #2 | Milestone 4, plus firmware fixes, refresh scheduling, and CI |
-
-`main` contains only this specification. All implementation is in the stack.
+| #1 to #3 | merged | `main` | Milestones 1 to 4, firmware fixes, refresh scheduling, and CI |
+| current | `thomaskistler/shared-data-services` | `main` | Milestone 5, the five shared data services and their diagnostic views |
 
 ### Verification state
 
-- `make test` and `make build` pass from a clean tree.
-- CI (`.github/workflows/ci.yml`) runs on every pull request: `make check` under Lua 5.3, the SD image build, and two integrity assertions. Green on #3.
-- The dashboard has been confirmed running in the EdgeTX simulator on a TX16S profile.
-- CI currently exists only on #3's branch, because #1 and #2 predate it. Propagating it down, or merging the stack, gives every pull request its own check.
+- `make test`, `make check`, and `make build` pass from a clean tree. `make check` was also run against a real Lua 5.3 `luac`, and both suites were executed under a real Lua 5.3 interpreter, not only under whichever Lua `lupa` provides.
+- CI (`.github/workflows/ci.yml`) runs `make check` under Lua 5.3 on every pull request, plus the SD image build and two integrity assertions.
+- The dashboard has been confirmed running in the EdgeTX simulator on a TX16S profile through milestone 4. Milestone 5 has not yet been run on hardware or in the simulator.
 
 ### Immediate next steps
 
-1. Land the stack, or at least #1, so the tree stops being three deep.
-2. Begin Milestone 5, shared data services. This is the milestone that replaces the temporary `demo` setting with real telemetry.
-3. Remove the `demo` setting from `metric` and from `layouts/default.yaml` once `telemetryService` supplies readings.
+1. Run the two diagnostics layouts on a radio. Set the widget's Dashboard ID to `services` or `services2`; they load on any model without a model-specific file. This is the check that milestone 5's normalization is right against real sensors rather than mocks.
+2. Begin Milestone 6, core components, starting with `metric` presets. Every component now reads through the services rather than EdgeTX directly.
+3. Decide the extrema reset policy beyond arm switch. The specification names manual, timer, and switch; switch and manual are implemented, timer is not.
 
 ### Open items carried forward
 
 | Item | Where | Note |
 | --- | --- | --- |
 | Physical readability review at 480 x 272 | Milestone 4 | Needs hardware; the only thing keeping milestone 4 from being fully closed |
+| Milestone 5 has not been run on hardware | Milestone 5 | The diagnostics layouts exist precisely to make that check quick |
+| Staleness is link-wide, not per sensor | Milestone 5 | EdgeTX exposes no per-sensor age except for GPS, so a sensor that stops arriving, or was never received, while the link holds still reads as live. See below |
+| Extrema reset policy covers switch and manual only | Milestone 5 | Timer-based reset is specified but not implemented |
 | EdgeTX App mode menu button overlaps the top-left component | Milestone 8 | Deliberately deferred; the status rail reserves that strip |
-| Steady-state refresh cost scales with component count | Milestone 5 | Now 1000 of 20000 instructions; watch it as real telemetry components replace the demo driver |
+| Steady-state refresh cost scales with component count | Milestone 6 | Now 2000 of 20000 at sixteen components with live services; watch it as the catalog grows |
 | `actions/checkout@v4` and `setup-python@v5` target Node 20 | CI | Non-blocking deprecation warning |
 | A `1 x 1` metric fits its value vertically but width is unchecked | Milestone 6 | Long values may clip; the specification asks for abbreviation before clipping |
 
 ### Hard-won constraints
 
-Three firmware behaviours cost real debugging time and are invisible to the mocked tests. Each now has a regression test, and each is documented in full further down.
+Four firmware behaviours cost real debugging time and are invisible to the mocked tests. Each now has a regression test, and each is documented in full further down.
 
-1. **A widget callback may not exceed 20000 Lua VM instructions.** Loading, reflow, and refresh are all bounded work per callback as a result.
+1. **A widget callback may not exceed 20000 Lua VM instructions.** Loading, reflow, refresh, and service updates are all bounded work per callback as a result.
 2. **`lvgl.box` accepts a `color` and silently ignores it.** Only a filled `lvgl.rectangle` paints a background.
 3. **EdgeTX fonts are much taller than they look.** `XXL` is a 69 px line height at 480 x 272. Lay out from measured heights, never fixed offsets.
+4. **`getValue` returns integer zero for a telemetry source whose link is down.** That is indistinguishable from a genuine zero reading, so only a zero may be judged: a non-zero value is proof of life whatever `getRSSI()` says, and `getRSSI()` itself reads zero on a live link whose protocol has no RSSI sensor.
 
-A fourth lesson came from the tests rather than the firmware: a budget test that measured only the shipped layout could not fail, and hid a loader that broke on any layout larger than twelve components. Measure the worst case the schema permits, and assert that the measured work actually happened.
+A fifth lesson came from the tests rather than the firmware: a budget test that measured only the shipped layout could not fail, and hid a loader that broke on any layout larger than twelve components. Measure the worst case the schema permits, and assert that the measured work actually happened.
 
 ## Proposed Release Phases
 
 ### Implementation status
 
-Status last verified on 2026-09-15:
+Status last verified on 2026-09-16:
 
 | Work item | Status | Implemented | Remaining |
 | --- | --- | --- | --- |
@@ -885,17 +894,15 @@ Status last verified on 2026-09-15:
 | Milestone 2: Read-only YAML loader | Complete | Constrained parser, empty flow collections, schema version check, model/Dashboard ID resolution, default fallback, fail-closed document validation, per-entry validation, preserved unknown keys, optional theme block, and a malformed-input matrix | Physical-radio verification belongs to hardening |
 | Milestone 3: Component runtime | Complete | Referenced-module loading, metatable-safe contract validation, declared settings with typed defaults, `supportedSpans` enforcement, host-owned containers, declared refresh intervals with phase staggering, and isolated create/update/refresh/background/event/destroy dispatch | Production components arrive in milestones 6 and 7 |
 | Milestone 4: Design system | Complete | Semantic tokens, panel/typography/bar/radial/badge primitives, Modern, Follow EdgeTX, and Custom modes, guaranteed-legible derived palettes, all seven states, and responsive `1 x 1`, `2 x 1`, and `2 x 2` presentations | Physical readability review at 480 x 272 on a TX16S-class display |
-| Milestone 5: Shared data services | Not started | None | Telemetry, model, control, extrema, and navigation services |
-| Milestones 6–7: Production components | Not started | Reference `metric` plus development `placeholder` and `heartbeat` components | Complete ten-component catalog and metric presets |
-| Milestone 8: Status rail and multiple screens | In progress | Dashboard ID option and per-model/per-dashboard filename resolution | Status rail, reserving the App mode menu button, and multi-instance simulator verification |
-| Milestone 9: Hardening | In progress | Unit/integration tests, firmware-like string behavior tests, CI running Lua 5.3 parsing, simulator fixture, corrupt-layout, contract-rejection, hostile-module, and legibility coverage, component failure isolation, and an enforced instruction budget measured at the largest legal layout | Target-radio matrix, runtime diagnostics view, and physical-radio testing |
+| Milestone 5: Shared data services | Complete | Registry with per-service intervals, staggering, and subscription caps; telemetry, model, control, extrema, and navigation services; immutable snapshots; graceful degradation for missing sources, unseen sensors, absent firmware APIs, and stale telemetry; `service-probe` diagnostic views and two shipped diagnostics layouts | Hardware verification, and timer-based extrema reset |
+| Milestones 6–7: Production components | Not started | Reference `metric`, now telemetry driven, plus development `placeholder`, `heartbeat`, and `service-probe` components | Complete ten-component catalog and metric presets |
+| Milestone 8: Status rail and multiple screens | In progress | Dashboard ID option, per-model/per-dashboard filename resolution, and dashboard-scoped layouts shared by every model | Status rail, reserving the App mode menu button, and multi-instance simulator verification |
+| Milestone 9: Hardening | In progress | Unit/integration tests, firmware-like string behavior tests, CI running Lua 5.3 parsing, simulator fixture, corrupt-layout, contract-rejection, hostile-module, and legibility coverage, component failure isolation, an enforced instruction budget measured at the largest legal layout for both components and services, and diagnostic views over every service | Target-radio matrix, a host-level diagnostics view for versions and layout paths, and physical-radio testing |
 | Milestone 10: On-radio editor | Not started | None | Entire phase 2 editor and write/recovery workflow |
 
-The design system is in place: the host owns every color, resolves one theme per dashboard, and hands each component a `services` table carrying the theme, shared primitives, span-appropriate typography, and a state resolver. The `metric` component is the reference implementation. Milestone 4's remaining item is a physical readability review, which requires hardware.
+The design system is in place: the host owns every color, resolves one theme per dashboard, and hands each component a `services` table carrying the theme, shared primitives, span-appropriate typography, a state resolver, and the five shared data services. The `metric` component is the reference implementation and now reads real telemetry; the temporary `demo` setting is gone. Milestone 4's remaining item is a physical readability review, which requires hardware.
 
-Until milestone 5 supplies telemetry, `metric` accepts a temporary `demo` setting that drives synthetic readings through every state so the design system can be reviewed on a radio. That setting is removed once `telemetryService` exists.
-
-Measured cost on the largest layout the schema permits, sixteen single-cell components: worst callback 3600 of 20000 instructions, worst steady frame 1000. Both are asserted by the test suite.
+Measured cost on the largest layout the schema permits, sixteen single-cell components: worst callback 4200 of 20000 instructions, worst steady frame 2000. Both are asserted by the test suite, at three separate sixteen-component layouts: metrics with sixteen distinct live sources, sixteen diagnostic panels spanning all five services, and sixteen components that demand a refresh every frame. Removing the services' subscription caps raises the worst steady frame to 6200, which is what the caps are for.
 
 ### Component module contract
 
@@ -933,6 +940,8 @@ The regression test measures every callback with a 200-instruction count hook, m
 
 Component authors must respect the same ceiling: `create`, `update`, `refresh`, `background`, and `event` each run inside the host's callback and share its allowance. Avoid per-character string loops, which are the most common way to exhaust it.
 
+Shared data services share the same allowance, and are bounded the same way. The test measures three sixteen-component layouts: metrics with sixteen distinct live telemetry sources, sixteen diagnostic panels spanning all five services, and sixteen components demanding a refresh every frame. Each exercise declares which services it must actually run, and the test fails if one of them never updated during the sampled frames, so a layout that quietly subscribed to nothing cannot make the service layer measure zero.
+
 ##### Refresh scheduling
 
 EdgeTX refreshes widgets on every main loop pass, so steady-state cost is paid tens of times per second and is shared by every component on the dashboard. Two mechanisms keep it bounded.
@@ -958,6 +967,64 @@ Every visible surface must be a **filled `lvgl.rectangle`**. Boxes are used only
 | `fonts` | Typography roles chosen for this component's span. |
 | `span` | The component's `colSpan` and `rowSpan`. |
 | `state(name, accent)` | Resolves a state name into concrete colors, border weight, and badge text. |
+| `telemetry` | Cached source readings with units, precision, and freshness. |
+| `model` | Model identity, bitmap path, timers, flight mode, and transmitter voltage. |
+| `control` | Effective trim positions and read-only global variables. |
+| `extrema` | EdgeTX sensor extrema and dashboard flight sessions. |
+| `navigation` | GPS fix, pilot position, distance, and north-up home-to-model bearing. |
+
+Any data service may be absent when its module failed to load, so a component must tolerate `nil` rather than assume.
+
+### Subscribing to a service
+
+A component subscribes once, in `create`, and keeps the returned snapshot for its lifetime:
+
+```lua
+function example.create(parent, rect, settings, services)
+  local telemetry = services.telemetry
+  return {feed = telemetry and telemetry:subscribe(settings.source)}
+end
+
+function example.refresh(context)
+  local feed = context.feed
+  if not feed or not feed.available then return end
+  -- feed.value, feed.unitText, feed.precision, feed.state, feed.age
+end
+```
+
+Subscribing in `create` is not a convention, it is the mechanism: a source nothing subscribed to is never read. Two components naming the same source share one subscription and therefore one poll.
+
+| Service | Subscription | Snapshot highlights |
+| --- | --- | --- |
+| `telemetry` | `subscribe(name)` | `value`, `raw`, `kind`, `unit`, `unitText`, `precision`, `state`, `available`, `fresh`, `stale`, `age` |
+| `model` | `identity()`, `timer(index)`, `flightMode()`, `txVoltage()` | `name`/`bitmapPath`; `value`, `countdown`, `elapsed`, `remaining`, `expired`, `text`; `index`/`name`; a telemetry-shaped reading |
+| `control` | `trim(name, scale)`, `globalVariable(index)` | `raw`, `value`, `fraction`, `scale`, `centered`, `threePosition`; `name`, `value`, `min`, `max`, `precision`, `unitText`, `flightMode` |
+| `extrema` | `sourceExtreme(name, mode)`, `sessionExtrema(name)`, `flight(armSource)` | an ordinary reading of `<name>-`/`<name>+`; `min`, `max`, `samples`, `session`; `armed`, `active`, `count`, `duration` |
+| `navigation` | `subscribe(name, distanceSource)` | `fix`, `home`, `latitude`, `longitude`, `pilotLatitude`, `pilotLongitude`, `distance`, `distanceUnit`, `distanceSource`, `bearing`, `age` |
+
+Every snapshot is a read-only view over state the service mutates in place. Writing to one raises, and the metatable is hidden so the mutable state stays unreachable.
+
+### Freshness and degradation
+
+Freshness is the subtlest part of EdgeTX telemetry. `getValue` returns integer zero for a telemetry source both when the sensor genuinely reads zero and when telemetry is not streaming, and the Lua API exposes no per-sensor age except for GPS, which carries a `delay` field.
+
+Only a zero is ambiguous, so `telemetryService` judges only a zero:
+
+- A non-zero value is always stored, whatever the link indicator says, because EdgeTX returns exactly zero when it has nothing.
+- A zero is stored only while the link is believed up. Otherwise the last live value is kept and classified `stale`.
+- The link indicator is `getRSSI() > 0`, the only liveness signal the Lua API offers. It is not universally reliable: a protocol that never populates an RSSI sensor reads zero on a live link. A telemetry source returning a non-zero value while the indicator says otherwise proves the indicator wrong, so the service learns that once and stops trusting it.
+- A source the radio does not recognize is `unavailable`, and resolution is retried periodically, because a sensor only appears once telemetry has delivered it.
+- Precision comes from the model's sensor table, searched by name a bounded number of entries per update.
+- A sensor's extremes, `<name>-` and `<name>+`, report the base sensor's unit but not always its value shape. `Cels-` and `Cels+` return a plain number where `Cels` returns a table, and the service normalizes that.
+
+Two limitations remain, and neither is solvable from Lua:
+
+- Staleness is link-wide, not per sensor. A single sensor that stops arriving while the link stays up still reads as live.
+- A sensor that is configured but has never been received reads as a valid zero while the link is up, because EdgeTX exposes no per-sensor availability.
+
+Closing either needs a per-sensor age from the firmware, or a heuristic this specification is not willing to guess at.
+
+Every service degrades the same way. A missing firmware API, an out-of-range timer index, a radio without global variables, a GPS source that has never produced a position, and a source name that is simply wrong all produce an `unavailable` snapshot rather than an error, and no service raises inside a widget callback. A service whose update does raise is reported once and then retired.
 
 ### Theme resolution
 
@@ -1031,6 +1098,10 @@ Deliverable: one polished metric component demonstrating every state, theme mode
 - Update each service once per host cycle and expose immutable snapshots to components.
 
 Deliverable: diagnostic views prove normalized service output independently of final component rendering.
+
+Delivered. The `service-probe` component renders any service's normalized output as label and value rows, and two layouts ship: `services.yaml` for telemetry and navigation, `services2.yaml` for model, control, and extrema. Both load from their Dashboard ID alone, on any model.
+
+The cadence is deliberate rather than "once per host cycle" literally. Polling five services on every cycle was measured and rejected: at most one service is updated per cycle, services are phase staggered on registration, a service nothing subscribed to is never scheduled, and each service caps how many subscriptions it refreshes in one update. A component still sees one consistent set of readings per cycle, because services update before component refreshes.
 
 #### Milestone 6: Core components
 

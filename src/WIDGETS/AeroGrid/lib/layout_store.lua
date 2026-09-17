@@ -74,6 +74,11 @@ end
 --- Resolve and read the layout file, without parsing it.
 --- Reading, tokenizing, parsing, and validating are separate steps so the host
 --- can spend one widget callback on each and stay inside EdgeTX's budget.
+---
+--- Three candidates are tried in order: the model- and dashboard-specific
+--- layout, a dashboard-specific layout shared by every model, and the shipped
+--- default. The middle candidate is what makes a layout such as the bundled
+--- service diagnostics usable on any model simply by naming its Dashboard ID.
 ---@param widgetPath string Absolute AeroGrid widget directory.
 ---@param modelFilename string Current EdgeTX model filename.
 ---@param dashboardId string Native Dashboard ID option.
@@ -81,12 +86,17 @@ end
 ---@return string? error
 ---@return string filename Selected specific or fallback layout path.
 function layoutStore.read(widgetPath, modelFilename, dashboardId)
+  local base = string.sub(widgetPath, -1) == "/" and widgetPath or widgetPath .. "/"
   local filename = layoutStore.path(widgetPath, modelFilename, dashboardId)
   local content, readError = readFile(filename)
 
   if not content then
-    filename = (string.sub(widgetPath, -1) == "/" and widgetPath or widgetPath .. "/")
-      .. "layouts/default.yaml"
+    filename = base .. "layouts/" .. sanitize(dashboardId) .. ".yaml"
+    content, readError = readFile(filename)
+  end
+
+  if not content then
+    filename = base .. "layouts/default.yaml"
     content, readError = readFile(filename)
   end
 

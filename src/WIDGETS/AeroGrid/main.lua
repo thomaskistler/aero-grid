@@ -36,7 +36,10 @@
 ---@field layoutPath? string
 ---@field errorLabel? any
 ---@field reloadState? "clear"
----@field stage? "read"|"tokenize"|"parse"|"components" Staged loader position.
+---@field stage? "read"|"tokenize"|"header"|"services"|"components" Staged loader position.
+---@field servicesModule? table Loaded lib/services.lua registry module.
+---@field serviceRuntime? table Registry holding every constructed service.
+---@field serviceIndex? integer Next service definition to construct.
 ---@field source? string Layout text held between the read and tokenize steps.
 ---@field tokens? table Tokens held between the tokenize and parse steps.
 ---@field pending? table[] Validated placements still awaiting construction.
@@ -136,13 +139,17 @@ end
 
 --- Assemble the shared objects handed to one component.
 --- Typography depends on the component's span, so services are built per
---- placement rather than shared across the dashboard.
+--- placement rather than shared across the dashboard. The data services
+--- themselves are dashboard-wide singletons and are passed through by
+--- reference, so two components naming the same source share one poll.
 ---@param context AeroGridContext
 ---@param placement table
 ---@return table services
 local function buildServices(context, placement)
   local builder = context.themeBuilder
   local theme = context.theme
+  local registry = context.serviceRuntime
+  local byId = registry and registry.byId or {}
 
   return {
     theme = theme,
@@ -153,6 +160,13 @@ local function buildServices(context, placement)
     state = function(name, accentName)
       return builder.state(theme, name, accentName)
     end,
+    -- Shared data services. Any of these may be absent when its module failed
+    -- to load, so a component must tolerate nil rather than assume.
+    telemetry = byId.telemetry,
+    model = byId.model,
+    control = byId.control,
+    extrema = byId.extrema,
+    navigation = byId.navigation,
   }
 end
 
@@ -345,7 +359,59 @@ local function advanceLoad(context)
     context.itemIndent = componentsIndent or 2
     context.itemNumber = 0
     context.identifiers = {}
-    context.stage = "components"
+    context.serviceIndex = 0
+    context.stage = "services"
+    return true
+  end
+
+  if stage == "services" then
+    -- Services are staged for the same reason components are: each module has
+    -- to be compiled and run, and the whole set does not fit in one callback.
+    -- They are built before any component, so a component can subscribe from
+    -- inside its own create call.
+    local index = context.serviceIndex
+
+    if index == 0 then
+      local support, supportError = loadModule(context.path, "lib/services.lua")
+      if not support then
+        -- A dashboard without services still renders: every component sees
+        -- nil and must degrade to an unavailable presentation.
+        addError(context, "services: " .. tostring(supportError))
+        context.serviceIndex = nil
+        context.stage = "components"
+        return true
+      end
+
+      context.servicesModule = support
+      context.serviceRuntime = support.runtime(support.environment())
+      context.serviceIndex = 1
+      return true
+    end
+
+    local definition = context.servicesModule.DEFINITIONS[index]
+    if not definition then
+      context.serviceIndex = nil
+      context.stage = "components"
+      return true
+    end
+
+    context.serviceIndex = index + 1
+
+    local module, moduleError = loadModule(context.path, definition.file)
+    if module and type(rawget(module, "new")) == "function" then
+      local runtime = context.serviceRuntime
+      local ok, instance = pcall(module.new, runtime.env,
+        context.servicesModule, runtime)
+      if ok and type(instance) == "table" then
+        context.servicesModule.register(runtime, instance, getTime())
+      else
+        addError(context, definition.id .. ": " .. tostring(instance))
+      end
+    else
+      addError(context, definition.id .. ": " .. tostring(moduleError
+        or "service module has no constructor"))
+    end
+
     return true
   end
 
@@ -397,6 +463,10 @@ local function beginLoad(context)
   context.identifiers = nil
   context.itemIndex = nil
   context.itemNumber = 0
+  -- Subscriptions belong to the components that made them, so the registry is
+  -- rebuilt with the dashboard rather than reused across a reload.
+  context.serviceRuntime = nil
+  context.serviceIndex = nil
   context.stage = "read"
 end
 
@@ -606,6 +676,26 @@ local function dispatchDue(context)
   return dispatched
 end
 
+--- Advance the shared data services by at most one service per callback.
+--- Services are charged to the same instruction budget as everything else, so
+--- polling all five every cycle is not affordable. Each service declares its
+--- own interval and caps how much it reads in one update, and the registry
+--- serves whichever due service is next in rotation.
+---@param context AeroGridContext
+---@return string? id Service updated, for tests and error reporting.
+local function updateServices(context)
+  local registry = context.serviceRuntime
+  if not registry then return nil end
+
+  local id, serviceError = context.servicesModule.update(registry, getTime())
+  if serviceError then
+    addError(context, id .. ": " .. serviceError)
+    showErrors(context)
+  end
+
+  return id
+end
+
 --- Advance the staged loader, then keep geometry and components synchronized.
 --- At most one loading step runs per call, so the instruction budget is never
 --- exceeded no matter how large the layout is.
@@ -644,13 +734,19 @@ local function refresh(context)
     return
   end
 
+  -- Services are refreshed before components so every component rendering this
+  -- cycle sees the same set of readings.
+  updateServices(context)
   dispatchDue(context)
 end
 
 --- Keep components updated while the dashboard screen is not visible.
+--- Services keep running here too, so flight extrema and timers do not develop
+--- a hole whenever the pilot looks at another screen.
 ---@param context AeroGridContext
 local function background(context)
   if context.stage or context.reloadState or context.reflowIndex then return end
+  updateServices(context)
   dispatchAll(context, "background")
 end
 

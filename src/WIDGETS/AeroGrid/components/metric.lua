@@ -6,7 +6,8 @@
 
 ---@class AeroGridMetricSettings
 ---@field label? string
----@field unit? string
+---@field source? string EdgeTX source name read through telemetryService.
+---@field unit? string Overrides the sensor's own unit label.
 ---@field accent? "cyan"|"green"|"amber"|"orange"
 ---@field min? number
 ---@field max? number
@@ -21,6 +22,7 @@
 ---@field primitives table
 ---@field state fun(name: string, accent?: string): table
 ---@field layout table Resolved presentation for the current span.
+---@field feed? AeroGridReading Immutable telemetry subscription.
 ---@field reading? number Last applied reading.
 ---@field stateName string Current resolved state name.
 
@@ -33,6 +35,7 @@ local metric = {
   refreshInterval = 20,
   settings = {
     {key = "label", label = "Label", type = "string", default = "METRIC"},
+    {key = "source", label = "Source", type = "string", default = ""},
     {key = "unit", label = "Unit", type = "string", default = ""},
     {key = "accent", label = "Accent", type = "string", default = "cyan"},
     {key = "min", label = "Minimum", type = "number", default = 0},
@@ -40,19 +43,11 @@ local metric = {
     {key = "warning", label = "Warning threshold", type = "number"},
     {key = "critical", label = "Critical threshold", type = "number"},
     {key = "direction", label = "Threshold direction", type = "string", default = "auto"},
-    {key = "precision", label = "Decimal places", type = "number", default = 0},
+    -- Negative means follow the sensor's own configured precision.
+    {key = "precision", label = "Decimal places", type = "number", default = -1},
     {key = "visual", label = "Visualization", type = "string", default = "bar"},
-    -- Temporary: drives synthetic readings until milestone 5 supplies real
-    -- telemetry. Remove this setting once telemetryService exists.
-    {key = "demo", label = "Demo readings", type = "boolean", default = false},
   },
 }
-
---- Phases walked by the demo driver, in order.
-local DEMO_PHASES = {"normal", "warning", "critical", "stale", "unavailable"}
---- Refreshes spent in each demo phase. At the declared 5 Hz interval this is
---- roughly two seconds per phase.
-local DEMO_TICKS = 10
 
 --- Describe how the component presents itself at a given span.
 --- Unsupported spans are rejected by metadata, so each entry here is deliberate.
@@ -86,6 +81,22 @@ function metric.format(value, precision)
   if digits > 3 then digits = 3 end
 
   return string.format("%." .. digits .. "f", value)
+end
+
+--- Resolve how many decimals to print.
+--- A negative configured precision means "follow the sensor", which is what
+--- the telemetry service normalizes from the model's sensor table. A layout
+--- that states a precision always wins, because a pilot may want a coarser
+--- readout than the sensor offers.
+---@param context AeroGridMetricContext
+---@return integer
+function metric.digitsFor(context)
+  local configured = context.settings.precision
+  if type(configured) == "number" and configured >= 0 then return configured end
+
+  local feed = context.feed
+  if feed and type(feed.precision) == "number" then return feed.precision end
+  return 0
 end
 
 --- Report whether thresholds count downward for this metric.
@@ -128,57 +139,38 @@ function metric.resolveState(settings, value, stale)
   return "normal"
 end
 
---- Produce a synthetic reading that lands inside a requested state band.
---- This exists only so the design system can be reviewed on a radio before
---- milestone 5 delivers real telemetry.
----@param settings AeroGridMetricSettings
----@param phase string
----@param progress number Position within the phase, from 0 to 1.
----@return number
-function metric.demoValue(settings, phase, progress)
-  local low = type(settings.min) == "number" and settings.min or 0
-  local high = type(settings.max) == "number" and settings.max or 100
-  local warning = type(settings.warning) == "number" and settings.warning or nil
-  local critical = type(settings.critical) == "number" and settings.critical or nil
-  local falling = isFalling(settings)
-
-  local function lerp(from, to, amount)
-    return from + (to - from) * amount
-  end
-
-  if phase == "critical" and critical ~= nil then
-    return lerp(critical, falling and low or high, progress)
-  end
-  if phase == "warning" and warning ~= nil then
-    local bound = critical or (falling and low or high)
-    -- Stop short of the critical bound so this phase stays a warning.
-    return lerp(warning, bound, progress * 0.8)
-  end
-
-  if warning ~= nil then
-    -- Approach the warning threshold without reaching it.
-    return lerp(falling and high or low, warning, progress * 0.9)
-  end
-  return lerp(low, high, progress)
-end
-
---- Advance the demo driver. Inert unless the layout opts in.
+--- Advance the component from its telemetry subscription.
+--- Nothing is repainted unless the reading or its freshness actually changed,
+--- because the host pays this for every metric on the dashboard.
 ---@param context AeroGridMetricContext
 function metric.refresh(context)
-  if not context.settings.demo then return end
+  local feed = context.feed
+  if not feed then return end
 
-  local tick = (context.demoTick or 0) + 1
-  context.demoTick = tick
+  local value = feed.available and feed.value or nil
+  local stale = feed.stale == true
+  -- The sensor's precision only becomes known once the source resolves, so a
+  -- change in it has to repaint even when the reading itself has not moved.
+  local digits = metric.digitsFor(context)
 
-  local phase = DEMO_PHASES[math.floor(tick / DEMO_TICKS) % #DEMO_PHASES + 1]
-  local progress = (tick % DEMO_TICKS) / DEMO_TICKS
+  if context.applied and value == context.reading
+      and stale == context.staleReading and digits == context.digits then
+    return
+  end
 
-  if phase == "unavailable" then
-    metric.setValue(context, nil)
-  elseif phase == "stale" then
-    metric.setValue(context, metric.demoValue(context.settings, "normal", progress), true)
-  else
-    metric.setValue(context, metric.demoValue(context.settings, phase, progress), false)
+  context.applied = true
+  context.staleReading = stale
+  context.digits = digits
+  metric.setValue(context, value, stale)
+
+  -- The sensor's unit is only known once the source resolves, so the label
+  -- follows it rather than being fixed when the panel was built.
+  if context.unit and context.settings.unit == "" then
+    local text = feed.unitText or ""
+    if text ~= context.unitText then
+      context.unitText = text
+      context.unit:set({text = text})
+    end
   end
 end
 
@@ -317,6 +309,14 @@ function metric.create(parent, rect, settings, services)
     text = "--",
   }
 
+  -- The host owns polling. Subscribing here, in create, is what tells the
+  -- telemetry service that this source is referenced at all; a source nothing
+  -- references is never read.
+  local telemetry = services.telemetry
+  if telemetry then
+    context.feed = telemetry:subscribe(settings.source)
+  end
+
   context.label = primitives.label(panel.root, theme, {
     x = area.pad,
     y = area.compact,
@@ -337,13 +337,16 @@ function metric.create(parent, rect, settings, services)
 
   -- Optional elements are created whenever the span could ever want them, and
   -- hidden when the current size cannot fit them, so a later enlargement can
-  -- simply reveal them instead of needing a rebuild.
-  if layout.showUnit and settings.unit ~= "" then
+  -- simply reveal them instead of needing a rebuild. The unit is created even
+  -- when the layout names none, because the sensor supplies one once it
+  -- resolves.
+  if layout.showUnit then
+    context.unitText = tostring(settings.unit or "")
     context.unit = primitives.label(panel.root, theme, {
       x = area.pad,
       y = area.unitY,
       w = area.valueWidth,
-      text = tostring(settings.unit),
+      text = context.unitText,
       color = theme.color.textFaint,
       font = fonts.unit,
     })
@@ -389,6 +392,10 @@ function metric.create(parent, rect, settings, services)
     font = fonts.badge,
   })
 
+  -- Without a telemetry service there is nothing to subscribe to, so say so
+  -- rather than leaving a dash that looks like a reading in progress.
+  if not context.feed then metric.setValue(context, nil) end
+
   if context.unit and not area.showUnit then lvgl.hide(context.unit) end
   if context.range and not area.showRange then lvgl.hide(context.range) end
   if not area.showVisual then
@@ -414,7 +421,7 @@ function metric.setValue(context, value, stale)
 
   context.reading = value
   context.stateName = stateName
-  context.text = metric.format(value, settings.precision)
+  context.text = metric.format(value, metric.digitsFor(context))
 
   context.label:set({color = presentation.label})
   context.value:set({text = context.text, color = presentation.value})

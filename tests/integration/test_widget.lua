@@ -101,10 +101,149 @@ lvgl = {
 
 local modelFilename = "test-model.yml"
 
+--- Controllable EdgeTX radio state.
+--- Services read sources, sensors, timers, and global variables through the
+--- firmware's global functions, so the mock owns one table a test can drive
+--- and every entry point reads from it.
+local radio = {
+  rssi = 80,
+  fields = {
+    RxBt = {id = 100, name = "RxBt", desc = "Rx battery", unit = 1},
+    Curr = {id = 103, name = "Curr", desc = "Current", unit = 2},
+    Alt = {id = 106, name = "Alt", desc = "Altitude", unit = 9},
+    ["Alt+"] = {id = 108, name = "Alt+", desc = "Altitude max", unit = 9},
+    GPS = {id = 109, name = "GPS", desc = "GPS", unit = 40},
+    GSpd = {id = 112, name = "GSpd", desc = "GPS speed", unit = 7},
+    Dist = {id = 115, name = "Dist", desc = "Distance", unit = 9},
+    sa = {id = 300, name = "sa", desc = "Switch A"},
+    ["trim-ail"] = {id = 310, name = "trim-ail", desc = "Aileron trim"},
+    ["tx-voltage"] = {id = 320, name = "tx-voltage", desc = "Tx voltage"},
+  },
+  values = {
+    [100] = 24.0,
+    [103] = 10,
+    [106] = 100,
+    [108] = 180,
+    [109] = {
+      lat = 47.3769,
+      lon = 8.5417,
+      ["pilot-lat"] = 47.3700,
+      ["pilot-lon"] = 8.5400,
+      delay = 1,
+    },
+    [112] = 42,
+    [115] = 812,
+    [300] = 1024,
+    [310] = 240,
+    [320] = 7.9,
+  },
+  sensors = {
+    [0] = {name = "RxBt", prec = 2},
+    [1] = {name = "Curr", prec = 1},
+    [2] = {name = "Alt", prec = 0},
+  },
+  timers = {
+    [0] = {value = 90, start = 300, name = "Flight", persistent = 1},
+  },
+  globals = {[0] = 45},
+  globalDetails = {[0] = {name = "Rates", min = -100, max = 100, prec = 1, unit = 0}},
+  flightMode = 1,
+  flightModeName = "Sport",
+}
+
+-- Sixteen generic sensors, so a layout that fills the grid can reference a
+-- distinct live source per cell instead of sixteen names the radio rejects.
+for index = 1, 16 do
+  local name = "S" .. index
+  radio.fields[name] = {id = 400 + index, name = name, unit = 9}
+  radio.values[400 + index] = index * 3
+  radio.sensors[index + 2] = {name = name, prec = 1}
+end
+
+-- The remaining sources the service diagnostics layouts reference.
+radio.fields["trim-ele"] = {id = 311, name = "trim-ele", desc = "Elevator trim"}
+radio.fields["trim-rud"] = {id = 312, name = "trim-rud", desc = "Rudder trim"}
+radio.fields["trim-thr"] = {id = 313, name = "trim-thr", desc = "Throttle trim"}
+radio.fields.GPS2 = {id = 118, name = "GPS2", desc = "GPS 2", unit = 40}
+radio.values[311] = -120
+radio.values[312] = 0
+radio.values[313] = 64
+radio.values[118] = radio.values[109]
+radio.timers[1] = {value = 64, start = 0, name = "Up"}
+radio.timers[2] = {value = 12, start = 60, name = "Glide"}
+for index = 1, 3 do
+  radio.globals[index] = index * 10
+  radio.globalDetails[index] = {
+    name = "GV" .. (index + 1), min = -100, max = 100, prec = 0, unit = 1,
+  }
+end
+
+--- Reverse index from source id to field, rebuilt whenever a test adds one.
+--- It exists so the mock costs a table lookup rather than a scan: getValue is
+--- a C function in the firmware and costs no VM instructions at all, so a
+--- mock that searched would show up in the instruction budget measurement.
+local fieldsById = {}
+
+local function indexFields()
+  fieldsById = {}
+  for _, field in pairs(radio.fields) do fieldsById[field.id] = field end
+end
+
+indexFields()
+
+--- Reset the radio to the state every test starts from.
+local function resetRadio()
+  indexFields()
+  radio.rssi = 80
+  radio.values[100] = 24.0
+  radio.values[103] = 10
+  radio.values[106] = 100
+  radio.values[300] = 1024
+end
+
+function getValue(source)
+  local field
+  if type(source) == "string" then
+    field = radio.fields[source]
+    source = field and field.id or nil
+  else
+    field = fieldsById[source]
+  end
+  if source == nil then return nil end
+
+  -- EdgeTX returns integer zero for every telemetry source while telemetry is
+  -- not streaming. A mock that kept reporting real values instead would let a
+  -- freshness bug pass, because nothing would ever look like a dead link.
+  if field and field.unit and radio.rssi == 0 then return 0 end
+
+  return radio.values[source]
+end
+
+function getFieldInfo(name)
+  return radio.fields[name]
+end
+
+function getRSSI()
+  return radio.rssi, 45, 42
+end
+
+function getFlightMode()
+  return radio.flightMode, radio.flightModeName
+end
+
 model = {
   getInfo = function()
-    return {filename = modelFilename, name = "Test Model"}
+    return {
+      filename = modelFilename,
+      name = "Test Model",
+      bitmap = "plane.png",
+      labels = "fpv",
+    }
   end,
+  getTimer = function(index) return radio.timers[index] end,
+  getSensor = function(index) return radio.sensors[index] end,
+  getGlobalVariable = function(index) return radio.globals[index] end,
+  getGlobalVariableDetails = function(index) return radio.globalDetails[index] end,
 }
 
 -- EdgeTX's monotonic clock, in 10ms ticks. Controllable so scheduling is
@@ -544,33 +683,99 @@ return halfbuilt
   assert(string.match(table.concat(context.errors, "\n"), "failed after drawing"))
 end
 
---- The demo driver must cycle visible states through the host refresh loop.
-local function testDemoCycle()
+--- Real telemetry must drive the shipped dashboard end to end: the host polls
+--- through its services, the metric renders what the service normalized, and
+--- every state the design system defines is reachable from radio state alone.
+local function testTelemetryDrivesComponents()
+  resetRadio()
   local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
     DEFAULT_OPTIONS, sourcePath)
   local pack = entryById(context, "pack").instance
-  local seen = {}
-  local badges = {}
+  local current = entryById(context, "current").instance
 
-  -- One full cycle is five phases of DEMO_TICKS refreshes, and a refresh only
-  -- happens once the component's interval has elapsed.
-  for _ = 1, 60 do
+  assert(pack.feed, "the metric never subscribed to a source")
+  assertEqual(pack.feed.name, "RxBt")
+
+  --- Advance far enough for the services and the component to both fall due.
+  local function settle()
+    for _ = 1, 8 do
+      tick(20)
+      definition.refresh(context)
+    end
+  end
+
+  settle()
+  assertEqual(pack.stateName, "normal")
+  assertEqual(pack.value.properties.text, "24.0")
+  assertEqual(pack.badge.properties.text, "")
+
+  -- A metric without a configured unit takes the sensor's own.
+  assertEqual(current.unit.properties.text, "A")
+  -- And without a configured precision, the sensor's precision.
+  assertEqual(current.text, "10.0", "the sensor precision was ignored")
+
+  radio.values[100] = 20.5
+  settle()
+  assertEqual(pack.stateName, "warning")
+  assertEqual(pack.badge.properties.text, "WARN")
+
+  radio.values[100] = 19.0
+  settle()
+  assertEqual(pack.stateName, "critical")
+  assertEqual(pack.badge.properties.text, "CRIT")
+
+  -- Losing the link must keep the last reading and mark it stale, never
+  -- replace it with the zero EdgeTX reports for a dead telemetry source.
+  radio.values[100] = 24.0
+  settle()
+  assertEqual(pack.stateName, "normal")
+  radio.rssi = 0
+  settle()
+  assertEqual(pack.stateName, "stale")
+  assertEqual(pack.badge.properties.text, "STALE")
+  assertEqual(pack.value.properties.text, "24.0", "a stale poll overwrote the value")
+
+  -- With the link back, a zero really is a reading and must be shown as one.
+  radio.rssi = 80
+  radio.values[100] = 0
+  settle()
+  assertEqual(pack.value.properties.text, "0.0", "a valid zero was not shown")
+  assertEqual(pack.stateName, "critical")
+
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  resetRadio()
+end
+
+--- A source no component references must never be read, because every poll is
+--- charged to the same instruction budget as the rest of the dashboard.
+local function testOnlyReferencedSourcesArePolled()
+  resetRadio()
+  local read = {}
+  local realGetValue = getValue
+  getValue = function(source)
+    read[tostring(source)] = true
+    return realGetValue(source)
+  end
+
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, sourcePath)
+  for _ = 1, 40 do
     tick(20)
     definition.refresh(context)
-    seen[pack.stateName] = true
-    badges[pack.stateName] = pack.badge.properties.text
   end
+  getValue = realGetValue
 
-  for _, state in ipairs({"normal", "warning", "critical", "stale", "unavailable"}) do
-    assert(seen[state], "demo never reached " .. state)
-  end
+  assert(read["100"], "a referenced source was never polled")
+  assert(not read["109"], "an unreferenced GPS source was polled")
+  assert(not read["310"], "an unreferenced trim source was polled")
+  assert(not read["tx-voltage"], "an unreferenced radio source was polled")
 
-  assertEqual(badges.normal, "")
-  assertEqual(badges.warning, "WARN")
-  assertEqual(badges.critical, "CRIT")
-  assertEqual(badges.stale, "STALE")
-  assertEqual(badges.unavailable, "NO SOURCE")
-  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  -- Services nothing subscribed to must stay idle rather than being scheduled.
+  local byId = context.serviceRuntime.byId
+  assert(byId.telemetry.revision > 0, "the telemetry service never ran")
+  assertEqual(byId.navigation.revision, 0, "an idle service was scheduled")
+  assertEqual(byId.control.revision, 0, "an idle service was scheduled")
+  assertEqual(byId.model.revision, 0, "an idle service was scheduled")
 end
 
 testThemeReachesComponents()
@@ -578,7 +783,8 @@ testBackgroundsArePainted()
 testResponsiveSpans()
 testBadgeGeometry()
 testMetricStates()
-testDemoCycle()
+testTelemetryDrivesComponents()
+testOnlyReferencedSourcesArePolled()
 testReflowAndLifecycle()
 testOptionReload()
 
@@ -875,7 +1081,57 @@ local function testInstructionBudget()
       lines[#lines + 1] = "      critical: 90"
       lines[#lines + 1] = "      precision: 1"
       lines[#lines + 1] = "      visual: bar"
-      lines[#lines + 1] = "      demo: true"
+      -- A distinct live source per cell, so the telemetry service really does
+      -- carry sixteen subscriptions rather than sixteen names it rejects.
+      lines[#lines + 1] = "      source: S" .. i
+    end
+    return table.concat(lines, "\n") .. "\n"
+  end
+
+  --- Every service, exercised at the largest layout the schema permits.
+  --- The five services are spread across sixteen single-cell diagnostic
+  --- panels, each subscribing to something different, so the measurement
+  --- covers the whole service layer rather than telemetry alone.
+  local PROBE_SPECS = {
+    {service = "telemetry", source = "S1"},
+    {service = "telemetry", source = "S2"},
+    {service = "telemetry", source = "S3"},
+    {service = "telemetry", source = "RxBt"},
+    {service = "navigation", source = "GPS", extra = "Dist"},
+    {service = "navigation", source = "GPS2"},
+    {service = "model", index = 0},
+    {service = "model", index = 1},
+    {service = "model", index = 2},
+    {service = "control", source = "trim-ail", index = 0},
+    {service = "control", source = "trim-ele", index = 1},
+    {service = "control", source = "trim-rud", index = 2},
+    {service = "control", source = "trim-thr", index = 3},
+    {service = "extrema", source = "S4", extra = "sa"},
+    {service = "extrema", source = "S5"},
+    {service = "extrema", source = "S6"},
+  }
+
+  --- Build a layout that fills the grid with service diagnostic panels.
+  local function probeGridLayout()
+    local lines = {"version: 1", "grid:", "  columns: 4", "  rows: 4", "components:"}
+    for i, spec in ipairs(PROBE_SPECS) do
+      local col, row = (i - 1) % 4, math.floor((i - 1) / 4)
+      lines[#lines + 1] = "  - id: p" .. i
+      lines[#lines + 1] = "    type: service-probe"
+      lines[#lines + 1] = "    col: " .. col
+      lines[#lines + 1] = "    row: " .. row
+      lines[#lines + 1] = "    colSpan: 1"
+      lines[#lines + 1] = "    rowSpan: 1"
+      lines[#lines + 1] = "    config:"
+      lines[#lines + 1] = "      service: " .. spec.service
+      lines[#lines + 1] = "      label: Probe " .. i
+      if spec.source then
+        lines[#lines + 1] = "      source: " .. spec.source
+      end
+      if spec.extra then
+        lines[#lines + 1] = "      extra: " .. spec.extra
+      end
+      lines[#lines + 1] = "      index: " .. (spec.index or 0)
     end
     return table.concat(lines, "\n") .. "\n"
   end
@@ -896,7 +1152,8 @@ local function testInstructionBudget()
   end
 
   --- Load one widget package end to end, measuring every callback.
-  local function exercise(label, path, expectedComponents)
+  ---@param expectedServices? string[] Services this layout must actually run.
+  local function exercise(label, path, expectedComponents, expectedServices)
     local zone = {x = 0, y = 0, w = 480, h = 272}
     local context
     record(label .. " create", measure(function()
@@ -922,6 +1179,11 @@ local function testInstructionBudget()
       before[index] = entry.nextRefresh
     end
 
+    local revisions = {}
+    for id, instance in pairs(context.serviceRuntime.byId) do
+      revisions[id] = instance.revision
+    end
+
     for _ = 1, 60 do
       tick(1)
       record(label .. " refresh/steady", measure(definition.refresh, context))
@@ -933,6 +1195,19 @@ local function testInstructionBudget()
     for index, entry in ipairs(context.components) do
       assert(entry.nextRefresh ~= before[index], label .. ": "
         .. entry.placement.id .. " was never refreshed during the sample")
+    end
+
+    -- The same applies to the services, whose updates are charged to these
+    -- very callbacks: a layout that subscribed to nothing would measure the
+    -- service layer at zero and hide whatever it really costs.
+    for _, id in ipairs(expectedServices or {}) do
+      local instance = context.serviceRuntime.byId[id]
+      assert(instance, label .. ": the " .. id .. " service was never built")
+      assert(instance.count > 0,
+        label .. ": nothing subscribed to the " .. id .. " service")
+      assert(instance.revision > revisions[id],
+        label .. ": the " .. id .. " service never updated during the sample")
+      assert(not instance.failed, label .. ": the " .. id .. " service failed")
     end
 
     record(label .. " background", measure(definition.background, context))
@@ -949,8 +1224,14 @@ local function testInstructionBudget()
     return context
   end
 
-  exercise("shipped", sourcePath, 5)
-  exercise("full grid", makeWidget("budget-16", fullGridLayout(16)), 16)
+  exercise("shipped", sourcePath, 5, {"telemetry"})
+  exercise("full grid", makeWidget("budget-16", fullGridLayout(16)), 16,
+    {"telemetry"})
+
+  -- Sixteen diagnostic panels spanning all five services: the worst case the
+  -- schema permits for the service layer itself.
+  exercise("service probes", makeWidget("budget-probes", probeGridLayout()), 16,
+    {"telemetry", "model", "control", "extrema", "navigation"})
 
   -- A layout whose components all demand every frame defeats staggering, so
   -- the per-frame cap is the only thing bounding cost. Prove it holds.
@@ -1087,6 +1368,200 @@ local function testModelFilenames()
   modelFilename = previous
 end
 
+--- Collect a diagnostic panel's rendered rows as a label-to-text mapping.
+local function probeRows(instance)
+  local rows = {}
+  for index = 1, #instance.keys do
+    local key = instance.keys[index]
+    if not key.hidden then
+      local label = key.properties.text
+      if label ~= "" then rows[label] = instance.values[index].properties.text end
+    end
+  end
+  return rows
+end
+
+--- Milestone 5's deliverable: diagnostic views that prove normalized service
+--- output independently of any production component's rendering. The shipped
+--- diagnostics layouts load from their Dashboard ID alone, on any model, and
+--- every service reports through the same panel contract.
+local function testServiceDiagnostics()
+  resetRadio()
+  local zone = {x = 0, y = 0, w = 480, h = 272}
+
+  --- Load one diagnostics page and let its services settle.
+  local function page(dashboardId)
+    local context = createLoaded(zone, {DashID = dashboardId, Theme = "modern"},
+      sourcePath)
+    -- A dashboard-scoped layout is found without a model-specific file.
+    assertEqual(context.layoutPath,
+      sourcePath .. "layouts/" .. dashboardId .. ".yaml")
+    assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+    for _ = 1, 80 do
+      tick(20)
+      definition.refresh(context)
+    end
+    return context
+  end
+
+  local first = page("services")
+  assertEqual(#first.components, 2)
+
+  local telemetry = probeRows(entryById(first, "telemetry").instance)
+  assertEqual(telemetry.SRC, "RxBt")
+  assertEqual(telemetry.STATE, "NORMAL")
+  -- Precision comes from the model's sensor table, not from the layout.
+  assertEqual(telemetry.VALUE, "24.00")
+  assertEqual(telemetry.UNIT, "V")
+  assertEqual(telemetry.PREC, "2")
+  assertEqual(telemetry.LINK, "UP")
+
+  local navigation = probeRows(entryById(first, "navigation").instance)
+  assertEqual(navigation.GPS, "GPS")
+  assertEqual(navigation.FIX, "YES")
+  assertEqual(navigation.HOME, "YES")
+  assertEqual(navigation.LAT, "47.37690")
+  -- The configured native distance sensor wins over the computed one.
+  assertEqual(navigation.DIST, "812.0m")
+  assertEqual(navigation.BRG, "9 deg")
+
+  local second = page("services2")
+  assertEqual(#second.components, 3)
+
+  local modelRows = probeRows(entryById(second, "model").instance)
+  assertEqual(modelRows.MODEL, "Test Model")
+  assertEqual(modelRows.IMAGE, "plane.png")
+  assertEqual(modelRows.MODE, "Sport")
+  assertEqual(modelRows.TXV, "7.9V")
+  assertEqual(modelRows.T0, "1:30")
+
+  local control = probeRows(entryById(second, "control").instance)
+  assertEqual(control["TRIM-AIL"], "30 23%")
+  assertEqual(control.RATES, "4.5")
+
+  local extrema = probeRows(entryById(second, "extrema").instance)
+  assertEqual(extrema.ARM, "ARMED")
+  assert(string.match(extrema.FLIGHT, "^#1 "), extrema.FLIGHT)
+
+  assertEqual(#second.errors, 0, table.concat(second.errors, "\n"))
+end
+
+--- Every diagnostic panel must keep its rows inside its own container, at real
+--- font heights, and must shed rows rather than draw past the bottom edge.
+local function testDiagnosticsFitTheirPanels()
+  resetRadio()
+  local zone = {x = 0, y = 0, w = 480, h = 272}
+  local context = createLoaded(zone,
+    {DashID = "services2", Theme = "modern"}, sourcePath)
+
+  --- Drain a batched reflow.
+  local function settle()
+    local passes = 0
+    repeat
+      definition.refresh(context)
+      passes = passes + 1
+      assert(passes < 100, "reflow never finished")
+    until not context.reflowIndex
+  end
+
+  local function assertContained(what)
+    for _, entry in ipairs(context.components) do
+      local bounds = boundsOf(entry)
+      local instance = entry.instance
+      local lineHeight = themeModule.fontHeight(instance.fonts.label)
+      for index = 1, #instance.keys do
+        local key = instance.keys[index]
+        if not key.hidden then
+          assert(key.properties.y + lineHeight <= bounds.h, what .. ": "
+            .. entry.placement.id .. " row " .. index .. " ran past its panel")
+          local value = instance.values[index].properties
+          assert(value.x + value.w <= bounds.w,
+            what .. ": " .. entry.placement.id .. " row ran past the right edge")
+          assert(key.properties.x + key.properties.w <= value.x,
+            what .. ": " .. entry.placement.id .. " label overlaps its value")
+        end
+      end
+    end
+  end
+
+  assertContained("full size")
+  local tallest = entryById(context, "model").instance.visibleRows
+  assert(tallest > 2, "a 2 x 2 diagnostic panel showed only " .. tallest .. " rows")
+
+  zone.w = 320
+  zone.h = 140
+  settle()
+  assertContained("shrunk")
+  assert(entryById(context, "model").instance.visibleRows < tallest,
+    "a shrunk panel did not shed rows")
+
+  zone.w = 480
+  zone.h = 272
+  settle()
+  assertContained("restored")
+  assertEqual(entryById(context, "model").instance.visibleRows, tallest,
+    "rows were not restored when the panel grew again")
+
+  for _ = 1, 4 do
+    tick(50)
+    definition.refresh(context)
+  end
+  local rows = probeRows(entryById(context, "model").instance)
+  assertEqual(rows.MODEL, "Test Model", "a restored row kept stale text")
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+end
+
+--- A missing service module must leave the dashboard running and visibly say
+--- so, rather than raising inside a widget callback.
+local function testMissingServiceModule()
+  local widgetPath = makeWidget("noservice", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: probe
+    type: service-probe
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      service: navigation
+      source: GPS
+  - id: reading
+    type: metric
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: Pack
+      source: RxBt
+]])
+  os.execute("rm -f '" .. widgetPath .. "lib/navigation_service.lua'")
+
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+
+  assertEqual(#context.components, 2, "a missing service disabled a component")
+  assert(string.match(table.concat(context.errors, "\n"), "navigation:"),
+    table.concat(context.errors, "\n"))
+
+  for _ = 1, 20 do
+    tick(20)
+    local ok, err = pcall(definition.refresh, context)
+    assert(ok, "refresh raised without a service: " .. tostring(err))
+  end
+
+  local rows = probeRows(entryById(context, "probe").instance)
+  assertEqual(rows.NAVIGATION, "UNAVAILABLE")
+  -- The services that did load must keep working.
+  assertEqual(entryById(context, "reading").instance.stateName, "normal")
+  local ok = pcall(definition.background, context)
+  assert(ok, "background raised without a service")
+end
+
 testEdgeTxTheme()
 testCustomTheme()
 testRadialReflow()
@@ -1098,6 +1573,9 @@ testCorruptLayout()
 testModelFilenames()
 testMetricReconcilesOnResize()
 testRuntimeFailureIsContained()
+testServiceDiagnostics()
+testDiagnosticsFitTheirPanels()
+testMissingServiceModule()
 testInstructionBudget()
 
 print("AeroGrid widget integration test passed")
