@@ -5,10 +5,12 @@
 --- AeroGrid's EdgeTX widget entry point and component host.
 
 ---@class AeroGridZone
----@field x integer
----@field y integer
+---@field x integer Always zero; a widget draws in its own coordinates.
+---@field y integer Always zero.
 ---@field w integer
 ---@field h integer
+---@field xabs? integer Absolute screen position of the zone's left edge.
+---@field yabs? integer Absolute screen position of the zone's top edge.
 
 ---@class AeroGridWidgetOptions
 ---@field DashID string
@@ -22,6 +24,9 @@
 ---@field errors string[]
 ---@field width integer Last rendered zone width.
 ---@field height integer Last rendered zone height.
+---@field left integer Last rendered absolute zone left edge.
+---@field top integer Last rendered absolute zone top edge.
+---@field reserved? table Corner covered by the EdgeTX menu button, or nil.
 ---@field root any Root LVGL container.
 ---@field grid table
 ---@field yaml table
@@ -91,8 +96,88 @@ local function addError(context, message)
   context.errors[#context.errors + 1] = tostring(message)
 end
 
+--- Menu button height on a 480 x 272 display, used when the radio will not say.
+local BUTTON_HEIGHT = 45
+
+--- Ratio between the firmware's button height and the width it keeps clear.
+--- EdgeTX scales both per display class, as MENU_HEADER_HEIGHT 45 and
+--- MENU_HEADER_BUTTONS_LEFT 47, and rounding the ratio reproduces the
+--- firmware's own values exactly at 320, 480, and 800 pixels wide.
+local BUTTON_WIDTH_RATIO = 47 / 45
+
+--- Read the height EdgeTX draws its menu button at.
+---
+--- The firmware does publish this to Lua, but registers MENU_HEADER_HEIGHT
+--- beside the colour constants and so passes it through COLOR2FLAGS, which
+--- shifts a value left by sixteen bits (radio/src/lua/api_general.cpp). The
+--- global therefore reads 2949120 on a TX16S rather than 45. Shifting it back
+--- is worth the trouble because the firmware scales the real constant per
+--- display class, so a radio whose button is not 45 px tall still gets the
+--- right answer instead of this file's guess.
+---@return integer
+local function buttonHeight()
+  local raw = MENU_HEADER_HEIGHT
+  if type(raw) ~= "number" then return BUTTON_HEIGHT end
+
+  if raw >= 65536 then raw = math.floor(raw / 65536) end
+  -- A value outside this range is not a button height, whatever it is.
+  if raw < 1 or raw > 200 then return BUTTON_HEIGHT end
+
+  return raw
+end
+
+--- Report the part of our zone that EdgeTX's menu button covers.
+---
+--- In App mode the button is the only route to the radio's menus, so it cannot
+--- be hidden, and `ViewMain` deliberately creates it after the screen it sits
+--- on: view_main.cpp carries the comment "create last to be on top". Anything
+--- the dashboard draws underneath it is simply not visible.
+---
+--- Only App mode overlaps. `ViewMain::updateTopbarVisibility` shows the button
+--- when `hasTopbar(view) or isAppMode(view)`, and a layout that has a top bar
+--- puts the widget below it: `ViewMainDecoration::getWidgetsZone` starts the
+--- widget zone at MENU_HEADER_HEIGHT whenever the bar is shown. A layout with
+--- neither hides the button altogether.
+---@param zone AeroGridZone
+---@return table? reserved Width and height of the covered corner.
+local function reservedCorner(zone)
+  local appMode = false
+  if type(lvgl) == "table" and type(lvgl.isAppMode) == "function" then
+    local ok, value = pcall(lvgl.isAppMode)
+    appMode = ok and value == true
+  end
+  if not appMode then return nil end
+
+  local height = buttonHeight()
+  local width = math.floor(height * BUTTON_WIDTH_RATIO + 0.5)
+
+  -- A widget's own x and y are always zero; xabs and yabs carry where the zone
+  -- actually sits on the screen (radio/src/lua/lua_widget_factory.cpp). The
+  -- button is drawn at the screen origin, so what it takes from us is whatever
+  -- of it reaches into the zone.
+  local left = zone.xabs or 0
+  local top = zone.yabs or 0
+  if left >= width or top >= height then return nil end
+
+  return {w = width - left, h = height - top}
+end
+
+--- Where the error overlay may start without disappearing under the button.
+---@param context AeroGridContext
+---@return integer y
+local function errorTop(context)
+  local reserved = context.reserved
+  if not reserved then return 8 end
+  return reserved.h + 4
+end
+
 --- Render accumulated runtime errors over the dashboard.
 --- Reuses the existing label so failures raised after creation stay visible.
+---
+--- The overlay starts below the region EdgeTX's menu button covers. Drawn at
+--- the zone's own origin it lands underneath that button in App mode, which is
+--- the deployment this dashboard is primarily built for, so a component could
+--- fail and the radio would show nothing at all.
 ---@param context AeroGridContext
 local function showErrors(context)
   if #context.errors == 0 then return end
@@ -108,7 +193,7 @@ local function showErrors(context)
 
   context.errorLabel = lvgl.label(context.page or context.root, {
       x = 8,
-      y = 8,
+      y = errorTop(context),
       w = math.max(1, context.zone.w - 16),
       h = 0,
       text = text,
@@ -486,6 +571,11 @@ local function create(zone, widgetOptions, path)
     errors = {},
     width = zone.w,
     height = zone.h,
+    left = zone.xabs or 0,
+    top = zone.yabs or 0,
+    -- Resolved before any module is loaded, because the overlay that reports a
+    -- failed module load is itself placed against this.
+    reserved = reservedCorner(zone),
   }
 
   context.grid = select(1, loadModule(path, "lib/grid.lua"))
@@ -548,12 +638,20 @@ local function beginReflow(context)
   context.page:set({w = context.zone.w, h = context.zone.h})
   context.canvas:set({w = context.zone.w, h = context.zone.h})
 
+  -- A zone that moved may have moved out from under the button, or into it.
+  context.reserved = reservedCorner(context.zone)
+
   if context.errorLabel then
-    context.errorLabel:set({w = math.max(1, context.zone.w - 16)})
+    context.errorLabel:set({
+      y = errorTop(context),
+      w = math.max(1, context.zone.w - 16),
+    })
   end
 
   context.width = context.zone.w
   context.height = context.zone.h
+  context.left = context.zone.xabs or 0
+  context.top = context.zone.yabs or 0
   context.reflowIndex = 1
 end
 
@@ -759,8 +857,12 @@ local function refresh(context)
   end
 
   -- A zone change repositions every component, which a full grid cannot
-  -- afford in one callback, so it is batched like loading.
-  if context.width ~= context.zone.w or context.height ~= context.zone.h then
+  -- afford in one callback, so it is batched like loading. The absolute
+  -- position matters as well as the size, because it decides whether the
+  -- EdgeTX menu button reaches into us.
+  if context.width ~= context.zone.w or context.height ~= context.zone.h
+      or context.left ~= (context.zone.xabs or 0)
+      or context.top ~= (context.zone.yabs or 0) then
     beginReflow(context)
   end
   if context.reflowIndex then

@@ -12,6 +12,19 @@ XXLSIZE = 6
 TINSIZE = 2
 BOLD = 1
 
+--- Height EdgeTX draws its menu button at, exactly as Lua receives it.
+---
+--- The firmware registers MENU_HEADER_HEIGHT beside its colour constants and
+--- passes it through COLOR2FLAGS, which shifts left by sixteen bits
+--- (radio/src/lua/api_general.cpp). Publishing a convenient 45 here would let
+--- a host that forgot to shift it back pass the tests and then reserve nothing
+--- at all on a radio, so the mock carries what the radio carries.
+local MENU_BUTTON_HEIGHT = 45
+MENU_HEADER_HEIGHT = MENU_BUTTON_HEIGHT * 65536
+
+--- Width the firmware keeps clear beside the button, MENU_HEADER_BUTTONS_LEFT.
+local MENU_BUTTON_WIDTH = 47
+
 COLOR_THEME_PRIMARY1 = 101
 COLOR_THEME_PRIMARY2 = 102
 COLOR_THEME_PRIMARY3 = 103
@@ -186,6 +199,11 @@ local function constructor(kind)
   end
 end
 
+--- Whether EdgeTX would report App mode for the screen under test.
+--- The button is only drawn over a widget in App mode, so this decides whether
+--- the reserved corner exists at all.
+local appMode = false
+
 lvgl = {
   box = constructor("box"),
   rectangle = constructor("rectangle"),
@@ -194,7 +212,30 @@ lvgl = {
   image = constructor("image"),
   hide = function(object) object.hidden = true end,
   show = function(object) object.hidden = false end,
+  isAppMode = function() return appMode end,
 }
+
+--- The App mode zone: one widget over the whole display, at the screen origin.
+--- x and y are always zero for a widget; xabs and yabs carry where the zone
+--- really sits (radio/src/lua/lua_widget_factory.cpp).
+local function appZone()
+  appMode = true
+  return {x = 0, y = 0, xabs = 0, yabs = 0, w = 480, h = 272}
+end
+
+--- The ordinary Full screen zone, with EdgeTX's own top bar above it.
+--- ViewMainDecoration::getWidgetsZone starts the widget zone at
+--- MENU_HEADER_HEIGHT and takes the same amount off its height whenever the
+--- bar is shown, so the zone is 227 tall at 480 x 272 and begins below the
+--- button rather than under it.
+local function fullScreenZone()
+  appMode = false
+  return {
+    x = 0, y = 0,
+    xabs = 0, yabs = MENU_BUTTON_HEIGHT,
+    w = 480, h = 272 - MENU_BUTTON_HEIGHT,
+  }
+end
 
 local modelFilename = "test-model.yml"
 
@@ -666,9 +707,11 @@ local function testRendersInBothModes(label, zone, path, expected)
   return context
 end
 
--- App mode occupies the full TX16S-class display; 1 x 1 loses the top bar.
-local appContext = testRendersInBothModes("app mode", {x = 0, y = 0, w = 480, h = 272})
-testRendersInBothModes("1 x 1", {x = 0, y = 0, w = 480, h = 232})
+-- App mode occupies the full TX16S-class display; ordinary Full screen sits
+-- below EdgeTX's own top bar and is 227 tall rather than 272.
+local appContext = testRendersInBothModes("app mode", appZone())
+testRendersInBothModes("1 x 1", fullScreenZone())
+appMode = false
 
 --- Milestone 7's deliverable: the shipped dashboard must demonstrate the
 --- complete ten-component catalogue, loading each from its own module without
@@ -1375,6 +1418,104 @@ return exploder
   pump(context, 2)
   assertEqual(#context.errors, 1, "failure was reported repeatedly")
   assertEqual(#context.components, 2)
+end
+
+--- A reported failure must be readable on the radio it happened on.
+---
+--- In App mode EdgeTX draws its menu button over the top-left corner of the
+--- screen, above everything the widget draws, so an overlay placed at the
+--- zone's own origin is invisible exactly when it matters most: a component
+--- could fail and the radio would show nothing at all. The overlay therefore
+--- has to clear the button, and a reserved corner has to be recognized in the
+--- first place, which means reading a firmware constant the firmware shifts.
+local function testErrorsClearTheMenuButton()
+  local widgetPath = makeWidget("overlay", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: boom
+    type: exploder
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+]], {
+    ["exploder.lua"] = [==[
+local exploder = {id = "exploder", apiVersion = 1, supportedSpans = {"any"}}
+function exploder.create(parent, rect, settings, services)
+  return {panel = services.primitives.panel(parent, rect, services.theme,
+    services.state("normal", "cyan"))}
+end
+function exploder.refresh()
+  error("exploder failed", 0)
+end
+return exploder
+]==],
+  })
+
+  --- Report whether a box intersects the corner the button covers.
+  local function underButton(properties, text)
+    local width = themeModule.textWidth(SMLSIZE, text)
+    local height = themeModule.fontHeight(SMLSIZE)
+    return properties.x < MENU_BUTTON_WIDTH
+      and properties.y < MENU_BUTTON_HEIGHT
+      and properties.x + width > 0
+      and properties.y + height > 0
+  end
+
+  local context = createLoaded(appZone(), DEFAULT_OPTIONS, widgetPath)
+  pump(context, 1)
+
+  assert(context.reserved, "App mode did not reserve the menu button corner")
+  assertEqual(context.reserved.w, MENU_BUTTON_WIDTH, "reserved width")
+  assertEqual(context.reserved.h, MENU_BUTTON_HEIGHT, "reserved height")
+
+  local label = assert(context.errorLabel, "failure was not shown at all")
+  local text = table.concat(context.errors, "\n")
+  assert(not underButton(label.properties, text),
+    "the error overlay is drawn under the EdgeTX menu button, at ("
+      .. label.properties.x .. "," .. label.properties.y .. ")")
+  -- Clearing the button must not push it off the screen either.
+  assert(label.properties.y + themeModule.fontHeight(SMLSIZE) <= 272,
+    "the error overlay was pushed off the bottom of the display")
+
+  -- Outside App mode the button is either hidden or drawn above the widget, so
+  -- nothing is reserved and the overlay keeps the whole zone.
+  local plain = createLoaded(fullScreenZone(), DEFAULT_OPTIONS, widgetPath)
+  pump(plain, 1)
+  assertEqual(plain.reserved, nil, "a Full screen zone reserved a corner")
+  assertEqual(assert(plain.errorLabel).properties.y, 8,
+    "the overlay gave up room it did not have to")
+
+  -- A radio whose button is not 45 px must still be measured rather than
+  -- assumed. EdgeTX scales MENU_HEADER_HEIGHT per display class, so a host
+  -- that never unshifts the constant falls back to this file's 480 x 272
+  -- guess and is wrong everywhere else; only a different height can catch it.
+  local wideButton = 62
+  MENU_HEADER_HEIGHT = wideButton * 65536
+  local wide = createLoaded(appZone(), DEFAULT_OPTIONS, widgetPath)
+  assertEqual(assert(wide.reserved, "no corner reserved on a wider display").h,
+    wideButton, "the button height was assumed rather than read")
+  assertEqual(wide.reserved.w, 65,
+    "the width kept clear does not match MENU_HEADER_BUTTONS_LEFT")
+  MENU_HEADER_HEIGHT = MENU_BUTTON_HEIGHT * 65536
+
+  -- A zone that moves out from under the button releases the reservation, and
+  -- the overlay it already created follows.
+  appMode = true
+  local moving = createLoaded(appZone(), DEFAULT_OPTIONS, widgetPath)
+  pump(moving, 1)
+  local moved = assert(moving.errorLabel).properties.y
+  assert(moved > 8, "App mode overlay was not moved clear")
+  moving.zone.yabs = MENU_BUTTON_HEIGHT
+  moving.zone.h = 272 - MENU_BUTTON_HEIGHT
+  pump(moving, 4)
+  assertEqual(moving.reserved, nil, "reservation survived the zone moving")
+  assertEqual(moving.errorLabel.properties.y, 8,
+    "the overlay did not follow the zone out from under the button")
+  appMode = false
 end
 
 --- An event consumed by one component must stop propagating.
@@ -3166,6 +3307,7 @@ testCustomTheme()
 testRadialReflow()
 testCreateFailureIsCleaned()
 testFailureIsolation()
+testErrorsClearTheMenuButton()
 testEventConsumption()
 testContractRejections()
 testCorruptLayout()
