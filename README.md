@@ -43,6 +43,12 @@ Open the repository folder in VS Code. The repository includes a TX16S/EdgeTX 2.
 
 The build starts from the tracked baseline in `tests/fixtures/sdcard/`, then overlays the current `src/WIDGETS/AeroGrid/` sources. The baseline contains the fixed radio and model configuration needed to boot directly into AeroGrid. The generated `build/sdcard/` image is ignored and may be changed by the simulator. Run `make build` again after source changes or whenever you want to reset the image to the checked-in baseline.
 
+### Stale bytecode
+
+EdgeTX compiles each script to a `.luac` beside it on the SD card and then prefers the bytecode. `rsync` preserves source timestamps, so a freshly copied `.lua` can look older than bytecode the radio compiled from the previous build, and the radio keeps running code that is no longer on disk. The symptom is a fix that visibly does nothing, including error messages citing line numbers that no longer exist in the source.
+
+`make build` therefore deletes every `.luac` from the image and stamps the sources as new. If you copy an image somewhere by hand, do the same.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every pull request and on pushes to `main`. It installs Lua 5.3, runs `make check` (the behaviour suites in both string modes, then parses every Lua file with `luac5.3`), builds the SD image, and verifies the packaged image matches its sources and that the build leaves no untracked output.

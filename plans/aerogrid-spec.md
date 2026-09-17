@@ -896,7 +896,7 @@ commits, merge them into the branch below rather than rebasing it.
 
 ### Hard-won constraints
 
-Nine firmware behaviours cost real debugging time and were invisible to the mocked tests until each mock was made faithful. Each now has a regression test, and each is documented in full further down.
+Ten firmware behaviours cost real debugging time and were invisible to the mocked tests until each mock was made faithful. Each now has a regression test, and each is documented in full further down.
 
 1. **A widget callback may not exceed 20000 Lua VM instructions.** Loading, reflow, refresh, and service updates are all bounded work per callback as a result.
 2. **`lvgl.box` accepts a `color` and silently ignores it.** Only a filled `lvgl.rectangle` paints a background.
@@ -914,6 +914,8 @@ Milestone 7 added one more, and it invalidated work already shipped:
 8. **`lvgl.arc` is positioned by its centre, not its corner.** `LvglWidgetArc::build` calls `setPos(x, y)`, and `LvglWidgetRoundObject::setPos` stores `x - radius, y - radius`. Every radial written in milestone 6 passed a top-left corner, so on real hardware each one was drawn a full radius up and to the left of where the layout intended, overlapping the panel header and the reading beside it. Nothing in the mocked tests could see it, because the mock stores whatever coordinates it is handed. `primitives.radial` now takes a centre, `primitives.arcBounds` converts between the two in one place, and the tests assert containment against the converted box rather than against `x` and `y`.
 
 9. **A `clear()` is collected at a time the script cannot predict.** `LvglWidgetObjectBase::clear` only destroys windows and sets `clearRequest`; the reference cleanup happens later, in `callRefs`, which EdgeTX skips while the widget is off screen, such as behind the settings dialog, and once an error has been reported. When it does run, `clearChildRefs` invalidates every reference in that object's child list, including ones created long after the clear. Rebuilding the dashboard in place after a Dashboard ID or Theme change hit this: the canvas was recreated under the cleared root and then silently invalidated, and the next callback failed with `Invalid object (it has been probably been cleared)`, which disables the widget until the radio restarts. The dashboard now draws into a page container. A reload discards the whole page and builds the next generation as a fresh child of the root, which is never cleared, so no pending cleanup can reach it whenever it eventually lands. Deferring the rebuild by one callback is not sufficient on its own, because the collection point is not guaranteed to be the next callback.
+
+10. **EdgeTX prefers `.luac` bytecode and compiles it beside each script.** The radio writes a `.luac` next to every `.lua` it loads and uses the bytecode on the next run. Copying a new image with `rsync -a` preserves source timestamps, so the new scripts can appear older than bytecode compiled from the previous build and the radio silently keeps running the old code. This cost several rounds of debugging: fixes appeared to do nothing, and the widget reported an error at a line number that no longer existed in the source. `make build` now deletes the bytecode and stamps the sources as new. When a fix appears to have no effect on a radio, confirm which code is actually running before changing anything else.
 
 Two more lessons came from the tests rather than the firmware:
 
