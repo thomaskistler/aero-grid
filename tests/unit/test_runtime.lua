@@ -370,14 +370,38 @@ local function testModernTheme()
   assertEqual(resolved.mode, "modern")
   assertEqual(#resolved.warnings, 0)
   assertEqual(#resolved.notices, 0)
-  assertEqual(resolved.rgb.canvas, 0x101316)
+  assertEqual(resolved.rgb.canvas, 0x0A0C0E)
   assertEqual(resolved.rgb.critical, 0xF05252)
   -- The palette is held twice and the two forms are not interchangeable: rgb
   -- is the 24-bit token contrast arithmetic runs on, color is what a radio
   -- is given to draw with. Asserting they are equal, as this did, asserted
   -- the one thing about them that is false on hardware.
-  assertEqual(resolved.color.canvas, toLcdFlags(0x101316))
+  assertEqual(resolved.color.canvas, toLcdFlags(0x0A0C0E))
   assertEqual(resolved.spacing.gutter, 4)
+
+  -- Panels carry no resting outline, so the fill against the screen is the
+  -- only thing separating one panel from the next, and the separation is a
+  -- number rather than a matter of taste. The pairing this replaced measured
+  -- 1.122, which read as one flat field with faint boxes on it.
+  local elevation = theme.contrast(resolved.rgb.canvas, resolved.rgb.surface)
+  assert(elevation >= 1.30,
+    string.format("panels are not elevated above the screen: %.3f", elevation))
+  assert(theme.contrast(resolved.rgb.surface, resolved.rgb.surfaceRaised) >= 1.20,
+    "a raised surface is not separated from the panel it sits on")
+  -- Lifting the panel spends contrast every token measured against it has to
+  -- give up, and the track is the one with the least to spare.
+  assert(theme.contrast(resolved.rgb.surface, resolved.rgb.track) >= 2.0,
+    "the track vanished into a lifted surface")
+
+  -- The corner radius is pinned as a number on purpose. Everything that draws
+  -- a corner reads it from here, so a test comparing a drawn corner against
+  -- this token agrees with any value at all, including the 4 px the design
+  -- was rejected for. Eight is the design, and this is where it is stated.
+  assertEqual(resolved.spacing.radius, 8)
+  -- Content clears the accent stripe rather than starting at its right edge.
+  assert(resolved.spacing.paddingTight
+    >= resolved.spacing.accentWidth + resolved.spacing.accentGap,
+    "a short panel's padding leaves content against the accent stripe")
 
   -- An unknown mode degrades to Modern and says so.
   local fallback = theme.build("neon")
@@ -395,10 +419,15 @@ local function testEdgeTxTheme()
     secondary1 = 4, secondary2 = 5, secondary3 = 6,
     focus = 7, edit = 8, active = 9, warning = 10, disabled = 11,
   }
-  -- A pale EdgeTX theme whose own text color would be unreadable for us.
+  -- A pale EdgeTX theme whose own muted and faint colors would be unreadable
+  -- for us. `secondary1` is deliberately dark enough that the legibility pass
+  -- has no reason to move the canvas: the assertion below is the regression
+  -- test for the flag-word decode, and it can only say the radio's colour
+  -- survived if nothing legitimately moved it afterwards. The correction path
+  -- is exercised by the hostile palette further down, which is its own test.
   local values = {
     [1] = 0x000000, [2] = 0xF0F0F0, [3] = 0x9E9E9E,
-    [4] = 0x1B3A57, [5] = 0x3F7CA8, [6] = 0xC8D8E4,
+    [4] = 0x142838, [5] = 0x3F7CA8, [6] = 0xC8D8E4,
     [7] = 0x1E88E5, [8] = 0xFF8F00, [9] = 0x43A047,
     [10] = 0xF9A825, [11] = 0x757575,
   }
@@ -428,8 +457,14 @@ local function testEdgeTxTheme()
   assertEqual(resolved.rgb.critical, theme.modern().critical)
   assert(theme.contrast(resolved.rgb.surface, resolved.rgb.text) >= 4.5,
     "derived text is unreadable")
-  assert(theme.contrast(resolved.rgb.surface, resolved.rgb.surfaceRaised) > 1,
+  -- A derived palette has to be elevated to the same degree Modern is, not
+  -- merely to two colours that are not identical. `> 1` is satisfied by any
+  -- pair at all, and a derived palette sitting at the old 1.10 floor looked
+  -- flat next to Modern on the same radio one page apart.
+  assert(theme.contrast(resolved.rgb.surface, resolved.rgb.surfaceRaised) >= 1.20,
     "surfaces were not separated")
+  assert(theme.contrast(resolved.rgb.canvas, resolved.rgb.surface) >= 1.30,
+    "a derived palette is flatter than Modern")
 
   -- Correcting a token for contrast is the legibility pass working, so it is
   -- a notice rather than a warning. Reporting it as a failure would put a
@@ -495,7 +530,17 @@ local function testCustomTheme()
   })
 
   assertEqual(resolved.rgb.canvas, 0x000000)
-  assertEqual(resolved.rgb.surface, 0x141414)
+  -- A custom surface is honoured only as far as it stays legible, exactly as
+  -- a custom surface that would swallow text is. 0x141414 on a black canvas
+  -- measures 1.15, and a panel that close to the screen has no edge at all
+  -- now that nothing draws an outline, so the legibility pass lifts it and
+  -- records having done so.
+  assert(theme.contrast(resolved.rgb.canvas, resolved.rgb.surface) >= 1.30,
+    "a custom surface was left flat against its own canvas")
+  local lifted = {}
+  for index, notice in ipairs(resolved.notices) do lifted[index] = notice.text end
+  assert(string.match(table.concat(lifted, "\n"), "lifted to elevate"),
+    "the host adapted a custom palette without saying so")
   assertEqual(resolved.accent, "green")
   assertEqual(resolved.rgb.border, theme.modern().border)
 
@@ -566,9 +611,24 @@ local function testStates()
   assertEqual(theme.state(resolved, "normal").badge, nil,
     "a healthy panel must not be badged")
 
-  -- Selection and editing use a heavier focus border.
-  assert(theme.state(resolved, "selected").borderWidth
-    > theme.state(resolved, "normal").borderWidth)
+  -- Selection, editing, and both alarm states are the only things that draw
+  -- an outline, and they all draw it at the focus weight. A resting panel
+  -- carries none: its fill against the darker screen is what makes it a
+  -- panel, and an outline on every panel spends the border on decoration at
+  -- the moment it should mean something.
+  local focus = resolved.spacing.borderFocus
+  assertEqual(theme.state(resolved, "normal").borderWidth, 0,
+    "a resting panel drew an outline")
+  assertEqual(theme.state(resolved, "stale").borderWidth, 0,
+    "stale data is said with a badge and dimming, not an outline")
+  assertEqual(theme.state(resolved, "unavailable").borderWidth, 0,
+    "a missing source is said with a badge, not an outline")
+  for _, name in ipairs({"selected", "editing", "warning", "critical"}) do
+    assertEqual(theme.state(resolved, name).borderWidth, focus,
+      name .. " did not draw its outline at the focus weight")
+  end
+  assertEqual(theme.state(resolved, "critical").border, lcd.RGB(modern.critical),
+    "a critical outline must be unmistakable")
 
   -- An unknown accent falls back to the theme default rather than failing.
   assertEqual(theme.state(resolved, "normal", "magenta").accent, lcd.RGB(modern.cyan))
@@ -640,7 +700,12 @@ end
 
 --- A hostile surface must never swallow text, accents, or state badges.
 local function testDerivedThemesStayLegible()
-  local surfaces = {0xFFFFFF, 0x000000, 0x69737A, 0x808080, 0xF2B84B, 0x101316}
+  -- The last two are surfaces that force the critical-red shift: red is never
+  -- adjusted, so the surface moves instead, and that move answers only to red.
+  -- It can land next to the canvas and leave panels with no edge at all now
+  -- that nothing draws an outline, which is why the canvas moves after it.
+  local surfaces = {0xFFFFFF, 0x000000, 0x69737A, 0x808080, 0xF2B84B, 0x101316,
+    0x1B3A57, 0x8B1A1A}
 
   for _, surface in ipairs(surfaces) do
     local resolved = theme.build("custom", {surface = surface, canvas = surface})
@@ -652,8 +717,10 @@ local function testDerivedThemesStayLegible()
     assert(theme.contrast(tokens.surface, tokens.textFaint) >= 1.8, label .. ": faint")
 
     -- Structural separation must be visible in either direction.
-    assert(theme.contrast(tokens.surface, tokens.surfaceRaised) >= 1.08,
+    assert(theme.contrast(tokens.surface, tokens.surfaceRaised) >= 1.20,
       label .. ": elevation vanished")
+    assert(theme.contrast(tokens.canvas, tokens.surface) >= 1.30,
+      label .. ": the panel is not elevated above the screen")
     -- A track carries meaning: the filled portion is read against it, so it
     -- needs far more separation than panel elevation does. Reusing
     -- surfaceRaised for a compass dial made the dial invisible on a radio.

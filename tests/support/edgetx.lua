@@ -266,6 +266,30 @@ local LVGL_H = "radio/src/lua/lua_lvgl_widget.h"
 claim("INVALID_OBJECT_MESSAGE", LVGL_CPP, "LvglWidgetObjectBase::checkLvgl",
   "Invalid object (it has been probably been cleared).")
 
+--- A border width only reaches LVGL when the object is built, or when its
+--- opacity moves.
+---
+--- `LvglWidgetBorderedObject::setOpacity` is the only caller of
+--- `lv_obj_set_style_border_width`, and it runs behind
+--- `LvglParamFuncOrValue::changedValue`, which returns false when the value it
+--- is handed equals the one it already holds. `refresh()` passes the current
+--- opacity, so a `set{thickness = n}` on an existing object updates the C++
+--- member and stops there. A mock that simply stored the thickness reported a
+--- weight the radio was never given, which is how a panel could claim a
+--- heavier outline for its critical state and draw the resting one.
+claim("BORDER_WIDTH_APPLIED_AT", LVGL_CPP,
+  "LvglWidgetBorderedObject::setOpacity lv_obj_set_style_border_width",
+  "build")
+
+--- A corner radius is applied in `build` and never again.
+--- `LvglWidgetRectangle::build` is the only caller of
+--- `lv_obj_set_style_radius` for a rectangle, and `LvglWidgetRectangle` adds
+--- no refresh of its own, so `rounded` passed to `set` is parsed and then
+--- ignored. It is also raised to the border thickness when thinner:
+--- `(rounded >= thickness) ? rounded : thickness`.
+claim("ROUNDED_APPLIED_AT", LVGL_CPP,
+  "LvglWidgetRectangle::build lv_obj_set_style_radius", "build")
+
 --- Format of the error an unrecognized property raises.
 --- An unknown key is not ignored on a radio: parseParam falls through to
 --- luaL_error, so a misspelled property stops the script rather than quietly
@@ -616,6 +640,19 @@ function support.lvgl()
     }
 
     if kind == "arc" then object.round = newRoundGeometry(properties) end
+    -- A rectangle's border width and corner radius reach LVGL when the object
+    -- is built and never again, so what the radio actually paints is fixed
+    -- here. `properties` keeps whatever Lua last passed; `painted` is what is
+    -- on the screen, and the two diverge exactly where the firmware discards
+    -- an update.
+    if kind == "rectangle" then
+      object.painted = {
+        borderWidth = properties.filled and 0 or (properties.thickness or 0),
+        -- LvglWidgetRectangle::build raises a radius thinner than the border.
+        radius = math.max(properties.rounded or 0,
+          (properties.rounded or 0) > 0 and (properties.thickness or 0) or 0),
+      }
+    end
 
     if parent then parent.children[#parent.children + 1] = object end
     objects[#objects + 1] = object

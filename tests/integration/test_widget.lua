@@ -451,6 +451,141 @@ local function testBackgroundsArePainted()
   end
 end
 
+--- A panel is a card: an elevated fill, softly rounded, with a pill accent and
+--- no outline at rest.
+---
+--- Every number here is a claim about what the radio paints rather than about
+--- what the host asked for. A rectangle's corner radius and border width reach
+--- LVGL in `build`, and for the border only again when its opacity moves, so
+--- the fixture keeps what was actually applied apart from what was last
+--- passed. Asserting the latter would let a panel claim a heavier critical
+--- outline while drawing the resting one.
+local function testPanelPresentation()
+  local spacing = appContext.theme.spacing
+  local modern = themeModule.modern()
+
+  -- Panels are told apart from the screen by their fill, so the fill has to
+  -- be separable by eye. Measured on the tokens, because contrast arithmetic
+  -- is defined on 24-bit values and means nothing applied to a flag word.
+  assert(themeModule.contrast(modern.canvas, modern.surface) >= 1.30,
+    "panels are not elevated above the screen they sit on")
+
+  for _, entry in ipairs(appContext.components) do
+    local id = entry.placement.id
+    local panel = entry.instance.panel
+    local bounds = boundsOf(entry)
+
+    -- No outline at rest. The fill already says where the panel is, and a
+    -- border on every panel is a border that says nothing when one of them
+    -- needs to shout.
+    assertEqual(panel.border.hidden, true, id .. " drew an outline at rest")
+
+    -- Corners: what the radio was given, not what was last passed to `set`.
+    assertEqual(panel.background.painted.radius, spacing.radius,
+      id .. " was not rounded to the theme's corner radius")
+
+    -- The accent is a pill inset from both ends, so it never meets a corner.
+    local accent = panel.accent.properties
+    assertEqual(accent.x, 0, id .. " moved its accent off the left edge")
+    assertEqual(accent.w, spacing.accentWidth, id .. " accent changed width")
+    assertEqual(accent.y, spacing.radius,
+      id .. " accent reached into the top corner")
+    assertEqual(accent.y + accent.h, bounds.h - spacing.radius,
+      id .. " accent reached into the bottom corner")
+    -- LVGL clamps a radius to half the shorter side, so anything at or above
+    -- the stripe's own width rounds its ends into a pill.
+    assert(panel.accent.painted.radius >= spacing.accentWidth / 2,
+      id .. " accent was drawn with square ends")
+
+    -- Content has to clear the stripe. Every panel under 80 px tall used to
+    -- start its text at the stripe's own right edge. Checked over whatever
+    -- labels the component actually built, because the catalogue does not
+    -- agree on what to call them and the rule is about pixels, not names.
+    local labels = 0
+    for _, object in ipairs(lvglMock.objects) do
+      if object.parent == panel.root and object.kind == "label"
+          and not object.hidden then
+        labels = labels + 1
+        assert(object.properties.x >= spacing.accentWidth + spacing.accentGap,
+          id .. " drew text against the accent stripe, at x "
+            .. tostring(object.properties.x))
+      end
+    end
+    assert(labels > 0, id .. " drew no text at all")
+  end
+end
+
+--- An alarm is the one thing that still draws an outline, and it draws a heavy
+--- one that follows the panel through a reflow it was hidden for.
+local function testAlarmBorder()
+  local widgetPath = makeWidget("alarm-border", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: pack
+    type: metric
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: Pack
+      source: RxBt
+      min: 18
+      max: 25.2
+      warning: 21.0
+      critical: 19.8
+      precision: 1
+]])
+
+  local zone = {x = 0, y = 0, w = 480, h = 272}
+  local context = createLoaded(zone, DEFAULT_OPTIONS, widgetPath)
+  local spacing = context.theme.spacing
+  local entry = entryById(context, "pack")
+  local panel = entry.instance.panel
+  local metricModule = assert(loadfile(sourcePath .. "components/metric.lua"))()
+  local modern = themeModule.modern()
+
+  assertEqual(panel.border.hidden, true, "a healthy panel drew an outline")
+
+  -- Reflow the panel while its border is hidden. Nothing repaints it, because
+  -- the reading has not moved, so an invisible border is deliberately left
+  -- carrying the old size until something asks to see it.
+  zone.w = 320
+  zone.h = 240
+  local passes = 0
+  repeat
+    definition.refresh(context)
+    passes = passes + 1
+    assert(passes < 100, "reflow never finished")
+  until not context.reflowIndex
+
+  metricModule.setValue(entry.instance, 19.0)
+  assertEqual(entry.instance.stateName, "critical")
+  assertEqual(panel.border.hidden, false, "a critical panel drew no outline")
+  assertEqual(panel.border.properties.color, lcd.RGB(modern.critical),
+    "a critical outline was not drawn in critical red")
+
+  -- The weight the radio was given, which is fixed when the object is built:
+  -- `set{thickness=...}` on a live object is parsed and then discarded, so a
+  -- panel that waited until it was critical to ask for a heavier outline
+  -- would draw whatever weight it was born with.
+  assertEqual(panel.border.painted.borderWidth, spacing.borderFocus,
+    "a critical outline was not drawn at the focus weight")
+
+  local bounds = boundsOf(entry)
+  assertEqual(panel.border.properties.w, bounds.w,
+    "a revealed outline kept the width it had before the reflow")
+  assertEqual(panel.border.properties.h, bounds.h,
+    "a revealed outline kept the height it had before the reflow")
+
+  -- Back to healthy, and the outline goes away again.
+  metricModule.setValue(entry.instance, 24.0)
+  assertEqual(panel.border.hidden, true, "an outline outlived its alarm")
+end
+
 --- Responsive presentation must differ across the baseline spans.
 local function testResponsiveSpans()
   local metricModule = assert(loadfile(sourcePath .. "components/metric.lua"))()
@@ -859,6 +994,8 @@ end
 testShippedLayout()
 testThemeReachesComponents()
 testBackgroundsArePainted()
+testPanelPresentation()
+testAlarmBorder()
 testResponsiveSpans()
 testBadgeGeometry()
 testMetricStates()
@@ -960,10 +1097,18 @@ components:
 
   assertEqual(context.theme.mode, "custom")
   assertEqual(context.theme.rgb.canvas, 0x000000)
-  assertEqual(context.theme.rgb.surface, 0x101010)
+  -- 0x101010 on a black canvas measures 1.11, and with no resting outline the
+  -- fill is the only thing that makes a panel a panel, so the legibility pass
+  -- lifts it exactly as it lifts a surface that would swallow text.
+  assert(themeModule.contrast(context.theme.rgb.canvas,
+    context.theme.rgb.surface) >= 1.30,
+    "a custom surface was left flat against its own canvas")
   assertEqual(context.theme.accent, "green")
   -- border is outside the customizable set and must be reported, not applied.
-  assertEqual(context.theme.rgb.border, themeModule.modern().border)
+  assert(context.theme.rgb.border ~= 0xFF00FF,
+    "an override outside the customizable set was applied anyway")
+  assert(themeModule.contrast(context.theme.rgb.surface,
+    context.theme.rgb.border) >= 1.25, "the border vanished into the surface")
 
   local joined = table.concat(context.errors, "\n")
   assert(string.match(joined, "border is not customizable"), joined)
@@ -1301,8 +1446,13 @@ components:
   local plain = createLoaded(fullScreenZone(), DEFAULT_OPTIONS, cramped)
   pump(plain, 60)
   local plainLabel = entryById(plain, "tight").instance.label
+  local plainSpacing = themeModule.build("modern").spacing
   assertEqual(plainLabel.hidden, false, "a Full screen panel lost its label")
-  assertEqual(plainLabel.properties.x, 4, "a Full screen panel moved its label")
+  -- An unobstructed label starts where the content does, which is clear of
+  -- the accent stripe rather than hard against it.
+  assertEqual(plainLabel.properties.x,
+    plainSpacing.accentWidth + plainSpacing.accentGap,
+    "a Full screen panel moved its label")
   lvglMock.setAppMode(false)
 end
 

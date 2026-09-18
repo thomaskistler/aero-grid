@@ -106,7 +106,11 @@ function probe.regionsFor(theme, themeBuilder, rect, fonts)
   local valueWidth = math.max(1, math.floor(content * VALUE_SHARE))
   local keyWidth = math.max(1, content - valueWidth - 4)
 
-  local room = rect.h - top - pad
+  -- The bottom margin is the frame's, not the horizontal padding. They were
+  -- the same number on a short panel until the padding had to clear the
+  -- accent stripe, at which point borrowing one for the other silently cost
+  -- this panel a row at every single-row span.
+  local room = rect.h - top - frame.bottom
   local rows = math.floor(room / lineHeight)
   if rows < 0 then rows = 0 end
   if rows > MAX_ROWS then rows = MAX_ROWS end
