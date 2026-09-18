@@ -291,6 +291,11 @@ function trimPanel.create(parent, rect, settings, services)
     count = count,
     indicators = {},
     stateName = "normal",
+    -- What the cells have room for. Held on the context because `render` has
+    -- to know: a readout the panel has shed is a reading nobody can check,
+    -- and formatting one four times a frame is work with no reader.
+    showCaption = area.showCaption,
+    showValue = area.showValue,
   }
 
   local panel = primitives.panel(parent, rect, theme, presentation)
@@ -321,7 +326,7 @@ function trimPanel.create(parent, rect, settings, services)
       x = cell.x,
       y = cell.captionY,
       w = cell.textWidth,
-      text = trimPanel.captionFor(indicator.name),
+      text = area.showCaption and trimPanel.captionFor(indicator.name) or "",
       color = theme.color.textFaint,
       font = fonts.label,
     })
@@ -381,12 +386,17 @@ end
 ---@param out table
 function trimPanel.render(context, out)
   local settings = context.settings
+  local showValue = context.showValue
   out.state = trimPanel.resolveState(context)
 
   for index, indicator in ipairs(context.indicators) do
     local feed = indicator.feed
     local available = type(feed) == "table" and feed.available == true
-    out["text" .. index] = trimPanel.valueText(settings, feed)
+    -- A cell too narrow for text has no readout, so none is formatted. The
+    -- key is absent rather than empty, which `changed` notices by counting.
+    if showValue then
+      out["text" .. index] = trimPanel.valueText(settings, feed)
+    end
     out["fraction" .. index] = available and feed.fraction or 0
     out["available" .. index] = available
   end
@@ -411,9 +421,11 @@ function trimPanel.apply(context, drawn)
       drawn["available" .. index] and presentation.accent
         or context.theme.color.textFaint)
 
-    local text = drawn["text" .. index]
-    indicator.valueText = text
-    indicator.value:set({text = text})
+    if context.showValue then
+      local text = drawn["text" .. index]
+      indicator.valueText = text
+      indicator.value:set({text = text})
+    end
   end
 end
 
@@ -435,6 +447,29 @@ function trimPanel.update(context, rect)
   primitives.resizePanel(context.panel, rect)
   primitives.placeHeader(context.label, context.badge, area.frame)
 
+  local reconcile = primitives.reconcile
+  local captionsChanged = area.showCaption ~= context.showCaption
+  context.showCaption = area.showCaption
+
+  local valuesChanged = area.showValue ~= context.showValue
+  if valuesChanged then
+    context.showValue = area.showValue
+    if not area.showValue then
+      -- Nothing reads a shed readout, and a stale one left behind reads like
+      -- a value that is still being kept up to date.
+      for _, indicator in ipairs(context.indicators) do
+        indicator.valueText = ""
+      end
+    end
+    -- Nothing is discarded here on purpose. Every other component that sheds
+    -- a row drops its last record so the next refresh repaints, because its
+    -- row keeps being declared while hidden and the comparison would
+    -- otherwise match. This panel stops declaring the readout at all, so the
+    -- key count changes and `changed` sees the reveal by construction. The
+    -- discard was written first and then removed when no test could be made
+    -- to fail without it.
+  end
+
   for index, indicator in ipairs(context.indicators) do
     -- The panel's shape may have changed, so an `auto` axis is resolved again.
     local vertical = trimPanel.isVertical(context.settings, index, rect)
@@ -445,21 +480,20 @@ function trimPanel.update(context, rect)
       indicator.bar.vertical = vertical
     end
 
-    indicator.caption:set({x = cell.x, y = cell.captionY, w = cell.textWidth})
-    indicator.value:set({x = cell.x, y = cell.valueY, w = cell.textWidth})
+    -- Eight rows here rather than one or two, so a row whose visibility has
+    -- not moved is repositioned without being told again what it already is.
+    reconcile(indicator.caption, area.showCaption,
+      {x = cell.x, y = cell.captionY, w = cell.textWidth}, not captionsChanged)
+    reconcile(indicator.value, area.showValue,
+      {x = cell.x, y = cell.valueY, w = cell.textWidth}, not valuesChanged)
     primitives.placeBipolarBar(indicator.bar, cell.barX, cell.barY,
       cell.barWidth, cell.barHeight,
       type(indicator.feed) == "table" and indicator.feed.fraction or 0)
 
-    if area.showCaption then
-      lvgl.show(indicator.caption)
-    else
-      lvgl.hide(indicator.caption)
-    end
-    if area.showValue then
-      lvgl.show(indicator.value)
-    else
-      lvgl.hide(indicator.value)
+    -- A caption is fixed text, so it is written once when the row appears
+    -- rather than on every reflow that keeps it.
+    if captionsChanged and area.showCaption then
+      indicator.caption:set({text = trimPanel.captionFor(indicator.name)})
     end
   end
 end

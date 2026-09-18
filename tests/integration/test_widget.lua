@@ -22,6 +22,7 @@ local edgeTxRoles = lcdMock.roles
 
 local settleLvgl = lvglMock.settle
 local setPropertyValidation = lvglMock.setPropertyValidation
+local setCallCounting = lvglMock.setCallCounting
 local appZone = lvglMock.appZone
 local fullScreenZone = lvglMock.fullScreenZone
 
@@ -2841,10 +2842,12 @@ local function testInstructionBudget()
     -- The mock's property validation stands in for `parseParam`, which is C++
     -- and costs a script nothing. Counting it here would measure the fixture.
     setPropertyValidation(false)
+    setCallCounting(false)
     -- Count exactly as the firmware does: a hook every 200 instructions.
     debug.sethook(function() ticks = ticks + 1 end, "", 200)
     local ok, err = pcall(fn, ...)
     debug.sethook()
+    setCallCounting(true)
     setPropertyValidation(true)
     assert(ok, "callback raised: " .. tostring(err))
     return ticks * 200
@@ -3613,6 +3616,215 @@ local function settle(context, count)
   end
 end
 
+--- A trim panel sheds text it has no room for, and stops producing it.
+---
+--- Four indicators each carry a caption, a bar and a readout, and a cell too
+--- narrow for text keeps only the bar. What the panel used to do was hide the
+--- text and then go on positioning it on every reflow, formatting it four
+--- times a frame, and writing it into labels nobody could see. That is the
+--- same invisible work the header pass found, and it is why this panel's
+--- reflow was the most expensive callback in the dashboard.
+---
+--- So this checks both halves at the two spans that decide them: the text
+--- exists where there is room for it, and is not merely hidden but not made
+--- where there is not. The reveal is driven by a real reflow, because a
+--- caption written once when the row appears is wrong if the row can appear
+--- without anything writing it.
+local function testTrimPanelShedsText()
+  resetRadio()
+  local layout = [==[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: trims
+    type: trim-panel
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      indicators: all
+      orientation: horizontal
+      readout: raw
+  - id: tight
+    type: metric
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: Alt
+      source: Alt
+      unit: m
+      precision: 0
+]==]
+  local widget = makeWidget("trim-shed", layout)
+  local zone = {x = 0, y = 0, w = 480, h = 272}
+  local context = createLoaded(zone, DEFAULT_OPTIONS, widget)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  settle(context)
+
+  local trims = entryById(context, "trims").instance
+  assertEqual(#trims.indicators, 4)
+
+  -- The shared reconcile is what keeps every component off its hidden rows.
+  -- It is proved on a metric rather than on the trim panel, which guards the
+  -- call itself and so never reaches reconcile with a row staying shed. The
+  -- metric is built at a span that has a unit and then narrowed until it
+  -- does not, which is the state reconcile is being asked about.
+  local tight = entryById(context, "tight").instance
+  assert(tight.unit, "the metric never built a unit to shed")
+  assertEqual(tight.unit.hidden, false, "a 2 x 2 metric shed its unit")
+
+  -- Two rows tall and half the width: room for all three parts.
+  assertEqual(trims.showCaption, true, "a 2 x 2 trim panel shed its captions")
+  assertEqual(trims.showValue, true, "a 2 x 2 trim panel shed its readouts")
+  assertEqual(trims.indicators[1].caption.properties.text, "AIL")
+  assertEqual(trims.indicators[1].caption.hidden, false)
+  assertEqual(trims.indicators[1].valueText, "+30",
+    "240 raw is 30 trim units")
+
+  -- Shrinking the host zone narrows every cell past what text needs, and
+  -- shortens the metric beside it past the row its unit needs.
+  zone.w = 240
+  zone.h = 130
+  local passes = 0
+  repeat
+    definition.refresh(context)
+    passes = passes + 1
+    assert(passes < 100, "reflow never finished")
+  until not context.reflowIndex
+  settle(context)
+
+  assertEqual(trims.showCaption, false,
+    "a narrowed trim panel kept captions it has no room for")
+  assertEqual(trims.showValue, false,
+    "a narrowed trim panel kept readouts it has no room for")
+  assert(trims.indicators[1].caption.hidden, "a shed caption stayed on screen")
+  assert(trims.indicators[1].value.hidden, "a shed readout stayed on screen")
+
+  -- Hidden is not the point. The declaration is what the panel draws, so a
+  -- readout it has shed must not be in it: nothing formats a string for a
+  -- label that is not on screen.
+  assertEqual(trims.rendered.text1, nil,
+    "a shed readout was still being formatted every frame")
+  assertEqual(trims.rendered.fraction1 ~= nil, true,
+    "the bar stopped being declared, which is the part that is still drawn")
+  assertEqual(trims.indicators[1].valueText, "",
+    "a shed readout left its last wording behind as if still current")
+
+  -- Invisible work leaves no trace on screen, so nothing else in this suite
+  -- can see it. The harness counts writes into LVGL for exactly this: a row
+  -- the panel has shed must cost nothing to keep shed, however many reflows
+  -- pass over it.
+  local captionWrites = trims.indicators[1].caption.writes
+  local valueWrites = trims.indicators[1].value.writes
+  local captionCalls = trims.indicators[1].caption.visibilityCalls
+  local valueCalls = trims.indicators[1].value.visibilityCalls
+  local unitWrites = tight.unit.writes
+  zone.w = 236
+  passes = 0
+  repeat
+    definition.refresh(context)
+    passes = passes + 1
+    assert(passes < 100, "reflow never finished")
+  until not context.reflowIndex
+  settle(context)
+
+  assertEqual(trims.indicators[1].caption.writes, captionWrites,
+    "a reflow repositioned a caption the panel had already shed")
+  assertEqual(trims.indicators[1].value.writes, valueWrites,
+    "a reflow repositioned a readout the panel had already shed")
+  assertEqual(trims.indicators[1].caption.visibilityCalls, captionCalls,
+    "a reflow hid a caption that was already hidden")
+  assertEqual(trims.indicators[1].value.visibilityCalls, valueCalls,
+    "a reflow hid a readout that was already hidden")
+  assert(tight.unit.hidden, "a short metric found room for its unit")
+  assertEqual(tight.unit.writes, unitWrites,
+    "reconcile repositioned a row its component had hidden")
+  zone.w = 240
+  passes = 0
+  repeat
+    definition.refresh(context)
+    passes = passes + 1
+    assert(passes < 100, "reflow never finished")
+  until not context.reflowIndex
+
+  -- Widening again must bring the text back with its wording, not with
+  -- whatever it held when it was shed.
+  zone.w = 480
+  zone.h = 272
+  passes = 0
+  repeat
+    definition.refresh(context)
+    passes = passes + 1
+    assert(passes < 100, "reflow never finished")
+  until not context.reflowIndex
+  settle(context)
+
+  assertEqual(trims.showCaption, true, "captions never came back")
+  assertEqual(trims.indicators[1].caption.properties.text, "AIL",
+    "a revealed caption came back blank")
+  assertEqual(trims.indicators[1].caption.hidden, false)
+  assertEqual(trims.indicators[1].value.properties.text, "+30",
+    "a revealed readout came back with what it held when it was shed")
+
+  -- A reflow that changes nothing about visibility still has to move the
+  -- rows, or a panel that merely narrows leaves its text where it was.
+  local captionBefore = trims.indicators[2].caption.properties.x
+  zone.w = 420
+  passes = 0
+  repeat
+    definition.refresh(context)
+    passes = passes + 1
+    assert(passes < 100, "reflow never finished")
+  until not context.reflowIndex
+  settle(context)
+
+  assertEqual(trims.showCaption, true,
+    "a mild narrowing shed captions that still fit")
+  assert(trims.indicators[2].caption.properties.x < captionBefore,
+    "a narrowed panel left its captions at their old positions")
+  assertEqual(trims.indicators[2].caption.hidden, false,
+    "a caption that never changed visibility was hidden by the reflow")
+  assertEqual(trims.indicators[1].caption.properties.text, "AIL",
+    "a reflow that kept the captions rewrote one of them blank")
+
+  -- A panel built small has never had a caption to write, so revealing one
+  -- has to write it rather than reveal whatever creation happened to leave.
+  -- This is the case the first reveal above cannot prove: that panel was
+  -- built wide, so its captions already said the right thing.
+  resetRadio()
+  local narrowZone = {x = 0, y = 0, w = 240, h = 240}
+  local narrow = createLoaded(narrowZone, DEFAULT_OPTIONS,
+    makeWidget("trim-shed-narrow", layout))
+  assertEqual(#narrow.errors, 0, table.concat(narrow.errors, "\n"))
+  settle(narrow)
+
+  local born = entryById(narrow, "trims").instance
+  assertEqual(born.showCaption, false, "a 240 px panel found room for captions")
+  assertEqual(born.indicators[1].caption.properties.text, "",
+    "a panel built without room wrote captions nobody could read")
+
+  narrowZone.w = 480
+  narrowZone.h = 272
+  passes = 0
+  repeat
+    definition.refresh(narrow)
+    passes = passes + 1
+    assert(passes < 100, "reflow never finished")
+  until not narrow.reflowIndex
+  settle(narrow)
+
+  assertEqual(born.showCaption, true, "a widened panel never found room")
+  assertEqual(born.indicators[1].caption.properties.text, "AIL",
+    "a caption revealed for the first time came back blank")
+  assertEqual(born.indicators[1].caption.hidden, false)
+end
+
+
 --- Each core component must render what the radio reports, in the state the
 --- radio's own values imply.
 local function testCoreComponents()
@@ -3743,7 +3955,14 @@ local function testCoreComponents()
   assertEqual(trims.indicators[2].valueText, "-15")
   assertEqual(trims.indicators[3].valueText, "+8")
   assertEqual(trims.indicators[4].valueText, "0")
-  assertEqual(trims.indicators[1].caption.properties.text, "AIL")
+  -- This panel is one row tall, which is not enough for a caption above a
+  -- bar, so it sheds them. Asserting the caption's text here would assert
+  -- something nobody can see; that it is hidden is the fact on screen. The
+  -- text is checked at a span that keeps it, in testTrimPanelShedsText.
+  assertEqual(trims.showCaption, false,
+    "a one-row trim panel found room for captions")
+  assert(trims.indicators[1].caption.hidden,
+    "a shed caption was left on screen")
   -- A positive trim fills rightward from the centre of its own bar.
   local fill = trims.indicators[1].bar.fill.properties
   assert(fill.x >= trims.indicators[1].bar.x + math.floor(trims.indicators[1].bar.w / 2),
@@ -4574,6 +4793,7 @@ testServiceDiagnostics()
 testDiagnosticsFitTheirPanels()
 testMissingServiceModule()
 testCoreComponents()
+testTrimPanelShedsText()
 testComponentsDegrade()
 testCoreComponentsReflow()
 testMetricPresetDetail()

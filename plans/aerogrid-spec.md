@@ -220,7 +220,7 @@ A preset cannot be expressed as a settings default, because the host fills decla
 #### Trim panel
 
 - Present trims inside a normal grid component rather than along the display edges.
-- Support `single`, `pair`, and `all` presentations so a compact panel may show one trim while a larger panel may show the primary four.
+- Offer `single`, `pair`, and `all` under `indicators` so a compact panel may show one trim while a larger panel may show the primary four.
 - Use a centered bipolar bar with a persistent neutral marker, signed displacement, and optional percentage or raw value.
 - Support horizontal and vertical orientations, with a per-indicator override when automatic axis metadata is unavailable.
 - Read effective current-flight-mode values through selectable EdgeTX trim sources so EdgeTX resolves trim inheritance.
@@ -235,7 +235,7 @@ A preset cannot be expressed as a settings default, because the host fills decla
 - For a global variable, read the value for the current or explicitly selected flight mode with `model.getGlobalVariable(index, flightMode)`. `controlService:globalVariable(index, flightMode)` pins a mode when one is given and follows the active mode otherwise; a pinned mode is its own subscription, because two components may legitimately show the same variable for different modes.
 - Use `model.getGlobalVariableDetails(index)` where available to obtain the configured name, minimum, maximum, precision, and unit.
 - Rely on EdgeTX to resolve global-variable flight-mode inheritance.
-- Support `value`, `horizontal-bar`, `bipolar-bar`, and `radial` presentations.
+- Offer `none`, `bar`, `bipolar-bar`, and `radial` under `visual`. These are drawings of one value, not arrangements of different content, which is why they are not `presentation`.
 - Normalize bar and radial geometry using GV bounds or explicit source bounds; clamp only the drawing, not the displayed value.
 - Show a center marker when the configured range crosses zero.
 - Remain read-only. AeroGrid does not modify global variables.
@@ -1039,7 +1039,7 @@ Prose does not. Each part of the rule has a mechanism.
 - `tests/support/edgetx.lua` splits every value into `firmware`, which is a claim about the radio and must name the file and symbol it was read from, and `scaffold`, which is invented and owes nothing. The citation is enforced at load: an uncited value, a path outside `radio/src/`, or a citation naming no symbol raises before any test runs, and there is no warning-only mode. The obligation covers behaviour as well as constants, because three of the five defects were wrong arithmetic rather than a wrong number.
 - The LVGL mock rejects a property key the firmware's `parseParam` does not accept, and a colour that is not a word `lcd.RGB` produced. Both are faithfulness rather than extra rules: the firmware raises `Invalid property '%s'`, and a 24-bit token on a radio paints a colour belonging to no theme.
 - Every test is proved able to fail. Break the thing it covers, watch it fail with a message that names the problem, restore. A test that cannot be made to fail is not a test, and several in this suite could not be.
-- Keep the mock out of the instruction budget. `parseParam`, `lcd.RGB` and `getValue` are C in the firmware and cost a script nothing, so charging a Lua stand-in for them to a widget callback measures the fixture and slowly squeezes the thing being measured.
+- Keep the mock out of the instruction budget. `parseParam`, `lcd.RGB` and `getValue` are C in the firmware and cost a script nothing, so charging a Lua stand-in for them to a widget callback measures the fixture and slowly squeezes the thing being measured. This applies to the harness's own bookkeeping as much as to its stand-ins: the per-object write and visibility counters exist so a test can see work that leaves no trace on screen, and they are swapped out rather than branched around while a callback is measured, so a measured callback pays nothing for them.
 
 **LVGL's own behaviour is citable, but only once the submodule is initialised.** `radio/src/thirdparty/lvgl` starts uninitialised, and while it is, `lv_draw_arc.c` and everything else below EdgeTX's own wrappers cannot be read, so anything the dashboard depends on from inside LVGL is an unverifiable claim. The rule's third part applies to those with particular force. One shipped example was found and removed during the presentation pass: a panel's accent was built as a pill on the strength of a comment asserting that LVGL clamps a corner radius to half the shorter side, which nobody had checked. Run `git submodule update --init --depth 1 radio/src/thirdparty/lvgl` in the EdgeTX tree before writing a claim about LVGL, and cite `lv_*.c` the same way as any other firmware file. Where a construction can be made indifferent to LVGL's behaviour rather than dependent on it, prefer that even so.
 
@@ -1066,14 +1066,40 @@ Status last verified on 2026-09-16:
 
 The design system is in place: the host owns every color, resolves one theme per dashboard, and hands each component a `services` table carrying the theme, shared primitives, span-appropriate typography, a state resolver, and the five shared data services. The `metric` component is the reference implementation and now reads real telemetry; the temporary `demo` setting is gone. Milestone 4's remaining item is a physical readability review, which requires hardware.
 
-Measured cost on the largest layout the schema permits, sixteen single-cell components: worst callback 7800 of 20000 instructions, worst steady frame 2400. Both are asserted by the test suite. Fourteen sixteen-component layouts are measured: metrics with sixteen distinct live sources, sixteen diagnostic panels spanning all five services, sixteen components that demand a refresh every frame, and one layout per catalogue component type. The worst callback is a `trim-panel` reflow, which repositions four indicators for each of the four components in a reflow batch; the three telemetry components cost 3800, 4000, and 4200 at sixteen cells, and their worst steady frames are 1800, 2400, and 1600. Removing the services' subscription caps raises the worst steady frame to 6200, which is what the caps are for.
+Measured cost on the largest layout the schema permits, sixteen single-cell components: worst callback 8532 of 20000 instructions, worst steady frame 2562. Both are asserted by the test suite. Fourteen sixteen-component layouts are measured: metrics with sixteen distinct live sources, sixteen diagnostic panels spanning all five services, sixteen components that demand a refresh every frame, and one layout per catalogue component type. The worst callback is a `trim-panel` reflow, which repositions four indicators for each of the four components in a reflow batch; the three telemetry components cost 3800, 4000, and 4200 at sixteen cells, and their worst steady frames are 1800, 2400, and 1600. Removing the services' subscription caps raises the worst steady frame to 6200, which is what the caps are for.
+
+**Why `trim-panel`'s reflow is the worst callback, and why it stays that
+way.** It is not a defect and not worth optimising further. Reflow is batched
+four components to a callback, so the figure is four `update` calls plus the
+host's own work. At sixteen cells a `trim-panel` showing one indicator costs
+872 instructions to reposition, which sits in the middle of the catalogue
+between `cell-battery` at 769 and `model-identity` at 902. Showing four costs
+1798. The excess is entirely the three extra indicators, at 309 each, and each
+indicator is a caption, a bipolar bar of three objects and a readout. A panel
+that draws four readings repositions four readings' worth of geometry. There
+is no shared mechanism left for it to adopt: it goes through the panel frame,
+the header, the render declaration and the shared `reconcile` like everything
+else.
+
+That was established by measurement after removing the part that *was*
+accidental. The panel used to hide the caption and readout rows a narrow cell
+cannot fit, and then keep positioning them on every reflow, formatting them
+four times a frame, and writing them into labels nobody could see: about 740
+instructions of work with no reader, which took the worst callback from 9268
+to 8532 when removed. Invisible work is the hazard here, because it leaves no
+trace on screen and so no assertion about what is drawn can see it. The test
+harness counts writes and visibility calls per object for exactly that reason,
+and those counters are swapped out while a callback is measured, on the same
+grounds as property validation.
 
 The worst steady frame rose from 2000 to 2400 with milestone 7, on sixteen
 `link-status` panels, which is the component that reads the most per refresh:
 two sources, a minimum, and the link view. A component's declared refresh
 interval, not its size, is what decides steady-state cost: `cell-battery`
 walks its cells table on every refresh and declares 20 ticks for it, and
-`navigation` declares 25 because telemetry GPS never arrives faster.
+`navigation` declares 25 because telemetry GPS never arrives faster. It is
+now 2562 on sixteen `navigation` panels; `trim-panel` held it until it
+stopped formatting four readouts a frame that its cells had no room to show.
 
 ### Component module contract
 

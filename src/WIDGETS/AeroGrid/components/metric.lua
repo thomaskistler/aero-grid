@@ -757,15 +757,7 @@ function metric.update(context, rect)
   })
 
   --- Show or hide an optional element, positioning it only when visible.
-  local function reconcile(object, visible, changes)
-    if not object then return end
-    if visible then
-      object:set(changes)
-      lvgl.show(object)
-    else
-      lvgl.hide(object)
-    end
-  end
+  local reconcile = context.primitives.reconcile
 
   reconcile(context.unit, area.showUnit,
     {x = area.pad, y = area.unitY, w = area.valueWidth})
