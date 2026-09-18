@@ -4,688 +4,33 @@ local root = assert(..., "repository root argument is required")
 local sourcePath = root .. "/src/WIDGETS/AeroGrid/"
 local hostIo = io
 
-STRING = 3
-SMLSIZE = 3
-MIDSIZE = 4
-DBLSIZE = 5
-XXLSIZE = 6
-TINSIZE = 2
-BOLD = 1
-
---- Height EdgeTX draws its menu button at, exactly as Lua receives it.
+--- The EdgeTX surface this suite runs against.
 ---
---- The firmware registers MENU_HEADER_HEIGHT beside its colour constants and
---- passes it through COLOR2FLAGS, which shifts left by sixteen bits
---- (radio/src/lua/api_general.cpp). Publishing a convenient 45 here would let
---- a host that forgot to shift it back pass the tests and then reserve nothing
---- at all on a radio, so the mock carries what the radio carries.
-local MENU_BUTTON_HEIGHT = 45
-MENU_HEADER_HEIGHT = MENU_BUTTON_HEIGHT * 65536
-
---- Width the firmware keeps clear beside the button, MENU_HEADER_BUTTONS_LEFT.
-local MENU_BUTTON_WIDTH = 47
-
-COLOR_THEME_PRIMARY1 = 101
-COLOR_THEME_PRIMARY2 = 102
-COLOR_THEME_PRIMARY3 = 103
-COLOR_THEME_SECONDARY1 = 104
-COLOR_THEME_SECONDARY2 = 105
-COLOR_THEME_SECONDARY3 = 106
-COLOR_THEME_FOCUS = 107
-COLOR_THEME_EDIT = 108
-COLOR_THEME_ACTIVE = 109
-COLOR_THEME_WARNING = 110
-COLOR_THEME_DISABLED = 111
-
---- Pack a 24-bit color into RGB565, matching EdgeTX's display format.
-local function toRgb565(rgb)
-  local red = math.floor(rgb / 65536) % 256
-  local green = math.floor(rgb / 256) % 256
-  local blue = rgb % 256
-  return math.floor(red * 31 / 255) * 2048
-    + math.floor(green * 63 / 255) * 32
-    + math.floor(blue * 31 / 255)
-end
-
---- EdgeTX's RGB_FLAG, the bit that marks a flag word as carrying a colour.
---- `radio/src/gui/colorlcd/colors.h`.
-local RGB_FLAG = 0x8000
-
---- Build the LcdFlags word EdgeTX hands a script for a colour.
----
---- There is exactly one encoder because the firmware has exactly one shape.
---- `luaRGB` returns `COLOR2FLAGS(RGB(r, g, b)) | RGB_FLAG` and `luaLcdGetColor`
---- returns `colorToRGB(flags) & (COLOR_MASK(~0u) | RGB_FLAG)`, both in
---- `radio/src/lua/api_colorlcd.cpp`: RGB565 in the upper half, `RGB_FLAG` in
---- the lower. When the two sides were encoded separately here, the read side
---- was corrected and the write side was left handing back a bare 24-bit value
---- for another day. Sharing the encoder is what stops them drifting again.
----
---- The result is cached because both firmware entry points are C functions and
---- cost a script no Lua VM instructions at all. A palette is small and drawn
---- from repeatedly, so a warm cache keeps the mock down to a lookup instead of
---- charging the dashboard's instruction budget for arithmetic the radio does
---- for free.
-local lcdFlagsCache = {}
-
-local function toLcdFlags(rgb)
-  local cached = lcdFlagsCache[rgb]
-  if cached then return cached end
-
-  cached = toRgb565(rgb) * 65536 + RGB_FLAG
-  lcdFlagsCache[rgb] = cached
-  return cached
-end
-
--- A deliberately light EdgeTX theme, so contrast correction must engage.
---- The EdgeTX Default theme, exactly as the firmware ships it.
----
---- Taken from `defaultColors` in `radio/src/gui/colorlcd/colors.cpp`. These
---- were previously invented to match the role *names*, with a green `ACTIVE`,
---- an amber `WARNING` and an orange `EDIT`. The firmware ships none of those:
---- `ACTIVE` is yellow, `EDIT` is green and `WARNING` is red. A fixture that
---- encodes what we assumed rather than what the radio does cannot fail when
---- the assumption is wrong, and this one hid a scrambled palette on real
---- hardware while every test passed.
-local edgeTxRoles = {
-  [COLOR_THEME_PRIMARY1] = 0x000000,
-  [COLOR_THEME_PRIMARY2] = 0xFFFFFF,
-  [COLOR_THEME_PRIMARY3] = 0x0C3F66,
-  [COLOR_THEME_SECONDARY1] = 0x125E99,
-  [COLOR_THEME_SECONDARY2] = 0xB6E0F2,
-  [COLOR_THEME_SECONDARY3] = 0xE4EEF2,
-  [COLOR_THEME_FOCUS] = 0x14A1E5,
-  [COLOR_THEME_EDIT] = 0x009909,
-  [COLOR_THEME_ACTIVE] = 0xFFDE00,
-  [COLOR_THEME_WARNING] = 0xE00000,
-  [COLOR_THEME_DISABLED] = 0x8C8C8C,
-}
-
-lcd = {
-  -- EdgeTX accepts lcd.RGB(r, g, b) or a single packed lcd.RGB(rgb), and
-  -- returns a flag word either way rather than the 24-bit value it was given.
-  -- Returning the input unchanged made `theme.rgb` and `theme.color`
-  -- numerically identical, so no assertion in this suite could tell a token
-  -- apart from a display value, which is the mistake that drew every panel
-  -- dark red once already.
-  RGB = function(red, green, blue)
-    if green ~= nil then red = red * 65536 + green * 256 + blue end
-    return toLcdFlags(red)
-  end,
-  -- Returns what the firmware returns: an LcdFlags word with the colour in
-  -- the upper half and RGB_FLAG set, not a bare RGB565. A mock that hands
-  -- back a bare RGB565 cannot see the host misread the real thing.
-  -- `luaLcdGetColor` answers nil for a role it does not recognize.
-  getColor = function(role)
-    local rgb = edgeTxRoles[role]
-    if rgb == nil then return nil end
-    return toLcdFlags(rgb)
-  end,
-}
-
-local objects = {}
-
--- Objects whose clear() is still awaiting EdgeTX's deferred cleanup.
-local pendingClears = {}
-
---- Emulate the firmware's post-callback ref cleanup.
---- EdgeTX runs callRefs() AFTER a widget callback returns, and a pending
---- clear() then invalidates every ref in that object's child list, including
---- children created after the clear but within the same callback. Modelling
---- clear() as an immediate flag hid a real defect, so this mirrors the
---- firmware's ordering instead.
--- When true, deferred cleanup is withheld, exactly as the firmware withholds
--- it while the widget is off screen or once an error has been reported.
-local deferCleanup = false
-
-local function settleLvgl()
-  if deferCleanup then return end
-  if #pendingClears == 0 then return end
-
-  local pending = pendingClears
-  pendingClears = {}
-  for _, object in ipairs(pending) do
-    object.clearRequest = false
-    for _, child in ipairs(object.children) do
-      child.invalid = true
-    end
-    object.children = {}
-  end
-end
-
---- Model how the firmware actually places a round object.
----
---- EdgeTX positions an arc by its centre but stores a corner, and
---- `LvglWidgetRoundObject::refresh` subtracts the radius twice: once inside
---- `setRadius`, and again through the inherited `setPos`, which receives
---- members that already hold a corner. Every update therefore walks an arc up
---- and to the left by its own radius. A mock that simply records the
---- coordinates it was handed cannot see that, which is why dials drifted off
---- the radio while these tests stayed green.
-local function newRoundGeometry(properties)
-  local fwX = properties.x or 0
-  local fwY = properties.y or 0
-  local fwRadius = properties.radius or 0
-  local drawn = {x = 0, y = 0}
-
-  -- LvglWidgetRoundObject::setPos, which subtracts the radius before
-  -- delegating to LvglWidgetObject::setPos.
-  local function setPos(nx, ny)
-    fwX = nx - fwRadius
-    fwY = ny - fwRadius
-    drawn.x, drawn.y = fwX, fwY
-  end
-
-  local function setRadius(r)
-    fwX = fwX + fwRadius
-    fwY = fwY + fwRadius
-    fwRadius = r
-    setPos(fwX, fwY)
-  end
-
-  -- build() runs setPos then setRadius and never calls refresh, which is why
-  -- a dial is only ever misplaced after its first update.
-  setPos(fwX, fwY)
-  setRadius(fwRadius)
-
-  return {
-    drawn = drawn,
-    radius = function() return fwRadius end,
-    -- update(): getParams overwrites only the supplied members, then refresh()
-    -- runs setRadius followed by the inherited setPos.
-    refresh = function(changes)
-      if changes.x ~= nil then fwX = changes.x end
-      if changes.y ~= nil then fwY = changes.y end
-      if changes.radius ~= nil then fwRadius = changes.radius end
-      setRadius(fwRadius)
-      setPos(fwX, fwY)
-    end,
-  }
-end
-
---- Property keys EdgeTX accepts, per object kind.
----
---- `LvglWidgetObjectBase::parseParam` ends in
---- `luaL_error(L, "Invalid property '%s'", key)`
---- (`radio/src/lua/lua_lvgl_widget.cpp`), so an unrecognized key is not
---- ignored on a radio, it raises. A mock that accepts every key turns a
---- misspelled property into a silent no-op on hardware and a passing test
---- here, which is the same shape as every incident in this file's history.
----
---- Each set below is the chain of `parseParam` overrides for that class, read
---- from the class declarations in `radio/src/lua/lua_lvgl_widget.h`. Note that
---- `left`, `right`, `top` and `bottom` are nested inside `borderPad` rather
---- than being top-level keys, so they are deliberately absent.
-local function acceptedKeys(inherited, ...)
-  local set = {}
-  for key in pairs(inherited or {}) do set[key] = true end
-  for _, key in ipairs({...}) do set[key] = true end
-  return set
-end
-
--- LvglWidgetObjectBase::parseParam. `children`, `type` and `name` are accepted
--- and ignored rather than rejected, exactly as the firmware does.
-local OBJECT_BASE_KEYS = acceptedKeys(nil, "x", "y", "w", "h", "color",
-  "opacity", "visible", "size", "pos", "floating", "children", "type", "name")
--- LvglWidgetObject::parseParam.
-local OBJECT_KEYS = acceptedKeys(OBJECT_BASE_KEYS,
-  "flexFlow", "flexPad", "borderPad", "active")
--- LvglWidgetBox: LvglWidgetObject + LvglScrollableParams + LvglAlignParam.
-local BOX_KEYS = acceptedKeys(OBJECT_KEYS,
-  "align", "scrollBar", "scrollDir", "scrollTo", "scrolled")
--- LvglWidgetBorderedObject: LvglWidgetBox + LvglThicknessParam, plus filled.
-local BORDERED_KEYS = acceptedKeys(BOX_KEYS, "thickness", "filled")
--- LvglWidgetRoundObject: LvglWidgetBorderedObject, plus radius.
-local ROUND_KEYS = acceptedKeys(BORDERED_KEYS, "radius")
-
-local PROPERTY_KEYS = {
-  box = BOX_KEYS,
-  rectangle = acceptedKeys(BORDERED_KEYS, "rounded"),
-  arc = acceptedKeys(ROUND_KEYS, "rounded", "startAngle", "endAngle",
-    "bgColor", "bgOpacity", "bgStartAngle", "bgEndAngle"),
-  label = acceptedKeys(OBJECT_BASE_KEYS, "align", "text", "font"),
-  image = acceptedKeys(OBJECT_KEYS, "file", "fill"),
-}
-
---- Keys whose value EdgeTX reads as a colour.
-local COLOR_KEYS = {color = true, bgColor = true}
-
---- Whether property validation runs.
----
---- `parseParam` is C++ and costs a script no Lua VM instructions at all, so
---- charging our stand-in for it to the instruction budget would measure the
---- fixture rather than the dashboard. The budget test switches this off while
---- it counts, exactly as the mock's `getValue` avoids a scan for the same
---- reason. Every object kind is still validated by the rest of the suite,
---- which builds each component at every span it supports.
-local validateProperties = true
-
---- Reject exactly what the radio rejects.
----
---- A colour must be a word `lcd.RGB` produced. The dashboard holds its palette
---- twice, as 24-bit `theme.rgb` tokens for arithmetic and as `theme.color`
---- display values for drawing, and handing an LVGL object the former paints a
---- colour belonging to no theme at all. The radio cannot report that; this can.
-local function checkProperties(kind, properties)
-  local accepted = PROPERTY_KEYS[kind]
-  if not accepted then return end
-
-  for key, value in pairs(properties) do
-    if not accepted[key] then
-      error("Invalid property '" .. tostring(key) .. "' on " .. kind, 0)
-    end
-    if COLOR_KEYS[key] and (type(value) ~= "number" or value % 65536 ~= RGB_FLAG) then
-      error(kind .. "." .. key .. " is not a colour lcd.RGB returned: "
-        .. tostring(value), 0)
-    end
-  end
-end
-
---- Object methods, defined once rather than per object.
----
---- `set` is assigned directly on each object rather than reached through a
---- metatable, and the checking and unchecking variants are exchanged rather
---- than selected by a test inside `set`. Both alternatives cost the dashboard
---- several hundred instructions of the budget on the worst callback, for work
---- the radio does in C++. Measuring the fixture instead of the dashboard is
---- how the budget test misled us before, so the hot path carries nothing.
-local function assertUsable(object)
-  if object.invalid then
-    error("Invalid object (it has been probably been cleared).", 0)
-  end
-end
-
--- The body is repeated rather than shared, because a second call costs the
--- measured callback another 200 instructions the radio never pays.
-local function setChecked(object, changes)
-  assertUsable(object)
-  checkProperties(object.kind, changes)
-  for key, value in pairs(changes) do object.properties[key] = value end
-  if object.round then object.round.refresh(changes) end
-end
-
-local function setUnchecked(object, changes)
-  assertUsable(object)
-  for key, value in pairs(changes) do object.properties[key] = value end
-  if object.round then object.round.refresh(changes) end
-end
-
-local function clearObject(object)
-  assertUsable(object)
-  object.cleared = true
-  if not object.clearRequest then
-    object.clearRequest = true
-    pendingClears[#pendingClears + 1] = object
-  end
-end
-
---- Turn property validation on or off for every object, existing and future.
---- Called outside the instruction hook, so the exchange is never counted.
-local function setPropertyValidation(enabled)
-  validateProperties = enabled
-  local method = enabled and setChecked or setUnchecked
-  for _, object in ipairs(objects) do object.set = method end
-end
-
-local function newObject(kind, parent, properties)
-  if validateProperties then checkProperties(kind, properties) end
-  local object = {
-    kind = kind,
-    parent = parent,
-    properties = properties,
-    children = {},
-    cleared = false,
-    hidden = false,
-    invalid = false,
-    set = validateProperties and setChecked or setUnchecked,
-    clear = clearObject,
-  }
-
-  if kind == "arc" then object.round = newRoundGeometry(properties) end
-
-  if parent then parent.children[#parent.children + 1] = object end
-  objects[#objects + 1] = object
-  return object
-end
-
-local function constructor(kind)
-  return function(first, second)
-    if second then return newObject(kind, first, second) end
-    return newObject(kind, nil, first)
-  end
-end
-
---- Whether EdgeTX would report App mode for the screen under test.
---- The button is only drawn over a widget in App mode, so this decides whether
---- the reserved corner exists at all.
-local appMode = false
-
-lvgl = {
-  box = constructor("box"),
-  rectangle = constructor("rectangle"),
-  label = constructor("label"),
-  arc = constructor("arc"),
-  image = constructor("image"),
-  hide = function(object) object.hidden = true end,
-  show = function(object) object.hidden = false end,
-  isAppMode = function() return appMode end,
-}
-
---- The App mode zone: one widget over the whole display, at the screen origin.
---- x and y are always zero for a widget; xabs and yabs carry where the zone
---- really sits (radio/src/lua/lua_widget_factory.cpp).
-local function appZone()
-  appMode = true
-  return {x = 0, y = 0, xabs = 0, yabs = 0, w = 480, h = 272}
-end
-
---- The ordinary Full screen zone, with EdgeTX's own top bar above it.
---- ViewMainDecoration::getWidgetsZone starts the widget zone at
---- MENU_HEADER_HEIGHT and takes the same amount off its height whenever the
---- bar is shown, so the zone is 227 tall at 480 x 272 and begins below the
---- button rather than under it.
-local function fullScreenZone()
-  appMode = false
-  return {
-    x = 0, y = 0,
-    xabs = 0, yabs = MENU_BUTTON_HEIGHT,
-    w = 480, h = 272 - MENU_BUTTON_HEIGHT,
-  }
-end
-
-local modelFilename = "test-model.yml"
-
---- Controllable EdgeTX radio state.
---- Services read sources, sensors, timers, and global variables through the
---- firmware's global functions, so the mock owns one table a test can drive
---- and every entry point reads from it.
-local radio = {
-  rssi = 80,
-  -- The model's RF alarm thresholds, which getRSSI reports alongside the
-  -- reading. Nothing on the dashboard consults them yet; they are here
-  -- because the radio returns them, not because a test needs them.
-  rfAlarms = {warning = 45, critical = 42},
-  fields = {
-    RxBt = {id = 100, name = "RxBt", desc = "Rx battery", unit = 1},
-    Curr = {id = 103, name = "Curr", desc = "Current", unit = 2},
-    Alt = {id = 106, name = "Alt", desc = "Altitude", unit = 9},
-    ["Alt+"] = {id = 108, name = "Alt+", desc = "Altitude max", unit = 9},
-    GPS = {id = 109, name = "GPS", desc = "GPS", unit = 40},
-    GSpd = {id = 112, name = "GSpd", desc = "GPS speed", unit = 7},
-    Dist = {id = 115, name = "Dist", desc = "Distance", unit = 9},
-    sa = {id = 300, name = "sa", desc = "Switch A"},
-    ["trim-ail"] = {id = 310, name = "trim-ail", desc = "Aileron trim"},
-    ["tx-voltage"] = {id = 320, name = "tx-voltage", desc = "Tx voltage"},
-  },
-  values = {
-    [100] = 24.0,
-    [103] = 10,
-    [106] = 100,
-    [108] = 180,
-    [109] = {
-      lat = 47.3769,
-      lon = 8.5417,
-      ["pilot-lat"] = 47.3700,
-      ["pilot-lon"] = 8.5400,
-      delay = 1,
-    },
-    [112] = 42,
-    [115] = 812,
-    [300] = 1024,
-    [310] = 240,
-    [320] = 7.9,
-  },
-  sensors = {
-    [0] = {name = "RxBt", prec = 2},
-    [1] = {name = "Curr", prec = 1},
-    [2] = {name = "Alt", prec = 0},
-  },
-  --- Timers, carrying the key set `luaModelGetTimer` really pushes.
-  ---
-  --- `radio/src/lua/api_model.cpp` pushes mode, start, value, countdownBeep,
-  --- minuteBeep, persistent, name, showElapsed, switch, countdownStart and
-  --- extraHaptic, and answers nil beyond MAX_TIMERS. `showElapsed` matters
-  --- rather than merely being missing: `model_service` reads it and flips a
-  --- countdown to count up, and while the fixture omitted it that branch was
-  --- permanently false and never reached a component.
-  timers = {
-    [0] = {
-      mode = 1, start = 300, value = 90, countdownBeep = 0, minuteBeep = false,
-      persistent = 1, name = "Flight", showElapsed = false, switch = 0,
-      countdownStart = 0, extraHaptic = 0,
-    },
-  },
-  globals = {[0] = 45},
-  -- A global variable holds a value per flight mode, and
-  -- `luaModelGetGlobalVariable(index, flight_mode)` reads the one stored for
-  -- the mode it is given (radio/src/lua/api_model.cpp). A mock that ignores
-  -- its second argument answers the same number whatever mode is asked for,
-  -- so a component reading the wrong mode, or no mode at all, is invisible.
-  -- Index 1 therefore carries its own value in flight mode 2, and inherits
-  -- everywhere else.
-  globalsByMode = {[1] = {[2] = 60}},
-  globalDetails = {[0] = {name = "Rates", min = -100, max = 100, prec = 1, unit = 0}},
-  flightMode = 1,
-  flightModeName = "Sport",
-}
-
--- Sixteen generic sensors, so a layout that fills the grid can reference a
--- distinct live source per cell instead of sixteen names the radio rejects.
-for index = 1, 16 do
-  local name = "S" .. index
-  radio.fields[name] = {id = 400 + index, name = name, unit = 9}
-  radio.values[400 + index] = index * 3
-  radio.sensors[index + 2] = {name = name, prec = 1}
-end
-
--- The remaining sources the service diagnostics layouts reference.
-radio.fields["trim-ele"] = {id = 311, name = "trim-ele", desc = "Elevator trim"}
-radio.fields["trim-rud"] = {id = 312, name = "trim-rud", desc = "Rudder trim"}
-radio.fields["trim-thr"] = {id = 313, name = "trim-thr", desc = "Throttle trim"}
-radio.fields.GPS2 = {id = 118, name = "GPS2", desc = "GPS 2", unit = 40}
-radio.values[311] = -120
-radio.values[312] = 0
-radio.values[313] = 64
-radio.values[118] = radio.values[109]
-radio.timers[1] = {
-  mode = 1, start = 0, value = 64, countdownBeep = 0, minuteBeep = false,
-  persistent = 0, name = "Up", showElapsed = false, switch = 0,
-  countdownStart = 0, extraHaptic = 0,
-}
-radio.timers[2] = {
-  mode = 1, start = 60, value = 12, countdownBeep = 0, minuteBeep = false,
-  persistent = 0, name = "Glide", showElapsed = false, switch = 0,
-  countdownStart = 0, extraHaptic = 0,
-}
-for index = 1, 3 do
-  radio.globals[index] = index * 10
-  radio.globalDetails[index] = {
-    name = "GV" .. (index + 1), min = -100, max = 100, prec = 0, unit = 1,
-  }
-end
-
--- Vertical speed, which the metric's altitude preset takes as its secondary
--- reading. It is never derived from altitude; an absent sensor simply leaves
--- the secondary row unavailable.
-radio.fields.VSpd = {id = 120, name = "VSpd", desc = "Vertical speed", unit = 5}
-radio.values[120] = 2.5
-radio.sensors[19] = {name = "VSpd", prec = 1}
-
--- A flight pack. EdgeTX returns a table of individual cell voltages for the
--- base cells source, and a plain number for its extremes, which is exactly the
--- shape mismatch cell-battery has to survive.
-radio.fields.Cels = {id = 130, name = "Cels", desc = "Cells", unit = 38}
-radio.fields["Cels-"] = {id = 131, name = "Cels-", desc = "Cell min", unit = 38}
-radio.fields["Cels+"] = {id = 132, name = "Cels+", desc = "Cell max", unit = 38}
-radio.values[130] = {4.11, 4.13, 4.09, 4.12}
-radio.values[131] = 4.09
-radio.values[132] = 4.13
-radio.sensors[20] = {name = "Cels", prec = 2}
-
--- Link sensors. FrSky populates RSSI in dB; ELRS populates 1RSS in dBm
--- alongside RQly as a percentage, and the two protocols never both apply.
-radio.fields.RSSI = {id = 140, name = "RSSI", desc = "RSSI", unit = 17}
-radio.fields.RQly = {id = 141, name = "RQly", desc = "Link quality", unit = 13}
-radio.fields["RQly-"] = {id = 142, name = "RQly-", desc = "Link quality min", unit = 13}
-radio.fields["1RSS"] = {id = 143, name = "1RSS", desc = "Antenna 1", unit = 29}
-radio.values[140] = 78
-radio.values[141] = 96
-radio.values[142] = 62
-radio.values[143] = -72
-radio.sensors[21] = {name = "RSSI", prec = 0}
-radio.sensors[22] = {name = "RQly", prec = 0}
-
--- Further GPS sources, so a layout that fills the grid with navigation panels
--- really does carry more than one subscription.
-radio.fields.GPS3 = {id = 119, name = "GPS3", desc = "GPS 3", unit = 40}
-radio.fields.GPS4 = {id = 121, name = "GPS4", desc = "GPS 4", unit = 40}
-radio.values[119] = radio.values[109]
-radio.values[121] = radio.values[109]
-
---- Does this radio's protocol populate an RSSI sensor at all?
---- Some do not, and EdgeTX's getRSSI() then reads zero on a perfectly live
---- link. That is a different situation from a dead link and the two must not
---- be simulated by the same flag, or a test cannot tell them apart either.
-radio.rssiAbsent = false
-
---- Files the radio reports through `fstat`, keyed by absolute path.
---- Model bitmaps live under /IMAGES/ on the SD card, which the host running
---- these tests does not have, so the mock answers for them directly.
-radio.files = {["/IMAGES/plane.png"] = 4096}
-
---- Reverse index from source id to field, rebuilt whenever a test adds one.
---- It exists so the mock costs a table lookup rather than a scan: getValue is
---- a C function in the firmware and costs no VM instructions at all, so a
---- mock that searched would show up in the instruction budget measurement.
-local fieldsById = {}
-
-local function indexFields()
-  fieldsById = {}
-  for _, field in pairs(radio.fields) do fieldsById[field.id] = field end
-end
-
-indexFields()
-
---- Reset the radio to the state every test starts from.
-local function resetRadio()
-  indexFields()
-  radio.rssi = 80
-  radio.rssiAbsent = false
-  radio.values[100] = 24.0
-  radio.values[103] = 10
-  radio.values[106] = 100
-  radio.values[300] = 1024
-  radio.values[130] = {4.11, 4.13, 4.09, 4.12}
-  radio.values[131] = 4.09
-  radio.values[140] = 78
-  radio.values[141] = 96
-  radio.values[109].lat = 47.3769
-  radio.values[109].lon = 8.5417
-  radio.values[109]["pilot-lat"] = 47.3700
-  radio.values[109]["pilot-lon"] = 8.5400
-end
-
-function getValue(source)
-  local field
-  if type(source) == "string" then
-    field = radio.fields[source]
-    source = field and field.id or nil
-  else
-    field = fieldsById[source]
-  end
-  if source == nil then return nil end
-
-  -- EdgeTX returns integer zero for every telemetry source while telemetry is
-  -- not streaming. A mock that kept reporting real values instead would let a
-  -- freshness bug pass, because nothing would ever look like a dead link.
-  --
-  -- The RSSI indicator is not the same thing as the telemetry stream: on a
-  -- protocol that populates no RSSI sensor, getRSSI() reads zero while values
-  -- keep arriving. `rssiAbsent` simulates that, and nothing else does.
-  if field and field.unit and radio.rssi == 0 and not radio.rssiAbsent then
-    return 0
-  end
-
-  return radio.values[source]
-end
-
-function getFieldInfo(name)
-  return radio.fields[name]
-end
-
---- EdgeTX caps the reading at 99 and reports the model's own RF alarms.
---- `luaGetRSSI` pushes `min((uint8_t)99, TELEMETRY_RSSI())`, then
---- `g_model.rfAlarms.warning` and `.critical`
---- (radio/src/lua/api_general.cpp). A reading above 99 is a number no radio
---- can produce, so the mock cannot hand one out either.
-function getRSSI()
-  local rssi = radio.rssi
-  if rssi > 99 then rssi = 99 end
-  return rssi, radio.rfAlarms.warning, radio.rfAlarms.critical
-end
-
-function getFlightMode()
-  return radio.flightMode, radio.flightModeName
-end
-
-model = {
-  getInfo = function()
-    return {
-      filename = modelFilename,
-      name = "Test Model",
-      bitmap = "plane.png",
-      labels = "fpv",
-    }
-  end,
-  getTimer = function(index) return radio.timers[index] end,
-  getSensor = function(index) return radio.sensors[index] end,
-  getGlobalVariable = function(index, flightMode)
-    local perMode = radio.globalsByMode[index]
-    local value = perMode and perMode[flightMode]
-    if value ~= nil then return value end
-    return radio.globals[index]
-  end,
-  getGlobalVariableDetails = function(index) return radio.globalDetails[index] end,
-}
-
--- EdgeTX's monotonic clock, in 10ms ticks. Controllable so scheduling is
--- deterministic rather than dependent on wall time.
-local clock = 0
-
-function getTime()
-  return clock
-end
-
---- Advance the simulated clock.
-local function tick(amount)
-  clock = clock + (amount or 1)
-end
-
-function loadScript(filename)
-  return loadfile(filename)
-end
-
---- `luaFstat` returns one table of size, attrib and time, and returns no
---- values at all for a file it cannot stat
---- (radio/src/lua/api_filesystem.cpp). Only `size` is read by the dashboard,
---- so the other two are carried for shape rather than for any behaviour, and
---- nothing asserts them.
-function fstat(filename)
-  local function stat(size)
-    return {size = size, attrib = 32, time = {}}
-  end
-
-  -- The radio's own SD card comes first, so a test can describe a model
-  -- bitmap that the host filesystem does not have.
-  local size = radio.files[filename]
-  if size then return stat(size) end
-
-  local handle = hostIo.open(filename, "rb")
-  if not handle then return end
-  size = handle:seek("end")
-  handle:close()
-  return stat(size)
-end
+--- Every value that is a claim about the radio lives in `tests/support/edgetx.lua`,
+--- carries the firmware file and symbol it was read from, and cannot be added
+--- without one. Everything below is this suite's own scaffolding.
+local edgetx = assert(loadfile(root .. "/tests/support/edgetx.lua"))()
+local firmware = edgetx.firmware
+
+edgetx.constants()
+local lcdMock = edgetx.lcd()
+local lvglMock = edgetx.lvgl()
+local radioMock = edgetx.radio(hostIo)
+
+local toRgb565 = lcdMock.toRgb565
+local edgeTxRoles = lcdMock.roles
+
+local settleLvgl = lvglMock.settle
+local setPropertyValidation = lvglMock.setPropertyValidation
+local appZone = lvglMock.appZone
+local fullScreenZone = lvglMock.fullScreenZone
+
+local radio = radioMock.state
+local resetRadio = radioMock.reset
+local tick = radioMock.tick
+
+local MENU_BUTTON_HEIGHT = firmware.MENU_HEADER_HEIGHT_PX
+local MENU_BUTTON_WIDTH = firmware.MENU_HEADER_BUTTONS_LEFT
 
 io = {
   open = hostIo.open,
@@ -697,6 +42,18 @@ local function assertEqual(actual, expected, message)
   if actual ~= expected then
     error((message or "values differ") .. ": expected " .. tostring(expected)
       .. ", got " .. tostring(actual), 2)
+  end
+end
+
+--- Compare font constants by name.
+---
+--- The real constants are LcdFlags, so a mismatch otherwise reads "expected
+--- 1536, got 1280", which tells a reader nothing. Correcting the fixture to
+--- the radio's values is only worth doing if a failure stays legible.
+local function assertFont(actual, expected, message)
+  if actual ~= expected then
+    error((message or "wrong font") .. ": expected "
+      .. edgetx.fontName(expected) .. ", got " .. edgetx.fontName(actual), 2)
   end
 end
 
@@ -920,8 +277,7 @@ end
 -- below EdgeTX's own top bar and is 227 tall rather than 272.
 local appContext = testRendersInBothModes("app mode", appZone())
 testRendersInBothModes("1 x 1", fullScreenZone())
-appMode = false
-
+lvglMock.setAppMode(false)
 --- Milestone 7's deliverable: the shipped dashboard must demonstrate the
 --- complete ten-component catalogue, loading each from its own module without
 --- error and keeping each one inside the container the host gave it.
@@ -1062,8 +418,8 @@ local function testThemeReachesComponents()
   -- Components receive span-appropriate typography from the host.
   local pack = entryById(appContext, "pack")
   local current = entryById(appContext, "current")
-  assertEqual(pack.instance.fonts.primary, XXLSIZE)
-  assertEqual(current.instance.fonts.primary, DBLSIZE)
+  assertFont(pack.instance.fonts.primary, XXLSIZE)
+  assertFont(current.instance.fonts.primary, DBLSIZE)
 end
 
 --- EdgeTX's lvgl.box parses `color` but never paints it, so any background
@@ -1266,7 +622,7 @@ local function testReloadSurvivesLateCleanup()
   definition.update(context, {DashID = "alternate", Theme = "modern"})
 
   -- Withhold cleanup across the entire reload, the worst case.
-  deferCleanup = true
+  lvglMock.setDeferCleanup(true)
   local guard = 0
   repeat
     definition.refresh(context)
@@ -1279,7 +635,7 @@ local function testReloadSurvivesLateCleanup()
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 
   -- Now let the withheld cleanup land, all at once and late.
-  deferCleanup = false
+  lvglMock.setDeferCleanup(false)
   settleLvgl()
 
   -- The rebuilt dashboard must still be alive and usable.
@@ -1752,7 +1108,7 @@ return exploder
 
   -- A zone that moves out from under the button releases the reservation, and
   -- the overlay it already created follows.
-  appMode = true
+  lvglMock.setAppMode(true)
   local moving = createLoaded(appZone(), DEFAULT_OPTIONS, widgetPath)
   pump(moving, 1)
   local moved = assert(moving.errorLabel).properties.y
@@ -1763,7 +1119,7 @@ return exploder
   assertEqual(moving.reserved, nil, "reservation survived the zone moving")
   assertEqual(moving.errorLabel.properties.y, 8,
     "the overlay did not follow the zone out from under the button")
-  appMode = false
+  lvglMock.setAppMode(false)
 end
 
 --- Nothing a pilot has to read may sit under the EdgeTX menu button.
@@ -1947,7 +1303,7 @@ components:
   local plainLabel = entryById(plain, "tight").instance.label
   assertEqual(plainLabel.hidden, false, "a Full screen panel lost its label")
   assertEqual(plainLabel.properties.x, 4, "a Full screen panel moved its label")
-  appMode = false
+  lvglMock.setAppMode(false)
 end
 
 --- The host adapting as designed must not be reported as a failure.
@@ -2039,7 +1395,7 @@ end
 --- it. The firmware comment there says loadModel can re-enter the UI refresh
 --- loop, so a widget that tried to survive one would read torn-down data.
 local function testMultipleScreens()
-  local previous = modelFilename
+  local previous = radio.modelFilename
   local widgetPath = makeWidget("screens", [[
 version: 1
 grid:
@@ -2132,7 +1488,7 @@ components:
   end
 
   resetRadio()
-  modelFilename = "model1.yml"
+  radio.modelFilename = "model1.yml"
 
   -- Two Dashboard IDs, one model: two separate screens of the same radio.
   local alpha = createLoaded({x = 0, y = 0, w = 480, h = 272},
@@ -2183,7 +1539,7 @@ components:
   -- A different model resolves a different file for the same Dashboard ID.
   -- EdgeTX rebuilds every widget across a model change, so this is what the
   -- radio really does rather than a reload the host would have to detect.
-  modelFilename = "other.yml"
+  radio.modelFilename = "other.yml"
   local switched = createLoaded({x = 0, y = 0, w = 480, h = 272},
     {DashID = "alpha", Theme = "modern"}, widgetPath)
   assertEqual(switched.layoutPath, widgetPath .. "layouts/other--alpha.yaml")
@@ -2192,7 +1548,7 @@ components:
 
   -- A model with no file of its own falls back to the dashboard-wide layout,
   -- then to the shipped default, rather than failing to load.
-  modelFilename = "third.yml"
+  radio.modelFilename = "third.yml"
   local fallback = createLoaded({x = 0, y = 0, w = 480, h = 272},
     {DashID = "gamma", Theme = "modern"}, widgetPath)
   assertEqual(fallback.layoutPath, widgetPath .. "layouts/default.yaml")
@@ -2203,7 +1559,7 @@ components:
   assertEqual(idsOf(alpha), "alt", "a later instance disturbed an earlier one")
   assertEqual(alpha.layoutPath, widgetPath .. "layouts/model1--alpha.yaml")
 
-  modelFilename = previous
+  radio.modelFilename = previous
 end
 
 --- An event consumed by one component must stop propagating.
@@ -2782,9 +2138,9 @@ local function testRuntimeFailureIsContained()
 end
 
 local function testModelFilenames()
-  local previous = modelFilename
+  local previous = radio.modelFilename
   for _, name in ipairs({"model1.yml", "Kavan Sonic.yml", "FPV-7in.yml"}) do
-    modelFilename = name
+    radio.modelFilename = name
     local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
       DEFAULT_OPTIONS, referencePath)
     assertEqual(context.layoutPath, referencePath .. "layouts/default.yaml",
@@ -2792,7 +2148,7 @@ local function testModelFilenames()
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
     assertEqual(#context.components, 5)
   end
-  modelFilename = previous
+  radio.modelFilename = previous
 end
 
 --- Collect a diagnostic panel's rendered rows as a label-to-text mapping.
@@ -3314,7 +2670,7 @@ components:
   local realGetInfo = model.getInfo
   getFlightMode = nil
   model.getInfo = function()
-    return {filename = modelFilename, name = "No Picture", bitmap = "gone.png"}
+    return {filename = radio.modelFilename, name = "No Picture", bitmap = "gone.png"}
   end
 
   local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
@@ -3383,7 +2739,7 @@ local function testCoreComponentsReflow()
       assertEqual(panel.h, bounds.h, what .. ": " .. entry.placement.id
         .. " did not follow its container height")
 
-      for _, object in ipairs(objects) do
+      for _, object in ipairs(lvglMock.objects) do
         if object.parent == entry.instance.panel.root and not object.hidden then
           local properties = object.properties
           local right = (properties.x or 0) + (properties.w or 0)
@@ -3812,7 +3168,7 @@ components:
   -- there. Nothing else in the snapshot moves, so only `known` says so.
   radio.fields.LateGps = {id = 150, name = "LateGps", desc = "Late GPS", unit = 40}
   radio.values[150] = {lat = 0, lon = 0, ["pilot-lat"] = 0, ["pilot-lon"] = 0}
-  indexFields()
+  radioMock.indexFields()
   settle(context, 60)
 
   assertEqual(nav.stateName, "unavailable")
@@ -3831,7 +3187,7 @@ components:
 
   radio.fields.LateGps = nil
   radio.values[150] = nil
-  indexFields()
+  radioMock.indexFields()
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
   resetRadio()
 end
@@ -3877,7 +3233,7 @@ components:
   radio.rssi = 0
   radio.rssiAbsent = true
   radio.fields.RSSI = nil
-  indexFields()
+  radioMock.indexFields()
 
   local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
     DEFAULT_OPTIONS, widgetPath)
@@ -3930,7 +3286,7 @@ local function testTelemetryComponentsReflow()
       local bounds = boundsOf(entry)
       local instance = entry.instance
 
-      for _, object in ipairs(objects) do
+      for _, object in ipairs(lvglMock.objects) do
         if object.parent == instance.panel.root and not object.hidden then
           local properties = object.properties
           local right, bottom

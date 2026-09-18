@@ -2,49 +2,32 @@
 
 local root = (... and ... ~= "" and ...) or "."
 
--- Minimal EdgeTX surface required by the theme and primitive modules.
-SMLSIZE = 3
-MIDSIZE = 4
-DBLSIZE = 5
-XXLSIZE = 6
-BOLD = 1
-
---- Pack a 24-bit color into RGB565, matching EdgeTX's display format.
-local function toRgb565(rgb)
-  local red = math.floor(rgb / 65536) % 256
-  local green = math.floor(rgb / 256) % 256
-  local blue = rgb % 256
-  return math.floor(red * 31 / 255) * 2048
-    + math.floor(green * 63 / 255) * 32
-    + math.floor(blue * 31 / 255)
-end
-
---- EdgeTX's RGB_FLAG, the bit marking a flag word as carrying a colour.
---- `radio/src/gui/colorlcd/colors.h`.
-local RGB_FLAG = 0x8000
-
---- Build the LcdFlags word EdgeTX hands a script for a colour.
+--- The minimal EdgeTX surface the pure-Lua modules need.
 ---
---- One encoder, because the firmware has one shape. `luaRGB` returns
---- `COLOR2FLAGS(RGB(r, g, b)) | RGB_FLAG` and `luaLcdGetColor` returns
---- `colorToRGB(flags) & (COLOR_MASK(~0u) | RGB_FLAG)`, both in
---- `radio/src/lua/api_colorlcd.cpp`: RGB565 in the upper half, RGB_FLAG in
---- the lower. Encoding the two separately is how the read side came to be
---- corrected while the write side kept handing back a bare 24-bit value.
-local function toLcdFlags(rgb)
-  return toRgb565(rgb) * 65536 + RGB_FLAG
-end
+--- Deliberately only `constants()` and `lcd()`. No `lvgl`, no `getValue`, no
+--- `model`: that is what proves a lib module works without a host, and it only
+--- proves it while the surface stays this small. If one call installed the
+--- whole radio, a module that had quietly started reading a host global would
+--- keep passing here and fail on hardware.
+---
+--- Every value in it is a claim about the radio carrying the firmware file and
+--- symbol it came from; see `tests/support/edgetx.lua`.
+local edgetx = assert(loadfile(root .. "/tests/support/edgetx.lua"))()
+local firmware = edgetx.firmware
 
-lcd = {
-  -- EdgeTX accepts lcd.RGB(r, g, b) or a single packed lcd.RGB(rgb), and
-  -- returns a flag word either way. Returning the input unchanged made
-  -- `theme.rgb` and `theme.color` the same number, so nothing here could tell
-  -- a token apart from a display value.
-  RGB = function(red, green, blue)
-    if green ~= nil then red = red * 65536 + green * 256 + blue end
-    return toLcdFlags(red)
-  end,
-}
+edgetx.constants()
+local lcdMock = edgetx.lcd()
+local toRgb565 = lcdMock.toRgb565
+local toLcdFlags = lcdMock.toLcdFlags
+
+-- The minimal surface is the point, so it is asserted rather than assumed. A
+-- lib module that quietly started reaching for a host global would otherwise
+-- keep passing here, which is the whole reason this suite is separate.
+for _, name in ipairs({"lvgl", "model", "getValue", "getFieldInfo", "getRSSI",
+    "getTime", "getFlightMode", "fstat", "loadScript"}) do
+  assert(_G[name] == nil,
+    "the unit suite installed " .. name .. ", which it is meant to do without")
+end
 
 local function loadModule(relative)
   local chunk, err = loadfile(root .. "/src/WIDGETS/AeroGrid/" .. relative)
@@ -70,6 +53,18 @@ local function assertEqual(actual, expected, message)
   if actual ~= expected then
     error((message or "values differ") .. ": expected " .. tostring(expected)
       .. ", got " .. tostring(actual), 2)
+  end
+end
+
+--- Compare font constants by name.
+---
+--- The real constants are LcdFlags, so a mismatch otherwise reads "expected
+--- 1536, got 1280", which tells a reader nothing. Correcting the fixture to
+--- the radio's values is only worth doing if a failure stays legible.
+local function assertFont(actual, expected, message)
+  if actual ~= expected then
+    error((message or "wrong font") .. ": expected "
+      .. edgetx.fontName(expected) .. ", got " .. edgetx.fontName(actual), 2)
   end
 end
 
@@ -525,13 +520,13 @@ end
 
 --- Typography must grow with the component's span.
 local function testTypography()
-  assertEqual(theme.typography(1, 1).primary, MIDSIZE)
-  assertEqual(theme.typography(2, 1).primary, DBLSIZE)
-  assertEqual(theme.typography(1, 2).primary, DBLSIZE)
-  assertEqual(theme.typography(2, 2).primary, XXLSIZE)
-  assertEqual(theme.typography(2, 2).unit, MIDSIZE)
-  assertEqual(theme.typography(1, 1).unit, SMLSIZE)
-  assertEqual(theme.typography(1, 1).label, SMLSIZE)
+  assertFont(theme.typography(1, 1).primary, MIDSIZE)
+  assertFont(theme.typography(2, 1).primary, DBLSIZE)
+  assertFont(theme.typography(1, 2).primary, DBLSIZE)
+  assertFont(theme.typography(2, 2).primary, XXLSIZE)
+  assertFont(theme.typography(2, 2).unit, MIDSIZE)
+  assertFont(theme.typography(1, 1).unit, SMLSIZE)
+  assertFont(theme.typography(1, 1).label, SMLSIZE)
 end
 
 --- Every state must be distinguishable by more than color alone.
@@ -1549,6 +1544,28 @@ local function testNavigationService()
 end
 
 
+--- Every line height the dashboard lays out from must be the radio's own.
+---
+--- `theme.fontHeight` carries five numbers that decide every vertical
+--- decision the dashboard makes, and until now nothing checked them against
+--- anything. They are a claim about the firmware, so they are checked against
+--- the firmware: `tests/support/edgetx.lua` records the line heights of the
+--- `std` font set, which is what a 480 x 272 radio is built with, along with
+--- the file they were read from.
+---
+--- The wrong font set is the easy mistake here rather than a typo. EdgeTX also
+--- ships `sml` for 320 x 240 and `lrg` for 800 x 480, and the `sml` heights
+--- are 54, 33, 23, 14 and 10. Adopting those would rescale every text fitting
+--- decision in the project and no test would have objected.
+local function testFontHeightsMatchTheFirmware()
+  local citation = edgetx.citation("FONT_HEIGHT")
+  for font, height in pairs(firmware.FONT_HEIGHT) do
+    assertEqual(theme.fontHeight(font), height,
+      edgetx.fontName(font) .. " is not the height the radio draws it at ("
+        .. citation.file .. ")")
+  end
+end
+
 --- Text must be fitted by measured width as well as height, because a long
 --- reading in a narrow cell clips sideways where a short one would not.
 local function testTextFitting()
@@ -1559,13 +1576,13 @@ local function testTextFitting()
 
   -- Height alone would choose the biggest font that fits vertically, which is
   -- exactly the defect this exists to prevent.
-  assertEqual(theme.fitPrimary(80), XXLSIZE)
-  assertEqual(theme.fitText("-1234.5", 60, 80), SMLSIZE,
+  assertFont(theme.fitPrimary(80), XXLSIZE)
+  assertFont(theme.fitText("-1234.5", 60, 80), SMLSIZE,
     "a narrow cell must reduce the font rather than clip")
-  assertEqual(theme.fitText("9", 400, 80), XXLSIZE,
+  assertFont(theme.fitText("9", 400, 80), XXLSIZE,
     "a short value in a wide cell must keep the largest font")
   -- Nothing fits, so the smallest font is the honest answer.
-  assertEqual(theme.fitText("123456789012", 10, 10), SMLSIZE)
+  assertFont(theme.fitText("123456789012", 10, 10), SMLSIZE)
 
   -- A panel frame must keep its badge clear of its label at every width.
   local resolved = theme.build("modern")
@@ -2397,6 +2414,7 @@ testModelService()
 testControlService()
 testExtremaService()
 testNavigationService()
+testFontHeightsMatchTheFirmware()
 testTextFitting()
 testBipolarGeometry()
 testMetricPresets()
