@@ -38,7 +38,8 @@ local txBattery = {
   -- A transmitter pack moves over minutes, not frames.
   refreshInterval = 50,
   settings = {
-    {key = "label", label = "Label", type = "string", default = "TX BATTERY"},
+    -- "TX BATTERY" needs ten characters of a header that has about five.
+    {key = "label", label = "Label", type = "string", default = "TX"},
     {key = "accent", label = "Accent", type = "string", default = "green"},
     -- No default range: the estimate stays off until a layout states one.
     {key = "min", label = "Empty voltage", type = "number"},

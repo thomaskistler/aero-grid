@@ -600,9 +600,12 @@ local function testStates()
   -- the contract: the badge is what makes a state legible to a colourblind
   -- pilot, so asserting only that it is non-empty asserts nothing a typo
   -- could not satisfy.
+  -- Pinned as literals rather than read from theme.BADGES, because a test
+  -- taking its expectations from the table it is checking would agree with any
+  -- vocabulary at all, including one nobody meant to ship.
   local badges = {
     stale = "STALE", warning = "WARN", critical = "CRIT",
-    unavailable = "NO SOURCE", editing = "EDIT",
+    unavailable = "N/A", editing = "EDIT",
   }
   for name, text in pairs(badges) do
     assertEqual(theme.state(resolved, name).badge, text,
@@ -637,6 +640,71 @@ local function testStates()
     lcd.RGB(resolved.alertRgb.critical), "a critical reading did not tint its panel")
   assert(resolved.alertRgb.warning ~= resolved.alertRgb.critical,
     "warning and critical tint a panel the same colour")
+
+  -- The whole vocabulary has to fit the column reserved for it, at every span
+  -- the typography produces. This is the check the column's width is derived
+  -- to satisfy, and it is driven over the table rather than a list so a badge
+  -- added later is covered by it whether or not anyone remembers.
+  for _, span in ipairs({{1, 1}, {2, 1}, {2, 2}, {4, 4}}) do
+    local fonts = theme.typography(span[1], span[2])
+    local column = theme.badgeWidth(fonts.badge)
+    for name, text in pairs(theme.BADGES) do
+      local needed = theme.textWidth(fonts.badge, text)
+      assert(needed <= column, string.format(
+        "%s does not fit the badge column at %dx%d: %s needs %d of %d",
+        name, span[1], span[2], text, needed, column))
+    end
+  end
+
+  -- The column is exactly what the vocabulary needs, with no slack. Asserting
+  -- only that every badge fits is satisfied by any column at least that wide,
+  -- including the fixed 56 this replaced, and the slack is taken out of the
+  -- header label on every panel of the dashboard.
+  local fonts = theme.typography(1, 1)
+  local widest = 0
+  for _, text in pairs(theme.BADGES) do
+    local width = theme.textWidth(fonts.badge, text)
+    if width > widest then widest = width end
+  end
+  assertEqual(theme.badgeWidth(fonts.badge), widest,
+    "the badge column is not the width its vocabulary actually needs")
+
+  -- On a panel with room, the badge gets that width whole. It used to be
+  -- clamped to half the content, which protected the label by clipping the
+  -- badge: CRIT and CRI are not equally alarming, while a shortened source
+  -- name is merely less informative.
+  local narrow = theme.frame(resolved, {x = 0, y = 0, w = 117, h = 65}, fonts)
+  assertEqual(narrow.badgeWidth, widest,
+    "a single-cell panel squeezed its badge instead of its label")
+
+  -- And the label keeps what is left, which on a single cell is the whole
+  -- argument for the trimmed vocabulary and the asymmetric padding. Pinned as
+  -- a number: a bound like "at least four characters" is satisfied by the
+  -- geometry this replaced.
+  assertEqual(narrow.labelHidden, false,
+    "a single-cell panel cannot show a header label beside its badge")
+  assertEqual(narrow.labelWidth, 117 - resolved.spacing.paddingTight
+    - resolved.spacing.paddingRight - widest - 4,
+    "a single-cell panel's header label is not the width the frame leaves it")
+  assert(narrow.labelWidth >= theme.textWidth(SMLSIZE, "CELLS"), string.format(
+    "a single-cell panel cannot show a five-character label: %d px of a needed %d",
+    narrow.labelWidth, theme.textWidth(SMLSIZE, "CELLS")))
+
+  -- The right margin is smaller than the left padding, because the left has
+  -- the accent to clear and the right has nothing. Those four pixels are a
+  -- character of header on a single cell.
+  assert(resolved.spacing.paddingRight < resolved.spacing.paddingTight,
+    "the header pays for symmetry it does not need")
+  assertEqual(narrow.content, 117 - resolved.spacing.paddingTight
+    - resolved.spacing.paddingRight)
+
+  -- A panel too narrow to carry both drops the label rather than clipping it,
+  -- whether or not the menu button is the reason it ran out of room. This used
+  -- to apply only to an obstructed corner, so an ordinary narrow panel clipped.
+  local tiny = theme.frame(resolved, {x = 0, y = 0, w = 80, h = 65}, fonts)
+  assertEqual(tiny.labelHidden, true,
+    "a panel with no room for a label drew a clipped one anyway")
+  assertEqual(tiny.labelWidth, 0, "a hidden label kept a width")
 
   -- An unknown accent falls back to the theme default rather than failing.
   assertEqual(theme.state(resolved, "normal", "magenta").accent, lcd.RGB(modern.cyan))
@@ -857,7 +925,7 @@ testAlertTintGuarantees()
     -- state is pinned to the token it must come from, and the token is what
     -- is measured.
     local unavailable = theme.state(resolved, "unavailable")
-    assertEqual(unavailable.badge, "NO SOURCE", label .. ": badge text")
+    assertEqual(unavailable.badge, "N/A", label .. ": badge text")
     assertEqual(unavailable.value, lcd.RGB(tokens.textFaint),
       label .. ": unavailable text left the resolved palette")
     assert(theme.contrast(tokens.surface, tokens.textFaint) >= 1.8,
@@ -1769,6 +1837,32 @@ local function testTextFitting()
   end
 end
 
+--- Supporting text picks a wording that fits rather than clipping.
+local function testLabelFitting()
+  local variants = {"NO HOME POSITION", "NO HOME POS", "NO HOME"}
+
+  assertEqual(theme.fitLabel(variants, SMLSIZE, 400), "NO HOME POSITION",
+    "a wide row took a shorter wording than it had room for")
+  assertEqual(theme.fitLabel(variants, SMLSIZE, 120), "NO HOME POS")
+  assertEqual(theme.fitLabel(variants, SMLSIZE, 80), "NO HOME")
+
+  -- Nothing fits, so the shortest offered is the honest answer: the caller
+  -- chose what its last resort would be.
+  assertEqual(theme.fitLabel(variants, SMLSIZE, 4), "NO HOME")
+  -- And a caller with no layout context gets the full wording.
+  assertEqual(theme.fitLabel(variants, SMLSIZE, nil), "NO HOME POSITION")
+
+  -- The chosen wording must actually fit, which is the property callers rely
+  -- on; asserting which string comes back would pass on a helper that always
+  -- returned the shortest one.
+  for _, width in ipairs({400, 200, 120, 100, 80, 40}) do
+    local text = theme.fitLabel(variants, SMLSIZE, width)
+    local needed = theme.textWidth(SMLSIZE, text)
+    assert(needed <= width or text == variants[#variants], string.format(
+      "fitLabel returned %q needing %d px for a row of %d", text, needed, width))
+  end
+end
+
 --- A bipolar bar grows outward from its own centre and keeps its neutral
 --- marker visible at every deflection.
 local function testBipolarGeometry()
@@ -2157,14 +2251,44 @@ local function testCellReadings()
   assertEqual(cellBattery.resolveState(settings, 3.9, 3.9, true), "stale")
   assertEqual(cellBattery.resolveState(settings, nil, nil, false), "unavailable")
 
-  -- A shape problem and a missing sensor need different words.
-  assertEqual(cellBattery.badgeText({shape = "number"}, "unavailable", "NO SOURCE"),
-    "NOT CELLS")
-  assertEqual(cellBattery.badgeText({shape = "invalid"}, "unavailable", "NO SOURCE"),
-    "BAD CELLS")
-  assertEqual(cellBattery.badgeText({shape = "none"}, "unavailable", "NO SOURCE"),
-    "NO SOURCE")
-  assertEqual(cellBattery.badgeText({shape = "cells"}, "warning", "WARN"), "WARN")
+  -- Three shape problems with three different fixes, said in the detail row
+  -- rather than in a badge. A cells source returning a plain number is a
+  -- configuration mistake, one returning nonsense is a sensor fault, and an
+  -- empty table is a pack not detected yet. The badge for all three is the
+  -- state, which is the same for all three.
+  local function count(summary, width)
+    return theme.fitLabel(
+      cellBattery.countVariants(summary, {showCount = true}), SMLSIZE, width)
+  end
+
+  assertEqual(count({shape = "number"}, 400), "NOT A CELLS SENSOR")
+  assertEqual(count({shape = "invalid"}, 400), "BAD CELL VALUES")
+  assertEqual(count({shape = "empty"}, 400), "NO CELLS DETECTED")
+  -- A source the radio has never seen is not a shape problem, and the row has
+  -- nothing of its own to add to the badge.
+  assertEqual(count({shape = "none"}, 400), "")
+  assertEqual(count({shape = "cells", count = 4}, 400), "4S")
+
+  -- Each wording shortens rather than clipping when the row is narrow. This
+  -- is the whole reason the distinction moved out of the badge: a detail row
+  -- can say it at four widths, a six-character badge cannot say it at all.
+  assertEqual(count({shape = "number"}, 100), "NOT CELLS")
+  assertEqual(count({shape = "number"}, 50), "NOT CELS")
+
+  -- A count below the configured one is called out, and that too shortens.
+  local short = {shape = "cells", count = 3}
+  assertEqual(theme.fitLabel(cellBattery.countVariants(short,
+    {showCount = true, cells = 4}), SMLSIZE, 400), "3S OF 4")
+  assertEqual(theme.fitLabel(cellBattery.countVariants(short,
+    {showCount = true, cells = 4}), SMLSIZE, 50), "3S/4")
+
+  -- The pack row shortens the same way, and says nothing when switched off.
+  assertEqual(theme.fitLabel(cellBattery.packVariants({pack = 16.4},
+    {showPack = true}), SMLSIZE, 400), "16.4V PACK")
+  assertEqual(theme.fitLabel(cellBattery.packVariants({pack = 16.4},
+    {showPack = true}), SMLSIZE, 60), "16.4V")
+  assertEqual(theme.fitLabel(cellBattery.packVariants({pack = 16.4},
+    {showPack = false}), SMLSIZE, 400), "")
 end
 
 --- Three situations look like a zero and must not: a dead link, a protocol
@@ -2194,27 +2318,39 @@ local function testLinkClassification()
 
   local thresholds = {warning = 50, critical = 30}
   local function state(reading)
-    local name = linkStatus.resolveState(thresholds, reading)
-    local _, badge = linkStatus.resolveState(thresholds, reading)
-    return name, badge
+    return linkStatus.resolveState(thresholds, reading)
+  end
+
+  --- What the supporting row says, at whatever width it is given.
+  local function link(reading, width)
+    return linkStatus.linkText({
+      themeBuilder = theme, fonts = {label = SMLSIZE},
+      linkWidth = width or 400,
+    }, reading)
   end
 
   -- A protocol with no RSSI sensor is a permanent property of the link, not a
-  -- fade, and it must never be reported as a dead link.
-  local name, badge = state({sourceState = "absent", linkDown = false})
-  assertEqual(name, "unavailable")
-  assertEqual(badge, "NO SENSOR")
+  -- fade, and it must never be reported as a dead link. The state is the same
+  -- for both; the row is what tells them apart, which is why it says this in
+  -- words rather than in six badge characters.
+  assertEqual(state({sourceState = "absent", linkDown = false}), "unavailable")
+  assertEqual(link({sourceState = "absent", indicator = true,
+    rssiState = "absent"}), "NO RSSI SENSOR")
 
   -- A dead link is the measurement this panel exists to report.
-  name, badge = state({sourceState = "live", linkDown = true, available = true,
-    value = 96})
-  assertEqual(name, "critical")
-  assertEqual(badge, "NO LINK")
+  assertEqual(state({sourceState = "live", linkDown = true, available = true,
+    value = 96}), "critical")
+  assertEqual(link({linkDown = true}), "LINK DOWN")
 
   -- Never powered up is not an alarm.
-  name, badge = state({sourceState = "waiting", linkDown = true, available = false})
-  assertEqual(name, "unavailable")
-  assertEqual(badge, "NO LINK")
+  assertEqual(state({sourceState = "waiting", linkDown = true,
+    available = false}), "unavailable")
+
+  -- Both shorten rather than clipping when the row is narrow.
+  assertEqual(link({linkDown = true}, 70), "NO LINK")
+  assertEqual(link({linkDown = true}, 45), "DOWN")
+  assertEqual(link({sourceState = "absent", indicator = true,
+    rssiState = "absent"}, 90), "NO RSSI")
 
   -- Thresholds count downward, and a genuine zero on a live link is a
   -- reading, not a missing one.
@@ -2365,9 +2501,9 @@ local function testNavigationPresentation()
   -- known; only the two values measured from home are withheld.
   local noHome = {source = "GPS", known = true, fix = true, home = false,
     state = "normal", latitude = 47.3769, longitude = 8.5417}
-  local state, badge = navigation.resolveState({}, noHome)
-  assertEqual(state, "normal")
-  assertEqual(badge, "NO HOME")
+  -- No badge at all: the panel is not in a failed state, and the origin
+  -- caption below says which part is missing at a length a row has room for.
+  assertEqual(navigation.resolveState({}, noHome), "normal")
   assertEqual(navigation.bearingText(noHome), "BRG --")
   assertEqual(navigation.originText(noHome), "NO HOME POSITION")
   assertEqual(navigation.coordinateText(noHome), "47.37690 8.54170")
@@ -2375,18 +2511,23 @@ local function testNavigationPresentation()
   -- No fix is reported as such, never as a distance of zero.
   local noFix = {source = "GPS", known = true, fix = false, home = false,
     state = "unavailable"}
-  state, badge = navigation.resolveState({}, noFix)
-  assertEqual(state, "unavailable")
-  assertEqual(badge, "NO FIX")
+  assertEqual(navigation.resolveState({}, noFix), "unavailable")
+  assertEqual(navigation.originText(noFix), "NO FIX")
   assertEqual(navigation.coordinateText(noFix), "-- , --")
 
-  -- A source the radio does not have is a different problem again.
-  state, badge = navigation.resolveState({},
-    {source = "GPS", known = false, fix = false, home = false})
-  assertEqual(state, "unavailable")
-  assertEqual(badge, "NO SOURCE")
+  -- A source the radio does not have is a different problem again, and the
+  -- caption is where that difference is stated. All three are `unavailable`.
+  assertEqual(navigation.resolveState({},
+    {source = "GPS", known = false, fix = false, home = false}), "unavailable")
   assertEqual(navigation.originText({source = "GPS", known = false}),
     "NO GPS SOURCE")
+
+  -- The bearing row shortens rather than clipping. `BRG 009 N` needs 89 px and
+  -- was being drawn into 38 on a 1 x 2 panel.
+  assertEqual(navigation.bearingText(fix, theme, SMLSIZE, 400), "BRG 009 N")
+  assertEqual(navigation.bearingText(fix, theme, SMLSIZE, 80), "BRG 009")
+  assertEqual(navigation.bearingText(fix, theme, SMLSIZE, 60), "009 N")
+  assertEqual(navigation.bearingText(fix, theme, SMLSIZE, 35), "009")
 
   -- Stale keeps the last known position visible and marked.
   local stale = {source = "GPS", known = true, fix = true, home = true,
@@ -2589,6 +2730,7 @@ testExtremaService()
 testNavigationService()
 testFontHeightsMatchTheFirmware()
 testTextFitting()
+testLabelFitting()
 testBipolarGeometry()
 testMetricPresets()
 testTimerSemantics()

@@ -119,16 +119,22 @@ end
 --- position leaves the fix itself perfectly good, so the panel stays normal
 --- and says which part is missing.
 ---@param settings AeroGridNavigationSettings
+--- No source, no fix and no home are three different causes with three
+--- different fixes, and the origin caption below the reading says which in
+--- words. The badge says only what state the panel is in, because a badge has
+--- room for one word and the caption has room for a sentence.
 ---@param view any Navigation subscription.
 ---@return string stateName
----@return string? badge Overriding badge text.
 function navigation.resolveState(settings, view)
-  if type(view) ~= "table" then return "unavailable", nil end
-  if view.source == nil or view.source == "" then return "unavailable", nil end
-  if not view.known then return "unavailable", "NO SOURCE" end
-  if not view.fix then return "unavailable", "NO FIX" end
-  if view.state == "stale" then return "stale", nil end
-  if not view.home then return "normal", "NO HOME" end
+  if type(view) ~= "table" then return "unavailable" end
+  if view.source == nil or view.source == "" then return "unavailable" end
+  if not view.known then return "unavailable" end
+  if not view.fix then return "unavailable" end
+  if view.state == "stale" then return "stale" end
+  -- A missing home position leaves the fix perfectly good, so the panel is not
+  -- in a failed state at all; only the two values measured from home are
+  -- withheld, and the caption says so.
+  if not view.home then return "normal" end
 
   local distance = view.distance
   if type(distance) == "number" then
@@ -136,14 +142,14 @@ function navigation.resolveState(settings, view)
     local warning = settings.warning
     -- Distance thresholds count upward: further away is worse.
     if type(critical) == "number" and distance >= critical then
-      return "critical", nil
+      return "critical"
     end
     if type(warning) == "number" and distance >= warning then
-      return "warning", nil
+      return "warning"
     end
   end
 
-  return "normal", nil
+  return "normal"
 end
 
 --- Format the dominant distance reading.
@@ -156,18 +162,39 @@ function navigation.distanceText(view, formatter)
   return formatter(view) or "--"
 end
 
---- Format the supporting bearing row.
+--- Wordings for the supporting bearing row, longest first.
 --- The bearing is withheld, not zeroed, when there is no home position: due
 --- north and "nowhere to measure from" must not look the same.
 ---@param view any
----@return string
-function navigation.bearingText(view)
+---@return string[]
+function navigation.bearingVariants(view)
   if type(view) ~= "table" or type(view.bearing) ~= "number" then
-    return "BRG --"
+    return {"BRG --", "--"}
   end
 
   local bearing = math.floor(view.bearing % 360 + 0.5) % 360
-  return string.format("BRG %03d %s", bearing, navigation.cardinal(bearing))
+  local cardinal = navigation.cardinal(bearing)
+  -- `BRG 009 N` needed 89 px and was drawn into 38 on a 1 x 2 panel, so the
+  -- compass point goes first and then the caption, leaving the number, which
+  -- is the part that is actually a measurement.
+  return {
+    string.format("BRG %03d %s", bearing, cardinal),
+    string.format("BRG %03d", bearing),
+    string.format("%03d %s", bearing, cardinal),
+    string.format("%03d", bearing),
+  }
+end
+
+--- Format the supporting bearing row at whatever width it has.
+---@param view any
+---@param themeBuilder? table
+---@param font? any
+---@param width? integer
+---@return string
+function navigation.bearingText(view, themeBuilder, font, width)
+  local variants = navigation.bearingVariants(view)
+  if not themeBuilder then return variants[1] end
+  return themeBuilder.fitLabel(variants, font, width)
 end
 
 --- Wordings for the origin caption, longest first.
@@ -197,14 +224,11 @@ end
 function navigation.originText(view, themeBuilder, font, width)
   local variants = navigation.originVariants(view)
 
-  -- Callers without layout context get the full wording.
-  if not themeBuilder or not width then return variants[1] end
-
-  for _, text in ipairs(variants) do
-    if themeBuilder.textWidth(font, text) <= width then return text end
-  end
-
-  return variants[#variants]
+  -- Callers without layout context get the full wording. Choosing between the
+  -- wordings is the shared helper's job now: every supporting row in the
+  -- catalogue has this problem and only this one used to solve it.
+  if not themeBuilder then return variants[1] end
+  return themeBuilder.fitLabel(variants, font, width)
 end
 
 --- Format the coordinates row.
@@ -375,8 +399,11 @@ function navigation.create(parent, rect, settings, services)
     font = fonts.label,
   })
 
-  -- The wording is chosen against this width, so remember it.
+  -- Both wordings are chosen against the widths they will be given, so both
+  -- widths are remembered.
+  context.detailWidth = area.detailWidth
   context.originWidth = area.originWidth
+  context.showDetail = area.showDetail
   context.originLabel = primitives.label(panel.root, theme, {
     x = area.originX,
     y = area.detailY,
@@ -443,7 +470,7 @@ end
 function navigation.apply(context)
   local settings = context.settings
   local view = context.feed
-  local stateName, badge = navigation.resolveState(settings, view)
+  local stateName = navigation.resolveState(settings, view)
   local presentation = context.state(stateName, settings.accent)
 
   context.stateName = stateName
@@ -459,13 +486,13 @@ function navigation.apply(context)
 
   context.value:set({text = text, color = presentation.value})
   context.label:set({color = presentation.label})
-  context.badge:set({
-    text = badge or presentation.badge or "",
-    color = presentation.accent,
-  })
+  context.badge:set({text = presentation.badge or "", color = presentation.accent})
   context.primitives.stylePanel(context.panel, presentation)
 
-  local detail = navigation.bearingText(view)
+  -- A row the span sheds is not worth fitting words to.
+  if context.showDetail then
+  local detail = navigation.bearingText(view, context.themeBuilder,
+    context.fonts.label, context.detailWidth)
   if detail ~= context.detail then
     context.detail = detail
     context.detailLabel:set({text = detail})
@@ -476,6 +503,7 @@ function navigation.apply(context)
   if origin ~= context.origin then
     context.origin = origin
     context.originLabel:set({text = origin})
+  end
   end
 
   if context.coordinatesLabel then
@@ -557,10 +585,23 @@ function navigation.update(context, rect)
 
   reconcile(context.detailLabel, area.showDetail,
     {x = area.pad, y = area.detailY, w = area.detailWidth})
-  -- A resize changes how much room the caption has, so let it be re-chosen.
+  -- A resize changes how much room each caption has, so let both be
+  -- re-chosen on the refresh that follows.
+  if area.detailWidth ~= context.detailWidth then
+    context.detailWidth = area.detailWidth
+    context.detail = nil
+  end
   if area.originWidth ~= context.originWidth then
     context.originWidth = area.originWidth
     context.origin = nil
+  end
+  if area.showDetail ~= context.showDetail then
+    context.showDetail = area.showDetail
+    -- A row that just became visible still holds whatever it had when it was
+    -- hidden, so force the next refresh to fit it again.
+    context.detail = nil
+    context.origin = nil
+    context.applied = false
   end
   reconcile(context.originLabel, area.showDetail,
     {x = area.originX, y = area.detailY, w = area.originWidth})

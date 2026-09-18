@@ -393,6 +393,10 @@ The primary reference viewport is 480 x 272, matching the TX16S and several othe
 - Units stay attached to the value but use a smaller size and lower contrast.
 - Supporting values and captions must remain legible on the physical radio, not merely in the simulator.
 - Letter spacing is zero. Text must wrap, abbreviate, or reduce to a defined smaller font before it clips.
+- A dominant reading abbreviates by shrinking its font; a supporting row cannot, because it is already at the smallest size the dashboard uses. A row therefore offers several wordings, longest first, and `theme.fitLabel` takes the longest that fits the width it will actually be given. Every supporting row in the catalogue goes through it.
+- **A badge names the state; the supporting row says why.** The badge vocabulary is a closed set on the theme, and short, because the column is reserved on every panel whether or not a badge is showing: a long word is paid for by every header on the dashboard rather than by the state that uses it. Components do not override it. Distinctions such as a cells sensor returning a number against one returning nonsense, or a dead link against a protocol with no RSSI sensor, belong in the row, which has room for words and is fitted to its width.
+- The badge column is exactly as wide as its widest word, and is never squeezed. Clamping it to a fraction of a narrow panel protects the label by clipping the badge, which is the wrong way round: `CRIT` and `CRI` are not equally alarming, while a shortened source name is merely less informative. A header label with too little room left is dropped rather than clipped, on any panel, not only one obstructed by the menu button.
+- Horizontal padding is asymmetric. The left clears the accent; the right has nothing to clear, so it is smaller. On a single cell those four pixels are a character of header label.
 
 ### Initial color tokens
 

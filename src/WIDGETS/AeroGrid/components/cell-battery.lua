@@ -59,7 +59,7 @@ local cellBattery = {
   settings = {
     {key = "source", label = "Cells source", type = "string", default = "Cels"},
     {key = "lowestSource", label = "Lowest cell source", type = "string", default = ""},
-    {key = "label", label = "Label", type = "string", default = "CELLS"},
+    {key = "label", label = "Label", type = "string", default = "PACK"},
     {key = "reading", label = "Primary reading", type = "string", default = "lowest"},
     -- The usable range, per cell: a LiPo is flat at 3.3 V and full at 4.2 V.
     {key = "min", label = "Empty voltage", type = "number", default = 3.3},
@@ -232,23 +232,51 @@ function cellBattery.fraction(settings, value, cells)
   return fraction
 end
 
---- Badge text for a state, naming the shape problem when there is one.
---- "NO SOURCE" is the right answer for a sensor the radio has never seen, but
---- it is the wrong answer for a source that answered with something this
---- component cannot read: those need different fixes, so they read
---- differently.
+--- Wordings for the cell-count row, which is where a shape problem is named.
+---
+--- "N/A" is the right badge for a source that answered with something this
+--- component cannot read, and it is not enough on its own: a cells source that
+--- returned a plain number is a configuration mistake, one that returned
+--- nonsense is a sensor fault, and one that returned an empty table is a pack
+--- that has not been detected yet. Three different fixes.
+---
+--- That distinction used to be three nine-character badges, which did not fit
+--- the badge column at any span and made the column too wide for every other
+--- panel's header. It belongs here, in a row that has room for words and is
+--- fitted to the width it actually has.
 ---@param summary table
----@param stateName string
----@param fallback? string Badge the theme resolved for this state.
----@return string
-function cellBattery.badgeText(summary, stateName, fallback)
-  if stateName == "unavailable" then
-    if summary.shape == "number" then return "NOT CELLS" end
-    if summary.shape == "invalid" then return "BAD CELLS" end
-    if summary.shape == "empty" then return "NO CELLS" end
+---@param settings AeroGridCellSettings
+---@return string[]
+function cellBattery.countVariants(summary, settings)
+  local shape = summary.shape
+
+  if shape == "number" then return {"NOT A CELLS SENSOR", "NOT CELLS", "NOT CELS"} end
+  if shape == "invalid" then return {"BAD CELL VALUES", "BAD CELLS", "BAD CELS"} end
+  if shape == "empty" then return {"NO CELLS DETECTED", "NO CELLS", "NO CELS"} end
+  if shape ~= "cells" or summary.count == 0 then return {""} end
+  if not settings.showCount then return {""} end
+
+  local count = tostring(summary.count) .. "S"
+  local expected = settings.cells
+  -- A cell that stopped reporting is exactly the failure this component exists
+  -- to catch, so a count below the configured one is called out.
+  if type(expected) == "number" and expected > 0 and summary.count ~= expected then
+    local full = count .. " OF " .. tostring(math.floor(expected))
+    return {full, count .. "/" .. tostring(math.floor(expected)), count}
   end
 
-  return fallback or ""
+  return {count}
+end
+
+--- Wordings for the pack-voltage row.
+---@param summary table
+---@param settings AeroGridCellSettings
+---@return string[]
+function cellBattery.packVariants(summary, settings)
+  if not settings.showPack or type(summary.pack) ~= "number" then return {""} end
+
+  local volts = string.format("%.1fV", summary.pack)
+  return {volts .. " PACK", volts}
 end
 
 --- Describe how the component presents itself at a given span.
@@ -360,6 +388,8 @@ function cellBattery.create(parent, rect, settings, services)
 
   local area = cellBattery.regionsFor(
     theme, services.themeBuilder, rect, layout, fonts, sample)
+  context.detailWidth = area.detailWidth
+  context.showDetail = area.showDetail
 
   local panel = primitives.panel(parent, rect, theme, presentation)
   context.panel = panel
@@ -480,36 +510,27 @@ function cellBattery.apply(context)
 
   context.value:set({text = text, color = presentation.value})
   context.label:set({color = presentation.label})
-  context.badge:set({
-    text = cellBattery.badgeText(summary, stateName, presentation.badge),
-    color = presentation.accent,
-  })
+  context.badge:set({text = presentation.badge or "", color = presentation.accent})
   context.primitives.stylePanel(context.panel, presentation)
 
-  local countText = ""
-  if settings.showCount and summary.count > 0 then
-    countText = tostring(summary.count) .. "S"
-    local expected = settings.cells
-    -- A cell that stopped reporting is exactly the failure this component
-    -- exists to catch, so a count below the configured one is called out.
-    if type(expected) == "number" and expected > 0 and summary.count ~= expected then
-      countText = countText .. " OF " .. tostring(math.floor(expected))
-    end
-  elseif settings.showCount and summary.shape ~= "cells" and summary.shape ~= "none" then
-    countText = "NO CELLS"
-  end
+  -- A row the span sheds is not worth fitting words to.
+  if context.showDetail then
+  local fit = context.themeBuilder.fitLabel
+  local font = context.fonts.label
+
+  local countText = fit(cellBattery.countVariants(summary, settings), font,
+    context.detailWidth)
   if countText ~= context.countText then
     context.countText = countText
     context.countLabel:set({text = countText})
   end
 
-  local packText = ""
-  if settings.showPack and type(summary.pack) == "number" then
-    packText = string.format("%.1fV PACK", summary.pack)
-  end
+  local packText = fit(cellBattery.packVariants(summary, settings), font,
+    context.detailWidth)
   if packText ~= context.packText then
     context.packText = packText
     context.packLabel:set({text = packText})
+  end
   end
 
   if context.bar then
@@ -570,6 +591,19 @@ function cellBattery.update(context, rect)
     else
       lvgl.hide(object)
     end
+  end
+
+  -- A resize changes how much room each row has, so let both wordings be
+  -- re-chosen on the refresh that follows.
+  if area.detailWidth ~= context.detailWidth
+      or area.showDetail ~= context.showDetail then
+    context.detailWidth = area.detailWidth
+    context.showDetail = area.showDetail
+    -- A row that just became visible still holds whatever it had when it was
+    -- hidden, so force the next refresh to fit it again.
+    context.countText = nil
+    context.packText = nil
+    context.applied = false
   end
 
   reconcile(context.countLabel, area.showDetail,
