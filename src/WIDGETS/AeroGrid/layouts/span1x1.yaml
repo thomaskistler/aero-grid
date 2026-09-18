@@ -1,0 +1,218 @@
+version: 1
+
+# Span gallery, 1 x 1: every component that declares a single cell, at that
+# single cell, side by side.
+#
+# Set the widget's Dashboard ID to `span1x1` to load this screen on any model.
+#
+# This is not a dashboard. `sim` and `sim2` are arranged to be useful; this one
+# is arranged to make the catalogue disagree with itself in a way a person can
+# see, by putting the same span in front of you thirteen times at once. Paging
+# between the four `span*` galleries then compares the same components across
+# spans.
+#
+# What to look for, in rough order of how loud it should be:
+#
+#   * The dominant reading is a different size on almost every panel. They are
+#     all fitted to the widest string each component could ever print, which is
+#     3 characters for a metric and 15 for a model name, so the fitting is doing
+#     what it was told and the instruction is what is wrong.
+#   * Header labels are cut off. A single-column panel gives the state badge
+#     half of its header row whether or not the badge has anything to say, and
+#     the label gets what is left, which is about four characters.
+#   * Nothing here draws a bar, a dial or a supporting row except the variable
+#     indicator, which draws its bar at every span while everything else sheds
+#     its visualization below two cells.
+#
+# Sources are the ones an ELRS link publishes in the simulator, so the readings
+# are live there. `Cels` is deliberately absent on that link: the cell panel
+# showing NO CELLS rather than a zero is the point of it being here.
+
+theme:
+  mode: modern
+
+grid:
+  columns: 4
+  rows: 4
+
+components:
+  # Top-left is under the EdgeTX menu button in App mode. A single cell cannot
+  # be saved there and the specification says so; it keeps its reading and
+  # drops its label. It is occupied here on purpose, so the damage is visible
+  # beside twelve panels that are not damaged.
+  - id: g-metric
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: Metric
+      source: RxBt
+      unit: V
+      min: 6.0
+      max: 8.4
+      precision: 1
+
+  - id: g-cells
+    type: cell-battery
+    col: 1
+    row: 0
+    colSpan: 1
+    rowSpan: 1
+    config:
+      source: Cels
+      label: Cells
+
+  - id: g-link
+    type: link-status
+    col: 2
+    row: 0
+    colSpan: 1
+    rowSpan: 1
+    config:
+      rssiSource: 1RSS
+      qualitySource: RQly
+      label: Link
+
+  - id: g-nav
+    type: navigation
+    col: 3
+    row: 0
+    colSpan: 1
+    rowSpan: 1
+    config:
+      source: GPS
+      label: Nav
+
+  - id: g-timer
+    type: flight-timer
+    col: 0
+    row: 1
+    colSpan: 1
+    rowSpan: 1
+    config:
+      timer: 0
+
+  - id: g-mode
+    type: flight-mode
+    col: 1
+    row: 1
+    colSpan: 1
+    rowSpan: 1
+    config:
+      accent: green
+
+  - id: g-tx
+    type: tx-battery
+    col: 2
+    row: 1
+    colSpan: 1
+    rowSpan: 1
+    config:
+      min: 6.6
+      max: 8.4
+
+  - id: g-gvar
+    type: variable-indicator
+    col: 3
+    row: 1
+    colSpan: 1
+    rowSpan: 1
+    config:
+      binding: global
+      index: 0
+
+  - id: g-trim
+    type: trim-panel
+    col: 0
+    row: 2
+    colSpan: 1
+    rowSpan: 1
+    config:
+      mode: single
+      trim1: trim-ail
+      orientation: horizontal
+
+  - id: g-model
+    type: model-identity
+    col: 1
+    row: 2
+    colSpan: 1
+    rowSpan: 1
+    config:
+      presentation: auto
+
+  - id: g-probe
+    type: service-probe
+    col: 2
+    row: 2
+    colSpan: 1
+    rowSpan: 1
+    config:
+      service: telemetry
+      source: RxBt
+      label: Probe
+
+  - id: g-placeholder
+    type: placeholder
+    col: 3
+    row: 2
+    colSpan: 1
+    rowSpan: 1
+    config:
+      title: Placeholder
+      subtitle: Subtitle
+
+  - id: g-heartbeat
+    type: heartbeat
+    col: 0
+    row: 3
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: Heartbeat
+
+  # The same component three times, differing only in its visualization, so the
+  # three can be compared without remembering what the fourth looked like.
+  - id: g-metric-radial
+    type: metric
+    col: 1
+    row: 3
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: Radial
+      source: RQly
+      min: 0
+      max: 100
+      precision: 0
+      visual: radial
+
+  - id: g-metric-bar
+    type: metric
+    col: 2
+    row: 3
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: Bar
+      source: RQly
+      min: 0
+      max: 100
+      precision: 0
+      visual: bar
+
+  - id: g-metric-plain
+    type: metric
+    col: 3
+    row: 3
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: Plain
+      source: RQly
+      min: 0
+      max: 100
+      precision: 0
+      visual: none

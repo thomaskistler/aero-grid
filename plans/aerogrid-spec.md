@@ -300,6 +300,10 @@ Components consume immutable snapshots. A service mutates its own state table in
     ├── default.yaml
     ├── services.yaml
     ├── services2.yaml
+    ├── span1x1.yaml
+    ├── span2x1.yaml
+    ├── span2x2.yaml
+    ├── span4x1.yaml
     └── <model-identifier>--<dashboard-id>.yaml
 ```
 
@@ -870,6 +874,7 @@ Milestones 1 to 7 are merged into `main`.
 - Two instances running together are held to owning their own root, page, service registry and telemetry service, because EdgeTX runs every Lua widget in one interpreter state and anything a module kept at its own scope would be shared between dashboards that know nothing about each other.
 - In App mode, every shipped layout is checked to draw nothing readable inside the corner EdgeTX's menu button covers. The directory is read rather than listed, so a new layout is covered as soon as it is added.
 - Every layout under `layouts/` is loaded by the integration suite, not merely the shipped default: each one is built through the real host and components, held to the same containment rules, and refreshed against radio state. A layout is covered as soon as it is added, because the suite reads the directory rather than a list.
+- Four span galleries ship alongside the dashboards, under the Dashboard IDs `span1x1`, `span2x1`, `span2x2` and `span4x1`. They are not dashboards. `sim` and `sim2` are arranged to be useful; a gallery is arranged to make the catalogue disagree with itself where a person can see it, by putting one span in front of them for every component at once. Paging between the four then compares the same components across spans. The single-cell gallery is held to containing every component that declares a `1x1` span, read from the component directory rather than from a list, so a component written later cannot quietly drop out of the comparison.
 
 ### Immediate next steps
 
