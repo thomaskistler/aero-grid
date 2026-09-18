@@ -1,0 +1,78 @@
+version: 1
+
+# Span gallery, 2 x 2: four components on identical square panels, chosen
+# because at this one span their dominant readings land four sizes apart.
+#
+# Set the widget's Dashboard ID to `span2x2` to load this screen on any model.
+#
+# Measured against the real host, on a 238 x 134 panel, the reading is:
+#
+#   cell battery    XXLSIZE   69 px
+#   metric          DBLSIZE   40 px
+#   flight mode     MIDSIZE   29 px
+#   navigation      SMLSIZE   17 px
+#
+# Four panels of exactly the same size, one dashboard, and the dominant reading
+# on the smallest is a quarter the height of the dominant reading on the
+# largest. Each is individually defensible: every component fits its value to
+# the widest string it could ever print, and "888.88km" is simply longer than
+# "4.44V". Whether the result reads as one instrument is the question, and it
+# is a question for a screen rather than for a measurement.
+#
+# The navigation panel is the extreme case for a second reason: its dial takes
+# the right of the panel, so the reading is fitted to what is left rather than
+# to the panel. That is also why it reads smaller here than it does at 2 x 1,
+# where there is no dial.
+
+theme:
+  mode: modern
+
+grid:
+  columns: 4
+  rows: 4
+
+components:
+  - id: g-cells
+    type: cell-battery
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      source: Cels
+      label: Cells
+
+  - id: g-metric
+    type: metric
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: Metric
+      source: RxBt
+      unit: V
+      min: 6.0
+      max: 8.4
+      precision: 1
+
+  - id: g-mode
+    type: flight-mode
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      accent: green
+      showIndex: true
+
+  - id: g-nav
+    type: navigation
+    col: 2
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      source: GPS
+      label: Nav
+      presentation: compass

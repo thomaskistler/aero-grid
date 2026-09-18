@@ -337,8 +337,53 @@ local function testShippedLayoutsLoad()
   end
 end
 
+--- The single-cell gallery has to contain the catalogue, or it is not a
+--- comparison.
+---
+--- `span1x1.yaml` exists so a person can see thirteen components at the same
+--- span at once and judge whether they belong to the same dashboard. A
+--- component missing from it is a component nobody is comparing, and the most
+--- likely way for one to go missing is for it to be written after the gallery.
+--- The component directory is therefore read from disk rather than listed
+--- here, exactly as the layout sweep above reads the layout directory.
+local function testSpanGalleryIsComplete()
+  local componentHost = assert(loadfile(sourcePath .. "lib/component_host.lua"))()
+
+  local listingPath = root .. "/build/gallery-components.txt"
+  os.execute("ls '" .. sourcePath .. "components' > '" .. listingPath .. "'")
+  local listing = assert(hostIo.open(listingPath, "r"))
+  local stems = {}
+  for name in listing:lines() do
+    local stem = string.match(name, "^(.+)%.lua$")
+    if stem then stems[#stems + 1] = stem end
+  end
+  listing:close()
+  os.remove(listingPath)
+  assert(#stems > 0, "no components were found to compare")
+
+  local source = assert(hostIo.open(sourcePath .. "layouts/span1x1.yaml", "r"))
+  local gallery = source:read("a")
+  source:close()
+
+  local compared = 0
+  for _, stem in ipairs(stems) do
+    local module = assert(loadfile(sourcePath .. "components/" .. stem .. ".lua"))()
+    if componentHost.supportsSpan(module, 1, 1) then
+      compared = compared + 1
+      assert(string.find(gallery, "type: " .. stem, 1, true),
+        stem .. " declares a 1 x 1 span but is missing from the 1 x 1 gallery,"
+          .. " so nothing is comparing it against the rest of the catalogue")
+    end
+  end
+
+  -- A gallery that compared one component would satisfy every assertion above.
+  assert(compared >= 13,
+    "only " .. compared .. " components were compared at 1 x 1")
+end
+
 local function testShippedLayout()
 testShippedLayoutsLoad()
+testSpanGalleryIsComplete()
   resetRadio()
   local zone = {x = 0, y = 0, w = 480, h = 272}
   local context = testRendersInBothModes("shipped", zone, sourcePath, 10)

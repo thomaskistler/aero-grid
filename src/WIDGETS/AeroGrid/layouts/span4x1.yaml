@@ -1,0 +1,68 @@
+version: 1
+
+# Span gallery, 4 x 1: four full-width rows, stacked, so components that differ
+# only in their chosen font sit directly above one another.
+#
+# Set the widget's Dashboard ID to `span4x1` to load this screen on any model.
+#
+# A full-width row is the same height as a single cell and four times the
+# width, which removes width from the argument entirely: anything that reads
+# differently here differs because of the vertical ladder alone. Measured on a
+# 480 x 65 panel the readings are MIDSIZE for the metric and the cell battery,
+# DBLSIZE for the timer and the flight mode. The two rows are 29 px and 40 px,
+# and the panels are identical.
+#
+# This is also the arrangement where the header row is most obviously wrong in
+# the other direction: with 464 px of content the state badge still takes its
+# fixed 56, and the label is given the remaining 400 whether it is three
+# characters or thirty.
+
+theme:
+  mode: modern
+
+grid:
+  columns: 4
+  rows: 4
+
+components:
+  - id: g-metric
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 4
+    rowSpan: 1
+    config:
+      label: Metric
+      source: RxBt
+      unit: V
+      min: 6.0
+      max: 8.4
+      precision: 1
+
+  - id: g-cells
+    type: cell-battery
+    col: 0
+    row: 1
+    colSpan: 4
+    rowSpan: 1
+    config:
+      source: Cels
+      label: Cells
+
+  - id: g-timer
+    type: flight-timer
+    col: 0
+    row: 2
+    colSpan: 4
+    rowSpan: 1
+    config:
+      timer: 0
+
+  - id: g-mode
+    type: flight-mode
+    col: 0
+    row: 3
+    colSpan: 4
+    rowSpan: 1
+    config:
+      accent: green

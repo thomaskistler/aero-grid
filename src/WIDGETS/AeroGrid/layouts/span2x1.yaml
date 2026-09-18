@@ -1,0 +1,113 @@
+version: 1
+
+# Span gallery, 2 x 1: the eight components carrying a dominant telemetry or
+# radio reading, all at two cells wide and one tall.
+#
+# Set the widget's Dashboard ID to `span2x1` to load this screen on any model.
+#
+# This is the span where the responsive ladder stops making sense, and it is
+# the reason this gallery exists. Compare it against `span1x1`, which shows the
+# same components on panels a quarter the area:
+#
+#   * The metric's reading is *smaller* here than it is at one cell. A 2 x 1 is
+#     the same height as a 1 x 1 and twice the width, but the presentation adds
+#     a unit row at two cells, the unit row comes out of the same vertical
+#     space as the reading, and the reading shrinks to pay for it. A panel that
+#     grew shows a smaller number.
+#   * Beside it, the timer and the flight mode both get *larger* at this span.
+#     Nothing distinguishes them from the metric except which optional row each
+#     happens to add at which cell count.
+#
+# Sources match `span1x1`, so paging between the galleries changes only the
+# span.
+
+theme:
+  mode: modern
+
+grid:
+  columns: 4
+  rows: 4
+
+components:
+  - id: g-metric
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: Metric
+      source: RxBt
+      unit: V
+      min: 6.0
+      max: 8.4
+      precision: 1
+
+  - id: g-cells
+    type: cell-battery
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      source: Cels
+      label: Cells
+
+  - id: g-link
+    type: link-status
+    col: 0
+    row: 1
+    colSpan: 2
+    rowSpan: 1
+    config:
+      rssiSource: 1RSS
+      qualitySource: RQly
+      label: Link
+
+  - id: g-nav
+    type: navigation
+    col: 2
+    row: 1
+    colSpan: 2
+    rowSpan: 1
+    config:
+      source: GPS
+      label: Nav
+
+  - id: g-timer
+    type: flight-timer
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 1
+    config:
+      timer: 0
+
+  - id: g-mode
+    type: flight-mode
+    col: 2
+    row: 2
+    colSpan: 2
+    rowSpan: 1
+    config:
+      accent: green
+
+  - id: g-tx
+    type: tx-battery
+    col: 0
+    row: 3
+    colSpan: 2
+    rowSpan: 1
+    config:
+      min: 6.6
+      max: 8.4
+
+  - id: g-gvar
+    type: variable-indicator
+    col: 2
+    row: 3
+    colSpan: 2
+    rowSpan: 1
+    config:
+      binding: global
+      index: 0
