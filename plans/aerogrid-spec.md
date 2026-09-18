@@ -362,7 +362,11 @@ The primary reference viewport is 480 x 272, matching the TX16S and several othe
 - Use dark neutral surfaces with luminance separation rather than a one-hue dark blue or slate palette.
 - Reserve saturated color for meaning: cyan for electrical or selected data, green for healthy/current state, amber for caution, red for critical state, and orange only where it identifies a distinct measurement family.
 - Use one dominant reading per component. Supporting values must be visibly secondary.
-- Keep component framing quiet. A panel is defined by its elevated fill against the darker screen, not by an outline: there is no resting border at all, and the border is reserved for focus, editing, and the two alarm states, where it is the message rather than the frame. Prefer surface separation and a narrow semantic accent over any stroke.
+- Keep component framing quiet. A panel is defined by its elevated fill against the darker screen, not by an outline. Prefer surface separation and a narrow semantic accent over any stroke.
+- **The fill is a condition of the data; the outline is where the interaction is.** Warning and critical tint the panel's field and draw no border. Selection and editing draw the border and are the only things that do. Area is seen in peripheral vision where a line is not, which is what matters on a moving aircraft: an outline has to be looked at, a tinted field is noticed while looking elsewhere. Keeping the two apart also means a panel can be alarming and focused at once, which it could not while the border carried both.
+- Stale and unavailable are in neither group. They dim, because absent data is not an alarm and a panel that shouted whenever a sensor went quiet would teach a pilot to ignore it.
+- An alert tint is derived from the state's own accent rather than stated, so a palette taken from the radio tints from the surface the radio gave it. It is mixed by the smallest amount that is noticeable beside an untinted panel, because every step beyond that spends contrast the text drawn on it has to give back, and it may be darkened as well as lightened: a dark surface tints by moving toward a bright accent, and a mid-grey one has no room to lighten without losing the faint text on it.
+- **Every guarantee the resting surface carries is re-checked against each tint.** None of them transfer. Body, muted and faint text, elevation above the screen, separation from an untinted panel, and the state's own accent all have to hold on the tinted field, and a palette where none can is left untinted rather than made illegible.
 - Avoid ornamental gradients, glow effects, glossy styling, decorative blobs, and excessive gauge rings.
 - Keep animation purposeful and sparse: value interpolation, state changes, and editor transitions only.
 - Preserve stable geometry when values, units, labels, or warning states change.
@@ -430,8 +434,8 @@ Components must define responsive presentations for the spans they support. A 1 
 - `normal`: Elevated panel with a semantic measurement accent, and no outline.
 - `selected`: Clear focus outline suitable for touch and rotary navigation.
 - `stale`: Muted value plus an explicit stale indicator; color alone is insufficient.
-- `warning`: Amber accent and concise threshold indication.
-- `critical`: Red accent with high contrast; avoid continuous distracting animation.
+- `warning`: Amber accent, a tinted panel field, and concise threshold indication. No outline.
+- `critical`: Red accent and a tinted panel field, with high contrast; avoid continuous distracting animation. No outline.
 - `unavailable`: Placeholder label identifying the missing source or component.
 - `editing`: Visible grid, selection bounds, and resize or move affordances without obscuring readings unnecessarily.
 

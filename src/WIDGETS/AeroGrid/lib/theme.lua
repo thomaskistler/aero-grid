@@ -121,6 +121,14 @@ local MIN_ACCENT_CONTRAST = 2.5
 --- A track is read against the value drawn on it, so it must be seen. Panel
 --- elevation may be subtle; a dial someone navigates by may not.
 local MIN_TRACK_CONTRAST = 2.0
+--- Separation between an alert's tinted panel and an untinted one beside it.
+---
+--- The same figure as the elevation floor, and for the same reason: a panel is
+--- told apart from the screen at 1.30 and reads as a card, so a panel told
+--- apart from its neighbour by as much reads as a different card. Below that
+--- the tint is a colour cast nobody notices, which defeats the point of
+--- tinting rather than outlining.
+local MIN_TINT_SEPARATION = 1.30
 --- Separation between the screen and a panel drawn on it.
 ---
 --- This is a target rather than a floor in everything but name: panels carry
@@ -363,6 +371,99 @@ local function enforceLegibility(tokens, notices)
   end
 end
 
+--- Blend two colours, channel by channel.
+---@param base integer
+---@param other integer
+---@param fraction number Amount of `other` to take.
+---@return integer
+local function blend(base, other, fraction)
+  local br, bg, bb = channels(base)
+  local orr, og, ob = channels(other)
+  local keep = 1 - fraction
+  return pack(br * keep + orr * fraction, bg * keep + og * fraction,
+    bb * keep + ob * fraction)
+end
+
+--- Derive the tinted panel surface an alert state draws on.
+---
+--- Warning and critical colour the panel's field rather than its outline. Area
+--- is seen in peripheral vision where a line is not, which is what a panel has
+--- to do on a moving aircraft: an outline has to be looked at, a tinted field
+--- is noticed while looking somewhere else.
+---
+--- The tint is mixed from the state's own accent rather than stated, so a
+--- derived palette tints from whatever surface the radio gave it instead of
+--- from a colour chosen against Modern's. It is mixed by the smallest amount
+--- that is actually noticeable beside an untinted panel, because every step
+--- past that spends contrast the text drawn on it has to give back.
+---
+--- Every guarantee the resting surface carries is re-checked against the tint,
+--- since none of them transfer: a surface is legible or not on its own terms,
+--- and there was previously only ever one surface to check. The accent is in
+--- that set and is the reason this can fail rather than merely compromise. A
+--- critical panel carries a red accent and a red badge on what is now a red
+--- field, and mush is the obvious outcome; it survives because the tint is
+--- taken far darker than the accent rather than toward its lightness.
+---@param tokens table Resolved 24-bit tokens.
+---@param accent integer Accent this state draws, which the tint is mixed from.
+---@return integer? surface Nil when no tint satisfies the guarantees.
+function theme.alertSurface(tokens, accent)
+  local surface = tokens.surface
+
+  -- Each guarantee is a contrast ratio against a colour that does not change
+  -- while the search runs, so their luminances are taken once rather than for
+  -- every candidate. `theme.contrast` recomputes both sides on each call and
+  -- luminance is three floating point powers, so measuring the naive way cost
+  -- over seven hundred of them and put the loader's theme step 1600
+  -- instructions up, on a budget of 20000. Measured, not guessed at.
+  local surfaceLum = luminance(surface)
+  local canvasLum = luminance(tokens.canvas)
+  local textLum = luminance(tokens.text)
+  local mutedLum = luminance(tokens.textMuted)
+  local faintLum = luminance(tokens.textFaint)
+  local accentLum = luminance(accent)
+
+  --- Contrast between two already-measured luminances.
+  local function ratio(a, b)
+    if a < b then a, b = b, a end
+    return (a + 0.05) / (b + 0.05)
+  end
+
+  -- Hue first, then lightness, and both directions of lightness.
+  --
+  -- Mixing alone is only enough on a dark surface. Modern's panel is very
+  -- dark, so taking it toward a bright accent lightens it and every guarantee
+  -- survives. A palette derived from a radio whose own surface is mid grey
+  -- behaves oppositely: lightening closes the gap to the muted and faint text
+  -- drawn on it, and the EdgeTX default leaves faint at 1.99 against a floor
+  -- of 1.8 before anything is tinted at all, so there is no room to lighten.
+  -- Darkening the same mix keeps the hue and opens that gap instead.
+  for _, fraction in ipairs({0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40}) do
+    local mixed = blend(surface, accent, fraction)
+
+    for _, amount in ipairs({0, -0.2, -0.35, -0.5, 0.15}) do
+      local candidate = amount == 0 and mixed or theme.shade(mixed, amount)
+      local candidateLum = luminance(candidate)
+
+      -- Cheapest to fail first: a candidate too close to the resting surface
+      -- is the common rejection, and testing it first skips the rest.
+      if ratio(surfaceLum, candidateLum) >= MIN_TINT_SEPARATION
+          and ratio(canvasLum, candidateLum) >= MIN_ELEVATION_CONTRAST
+          and ratio(candidateLum, faintLum) >= MIN_FAINT_CONTRAST
+          and ratio(candidateLum, accentLum) >= MIN_ACCENT_CONTRAST
+          and ratio(candidateLum, mutedLum) >= MIN_MUTED_CONTRAST
+          and ratio(candidateLum, textLum) >= MIN_TEXT_CONTRAST then
+        return candidate
+      end
+    end
+  end
+
+  -- Nothing satisfied every guarantee. The panel keeps its resting surface and
+  -- says so through its accent and badge alone, which is worse than a tint and
+  -- better than an illegible one.
+  return nil
+end
+
 --- Read one EdgeTX theme role and widen it to 24-bit.
 ---@param env table Resolved EdgeTX environment.
 ---@param role any Value of a COLOR_THEME_* constant.
@@ -559,10 +660,33 @@ function theme.build(mode, overrides, env)
     enforceLegibility(tokens, notices)
   end
 
+  -- Alert tints come last, after the legibility pass has finished moving the
+  -- surface about. That ordering is load bearing: the pass shifts the surface
+  -- to keep critical red visible and then re-derives everything measured
+  -- against it, so a tint mixed earlier would be mixed from a surface that no
+  -- longer exists.
+  local alertRgb = {
+    warning = theme.alertSurface(tokens, tokens.amber),
+    critical = theme.alertSurface(tokens, tokens.critical),
+  }
+  local alertColor = {}
+  for name, value in pairs(alertRgb) do alertColor[name] = lcd.RGB(value) end
+  for _, name in ipairs({"warning", "critical"}) do
+    if not alertRgb[name] then
+      theme.notice(notices, "warning",
+        "no legible " .. name .. " tint; the panel keeps its resting surface")
+    end
+  end
+
   return {
     mode = mode,
     rgb = tokens,
     color = toDisplay(tokens),
+    -- Kept apart from `color` because these are per state rather than per
+    -- token, and mirrored in 24-bit so contrast arithmetic has values it can
+    -- actually work on.
+    alertRgb = alertRgb,
+    alertColor = alertColor,
     spacing = SPACING,
     accent = accent,
     warnings = warnings,
@@ -756,11 +880,20 @@ end
 ---
 --- A resting panel carries no outline. Its fill against the darker screen is
 --- what makes it a panel, so an outline on top of that is a second answer to a
---- question already answered, and drawing one on every panel spends the
---- border on decoration at exactly the moment it should mean something. A
---- border therefore appears only where it is the message: focus, editing, and
---- the two alarm states. Those are all drawn at the focus weight, because a
---- one-pixel alarm outline on a 480 x 272 panel is not an alarm.
+--- question already answered.
+---
+--- The two kinds of thing a panel has to say are then kept apart, and said by
+--- different means. **The fill is a condition of the data** and **the outline
+--- is where the interaction is.** A warning or a critical reading tints the
+--- panel's field, which is seen in peripheral vision where a line is not;
+--- selection and editing draw the outline and are the only things that do.
+--- Before this the border carried both at once, so a panel could not be
+--- alarming and focused at the same time without one meaning overwriting the
+--- other.
+---
+--- Stale and unavailable are deliberately in neither group. They dim rather
+--- than colour, because absent data is not an alarm and a panel that shouted
+--- every time a sensor went quiet would teach a pilot to ignore it.
 ---@param resolved AeroGridTheme
 ---@param state? string
 ---@param accentName? string
@@ -789,16 +922,16 @@ function theme.state(resolved, state, accentName)
     presentation.badge = "STALE"
     presentation.dim = true
   elseif state == "warning" then
+    -- The field carries the alarm, not the frame. `borderWidth` stays zero, so
+    -- the panel draws no outline and the border keeps one meaning.
     presentation.accent = color.amber
-    presentation.border = color.amber
-    presentation.borderWidth = resolved.spacing.borderFocus
+    presentation.surface = resolved.alertColor.warning
     presentation.badge = "WARN"
   elseif state == "critical" then
     presentation.accent = color.critical
-    presentation.border = color.critical
+    presentation.surface = resolved.alertColor.critical
     presentation.value = color.text
     presentation.badge = "CRIT"
-    presentation.borderWidth = resolved.spacing.borderFocus
   elseif state == "unavailable" then
     presentation.accent = color.textFaint
     presentation.value = color.textFaint

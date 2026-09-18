@@ -199,6 +199,9 @@ function primitives.panel(parent, rect, theme, presentation)
     column = column,
     accent = accent,
     spacing = spacing,
+    -- The resting surface, so a state that does not tint can put it back.
+    surface = theme.color.surface,
+    surfaceColor = theme.color.surface,
     width = rect.w,
     height = rect.h,
     -- Reused for every corner update. `setRound` fills in x and y, so the
@@ -336,6 +339,16 @@ end
 ---@param panel table
 ---@param presentation table
 function primitives.stylePanel(panel, presentation)
+  -- An alert tints the panel's field rather than outlining it, so the surface
+  -- is per state now and not merely per theme. A state with no tint of its own
+  -- restores the resting one, or a panel stays coloured after the reading that
+  -- alarmed it has recovered.
+  local surface = presentation.surface or panel.surface
+  if surface ~= panel.surfaceColor then
+    panel.surfaceColor = surface
+    panel.background:set({color = surface})
+  end
+
   -- A component calls this on every repaint, and a panel's state changes far
   -- less often than its reading does, so nothing is touched unless it actually
   -- moved. Three objects carry the accent now rather than one, which made

@@ -1,0 +1,189 @@
+version: 1
+
+# State gallery: every panel state at once, side by side.
+#
+# Set the widget's Dashboard ID to `states` to load this screen on any model.
+#
+# The other galleries compare components at one span. This one compares one
+# component across states, which is the only way to judge an alarm: a tinted
+# panel means nothing on its own, it means something beside an untinted one.
+#
+# Each row is the same component, the same span, the same source, differing
+# only in the thresholds that decide its state. The top row is what a healthy
+# dashboard looks like; the rows below it are what it looks like when something
+# is wrong.
+#
+# The thresholds here are deliberately rigged rather than realistic. A rising
+# threshold of zero is met by every reading, so the panel is always in that
+# state and can be looked at for as long as you like, which a genuine alarm
+# does not allow.
+#
+# What to look for:
+#
+#   * Whether a tinted panel is noticed without looking directly at it. That is
+#     the whole argument for tinting rather than outlining, and it cannot be
+#     checked by measurement.
+#   * Whether warning and critical are told apart at a glance. They are
+#     different hues but both are dark, and the badge is the backstop.
+#   * Whether the accent stripe and the badge still read on the tint. Critical
+#     is the hard case: a red stripe and a red badge on a red field.
+#   * Whether the stale and unavailable panels still read as absent rather than
+#     alarming. They are deliberately not tinted.
+#
+# Check this on `sim2` as well, which carries the EdgeTX-derived palette. Its
+# surface comes from the radio rather than from Modern, so the tints are mixed
+# from a different starting colour and may sit differently against it.
+
+theme:
+  mode: modern
+
+grid:
+  columns: 4
+  rows: 4
+
+components:
+  # Healthy, for comparison. Everything below differs from this only in state.
+  - id: s-normal-a
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: Normal
+      source: RxBt
+      unit: V
+      min: 0
+      max: 10
+      precision: 2
+
+  - id: s-normal-b
+    type: metric
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: Normal
+      source: RQly
+      unit: "%"
+      min: 0
+      max: 100
+      precision: 0
+
+  # A rising threshold of zero is met by every reading, so this panel is always
+  # in warning and can be studied rather than caught.
+  - id: s-warning
+    type: metric
+    col: 0
+    row: 1
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: Warning
+      source: RxBt
+      unit: V
+      min: 0
+      max: 10
+      precision: 2
+      direction: rising
+      warning: 0
+
+  - id: s-critical
+    type: metric
+    col: 2
+    row: 1
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: Critical
+      source: RxBt
+      unit: V
+      min: 0
+      max: 10
+      precision: 2
+      direction: rising
+      critical: 0
+
+  # Absent data, which is deliberately not an alarm and must not look like one.
+  # A source name the radio does not have reads unavailable.
+  - id: s-unavailable
+    type: metric
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: No source
+      source: NotASensor
+      min: 0
+      max: 10
+
+  # The cells panel has nothing to read on an ELRS link, which is a second
+  # route to the same state through a different component.
+  - id: s-nocells
+    type: cell-battery
+    col: 2
+    row: 2
+    colSpan: 2
+    rowSpan: 1
+    config:
+      source: Cels
+      label: No cells
+
+  # The same two alarms again at a single cell, where the panel is smallest and
+  # the tint has the least area to work with.
+  - id: s-small-normal
+    type: metric
+    col: 0
+    row: 3
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: OK
+      source: RQly
+      min: 0
+      max: 100
+      precision: 0
+
+  - id: s-small-warning
+    type: metric
+    col: 1
+    row: 3
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: Warn
+      source: RQly
+      min: 0
+      max: 100
+      precision: 0
+      direction: rising
+      warning: 0
+
+  - id: s-small-critical
+    type: metric
+    col: 2
+    row: 3
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: Crit
+      source: RQly
+      min: 0
+      max: 100
+      precision: 0
+      direction: rising
+      critical: 0
+
+  - id: s-small-none
+    type: metric
+    col: 3
+    row: 3
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: None
+      source: NotASensor
+      min: 0
+      max: 100

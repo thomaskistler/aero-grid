@@ -611,24 +611,32 @@ local function testStates()
   assertEqual(theme.state(resolved, "normal").badge, nil,
     "a healthy panel must not be badged")
 
-  -- Selection, editing, and both alarm states are the only things that draw
-  -- an outline, and they all draw it at the focus weight. A resting panel
-  -- carries none: its fill against the darker screen is what makes it a
-  -- panel, and an outline on every panel spends the border on decoration at
-  -- the moment it should mean something.
+  -- Two kinds of thing, said by two different means. The fill is a condition
+  -- of the data; the outline is where the interaction is. Nothing says both.
   local focus = resolved.spacing.borderFocus
-  assertEqual(theme.state(resolved, "normal").borderWidth, 0,
-    "a resting panel drew an outline")
-  assertEqual(theme.state(resolved, "stale").borderWidth, 0,
-    "stale data is said with a badge and dimming, not an outline")
-  assertEqual(theme.state(resolved, "unavailable").borderWidth, 0,
-    "a missing source is said with a badge, not an outline")
-  for _, name in ipairs({"selected", "editing", "warning", "critical"}) do
+  for _, name in ipairs({"normal", "stale", "unavailable", "warning", "critical"}) do
+    assertEqual(theme.state(resolved, name).borderWidth, 0,
+      name .. " drew an outline, which now means focus rather than state")
+  end
+  for _, name in ipairs({"selected", "editing"}) do
     assertEqual(theme.state(resolved, name).borderWidth, focus,
       name .. " did not draw its outline at the focus weight")
   end
-  assertEqual(theme.state(resolved, "critical").border, lcd.RGB(modern.critical),
-    "a critical outline must be unmistakable")
+
+  -- An alarm tints the panel's field instead. Area is seen in peripheral
+  -- vision where a line is not, which is the whole reason for the change.
+  assertEqual(theme.state(resolved, "normal").surface, nil,
+    "a resting panel asked for a tint")
+  assertEqual(theme.state(resolved, "stale").surface, nil,
+    "stale data tinted the panel; absent data is not an alarm")
+  assertEqual(theme.state(resolved, "unavailable").surface, nil,
+    "a missing source tinted the panel; absent data is not an alarm")
+  assertEqual(theme.state(resolved, "warning").surface,
+    lcd.RGB(resolved.alertRgb.warning), "a warning did not tint its panel")
+  assertEqual(theme.state(resolved, "critical").surface,
+    lcd.RGB(resolved.alertRgb.critical), "a critical reading did not tint its panel")
+  assert(resolved.alertRgb.warning ~= resolved.alertRgb.critical,
+    "warning and critical tint a panel the same colour")
 
   -- An unknown accent falls back to the theme default rather than failing.
   assertEqual(theme.state(resolved, "normal", "magenta").accent, lcd.RGB(modern.cyan))
@@ -698,8 +706,106 @@ components: []
   assert(string.match(table.concat(brokenErrors, "\n"), "theme must be a mapping"))
 end
 
+--- Every guarantee an alert tint carries must be the reason it was chosen.
+---
+--- The shipped palettes do not exercise all of them. Removing the elevation
+--- and accent checks from the search leaves Modern's tints unchanged, because
+--- another check happens to reject the same candidates first, so a test that
+--- only looked at Modern would report both as covered while neither did
+--- anything. That is the vacuous assertion this project has been caught by
+--- before, and the answer is to test the function against palettes where each
+--- check is the binding one rather than to assert harder about Modern.
+---
+--- Each case below is built so exactly one guarantee can reject the candidates
+--- a tint would otherwise take. If that guarantee is removed, `alertSurface`
+--- returns a colour violating it, and the assertion fails.
+local function testAlertTintGuarantees()
+  local modern = theme.modern()
+
+  --- Tokens that are legible at rest, with one field replaced.
+  local function tokensWith(overrides)
+    local tokens = {}
+    for key, value in pairs(modern) do tokens[key] = value end
+    for key, value in pairs(overrides or {}) do tokens[key] = value end
+    return tokens
+  end
+
+  --- Whatever the search returns must satisfy every guarantee, or be absent.
+  local function assertCompliant(label, tokens, accent)
+    local tint = theme.alertSurface(tokens, accent)
+    if tint == nil then return nil end
+
+    local checks = {
+      {"separation from the resting panel", theme.contrast(tokens.surface, tint), 1.30},
+      {"elevation above the screen", theme.contrast(tokens.canvas, tint), 1.30},
+      {"body text", theme.contrast(tint, tokens.text), 4.5},
+      {"muted text", theme.contrast(tint, tokens.textMuted), 3.0},
+      {"faint text", theme.contrast(tint, tokens.textFaint), 1.8},
+      {"its own accent", theme.contrast(tint, accent), 2.5},
+    }
+    for _, check in ipairs(checks) do
+      assert(check[2] >= check[3], string.format(
+        "%s: the tint leaves %s at %.2f, below %.1f",
+        label, check[1], check[2], check[3]))
+    end
+    return tint
+  end
+
+  -- The shipped palettes, which must both produce a tint at all.
+  for _, mode in ipairs({"modern", "edgetx"}) do
+    local resolved = theme.build(mode)
+    for _, state in ipairs({"warning", "critical"}) do
+      local accent = state == "warning" and resolved.rgb.amber or resolved.rgb.critical
+      assert(assertCompliant(mode .. " " .. state, resolved.rgb, accent),
+        mode .. " has no " .. state .. " tint at all")
+    end
+  end
+
+  -- Elevation binds: the screen sits where a tint would otherwise land, so
+  -- every candidate separated from the surface is flat against the canvas
+  -- until the search is pushed past it.
+  assertCompliant("canvas under the tint",
+    tokensWith({canvas = 0x4B4535}), modern.amber)
+
+  -- The accent binds: an accent close to the surface it is drawn on leaves a
+  -- tint mixed from it closer still, so the accent check is the only thing
+  -- that can reject those candidates.
+  assertCompliant("accent near the surface",
+    tokensWith({amber = 0x2E3640}), 0x2E3640)
+  assertCompliant("critical near the surface",
+    tokensWith({critical = 0x333A44}), 0x333A44)
+
+  -- Muted and body text are normally the easiest of the three to satisfy,
+  -- because faint text is by definition the closest to the surface, so on any
+  -- ordinary palette the faint check rejects a candidate before either of them
+  -- is consulted and neither can be shown to do anything. A palette that
+  -- inverts the ordering makes each the binding one in turn. Nothing ships
+  -- looking like this; the point is that the guarantee holds when it has to.
+  assertCompliant("muted text nearest the tint",
+    tokensWith({textMuted = 0x555347, textFaint = 0xF0F0F0}), modern.amber)
+  assertCompliant("body text nearest the tint",
+    tokensWith({text = 0x4A4840, textMuted = 0xF0F0F0, textFaint = 0xE8E8E8}),
+    modern.amber)
+
+  -- Faint text binds on a light surface, which is the derived-palette case:
+  -- there is no room to lighten, so the search has to darken instead.
+  assertCompliant("light surface",
+    tokensWith({surface = 0x364752, canvas = 0x102431, textFaint = 0x737173}),
+    modern.amber)
+
+  -- And a palette with nowhere to go returns nothing rather than something
+  -- illegible, which is the branch the panel's fallback to its resting surface
+  -- exists for. Body text at 4.5 against a near-white surface is what no tint
+  -- can satisfy: every candidate is lighter still or too close to the surface
+  -- it was mixed from.
+  assertEqual(theme.alertSurface(
+    tokensWith({surface = 0xF2F4F5, canvas = 0xFFFFFF}), modern.amber), nil,
+    "a palette with no legible tint produced one anyway")
+end
+
 --- A hostile surface must never swallow text, accents, or state badges.
 local function testDerivedThemesStayLegible()
+testAlertTintGuarantees()
   -- The last two are surfaces that force the critical-red shift: red is never
   -- adjusted, so the surface moves instead, and that move answers only to red.
   -- It can land next to the canvas and leave panels with no edge at all now
