@@ -594,16 +594,53 @@ local function testPanelPresentation()
     assertEqual(panel.accent.painted.radius, 0,
       id .. " accent was drawn with rounded ends")
 
-    -- The inset is the corner radius, and it is forced rather than chosen. A
-    -- square-ended stripe at x = 0 only sits inside the panel where the
-    -- panel's own left boundary has reached x = 0, which for a corner radius
-    -- R is true only at y >= R. Rasterising a 4 px stripe against a rounded
-    -- panel puts the first fully enclosed row at exactly R, at every panel
-    -- size. A shorter inset draws the stripe outside the card.
+    -- The straight run spans exactly the part of the left edge that is
+    -- straight: it starts where the top corner's arc ends and stops where the
+    -- bottom corner's begins, so stripe and arcs abut at the two tangents.
     assertEqual(accent.y, spacing.radius,
-      id .. " accent starts above the panel's corner, outside the card")
+      id .. " accent does not start at the top corner's tangent")
     assertEqual(accent.y + accent.h, bounds.h - spacing.radius,
-      id .. " accent ends below the panel's corner, outside the card")
+      id .. " accent does not end at the bottom corner's tangent")
+
+    -- A quarter band per corner, carrying the accent round rather than
+    -- stopping at it. Centred on the panel's own corner centres and given the
+    -- panel's own corner radius, which is what makes the band's outer edge
+    -- and the panel's edge the same circle: LVGL draws an arc between
+    -- `radius` and `radius - width` from the centre (lv_draw_arc.c, rout and
+    -- rin), and the object's box is 2 * radius square about that centre
+    -- (LvglWidgetArc::build via setRadius, and get_center in lv_arc.c).
+    for corner, band in pairs({top = panel.topArc, bottom = panel.bottomArc}) do
+      local arc = band.arc.properties
+      assertEqual(arc.radius, spacing.radius,
+        id .. " " .. corner .. " band does not share the panel's corner radius")
+      assertEqual(arc.thickness, spacing.accentWidth,
+        id .. " " .. corner .. " band is not the accent's thickness")
+      assertEqual(band.centreX, spacing.radius,
+        id .. " " .. corner .. " band is not on the corner centre")
+      -- An arc stores a corner, so what the firmware would draw is checked
+      -- through the mock's own reproduction of that arithmetic rather than
+      -- through the coordinates it was handed.
+      assertEqual(band.arc.round.drawn.x, band.centreX - spacing.radius,
+        id .. " " .. corner .. " band drifted horizontally")
+      assertEqual(band.arc.round.drawn.y, band.centreY - spacing.radius,
+        id .. " " .. corner .. " band drifted vertically")
+    end
+
+    assertEqual(panel.topArc.centreY, spacing.radius,
+      id .. " top band is not on the top corner centre")
+    assertEqual(panel.bottomArc.centreY, bounds.h - spacing.radius,
+      id .. " bottom band is not on the bottom corner centre")
+
+    -- The quarters face the left edge, or the accent would appear on the
+    -- right. LVGL measures zero at three o'clock, clockwise.
+    assertEqual(panel.topArc.arc.properties.startAngle, 180,
+      id .. " top band does not start at nine o'clock")
+    assertEqual(panel.topArc.arc.properties.endAngle, 270,
+      id .. " top band does not end at twelve o'clock")
+    assertEqual(panel.bottomArc.arc.properties.startAngle, 90,
+      id .. " bottom band does not start at six o'clock")
+    assertEqual(panel.bottomArc.arc.properties.endAngle, 180,
+      id .. " bottom band does not end at nine o'clock")
 
     -- The surface is the whole panel. The accent is drawn on it, not under it.
     local surface = panel.background.properties
@@ -699,6 +736,112 @@ components:
   -- Back to healthy, and the outline goes away again.
   metricModule.setValue(entry.instance, 24.0)
   assertEqual(panel.border.hidden, true, "an outline outlived its alarm")
+end
+
+--- The accent is three objects, and a state has to move all of them.
+---
+--- The stripe and the two corner bands are one visual element, so a state that
+--- dims the accent must dim the corners too. With the accent carried by a
+--- single rectangle this could not go wrong; with three it can, and a panel
+--- whose corners stayed bright while its stripe went grey would read as a
+--- rendering fault rather than as stale data.
+---
+--- The bands are also arcs, which means constraint 11 applies: every `set` on
+--- a round object walks it up and left by its own radius unless the centre is
+--- restated. Colour changes are `set` calls, so a panel that changes state
+--- repeatedly would march its own corners off the screen. The mock reproduces
+--- that arithmetic rather than storing coordinates, so the assertion is
+--- against where the firmware would actually draw.
+local function testAccentFollowsState()
+  local widgetPath = makeWidget("accent-state", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: pack
+    type: metric
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: Pack
+      source: RxBt
+      min: 18
+      max: 25.2
+      warning: 21.0
+      critical: 19.8
+      precision: 1
+      accent: cyan
+]])
+
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  local spacing = context.theme.spacing
+  local entry = entryById(context, "pack")
+  local panel = entry.instance.panel
+  local metricModule = assert(loadfile(sourcePath .. "components/metric.lua"))()
+  local modern = themeModule.modern()
+
+  --- Every object carrying the accent, and where the radio would draw the arcs.
+  local function assertAccent(expected, what)
+    assertEqual(panel.accent.properties.color, expected, what .. ": stripe")
+    assertEqual(panel.topArc.arc.properties.color, expected, what .. ": top band")
+    assertEqual(panel.bottomArc.arc.properties.color, expected,
+      what .. ": bottom band")
+    for corner, band in pairs({top = panel.topArc, bottom = panel.bottomArc}) do
+      assertEqual(band.arc.round.drawn.x, band.centreX - spacing.radius,
+        what .. ": " .. corner .. " band walked horizontally")
+      assertEqual(band.arc.round.drawn.y, band.centreY - spacing.radius,
+        what .. ": " .. corner .. " band walked vertically")
+    end
+  end
+
+  metricModule.setValue(entry.instance, 24.0)
+  assertAccent(lcd.RGB(modern.cyan), "healthy")
+
+  metricModule.setValue(entry.instance, 20.5)
+  assertEqual(entry.instance.stateName, "warning")
+  assertAccent(lcd.RGB(modern.amber), "warning")
+
+  metricModule.setValue(entry.instance, 19.0)
+  assertEqual(entry.instance.stateName, "critical")
+  assertAccent(lcd.RGB(modern.critical), "critical")
+
+  -- Freshness dims the accent, and the corners have to dim with it.
+  metricModule.setValue(entry.instance, 24.0, true)
+  assertEqual(entry.instance.stateName, "stale")
+  assertAccent(lcd.RGB(modern.textFaint), "stale")
+
+  metricModule.setValue(entry.instance, nil)
+  assertEqual(entry.instance.stateName, "unavailable")
+  assertAccent(lcd.RGB(modern.textFaint), "unavailable")
+
+  -- Twenty more transitions. One misplaced `set` moves a band by its own
+  -- radius each time, so a drift this would miss is not a drift at all.
+  for index = 1, 20 do
+    metricModule.setValue(entry.instance, index % 2 == 0 and 24.0 or 19.0)
+  end
+  assertAccent(lcd.RGB(modern.cyan), "after twenty state changes")
+
+  -- And through a reflow, which moves the bottom band and must not move the
+  -- top one. The panel keeps its column, so only the height changes.
+  local zone = {x = 0, y = 0, w = 480, h = 200}
+  context.zone.w, context.zone.h = zone.w, zone.h
+  local passes = 0
+  repeat
+    definition.refresh(context)
+    passes = passes + 1
+    assert(passes < 100, "reflow never finished")
+  until not context.reflowIndex
+
+  local bounds = boundsOf(entry)
+  assertEqual(panel.topArc.centreY, spacing.radius,
+    "the top band moved during a reflow")
+  assertEqual(panel.bottomArc.centreY, bounds.h - spacing.radius,
+    "the bottom band did not follow the panel's height")
+  assertAccent(lcd.RGB(modern.cyan), "after a reflow")
 end
 
 --- Responsive presentation must differ across the baseline spans.
@@ -1111,6 +1254,7 @@ testThemeReachesComponents()
 testBackgroundsArePainted()
 testPanelPresentation()
 testAlarmBorder()
+testAccentFollowsState()
 testResponsiveSpans()
 testBadgeGeometry()
 testMetricStates()
