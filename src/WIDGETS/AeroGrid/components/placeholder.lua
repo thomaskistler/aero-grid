@@ -33,34 +33,41 @@ local placeholder = {
 function placeholder.create(parent, rect, settings, services)
   local theme = services.theme
   local primitives = services.primitives
+  local themeBuilder = services.themeBuilder
   local fonts = services.fonts
-  local spacing = theme.spacing
   local presentation = services.state("normal", settings.accent)
 
+  -- Through the shared frame like every other component, so a placeholder in
+  -- the top-left cell of an App mode screen is laid out around the EdgeTX
+  -- menu button rather than underneath it.
+  local frame = themeBuilder.frame(theme, rect, fonts)
   local panel = primitives.panel(parent, rect, theme, presentation)
-  local width = primitives.contentWidth(theme, rect.w)
 
   local title = primitives.value(panel.root, theme, {
-    x = spacing.padding,
-    y = spacing.paddingCompact,
-    w = width,
+    x = frame.labelX,
+    y = frame.compact,
+    w = frame.labelWidth,
     text = tostring(settings.title),
     color = presentation.value,
     font = fonts.label,
   })
 
   local subtitle = primitives.label(panel.root, theme, {
-    x = spacing.padding,
-    y = spacing.paddingCompact + 22,
-    w = width,
+    x = frame.pad,
+    y = frame.top,
+    w = frame.content,
     text = tostring(settings.subtitle),
     color = presentation.label,
     font = fonts.label,
   })
 
+  if frame.labelHidden then lvgl.hide(title) end
+
   return {
     panel = panel,
     theme = theme,
+    themeBuilder = themeBuilder,
+    fonts = fonts,
     primitives = primitives,
     title = title,
     subtitle = subtitle,
@@ -71,11 +78,16 @@ end
 ---@param context AeroGridPlaceholderContext
 ---@param rect AeroGridRect
 function placeholder.update(context, rect)
-  local width = context.primitives.contentWidth(context.theme, rect.w)
+  local frame = context.themeBuilder.frame(context.theme, rect, context.fonts)
 
   context.primitives.resizePanel(context.panel, rect)
-  context.title:set({w = width})
-  context.subtitle:set({w = width})
+  context.title:set({x = frame.labelX, y = frame.compact, w = frame.labelWidth})
+  context.subtitle:set({x = frame.pad, y = frame.top, w = frame.content})
+  if frame.labelHidden then
+    lvgl.hide(context.title)
+  else
+    lvgl.show(context.title)
+  end
 end
 
 return placeholder

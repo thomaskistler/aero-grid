@@ -59,25 +59,29 @@ end
 function heartbeat.create(parent, rect, settings, services)
   local theme = services.theme
   local primitives = services.primitives
+  local themeBuilder = services.themeBuilder
   local fonts = services.fonts
-  local spacing = theme.spacing
   local presentation = services.state("normal", settings.accent)
 
+  -- Through the shared frame like every other component, so a heartbeat in
+  -- the top-left cell of an App mode screen is laid out around the EdgeTX
+  -- menu button rather than underneath it.
+  local frame = themeBuilder.frame(theme, rect, fonts)
   local panel = primitives.panel(parent, rect, theme, presentation)
-  local width = primitives.contentWidth(theme, rect.w)
+  local width = frame.content
 
   local label = primitives.value(panel.root, theme, {
-    x = spacing.padding,
-    y = spacing.paddingCompact,
-    w = width,
+    x = frame.labelX,
+    y = frame.compact,
+    w = frame.labelWidth,
     text = tostring(settings.label),
     color = presentation.value,
     font = fonts.label,
   })
 
   local counter = primitives.label(panel.root, theme, {
-    x = spacing.padding,
-    y = spacing.paddingCompact + 22,
+    x = frame.pad,
+    y = frame.top,
     w = width,
     text = "0 / 0",
     color = presentation.label,
@@ -85,16 +89,20 @@ function heartbeat.create(parent, rect, settings, services)
   })
 
   local bar = primitives.bar(panel.root, theme, {
-    x = spacing.padding,
+    x = frame.pad,
     y = barY(theme, rect.h),
     w = width,
     fraction = 1 / PHASES,
     color = presentation.accent,
   })
 
+  if frame.labelHidden then lvgl.hide(label) end
+
   return {
     panel = panel,
     theme = theme,
+    themeBuilder = themeBuilder,
+    fonts = fonts,
     primitives = primitives,
     label = label,
     counter = counter,
@@ -112,15 +120,21 @@ end
 ---@param rect AeroGridRect
 function heartbeat.update(context, rect)
   local theme = context.theme
-  local width = context.primitives.contentWidth(theme, rect.w)
+  local frame = context.themeBuilder.frame(theme, rect, context.fonts)
+  local width = frame.content
 
   context.primitives.resizePanel(context.panel, rect)
-  context.label:set({w = width})
-  context.counter:set({w = width})
+  context.label:set({x = frame.labelX, y = frame.compact, w = frame.labelWidth})
+  context.counter:set({x = frame.pad, y = frame.top, w = width})
   context.bar.width = width
-  context.bar.track:set({w = width, y = barY(theme, rect.h)})
-  context.bar.fill:set({y = barY(theme, rect.h)})
+  context.bar.track:set({x = frame.pad, w = width, y = barY(theme, rect.h)})
+  context.bar.fill:set({x = frame.pad, y = barY(theme, rect.h)})
   context.primitives.setBar(context.bar, context.phase / PHASES)
+  if frame.labelHidden then
+    lvgl.hide(context.label)
+  else
+    lvgl.show(context.label)
+  end
 end
 
 --- Advance the visible activity indicator once per host refresh.

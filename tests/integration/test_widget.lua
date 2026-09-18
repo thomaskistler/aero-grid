@@ -1637,6 +1637,10 @@ components:
     "metric", "flight-timer", "flight-mode", "tx-battery",
     "variable-indicator", "trim-panel", "model-identity",
     "cell-battery", "link-status", "navigation",
+    -- The two development components ship in the package too, so a layout
+    -- may place them. Both drew at a raw (8, 6) until they were routed
+    -- through the shared frame like everything else.
+    "heartbeat", "placeholder",
   }
   local checked = {}
 
