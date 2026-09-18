@@ -407,6 +407,7 @@ local function testGalleriesAreReachable()
   local galleries = {}
   for name in listing:lines() do
     local stem = string.match(name, "^(span%w+)%.yaml$")
+      or string.match(name, "^(states)%.yaml$")
     if stem then galleries[#galleries + 1] = stem end
   end
   listing:close()
@@ -711,10 +712,19 @@ local function testPanelPresentation()
   end
 end
 
---- An alarm is the one thing that still draws an outline, and it draws a heavy
---- one that follows the panel through a reflow it was hidden for.
-local function testAlarmBorder()
-  local widgetPath = makeWidget("alarm-border", [[
+--- An alarm tints the panel's field, and recovering puts it back.
+---
+--- The outline used to carry this and no longer does. Area is seen in
+--- peripheral vision where a line is not, which is what a panel on a moving
+--- aircraft has to manage, and the border is now free to mean one thing.
+---
+--- The tint has to hold every guarantee the resting surface holds, because
+--- none of them transfer: there was only ever one surface to check before, and
+--- `enforceLegibility` checked it once at build. A tint that swallowed the
+--- muted text drawn on it would be a legible panel turning illegible at
+--- exactly the moment a pilot needs to read it.
+local function testAlarmTint()
+  local widgetPath = makeWidget("alarm-tint", [[
 version: 1
 grid:
   columns: 4
@@ -736,19 +746,129 @@ components:
       precision: 1
 ]])
 
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  local resolved = context.theme
+  local entry = entryById(context, "pack")
+  local panel = entry.instance.panel
+  local metricModule = assert(loadfile(sourcePath .. "components/metric.lua"))()
+
+  local resting = panel.background.properties.color
+  assertEqual(resting, resolved.color.surface,
+    "a healthy panel is not drawn on the resting surface")
+  assertEqual(panel.border.hidden, true, "a healthy panel drew an outline")
+
+  --- Every guarantee the resting surface carries, against a tint.
+  ---
+  --- Measured on the 24-bit tokens, because contrast arithmetic is defined on
+  --- those; the panel is painted with the display value and the two are
+  --- deliberately different numbers.
+  local function assertLegible(name, tint)
+    assert(tint, "there is no " .. name .. " tint at all")
+    local checks = {
+      {"body text", resolved.rgb.text, 4.5},
+      {"muted text", resolved.rgb.textMuted, 3.0},
+      {"faint text", resolved.rgb.textFaint, 1.8},
+    }
+    for _, check in ipairs(checks) do
+      local ratio = themeModule.contrast(tint, check[2])
+      assert(ratio >= check[3], string.format(
+        "the %s tint leaves %s at %.2f, below %.1f", name, check[1], ratio, check[3]))
+    end
+    -- A card has to still read as a card once it is coloured.
+    local elevation = themeModule.contrast(resolved.rgb.canvas, tint)
+    assert(elevation >= 1.30, string.format(
+      "the %s tint leaves the panel flat against the screen at %.2f", name, elevation))
+    -- And it has to be noticed beside an untinted panel, or it says nothing.
+    local separation = themeModule.contrast(resolved.rgb.surface, tint)
+    assert(separation >= 1.30, string.format(
+      "the %s tint is indistinguishable from a resting panel at %.2f",
+      name, separation))
+  end
+
+  assertLegible("warning", resolved.alertRgb.warning)
+  assertLegible("critical", resolved.alertRgb.critical)
+
+  -- The accent and the badge are drawn on the tint, and for critical both are
+  -- red on what is now a red field. That is the pairing most likely to turn to
+  -- mush, and it is the reason the tint is taken darker rather than toward the
+  -- accent's own lightness.
+  local accents = {warning = resolved.rgb.amber, critical = resolved.rgb.critical}
+  for name, accent in pairs(accents) do
+    local ratio = themeModule.contrast(resolved.alertRgb[name], accent)
+    assert(ratio >= 2.5, string.format(
+      "the %s accent is lost on its own tint at %.2f", name, ratio))
+  end
+
+  metricModule.setValue(entry.instance, 20.5)
+  assertEqual(entry.instance.stateName, "warning")
+  assertEqual(panel.background.properties.color, resolved.alertColor.warning,
+    "a warning did not tint the panel")
+  assertEqual(panel.border.hidden, true, "a warning drew an outline as well")
+
+  metricModule.setValue(entry.instance, 19.0)
+  assertEqual(entry.instance.stateName, "critical")
+  assertEqual(panel.background.properties.color, resolved.alertColor.critical,
+    "a critical reading did not tint the panel")
+  assertEqual(panel.border.hidden, true, "a critical reading drew an outline as well")
+  assert(resolved.alertColor.warning ~= resolved.alertColor.critical,
+    "a warning and a critical reading tint the panel the same colour")
+
+  -- Absent data is not an alarm, so neither of these tints anything.
+  metricModule.setValue(entry.instance, 24.0, true)
+  assertEqual(entry.instance.stateName, "stale")
+  assertEqual(panel.background.properties.color, resting,
+    "stale data tinted the panel")
+
+  metricModule.setValue(entry.instance, nil)
+  assertEqual(entry.instance.stateName, "unavailable")
+  assertEqual(panel.background.properties.color, resting,
+    "a missing source tinted the panel")
+
+  -- Recovering puts the panel back, or it stays coloured after the reading
+  -- that alarmed it has returned to normal.
+  metricModule.setValue(entry.instance, 24.0)
+  assertEqual(entry.instance.stateName, "normal")
+  assertEqual(panel.background.properties.color, resting,
+    "a panel stayed tinted after its reading recovered")
+end
+
+--- A revealed outline still carries the weight and size it should.
+---
+--- Nothing a component produces draws an outline any more, so this drives the
+--- presentation directly. It is kept because constraint 13 has not gone away:
+--- a border's thickness reaches LVGL when the object is built and never again,
+--- which is why the panel builds one at the focus weight and shows or hides
+--- it. The editor in phase 2 is what will exercise this for real.
+local function testFocusBorder()
+  local widgetPath = makeWidget("focus-border", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: pack
+    type: metric
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: Pack
+      source: RxBt
+]])
+
   local zone = {x = 0, y = 0, w = 480, h = 272}
   local context = createLoaded(zone, DEFAULT_OPTIONS, widgetPath)
   local spacing = context.theme.spacing
   local entry = entryById(context, "pack")
   local panel = entry.instance.panel
-  local metricModule = assert(loadfile(sourcePath .. "components/metric.lua"))()
-  local modern = themeModule.modern()
 
-  assertEqual(panel.border.hidden, true, "a healthy panel drew an outline")
+  assertEqual(panel.border.hidden, true, "a resting panel drew an outline")
 
-  -- Reflow the panel while its border is hidden. Nothing repaints it, because
-  -- the reading has not moved, so an invisible border is deliberately left
-  -- carrying the old size until something asks to see it.
+  -- Reflow while the border is hidden. Nothing repaints it, so an invisible
+  -- border is deliberately left carrying the old size until something asks to
+  -- see it.
   zone.w = 320
   zone.h = 240
   local passes = 0
@@ -758,18 +878,13 @@ components:
     assert(passes < 100, "reflow never finished")
   until not context.reflowIndex
 
-  metricModule.setValue(entry.instance, 19.0)
-  assertEqual(entry.instance.stateName, "critical")
-  assertEqual(panel.border.hidden, false, "a critical panel drew no outline")
-  assertEqual(panel.border.properties.color, lcd.RGB(modern.critical),
-    "a critical outline was not drawn in critical red")
-
-  -- The weight the radio was given, which is fixed when the object is built:
-  -- `set{thickness=...}` on a live object is parsed and then discarded, so a
-  -- panel that waited until it was critical to ask for a heavier outline
-  -- would draw whatever weight it was born with.
+  local selected = themeModule.state(context.theme, "selected")
+  primitivesModule.stylePanel(panel, selected)
+  assertEqual(panel.border.hidden, false, "a selected panel drew no outline")
+  assertEqual(panel.border.properties.color, context.theme.color.cyan,
+    "a selection outline was not drawn in the focus colour")
   assertEqual(panel.border.painted.borderWidth, spacing.borderFocus,
-    "a critical outline was not drawn at the focus weight")
+    "a selection outline was not drawn at the focus weight")
 
   local bounds = boundsOf(entry)
   assertEqual(panel.border.properties.w, bounds.w,
@@ -777,9 +892,8 @@ components:
   assertEqual(panel.border.properties.h, bounds.h,
     "a revealed outline kept the height it had before the reflow")
 
-  -- Back to healthy, and the outline goes away again.
-  metricModule.setValue(entry.instance, 24.0)
-  assertEqual(panel.border.hidden, true, "an outline outlived its alarm")
+  primitivesModule.stylePanel(panel, themeModule.state(context.theme, "normal"))
+  assertEqual(panel.border.hidden, true, "an outline outlived its focus")
 end
 
 --- The accent is three objects, and a state has to move all of them.
@@ -1304,7 +1418,8 @@ testShippedLayout()
 testThemeReachesComponents()
 testBackgroundsArePainted()
 testPanelPresentation()
-testAlarmBorder()
+testAlarmTint()
+testFocusBorder()
 testAccentFollowsState()
 testResponsiveSpans()
 testBadgeGeometry()
