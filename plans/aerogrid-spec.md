@@ -358,7 +358,7 @@ The primary reference viewport is 480 x 272, matching the TX16S and several othe
 - Use dark neutral surfaces with luminance separation rather than a one-hue dark blue or slate palette.
 - Reserve saturated color for meaning: cyan for electrical or selected data, green for healthy/current state, amber for caution, red for critical state, and orange only where it identifies a distinct measurement family.
 - Use one dominant reading per component. Supporting values must be visibly secondary.
-- Keep component framing quiet. Prefer thin separators, subtle surface changes, and a narrow semantic accent over heavy borders.
+- Keep component framing quiet. A panel is defined by its elevated fill against the darker screen, not by an outline: there is no resting border at all, and the border is reserved for focus, editing, and the two alarm states, where it is the message rather than the frame. Prefer surface separation and a narrow semantic accent over any stroke.
 - Avoid ornamental gradients, glow effects, glossy styling, decorative blobs, and excessive gauge rings.
 - Keep animation purposeful and sparse: value interpolation, state changes, and editor transitions only.
 - Preserve stable geometry when values, units, labels, or warning states change.
@@ -369,7 +369,9 @@ The primary reference viewport is 480 x 272, matching the TX16S and several othe
 - In App mode the top-left 47 x 45 corner belongs to EdgeTX's menu button. Panels lay out around it through `theme.frame` rather than the grid surrendering a strip.
 - Use a compact footer only for genuinely global data such as coordinates or an active flight timer. Do not reserve footer space by default.
 - Use 4 px outer margins and 4 px grid gutters at 480 x 272 as the initial baseline, subject to hardware verification.
-- Component panels should use a 4-6 px corner radius. Nested cards are prohibited.
+- Component panels use an 8 px corner radius. The originally specified 4 to 6 px reads as a square panel with the corners shaved at 480 x 272, and the reference design's corners are visibly softer. Nested cards are prohibited.
+- The semantic accent is a rounded pill on the panel's left edge, inset from top and bottom by the corner radius so it runs only alongside the straight part of the edge. A full-height stripe meets both corners exactly where each is curving, and its square shoulders sit outside the arc.
+- Content clears the accent stripe. The horizontal padding is never less than the stripe's width plus a gap, on short panels as well as tall ones.
 - A component spanning several cells remains one coherent panel; it must not visually imitate multiple unrelated cards unless its data model genuinely contains repeated items.
 
 ### Typography and values
@@ -388,10 +390,10 @@ Exact colors require physical-display testing, but components must consume seman
 
 ```lua
 local theme = {
-  canvas = 0x101316,
-  surface = 0x1A1F23,
-  surfaceRaised = 0x22282D,
-  border = 0x343B40,
+  canvas = 0x0A0C0E,
+  surface = 0x212830,
+  surfaceRaised = 0x2E3841,
+  border = 0x3A434B,
   text = 0xF4F6F7,
   textMuted = 0xA7B0B6,
   textFaint = 0x69737A,
@@ -419,7 +421,7 @@ Components must define responsive presentations for the spans they support. A 1 
 
 ### States
 
-- `normal`: Neutral panel with semantic measurement accent.
+- `normal`: Elevated panel with a semantic measurement accent, and no outline.
 - `selected`: Clear focus outline suitable for touch and rotary navigation.
 - `stale`: Muted value plus an explicit stale indicator; color alone is insufficient.
 - `warning`: Amber accent and concise threshold indication.
@@ -875,7 +877,7 @@ Milestones 1 to 7 are merged into `main`.
 2. Run the two diagnostics layouts on a radio. Set the widget's Dashboard ID to `services` or `services2`; they load on any model without a model-specific file. This is the check that milestone 5's normalization is right against real sensors rather than mocks.
 3. Confirm the value shapes on real hardware, on more than one protocol. `cell-battery` assumes a cells source returns a contiguous array of per-cell voltages, and `link-status` assumes a protocol without an RSSI sensor is detected by a source contradicting `getRSSI()`. Both are mocked faithfully but neither has met a receiver.
 4. Look at milestone 8's corner in the simulator, in App mode, on both screens. The distance reading it recovers should now sit below the menu button at `MIDSIZE`, and the panel headers beside it rather than under it.
-5. Compare the two palettes in the simulator. `sim` is Modern and `sim2` is EdgeTX-derived, so paging between them compares the two directly. The derived palette is not flat but it is much more strongly outlined: canvas to surface 1.272 against Modern's 1.122, surface to raised 1.263 against 1.115, but border 3.499 against Modern's 1.460. Whether those outlines read as deliberate or as heavy is a question for a screen, and it is worth establishing whether what stands out is `presentation.border` or the accent bar in `primitives.panel`.
+5. Compare the two palettes in the simulator. `sim` is Modern and `sim2` is EdgeTX-derived, so paging between them compares the two directly. The earlier reading of this, that the derived palette looked heavily outlined at 3.499 border contrast against Modern's 1.460, is answered rather than outstanding: no palette draws a resting outline any more, so what is being compared is now two elevated fills. Modern is 1.316 canvas to surface and the legibility pass holds every derived palette to at least 1.30, so the two should read as the same dashboard in different colours. Whether they do is still a question for a screen.
 6. Decide the extrema reset policy beyond arm switch. The specification names manual, timer, and switch; switch and manual are implemented, timer is not.
 7. Decide whether the status rail is ever built. It is deferred rather than cancelled, and the reasoning is recorded so the question starts from where it was left.
 
@@ -884,6 +886,7 @@ Milestones 1 to 7 are merged into `main`.
 | Item | Where | Note |
 | --- | --- | --- |
 | Physical readability review at 480 x 272 | Milestone 4 | Needs hardware; the only thing keeping milestone 4 from being fully closed |
+| The panel presentation has not been seen on a radio | Milestone 4 | Elevation, 8 px corners, the pill accent and the removal of the resting outline are all measured, but they were asked for from a screen and have to be judged on one |
 | Milestones 5 and 6 have not been run on hardware | Milestones 5 and 6 | The diagnostics layouts exist precisely to make that check quick, and the shipped dashboard now exercises all seven core components at once |
 | Staleness is link-wide, not per sensor | Milestone 5 | EdgeTX exposes no per-sensor age except for GPS, so a sensor that stops arriving, or was never received, while the link holds still reads as live. See below |
 | Extrema reset policy covers switch and manual only | Milestone 5 | Timer-based reset is specified but not implemented |
@@ -898,6 +901,7 @@ Milestones 1 to 7 are merged into `main`.
 | A trim's axis is unknown to the dashboard | Milestone 6 | EdgeTX exposes no axis metadata for a trim source, so `trim-panel` takes an orientation with a per-indicator override instead of matching on trim names |
 | `lvgl.image` cannot report a failed decode | Milestone 6 | `StaticImage` clears its source silently, so `model-identity` checks the file with `fstat` beforehand and keeps the model name visible when `fstat` is unavailable |
 | `actions/checkout@v4` and `setup-python@v5` target Node 20 | CI | Non-blocking deprecation warning |
+| ~~Panels are outlined on every state, including healthy~~ | Milestone 4 | Closed. A resting panel is an elevated fill with no stroke; the border is reserved for focus, editing, warning and critical, and is built at the focus weight because a radio will not change a border's weight after the object exists |
 | ~~A `1 x 1` metric fits its value vertically but width is unchecked~~ | Milestone 6 | Closed. `theme.fitText` fits a value by measured width as well as height, choosing the font from the widest string the component can ever produce so geometry stays stable |
 | ~~`lvgl.arc` is positioned by its top-left corner~~ | Milestone 7 | Closed, and it never was. EdgeTX positions an arc by its **centre**, so every radial drawn before this milestone was one radius up and to the left of its intended place. See below |
 | ~~The navigation distance value does not render in the simulator~~ | Milestone 8 | Closed. It rendered perfectly and EdgeTX's menu button was painted over it: `778m` at (8, 25), inside a corner of 47 x 45. Not a Lua fault, and no error was ever raised |
@@ -905,7 +909,7 @@ Milestones 1 to 7 are merged into `main`.
 
 ### Hard-won constraints
 
-Twelve firmware behaviours cost real debugging time and were invisible to the mocked tests until each mock was made faithful. Each now has a regression test, and each is documented in full further down. Why they were invisible, and what stops the next one, is the fixture discipline section below.
+Thirteen firmware behaviours cost real debugging time and were invisible to the mocked tests until each mock was made faithful. Each now has a regression test, and each is documented in full further down. Why they were invisible, and what stops the next one, is the fixture discipline section below.
 
 1. **A widget callback may not exceed 20000 Lua VM instructions.** Loading, reflow, refresh, and service updates are all bounded work per callback as a result.
 2. **`lvgl.box` accepts a `color` and silently ignores it.** Only a filled `lvgl.rectangle` paints a background.
@@ -931,6 +935,10 @@ Milestone 7 added one more, and it invalidated work already shipped:
 Milestone 8 added one firmware behaviour, and one about what a constant means:
 
 12. **EdgeTX paints its menu button over the widget in App mode, and says how big it is in a unit nobody expects.** `ViewMain` creates the top bar after the screen, commented `// create last to be on top`, and the button is parented to `ViewMain` rather than to the bar, so hiding the bar in App mode leaves the button drawn over the dashboard's top-left corner. Anything underneath it is simply not visible: the shipped dashboard's distance reading was painted over for two releases without a single error being raised. The firmware does publish the size, as `MENU_HEADER_HEIGHT`, but registers it beside the colour constants so it passes through `COLOR2FLAGS` and arrives shifted left by sixteen bits. The global reads 2949120 on a TX16S, not 45. A host that never unshifts it falls back to a hard-coded 45 and is then wrong on every radio whose display class scales the constant, which is why the mock publishes the shifted value and the tests measure a 62 px button as well as a 45 px one.
+
+The presentation pass added one more, and it had been silently wrong for as long as the panels had states:
+
+13. **A rectangle's border width and corner radius are build-time properties.** `LvglWidgetRectangle::build` is the only caller of `lv_obj_set_style_radius` for a rectangle, and `LvglWidgetRectangle` adds no refresh of its own, so a `rounded` passed to `set` is parsed and then ignored. Border width is worse, because it looks like it works: `lv_obj_set_style_border_width` is called only from `LvglWidgetBorderedObject::setOpacity`, which runs behind `LvglParamFuncOrValue::changedValue`, and `refresh()` hands it the opacity the object already has. So `set{thickness = n}` updates the C++ member, never reaches LVGL, and reports nothing. Every panel therefore drew whatever weight it was born with: a component created healthy and later going critical asked for the focus weight and kept the resting one, on every radio, for three milestones. The panel now builds its border at the focus weight and shows or hides it, because visibility is the only property of a border that can actually change after the object exists. The mock keeps what was applied at build apart from what was last passed, so a test asserting the latter fails.
 
 Two more lessons came from the tests rather than the firmware:
 

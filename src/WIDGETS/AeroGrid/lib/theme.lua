@@ -45,12 +45,25 @@ function theme.notice(notices, severity, text)
 end
 
 --- The designed instrument palette from the project specification.
+---
+--- Panels are defined by their fill against a darker screen, not by an
+--- outline, so the separation between `canvas` and `surface` is the whole of
+--- the dashboard's structure and has to be seen from arm's length. The
+--- original pairing measured 1.122, which reads as one flat dark field with
+--- faint boxes drawn on it. The elevation is now 1.316, reached from both
+--- ends: the screen was deepened as well as the panel lifted, because
+--- deepening costs nothing elsewhere while lifting the panel spends contrast
+--- that every token measured against it has to give up.
+---
+--- `track` moved with the surface deliberately. It is read against the fill
+--- drawn on top of it, and it would otherwise have fallen through the 2.0
+--- floor the moment the panel was lifted.
 local MODERN = {
-  canvas = 0x101316,
-  surface = 0x1A1F23,
-  surfaceRaised = 0x22282D,
-  border = 0x343B40,
-  track = 0x48515A,
+  canvas = 0x0A0C0E,
+  surface = 0x212830,
+  surfaceRaised = 0x2E3841,
+  border = 0x3A434B,
+  track = 0x545F6A,
   text = 0xF4F6F7,
   textMuted = 0xA7B0B6,
   textFaint = 0x69737A,
@@ -71,15 +84,29 @@ theme.ACCENTS = {cyan = true, green = true, amber = true, orange = true}
 theme.CUSTOM_KEYS = {canvas = true, surface = true, text = true, accent = true}
 
 --- Shared spacing baseline at 480 x 272, subject to hardware verification.
+---
+--- The accent stripe is a rounded pill inset from the panel's top and bottom
+--- rather than a full-height bar. A bar running the whole height meets the
+--- panel's own rounded corners exactly where both are curving, and the two
+--- radii fight: the stripe's square shoulder sits outside the corner arc. The
+--- inset is the corner radius, which is where the panel's left edge becomes
+--- straight, so the pill only ever runs alongside a straight edge.
 local SPACING = {
   outerMargin = 4,
   gutter = 4,
   padding = 8,
+  --- Horizontal padding on a panel too short for the standard vertical rhythm.
+  --- It is not smaller than the standard padding, despite the name of the case
+  --- it serves: the accent stripe occupies the left edge, and content starting
+  --- at the stripe's own right edge reads as crowded against it. The floor is
+  --- `accentWidth + accentGap`, which a test pins at every span.
+  paddingTight = 8,
   paddingCompact = 6,
-  radius = 4,
+  radius = 8,
   accentWidth = 4,
+  --- Clear space between the accent stripe and the content beside it.
+  accentGap = 4,
   barHeight = 4,
-  borderThin = 1,
   borderFocus = 2,
 }
 
@@ -94,6 +121,16 @@ local MIN_ACCENT_CONTRAST = 2.5
 --- A track is read against the value drawn on it, so it must be seen. Panel
 --- elevation may be subtle; a dial someone navigates by may not.
 local MIN_TRACK_CONTRAST = 2.0
+--- Separation between the screen and a panel drawn on it.
+---
+--- This is a target rather than a floor in everything but name: panels carry
+--- no resting outline, so the fill against the screen is the only thing that
+--- says where one panel ends and the next begins. It matches what Modern's own
+--- pairing achieves, because a derived palette sitting at the old 1.10 looked
+--- flat next to Modern on the same radio one page apart.
+local MIN_ELEVATION_CONTRAST = 1.30
+--- Separation between a panel and a raised surface drawn on it.
+local MIN_RAISE_CONTRAST = 1.20
 
 --- Split a 24-bit color into channels.
 ---@param rgb integer
@@ -261,10 +298,11 @@ end
 ---@param notices table[]
 local function enforceLegibility(tokens, notices)
   -- Structural separation: panels, elevation, and borders must be visible.
-  if theme.contrast(tokens.canvas, tokens.surface) < 1.10 then
-    tokens.surface = separated(tokens.canvas, 1.10)
+  if theme.contrast(tokens.canvas, tokens.surface) < MIN_ELEVATION_CONTRAST then
+    tokens.surface = separated(tokens.canvas, MIN_ELEVATION_CONTRAST)
+    theme.notice(notices, "info", "surface was lifted to elevate panels")
   end
-  tokens.surfaceRaised = separated(tokens.surface, 1.08)
+  tokens.surfaceRaised = separated(tokens.surface, MIN_RAISE_CONTRAST)
   if theme.contrast(tokens.surface, tokens.border) < 1.25 then
     tokens.border = separated(tokens.surface, 1.25)
   end
@@ -304,9 +342,18 @@ local function enforceLegibility(tokens, notices)
     theme.notice(notices, "info", "surface was shifted to keep critical visible")
 
     -- The surface moved, so everything measured against it must be rechecked.
-    tokens.surfaceRaised = separated(tokens.surface, 1.08)
+    tokens.surfaceRaised = separated(tokens.surface, MIN_RAISE_CONTRAST)
     tokens.border = separated(tokens.surface, 1.25)
     tokens.track = separated(tokens.surface, MIN_TRACK_CONTRAST)
+    -- Elevation included. The shift above answers only to critical red, so it
+    -- can land next to the canvas and leave the panels invisible against the
+    -- screen; the canvas moves rather than the surface, because moving the
+    -- surface back is exactly what this branch just refused to do, and
+    -- nothing but elevation is measured against the canvas.
+    if theme.contrast(tokens.canvas, tokens.surface) < MIN_ELEVATION_CONTRAST then
+      tokens.canvas = separated(tokens.surface, MIN_ELEVATION_CONTRAST)
+      theme.notice(notices, "info", "canvas was moved to keep panels elevated")
+    end
     correctContrast(tokens, "text", tokens.surface, MIN_TEXT_CONTRAST, notices)
     correctContrast(tokens, "textMuted", tokens.surface, MIN_MUTED_CONTRAST, notices)
     correctContrast(tokens, "textFaint", tokens.surface, MIN_FAINT_CONTRAST, notices)
@@ -627,9 +674,13 @@ local MIN_LABEL_WIDTH = 24
 ---@return table frame
 function theme.frame(resolved, rect, fonts, reserved)
   local spacing = resolved.spacing
-  -- Short panels cannot afford the standard padding.
+  -- Short panels cannot afford the standard vertical rhythm, but the
+  -- horizontal padding has a floor their height has no say in: the accent
+  -- stripe occupies the left edge, and content that started at the stripe's
+  -- own right edge read as crowded against it on every panel under 80 px
+  -- tall, which is most of a four-row dashboard.
   local tight = rect.h < 80
-  local pad = tight and 4 or spacing.padding
+  local pad = tight and spacing.paddingTight or spacing.padding
   local compact = tight and 2 or spacing.paddingCompact
 
   local content = math.max(1, rect.w - pad * 2)
@@ -702,6 +753,14 @@ end
 --- Warning, critical, stale, and unavailable states deliberately override a
 --- component's decorative accent, and each carries a text badge because color
 --- alone is not sufficient to communicate state.
+---
+--- A resting panel carries no outline. Its fill against the darker screen is
+--- what makes it a panel, so an outline on top of that is a second answer to a
+--- question already answered, and drawing one on every panel spends the
+--- border on decoration at exactly the moment it should mean something. A
+--- border therefore appears only where it is the message: focus, editing, and
+--- the two alarm states. Those are all drawn at the focus weight, because a
+--- one-pixel alarm outline on a 480 x 272 panel is not an alarm.
 ---@param resolved AeroGridTheme
 ---@param state? string
 ---@param accentName? string
@@ -714,7 +773,7 @@ function theme.state(resolved, state, accentName)
     value = color.text,
     label = color.textMuted,
     border = color.border,
-    borderWidth = resolved.spacing.borderThin,
+    borderWidth = 0,
     badge = nil,
     dim = false,
   }
@@ -732,6 +791,7 @@ function theme.state(resolved, state, accentName)
   elseif state == "warning" then
     presentation.accent = color.amber
     presentation.border = color.amber
+    presentation.borderWidth = resolved.spacing.borderFocus
     presentation.badge = "WARN"
   elseif state == "critical" then
     presentation.accent = color.critical
