@@ -395,7 +395,84 @@ end
 --- The tracked simulator model therefore carries a screen per gallery. This
 --- holds that arrangement together: a gallery added later without a screen is
 --- a gallery nobody pages to.
+--- The states layout has to be judgeable on both palettes, from a screen.
+---
+--- Every guarantee an alert tint carries is a contrast ratio, and a ratio can
+--- only say a tint is legible. It cannot say whether the colour the search
+--- landed on is the right one to look at, and the derived palette is where
+--- that is least likely to be right by luck: its tints are mixed from
+--- whatever surface the radio supplied, in the opposite lightness direction to
+--- Modern's. Modern's critical has been seen and approved; the derived one had
+--- only ever been a number.
+---
+--- So the tracked model carries the same layout twice under different Theme
+--- options. That works because `states.yaml` states no theme of its own and
+--- the host falls back to the native option, which this pins: a `theme` block
+--- creeping back into the layout would silently collapse both screens onto one
+--- palette while every assertion about reachability still passed.
+local function testStatesCoverBothPalettes()
+  local handle = assert(hostIo.open(
+    sourcePath .. "layouts/states.yaml", "r"))
+  local layout = handle:read("a")
+  handle:close()
+
+  assert(not string.match(layout, "\ntheme:"),
+    "states.yaml pins a theme, so both of its screens resolve the same palette"
+      .. " and the derived tints cannot be looked at")
+
+  local widgetPath = makeWidget("states-palettes", layout)
+
+  --- Build the states layout under one Theme option and report what it drew.
+  local function render(mode)
+    resetRadio()
+    local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+      {DashID = "main", Theme = mode}, widgetPath)
+    pump(context, 60)
+    assertEqual(#context.errors, 0,
+      mode .. ": " .. table.concat(context.errors, "\n"))
+    return context
+  end
+
+  for _, mode in ipairs({"modern", "edgetx"}) do
+    local context = render(mode)
+    assertEqual(context.theme.mode, mode,
+      "the Theme option did not decide the palette")
+
+    -- Configured to be critical is not the same as being critical. The
+    -- thresholds are rigged so the state is permanent, but that was only ever
+    -- checked against Modern, and a palette is free to resolve differently.
+    local critical = entryById(context, "s-critical")
+    assert(critical, mode .. ": the states layout has no critical panel")
+    assertEqual(critical.instance.stateName, "critical",
+      mode .. ": the panel meant to be critical is not")
+
+    local warning = entryById(context, "s-warning")
+    assertEqual(warning.instance.stateName, "warning",
+      mode .. ": the panel meant to be warning is not")
+
+    -- And each is actually drawn on its tint, rather than merely resolving to
+    -- a state that has one.
+    assertEqual(critical.instance.panel.background.properties.color,
+      context.theme.alertColor.critical,
+      mode .. ": the critical panel is not drawn on the critical tint")
+    assertEqual(warning.instance.panel.background.properties.color,
+      context.theme.alertColor.warning,
+      mode .. ": the warning panel is not drawn on the warning tint")
+  end
+
+  -- The two screens are only worth having if they differ. Derived tints that
+  -- landed on Modern's would mean the search is ignoring the radio's surface.
+  local modern = render("modern").theme
+  local derived = render("edgetx").theme
+  assert(modern.alertRgb.critical ~= derived.alertRgb.critical,
+    "both palettes resolve the same critical tint, so the second screen shows"
+      .. " nothing the first does not")
+  assert(modern.alertRgb.warning ~= derived.alertRgb.warning,
+    "both palettes resolve the same warning tint")
+end
+
 local function testGalleriesAreReachable()
+testStatesCoverBothPalettes()
   local handle = assert(hostIo.open(
     root .. "/tests/fixtures/sdcard/MODELS/model1.yml", "r"))
   local model = handle:read("a")
@@ -420,6 +497,46 @@ local function testGalleriesAreReachable()
     assert(string.find(model, "stringValue: " .. stem, 1, true),
       stem .. " ships as a layout but no screen of the tracked model selects"
         .. " it, so nothing pages to it")
+  end
+
+  -- Anything under review has to be reachable in a page or two. The galleries
+  -- are reference material for this audit and can sit behind the dashboards
+  -- and the states pages; when `states` was last it took six pages to reach
+  -- and in practice went unseen, which is the whole failure mode a screen
+  -- exists to prevent.
+  local order = {}
+  for value in string.gmatch(model, "stringValue: ([%w]+)") do
+    order[#order + 1] = value
+  end
+  local position = {}
+  for index, name in ipairs(order) do
+    if not position[name] then position[name] = index end
+  end
+  for _, stem in ipairs(galleries) do
+    if string.match(stem, "^span") then
+      assert(position.states < position[stem], "the " .. stem
+        .. " gallery is paged before the states screens, which are what is"
+        .. " actually being looked at")
+    end
+  end
+  assert(position.sim == 1 and position.sim2 == 2,
+    "the two dashboards are not the first two screens")
+
+  -- The states layout is carried twice, and the two screens are only worth
+  -- the space if they resolve different palettes. Each screen stores DashID
+  -- then Theme, so the value after a `states` entry is that screen's theme.
+  local themes = {}
+  for index, name in ipairs(order) do
+    if name == "states" then themes[#themes + 1] = order[index + 1] end
+  end
+  assertEqual(#themes, 2,
+    "the states layout is not carried on two screens")
+  assert(themes[1] ~= themes[2],
+    "both states screens are set to the " .. tostring(themes[1])
+      .. " palette, so the derived tints are on no screen at all")
+  for _, mode in ipairs(themes) do
+    assert(mode == "modern" or mode == "edgetx",
+      "a states screen asks for an unknown palette: " .. tostring(mode))
   end
 
   -- EdgeTX stops at MAX_CUSTOM_SCREENS, which is 10 on colour targets

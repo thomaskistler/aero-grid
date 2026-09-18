@@ -30,12 +30,20 @@ version: 1
 #   * Whether the stale and unavailable panels still read as absent rather than
 #     alarming. They are deliberately not tinted.
 #
-# Check this on `sim2` as well, which carries the EdgeTX-derived palette. Its
-# surface comes from the radio rather than from Modern, so the tints are mixed
-# from a different starting colour and may sit differently against it.
-
-theme:
-  mode: modern
+# This layout deliberately states no theme. The host resolves a layout's own
+# theme block first and falls back to the widget's native Theme option
+# (`themeConfig.mode or context.themeMode` in main.lua), so a layout that says
+# nothing takes whatever the screen was configured with. The tracked model
+# carries two screens on this one layout, one set to Modern and one to Follow
+# EdgeTX, which is the only way to compare the two palettes' tints: everything
+# else about the two pages is identical because it is the same file.
+#
+# The derived palette matters here more than anywhere else on the dashboard.
+# Its surface comes from the radio rather than from Modern, so the tints are
+# mixed from a different starting colour and in the opposite direction --
+# Modern's panel is dark enough to tint by lightening, while a mid-grey
+# derived surface has no room and has to be darkened instead. That was
+# verified numerically and never seen.
 
 grid:
   columns: 4
