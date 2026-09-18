@@ -856,7 +856,7 @@ Milestones 1 to 7 are merged into `main`.
 | PR | Branch | Base | Contents |
 | --- | --- | --- | --- |
 | #1 to #7 | merged | `main` | Milestones 1 to 7, the shared services, the full component catalogue, firmware fixes, refresh scheduling, and CI |
-| current | `thomaskistler/app-mode-menu-button-corner` | `main` | Milestone 8, the App mode menu button corner and the multi-screen verification |
+| current | `thomaskistler/status-rail-and-menu-button` | `main` | Milestone 8, the App mode menu button corner and the multi-screen verification |
 
 ### Verification state
 
