@@ -48,18 +48,27 @@ local function toRgb565(rgb)
 end
 
 -- A deliberately light EdgeTX theme, so contrast correction must engage.
+--- The EdgeTX Default theme, exactly as the firmware ships it.
+---
+--- Taken from `defaultColors` in `radio/src/gui/colorlcd/colors.cpp`. These
+--- were previously invented to match the role *names*, with a green `ACTIVE`,
+--- an amber `WARNING` and an orange `EDIT`. The firmware ships none of those:
+--- `ACTIVE` is yellow, `EDIT` is green and `WARNING` is red. A fixture that
+--- encodes what we assumed rather than what the radio does cannot fail when
+--- the assumption is wrong, and this one hid a scrambled palette on real
+--- hardware while every test passed.
 local edgeTxRoles = {
   [COLOR_THEME_PRIMARY1] = 0x000000,
   [COLOR_THEME_PRIMARY2] = 0xFFFFFF,
-  [COLOR_THEME_PRIMARY3] = 0x9E9E9E,
-  [COLOR_THEME_SECONDARY1] = 0x1B3A57,
-  [COLOR_THEME_SECONDARY2] = 0x3F7CA8,
-  [COLOR_THEME_SECONDARY3] = 0xC8D8E4,
-  [COLOR_THEME_FOCUS] = 0x1E88E5,
-  [COLOR_THEME_EDIT] = 0xFF8F00,
-  [COLOR_THEME_ACTIVE] = 0x43A047,
-  [COLOR_THEME_WARNING] = 0xF9A825,
-  [COLOR_THEME_DISABLED] = 0x757575,
+  [COLOR_THEME_PRIMARY3] = 0x0C3F66,
+  [COLOR_THEME_SECONDARY1] = 0x125E99,
+  [COLOR_THEME_SECONDARY2] = 0xB6E0F2,
+  [COLOR_THEME_SECONDARY3] = 0xE4EEF2,
+  [COLOR_THEME_FOCUS] = 0x14A1E5,
+  [COLOR_THEME_EDIT] = 0x009909,
+  [COLOR_THEME_ACTIVE] = 0xFFDE00,
+  [COLOR_THEME_WARNING] = 0xE00000,
+  [COLOR_THEME_DISABLED] = 0x8C8C8C,
 }
 
 lcd = {

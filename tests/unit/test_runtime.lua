@@ -401,8 +401,32 @@ local function testEdgeTxTheme()
   -- permanent banner on every radio running a derived palette.
   assertEqual(#resolved.warnings, 0,
     "a derived palette reported its own legibility pass as a problem")
-  assert(#resolved.notices > 0, "the legibility pass recorded nothing at all")
-  for _, notice in ipairs(resolved.notices) do
+
+  -- Structure follows the radio; meaning does not. EdgeTX's roles are menu
+  -- chrome and their names do not describe their colours: the shipped theme
+  -- has a yellow ACTIVE, a green EDIT and a red WARNING. Mapping accents onto
+  -- them by name rendered a warning in a red indistinguishable from critical,
+  -- and drew healthy panels in yellow.
+  local modern = theme.modern()
+  for _, key in ipairs({"cyan", "green", "amber", "orange", "critical"}) do
+    assertEqual(resolved.rgb[key], modern[key],
+      key .. " was taken from the radio instead of keeping its meaning")
+  end
+
+  -- A theme that genuinely needs correcting still records it, so the guard
+  -- that the legibility pass does something is kept rather than weakened: a
+  -- surface this close to the accents leaves them unreadable untouched.
+  local hostile = theme.build("edgetx", nil, {
+    roles = roles,
+    getColor = function(role)
+      if role == 4 then return toRgb565(0x70D6F3) end
+      return toRgb565(values[role])
+    end,
+  })
+  assertEqual(#hostile.warnings, 0,
+    "a derived palette reported its own legibility pass as a problem")
+  assert(#hostile.notices > 0, "the legibility pass recorded nothing at all")
+  for _, notice in ipairs(hostile.notices) do
     assertEqual(notice.severity, "info", notice.text)
   end
 

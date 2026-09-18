@@ -372,6 +372,16 @@ local function deriveFromEdgeTx(notices, env)
     return tokens
   end
 
+  -- Structure follows the radio; meaning does not.
+  --
+  -- EdgeTX's roles are menu chrome, and their names do not describe their
+  -- colours. In the shipped EdgeTX Default theme `ACTIVE` is yellow, `EDIT` is
+  -- green and `WARNING` is red, so mapping our accents onto them by name
+  -- scrambled every semantic on the dashboard: healthy read as caution, and a
+  -- warning was rendered in a red indistinguishable from critical. A pilot
+  -- cannot be asked to relearn what a colour means per radio theme, so the
+  -- accents stay exactly as Modern defines them and only the surfaces and text
+  -- follow the radio.
   local roles = resolved.roles
   local mapping = {
     canvas = roles.secondary1,
@@ -380,10 +390,6 @@ local function deriveFromEdgeTx(notices, env)
     text = roles.primary2,
     textMuted = roles.primary3,
     textFaint = roles.disabled,
-    cyan = roles.focus,
-    green = roles.active,
-    amber = roles.warning,
-    orange = roles.edit,
   }
 
   local found = false
