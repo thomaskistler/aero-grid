@@ -161,9 +161,29 @@ function primitives.panel(parent, rect, theme, presentation)
     thickness = spacing.borderFocus,
   })
 
+  -- Everything carrying the accent lives inside a column exactly one accent
+  -- width across, and the renderer keeps it there. LVGL intersects a child's
+  -- clip area with its parent's coordinates unless the parent carries
+  -- LV_OBJ_FLAG_OVERFLOW_VISIBLE (`lv_refr.c`, `refr_obj`), and EdgeTX never
+  -- sets that flag anywhere, so a container is a rectangular mask. That is the
+  -- only masking primitive available to us: `lv_obj_set_style_clip_corner`
+  -- would clip to a parent's rounded corners instead, but EdgeTX neither calls
+  -- it nor exposes it to Lua.
+  --
+  -- The box paints nothing. `LvglWidgetBox::build` creates a bare `lv_obj` and
+  -- its `setColor` is the base class's empty virtual, which is hard-won
+  -- constraint 2 read in our favour for once: here an unpainted container is
+  -- exactly what is wanted.
+  local column = lvgl.box(root, {
+    x = 0,
+    y = 0,
+    w = spacing.accentWidth,
+    h = rect.h,
+  })
+
   -- The straight run, between the two corners. A plain rectangle with no
   -- `rounded` key, so its ends are square and meet the arcs flush.
-  local accent = lvgl.rectangle(root, {
+  local accent = lvgl.rectangle(column, {
     x = 0,
     y = radius,
     w = spacing.accentWidth,
@@ -176,6 +196,7 @@ function primitives.panel(parent, rect, theme, presentation)
     root = root,
     background = background,
     border = border,
+    column = column,
     accent = accent,
     spacing = spacing,
     width = rect.w,
@@ -186,11 +207,16 @@ function primitives.panel(parent, rect, theme, presentation)
   }
 
   -- One quarter-circle band per corner, continuing the stripe around the
-  -- panel's own corner arc. Centred on the corner centres, so the two curves
-  -- are concentric and the same radius.
-  panel.topArc = primitives.accentArc(root, spacing, radius, radius,
+  -- panel's own corner arc. Centred on the corner centres and given the
+  -- panel's corner radius, so each band's outer edge is the panel's own curve;
+  -- the column then removes everything right of it. What survives is the part
+  -- of the panel's corner that lies inside the accent's own width, which
+  -- narrows from the full width at the tangent to nothing where the curve
+  -- leaves the column. The arcs are children of the column, not of the root,
+  -- or there would be nothing doing the clipping.
+  panel.topArc = primitives.accentArc(column, spacing, radius, radius,
     primitives.ACCENT_TOP, presentation.accent)
-  panel.bottomArc = primitives.accentArc(root, spacing, radius,
+  panel.bottomArc = primitives.accentArc(column, spacing, radius,
     rect.h - radius, primitives.ACCENT_BOTTOM, presentation.accent)
 
   primitives.stylePanel(panel, presentation)
@@ -288,6 +314,9 @@ function primitives.resizePanel(panel, rect)
   panel.height = rect.h
   panel.root:set({x = rect.x, y = rect.y, w = rect.w, h = rect.h})
   panel.background:set({w = rect.w, h = rect.h})
+  -- The mask follows the panel's height, or a shorter panel keeps clipping to
+  -- the old one and a taller one loses its bottom corner.
+  panel.column:set({h = rect.h})
   panel.accent:set({h = primitives.accentHeight(spacing, rect.h)})
 
   -- The top corner never moves, so it is deliberately not touched: an arc that

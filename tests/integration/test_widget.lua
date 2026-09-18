@@ -583,6 +583,50 @@ local function testPanelPresentation()
     assertEqual(panel.background.painted.radius, spacing.radius,
       id .. " was not rounded to the theme's corner radius")
 
+    -- Everything carrying the accent is a child of a column exactly one
+    -- accent width across, and LVGL clips a child to its parent's coordinates
+    -- unless the parent carries LV_OBJ_FLAG_OVERFLOW_VISIBLE, which EdgeTX
+    -- never sets (`lv_refr.c`, `refr_obj`). The column is therefore a
+    -- rectangular mask, and it is what keeps the corner bands inside the
+    -- accent's own width instead of bulging into the panel.
+    local column = panel.column.properties
+    assertEqual(panel.column.kind, "box", id .. " accent mask is not a box")
+    assertEqual(column.x, 0, id .. " accent mask left the panel's left edge")
+    assertEqual(column.y, 0, id .. " accent mask left the panel's top edge")
+    assertEqual(column.w, spacing.accentWidth,
+      id .. " accent mask is not one accent width across")
+    assertEqual(column.h, bounds.h,
+      id .. " accent mask does not cover the panel's height")
+    -- A box accepts `color` and silently ignores it (constraint 2), so a mask
+    -- that asked for one would be relying on that. It asks for none.
+    assertEqual(column.color, nil, id .. " accent mask asked for a colour")
+
+    -- The mask only masks what is inside it. An accent object parented to the
+    -- panel root would be clipped by the root instead, which is the whole
+    -- panel, so it would not be clipped at all.
+    --- Name an object's parent, so a mismatch does not read as two addresses.
+    local function parentName(object)
+      if object.parent == panel.column then return "the accent mask" end
+      if object.parent == panel.root then return "the panel root" end
+      return "something else"
+    end
+    for what, object in pairs({["accent stripe"] = panel.accent,
+        ["top band"] = panel.topArc.arc,
+        ["bottom band"] = panel.bottomArc.arc}) do
+      assert(object.parent == panel.column, id .. ": the " .. what
+        .. " is parented to " .. parentName(object) .. " rather than to the"
+        .. " accent mask, so nothing clips it")
+    end
+
+    -- The mask has to be load bearing, or asserting its width asserts
+    -- nothing. An arc occupies a box of `2 * radius` about its centre, so a
+    -- corner band reaches `2 * radius` across where the column allows
+    -- `accentWidth`. Without the clip that difference is drawn, which is the
+    -- accent bulging out of its own column.
+    assert(spacing.radius * 2 > spacing.accentWidth,
+      id .. " the corner bands fit inside the accent width unclipped, so the"
+        .. " mask is decorative and proves nothing")
+
     -- The accent is a plain stripe: constant width, square ends, stopping
     -- where the panel's corner curves away rather than following it round.
     local accent = panel.accent.properties
@@ -841,6 +885,13 @@ components:
     "the top band moved during a reflow")
   assertEqual(panel.bottomArc.centreY, bounds.h - spacing.radius,
     "the bottom band did not follow the panel's height")
+  -- The mask follows too. A panel that grew past a stale mask would have its
+  -- bottom corner clipped away; one that shrank would clip nothing at all
+  -- below the old height, and the band would escape into the next panel.
+  assertEqual(panel.column.properties.h, bounds.h,
+    "the accent mask did not follow the panel's height")
+  assertEqual(panel.column.properties.w, spacing.accentWidth,
+    "the accent mask changed width during a reflow")
   assertAccent(lcd.RGB(modern.cyan), "after a reflow")
 end
 
