@@ -338,51 +338,82 @@ end
 --- Nothing is repainted unless the reading or its freshness actually changed,
 --- because the host pays this for every metric on the dashboard.
 ---@param context AeroGridMetricContext
-function metric.refresh(context)
+--- Collect everything this panel draws.
+---
+--- Metric kept a separate cache beside each `set` call rather than one list,
+--- which is safe but is a third mechanism: the catalogue now has one, and a
+--- component that opts out of it is a component the next reader has to check
+--- by hand.
+---@param context AeroGridMetricContext
+---@param out table
+function metric.render(context, out)
+  local settings = context.settings
   local feed = context.feed
-  if not feed then return end
+  local forced = context.forced
+  local value = feed and feed.available and feed.value or nil
+  local stale = feed and feed.stale == true or false
+  if forced then value, stale = forced.value, forced.stale end
 
-  local value = feed.available and feed.value or nil
-  local stale = feed.stale == true
-  -- The sensor's precision only becomes known once the source resolves, so a
-  -- change in it has to repaint even when the reading itself has not moved.
-  local digits = metric.digitsFor(context)
+  out.state = metric.resolveState(settings, value, stale)
+  -- The sensor's precision is only known once the source resolves, so it has
+  -- to repaint even when the reading itself has not moved.
+  out.text = metric.format(value, metric.digitsFor(context))
+  out.fraction = metric.fraction(settings, value)
+  out.value = value
 
-  if not (context.applied and value == context.reading
-      and stale == context.staleReading and digits == context.digits) then
-    context.applied = true
-    context.staleReading = stale
-    context.digits = digits
-    metric.setValue(context, value, stale)
+  -- The sensor's unit is likewise only known once the source resolves, so the
+  -- label follows it rather than being fixed when the panel was built.
+  if context.unit and settings.unit == "" then
+    out.unit = feed and feed.unitText or ""
   end
-
-  -- The sensor's unit is only known once the source resolves, so the label
-  -- follows it rather than being fixed when the panel was built.
-  if context.unit and context.settings.unit == "" then
-    local text = feed.unitText or ""
-    if text ~= context.unitText then
-      context.unitText = text
-      context.unit:set({text = text})
-    end
-  end
-
   -- The detail row moves independently of the primary reading: an extreme
   -- changes on its own schedule and a secondary sensor has its own source.
-  if context.range then
-    local text = metric.detailText(context)
-    if text ~= context.rangeText then
-      context.rangeText = text
-      context.range:set({text = text})
-    end
+  if context.range then out.range = metric.detailText(context) end
+  if context.secondary then out.secondary = metric.secondaryText(context) end
+end
+
+--- Paint the panel from what `render` collected, and from nothing else.
+---@param context AeroGridMetricContext
+---@param drawn table
+function metric.apply(context, drawn)
+  local presentation = context.state(drawn.state, context.settings.accent)
+
+  context.reading = drawn.value
+  context.stateName = drawn.state
+  context.text = drawn.text
+
+  context.label:set({color = presentation.label})
+  context.value:set({text = drawn.text, color = presentation.value})
+  context.badge:set({text = presentation.badge or "", color = presentation.accent})
+  context.primitives.stylePanel(context.panel, presentation)
+
+  if context.unit and drawn.unit then
+    context.unitText = drawn.unit
+    context.unit:set({text = drawn.unit})
+  end
+  if context.range and drawn.range then
+    context.rangeText = drawn.range
+    context.range:set({text = drawn.range})
+  end
+  if context.secondary and drawn.secondary then
+    context.secondaryText = drawn.secondary
+    context.secondary:set({text = drawn.secondary})
   end
 
-  if context.secondary then
-    local text = metric.secondaryText(context)
-    if text ~= context.secondaryText then
-      context.secondaryText = text
-      context.secondary:set({text = text})
-    end
+  if context.bar then
+    context.primitives.setBar(context.bar, drawn.fraction, presentation.accent)
   end
+  if context.radial then
+    context.primitives.setRadial(context.radial, drawn.fraction, presentation.accent)
+  end
+end
+
+--- Advance the component, repainting only when something drawn changed.
+---@param context AeroGridMetricContext
+function metric.refresh(context)
+  if not context.feed then return end
+  local changed, drawn = context.primitives.changed(context, metric.render)
+  if changed then metric.apply(context, drawn) end
 end
 
 --- Convert a reading into a 0..1 fraction of the configured range.
@@ -681,26 +712,12 @@ end
 ---@param value any
 ---@param stale? boolean
 function metric.setValue(context, value, stale)
-  local settings = context.settings
-  local stateName = metric.resolveState(settings, value, stale == true)
-  local presentation = context.state(stateName, settings.accent)
-  local fraction = metric.fraction(settings, value)
-
-  context.reading = value
-  context.stateName = stateName
-  context.text = metric.format(value, metric.digitsFor(context))
-
-  context.label:set({color = presentation.label})
-  context.value:set({text = context.text, color = presentation.value})
-  context.badge:set({text = presentation.badge or "", color = presentation.accent})
-  context.primitives.stylePanel(context.panel, presentation)
-
-  if context.bar then
-    context.primitives.setBar(context.bar, fraction, presentation.accent)
-  end
-  if context.radial then
-    context.primitives.setRadial(context.radial, fraction, presentation.accent)
-  end
+  -- Kept as the way a caller forces a reading, and routed through the same
+  -- render-and-paint path so it cannot draw something `render` would not.
+  context.forced = {value = value, stale = stale == true}
+  local _, drawn = context.primitives.changed(context, metric.render)
+  metric.apply(context, drawn)
+  context.forced = nil
 end
 
 --- Reposition after a zone or configuration change.

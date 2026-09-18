@@ -1409,6 +1409,102 @@ local function testReadingsAgreeAcrossComponents()
     .. " result of every reading being shrunk rather than reconciled")
 end
 
+--- A panel redraws when anything it draws changes, not when a chosen subset does.
+---
+--- Four instances of one defect have been found in this catalogue, each fixed
+--- by adding the missed field to a hand-written list, which is why there was a
+--- fourth. The two driven here are the live one and the latent one.
+---
+--- Both need the same care to reproduce: a change that also moves a compared
+--- value proves nothing, because the short-circuit would have broken anyway
+--- and the assertion passes for the wrong reason. The global variable's
+--- precision is therefore pinned so that only its name arrives, and the
+--- model's labels are changed while its name and bitmap are held still.
+local function testRedrawsOnEverythingItDraws()
+  local widgetPath = makeWidget("render-declaration", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: gv
+    type: variable-indicator
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      binding: global
+      index: 0
+      showName: true
+  - id: identity
+    type: model-identity
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      presentation: name
+      showLabels: true
+]])
+
+  resetRadio()
+  -- The radio has not yet answered for this variable's details, which is the
+  -- cold start every dashboard goes through.
+  local details = radio.globalDetails[0]
+  radio.globalDetails[0] = nil
+
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  pump(context, 40)
+
+  local gv = entryById(context, "gv").instance
+  assertEqual(gv.detail, "GV1 FM1",
+    "the supporting row does not name the variable before its details arrive")
+  local before = gv.text
+
+  -- EdgeTX answers, with a name and with the same precision it was already
+  -- being read at, so the value on screen does not move. Anything that moved
+  -- the value would break the short-circuit by itself and prove nothing.
+  radio.globalDetails[0] = {
+    name = "Rates", min = -100, max = 100, prec = 0, unit = 0,
+  }
+  pump(context, 60)
+
+  assertEqual(gv.text, before,
+    "the value moved, so this no longer tests what it was written for")
+  assertEqual(gv.labelValue, "RATES", "the header did not take the new name")
+  assertEqual(gv.detail, "Rates FM1",
+    "the header took the variable's name and the supporting row kept the old"
+      .. " one, which is the defect this exists to catch")
+
+  -- The same shape in model-identity, which could not be made to fail before
+  -- because a model's labels only change when its name does. Driven directly
+  -- here, with the name and the bitmap held still.
+  local identity = entryById(context, "identity").instance
+  assertEqual(identity.labelsText, edgetx.scaffold.MODEL_LABELS)
+  local name, bitmap = identity.text, identity.bitmap
+
+  -- The services capture the radio's entry points once, at construction, so
+  -- the model has to change where the service actually reads it.
+  local env = context.serviceRuntime.env
+  local info = env.getInfo
+  env.getInfo = function()
+    local out = info()
+    out.labels = "fpv,racing"
+    return out
+  end
+  pump(context, 600)
+  env.getInfo = info
+
+  assertEqual(identity.text, name, "the model name moved during the test")
+  assertEqual(identity.labelsText, "fpv,racing",
+    "the labels row kept its old value while the model's labels changed")
+
+  radio.globalDetails[0] = details
+  resetRadio()
+end
+
 --- Responsive presentation must differ across the baseline spans.
 local function testResponsiveSpans()
   local metricModule = assert(loadfile(sourcePath .. "components/metric.lua"))()
@@ -1824,6 +1920,7 @@ testAccentFollowsState()
 testProbeUsesTheSharedHeader()
 testSupportingRowsExplainTheBadge()
 testReadingsAgreeAcrossComponents()
+testRedrawsOnEverythingItDraws()
 testResponsiveSpans()
 testBadgeGeometry()
 testMetricStates()

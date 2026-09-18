@@ -161,49 +161,55 @@ function flightMode.create(parent, rect, settings, services)
 
   if not area.showDetail then lvgl.hide(context.detailLabel) end
 
-  flightMode.apply(context)
+  local _, drawn = primitives.changed(context, flightMode.render)
+  flightMode.apply(context, drawn)
   return context
 end
 
 --- Repaint the component from its current subscription.
 ---@param context AeroGridFlightModeContext
-function flightMode.apply(context)
+--- Collect everything this panel draws.
+---
+--- The mode number is why this is a declaration rather than a list. `apply`
+--- drew it and the refresh compared only the name, so two flight modes sharing
+--- a configured name would have left the number showing the old mode.
+---@param context AeroGridFlightModeContext
+---@param out table
+function flightMode.render(context, out)
   local feed = context.feed
-  local settings = context.settings
   local available = type(feed) == "table" and feed.available == true
-  local presentation = context.state(
-    available and "normal" or "unavailable", settings.accent)
 
-  context.stateName = available and "normal" or "unavailable"
-  context.text = available and tostring(feed.name) or "--"
-
-  context.value:set({text = context.text, color = presentation.value})
-  context.label:set({color = presentation.label})
-  context.badge:set({text = presentation.badge or "", color = presentation.accent})
-  context.primitives.stylePanel(context.panel, presentation)
-
-  local detail = ""
-  if settings.showIndex and available then
-    detail = "MODE " .. tostring(feed.index)
-  end
-  if detail ~= context.detail then
-    context.detail = detail
-    context.detailLabel:set({text = detail})
+  out.state = available and "normal" or "unavailable"
+  out.text = available and tostring(feed.name) or "--"
+  out.detail = ""
+  if context.settings.showIndex and available then
+    out.detail = "MODE " .. tostring(feed.index)
   end
 end
 
---- Advance the component, repainting only when the mode actually changed.
+--- Paint the panel from what `render` collected, and from nothing else.
+---@param context AeroGridFlightModeContext
+---@param drawn table
+function flightMode.apply(context, drawn)
+  local presentation = context.state(drawn.state, context.settings.accent)
+
+  context.stateName = drawn.state
+  context.text = drawn.text
+  context.detail = drawn.detail
+
+  context.value:set({text = drawn.text, color = presentation.value})
+  context.label:set({color = presentation.label})
+  context.badge:set({text = presentation.badge or "", color = presentation.accent})
+  context.detailLabel:set({text = drawn.detail})
+  context.primitives.stylePanel(context.panel, presentation)
+end
+
+--- Advance the component, repainting only when something drawn changed.
 ---@param context AeroGridFlightModeContext
 function flightMode.refresh(context)
-  local feed = context.feed
-  if not feed then return end
-
-  local name = feed.available and feed.name or nil
-  if context.applied and name == context.reading then return end
-
-  context.applied = true
-  context.reading = name
-  flightMode.apply(context)
+  if not context.feed then return end
+  local changed, drawn = context.primitives.changed(context, flightMode.render)
+  if changed then flightMode.apply(context, drawn) end
 end
 
 --- Reposition after a zone change.
