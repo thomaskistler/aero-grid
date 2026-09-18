@@ -4,12 +4,12 @@
 
 - Draft specification
 - Date: 2026-09-07
-- Status last updated: 2026-09-17
+- Status last updated: 2026-09-18
 - EdgeTX source: `../edgetx`
 - Project root: `aero-grid/`
-- Implementation: Phase 1, milestones 1 to 8 complete
-- Next work: Milestone 9, hardening, and hardware verification
-- See [Resuming work](#resuming-work) for the current branch stack and the exact next steps.
+- Implementation: Phase 1, milestones 1 to 8 complete, plus a presentation and consistency pass over the whole catalogue
+- Next work: Milestone 9, hardening, and hardware verification. Nothing in this project has run on a radio.
+- Everything is merged into `main`; there is no branch in flight. See [Resuming work](#resuming-work) for the state and the exact next steps.
 
 ## Summary
 
@@ -601,6 +601,8 @@ local value, isCurrent, isFresh = getSourceValue(config.source)
 
 The YAML may also record `sourceName` as optional human-readable and recovery metadata. The numeric identifier is authoritative for normal operation. On model or firmware changes, the loader may use the name to recover a source when the stored identifier is invalid, but it must not silently change a valid identifier.
 
+**This section is aspirational and the implementation does the opposite.** `telemetryService:subscribe` takes a source *name* and rejects anything that is not a string; every shipped layout names its sources; and `<key>Name` survives only as a key the settings loader will not report as unknown. Nothing has been built towards the numeric form, and hand-authored YAML is the reason — a name is what a person can write and read, and phase 1 has no editor to write anything else. The question is live rather than settled: an identifier survives a sensor being renamed and a name does not, which is exactly what recovery metadata was for. It has to be decided before the on-radio editor is built, because the editor is the thing that would persist an identifier.
+
 ### Native host options
 
 Settings that apply to the dashboard as a whole, such as a global theme or diagnostic mode, may remain native options declared by `main.lua`. EdgeTX will generate their settings UI and persist them in the model. Placement and dynamic per-component settings must remain in the dashboard YAML.
@@ -703,11 +705,11 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      source: 216
-      sourceName: Cels
+      source: Cels
+      label: PACK
       warning: 3.5
       critical: 3.3
-      showLabel: true
+      showCount: true
 
   - id: flight-timer
     type: flight-timer
@@ -725,13 +727,16 @@ components:
     colSpan: 4
     rowSpan: 3
     config:
-      rssiSource: 200
-      rssiSourceName: RSSI
-      qualitySource: 203
-      qualitySourceName: RQly
+      rssiSource: RSSI
+      qualitySource: RQly
+      reading: auto
 session:
   armSource: sf
 ```
+
+Every key above is one the named component declares, and this example has been run through the real loader to confirm it. That is not a stylistic point: since the settings vocabulary work, a key a component does not declare is reported at load with the layout, component and key named. The version of this example printed here until 2026-09-18 did not load cleanly — it produced `main-battery: source must be a string; showLabel is not a setting of this component` — and it was the most likely thing for someone to copy.
+
+The second half of that message is the more interesting one. The example showed sources as numeric identifiers with a `sourceName` companion, as described under [Source settings](#source-settings), and that is not what the implementation does: `telemetryService:subscribe` takes a name and rejects anything that is not a string, and every shipped layout names its sources. The spec section describes an intended end state that nothing has been built towards. The two have to be reconciled before the on-radio editor exists, because the editor is the thing that would write an identifier.
 
 ### Schema rules
 
@@ -897,23 +902,58 @@ This would allow independently registered EdgeTX widgets to occupy configurable 
 
 ## Resuming Work
 
-State as of 2026-09-17. This section is the entry point after a break: it records where the code lives, what is proven, and what to do next.
+State as of 2026-09-18. This section is the entry point after a break: it records where the code lives, what is proven, and what to do next.
 
-### Branch stack
+### Where the work is
 
-Milestones 1 to 7 are merged into `main`.
+**Everything is on `main`. There is no branch stack, no open pull request, and no work in flight.** Milestones 1 to 8 and the presentation and consistency pass are all merged; every working branch has been deleted. A fresh branch off `main` is the correct starting point for anything.
 
-| PR | Branch | Base | Contents |
-| --- | --- | --- | --- |
-| #1 to #7 | merged | `main` | Milestones 1 to 7, the shared services, the full component catalogue, firmware fixes, refresh scheduling, and CI |
-| current | `thomaskistler/status-rail-and-menu-button` | `main` | Milestone 8, the App mode menu button corner and the multi-screen verification |
+This section used to carry a table naming the branch currently in flight, which was accurate only while one existed and became a trap the moment it was merged: the first act on resuming was to check out a branch that had been deleted. The shape is gone rather than filled in with `main`. If a branch stack ever returns, record it here again — but only while it is real.
+
+### Nothing has run on a radio
+
+Every decision this project has made rests on two things: the EdgeTX simulator, and arithmetic. That includes all of today's work.
+
+The simulator is a real host running real LVGL, so it catches a great deal, and the test suite measures against a mock whose arithmetic is taken from the firmware source. But a simulator on a desktop monitor is not a 480 x 272 transflective panel at arm's length in daylight, and no amount of contrast arithmetic substitutes for looking at one.
+
+The judgements most exposed by this are the ones that were made *because* of how something reads:
+
+- **The alert tints.** `warning` and `critical` now tint the panel's surface instead of drawing a coloured frame, on the argument that area is noticed in peripheral vision where an outline has to be looked at. Every tint is held to the same text and elevation minimums as the resting surface, and that is checked numerically for both palettes. Whether a tinted field is actually noticed while looking elsewhere, on a moving aircraft, has never been tested.
+- **The panel as a card.** Elevation of 1.316 canvas to surface, 8 px corners, no resting outline. Chosen from ratios.
+- **Estimated text width.** The Lua API cannot measure text outside a draw callback, so `theme.textWidth` assumes a mean advance of 0.58 of the line height. Every font choice in the dashboard descends from that constant, and it has never met a real font.
+- **The responsive ladder.** Which rows a panel keeps at each span is decided from measured box geometry, but whether the result is readable is a question for eyes.
+
+This is carried in the open-items table as milestone 4's physical readability review, which undersells it. It is not one milestone's loose end; it is the standing condition of the whole project.
+
+### What the presentation and consistency pass did
+
+Eleven pull requests over one day, after an audit that measured every component at every span it declares through the real host. The audit's premise was that thirteen components written across three milestones by different sessions to the same contract, but not to each other, would agree individually and disagree as a set. They did. The PRs hold the detail; this is the shape.
+
+**Presentation.** A panel is now a card: deepened canvas, lifted surface, 8 px corners, and no outline at rest. Its accent is a full-height stripe with rounded outer corners, drawn as arcs clipped by a box one accent-width wide — five rounds of trying, and the version that worked came from the user rather than from the measurements. Alert states tint the surface instead of colouring the frame, which leaves **fill meaning a condition of the data and outline meaning where the interaction focus is**, where the border previously carried both.
+
+**Consistency.** The badge vocabulary was cut from thirteen strings to five rather than widening the column to fit the longest, because `NOT CELLS` and `BAD CELLS` were nine characters separating two failure modes of one component. The header gives the label the room an empty badge is not using, permanently rather than conditionally, so a state change never makes the label reflow. Eight private copies of "choose a font for this reading" became one shared responsive ladder: composition comes from the box, and the font from the composition, so two panels of the same size agree. Ten non-monotonic font ladders became none.
+
+**Correctness.** A component now declares what it renders, and its redraw comparison is derived from that declaration rather than from a hand-listed subset that drifts from `apply` — which was the fourth instance of one defect, after three were fixed individually in milestone 7. The settings vocabulary was unified: one name per concept, declared `choices` the loader enforces, thresholds that state their direction and unit, ranges named for what they bound, and the flight arm switch moved to the layout where two components cannot contradict each other.
+
+**Cost.** `trim-panel`'s reflow, the worst callback, was found to be half inherent and half invisible work: it hid the text rows a narrow cell cannot fit and then went on positioning, formatting and writing them anyway.
+
+Two lessons generalised past their PRs and are recorded where they will be read rather than only in a PR body: **assert what the panel draws, not what it computed**, in the fixture discipline section, which seven assertions in the existing suite were violating; and **a form may drop redundancy, never magnitude**, under typography, which stopped `flight-timer` rendering `1:04:12` as `04:12`.
+
+### Current cost
+
+| | Value | Where |
+| --- | --- | --- |
+| Worst callback | 8532 of 20000 | `trim-panel` reflow at sixteen cells |
+| Worst steady frame | 2562 of 20000 | `navigation` at sixteen cells |
+
+The worst steady frame used to be a `trim-panel` and is not any more. Both figures are asserted by the suite and are measured at the largest layout the schema permits. Note the second-worst callback is 7361, and it is the loader's own header stage rather than any component — which means component work is no longer the binding constraint on a full grid, and the next person looking for headroom should know that before optimising a panel.
 
 ### Verification state
 
 - `make test`, `make check`, and `make build` pass from a clean tree. `make check` was also run against a real Lua 5.3 `luac`, and both suites were executed under a real Lua 5.3 interpreter, not only under whichever Lua `lupa` provides.
 - CI (`.github/workflows/ci.yml`) runs `make check` under Lua 5.3 on every pull request, plus the SD image build and two integrity assertions.
 - The dashboard has been confirmed running in the EdgeTX simulator on a TX16S profile through milestone 7. Navigation, link status, the radial and bar metrics and the trim panel have all been read against live simulated telemetry, which is where the arc drift in constraint 11 was found. Two of milestone 7's behaviours still cannot be judged there: whether a cells source on a real receiver returns the table shape assumed here, since nothing on an ELRS link publishes one, and whether a protocol without an RSSI sensor is recognized as a link rather than a dead one.
-- Milestone 8's corner work has not yet been seen in the simulator. It is measured against the real host in the test suite, and the numbers are in the milestone section, but the thing it fixes was only ever visible on a screen, so it should be looked at on one.
+- Milestone 8's corner work and the whole presentation and consistency pass have been seen in the EdgeTX simulator and judged there. The accent geometry in particular took five rounds of looking, and the version that was accepted came from the person at the screen rather than from any measurement, which is the standing argument for building something to look at rather than reasoning about it in prose. None of it has been seen on a radio; see [Nothing has run on a radio](#nothing-has-run-on-a-radio).
 - The simulator fixture carries eight screens, every one holding an AeroGrid instance: `sim`, which fills its grid with the telemetry components, `sim2`, which covers the radio-local ones that had nowhere to go beside them, the `states` layout twice, and the four span galleries. They are ordered by what is being looked at rather than by when they were written: the two dashboards, then the states pages, then the galleries, which are reference material for the catalogue audit. A screen that takes six pages to reach does not get looked at, which is the only thing a screen is for. A gallery only ships as a layout, and selecting a layout means setting the widget's Dashboard ID, which in App mode cannot be reached from the main view at all: `Widget::openMenu` returns immediately after `setFullscreen(true)` when the widget is not in the top bar and the view is App mode. Without a screen apiece, reaching a gallery means going through Model Setup and Screens once per gallery. `MAX_CUSTOM_SCREENS` is 10, so six leaves room. Paging between them switches dashboards without opening widget settings, and exercises two widget instances resolving different layouts at once. `sim` carries the Modern palette and `sim2` the EdgeTX-derived one, so the two are one button press apart.
 - Two instances running together are held to owning their own root, page, service registry and telemetry service, because EdgeTX runs every Lua widget in one interpreter state and anything a module kept at its own scope would be shared between dashboards that know nothing about each other.
 - In App mode, every shipped layout is checked to draw nothing readable inside the corner EdgeTX's menu button covers. The directory is read rather than listed, so a new layout is covered as soon as it is added.
@@ -922,34 +962,53 @@ Milestones 1 to 7 are merged into `main`.
 
 ### Immediate next steps
 
-1. Run the shipped dashboard on a radio. It now demonstrates the complete ten-component catalogue, so one screen exercises telemetry, cells, link, GPS, model timers, flight mode, transmitter voltage, a global variable, trims, and the model bitmap at once. Four things can only be judged there: whether the estimated text widths behind `theme.fitText` hold against the real fonts, whether an `lvgl.image` of a model bitmap scales the way `StaticImage` is expected to, whether the corrected arc centring places the radial and compass dials where they are meant to go, and whether the compass pointer reads as a direction at arm's length.
-2. Run the two diagnostics layouts on a radio. Set the widget's Dashboard ID to `services` or `services2`; they load on any model without a model-specific file. This is the check that milestone 5's normalization is right against real sensors rather than mocks.
-3. Confirm the value shapes on real hardware, on more than one protocol. `cell-battery` assumes a cells source returns a contiguous array of per-cell voltages, and `link-status` assumes a protocol without an RSSI sensor is detected by a source contradicting `getRSSI()`. Both are mocked faithfully but neither has met a receiver.
-4. Look at milestone 8's corner in the simulator, in App mode, on both screens. The distance reading it recovers should now sit below the menu button at `MIDSIZE`, and the panel headers beside it rather than under it.
-5. Compare the two palettes in the simulator. `sim` is Modern and `sim2` is EdgeTX-derived, so paging between them compares the two directly. The earlier reading of this, that the derived palette looked heavily outlined at 3.499 border contrast against Modern's 1.460, is answered rather than outstanding: no palette draws a resting outline any more, so what is being compared is now two elevated fills. Modern is 1.316 canvas to surface and the legibility pass holds every derived palette to at least 1.30, so the two should read as the same dashboard in different colours. Whether they do is still a question for a screen.
-6. Decide the extrema reset policy beyond arm switch. The specification names manual, timer, and switch; switch and manual are implemented, timer is not.
-7. Decide whether the status rail is ever built. It is deferred rather than cancelled, and the reasoning is recorded so the question starts from where it was left.
+1. **Run the shipped dashboard on a radio.** This is first and has been first for three milestones. One screen exercises telemetry, cells, link, GPS, model timers, flight mode, transmitter voltage, a global variable, trims, and the model bitmap at once. Five things can only be judged there: whether the estimated text widths behind `theme.textWidth` hold against the real fonts, whether an `lvgl.image` of a model bitmap scales the way `StaticImage` is expected to, whether the corrected arc centring places the radial and compass dials where they are meant to go, whether the compass pointer reads as a direction at arm's length, and whether an alert tint is noticed without being looked at.
+2. **Run the two diagnostics layouts on a radio.** Set the widget's Dashboard ID to `services` or `services2`; they load on any model without a model-specific file. This is the check that milestone 5's normalization is right against real sensors rather than mocks.
+3. **Confirm the value shapes on real hardware, on more than one protocol.** `cell-battery` assumes a cells source returns a contiguous array of per-cell voltages, and `link-status` assumes a protocol without an RSSI sensor is detected by a source contradicting `getRSSI()`. Both are mocked faithfully but neither has met a receiver.
+4. **Decide the extrema reset policy beyond arm switch.** The specification names manual, timer, and switch; switch and manual are implemented, timer is not.
+5. **Decide whether the status rail is ever built.** It is deferred rather than cancelled, and the reasoning is recorded so the question starts from where it was left.
+
+Items 4 and 5 are decisions rather than work, and can be taken at a desk. Everything above them needs a radio.
+
+### Deliberately set aside
+
+These came out of the presentation and consistency pass and were not done, each for a stated reason. They are recorded here rather than in an issue tracker because the reasoning is the part worth keeping — the work itself is small in every case.
+
+**Recommended next, of these: `REFLOW_BATCH`.** It is a one-line change with a real trade behind it, it is the only item here that would give budget back, and it has never been examined at all.
+
+| Item | Why it was left | What taking it would involve |
+| --- | --- | --- |
+| **`REFLOW_BATCH` has never been measured** | It is set to 4 and nothing has ever asked whether that is right. It is the direct multiplier on the worst callback: a component costing 1798 instructions to reposition produces an 8532-instruction callback because four of them share one. Three would cut the headline figure by roughly a quarter. | Decide the trade rather than the number: a smaller batch means more callbacks to settle a reflow, so a zone change takes longer to finish. Measure how many callbacks a full grid already takes, and whether a user can see the difference. |
+| **Reveal costs a frame of stale content in four components** | `cell-battery`, `link-status`, `metric` and `navigation` each drop their last drawn record when a shed row reappears, so the *next* refresh repaints it. `trim-panel` no longer needs to, because it stops declaring a row it has shed and the comparison notices the missing key by counting. | Give the other four the same property, which means changing what each declares rather than adding another discard. The result is that the discard becomes unnecessary everywhere rather than in one place — unreachable by construction, which is the same argument the render declaration was built on. |
+| **`primitives.arcBounds` has no production caller** | It converts an arc's centre into the rectangle it occupies. Six tests use it; nothing in the widget does. It therefore ships to the radio to serve the test suite, which is the wrong direction of dependency. | Decide whether it is a test helper that belongs in the suite, or a primitive that components *should* be using and are not. Components do lay out in corner coordinates while EdgeTX positions arcs by centre, so the second is plausible and worth checking before deleting anything. |
+| **`link-status` thresholds change unit at runtime** | With `reading: auto`, the leading source can resolve to RSSI in dBm or to link quality in percent, and `warning` and `critical` are bare numbers either way. The settings vocabulary made the label honest — "in the leading source's unit" — rather than fixing it. | Either pin the threshold to a named source, or carry two thresholds and select with the reading. Both change behaviour for an existing layout, which is why it was documented instead. |
+| **Three development components ship** | `heartbeat`, `placeholder` and `service-probe` are in the catalogue, in the galleries, and carry the same settings discipline, `choices` and header geometry as real panels. Whether they should be in a release at all was never asked. | `service-probe` has a genuine diagnostic use and milestone 9 wants a diagnostics view; the other two are scaffolding. Decide per component rather than as a group. |
+| **The physical readability review** | Needs hardware. It is milestone 4's last open item and has been open since milestone 4. | See [Nothing has run on a radio](#nothing-has-run-on-a-radio). It is larger than one milestone's loose end. |
 
 ### Open items carried forward
 
 | Item | Where | Note |
 | --- | --- | --- |
 | Physical readability review at 480 x 272 | Milestone 4 | Needs hardware; the only thing keeping milestone 4 from being fully closed |
-| The panel presentation has not been seen on a radio | Milestone 4 | Elevation, 8 px corners, the full-height accent and the removal of the resting outline are all measured, but they were asked for from a screen and have to be judged on one |
+| The panel presentation has not been seen on a radio | Milestone 4 | Elevation, 8 px corners, the clipped accent stripe, the removal of the resting outline and the alert tints have all been judged in the simulator. None has been seen on a radio, which is where the peripheral-vision argument behind the tints can actually be tested |
 | Milestones 5 and 6 have not been run on hardware | Milestones 5 and 6 | The diagnostics layouts exist precisely to make that check quick, and the shipped dashboard now exercises all seven core components at once |
 | Staleness is link-wide, not per sensor | Milestone 5 | EdgeTX exposes no per-sensor age except for GPS, so a sensor that stops arriving, or was never received, while the link holds still reads as live. See below |
 | Extrema reset policy covers switch and manual only | Milestone 5 | Timer-based reset is specified but not implemented |
 | A `1 x 1` component in the App mode top-left corner cannot be fully shown | Milestone 8 | The button covers 40% of its width and 69% of its height. Its reading survives, pushed below the button, and its header label is dropped rather than clipped. No approach saves it; avoid the placement |
-| The menu button corner has not been seen on a radio | Milestone 8 | Measured against the real host and asserted for every shipped layout, but the defect it fixes was only ever visible on a screen |
+| The menu button corner has not been seen on a radio | Milestone 8 | Seen and confirmed in the simulator. Measured against the real host and asserted for every shipped layout. Still unseen on hardware |
 | Host notices are collected but not shown anywhere | Milestone 8 | Contrast corrections and palette fallbacks are recorded on the context with a severity, ready for milestone 9's diagnostics view. Until that exists they are invisible except to a test |
 | The status rail is deferred, not cancelled | Milestone 8 | EdgeTX's own top bar fills the role at no Lua cost, and the geometry does not favour a dashboard rail. Default settled as off should it return |
-| Steady-state refresh cost scales with component count | Milestone 6 | 2200 of 20000 on the shipped ten-component dashboard, up from 2000; watch it as the catalog grows |
+| Steady-state refresh cost scales with component count | Milestone 6 | 2562 of 20000 at sixteen `navigation` panels, and 2535 on the shipped ten-component dashboard. Watch it as the catalogue grows |
 | A cells source's real shape is unverified | Milestone 7 | `cell-battery` assumes a contiguous array of per-cell voltages and validates every entry, but no receiver has produced one yet |
 | A protocol without an RSSI sensor is detected indirectly | Milestone 7 | `link-status` relies on `telemetryService` observing a source contradict `getRSSI()`. Until something contradicts it, a genuinely dead link and a missing RSSI sensor are indistinguishable, and both read as no link |
-| Text width is estimated, not measured | Milestone 6 | The Lua API exposes no text measurement outside a draw callback, so `theme.textWidth` assumes a mean advance of 0.58 of the line height. Deliberately generous, so it shrinks text that would have fitted rather than clipping text that does not. Needs a hardware check |
+| Text width is estimated, not measured | Milestone 6 | The Lua API exposes no text measurement outside a draw callback, so `theme.textWidth` assumes a mean advance of 0.58 of the line height. Deliberately generous, so it shrinks text that would have fitted rather than clipping text that does not. Every font choice in the dashboard now descends from this one constant through the shared ladder, which makes a hardware check more valuable rather than less |
 | A trim's axis is unknown to the dashboard | Milestone 6 | EdgeTX exposes no axis metadata for a trim source, so `trim-panel` takes an orientation with a per-indicator override instead of matching on trim names |
 | `lvgl.image` cannot report a failed decode | Milestone 6 | `StaticImage` clears its source silently, so `model-identity` checks the file with `fstat` beforehand and keeps the model name visible when `fstat` is unavailable |
 | `actions/checkout@v4` and `setup-python@v5` target Node 20 | CI | Non-blocking deprecation warning |
+| `primitives.arcBounds` has no production caller | Presentation pass | Six tests use it and the widget does not, so it ships to a radio to serve the suite. See [Deliberately set aside](#deliberately-set-aside) |
+| `REFLOW_BATCH` has never been measured | Presentation pass | Set to 4, and the direct multiplier on the worst callback. The recommended next item. See [Deliberately set aside](#deliberately-set-aside) |
+| `link-status` thresholds change unit at runtime | Presentation pass | With `reading: auto` the leading source may be RSSI in dBm or quality in percent, and the thresholds are bare numbers either way. The label says so; the setting does not |
+| Three development components ship | Presentation pass | `heartbeat`, `placeholder` and `service-probe` are in the catalogue and the galleries. Whether they belong in a release was never asked |
 | ~~Panels are outlined on every state, including healthy~~ | Milestone 4 | Closed. A resting panel is an elevated fill with no stroke; the border is reserved for focus, editing, warning and critical, and is built at the focus weight because a radio will not change a border's weight after the object exists |
 | ~~A `1 x 1` metric fits its value vertically but width is unchecked~~ | Milestone 6 | Closed. `theme.fitText` fits a value by measured width as well as height, choosing the font from the widest string the component can ever produce so geometry stays stable |
 | ~~`lvgl.arc` is positioned by its top-left corner~~ | Milestone 7 | Closed, and it never was. EdgeTX positions an arc by its **centre**, so every radial drawn before this milestone was one radius up and to the left of its intended place. See below |
@@ -1013,7 +1072,9 @@ The rule has three parts, because the failures came in three shapes.
 
 **An assertion must pin the value the contract names, not assert that something differs from something else.** "Differs from" is satisfied by every wrong answer as well as the right one, and is therefore satisfied when every value is wrong in the same way, which is precisely what happened. The same applies to "is not nil", "is greater than zero", and any assertion whose truth does not depend on the implementation at all: `contrast(a, b) >= 1.0` was in this suite for two milestones and is a tautology.
 
-**An assertion must be about what the panel draws, not about what it computed.** This is the newest of the shapes and was found by accident. Six assertions in this suite described the text of supporting rows on panels that shed those rows: the shipped dashboard's cell count, both link panels of the telemetry layout, and others. Every one passed, because the component computed the row's text and then hid the label, so the string existed and was correct and was on no screen anywhere. They only failed once the component stopped doing work for labels nobody sees, which also recovered 298 instructions a frame. The two facts are the same fact. Invisible work is work nothing is checking, and an assertion that reads state the panel does not draw is testing the component's bookkeeping rather than its output. Where a component can shed an element, assert that it sheds it, and assert the content at a span that shows it.
+**An assertion must be about what the panel draws, not about what it computed.** This is the newest of the shapes and was found by accident. Seven assertions in this suite described the text of supporting rows on panels that shed those rows: the shipped dashboard's cell count, both link panels of the telemetry layout, a trim panel's caption, and others. Every one passed, because the component computed the row's text and then hid the label, so the string existed and was correct and was on no screen anywhere. They only failed once the component stopped doing work for labels nobody sees, which also recovered 298 instructions a frame in the header case, and 736 from the worst callback in the trim panel. The two facts are the same fact. Invisible work is work nothing is checking, and an assertion that reads state the panel does not draw is testing the component's bookkeeping rather than its output. Where a component can shed an element, assert that it sheds it, and assert the content at a span that shows it.
+
+The hard part is that invisible work is invisible to assertions as well as to eyes: nothing about what is *drawn* can see a panel repositioning a label it has hidden, so the cost grows unnoticed and the only symptom is a number on a budget report. The harness therefore counts writes and visibility calls per object, which is its own bookkeeping and not a claim about firmware, so a test can assert that a shed row costs nothing to keep shed. Those counters are swapped out rather than branched around while a callback is measured, for the same reason property validation is: see the mock rule below. Branching cost 261 instructions of a measured callback before they were swapped, which is the same mistake as charging a Lua stand-in for a C++ call, made by the tool built to detect it.
 
 **A comment must not explain a test's behaviour with a claim about the radio that nobody has checked.** This is the least obvious of the three and the most corrosive. A global variable test asserted that switching flight mode left a value unmoved, and explained the non-movement as EdgeTX resolving inheritance. The explanation was invented. The value did not move because the fixture ignored the flight mode argument entirely and answered the same number for every mode, so the assertion could not have failed however wrong the host was. A vacuous assertion is inert; a vacuous assertion with a confident explanation actively stops the next reader checking, because it answers the question they were about to ask. If a comment states what the radio does, it is a claim, and it carries the same obligation as a value: cite it or do not write it.
 
@@ -1048,7 +1109,7 @@ Prose does not. Each part of the rule has a mechanism.
 
 ### Implementation status
 
-Status last verified on 2026-09-16:
+Status last verified on 2026-09-18:
 
 | Work item | Status | Implemented | Remaining |
 | --- | --- | --- | --- |
@@ -1056,17 +1117,20 @@ Status last verified on 2026-09-16:
 | Milestone 1: Runtime skeleton | Complete | LVGL host, integer 4 x 4 geometry, gutters, per-component containers, batched reflow, App mode fixture, and `1 x 1`-sized mocked tests | Additional physical-radio verification belongs to hardening |
 | Milestone 2: Read-only YAML loader | Complete | Constrained parser, empty flow collections, schema version check, model/Dashboard ID resolution, default fallback, fail-closed document validation, per-entry validation, preserved unknown keys, optional theme block, and a malformed-input matrix | Physical-radio verification belongs to hardening |
 | Milestone 3: Component runtime | Complete | Referenced-module loading, metatable-safe contract validation, declared settings with typed defaults, `supportedSpans` enforcement, host-owned containers, declared refresh intervals with phase staggering, and isolated create/update/refresh/background/event/destroy dispatch | Production components arrive in milestones 6 and 7 |
-| Milestone 4: Design system | Complete | Semantic tokens, panel/typography/bar/radial/badge primitives, Modern, Follow EdgeTX, and Custom modes, guaranteed-legible derived palettes, all seven states, and responsive `1 x 1`, `2 x 1`, and `2 x 2` presentations | Physical readability review at 480 x 272 on a TX16S-class display |
+| Milestone 4: Design system | Complete | Semantic tokens, panel/typography/bar/radial/badge primitives, Modern, Follow EdgeTX, and Custom modes, guaranteed-legible derived palettes, all seven states, and one shared responsive ladder deciding composition from the box and the font from the composition | Physical readability review at 480 x 272 on a TX16S-class display |
 | Milestone 5: Shared data services | Complete | Registry with per-service intervals, staggering, and subscription caps; telemetry, model, control, extrema, and navigation services; immutable snapshots; graceful degradation for missing sources, unseen sensors, absent firmware APIs, and stale telemetry; `service-probe` diagnostic views and two shipped diagnostics layouts | Hardware verification, and timer-based extrema reset |
 | Milestone 6: Core components | Complete | `metric` with `custom`/`altitude`/`speed` presets, source and flight extrema, and a secondary reading; `flight-timer`, `flight-mode`, `tx-battery`, `variable-indicator`, `trim-panel`, and `model-identity`; width-aware font fitting, shared panel frame and header geometry, bipolar bars with neutral markers, and images; a shipped dashboard demonstrating all seven | Physical-radio verification of estimated text widths and of model bitmap scaling |
 | Milestone 7: Telemetry-specialized components | Complete | `cell-battery` with cells-table validation and a usable-range bar; `link-status` with independent RSSI and quality sources, a published link view, and explicit no-sensor/no-link states; `navigation` with four responsive presentations and a north-up dial; centre-positioned arcs, the `compass` primitive, and a shipped dashboard demonstrating all ten components | Hardware confirmation of the cells shape and of no-RSSI-sensor detection |
 | Milestone 8: The App mode menu button and multiple screens | Complete | Dashboard ID option, per-model/per-dashboard filename resolution, dashboard-scoped layouts shared by every model, panels laid out around the App mode menu button through the shared frame, an error overlay that clears it, notices separated from errors, and two-instance and model-change coverage | Status rail deferred by decision, not outstanding; simulator confirmation of the corner on a radio |
 | Milestone 9: Hardening | In progress | Unit/integration tests, firmware-like string behavior tests, CI running Lua 5.3 parsing, simulator fixture, corrupt-layout, contract-rejection, hostile-module, and legibility coverage, component failure isolation, an enforced instruction budget measured at the largest legal layout for both components and services, and diagnostic views over every service | Target-radio matrix, a host-level diagnostics view for versions and layout paths, and physical-radio testing |
 | Milestone 10: On-radio editor | Not started | None | Entire phase 2 editor and write/recovery workflow |
+| Presentation and consistency pass | Complete | An audit of every component at every declared span measured through the real host, then: the panel as a card with a clipped accent stripe, alert states tinting the surface instead of the frame, the badge vocabulary cut from thirteen strings to five, header geometry that never reflows on a state change, one shared responsive ladder replacing eight private copies, a render declaration the redraw comparison is derived from, one settings vocabulary with enforced `choices`, and `trim-panel` no longer drawing what it hides | Six items deliberately set aside, listed under [Deliberately set aside](#deliberately-set-aside); none of it seen on a radio |
 
 The design system is in place: the host owns every color, resolves one theme per dashboard, and hands each component a `services` table carrying the theme, shared primitives, span-appropriate typography, a state resolver, and the five shared data services. The `metric` component is the reference implementation and now reads real telemetry; the temporary `demo` setting is gone. Milestone 4's remaining item is a physical readability review, which requires hardware.
 
-Measured cost on the largest layout the schema permits, sixteen single-cell components: worst callback 8532 of 20000 instructions, worst steady frame 2562. Both are asserted by the test suite. Fourteen sixteen-component layouts are measured: metrics with sixteen distinct live sources, sixteen diagnostic panels spanning all five services, sixteen components that demand a refresh every frame, and one layout per catalogue component type. The worst callback is a `trim-panel` reflow, which repositions four indicators for each of the four components in a reflow batch; the three telemetry components cost 3800, 4000, and 4200 at sixteen cells, and their worst steady frames are 1800, 2400, and 1600. Removing the services' subscription caps raises the worst steady frame to 6200, which is what the caps are for.
+Measured cost on the largest layout the schema permits, sixteen single-cell components: worst callback 8532 of 20000 instructions, worst steady frame 2562. Both are asserted by the test suite. Fourteen layouts are exercised, thirteen of them at sixteen components: metrics with sixteen distinct live sources, sixteen diagnostic panels spanning all five services, sixteen components that demand a refresh every frame, one layout per catalogue component type, and the shipped ten-component dashboard.
+
+The worst callback is a `trim-panel` reflow, which repositions four indicators for each of the four components in a reflow batch. **Every other layout's worst callback is the loader's own header stage rather than any component**, between 6209 and 7361, which is worth knowing before optimising a panel: on a full grid, component work stopped being the binding constraint. The three telemetry components at sixteen cells reach 6721, 6593 and 6337, all of them in that header stage, and their worst steady frames are 2290, 2380 and 2562. Removing the services' subscription caps raises the worst steady frame to 6200, which is what the caps are for.
 
 **Why `trim-panel`'s reflow is the worst callback, and why it stays that
 way.** It is not a defect and not worth optimising further. Reflow is batched
@@ -1339,7 +1403,7 @@ Three shared additions came out of the work rather than being planned:
 Milestone 7 added two more, both about arcs:
 
 - `primitives.compass` draws a north-up bearing dial. The ring is the arc's background and the pointer is its indicator, so one LVGL object carries both, and a bearing that does not exist hides the pointer by setting its opacity to zero rather than resting it at north, which would read as a real due-north fix.
-- `primitives.arcBounds` converts an arc's centre into the rectangle it occupies. Components lay out in corner coordinates and EdgeTX positions arcs by their centre, so the conversion lives in one place instead of in every caller, and the tests assert containment through it.
+- `primitives.arcBounds` converts an arc's centre into the rectangle it occupies, so the conversion lives in one place rather than in every caller. In practice the callers are all tests: the components resolve their own geometry and no shipped code calls it. It is carried as an open item, because a helper that ships to a radio to serve the test suite is either a test helper in the wrong file or a primitive the components should be using and are not.
 
 Two specification details were corrected by the implementation, and both are recorded where they belong: model bitmaps cannot use `Bitmap.open()` under LVGL, and a `metric` preset cannot be expressed as a settings default.
 
@@ -1519,3 +1583,6 @@ Deliverable: layouts created and safely maintained entirely on the radio.
 - Which default YAML dashboard examples ship for aircraft, helicopter, and long-range use.
 - Phase 2 collision and resize-anchor behavior.
 - Numeric performance budgets after simulator and physical-radio baselining.
+- Whether a source is persisted by name or by numeric identifier. The specification says identifier; the implementation uses names throughout. See [Source settings](#source-settings).
+- Whether `REFLOW_BATCH` should be 4. Never examined, and the direct multiplier on the worst callback. See [Deliberately set aside](#deliberately-set-aside).
+- Whether the three development components ship in a release.
