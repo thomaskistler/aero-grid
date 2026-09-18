@@ -440,8 +440,8 @@ function cellBattery.create(parent, rect, settings, services)
     lvgl.hide(context.bar.fill)
   end
 
-  cellBattery.gather(context)
-  cellBattery.apply(context)
+  local _, drawn = primitives.changed(context, cellBattery.render)
+  cellBattery.apply(context, drawn)
   return context
 end
 
@@ -479,88 +479,67 @@ end
 
 --- Repaint the component from the gathered reading.
 ---@param context AeroGridCellContext
-function cellBattery.apply(context)
+--- Collect everything this panel draws.
+---@param context AeroGridCellContext
+---@param out table
+function cellBattery.render(context, out)
+  cellBattery.gather(context)
+
   local settings = context.settings
   local summary = context.summary
   local value = context.primary
   local stale = context.stale == true
 
-  local stateName = cellBattery.resolveState(
-    settings, value, context.perCell, stale)
-  local presentation = context.state(stateName, settings.accent)
+  out.state = cellBattery.resolveState(settings, value, context.perCell, stale)
+  -- Two decimals: cells are compared against each other, and 3.8 V hides a
+  -- difference that matters where 3.82 V does not.
+  out.text = type(value) == "number" and string.format("%.2fV", value) or "--"
+  out.fraction = cellBattery.fraction(settings, value, summary.count)
+  out.value = value
 
-  context.stateName = stateName
-  context.reading = value
-  context.staleReading = stale
-  context.shape = summary.shape
-  context.appliedCount = summary.count
-  context.appliedPack = summary.pack
-  context.appliedPerCell = context.perCell
-
-  local text = "--"
-  if type(value) == "number" then
-    -- Two decimals: cells are compared against each other, and 3.8 V hides a
-    -- difference that matters where 3.82 V does not.
-    text = string.format("%.2fV", value)
+  if context.showDetail then
+    local fit = context.themeBuilder.fitLabel
+    local font = context.fonts.label
+    out.count = fit(cellBattery.countVariants(summary, settings), font,
+      context.detailWidth)
+    out.pack = fit(cellBattery.packVariants(summary, settings), font,
+      context.detailWidth)
   end
-  context.text = text
+end
 
-  context.value:set({text = text, color = presentation.value})
+--- Paint the panel from what `render` collected, and from nothing else.
+---@param context AeroGridCellContext
+---@param drawn table
+function cellBattery.apply(context, drawn)
+  local presentation = context.state(drawn.state, context.settings.accent)
+
+  context.stateName = drawn.state
+  context.reading = drawn.value
+  context.text = drawn.text
+  context.countText = drawn.count
+  context.packText = drawn.pack
+
+  context.value:set({text = drawn.text, color = presentation.value})
   context.label:set({color = presentation.label})
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
   context.primitives.stylePanel(context.panel, presentation)
 
-  -- A row the span sheds is not worth fitting words to.
   if context.showDetail then
-  local fit = context.themeBuilder.fitLabel
-  local font = context.fonts.label
-
-  local countText = fit(cellBattery.countVariants(summary, settings), font,
-    context.detailWidth)
-  if countText ~= context.countText then
-    context.countText = countText
-    context.countLabel:set({text = countText})
-  end
-
-  local packText = fit(cellBattery.packVariants(summary, settings), font,
-    context.detailWidth)
-  if packText ~= context.packText then
-    context.packText = packText
-    context.packLabel:set({text = packText})
-  end
+    context.countLabel:set({text = drawn.count})
+    context.packLabel:set({text = drawn.pack})
   end
 
   if context.bar then
-    context.primitives.setBar(context.bar,
-      cellBattery.fraction(settings, value, summary.count), presentation.accent)
+    context.primitives.setBar(context.bar, drawn.fraction, presentation.accent)
   end
 end
 
---- Advance the component, repainting only when something visible changed.
+--- Advance the component, repainting only when something drawn changed.
 ---@param context AeroGridCellContext
 function cellBattery.refresh(context)
   if not context.feed and not context.lowestFeed then return end
-
-  -- EdgeTX builds a fresh cells table on every read, so the table identity
-  -- cannot be compared. Summarizing is bounded and cheap; repainting is not,
-  -- so the summary decides whether anything is worth redrawing.
-  cellBattery.gather(context)
-
-  local summary = context.summary
-  -- The pack sum and the worst cell both appear on the panel and both decide
-  -- the state, and neither has to move when the primary reading does. Three
-  -- of four cells sagging leaves the lowest cell exactly where it was.
-  if context.applied and context.primary == context.reading
-      and (context.stale == true) == context.staleReading
-      and summary.count == context.appliedCount
-      and summary.shape == context.shape
-      and summary.pack == context.appliedPack
-      and context.perCell == context.appliedPerCell then
-    return
-  end
-
-  context.applied = true
-  cellBattery.apply(context)
+  local changed, drawn = context.primitives.changed(context, cellBattery.render)
+  if changed then cellBattery.apply(context, drawn) end
 end
 
 --- Reposition after a zone change.
@@ -597,10 +576,9 @@ function cellBattery.update(context, rect)
     context.detailWidth = area.detailWidth
     context.showDetail = area.showDetail
     -- A row that just became visible still holds whatever it had when it was
-    -- hidden, so force the next refresh to fit it again.
-    context.countText = nil
-    context.packText = nil
-    context.applied = false
+    -- hidden, so discard what was last drawn and let the next refresh fit it
+    -- again. Dropping the record is enough: the comparison is against it.
+    context.rendered = nil
   end
 
   reconcile(context.countLabel, area.showDetail,

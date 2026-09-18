@@ -1907,6 +1907,56 @@ local function testLosslessReadingsOfferOneForm()
     "a metric offered a shorter form, which could only lose a digit")
 end
 
+--- The redraw decision covers the whole declaration, including its shape.
+---
+--- Comparing values alone is not enough, because a component may stop drawing
+--- something: `variable-indicator` writes a zero tick only while its range
+--- spans zero, and drops the key when it no longer does. A comparison that
+--- walked only the new table would find every key it held unchanged and
+--- report no change, leaving a tick on screen over a range that has none.
+---
+--- The reused scratch table is the other half of that. If it were not cleared
+--- between renders, a key written once would linger for the life of the panel
+--- and compare equal to itself forever, which is the same defect wearing the
+--- opposite hat.
+local function testRedrawDecision()
+  local context = {}
+  local function renderer(fields)
+    return function(_, out)
+      for key, value in pairs(fields) do out[key] = value end
+    end
+  end
+
+  local changed, drawn = primitives.changed(context, renderer({a = 1, b = "x"}))
+  assertEqual(changed, true, "the first render must paint")
+  assertEqual(drawn.a, 1)
+
+  assertEqual(primitives.changed(context, renderer({a = 1, b = "x"})), false,
+    "nothing moved and the panel repainted anyway")
+
+  assertEqual(primitives.changed(context, renderer({a = 2, b = "x"})), true,
+    "a changed value did not repaint")
+
+  -- A key that appears is a change.
+  assertEqual(primitives.changed(context, renderer({a = 2, b = "x", c = true}),
+    true), true, "a new field did not repaint")
+
+  -- And a key that disappears is a change, which is the case a walk over the
+  -- new table alone cannot see: every key it still holds is unchanged.
+  local gone = primitives.changed(context, renderer({a = 2, b = "x"}))
+  assertEqual(gone, true, "a field that stopped being drawn did not repaint")
+
+  -- The table handed back must hold only what this render wrote. A key left
+  -- over from an earlier render would be painted, and would compare equal to
+  -- itself on every frame after that.
+  local _, current = primitives.changed(context, renderer({a = 3}))
+  assertEqual(current.a, 3)
+  assertEqual(current.b, nil,
+    "a field from an earlier render survived into this one")
+  assertEqual(current.c, nil,
+    "a field from an earlier render survived into this one")
+end
+
 --- One ladder, so two panels of the same size answer the same question.
 ---
 --- Every component used to decide its own composition and then fit its own
@@ -2867,6 +2917,7 @@ testNavigationService()
 testFontHeightsMatchTheFirmware()
 testTextFitting()
 testLosslessReadingsOfferOneForm()
+testRedrawDecision()
 testSharedLadder()
 testReadingForms()
 testLabelFitting()

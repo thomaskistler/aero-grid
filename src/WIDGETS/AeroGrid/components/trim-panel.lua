@@ -345,7 +345,8 @@ function trimPanel.create(parent, rect, settings, services)
     context.indicators[index] = indicator
   end
 
-  trimPanel.apply(context)
+  local _, drawn = primitives.changed(context, trimPanel.render)
+  trimPanel.apply(context, drawn)
   return context
 end
 
@@ -364,55 +365,56 @@ end
 
 --- Repaint every indicator from its current subscription.
 ---@param context table
-function trimPanel.apply(context)
-  local primitives = context.primitives
+--- Collect everything this panel draws.
+---
+--- One panel with several indicators, so the declaration is flat: each
+--- indicator contributes its own keys. A nested table would compare by
+--- identity and never differ.
+---@param context table
+---@param out table
+function trimPanel.render(context, out)
   local settings = context.settings
-  local stateName = trimPanel.resolveState(context)
-  local presentation = context.state(stateName, settings.accent)
+  out.state = trimPanel.resolveState(context)
 
-  context.stateName = stateName
+  for index, indicator in ipairs(context.indicators) do
+    local feed = indicator.feed
+    local available = type(feed) == "table" and feed.available == true
+    out["text" .. index] = trimPanel.valueText(settings, feed)
+    out["fraction" .. index] = available and feed.fraction or 0
+    out["available" .. index] = available
+  end
+end
+
+--- Paint the panel from what `render` collected, and from nothing else.
+---@param context table
+---@param drawn table
+function trimPanel.apply(context, drawn)
+  local primitives = context.primitives
+  local presentation = context.state(drawn.state, context.settings.accent)
+
+  context.stateName = drawn.state
   context.label:set({color = presentation.label})
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
   primitives.stylePanel(context.panel, presentation)
 
-  for _, indicator in ipairs(context.indicators) do
-    local feed = indicator.feed
-    local fraction = 0
-    local available = type(feed) == "table" and feed.available == true
-    if available then fraction = feed.fraction end
-
+  for index, indicator in ipairs(context.indicators) do
     -- An unreadable trim must not look like a centred one, so its bar is
     -- drawn in the faint token rather than the panel's accent.
-    primitives.setBipolarBar(indicator.bar, fraction,
-      available and presentation.accent or context.theme.color.textFaint)
+    primitives.setBipolarBar(indicator.bar, drawn["fraction" .. index],
+      drawn["available" .. index] and presentation.accent
+        or context.theme.color.textFaint)
 
-    local text = trimPanel.valueText(settings, feed)
-    if text ~= indicator.valueText then
-      indicator.valueText = text
-      indicator.value:set({text = text})
-    end
+    local text = drawn["text" .. index]
+    indicator.valueText = text
+    indicator.value:set({text = text})
   end
 end
 
---- Advance the panel, repainting only when a trim actually moved.
+--- Advance the panel, repainting only when something drawn changed.
 ---@param context table
 function trimPanel.refresh(context)
-  local changed = false
-
-  for _, indicator in ipairs(context.indicators) do
-    local feed = indicator.feed
-    local raw = type(feed) == "table" and feed.available and feed.raw or nil
-    local toggle = type(feed) == "table" and feed.threePosition or false
-    if raw ~= indicator.raw or toggle ~= indicator.toggle then
-      indicator.raw = raw
-      indicator.toggle = toggle
-      changed = true
-    end
-  end
-
-  if not changed and context.applied then return end
-  context.applied = true
-  trimPanel.apply(context)
+  local changed, drawn = context.primitives.changed(context, trimPanel.render)
+  if changed then trimPanel.apply(context, drawn) end
 end
 
 --- Reposition after a zone change, re-deriving every cell.

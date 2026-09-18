@@ -519,22 +519,21 @@ function linkStatus.create(parent, rect, settings, services)
     lvgl.hide(context.bar.fill)
   end
 
-  linkStatus.apply(context)
+  local _, drawn = primitives.changed(context, linkStatus.render)
+  linkStatus.apply(context, drawn)
   return context
 end
 
 --- Repaint the component from its current subscriptions.
 ---@param context AeroGridLinkContext
-function linkStatus.apply(context)
+--- Collect everything this panel draws.
+---@param context AeroGridLinkContext
+---@param out table
+function linkStatus.render(context, out)
   local settings = context.settings
   local reading = linkStatus.read(context)
-  local stateName = linkStatus.resolveState(settings, reading)
-  local presentation = context.state(stateName, settings.accent)
 
-  context.stateName = stateName
-  context.reading = reading.value
-  context.staleReading = reading.sourceState == "stale"
-  context.primaryName = reading.primary
+  out.state = linkStatus.resolveState(settings, reading)
 
   local text = "--"
   if type(reading.value) == "number" then
@@ -547,67 +546,55 @@ function linkStatus.apply(context)
     -- A source the protocol does not have reads N/A, never zero.
     text = "N/A"
   end
-  context.text = text
+  out.text = text
+  out.value = reading.value
+  out.primary = reading.primary
 
-  context.value:set({text = text, color = presentation.value})
+  -- A reading the panel is not showing must not leave a bar behind that still
+  -- looks like a healthy link.
+  out.fraction = out.state == "unavailable" and 0
+    or linkStatus.fraction(settings, reading.value)
+
+  if context.showDetail then
+    out.detail = linkStatus.detailText(context, reading)
+    out.link = linkStatus.linkText(context, reading)
+  end
+end
+
+--- Paint the panel from what `render` collected, and from nothing else.
+---@param context AeroGridLinkContext
+---@param drawn table
+function linkStatus.apply(context, drawn)
+  local presentation = context.state(drawn.state, context.settings.accent)
+
+  context.stateName = drawn.state
+  context.reading = drawn.value
+  context.primaryName = drawn.primary
+  context.text = drawn.text
+  context.detail = drawn.detail
+  context.linkDetail = drawn.link
+
+  context.value:set({text = drawn.text, color = presentation.value})
   context.label:set({color = presentation.label})
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
   context.primitives.stylePanel(context.panel, presentation)
 
-  -- A row the span sheds is not worth fitting words to. At a single cell both
-  -- supporting rows are hidden, and choosing a wording for a label nobody can
-  -- see was the whole of this change's steady-state cost.
   if context.showDetail then
-  local detail = linkStatus.detailText(context, reading)
-  if detail ~= context.detail then
-    context.detail = detail
-    context.detailLabel:set({text = detail})
-  end
-
-  local linkDetail = linkStatus.linkText(context, reading)
-  if linkDetail ~= context.linkDetail then
-    context.linkDetail = linkDetail
-    context.linkLabel:set({text = linkDetail})
-  end
+    context.detailLabel:set({text = drawn.detail})
+    context.linkLabel:set({text = drawn.link})
   end
 
   if context.bar then
-    -- A reading the panel is not showing must not leave a bar behind that
-    -- still looks like a healthy link.
-    local fraction = stateName == "unavailable" and 0
-      or linkStatus.fraction(settings, reading.value)
-    context.primitives.setBar(context.bar, fraction, presentation.accent)
+    context.primitives.setBar(context.bar, drawn.fraction, presentation.accent)
   end
 end
 
---- Advance the component, repainting only when something visible changed.
+--- Advance the component, repainting only when something drawn changed.
 ---@param context AeroGridLinkContext
 function linkStatus.refresh(context)
   if not context.rssiFeed and not context.qualityFeed then return end
-
-  local reading = linkStatus.read(context)
-  local stale = reading.sourceState == "stale"
-
-  -- Every one of these can change without the primary value moving, and each
-  -- one changes what the panel says.
-  if context.applied and reading.value == context.reading
-      and stale == context.staleReading
-      and reading.primary == context.primaryName
-      and reading.sourceState == context.appliedSourceState
-      and reading.secondaryValue == context.appliedSecondary
-      and reading.secondaryState == context.appliedSecondaryState
-      and reading.linkDown == context.appliedLinkDown
-      and reading.indicator == context.appliedIndicator then
-    return
-  end
-
-  context.applied = true
-  context.appliedSourceState = reading.sourceState
-  context.appliedSecondary = reading.secondaryValue
-  context.appliedSecondaryState = reading.secondaryState
-  context.appliedLinkDown = reading.linkDown
-  context.appliedIndicator = reading.indicator
-  linkStatus.apply(context)
+  local changed, drawn = context.primitives.changed(context, linkStatus.render)
+  if changed then linkStatus.apply(context, drawn) end
 end
 
 --- Reposition after a zone change.
@@ -641,19 +628,17 @@ function linkStatus.update(context, rect)
   -- re-chosen on the refresh that follows.
   if area.detailWidth ~= context.detailWidth then
     context.detailWidth = area.detailWidth
-    context.detail = nil
+    context.rendered = nil
   end
   if area.linkWidth ~= context.linkWidth then
     context.linkWidth = area.linkWidth
-    context.linkDetail = nil
+    context.rendered = nil
   end
   if area.showDetail ~= context.showDetail then
     context.showDetail = area.showDetail
     -- A row that just became visible still holds whatever it had when it was
-    -- hidden, so force the next refresh to fit it again.
-    context.detail = nil
-    context.linkDetail = nil
-    context.applied = false
+    -- hidden, so discard what was last drawn and let the next refresh fit it.
+    context.rendered = nil
   end
 
   reconcile(context.detailLabel, area.showDetail,

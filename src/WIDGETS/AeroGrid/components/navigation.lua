@@ -450,7 +450,8 @@ function navigation.create(parent, rect, settings, services)
     navigation.hideCompass(context)
   end
 
-  navigation.apply(context)
+  local _, drawn = primitives.changed(context, navigation.render)
+  navigation.apply(context, drawn)
   return context
 end
 
@@ -472,93 +473,71 @@ end
 
 --- Repaint the component from its current subscription.
 ---@param context AeroGridNavigationContext
-function navigation.apply(context)
-  local settings = context.settings
+--- Collect everything this panel draws.
+---
+--- The coordinates row is why this is a declaration. `apply` drew it from the
+--- position and the refresh compared distance and bearing, which are derived
+--- from the position *and the home position*: a model moving along an arc at
+--- constant range changes its coordinates without moving either.
+---@param context AeroGridNavigationContext
+---@param out table
+function navigation.render(context, out)
   local view = context.feed
-  local stateName = navigation.resolveState(settings, view)
-  local presentation = context.state(stateName, settings.accent)
-
-  context.stateName = stateName
-  context.distance = type(view) == "table" and view.distance or nil
-  context.bearing = type(view) == "table" and view.bearing or nil
-
   local service = context.service
-  local text = "--"
-  if service and type(view) == "table" then
-    text = navigation.distanceText(view, service.describeDistance)
-  end
-  context.text = text
 
-  context.value:set({text = text, color = presentation.value})
+  out.state = navigation.resolveState(context.settings, view)
+  out.text = "--"
+  if service and type(view) == "table" then
+    out.text = navigation.distanceText(view, service.describeDistance)
+  end
+  out.detail = navigation.bearingText(view, context.themeBuilder,
+    context.fonts.label, context.detailWidth)
+  out.origin = navigation.originText(view, context.themeBuilder,
+    context.fonts.label, context.originWidth)
+  out.coordinates = navigation.coordinateText(view)
+  out.bearing = type(view) == "table" and view.bearing or nil
+end
+
+--- Paint the panel from what `render` collected, and from nothing else.
+---@param context AeroGridNavigationContext
+---@param drawn table
+function navigation.apply(context, drawn)
+  local presentation = context.state(drawn.state, context.settings.accent)
+
+  context.stateName = drawn.state
+  context.text = drawn.text
+  context.detail = drawn.detail
+  context.origin = drawn.origin
+  context.coordinates = drawn.coordinates
+  context.bearing = drawn.bearing
+
+  context.value:set({text = drawn.text, color = presentation.value})
   context.label:set({color = presentation.label})
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
   context.primitives.stylePanel(context.panel, presentation)
 
-  -- A row the span sheds is not worth fitting words to.
   if context.showDetail then
-  local detail = navigation.bearingText(view, context.themeBuilder,
-    context.fonts.label, context.detailWidth)
-  if detail ~= context.detail then
-    context.detail = detail
-    context.detailLabel:set({text = detail})
+    context.detailLabel:set({text = drawn.detail})
+    context.originLabel:set({text = drawn.origin})
   end
-
-  local origin = navigation.originText(view, context.themeBuilder,
-    context.fonts.label, context.originWidth)
-  if origin ~= context.origin then
-    context.origin = origin
-    context.originLabel:set({text = origin})
-  end
-  end
-
   if context.coordinatesLabel then
-    local coordinates = navigation.coordinateText(view)
-    if coordinates ~= context.coordinates then
-      context.coordinates = coordinates
-      context.coordinatesLabel:set({text = coordinates})
-    end
+    context.coordinatesLabel:set({text = drawn.coordinates})
   end
 
   if context.compass then
     -- A bearing that does not exist hides the pointer rather than resting it
     -- at north, which would read as a real due-north fix.
     context.primitives.setCompass(
-      context.compass, context.bearing, presentation.accent)
+      context.compass, drawn.bearing, presentation.accent)
   end
 end
 
---- Advance the component, repainting only when something visible changed.
+--- Advance the component, repainting only when something drawn changed.
 ---@param context AeroGridNavigationContext
 function navigation.refresh(context)
-  local view = context.feed
-  if not view then return end
-
-  local distance = view.distance
-  local bearing = view.bearing
-  local fix = view.fix
-  local home = view.home
-  local state = view.state
-  -- A GPS sensor only becomes known once telemetry has delivered it, and
-  -- until it does none of the values below move. Without this, a panel that
-  -- started before the sensor appeared would say NO SOURCE until a fix
-  -- arrived, which is exactly the cold start this component exists to explain.
-  local known = view.known
-
-  -- Fix, home, and freshness all change what the panel says without
-  -- necessarily moving the distance, so each is part of the comparison.
-  if context.applied and distance == context.distance
-      and bearing == context.bearing and fix == context.appliedFix
-      and home == context.appliedHome and state == context.appliedState
-      and known == context.appliedKnown then
-    return
-  end
-
-  context.applied = true
-  context.appliedFix = fix
-  context.appliedHome = home
-  context.appliedState = state
-  context.appliedKnown = known
-  navigation.apply(context)
+  if not context.feed then return end
+  local changed, drawn = context.primitives.changed(context, navigation.render)
+  if changed then navigation.apply(context, drawn) end
 end
 
 --- Reposition after a zone change.
@@ -594,19 +573,17 @@ function navigation.update(context, rect)
   -- re-chosen on the refresh that follows.
   if area.detailWidth ~= context.detailWidth then
     context.detailWidth = area.detailWidth
-    context.detail = nil
+    context.rendered = nil
   end
   if area.originWidth ~= context.originWidth then
     context.originWidth = area.originWidth
-    context.origin = nil
+    context.rendered = nil
   end
   if area.showDetail ~= context.showDetail then
     context.showDetail = area.showDetail
     -- A row that just became visible still holds whatever it had when it was
-    -- hidden, so force the next refresh to fit it again.
-    context.detail = nil
-    context.origin = nil
-    context.applied = false
+    -- hidden, so discard what was last drawn and let the next refresh fit it.
+    context.rendered = nil
   end
   reconcile(context.originLabel, area.showDetail,
     {x = area.originX, y = area.detailY, w = area.originWidth})

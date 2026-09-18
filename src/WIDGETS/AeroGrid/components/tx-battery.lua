@@ -224,66 +224,63 @@ function txBattery.create(parent, rect, settings, services)
     lvgl.hide(context.bar.fill)
   end
 
-  txBattery.apply(context)
+  local _, drawn = primitives.changed(context, txBattery.render)
+  txBattery.apply(context, drawn)
   return context
 end
 
 --- Repaint the component from its current subscription.
 ---@param context AeroGridTxBatteryContext
-function txBattery.apply(context)
-  local feed = context.feed
+--- Collect everything this panel draws.
+---@param context AeroGridTxBatteryContext
+---@param out table
+function txBattery.render(context, out)
   local settings = context.settings
+  local feed = context.feed
   local value = type(feed) == "table" and feed.available and feed.value or nil
   local stale = type(feed) == "table" and feed.stale == true
-  local stateName = txBattery.resolveState(settings, value, stale)
-  local presentation = context.state(stateName, settings.accent)
 
-  context.stateName = stateName
-  context.reading = value
-  context.staleReading = stale
+  out.state = txBattery.resolveState(settings, value, stale)
+  out.text = type(value) == "number" and string.format("%.1fV", value) or "--"
+  out.fraction = txBattery.fraction(settings, value)
+  out.value = value
 
-  -- One decimal: a transmitter pack reported to three decimals flickers
-  -- constantly and reads no better.
-  local text = "--"
-  if type(value) == "number" then text = string.format("%.1fV", value) end
-  context.text = text
-
-  context.value:set({text = text, color = presentation.value})
-  context.label:set({color = presentation.label})
-  context.badge:set({text = presentation.badge or "", color = presentation.accent})
-  context.primitives.stylePanel(context.panel, presentation)
-
-  local detail = ""
+  -- One decimal: a transmitter pack reported to three flickers constantly and
+  -- reads no better.
+  out.detail = ""
   if context.ranged and settings.showPercent and type(value) == "number" then
-    detail = string.format("%d%% EST",
-      math.floor(txBattery.fraction(settings, value) * 100 + 0.5))
-  end
-  if detail ~= context.detail then
-    context.detail = detail
-    context.detailLabel:set({text = detail})
-  end
-
-  if context.bar then
-    context.primitives.setBar(
-      context.bar, txBattery.fraction(settings, value), presentation.accent)
+    out.detail = string.format("%d%% EST", math.floor(out.fraction * 100 + 0.5))
   end
 end
 
---- Advance the component, repainting only when the voltage changed.
+--- Paint the panel from what `render` collected, and from nothing else.
+---@param context AeroGridTxBatteryContext
+---@param drawn table
+function txBattery.apply(context, drawn)
+  local presentation = context.state(drawn.state, context.settings.accent)
+
+  context.stateName = drawn.state
+  context.reading = drawn.value
+  context.text = drawn.text
+  context.detail = drawn.detail
+
+  context.value:set({text = drawn.text, color = presentation.value})
+  context.label:set({color = presentation.label})
+  context.badge:set({text = presentation.badge or "", color = presentation.accent})
+  context.detailLabel:set({text = drawn.detail})
+  context.primitives.stylePanel(context.panel, presentation)
+
+  if context.bar then
+    context.primitives.setBar(context.bar, drawn.fraction, presentation.accent)
+  end
+end
+
+--- Advance the component, repainting only when something drawn changed.
 ---@param context AeroGridTxBatteryContext
 function txBattery.refresh(context)
-  local feed = context.feed
-  if not feed then return end
-
-  local value = feed.available and feed.value or nil
-  local stale = feed.stale == true
-  if context.applied and value == context.reading
-      and stale == context.staleReading then
-    return
-  end
-
-  context.applied = true
-  txBattery.apply(context)
+  if not context.feed then return end
+  local changed, drawn = context.primitives.changed(context, txBattery.render)
+  if changed then txBattery.apply(context, drawn) end
 end
 
 --- Reposition after a zone change.

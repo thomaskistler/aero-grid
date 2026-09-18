@@ -30,6 +30,64 @@ local function setRound(object, centreX, centreY, changes)
   object:set(changes)
 end
 
+--- Decide whether anything a component draws has changed since it last drew.
+---
+--- Repainting is expensive and a component is refreshed tens of times a
+--- second, so every one of them short-circuits. The bug is always the same:
+--- the short-circuit compares a hand-written list of fields, `apply` draws
+--- something that is not on it, and that something then freezes on screen
+--- while the panel looks perfectly healthy. Four instances have been found in
+--- this catalogue. The first three were fixed one at a time, by adding the
+--- missed field to the list, which is exactly why there was a fourth.
+---
+--- The list is the defect, so this removes the list. A component writes
+--- everything it draws into one table, and `apply` is handed that table and
+--- may draw nothing else. The comparison is then over the same values the
+--- panel is painted from, by construction rather than by remembering: a field
+--- `apply` reads but `render` never wrote is `nil` on screen, which is loud,
+--- and a field `render` writes but `apply` ignores costs a comparison and
+--- nothing worse.
+---
+--- Two tables are kept and swapped rather than allocated, because this runs on
+--- every refresh of every component and the host pays it inside one
+--- instruction budget.
+---@param context table Component context; owns `rendered` and `scratch`.
+---@param render fun(context: table, out: table)
+---@return boolean changed
+---@return table drawn Values to paint from.
+function primitives.changed(context, render)
+  local out = context.scratch
+  if not out then out = {}; context.scratch = out end
+
+  -- Cleared rather than replaced, so a key the component stops writing cannot
+  -- linger and compare equal forever.
+  for key in pairs(out) do out[key] = nil end
+  render(context, out)
+
+  local previous = context.rendered
+  if previous then
+    local same = true
+    for key, value in pairs(out) do
+      if previous[key] ~= value then same = false break end
+    end
+
+    -- A key that stopped being written cannot be seen by comparing what is
+    -- here, and one can stop: `variable-indicator` drops its zero tick when
+    -- the range no longer spans zero. Counting is only reached once the
+    -- values have all matched, which is the cheap path taken on most frames.
+    if same then
+      local before, now = 0, 0
+      for _ in pairs(previous) do before = before + 1 end
+      for _ in pairs(out) do now = now + 1 end
+      if before == now then return false, previous end
+    end
+  end
+
+  context.rendered = out
+  context.scratch = previous
+  return true, out
+end
+
 --- Return the usable content width inside a padded panel.
 ---@param theme AeroGridTheme
 ---@param width integer

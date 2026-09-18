@@ -253,7 +253,6 @@ function flightTimer.create(parent, rect, settings, services)
   context.label, context.badge = primitives.header(
     panel.root, theme, area.frame, fonts, flightTimer.labelText(context),
     presentation)
-  context.labelValue = string.upper(flightTimer.labelText(context))
 
   context.value = primitives.value(panel.root, theme, {
     x = area.pad,
@@ -289,7 +288,8 @@ function flightTimer.create(parent, rect, settings, services)
     lvgl.hide(context.bar.fill)
   end
 
-  flightTimer.apply(context)
+  local _, drawn = primitives.changed(context, flightTimer.render)
+  flightTimer.apply(context, drawn)
   return context
 end
 
@@ -310,57 +310,57 @@ end
 
 --- Repaint the component from its current subscription.
 ---@param context AeroGridTimerContext
-function flightTimer.apply(context)
+--- Collect everything this panel draws.
+---
+--- The timer's configured start is why this is a declaration. `apply` drew it
+--- in "OF 5:00" and used it for the bar, while the refresh compared only the
+--- displayed value, so a timer reconfigured mid-flight kept the old total.
+--- The timer's own name is here for the same reason: it arrives with the
+--- first successful read, and used to be reconciled by a second, separate
+--- comparison bolted onto the end of refresh.
+---@param context AeroGridTimerContext
+---@param out table
+function flightTimer.render(context, out)
   local feed = context.feed
   local settings = context.settings
-  local stateName = flightTimer.resolveState(settings, feed)
-  local presentation = context.state(stateName, settings.accent)
+  local available = type(feed) == "table" and feed.available == true
 
-  local text = "--:--"
-  if type(feed) == "table" and feed.available then
-    text = context.formatTime(flightTimer.displayValue(settings, feed))
-  end
+  out.state = flightTimer.resolveState(settings, feed)
+  out.text = available and context.formatTime(
+    flightTimer.displayValue(settings, feed)) or "--:--"
+  out.detail = flightTimer.detailText(feed, context.formatTime)
+  out.fraction = flightTimer.fraction(feed)
+  out.label = string.upper(flightTimer.labelText(context))
+end
 
-  context.stateName = stateName
-  context.text = text
-  context.value:set({text = text, color = presentation.value})
-  context.label:set({color = presentation.label})
+--- Paint the panel from what `render` collected, and from nothing else.
+---@param context AeroGridTimerContext
+---@param drawn table
+function flightTimer.apply(context, drawn)
+  local presentation = context.state(drawn.state, context.settings.accent)
+
+  context.stateName = drawn.state
+  context.text = drawn.text
+  context.detail = drawn.detail
+  context.labelValue = drawn.label
+
+  context.value:set({text = drawn.text, color = presentation.value})
+  context.label:set({text = drawn.label, color = presentation.label})
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
+  context.detailLabel:set({text = drawn.detail})
   context.primitives.stylePanel(context.panel, presentation)
 
-  local detail = flightTimer.detailText(feed, context.formatTime)
-  if detail ~= context.detail then
-    context.detail = detail
-    context.detailLabel:set({text = detail})
-  end
-
   if context.bar then
-    context.primitives.setBar(
-      context.bar, flightTimer.fraction(feed), presentation.accent)
+    context.primitives.setBar(context.bar, drawn.fraction, presentation.accent)
   end
 end
 
---- Advance the component, repainting only when something changed.
+--- Advance the component, repainting only when something drawn changed.
 ---@param context AeroGridTimerContext
 function flightTimer.refresh(context)
-  local feed = context.feed
-  if not feed then return end
-
-  local settings = context.settings
-  local value = feed.available and flightTimer.displayValue(settings, feed) or nil
-
-  if context.applied and value == context.reading then return end
-  context.applied = true
-  context.reading = value
-  flightTimer.apply(context)
-
-  -- The timer's name arrives with the first successful read, so the label is
-  -- resolved again rather than fixed when the panel was built.
-  local label = string.upper(flightTimer.labelText(context))
-  if label ~= context.labelValue then
-    context.labelValue = label
-    context.label:set({text = label})
-  end
+  if not context.feed then return end
+  local changed, drawn = context.primitives.changed(context, flightTimer.render)
+  if changed then flightTimer.apply(context, drawn) end
 end
 
 --- Reposition after a zone change, shedding or restoring optional rows.

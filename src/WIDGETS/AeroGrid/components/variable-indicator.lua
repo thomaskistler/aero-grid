@@ -363,7 +363,10 @@ function variableIndicator.create(parent, rect, settings, services)
   if not area.showDetail then lvgl.hide(context.detailLabel) end
   if not area.showVisual then variableIndicator.hideVisual(context) end
 
-  variableIndicator.apply(context)
+  -- The first paint goes through the same path as every later one, so the
+  -- panel cannot start out showing something `render` would never produce.
+  local _, drawn = primitives.changed(context, variableIndicator.render)
+  variableIndicator.apply(context, drawn)
   return context
 end
 
@@ -419,96 +422,90 @@ end
 
 --- Repaint the component from its current subscription.
 ---@param context AeroGridVariableContext
-function variableIndicator.apply(context)
-  local primitives = context.primitives
+--- Collect everything this panel draws, into one table.
+---
+--- The comparison that decides whether to repaint is taken from exactly this,
+--- so a value drawn from here cannot be left out of it. The defect this
+--- replaces was the header and the supporting row disagreeing about a global
+--- variable's name: the refresh compared the value, the staleness and the
+--- flight mode, and `apply` also drew the configured name. When EdgeTX
+--- answered `getGlobalVariableDetails` after the first read and the value had
+--- not moved, the header updated and the row kept saying `GV1`.
+---@param context AeroGridVariableContext
+---@param out table
+function variableIndicator.render(context, out)
   local settings = context.settings
   local reading = variableIndicator.read(context)
 
-  local stateName = "normal"
+  out.state = "normal"
   if not reading.available then
-    stateName = "unavailable"
+    out.state = "unavailable"
   elseif reading.stale then
-    stateName = "stale"
+    out.state = "stale"
   end
 
-  local presentation = context.state(stateName, settings.accent)
-  context.stateName = stateName
-
-  local text = variableIndicator.format(reading.value, reading.precision)
+  out.text = variableIndicator.format(reading.value, reading.precision)
   if reading.available and reading.unitText ~= "" then
-    text = text .. reading.unitText
+    out.text = out.text .. reading.unitText
   end
-  context.text = text
-
-  context.value:set({text = text, color = presentation.value})
-  context.label:set({color = presentation.label})
-  context.badge:set({text = presentation.badge or "", color = presentation.accent})
-  primitives.stylePanel(context.panel, presentation)
 
   -- The configured name is supporting text: it names the thing, while the
   -- header carries whatever the pilot chose to call it.
-  local detail = ""
+  out.detail = ""
   if settings.showName and reading.name ~= "" then
-    detail = reading.name
+    out.detail = reading.name
     if settings.binding ~= "source" and type(context.feed) == "table"
         and type(context.feed.flightMode) == "number" then
-      detail = detail .. " FM" .. tostring(context.feed.flightMode)
+      out.detail = out.detail .. " FM" .. tostring(context.feed.flightMode)
     end
   end
-  if detail ~= context.detail then
-    context.detail = detail
-    context.detailLabel:set({text = detail})
-  end
 
-  local fraction = variableIndicator.fraction(
-    context.presentationName, reading, primitives.signedFraction)
+  out.label = string.upper(variableIndicator.labelText(context, reading))
+  out.fraction = variableIndicator.fraction(
+    context.presentationName, reading, context.primitives.signedFraction)
+  -- The zero tick only means something when the range actually spans it.
+  out.marker = variableIndicator.crossesZero(reading)
+    and (-reading.min / (reading.max - reading.min)) or nil
+end
+
+--- Paint the panel from what `render` collected, and from nothing else.
+---@param context AeroGridVariableContext
+---@param drawn table
+function variableIndicator.apply(context, drawn)
+  local primitives = context.primitives
+  local presentation = context.state(drawn.state, context.settings.accent)
+
+  context.stateName = drawn.state
+  context.text = drawn.text
+  context.detail = drawn.detail
+  context.labelValue = drawn.label
+
+  context.value:set({text = drawn.text, color = presentation.value})
+  context.label:set({text = drawn.label, color = presentation.label})
+  context.badge:set({text = presentation.badge or "", color = presentation.accent})
+  context.detailLabel:set({text = drawn.detail})
+  primitives.stylePanel(context.panel, presentation)
 
   if context.bar then
-    primitives.setBar(context.bar, fraction, presentation.accent)
-    -- The zero tick only means something when the range actually spans it.
-    primitives.setBarMarker(context.bar, variableIndicator.crossesZero(reading)
-      and (-reading.min / (reading.max - reading.min)) or nil)
+    primitives.setBar(context.bar, drawn.fraction, presentation.accent)
+    primitives.setBarMarker(context.bar, drawn.marker)
   end
   if context.bipolar then
-    primitives.setBipolarBar(context.bipolar, fraction, presentation.accent)
+    primitives.setBipolarBar(context.bipolar, drawn.fraction, presentation.accent)
   end
   if context.radial then
-    primitives.setRadial(context.radial, fraction, presentation.accent)
+    primitives.setRadial(context.radial, drawn.fraction, presentation.accent)
   end
 end
 
---- Advance the component, repainting only when the reading changed.
+--- Advance the component, repainting only when something drawn changed.
 ---@param context AeroGridVariableContext
 function variableIndicator.refresh(context)
-  local feed = context.feed
-  if not feed then return end
+  if not context.feed then return end
 
-  local value = feed.available and feed.value or nil
-  local stale = feed.stale == true
-  -- The flight mode has to be part of the comparison, not just the value.
-  -- EdgeTX resolves global variable inheritance, so the value read for two
-  -- different modes is frequently identical, and the detail row naming the
-  -- mode is exactly the thing that would then go stale.
-  local mode = feed.flightMode
-
-  if context.applied and value == context.reading
-      and stale == context.staleReading and mode == context.modeReading then
-    return
-  end
-
-  context.applied = true
-  context.reading = value
-  context.staleReading = stale
-  context.modeReading = mode
-  variableIndicator.apply(context)
-
-  -- The configured name and bounds arrive with the first successful read.
-  local label = string.upper(
-    variableIndicator.labelText(context, context.readingCache))
-  if label ~= context.labelValue then
-    context.labelValue = label
-    context.label:set({text = label})
-  end
+  local changed, drawn = context.primitives.changed(
+    context, variableIndicator.render)
+  if changed then variableIndicator.apply(context, drawn) end
 end
 
 --- Reposition after a zone change.

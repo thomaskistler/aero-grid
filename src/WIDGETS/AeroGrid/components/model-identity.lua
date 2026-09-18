@@ -220,7 +220,9 @@ function modelIdentity.create(parent, rect, settings, services)
   if not area.showLabels then lvgl.hide(context.labelsLabel) end
 
   context.area = area
-  modelIdentity.apply(context)
+  -- The first paint goes through the same path as every later one.
+  local _, drawn = primitives.changed(context, modelIdentity.render)
+  modelIdentity.apply(context, drawn)
   return context
 end
 
@@ -251,32 +253,50 @@ end
 
 --- Repaint the component from its current subscription.
 ---@param context AeroGridIdentityContext
-function modelIdentity.apply(context)
+--- Collect everything this panel draws, into one table.
+---
+--- The labels row is the reason this exists. It was drawn by `apply` and left
+--- out of the refresh comparison, which compared only the name and the bitmap.
+--- Nothing could be made to fail, because a model's labels change only when
+--- the model does and that changes its name too, so the missed field was
+--- masked by a compared one. It was unreachable by coincidence. Collecting
+--- what is drawn, and comparing exactly that, makes it unreachable by
+--- construction instead.
+---@param context AeroGridIdentityContext
+---@param out table
+function modelIdentity.render(context, out)
   local feed = context.feed
-  local settings = context.settings
   local available = type(feed) == "table" and feed.available == true
-  local stateName = available and "normal" or "unavailable"
-  local presentation = context.state(stateName, settings.accent)
 
-  context.stateName = stateName
+  out.state = available and "normal" or "unavailable"
   local name = available and feed.name or ""
-  context.text = name ~= "" and name or "--"
+  out.text = name ~= "" and name or "--"
+  out.labels = ""
+  if context.layout.showLabels and available then out.labels = feed.labels or "" end
+  -- The path decides whether an image is created, so it is part of what the
+  -- panel draws even though it is not text.
+  out.bitmapPath = available and feed.bitmapPath or nil
+end
 
-  context.value:set({text = context.text, color = presentation.value})
+--- Paint the panel from what `render` collected, and from nothing else.
+---@param context AeroGridIdentityContext
+---@param drawn table
+function modelIdentity.apply(context, drawn)
+  local presentation = context.state(drawn.state, context.settings.accent)
+
+  context.stateName = drawn.state
+  context.text = drawn.text
+  context.labelsText = drawn.labels
+
+  context.value:set({text = drawn.text, color = presentation.value})
   context.label:set({color = presentation.label})
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
+  context.labelsLabel:set({text = drawn.labels})
   context.primitives.stylePanel(context.panel, presentation)
 
-  local labels = ""
-  if context.layout.showLabels and available then labels = feed.labels or "" end
-  if labels ~= context.labelsText then
-    context.labelsText = labels
-    context.labelsLabel:set({text = labels})
-  end
+  if drawn.state ~= "normal" or not context.area.showImage then return end
 
-  if not available or not context.area.showImage then return end
-
-  local path = feed.bitmapPath
+  local path = drawn.bitmapPath
   if type(path) ~= "string" or path == "" then
     -- No image is configured at all, so the name is the identity.
     modelIdentity.revealName(context)
@@ -306,22 +326,14 @@ function modelIdentity.revealName(context)
   lvgl.show(context.value)
 end
 
---- Advance the component, repainting only when identity actually changed.
+--- Advance the component, repainting only when something drawn changed.
 ---@param context AeroGridIdentityContext
 function modelIdentity.refresh(context)
-  local feed = context.feed
-  if not feed then return end
+  if not context.feed then return end
 
-  local name = feed.available and feed.name or nil
-  local bitmap = feed.available and feed.bitmap or nil
-  if context.applied and name == context.reading and bitmap == context.bitmap then
-    return
-  end
-
-  context.applied = true
-  context.reading = name
-  context.bitmap = bitmap
-  modelIdentity.apply(context)
+  local changed, drawn = context.primitives.changed(
+    context, modelIdentity.render)
+  if changed then modelIdentity.apply(context, drawn) end
 end
 
 --- Reposition after a zone change.
