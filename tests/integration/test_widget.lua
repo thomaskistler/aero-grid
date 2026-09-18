@@ -47,6 +47,36 @@ local function toRgb565(rgb)
     + math.floor(blue * 31 / 255)
 end
 
+--- EdgeTX's RGB_FLAG, the bit that marks a flag word as carrying a colour.
+--- `radio/src/gui/colorlcd/colors.h`.
+local RGB_FLAG = 0x8000
+
+--- Build the LcdFlags word EdgeTX hands a script for a colour.
+---
+--- There is exactly one encoder because the firmware has exactly one shape.
+--- `luaRGB` returns `COLOR2FLAGS(RGB(r, g, b)) | RGB_FLAG` and `luaLcdGetColor`
+--- returns `colorToRGB(flags) & (COLOR_MASK(~0u) | RGB_FLAG)`, both in
+--- `radio/src/lua/api_colorlcd.cpp`: RGB565 in the upper half, `RGB_FLAG` in
+--- the lower. When the two sides were encoded separately here, the read side
+--- was corrected and the write side was left handing back a bare 24-bit value
+--- for another day. Sharing the encoder is what stops them drifting again.
+---
+--- The result is cached because both firmware entry points are C functions and
+--- cost a script no Lua VM instructions at all. A palette is small and drawn
+--- from repeatedly, so a warm cache keeps the mock down to a lookup instead of
+--- charging the dashboard's instruction budget for arithmetic the radio does
+--- for free.
+local lcdFlagsCache = {}
+
+local function toLcdFlags(rgb)
+  local cached = lcdFlagsCache[rgb]
+  if cached then return cached end
+
+  cached = toRgb565(rgb) * 65536 + RGB_FLAG
+  lcdFlagsCache[rgb] = cached
+  return cached
+end
+
 -- A deliberately light EdgeTX theme, so contrast correction must engage.
 --- The EdgeTX Default theme, exactly as the firmware ships it.
 ---
@@ -72,16 +102,24 @@ local edgeTxRoles = {
 }
 
 lcd = {
-  -- EdgeTX accepts lcd.RGB(r, g, b) or a single packed lcd.RGB(rgb).
+  -- EdgeTX accepts lcd.RGB(r, g, b) or a single packed lcd.RGB(rgb), and
+  -- returns a flag word either way rather than the 24-bit value it was given.
+  -- Returning the input unchanged made `theme.rgb` and `theme.color`
+  -- numerically identical, so no assertion in this suite could tell a token
+  -- apart from a display value, which is the mistake that drew every panel
+  -- dark red once already.
   RGB = function(red, green, blue)
-    if green == nil and blue == nil then return red end
-    return red * 65536 + green * 256 + blue
+    if green ~= nil then red = red * 65536 + green * 256 + blue end
+    return toLcdFlags(red)
   end,
   -- Returns what the firmware returns: an LcdFlags word with the colour in
   -- the upper half and RGB_FLAG set, not a bare RGB565. A mock that hands
   -- back a bare RGB565 cannot see the host misread the real thing.
+  -- `luaLcdGetColor` answers nil for a role it does not recognize.
   getColor = function(role)
-    return toRgb565(edgeTxRoles[role] or 0x000000) * 65536 + 0x8000
+    local rgb = edgeTxRoles[role]
+    if rgb == nil then return nil end
+    return toLcdFlags(rgb)
   end,
 }
 
@@ -165,7 +203,132 @@ local function newRoundGeometry(properties)
   }
 end
 
+--- Property keys EdgeTX accepts, per object kind.
+---
+--- `LvglWidgetObjectBase::parseParam` ends in
+--- `luaL_error(L, "Invalid property '%s'", key)`
+--- (`radio/src/lua/lua_lvgl_widget.cpp`), so an unrecognized key is not
+--- ignored on a radio, it raises. A mock that accepts every key turns a
+--- misspelled property into a silent no-op on hardware and a passing test
+--- here, which is the same shape as every incident in this file's history.
+---
+--- Each set below is the chain of `parseParam` overrides for that class, read
+--- from the class declarations in `radio/src/lua/lua_lvgl_widget.h`. Note that
+--- `left`, `right`, `top` and `bottom` are nested inside `borderPad` rather
+--- than being top-level keys, so they are deliberately absent.
+local function acceptedKeys(inherited, ...)
+  local set = {}
+  for key in pairs(inherited or {}) do set[key] = true end
+  for _, key in ipairs({...}) do set[key] = true end
+  return set
+end
+
+-- LvglWidgetObjectBase::parseParam. `children`, `type` and `name` are accepted
+-- and ignored rather than rejected, exactly as the firmware does.
+local OBJECT_BASE_KEYS = acceptedKeys(nil, "x", "y", "w", "h", "color",
+  "opacity", "visible", "size", "pos", "floating", "children", "type", "name")
+-- LvglWidgetObject::parseParam.
+local OBJECT_KEYS = acceptedKeys(OBJECT_BASE_KEYS,
+  "flexFlow", "flexPad", "borderPad", "active")
+-- LvglWidgetBox: LvglWidgetObject + LvglScrollableParams + LvglAlignParam.
+local BOX_KEYS = acceptedKeys(OBJECT_KEYS,
+  "align", "scrollBar", "scrollDir", "scrollTo", "scrolled")
+-- LvglWidgetBorderedObject: LvglWidgetBox + LvglThicknessParam, plus filled.
+local BORDERED_KEYS = acceptedKeys(BOX_KEYS, "thickness", "filled")
+-- LvglWidgetRoundObject: LvglWidgetBorderedObject, plus radius.
+local ROUND_KEYS = acceptedKeys(BORDERED_KEYS, "radius")
+
+local PROPERTY_KEYS = {
+  box = BOX_KEYS,
+  rectangle = acceptedKeys(BORDERED_KEYS, "rounded"),
+  arc = acceptedKeys(ROUND_KEYS, "rounded", "startAngle", "endAngle",
+    "bgColor", "bgOpacity", "bgStartAngle", "bgEndAngle"),
+  label = acceptedKeys(OBJECT_BASE_KEYS, "align", "text", "font"),
+  image = acceptedKeys(OBJECT_KEYS, "file", "fill"),
+}
+
+--- Keys whose value EdgeTX reads as a colour.
+local COLOR_KEYS = {color = true, bgColor = true}
+
+--- Whether property validation runs.
+---
+--- `parseParam` is C++ and costs a script no Lua VM instructions at all, so
+--- charging our stand-in for it to the instruction budget would measure the
+--- fixture rather than the dashboard. The budget test switches this off while
+--- it counts, exactly as the mock's `getValue` avoids a scan for the same
+--- reason. Every object kind is still validated by the rest of the suite,
+--- which builds each component at every span it supports.
+local validateProperties = true
+
+--- Reject exactly what the radio rejects.
+---
+--- A colour must be a word `lcd.RGB` produced. The dashboard holds its palette
+--- twice, as 24-bit `theme.rgb` tokens for arithmetic and as `theme.color`
+--- display values for drawing, and handing an LVGL object the former paints a
+--- colour belonging to no theme at all. The radio cannot report that; this can.
+local function checkProperties(kind, properties)
+  local accepted = PROPERTY_KEYS[kind]
+  if not accepted then return end
+
+  for key, value in pairs(properties) do
+    if not accepted[key] then
+      error("Invalid property '" .. tostring(key) .. "' on " .. kind, 0)
+    end
+    if COLOR_KEYS[key] and (type(value) ~= "number" or value % 65536 ~= RGB_FLAG) then
+      error(kind .. "." .. key .. " is not a colour lcd.RGB returned: "
+        .. tostring(value), 0)
+    end
+  end
+end
+
+--- Object methods, defined once rather than per object.
+---
+--- `set` is assigned directly on each object rather than reached through a
+--- metatable, and the checking and unchecking variants are exchanged rather
+--- than selected by a test inside `set`. Both alternatives cost the dashboard
+--- several hundred instructions of the budget on the worst callback, for work
+--- the radio does in C++. Measuring the fixture instead of the dashboard is
+--- how the budget test misled us before, so the hot path carries nothing.
+local function assertUsable(object)
+  if object.invalid then
+    error("Invalid object (it has been probably been cleared).", 0)
+  end
+end
+
+-- The body is repeated rather than shared, because a second call costs the
+-- measured callback another 200 instructions the radio never pays.
+local function setChecked(object, changes)
+  assertUsable(object)
+  checkProperties(object.kind, changes)
+  for key, value in pairs(changes) do object.properties[key] = value end
+  if object.round then object.round.refresh(changes) end
+end
+
+local function setUnchecked(object, changes)
+  assertUsable(object)
+  for key, value in pairs(changes) do object.properties[key] = value end
+  if object.round then object.round.refresh(changes) end
+end
+
+local function clearObject(object)
+  assertUsable(object)
+  object.cleared = true
+  if not object.clearRequest then
+    object.clearRequest = true
+    pendingClears[#pendingClears + 1] = object
+  end
+end
+
+--- Turn property validation on or off for every object, existing and future.
+--- Called outside the instruction hook, so the exchange is never counted.
+local function setPropertyValidation(enabled)
+  validateProperties = enabled
+  local method = enabled and setChecked or setUnchecked
+  for _, object in ipairs(objects) do object.set = method end
+end
+
 local function newObject(kind, parent, properties)
+  if validateProperties then checkProperties(kind, properties) end
   local object = {
     kind = kind,
     parent = parent,
@@ -174,28 +337,9 @@ local function newObject(kind, parent, properties)
     cleared = false,
     hidden = false,
     invalid = false,
+    set = validateProperties and setChecked or setUnchecked,
+    clear = clearObject,
   }
-
-  local function assertUsable(object)
-    if object.invalid then
-      error("Invalid object (it has been probably been cleared).", 0)
-    end
-  end
-
-  function object:set(changes)
-    assertUsable(self)
-    for key, value in pairs(changes) do self.properties[key] = value end
-    if self.round then self.round.refresh(changes) end
-  end
-
-  function object:clear()
-    assertUsable(self)
-    self.cleared = true
-    if not self.clearRequest then
-      self.clearRequest = true
-      pendingClears[#pendingClears + 1] = self
-    end
-  end
 
   if kind == "arc" then object.round = newRoundGeometry(properties) end
 
@@ -257,6 +401,10 @@ local modelFilename = "test-model.yml"
 --- and every entry point reads from it.
 local radio = {
   rssi = 80,
+  -- The model's RF alarm thresholds, which getRSSI reports alongside the
+  -- reading. Nothing on the dashboard consults them yet; they are here
+  -- because the radio returns them, not because a test needs them.
+  rfAlarms = {warning = 45, critical = 42},
   fields = {
     RxBt = {id = 100, name = "RxBt", desc = "Rx battery", unit = 1},
     Curr = {id = 103, name = "Curr", desc = "Current", unit = 2},
@@ -292,10 +440,30 @@ local radio = {
     [1] = {name = "Curr", prec = 1},
     [2] = {name = "Alt", prec = 0},
   },
+  --- Timers, carrying the key set `luaModelGetTimer` really pushes.
+  ---
+  --- `radio/src/lua/api_model.cpp` pushes mode, start, value, countdownBeep,
+  --- minuteBeep, persistent, name, showElapsed, switch, countdownStart and
+  --- extraHaptic, and answers nil beyond MAX_TIMERS. `showElapsed` matters
+  --- rather than merely being missing: `model_service` reads it and flips a
+  --- countdown to count up, and while the fixture omitted it that branch was
+  --- permanently false and never reached a component.
   timers = {
-    [0] = {value = 90, start = 300, name = "Flight", persistent = 1},
+    [0] = {
+      mode = 1, start = 300, value = 90, countdownBeep = 0, minuteBeep = false,
+      persistent = 1, name = "Flight", showElapsed = false, switch = 0,
+      countdownStart = 0, extraHaptic = 0,
+    },
   },
   globals = {[0] = 45},
+  -- A global variable holds a value per flight mode, and
+  -- `luaModelGetGlobalVariable(index, flight_mode)` reads the one stored for
+  -- the mode it is given (radio/src/lua/api_model.cpp). A mock that ignores
+  -- its second argument answers the same number whatever mode is asked for,
+  -- so a component reading the wrong mode, or no mode at all, is invisible.
+  -- Index 1 therefore carries its own value in flight mode 2, and inherits
+  -- everywhere else.
+  globalsByMode = {[1] = {[2] = 60}},
   globalDetails = {[0] = {name = "Rates", min = -100, max = 100, prec = 1, unit = 0}},
   flightMode = 1,
   flightModeName = "Sport",
@@ -319,8 +487,16 @@ radio.values[311] = -120
 radio.values[312] = 0
 radio.values[313] = 64
 radio.values[118] = radio.values[109]
-radio.timers[1] = {value = 64, start = 0, name = "Up"}
-radio.timers[2] = {value = 12, start = 60, name = "Glide"}
+radio.timers[1] = {
+  mode = 1, start = 0, value = 64, countdownBeep = 0, minuteBeep = false,
+  persistent = 0, name = "Up", showElapsed = false, switch = 0,
+  countdownStart = 0, extraHaptic = 0,
+}
+radio.timers[2] = {
+  mode = 1, start = 60, value = 12, countdownBeep = 0, minuteBeep = false,
+  persistent = 0, name = "Glide", showElapsed = false, switch = 0,
+  countdownStart = 0, extraHaptic = 0,
+}
 for index = 1, 3 do
   radio.globals[index] = index * 10
   radio.globalDetails[index] = {
@@ -437,8 +613,15 @@ function getFieldInfo(name)
   return radio.fields[name]
 end
 
+--- EdgeTX caps the reading at 99 and reports the model's own RF alarms.
+--- `luaGetRSSI` pushes `min((uint8_t)99, TELEMETRY_RSSI())`, then
+--- `g_model.rfAlarms.warning` and `.critical`
+--- (radio/src/lua/api_general.cpp). A reading above 99 is a number no radio
+--- can produce, so the mock cannot hand one out either.
 function getRSSI()
-  return radio.rssi, 45, 42
+  local rssi = radio.rssi
+  if rssi > 99 then rssi = 99 end
+  return rssi, radio.rfAlarms.warning, radio.rfAlarms.critical
 end
 
 function getFlightMode()
@@ -456,7 +639,12 @@ model = {
   end,
   getTimer = function(index) return radio.timers[index] end,
   getSensor = function(index) return radio.sensors[index] end,
-  getGlobalVariable = function(index) return radio.globals[index] end,
+  getGlobalVariable = function(index, flightMode)
+    local perMode = radio.globalsByMode[index]
+    local value = perMode and perMode[flightMode]
+    if value ~= nil then return value end
+    return radio.globals[index]
+  end,
   getGlobalVariableDetails = function(index) return radio.globalDetails[index] end,
 }
 
@@ -477,17 +665,26 @@ function loadScript(filename)
   return loadfile(filename)
 end
 
+--- `luaFstat` returns one table of size, attrib and time, and returns no
+--- values at all for a file it cannot stat
+--- (radio/src/lua/api_filesystem.cpp). Only `size` is read by the dashboard,
+--- so the other two are carried for shape rather than for any behaviour, and
+--- nothing asserts them.
 function fstat(filename)
+  local function stat(size)
+    return {size = size, attrib = 32, time = {}}
+  end
+
   -- The radio's own SD card comes first, so a test can describe a model
   -- bitmap that the host filesystem does not have.
   local size = radio.files[filename]
-  if size then return {size = size} end
+  if size then return stat(size) end
 
   local handle = hostIo.open(filename, "rb")
-  if not handle then return nil end
+  if not handle then return end
   size = handle:seek("end")
   handle:close()
-  return {size = size}
+  return stat(size)
 end
 
 io = {
@@ -844,13 +1041,21 @@ testShippedLayoutsLoad()
 end
 
 --- The host owns the palette: every panel uses the resolved surface token.
+---
+--- A rendered colour is compared against `lcd.RGB(token)`, never against the
+--- token itself. The dashboard keeps its palette twice: 24-bit `theme.rgb`
+--- for arithmetic, `theme.color` display values for drawing. While the
+--- mock returned its input unchanged the two were the same number, so this
+--- test passed whichever one the host reached for.
 local function testThemeReachesComponents()
   local modern = themeModule.modern()
   assertEqual(appContext.theme.mode, "modern")
-  assertEqual(appContext.canvas.properties.color, modern.canvas)
+  assertEqual(appContext.canvas.properties.color, lcd.RGB(modern.canvas),
+    "the canvas was not painted in the resolved canvas colour")
 
   for _, entry in ipairs(appContext.components) do
-    assertEqual(entry.instance.panel.background.properties.color, modern.surface,
+    assertEqual(entry.instance.panel.background.properties.color,
+      lcd.RGB(modern.surface),
       entry.placement.id .. " did not use the theme surface")
   end
 
@@ -868,7 +1073,12 @@ local function testBackgroundsArePainted()
   local function assertPainted(object, what)
     assertEqual(object.kind, "rectangle", what .. " must be a rectangle")
     assertEqual(object.properties.filled, true, what .. " must be filled")
-    assert(object.properties.color ~= nil, what .. " has no color")
+    -- Not merely "has a colour": a surface has to be painted in a value the
+    -- host resolved and lcd.RGB encoded. A 24-bit token is not nil either,
+    -- and on a radio it paints a colour belonging to no theme.
+    local color = object.properties.color
+    assert(type(color) == "number" and color % 65536 == 0x8000,
+      what .. " was not painted in a resolved colour: " .. tostring(color))
   end
 
   assertPainted(appContext.canvas, "dashboard canvas")
@@ -916,18 +1126,21 @@ local function testMetricStates()
   assertEqual(pack.stateName, "normal")
   assertEqual(pack.value.properties.text, "24.0")
   assertEqual(pack.badge.properties.text, "")
-  assertEqual(pack.panel.accent.properties.color, modern.cyan)
+  assertEqual(pack.panel.accent.properties.color, lcd.RGB(modern.cyan),
+    "the accent bar did not follow the normal state")
 
   -- Falling thresholds: warning at 21.0, critical at 19.8.
   metricModule.setValue(pack, 20.5)
   assertEqual(pack.stateName, "warning")
   assertEqual(pack.badge.properties.text, "WARN")
-  assertEqual(pack.panel.accent.properties.color, modern.amber)
+  assertEqual(pack.panel.accent.properties.color, lcd.RGB(modern.amber),
+    "the accent bar did not follow the amber state")
 
   metricModule.setValue(pack, 19.0)
   assertEqual(pack.stateName, "critical")
   assertEqual(pack.badge.properties.text, "CRIT")
-  assertEqual(pack.panel.accent.properties.color, modern.critical)
+  assertEqual(pack.panel.accent.properties.color, lcd.RGB(modern.critical),
+    "the accent bar did not follow the critical state")
 
   metricModule.setValue(pack, 24.0, true)
   assertEqual(pack.stateName, "stale")
@@ -1328,14 +1541,37 @@ components:
   local modern = themeModule.modern()
   local tokens = context.theme.rgb
 
-  -- Derived from COLOR_THEME_SECONDARY1, so it must not be the Modern surface.
-  assert(tokens.canvas ~= modern.canvas, "EdgeTX canvas was not derived")
+  -- The canvas must be the radio's own COLOR_THEME_SECONDARY1, widened from
+  -- the RGB565 half of the flag word `lcd.getColor` returns.
+  --
+  -- This previously asserted only that the canvas differed from Modern's,
+  -- which is satisfied by every colour being wrong in the same way. That is
+  -- how a palette in which every role of every theme resolved to 0x840000
+  -- passed this suite while drawing every panel on the radio dark red.
+  assertEqual(tokens.canvas,
+    themeModule.fromRgb565(toRgb565(edgeTxRoles[COLOR_THEME_SECONDARY1])),
+    "the canvas is not the radio's own COLOR_THEME_SECONDARY1")
+  assertEqual(tokens.text,
+    themeModule.fromRgb565(toRgb565(edgeTxRoles[COLOR_THEME_PRIMARY2])),
+    "body text is not the radio's own COLOR_THEME_PRIMARY2")
+
   -- Critical red stays dashboard-owned so alarms remain recognizable.
   assertEqual(tokens.critical, modern.critical)
   -- Contrast correction must keep body text readable on the derived surface.
   assert(themeModule.contrast(tokens.surface, tokens.text) >= 4.5,
     "derived text failed contrast correction")
-  assert(themeModule.contrast(tokens.surface, tokens.canvas) >= 1.0)
+
+  -- A panel has to be visible against the dashboard behind it. Canvas and
+  -- surface derive from the same EdgeTX role, so without the legibility pass
+  -- separating them they are the same colour and a panel has no edge at all.
+  --
+  -- The old assertion here was `contrast(surface, canvas) >= 1.0`, which is
+  -- a tautology: theme.contrast orders its arguments and returns
+  -- (lighter + 0.05) / (darker + 0.05), so it is at least 1 for any two
+  -- colours, including two identical ones. It could not fail for any
+  -- implementation of anything.
+  assert(themeModule.contrast(tokens.surface, tokens.canvas) >= 1.08,
+    "a panel cannot be told apart from the dashboard behind it")
 end
 
 --- Custom mode accepts a small override set and rejects the rest.
@@ -2100,10 +2336,14 @@ local function testInstructionBudget()
 
   local function measure(fn, ...)
     local ticks = 0
+    -- The mock's property validation stands in for `parseParam`, which is C++
+    -- and costs a script nothing. Counting it here would measure the fixture.
+    setPropertyValidation(false)
     -- Count exactly as the firmware does: a hook every 200 instructions.
     debug.sethook(function() ticks = ticks + 1 end, "", 200)
     local ok, err = pcall(fn, ...)
     debug.sethook()
+    setPropertyValidation(true)
     assert(ok, "callback raised: " .. tostring(err))
     return ticks * 200
   end
@@ -2885,12 +3125,24 @@ local function testCoreComponents()
   assertEqual(countup.stateName, "normal")
 
   -- An expired countdown must never read like a healthy timer.
-  radio.timers[0] = {value = -15, start = 300, name = "Flight", persistent = 1}
+  radio.timers[0].value = -15
   settle(context, 12)
   assertEqual(countdown.text, "-0:15", "an expired countdown lost its sign")
   assertEqual(countdown.detail, "ELAPSED PAST ZERO")
   assertEqual(countdown.stateName, "critical")
-  radio.timers[0] = {value = 90, start = 300, name = "Flight", persistent = 1}
+  radio.timers[0].value = 90
+
+  -- EdgeTX lets a countdown be shown as time used rather than time left, and
+  -- says so with showElapsed. The fixture omitted the field entirely, so this
+  -- branch was permanently false and no component ever reached it: the same
+  -- 300 second timer with 90 seconds left must read 3:30 used, not 1:30 left,
+  -- and it is no longer a countdown to warn about.
+  radio.timers[0].showElapsed = true
+  settle(context, 12)
+  assertEqual(countdown.text, "3:30", "showElapsed did not flip the timer")
+  radio.timers[0].showElapsed = false
+  settle(context, 12)
+  assertEqual(countdown.text, "1:30", "the timer did not flip back")
 
   local mode = entryById(context, "mode").instance
   assertEqual(mode.text, "Sport")
@@ -2918,15 +3170,27 @@ local function testCoreComponents()
   assert(gv.bar.markerFraction, "a bar over a signed range lost its zero tick")
   assertEqual(gv.bar.marker.hidden, false)
 
-  -- EdgeTX resolves global variable inheritance, so the value read for two
-  -- flight modes is frequently identical. The row that names the mode has to
-  -- follow the mode anyway, or it reports the wrong one with a straight face.
+  -- A global variable holds a separate value per flight mode, so switching
+  -- mode has to re-read it. This previously asserted that the value did NOT
+  -- move, reasoning about EdgeTX's inheritance, and it could not have failed
+  -- either way: the mock ignored the flight mode argument entirely and
+  -- answered the same number for every mode. It was asserting the fixture's
+  -- limitation and calling it firmware behaviour.
   radio.flightMode, radio.flightModeName = 2, "Land"
   settle(context, 12)
-  assertEqual(gv.text, "10%", "the inherited value should not have moved")
+  assertEqual(gv.text, "60%", "the value stored for the new flight mode was not read")
   assertEqual(gv.detail, "GV2 FM2", "the flight mode row went stale")
+
+  -- A mode with no value of its own does inherit, and that is a different
+  -- observation from never having looked.
+  radio.flightMode, radio.flightModeName = 3, "Cruise"
+  settle(context, 12)
+  assertEqual(gv.text, "10%", "an inherited value was not inherited")
+  assertEqual(gv.detail, "GV2 FM3", "the flight mode row went stale")
+
   radio.flightMode, radio.flightModeName = 1, "Sport"
   settle(context, 12)
+  assertEqual(gv.text, "10%")
 
   -- The same component bound to a telemetry source instead.
   local dial = entryById(context, "dial").instance
@@ -2948,8 +3212,12 @@ local function testCoreComponents()
     radio.values[103] = 10 + reading * 5
     settle(context, 12)
   end
-  assert(arc.properties.endAngle ~= 135 + 23,
-    "the dial never moved, so this proves nothing")
+  -- The precondition of a drift test is that the dial actually moved, and it
+  -- is pinned rather than merely required to differ: 50 of 0 to 120 is 113
+  -- degrees of the 270 degree sweep, drawn from 135. A sweep that changed
+  -- for the wrong reason would satisfy "it is no longer 158".
+  assertEqual(arc.properties.endAngle, 248,
+    "the dial never moved, so a drift test proves nothing")
   assertEqual(arc.round.drawn.x, expectedX, "the dial drifted horizontally")
   assertEqual(arc.round.drawn.y, expectedY, "the dial drifted vertically")
 
