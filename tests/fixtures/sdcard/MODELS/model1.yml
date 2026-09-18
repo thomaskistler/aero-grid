@@ -665,6 +665,70 @@ screenData:
                         type: String
                         value: 
                            stringValue: 
+   2:
+      LayoutId: Layout1x1AM
+      layoutData: 
+         zones: 
+            0:
+               widgetName: AeroGrid
+               widgetData: 
+                  options: 
+                     0:
+                        type: String
+                        value: 
+                           stringValue: span1x1
+                     1:
+                        type: String
+                        value: 
+                           stringValue: 
+   3:
+      LayoutId: Layout1x1AM
+      layoutData: 
+         zones: 
+            0:
+               widgetName: AeroGrid
+               widgetData: 
+                  options: 
+                     0:
+                        type: String
+                        value: 
+                           stringValue: span2x1
+                     1:
+                        type: String
+                        value: 
+                           stringValue: 
+   4:
+      LayoutId: Layout1x1AM
+      layoutData: 
+         zones: 
+            0:
+               widgetName: AeroGrid
+               widgetData: 
+                  options: 
+                     0:
+                        type: String
+                        value: 
+                           stringValue: span2x2
+                     1:
+                        type: String
+                        value: 
+                           stringValue: 
+   5:
+      LayoutId: Layout1x1AM
+      layoutData: 
+         zones: 
+            0:
+               widgetName: AeroGrid
+               widgetData: 
+                  options: 
+                     0:
+                        type: String
+                        value: 
+                           stringValue: span4x1
+                     1:
+                        type: String
+                        value: 
+                           stringValue: 
 topbarData: 
    zones: 
       3:
