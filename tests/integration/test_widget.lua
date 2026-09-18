@@ -401,6 +401,10 @@ local modelFilename = "test-model.yml"
 --- and every entry point reads from it.
 local radio = {
   rssi = 80,
+  -- The model's RF alarm thresholds, which getRSSI reports alongside the
+  -- reading. Nothing on the dashboard consults them yet; they are here
+  -- because the radio returns them, not because a test needs them.
+  rfAlarms = {warning = 45, critical = 42},
   fields = {
     RxBt = {id = 100, name = "RxBt", desc = "Rx battery", unit = 1},
     Curr = {id = 103, name = "Curr", desc = "Current", unit = 2},
@@ -436,10 +440,30 @@ local radio = {
     [1] = {name = "Curr", prec = 1},
     [2] = {name = "Alt", prec = 0},
   },
+  --- Timers, carrying the key set `luaModelGetTimer` really pushes.
+  ---
+  --- `radio/src/lua/api_model.cpp` pushes mode, start, value, countdownBeep,
+  --- minuteBeep, persistent, name, showElapsed, switch, countdownStart and
+  --- extraHaptic, and answers nil beyond MAX_TIMERS. `showElapsed` matters
+  --- rather than merely being missing: `model_service` reads it and flips a
+  --- countdown to count up, and while the fixture omitted it that branch was
+  --- permanently false and never reached a component.
   timers = {
-    [0] = {value = 90, start = 300, name = "Flight", persistent = 1},
+    [0] = {
+      mode = 1, start = 300, value = 90, countdownBeep = 0, minuteBeep = false,
+      persistent = 1, name = "Flight", showElapsed = false, switch = 0,
+      countdownStart = 0, extraHaptic = 0,
+    },
   },
   globals = {[0] = 45},
+  -- A global variable holds a value per flight mode, and
+  -- `luaModelGetGlobalVariable(index, flight_mode)` reads the one stored for
+  -- the mode it is given (radio/src/lua/api_model.cpp). A mock that ignores
+  -- its second argument answers the same number whatever mode is asked for,
+  -- so a component reading the wrong mode, or no mode at all, is invisible.
+  -- Index 1 therefore carries its own value in flight mode 2, and inherits
+  -- everywhere else.
+  globalsByMode = {[1] = {[2] = 60}},
   globalDetails = {[0] = {name = "Rates", min = -100, max = 100, prec = 1, unit = 0}},
   flightMode = 1,
   flightModeName = "Sport",
@@ -463,8 +487,16 @@ radio.values[311] = -120
 radio.values[312] = 0
 radio.values[313] = 64
 radio.values[118] = radio.values[109]
-radio.timers[1] = {value = 64, start = 0, name = "Up"}
-radio.timers[2] = {value = 12, start = 60, name = "Glide"}
+radio.timers[1] = {
+  mode = 1, start = 0, value = 64, countdownBeep = 0, minuteBeep = false,
+  persistent = 0, name = "Up", showElapsed = false, switch = 0,
+  countdownStart = 0, extraHaptic = 0,
+}
+radio.timers[2] = {
+  mode = 1, start = 60, value = 12, countdownBeep = 0, minuteBeep = false,
+  persistent = 0, name = "Glide", showElapsed = false, switch = 0,
+  countdownStart = 0, extraHaptic = 0,
+}
 for index = 1, 3 do
   radio.globals[index] = index * 10
   radio.globalDetails[index] = {
@@ -581,8 +613,15 @@ function getFieldInfo(name)
   return radio.fields[name]
 end
 
+--- EdgeTX caps the reading at 99 and reports the model's own RF alarms.
+--- `luaGetRSSI` pushes `min((uint8_t)99, TELEMETRY_RSSI())`, then
+--- `g_model.rfAlarms.warning` and `.critical`
+--- (radio/src/lua/api_general.cpp). A reading above 99 is a number no radio
+--- can produce, so the mock cannot hand one out either.
 function getRSSI()
-  return radio.rssi, 45, 42
+  local rssi = radio.rssi
+  if rssi > 99 then rssi = 99 end
+  return rssi, radio.rfAlarms.warning, radio.rfAlarms.critical
 end
 
 function getFlightMode()
@@ -600,7 +639,12 @@ model = {
   end,
   getTimer = function(index) return radio.timers[index] end,
   getSensor = function(index) return radio.sensors[index] end,
-  getGlobalVariable = function(index) return radio.globals[index] end,
+  getGlobalVariable = function(index, flightMode)
+    local perMode = radio.globalsByMode[index]
+    local value = perMode and perMode[flightMode]
+    if value ~= nil then return value end
+    return radio.globals[index]
+  end,
   getGlobalVariableDetails = function(index) return radio.globalDetails[index] end,
 }
 
@@ -621,17 +665,26 @@ function loadScript(filename)
   return loadfile(filename)
 end
 
+--- `luaFstat` returns one table of size, attrib and time, and returns no
+--- values at all for a file it cannot stat
+--- (radio/src/lua/api_filesystem.cpp). Only `size` is read by the dashboard,
+--- so the other two are carried for shape rather than for any behaviour, and
+--- nothing asserts them.
 function fstat(filename)
+  local function stat(size)
+    return {size = size, attrib = 32, time = {}}
+  end
+
   -- The radio's own SD card comes first, so a test can describe a model
   -- bitmap that the host filesystem does not have.
   local size = radio.files[filename]
-  if size then return {size = size} end
+  if size then return stat(size) end
 
   local handle = hostIo.open(filename, "rb")
-  if not handle then return nil end
+  if not handle then return end
   size = handle:seek("end")
   handle:close()
-  return {size = size}
+  return stat(size)
 end
 
 io = {
@@ -3067,12 +3120,24 @@ local function testCoreComponents()
   assertEqual(countup.stateName, "normal")
 
   -- An expired countdown must never read like a healthy timer.
-  radio.timers[0] = {value = -15, start = 300, name = "Flight", persistent = 1}
+  radio.timers[0].value = -15
   settle(context, 12)
   assertEqual(countdown.text, "-0:15", "an expired countdown lost its sign")
   assertEqual(countdown.detail, "ELAPSED PAST ZERO")
   assertEqual(countdown.stateName, "critical")
-  radio.timers[0] = {value = 90, start = 300, name = "Flight", persistent = 1}
+  radio.timers[0].value = 90
+
+  -- EdgeTX lets a countdown be shown as time used rather than time left, and
+  -- says so with showElapsed. The fixture omitted the field entirely, so this
+  -- branch was permanently false and no component ever reached it: the same
+  -- 300 second timer with 90 seconds left must read 3:30 used, not 1:30 left,
+  -- and it is no longer a countdown to warn about.
+  radio.timers[0].showElapsed = true
+  settle(context, 12)
+  assertEqual(countdown.text, "3:30", "showElapsed did not flip the timer")
+  radio.timers[0].showElapsed = false
+  settle(context, 12)
+  assertEqual(countdown.text, "1:30", "the timer did not flip back")
 
   local mode = entryById(context, "mode").instance
   assertEqual(mode.text, "Sport")
@@ -3100,15 +3165,27 @@ local function testCoreComponents()
   assert(gv.bar.markerFraction, "a bar over a signed range lost its zero tick")
   assertEqual(gv.bar.marker.hidden, false)
 
-  -- EdgeTX resolves global variable inheritance, so the value read for two
-  -- flight modes is frequently identical. The row that names the mode has to
-  -- follow the mode anyway, or it reports the wrong one with a straight face.
+  -- A global variable holds a separate value per flight mode, so switching
+  -- mode has to re-read it. This previously asserted that the value did NOT
+  -- move, reasoning about EdgeTX's inheritance, and it could not have failed
+  -- either way: the mock ignored the flight mode argument entirely and
+  -- answered the same number for every mode. It was asserting the fixture's
+  -- limitation and calling it firmware behaviour.
   radio.flightMode, radio.flightModeName = 2, "Land"
   settle(context, 12)
-  assertEqual(gv.text, "10%", "the inherited value should not have moved")
+  assertEqual(gv.text, "60%", "the value stored for the new flight mode was not read")
   assertEqual(gv.detail, "GV2 FM2", "the flight mode row went stale")
+
+  -- A mode with no value of its own does inherit, and that is a different
+  -- observation from never having looked.
+  radio.flightMode, radio.flightModeName = 3, "Cruise"
+  settle(context, 12)
+  assertEqual(gv.text, "10%", "an inherited value was not inherited")
+  assertEqual(gv.detail, "GV2 FM3", "the flight mode row went stale")
+
   radio.flightMode, radio.flightModeName = 1, "Sport"
   settle(context, 12)
+  assertEqual(gv.text, "10%")
 
   -- The same component bound to a telemetry source instead.
   local dial = entryById(context, "dial").instance
