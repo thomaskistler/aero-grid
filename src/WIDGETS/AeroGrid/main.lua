@@ -5,10 +5,12 @@
 --- AeroGrid's EdgeTX widget entry point and component host.
 
 ---@class AeroGridZone
----@field x integer
----@field y integer
+---@field x integer Always zero; a widget draws in its own coordinates.
+---@field y integer Always zero.
 ---@field w integer
 ---@field h integer
+---@field xabs? integer Absolute screen position of the zone's left edge.
+---@field yabs? integer Absolute screen position of the zone's top edge.
 
 ---@class AeroGridWidgetOptions
 ---@field DashID string
@@ -19,9 +21,13 @@
 ---@field path string Absolute widget directory path.
 ---@field dashboardId string Layout identity selected in native widget settings.
 ---@field components AeroGridComponentEntry[]
----@field errors string[]
+---@field errors string[] Failures, shown on the overlay.
+---@field notices table[] `{severity, text}` records of the host adapting.
 ---@field width integer Last rendered zone width.
 ---@field height integer Last rendered zone height.
+---@field left integer Last rendered absolute zone left edge.
+---@field top integer Last rendered absolute zone top edge.
+---@field reserved? table Corner covered by the EdgeTX menu button, or nil.
 ---@field root any Root LVGL container.
 ---@field grid table
 ---@field yaml table
@@ -91,8 +97,112 @@ local function addError(context, message)
   context.errors[#context.errors + 1] = tostring(message)
 end
 
+--- Notices retained for diagnostics; older ones are dropped rather than grown.
+local NOTICE_LIMIT = 16
+
+--- Record the host adapting as designed, which is not a failure.
+---
+--- An error is something that did not work: a module that would not load, a
+--- layout key that is invalid, a component that raised. Those belong on the
+--- overlay, because the dashboard is not doing what it was told. A notice is
+--- the host doing its job: correcting a token for contrast, or falling back to
+--- the Modern palette when the radio will not hand over its own. Putting those
+--- on the overlay would leave a permanent banner on every radio running a
+--- derived theme, reporting that the legibility pass worked.
+---
+--- They are kept rather than discarded because milestone 9's diagnostics view
+--- is where they belong.
+---@param context AeroGridContext
+---@param severity "info"|"warning"
+---@param message any
+local function addNotice(context, severity, message)
+  local notices = context.notices
+  if #notices >= NOTICE_LIMIT then table.remove(notices, 1) end
+  notices[#notices + 1] = {severity = severity, text = tostring(message)}
+end
+
+--- Menu button height on a 480 x 272 display, used when the radio will not say.
+local BUTTON_HEIGHT = 45
+
+--- Ratio between the firmware's button height and the width it keeps clear.
+--- EdgeTX scales both per display class, as MENU_HEADER_HEIGHT 45 and
+--- MENU_HEADER_BUTTONS_LEFT 47, and rounding the ratio reproduces the
+--- firmware's own values exactly at 320, 480, and 800 pixels wide.
+local BUTTON_WIDTH_RATIO = 47 / 45
+
+--- Read the height EdgeTX draws its menu button at.
+---
+--- The firmware does publish this to Lua, but registers MENU_HEADER_HEIGHT
+--- beside the colour constants and so passes it through COLOR2FLAGS, which
+--- shifts a value left by sixteen bits (radio/src/lua/api_general.cpp). The
+--- global therefore reads 2949120 on a TX16S rather than 45. Shifting it back
+--- is worth the trouble because the firmware scales the real constant per
+--- display class, so a radio whose button is not 45 px tall still gets the
+--- right answer instead of this file's guess.
+---@return integer
+local function buttonHeight()
+  local raw = MENU_HEADER_HEIGHT
+  if type(raw) ~= "number" then return BUTTON_HEIGHT end
+
+  if raw >= 65536 then raw = math.floor(raw / 65536) end
+  -- A value outside this range is not a button height, whatever it is.
+  if raw < 1 or raw > 200 then return BUTTON_HEIGHT end
+
+  return raw
+end
+
+--- Report the part of our zone that EdgeTX's menu button covers.
+---
+--- In App mode the button is the only route to the radio's menus, so it cannot
+--- be hidden, and `ViewMain` deliberately creates it after the screen it sits
+--- on: view_main.cpp carries the comment "create last to be on top". Anything
+--- the dashboard draws underneath it is simply not visible.
+---
+--- Only App mode overlaps. `ViewMain::updateTopbarVisibility` shows the button
+--- when `hasTopbar(view) or isAppMode(view)`, and a layout that has a top bar
+--- puts the widget below it: `ViewMainDecoration::getWidgetsZone` starts the
+--- widget zone at MENU_HEADER_HEIGHT whenever the bar is shown. A layout with
+--- neither hides the button altogether.
+---@param zone AeroGridZone
+---@return table? reserved Width and height of the covered corner.
+local function reservedCorner(zone)
+  local appMode = false
+  if type(lvgl) == "table" and type(lvgl.isAppMode) == "function" then
+    local ok, value = pcall(lvgl.isAppMode)
+    appMode = ok and value == true
+  end
+  if not appMode then return nil end
+
+  local height = buttonHeight()
+  local width = math.floor(height * BUTTON_WIDTH_RATIO + 0.5)
+
+  -- A widget's own x and y are always zero; xabs and yabs carry where the zone
+  -- actually sits on the screen (radio/src/lua/lua_widget_factory.cpp). The
+  -- button is drawn at the screen origin, so what it takes from us is whatever
+  -- of it reaches into the zone.
+  local left = zone.xabs or 0
+  local top = zone.yabs or 0
+  if left >= width or top >= height then return nil end
+
+  return {w = width - left, h = height - top}
+end
+
+--- Where the error overlay may start without disappearing under the button.
+---@param context AeroGridContext
+---@return integer y
+local function errorTop(context)
+  local reserved = context.reserved
+  if not reserved then return 8 end
+  return reserved.h + 4
+end
+
 --- Render accumulated runtime errors over the dashboard.
 --- Reuses the existing label so failures raised after creation stay visible.
+---
+--- The overlay starts below the region EdgeTX's menu button covers. Drawn at
+--- the zone's own origin it lands underneath that button in App mode, which is
+--- the deployment this dashboard is primarily built for, so a component could
+--- fail and the radio would show nothing at all.
 ---@param context AeroGridContext
 local function showErrors(context)
   if #context.errors == 0 then return end
@@ -108,7 +218,7 @@ local function showErrors(context)
 
   context.errorLabel = lvgl.label(context.page or context.root, {
       x = 8,
-      y = 8,
+      y = errorTop(context),
       w = math.max(1, context.zone.w - 16),
       h = 0,
       text = text,
@@ -138,6 +248,43 @@ local function dispatchAll(context, event, ...)
   if failures then showErrors(context) end
 end
 
+--- The rectangle one placement occupies inside the host zone.
+--- Both building and reflow go through this, so the two cannot drift apart.
+---@param context AeroGridContext
+---@param placement table
+---@return AeroGridRect? rect
+---@return string? error
+local function componentRect(context, placement)
+  return context.grid.rect(context.zone, placement, 4, 4, 4)
+end
+
+--- The part of one placement's own rectangle the menu button covers.
+---
+--- Expressed in the component's coordinates, because a component is handed a
+--- container-local rectangle and can neither see nor reach the zone. On a
+--- 480 x 272 display only a placement at column zero, row zero can overlap,
+--- but that is a property of the arithmetic rather than a rule, so the
+--- intersection is computed rather than assumed.
+---@param context AeroGridContext
+---@param placement table
+---@return table? reserved
+local function reservedFor(context, placement)
+  local reserved = context.reserved
+  if not reserved then return nil end
+
+  local rect = componentRect(context, placement)
+  if not rect then return nil end
+
+  local width = reserved.w - rect.x
+  local height = reserved.h - rect.y
+  if width <= 0 or height <= 0 then return nil end
+
+  return {
+    w = width < rect.w and width or rect.w,
+    h = height < rect.h and height or rect.h,
+  }
+end
+
 --- Assemble the shared objects handed to one component.
 --- Typography depends on the component's span, so services are built per
 --- placement rather than shared across the dashboard. The data services
@@ -151,6 +298,21 @@ local function buildServices(context, placement)
   local theme = context.theme
   local registry = context.serviceRuntime
   local byId = registry and registry.byId or {}
+
+  -- Where the radio paints over us, the theme builder this component sees
+  -- resolves its panel frame around that corner. Binding it here rather than
+  -- adding an argument to every component means a component written by
+  -- someone else is laid out correctly too, without knowing any of this
+  -- exists. The reservation is read on each call, not captured, so a zone
+  -- that moves is picked up by the update that follows it.
+  if context.reserved then
+    builder = setmetatable({
+      frame = function(resolved, rect, fonts)
+        return context.themeBuilder.frame(resolved, rect, fonts,
+          reservedFor(context, placement))
+      end,
+    }, {__index = context.themeBuilder})
+  end
 
   return {
     theme = theme,
@@ -200,7 +362,7 @@ local function buildComponent(context, placement)
     return
   end
 
-  local rect, rectError = context.grid.rect(context.zone, placement, 4, 4, 4)
+  local rect, rectError = componentRect(context, placement)
   if not rect then
     addError(context, placement.id .. ": " .. tostring(rectError))
     return
@@ -353,6 +515,9 @@ local function advanceLoad(context)
     for _, warning in ipairs(context.theme.warnings) do
       addError(context, "theme: " .. warning)
     end
+    for _, notice in ipairs(context.theme.notices) do
+      addNotice(context, notice.severity, "theme: " .. notice.text)
+    end
     context.canvas:set({color = context.theme.color.canvas})
 
     context.document = validated
@@ -457,6 +622,7 @@ end
 local function beginLoad(context)
   context.components = {}
   context.errors = {}
+  context.notices = {}
   context.errorLabel = nil
   context.tokens = nil
   context.source = nil
@@ -484,8 +650,14 @@ local function create(zone, widgetOptions, path)
     themeMode = widgetOptions.Theme,
     components = {},
     errors = {},
+    notices = {},
     width = zone.w,
     height = zone.h,
+    left = zone.xabs or 0,
+    top = zone.yabs or 0,
+    -- Resolved before any module is loaded, because the overlay that reports a
+    -- failed module load is itself placed against this.
+    reserved = reservedCorner(zone),
   }
 
   context.grid = select(1, loadModule(path, "lib/grid.lua"))
@@ -548,12 +720,20 @@ local function beginReflow(context)
   context.page:set({w = context.zone.w, h = context.zone.h})
   context.canvas:set({w = context.zone.w, h = context.zone.h})
 
+  -- A zone that moved may have moved out from under the button, or into it.
+  context.reserved = reservedCorner(context.zone)
+
   if context.errorLabel then
-    context.errorLabel:set({w = math.max(1, context.zone.w - 16)})
+    context.errorLabel:set({
+      y = errorTop(context),
+      w = math.max(1, context.zone.w - 16),
+    })
   end
 
   context.width = context.zone.w
   context.height = context.zone.h
+  context.left = context.zone.xabs or 0
+  context.top = context.zone.yabs or 0
   context.reflowIndex = 1
 end
 
@@ -567,7 +747,7 @@ local function advanceReflow(context)
   for position = index, last do
     local entry = context.components[position]
     if entry and not entry.failed then
-      local rect = context.grid.rect(context.zone, entry.placement, 4, 4, 4)
+      local rect = componentRect(context, entry.placement)
       if rect then
         entry.container:set({x = rect.x, y = rect.y, w = rect.w, h = rect.h})
         local ok, dispatchError = context.componentHost.dispatch(
@@ -728,6 +908,7 @@ local function refresh(context)
     context.canvas = nil
     context.components = {}
     context.errors = {}
+    context.notices = {}
     context.errorLabel = nil
     context.reloadState = "rebuild"
     return
@@ -759,8 +940,12 @@ local function refresh(context)
   end
 
   -- A zone change repositions every component, which a full grid cannot
-  -- afford in one callback, so it is batched like loading.
-  if context.width ~= context.zone.w or context.height ~= context.zone.h then
+  -- afford in one callback, so it is batched like loading. The absolute
+  -- position matters as well as the size, because it decides whether the
+  -- EdgeTX menu button reaches into us.
+  if context.width ~= context.zone.w or context.height ~= context.zone.h
+      or context.left ~= (context.zone.xabs or 0)
+      or context.top ~= (context.zone.yabs or 0) then
     beginReflow(context)
   end
   if context.reflowIndex then

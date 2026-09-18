@@ -344,6 +344,7 @@ local function testModernTheme()
 
   assertEqual(resolved.mode, "modern")
   assertEqual(#resolved.warnings, 0)
+  assertEqual(#resolved.notices, 0)
   assertEqual(resolved.rgb.canvas, 0x101316)
   assertEqual(resolved.rgb.critical, 0xF05252)
   assertEqual(resolved.color.canvas, 0x101316)
@@ -382,23 +383,75 @@ local function testEdgeTxTheme()
       + math.floor(blue * 31 / 255)
   end
 
+  -- `lcd.getColor` returns an LcdFlags word: the colour sits in the upper
+  -- half with RGB_FLAG set in the lower. Handing back a bare RGB565 is the
+  -- shape the firmware never produces.
+  local function asFlags(rgb) return toRgb565(rgb) * 65536 + 0x8000 end
+
   local resolved = theme.build("edgetx", nil, {
     roles = roles,
-    getColor = function(role) return toRgb565(values[role]) end,
+    getColor = function(role) return asFlags(values[role]) end,
   })
 
   assertEqual(resolved.mode, "edgetx")
   assert(resolved.rgb.canvas ~= theme.modern().canvas, "canvas was not derived")
+
+  -- The canvas has to be the radio's own colour, not merely different from
+  -- Modern's. Reading the low half of the flag word `lcd.getColor` returns
+  -- yielded red 16, green 0, blue 0 for every role of every theme: a value
+  -- that satisfies "was it derived?" while being wrong for all of them, and
+  -- which drew every panel dark red on a radio while this suite stayed green.
+  assertEqual(resolved.rgb.canvas, theme.fromRgb565(toRgb565(values[4])),
+    "the radio's own colour did not survive being read")
+  assertEqual(resolved.rgb.text, theme.fromRgb565(toRgb565(values[2])),
+    "the radio's own colour did not survive being read")
   assertEqual(resolved.rgb.critical, theme.modern().critical)
   assert(theme.contrast(resolved.rgb.surface, resolved.rgb.text) >= 4.5,
     "derived text is unreadable")
   assert(theme.contrast(resolved.rgb.surface, resolved.rgb.surfaceRaised) > 1,
     "surfaces were not separated")
 
-  -- A radio without color support falls back with a warning.
+  -- Correcting a token for contrast is the legibility pass working, so it is
+  -- a notice rather than a warning. Reporting it as a failure would put a
+  -- permanent banner on every radio running a derived palette.
+  assertEqual(#resolved.warnings, 0,
+    "a derived palette reported its own legibility pass as a problem")
+
+  -- Structure follows the radio; meaning does not. EdgeTX's roles are menu
+  -- chrome and their names do not describe their colours: the shipped theme
+  -- has a yellow ACTIVE, a green EDIT and a red WARNING. Mapping accents onto
+  -- them by name rendered a warning in a red indistinguishable from critical,
+  -- and drew healthy panels in yellow.
+  local modern = theme.modern()
+  for _, key in ipairs({"cyan", "green", "amber", "orange", "critical"}) do
+    assertEqual(resolved.rgb[key], modern[key],
+      key .. " was taken from the radio instead of keeping its meaning")
+  end
+
+  -- A theme that genuinely needs correcting still records it, so the guard
+  -- that the legibility pass does something is kept rather than weakened: a
+  -- surface this close to the accents leaves them unreadable untouched.
+  local hostile = theme.build("edgetx", nil, {
+    roles = roles,
+    getColor = function(role)
+      if role == 4 then return asFlags(0x70D6F3) end
+      return asFlags(values[role])
+    end,
+  })
+  assertEqual(#hostile.warnings, 0,
+    "a derived palette reported its own legibility pass as a problem")
+  assert(#hostile.notices > 0, "the legibility pass recorded nothing at all")
+  for _, notice in ipairs(hostile.notices) do
+    assertEqual(notice.severity, "info", notice.text)
+  end
+
+  -- A radio without color support falls back. Still not a failure, but the
+  -- radio declined to answer, which is worth more than a contrast nudge.
   local missing = theme.build("edgetx", nil, {getColor = false})
   assertEqual(missing.rgb.canvas, theme.modern().canvas)
-  assert(string.match(missing.warnings[1], "unavailable"), missing.warnings[1])
+  assertEqual(#missing.warnings, 0)
+  assertEqual(missing.notices[1].severity, "warning")
+  assert(string.match(missing.notices[1].text, "unavailable"), missing.notices[1].text)
 
   -- Unreadable roles also fall back rather than producing an invisible theme.
   local broken = theme.build("edgetx", nil, {
@@ -406,7 +459,9 @@ local function testEdgeTxTheme()
     getColor = function() error("no colors", 0) end,
   })
   assertEqual(broken.rgb.canvas, theme.modern().canvas)
-  assert(string.match(table.concat(broken.warnings, "\n"), "unreadable"))
+  local brokenText = {}
+  for index, notice in ipairs(broken.notices) do brokenText[index] = notice.text end
+  assert(string.match(table.concat(brokenText, "\n"), "unreadable"))
 end
 
 --- Custom mode accepts only the documented override set.

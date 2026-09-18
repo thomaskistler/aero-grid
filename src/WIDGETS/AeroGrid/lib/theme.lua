@@ -25,9 +25,24 @@
 ---@field color table<string, integer> Display values produced by lcd.RGB.
 ---@field spacing table
 ---@field accent string Default semantic accent token name.
----@field warnings string[] Non-fatal problems encountered while resolving.
+---@field warnings string[] Things the layout asked for that cannot be honoured.
+---@field notices table[] `{severity, text}` records of the host adapting.
 
 local theme = {}
+
+--- Record something the host did on its own behalf, rather than a failure.
+---
+--- A contrast correction is the legibility pass doing its job, not a problem,
+--- and reporting it as an error would put a permanent banner on the screen of
+--- every radio using a derived palette. Severity separates a routine
+--- adjustment from the radio refusing to answer at all, which is still not a
+--- failure but is worth knowing about.
+---@param notices table[]
+---@param severity "info"|"warning"
+---@param text string
+function theme.notice(notices, severity, text)
+  notices[#notices + 1] = {severity = severity, text = text}
+end
 
 --- The designed instrument palette from the project specification.
 local MODERN = {
@@ -186,8 +201,8 @@ end
 ---@param key string
 ---@param background integer
 ---@param minimum number
----@param warnings string[]
-local function correctContrast(tokens, key, background, minimum, warnings)
+---@param notices table[]
+local function correctContrast(tokens, key, background, minimum, notices)
   if theme.contrast(background, tokens[key]) >= minimum then return end
 
   local candidate = betterContrast(background, MODERN[key], theme.shade(background, 0.85))
@@ -196,7 +211,7 @@ local function correctContrast(tokens, key, background, minimum, warnings)
   end
 
   tokens[key] = candidate
-  warnings[#warnings + 1] = key .. " was corrected for contrast"
+  theme.notice(notices, "info", key .. " was corrected for contrast")
 end
 
 --- Find a color separated from a base by at least a minimum contrast ratio.
@@ -221,8 +236,8 @@ end
 ---@param key string
 ---@param background integer
 ---@param minimum number
----@param warnings string[]
-local function correctAccent(tokens, key, background, minimum, warnings)
+---@param notices table[]
+local function correctAccent(tokens, key, background, minimum, notices)
   if theme.contrast(background, tokens[key]) >= minimum then return end
 
   -- Lighten on dark surfaces and darken on light ones so the hue survives.
@@ -231,20 +246,20 @@ local function correctAccent(tokens, key, background, minimum, warnings)
     local candidate = theme.shade(tokens[key], direction * amount)
     if theme.contrast(background, candidate) >= minimum then
       tokens[key] = candidate
-      warnings[#warnings + 1] = key .. " was corrected for contrast"
+      theme.notice(notices, "info", key .. " was corrected for contrast")
       return
     end
   end
 
   tokens[key] = betterContrast(background, 0xFFFFFF, 0x000000)
-  warnings[#warnings + 1] = key .. " was replaced for contrast"
+  theme.notice(notices, "info", key .. " was replaced for contrast")
 end
 
 --- Guarantee that a derived palette is structurally visible and legible.
 --- Modern is exempt because its values are specified directly.
 ---@param tokens table
----@param warnings string[]
-local function enforceLegibility(tokens, warnings)
+---@param notices table[]
+local function enforceLegibility(tokens, notices)
   -- Structural separation: panels, elevation, and borders must be visible.
   if theme.contrast(tokens.canvas, tokens.surface) < 1.10 then
     tokens.surface = separated(tokens.canvas, 1.10)
@@ -257,13 +272,13 @@ local function enforceLegibility(tokens, warnings)
     tokens.track = separated(tokens.surface, MIN_TRACK_CONTRAST)
   end
 
-  correctContrast(tokens, "text", tokens.surface, MIN_TEXT_CONTRAST, warnings)
-  correctContrast(tokens, "textMuted", tokens.surface, MIN_MUTED_CONTRAST, warnings)
-  correctContrast(tokens, "textFaint", tokens.surface, MIN_FAINT_CONTRAST, warnings)
+  correctContrast(tokens, "text", tokens.surface, MIN_TEXT_CONTRAST, notices)
+  correctContrast(tokens, "textMuted", tokens.surface, MIN_MUTED_CONTRAST, notices)
+  correctContrast(tokens, "textFaint", tokens.surface, MIN_FAINT_CONTRAST, notices)
 
   -- Decorative accents may be nudged to stay visible on the panel surface.
   for _, key in ipairs({"cyan", "green", "amber", "orange"}) do
-    correctAccent(tokens, key, tokens.surface, MIN_ACCENT_CONTRAST, warnings)
+    correctAccent(tokens, key, tokens.surface, MIN_ACCENT_CONTRAST, notices)
   end
 
   -- Critical red is never adjusted: an alarm must look the same on every
@@ -286,17 +301,17 @@ local function enforceLegibility(tokens, warnings)
     end
 
     tokens.surface = replacement
-    warnings[#warnings + 1] = "surface was shifted to keep critical visible"
+    theme.notice(notices, "info", "surface was shifted to keep critical visible")
 
     -- The surface moved, so everything measured against it must be rechecked.
     tokens.surfaceRaised = separated(tokens.surface, 1.08)
     tokens.border = separated(tokens.surface, 1.25)
     tokens.track = separated(tokens.surface, MIN_TRACK_CONTRAST)
-    correctContrast(tokens, "text", tokens.surface, MIN_TEXT_CONTRAST, warnings)
-    correctContrast(tokens, "textMuted", tokens.surface, MIN_MUTED_CONTRAST, warnings)
-    correctContrast(tokens, "textFaint", tokens.surface, MIN_FAINT_CONTRAST, warnings)
+    correctContrast(tokens, "text", tokens.surface, MIN_TEXT_CONTRAST, notices)
+    correctContrast(tokens, "textMuted", tokens.surface, MIN_MUTED_CONTRAST, notices)
+    correctContrast(tokens, "textFaint", tokens.surface, MIN_FAINT_CONTRAST, notices)
     for _, key in ipairs({"cyan", "green", "amber", "orange"}) do
-      correctAccent(tokens, key, tokens.surface, MIN_ACCENT_CONTRAST, warnings)
+      correctAccent(tokens, key, tokens.surface, MIN_ACCENT_CONTRAST, notices)
     end
   end
 end
@@ -305,13 +320,27 @@ end
 ---@param env table Resolved EdgeTX environment.
 ---@param role any Value of a COLOR_THEME_* constant.
 ---@return integer? color
+--- Extract the RGB565 payload from an EdgeTX colour flag word.
+---
+--- `lcd.getColor` does not return a bare RGB565. `luaLcdGetColor` returns
+--- `colorToRGB(flags) & (COLOR_MASK(~0u) | RGB_FLAG)`, and the colour lives in
+--- the upper half: `COLOR_VAL(flags)` is `flags >> 16`, with `RGB_FLAG`
+--- (`0x8000`) set in the lower half. Reading the low 16 bits instead leaves
+--- red 16, green 0 and blue 0 for every role of every theme, which drew every
+--- panel on the dashboard in a dark red belonging to no EdgeTX theme at all.
+---@param flags integer
+---@return integer rgb565
+local function colorValue(flags)
+  return math.floor(flags / 65536) % 65536
+end
+
 local function readRole(env, role)
   if type(role) ~= "number" then return nil end
 
   local ok, value = pcall(env.getColor, role)
   if not ok or type(value) ~= "number" then return nil end
 
-  return theme.fromRgb565(value)
+  return theme.fromRgb565(colorValue(value))
 end
 
 --- Collect the EdgeTX color environment, allowing tests to inject one.
@@ -343,19 +372,30 @@ end
 --- Derive dashboard tokens from the active EdgeTX theme.
 --- Roles without a suitable EdgeTX equivalent keep their Modern values, and
 --- critical red stays dashboard-controlled so alarms remain recognizable.
----@param warnings string[]
+---@param notices table[]
 ---@param env? table
 ---@return table tokens
-local function deriveFromEdgeTx(warnings, env)
+local function deriveFromEdgeTx(notices, env)
   local resolved = resolveEnv(env)
   local tokens = {}
   for key, value in pairs(MODERN) do tokens[key] = value end
 
   if not resolved then
-    warnings[#warnings + 1] = "EdgeTX colors unavailable; using Modern palette"
+    theme.notice(notices, "warning",
+      "EdgeTX colors unavailable; using Modern palette")
     return tokens
   end
 
+  -- Structure follows the radio; meaning does not.
+  --
+  -- EdgeTX's roles are menu chrome, and their names do not describe their
+  -- colours. In the shipped EdgeTX Default theme `ACTIVE` is yellow, `EDIT` is
+  -- green and `WARNING` is red, so mapping our accents onto them by name
+  -- scrambled every semantic on the dashboard: healthy read as caution, and a
+  -- warning was rendered in a red indistinguishable from critical. A pilot
+  -- cannot be asked to relearn what a colour means per radio theme, so the
+  -- accents stay exactly as Modern defines them and only the surfaces and text
+  -- follow the radio.
   local roles = resolved.roles
   local mapping = {
     canvas = roles.secondary1,
@@ -364,10 +404,6 @@ local function deriveFromEdgeTx(warnings, env)
     text = roles.primary2,
     textMuted = roles.primary3,
     textFaint = roles.disabled,
-    cyan = roles.focus,
-    green = roles.active,
-    amber = roles.warning,
-    orange = roles.edit,
   }
 
   local found = false
@@ -380,7 +416,8 @@ local function deriveFromEdgeTx(warnings, env)
   end
 
   if not found then
-    warnings[#warnings + 1] = "EdgeTX theme roles unreadable; using Modern palette"
+    theme.notice(notices, "warning",
+      "EdgeTX theme roles unreadable; using Modern palette")
     return tokens
   end
 
@@ -435,12 +472,20 @@ local function toDisplay(tokens)
 end
 
 --- Resolve the active theme.
+---
+--- Two outcomes are kept apart. A warning is something the layout or the
+--- widget option asked for that cannot be honoured, such as a theme mode that
+--- does not exist or an override key that is not customizable: an authoring
+--- mistake whose author needs to see it. A notice is the host adapting exactly
+--- as designed, such as the legibility pass nudging a token, or the radio
+--- declining to hand over its palette.
 ---@param mode? string One of modern, edgetx, or custom.
 ---@param overrides? table Custom mode overrides.
 ---@param env? table Optional injected EdgeTX color environment.
 ---@return AeroGridTheme
 function theme.build(mode, overrides, env)
   local warnings = {}
+  local notices = {}
   local accent = "cyan"
   local tokens
 
@@ -451,7 +496,7 @@ function theme.build(mode, overrides, env)
   mode = mode or "modern"
 
   if mode == "edgetx" then
-    tokens = deriveFromEdgeTx(warnings, env)
+    tokens = deriveFromEdgeTx(notices, env)
   elseif mode == "custom" then
     tokens, accent = applyCustom(overrides, warnings)
   else
@@ -464,7 +509,7 @@ function theme.build(mode, overrides, env)
 
   -- Derived palettes are guaranteed legible; Modern is specified directly.
   if mode ~= "modern" then
-    enforceLegibility(tokens, warnings)
+    enforceLegibility(tokens, notices)
   end
 
   return {
@@ -474,6 +519,7 @@ function theme.build(mode, overrides, env)
     spacing = SPACING,
     accent = accent,
     warnings = warnings,
+    notices = notices,
   }
 end
 
@@ -556,6 +602,10 @@ end
 --- Width reserved for a panel's state badge on its header row.
 local BADGE_WIDTH = 56
 
+--- Narrowest header label worth drawing, about two characters at SMLSIZE.
+--- A label squeezed below this says nothing and only clips, so it is dropped.
+local MIN_LABEL_WIDTH = 24
+
 --- Resolve the padded content geometry every component panel shares.
 ---
 --- Components derive their regions from this rather than repeating the same
@@ -563,11 +613,19 @@ local BADGE_WIDTH = 56
 --- state badge never lands on top of the label it accompanies. Every
 --- measurement comes from a real font line height, because EdgeTX's fonts are
 --- far taller than they look and fixed offsets overflow on the radio.
+---
+--- A panel may also be handed a corner the dashboard does not own. In App mode
+--- EdgeTX paints its menu button over the top-left of the screen, above
+--- everything the widget draws, and it cannot be hidden because it is the only
+--- route to the radio's menus. Laying the header and the content start out
+--- around that corner here means the one shared helper handles it once,
+--- instead of ten components each compensating and disagreeing about how.
 ---@param resolved AeroGridTheme
 ---@param rect AeroGridRect
 ---@param fonts table Typography roles for this component's span.
+---@param reserved? table Width and height of an obstructed top-left corner.
 ---@return table frame
-function theme.frame(resolved, rect, fonts)
+function theme.frame(resolved, rect, fonts, reserved)
   local spacing = resolved.spacing
   -- Short panels cannot afford the standard padding.
   local tight = rect.h < 80
@@ -579,7 +637,21 @@ function theme.frame(resolved, rect, fonts)
   -- it is squeezed to nothing: both have to be readable at once, which is the
   -- whole reason the badge is not drawn over the label.
   local badgeWidth = math.min(BADGE_WIDTH, math.max(1, math.floor(content / 2)))
+  local badgeX = math.max(pad, rect.w - pad - badgeWidth)
   local labelHeight = theme.fontHeight(fonts.label)
+  local labelX = pad
+  local top = compact + labelHeight + 2
+
+  if reserved then
+    -- The header shares the obstructed band, so it moves along to its right
+    -- rather than below it, which would cost the panel a whole row.
+    if compact < reserved.h then labelX = reserved.w + 4 end
+    -- Content starts below the obstruction. This is the only space the panel
+    -- actually loses, and it loses it once rather than per element.
+    if top < reserved.h then top = reserved.h end
+  end
+
+  local labelWidth = math.max(1, badgeX - labelX - 4)
 
   return {
     width = rect.w,
@@ -589,10 +661,16 @@ function theme.frame(resolved, rect, fonts)
     content = content,
     labelHeight = labelHeight,
     badgeWidth = badgeWidth,
-    badgeX = math.max(pad, rect.w - pad - badgeWidth),
-    labelWidth = math.max(1, content - badgeWidth - 4),
-    top = compact + labelHeight + 2,
+    badgeX = badgeX,
+    labelX = labelX,
+    labelWidth = labelWidth,
+    -- A panel narrow enough that the obstruction leaves no room beside it
+    -- drops its label rather than clipping one glyph of it. The reading is
+    -- what a pilot needs; the label is the part that can be given up.
+    labelHidden = reserved ~= nil and labelWidth < MIN_LABEL_WIDTH,
+    top = top,
     bottom = 4,
+    reserved = reserved,
   }
 end
 

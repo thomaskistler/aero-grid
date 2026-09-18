@@ -4,11 +4,11 @@
 
 - Draft specification
 - Date: 2026-09-07
-- Status last updated: 2026-09-16
+- Status last updated: 2026-09-17
 - EdgeTX source: `../edgetx`
 - Project root: `aero-grid/`
-- Implementation: Phase 1, milestones 1 to 7 complete
-- Next work: Milestone 8, status rail and multiple screens
+- Implementation: Phase 1, milestones 1 to 8 complete
+- Next work: Milestone 9, hardening, and hardware verification
 - See [Resuming work](#resuming-work) for the current branch stack and the exact next steps.
 
 ## Summary
@@ -245,7 +245,9 @@ A flight counter that already exists in a global variable is displayed by `varia
 
 ### Status rail
 
-The optional dashboard-owned status rail may contain model name, flight mode, transmitter voltage, link state, clock, and active timer items. Rail items reuse the same shared services as grid components. Users can enable, disable, and order rail items, but the first implementation may ship with one fixed order. Enabling the rail reduces the rectangle available to the 4 x 4 grid and must trigger a complete grid geometry update.
+Deferred. EdgeTX's own top bar already provides a configurable widget rail that reserves the same corner and costs no Lua instruction budget, and a dashboard-owned rail in App mode leaves no more grid area than inserting AeroGrid as an ordinary Full screen widget. The full reasoning, and the settled default should it be revisited, is under [Why there is no status rail](#why-there-is-no-status-rail).
+
+Were it built, the optional dashboard-owned rail would carry model name, flight mode, transmitter voltage, link state, clock, and active timer items, reusing the same shared services as grid components rather than polling again. Enabling it would reduce the rectangle available to the 4 x 4 grid and must trigger a complete grid geometry update.
 
 ### Shared services
 
@@ -363,8 +365,8 @@ The primary reference viewport is 480 x 272, matching the TX16S and several othe
 
 ### Screen composition
 
-- Provide an optional compact status rail across the top for model or flight mode, link quality, profile, clock, and radio battery.
-- The status rail is dashboard-owned and sits outside the component grid when enabled; the remaining content rectangle becomes the 4 x 4 grid area.
+- A compact status rail across the top was specified and is deferred; EdgeTX's own top bar fills that role at no cost to the Lua budget. See [Why there is no status rail](#why-there-is-no-status-rail).
+- In App mode the top-left 47 x 45 corner belongs to EdgeTX's menu button. Panels lay out around it through `theme.frame` rather than the grid surrendering a strip.
 - Use a compact footer only for genuinely global data such as coordinates or an active flight timer. Do not reserve footer space by default.
 - Use 4 px outer margins and 4 px grid gutters at 480 x 272 as the initial baseline, subject to hardware verification.
 - Component panels should use a 4-6 px corner radius. Nested cards are prohibited.
@@ -845,28 +847,26 @@ This would allow independently registered EdgeTX widgets to occupy configurable 
 
 ## Resuming Work
 
-State as of 2026-09-16. This section is the entry point after a break: it records where the code lives, what is proven, and what to do next.
+State as of 2026-09-17. This section is the entry point after a break: it records where the code lives, what is proven, and what to do next.
 
 ### Branch stack
 
-Milestones 1 to 4 are merged. Milestones 5 and 6 are a stack of two branches on top of `main`.
+Milestones 1 to 7 are merged into `main`.
 
 | PR | Branch | Base | Contents |
 | --- | --- | --- | --- |
-| #1 to #3 | merged | `main` | Milestones 1 to 4, firmware fixes, refresh scheduling, and CI |
-| #5 | `thomaskistler/shared-data-services` | `main` | Milestone 5, the five shared data services and their diagnostic views |
-| #6 | `thomaskistler/core-components` | `thomaskistler/shared-data-services` | Milestone 6, the seven core components |
-| current | `thomaskistler/telemetry-components` | `thomaskistler/core-components` | Milestone 7, the three telemetry-specialized components |
-
-Every branch above `main` is stacked, not rebased. If a parent gains further
-commits, merge them into the branch below rather than rebasing it.
+| #1 to #7 | merged | `main` | Milestones 1 to 7, the shared services, the full component catalogue, firmware fixes, refresh scheduling, and CI |
+| current | `thomaskistler/status-rail-and-menu-button` | `main` | Milestone 8, the App mode menu button corner and the multi-screen verification |
 
 ### Verification state
 
 - `make test`, `make check`, and `make build` pass from a clean tree. `make check` was also run against a real Lua 5.3 `luac`, and both suites were executed under a real Lua 5.3 interpreter, not only under whichever Lua `lupa` provides.
 - CI (`.github/workflows/ci.yml`) runs `make check` under Lua 5.3 on every pull request, plus the SD image build and two integrity assertions.
 - The dashboard has been confirmed running in the EdgeTX simulator on a TX16S profile through milestone 7. Navigation, link status, the radial and bar metrics and the trim panel have all been read against live simulated telemetry, which is where the arc drift in constraint 11 was found. Two of milestone 7's behaviours still cannot be judged there: whether a cells source on a real receiver returns the table shape assumed here, since nothing on an ELRS link publishes one, and whether a protocol without an RSSI sensor is recognized as a link rather than a dead one.
-- The simulator fixture carries two screens, both holding an AeroGrid instance: screen one selects `sim`, which fills its grid with the telemetry components, and screen two selects `sim2`, which covers the radio-local ones that had nowhere to go beside them. Paging between them switches dashboards without opening widget settings, and is also the first exercise of two widget instances resolving different layouts at once, which milestone 8 needs.
+- Milestone 8's corner work has not yet been seen in the simulator. It is measured against the real host in the test suite, and the numbers are in the milestone section, but the thing it fixes was only ever visible on a screen, so it should be looked at on one.
+- The simulator fixture carries two screens, both holding an AeroGrid instance: screen one selects `sim`, which fills its grid with the telemetry components, and screen two selects `sim2`, which covers the radio-local ones that had nowhere to go beside them. Paging between them switches dashboards without opening widget settings, and exercises two widget instances resolving different layouts at once. `sim` carries the Modern palette and `sim2` the EdgeTX-derived one, so the two are one button press apart.
+- Two instances running together are held to owning their own root, page, service registry and telemetry service, because EdgeTX runs every Lua widget in one interpreter state and anything a module kept at its own scope would be shared between dashboards that know nothing about each other.
+- In App mode, every shipped layout is checked to draw nothing readable inside the corner EdgeTX's menu button covers. The directory is read rather than listed, so a new layout is covered as soon as it is added.
 - Every layout under `layouts/` is loaded by the integration suite, not merely the shipped default: each one is built through the real host and components, held to the same containment rules, and refreshed against radio state. A layout is covered as soon as it is added, because the suite reads the directory rather than a list.
 
 ### Immediate next steps
@@ -874,8 +874,10 @@ commits, merge them into the branch below rather than rebasing it.
 1. Run the shipped dashboard on a radio. It now demonstrates the complete ten-component catalogue, so one screen exercises telemetry, cells, link, GPS, model timers, flight mode, transmitter voltage, a global variable, trims, and the model bitmap at once. Four things can only be judged there: whether the estimated text widths behind `theme.fitText` hold against the real fonts, whether an `lvgl.image` of a model bitmap scales the way `StaticImage` is expected to, whether the corrected arc centring places the radial and compass dials where they are meant to go, and whether the compass pointer reads as a direction at arm's length.
 2. Run the two diagnostics layouts on a radio. Set the widget's Dashboard ID to `services` or `services2`; they load on any model without a model-specific file. This is the check that milestone 5's normalization is right against real sensors rather than mocks.
 3. Confirm the value shapes on real hardware, on more than one protocol. `cell-battery` assumes a cells source returns a contiguous array of per-cell voltages, and `link-status` assumes a protocol without an RSSI sensor is detected by a source contradicting `getRSSI()`. Both are mocked faithfully but neither has met a receiver.
-4. Begin Milestone 8, the status rail and multiple screens. It also closes the App mode menu-button overlap, which the shipped dashboard currently works around by putting `navigation` in the top-left cell.
-5. Decide the extrema reset policy beyond arm switch. The specification names manual, timer, and switch; switch and manual are implemented, timer is not.
+4. Look at milestone 8's corner in the simulator, in App mode, on both screens. The distance reading it recovers should now sit below the menu button at `MIDSIZE`, and the panel headers beside it rather than under it.
+5. Compare the two palettes in the simulator. `sim` is Modern and `sim2` is EdgeTX-derived, so paging between them compares the two directly. The derived palette is not flat but it is much more strongly outlined: canvas to surface 1.272 against Modern's 1.122, surface to raised 1.263 against 1.115, but border 3.499 against Modern's 1.460. Whether those outlines read as deliberate or as heavy is a question for a screen, and it is worth establishing whether what stands out is `presentation.border` or the accent bar in `primitives.panel`.
+6. Decide the extrema reset policy beyond arm switch. The specification names manual, timer, and switch; switch and manual are implemented, timer is not.
+7. Decide whether the status rail is ever built. It is deferred rather than cancelled, and the reasoning is recorded so the question starts from where it was left.
 
 ### Open items carried forward
 
@@ -885,7 +887,10 @@ commits, merge them into the branch below rather than rebasing it.
 | Milestones 5 and 6 have not been run on hardware | Milestones 5 and 6 | The diagnostics layouts exist precisely to make that check quick, and the shipped dashboard now exercises all seven core components at once |
 | Staleness is link-wide, not per sensor | Milestone 5 | EdgeTX exposes no per-sensor age except for GPS, so a sensor that stops arriving, or was never received, while the link holds still reads as live. See below |
 | Extrema reset policy covers switch and manual only | Milestone 5 | Timer-based reset is specified but not implemented |
-| EdgeTX App mode menu button overlaps the top-left component | Milestone 8 | Deliberately deferred; the status rail reserves that strip |
+| A `1 x 1` component in the App mode top-left corner cannot be fully shown | Milestone 8 | The button covers 40% of its width and 69% of its height. Its reading survives, pushed below the button, and its header label is dropped rather than clipped. No approach saves it; avoid the placement |
+| The menu button corner has not been seen on a radio | Milestone 8 | Measured against the real host and asserted for every shipped layout, but the defect it fixes was only ever visible on a screen |
+| Host notices are collected but not shown anywhere | Milestone 8 | Contrast corrections and palette fallbacks are recorded on the context with a severity, ready for milestone 9's diagnostics view. Until that exists they are invisible except to a test |
+| The status rail is deferred, not cancelled | Milestone 8 | EdgeTX's own top bar fills the role at no Lua cost, and the geometry does not favour a dashboard rail. Default settled as off should it return |
 | Steady-state refresh cost scales with component count | Milestone 6 | 2200 of 20000 on the shipped ten-component dashboard, up from 2000; watch it as the catalog grows |
 | A cells source's real shape is unverified | Milestone 7 | `cell-battery` assumes a contiguous array of per-cell voltages and validates every entry, but no receiver has produced one yet |
 | A protocol without an RSSI sensor is detected indirectly | Milestone 7 | `link-status` relies on `telemetryService` observing a source contradict `getRSSI()`. Until something contradicts it, a genuinely dead link and a missing RSSI sensor are indistinguishable, and both read as no link |
@@ -895,10 +900,12 @@ commits, merge them into the branch below rather than rebasing it.
 | `actions/checkout@v4` and `setup-python@v5` target Node 20 | CI | Non-blocking deprecation warning |
 | ~~A `1 x 1` metric fits its value vertically but width is unchecked~~ | Milestone 6 | Closed. `theme.fitText` fits a value by measured width as well as height, choosing the font from the widest string the component can ever produce so geometry stays stable |
 | ~~`lvgl.arc` is positioned by its top-left corner~~ | Milestone 7 | Closed, and it never was. EdgeTX positions an arc by its **centre**, so every radial drawn before this milestone was one radius up and to the left of its intended place. See below |
+| ~~The navigation distance value does not render in the simulator~~ | Milestone 8 | Closed. It rendered perfectly and EdgeTX's menu button was painted over it: `778m` at (8, 25), inside a corner of 47 x 45. Not a Lua fault, and no error was ever raised |
+| ~~Component errors are invisible in App mode~~ | Milestone 8 | Closed. The overlay was drawn at (8, 8), underneath the menu button |
 
 ### Hard-won constraints
 
-Ten firmware behaviours cost real debugging time and were invisible to the mocked tests until each mock was made faithful. Each now has a regression test, and each is documented in full further down.
+Twelve firmware behaviours cost real debugging time and were invisible to the mocked tests until each mock was made faithful. Each now has a regression test, and each is documented in full further down.
 
 1. **A widget callback may not exceed 20000 Lua VM instructions.** Loading, reflow, refresh, and service updates are all bounded work per callback as a result.
 2. **`lvgl.box` accepts a `color` and silently ignores it.** Only a filled `lvgl.rectangle` paints a background.
@@ -921,11 +928,17 @@ Milestone 7 added one more, and it invalidated work already shipped:
 
 11. **Every update to an arc moves it, unless the update restates its centre.** `lvgl.arc` is positioned by its centre but stores `centre - radius`, and `LvglWidgetRoundObject::refresh` subtracts the radius twice: once inside `setRadius`, which converts the stored corner back to a centre, and again through the inherited `LvglWidgetObjectBase::refresh`, which calls `setPos(x, y)` with members that already hold a corner. Any `set` call runs `refresh`, whatever keys it carries, so an arc walks up and to the left by its own radius each time it is touched. `build` does not call `refresh`, so a dial is correct until its first update and wrong afterwards: the compass vanished the moment a GPS fix arrived, and the quality dial crept off its panel over a few telemetry readings. `primitives` now routes every arc update through one helper that adds the centre to the change set, which overwrites the drifted members with absolute coordinates so the doubled subtraction lands correctly. The test mock models this arithmetic rather than recording the coordinates it was handed, because a mock that stores what it is given cannot see the object move.
 
+Milestone 8 added one firmware behaviour, and one about what a constant means:
+
+12. **EdgeTX paints its menu button over the widget in App mode, and says how big it is in a unit nobody expects.** `ViewMain` creates the top bar after the screen, commented `// create last to be on top`, and the button is parented to `ViewMain` rather than to the bar, so hiding the bar in App mode leaves the button drawn over the dashboard's top-left corner. Anything underneath it is simply not visible: the shipped dashboard's distance reading was painted over for two releases without a single error being raised. The firmware does publish the size, as `MENU_HEADER_HEIGHT`, but registers it beside the colour constants so it passes through `COLOR2FLAGS` and arrives shifted left by sixteen bits. The global reads 2949120 on a TX16S, not 45. A host that never unshifts it falls back to a hard-coded 45 and is then wrong on every radio whose display class scales the constant, which is why the mock publishes the shifted value and the tests measure a 62 px button as well as a 45 px one.
+
 Two more lessons came from the tests rather than the firmware:
 
 - A budget test that measured only the shipped layout could not fail, and hid a loader that broke on any layout larger than twelve components. Measure the worst case the schema permits, and assert that the measured work actually happened.
 - An assertion can be vacuous without being wrong. A test that a missing model bitmap falls back to the model name passed while the panel was too short to have shown an image at all. It now asserts first that the panel could have shown one.
 - A geometry test that only checks the right and bottom edges cannot see two rows resolved onto the same line. Milestone 7's region tests assert that every supporting row clears the one above it and every column clears the one beside it, and that shedding a row actually buys the dominant reading a larger font, which is the reason for shedding it.
+- A fallback can hide the bug a test was written for. The reserved-corner test passed with the `MENU_HEADER_HEIGHT` unshifting removed, because the code's own 45 px default was right for the display the test used. Only measuring a display whose button is a different size made the shift load bearing. A default that rescues the mistake is worth keeping; a test that cannot see past it is not.
+- A component that reimplements a shared helper stops receiving that helper's fixes. `service-probe` had its own copy of the panel frame arithmetic, so it kept drawing its title into the menu button's corner after every catalogue component had stopped. `metric` shadowed a subset of the frame's fields and handed that to the header primitive, so it silently missed the new one.
 - A refresh short-circuit is a cache, and a cache that misses a change shows an old number with a straight face. Three of milestone 7's components compared only their dominant reading and so froze a supporting row: the pack sum when three of four cells sagged, the RSSI readout while link quality sat pinned at 100, and the whole navigation panel when its GPS sensor appeared but had no fix yet. Every field a component draws has to be part of the comparison, and each of the three now has a regression test that changes exactly the field the primary reading does not move with.
 
 ## Proposed Release Phases
@@ -944,7 +957,7 @@ Status last verified on 2026-09-16:
 | Milestone 5: Shared data services | Complete | Registry with per-service intervals, staggering, and subscription caps; telemetry, model, control, extrema, and navigation services; immutable snapshots; graceful degradation for missing sources, unseen sensors, absent firmware APIs, and stale telemetry; `service-probe` diagnostic views and two shipped diagnostics layouts | Hardware verification, and timer-based extrema reset |
 | Milestone 6: Core components | Complete | `metric` with `custom`/`altitude`/`speed` presets, source and flight extrema, and a secondary reading; `flight-timer`, `flight-mode`, `tx-battery`, `variable-indicator`, `trim-panel`, and `model-identity`; width-aware font fitting, shared panel frame and header geometry, bipolar bars with neutral markers, and images; a shipped dashboard demonstrating all seven | Physical-radio verification of estimated text widths and of model bitmap scaling |
 | Milestone 7: Telemetry-specialized components | Complete | `cell-battery` with cells-table validation and a usable-range bar; `link-status` with independent RSSI and quality sources, a published link view, and explicit no-sensor/no-link states; `navigation` with four responsive presentations and a north-up dial; centre-positioned arcs, the `compass` primitive, and a shipped dashboard demonstrating all ten components | Hardware confirmation of the cells shape and of no-RSSI-sensor detection |
-| Milestone 8: Status rail and multiple screens | In progress | Dashboard ID option, per-model/per-dashboard filename resolution, and dashboard-scoped layouts shared by every model | Status rail, reserving the App mode menu button, and multi-instance simulator verification |
+| Milestone 8: The App mode menu button and multiple screens | Complete | Dashboard ID option, per-model/per-dashboard filename resolution, dashboard-scoped layouts shared by every model, panels laid out around the App mode menu button through the shared frame, an error overlay that clears it, notices separated from errors, and two-instance and model-change coverage | Status rail deferred by decision, not outstanding; simulator confirmation of the corner on a radio |
 | Milestone 9: Hardening | In progress | Unit/integration tests, firmware-like string behavior tests, CI running Lua 5.3 parsing, simulator fixture, corrupt-layout, contract-rejection, hostile-module, and legibility coverage, component failure isolation, an enforced instruction budget measured at the largest legal layout for both components and services, and diagnostic views over every service | Target-radio matrix, a host-level diagnostics view for versions and layout paths, and physical-radio testing |
 | Milestone 10: On-radio editor | Not started | None | Entire phase 2 editor and write/recovery workflow |
 
@@ -1238,22 +1251,62 @@ One specification detail was corrected by the implementation: `lvgl.arc` is
 positioned by its centre, which invalidated every radial milestone 6 shipped.
 It is recorded under the hard-won constraints.
 
-#### Milestone 8: Status rail and multiple screens
+#### Milestone 8: The App mode menu button and multiple screens
 
-- Implement the optional status rail with configurable visibility and a fixed initial item order.
-- Reuse shared services rather than polling separately for rail items.
-- Verify that enabling the rail recalculates the complete grid rectangle.
+- Lay panels out around the EdgeTX App mode menu button described below.
 - Verify separate Dashboard IDs for multiple screens on one model.
 - Verify model switching reloads the correct layout and that each instance remains one page.
-- Reserve the EdgeTX App mode menu button described below, so the rail's left edge starts clear of it.
 
-Deliverable: multiple independent, model-scoped dashboards with a stable compact status rail.
+Deliverable: multiple independent, model-scoped dashboards, none of which hides a reading behind the radio's own furniture.
+
+The status rail this milestone originally carried is deferred. See [Why there is no status rail](#why-there-is-no-status-rail).
 
 ##### Reserved App mode menu button
 
-In App mode EdgeTX always draws its own menu button over the top-left corner of the screen. `ViewMain` sets `setEdgeTxButtonVisible(hasTopbar(view) || isAppMode(view))`, and the button opens the quick menu, so in App mode it is the only route to the radio's menus and must not be hidden. It occupies roughly `MENU_HEADER_HEIGHT` square, 45 px on a 480 x 272 display, drawn above the widget.
+In App mode EdgeTX always draws its own menu button over the top-left corner of the screen. `ViewMain::updateTopbarVisibility` sets `setEdgeTxButtonVisible(hasTopbar(view) || isAppMode(view))`, and the button opens the quick menu, so in App mode it is the only route to the radio's menus and must not be hidden.
 
-The dashboard currently lets the top-left component's header row sit underneath it, which obscures that component's label. This is accepted until the status rail exists, because the rail occupies the same strip and can reserve the region once for the whole dashboard rather than every component compensating individually. Until then, avoid placing a component whose label matters in the top-left cell of an App mode layout.
+Four firmware facts fix where it is, and all four are load bearing:
+
+- **It is drawn above the widget, deliberately.** `ViewMain`'s constructor creates the tile view and then the top bar, with the comment `// create last to be on top`. The button is a `HeaderIcon` parented to `ViewMain`, not to the top bar, so hiding the bar in App mode leaves the button. Anything the dashboard draws underneath it is painted over.
+- **Only App mode overlaps.** `ViewMainDecoration::getWidgetsZone` starts the widget zone at `MENU_HEADER_HEIGHT` and takes the same amount off its height whenever a top bar is shown, so an ordinary Full screen layout sits below the button. A layout with no top bar hides the button altogether. The `1 x 1` fallback therefore needs nothing.
+- **A widget's `zone.x` and `zone.y` are always zero.** `lua_widget_factory.cpp` pushes them as zero and carries the real screen position in `xabs` and `yabs`, which `updateZoneRect` keeps current. The overlap is whatever of the button reaches into the zone, so it is computed rather than assumed.
+- **`MENU_HEADER_HEIGHT` is published to Lua, but shifted.** `api_general.cpp` registers it beside the colour constants, so it passes through `COLOR2FLAGS` and arrives shifted left by sixteen bits: the global reads 2949120 on a TX16S, not 45. Unshifted it is correct on every display class, because the firmware scales the real constant. The width kept clear is `MENU_HEADER_BUTTONS_LEFT`, which is not published; the firmware's own values at 320, 480 and 800 pixels are reproduced exactly by rounding `height * 47 / 45`.
+
+The button is 47 x 45 at 480 x 272. Measured against the 4 x 4 grid, it covers 40% of the width and 69% of the height of a top-left `1 x 1` cell, 20% and 34% of a `2 x 2`, and 10% and 17% of the whole screen.
+
+The damage was worse than the label row this specification originally anticipated. On the shipped dashboard the `navigation` panel's compass takes the right of the panel, which left `theme.fitText` choosing `SMLSIZE` for the distance, so `778m` was drawn 39 x 17 at (8, 25) and vanished completely. Nothing failed and nothing was reported. A layout author cannot predict that, because it depends on which font was chosen at which span, so it cannot be left to a documented convention.
+
+Three approaches were measured before choosing:
+
+| Approach | Cost at `2 x 2` | Cost at `1 x 1` | Other |
+| --- | --- | --- | --- |
+| Reserve a full-width strip | 45 px of 272 for the whole dashboard | same | Gives up the entire area beside the button to clear something 47 px wide |
+| Inset the top-left container | 47 px of 238, a fifth of its width | 117 px falls to 70 | Leaves a notch where the cell no longer lines up with the column beneath it |
+| Reserve inside `theme.frame` | 20 px of 134, on that panel only | reading survives, label is dropped | No notch; every other cell is unchanged |
+
+`theme.frame` already owns the padded content geometry, the header row and the badge column, and all ten catalogue components take `frame.top` and `frame.pad` from it. Giving it the obstructed corner therefore fixes every component at once, in the place that exists to prevent them disagreeing, and is not the "every component compensating individually" this specification rejects. The header label moves to the right of the button rather than below it, which would cost a whole row, and the content start moves below it. The panel keeps its whole rectangle and the grid keeps its geometry.
+
+The corner reaches the frame through the theme builder each component is handed, rather than through a new argument on every component, so a component written by someone else is laid out correctly without knowing any of this exists. It is read on each call rather than captured, so a zone that moves is picked up by the update that follows it.
+
+The reading gets larger rather than smaller. With the dial shrunk to suit the reduced height, the shipped dashboard's distance is chosen at `MIDSIZE` where it was previously `SMLSIZE`.
+
+A `1 x 1` cell in that corner cannot be saved, and no approach saves it. Its reading survives, pushed below the button, and its header label is dropped rather than clipped to the four pixels left beside the badge. Avoid placing a single-cell component in the top-left of an App mode layout.
+
+The error overlay was subject to the same problem and was fixed first. It was drawn at (8, 8), so in App mode a component could fail, the host could report it, and the radio would show nothing.
+
+##### Why there is no status rail
+
+This milestone originally specified a dashboard-owned status rail carrying model name, flight mode, transmitter voltage, link state, clock and active timer. It is deferred, not cancelled, and the reasoning is recorded here so it is not re-litigated from scratch.
+
+EdgeTX's own top bar is already a configurable widget rail. `TopBar` is a `WidgetsContainer` over `{0, 0, LCD_W, MENU_HEADER_HEIGHT}` with per-model configurable zone widths, it accepts any widget, and `TopBar::getZone` already starts its zones at `MENU_HEADER_BUTTONS_LEFT + 1`, reserving the menu-button corner exactly as a dashboard rail would have to. It is C++, so it costs nothing against the 20000-instruction Lua callback budget, whereas a dashboard rail would spend from the same allowance as the grid.
+
+The arithmetic then settles it. A full-width rail in App mode leaves the grid `272 - 45 = 227` px. The ordinary Full screen layout with EdgeTX's top bar leaves the widget zone `272 - 45 = 227` px as well, by `ViewMainDecoration::getWidgetsZone`, and Full screen can also show flight mode, sliders and trims, which reduce it further. So a dashboard rail in App mode is at best a tie on grid area against simply inserting AeroGrid as a Full screen widget, and it buys a less capable status bar for a share of the instruction budget. AeroGrid already works inserted either way.
+
+Note that an earlier comparison used 232 px for the Full screen zone. That number appears nowhere in the firmware; it came from a test fixture. The correct figure is 227.
+
+If the rail is revisited, the arguments for it are that App mode has no top bar at all, that a dashboard rail would follow AeroGrid's theme rather than the radio's, that it would share the telemetry service instead of polling a second time, and that it could show dashboard state such as which layout is loaded or which service has gone stale. None of those outweighed the geometry.
+
+The visibility policy is settled even though the feature is not built: **the rail defaults to off when a layout says nothing about it.** Not automatic, not on. A layout must opt in. Off by default means the rail can never silently take 45 px from a dashboard or force a reflow its author did not ask for, and every layout that exists today keeps its geometry unchanged if the rail ever arrives. Choosing the default automatically, from whether EdgeTX gave the widget a top bar, was considered and rejected: it makes a layout's geometry depend on which EdgeTX layout it happens to be inserted into, which is exactly the invisible coupling that is painful to debug on a radio.
 
 #### Milestone 9: Phase 1 hardening
 

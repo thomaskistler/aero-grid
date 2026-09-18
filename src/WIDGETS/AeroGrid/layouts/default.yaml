@@ -17,9 +17,11 @@ grid:
   rows: 4
 
 components:
-  # Navigation takes the top-left quarter deliberately. In App mode EdgeTX
-  # draws its own menu button over that corner, and this is the component
-  # whose reading sits furthest below its label.
+  # Navigation takes the top-left quarter. In App mode EdgeTX draws its own
+  # menu button over that corner, 47 x 45 pixels, and the dashboard lays this
+  # panel out around it: the label sits to the right of the button and the
+  # reading below it. A 2 x 2 span is the smallest that stays fully readable
+  # there; a single cell would keep its reading but lose its label.
   #
   # The dial is north-up and measured from the pilot position EdgeTX recorded
   # when the fix was acquired. It is not aircraft heading, which EdgeTX cannot

@@ -12,6 +12,19 @@ XXLSIZE = 6
 TINSIZE = 2
 BOLD = 1
 
+--- Height EdgeTX draws its menu button at, exactly as Lua receives it.
+---
+--- The firmware registers MENU_HEADER_HEIGHT beside its colour constants and
+--- passes it through COLOR2FLAGS, which shifts left by sixteen bits
+--- (radio/src/lua/api_general.cpp). Publishing a convenient 45 here would let
+--- a host that forgot to shift it back pass the tests and then reserve nothing
+--- at all on a radio, so the mock carries what the radio carries.
+local MENU_BUTTON_HEIGHT = 45
+MENU_HEADER_HEIGHT = MENU_BUTTON_HEIGHT * 65536
+
+--- Width the firmware keeps clear beside the button, MENU_HEADER_BUTTONS_LEFT.
+local MENU_BUTTON_WIDTH = 47
+
 COLOR_THEME_PRIMARY1 = 101
 COLOR_THEME_PRIMARY2 = 102
 COLOR_THEME_PRIMARY3 = 103
@@ -35,18 +48,27 @@ local function toRgb565(rgb)
 end
 
 -- A deliberately light EdgeTX theme, so contrast correction must engage.
+--- The EdgeTX Default theme, exactly as the firmware ships it.
+---
+--- Taken from `defaultColors` in `radio/src/gui/colorlcd/colors.cpp`. These
+--- were previously invented to match the role *names*, with a green `ACTIVE`,
+--- an amber `WARNING` and an orange `EDIT`. The firmware ships none of those:
+--- `ACTIVE` is yellow, `EDIT` is green and `WARNING` is red. A fixture that
+--- encodes what we assumed rather than what the radio does cannot fail when
+--- the assumption is wrong, and this one hid a scrambled palette on real
+--- hardware while every test passed.
 local edgeTxRoles = {
   [COLOR_THEME_PRIMARY1] = 0x000000,
   [COLOR_THEME_PRIMARY2] = 0xFFFFFF,
-  [COLOR_THEME_PRIMARY3] = 0x9E9E9E,
-  [COLOR_THEME_SECONDARY1] = 0x1B3A57,
-  [COLOR_THEME_SECONDARY2] = 0x3F7CA8,
-  [COLOR_THEME_SECONDARY3] = 0xC8D8E4,
-  [COLOR_THEME_FOCUS] = 0x1E88E5,
-  [COLOR_THEME_EDIT] = 0xFF8F00,
-  [COLOR_THEME_ACTIVE] = 0x43A047,
-  [COLOR_THEME_WARNING] = 0xF9A825,
-  [COLOR_THEME_DISABLED] = 0x757575,
+  [COLOR_THEME_PRIMARY3] = 0x0C3F66,
+  [COLOR_THEME_SECONDARY1] = 0x125E99,
+  [COLOR_THEME_SECONDARY2] = 0xB6E0F2,
+  [COLOR_THEME_SECONDARY3] = 0xE4EEF2,
+  [COLOR_THEME_FOCUS] = 0x14A1E5,
+  [COLOR_THEME_EDIT] = 0x009909,
+  [COLOR_THEME_ACTIVE] = 0xFFDE00,
+  [COLOR_THEME_WARNING] = 0xE00000,
+  [COLOR_THEME_DISABLED] = 0x8C8C8C,
 }
 
 lcd = {
@@ -55,8 +77,11 @@ lcd = {
     if green == nil and blue == nil then return red end
     return red * 65536 + green * 256 + blue
   end,
+  -- Returns what the firmware returns: an LcdFlags word with the colour in
+  -- the upper half and RGB_FLAG set, not a bare RGB565. A mock that hands
+  -- back a bare RGB565 cannot see the host misread the real thing.
   getColor = function(role)
-    return toRgb565(edgeTxRoles[role] or 0x000000)
+    return toRgb565(edgeTxRoles[role] or 0x000000) * 65536 + 0x8000
   end,
 }
 
@@ -186,6 +211,11 @@ local function constructor(kind)
   end
 end
 
+--- Whether EdgeTX would report App mode for the screen under test.
+--- The button is only drawn over a widget in App mode, so this decides whether
+--- the reserved corner exists at all.
+local appMode = false
+
 lvgl = {
   box = constructor("box"),
   rectangle = constructor("rectangle"),
@@ -194,7 +224,30 @@ lvgl = {
   image = constructor("image"),
   hide = function(object) object.hidden = true end,
   show = function(object) object.hidden = false end,
+  isAppMode = function() return appMode end,
 }
+
+--- The App mode zone: one widget over the whole display, at the screen origin.
+--- x and y are always zero for a widget; xabs and yabs carry where the zone
+--- really sits (radio/src/lua/lua_widget_factory.cpp).
+local function appZone()
+  appMode = true
+  return {x = 0, y = 0, xabs = 0, yabs = 0, w = 480, h = 272}
+end
+
+--- The ordinary Full screen zone, with EdgeTX's own top bar above it.
+--- ViewMainDecoration::getWidgetsZone starts the widget zone at
+--- MENU_HEADER_HEIGHT and takes the same amount off its height whenever the
+--- bar is shown, so the zone is 227 tall at 480 x 272 and begins below the
+--- button rather than under it.
+local function fullScreenZone()
+  appMode = false
+  return {
+    x = 0, y = 0,
+    xabs = 0, yabs = MENU_BUTTON_HEIGHT,
+    w = 480, h = 272 - MENU_BUTTON_HEIGHT,
+  }
+end
 
 local modelFilename = "test-model.yml"
 
@@ -666,9 +719,11 @@ local function testRendersInBothModes(label, zone, path, expected)
   return context
 end
 
--- App mode occupies the full TX16S-class display; 1 x 1 loses the top bar.
-local appContext = testRendersInBothModes("app mode", {x = 0, y = 0, w = 480, h = 272})
-testRendersInBothModes("1 x 1", {x = 0, y = 0, w = 480, h = 232})
+-- App mode occupies the full TX16S-class display; ordinary Full screen sits
+-- below EdgeTX's own top bar and is 227 tall rather than 272.
+local appContext = testRendersInBothModes("app mode", appZone())
+testRendersInBothModes("1 x 1", fullScreenZone())
+appMode = false
 
 --- Milestone 7's deliverable: the shipped dashboard must demonstrate the
 --- complete ten-component catalogue, loading each from its own module without
@@ -1375,6 +1430,544 @@ return exploder
   pump(context, 2)
   assertEqual(#context.errors, 1, "failure was reported repeatedly")
   assertEqual(#context.components, 2)
+end
+
+--- A reported failure must be readable on the radio it happened on.
+---
+--- In App mode EdgeTX draws its menu button over the top-left corner of the
+--- screen, above everything the widget draws, so an overlay placed at the
+--- zone's own origin is invisible exactly when it matters most: a component
+--- could fail and the radio would show nothing at all. The overlay therefore
+--- has to clear the button, and a reserved corner has to be recognized in the
+--- first place, which means reading a firmware constant the firmware shifts.
+local function testErrorsClearTheMenuButton()
+  local widgetPath = makeWidget("overlay", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: boom
+    type: exploder
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+]], {
+    ["exploder.lua"] = [==[
+local exploder = {id = "exploder", apiVersion = 1, supportedSpans = {"any"}}
+function exploder.create(parent, rect, settings, services)
+  return {panel = services.primitives.panel(parent, rect, services.theme,
+    services.state("normal", "cyan"))}
+end
+function exploder.refresh()
+  error("exploder failed", 0)
+end
+return exploder
+]==],
+  })
+
+  --- Report whether a box intersects the corner the button covers.
+  local function underButton(properties, text)
+    local width = themeModule.textWidth(SMLSIZE, text)
+    local height = themeModule.fontHeight(SMLSIZE)
+    return properties.x < MENU_BUTTON_WIDTH
+      and properties.y < MENU_BUTTON_HEIGHT
+      and properties.x + width > 0
+      and properties.y + height > 0
+  end
+
+  local context = createLoaded(appZone(), DEFAULT_OPTIONS, widgetPath)
+  pump(context, 1)
+
+  assert(context.reserved, "App mode did not reserve the menu button corner")
+  assertEqual(context.reserved.w, MENU_BUTTON_WIDTH, "reserved width")
+  assertEqual(context.reserved.h, MENU_BUTTON_HEIGHT, "reserved height")
+
+  local label = assert(context.errorLabel, "failure was not shown at all")
+  local text = table.concat(context.errors, "\n")
+  assert(not underButton(label.properties, text),
+    "the error overlay is drawn under the EdgeTX menu button, at ("
+      .. label.properties.x .. "," .. label.properties.y .. ")")
+  -- Clearing the button must not push it off the screen either.
+  assert(label.properties.y + themeModule.fontHeight(SMLSIZE) <= 272,
+    "the error overlay was pushed off the bottom of the display")
+
+  -- Outside App mode the button is either hidden or drawn above the widget, so
+  -- nothing is reserved and the overlay keeps the whole zone.
+  local plain = createLoaded(fullScreenZone(), DEFAULT_OPTIONS, widgetPath)
+  pump(plain, 1)
+  assertEqual(plain.reserved, nil, "a Full screen zone reserved a corner")
+  assertEqual(assert(plain.errorLabel).properties.y, 8,
+    "the overlay gave up room it did not have to")
+
+  -- A radio whose button is not 45 px must still be measured rather than
+  -- assumed. EdgeTX scales MENU_HEADER_HEIGHT per display class, so a host
+  -- that never unshifts the constant falls back to this file's 480 x 272
+  -- guess and is wrong everywhere else; only a different height can catch it.
+  local wideButton = 62
+  MENU_HEADER_HEIGHT = wideButton * 65536
+  local wide = createLoaded(appZone(), DEFAULT_OPTIONS, widgetPath)
+  assertEqual(assert(wide.reserved, "no corner reserved on a wider display").h,
+    wideButton, "the button height was assumed rather than read")
+  assertEqual(wide.reserved.w, 65,
+    "the width kept clear does not match MENU_HEADER_BUTTONS_LEFT")
+  MENU_HEADER_HEIGHT = MENU_BUTTON_HEIGHT * 65536
+
+  -- A zone that moves out from under the button releases the reservation, and
+  -- the overlay it already created follows.
+  appMode = true
+  local moving = createLoaded(appZone(), DEFAULT_OPTIONS, widgetPath)
+  pump(moving, 1)
+  local moved = assert(moving.errorLabel).properties.y
+  assert(moved > 8, "App mode overlay was not moved clear")
+  moving.zone.yabs = MENU_BUTTON_HEIGHT
+  moving.zone.h = 272 - MENU_BUTTON_HEIGHT
+  pump(moving, 4)
+  assertEqual(moving.reserved, nil, "reservation survived the zone moving")
+  assertEqual(moving.errorLabel.properties.y, 8,
+    "the overlay did not follow the zone out from under the button")
+  appMode = false
+end
+
+--- Nothing a pilot has to read may sit under the EdgeTX menu button.
+---
+--- This is the defect that hid the shipped dashboard's distance reading: the
+--- compass dial squeezed navigation's value down to SMLSIZE, which left it
+--- 39 x 17 at (8, 25), entirely inside the 47 x 45 corner the button covers.
+--- Nothing failed and nothing was reported; the number was simply painted over.
+--- A layout author cannot predict that, because it depends on which font
+--- fitText chose, so it has to be a checked invariant rather than advice.
+local function testNothingReadableUnderTheMenuButton()
+  --- Every label a component actually draws, with its rendered box.
+  local function readableLabels(entry)
+    local found = {}
+
+    local function walk(object, offsetX, offsetY)
+      for _, child in ipairs(object.children) do
+        local x = offsetX + (child.properties.x or 0)
+        local y = offsetY + (child.properties.y or 0)
+        local text = tostring(child.properties.text or "")
+        if child.kind == "label" and not child.hidden and text ~= "" then
+          local font = child.properties.font
+          local size = type(font) == "function" and font() or font
+          found[#found + 1] = {
+            text = text,
+            x = x,
+            y = y,
+            w = themeModule.textWidth(size, text),
+            h = themeModule.fontHeight(size),
+          }
+        end
+        walk(child, x, y)
+      end
+    end
+
+    local bounds = boundsOf(entry)
+    walk(entry.container, bounds.x, bounds.y)
+    return found
+  end
+
+  local function check(label, context)
+    local reserved = assert(context.reserved, label .. ": nothing was reserved")
+    for _, entry in ipairs(context.components) do
+      for _, drawn in ipairs(readableLabels(entry)) do
+        assert(drawn.x >= reserved.w or drawn.y >= reserved.h
+            or drawn.x + drawn.w <= 0 or drawn.y + drawn.h <= 0,
+          label .. ": " .. entry.placement.id .. ' draws "' .. drawn.text
+            .. '" at (' .. drawn.x .. "," .. drawn.y
+            .. "), under the EdgeTX menu button")
+      end
+    end
+  end
+
+  -- Every shipped layout, because the directory is the list. A new layout is
+  -- covered the moment it is added, exactly like the load coverage.
+  local listingPath = root .. "/build/appmode-layouts.txt"
+  os.execute("ls '" .. sourcePath .. "layouts' > '" .. listingPath .. "'")
+  local listing = assert(hostIo.open(listingPath, "r"))
+  local names = {}
+  for name in listing:lines() do
+    local stem = string.match(name, "^(.+)%.yaml$")
+    if stem then names[#names + 1] = stem end
+  end
+  listing:close()
+  os.remove(listingPath)
+  assert(#names > 1, "no shipped layouts were found to check")
+
+  for _, stem in ipairs(names) do
+    resetRadio()
+    local source = assert(hostIo.open(sourcePath .. "layouts/" .. stem .. ".yaml", "r"))
+    local yaml = source:read("a")
+    source:close()
+
+    local widget = makeWidget("appmode-" .. stem, yaml)
+    local context = createLoaded(appZone(), DEFAULT_OPTIONS, widget)
+    pump(context, 60)
+    assertEqual(#context.errors, 0, stem .. ": " .. table.concat(context.errors, "\n"))
+    check("layout " .. stem, context)
+  end
+
+  -- The worst case the grid permits: a single cell in the corner, where the
+  -- button covers 40% of the width and 69% of the height. The reading has to
+  -- survive even though the label cannot.
+  local cramped = makeWidget("appmode-cramped", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: tight
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: Pack
+      source: RxBt
+      precision: 1
+]])
+  resetRadio()
+  local context = createLoaded(appZone(), DEFAULT_OPTIONS, cramped)
+  pump(context, 60)
+  check("1 x 1 corner", context)
+
+  local tight = entryById(context, "tight").instance
+  assertEqual(tight.value.properties.text, "24.0",
+    "the reading was lost rather than moved")
+  assert(tight.label.hidden,
+    "a label with no room left beside the button was drawn anyway")
+
+  -- Every catalogue component, at every span the grid allows, in the corner.
+  -- Eight of the ten pull their reading back up when a panel is too short to
+  -- hold it below the header, which could slide it under the button again.
+  -- The cell heights that would do that are one pixel away from the ones the
+  -- grid actually produces, so this is measured rather than reasoned about.
+  local sweepPath = makeWidget("appmode-sweep")
+  local sweepTypes = {
+    "metric", "flight-timer", "flight-mode", "tx-battery",
+    "variable-indicator", "trim-panel", "model-identity",
+    "cell-battery", "link-status", "navigation",
+    -- The two development components ship in the package too, so a layout
+    -- may place them. Both drew at a raw (8, 6) until they were routed
+    -- through the shared frame like everything else.
+    "heartbeat", "placeholder",
+  }
+  local checked = {}
+
+  for _, kind in ipairs(sweepTypes) do
+    checked[kind] = 0
+    for colSpan = 1, 4 do
+      for rowSpan = 1, 4 do
+        resetRadio()
+        writeFile(sweepPath .. "layouts/default.yaml", table.concat({
+          "version: 1",
+          "grid:",
+          "  columns: 4",
+          "  rows: 4",
+          "components:",
+          "  - id: probe",
+          "    type: " .. kind,
+          "    col: 0",
+          "    row: 0",
+          "    colSpan: " .. colSpan,
+          "    rowSpan: " .. rowSpan,
+          "    config:",
+          "      label: Probe",
+          "      source: RxBt",
+          "      rssiSource: RSSI",
+          "      qualitySource: RQly",
+          "      trim1: trim-ail",
+          "      timer: 0",
+          "      index: 0",
+          "", }, "\n"))
+
+        local swept = createLoaded(appZone(), DEFAULT_OPTIONS, sweepPath)
+        pump(swept, 20)
+
+        -- A span the component refuses is a refusal, not a defect.
+        local refused = #swept.components == 0
+        if not refused then
+          assertEqual(#swept.errors, 0, kind .. " " .. colSpan .. "x" .. rowSpan
+            .. ": " .. table.concat(swept.errors, "\n"))
+          check(kind .. " " .. colSpan .. "x" .. rowSpan, swept)
+          checked[kind] = checked[kind] + 1
+        end
+      end
+    end
+  end
+
+  -- Per type, so a name the loader rejects cannot quietly drop one from the
+  -- sweep and leave it looking as though it passed.
+  for _, kind in ipairs(sweepTypes) do
+    assert(checked[kind] > 0, kind .. " was never built at any span")
+  end
+
+  -- Outside App mode nothing is taken away, so the same layout keeps the
+  -- geometry it has always had.
+  local plain = createLoaded(fullScreenZone(), DEFAULT_OPTIONS, cramped)
+  pump(plain, 60)
+  local plainLabel = entryById(plain, "tight").instance.label
+  assertEqual(plainLabel.hidden, false, "a Full screen panel lost its label")
+  assertEqual(plainLabel.properties.x, 4, "a Full screen panel moved its label")
+  appMode = false
+end
+
+--- The host adapting as designed must not be reported as a failure.
+---
+--- The legibility pass corrects derived palettes by design, and every
+--- correction used to be promoted to an error. Now that the overlay is
+--- actually visible, that would leave a permanent banner on the screen of
+--- every radio running the EdgeTX or Custom theme, announcing that the
+--- dashboard had done its job.
+local function testNoticesAreNotErrors()
+  local derived = makeWidget("derived-theme", [[
+version: 1
+theme:
+  mode: edgetx
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: pack
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: Pack
+      source: RxBt
+  - id: boom
+    type: exploder
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+]], {
+    ["exploder.lua"] = [==[
+local exploder = {id = "exploder", apiVersion = 1, supportedSpans = {"any"}}
+function exploder.create(parent, rect, settings, services)
+  return {panel = services.primitives.panel(parent, rect, services.theme,
+    services.state("normal", "cyan"))}
+end
+function exploder.refresh()
+  error("exploder failed", 0)
+end
+return exploder
+]==],
+  })
+
+  resetRadio()
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, derived)
+  assertEqual(context.theme.mode, "edgetx")
+
+  -- The deliberately light mock roles guarantee the legibility pass engages,
+  -- so a test that saw no notices would not be testing anything.
+  assert(#context.notices > 0, "the legibility pass recorded nothing")
+  local corrected = false
+  for _, notice in ipairs(context.notices) do
+    assert(notice.severity == "info" or notice.severity == "warning",
+      "notice carried no usable severity: " .. tostring(notice.severity))
+    if string.match(notice.text, "corrected for contrast") then corrected = true end
+  end
+  assert(corrected, "no contrast correction was recorded on a derived palette")
+  assertEqual(#context.errors, 0,
+    "the legibility pass was reported as a failure: "
+      .. table.concat(context.errors, "\n"))
+  assertEqual(context.errorLabel, nil, "a notice put a banner on the screen")
+
+  -- A component that genuinely fails must still reach the overlay, so the
+  -- fix cannot have been "stop reporting things".
+  pump(context, 1)
+  assertEqual(#context.errors, 1, "a real failure stopped being reported")
+  assert(string.match(context.errors[1], "exploder failed"), context.errors[1])
+  assert(context.errorLabel, "a real failure was not shown")
+end
+
+--- Several independent dashboards, on one model and across a model change.
+---
+--- EdgeTX runs every Lua widget in one interpreter state, so two AeroGrid
+--- instances on two custom screens share a Lua state, a set of loaded modules
+--- and a set of globals. Anything a module keeps at its own scope is therefore
+--- shared between dashboards that are supposed to know nothing about each
+--- other, and the tracked simulator model has exactly this arrangement: two
+--- App mode screens whose widgets select the sim and sim2 dashboards.
+---
+--- A model change needs no handling at all, and that is worth recording
+--- rather than rediscovering. LayoutFactory::deleteCustomScreens runs before
+--- loadModel and loadCustomScreens after it, so every widget is destroyed and
+--- rebuilt; the host is never asked to notice that the model moved underneath
+--- it. The firmware comment there says loadModel can re-enter the UI refresh
+--- loop, so a widget that tried to survive one would read torn-down data.
+local function testMultipleScreens()
+  local previous = modelFilename
+  local widgetPath = makeWidget("screens", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: fallback
+    type: placeholder
+    col: 0
+    row: 0
+    colSpan: 4
+    rowSpan: 4
+]])
+
+  writeFile(widgetPath .. "layouts/model1--alpha.yaml", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: alt
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: Alt
+      source: Alt
+      precision: 0
+]])
+
+  writeFile(widgetPath .. "layouts/model1--beta.yaml", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: pack
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: Pack
+      source: RxBt
+      precision: 1
+  - id: mode
+    type: flight-mode
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+]])
+
+  writeFile(widgetPath .. "layouts/other--alpha.yaml", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: speed
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 4
+    rowSpan: 2
+    config:
+      label: Speed
+      source: GSpd
+      precision: 0
+]])
+
+  --- Ids of the components an instance actually built.
+  local function idsOf(context)
+    local ids = {}
+    for index, entry in ipairs(context.components) do ids[index] = entry.placement.id end
+    table.sort(ids)
+    return table.concat(ids, ",")
+  end
+
+  --- An instance renders one page, not a stack of them it could swap.
+  local function visiblePages(context)
+    local count = 0
+    for _, child in ipairs(context.root.children) do
+      if not child.hidden then count = count + 1 end
+    end
+    return count
+  end
+
+  resetRadio()
+  modelFilename = "model1.yml"
+
+  -- Two Dashboard IDs, one model: two separate screens of the same radio.
+  local alpha = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    {DashID = "alpha", Theme = "modern"}, widgetPath)
+  local beta = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    {DashID = "beta", Theme = "modern"}, widgetPath)
+
+  assertEqual(alpha.layoutPath, widgetPath .. "layouts/model1--alpha.yaml")
+  assertEqual(beta.layoutPath, widgetPath .. "layouts/model1--beta.yaml")
+  assertEqual(idsOf(alpha), "alt")
+  assertEqual(idsOf(beta), "mode,pack")
+
+  -- Nothing may be shared but the modules themselves. A service registry held
+  -- at module scope would hand one dashboard the other's subscriptions.
+  assert(alpha.root ~= beta.root, "two instances share a root")
+  assert(alpha.page ~= beta.page, "two instances share a page")
+  assert(alpha.serviceRuntime ~= beta.serviceRuntime,
+    "two instances share a service registry")
+  assert(alpha.serviceRuntime.byId.telemetry
+    ~= beta.serviceRuntime.byId.telemetry,
+    "two instances share a telemetry service, and so share subscriptions")
+
+  -- Running them together must not let either disturb the other.
+  for _ = 1, 60 do
+    tick(20)
+    definition.refresh(alpha)
+    definition.refresh(beta)
+  end
+
+  assertEqual(#alpha.errors, 0, table.concat(alpha.errors, "\n"))
+  assertEqual(#beta.errors, 0, table.concat(beta.errors, "\n"))
+  assertEqual(idsOf(alpha), "alt", "an instance changed what it rendered")
+  assertEqual(idsOf(beta), "mode,pack", "an instance changed what it rendered")
+  assertEqual(entryById(alpha, "alt").instance.value.properties.text, "100")
+  assertEqual(entryById(beta, "pack").instance.value.properties.text, "24.0")
+
+  -- Each instance renders exactly one page and offers no way to turn it.
+  -- Paging between dashboards is EdgeTX sliding between custom screens, not
+  -- anything this host does, so an event must not be able to change the page.
+  assertEqual(visiblePages(alpha), 1, "an instance rendered more than one page")
+  assertEqual(visiblePages(beta), 1, "an instance rendered more than one page")
+  assertEqual(definition.event(alpha, 34), false,
+    "the host consumed an event it has no page to turn with")
+  assertEqual(alpha.layoutPath, widgetPath .. "layouts/model1--alpha.yaml",
+    "an event changed which layout an instance was showing")
+  assertEqual(visiblePages(alpha), 1, "an event added a page")
+
+  -- A different model resolves a different file for the same Dashboard ID.
+  -- EdgeTX rebuilds every widget across a model change, so this is what the
+  -- radio really does rather than a reload the host would have to detect.
+  modelFilename = "other.yml"
+  local switched = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    {DashID = "alpha", Theme = "modern"}, widgetPath)
+  assertEqual(switched.layoutPath, widgetPath .. "layouts/other--alpha.yaml")
+  assertEqual(idsOf(switched), "speed")
+  assertEqual(#switched.errors, 0, table.concat(switched.errors, "\n"))
+
+  -- A model with no file of its own falls back to the dashboard-wide layout,
+  -- then to the shipped default, rather than failing to load.
+  modelFilename = "third.yml"
+  local fallback = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    {DashID = "gamma", Theme = "modern"}, widgetPath)
+  assertEqual(fallback.layoutPath, widgetPath .. "layouts/default.yaml")
+  assertEqual(idsOf(fallback), "fallback")
+
+  -- The instances created before the switch are untouched by it, because
+  -- nothing about them was keyed on a global.
+  assertEqual(idsOf(alpha), "alt", "a later instance disturbed an earlier one")
+  assertEqual(alpha.layoutPath, widgetPath .. "layouts/model1--alpha.yaml")
+
+  modelFilename = previous
 end
 
 --- An event consumed by one component must stop propagating.
@@ -3166,6 +3759,10 @@ testCustomTheme()
 testRadialReflow()
 testCreateFailureIsCleaned()
 testFailureIsolation()
+testErrorsClearTheMenuButton()
+testNothingReadableUnderTheMenuButton()
+testNoticesAreNotErrors()
+testMultipleScreens()
 testEventConsumption()
 testContractRejections()
 testCorruptLayout()

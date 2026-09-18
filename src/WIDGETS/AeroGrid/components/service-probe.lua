@@ -91,16 +91,18 @@ end
 ---@param fonts table
 ---@return table
 function probe.regionsFor(theme, themeBuilder, rect, fonts)
-  local spacing = theme.spacing
-  local tight = rect.h < 80
-  local pad = tight and 4 or spacing.padding
-  local compact = tight and 2 or spacing.paddingCompact
+  -- The shared frame, not a second copy of its arithmetic. Repeating it here
+  -- meant this panel kept drawing its title into the corner EdgeTX paints its
+  -- menu button over, because only the shared helper knows about that.
+  local frame = themeBuilder.frame(theme, rect, fonts)
+  local pad = frame.pad
+  local compact = frame.compact
 
-  local titleHeight = themeBuilder.fontHeight(fonts.label)
+  local titleHeight = frame.labelHeight
   local lineHeight = titleHeight + 2
-  local top = compact + titleHeight + 2
+  local top = frame.top
 
-  local content = math.max(1, rect.w - pad * 2)
+  local content = frame.content
   local valueWidth = math.max(1, math.floor(content * VALUE_SHARE))
   local keyWidth = math.max(1, content - valueWidth - 4)
 
@@ -113,6 +115,9 @@ function probe.regionsFor(theme, themeBuilder, rect, fonts)
     pad = pad,
     compact = compact,
     content = content,
+    titleX = frame.labelX,
+    titleWidth = math.max(1, frame.width - frame.labelX - pad),
+    titleHidden = frame.labelHidden,
     top = top,
     lineHeight = lineHeight,
     keyWidth = keyWidth,
@@ -164,13 +169,14 @@ function probe.create(parent, rect, settings, services)
   if type(title) ~= "string" or title == "" then title = name end
 
   context.title = primitives.label(context.panel.root, theme, {
-    x = area.pad,
+    x = area.titleX,
     y = area.compact,
-    w = area.content,
+    w = area.titleWidth,
     text = string.upper(title),
     color = presentation.label,
     font = fonts.label,
   })
+  if area.titleHidden then lvgl.hide(context.title) end
 
   -- Every row object is created once, up to the cap, so a later enlargement
   -- reveals rows instead of forcing a rebuild.
@@ -248,7 +254,12 @@ function probe.update(context, rect)
     context.theme, context.themeBuilder, rect, context.fonts)
 
   context.primitives.resizePanel(context.panel, rect)
-  context.title:set({x = area.pad, y = area.compact, w = area.content})
+  context.title:set({x = area.titleX, y = area.compact, w = area.titleWidth})
+  if area.titleHidden then
+    lvgl.hide(context.title)
+  else
+    lvgl.show(context.title)
+  end
 
   for index = 1, MAX_ROWS do
     local key = context.keys[index]

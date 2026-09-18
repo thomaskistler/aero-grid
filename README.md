@@ -14,8 +14,10 @@ The phase-one runtime currently provides:
 - Five shared data services covering telemetry, model, control, extrema, and navigation.
 - The complete ten-component catalogue, configured entirely from YAML.
 - Diagnostic views that print each service's normalized output.
+- Several independent dashboards on one radio, selected per screen by Dashboard ID.
+- Panels that lay out around EdgeTX's App mode menu button instead of underneath it.
 
-The status rail, multiple screens, and the on-radio editor are intentionally not part of this checkpoint.
+The status rail and the on-radio editor are intentionally not part of this checkpoint. The rail is deferred rather than planned: EdgeTX's own top bar is already a configurable widget rail that reserves the same corner and costs nothing against the Lua instruction budget.
 
 ## Install on an SD card
 
@@ -30,6 +32,18 @@ Each widget instance has two native settings: **Dashboard ID** (`DashID` in Lua)
 If that file does not exist, AeroGrid tries `/WIDGETS/AeroGrid/layouts/<dashboard-id>.yaml`, which is shared by every model, and finally `/WIDGETS/AeroGrid/layouts/default.yaml`.
 
 Changing either setting rebuilds the dashboard safely. Phase one never writes layout files.
+
+Use a different Dashboard ID on each custom screen to run several independent dashboards for one model. Each instance renders exactly one layout; paging between them is EdgeTX sliding between its own screens, not anything AeroGrid does. Changing model reloads whatever the new model's files select, because EdgeTX destroys and rebuilds every widget around a model change.
+
+### App mode and the EdgeTX menu button
+
+In App mode EdgeTX draws its menu button over the top-left corner of the screen, above everything the widget draws. It cannot be hidden, because in App mode it is the only route to the radio's menus. It is 47 x 45 pixels on a 480 x 272 display.
+
+AeroGrid lays the affected panel out around it: the header label moves to the right of the button and the panel's content starts below it. Everything else keeps the geometry it would have had, and no grid area is surrendered.
+
+One case cannot be rescued. In a top-left `1 x 1` cell the button covers 40% of the width and 69% of the height, so the panel keeps its reading, pushed below the button, but drops its header label. Give the top-left cell of an App mode layout a span of at least `2 x 2`, or place something there whose label does not matter.
+
+The ordinary `1 x 1` layout is unaffected either way: with a top bar the widget sits below the button, and without one the button is not drawn.
 
 ## EdgeTX Dev Kit simulator
 
