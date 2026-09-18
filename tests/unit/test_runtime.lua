@@ -9,10 +9,40 @@ DBLSIZE = 5
 XXLSIZE = 6
 BOLD = 1
 
+--- Pack a 24-bit color into RGB565, matching EdgeTX's display format.
+local function toRgb565(rgb)
+  local red = math.floor(rgb / 65536) % 256
+  local green = math.floor(rgb / 256) % 256
+  local blue = rgb % 256
+  return math.floor(red * 31 / 255) * 2048
+    + math.floor(green * 63 / 255) * 32
+    + math.floor(blue * 31 / 255)
+end
+
+--- EdgeTX's RGB_FLAG, the bit marking a flag word as carrying a colour.
+--- `radio/src/gui/colorlcd/colors.h`.
+local RGB_FLAG = 0x8000
+
+--- Build the LcdFlags word EdgeTX hands a script for a colour.
+---
+--- One encoder, because the firmware has one shape. `luaRGB` returns
+--- `COLOR2FLAGS(RGB(r, g, b)) | RGB_FLAG` and `luaLcdGetColor` returns
+--- `colorToRGB(flags) & (COLOR_MASK(~0u) | RGB_FLAG)`, both in
+--- `radio/src/lua/api_colorlcd.cpp`: RGB565 in the upper half, RGB_FLAG in
+--- the lower. Encoding the two separately is how the read side came to be
+--- corrected while the write side kept handing back a bare 24-bit value.
+local function toLcdFlags(rgb)
+  return toRgb565(rgb) * 65536 + RGB_FLAG
+end
+
 lcd = {
+  -- EdgeTX accepts lcd.RGB(r, g, b) or a single packed lcd.RGB(rgb), and
+  -- returns a flag word either way. Returning the input unchanged made
+  -- `theme.rgb` and `theme.color` the same number, so nothing here could tell
+  -- a token apart from a display value.
   RGB = function(red, green, blue)
-    if green == nil and blue == nil then return red end
-    return red * 65536 + green * 256 + blue
+    if green ~= nil then red = red * 65536 + green * 256 + blue end
+    return toLcdFlags(red)
   end,
 }
 
@@ -347,7 +377,11 @@ local function testModernTheme()
   assertEqual(#resolved.notices, 0)
   assertEqual(resolved.rgb.canvas, 0x101316)
   assertEqual(resolved.rgb.critical, 0xF05252)
-  assertEqual(resolved.color.canvas, 0x101316)
+  -- The palette is held twice and the two forms are not interchangeable: rgb
+  -- is the 24-bit token contrast arithmetic runs on, color is what a radio
+  -- is given to draw with. Asserting they are equal, as this did, asserted
+  -- the one thing about them that is false on hardware.
+  assertEqual(resolved.color.canvas, toLcdFlags(0x101316))
   assertEqual(resolved.spacing.gutter, 4)
 
   -- An unknown mode degrades to Modern and says so.
@@ -374,19 +408,11 @@ local function testEdgeTxTheme()
     [10] = 0xF9A825, [11] = 0x757575,
   }
 
-  local function toRgb565(rgb)
-    local red = math.floor(rgb / 65536) % 256
-    local green = math.floor(rgb / 256) % 256
-    local blue = rgb % 256
-    return math.floor(red * 31 / 255) * 2048
-      + math.floor(green * 63 / 255) * 32
-      + math.floor(blue * 31 / 255)
-  end
-
   -- `lcd.getColor` returns an LcdFlags word: the colour sits in the upper
   -- half with RGB_FLAG set in the lower. Handing back a bare RGB565 is the
-  -- shape the firmware never produces.
-  local function asFlags(rgb) return toRgb565(rgb) * 65536 + 0x8000 end
+  -- shape the firmware never produces. Both sides share one encoder, so
+  -- neither can be corrected without the other.
+  local asFlags = toLcdFlags
 
   local resolved = theme.build("edgetx", nil, {
     roles = roles,
@@ -510,20 +536,26 @@ local function testTypography()
 end
 
 --- Every state must be distinguishable by more than color alone.
+---
+--- A presentation carries display values, because a component hands them
+--- straight to an LVGL object. They are compared against `lcd.RGB(token)`
+--- rather than against the token, which is the difference between asserting
+--- what the radio is given and asserting a mock's identity function.
 local function testStates()
   local resolved = theme.build("modern")
   local modern = theme.modern()
 
   local normal = theme.state(resolved, "normal", "green")
-  assertEqual(normal.accent, modern.green)
+  assertEqual(normal.accent, lcd.RGB(modern.green))
   assertEqual(normal.badge, nil)
-  assertEqual(normal.value, modern.text)
+  assertEqual(normal.value, lcd.RGB(modern.text))
 
   -- Warning and freshness states override a decorative accent.
-  assertEqual(theme.state(resolved, "warning", "green").accent, modern.amber)
-  assertEqual(theme.state(resolved, "critical", "green").accent, modern.critical)
-  assertEqual(theme.state(resolved, "stale", "green").value, modern.textMuted)
-  assertEqual(theme.state(resolved, "unavailable", "green").value, modern.textFaint)
+  assertEqual(theme.state(resolved, "warning", "green").accent, lcd.RGB(modern.amber))
+  assertEqual(theme.state(resolved, "critical", "green").accent, lcd.RGB(modern.critical))
+  assertEqual(theme.state(resolved, "stale", "green").value, lcd.RGB(modern.textMuted))
+  assertEqual(theme.state(resolved, "unavailable", "green").value,
+    lcd.RGB(modern.textFaint))
 
   -- Each non-normal state carries a text badge.
   for _, name in ipairs({"stale", "warning", "critical", "unavailable", "editing"}) do
@@ -537,8 +569,8 @@ local function testStates()
     > theme.state(resolved, "normal").borderWidth)
 
   -- An unknown accent falls back to the theme default rather than failing.
-  assertEqual(theme.state(resolved, "normal", "magenta").accent, modern.cyan)
-  assertEqual(theme.accentColor(resolved, "amber"), modern.amber)
+  assertEqual(theme.state(resolved, "normal", "magenta").accent, lcd.RGB(modern.cyan))
+  assertEqual(theme.accentColor(resolved, "amber"), lcd.RGB(modern.amber))
 end
 
 --- Fractions must be clamped so bad readings cannot draw outside a panel.
@@ -642,9 +674,18 @@ local function testDerivedThemesStayLegible()
       label .. ": critical red vanished into the surface")
 
     -- The unavailable state must stay readable against its own panel.
+    --
+    -- Readability is a property of the 24-bit tokens, because that is what
+    -- the contrast arithmetic is defined on; the state's own `value` is a
+    -- display value bound for an LVGL object. Feeding one to `theme.contrast`
+    -- measures the luminance of a flag word, which means nothing. So the
+    -- state is pinned to the token it must come from, and the token is what
+    -- is measured.
     local unavailable = theme.state(resolved, "unavailable")
     assert(unavailable.badge ~= nil and unavailable.badge ~= "")
-    assert(theme.contrast(tokens.surface, unavailable.value) >= 1.8,
+    assertEqual(unavailable.value, lcd.RGB(tokens.textFaint),
+      label .. ": unavailable text left the resolved palette")
+    assert(theme.contrast(tokens.surface, tokens.textFaint) >= 1.8,
       label .. ": unavailable text vanished")
   end
 end
@@ -657,9 +698,9 @@ local function testStaleOverridesAccent()
   local normal = theme.state(resolved, "normal", "green")
   local stale = theme.state(resolved, "stale", "green")
 
-  assertEqual(normal.accent, modern.green)
-  assert(stale.accent ~= modern.green, "stale kept the decorative accent")
-  assertEqual(stale.accent, modern.textFaint)
+  assertEqual(normal.accent, lcd.RGB(modern.green))
+  assert(stale.accent ~= lcd.RGB(modern.green), "stale kept the decorative accent")
+  assertEqual(stale.accent, lcd.RGB(modern.textFaint))
 end
 
 --- A module whose metatable raises must be rejected, not crash the host.
