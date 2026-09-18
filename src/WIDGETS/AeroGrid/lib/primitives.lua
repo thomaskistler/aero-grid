@@ -9,6 +9,27 @@ local primitives = {}
 --- Width reserved for a panel's state badge on its header row.
 primitives.BADGE_WIDTH = 56
 
+--- Apply changes to an arc, always restating its centre.
+---
+--- An arc is positioned by its centre, but the firmware stores the corner as
+--- `centre - radius`, and `LvglWidgetRoundObject::refresh` subtracts the radius
+--- twice: once inside `setRadius`, and again through the inherited
+--- `setPos(x, y)` that follows it, which is handed members already holding a
+--- corner. Every `set` call therefore walks an arc up and to the left by its
+--- own radius, whatever keys it carries, until it leaves the panel. Restating
+--- the centre replaces the drifted members with absolute coordinates, so the
+--- doubled subtraction lands where it should. `build` does not call `refresh`,
+--- which is why a dial is only ever wrong after its first update.
+---@param object any
+---@param centreX integer
+---@param centreY integer
+---@param changes table
+local function setRound(object, centreX, centreY, changes)
+  changes.x = centreX
+  changes.y = centreY
+  object:set(changes)
+end
+
 --- Return the usable content width inside a padded panel.
 ---@param theme AeroGridTheme
 ---@param width integer
@@ -62,6 +83,13 @@ function primitives.placeHeader(label, badge, frame)
   if frame.labelHidden then lvgl.hide(label) else lvgl.show(label) end
 end
 
+--- Angles of the two quarter bands that carry the accent round the corners.
+--- LVGL measures zero at three o'clock and increases clockwise, so the upper
+--- left quarter runs from nine o'clock to twelve, and the lower left from six
+--- o'clock to nine.
+primitives.ACCENT_TOP = {start = 180, finish = 270}
+primitives.ACCENT_BOTTOM = {start = 90, finish = 180}
+
 --- Create a component panel: an elevated fill with a narrow semantic accent.
 --- The accent carries state, so it is never purely decorative.
 ---
@@ -103,6 +131,7 @@ end
 ---@return table panel
 function primitives.panel(parent, rect, theme, presentation)
   local spacing = theme.spacing
+  local radius = spacing.radius
 
   local root = lvgl.box(parent, {
     x = rect.x,
@@ -118,7 +147,7 @@ function primitives.panel(parent, rect, theme, presentation)
     h = rect.h,
     color = theme.color.surface,
     filled = true,
-    rounded = spacing.radius,
+    rounded = radius,
   })
 
   local border = lvgl.rectangle(root, {
@@ -128,15 +157,15 @@ function primitives.panel(parent, rect, theme, presentation)
     h = rect.h,
     color = presentation.border,
     filled = false,
-    rounded = spacing.radius,
+    rounded = radius,
     thickness = spacing.borderFocus,
   })
 
-  -- A plain rectangle: no `rounded` key, so the ends are square and the band
-  -- is the same width at every row of its length.
+  -- The straight run, between the two corners. A plain rectangle with no
+  -- `rounded` key, so its ends are square and meet the arcs flush.
   local accent = lvgl.rectangle(root, {
     x = 0,
-    y = spacing.radius,
+    y = radius,
     w = spacing.accentWidth,
     h = primitives.accentHeight(spacing, rect.h),
     color = presentation.accent,
@@ -151,10 +180,73 @@ function primitives.panel(parent, rect, theme, presentation)
     spacing = spacing,
     width = rect.w,
     height = rect.h,
+    -- Reused for every corner update. `setRound` fills in x and y, so the
+    -- table always carries the same three keys and never grows.
+    arcChanges = {},
   }
+
+  -- One quarter-circle band per corner, continuing the stripe around the
+  -- panel's own corner arc. Centred on the corner centres, so the two curves
+  -- are concentric and the same radius.
+  panel.topArc = primitives.accentArc(root, spacing, radius, radius,
+    primitives.ACCENT_TOP, presentation.accent)
+  panel.bottomArc = primitives.accentArc(root, spacing, radius,
+    rect.h - radius, primitives.ACCENT_BOTTOM, presentation.accent)
 
   primitives.stylePanel(panel, presentation)
   return panel
+end
+
+--- Create one corner band of the panel accent.
+---
+--- The band's outer edge lands exactly on the panel's own corner arc. LVGL
+--- draws an arc between `radius` and `radius - width` measured from the centre
+--- (`lv_draw_arc.c`: `rout = radius`, `rin = radius - w`), and the object's
+--- box is `2 * radius` square centred on the position EdgeTX was given
+--- (`LvglWidgetArc::build` calls `setRadius`, and `get_center` in `lv_arc.c`
+--- takes `min(w, h) / 2`). Passing the panel's corner centre and its corner
+--- radius therefore puts the outer edge on the same circle the panel's fill
+--- is rounded by, and the inner edge one accent width inside it.
+---
+--- Nothing is passed for the background arc. `bgOpacity` defaults to
+--- `LV_OPA_TRANSP`, so the unused half of the object is invisible without
+--- touching `opacity`, which is what stopped a compass ring rendering on a
+--- radio once.
+---@param parent any
+---@param spacing table
+---@param centreX integer
+---@param centreY integer
+---@param angles table One of ACCENT_TOP or ACCENT_BOTTOM.
+---@param color integer
+---@return table band
+function primitives.accentArc(parent, spacing, centreX, centreY, angles, color)
+  local arc = lvgl.arc(parent, {
+    x = centreX,
+    y = centreY,
+    radius = spacing.radius,
+    thickness = spacing.accentWidth,
+    color = color,
+    startAngle = angles.start,
+    endAngle = angles.finish,
+  })
+
+  return {arc = arc, centreX = centreX, centreY = centreY, angles = angles}
+end
+
+--- Move a corner band, restating its centre.
+---
+--- Constraint 11: every `set` on a round object walks it up and left by its
+--- own radius unless the centre is restated, so this goes through the one
+--- helper that does rather than becoming another hand-rolled copy of it. The
+--- radius never changes, so position alone is restated.
+---@param band table
+---@param centreX integer
+---@param centreY integer
+---@param changes table Reusable change table, so a reflow allocates nothing.
+function primitives.placeAccentArc(band, centreX, centreY, changes)
+  band.centreX = centreX
+  band.centreY = centreY
+  setRound(band.arc, centreX, centreY, changes)
 end
 
 --- Height of the accent stripe inside a panel.
@@ -191,11 +283,19 @@ end
 ---@param panel table
 ---@param rect AeroGridRect
 function primitives.resizePanel(panel, rect)
+  local spacing = panel.spacing
   panel.width = rect.w
   panel.height = rect.h
   panel.root:set({x = rect.x, y = rect.y, w = rect.w, h = rect.h})
   panel.background:set({w = rect.w, h = rect.h})
-  panel.accent:set({h = primitives.accentHeight(panel.spacing, rect.h)})
+  panel.accent:set({h = primitives.accentHeight(spacing, rect.h)})
+
+  -- The top corner never moves, so it is deliberately not touched: an arc that
+  -- is not set cannot drift. Only the bottom one follows the height, and its
+  -- radius is unchanged, so the update restates position alone.
+  primitives.placeAccentArc(panel.bottomArc, spacing.radius,
+    rect.h - spacing.radius, panel.arcChanges)
+
   if panel.borderVisible then
     panel.border:set({w = rect.w, h = rect.h})
   end
@@ -207,23 +307,45 @@ end
 ---@param panel table
 ---@param presentation table
 function primitives.stylePanel(panel, presentation)
-  panel.accent:set({color = presentation.accent})
+  -- A component calls this on every repaint, and a panel's state changes far
+  -- less often than its reading does, so nothing is touched unless it actually
+  -- moved. Three objects carry the accent now rather than one, which made
+  -- repainting it unconditionally the largest single cost in a steady frame.
+  local accent = presentation.accent
+  if accent ~= panel.accentColor then
+    panel.accentColor = accent
+    panel.accent:set({color = accent})
+    -- The corner bands are the same stripe, so a state that dims the accent
+    -- dims all three. They are arcs, so the centre is restated with the
+    -- colour, or constraint 11 walks them out of the panel.
+    local changes = panel.arcChanges
+    changes.color = accent
+    setRound(panel.topArc.arc, panel.topArc.centreX, panel.topArc.centreY,
+      changes)
+    setRound(panel.bottomArc.arc, panel.bottomArc.centreX,
+      panel.bottomArc.centreY, changes)
+  end
 
   if presentation.borderWidth <= 0 then
-    panel.borderVisible = false
-    lvgl.hide(panel.border)
+    if panel.borderVisible ~= false then
+      panel.borderVisible = false
+      lvgl.hide(panel.border)
+    end
     return
   end
 
-  -- Size and colour together, because this is where a border hidden through a
+  -- Size as well as colour, because this is where a border hidden through a
   -- reflow learns the panel changed shape while it was invisible.
-  panel.borderVisible = true
-  panel.border:set({
-    w = panel.width,
-    h = panel.height,
-    color = presentation.border,
-  })
-  lvgl.show(panel.border)
+  if not panel.borderVisible or panel.borderColor ~= presentation.border then
+    panel.borderVisible = true
+    panel.borderColor = presentation.border
+    panel.border:set({
+      w = panel.width,
+      h = panel.height,
+      color = presentation.border,
+    })
+    lvgl.show(panel.border)
+  end
 end
 
 --- Create a quiet uppercase label.
@@ -557,27 +679,6 @@ function primitives.radial(parent, theme, options)
     centreY = options.y,
     radius = options.radius,
   }
-end
-
---- Apply changes to an arc, always restating its centre.
----
---- An arc is positioned by its centre, but the firmware stores the corner as
---- `centre - radius`, and `LvglWidgetRoundObject::refresh` subtracts the radius
---- twice: once inside `setRadius`, and again through the inherited
---- `setPos(x, y)` that follows it, which is handed members already holding a
---- corner. Every `set` call therefore walks an arc up and to the left by its
---- own radius, whatever keys it carries, until it leaves the panel. Restating
---- the centre replaces the drifted members with absolute coordinates, so the
---- doubled subtraction lands where it should. `build` does not call `refresh`,
---- which is why a dial is only ever wrong after its first update.
----@param object any
----@param centreX integer
----@param centreY integer
----@param changes table
-local function setRound(object, centreX, centreY, changes)
-  changes.x = centreX
-  changes.y = centreY
-  object:set(changes)
 end
 
 --- Reposition a radial gauge, keeping centre coordinates in one place.
