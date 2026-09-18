@@ -370,8 +370,9 @@ The primary reference viewport is 480 x 272, matching the TX16S and several othe
 - Use a compact footer only for genuinely global data such as coordinates or an active flight timer. Do not reserve footer space by default.
 - Use 4 px outer margins and 4 px grid gutters at 480 x 272 as the initial baseline, subject to hardware verification.
 - Component panels use an 8 px corner radius. The originally specified 4 to 6 px reads as a square panel with the corners shaved at 480 x 272, and the reference design's corners are visibly softer. Nested cards are prohibited.
-- The semantic accent is a rounded pill on the panel's left edge, inset from top and bottom by the corner radius so it runs only alongside the straight part of the edge. A full-height stripe meets both corners exactly where each is curving, and its square shoulders sit outside the arc.
-- Content clears the accent stripe. The horizontal padding is never less than the stripe's width plus a gap, on short panels as well as tall ones.
+- The semantic accent runs the full height of the panel and follows the panel's own rounded corners. It is not a stripe drawn on the panel: the base rectangle is filled in the accent colour at the panel's size and radius, and the surface is drawn over it inset from the left by the accent width, with the same radius. What stays visible is a band of exactly that width whose ends are the panel's corner arc, because they are the same arc.
+- A stripe cannot do this, which is why the accent is built from two rectangles rather than one. A 4 px wide rectangle cannot render an 8 px corner, so a full-height stripe ends in shoulders outside the panel's own arc. Insetting the stripe from top and bottom avoids that by keeping it away from the corners, at the cost of an accent that stops short of them.
+- Content clears the accent. The horizontal padding is never less than the accent width plus a gap, on short panels as well as tall ones.
 - A component spanning several cells remains one coherent panel; it must not visually imitate multiple unrelated cards unless its data model genuinely contains repeated items.
 
 ### Typography and values
@@ -886,7 +887,7 @@ Milestones 1 to 7 are merged into `main`.
 | Item | Where | Note |
 | --- | --- | --- |
 | Physical readability review at 480 x 272 | Milestone 4 | Needs hardware; the only thing keeping milestone 4 from being fully closed |
-| The panel presentation has not been seen on a radio | Milestone 4 | Elevation, 8 px corners, the pill accent and the removal of the resting outline are all measured, but they were asked for from a screen and have to be judged on one |
+| The panel presentation has not been seen on a radio | Milestone 4 | Elevation, 8 px corners, the full-height accent and the removal of the resting outline are all measured, but they were asked for from a screen and have to be judged on one |
 | Milestones 5 and 6 have not been run on hardware | Milestones 5 and 6 | The diagnostics layouts exist precisely to make that check quick, and the shipped dashboard now exercises all seven core components at once |
 | Staleness is link-wide, not per sensor | Milestone 5 | EdgeTX exposes no per-sensor age except for GPS, so a sensor that stops arriving, or was never received, while the link holds still reads as live. See below |
 | Extrema reset policy covers switch and manual only | Milestone 5 | Timer-based reset is specified but not implemented |

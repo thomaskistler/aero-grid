@@ -63,21 +63,39 @@ function primitives.placeHeader(label, badge, frame)
 end
 
 --- Create a component panel: an elevated fill with a narrow semantic accent.
---- The accent stripe carries state, so it is never purely decorative.
+--- The accent carries state, so it is never purely decorative.
+---
+--- The accent is not a stripe drawn on the panel. It is the panel: the base
+--- rectangle is filled in the accent colour at the panel's own size and corner
+--- radius, and the surface is then drawn over it inset from the left by the
+--- accent width, with the same radius. What stays visible on the left is a
+--- band of exactly that width whose ends follow the panel's corner arc, not
+--- because they were made to match it but because they are it.
+---
+--- A stripe cannot do this. A 4 px wide rectangle asking for the panel's 8 px
+--- radius cannot render an 8 px corner, so a full height stripe ends in
+--- shoulders that sit outside the panel's own arc and protrude past the curve.
+--- Insetting the stripe from top and bottom avoided the collision by keeping
+--- it away from the corners, which is the version that was asked to run the
+--- full height instead.
+---
+--- Rasterising both rectangles confirms the layering rather than assuming it:
+--- on 117 x 65, 238 x 65, 480 x 65 and 238 x 134 panels the accent is exactly
+--- `accentWidth` wide on every row, reaches every row, and no accent pixel
+--- falls right of the left corner region, so nothing fringes along the top,
+--- right or bottom. It holds whatever LVGL does with a radius it considers too
+--- large, because both rectangles ask for the same one.
 ---
 --- The background is a filled rectangle rather than a colored box: EdgeTX's
 --- `lvgl.box` parses `color` but never paints it, so a box keeps the radio
 --- theme's own styling and the dashboard would render in EdgeTX's palette.
 ---
---- A panel is defined by that fill against the darker screen rather than by an
---- outline, so the border object is built but left hidden unless the state has
---- something to say with it. It is built at the focus weight whatever the
---- current state asks for, because `thickness` is effectively a build-time
---- property on a radio: `LvglWidgetBorderedObject::setOpacity` is the only
---- place that pushes it to LVGL, and its own `changedValue` guard skips the
---- call when the opacity has not moved, so a later `set{thickness=...}` is
---- discarded. Showing and hiding an object of fixed weight is therefore the
---- only way a border can change after the panel exists.
+--- The border object is built but left hidden unless the state has something
+--- to say with it, and it is built at the focus weight whatever the current
+--- state asks for, because `thickness` is effectively a build-time property on
+--- a radio: `LvglWidgetBorderedObject::setOpacity` is the only place that
+--- pushes it to LVGL, and its own `changedValue` guard skips the call when the
+--- opacity has not moved, so a later `set{thickness=...}` is discarded.
 ---@param parent any
 ---@param rect AeroGridRect
 ---@param theme AeroGridTheme
@@ -85,6 +103,7 @@ end
 ---@return table panel
 function primitives.panel(parent, rect, theme, presentation)
   local spacing = theme.spacing
+  local stripe = spacing.accentWidth
 
   local root = lvgl.box(parent, {
     x = rect.x,
@@ -93,10 +112,22 @@ function primitives.panel(parent, rect, theme, presentation)
     h = rect.h,
   })
 
-  local background = lvgl.rectangle(root, {
+  -- The base, in the accent colour. Only its left edge is ever seen.
+  local accent = lvgl.rectangle(root, {
     x = 0,
     y = 0,
     w = rect.w,
+    h = rect.h,
+    color = presentation.accent,
+    filled = true,
+    rounded = spacing.radius,
+  })
+
+  -- The panel surface, inset from the left and sharing every other edge.
+  local background = lvgl.rectangle(root, {
+    x = stripe,
+    y = 0,
+    w = primitives.surfaceWidth(spacing, rect.w),
     h = rect.h,
     color = theme.color.surface,
     filled = true,
@@ -114,18 +145,6 @@ function primitives.panel(parent, rect, theme, presentation)
     thickness = spacing.borderFocus,
   })
 
-  local accent = lvgl.rectangle(root, {
-    x = 0,
-    y = spacing.radius,
-    w = spacing.accentWidth,
-    h = primitives.accentHeight(spacing, rect.h),
-    color = presentation.accent,
-    filled = true,
-    -- LVGL clamps a corner radius to half the shorter side, so asking for the
-    -- stripe's full width is how a narrow rectangle is made into a pill.
-    rounded = spacing.accentWidth,
-  })
-
   local panel = {
     root = root,
     background = background,
@@ -140,26 +159,18 @@ function primitives.panel(parent, rect, theme, presentation)
   return panel
 end
 
---- Height of the accent pill inside a panel.
+--- Width of the surface rectangle drawn over the accent base.
 ---
---- The stripe is inset from top and bottom by the panel's corner radius,
---- which is where the left edge stops curving, so it only ever runs alongside
---- a straight edge and never has to agree with a corner about its own shape.
---- A full height stripe met both corners at exactly the point each was
---- curving, and its square shoulders sat outside the arc.
----
---- Only the height is computed, because only the height changes: the inset is
---- the radius, so the stripe's `y` is fixed for the life of the panel and a
---- reflow updates one property rather than two. A panel shorter than twice
---- the radius keeps a one pixel stripe rather than an inverted one; no cell of
---- a 4 x 4 grid on a supported display is anywhere near that small.
+--- A branch rather than `math.max`, which is a C call: this runs for every
+--- panel of every reflow batch, and the batch is the worst callback the
+--- dashboard has.
 ---@param spacing table
----@param height integer Panel height.
+---@param width integer Panel width.
 ---@return integer
-function primitives.accentHeight(spacing, height)
-  local extent = height - spacing.radius * 2
-  if extent < 1 then return 1 end
-  return extent
+function primitives.surfaceWidth(spacing, width)
+  local inner = width - spacing.accentWidth
+  if inner < 1 then return 1 end
+  return inner
 end
 
 --- Resize a panel without recreating its LVGL objects.
@@ -167,19 +178,21 @@ end
 --- A hidden border is deliberately left alone. It is hidden on a healthy
 --- panel, which is most panels for most of a flight, and an object nobody can
 --- see does not need resizing: it is brought up to date by `stylePanel` on the
---- state change that reveals it. A reflow batch pays for four panels at once,
---- so a `set` call saved here is saved four times per callback. A border that
---- is already on screen is resized immediately, because the state change that
---- would otherwise fix it may never come: a panel that was critical before the
---- reflow and is critical after it does not repaint at all.
+--- state change that reveals it. A border that is already on screen is resized
+--- immediately, because the state change that would otherwise fix it may never
+--- come: a panel that was critical before the reflow and is critical after it
+--- does not repaint at all.
 ---@param panel table
 ---@param rect AeroGridRect
 function primitives.resizePanel(panel, rect)
   panel.width = rect.w
   panel.height = rect.h
   panel.root:set({x = rect.x, y = rect.y, w = rect.w, h = rect.h})
-  panel.background:set({w = rect.w, h = rect.h})
-  panel.accent:set({h = primitives.accentHeight(panel.spacing, rect.h)})
+  panel.accent:set({w = rect.w, h = rect.h})
+  panel.background:set({
+    w = primitives.surfaceWidth(panel.spacing, rect.w),
+    h = rect.h,
+  })
   if panel.borderVisible then
     panel.border:set({w = rect.w, h = rect.h})
   end

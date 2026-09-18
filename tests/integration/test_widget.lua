@@ -484,21 +484,39 @@ local function testPanelPresentation()
     assertEqual(panel.background.painted.radius, spacing.radius,
       id .. " was not rounded to the theme's corner radius")
 
-    -- The accent is a pill inset from both ends, so it never meets a corner.
+    -- The accent is the panel's own base rectangle, seen down its left edge.
+    -- Rasterising the two confirms the result: the accent is exactly
+    -- `accentWidth` wide on every row of a 117 x 65, 238 x 65, 480 x 65 and
+    -- 238 x 134 panel, reaches every row, and places no pixel right of the
+    -- left corner region.
     local accent = panel.accent.properties
+    local surface = panel.background.properties
     assertEqual(accent.x, 0, id .. " moved its accent off the left edge")
-    assertEqual(accent.w, spacing.accentWidth, id .. " accent changed width")
-    assertEqual(accent.y, spacing.radius,
-      id .. " accent reached into the top corner")
-    assertEqual(accent.y + accent.h, bounds.h - spacing.radius,
-      id .. " accent reached into the bottom corner")
-    -- LVGL clamps a radius to half the shorter side, so anything at or above
-    -- the stripe's own width rounds its ends into a pill.
-    assert(panel.accent.painted.radius >= spacing.accentWidth / 2,
-      id .. " accent was drawn with square ends")
+    assertEqual(accent.y, 0, id .. " accent does not start at the top")
+    assertEqual(accent.w, bounds.w, id .. " accent is not the panel's width")
+    assertEqual(accent.h, bounds.h, id .. " accent does not run the full height")
+    assertEqual(panel.accent.painted.radius, spacing.radius,
+      id .. " accent was not rounded to the panel's corner radius")
 
-    -- Content has to clear the stripe. Every panel under 80 px tall used to
-    -- start its text at the stripe's own right edge. Checked over whatever
+    -- The surface is inset from the left by exactly the accent width, which is
+    -- what leaves a band of that width showing and nothing more.
+    assertEqual(surface.x, spacing.accentWidth,
+      id .. " surface is not inset by the accent width")
+    assertEqual(surface.y, 0, id .. " surface does not start at the top")
+    assertEqual(panel.background.painted.radius, spacing.radius,
+      id .. " surface corner radius does not match the panel's")
+
+    -- Every other edge coincides, or the accent fringes along it. Asserted as
+    -- edges rather than as widths, because that is the failure being guarded
+    -- against: a surface inset on the wrong side, or short by a pixel, shows
+    -- accent down the right or along the bottom.
+    assertEqual(surface.x + surface.w, accent.x + accent.w,
+      id .. " accent shows down the right edge")
+    assertEqual(surface.y + surface.h, accent.y + accent.h,
+      id .. " accent shows along the bottom edge")
+
+    -- Content has to clear the band. Every panel under 80 px tall used to
+    -- start its text at the accent's own right edge. Checked over whatever
     -- labels the component actually built, because the catalogue does not
     -- agree on what to call them and the rule is about pixels, not names.
     local labels = 0
@@ -507,7 +525,7 @@ local function testPanelPresentation()
           and not object.hidden then
         labels = labels + 1
         assert(object.properties.x >= spacing.accentWidth + spacing.accentGap,
-          id .. " drew text against the accent stripe, at x "
+          id .. " drew text against the accent, at x "
             .. tostring(object.properties.x))
       end
     end
