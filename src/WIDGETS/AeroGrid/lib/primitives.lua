@@ -103,7 +103,6 @@ end
 ---@return table panel
 function primitives.panel(parent, rect, theme, presentation)
   local spacing = theme.spacing
-  local stripe = spacing.accentWidth
 
   local root = lvgl.box(parent, {
     x = rect.x,
@@ -112,22 +111,10 @@ function primitives.panel(parent, rect, theme, presentation)
     h = rect.h,
   })
 
-  -- The base, in the accent colour. Only its left edge is ever seen.
-  local accent = lvgl.rectangle(root, {
+  local background = lvgl.rectangle(root, {
     x = 0,
     y = 0,
     w = rect.w,
-    h = rect.h,
-    color = presentation.accent,
-    filled = true,
-    rounded = spacing.radius,
-  })
-
-  -- The panel surface, inset from the left and sharing every other edge.
-  local background = lvgl.rectangle(root, {
-    x = stripe,
-    y = 0,
-    w = primitives.surfaceWidth(spacing, rect.w),
     h = rect.h,
     color = theme.color.surface,
     filled = true,
@@ -145,6 +132,17 @@ function primitives.panel(parent, rect, theme, presentation)
     thickness = spacing.borderFocus,
   })
 
+  -- A plain rectangle: no `rounded` key, so the ends are square and the band
+  -- is the same width at every row of its length.
+  local accent = lvgl.rectangle(root, {
+    x = 0,
+    y = spacing.radius,
+    w = spacing.accentWidth,
+    h = primitives.accentHeight(spacing, rect.h),
+    color = presentation.accent,
+    filled = true,
+  })
+
   local panel = {
     root = root,
     background = background,
@@ -159,18 +157,26 @@ function primitives.panel(parent, rect, theme, presentation)
   return panel
 end
 
---- Width of the surface rectangle drawn over the accent base.
+--- Height of the accent stripe inside a panel.
 ---
---- A branch rather than `math.max`, which is a C call: this runs for every
---- panel of every reflow batch, and the batch is the worst callback the
---- dashboard has.
+--- The inset is the panel's corner radius, and it is forced rather than
+--- chosen. A stripe with square ends occupies `x` from 0 to `accentWidth`, and
+--- it can only sit inside the panel where the panel's own left boundary has
+--- reached `x = 0`. For a corner radius `R` that is true only for `y >= R`:
+--- above it the fill has curved away to the right, so a stripe pixel there
+--- would be drawn outside the card, in the gutter. Rasterising confirms it at
+--- every panel size, with the first fully enclosed row at exactly `R`.
+---
+--- Anything that makes the stripe longer therefore has to make the corner less
+--- round. There is no separate inset to tune, and inventing one lets the
+--- stripe escape the panel.
 ---@param spacing table
----@param width integer Panel width.
+---@param height integer Panel height.
 ---@return integer
-function primitives.surfaceWidth(spacing, width)
-  local inner = width - spacing.accentWidth
-  if inner < 1 then return 1 end
-  return inner
+function primitives.accentHeight(spacing, height)
+  local extent = height - spacing.radius * 2
+  if extent < 1 then return 1 end
+  return extent
 end
 
 --- Resize a panel without recreating its LVGL objects.
@@ -188,11 +194,8 @@ function primitives.resizePanel(panel, rect)
   panel.width = rect.w
   panel.height = rect.h
   panel.root:set({x = rect.x, y = rect.y, w = rect.w, h = rect.h})
-  panel.accent:set({w = rect.w, h = rect.h})
-  panel.background:set({
-    w = primitives.surfaceWidth(panel.spacing, rect.w),
-    h = rect.h,
-  })
+  panel.background:set({w = rect.w, h = rect.h})
+  panel.accent:set({h = primitives.accentHeight(panel.spacing, rect.h)})
   if panel.borderVisible then
     panel.border:set({w = rect.w, h = rect.h})
   end
