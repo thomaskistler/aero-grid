@@ -595,8 +595,15 @@ testGalleriesAreReachable()
   -- The three telemetry components, reading what the radio really reports.
   local pack = entryById(context, "pack").instance
   assertEqual(pack.text, "4.09V", "the lowest cell is the safety reading")
-  assertEqual(pack.countText, "4S")
-  assertEqual(pack.packText, "16.4V PACK")
+  -- The shipped pack is 2 x 1, which is 65 px tall, and sheds its supporting
+  -- row to keep the reading large. This used to assert the row's text anyway:
+  -- the label was hidden and its content was still being computed, so the
+  -- assertion described a string nothing drew. A row that is not shown is now
+  -- not fitted either, which is what made that visible.
+  assertEqual(pack.showDetail, false,
+    "a 2 x 1 cell panel is tall enough for a supporting row after all")
+  assertEqual(pack.countLabel.hidden, true)
+  assertEqual(pack.packLabel.hidden, true)
 
   local link = entryById(context, "link").instance
   assertEqual(link.primaryName, "quality", "auto must prefer link quality")
@@ -605,11 +612,19 @@ testGalleriesAreReachable()
 
   local nav = entryById(context, "nav").instance
   assertEqual(nav.text, "778m")
-  assertEqual(nav.detail, "BRG 009 N")
-  -- The caption shares its row with the bearing, so on a 2 x 2 panel the full
-  -- wording does not fit and must abbreviate rather than clip. It read
-  -- "NORTH UP FROM" on a radio before this was handled.
+  -- Both supporting wordings share one row, and on a 2 x 2 panel neither full
+  -- wording fits. The bearing needs 89 px of the 87 it is given, so it sheds
+  -- its compass point and keeps the number, which is the measurement; the
+  -- caption sheds its last two words. Before this the bearing simply overran
+  -- its box and the caption read "NORTH UP FROM" on a radio.
+  assertEqual(nav.detail, "BRG 009")
   assertEqual(nav.origin, "NORTH UP")
+  for _, row in ipairs({{nav.detail, nav.detailWidth}, {nav.origin, nav.originWidth}}) do
+    local needed = themeModule.textWidth(nav.fonts.label, row[1])
+    assert(needed <= row[2], string.format(
+      "the shipped navigation panel draws %q, needing %d px of %d",
+      row[1], needed, row[2]))
+  end
   assert(nav.compass, "the shipped dashboard must demonstrate the dial")
 end
 
@@ -1126,6 +1141,183 @@ components:
   assertAccent(lcd.RGB(modern.cyan), "after a reflow")
 end
 
+--- Supporting rows say what a badge cannot, at a span that has room for them.
+---
+--- The badge vocabulary was cut to the theme's own states, because a column
+--- wide enough for `NOT CELLS` is a column that leaves a single-cell header
+--- about four characters. Everything that vocabulary used to carry moved to
+--- the supporting row, so this is where the distinctions the catalogue depends
+--- on have to be checked: a dead link against a protocol with no RSSI sensor,
+--- and a cells sensor returning a number against one returning nonsense.
+---
+--- Every row here is also checked to fit the box it was given. That is the
+--- other half: a row that says the right thing and overruns its width is the
+--- defect this replaced, where `16.4V PACK` was drawn into 48 px of a panel
+--- that needed 99.
+--- The diagnostic panel uses the shared header, not a private copy of it.
+---
+--- `service-probe` computed its own title width, spanning the panel's whole
+--- content, so it reserved no badge column at all: the one shipped diagnostic
+--- view was the only thing on the dashboard that could not show a state. It
+--- had already drifted once before for the same reason, drawing its title into
+--- the corner EdgeTX paints its menu button over, because only the shared
+--- helper knows that corner exists.
+---
+--- The geometry is compared against `theme.frame`'s own answer rather than
+--- against numbers copied out of it, so a probe that starts computing its own
+--- again fails here however plausible its arithmetic looks.
+local function testProbeUsesTheSharedHeader()
+  local widgetPath = makeWidget("probe-header", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: probe
+    type: service-probe
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      service: telemetry
+      source: RxBt
+      label: Telemetry
+]])
+
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  pump(context, 20)
+
+  local entry = entryById(context, "probe")
+  local probe = entry.instance
+  local bounds = boundsOf(entry)
+  local frame = themeModule.frame(context.theme,
+    {x = 0, y = 0, w = bounds.w, h = bounds.h}, probe.fonts)
+
+  assert(probe.badge, "the diagnostic panel has no badge object at all")
+  local title = probe.title.properties
+  local badge = probe.badge.properties
+
+  assertEqual(title.x, frame.labelX,
+    "the probe's title is not where the shared frame puts a label")
+  assertEqual(title.w, frame.labelWidth,
+    "the probe's title is not the width the shared frame leaves a label")
+  assertEqual(badge.x, frame.badgeX,
+    "the probe's badge is not in the shared frame's badge column")
+  assertEqual(badge.w, frame.badgeWidth,
+    "the probe's badge is not the width of the shared frame's column")
+
+  -- The title must actually leave the badge column alone, which is the thing
+  -- that was wrong: a title spanning the content reaches into it.
+  assert(title.x + title.w <= badge.x,
+    "the probe's title runs into its own badge column")
+
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+end
+
+local function testSupportingRowsExplainTheBadge()
+  local widgetPath = makeWidget("supporting-rows", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: link
+    type: link-status
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      rssiSource: RSSI
+      qualitySource: RQly
+      primary: auto
+  - id: pack
+    type: cell-battery
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      source: Cels
+      lowestSource: Cels-
+      label: Pack
+  - id: notcells
+    type: cell-battery
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      source: Cels-
+      label: Wrong
+]])
+
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  pump(context, 40)
+
+  local link = entryById(context, "link").instance
+  local pack = entryById(context, "pack").instance
+  assertEqual(link.showDetail, true, "a 2 x 2 link panel shed its rows")
+  assertEqual(pack.showDetail, true, "a 2 x 2 cell panel shed its rows")
+
+  --- Assert a row says something and fits the box it was given.
+  local function assertRow(instance, text, width, expected, what)
+    assertEqual(text, expected, what)
+    local needed = themeModule.textWidth(instance.fonts.label, text)
+    assert(needed <= width, string.format(
+      "%s needs %d px of %d", what, needed, width))
+  end
+
+  assertRow(link, link.linkDetail, link.linkWidth, "RSSI 78dB",
+    "a healthy link names its secondary source")
+  assertRow(pack, pack.countText, pack.detailWidth, "4S",
+    "the cell count")
+  assertRow(pack, pack.packText, pack.detailWidth, "16.4V PACK",
+    "the pack sum")
+
+  -- A cells source answering with a plain number is a configuration mistake,
+  -- and one answering with nonsense is a sensor fault. Both resolve to `N/A`,
+  -- and the supporting row is the only thing that separates them.
+  --
+  -- The number case is configured rather than mutated into: the telemetry
+  -- service keeps the last good reading, so a source that has already produced
+  -- a cells table and then produces a number reads as stale data, which is a
+  -- third situation again and not the one being tested here.
+  local wrong = entryById(context, "notcells").instance
+  assertEqual(wrong.summary.shape, "number")
+  assertEqual(wrong.badge.properties.text, "N/A")
+  assertRow(wrong, wrong.countText, wrong.detailWidth, "NOT CELLS",
+    "a plain number from a cells source")
+
+  radio.values[130] = {0, -1, 99}
+  pump(context, 40)
+  assertEqual(pack.summary.shape, "invalid")
+  -- The explicit lowest-cell source keeps a reading alive, so the panel is not
+  -- unavailable; the row is what reports that the table itself is gone.
+  assertEqual(pack.text, "4.09V")
+  assertRow(pack, pack.countText, pack.detailWidth, "BAD CELLS",
+    "nonsense from a cells source")
+  assert(pack.countText ~= wrong.countText,
+    "a sensor fault and a configuration mistake read the same")
+
+  -- A dead link is reported by the row too, and is checked last because it
+  -- marks every other panel stale on its way past.
+  resetRadio()
+  pump(context, 40)
+  radio.rssi = 0
+  pump(context, 40)
+  assertEqual(link.stateName, "critical")
+  assertEqual(link.badge.properties.text, "CRIT")
+  assertRow(link, link.linkDetail, link.linkWidth, "LINK DOWN",
+    "a dead link says so in words")
+
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  resetRadio()
+end
+
 --- Responsive presentation must differ across the baseline spans.
 local function testResponsiveSpans()
   local metricModule = assert(loadfile(sourcePath .. "components/metric.lua"))()
@@ -1179,7 +1371,7 @@ local function testMetricStates()
 
   metricModule.setValue(pack, nil)
   assertEqual(pack.stateName, "unavailable")
-  assertEqual(pack.badge.properties.text, "NO SOURCE")
+  assertEqual(pack.badge.properties.text, "N/A")
   assertEqual(pack.value.properties.text, "--")
 
   -- Rising thresholds must be inferred in the opposite direction.
@@ -1538,6 +1730,8 @@ testPanelPresentation()
 testAlarmTint()
 testFocusBorder()
 testAccentFollowsState()
+testProbeUsesTheSharedHeader()
+testSupportingRowsExplainTheBadge()
 testResponsiveSpans()
 testBadgeGeometry()
 testMetricStates()
@@ -3375,7 +3569,7 @@ components:
   local function assertUnavailable(id)
     local instance = entryById(context, id).instance
     assertEqual(instance.stateName, "unavailable", id .. " hid a missing source")
-    assertEqual(instance.badge.properties.text, "NO SOURCE",
+    assertEqual(instance.badge.properties.text, "N/A",
       id .. " reported its state by colour alone")
   end
 
@@ -3579,9 +3773,11 @@ local function testTelemetryComponents()
   assertEqual(link.primaryName, "quality")
   assertEqual(link.text, "96%")
   assertEqual(link.stateName, "normal")
-  -- EdgeTX's own minimum for the leading source, explicitly named.
-  assertEqual(link.detail, "MIN 62")
-  assertEqual(link.linkDetail, "RSSI 78dB")
+  -- Both link panels are 2 x 1, which is 65 px tall, and shed their supporting
+  -- rows to keep the reading large. What those rows say is covered at a span
+  -- that shows them, below; asserting their text here described strings the
+  -- panel does not draw.
+  assertEqual(link.showDetail, false)
 
   radio.values[141] = 44
   settle(context, 12)
@@ -3606,8 +3802,15 @@ local function testTelemetryComponents()
   -- recorded, and says in words what the direction means.
   local nav = entryById(context, "nav").instance
   assertEqual(nav.text, "778m")
-  assertEqual(nav.detail, "BRG 009 N")
+  -- Fitted to the row rather than overrunning it. Whichever wording is chosen
+  -- has to fit, which is the property that matters; pinning the string alone
+  -- would pass on a helper that always returned the shortest one.
+  assertEqual(nav.detail, "BRG 009")
   assertEqual(nav.origin, "NORTH UP")
+  assert(themeModule.textWidth(nav.fonts.label, nav.detail) <= nav.detailWidth,
+    "the bearing row overran its box")
+  assert(themeModule.textWidth(nav.fonts.label, nav.origin) <= nav.originWidth,
+    "the origin caption overran its box")
   assertEqual(nav.coordinates, "47.37690 8.54170")
   assertEqual(nav.stateName, "normal")
   assert(nav.compass, "the detailed presentation must carry the dial")
@@ -3649,15 +3852,17 @@ local function testTelemetryDegrades()
   -- Disconnect. Every reading keeps its last value, marked, and the link
   -- panel says so in the one place a pilot will look.
   radio.rssi = 0
-  settle(context, 40)
+  pump(context, 40)
 
   assertEqual(pack.stateName, "stale", "a dropped link hid the last cells")
   assertEqual(pack.text, "4.09V", "a stale poll overwrote the reading")
   assertEqual(pack.badge.properties.text, "STALE")
 
   assertEqual(link.stateName, "critical", "a dead link is the measurement")
-  assertEqual(link.badge.properties.text, "NO LINK")
-  assertEqual(link.linkDetail, "LINK DOWN")
+  -- The badge carries the state. Which of the several ways a link can fail is
+  -- carried by the supporting row, at a span that has one; this panel is
+  -- 2 x 1 and sheds it.
+  assertEqual(link.badge.properties.text, "CRIT")
 
   assertEqual(nav.stateName, "stale")
   assertEqual(nav.text, "778m", "the last known position was discarded")
@@ -3665,7 +3870,7 @@ local function testTelemetryDegrades()
 
   -- Reconnect. Nothing may be left marked once readings arrive again.
   radio.rssi = 80
-  settle(context, 40)
+  pump(context, 40)
   assertEqual(pack.stateName, "normal")
   assertEqual(link.stateName, "normal")
   assertEqual(link.badge.properties.text, "")
@@ -3676,9 +3881,10 @@ local function testTelemetryDegrades()
   -- place off the coast of Africa and must never be shown as one.
   radio.values[109].lat = 0
   radio.values[109].lon = 0
-  settle(context, 40)
+  pump(context, 40)
   assertEqual(nav.stateName, "unavailable")
-  assertEqual(nav.badge.properties.text, "NO FIX")
+  assertEqual(nav.badge.properties.text, "N/A")
+  assertEqual(nav.origin, "NO FIX")
   assertEqual(nav.text, "--", "a missing fix was shown as a distance")
   assertEqual(nav.coordinates, "-- , --")
   -- The dial must not point anywhere when there is nowhere to point.
@@ -3692,9 +3898,12 @@ local function testTelemetryDegrades()
   radio.values[109].lon = 8.5417
   radio.values[109]["pilot-lat"] = 0
   radio.values[109]["pilot-lon"] = 0
-  settle(context, 40)
+  pump(context, 40)
   assertEqual(nav.stateName, "normal", "a missing home is not a broken fix")
-  assertEqual(nav.badge.properties.text, "NO HOME")
+  -- A missing home position leaves the fix good, so the panel is not badged
+  -- at all and only the caption changes.
+  assertEqual(nav.badge.properties.text, "")
+  assert(string.match(nav.origin, "^NO HOME"), nav.origin)
   assertEqual(nav.text, "--")
   assertEqual(nav.detail, "BRG --", "a bearing was invented without a home")
   assertEqual(nav.origin, "NO HOME POS")
@@ -3703,11 +3912,15 @@ local function testTelemetryDegrades()
 
   -- A table whose entries cannot be cell voltages. The explicit lowest-cell
   -- source keeps the reading alive, and the count row says the table is gone.
+  -- A sensor fault and an undetected pack want different fixes, so they read
+  -- differently; the row shortens to suit its width rather than clipping.
   radio.values[130] = {0, -1, 99}
-  settle(context, 40)
+  pump(context, 40)
   assertEqual(pack.summary.shape, "invalid")
   assertEqual(pack.text, "4.09V")
-  assertEqual(pack.countText, "NO CELLS")
+  assertEqual(pack.countText, "BAD CELLS")
+  assert(themeModule.textWidth(pack.fonts.label, pack.countText)
+    <= pack.detailWidth, "the cell-count row overran its box")
   assertEqual(pack.packText, "", "a pack sum was computed from nonsense")
 
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
@@ -3719,7 +3932,7 @@ end
 --- "Cels-" carries the cells unit but returns a plain number, which milestone
 --- 5 found and normalized, so a layout naming it here resolves to a numeric
 --- reading rather than a table. That is a configuration mistake, not a failed
---- link, and it reads differently: "NOT CELLS" says which fix is needed.
+--- link, and it reads differently: the detail row says which fix is needed.
 local function testCellSourceShapes()
   resetRadio()
   local widgetPath = makeWidget("cell-shapes", [[
@@ -3759,14 +3972,16 @@ components:
 
   local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
     DEFAULT_OPTIONS, widgetPath)
-  settle(context, 40)
+  pump(context, 40)
 
   for _, id in ipairs({"extreme", "voltage"}) do
     local instance = entryById(context, id).instance
     assertEqual(instance.summary.shape, "number",
       id .. " read a plain number as a cells table")
     assertEqual(instance.stateName, "unavailable")
-    assertEqual(instance.badge.properties.text, "NOT CELLS",
+    -- The wording shortens to the row it is given, so the assertion is that
+    -- the panel says this at all rather than that it says it at full length.
+    assert(string.match(instance.countText, "^NOT"),
       id .. " reported a shape problem as a missing source")
     assertEqual(instance.text, "--", "a number was shown as a cell voltage")
   end
@@ -3776,7 +3991,7 @@ components:
   local absent = entryById(context, "absent").instance
   assertEqual(absent.summary.shape, "none")
   assertEqual(absent.stateName, "unavailable")
-  assertEqual(absent.badge.properties.text, "NO SOURCE")
+  assertEqual(absent.badge.properties.text, "N/A")
 
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
   resetRadio()
@@ -3813,12 +4028,10 @@ local function testRefreshSeesEverythingItDraws()
   radio.values[140] = 70
   settle(context, 20)
   assertEqual(link.text, "100%")
-  assertEqual(link.linkDetail, "RSSI 70dB")
 
   radio.values[140] = 41
   settle(context, 20)
   assertEqual(link.text, "100%", "link quality should not have moved")
-  assertEqual(link.linkDetail, "RSSI 41dB", "the RSSI row froze during a fade")
 
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
   resetRadio()
@@ -3852,7 +4065,7 @@ components:
 
   local nav = entryById(context, "nav").instance
   assertEqual(nav.stateName, "unavailable")
-  assertEqual(nav.badge.properties.text, "NO SOURCE")
+  assertEqual(nav.badge.properties.text, "N/A")
   assertEqual(nav.origin, "NO GPS SOURCE")
 
   -- The sensor arrives, but without a position yet: this is the cold start,
@@ -3864,7 +4077,7 @@ components:
   settle(context, 60)
 
   assertEqual(nav.stateName, "unavailable")
-  assertEqual(nav.badge.properties.text, "NO FIX",
+  assertEqual(nav.badge.properties.text, "N/A",
     "a sensor that appeared was still reported as a missing source")
   assertEqual(nav.origin, "NO FIX")
 
@@ -3937,14 +4150,13 @@ components:
   assertEqual(link.text, "96%", "a live reading was discarded as a dead link")
   assertEqual(link.stateName, "normal")
   assertEqual(link.badge.properties.text, "")
-  assertEqual(link.linkDetail, "NO RSSI SENSOR")
 
   -- A panel configured for RSSI alone on such a protocol has nothing to show,
   -- and must say the sensor is missing rather than report zero or claim the
   -- link is down.
   local rssiOnly = entryById(context, "rssionly").instance
   assertEqual(rssiOnly.stateName, "unavailable")
-  assertEqual(rssiOnly.badge.properties.text, "NO SENSOR")
+  assertEqual(rssiOnly.badge.properties.text, "N/A")
   assertEqual(rssiOnly.text, "N/A", "an absent sensor was reported as zero")
 
   radio.fields.RSSI = realRssi

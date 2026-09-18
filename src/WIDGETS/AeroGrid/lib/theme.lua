@@ -30,6 +30,9 @@
 
 local theme = {}
 
+--- Badge column width per font, since typography varies by span.
+local badgeWidths = {}
+
 --- Record something the host did on its own behalf, rather than a failure.
 ---
 --- A contrast correction is the legibility pass doing its job, not a problem,
@@ -101,6 +104,12 @@ local SPACING = {
   --- at the stripe's own right edge reads as crowded against it. The floor is
   --- `accentWidth + accentGap`, which a test pins at every span.
   paddingTight = 8,
+  --- Right-hand margin. Deliberately smaller than the left padding: the left
+  --- exists to clear the accent, and the right has nothing to clear. Making
+  --- them equal spent four pixels of every panel on symmetry, which on a
+  --- single cell is the difference between a four-character header label and
+  --- a three-character one.
+  paddingRight = 4,
   paddingCompact = 6,
   radius = 8,
   accentWidth = 4,
@@ -770,12 +779,103 @@ function theme.fitText(text, width, height)
   return SMLSIZE
 end
 
---- Width reserved for a panel's state badge on its header row.
-local BADGE_WIDTH = 56
+--- Choose the longest of several wordings that fits a width.
+---
+--- Supporting rows were the one place nothing was fitted. The dominant reading
+--- goes through `fitText` in every component; a supporting row went through
+--- nothing at all, so `16.4V PACK` was drawn into 48 pixels of a panel that
+--- needed 99, and `BRG 009 N` into 38 of 89. A row cannot shrink its font the
+--- way a reading can, because it is already the smallest the dashboard uses,
+--- so the only thing left to vary is the words.
+---
+--- `navigation` already did this for one of its two captions, with a private
+--- ladder of phrasings. This is that, shared, so a component says what it
+--- means at a length it has room for rather than clipping mid-word.
+---
+--- The last variant is returned when none fits: it is the shortest the caller
+--- offered, and a caller wanting a guaranteed fit ends its list with something
+--- very short.
+---@param variants string[] Wordings, longest first.
+---@param font any
+---@param width? integer Pixels available; nil returns the longest wording.
+---@return string
+function theme.fitLabel(variants, font, width)
+  if type(width) ~= "number" then return variants[1] end
 
---- Narrowest header label worth drawing, about two characters at SMLSIZE.
+  for index = 1, #variants do
+    if theme.textWidth(font, variants[index]) <= width then
+      return variants[index]
+    end
+  end
+
+  return variants[#variants]
+end
+
+--- Every badge the dashboard may print, and the whole of that vocabulary.
+---
+--- A closed set, and a short one, because the badge column is reserved on
+--- every panel whether or not a badge is showing. Its width is whatever the
+--- longest word needs, so a long word is not paid for by the state that uses
+--- it; it is paid for by every header on the dashboard.
+---
+--- The set had grown to thirteen strings, nine of which did not fit the 56 px
+--- the column reserved. `NO SOURCE` is the theme's own default for an
+--- unavailable panel, needed 89 px, and was therefore clipped on every panel
+--- at every span. Widening the column to 89 px would have fixed that by
+--- taking the width out of the header label instead, which on a single cell
+--- had about four characters to give.
+---
+--- So the vocabulary was cut rather than the column widened, to one rule:
+--- **a badge names the state, and the panel's supporting row says why.** A
+--- badge is read at a glance from arm's length and has room for one word. A
+--- detail row has room for a sentence, is fitted to its width, and is where
+--- the difference between a cells sensor that returned a number and one that
+--- returned nonsense actually belongs.
+---
+--- Components therefore no longer override it. `NOT CELLS` against
+--- `BAD CELLS` spent nine characters separating two failure modes of one
+--- component, and `NO SENSOR` against `NO SOURCE` were near-identical strings
+--- for two situations with the same fix. Every one of those distinctions was
+--- already being drawn in the same component's detail row.
+theme.BADGES = {
+  stale = "STALE",
+  warning = "WARN",
+  critical = "CRIT",
+  editing = "EDIT",
+  -- Nothing usable from the source: unconfigured, unrecognized, or answering
+  -- with a shape this component cannot read. All three want the same fix and
+  -- the detail row says which it is.
+  unavailable = "N/A",
+}
+
+--- Widest string the badge vocabulary can produce, in pixels.
+---
+--- Resolved once and cached. Not computed at load, because the font constants
+--- are EdgeTX globals and a module that read them while being loaded would
+--- depend on the order the host happens to load its modules in; and not per
+--- call, because `theme.frame` runs for every component of every reflow and
+--- this never changes.
+---@param font any Badge font, from theme.typography.
+---@return integer
+function theme.badgeWidth(font)
+  local cached = badgeWidths[font]
+  if cached then return cached end
+
+  local widest = 0
+  for _, text in pairs(theme.BADGES) do
+    local width = theme.textWidth(font, text)
+    if width > widest then widest = width end
+  end
+
+  badgeWidths[font] = widest
+  return widest
+end
+
+--- Narrowest header label worth drawing, about three characters at SMLSIZE.
 --- A label squeezed below this says nothing and only clips, so it is dropped.
-local MIN_LABEL_WIDTH = 24
+--- Three rather than two because the catalogue's own short labels are three
+--- and four characters: ALT, NAV, TRIM, LINK, MODE, PACK.
+local MIN_LABEL_WIDTH = 30
 
 --- Resolve the padded content geometry every component panel shares.
 ---
@@ -798,21 +898,27 @@ local MIN_LABEL_WIDTH = 24
 ---@return table frame
 function theme.frame(resolved, rect, fonts, reserved)
   local spacing = resolved.spacing
-  -- Short panels cannot afford the standard vertical rhythm, but the
-  -- horizontal padding has a floor their height has no say in: the accent
-  -- stripe occupies the left edge, and content that started at the stripe's
-  -- own right edge read as crowded against it on every panel under 80 px
-  -- tall, which is most of a four-row dashboard.
+  -- Short panels cannot afford the standard vertical rhythm, but the left
+  -- padding has a floor their height has no say in: the accent occupies that
+  -- edge, and content starting at the accent's own right edge read as crowded
+  -- against it on every panel under 80 px tall.
   local tight = rect.h < 80
   local pad = tight and spacing.paddingTight or spacing.padding
   local compact = tight and 2 or spacing.paddingCompact
+  local padRight = spacing.paddingRight
 
-  local content = math.max(1, rect.w - pad * 2)
-  -- The badge may never take so much of a narrow panel that the label beside
-  -- it is squeezed to nothing: both have to be readable at once, which is the
-  -- whole reason the badge is not drawn over the label.
-  local badgeWidth = math.min(BADGE_WIDTH, math.max(1, math.floor(content / 2)))
-  local badgeX = math.max(pad, rect.w - pad - badgeWidth)
+  local content = math.max(1, rect.w - pad - padRight)
+
+  -- The badge takes exactly what its vocabulary needs, and is clamped to the
+  -- content rather than to half of it. The old half-content clamp protected
+  -- the label by clipping the badge, which is the wrong way round: a
+  -- half-drawn state word is worse than an absent one, because CRIT and CRI
+  -- are not equally alarming, while a shortened source name is merely less
+  -- informative. The label now yields to the badge and is dropped outright
+  -- when what is left would only clip.
+  local badgeWidth = theme.badgeWidth(fonts.badge)
+  if badgeWidth > content then badgeWidth = content end
+  local badgeX = math.max(pad, rect.w - padRight - badgeWidth)
   local labelHeight = theme.fontHeight(fonts.label)
   local labelX = pad
   local top = compact + labelHeight + 2
@@ -826,12 +932,27 @@ function theme.frame(resolved, rect, fonts, reserved)
     if top < reserved.h then top = reserved.h end
   end
 
-  local labelWidth = math.max(1, badgeX - labelX - 4)
+  -- The badge column is reserved whether or not a badge is showing, and the
+  -- label's width does not depend on whether one is.
+  --
+  -- Handing the label the empty column and taking it back when a badge
+  -- appears would reflow the label at exactly the moment a panel changes
+  -- state, which is the text-jumping the specification forbids and is worse
+  -- than a permanently shorter label: a header that moves draws the eye to
+  -- itself rather than to the reading that just went critical. Every
+  -- component in the catalogue can reach a badged state, so a column that was
+  -- conditional would be conditional on nothing in practice anyway.
+  local labelWidth = badgeX - labelX - 4
+  local labelHidden = labelWidth < MIN_LABEL_WIDTH
+  -- A hidden label has no width rather than a token one, so a panel too narrow
+  -- to carry both still has coherent geometry.
+  if labelHidden then labelWidth = 0 end
 
   return {
     width = rect.w,
     height = rect.h,
     pad = pad,
+    padRight = padRight,
     compact = compact,
     content = content,
     labelHeight = labelHeight,
@@ -839,10 +960,11 @@ function theme.frame(resolved, rect, fonts, reserved)
     badgeX = badgeX,
     labelX = labelX,
     labelWidth = labelWidth,
-    -- A panel narrow enough that the obstruction leaves no room beside it
-    -- drops its label rather than clipping one glyph of it. The reading is
-    -- what a pilot needs; the label is the part that can be given up.
-    labelHidden = reserved ~= nil and labelWidth < MIN_LABEL_WIDTH,
+    -- Dropped rather than clipped, which is the judgement the obstructed
+    -- corner already made and which applies to a narrow panel for the same
+    -- reason: the reading and its state are what a pilot needs, and the source
+    -- name is the part that can be given up.
+    labelHidden = labelHidden,
     top = top,
     bottom = 4,
     reserved = reserved,
@@ -919,29 +1041,29 @@ function theme.state(resolved, state, accentName)
     presentation.accent = color.textFaint
     presentation.value = color.textMuted
     presentation.label = color.textFaint
-    presentation.badge = "STALE"
+    presentation.badge = theme.BADGES.stale
     presentation.dim = true
   elseif state == "warning" then
     -- The field carries the alarm, not the frame. `borderWidth` stays zero, so
     -- the panel draws no outline and the border keeps one meaning.
     presentation.accent = color.amber
     presentation.surface = resolved.alertColor.warning
-    presentation.badge = "WARN"
+    presentation.badge = theme.BADGES.warning
   elseif state == "critical" then
     presentation.accent = color.critical
     presentation.surface = resolved.alertColor.critical
     presentation.value = color.text
-    presentation.badge = "CRIT"
+    presentation.badge = theme.BADGES.critical
   elseif state == "unavailable" then
     presentation.accent = color.textFaint
     presentation.value = color.textFaint
     presentation.label = color.textFaint
-    presentation.badge = "NO SOURCE"
+    presentation.badge = theme.BADGES.unavailable
     presentation.dim = true
   elseif state == "editing" then
     presentation.border = color.cyan
     presentation.borderWidth = resolved.spacing.borderFocus
-    presentation.badge = "EDIT"
+    presentation.badge = theme.BADGES.editing
   end
 
   return presentation

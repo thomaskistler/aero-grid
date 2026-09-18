@@ -138,36 +138,40 @@ end
 --- critical with its own badge rather than being dimmed like an idle sensor.
 --- Link thresholds always count downward.
 ---@param settings AeroGridLinkSettings
+--- A dead link, a protocol with no RSSI sensor and a source that has never
+--- reported are three different situations, and the supporting row already
+--- names each of them in words. The badge carries only the state, because six
+--- characters cannot hold the difference between `NO SENSOR` and `NO LINK`
+--- when both are being read at a glance.
 ---@param reading table Result of linkStatus.read.
 ---@return string stateName
----@return string? badge Overriding badge text, when the state needs its own.
 function linkStatus.resolveState(settings, reading)
   -- Nothing configured that the radio recognizes at all.
   if reading.sourceState == "none" or reading.sourceState == "absent" then
-    return "unavailable", reading.sourceState == "absent" and "NO SENSOR" or nil
+    return "unavailable"
   end
 
   if reading.linkDown then
     -- Never seen a reading and no link either: the model has not been powered
     -- up yet, which is not a fault and must not shout about one.
-    if not reading.available then return "unavailable", "NO LINK" end
-    return "critical", "NO LINK"
+    if not reading.available then return "unavailable" end
+    return "critical"
   end
 
-  if reading.sourceState == "waiting" then return "unavailable", "NO DATA" end
-  if reading.sourceState == "stale" then return "stale", nil end
-  if type(reading.value) ~= "number" then return "unavailable", nil end
+  if reading.sourceState == "waiting" then return "unavailable" end
+  if reading.sourceState == "stale" then return "stale" end
+  if type(reading.value) ~= "number" then return "unavailable" end
 
   local critical = settings.critical
   local warning = settings.warning
   if type(critical) == "number" and reading.value <= critical then
-    return "critical", nil
+    return "critical"
   end
   if type(warning) == "number" and reading.value <= warning then
-    return "warning", nil
+    return "warning"
   end
 
-  return "normal", nil
+  return "normal"
 end
 
 --- Collect the current state of both sources and the link itself.
@@ -278,18 +282,28 @@ end
 ---@param reading table
 ---@return string
 function linkStatus.detailText(context, reading)
+  local variants
+
   if context.settings.extrema ~= "none" then
     local value = linkStatus.minimumValue(context)
-    if type(value) ~= "number" then return "MIN --" end
-    return "MIN " .. string.format("%." .. math.max(0, reading.precision) .. "f", value)
+    if type(value) ~= "number" then
+      variants = {"MIN --", "--"}
+    else
+      local text = string.format("%." .. math.max(0, reading.precision) .. "f", value)
+      variants = {"MIN " .. text, text}
+    end
+  elseif reading.primary == "quality" then
+    -- With no minimum configured, the row names the secondary source, which is
+    -- whichever of the two is not leading the panel.
+    local text = linkStatus.sourceText(context.rssiFeed, reading.rssiState)
+    variants = {"RSSI " .. text, text}
+  else
+    local text = linkStatus.sourceText(context.qualityFeed, reading.qualityState)
+    variants = {"LQ " .. text, text}
   end
 
-  -- With no minimum configured, the row names the secondary source, which is
-  -- whichever of the two is not leading the panel.
-  if reading.primary == "quality" then
-    return "RSSI " .. linkStatus.sourceText(context.rssiFeed, reading.rssiState)
-  end
-  return "LQ " .. linkStatus.sourceText(context.qualityFeed, reading.qualityState)
+  return context.themeBuilder.fitLabel(variants, context.fonts.label,
+    context.detailWidth)
 end
 
 --- Format the supporting detail row's right-hand text.
@@ -299,14 +313,21 @@ end
 ---@param reading table
 ---@return string
 function linkStatus.linkText(context, reading)
-  if reading.linkDown then return "LINK DOWN" end
-  if not reading.indicator then return "NO RSSI SENSOR" end
-  if reading.rssiState == "absent" then return "NO RSSI SENSOR" end
-
-  if reading.primary == "quality" then
-    return "RSSI " .. linkStatus.sourceText(context.rssiFeed, reading.rssiState)
+  local variants
+  if reading.linkDown then
+    variants = {"LINK DOWN", "NO LINK", "DOWN"}
+  elseif not reading.indicator or reading.rssiState == "absent" then
+    variants = {"NO RSSI SENSOR", "NO RSSI SENSE", "NO RSSI", "NO RSS"}
+  elseif reading.primary == "quality" then
+    local text = linkStatus.sourceText(context.rssiFeed, reading.rssiState)
+    variants = {"RSSI " .. text, text}
+  else
+    local text = linkStatus.sourceText(context.qualityFeed, reading.qualityState)
+    variants = {"LQ " .. text, text}
   end
-  return "LQ " .. linkStatus.sourceText(context.qualityFeed, reading.qualityState)
+
+  return context.themeBuilder.fitLabel(variants, context.fonts.label,
+    context.linkWidth)
 end
 
 --- Convert the primary reading into a 0..1 fraction of the configured range.
@@ -447,6 +468,9 @@ function linkStatus.create(parent, rect, settings, services)
 
   local area = linkStatus.regionsFor(
     theme, services.themeBuilder, rect, layout, fonts, context.sample)
+  context.detailWidth = area.detailWidth
+  context.linkWidth = area.linkWidth
+  context.showDetail = area.showDetail
 
   local panel = primitives.panel(parent, rect, theme, presentation)
   context.panel = panel
@@ -509,7 +533,7 @@ end
 function linkStatus.apply(context)
   local settings = context.settings
   local reading = linkStatus.read(context)
-  local stateName, badge = linkStatus.resolveState(settings, reading)
+  local stateName = linkStatus.resolveState(settings, reading)
   local presentation = context.state(stateName, settings.accent)
 
   context.stateName = stateName
@@ -532,12 +556,13 @@ function linkStatus.apply(context)
 
   context.value:set({text = text, color = presentation.value})
   context.label:set({color = presentation.label})
-  context.badge:set({
-    text = badge or presentation.badge or "",
-    color = presentation.accent,
-  })
+  context.badge:set({text = presentation.badge or "", color = presentation.accent})
   context.primitives.stylePanel(context.panel, presentation)
 
+  -- A row the span sheds is not worth fitting words to. At a single cell both
+  -- supporting rows are hidden, and choosing a wording for a label nobody can
+  -- see was the whole of this change's steady-state cost.
+  if context.showDetail then
   local detail = linkStatus.detailText(context, reading)
   if detail ~= context.detail then
     context.detail = detail
@@ -548,6 +573,7 @@ function linkStatus.apply(context)
   if linkDetail ~= context.linkDetail then
     context.linkDetail = linkDetail
     context.linkLabel:set({text = linkDetail})
+  end
   end
 
   if context.bar then
@@ -614,6 +640,25 @@ function linkStatus.update(context, rect)
     else
       lvgl.hide(object)
     end
+  end
+
+  -- A resize changes how much room each row has, so let both wordings be
+  -- re-chosen on the refresh that follows.
+  if area.detailWidth ~= context.detailWidth then
+    context.detailWidth = area.detailWidth
+    context.detail = nil
+  end
+  if area.linkWidth ~= context.linkWidth then
+    context.linkWidth = area.linkWidth
+    context.linkDetail = nil
+  end
+  if area.showDetail ~= context.showDetail then
+    context.showDetail = area.showDetail
+    -- A row that just became visible still holds whatever it had when it was
+    -- hidden, so force the next refresh to fit it again.
+    context.detail = nil
+    context.linkDetail = nil
+    context.applied = false
   end
 
   reconcile(context.detailLabel, area.showDetail,

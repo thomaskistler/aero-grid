@@ -116,12 +116,10 @@ function probe.regionsFor(theme, themeBuilder, rect, fonts)
   if rows > MAX_ROWS then rows = MAX_ROWS end
 
   return {
+    frame = frame,
     pad = pad,
     compact = compact,
     content = content,
-    titleX = frame.labelX,
-    titleWidth = math.max(1, frame.width - frame.labelX - pad),
-    titleHidden = frame.labelHidden,
     top = top,
     lineHeight = lineHeight,
     keyWidth = keyWidth,
@@ -172,15 +170,14 @@ function probe.create(parent, rect, settings, services)
   local title = settings.label
   if type(title) ~= "string" or title == "" then title = name end
 
-  context.title = primitives.label(context.panel.root, theme, {
-    x = area.titleX,
-    y = area.compact,
-    w = area.titleWidth,
-    text = string.upper(title),
-    color = presentation.label,
-    font = fonts.label,
-  })
-  if area.titleHidden then lvgl.hide(context.title) end
+  -- The shared header, not a private copy of it. Computing its own title width
+  -- meant this panel reserved no badge column at all, so the one shipped
+  -- diagnostic view was the only thing on the dashboard that could not show a
+  -- state, and it had already drifted once before: its title used to be drawn
+  -- into the corner EdgeTX paints its menu button over, because only the
+  -- shared helper knows that corner exists.
+  context.title, context.badge = primitives.header(
+    context.panel.root, theme, area.frame, fonts, title, presentation)
 
   -- Every row object is created once, up to the cap, so a later enlargement
   -- reveals rows instead of forcing a rebuild.
@@ -258,12 +255,7 @@ function probe.update(context, rect)
     context.theme, context.themeBuilder, rect, context.fonts)
 
   context.primitives.resizePanel(context.panel, rect)
-  context.title:set({x = area.titleX, y = area.compact, w = area.titleWidth})
-  if area.titleHidden then
-    lvgl.hide(context.title)
-  else
-    lvgl.show(context.title)
-  end
+  context.primitives.placeHeader(context.title, context.badge, area.frame)
 
   for index = 1, MAX_ROWS do
     local key = context.keys[index]
