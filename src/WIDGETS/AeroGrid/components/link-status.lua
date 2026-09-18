@@ -360,21 +360,14 @@ function linkStatus.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
   local frame = themeBuilder.frame(theme, rect, fonts)
   local labelHeight = frame.labelHeight
   local top = frame.top
-  local showVisual = layout.showVisual and layout.visual ~= "none"
-  local showDetail = layout.showDetail
+  -- Composition comes from the shared ladder, so a panel of this size carries
+  -- the same rows as any other panel of this size, whichever component drew
+  -- it. What this component wants is a veto, not a vote.
+  local ladder = themeBuilder.ladder(theme, rect, frame)
+  local showVisual = layout.showVisual and layout.visual ~= "none" and ladder.visual
+  local showDetail = layout.showDetail and ladder.rows > 0
 
-  local function room()
-    local below = frame.bottom
-    if showVisual then below = below + spacing.barHeight + 2 end
-    if showDetail then below = below + labelHeight + 2 end
-    return rect.h - top - below
-  end
-
-  local comfortable = themeBuilder.fontHeight(MIDSIZE)
-  if room() < comfortable and showDetail then showDetail = false end
-  if room() < comfortable and showVisual then showVisual = false end
-
-  local value = themeBuilder.fitText(sample, frame.content, math.max(1, room()))
+  local value, formIndex = themeBuilder.fitReading(sample, frame.content, ladder.room)
   local valueHeight = themeBuilder.fontHeight(value)
   if top + valueHeight > rect.h then top = math.max(0, rect.h - valueHeight) end
 
@@ -389,6 +382,7 @@ function linkStatus.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     content = frame.content,
     valueY = top,
     value = value,
+    formIndex = formIndex,
     detailY = math.max(1, barY - labelHeight - 2),
     detailWidth = detailWidth,
     linkX = frame.pad + detailWidth + 4,
@@ -461,10 +455,11 @@ function linkStatus.create(parent, rect, settings, services)
     context.sessionExtrema = extrema:sessionExtrema(leading)
   end
 
-  -- A dBm reading is the widest thing this panel prints, and the font is
-  -- chosen from that rather than from the current value so the reading never
-  -- resizes as the link fades.
-  context.sample = "-100dBm"
+  -- A dBm reading is the widest thing this panel prints, and the forms come
+  -- from that rather than from the current value so the reading never resizes
+  -- as the link fades. The unit may go, since the panel's label and its
+  -- supporting row both name the source; the digits may not.
+  context.sample = {"-100dBm", "-100"}
 
   local area = linkStatus.regionsFor(
     theme, services.themeBuilder, rect, layout, fonts, context.sample)

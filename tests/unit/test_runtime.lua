@@ -1863,6 +1863,129 @@ local function testLabelFitting()
   end
 end
 
+--- A reading that holds no redundancy offers exactly one form.
+---
+--- This is the magnitude rule, checked at the only place it can be: the forms
+--- a component declares. Every entry below is a reading with nothing to give
+--- up, and offering it a shorter form would mean dropping a digit, a clock
+--- field, or a unit that is not redundant. `flight-timer` had such a form and
+--- it turned `1:04:12` into `04:12`, an hour reported as four minutes.
+local function testLosslessReadingsOfferOneForm()
+  local cases = {
+    {"flight-timer", "FORMS",
+      "a clock has no redundancy: every shorter form drops a field"},
+    {"tx-battery", "FORMS", nil},
+  }
+
+  for _, case in ipairs(cases) do
+    local module = loadModule("components/" .. case[1] .. ".lua")
+    local forms = module[case[2]]
+    assert(type(forms) == "table", case[1] .. " declares no forms")
+    if case[3] then
+      assertEqual(#forms, 1, case[1] .. ": " .. case[3])
+    end
+  end
+
+  -- `tx-battery` is the counter-example that keeps the rule honest: its unit
+  -- really is redundant with its label, so it may abbreviate, and a test that
+  -- simply demanded one form everywhere would be wrong about it.
+  local tx = loadModule("components/tx-battery.lua")
+  assertEqual(#tx.FORMS, 2, "tx-battery lost the abbreviation it may have")
+  assertEqual(tx.FORMS[2], "88.8",
+    "tx-battery's shorter form drops something other than its unit")
+
+  -- A distance cannot shorten, because its unit changes with range: `1.23km`
+  -- and `1.23m` are different readings, so the unit is not decoration either.
+  local navigation = loadModule("components/navigation.lua")
+  assertEqual(#navigation.FORMS, 1,
+    "navigation offered a shorter distance, which could only lose magnitude")
+  assertEqual(navigation.FORMS[1], "888.88km")
+
+  -- And a metric, whose unit is a separate label entirely.
+  local metric = loadModule("components/metric.lua")
+  assertEqual(#metric.widestSample({min = 0, max = 400}, 1), 1,
+    "a metric offered a shorter form, which could only lose a digit")
+end
+
+--- One ladder, so two panels of the same size answer the same question.
+---
+--- Every component used to decide its own composition and then fit its own
+--- string against the result, so identical panels disagreed twice over. The
+--- assertions here are about *agreement between components*, which is the
+--- thing that was broken; a bound like "no larger than the box allows" was
+--- true of the old code too and would prove nothing.
+local function testSharedLadder()
+  local resolved = theme.build("modern")
+
+  --- The composition a panel of this size carries.
+  local function ladderFor(w, h)
+    local fonts = theme.typography(w >= 200 and 2 or 1, h >= 100 and 2 or 1)
+    local frame = theme.frame(resolved, {x = 0, y = 0, w = w, h = h}, fonts)
+    return theme.ladder(resolved, {x = 0, y = 0, w = w, h = h}, frame)
+  end
+
+  -- A single grid row has no space for a supporting row once the reading has
+  -- what it needs; two rows do. This is the decision that used to be made
+  -- eight times, and it is now made once and is the same answer for everyone.
+  assertEqual(ladderFor(238, 65).rows, 0,
+    "a 65 px panel claimed room for a supporting row")
+  assertEqual(ladderFor(238, 134).rows, 1,
+    "a 134 px panel did not grant a supporting row")
+  assertEqual(ladderFor(238, 65).visual, true,
+    "a 65 px panel cannot carry a bar")
+
+  -- The room left for the reading grows with the panel, and never shrinks as
+  -- it grows. That is the property the four non-monotonic ladders violated.
+  local previous = 0
+  for _, h in ipairs({65, 134, 203, 272}) do
+    local room = ladderFor(238, h).room
+    assert(room >= previous, string.format(
+      "a %d px panel left less room for its reading than a shorter one", h))
+    previous = room
+  end
+end
+
+--- A reading may give up redundancy, never magnitude.
+local function testReadingForms()
+  -- The box decides the font. Same box, same answer, whatever is drawn in it.
+  local a = theme.fitReading({"100"}, 226, 80)
+  local b = theme.fitReading({"4.44V"}, 226, 80)
+  assertFont(a, b, "two readings in the same box chose different fonts")
+
+  -- The longest form is preferred wherever it fits. Taking a shorter one
+  -- anyway gives up a unit for nothing, and an assertion that only looked at
+  -- narrow panels would never notice.
+  local wide, wideIndex = theme.fitReading({"-100dBm", "-100"}, 400, 80)
+  assertEqual(wideIndex, 1, "a reading abbreviated on a panel with room for it")
+
+  -- And abbreviating is preferred to shrinking, which is the whole mechanism:
+  -- at 226 px the full form does not fit at the target size, so the unit goes
+  -- and the reading stays the size its neighbours are.
+  local kept, keptIndex = theme.fitReading({"-100dBm", "-100"}, 226, 80)
+  assertEqual(keptIndex, 2, "the reading shrank instead of dropping its unit")
+  assertFont(kept, theme.fitReading({"100"}, 226, 80),
+    "abbreviating did not keep the reading at its neighbours' size")
+
+  -- With nothing to give up, the font steps instead. Offering one form is how
+  -- a component says its reading holds no redundancy.
+  local only = theme.fitReading({"-88:88:88"}, 226, 80)
+  assert(theme.fontHeight(only) < theme.fontHeight(kept),
+    "a reading with no shorter form kept a size it does not fit")
+
+  -- Whatever comes back must actually fit, or the panel clips. This is the
+  -- property; asserting a particular font would pass on a helper that always
+  -- returned the smallest.
+  for _, width in ipairs({400, 226, 160, 105, 60, 30}) do
+    for _, forms in ipairs({{"100"}, {"-100dBm", "-100"}, {"888.88km"}}) do
+      local chosen, at = theme.fitReading(forms, width, 80)
+      local needed = theme.textWidth(chosen, forms[at])
+      assert(needed <= width or chosen == SMLSIZE, string.format(
+        "fitReading returned %q at %s, needing %d px of %d",
+        forms[at], edgetx.fontName(chosen), needed, width))
+    end
+  end
+end
+
 --- A bipolar bar grows outward from its own centre and keeps its neutral
 --- marker visible at every deflection.
 local function testBipolarGeometry()
@@ -1934,10 +2057,16 @@ local function testMetricPresets()
   assertEqual(unknown.extrema, "none")
   assertEqual(unknown.extremaMode, "max")
 
-  -- The widest sample decides the font, so it must come from the bounds
-  -- rather than from whichever value happens to be showing.
-  assertEqual(metric.widestSample({min = 0, max = 1200}, 1), "1200.0")
-  assertEqual(metric.widestSample({min = -50, max = 10}, 0), "-50")
+  -- The forms decide the font, so they must come from the bounds rather than
+  -- from whichever value happens to be showing.
+  assertEqual(metric.widestSample({min = 0, max = 1200}, 1)[1], "1200.0")
+  assertEqual(metric.widestSample({min = -50, max = 10}, 0)[1], "-50")
+
+  -- A metric offers exactly one form. Its unit is drawn as a separate label,
+  -- so the reading is digits alone and holds no redundancy to give up;
+  -- anything shorter would drop magnitude.
+  assertEqual(#metric.widestSample({min = 0, max = 1200}, 1), 1,
+    "a metric offered a shorter form, which could only lose a digit")
 end
 
 --- Timer semantics belong to EdgeTX; the component only presents them.
@@ -2545,7 +2674,7 @@ local function testNavigationRegions()
   local layout = navigation.presentationFor("detailed")
 
   local large = navigation.regionsFor(resolved, theme,
-    {x = 0, y = 0, w = 238, h = 134}, layout, fonts, "888.88km")
+    {x = 0, y = 0, w = 238, h = 134}, layout, fonts, {"888.88km"})
   assertEqual(large.showCompass, true)
   assertEqual(large.showCoordinates, true)
   -- The dial sits inside its own panel, measured from its centre.
@@ -2559,11 +2688,11 @@ local function testNavigationRegions()
   -- A panel that cannot afford everything sheds the coordinates first and the
   -- dial next, and never the distance.
   local short = navigation.regionsFor(resolved, theme,
-    {x = 0, y = 0, w = 238, h = 62}, layout, fonts, "888.88km")
+    {x = 0, y = 0, w = 238, h = 62}, layout, fonts, {"888.88km"})
   assertEqual(short.showCoordinates, false)
 
   local tiny = navigation.regionsFor(resolved, theme,
-    {x = 0, y = 0, w = 58, h = 40}, layout, fonts, "888.88km")
+    {x = 0, y = 0, w = 58, h = 40}, layout, fonts, {"888.88km"})
   assertEqual(tiny.showCompass, false, "an unreadable dial was kept")
   assertEqual(tiny.radius, 0)
   assertEqual(tiny.valueWidth, tiny.content, "the reading did not reclaim the room")
@@ -2596,7 +2725,12 @@ local function testTelemetryContentFitsPanel()
 
     --- Shared assertions: the reading fits its own region in both axes, and
     --- clears the header above it and whatever row sits below it.
-    local function assertReading(what, area, valueFont, valueWidth, sample)
+    local function assertReading(what, area, valueFont, valueWidth, forms)
+      -- The component may draw a shorter form than the longest it offered, so
+      -- the assertion is against the form it actually chose. Checking the
+      -- longest would fail a panel that correctly abbreviated, and checking
+      -- only the shortest would pass one that never abbreviated at all.
+      local sample = forms[area.formIndex or 1]
       local bottom = area.valueY + heightOf(valueFont)
       assert(bottom <= case.h, what .. " " .. case.name
         .. ": the reading overflows the panel, ends at " .. bottom)
@@ -2630,8 +2764,9 @@ local function testTelemetryContentFitsPanel()
     local cellLayout = cellBattery.presentationFor(case.colSpan, case.rowSpan)
     cellLayout.visual = "bar"
     local cells = cellBattery.regionsFor(
-      resolved, theme, rect, cellLayout, fonts, "4.44V")
-    assertReading("cell-battery", cells, cells.value, cells.content, "4.44V")
+      resolved, theme, rect, cellLayout, fonts, {"4.44V", "4.44"})
+    assertReading("cell-battery", cells, cells.value, cells.content,
+      {"4.44V", "4.44"})
     if cells.showDetail then
       assert(cells.detailY + labelHeight <= cells.barY, "cell-battery "
         .. case.name .. ": the detail row overlaps the bar")
@@ -2646,8 +2781,9 @@ local function testTelemetryContentFitsPanel()
     local linkLayout = linkStatus.presentationFor(case.colSpan, case.rowSpan)
     linkLayout.visual = "bar"
     local link = linkStatus.regionsFor(
-      resolved, theme, rect, linkLayout, fonts, "-100dBm")
-    assertReading("link-status", link, link.value, link.content, "-100dBm")
+      resolved, theme, rect, linkLayout, fonts, {"-100dBm", "-100"})
+    assertReading("link-status", link, link.value, link.content,
+      {"-100dBm", "-100"})
     if link.showDetail then
       assert(link.detailY + labelHeight <= link.barY, "link-status "
         .. case.name .. ": the detail row overlaps the bar")
@@ -2658,9 +2794,9 @@ local function testTelemetryContentFitsPanel()
     for _, presentation in ipairs({"distance", "bearing", "compass", "detailed"}) do
       local navLayout = navigationComponent.presentationFor(presentation)
       local nav = navigationComponent.regionsFor(
-        resolved, theme, rect, navLayout, fonts, "888.88km")
+        resolved, theme, rect, navLayout, fonts, {"888.88km"})
       local what = "navigation/" .. presentation
-      assertReading(what, nav, nav.value, nav.valueWidth, "888.88km")
+      assertReading(what, nav, nav.value, nav.valueWidth, {"888.88km"})
 
       if nav.showDetail then
         assert(nav.detailY + labelHeight <= case.h,
@@ -2696,7 +2832,7 @@ local function testTelemetryContentFitsPanel()
   local cellLayout = cellBattery.presentationFor(2, 1)
   cellLayout.visual = "bar"
   local shedCells = cellBattery.regionsFor(
-    resolved, theme, squeezed, cellLayout, wideFonts, "4.44V")
+    resolved, theme, squeezed, cellLayout, wideFonts, {"4.44V", "4.44"})
   assertEqual(shedCells.showDetail, false,
     "cell-battery kept a supporting row a short panel could not afford")
   assert(heightOf(shedCells.value) >= heightOf(MIDSIZE),
@@ -2705,14 +2841,14 @@ local function testTelemetryContentFitsPanel()
   local linkLayout = linkStatus.presentationFor(2, 1)
   linkLayout.visual = "bar"
   local shedLink = linkStatus.regionsFor(
-    resolved, theme, squeezed, linkLayout, wideFonts, "-100dBm")
+    resolved, theme, squeezed, linkLayout, wideFonts, {"-100dBm", "-100"})
   assertEqual(shedLink.showDetail, false,
     "link-status kept a supporting row a short panel could not afford")
   assert(heightOf(shedLink.value) >= heightOf(MIDSIZE),
     "link-status shed a row without buying its reading any size")
 
   local shedNav = navigationComponent.regionsFor(resolved, theme, squeezed,
-    navigationComponent.presentationFor("detailed"), wideFonts, "888.88km")
+    navigationComponent.presentationFor("detailed"), wideFonts, {"888.88km"})
   assertEqual(shedNav.showCoordinates, false,
     "navigation kept a coordinates row a short panel could not afford")
   assert(heightOf(shedNav.value) >= heightOf(MIDSIZE),
@@ -2730,6 +2866,9 @@ testExtremaService()
 testNavigationService()
 testFontHeightsMatchTheFirmware()
 testTextFitting()
+testLosslessReadingsOfferOneForm()
+testSharedLadder()
+testReadingForms()
 testLabelFitting()
 testBipolarGeometry()
 testMetricPresets()

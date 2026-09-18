@@ -301,22 +301,14 @@ function cellBattery.regionsFor(theme, themeBuilder, rect, layout, fonts, sample
   local frame = themeBuilder.frame(theme, rect, fonts)
   local labelHeight = frame.labelHeight
   local top = frame.top
-  local showVisual = layout.showVisual and layout.visual ~= "none"
-  local showDetail = layout.showDetail
+  -- Composition comes from the shared ladder, so a panel of this size carries
+  -- the same rows as any other panel of this size, whichever component drew
+  -- it. What this component wants is a veto, not a vote.
+  local ladder = themeBuilder.ladder(theme, rect, frame)
+  local showVisual = layout.showVisual and layout.visual ~= "none" and ladder.visual
+  local showDetail = layout.showDetail and ladder.rows > 0
 
-  local function room()
-    local below = frame.bottom
-    if showVisual then below = below + spacing.barHeight + 2 end
-    if showDetail then below = below + labelHeight + 2 end
-    return rect.h - top - below
-  end
-
-  -- The dominant reading wins: shed the supporting rows before shrinking it.
-  local comfortable = themeBuilder.fontHeight(MIDSIZE)
-  if room() < comfortable and showDetail then showDetail = false end
-  if room() < comfortable and showVisual then showVisual = false end
-
-  local value = themeBuilder.fitText(sample, frame.content, math.max(1, room()))
+  local value, formIndex = themeBuilder.fitReading(sample, frame.content, ladder.room)
   local valueHeight = themeBuilder.fontHeight(value)
   if top + valueHeight > rect.h then top = math.max(0, rect.h - valueHeight) end
 
@@ -331,6 +323,7 @@ function cellBattery.regionsFor(theme, themeBuilder, rect, layout, fonts, sample
     content = frame.content,
     valueY = top,
     value = value,
+    formIndex = formIndex,
     detailY = math.max(1, barY - labelHeight - 2),
     detailWidth = detailWidth,
     packX = frame.pad + frame.content - detailWidth,
@@ -381,9 +374,13 @@ function cellBattery.create(parent, rect, settings, services)
     end
   end
 
-  -- A pack reading is the widest thing this component can print, so the font
-  -- is chosen from that rather than from whichever value is showing now.
-  local sample = cellBattery.isPerCell(settings) and "4.44V" or "88.8V"
+  -- A pack reading is the widest thing this component can print, so the forms
+  -- come from that rather than from whichever value is showing now. The unit
+  -- is redundant with the panel's own label and may go; the two decimals may
+  -- not, because cells are compared against each other and 3.8 V hides a
+  -- difference that matters where 3.82 V does not.
+  local sample = cellBattery.isPerCell(settings)
+    and {"4.44V", "4.44"} or {"88.8V", "88.8"}
   context.sample = sample
 
   local area = cellBattery.regionsFor(

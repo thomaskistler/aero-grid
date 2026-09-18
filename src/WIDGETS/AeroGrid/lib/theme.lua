@@ -779,6 +779,93 @@ function theme.fitText(text, width, height)
   return SMLSIZE
 end
 
+--- Decide what a panel of this size carries, and how large its reading is.
+---
+--- Every component used to answer this for itself, with a private copy of the
+--- same ladder: reserve the supporting rows I want, shed them if the reading
+--- gets uncomfortable, then fit the reading to what is left. Eight copies,
+--- and two panels of identical size disagreed because each had shed a
+--- different amount and then measured a different string against the result.
+--- At `2 x 2` the four panels of the span gallery landed on four different
+--- fonts, a range of four to one, on panels the same size to the pixel.
+---
+--- So composition is decided here, from the panel's box alone, and is the same
+--- answer for every component of that size. A component asks whether it has a
+--- supporting row and a visualization; it does not decide.
+---
+--- The reading then takes what the composition leaves. Deciding the font from
+--- the box rather than from the string is what makes two panels of one size
+--- agree, because they are answering the same question.
+---@param resolved AeroGridTheme
+---@param rect AeroGridRect
+---@param frame table Result of theme.frame.
+---@return table ladder `{rows, visual, room}`
+function theme.ladder(resolved, rect, frame)
+  local spacing = resolved.spacing
+  local rowHeight = frame.labelHeight + 2
+  local barHeight = spacing.barHeight + 2
+  local fixed = frame.top + frame.bottom
+
+  -- Granted in order of what a panel loses least by dropping. A visualization
+  -- is a shape and survives being small; a supporting row is text and does
+  -- not, so the row is the first thing a short panel gives up.
+  local visual = fixed + barHeight + theme.fontHeight(SMLSIZE) <= rect.h
+  local used = fixed + (visual and barHeight or 0)
+  local rows = used + rowHeight + theme.fontHeight(MIDSIZE) <= rect.h and 1 or 0
+
+  return {
+    rows = rows,
+    visual = visual,
+    room = math.max(1, rect.h - used - rows * rowHeight),
+  }
+end
+
+--- Choose the font and the wording a reading is drawn in.
+---
+--- The forms are offered longest first and are all derived from the widest
+--- value the component can ever print, never from the current one, so a
+--- reading does not resize or reword as it changes.
+---
+--- **A form may drop redundancy, never magnitude.** A unit the panel's own
+--- label already states, a name, a suffix: those are abbreviation. A digit of
+--- precision, or a field of a clock, is not. `4.44V` to `4.44` removes
+--- something the panel says elsewhere; `1:04:12` to `04:12` removes an hour
+--- and reports a different reading, which no font size is worth. Callers
+--- therefore offer only lossless forms, and where the shortest of them still
+--- will not fit, the font steps down instead.
+---
+--- One step is the intent, and it is what happens almost everywhere: a
+--- reading two sizes below its neighbours is the disagreement this exists to
+--- remove. It is not a cap, because the alternative to stepping again is
+--- clipping, and the specification is explicit that text reduces to a smaller
+--- font before it clips. A panel that needs two steps is telling us its
+--- column is genuinely too narrow for the reading, which happens where a dial
+--- takes half the width, and a smaller number is better than half a number.
+---@param forms string[] Lossless wordings, longest first.
+---@param width integer Pixels available.
+---@param room integer Vertical pixels the composition left.
+---@return any font
+---@return integer index Form chosen, from 1.
+function theme.fitReading(forms, width, room)
+  local ordered = {XXLSIZE, DBLSIZE, MIDSIZE, SMLSIZE}
+  local start = #ordered
+
+  for index = 1, #ordered do
+    if theme.fontHeight(ordered[index]) <= room then start = index break end
+  end
+
+  -- The target the box allows, then down until something fits.
+  for step = start, #ordered do
+    for index = 1, #forms do
+      if theme.textWidth(ordered[step], forms[index]) <= width then
+        return ordered[step], index
+      end
+    end
+  end
+
+  return ordered[#ordered], #forms
+end
+
 --- Choose the longest of several wordings that fits a width.
 ---
 --- Supporting rows were the one place nothing was fitted. The dominant reading

@@ -54,6 +54,14 @@ local modelIdentity = {
 --- `LEN_MODEL_NAME` is 15 on colour targets.
 local WIDEST_NAME = "MMMMMMMMMMMMMMM"
 
+--- Forms of the reading, longest first.
+---
+--- A model name is text rather than a measurement, so a shorter form gives up
+--- characters of a name and not magnitude of a reading. Fifteen characters is
+--- what EdgeTX will store, and reserving all of it on every panel was why this
+--- component drew the smallest reading on the dashboard at almost every span.
+local FORMS = {WIDEST_NAME, "MMMMMMMMMM", "MMMMMM"}
+
 --- Resolve the presentation for a span.
 --- `auto` needs real room before it spends it on a picture: a single cell is
 --- barely larger than the name itself, so the name wins there.
@@ -102,16 +110,13 @@ function modelIdentity.regionsFor(theme, themeBuilder, rect, layout, fonts)
   local showImage = layout.showImage
   local showLabels = layout.showLabels
 
-  local function nameRoom()
-    local below = frame.bottom
-    if showLabels then below = below + labelHeight + 2 end
-    return rect.h - top - below
-  end
+  -- Composition comes from the shared ladder, like every other panel of this
+  -- size. The image takes what the text leaves, below.
+  local ladder = themeBuilder.ladder(theme, rect, frame)
+  showLabels = showLabels and ladder.rows > 0
 
-  if nameRoom() < labelHeight and showLabels then showLabels = false end
-
-  local nameFont = themeBuilder.fitText(
-    WIDEST_NAME, frame.content, math.max(1, nameRoom()))
+  local nameFont, formIndex = themeBuilder.fitReading(
+    FORMS, frame.content, ladder.room)
   local nameHeight = themeBuilder.fontHeight(nameFont)
 
   -- The image takes whatever the text does not, and is dropped entirely when
@@ -141,6 +146,7 @@ function modelIdentity.regionsFor(theme, themeBuilder, rect, layout, fonts)
     content = frame.content,
     nameY = nameY,
     nameFont = nameFont,
+    formIndex = formIndex,
     imageY = imageTop,
     imageHeight = math.max(1, imageHeight),
     labelsY = math.max(1, rect.h - frame.bottom - labelHeight),
