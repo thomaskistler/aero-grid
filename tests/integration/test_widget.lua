@@ -47,6 +47,36 @@ local function toRgb565(rgb)
     + math.floor(blue * 31 / 255)
 end
 
+--- EdgeTX's RGB_FLAG, the bit that marks a flag word as carrying a colour.
+--- `radio/src/gui/colorlcd/colors.h`.
+local RGB_FLAG = 0x8000
+
+--- Build the LcdFlags word EdgeTX hands a script for a colour.
+---
+--- There is exactly one encoder because the firmware has exactly one shape.
+--- `luaRGB` returns `COLOR2FLAGS(RGB(r, g, b)) | RGB_FLAG` and `luaLcdGetColor`
+--- returns `colorToRGB(flags) & (COLOR_MASK(~0u) | RGB_FLAG)`, both in
+--- `radio/src/lua/api_colorlcd.cpp`: RGB565 in the upper half, `RGB_FLAG` in
+--- the lower. When the two sides were encoded separately here, the read side
+--- was corrected and the write side was left handing back a bare 24-bit value
+--- for another day. Sharing the encoder is what stops them drifting again.
+---
+--- The result is cached because both firmware entry points are C functions and
+--- cost a script no Lua VM instructions at all. A palette is small and drawn
+--- from repeatedly, so a warm cache keeps the mock down to a lookup instead of
+--- charging the dashboard's instruction budget for arithmetic the radio does
+--- for free.
+local lcdFlagsCache = {}
+
+local function toLcdFlags(rgb)
+  local cached = lcdFlagsCache[rgb]
+  if cached then return cached end
+
+  cached = toRgb565(rgb) * 65536 + RGB_FLAG
+  lcdFlagsCache[rgb] = cached
+  return cached
+end
+
 -- A deliberately light EdgeTX theme, so contrast correction must engage.
 --- The EdgeTX Default theme, exactly as the firmware ships it.
 ---
@@ -72,16 +102,24 @@ local edgeTxRoles = {
 }
 
 lcd = {
-  -- EdgeTX accepts lcd.RGB(r, g, b) or a single packed lcd.RGB(rgb).
+  -- EdgeTX accepts lcd.RGB(r, g, b) or a single packed lcd.RGB(rgb), and
+  -- returns a flag word either way rather than the 24-bit value it was given.
+  -- Returning the input unchanged made `theme.rgb` and `theme.color`
+  -- numerically identical, so no assertion in this suite could tell a token
+  -- apart from a display value, which is the mistake that drew every panel
+  -- dark red once already.
   RGB = function(red, green, blue)
-    if green == nil and blue == nil then return red end
-    return red * 65536 + green * 256 + blue
+    if green ~= nil then red = red * 65536 + green * 256 + blue end
+    return toLcdFlags(red)
   end,
   -- Returns what the firmware returns: an LcdFlags word with the colour in
   -- the upper half and RGB_FLAG set, not a bare RGB565. A mock that hands
   -- back a bare RGB565 cannot see the host misread the real thing.
+  -- `luaLcdGetColor` answers nil for a role it does not recognize.
   getColor = function(role)
-    return toRgb565(edgeTxRoles[role] or 0x000000) * 65536 + 0x8000
+    local rgb = edgeTxRoles[role]
+    if rgb == nil then return nil end
+    return toLcdFlags(rgb)
   end,
 }
 
@@ -165,7 +203,132 @@ local function newRoundGeometry(properties)
   }
 end
 
+--- Property keys EdgeTX accepts, per object kind.
+---
+--- `LvglWidgetObjectBase::parseParam` ends in
+--- `luaL_error(L, "Invalid property '%s'", key)`
+--- (`radio/src/lua/lua_lvgl_widget.cpp`), so an unrecognized key is not
+--- ignored on a radio, it raises. A mock that accepts every key turns a
+--- misspelled property into a silent no-op on hardware and a passing test
+--- here, which is the same shape as every incident in this file's history.
+---
+--- Each set below is the chain of `parseParam` overrides for that class, read
+--- from the class declarations in `radio/src/lua/lua_lvgl_widget.h`. Note that
+--- `left`, `right`, `top` and `bottom` are nested inside `borderPad` rather
+--- than being top-level keys, so they are deliberately absent.
+local function acceptedKeys(inherited, ...)
+  local set = {}
+  for key in pairs(inherited or {}) do set[key] = true end
+  for _, key in ipairs({...}) do set[key] = true end
+  return set
+end
+
+-- LvglWidgetObjectBase::parseParam. `children`, `type` and `name` are accepted
+-- and ignored rather than rejected, exactly as the firmware does.
+local OBJECT_BASE_KEYS = acceptedKeys(nil, "x", "y", "w", "h", "color",
+  "opacity", "visible", "size", "pos", "floating", "children", "type", "name")
+-- LvglWidgetObject::parseParam.
+local OBJECT_KEYS = acceptedKeys(OBJECT_BASE_KEYS,
+  "flexFlow", "flexPad", "borderPad", "active")
+-- LvglWidgetBox: LvglWidgetObject + LvglScrollableParams + LvglAlignParam.
+local BOX_KEYS = acceptedKeys(OBJECT_KEYS,
+  "align", "scrollBar", "scrollDir", "scrollTo", "scrolled")
+-- LvglWidgetBorderedObject: LvglWidgetBox + LvglThicknessParam, plus filled.
+local BORDERED_KEYS = acceptedKeys(BOX_KEYS, "thickness", "filled")
+-- LvglWidgetRoundObject: LvglWidgetBorderedObject, plus radius.
+local ROUND_KEYS = acceptedKeys(BORDERED_KEYS, "radius")
+
+local PROPERTY_KEYS = {
+  box = BOX_KEYS,
+  rectangle = acceptedKeys(BORDERED_KEYS, "rounded"),
+  arc = acceptedKeys(ROUND_KEYS, "rounded", "startAngle", "endAngle",
+    "bgColor", "bgOpacity", "bgStartAngle", "bgEndAngle"),
+  label = acceptedKeys(OBJECT_BASE_KEYS, "align", "text", "font"),
+  image = acceptedKeys(OBJECT_KEYS, "file", "fill"),
+}
+
+--- Keys whose value EdgeTX reads as a colour.
+local COLOR_KEYS = {color = true, bgColor = true}
+
+--- Whether property validation runs.
+---
+--- `parseParam` is C++ and costs a script no Lua VM instructions at all, so
+--- charging our stand-in for it to the instruction budget would measure the
+--- fixture rather than the dashboard. The budget test switches this off while
+--- it counts, exactly as the mock's `getValue` avoids a scan for the same
+--- reason. Every object kind is still validated by the rest of the suite,
+--- which builds each component at every span it supports.
+local validateProperties = true
+
+--- Reject exactly what the radio rejects.
+---
+--- A colour must be a word `lcd.RGB` produced. The dashboard holds its palette
+--- twice, as 24-bit `theme.rgb` tokens for arithmetic and as `theme.color`
+--- display values for drawing, and handing an LVGL object the former paints a
+--- colour belonging to no theme at all. The radio cannot report that; this can.
+local function checkProperties(kind, properties)
+  local accepted = PROPERTY_KEYS[kind]
+  if not accepted then return end
+
+  for key, value in pairs(properties) do
+    if not accepted[key] then
+      error("Invalid property '" .. tostring(key) .. "' on " .. kind, 0)
+    end
+    if COLOR_KEYS[key] and (type(value) ~= "number" or value % 65536 ~= RGB_FLAG) then
+      error(kind .. "." .. key .. " is not a colour lcd.RGB returned: "
+        .. tostring(value), 0)
+    end
+  end
+end
+
+--- Object methods, defined once rather than per object.
+---
+--- `set` is assigned directly on each object rather than reached through a
+--- metatable, and the checking and unchecking variants are exchanged rather
+--- than selected by a test inside `set`. Both alternatives cost the dashboard
+--- several hundred instructions of the budget on the worst callback, for work
+--- the radio does in C++. Measuring the fixture instead of the dashboard is
+--- how the budget test misled us before, so the hot path carries nothing.
+local function assertUsable(object)
+  if object.invalid then
+    error("Invalid object (it has been probably been cleared).", 0)
+  end
+end
+
+-- The body is repeated rather than shared, because a second call costs the
+-- measured callback another 200 instructions the radio never pays.
+local function setChecked(object, changes)
+  assertUsable(object)
+  checkProperties(object.kind, changes)
+  for key, value in pairs(changes) do object.properties[key] = value end
+  if object.round then object.round.refresh(changes) end
+end
+
+local function setUnchecked(object, changes)
+  assertUsable(object)
+  for key, value in pairs(changes) do object.properties[key] = value end
+  if object.round then object.round.refresh(changes) end
+end
+
+local function clearObject(object)
+  assertUsable(object)
+  object.cleared = true
+  if not object.clearRequest then
+    object.clearRequest = true
+    pendingClears[#pendingClears + 1] = object
+  end
+end
+
+--- Turn property validation on or off for every object, existing and future.
+--- Called outside the instruction hook, so the exchange is never counted.
+local function setPropertyValidation(enabled)
+  validateProperties = enabled
+  local method = enabled and setChecked or setUnchecked
+  for _, object in ipairs(objects) do object.set = method end
+end
+
 local function newObject(kind, parent, properties)
+  if validateProperties then checkProperties(kind, properties) end
   local object = {
     kind = kind,
     parent = parent,
@@ -174,28 +337,9 @@ local function newObject(kind, parent, properties)
     cleared = false,
     hidden = false,
     invalid = false,
+    set = validateProperties and setChecked or setUnchecked,
+    clear = clearObject,
   }
-
-  local function assertUsable(object)
-    if object.invalid then
-      error("Invalid object (it has been probably been cleared).", 0)
-    end
-  end
-
-  function object:set(changes)
-    assertUsable(self)
-    for key, value in pairs(changes) do self.properties[key] = value end
-    if self.round then self.round.refresh(changes) end
-  end
-
-  function object:clear()
-    assertUsable(self)
-    self.cleared = true
-    if not self.clearRequest then
-      self.clearRequest = true
-      pendingClears[#pendingClears + 1] = self
-    end
-  end
 
   if kind == "arc" then object.round = newRoundGeometry(properties) end
 
@@ -844,13 +988,21 @@ testShippedLayoutsLoad()
 end
 
 --- The host owns the palette: every panel uses the resolved surface token.
+---
+--- A rendered colour is compared against `lcd.RGB(token)`, never against the
+--- token itself. The dashboard keeps its palette twice: 24-bit `theme.rgb`
+--- for arithmetic, `theme.color` display values for drawing. While the
+--- mock returned its input unchanged the two were the same number, so this
+--- test passed whichever one the host reached for.
 local function testThemeReachesComponents()
   local modern = themeModule.modern()
   assertEqual(appContext.theme.mode, "modern")
-  assertEqual(appContext.canvas.properties.color, modern.canvas)
+  assertEqual(appContext.canvas.properties.color, lcd.RGB(modern.canvas),
+    "the canvas was not painted in the resolved canvas colour")
 
   for _, entry in ipairs(appContext.components) do
-    assertEqual(entry.instance.panel.background.properties.color, modern.surface,
+    assertEqual(entry.instance.panel.background.properties.color,
+      lcd.RGB(modern.surface),
       entry.placement.id .. " did not use the theme surface")
   end
 
@@ -916,18 +1068,21 @@ local function testMetricStates()
   assertEqual(pack.stateName, "normal")
   assertEqual(pack.value.properties.text, "24.0")
   assertEqual(pack.badge.properties.text, "")
-  assertEqual(pack.panel.accent.properties.color, modern.cyan)
+  assertEqual(pack.panel.accent.properties.color, lcd.RGB(modern.cyan),
+    "the accent bar did not follow the normal state")
 
   -- Falling thresholds: warning at 21.0, critical at 19.8.
   metricModule.setValue(pack, 20.5)
   assertEqual(pack.stateName, "warning")
   assertEqual(pack.badge.properties.text, "WARN")
-  assertEqual(pack.panel.accent.properties.color, modern.amber)
+  assertEqual(pack.panel.accent.properties.color, lcd.RGB(modern.amber),
+    "the accent bar did not follow the amber state")
 
   metricModule.setValue(pack, 19.0)
   assertEqual(pack.stateName, "critical")
   assertEqual(pack.badge.properties.text, "CRIT")
-  assertEqual(pack.panel.accent.properties.color, modern.critical)
+  assertEqual(pack.panel.accent.properties.color, lcd.RGB(modern.critical),
+    "the accent bar did not follow the critical state")
 
   metricModule.setValue(pack, 24.0, true)
   assertEqual(pack.stateName, "stale")
@@ -2100,10 +2255,14 @@ local function testInstructionBudget()
 
   local function measure(fn, ...)
     local ticks = 0
+    -- The mock's property validation stands in for `parseParam`, which is C++
+    -- and costs a script nothing. Counting it here would measure the fixture.
+    setPropertyValidation(false)
     -- Count exactly as the firmware does: a hook every 200 instructions.
     debug.sethook(function() ticks = ticks + 1 end, "", 200)
     local ok, err = pcall(fn, ...)
     debug.sethook()
+    setPropertyValidation(true)
     assert(ok, "callback raised: " .. tostring(err))
     return ticks * 200
   end
