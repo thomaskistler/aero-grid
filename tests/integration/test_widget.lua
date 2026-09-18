@@ -1483,14 +1483,37 @@ components:
   local modern = themeModule.modern()
   local tokens = context.theme.rgb
 
-  -- Derived from COLOR_THEME_SECONDARY1, so it must not be the Modern surface.
-  assert(tokens.canvas ~= modern.canvas, "EdgeTX canvas was not derived")
+  -- The canvas must be the radio's own COLOR_THEME_SECONDARY1, widened from
+  -- the RGB565 half of the flag word `lcd.getColor` returns.
+  --
+  -- This previously asserted only that the canvas differed from Modern's,
+  -- which is satisfied by every colour being wrong in the same way. That is
+  -- how a palette in which every role of every theme resolved to 0x840000
+  -- passed this suite while drawing every panel on the radio dark red.
+  assertEqual(tokens.canvas,
+    themeModule.fromRgb565(toRgb565(edgeTxRoles[COLOR_THEME_SECONDARY1])),
+    "the canvas is not the radio's own COLOR_THEME_SECONDARY1")
+  assertEqual(tokens.text,
+    themeModule.fromRgb565(toRgb565(edgeTxRoles[COLOR_THEME_PRIMARY2])),
+    "body text is not the radio's own COLOR_THEME_PRIMARY2")
+
   -- Critical red stays dashboard-owned so alarms remain recognizable.
   assertEqual(tokens.critical, modern.critical)
   -- Contrast correction must keep body text readable on the derived surface.
   assert(themeModule.contrast(tokens.surface, tokens.text) >= 4.5,
     "derived text failed contrast correction")
-  assert(themeModule.contrast(tokens.surface, tokens.canvas) >= 1.0)
+
+  -- A panel has to be visible against the dashboard behind it. Canvas and
+  -- surface derive from the same EdgeTX role, so without the legibility pass
+  -- separating them they are the same colour and a panel has no edge at all.
+  --
+  -- The old assertion here was `contrast(surface, canvas) >= 1.0`, which is
+  -- a tautology: theme.contrast orders its arguments and returns
+  -- (lighter + 0.05) / (darker + 0.05), so it is at least 1 for any two
+  -- colours, including two identical ones. It could not fail for any
+  -- implementation of anything.
+  assert(themeModule.contrast(tokens.surface, tokens.canvas) >= 1.08,
+    "a panel cannot be told apart from the dashboard behind it")
 end
 
 --- Custom mode accepts a small override set and rejects the rest.
