@@ -420,7 +420,6 @@ local function testEdgeTxTheme()
   })
 
   assertEqual(resolved.mode, "edgetx")
-  assert(resolved.rgb.canvas ~= theme.modern().canvas, "canvas was not derived")
 
   -- The canvas has to be the radio's own colour, not merely different from
   -- Modern's. Reading the low half of the flag word `lcd.getColor` returns
@@ -557,12 +556,20 @@ local function testStates()
   assertEqual(theme.state(resolved, "unavailable", "green").value,
     lcd.RGB(modern.textFaint))
 
-  -- Each non-normal state carries a text badge.
-  for _, name in ipairs({"stale", "warning", "critical", "unavailable", "editing"}) do
-    local presentation = theme.state(resolved, name)
-    assert(presentation.badge and presentation.badge ~= "",
-      name .. " has no text badge")
+  -- Each non-normal state carries a text badge, and which words it uses is
+  -- the contract: the badge is what makes a state legible to a colourblind
+  -- pilot, so asserting only that it is non-empty asserts nothing a typo
+  -- could not satisfy.
+  local badges = {
+    stale = "STALE", warning = "WARN", critical = "CRIT",
+    unavailable = "NO SOURCE", editing = "EDIT",
+  }
+  for name, text in pairs(badges) do
+    assertEqual(theme.state(resolved, name).badge, text,
+      name .. " does not carry its own badge")
   end
+  assertEqual(theme.state(resolved, "normal").badge, nil,
+    "a healthy panel must not be badged")
 
   -- Selection and editing use a heavier focus border.
   assert(theme.state(resolved, "selected").borderWidth
@@ -682,7 +689,7 @@ local function testDerivedThemesStayLegible()
     -- state is pinned to the token it must come from, and the token is what
     -- is measured.
     local unavailable = theme.state(resolved, "unavailable")
-    assert(unavailable.badge ~= nil and unavailable.badge ~= "")
+    assertEqual(unavailable.badge, "NO SOURCE", label .. ": badge text")
     assertEqual(unavailable.value, lcd.RGB(tokens.textFaint),
       label .. ": unavailable text left the resolved palette")
     assert(theme.contrast(tokens.surface, tokens.textFaint) >= 1.8,
@@ -1309,9 +1316,15 @@ local function testControlService()
   -- negative percentage reports more deflection than the trim actually has.
   raw = -240
   service:update(1)
+  -- describe() reports one row per subscription, in subscription order. A
+  -- count greater than zero would be satisfied by a diagnostics panel that
+  -- silently dropped every row but the first.
   local rows = {}
-  assert(service:describe(rows) > 0)
+  assertEqual(service:describe(rows), 2, "a subscription was left undescribed")
+  assertEqual(rows[1].label, "TRIM-AIL")
   assertEqual(rows[1].text, "-30 -23%", "a negative trim rounded the wrong way")
+  assertEqual(rows[2].label, "RATES")
+  assertEqual(rows[2].text, "4.5")
   raw = 512
   service:update(1)
 
@@ -2095,8 +2108,6 @@ local function testCompassGeometry()
 
   primitives.setCompass(compass, 90)
   assertEqual(compass.bearing, 90)
-  assert(compass.ring.last.startAngle ~= compass.ring.last.endAngle,
-    "a known bearing must sweep a visible pointer")
   assertEqual(compass.ring.last.startAngle, 345)
   assertEqual(compass.ring.last.endAngle, 15)
 

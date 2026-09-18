@@ -1073,7 +1073,12 @@ local function testBackgroundsArePainted()
   local function assertPainted(object, what)
     assertEqual(object.kind, "rectangle", what .. " must be a rectangle")
     assertEqual(object.properties.filled, true, what .. " must be filled")
-    assert(object.properties.color ~= nil, what .. " has no color")
+    -- Not merely "has a colour": a surface has to be painted in a value the
+    -- host resolved and lcd.RGB encoded. A 24-bit token is not nil either,
+    -- and on a radio it paints a colour belonging to no theme.
+    local color = object.properties.color
+    assert(type(color) == "number" and color % 65536 == 0x8000,
+      what .. " was not painted in a resolved colour: " .. tostring(color))
   end
 
   assertPainted(appContext.canvas, "dashboard canvas")
@@ -3207,8 +3212,12 @@ local function testCoreComponents()
     radio.values[103] = 10 + reading * 5
     settle(context, 12)
   end
-  assert(arc.properties.endAngle ~= 135 + 23,
-    "the dial never moved, so this proves nothing")
+  -- The precondition of a drift test is that the dial actually moved, and it
+  -- is pinned rather than merely required to differ: 50 of 0 to 120 is 113
+  -- degrees of the 270 degree sweep, drawn from 135. A sweep that changed
+  -- for the wrong reason would satisfy "it is no longer 158".
+  assertEqual(arc.properties.endAngle, 248,
+    "the dial never moved, so a drift test proves nothing")
   assertEqual(arc.round.drawn.x, expectedX, "the dial drifted horizontally")
   assertEqual(arc.round.drawn.y, expectedY, "the dial drifted vertically")
 
