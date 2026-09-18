@@ -30,7 +30,7 @@
 --- matching on trim names the specification explicitly forbids assuming.
 
 ---@class AeroGridTrimSettings
----@field mode? "single"|"pair"|"all"
+---@field indicators? "single"|"pair"|"all"
 ---@field trim1? string
 ---@field trim2? string
 ---@field trim3? string
@@ -41,7 +41,7 @@
 ---@field orientation3? string
 ---@field orientation4? string
 ---@field scale? "standard"|"extended"|"auto"
----@field display? "percent"|"raw"|"none"
+---@field readout? "percent"|"raw"|"none"
 ---@field label? string
 ---@field accent? string
 
@@ -65,22 +65,29 @@ local trimPanel = {
   -- as a telemetry readout rather than at a status-panel rate.
   refreshInterval = 20,
   settings = {
-    {key = "mode", label = "Indicators", type = "string", default = "single"},
+    -- How many trims the panel shows. `mode` said nothing about which axis of
+    -- the component it selected; the label already said "Indicators".
+    {key = "indicators", label = "Indicators", type = "string",
+      default = "single", choices = {"single", "pair", "all"}},
     -- Trim source names are persisted rather than assumed. They follow the
     -- radio's hardware description, not the pilot's stick mode.
     {key = "trim1", label = "Trim 1", type = "string", default = "trim-ail"},
     {key = "trim2", label = "Trim 2", type = "string", default = "trim-ele"},
     {key = "trim3", label = "Trim 3", type = "string", default = "trim-thr"},
     {key = "trim4", label = "Trim 4", type = "string", default = "trim-rud"},
-    {key = "orientation", label = "Orientation", type = "string", default = "auto"},
+    {key = "orientation", label = "Orientation", type = "string",
+      default = "auto", choices = {"auto", "horizontal", "vertical"}},
     {key = "orientation1", label = "Trim 1 axis", type = "string", default = ""},
     {key = "orientation2", label = "Trim 2 axis", type = "string", default = ""},
     {key = "orientation3", label = "Trim 3 axis", type = "string", default = ""},
     {key = "orientation4", label = "Trim 4 axis", type = "string", default = ""},
-    {key = "scale", label = "Scale", type = "string", default = "auto"},
-    {key = "display", label = "Readout", type = "string", default = "percent"},
+    {key = "scale", label = "Scale", type = "string", default = "auto",
+      choices = {"auto", "standard", "extended"}},
+    {key = "readout", label = "Readout", type = "string", default = "percent",
+      choices = {"percent", "raw", "none"}},
     {key = "label", label = "Label", type = "string", default = "TRIM"},
-    {key = "accent", label = "Accent", type = "string", default = "cyan"},
+    {key = "accent", label = "Accent", type = "string", default = "cyan",
+      choices = {"cyan", "green", "amber", "orange"}},
   },
 }
 
@@ -138,7 +145,7 @@ end
 ---@param feed? AeroGridTrim
 ---@return string
 function trimPanel.valueText(settings, feed)
-  if settings.display == "none" then return "" end
+  if settings.readout == "none" then return "" end
   if type(feed) ~= "table" or not feed.available then return "--" end
 
   if feed.threePosition then
@@ -146,9 +153,9 @@ function trimPanel.valueText(settings, feed)
     return feed.raw > 0 and "3P HI" or "3P LO"
   end
 
-  if feed.centered then return settings.display == "raw" and "0" or "0%" end
+  if feed.centered then return settings.readout == "raw" and "0" or "0%" end
 
-  if settings.display == "raw" then
+  if settings.readout == "raw" then
     return (feed.value > 0 and "+" or "") .. tostring(feed.value)
   end
 
@@ -270,7 +277,7 @@ function trimPanel.create(parent, rect, settings, services)
   local primitives = services.primitives
   local fonts = services.fonts
   local presentation = services.state("normal", settings.accent)
-  local count = trimPanel.indicatorCount(settings.mode)
+  local count = trimPanel.indicatorCount(settings.indicators)
   local area = trimPanel.regionsFor(
     theme, services.themeBuilder, rect, count, fonts)
 

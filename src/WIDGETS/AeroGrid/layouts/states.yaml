@@ -61,8 +61,8 @@ components:
       label: Normal
       source: RxBt
       unit: V
-      min: 0
-      max: 10
+      rangeMin: 0
+      rangeMax: 10
       precision: 2
 
   - id: s-normal-b
@@ -75,8 +75,8 @@ components:
       label: Normal
       source: RQly
       unit: "%"
-      min: 0
-      max: 100
+      rangeMin: 0
+      rangeMax: 100
       precision: 0
 
   # A rising threshold of zero is met by every reading, so this panel is always
@@ -91,8 +91,8 @@ components:
       label: Warning
       source: RxBt
       unit: V
-      min: 0
-      max: 10
+      rangeMin: 0
+      rangeMax: 10
       precision: 2
       direction: rising
       warning: 0
@@ -107,8 +107,8 @@ components:
       label: Critical
       source: RxBt
       unit: V
-      min: 0
-      max: 10
+      rangeMin: 0
+      rangeMax: 10
       precision: 2
       direction: rising
       critical: 0
@@ -124,8 +124,8 @@ components:
     config:
       label: No source
       source: NotASensor
-      min: 0
-      max: 10
+      rangeMin: 0
+      rangeMax: 10
 
   # The cells panel has nothing to read on an ELRS link, which is a second
   # route to the same state through a different component.
@@ -150,8 +150,8 @@ components:
     config:
       label: OK
       source: RQly
-      min: 0
-      max: 100
+      rangeMin: 0
+      rangeMax: 100
       precision: 0
 
   - id: s-small-warning
@@ -163,8 +163,8 @@ components:
     config:
       label: Warn
       source: RQly
-      min: 0
-      max: 100
+      rangeMin: 0
+      rangeMax: 100
       precision: 0
       direction: rising
       warning: 0
@@ -178,8 +178,8 @@ components:
     config:
       label: Crit
       source: RQly
-      min: 0
-      max: 100
+      rangeMin: 0
+      rangeMax: 100
       precision: 0
       direction: rising
       critical: 0
@@ -193,5 +193,5 @@ components:
     config:
       label: None
       source: NotASensor
-      min: 0
-      max: 100
+      rangeMin: 0
+      rangeMax: 100

@@ -308,11 +308,185 @@ local function testSettingsResolution()
   assertEqual(settings.title, "Given")
   assertEqual(settings.limit, 10)
   assertEqual(settings.shown, true)
+  -- Kept, because a layout written for a newer component must survive an
+  -- older host, and reported, because an undeclared key is far more often a
+  -- misspelling or a stale name than a message from the future.
   assertEqual(settings.extra, "kept")
-  assertEqual(#warnings, 2)
+  assert(string.find(table.concat(warnings, "\n"),
+    "extra is not a setting of this component", 1, true),
+    "an undeclared key was accepted in silence")
+  assertEqual(#warnings, 3, "the warning count changed; read them before editing")
+
+  -- A `<key>Name` companion is the documented way a layout records a readable
+  -- source name beside its identifier, so it is not undeclared.
+  local _, named = componentHost.resolveSettings(
+    {settings = {{key = "source", type = "string", default = ""}}},
+    {source = "RxBt", sourceName = "Rx battery"})
+  assertEqual(#named, 0, "a source-name companion was reported as unknown")
+
+  -- A value outside a declared choice list is a typo, not a preference.
+  local choiceModule = {settings = {
+    {key = "shape", type = "string", default = "bar",
+      choices = {"bar", "radial", "none"}},
+  }}
+  local chosen, choiceWarnings = componentHost.resolveSettings(
+    choiceModule, {shape = "nonsense"})
+  assertEqual(chosen.shape, "bar", "an unknown choice was not replaced")
+  assertEqual(#choiceWarnings, 1)
+  assert(string.find(choiceWarnings[1], "must be one of bar, radial, none", 1, true),
+    choiceWarnings[1])
+
+  local valid = componentHost.resolveSettings(choiceModule, {shape = "radial"})
+  assertEqual(valid.shape, "radial", "a declared choice was rejected")
 
   local defaults = componentHost.resolveSettings(module, nil)
   assertEqual(defaults.title, "DEFAULT")
+end
+
+--- Every component's settings schema, read as one catalogue.
+--- The vocabulary rules are properties of the set, not of any one component,
+--- so they are checked over the set. Thirteen modules written to the same
+--- contract by different sessions is exactly the situation in which each is
+--- individually defensible and the collection is not.
+--- Read from disk rather than listed here. A hand-kept list would leave a
+--- newly added component uncovered by exactly the check that exists to keep
+--- the catalogue consistent, and nothing would say so.
+local function componentTypes()
+  local listingPath = root .. "/build/component-types.txt"
+  os.execute("ls '" .. root .. "/src/WIDGETS/AeroGrid/components' > '"
+    .. listingPath .. "'")
+  local listing = assert(io.open(listingPath, "r"))
+  local types = {}
+  for name in listing:lines() do
+    local stem = string.match(name, "^(.+)%.lua$")
+    if stem then types[#types + 1] = stem end
+  end
+  listing:close()
+  os.remove(listingPath)
+  assert(#types > 0, "no components were found to check")
+  return types
+end
+
+--- Names that were retired because another key already asked their question.
+--- Listed by what replaced them, so a reintroduction says where to go.
+local RETIRED_KEYS = {
+  display = "reading, or readout where it names a text form",
+  primary = "reading",
+  min = "a range named for what it bounds",
+  max = "a range named for what it bounds",
+  armSource = "the layout's session block",
+  title = "label",
+}
+
+--- What each component's thresholds are measured in, where the answer is
+--- fixed by the quantity rather than by configuration.
+local FIXED_THRESHOLD_UNITS = {
+  ["cell-battery"] = "volts per cell",
+  ["tx-battery"] = "volts",
+  ["flight-timer"] = "seconds",
+  ["navigation"] = "metres",
+}
+
+local function settingsCatalog()
+  local catalog = {}
+  for _, kind in ipairs(componentTypes()) do
+    catalog[kind] = loadModule("components/" .. kind .. ".lua").settings or {}
+  end
+  return catalog
+end
+
+local function testSettingsVocabulary()
+  local catalog = settingsCatalog()
+  local kinds = componentTypes()
+  assertEqual(#kinds, 13, "the catalogue changed size; the spec names thirteen")
+
+  for kind, settings in pairs(catalog) do
+    local declared = {}
+    for _, setting in ipairs(settings) do
+      declared[setting.key] = setting
+
+      local replacement = RETIRED_KEYS[setting.key]
+      assert(not replacement, kind .. " declares the retired key "
+        .. tostring(setting.key) .. "; use " .. tostring(replacement))
+
+      -- A choice list that omits its own default rejects the value the host
+      -- falls back to, so the setting has no reachable resting value.
+      if setting.choices then
+        local found = false
+        for _, choice in ipairs(setting.choices) do
+          if choice == setting.default then found = true end
+        end
+        assert(found, kind .. "." .. setting.key
+          .. " declares choices that do not include its default "
+          .. tostring(setting.default))
+      end
+    end
+
+    -- Thresholds without a direction do not say which way is the alarm, and
+    -- five components had been hard-coding the answer privately.
+    if declared.warning or declared.critical then
+      assert(declared.direction, kind
+        .. " declares thresholds but no direction")
+      assert(declared.direction.choices, kind
+        .. ".direction declares no choices")
+    end
+
+    -- A threshold's unit is not recoverable from a bare number, so the label
+    -- carries it. Where the unit is fixed by what the component measures the
+    -- label names it; where it follows configuration, as a metric's does and
+    -- as link-status's does when `reading` resolves to RSSI rather than
+    -- quality, the label says that instead of naming a unit that may be wrong.
+    for _, key in ipairs({"warning", "critical"}) do
+      local setting = declared[key]
+      if setting and setting.type == "number" then
+        local unit = FIXED_THRESHOLD_UNITS[kind]
+        if unit then
+          assert(string.find(setting.label, unit, 1, true),
+            kind .. "." .. key .. " is measured in " .. unit
+            .. " and its label does not say so: " .. tostring(setting.label))
+        else
+          assert(string.find(setting.label, "unit", 1, true),
+            kind .. "." .. key .. " has no fixed unit and its label does not"
+            .. " say which one applies: " .. tostring(setting.label))
+        end
+      end
+    end
+  end
+
+  -- `visual` selects a drawing and `presentation` selects content. A
+  -- component that confuses them reads as offering a choice it does not.
+  local indicator = loadModule("components/variable-indicator.lua")
+  for _, name in ipairs({"none", "bar", "bipolar-bar", "radial"}) do
+    assertEqual(indicator.visual(name), name,
+      "variable-indicator offers a visual it does not implement")
+  end
+
+  -- A choice list naming a value the component's own normalizer drops is
+  -- worse than no list: the loader accepts it and the panel ignores it.
+  local trims = loadModule("components/trim-panel.lua")
+  local counts = {}
+  for _, setting in ipairs(catalog["trim-panel"]) do
+    if setting.key == "indicators" then
+      for _, choice in ipairs(setting.choices) do
+        local count = trims.indicatorCount(choice)
+        assert(not counts[count], "trim-panel offers " .. choice
+          .. " and " .. tostring(counts[count]) .. " as the same count")
+        counts[count] = choice
+      end
+    end
+  end
+  assertEqual(counts[4], "all", "trim-panel lost its four-indicator choice")
+
+  -- The palette reserves cyan for electrical data. Both batteries measure
+  -- volts; one of them used to be green.
+  for _, kind in ipairs({"cell-battery", "tx-battery"}) do
+    for _, setting in ipairs(catalog[kind]) do
+      if setting.key == "accent" then
+        assertEqual(setting.default, "cyan",
+          kind .. " defaults to an accent the colour rule does not allow")
+      end
+    end
+  end
 end
 
 --- A raising callback disables only its own component, and only reports once.
@@ -992,9 +1166,9 @@ local function testMetricDirection()
   assertEqual(metric.resolveState(inferred, 24.0, true), "stale")
 
   -- A zero-width range must not divide by zero.
-  assertEqual(metric.fraction({min = 5, max = 5}, 5), 0)
-  assertEqual(metric.fraction({min = 0, max = 10}, 20), 1)
-  assertEqual(metric.fraction({min = 0, max = 10}, -5), 0)
+  assertEqual(metric.fraction({rangeMin = 5, rangeMax = 5}, 5), 0)
+  assertEqual(metric.fraction({rangeMin = 0, rangeMax = 10}, 20), 1)
+  assertEqual(metric.fraction({rangeMin = 0, rangeMax = 10}, -5), 0)
   assertEqual(metric.format(nil, 2), "--")
   assertEqual(metric.format(1.239, 2), "1.24")
 end
@@ -1155,6 +1329,7 @@ testInvalidEntryIsIsolated()
 testComponentContract()
 testSupportedSpans()
 testSettingsResolution()
+testSettingsVocabulary()
 testLifecycleIsolation()
 testColorConversion()
 testModernTheme()
@@ -1903,7 +2078,7 @@ local function testLosslessReadingsOfferOneForm()
 
   -- And a metric, whose unit is a separate label entirely.
   local metric = loadModule("components/metric.lua")
-  assertEqual(#metric.widestSample({min = 0, max = 400}, 1), 1,
+  assertEqual(#metric.widestSample({rangeMin = 0, rangeMax = 400}, 1), 1,
     "a metric offered a shorter form, which could only lose a digit")
 end
 
@@ -2087,16 +2262,16 @@ local function testMetricPresets()
   assertEqual(preset.label, "ALT")
   assertEqual(preset.source, "Alt")
   assertEqual(preset.accent, "green")
-  assertEqual(preset.max, 400)
+  assertEqual(preset.rangeMax, 400)
   assertEqual(preset.extrema, "source")
   assertEqual(preset.secondarySource, "VSpd")
 
   -- Anything stated in the layout wins over the preset.
-  local overridden = {preset = "altitude", label = "HEIGHT", max = 1200,
+  local overridden = {preset = "altitude", label = "HEIGHT", rangeMax = 1200,
     source = "GAlt", extrema = "flight"}
   metric.applyPreset(overridden)
   assertEqual(overridden.label, "HEIGHT")
-  assertEqual(overridden.max, 1200)
+  assertEqual(overridden.rangeMax, 1200)
   assertEqual(overridden.source, "GAlt")
   assertEqual(overridden.extrema, "flight")
 
@@ -2109,13 +2284,13 @@ local function testMetricPresets()
 
   -- The forms decide the font, so they must come from the bounds rather than
   -- from whichever value happens to be showing.
-  assertEqual(metric.widestSample({min = 0, max = 1200}, 1)[1], "1200.0")
-  assertEqual(metric.widestSample({min = -50, max = 10}, 0)[1], "-50")
+  assertEqual(metric.widestSample({rangeMin = 0, rangeMax = 1200}, 1)[1], "1200.0")
+  assertEqual(metric.widestSample({rangeMin = -50, rangeMax = 10}, 0)[1], "-50")
 
   -- A metric offers exactly one form. Its unit is drawn as a separate label,
   -- so the reading is digits alone and holds no redundancy to give up;
   -- anything shorter would drop magnitude.
-  assertEqual(#metric.widestSample({min = 0, max = 1200}, 1), 1,
+  assertEqual(#metric.widestSample({rangeMin = 0, rangeMax = 1200}, 1), 1,
     "a metric offered a shorter form, which could only lose a digit")
 end
 
@@ -2128,11 +2303,11 @@ local function testTimerSemantics()
     elapsed = 210, remaining = 90, expired = false, showElapsed = false,
   }
 
-  assertEqual(timer.displayValue({display = "model"}, countdown), 90)
-  assertEqual(timer.displayValue({display = "elapsed"}, countdown), 210)
+  assertEqual(timer.displayValue({reading = "model"}, countdown), 90)
+  assertEqual(timer.displayValue({reading = "elapsed"}, countdown), 210)
   -- EdgeTX's own showElapsed preference is honoured by `model`.
   countdown.showElapsed = true
-  assertEqual(timer.displayValue({display = "model"}, countdown), 210)
+  assertEqual(timer.displayValue({reading = "model"}, countdown), 210)
   countdown.showElapsed = false
 
   assertEqual(timer.resolveState({}, countdown), "normal")
@@ -2167,15 +2342,15 @@ local function testTxBatteryEstimate()
   local battery = loadModule("components/tx-battery.lua")
 
   assertEqual(battery.hasRange({}), false)
-  assertEqual(battery.hasRange({min = 6.6}), false)
-  assertEqual(battery.hasRange({min = 8.4, max = 6.6}), false,
+  assertEqual(battery.hasRange({packEmpty = 6.6}), false)
+  assertEqual(battery.hasRange({packEmpty = 8.4, packFull = 6.6}), false,
     "an inverted range is not a range")
-  assertEqual(battery.hasRange({min = 6.6, max = 8.4}), true)
+  assertEqual(battery.hasRange({packEmpty = 6.6, packFull = 8.4}), true)
 
   assertEqual(battery.fraction({}, 7.5), 0, "no range means no estimate")
-  assertEqual(battery.fraction({min = 6.6, max = 8.6}, 7.6), 0.5)
-  assertEqual(battery.fraction({min = 6.6, max = 8.6}, 9.0), 1)
-  assertEqual(battery.fraction({min = 6.6, max = 8.6}, 6.0), 0)
+  assertEqual(battery.fraction({packEmpty = 6.6, packFull = 8.6}, 7.6), 0.5)
+  assertEqual(battery.fraction({packEmpty = 6.6, packFull = 8.6}, 9.0), 1)
+  assertEqual(battery.fraction({packEmpty = 6.6, packFull = 8.6}, 6.0), 0)
 
   -- Voltage thresholds always count downward.
   local limits = {warning = 7.0, critical = 6.8}
@@ -2192,23 +2367,23 @@ local function testVariableNormalization()
   local indicator = loadModule("components/variable-indicator.lua")
   local signed = primitives.signedFraction
 
-  assertEqual(indicator.presentation("radial"), "radial")
-  assertEqual(indicator.presentation("sparkline"), "value")
-  assertEqual(indicator.presentation(nil), "value")
+  assertEqual(indicator.visual("radial"), "radial")
+  assertEqual(indicator.visual("sparkline"), "none")
+  assertEqual(indicator.visual(nil), "none")
 
   local range = {value = 150, min = 0, max = 100}
-  assertEqual(indicator.fraction("horizontal-bar", range, signed), 1,
+  assertEqual(indicator.fraction("bar", range, signed), 1,
     "the drawing is clamped")
   assertEqual(indicator.format(range.value, 0), "150",
     "the value is not clamped")
 
   local bipolar = {value = -25, min = -50, max = 100}
   assertEqual(indicator.fraction("bipolar-bar", bipolar, signed), -0.5)
-  assertEqual(indicator.fraction("horizontal-bar", {value = 25, min = 0, max = 100},
+  assertEqual(indicator.fraction("bar", {value = 25, min = 0, max = 100},
     signed), 0.25)
   assertEqual(indicator.fraction("radial", {value = nil, min = 0, max = 100},
     signed), 0)
-  assertEqual(indicator.fraction("horizontal-bar", {value = 5, min = 5, max = 5},
+  assertEqual(indicator.fraction("bar", {value = 5, min = 5, max = 5},
     signed), 0, "a collapsed range cannot produce a fraction")
 
   assertEqual(indicator.crossesZero({min = -100, max = 100}), true)
@@ -2238,31 +2413,31 @@ local function testTrimPresentation()
 
   local right = {available = true, raw = 240, value = 30, fraction = 0.234375,
     centered = false, threePosition = false}
-  assertEqual(trims.valueText({display = "percent"}, right), "+23%")
-  assertEqual(trims.valueText({display = "raw"}, right), "+30")
-  assertEqual(trims.valueText({display = "none"}, right), "")
+  assertEqual(trims.valueText({readout = "percent"}, right), "+23%")
+  assertEqual(trims.valueText({readout = "raw"}, right), "+30")
+  assertEqual(trims.valueText({readout = "none"}, right), "")
 
   local left = {available = true, raw = -240, value = -30, fraction = -0.234375,
     centered = false, threePosition = false}
-  assertEqual(trims.valueText({display = "percent"}, left), "-23%")
-  assertEqual(trims.valueText({display = "raw"}, left), "-30")
+  assertEqual(trims.valueText({readout = "percent"}, left), "-23%")
+  assertEqual(trims.valueText({readout = "raw"}, left), "-30")
 
   local centred = {available = true, raw = 0, value = 0, fraction = 0,
     centered = true, threePosition = false}
-  assertEqual(trims.valueText({display = "percent"}, centred), "0%")
+  assertEqual(trims.valueText({readout = "percent"}, centred), "0%")
 
   -- A three-position trim reports full deflection or nothing, so naming its
   -- position is honest where a percentage would not be.
   local toggle = {available = true, raw = 1024, value = 128, fraction = 1,
     centered = false, threePosition = true}
-  assertEqual(trims.valueText({display = "percent"}, toggle), "3P HI")
+  assertEqual(trims.valueText({readout = "percent"}, toggle), "3P HI")
   toggle.raw, toggle.centered, toggle.fraction = 0, true, 0
-  assertEqual(trims.valueText({display = "percent"}, toggle), "3P MID")
+  assertEqual(trims.valueText({readout = "percent"}, toggle), "3P MID")
   toggle.raw, toggle.centered, toggle.fraction = -1024, false, -1
-  assertEqual(trims.valueText({display = "raw"}, toggle), "3P LO")
+  assertEqual(trims.valueText({readout = "raw"}, toggle), "3P LO")
 
-  assertEqual(trims.valueText({display = "percent"}, nil), "--")
-  assertEqual(trims.valueText({display = "percent"}, {available = false}), "--")
+  assertEqual(trims.valueText({readout = "percent"}, nil), "--")
+  assertEqual(trims.valueText({readout = "percent"}, {available = false}), "--")
 
   -- EdgeTX exposes no axis metadata for a trim source, so `auto` follows the
   -- panel's shape and an explicit override always wins.
@@ -2396,7 +2571,7 @@ local function testCellReadings()
   local cellBattery = loadModule("components/cell-battery.lua")
   local out = {}
   local summary = cellBattery.summarize({4.11, 3.25, 4.09, 4.12}, out)
-  local settings = {reading = "lowest", min = 3.3, max = 4.2,
+  local settings = {reading = "lowest", cellEmpty = 3.3, cellFull = 4.2,
     warning = 3.5, critical = 3.3}
 
   assertEqual(cellBattery.primaryValue(settings, summary), 3.25)
@@ -2404,7 +2579,7 @@ local function testCellReadings()
   -- samples between our polls that this component never will.
   assertEqual(cellBattery.primaryValue(settings, summary, 3.11), 3.11)
 
-  local pack = {reading = "pack", min = 3.3, max = 4.2}
+  local pack = {reading = "pack", cellEmpty = 3.3, cellFull = 4.2}
   assert(math.abs(cellBattery.primaryValue(pack, summary) - 15.57) < 0.001)
   local average = {reading = "average"}
   assert(math.abs(cellBattery.primaryValue(average, summary) - 3.8925) < 0.001)
@@ -2486,13 +2661,13 @@ local function testLinkClassification()
 
   -- Auto prefers quality, because a percentage means the same thing on every
   -- protocol where RSSI does not, but never at the cost of an empty panel.
-  assertEqual(linkStatus.primaryFor({primary = "auto"}, "live", "live"), "quality")
-  assertEqual(linkStatus.primaryFor({primary = "auto"}, "live", "absent"), "rssi")
-  assertEqual(linkStatus.primaryFor({primary = "auto"}, "live", "none"), "rssi")
-  assertEqual(linkStatus.primaryFor({primary = "auto"}, "absent", "live"), "quality")
+  assertEqual(linkStatus.primaryFor({reading = "auto"}, "live", "live"), "quality")
+  assertEqual(linkStatus.primaryFor({reading = "auto"}, "live", "absent"), "rssi")
+  assertEqual(linkStatus.primaryFor({reading = "auto"}, "live", "none"), "rssi")
+  assertEqual(linkStatus.primaryFor({reading = "auto"}, "absent", "live"), "quality")
   -- An explicit choice is never overridden, however bad the source looks.
-  assertEqual(linkStatus.primaryFor({primary = "rssi"}, "absent", "live"), "rssi")
-  assertEqual(linkStatus.primaryFor({primary = "quality"}, "live", "absent"),
+  assertEqual(linkStatus.primaryFor({reading = "rssi"}, "absent", "live"), "rssi")
+  assertEqual(linkStatus.primaryFor({reading = "quality"}, "live", "absent"),
     "quality")
 
   local thresholds = {warning = 50, critical = 30}
@@ -2548,12 +2723,12 @@ local function testLinkClassification()
 
   -- The bar clamps its drawing without altering the reading, including for a
   -- dBm range that is entirely negative.
-  local dbm = {min = -110, max = -30}
+  local dbm = {barMin = -110, barMax = -30}
   assertEqual(linkStatus.fraction(dbm, -110), 0)
   assertEqual(linkStatus.fraction(dbm, -30), 1)
   assert(math.abs(linkStatus.fraction(dbm, -70) - 0.5) < 0.001)
   assertEqual(linkStatus.fraction(dbm, -200), 0)
-  assertEqual(linkStatus.fraction({min = 0, max = 0}, 5), 0)
+  assertEqual(linkStatus.fraction({barMin = 0, barMax = 0}, 5), 0)
 end
 
 --- The link view is the only thing that can tell a dead link from a protocol

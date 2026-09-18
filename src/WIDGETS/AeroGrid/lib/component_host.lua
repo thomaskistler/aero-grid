@@ -7,7 +7,8 @@
 ---@class AeroGridComponentSetting
 ---@field key string Configuration key read from the layout YAML.
 ---@field type? "string"|"number"|"boolean"|"table" Rejects mistyped YAML values.
----@field default? any Applied when the key is absent or mistyped.
+---@field choices? string[] Values this setting accepts; anything else is reported.
+---@field default? any Applied when the key is absent, mistyped, or not a choice.
 
 ---@class AeroGridComponentModule
 ---@field id string Must equal the component type name used in YAML.
@@ -169,6 +170,7 @@ end
 function componentHost.resolveSettings(module, config)
   local settings = {}
   local warnings = {}
+  local declared = {}
 
   if type(config) == "table" then
     for key, value in pairs(config) do
@@ -180,12 +182,43 @@ function componentHost.resolveSettings(module, config)
     if type(setting) ~= "table" or type(setting.key) ~= "string" then
       warnings[#warnings + 1] = "setting " .. index .. " is malformed"
     else
+      declared[setting.key] = setting
       local current = settings[setting.key]
       if current == nil then
         settings[setting.key] = setting.default
       elseif setting.type ~= nil and type(current) ~= setting.type then
         warnings[#warnings + 1] = setting.key .. " must be a " .. tostring(setting.type)
         settings[setting.key] = setting.default
+      elseif setting.choices ~= nil then
+        -- A choice the component does not offer is a typo, and a typo that
+        -- falls back silently is one nobody finds: `presentation: nonsense`
+        -- used to load, render the default, and report nothing. The layout is
+        -- authored by hand in a text editor, so this is the only check it
+        -- gets.
+        local allowed = false
+        for _, choice in ipairs(setting.choices) do
+          if choice == current then allowed = true break end
+        end
+        if not allowed then
+          warnings[#warnings + 1] = setting.key .. " must be one of "
+            .. table.concat(setting.choices, ", ") .. ", not "
+            .. tostring(current)
+          settings[setting.key] = setting.default
+        end
+      end
+    end
+  end
+
+  -- A key the component does not declare is almost always a misspelling of
+  -- one it does, or a key left behind by a rename. Unknown keys are still
+  -- kept, because a layout written for a newer component must not be
+  -- destroyed by an older host, but they are reported rather than ignored:
+  -- silence here is how a renamed setting survives a whole repository of
+  -- layouts and only shows up on a radio.
+  if type(config) == "table" then
+    for key in pairs(config) do
+      if not declared[key] and not string.match(key, "Name$") then
+        warnings[#warnings + 1] = key .. " is not a setting of this component"
       end
     end
   end

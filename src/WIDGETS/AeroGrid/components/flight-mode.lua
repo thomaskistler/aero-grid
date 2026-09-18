@@ -39,7 +39,8 @@ local flightMode = {
     -- and "FLIGHT MODE" needs eleven. A layout wanting the long form can say
     -- so on a panel wide enough to carry it.
     {key = "label", label = "Label", type = "string", default = "MODE"},
-    {key = "accent", label = "Accent", type = "string", default = "green"},
+    {key = "accent", label = "Accent", type = "string", default = "green",
+      choices = {"cyan", "green", "amber", "orange"}},
     {key = "showIndex", label = "Show mode number", type = "boolean", default = false},
   },
 }

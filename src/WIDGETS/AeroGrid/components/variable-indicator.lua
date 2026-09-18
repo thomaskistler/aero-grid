@@ -24,9 +24,9 @@
 ---@field source? string EdgeTX source name, when binding is "source".
 ---@field label? string Semantic label such as Flight count, Rates, or Gain.
 ---@field showName? boolean Keep the configured global variable name visible.
----@field presentation? "value"|"horizontal-bar"|"bipolar-bar"|"radial"
----@field min? number Overrides the resolved lower bound.
----@field max? number Overrides the resolved upper bound.
+---@field visual? "none"|"bar"|"bipolar-bar"|"radial"
+---@field rangeMin? number Overrides the resolved lower bound.
+---@field rangeMax? number Overrides the resolved upper bound.
 ---@field precision? number Negative follows the variable or sensor.
 ---@field unit? string Overrides the resolved unit label.
 ---@field accent? string
@@ -47,34 +47,46 @@ local variableIndicator = {
   -- source binding is rate limited by the telemetry service anyway.
   refreshInterval = 50,
   settings = {
-    {key = "binding", label = "Bind to", type = "string", default = "global"},
+    {key = "binding", label = "Bind to", type = "string", default = "global",
+      choices = {"global", "source"}},
     {key = "index", label = "Global variable", type = "number", default = 0},
     {key = "flightMode", label = "Flight mode", type = "number", default = -1},
     {key = "source", label = "Source", type = "string", default = ""},
+    -- An empty label is not an absent one: it means derive the heading at
+    -- runtime, here from the global variable's configured name. A
+    -- component with a fixed heading states it as its default instead.
     {key = "label", label = "Label", type = "string", default = ""},
     {key = "showName", label = "Show configured name", type = "boolean", default = true},
-    {key = "presentation", label = "Presentation", type = "string", default = "value"},
-    {key = "min", label = "Minimum", type = "number"},
-    {key = "max", label = "Maximum", type = "number"},
+    -- How the value is drawn as a shape, which is what every other component
+    -- calls `visual`. It used to be `presentation`, which elsewhere selects
+    -- responsive content: two different questions under one name.
+    {key = "visual", label = "Visualization", type = "string",
+      default = "none",
+      choices = {"none", "bar", "bipolar-bar", "radial"}},
+    -- Normalization range for the visualization, as in `metric`. It is not a
+    -- limit: a value outside it still reads as itself.
+    {key = "rangeMin", label = "Range minimum", type = "number"},
+    {key = "rangeMax", label = "Range maximum", type = "number"},
     {key = "precision", label = "Decimal places", type = "number", default = -1},
     {key = "unit", label = "Unit", type = "string", default = ""},
-    {key = "accent", label = "Accent", type = "string", default = "cyan"},
+    {key = "accent", label = "Accent", type = "string", default = "cyan",
+      choices = {"cyan", "green", "amber", "orange"}},
   },
 }
 
 --- Presentations this component knows how to draw.
-local PRESENTATIONS = {
-  value = true,
-  ["horizontal-bar"] = true,
+local VISUALS = {
+  none = true,
+  bar = true,
   ["bipolar-bar"] = true,
   radial = true,
 }
 
---- Normalize the selected presentation.
+--- Normalize the selected visualization.
 ---@param name any
 ---@return string
-function variableIndicator.presentation(name)
-  return PRESENTATIONS[name] and name or "value"
+function variableIndicator.visual(name)
+  return VISUALS[name] and name or "none"
 end
 
 --- Format a value with a fixed number of decimals.
@@ -125,8 +137,8 @@ function variableIndicator.read(context)
     end
   end
 
-  if type(settings.min) == "number" then out.min = settings.min end
-  if type(settings.max) == "number" then out.max = settings.max end
+  if type(settings.rangeMin) == "number" then out.min = settings.rangeMin end
+  if type(settings.rangeMax) == "number" then out.max = settings.rangeMax end
   if type(settings.precision) == "number" and settings.precision >= 0 then
     out.precision = settings.precision
   end
@@ -140,15 +152,15 @@ end
 --- Convert a reading into the fraction its presentation needs.
 --- Only the drawing is clamped; the displayed value is never altered, because
 --- a value outside its configured bounds is still the real value.
----@param presentation string
+---@param visual string
 ---@param reading table
 ---@param signedFraction fun(value: any, low: any, high: any): number
 ---@return number
-function variableIndicator.fraction(presentation, reading, signedFraction)
+function variableIndicator.fraction(visual, reading, signedFraction)
   local value = reading.value
   if type(value) ~= "number" or value ~= value then return 0 end
 
-  if presentation == "bipolar-bar" then
+  if visual == "bipolar-bar" then
     return signedFraction(value, reading.min, reading.max)
   end
 
@@ -197,8 +209,8 @@ function variableIndicator.regionsFor(
   -- the same rows as any other panel of this size, whichever component drew
   -- it. What this component wants is a veto, not a vote.
   local ladder = themeBuilder.ladder(theme, rect, frame)
-  local radial = layout.presentation == "radial"
-  local showVisual = layout.showVisual and layout.presentation ~= "value"
+  local radial = layout.visual == "radial"
+  local showVisual = layout.showVisual and layout.visual ~= "none"
     and (radial or ladder.visual)
   local showDetail = layout.showDetail and ladder.rows > 0
 
@@ -248,9 +260,9 @@ function variableIndicator.create(parent, rect, settings, services)
   local primitives = services.primitives
   local fonts = services.fonts
   local span = services.span
-  local presentationName = variableIndicator.presentation(settings.presentation)
+  local visualName = variableIndicator.visual(settings.visual)
   local layout = variableIndicator.presentationFor(span.colSpan, span.rowSpan)
-  layout.presentation = presentationName
+  layout.visual = visualName
   local presentation = services.state("normal", settings.accent)
 
   local context = {
@@ -261,7 +273,7 @@ function variableIndicator.create(parent, rect, settings, services)
     fonts = fonts,
     layout = layout,
     settings = settings,
-    presentationName = presentationName,
+    visualName = visualName,
     stateName = "normal",
     text = "--",
     detail = "",
@@ -329,7 +341,7 @@ function variableIndicator.create(parent, rect, settings, services)
     font = fonts.label,
   })
 
-  if presentationName == "radial" then
+  if visualName == "radial" then
     context.radial = primitives.radial(panel.root, theme, {
       x = area.radialCentreX,
       y = area.radialCentreY,
@@ -337,7 +349,7 @@ function variableIndicator.create(parent, rect, settings, services)
       color = presentation.accent,
       fraction = 0,
     })
-  elseif presentationName == "bipolar-bar" then
+  elseif visualName == "bipolar-bar" then
     context.bipolar = primitives.bipolarBar(panel.root, theme, {
       x = area.pad,
       y = area.barY,
@@ -345,7 +357,7 @@ function variableIndicator.create(parent, rect, settings, services)
       fraction = 0,
       color = presentation.accent,
     })
-  elseif presentationName == "horizontal-bar" then
+  elseif visualName == "bar" then
     context.bar = primitives.bar(panel.root, theme, {
       x = area.pad,
       y = area.barY,
@@ -462,7 +474,7 @@ function variableIndicator.render(context, out)
 
   out.label = string.upper(variableIndicator.labelText(context, reading))
   out.fraction = variableIndicator.fraction(
-    context.presentationName, reading, context.primitives.signedFraction)
+    context.visualName, reading, context.primitives.signedFraction)
   -- The zero tick only means something when the range actually spans it.
   out.marker = variableIndicator.crossesZero(reading)
     and (-reading.min / (reading.max - reading.min)) or nil
@@ -539,7 +551,7 @@ function variableIndicator.update(context, rect)
 
   local reading = variableIndicator.read(context)
   local fraction = variableIndicator.fraction(
-    context.presentationName, reading, primitives.signedFraction)
+    context.visualName, reading, primitives.signedFraction)
 
   if context.bar then
     primitives.placeBar(context.bar, area.pad, area.barY, area.content, fraction)

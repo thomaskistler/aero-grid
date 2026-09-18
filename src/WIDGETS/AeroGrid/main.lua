@@ -316,6 +316,9 @@ local function buildServices(context, placement)
 
   return {
     theme = theme,
+    -- The flight session belongs to the dashboard, not to a component, so it
+    -- is handed down rather than configured per panel.
+    session = context.session or {},
     primitives = context.primitives,
     themeBuilder = builder,
     fonts = builder.typography(placement.colSpan, placement.rowSpan),
@@ -520,6 +523,7 @@ local function advanceLoad(context)
     end
     context.canvas:set({color = context.theme.color.canvas})
 
+    context.session = validated.session or {}
     context.document = validated
     context.itemIndex = componentsIndex
     context.itemIndent = componentsIndent or 2

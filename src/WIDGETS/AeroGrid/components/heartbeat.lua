@@ -29,7 +29,8 @@ local heartbeat = {
   refreshInterval = 10,
   settings = {
     {key = "label", label = "Label", type = "string", default = "HEARTBEAT"},
-    {key = "accent", label = "Accent", type = "string", default = "amber"},
+    {key = "accent", label = "Accent", type = "string", default = "amber",
+      choices = {"cyan", "green", "amber", "orange"}},
   },
 }
 

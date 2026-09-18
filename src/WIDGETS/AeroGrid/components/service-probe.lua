@@ -28,12 +28,17 @@ local probe = {
   -- instruction budget to the services themselves.
   refreshInterval = 50,
   settings = {
-    {key = "service", label = "Service", type = "string", default = "telemetry"},
+    {key = "service", label = "Service", type = "string", default = "telemetry",
+      choices = {"telemetry", "model", "control", "extrema", "navigation"}},
     {key = "source", label = "Source", type = "string", default = ""},
     {key = "extra", label = "Second source", type = "string", default = ""},
     {key = "index", label = "Index", type = "number", default = 0},
+    -- An empty label is not an absent one: it means derive the heading at
+    -- runtime, here from the name of the service being probed. A
+    -- component with a fixed heading states it as its default instead.
     {key = "label", label = "Label", type = "string", default = ""},
-    {key = "accent", label = "Accent", type = "string", default = "cyan"},
+    {key = "accent", label = "Accent", type = "string", default = "cyan",
+      choices = {"cyan", "green", "amber", "orange"}},
   },
 }
 

@@ -29,15 +29,14 @@
 ---@class AeroGridLinkSettings
 ---@field rssiSource? string
 ---@field qualitySource? string
----@field primary? "auto"|"rssi"|"quality"
+---@field reading? "auto"|"rssi"|"quality"
 ---@field label? string
----@field min? number Reading treated as empty by the bar.
----@field max? number Reading treated as full by the bar.
+---@field barMin? number Reading treated as empty by the bar.
+---@field barMax? number Reading treated as full by the bar.
 ---@field warning? number
 ---@field critical? number
 ---@field extrema? "source"|"flight"|"none"
 ---@field extremaSource? string Explicit EdgeTX minimum source.
----@field armSource? string Arm switch bounding a flight session.
 ---@field visual? "bar"|"none"
 ---@field accent? string
 
@@ -64,21 +63,32 @@ local linkStatus = {
     -- Never defaulted: link quality is not universal, and inferring it from
     -- RSSI would invent a number the radio never reported.
     {key = "qualitySource", label = "Link quality source", type = "string", default = ""},
-    {key = "primary", label = "Primary reading", type = "string", default = "auto"},
+    -- Which of the two sources leads the panel. Named `reading` like every
+    -- other component that chooses between its own values.
+    {key = "reading", label = "Primary reading", type = "string",
+      default = "auto", choices = {"auto", "rssi", "quality"}},
     {key = "label", label = "Label", type = "string", default = "LINK"},
     -- The bar's range, in the primary reading's own unit. The defaults suit a
     -- percentage; a dBm source needs its own, which is why they are settings.
-    {key = "min", label = "Bar minimum", type = "number", default = 0},
-    {key = "max", label = "Bar maximum", type = "number", default = 100},
+    {key = "barMin", label = "Bar minimum", type = "number", default = 0},
+    {key = "barMax", label = "Bar maximum", type = "number", default = 100},
     -- No default thresholds: what counts as a bad link depends entirely on
     -- the unit, and a guess would warn constantly on dBm or never on percent.
-    {key = "warning", label = "Warning level", type = "number"},
-    {key = "critical", label = "Critical level", type = "number"},
-    {key = "extrema", label = "Minimum tracked", type = "string", default = "none"},
+    -- In the unit of whichever source leads, which is what `reading` selects:
+    -- a percentage under `quality` and dBm or dB under `rssi`. There is no
+    -- one unit to name here, so the layout has to know which source it chose.
+    {key = "warning", label = "Warning, in the leading source's unit", type = "number"},
+    {key = "critical", label = "Critical, in the leading source's unit", type = "number"},
+    -- A link only ever gets worse downward.
+    {key = "direction", label = "Threshold direction", type = "string",
+      default = "falling", choices = {"falling"}},
+    {key = "extrema", label = "Minimum tracked", type = "string",
+      default = "none", choices = {"none", "source", "flight"}},
     {key = "extremaSource", label = "Minimum source", type = "string", default = ""},
-    {key = "armSource", label = "Arm switch", type = "string", default = ""},
-    {key = "visual", label = "Visualization", type = "string", default = "bar"},
-    {key = "accent", label = "Accent", type = "string", default = "green"},
+    {key = "visual", label = "Visualization", type = "string", default = "bar",
+      choices = {"bar", "none"}},
+    {key = "accent", label = "Accent", type = "string", default = "green",
+      choices = {"cyan", "green", "amber", "orange"}},
   },
 }
 
@@ -118,7 +128,7 @@ end
 ---@param qualityState string
 ---@return "rssi"|"quality"
 function linkStatus.primaryFor(settings, rssiState, qualityState)
-  local wanted = settings.primary
+  local wanted = settings.reading
 
   if wanted == "rssi" then return "rssi" end
   if wanted == "quality" then return "quality" end
@@ -337,8 +347,8 @@ end
 function linkStatus.fraction(settings, value)
   if type(value) ~= "number" or value ~= value then return 0 end
 
-  local low = type(settings.min) == "number" and settings.min or 0
-  local high = type(settings.max) == "number" and settings.max or 100
+  local low = type(settings.barMin) == "number" and settings.barMin or 0
+  local high = type(settings.barMax) == "number" and settings.barMax or 100
   if high <= low then return 0 end
 
   local fraction = (value - low) / (high - low)
@@ -438,7 +448,7 @@ function linkStatus.create(parent, rect, settings, services)
     context.link = telemetry:link()
   end
 
-  local leading = settings.primary == "rssi" and settings.rssiSource
+  local leading = settings.reading == "rssi" and settings.rssiSource
     or settings.qualitySource
   if type(leading) ~= "string" or leading == "" then leading = settings.rssiSource end
 
@@ -451,7 +461,8 @@ function linkStatus.create(parent, rect, settings, services)
       context.minimumFeed = extrema:sourceExtreme(leading, "min")
     end
   elseif extrema and settings.extrema == "flight" then
-    extrema:flight(settings.armSource ~= "" and settings.armSource or nil)
+    local arm = services.session and services.session.armSource
+    extrema:flight(arm ~= "" and arm or nil)
     context.sessionExtrema = extrema:sessionExtrema(leading)
   end
 
