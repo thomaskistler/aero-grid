@@ -1627,6 +1627,67 @@ components:
   assert(tight.label.hidden,
     "a label with no room left beside the button was drawn anyway")
 
+  -- Every catalogue component, at every span the grid allows, in the corner.
+  -- Eight of the ten pull their reading back up when a panel is too short to
+  -- hold it below the header, which could slide it under the button again.
+  -- The cell heights that would do that are one pixel away from the ones the
+  -- grid actually produces, so this is measured rather than reasoned about.
+  local sweepPath = makeWidget("appmode-sweep")
+  local sweepTypes = {
+    "metric", "flight-timer", "flight-mode", "tx-battery",
+    "variable-indicator", "trim-panel", "model-identity",
+    "cell-battery", "link-status", "navigation",
+  }
+  local checked = {}
+
+  for _, kind in ipairs(sweepTypes) do
+    checked[kind] = 0
+    for colSpan = 1, 4 do
+      for rowSpan = 1, 4 do
+        resetRadio()
+        writeFile(sweepPath .. "layouts/default.yaml", table.concat({
+          "version: 1",
+          "grid:",
+          "  columns: 4",
+          "  rows: 4",
+          "components:",
+          "  - id: probe",
+          "    type: " .. kind,
+          "    col: 0",
+          "    row: 0",
+          "    colSpan: " .. colSpan,
+          "    rowSpan: " .. rowSpan,
+          "    config:",
+          "      label: Probe",
+          "      source: RxBt",
+          "      rssiSource: RSSI",
+          "      qualitySource: RQly",
+          "      trim1: trim-ail",
+          "      timer: 0",
+          "      index: 0",
+          "", }, "\n"))
+
+        local swept = createLoaded(appZone(), DEFAULT_OPTIONS, sweepPath)
+        pump(swept, 20)
+
+        -- A span the component refuses is a refusal, not a defect.
+        local refused = #swept.components == 0
+        if not refused then
+          assertEqual(#swept.errors, 0, kind .. " " .. colSpan .. "x" .. rowSpan
+            .. ": " .. table.concat(swept.errors, "\n"))
+          check(kind .. " " .. colSpan .. "x" .. rowSpan, swept)
+          checked[kind] = checked[kind] + 1
+        end
+      end
+    end
+  end
+
+  -- Per type, so a name the loader rejects cannot quietly drop one from the
+  -- sweep and leave it looking as though it passed.
+  for _, kind in ipairs(sweepTypes) do
+    assert(checked[kind] > 0, kind .. " was never built at any span")
+  end
+
   -- Outside App mode nothing is taken away, so the same layout keeps the
   -- geometry it has always had.
   local plain = createLoaded(fullScreenZone(), DEFAULT_OPTIONS, cramped)
