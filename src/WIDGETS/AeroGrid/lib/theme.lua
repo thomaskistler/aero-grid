@@ -320,13 +320,27 @@ end
 ---@param env table Resolved EdgeTX environment.
 ---@param role any Value of a COLOR_THEME_* constant.
 ---@return integer? color
+--- Extract the RGB565 payload from an EdgeTX colour flag word.
+---
+--- `lcd.getColor` does not return a bare RGB565. `luaLcdGetColor` returns
+--- `colorToRGB(flags) & (COLOR_MASK(~0u) | RGB_FLAG)`, and the colour lives in
+--- the upper half: `COLOR_VAL(flags)` is `flags >> 16`, with `RGB_FLAG`
+--- (`0x8000`) set in the lower half. Reading the low 16 bits instead leaves
+--- red 16, green 0 and blue 0 for every role of every theme, which drew every
+--- panel on the dashboard in a dark red belonging to no EdgeTX theme at all.
+---@param flags integer
+---@return integer rgb565
+local function colorValue(flags)
+  return math.floor(flags / 65536) % 65536
+end
+
 local function readRole(env, role)
   if type(role) ~= "number" then return nil end
 
   local ok, value = pcall(env.getColor, role)
   if not ok or type(value) ~= "number" then return nil end
 
-  return theme.fromRgb565(value)
+  return theme.fromRgb565(colorValue(value))
 end
 
 --- Collect the EdgeTX color environment, allowing tests to inject one.

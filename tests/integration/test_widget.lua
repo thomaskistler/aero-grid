@@ -77,8 +77,11 @@ lcd = {
     if green == nil and blue == nil then return red end
     return red * 65536 + green * 256 + blue
   end,
+  -- Returns what the firmware returns: an LcdFlags word with the colour in
+  -- the upper half and RGB_FLAG set, not a bare RGB565. A mock that hands
+  -- back a bare RGB565 cannot see the host misread the real thing.
   getColor = function(role)
-    return toRgb565(edgeTxRoles[role] or 0x000000)
+    return toRgb565(edgeTxRoles[role] or 0x000000) * 65536 + 0x8000
   end,
 }
 

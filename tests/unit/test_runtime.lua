@@ -383,13 +383,28 @@ local function testEdgeTxTheme()
       + math.floor(blue * 31 / 255)
   end
 
+  -- `lcd.getColor` returns an LcdFlags word: the colour sits in the upper
+  -- half with RGB_FLAG set in the lower. Handing back a bare RGB565 is the
+  -- shape the firmware never produces.
+  local function asFlags(rgb) return toRgb565(rgb) * 65536 + 0x8000 end
+
   local resolved = theme.build("edgetx", nil, {
     roles = roles,
-    getColor = function(role) return toRgb565(values[role]) end,
+    getColor = function(role) return asFlags(values[role]) end,
   })
 
   assertEqual(resolved.mode, "edgetx")
   assert(resolved.rgb.canvas ~= theme.modern().canvas, "canvas was not derived")
+
+  -- The canvas has to be the radio's own colour, not merely different from
+  -- Modern's. Reading the low half of the flag word `lcd.getColor` returns
+  -- yielded red 16, green 0, blue 0 for every role of every theme: a value
+  -- that satisfies "was it derived?" while being wrong for all of them, and
+  -- which drew every panel dark red on a radio while this suite stayed green.
+  assertEqual(resolved.rgb.canvas, theme.fromRgb565(toRgb565(values[4])),
+    "the radio's own colour did not survive being read")
+  assertEqual(resolved.rgb.text, theme.fromRgb565(toRgb565(values[2])),
+    "the radio's own colour did not survive being read")
   assertEqual(resolved.rgb.critical, theme.modern().critical)
   assert(theme.contrast(resolved.rgb.surface, resolved.rgb.text) >= 4.5,
     "derived text is unreadable")
@@ -419,8 +434,8 @@ local function testEdgeTxTheme()
   local hostile = theme.build("edgetx", nil, {
     roles = roles,
     getColor = function(role)
-      if role == 4 then return toRgb565(0x70D6F3) end
-      return toRgb565(values[role])
+      if role == 4 then return asFlags(0x70D6F3) end
+      return asFlags(values[role])
     end,
   })
   assertEqual(#hostile.warnings, 0,
