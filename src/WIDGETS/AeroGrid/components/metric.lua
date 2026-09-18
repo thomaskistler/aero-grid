@@ -402,14 +402,17 @@ function metric.fraction(settings, value)
   return fraction
 end
 
---- Build the widest string this metric will ever display.
---- The primary font is chosen from this rather than from the current reading,
---- so the value never resizes as it changes: the specification requires stable
---- geometry, and a font that shrank on the first three-digit reading would
---- move every neighbouring element.
+--- The forms this metric's reading may be drawn in, longest first.
+---
+--- There is only one. A metric draws its unit as a separate label, so the
+--- reading is digits alone and there is no redundancy in it to give up:
+--- dropping a digit would drop magnitude, which no font size is worth.
+---
+--- The forms are built from the configured range rather than from the current
+--- reading, so the font is chosen once and does not change as the value moves.
 ---@param settings AeroGridMetricSettings
 ---@param digits integer
----@return string
+---@return string[]
 function metric.widestSample(settings, digits)
   local low = type(settings.min) == "number" and settings.min or 0
   local high = type(settings.max) == "number" and settings.max or 100
@@ -418,9 +421,7 @@ function metric.widestSample(settings, digits)
   local other = metric.format(high, digits)
   if #other > #widest then widest = other end
 
-  -- A range that never goes negative still has to survive one that does, so
-  -- reserve the sign only when the configured range actually uses it.
-  return widest
+  return {widest}
 end
 
 --- Compute every content region from the current rectangle.
@@ -437,7 +438,7 @@ end
 ---@param rect AeroGridRect
 ---@param layout table
 ---@param fonts table
----@param sample? string Widest value text the component will render.
+---@param sample? string[] Lossless forms of the reading, longest first.
 ---@return table
 function metric.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
   local spacing = theme.spacing
@@ -452,26 +453,15 @@ function metric.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
   local unitHeight = themeBuilder.fontHeight(fonts.unit)
   local top = frame.top
 
-  local showUnit = layout.showUnit
-  local showVisual = layout.showVisual and layout.visual ~= "none"
-  local showRange = layout.showRange
-  local showSecondary = layout.showSecondary and layout.showRange
-
-  local function room()
-    local below = bottomPad
-    if showVisual then below = below + spacing.barHeight + 2 end
-    if showRange then below = below + labelHeight + 2 end
-    return rect.h - top - (showUnit and unitHeight or 0) - below
-  end
-
-  -- The dominant reading wins: shed optional detail before shrinking it.
-  local comfortable = themeBuilder.fontHeight(MIDSIZE)
-  if room() < comfortable and showRange then
-    showRange = false
-    showSecondary = false
-  end
-  if room() < comfortable and showUnit then showUnit = false end
-  if room() < comfortable and showVisual then showVisual = false end
+  -- Composition comes from the shared ladder, so a panel of this size carries
+  -- the same rows as any other panel of this size, whichever component drew
+  -- it. What this component wants is a veto, not a vote: it may decline a row
+  -- the ladder granted, and cannot claim one it did not.
+  local ladder = themeBuilder.ladder(theme, rect, frame)
+  local showUnit = layout.showUnit and ladder.rows > 0
+  local showVisual = layout.showVisual and layout.visual ~= "none" and ladder.visual
+  local showRange = layout.showRange and ladder.rows > 0
+  local showSecondary = layout.showSecondary and showRange
 
   local radius = math.max(6, math.floor(math.min(rect.w, rect.h) / 5))
   local radialX = math.max(pad, rect.w - pad - radius * 2)
@@ -481,10 +471,11 @@ function metric.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     valueWidth = math.max(1, radialX - pad - 4)
   end
 
-  local available = math.max(1, room())
-  local primary = sample
-    and themeBuilder.fitText(sample, valueWidth, available)
-    or themeBuilder.fitPrimary(available)
+  -- The unit sits under the reading and comes out of the same room.
+  local available = math.max(1, ladder.room
+    - (showUnit and themeBuilder.fontHeight(fonts.unit) or 0))
+  local primary, formIndex = themeBuilder.fitReading(
+    sample or {""}, valueWidth, available)
   local primaryHeight = themeBuilder.fontHeight(primary)
 
   if top + primaryHeight > rect.h then
@@ -508,6 +499,7 @@ function metric.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     valueY = top,
     valueWidth = valueWidth,
     primary = primary,
+    formIndex = formIndex,
     unitY = math.max(1, top + primaryHeight),
     barY = barY,
     rangeY = math.max(1, barY - labelHeight - 2),

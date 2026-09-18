@@ -51,6 +51,10 @@ local txBattery = {
   },
 }
 
+--- Lossless forms of the reading, longest first. The unit is redundant with
+--- the panel's label; the digits are not.
+txBattery.FORMS = {"88.8V", "88.8"}
+
 --- Report whether a usable voltage range was configured.
 --- Without one there is no estimate, so neither the bar nor the percentage is
 --- drawn however the layout set their own switches.
@@ -113,22 +117,18 @@ function txBattery.regionsFor(theme, themeBuilder, rect, layout, fonts)
   local frame = themeBuilder.frame(theme, rect, fonts)
   local labelHeight = frame.labelHeight
   local top = frame.top
-  local showVisual = layout.showVisual
-  local showDetail = layout.showDetail
+  -- Composition comes from the shared ladder, so a panel of this size carries
+  -- the same rows as any other panel of this size, whichever component drew
+  -- it. What this component wants is a veto, not a vote.
+  local ladder = themeBuilder.ladder(theme, rect, frame)
+  local showVisual = layout.showVisual and ladder.visual
+  local showDetail = layout.showDetail and ladder.rows > 0
 
-  local function room()
-    local below = frame.bottom
-    if showVisual then below = below + spacing.barHeight + 2 end
-    if showDetail then below = below + labelHeight + 2 end
-    return rect.h - top - below
-  end
-
-  local comfortable = themeBuilder.fontHeight(MIDSIZE)
-  if room() < comfortable and showDetail then showDetail = false end
-  if room() < comfortable and showVisual then showVisual = false end
-
-  -- "88.8V" is the widest reading a transmitter pack produces.
-  local value = themeBuilder.fitText("88.8V", frame.content, math.max(1, room()))
+  -- "88.8V" is the widest reading a transmitter pack produces, and "88.8" is
+  -- the same reading without a unit the panel's own label already carries.
+  -- Nothing shorter is offered: a digit here is magnitude.
+  local value, formIndex = themeBuilder.fitReading(
+    txBattery.FORMS, frame.content, ladder.room)
   local valueHeight = themeBuilder.fontHeight(value)
   if top + valueHeight > rect.h then top = math.max(0, rect.h - valueHeight) end
 
@@ -140,6 +140,8 @@ function txBattery.regionsFor(theme, themeBuilder, rect, layout, fonts)
     content = frame.content,
     valueY = top,
     value = value,
+    formIndex = formIndex,
+    formIndex = formIndex,
     detailY = math.max(1, barY - labelHeight - 2),
     barY = barY,
     showVisual = showVisual,

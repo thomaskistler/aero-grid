@@ -49,6 +49,11 @@ local flightTimer = {
   },
 }
 
+--- Forms of the clock, longest first, and there is deliberately only one.
+--- See the note in `regionsFor`: every shorter form of a clock drops a field,
+--- and a field is magnitude.
+flightTimer.FORMS = {"-88:88:88"}
+
 --- Describe how the component presents itself at a given span.
 ---@param colSpan integer
 ---@param rowSpan integer
@@ -159,26 +164,23 @@ function flightTimer.regionsFor(theme, themeBuilder, rect, layout, fonts)
   local labelHeight = frame.labelHeight
   local top = frame.top
 
-  local showDetail = layout.showDetail
-  local showVisual = layout.showVisual
-
-  local function room()
-    local below = frame.bottom
-    if showVisual then below = below + spacing.barHeight + 2 end
-    if showDetail then below = below + labelHeight + 2 end
-    return rect.h - top - below
-  end
-
-  -- The clock is the dominant reading: shed the supporting rows first.
-  local comfortable = themeBuilder.fontHeight(MIDSIZE)
-  if room() < comfortable and showVisual then showVisual = false end
-  if room() < comfortable and showDetail then showDetail = false end
+  -- Composition comes from the shared ladder, so a panel of this size carries
+  -- the same rows as any other panel of this size, whichever component drew
+  -- it. What this component wants is a veto, not a vote.
+  local ladder = themeBuilder.ladder(theme, rect, frame)
+  local showDetail = layout.showDetail and ladder.rows > 0
+  local showVisual = layout.showVisual and ladder.visual
 
   -- "-88:88:88" is the widest clock this component can produce, so the font is
   -- chosen from that rather than from the current reading; otherwise the
   -- digits would resize the first time an hour or a minus sign appeared.
-  local clock = themeBuilder.fitText(
-    "-88:88:88", frame.content, math.max(1, room()))
+  --
+  -- It is the only form offered. A clock has no redundancy in it: dropping
+  -- the hours field turns 1:04:12 into 04:12, which is not a shorter reading
+  -- but a different one, and one a pilot would believe. Where it will not fit,
+  -- the font steps down instead.
+  local clock, formIndex = themeBuilder.fitReading(
+    flightTimer.FORMS, frame.content, ladder.room)
   local clockHeight = themeBuilder.fontHeight(clock)
 
   if top + clockHeight > rect.h then
@@ -193,6 +195,7 @@ function flightTimer.regionsFor(theme, themeBuilder, rect, layout, fonts)
     content = frame.content,
     clockY = top,
     clock = clock,
+    formIndex = formIndex,
     detailY = math.max(1, barY - labelHeight - 2),
     barY = barY,
     showDetail = showDetail,

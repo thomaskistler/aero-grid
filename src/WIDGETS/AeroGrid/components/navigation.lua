@@ -58,6 +58,15 @@ local navigation = {
   },
 }
 
+--- Forms of the distance reading, longest first, and there is only one.
+---
+--- A distance has no redundancy to give up. Its unit is not decoration,
+--- because it changes with range: `1.23km` and `1.23m` are different readings,
+--- so dropping it would be dropping magnitude. Nor can a decimal go, since
+--- `1.23km` as `1km` discards 230 metres of a number a pilot is flying by.
+--- Where it will not fit, the font steps down instead.
+navigation.FORMS = {"888.88km"}
+
 --- Presentations this component knows how to draw, from least to most.
 local PRESENTATIONS = {
   distance = true,
@@ -255,28 +264,19 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
   local frame = themeBuilder.frame(theme, rect, fonts)
   local labelHeight = frame.labelHeight
   local top = frame.top
-  local showDetail = layout.showDetail
-  local showCoordinates = layout.showCoordinates
+  -- Composition comes from the shared ladder, so a panel of this size carries
+  -- the same rows as any other panel of this size, whichever component drew
+  -- it. Navigation asks for two rows where every other component asks for
+  -- one, so the second is granted only where the first left room for it.
+  local ladder = themeBuilder.ladder(theme, rect, frame)
+  local rowHeight = labelHeight + 2
+  local showDetail = layout.showDetail and ladder.rows > 0
+  local showCoordinates = layout.showCoordinates and showDetail
+    and ladder.room - rowHeight >= themeBuilder.fontHeight(MIDSIZE)
   local showCompass = layout.showCompass
 
-  --- Vertical space left for the dominant reading and the dial.
-  local function room(detail, coordinates)
-    local below = frame.bottom
-    if coordinates then below = below + labelHeight + 2 end
-    if detail then below = below + labelHeight + 2 end
-    return rect.h - top - below
-  end
-
-  -- Optional detail is shed before the dominant reading is shrunk.
-  local comfortable = themeBuilder.fontHeight(MIDSIZE)
-  if room(showDetail, showCoordinates) < comfortable and showCoordinates then
-    showCoordinates = false
-  end
-  if room(showDetail, showCoordinates) < comfortable and showDetail then
-    showDetail = false
-  end
-
-  local available = math.max(1, room(showDetail, showCoordinates))
+  local available = math.max(1, ladder.room
+    - (showCoordinates and rowHeight or 0))
 
   -- The dial is square, so it is bounded by whichever of the two axes runs
   -- out first, and it is dropped entirely when what remains is too small to
@@ -293,7 +293,11 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     valueWidth = math.max(1, (centreX - radius) - frame.pad - 4)
   end
 
-  local value = themeBuilder.fitText(sample, valueWidth, available)
+  -- One form. A distance has no redundancy: the unit is not decoration here
+  -- because it changes with range, so `1.23km` and `1.23m` are different
+  -- readings, and dropping a decimal turns 1.23 km into 1 km, which is 230
+  -- metres of a number a pilot is flying by.
+  local value, formIndex = themeBuilder.fitReading(sample, valueWidth, available)
   local valueHeight = themeBuilder.fontHeight(value)
   if top + valueHeight > rect.h then top = math.max(0, rect.h - valueHeight) end
 
@@ -313,6 +317,7 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     valueY = top,
     valueWidth = valueWidth,
     value = value,
+    formIndex = formIndex,
     detailY = math.max(1, detailY),
     detailWidth = detailWidth,
     originX = frame.pad + detailWidth + 4,
@@ -368,9 +373,9 @@ function navigation.create(parent, rect, settings, services)
       settings.distanceSource ~= "" and settings.distanceSource or nil)
   end
 
-  -- "888.88km" is the widest distance this component can print, so the font
-  -- is chosen from that rather than from the current reading.
-  context.sample = "888.88km"
+  -- The widest distance this component can print, so the font is chosen from
+  -- that rather than from the current reading.
+  context.sample = navigation.FORMS
 
   local area = navigation.regionsFor(
     theme, services.themeBuilder, rect, layout, fonts, context.sample)

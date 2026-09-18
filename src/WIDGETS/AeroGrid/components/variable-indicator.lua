@@ -193,20 +193,14 @@ function variableIndicator.regionsFor(
   local frame = themeBuilder.frame(theme, rect, fonts)
   local labelHeight = frame.labelHeight
   local top = frame.top
+  -- Composition comes from the shared ladder, so a panel of this size carries
+  -- the same rows as any other panel of this size, whichever component drew
+  -- it. What this component wants is a veto, not a vote.
+  local ladder = themeBuilder.ladder(theme, rect, frame)
   local radial = layout.presentation == "radial"
   local showVisual = layout.showVisual and layout.presentation ~= "value"
-  local showDetail = layout.showDetail
-
-  local function room()
-    local below = frame.bottom
-    if showVisual and not radial then below = below + spacing.barHeight + 2 end
-    if showDetail then below = below + labelHeight + 2 end
-    return rect.h - top - below
-  end
-
-  local comfortable = themeBuilder.fontHeight(MIDSIZE)
-  if room() < comfortable and showDetail then showDetail = false end
-  if room() < comfortable and showVisual then showVisual = false end
+    and (radial or ladder.visual)
+  local showDetail = layout.showDetail and ladder.rows > 0
 
   local radius = math.max(6, math.floor(math.min(rect.w, rect.h) / 5))
   local radialX = math.max(frame.pad, rect.w - frame.pad - radius * 2)
@@ -216,7 +210,7 @@ function variableIndicator.regionsFor(
     valueWidth = math.max(1, radialX - frame.pad - 4)
   end
 
-  local value = themeBuilder.fitText(sample, valueWidth, math.max(1, room()))
+  local value, formIndex = themeBuilder.fitReading(sample, valueWidth, ladder.room)
   local valueHeight = themeBuilder.fontHeight(value)
   if top + valueHeight > rect.h then top = math.max(0, rect.h - valueHeight) end
 
@@ -229,6 +223,7 @@ function variableIndicator.regionsFor(
     valueY = top,
     valueWidth = valueWidth,
     value = value,
+    formIndex = formIndex,
     detailY = math.max(1, barY - labelHeight - 2),
     barY = barY,
     radius = radius,
@@ -297,11 +292,17 @@ function variableIndicator.create(parent, rect, settings, services)
   -- once and never changes afterwards, which is what keeps the reading from
   -- resizing under the pilot.
   if not reading.available then sample = "-" .. sample .. "0" end
-  if reading.unitText ~= "" then sample = sample .. reading.unitText end
-  context.sample = sample
+  -- The unit is redundant with the panel's label and with the configured name
+  -- on the supporting row, so it may go. The digits may not: a rates value of
+  -- 4.5 shown as 4 is a different number, not a shorter one.
+  local forms = {sample}
+  if reading.unitText ~= "" then
+    forms = {sample .. reading.unitText, sample}
+  end
+  context.sample = forms
 
   local area = variableIndicator.regionsFor(
-    theme, services.themeBuilder, rect, layout, fonts, sample)
+    theme, services.themeBuilder, rect, layout, fonts, forms)
 
   local panel = primitives.panel(parent, rect, theme, presentation)
   context.panel = panel

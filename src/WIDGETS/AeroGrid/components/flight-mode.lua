@@ -49,6 +49,14 @@ local flightMode = {
 --- to "FM<n>", which is always shorter.
 local WIDEST_NAME = "MMMMMMMMMM"
 
+--- Forms of the reading, longest first.
+---
+--- A flight mode name is text rather than a measurement, so a shorter form
+--- gives up characters of a name and not magnitude of a reading. EdgeTX will
+--- clip a name longer than the form allows, which is the same thing a narrower
+--- panel would do to it anyway.
+local FORMS = {WIDEST_NAME, "MMMMMM", "MMMM"}
+
 --- Describe how the component presents itself at a given span.
 ---@param colSpan integer
 ---@param rowSpan integer
@@ -69,20 +77,14 @@ function flightMode.regionsFor(theme, themeBuilder, rect, layout, fonts)
   local frame = themeBuilder.frame(theme, rect, fonts)
   local labelHeight = frame.labelHeight
   local top = frame.top
-  local showDetail = layout.showDetail
+  -- Composition comes from the shared ladder, so a panel of this size carries
+  -- the same rows as any other panel of this size, whichever component drew
+  -- it. What this component wants is a veto, not a vote.
+  local ladder = themeBuilder.ladder(theme, rect, frame)
+  local showDetail = layout.showDetail and ladder.rows > 0
 
-  local function room()
-    local below = frame.bottom
-    if showDetail then below = below + labelHeight + 2 end
-    return rect.h - top - below
-  end
-
-  if room() < themeBuilder.fontHeight(MIDSIZE) and showDetail then
-    showDetail = false
-  end
-
-  local name = themeBuilder.fitText(
-    WIDEST_NAME, frame.content, math.max(1, room()))
+  local name, formIndex = themeBuilder.fitReading(
+    FORMS, frame.content, ladder.room)
   local nameHeight = themeBuilder.fontHeight(name)
 
   if top + nameHeight > rect.h then
@@ -95,6 +97,7 @@ function flightMode.regionsFor(theme, themeBuilder, rect, layout, fonts)
     content = frame.content,
     nameY = top,
     name = name,
+    formIndex = formIndex,
     detailY = math.max(1, rect.h - frame.bottom - labelHeight),
     showDetail = showDetail,
   }

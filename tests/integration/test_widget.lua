@@ -1318,6 +1318,97 @@ components:
   resetRadio()
 end
 
+--- Panels of one size agree about how large a reading is.
+---
+--- This is the thing the shared ladder exists for, and it is measured through
+--- the real host rather than through the geometry helpers, because the defect
+--- was never in the arithmetic: each component's own ladder was correct and
+--- they disagreed with each other. At `2 x 2` the four panels of the span
+--- gallery landed on XXLSIZE, DBLSIZE, MIDSIZE and SMLSIZE, a range of four to
+--- one on panels identical to the pixel.
+---
+--- The bound the old code also satisfied is "no reading is larger than its box
+--- allows". That is true of every version of this component and proves
+--- nothing, so what is asserted here is the spread between components and the
+--- direction of the ladder.
+local function testReadingsAgreeAcrossComponents()
+  --- Build one layout full of a single span and report the fonts drawn.
+  local function fontsAt(colSpan, rowSpan, entries)
+    local lines = {"version: 1", "grid:", "  columns: 4", "  rows: 4", "components:"}
+    local col, row = 0, 0
+    for index, entry in ipairs(entries) do
+      lines[#lines + 1] = "  - id: c" .. index
+      lines[#lines + 1] = "    type: " .. entry[1]
+      lines[#lines + 1] = "    col: " .. col
+      lines[#lines + 1] = "    row: " .. row
+      lines[#lines + 1] = "    colSpan: " .. colSpan
+      lines[#lines + 1] = "    rowSpan: " .. rowSpan
+      lines[#lines + 1] = "    config:"
+      for _, line in ipairs(entry[2]) do lines[#lines + 1] = "      " .. line end
+      col = col + colSpan
+      if col + colSpan > 4 then col = 0; row = row + rowSpan end
+    end
+
+    local widget = makeWidget("agree-" .. colSpan .. "x" .. rowSpan,
+      table.concat(lines, "\n") .. "\n")
+    resetRadio()
+    local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+      DEFAULT_OPTIONS, widget)
+    pump(context, 40)
+    assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+
+    local seen = {}
+    for _, entry in ipairs(context.components) do
+      local instance = entry.instance
+      local object = instance.value
+      assert(object, entry.placement.id .. " drew no reading")
+      local font = object.properties.font
+      if type(font) == "function" then font = font() end
+      seen[#seen + 1] = {entry.module.id, font}
+    end
+    return seen
+  end
+
+  -- Four components whose readings are as different as the catalogue offers:
+  -- three digits, a voltage with a unit, a dBm reading, and a distance.
+  local ENTRIES = {
+    {"metric", {"label: Alt", "source: Alt", "min: 0", "max: 400", "precision: 0"}},
+    {"cell-battery", {"source: Cels", "label: Pack"}},
+    {"link-status", {"rssiSource: RSSI", "qualitySource: RQly", "label: Link"}},
+    {"tx-battery", {"label: TX", "min: 6.6", "max: 8.4"}},
+  }
+
+  local order = {[SMLSIZE] = 1, [MIDSIZE] = 2, [DBLSIZE] = 3, [XXLSIZE] = 4}
+  local spread = {}
+  for _, span in ipairs({{1, 1}, {2, 1}, {4, 1}, {2, 2}}) do
+    local name = span[1] .. "x" .. span[2]
+    local seen = fontsAt(span[1], span[2], ENTRIES)
+    assertEqual(#seen, #ENTRIES, name .. ": not every panel was built")
+
+    local low, high
+    for _, row in ipairs(seen) do
+      local rank = order[row[2]]
+      assert(rank, name .. ": " .. row[1] .. " drew an unknown font")
+      low = math.min(low or rank, rank)
+      high = math.max(high or rank, rank)
+    end
+
+    -- At most one step between the largest and smallest reading on a screen
+    -- of identical panels. Before this, `2 x 2` spanned three steps.
+    spread[name] = high - low
+    assert(high - low <= 1, string.format(
+      "%s: readings on identical panels span %d font steps", name, high - low))
+  end
+
+  -- And the agreement is real rather than an artefact of every panel being
+  -- driven to the smallest font: at least one span has to reach full
+  -- agreement, and the large spans must not all collapse onto SMLSIZE.
+  local agreed = 0
+  for _, value in pairs(spread) do if value == 0 then agreed = agreed + 1 end end
+  assert(agreed >= 2, "no span reached full agreement, which would be the"
+    .. " result of every reading being shrunk rather than reconciled")
+end
+
 --- Responsive presentation must differ across the baseline spans.
 local function testResponsiveSpans()
   local metricModule = assert(loadfile(sourcePath .. "components/metric.lua"))()
@@ -1732,6 +1823,7 @@ testFocusBorder()
 testAccentFollowsState()
 testProbeUsesTheSharedHeader()
 testSupportingRowsExplainTheBadge()
+testReadingsAgreeAcrossComponents()
 testResponsiveSpans()
 testBadgeGeometry()
 testMetricStates()
