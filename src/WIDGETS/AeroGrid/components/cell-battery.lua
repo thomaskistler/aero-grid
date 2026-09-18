@@ -568,15 +568,7 @@ function cellBattery.update(context, rect)
   })
 
   --- Show or hide a supporting row, positioning it only when visible.
-  local function reconcile(object, visible, changes)
-    if not object then return end
-    if visible then
-      object:set(changes)
-      lvgl.show(object)
-    else
-      lvgl.hide(object)
-    end
-  end
+  local reconcile = context.primitives.reconcile
 
   -- A resize changes how much room each row has, so let both wordings be
   -- re-chosen on the refresh that follows.

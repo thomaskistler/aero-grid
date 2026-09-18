@@ -565,15 +565,7 @@ function navigation.update(context, rect)
   })
 
   --- Show or hide a supporting row, positioning it only when visible.
-  local function reconcile(object, visible, changes)
-    if not object then return end
-    if visible then
-      object:set(changes)
-      lvgl.show(object)
-    else
-      lvgl.hide(object)
-    end
-  end
+  local reconcile = context.primitives.reconcile
 
   reconcile(context.detailLabel, area.showDetail,
     {x = area.pad, y = area.detailY, w = area.detailWidth})

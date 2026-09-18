@@ -603,13 +603,23 @@ function support.lvgl()
   -- rather than tested for, because both a second call and an upvalue test
   -- cost the measured callback instructions the radio never pays. parseParam
   -- is C++; charging our stand-in for it to a Lua budget measures the fixture.
+  --- `writes` counts calls from Lua into LVGL on this object. It is this
+  --- harness's own bookkeeping, not a firmware value: nothing in EdgeTX
+  --- exposes it. It exists so a test can see work that leaves no trace on
+  --- screen, such as a panel repositioning a label it has hidden, which is
+  --- otherwise invisible to every assertion and therefore free to grow.
   local function setChecked(object, changes)
     assertUsable(object)
+    object.writes = object.writes + 1
     checkProperties(object.kind, changes)
     for key, value in pairs(changes) do object.properties[key] = value end
     if object.round then object.round.refresh(changes) end
   end
 
+  --- No write counting here. Turning property validation off is what the
+  --- budget harness does before it measures, and the counters have to go
+  --- with it: a real object's setter is C++, so counting the call in Lua
+  --- would bill the script for work the radio does not do.
   local function setUnchecked(object, changes)
     assertUsable(object)
     for key, value in pairs(changes) do object.properties[key] = value end
@@ -635,6 +645,8 @@ function support.lvgl()
       cleared = false,
       hidden = false,
       invalid = false,
+      writes = 0,
+      visibilityCalls = 0,
       set = validateProperties and setChecked or setUnchecked,
       clear = clearObject,
     }
@@ -666,14 +678,30 @@ function support.lvgl()
     end
   end
 
+  local function plainHide(object) object.hidden = true end
+  local function plainShow(object) object.hidden = false end
+
+  local function countedHide(object)
+    object.visibilityCalls = object.visibilityCalls + 1
+    object.hidden = true
+  end
+
+  local function countedShow(object)
+    object.visibilityCalls = object.visibilityCalls + 1
+    object.hidden = false
+  end
+
   lvgl = {
     box = constructor("box"),
     rectangle = constructor("rectangle"),
     label = constructor("label"),
     arc = constructor("arc"),
     image = constructor("image"),
-    hide = function(object) object.hidden = true end,
-    show = function(object) object.hidden = false end,
+    -- `visibilityCalls` is counted for the same reason as `writes`: telling
+    -- an already-hidden object to hide again changes nothing on screen and
+    -- so cannot be seen by any assertion about what is drawn.
+    hide = countedHide,
+    show = countedShow,
     isAppMode = function() return appMode end,
   }
 
@@ -687,6 +715,14 @@ function support.lvgl()
     validateProperties = enabled
     local method = enabled and setChecked or setUnchecked
     for _, object in ipairs(objects) do object.set = method end
+  end
+
+  --- Swap the visibility counters in or out. Swapped rather than branched,
+  --- so that a measured callback pays nothing at all for them, the same way
+  --- property validation is swapped out rather than tested for.
+  function handle.setCallCounting(enabled)
+    lvgl.hide = enabled and countedHide or plainHide
+    lvgl.show = enabled and countedShow or plainShow
   end
 
   --- Withhold deferred cleanup, as the firmware withholds it while the widget

@@ -141,6 +141,30 @@ function primitives.placeHeader(label, badge, frame)
   if frame.labelHidden then lvgl.hide(label) else lvgl.show(label) end
 end
 
+--- Show or hide a supporting object, positioning it only when it is visible.
+---
+--- Four components had written this out privately and `trim-panel` had not
+--- written it at all, which is why it was repositioning eight labels it had
+--- just hidden. Moving a hidden object is not merely wasted: it is invisible
+--- work, and invisible work is the one kind the suite cannot see either.
+--- `settled` lets a caller that already knows visibility has not moved skip
+--- the show or hide entirely, which matters where a panel repeats the pair
+--- per indicator rather than once. Omitting it is always safe: nil reads as
+--- "it may have changed", which is what every caller did before.
+---@param object? any LVGL object, or nil when the component never built one.
+---@param visible boolean
+---@param changes? table Geometry to apply when the object is shown.
+---@param settled? boolean Visibility is unchanged since the last call.
+function primitives.reconcile(object, visible, changes, settled)
+  if not object then return end
+  if visible then
+    if changes then object:set(changes) end
+    if not settled then lvgl.show(object) end
+  elseif not settled then
+    lvgl.hide(object)
+  end
+end
+
 --- Angles of the two quarter bands that carry the accent round the corners.
 --- LVGL measures zero at three o'clock and increases clockwise, so the upper
 --- left quarter runs from nine o'clock to twelve, and the lower left from six
