@@ -76,8 +76,8 @@ components:
     config:
       label: TX
       accent: green
-      min: 6.6
-      max: 8.4
+      packEmpty: 6.6
+      packFull: 8.4
       warning: 7.2
       critical: 6.8
       visual: bar

@@ -555,6 +555,30 @@ The initial component schema should support:
 
 Additional types may be added without changing the layout schema. Each setting definition must have a stable `key`, display `label`, `type`, and `default`. Types may define relevant constraints such as `min`, `max`, `step`, `choices`, `path`, or `filter`.
 
+### Settings vocabulary
+
+Thirteen components written to the same contract by different sessions produced five names for "how should this look", four meanings for `min`, and a per-component setting for a dashboard-wide singleton. Names are part of the contract, not decoration: a layout author reads one component and expects the next to answer the same question the same way. The rules below are what the vocabulary converged on.
+
+**One name per concept.** Three questions exist and each has exactly one key:
+
+- `visual` — the shape the reading is drawn as: `bar`, `radial`, `none`. It selects a drawing, never content.
+- `presentation` — which arrangement of content the panel shows when several are possible and the box decides between them. Only `navigation` and `model-identity` have more than one arrangement.
+- `reading` — which of the component's own values leads the panel when it holds several, as `cell-battery` holds lowest, pack and average.
+
+A component that offers one of these but not the others declares only the one it offers. `display` and `primary` are not used; both were re-spellings of `reading`, and `display` also stood in for `readout` on `trim-panel`, which is neither.
+
+**Every enum declares its `choices`.** A `string` setting whose values are drawn from a fixed list must declare them, so the loader rejects `presentation: nonsense` at load with the component and key named, rather than falling back silently and leaving the author to wonder why the panel looks wrong. Undeclared keys are reported the same way: a renamed setting left behind in a layout is a defect, not a comment.
+
+**Thresholds state their direction and their unit.** `warning` and `critical` are bare numbers, so nothing about them says whether crossing downward or upward is the alarm, or what they are measured in. Both are stated: `direction` is declared by every component that has thresholds, and the unit belongs in the setting's label — `Warning volts per cell` and `Warning seconds`, not `Warning`. Where the unit genuinely depends on configuration, as `link-status` measures in whatever its leading source reports, the label says so rather than naming a unit that may be wrong.
+
+**A range is named for what it bounds.** `min` and `max` meant a normalisation range, a per-cell voltage range, a whole-pack voltage range and a bar-only range, in four components, all under one word. The range now carries its subject: `rangeMin`/`rangeMax` normalise a visualization, `cellEmpty`/`cellFull` bound one cell, `packEmpty`/`packFull` bound a pack, `barMin`/`barMax` bound a bar. A normalisation range is not a limit, and stating that in its comment is worth the two lines: a value outside it is still drawn as itself.
+
+**Dashboard-wide state belongs to the dashboard.** A setting that describes the session rather than the panel belongs in the layout's top-level `session` block, not in each component's `config`. `armSource` was per-component, which let two components name two different switches while the extrema service documented that the first caller wins — so the second was configured, accepted, and ignored. Anything that a second component could contradict is a candidate for the same move.
+
+**Accent defaults follow the colour rule.** The palette reserves cyan for electrical data and green for healthy state; a component's default accent obeys that rather than its author's taste. `tx-battery` was green and `cell-battery` cyan for the same concept.
+
+**An empty `label` means derive, not omit.** Four components leave `label` empty by default because their heading is only knowable at runtime — the timer's name, the preset's label, the probed service, the global variable's configured name. A component with a fixed heading states it as its default. The empty string is a deliberate instruction and each such declaration says what it derives from.
+
 ### Value flow
 
 1. The component module publishes its `settings` schema.
@@ -705,6 +729,8 @@ components:
       rssiSourceName: RSSI
       qualitySource: 203
       qualitySourceName: RQly
+session:
+  armSource: sf
 ```
 
 ### Schema rules
@@ -714,11 +740,13 @@ components:
 - `id` must be unique within a layout.
 - `type` maps to `components/<type>.lua` and must be restricted to safe filename characters.
 - Placement values must be integers within grid bounds.
-- Unknown top-level and component keys should be ignored for forward compatibility.
+- `session` is optional and carries settings that describe the flight rather than a panel. `armSource` names the switch or source that marks the model armed, and lives here because one dashboard has one flight; stated per component, two components could name two switches and only the first would be honoured.
+- Unknown top-level keys should be ignored for forward compatibility.
 - Unknown component types should produce a visible placeholder rather than prevent the dashboard from loading.
 - Component-specific data belongs under `config`.
 - Config keys correspond to stable keys in the component's `settings` schema.
-- Missing config keys receive component defaults; unknown config keys are preserved when saving for forward compatibility.
+- Missing config keys receive component defaults. An unknown config key is preserved when saving, for forward compatibility, but is reported at load with the layout, component and key named: in practice it is a typo or a rename left behind, and silence is how a renamed setting reaches a radio still doing nothing.
+- A config value outside a setting's declared `choices` is reported the same way and falls back to the setting's default.
 - Source identifiers are stored as integers. An adjacent `<key>Name` value may preserve a readable source name.
 
 ## YAML Handling

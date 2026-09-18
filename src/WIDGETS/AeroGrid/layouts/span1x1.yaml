@@ -50,8 +50,8 @@ components:
       label: Metric
       source: RxBt
       unit: V
-      min: 6.0
-      max: 8.4
+      rangeMin: 6.0
+      rangeMax: 8.4
       precision: 1
 
   - id: g-cells
@@ -110,8 +110,8 @@ components:
     colSpan: 1
     rowSpan: 1
     config:
-      min: 6.6
-      max: 8.4
+      packEmpty: 6.6
+      packFull: 8.4
 
   - id: g-gvar
     type: variable-indicator
@@ -130,7 +130,7 @@ components:
     colSpan: 1
     rowSpan: 1
     config:
-      mode: single
+      indicators: single
       trim1: trim-ail
       orientation: horizontal
 
@@ -161,7 +161,7 @@ components:
     colSpan: 1
     rowSpan: 1
     config:
-      title: Placeholder
+      label: Placeholder
       subtitle: Subtitle
 
   - id: g-heartbeat
@@ -184,8 +184,8 @@ components:
     config:
       label: Radial
       source: RQly
-      min: 0
-      max: 100
+      rangeMin: 0
+      rangeMax: 100
       precision: 0
       visual: radial
 
@@ -198,8 +198,8 @@ components:
     config:
       label: Bar
       source: RQly
-      min: 0
-      max: 100
+      rangeMin: 0
+      rangeMax: 100
       precision: 0
       visual: bar
 
@@ -212,7 +212,7 @@ components:
     config:
       label: Plain
       source: RQly
-      min: 0
-      max: 100
+      rangeMin: 0
+      rangeMax: 100
       precision: 0
       visual: none

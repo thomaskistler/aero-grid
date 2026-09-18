@@ -81,8 +81,10 @@ function extremaService:sourceExtreme(name, mode)
 end
 
 --- Configure the arm source and subscribe to the flight session.
---- The first caller establishes the source; later callers observe the same
---- session, because one dashboard has one flight.
+--- One dashboard has one flight, so the source comes from the layout's
+--- `session` block rather than from a component. It used to be a per-component
+--- setting, which let two components name two switches and left the second one
+--- silently ignored by the first-caller-wins rule below.
 ---@param armSource? string Switch or source name that marks the model armed.
 ---@return AeroGridFlightSession
 function extremaService:flight(armSource)

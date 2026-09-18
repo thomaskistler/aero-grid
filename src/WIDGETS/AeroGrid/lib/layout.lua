@@ -68,6 +68,36 @@ local function validateTheme(value, errors)
   return result
 end
 
+--- Validate the optional layout-level flight session block.
+---
+--- The arm switch bounds one flight, and a dashboard has one flight. It used
+--- to be a per-component setting, which let two components state different
+--- switches; `extremaService:flight` takes the first caller's and ignores the
+--- rest, so the second component's was silently discarded. A setting whose
+--- value is thrown away is worse than no setting, because it reads like a
+--- choice. It belongs to the layout, which is the thing there is one of.
+---@param value any
+---@param errors string[]
+---@return table? session
+local function validateSession(value, errors)
+  if value == nil then return nil end
+  if type(value) ~= "table" then
+    errors[#errors + 1] = "session must be a mapping"
+    return nil
+  end
+
+  local result = {}
+  if value.armSource ~= nil then
+    if type(value.armSource) ~= "string" then
+      errors[#errors + 1] = "session armSource must be a string"
+    else
+      result.armSource = value.armSource
+    end
+  end
+
+  return result
+end
+
 --- Validate the document's own fields, excluding its components.
 --- A document this loader cannot interpret fails closed, because rendering its
 --- components under phase-one assumptions would silently misplace them.
@@ -91,6 +121,7 @@ function layout.validateDocument(document)
   normalized.grid = document.grid
   normalized.components = {}
   normalized.theme = validateTheme(document.theme, errors)
+  normalized.session = validateSession(document.session, errors)
 
   if document.version ~= 1 then
     return nil, {"unsupported layout version"}

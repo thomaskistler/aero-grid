@@ -29,8 +29,8 @@
 ---@field lowestSource? string Explicit lowest-cell source such as "Cels-".
 ---@field label? string
 ---@field reading? "lowest"|"average"|"pack" Which value is dominant.
----@field min? number Volts per cell treated as empty by the bar.
----@field max? number Volts per cell treated as full by the bar.
+---@field cellEmpty? number Volts per cell treated as empty by the bar.
+---@field cellFull? number Volts per cell treated as full by the bar.
 ---@field warning? number Volts per cell.
 ---@field critical? number Volts per cell.
 ---@field cells? number Expected cell count; zero follows the pack.
@@ -60,17 +60,26 @@ local cellBattery = {
     {key = "source", label = "Cells source", type = "string", default = "Cels"},
     {key = "lowestSource", label = "Lowest cell source", type = "string", default = ""},
     {key = "label", label = "Label", type = "string", default = "PACK"},
-    {key = "reading", label = "Primary reading", type = "string", default = "lowest"},
+    {key = "reading", label = "Primary reading", type = "string",
+      default = "lowest", choices = {"lowest", "average", "pack"}},
     -- The usable range, per cell: a LiPo is flat at 3.3 V and full at 4.2 V.
-    {key = "min", label = "Empty voltage", type = "number", default = 3.3},
-    {key = "max", label = "Full voltage", type = "number", default = 4.2},
-    {key = "warning", label = "Warning voltage", type = "number", default = 3.5},
-    {key = "critical", label = "Critical voltage", type = "number", default = 3.3},
+    -- Named for what they range over, because `min` and `max` meant four
+    -- different things across the catalogue and nothing in the key said which.
+    {key = "cellEmpty", label = "Empty volts per cell", type = "number", default = 3.3},
+    {key = "cellFull", label = "Full volts per cell", type = "number", default = 4.2},
+    {key = "warning", label = "Warning volts per cell", type = "number", default = 3.5},
+    {key = "critical", label = "Critical volts per cell", type = "number", default = 3.3},
+    -- Cell voltages only ever count downward, but it is stated rather than
+    -- assumed so every threshold in the catalogue reads the same way.
+    {key = "direction", label = "Threshold direction", type = "string",
+      default = "falling", choices = {"falling"}},
     {key = "cells", label = "Expected cells", type = "number", default = 0},
     {key = "showPack", label = "Show pack voltage", type = "boolean", default = true},
     {key = "showCount", label = "Show cell count", type = "boolean", default = true},
-    {key = "visual", label = "Visualization", type = "string", default = "bar"},
-    {key = "accent", label = "Accent", type = "string", default = "cyan"},
+    {key = "visual", label = "Visualization", type = "string", default = "bar",
+      choices = {"bar", "none"}},
+    {key = "accent", label = "Accent", type = "string", default = "cyan",
+      choices = {"cyan", "green", "amber", "orange"}},
   },
 }
 
@@ -216,8 +225,8 @@ end
 function cellBattery.fraction(settings, value, cells)
   if type(value) ~= "number" or value ~= value then return 0 end
 
-  local low = type(settings.min) == "number" and settings.min or 3.3
-  local high = type(settings.max) == "number" and settings.max or 4.2
+  local low = type(settings.cellEmpty) == "number" and settings.cellEmpty or 3.3
+  local high = type(settings.cellFull) == "number" and settings.cellFull or 4.2
   if high <= low then return 0 end
 
   local perCell = value

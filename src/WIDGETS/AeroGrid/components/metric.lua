@@ -15,8 +15,8 @@
 ---@field source? string EdgeTX source name read through telemetryService.
 ---@field unit? string Overrides the sensor's own unit label.
 ---@field accent? "cyan"|"green"|"amber"|"orange"
----@field min? number
----@field max? number
+---@field rangeMin? number
+---@field rangeMax? number
 ---@field warning? number
 ---@field critical? number
 ---@field precision? number
@@ -24,7 +24,6 @@
 ---@field extrema? "source"|"flight"|"none"
 ---@field extremaMode? "min"|"max"
 ---@field extremaSource? string Explicit EdgeTX extreme source name.
----@field armSource? string Arm switch bounding a flight session.
 ---@field secondarySource? string
 ---@field secondaryLabel? string
 
@@ -52,26 +51,39 @@ local metric = {
   -- the host pays every component's refresh inside one instruction budget.
   refreshInterval = 20,
   settings = {
-    {key = "preset", label = "Preset", type = "string", default = "custom"},
+    {key = "preset", label = "Preset", type = "string", default = "custom",
+      choices = {"custom", "altitude", "speed"}},
     -- Absent means "take the preset's value". Presets cannot be expressed as
     -- schema defaults, because the host fills those in before the component
     -- runs and a filled default is indistinguishable from a stated one.
+    -- An empty label is not an absent one: it means derive the heading at
+    -- runtime, here from the preset's label, or METRIC when the preset is custom. A
+    -- component with a fixed heading states it as its default instead.
     {key = "label", label = "Label", type = "string", default = ""},
     {key = "source", label = "Source", type = "string", default = ""},
     {key = "unit", label = "Unit", type = "string", default = ""},
-    {key = "accent", label = "Accent", type = "string", default = ""},
-    {key = "min", label = "Minimum", type = "number"},
-    {key = "max", label = "Maximum", type = "number"},
-    {key = "warning", label = "Warning threshold", type = "number"},
-    {key = "critical", label = "Critical threshold", type = "number"},
-    {key = "direction", label = "Threshold direction", type = "string", default = "auto"},
+    {key = "accent", label = "Accent", type = "string", default = "",
+      choices = {"", "cyan", "green", "amber", "orange"}},
+    -- The range the visualization normalizes against. It is not a limit and
+    -- never clamps the reading: a value outside it is still drawn. Named for
+    -- what it bounds, because four components meant four things by `min`.
+    {key = "rangeMin", label = "Range minimum", type = "number"},
+    {key = "rangeMax", label = "Range maximum", type = "number"},
+    {key = "warning", label = "Warning, in the configured unit", type = "number"},
+    {key = "critical", label = "Critical, in the configured unit", type = "number"},
+    -- Which way the thresholds count. `auto` can only be inferred from two
+    -- thresholds, so a layout with one states it.
+    {key = "direction", label = "Threshold direction", type = "string",
+      default = "auto", choices = {"auto", "rising", "falling"}},
     -- Negative means follow the sensor's own configured precision.
     {key = "precision", label = "Decimal places", type = "number", default = -1},
-    {key = "visual", label = "Visualization", type = "string", default = ""},
-    {key = "extrema", label = "Extrema", type = "string", default = ""},
-    {key = "extremaMode", label = "Extreme tracked", type = "string", default = ""},
+    {key = "visual", label = "Visualization", type = "string", default = "",
+      choices = {"", "bar", "radial", "none"}},
+    {key = "extrema", label = "Extrema", type = "string", default = "",
+      choices = {"", "source", "flight", "none"}},
+    {key = "extremaMode", label = "Extreme tracked", type = "string",
+      default = "", choices = {"", "min", "max"}},
     {key = "extremaSource", label = "Extrema source", type = "string", default = ""},
-    {key = "armSource", label = "Arm switch", type = "string", default = ""},
     {key = "secondarySource", label = "Secondary source", type = "string", default = ""},
     {key = "secondaryLabel", label = "Secondary label", type = "string", default = ""},
   },
@@ -93,8 +105,8 @@ metric.PRESETS = {
     source = "Alt",
     accent = "green",
     visual = "bar",
-    min = 0,
-    max = 400,
+    rangeMin = 0,
+    rangeMax = 400,
     extrema = "source",
     extremaMode = "max",
     -- Vertical speed is shown only when the configured source is valid.
@@ -108,8 +120,8 @@ metric.PRESETS = {
     source = "GSpd",
     accent = "cyan",
     visual = "bar",
-    min = 0,
-    max = 200,
+    rangeMin = 0,
+    rangeMax = 200,
     extrema = "source",
     extremaMode = "max",
   },
@@ -149,8 +161,8 @@ function metric.applyPreset(settings)
   settings.secondaryLabel =
     metric.setting(settings, preset, "secondaryLabel", "")
 
-  if type(settings.min) ~= "number" then settings.min = preset.min end
-  if type(settings.max) ~= "number" then settings.max = preset.max end
+  if type(settings.rangeMin) ~= "number" then settings.rangeMin = preset.rangeMin end
+  if type(settings.rangeMax) ~= "number" then settings.rangeMax = preset.rangeMax end
 
   if settings.extrema ~= "source" and settings.extrema ~= "flight" then
     settings.extrema = "none"
@@ -305,7 +317,8 @@ function metric.detailText(context)
   local settings = context.settings
 
   if settings.extrema == "none" then
-    return metric.format(settings.min, 0) .. " - " .. metric.format(settings.max, 0)
+    return metric.format(settings.rangeMin, 0) .. " - "
+      .. metric.format(settings.rangeMax, 0)
   end
 
   local value, available = metric.extremeValue(context)
@@ -423,8 +436,8 @@ end
 function metric.fraction(settings, value)
   if type(value) ~= "number" or value ~= value then return 0 end
 
-  local low = type(settings.min) == "number" and settings.min or 0
-  local high = type(settings.max) == "number" and settings.max or 100
+  local low = type(settings.rangeMin) == "number" and settings.rangeMin or 0
+  local high = type(settings.rangeMax) == "number" and settings.rangeMax or 100
   if high == low then return 0 end
 
   local fraction = (value - low) / (high - low)
@@ -445,8 +458,8 @@ end
 ---@param digits integer
 ---@return string[]
 function metric.widestSample(settings, digits)
-  local low = type(settings.min) == "number" and settings.min or 0
-  local high = type(settings.max) == "number" and settings.max or 100
+  local low = type(settings.rangeMin) == "number" and settings.rangeMin or 0
+  local high = type(settings.rangeMax) == "number" and settings.rangeMax or 100
 
   local widest = metric.format(low, digits)
   local other = metric.format(high, digits)
@@ -604,7 +617,8 @@ function metric.create(parent, rect, settings, services)
   elseif extrema and settings.extrema == "flight" then
     -- The flight session decides where one flight's extrema end, so the arm
     -- switch is configured before the tracker is subscribed.
-    extrema:flight(settings.armSource ~= "" and settings.armSource or nil)
+    local arm = services.session and services.session.armSource
+    extrema:flight(arm ~= "" and arm or nil)
     context.sessionExtrema = extrema:sessionExtrema(settings.source)
   end
 

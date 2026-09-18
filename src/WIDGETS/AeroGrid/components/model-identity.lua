@@ -43,9 +43,12 @@ local modelIdentity = {
   -- widget anyway. Five seconds is already generous.
   refreshInterval = 500,
   settings = {
-    {key = "presentation", label = "Show", type = "string", default = "auto"},
+    -- Responsive content, like `navigation`: which arrangement is drawn.
+    {key = "presentation", label = "Show", type = "string", default = "auto",
+      choices = {"auto", "name", "image", "both"}},
     {key = "label", label = "Label", type = "string", default = "MODEL"},
-    {key = "accent", label = "Accent", type = "string", default = "cyan"},
+    {key = "accent", label = "Accent", type = "string", default = "cyan",
+      choices = {"cyan", "green", "amber", "orange"}},
     {key = "showLabels", label = "Show model labels", type = "boolean", default = false},
   },
 }

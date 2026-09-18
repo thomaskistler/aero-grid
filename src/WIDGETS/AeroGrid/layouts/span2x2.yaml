@@ -52,8 +52,8 @@ components:
       label: Metric
       source: RxBt
       unit: V
-      min: 6.0
-      max: 8.4
+      rangeMin: 6.0
+      rangeMax: 8.4
       precision: 1
 
   - id: g-mode

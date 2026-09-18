@@ -4,7 +4,7 @@
 --- All colors come from host theme tokens; components never define palettes.
 
 ---@class AeroGridPlaceholderSettings
----@field title? string
+---@field label? string
 ---@field subtitle? string
 ---@field accent? "cyan"|"green"|"amber"|"orange"
 
@@ -18,9 +18,10 @@ local placeholder = {
   apiVersion = 1,
   supportedSpans = {"any"},
   settings = {
-    {key = "title", label = "Title", type = "string", default = "PLACEHOLDER"},
+    {key = "label", label = "Label", type = "string", default = "PLACEHOLDER"},
     {key = "subtitle", label = "Subtitle", type = "string", default = ""},
-    {key = "accent", label = "Accent", type = "string", default = "cyan"},
+    {key = "accent", label = "Accent", type = "string", default = "cyan",
+      choices = {"cyan", "green", "amber", "orange"}},
   },
 }
 
@@ -47,7 +48,7 @@ function placeholder.create(parent, rect, settings, services)
     x = frame.labelX,
     y = frame.compact,
     w = frame.labelWidth,
-    text = tostring(settings.title),
+    text = tostring(settings.label),
     color = presentation.value,
     font = fonts.label,
   })

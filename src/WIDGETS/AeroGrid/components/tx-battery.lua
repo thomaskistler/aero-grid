@@ -16,8 +16,8 @@
 ---@class AeroGridTxBatterySettings
 ---@field label? string
 ---@field accent? string
----@field min? number Voltage treated as empty for the optional estimate.
----@field max? number Voltage treated as full for the optional estimate.
+---@field packEmpty? number Voltage treated as empty for the optional estimate.
+---@field packFull? number Voltage treated as full for the optional estimate.
 ---@field warning? number
 ---@field critical? number
 ---@field visual? "none"|"bar"
@@ -40,13 +40,19 @@ local txBattery = {
   settings = {
     -- "TX BATTERY" needs ten characters of a header that has about five.
     {key = "label", label = "Label", type = "string", default = "TX"},
-    {key = "accent", label = "Accent", type = "string", default = "green"},
+    -- Cyan, because the specification reserves it for electrical data and this
+    -- is a battery. `cell-battery` was already cyan and these two disagreed.
+    {key = "accent", label = "Accent", type = "string", default = "cyan",
+      choices = {"cyan", "green", "amber", "orange"}},
     -- No default range: the estimate stays off until a layout states one.
-    {key = "min", label = "Empty voltage", type = "number"},
-    {key = "max", label = "Full voltage", type = "number"},
-    {key = "warning", label = "Warning voltage", type = "number"},
-    {key = "critical", label = "Critical voltage", type = "number"},
-    {key = "visual", label = "Visualization", type = "string", default = "bar"},
+    {key = "packEmpty", label = "Empty volts, whole pack", type = "number"},
+    {key = "packFull", label = "Full volts, whole pack", type = "number"},
+    {key = "warning", label = "Warning volts", type = "number"},
+    {key = "critical", label = "Critical volts", type = "number"},
+    {key = "direction", label = "Threshold direction", type = "string",
+      default = "falling", choices = {"falling"}},
+    {key = "visual", label = "Visualization", type = "string", default = "bar",
+      choices = {"bar", "none"}},
     {key = "showPercent", label = "Show estimate", type = "boolean", default = false},
   },
 }
@@ -61,8 +67,8 @@ txBattery.FORMS = {"88.8V", "88.8"}
 ---@param settings AeroGridTxBatterySettings
 ---@return boolean
 function txBattery.hasRange(settings)
-  local low = settings.min
-  local high = settings.max
+  local low = settings.packEmpty
+  local high = settings.packFull
   return type(low) == "number" and type(high) == "number" and high > low
 end
 
@@ -74,7 +80,8 @@ function txBattery.fraction(settings, value)
   if not txBattery.hasRange(settings) then return 0 end
   if type(value) ~= "number" or value ~= value then return 0 end
 
-  local fraction = (value - settings.min) / (settings.max - settings.min)
+  local fraction = (value - settings.packEmpty)
+    / (settings.packFull - settings.packEmpty)
   if fraction < 0 then return 0 end
   if fraction > 1 then return 1 end
   return fraction

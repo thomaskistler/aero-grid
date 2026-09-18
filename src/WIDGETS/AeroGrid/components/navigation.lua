@@ -49,12 +49,20 @@ local navigation = {
     {key = "source", label = "GPS source", type = "string", default = "GPS"},
     {key = "distanceSource", label = "Distance source", type = "string", default = ""},
     {key = "label", label = "Label", type = "string", default = "NAV"},
-    {key = "presentation", label = "Presentation", type = "string", default = "auto"},
+    -- Responsive content: which of the four arrangements this panel draws.
+    {key = "presentation", label = "Presentation", type = "string",
+      default = "auto",
+      choices = {"auto", "distance", "bearing", "compass", "detailed"}},
     -- No default thresholds: a safe distance is a property of the field and
     -- the model, not of the dashboard.
-    {key = "warning", label = "Warning distance", type = "number"},
-    {key = "critical", label = "Critical distance", type = "number"},
-    {key = "accent", label = "Accent", type = "string", default = "cyan"},
+    {key = "warning", label = "Warning distance, metres", type = "number"},
+    {key = "critical", label = "Critical distance, metres", type = "number"},
+    -- Distance is the one threshold in the catalogue that counts upward:
+    -- further away is worse.
+    {key = "direction", label = "Threshold direction", type = "string",
+      default = "rising", choices = {"rising"}},
+    {key = "accent", label = "Accent", type = "string", default = "cyan",
+      choices = {"cyan", "green", "amber", "orange"}},
   },
 }
 

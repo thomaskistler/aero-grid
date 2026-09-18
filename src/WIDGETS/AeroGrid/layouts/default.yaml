@@ -68,10 +68,10 @@ components:
     config:
       rssiSource: RSSI
       qualitySource: RQly
-      primary: auto
+      reading: auto
       label: Link
-      min: 0
-      max: 100
+      barMin: 0
+      barMax: 100
       warning: 50
       critical: 30
       extrema: flight
@@ -131,8 +131,8 @@ components:
     rowSpan: 1
     config:
       label: TX
-      min: 6.6
-      max: 8.4
+      packEmpty: 6.6
+      packFull: 8.4
       warning: 7.0
       critical: 6.8
       accent: green
@@ -148,7 +148,7 @@ components:
       binding: global
       index: 0
       label: Rates
-      presentation: horizontal-bar
+      visual: bar
       accent: cyan
   # Trim sources are named for the radio's hardware axes, not for the pilot's
   # stick mode, and their orientation is stated because EdgeTX does not report
@@ -160,9 +160,15 @@ components:
     colSpan: 1
     rowSpan: 1
     config:
-      mode: single
+      indicators: single
       trim1: trim-ail
       orientation: horizontal
       scale: auto
-      display: percent
+      readout: percent
       accent: cyan
+
+# One dashboard, one flight. The extrema service subscribes to this once and
+# every component that tracks a flight extreme observes the same session,
+# which is why the switch is named here rather than in each of them.
+session:
+  armSource: sf

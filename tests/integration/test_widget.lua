@@ -179,8 +179,8 @@ components:
       source: RxBt
       unit: V
       accent: cyan
-      min: 18
-      max: 25.2
+      rangeMin: 18
+      rangeMax: 25.2
       warning: 21.0
       critical: 19.8
       precision: 1
@@ -195,8 +195,8 @@ components:
       label: Current
       source: Curr
       accent: orange
-      min: 0
-      max: 120
+      rangeMin: 0
+      rangeMax: 120
       warning: 90
       critical: 110
       visual: bar
@@ -210,8 +210,8 @@ components:
       label: Altitude
       source: Alt
       accent: green
-      min: 0
-      max: 400
+      rangeMin: 0
+      rangeMax: 400
       warning: 250
       critical: 350
       visual: radial
@@ -231,7 +231,7 @@ components:
     colSpan: 2
     rowSpan: 2
     config:
-      title: PHASE 1
+      label: PHASE 1
       subtitle: DESIGN SYSTEM
       accent: green
 ]]
@@ -335,6 +335,61 @@ local function testShippedLayoutsLoad()
       assert(not entry.failed, stem .. ": " .. entry.placement.id .. " failed")
     end
   end
+end
+
+--- The flight session is configured by the layout, not by a panel.
+---
+--- `armSource` used to be a setting on `metric` and on `link-status`, so a
+--- dashboard with both could name two switches. `extremaService:flight`
+--- documents that the first caller establishes the source, which meant the
+--- second component's switch was read from the layout, accepted by the host,
+--- and then silently discarded. Moving it to the layout's `session` block
+--- makes that contradiction unstatable. This checks the block is what does
+--- the arming, by building the same dashboard with and without it.
+local function testSessionArmsTheFlight()
+  local function dashboard(sessionBlock)
+    return table.concat({
+      "version: 1",
+      "grid:",
+      "  columns: 4",
+      "  rows: 4",
+      "components:",
+      "  - id: peak",
+      "    type: metric",
+      "    col: 0",
+      "    row: 0",
+      "    colSpan: 2",
+      "    rowSpan: 1",
+      "    config:",
+      "      label: Alt",
+      "      source: Alt",
+      "      extrema: flight",
+      "      precision: 0",
+      sessionBlock,
+    }, "\n") .. "\n"
+  end
+
+  local function flightOf(yaml)
+    resetRadio()
+    local widget = makeWidget("session-arm", yaml)
+    local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+      DEFAULT_OPTIONS, widget)
+    assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+    local registry = context.serviceRuntime
+    local extrema = registry and registry.byId and registry.byId.extrema
+    assert(extrema, "the dashboard built no extrema service")
+    return extrema:flight()
+  end
+
+  -- Configured is the service's own word for "an arm source was supplied",
+  -- so it is the value the contract names rather than a proxy for it.
+  local armed = flightOf(dashboard("session:\n  armSource: sf"))
+  assertEqual(armed.configured, true,
+    "the layout named an arm switch and the flight session did not see it")
+
+  local unarmed = flightOf(dashboard("# no session block"))
+  assertEqual(unarmed.configured, false,
+    "a dashboard that names no arm switch reported one anyway")
 end
 
 --- The single-cell gallery has to contain the catalogue, or it is not a
@@ -554,6 +609,7 @@ end
 
 local function testShippedLayout()
 testShippedLayoutsLoad()
+testSessionArmsTheFlight()
 testSpanGalleryIsComplete()
 testGalleriesAreReachable()
   resetRadio()
@@ -871,8 +927,8 @@ components:
     config:
       label: Pack
       source: RxBt
-      min: 18
-      max: 25.2
+      rangeMin: 18
+      rangeMax: 25.2
       warning: 21.0
       critical: 19.8
       precision: 1
@@ -1058,8 +1114,8 @@ components:
     config:
       label: Pack
       source: RxBt
-      min: 18
-      max: 25.2
+      rangeMin: 18
+      rangeMax: 25.2
       warning: 21.0
       critical: 19.8
       precision: 1
@@ -1232,7 +1288,7 @@ components:
     config:
       rssiSource: RSSI
       qualitySource: RQly
-      primary: auto
+      reading: auto
   - id: pack
     type: cell-battery
     col: 2
@@ -1372,10 +1428,11 @@ local function testReadingsAgreeAcrossComponents()
   -- Four components whose readings are as different as the catalogue offers:
   -- three digits, a voltage with a unit, a dBm reading, and a distance.
   local ENTRIES = {
-    {"metric", {"label: Alt", "source: Alt", "min: 0", "max: 400", "precision: 0"}},
+    {"metric", {"label: Alt", "source: Alt", "rangeMin: 0", "rangeMax: 400",
+      "precision: 0"}},
     {"cell-battery", {"source: Cels", "label: Pack"}},
     {"link-status", {"rssiSource: RSSI", "qualitySource: RQly", "label: Link"}},
-    {"tx-battery", {"label: TX", "min: 6.6", "max: 8.4"}},
+    {"tx-battery", {"label: TX", "packEmpty: 6.6", "packFull: 8.4"}},
   }
 
   local order = {[SMLSIZE] = 1, [MIDSIZE] = 2, [DBLSIZE] = 3, [XXLSIZE] = 4}
@@ -1738,8 +1795,8 @@ components:
     config:
       label: Dial
       visual: radial
-      min: 0
-      max: 100
+      rangeMin: 0
+      rangeMax: 100
 ]])
 
   local zone = {x = 0, y = 0, w = 480, h = 272}
@@ -2307,6 +2364,23 @@ components:
   -- The cell heights that would do that are one pixel away from the ones the
   -- grid actually produces, so this is measured rather than reasoned about.
   local sweepPath = makeWidget("appmode-sweep")
+  --- What each component needs to draw something real during the sweep.
+  local SWEEP_CONFIG = {
+    ["metric"] = {"      label: Probe", "      source: RxBt"},
+    ["flight-timer"] = {"      label: Probe", "      timer: 0"},
+    ["flight-mode"] = {"      label: Probe"},
+    ["tx-battery"] = {"      label: Probe"},
+    ["variable-indicator"] = {"      label: Probe", "      index: 0"},
+    ["trim-panel"] = {"      label: Probe", "      trim1: trim-ail"},
+    ["model-identity"] = {"      label: Probe"},
+    ["cell-battery"] = {"      label: Probe", "      source: Cels"},
+    ["link-status"] = {"      label: Probe", "      rssiSource: RSSI",
+      "      qualitySource: RQly"},
+    ["navigation"] = {"      label: Probe", "      source: GPS"},
+    ["heartbeat"] = {"      label: Probe"},
+    ["placeholder"] = {"      label: Probe"},
+  }
+
   local sweepTypes = {
     "metric", "flight-timer", "flight-mode", "tx-battery",
     "variable-indicator", "trim-panel", "model-identity",
@@ -2336,13 +2410,10 @@ components:
           "    colSpan: " .. colSpan,
           "    rowSpan: " .. rowSpan,
           "    config:",
-          "      label: Probe",
-          "      source: RxBt",
-          "      rssiSource: RSSI",
-          "      qualitySource: RQly",
-          "      trim1: trim-ail",
-          "      timer: 0",
-          "      index: 0",
+          -- Each kind gets only the keys it declares. Handing every key to
+          -- every component was a shortcut, and it stopped being a harmless
+          -- one when an undeclared key became something the host reports.
+          table.concat(SWEEP_CONFIG[kind] or {"      label: Probe"}, "\n"),
           "", }, "\n"))
 
         local swept = createLoaded(appZone(), DEFAULT_OPTIONS, sweepPath)
@@ -2795,8 +2866,8 @@ local function testInstructionBudget()
       lines[#lines + 1] = "      label: Metric " .. i
       lines[#lines + 1] = "      unit: V"
       lines[#lines + 1] = "      accent: cyan"
-      lines[#lines + 1] = "      min: 0"
-      lines[#lines + 1] = "      max: 100"
+      lines[#lines + 1] = "      rangeMin: 0"
+      lines[#lines + 1] = "      rangeMax: 100"
       lines[#lines + 1] = "      warning: 80"
       lines[#lines + 1] = "      critical: 90"
       lines[#lines + 1] = "      precision: 1"
@@ -2890,7 +2961,6 @@ local function testInstructionBudget()
           "preset: " .. (index % 2 == 0 and "altitude" or "speed"),
           "source: S" .. index,
           "extrema: flight",
-          "armSource: sa",
         }
       end,
     },
@@ -2910,20 +2980,18 @@ local function testInstructionBudget()
       type = "tx-battery",
       services = {"model"},
       config = function()
-        return {"min: 6.6", "max: 8.4", "warning: 7.0", "showPercent: true"}
+        return {"packEmpty: 6.6", "packFull: 8.4", "warning: 7.0", "showPercent: true"}
       end,
     },
     {
       type = "variable-indicator",
       services = {"control"},
       config = function(index)
-        local presentations = {
-          "value", "horizontal-bar", "bipolar-bar", "radial",
-        }
+        local visuals = {"none", "bar", "bipolar-bar", "radial"}
         return {
           "binding: global",
           "index: " .. ((index - 1) % 4),
-          "presentation: " .. presentations[(index - 1) % 4 + 1],
+          "visual: " .. visuals[(index - 1) % 4 + 1],
         }
       end,
     },
@@ -2933,7 +3001,7 @@ local function testInstructionBudget()
       config = function()
         -- Four indicators each, so the panel builds and drives the most
         -- objects it ever can.
-        return {"mode: all", "display: percent", "scale: auto"}
+        return {"indicators: all", "readout: percent", "scale: auto"}
       end,
     },
     {
@@ -2963,9 +3031,8 @@ local function testInstructionBudget()
         return {
           "rssiSource: " .. (index % 2 == 0 and "RSSI" or "1RSS"),
           "qualitySource: RQly",
-          "primary: " .. (index % 2 == 0 and "auto" or "rssi"),
+          "reading: " .. (index % 2 == 0 and "auto" or "rssi"),
           "extrema: flight",
-          "armSource: sa",
         }
       end,
     },
@@ -3100,6 +3167,23 @@ local greedy = {
   apiVersion = 1,
   supportedSpans = {"any"},
   refreshInterval = 0,
+  -- Declared because the shared grid layout writes them, and an undeclared
+  -- key is now reported rather than ignored.
+  settings = {
+    -- Every key `fullGridLayout` writes, because an undeclared key is now
+    -- reported rather than ignored and this fixture stands in for a real
+    -- component.
+    {key = "label", type = "string", default = ""},
+    {key = "source", type = "string", default = ""},
+    {key = "unit", type = "string", default = ""},
+    {key = "precision", type = "number", default = 0},
+    {key = "visual", type = "string", default = "bar"},
+    {key = "rangeMin", type = "number", default = 0},
+    {key = "rangeMax", type = "number", default = 100},
+    {key = "warning", type = "number"},
+    {key = "critical", type = "number"},
+    {key = "accent", type = "string", default = "cyan"},
+  },
 }
 function greedy.create(parent, rect, settings, services)
   local panel = services.primitives.panel(parent, rect, services.theme,
@@ -3141,8 +3225,8 @@ components:
     config:
       label: Pack
       unit: V
-      min: 18
-      max: 25
+      rangeMin: 18
+      rangeMax: 25
       precision: 1
       visual: bar
 ]])
@@ -3462,8 +3546,8 @@ components:
     colSpan: 1
     rowSpan: 1
     config:
-      min: 6.6
-      max: 8.4
+      packEmpty: 6.6
+      packFull: 8.4
       warning: 7.0
       critical: 6.8
       showPercent: true
@@ -3476,7 +3560,7 @@ components:
     config:
       binding: global
       index: 1
-      presentation: horizontal-bar
+      visual: bar
   - id: identity
     type: model-identity
     col: 0
@@ -3493,9 +3577,9 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      mode: all
+      indicators: all
       orientation: horizontal
-      display: raw
+      readout: raw
   - id: dial
     type: variable-indicator
     col: 2
@@ -3506,9 +3590,9 @@ components:
       binding: source
       source: Curr
       label: Current
-      presentation: radial
-      min: 0
-      max: 120
+      visual: radial
+      rangeMin: 0
+      rangeMax: 120
   - id: swing
     type: variable-indicator
     col: 3
@@ -3518,7 +3602,7 @@ components:
     config:
       binding: global
       index: 0
-      presentation: bipolar-bar
+      visual: bipolar-bar
 ]]
 
 --- Advance a context far enough for every service and component to settle.
@@ -3715,7 +3799,7 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      mode: pair
+      indicators: pair
       trim1: not-a-trim
       trim2: also-not-a-trim
   - id: identity
@@ -3877,7 +3961,7 @@ components:
     config:
       rssiSource: RSSI
       qualitySource: RQly
-      primary: auto
+      reading: auto
       warning: 50
       critical: 30
       extrema: source
@@ -3891,9 +3975,9 @@ components:
     config:
       rssiSource: 1RSS
       qualitySource: RQly
-      primary: rssi
-      min: -110
-      max: -30
+      reading: rssi
+      barMin: -110
+      barMax: -30
       warning: -90
       critical: -100
   - id: nav
@@ -4307,7 +4391,7 @@ components:
     config:
       rssiSource: RSSI
       qualitySource: RQly
-      primary: auto
+      reading: auto
       warning: 50
       critical: 30
   - id: rssionly
@@ -4318,7 +4402,7 @@ components:
     rowSpan: 2
     config:
       rssiSource: RSSI
-      primary: rssi
+      reading: rssi
 ]])
 
   -- A live link whose protocol has no RSSI sensor: values keep arriving while

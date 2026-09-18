@@ -37,8 +37,8 @@ components:
       source: GAlt
       unit: m
       accent: green
-      min: 0
-      max: 500
+      rangeMin: 0
+      rangeMax: 500
       precision: 0
       visual: radial
 
@@ -53,8 +53,8 @@ components:
       source: RQly
       unit: "%"
       accent: cyan
-      min: 0
-      max: 100
+      rangeMin: 0
+      rangeMax: 100
       warning: 50
       critical: 30
       direction: falling
@@ -72,8 +72,8 @@ components:
       source: RxBt
       unit: V
       accent: cyan
-      min: 6.0
-      max: 8.4
+      rangeMin: 6.0
+      rangeMax: 8.4
       warning: 7.0
       critical: 6.6
       direction: falling
@@ -102,8 +102,8 @@ components:
       source: "Bat%"
       unit: "%"
       accent: amber
-      min: 0
-      max: 100
+      rangeMin: 0
+      rangeMax: 100
       warning: 40
       critical: 20
       direction: falling

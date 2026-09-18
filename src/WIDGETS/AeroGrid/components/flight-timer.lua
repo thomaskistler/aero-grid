@@ -18,7 +18,7 @@
 ---@field timer? number Zero-based EdgeTX timer index.
 ---@field label? string Panel label; the timer's own name is used when empty.
 ---@field accent? string
----@field display? "model"|"elapsed"|"remaining"
+---@field reading? "model"|"elapsed"|"remaining"
 ---@field warning? number Seconds at which the timer becomes a caution.
 ---@field critical? number Seconds at which the timer becomes critical.
 
@@ -40,12 +40,24 @@ local flightTimer = {
   refreshInterval = 100,
   settings = {
     {key = "timer", label = "Model timer", type = "number", default = 0},
+    -- An empty label is not an absent one: it means derive the heading at
+    -- runtime, here from the timer's own name, or its number when it has none. A
+    -- component with a fixed heading states it as its default instead.
     {key = "label", label = "Label", type = "string", default = ""},
-    {key = "accent", label = "Accent", type = "string", default = "cyan"},
+    {key = "accent", label = "Accent", type = "string", default = "cyan",
+      choices = {"cyan", "green", "amber", "orange"}},
     -- `model` follows the timer's own configured elapsed/remaining choice.
-    {key = "display", label = "Show", type = "string", default = "model"},
+    -- Which of the timer's values leads the panel, named `reading` like every
+    -- other component that chooses between its own values.
+    {key = "reading", label = "Show", type = "string", default = "model",
+      choices = {"model", "elapsed", "remaining"}},
     {key = "warning", label = "Warning seconds", type = "number"},
     {key = "critical", label = "Critical seconds", type = "number"},
+    -- A countdown is judged on the time it has left and a count-up timer on
+    -- the time it has used, so the direction follows the timer rather than
+    -- the layout and cannot be stated.
+    {key = "direction", label = "Threshold direction", type = "string",
+      default = "timer", choices = {"timer"}},
   },
 }
 
@@ -79,7 +91,7 @@ end
 ---@param feed AeroGridModelTimer
 ---@return number seconds
 function flightTimer.displayValue(settings, feed)
-  local display = settings.display
+  local display = settings.reading
 
   if display == "elapsed" then return feed.elapsed end
   if display == "remaining" then
