@@ -381,9 +381,63 @@ local function testSpanGalleryIsComplete()
     "only " .. compared .. " components were compared at 1 x 1")
 end
 
+--- The span galleries have to be reachable by paging, not by editing settings.
+---
+--- A gallery only ships as a layout, and selecting a layout means setting the
+--- widget's Dashboard ID. In App mode that is not reachable from the main
+--- view at all: `Widget::openMenu` returns immediately after
+--- `setFullscreen(true)` when the widget is not in the top bar and the view is
+--- App mode (radio/src/gui/colorlcd/mainview/widget.cpp), so there is no
+--- widget menu to open. Reaching a gallery would mean going through Model
+--- Setup and Screens once per gallery, which is enough friction that nobody
+--- would look at them, which is the whole point of them existing.
+---
+--- The tracked simulator model therefore carries a screen per gallery. This
+--- holds that arrangement together: a gallery added later without a screen is
+--- a gallery nobody pages to.
+local function testGalleriesAreReachable()
+  local handle = assert(hostIo.open(
+    root .. "/tests/fixtures/sdcard/MODELS/model1.yml", "r"))
+  local model = handle:read("a")
+  handle:close()
+
+  local listingPath = root .. "/build/gallery-layouts.txt"
+  os.execute("ls '" .. sourcePath .. "layouts' > '" .. listingPath .. "'")
+  local listing = assert(hostIo.open(listingPath, "r"))
+  local galleries = {}
+  for name in listing:lines() do
+    local stem = string.match(name, "^(span%w+)%.yaml$")
+    if stem then galleries[#galleries + 1] = stem end
+  end
+  listing:close()
+  os.remove(listingPath)
+  assert(#galleries > 0, "no span galleries were found")
+
+  for _, stem in ipairs(galleries) do
+    -- The file is written by the simulator and uses CRLF, so the value is
+    -- matched up to the line ending rather than to the end of the line.
+    assert(string.find(model, "stringValue: " .. stem, 1, true),
+      stem .. " ships as a layout but no screen of the tracked model selects"
+        .. " it, so nothing pages to it")
+  end
+
+  -- EdgeTX stops at MAX_CUSTOM_SCREENS, which is 10 on colour targets
+  -- (radio/src/dataconstants.h). A model carrying more is one the radio will
+  -- not load as written.
+  local screens = 0
+  for _ in string.gmatch(model, "\n      LayoutId:") do screens = screens + 1 end
+  assert(screens >= #galleries + 2,
+    "the tracked model has " .. screens .. " screens, too few for the"
+      .. " galleries plus the two dashboards")
+  assert(screens <= 10,
+    "the tracked model has " .. screens .. " screens, more than EdgeTX's"
+      .. " MAX_CUSTOM_SCREENS of 10")
+end
+
 local function testShippedLayout()
 testShippedLayoutsLoad()
 testSpanGalleryIsComplete()
+testGalleriesAreReachable()
   resetRadio()
   local zone = {x = 0, y = 0, w = 480, h = 272}
   local context = testRendersInBothModes("shipped", zone, sourcePath, 10)
