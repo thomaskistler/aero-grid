@@ -905,7 +905,7 @@ Milestones 1 to 7 are merged into `main`.
 
 ### Hard-won constraints
 
-Twelve firmware behaviours cost real debugging time and were invisible to the mocked tests until each mock was made faithful. Each now has a regression test, and each is documented in full further down.
+Twelve firmware behaviours cost real debugging time and were invisible to the mocked tests until each mock was made faithful. Each now has a regression test, and each is documented in full further down. Why they were invisible, and what stops the next one, is the fixture discipline section below.
 
 1. **A widget callback may not exceed 20000 Lua VM instructions.** Loading, reflow, refresh, and service updates are all bounded work per callback as a result.
 2. **`lvgl.box` accepts a `color` and silently ignores it.** Only a filled `lvgl.rectangle` paints a background.
@@ -939,7 +939,44 @@ Two more lessons came from the tests rather than the firmware:
 - A geometry test that only checks the right and bottom edges cannot see two rows resolved onto the same line. Milestone 7's region tests assert that every supporting row clears the one above it and every column clears the one beside it, and that shedding a row actually buys the dominant reading a larger font, which is the reason for shedding it.
 - A fallback can hide the bug a test was written for. The reserved-corner test passed with the `MENU_HEADER_HEIGHT` unshifting removed, because the code's own 45 px default was right for the display the test used. Only measuring a display whose button is a different size made the shift load bearing. A default that rescues the mistake is worth keeping; a test that cannot see past it is not.
 - A component that reimplements a shared helper stops receiving that helper's fixes. `service-probe` had its own copy of the panel frame arithmetic, so it kept drawing its title into the menu button's corner after every catalogue component had stopped. `metric` shadowed a subset of the frame's fields and handed that to the header primitive, so it silently missed the new one.
+- A fixture's own limitation can be written up as firmware behaviour. A global variable test asserted that switching flight mode left the value unmoved and explained it as EdgeTX resolving inheritance; the mock ignored the flight mode argument, so the assertion could not have failed and the explanation was invented. See the fixture discipline section below.
 - A refresh short-circuit is a cache, and a cache that misses a change shows an old number with a straight face. Three of milestone 7's components compared only their dominant reading and so froze a supporting row: the pack sum when three of four cells sagged, the RSSI readout while link quality sat pinned at 100, and the whole navigation panel when its GPS sensor appeared but had no fix yet. Every field a component draws has to be part of the comparison, and each of the three now has a regression test that changes exactly the field the primary reading does not move with.
+
+### Fixture discipline
+
+Five defects reached a radio while this suite stayed green. They are listed below, and they are one defect: **a fixture encoded what we assumed, so it could not fail when the assumption was wrong.** A green suite told us nothing, because the mock and the code under test agreed with each other and both were wrong about the radio.
+
+The rule has three parts, because the failures came in three shapes.
+
+**A fixture that stands in for firmware must reproduce that firmware's arithmetic, ordering and data shape, and must cite the file it came from.** Not the result we expect it to produce: the behaviour. A mock that records the coordinates it is handed cannot see an object move. A mock whose `clear()` is an immediate flag cannot reproduce a deferred cleanup. A mock that returns its input unchanged cannot distinguish two encodings that are only the same number here. Where the firmware raises, the mock raises; where the firmware caps a value at 99, so does the mock; where the firmware accepts a fixed set of keys, the mock rejects everything else.
+
+**An assertion must pin the value the contract names, not assert that something differs from something else.** "Differs from" is satisfied by every wrong answer as well as the right one, and is therefore satisfied when every value is wrong in the same way, which is precisely what happened. The same applies to "is not nil", "is greater than zero", and any assertion whose truth does not depend on the implementation at all: `contrast(a, b) >= 1.0` was in this suite for two milestones and is a tautology.
+
+**A comment must not explain a test's behaviour with a claim about the radio that nobody has checked.** This is the least obvious of the three and the most corrosive. A global variable test asserted that switching flight mode left a value unmoved, and explained the non-movement as EdgeTX resolving inheritance. The explanation was invented. The value did not move because the fixture ignored the flight mode argument entirely and answered the same number for every mode, so the assertion could not have failed however wrong the host was. A vacuous assertion is inert; a vacuous assertion with a confident explanation actively stops the next reader checking, because it answers the question they were about to ask. If a comment states what the radio does, it is a claim, and it carries the same obligation as a value: cite it or do not write it.
+
+#### The evidence
+
+| # | Defect | What the fixture encoded |
+| --- | --- | --- |
+| 1 | Arc drift. Every dial walked off the screen a radius per update | The LVGL mock stored the coordinates it was handed instead of modelling `LvglWidgetRoundObject`'s doubled subtraction, so it could not see an object move |
+| 2 | An unbounded loader that broke on any layout over twelve components | The budget test measured the shipped five-component layout against a ceiling it used a third of |
+| 3 | `Invalid object (it has been probably been cleared)` after a theme change | The mock's `clear()` was an immediate flag with no parent/child tracking, so EdgeTX's deferred cleanup ordering could not occur |
+| 4 | Healthy panels drew yellow and warnings drew critical red | The theme fixture invented EdgeTX role colours to match the role *names*. The firmware ships `ACTIVE` yellow, `EDIT` green and `WARNING` red |
+| 5 | Every panel of every theme drew dark red | `lcd.getColor` returned a bare RGB565 where the firmware returns an `LcdFlags` word, so the suite exercised a decode path that does not exist on a radio |
+
+Defect 5 also produced the clearest example of the second shape. The assertion checked only that the derived canvas *differed* from Modern's, which is trivially satisfied when every colour is wrong in the same way. With the bug reintroduced, the entire suite passed.
+
+The audit that followed found a sixth of the same family, still in the tree: `lcd.RGB` was returning its 24-bit input where the firmware returns the same flag word. It had not yet caused a defect, but it made `theme.rgb` and `theme.color` the same number under test, so nothing could tell a palette token apart from a display value. Drawing every panel with the wrong one passed the whole suite.
+
+#### What holds the rule up
+
+Prose does not. Each part of the rule has a mechanism.
+
+- `tests/support/edgetx.lua` splits every value into `firmware`, which is a claim about the radio and must name the file and symbol it was read from, and `scaffold`, which is invented and owes nothing. The citation is enforced at load: an uncited value, a path outside `radio/src/`, or a citation naming no symbol raises before any test runs, and there is no warning-only mode. The obligation covers behaviour as well as constants, because three of the five defects were wrong arithmetic rather than a wrong number.
+- The LVGL mock rejects a property key the firmware's `parseParam` does not accept, and a colour that is not a word `lcd.RGB` produced. Both are faithfulness rather than extra rules: the firmware raises `Invalid property '%s'`, and a 24-bit token on a radio paints a colour belonging to no theme.
+- Every test is proved able to fail. Break the thing it covers, watch it fail with a message that names the problem, restore. A test that cannot be made to fail is not a test, and several in this suite could not be.
+- Keep the mock out of the instruction budget. `parseParam`, `lcd.RGB` and `getValue` are C in the firmware and cost a script nothing, so charging a Lua stand-in for them to a widget callback measures the fixture and slowly squeezes the thing being measured.
+
 
 ## Proposed Release Phases
 
