@@ -1564,6 +1564,18 @@ components:
     "the header took the variable's name and the supporting row kept the old"
       .. " one, which is the defect this exists to catch")
 
+  -- The row names the flight mode the value was read for, so it has to
+  -- follow a change of mode. Checked here, on a panel two rows tall that
+  -- actually draws the row: it used to be checked on a `2 x 1` that sheds it,
+  -- where the string was computed and written into a hidden label.
+  radio.flightMode, radio.flightModeName = 2, "Land"
+  pump(context, 60)
+  assertEqual(gv.detailLabel.properties.text, "Rates FM2",
+    "the supporting row kept the flight mode it was drawn with")
+  radio.flightMode, radio.flightModeName = 1, "Sport"
+  pump(context, 60)
+  assertEqual(gv.detailLabel.properties.text, "Rates FM1")
+
   -- The same shape in model-identity, which could not be made to fail before
   -- because a model's labels only change when its name does. Driven directly
   -- here, with the name and the bitmap held still.
@@ -3044,7 +3056,9 @@ local function testInstructionBudget()
       type = "tx-battery",
       services = {"model"},
       config = function()
-        return {"packEmpty: 6.6", "packFull: 8.4", "warning: 7.0", "showPercent: true"}
+        -- No `showPercent`: sixteen single cells, and a single row has no
+        -- space for one at any width, so asking is refused at load.
+        return {"packEmpty: 6.6", "packFull: 8.4", "warning: 7.0"}
       end,
     },
     {
@@ -3071,7 +3085,10 @@ local function testInstructionBudget()
     {
       type = "model-identity",
       services = {"model"},
-      config = function() return {"presentation: both", "showLabels: true"} end,
+      -- No `showLabels`: sixteen single cells, which have no row for them,
+      -- so it is refused at load. The worst case for this component at this
+      -- span genuinely does not include the label list.
+      config = function() return {"presentation: both"} end,
     },
     {
       -- Every panel walks a cells table on every refresh, so sixteen of them
@@ -3679,7 +3696,6 @@ components:
       packFull: 8.4
       warning: 7.0
       critical: 6.8
-      showPercent: true
   - id: gv
     type: variable-indicator
     col: 2
@@ -4348,6 +4364,140 @@ components:
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 end
 
+--- A timer's supporting caption is drawn where there is room and nowhere else.
+---
+--- Four assertions in this suite checked that caption's wording on panels one
+--- row tall, which shed it. They passed because the component formatted the
+--- string and then wrote it into a hidden label, which is the work this
+--- sweep removes. The wording still matters, so it is checked here, at a span
+--- that actually shows it.
+local function testFlightTimerShedsItsDetail()
+  resetRadio()
+  local widgetPath = makeWidget("timer-detail", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: tall
+    type: flight-timer
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      timer: 0
+  - id: flat
+    type: flight-timer
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      timer: 0
+]])
+
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  settle(context, 30)
+
+  local tall = entryById(context, "tall").instance
+  local flat = entryById(context, "flat").instance
+
+  -- Two rows: the caption is drawn, and says what the countdown is out of.
+  assertEqual(tall.showDetail, true, "a two-row timer shed its caption")
+  assertEqual(tall.detailLabel.properties.text, "OF 5:00",
+    "the caption does not state the total the timer counts down from")
+  assertEqual(tall.detailLabel.hidden, false)
+
+  -- One row: not drawn, and not made either.
+  assertEqual(flat.showDetail, false, "a one-row timer kept its caption")
+  assertEqual(flat.rendered.detail, nil,
+    "a shed caption was still being formatted every frame")
+  assert(flat.detailLabel.hidden, "a shed caption was left on screen")
+
+  -- An expired countdown says so, where it can.
+  radio.timers[0].value = -15
+  settle(context, 20)
+  assertEqual(tall.detailLabel.properties.text, "ELAPSED PAST ZERO")
+  assertEqual(tall.stateName, "critical")
+
+  -- And a shed caption costs nothing to keep shed while the timer moves
+  -- underneath it. Writing into a hidden label leaves no trace on screen, so
+  -- only the harness's write counter can see this.
+  local writes = flat.detailLabel.writes
+  radio.timers[0].value = 42
+  settle(context, 20)
+  assertEqual(flat.detailLabel.writes, writes,
+    "a shed caption was written while the timer changed underneath it")
+  resetRadio()
+end
+
+--- A bar is reconciled as one thing, because it is two or three objects.
+---
+--- Five components wrote the show-or-hide pair out by hand and `metric`
+--- reconciled `track` and `fill` separately and never touched the marker, so
+--- a bar carrying a neutral tick would have left it behind on a reflow.
+--- Only `primitives.bar` and `placeBar` know how many objects a bar has, and
+--- a caller reaching past them will drift again.
+---
+--- Driven against the real LVGL mock rather than a stand-in, because the
+--- thing being checked is which objects were told what, and the mock counts
+--- writes and visibility calls precisely so that work leaving no trace on
+--- screen can still be seen.
+local function testReconcileBar()
+  resetRadio()
+  local theme = themeModule.build("modern")
+  local root = lvgl.box({x = 0, y = 0, w = 200, h = 100})
+  local bar = primitivesModule.bar(root, theme, {
+    x = 0, y = 0, w = 100, fraction = 0, color = theme.color.cyan,
+    marker = 0.5,
+  })
+  assert(bar.marker, "this test needs a bar that carries a marker")
+
+  -- Shown: positioned, and every object told, the marker included.
+  primitivesModule.reconcileBar(bar, true, 10, 20, 100, 0.25)
+  assertEqual(bar.track.hidden, false)
+  assertEqual(bar.fill.hidden, false)
+  assertEqual(bar.marker.hidden, false,
+    "a bar's marker was left behind, which is what reconciling its two"
+      .. " other objects separately does")
+  assertEqual(bar.track.properties.x, 10)
+
+  -- Hidden: every object told, and nothing positioned, because moving an
+  -- object nobody can see is the invisible work this exists to stop.
+  local writes = bar.track.writes
+  primitivesModule.reconcileBar(bar, false, 99, 99, 40, 1)
+  assertEqual(bar.track.hidden, true)
+  assertEqual(bar.fill.hidden, true)
+  assertEqual(bar.marker.hidden, true)
+  assertEqual(bar.track.writes, writes, "a hidden bar was repositioned")
+  assertEqual(bar.track.properties.x, 10, "a hidden bar moved")
+
+  -- Settled: positioned, and told nothing it already is.
+  primitivesModule.reconcileBar(bar, true, 30, 40, 80, 0.5)
+  local calls = bar.track.visibilityCalls
+  local markerCalls = bar.marker.visibilityCalls
+  primitivesModule.reconcileBar(bar, true, 50, 40, 80, 0.5, true)
+  assertEqual(bar.track.properties.x, 50, "a settled bar was not repositioned")
+  assertEqual(bar.track.visibilityCalls, calls,
+    "a bar whose visibility had not moved was told what it already was")
+  assertEqual(bar.marker.visibilityCalls, markerCalls)
+
+  -- Settled and hidden: nothing at all.
+  primitivesModule.reconcileBar(bar, false, 1, 2, 3, 0)
+  writes = bar.track.writes
+  calls = bar.track.visibilityCalls
+  primitivesModule.reconcileBar(bar, false, 7, 8, 9, 1, true)
+  assertEqual(bar.track.writes, writes)
+  assertEqual(bar.track.visibilityCalls, calls)
+
+  -- A component with no bar passes nil, and that is not an error.
+  primitivesModule.reconcileBar(nil, true, 0, 0, 10, 1)
+  root:clear()
+end
+
 --- A row that comes back shows what is true now, not what was true when it
 --- was shed.
 ---
@@ -4745,21 +4895,29 @@ local function testCoreComponents()
   local countdown = entryById(context, "countdown").instance
   assertEqual(countdown.text, "1:30")
   assertEqual(countdown.labelValue, "FLIGHT", "the timer's own name was ignored")
-  assertEqual(countdown.detail, "OF 5:00")
+  -- Both timers here are one row tall, which sheds the supporting row, so
+  -- the total and the counting-up caption are not on screen and asserting
+  -- their text would assert something nobody can see. The wording is checked
+  -- at a span that keeps it, in testFlightTimerShedsItsDetail.
+  assertEqual(countdown.showDetail, false,
+    "a one-row timer found space for a supporting row")
+  assert(countdown.detailLabel.hidden, "a shed row was left on screen")
   assertEqual(countdown.stateName, "warning", "90s left is inside the warning")
   assertEqual(countdown.badge.properties.text, "WARN")
 
   -- A count-up timer has no total and therefore no progress to draw.
   local countup = entryById(context, "countup").instance
   assertEqual(countup.text, "1:04")
-  assertEqual(countup.detail, "COUNTING UP")
+  assertEqual(countup.showDetail, false)
+  assert(countup.detailLabel.hidden, "a shed row was left on screen")
   assertEqual(countup.stateName, "normal")
 
   -- An expired countdown must never read like a healthy timer.
   radio.timers[0].value = -15
   settle(context, 12)
   assertEqual(countdown.text, "-0:15", "an expired countdown lost its sign")
-  assertEqual(countdown.detail, "ELAPSED PAST ZERO")
+  assertEqual(countdown.rendered.detail, nil,
+    "a shed caption was still being formatted every frame")
   assertEqual(countdown.stateName, "critical")
   radio.timers[0].value = 90
 
@@ -4792,7 +4950,13 @@ local function testCoreComponents()
   -- estimate and says so.
   local battery = entryById(context, "battery").instance
   assertEqual(battery.text, "7.9V")
-  assertEqual(battery.detail, "72% EST")
+  -- A single cell sheds the supporting row, so the percentage is not on
+  -- screen here; its wording is checked at a span that shows it, in
+  -- testTxBatteryRangeGatesTheEstimate.
+  assertEqual(battery.showDetail, false,
+    "a single-cell battery found room for a percentage")
+  assertEqual(battery.rendered.detail, nil,
+    "a shed percentage was still being formatted every frame")
   assertEqual(battery.stateName, "normal")
   radio.values[320] = 6.7
   settle(context, 12)
@@ -4805,7 +4969,12 @@ local function testCoreComponents()
   local gv = entryById(context, "gv").instance
   assertEqual(gv.text, "10%")
   assertEqual(gv.labelValue, "GV2")
-  assertEqual(gv.detail, "GV2 FM1", "the flight mode the value was read for")
+  -- This panel is one row tall and sheds its supporting row, so the name
+  -- and flight mode are not on screen here. They are checked at a span that
+  -- shows them, in testGlobalVariableDetails.
+  assertEqual(gv.showDetail, false, "a one-row indicator kept its name row")
+  assertEqual(gv.rendered.detail, nil,
+    "a shed name row was still being formatted every frame")
   -- -100 to 100 crosses zero, so the bar carries a tick at its centre.
   assert(gv.bar.markerFraction, "a bar over a signed range lost its zero tick")
   assertEqual(gv.bar.marker.hidden, false)
@@ -4819,14 +4988,12 @@ local function testCoreComponents()
   radio.flightMode, radio.flightModeName = 2, "Land"
   settle(context, 12)
   assertEqual(gv.text, "60%", "the value stored for the new flight mode was not read")
-  assertEqual(gv.detail, "GV2 FM2", "the flight mode row went stale")
 
   -- A mode with no value of its own does inherit, and that is a different
   -- observation from never having looked.
   radio.flightMode, radio.flightModeName = 3, "Cruise"
   settle(context, 12)
   assertEqual(gv.text, "10%", "an inherited value was not inherited")
-  assertEqual(gv.detail, "GV2 FM3", "the flight mode row went stale")
 
   radio.flightMode, radio.flightModeName = 1, "Sport"
   settle(context, 12)
@@ -4983,8 +5150,9 @@ components:
   assertUnavailable("trims")
   assertUnavailable("mode")
 
+  -- The dominant reading, which every span draws. This panel is one row
+  -- tall and sheds its caption, so the caption is checked where it is shown.
   assertEqual(entryById(context, "timer").instance.text, "--:--")
-  assertEqual(entryById(context, "timer").instance.detail, "NO TIMER")
   assertEqual(entryById(context, "trims").instance.indicators[1].valueText, "--")
 
   -- A bitmap the card does not have falls back to the model name rather than
@@ -5713,6 +5881,8 @@ testTrimPanelShedsText()
 testShedRowsComeBackCurrent()
 testFlightModeIndexRow()
 testTxBatteryRangeGatesTheEstimate()
+testFlightTimerShedsItsDetail()
+testReconcileBar()
 testFlightModeSizesFromTheModel()
 testHostDiagnosticsReportsTheHost()
 testLayoutOriginIsReported()

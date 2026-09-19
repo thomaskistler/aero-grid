@@ -165,6 +165,36 @@ function primitives.reconcile(object, visible, changes, settled)
   end
 end
 
+--- Show or hide a bar, positioning and filling it only when it is visible.
+---
+--- A bar is two or three LVGL objects that always move together, which the
+--- single-object `reconcile` cannot express, so five components wrote the
+--- pair out by hand and a sixth wrote a `reconcile` per object and then
+--- forgot the marker. That last one is why this exists rather than a note
+--- asking people to remember: `placeBar` knows a bar may carry a neutral
+--- marker, and a caller reconciling `track` and `fill` individually silently
+--- leaves the marker where it was.
+---@param bar? table Bar returned by `primitives.bar`, or nil when none exists.
+---@param visible boolean
+---@param x integer
+---@param y integer
+---@param width integer
+---@param fraction number
+---@param settled? boolean Visibility is unchanged since the last call.
+function primitives.reconcileBar(bar, visible, x, y, width, fraction, settled)
+  if not bar then return end
+
+  if visible then
+    primitives.placeBar(bar, x, y, width, fraction)
+  end
+  if settled then return end
+
+  local show = visible and lvgl.show or lvgl.hide
+  show(bar.track)
+  show(bar.fill)
+  if bar.marker then show(bar.marker) end
+end
+
 --- Angles of the two quarter bands that carry the accent round the corners.
 --- LVGL measures zero at three o'clock and increases clockwise, so the upper
 --- left quarter runs from nine o'clock to twelve, and the lower left from six

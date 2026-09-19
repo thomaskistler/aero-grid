@@ -726,6 +726,9 @@ function metric.create(parent, rect, settings, services)
   context.showRange = context.range ~= nil and area.showRange == true
   context.showSecondary = context.secondary ~= nil
     and area.showSecondary == true
+  -- What the panel currently shows, so a reflow that changes nothing about
+  -- visibility does not tell every object again what it already is.
+  context.showVisual = area.showVisual
   if not area.showVisual then
     if context.bar then
       lvgl.hide(context.bar.track)
@@ -787,16 +790,11 @@ function metric.update(context, rect)
   reconcile(context.secondary, area.showSecondary,
     {x = area.secondaryX, y = area.rangeY, w = area.detailWidth})
 
-  if context.bar then
-    reconcile(context.bar.track, area.showVisual,
-      {x = area.pad, y = area.barY, w = area.content})
-    reconcile(context.bar.fill, area.showVisual, {x = area.pad, y = area.barY})
-    if area.showVisual then
-      context.bar.width = area.content
-      context.primitives.setBar(
-        context.bar, metric.fraction(context.settings, context.reading))
-    end
-  end
+  context.primitives.reconcileBar(context.bar, area.showVisual,
+    area.pad, area.barY, area.content,
+    metric.fraction(context.settings, context.reading),
+    area.showVisual == context.showVisual)
+  context.showVisual = area.showVisual
 
   if context.radial then
     -- The arc must shrink with the panel or it will overflow a smaller zone.

@@ -40,11 +40,12 @@ components:
       packEmpty: 6.6
       packFull: 8.4
       visual: bar
-      showPercent: true
 
-  # The same span and the same switches with no range stated. `visual: bar`
-  # and `showPercent: true` are both asked for and neither appears, because
-  # without a range there is nothing for them to mean.
+  # The same span and the same switch with no range stated. `visual: bar` is
+  # asked for and does not appear, because without a range there is nothing
+  # for it to mean. The percentage is compared on the two-row panels below:
+  # neither of these has a row to put one in, and asking for one here is
+  # refused at load.
   - id: unranged
     type: tx-battery
     col: 2
@@ -54,7 +55,6 @@ components:
     config:
       label: 2x1 NO RANGE
       visual: bar
-      showPercent: true
 
   # The narrowest span. No bar and no supporting row at any single cell.
   - id: smallest

@@ -262,25 +262,28 @@ function probe.update(context, rect)
   context.primitives.resizePanel(context.panel, rect)
   context.primitives.placeHeader(context.title, context.badge, area.frame)
 
+  local reconcile = context.primitives.reconcile
+  local before = context.visibleRows
+
   for index = 1, MAX_ROWS do
-    local key = context.keys[index]
-    local value = context.values[index]
-    if index <= area.rows then
-      local y = area.top + (index - 1) * area.lineHeight
-      key:set({x = area.pad, y = y, w = area.keyWidth})
-      value:set({x = area.valueX, y = y, w = area.valueWidth})
-      lvgl.show(key)
-      lvgl.show(value)
-    else
-      lvgl.hide(key)
-      lvgl.hide(value)
-    end
+    local visible = index <= area.rows
+    local settled = visible == (index <= before)
+    local y = area.top + (index - 1) * area.lineHeight
+
+    reconcile(context.keys[index], visible,
+      {x = area.pad, y = y, w = area.keyWidth}, settled)
+    reconcile(context.values[index], visible,
+      {x = area.valueX, y = y, w = area.valueWidth}, settled)
+
+    -- A row that just became visible still holds the text it had when it was
+    -- hidden, so the record of what was drawn is dropped for those rows and
+    -- the next refresh repaints them. Only those rows: one that was showing
+    -- and stays showing is already correct, and clearing every row made the
+    -- next refresh repaint the whole panel for one row's sake.
+    if visible and not settled then context.texts[index] = "" end
   end
 
   context.visibleRows = area.rows
-  -- Force the next refresh to repaint, because a row that just became visible
-  -- still holds the text it had when it was hidden.
-  for index = 1, MAX_ROWS do context.texts[index] = "" end
 end
 
 return probe

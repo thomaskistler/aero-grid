@@ -294,6 +294,11 @@ function flightTimer.create(parent, rect, settings, services)
     })
   end
 
+  -- What the panel currently draws, so `render` declares only that and a
+  -- reflow that changes nothing about visibility says nothing again.
+  context.showDetail = area.showDetail
+  context.showVisual = area.showVisual and context.bar ~= nil
+
   if not area.showDetail then lvgl.hide(context.detailLabel) end
   if context.bar and not area.showVisual then
     lvgl.hide(context.bar.track)
@@ -340,8 +345,16 @@ function flightTimer.render(context, out)
   out.state = flightTimer.resolveState(settings, feed)
   out.text = available and context.formatTime(
     flightTimer.displayValue(settings, feed)) or "--:--"
-  out.detail = flightTimer.detailText(feed, context.formatTime)
-  out.fraction = flightTimer.fraction(feed)
+  -- Declared only where it is drawn. A panel too short for a supporting row
+  -- was still formatting a second clock every frame and writing it into a
+  -- hidden label, which is the invisible work the reveal work removed from
+  -- five components and this one was not among them.
+  if context.showDetail then
+    out.detail = flightTimer.detailText(feed, context.formatTime)
+  end
+  if context.showVisual then
+    out.fraction = flightTimer.fraction(feed)
+  end
   out.label = string.upper(flightTimer.labelText(context))
 end
 
@@ -353,16 +366,18 @@ function flightTimer.apply(context, drawn)
 
   context.stateName = drawn.state
   context.text = drawn.text
-  context.detail = drawn.detail
+  context.detail = drawn.detail or ""
   context.labelValue = drawn.label
 
   context.value:set({text = drawn.text, color = presentation.value})
   context.label:set({text = drawn.label, color = presentation.label})
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
-  context.detailLabel:set({text = drawn.detail})
+  if context.showDetail then
+    context.detailLabel:set({text = context.detail})
+  end
   context.primitives.stylePanel(context.panel, presentation)
 
-  if context.bar then
+  if context.showVisual and context.bar then
     context.primitives.setBar(context.bar, drawn.fraction, presentation.accent)
   end
 end
@@ -391,24 +406,25 @@ function flightTimer.update(context, rect)
     font = function() return area.clock end,
   })
 
-  if area.showDetail then
-    context.detailLabel:set({x = area.pad, y = area.detailY, w = area.content})
-    lvgl.show(context.detailLabel)
-  else
-    lvgl.hide(context.detailLabel)
-  end
+  local primitives = context.primitives
+  primitives.reconcile(context.detailLabel, area.showDetail,
+    {x = area.pad, y = area.detailY, w = area.content},
+    area.showDetail == context.showDetail)
 
-  if context.bar then
-    if area.showVisual then
-      context.primitives.placeBar(context.bar, area.pad, area.barY,
-        area.content, flightTimer.fraction(context.feed))
-      lvgl.show(context.bar.track)
-      lvgl.show(context.bar.fill)
-    else
-      lvgl.hide(context.bar.track)
-      lvgl.hide(context.bar.fill)
-    end
+  local showVisual = area.showVisual and context.bar ~= nil
+  primitives.reconcileBar(context.bar, area.showVisual,
+    area.pad, area.barY, area.content, flightTimer.fraction(context.feed),
+    showVisual == context.showVisual)
+
+  -- A row that has just reappeared holds whatever it had when it was shed,
+  -- and `render` stopped declaring its key while it was hidden, so the record
+  -- of what was drawn is dropped and the next refresh repaints it.
+  if area.showDetail ~= context.showDetail
+      or showVisual ~= context.showVisual then
+    context.rendered = nil
   end
+  context.showDetail = area.showDetail
+  context.showVisual = showVisual
 end
 
 return flightTimer

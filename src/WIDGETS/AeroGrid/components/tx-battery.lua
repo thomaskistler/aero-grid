@@ -103,6 +103,38 @@ function txBattery.resolveState(settings, value, stale)
   return "normal"
 end
 
+--- Refuse a supporting row on a panel that has nowhere to put one.
+---
+--- No single-row span grants a supporting row: a 65 pixel panel has no space
+--- beneath the reading whatever its width, so asking for one on a `4 x 1` is
+--- as inert as asking on a `1 x 1`. Accepting it and ignoring it is the worst
+--- of the three options, because a layout author reads the setting back and
+--- believes it.
+---
+--- Only a layout that **stated** it is told. These settings arrive filled
+--- from their defaults, and a default that cannot apply here is the panel
+--- shedding a row, which is normal and silent.
+---@param settings AeroGridTxBatterySettings
+---@param span? table Placement span, when the host knows it.
+---@param config? table What the layout actually stated.
+---@return string[] messages
+function txBattery.validateSettings(settings, span, config)
+  local messages = {}
+  if type(config) ~= "table" then return messages end
+  if type(span) ~= "table" or type(span.rowSpan) ~= "number" then
+    return messages
+  end
+  if span.rowSpan >= 2 then return messages end
+
+  if config.showPercent then
+    messages[#messages + 1] = "showPercent needs a panel two rows tall;"
+      .. " a single row has no space beneath the reading at any width."
+      .. " Give the panel rowSpan 2, or drop showPercent."
+  end
+
+  return messages
+end
+
 --- Describe how the component presents itself at a given span.
 ---@param colSpan integer
 ---@param rowSpan integer
@@ -226,6 +258,11 @@ function txBattery.create(parent, rect, settings, services)
   end
 
   if not area.showDetail then lvgl.hide(context.detailLabel) end
+  -- What the panel currently shows, so `render` declares only that and a
+  -- reflow that changes nothing about visibility does not tell every object
+  -- again what it already is.
+  context.showVisual = area.showVisual
+  context.showDetail = area.showDetail
   if context.bar and not area.showVisual then
     lvgl.hide(context.bar.track)
     lvgl.hide(context.bar.fill)
@@ -254,8 +291,11 @@ function txBattery.render(context, out)
 
   -- One decimal: a transmitter pack reported to three flickers constantly and
   -- reads no better.
-  out.detail = ""
-  if context.ranged and settings.showPercent and type(value) == "number" then
+  -- Declared only where it is drawn. Every single-row span sheds this row,
+  -- so a `4 x 1` was formatting a percentage every frame and writing it into
+  -- a hidden label.
+  if context.showDetail and context.ranged and settings.showPercent
+      and type(value) == "number" then
     out.detail = string.format("%d%% EST", math.floor(out.fraction * 100 + 0.5))
   end
 end
@@ -269,12 +309,14 @@ function txBattery.apply(context, drawn)
   context.stateName = drawn.state
   context.reading = drawn.value
   context.text = drawn.text
-  context.detail = drawn.detail
+  context.detail = drawn.detail or ""
 
   context.value:set({text = drawn.text, color = presentation.value})
   context.label:set({color = presentation.label})
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
-  context.detailLabel:set({text = drawn.detail})
+  if context.showDetail then
+    context.detailLabel:set({text = context.detail})
+  end
   context.primitives.stylePanel(context.panel, presentation)
 
   if context.bar then
@@ -306,24 +348,20 @@ function txBattery.update(context, rect)
     font = function() return area.value end,
   })
 
-  if area.showDetail then
-    context.detailLabel:set({x = area.pad, y = area.detailY, w = area.content})
-    lvgl.show(context.detailLabel)
-  else
-    lvgl.hide(context.detailLabel)
-  end
+  context.primitives.reconcile(context.detailLabel, area.showDetail,
+    {x = area.pad, y = area.detailY, w = area.content},
+    area.showDetail == context.showDetail)
 
-  if context.bar then
-    if area.showVisual then
-      context.primitives.placeBar(context.bar, area.pad, area.barY, area.content,
-        txBattery.fraction(context.settings, context.reading))
-      lvgl.show(context.bar.track)
-      lvgl.show(context.bar.fill)
-    else
-      lvgl.hide(context.bar.track)
-      lvgl.hide(context.bar.fill)
-    end
-  end
+  -- A row that has just reappeared holds whatever it had when it was shed,
+  -- and `render` stopped declaring its key while it was hidden.
+  if area.showDetail ~= context.showDetail then context.rendered = nil end
+  context.showDetail = area.showDetail
+
+  context.primitives.reconcileBar(context.bar, area.showVisual,
+    area.pad, area.barY, area.content,
+    txBattery.fraction(context.settings, context.reading),
+    area.showVisual == context.showVisual)
+  context.showVisual = area.showVisual
 end
 
 return txBattery
