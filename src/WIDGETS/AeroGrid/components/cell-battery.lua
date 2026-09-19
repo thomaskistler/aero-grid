@@ -370,7 +370,17 @@ function cellBattery.regionsFor(theme, themeBuilder, rect, layout, fonts, sample
     frame = frame,
     pad = frame.pad,
     content = frame.content,
-    valueY = top,
+    -- Centred in the body band. The font came from that band, so this is
+    -- where it belongs: sizing a reading against a band and then drawing it
+    -- at the panel's old content top is how a bar first found itself under
+    -- its own reading.
+    -- Stated rather than inferred from the inset. `tx-battery` is the first
+    -- component on the panel-derived slots and its reading no longer starts
+    -- at the padding, so the shared helpers that place a unit read this
+    -- instead of assuming. The components still to be converted say so here.
+    valueX = frame.pad,
+    valueY = themeBuilder.bodyTop(
+      ladder, themeBuilder.fontHeight(value)),
     value = value,
     unitFont = unitFont,
     showUnit = showUnit,

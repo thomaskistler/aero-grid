@@ -201,10 +201,6 @@ function txBattery.presentationFor(colSpan, rowSpan)
   return {showVisual = cells >= 2, showDetail = cells >= 2}
 end
 
---- Vertical air between the reading and the glyph beside it, and between the
---- glyph and the percentage beneath it.
-txBattery.GLYPH_GAP = 6
-
 --- Tallest cell this panel will draw.
 --- An upright battery given every pixel of a two-row panel would be taller
 --- than the number beside it, and a battery is an indicator rather than the
@@ -219,59 +215,33 @@ txBattery.GLYPH_MAX_HEIGHT = 50
 --- bounded by the room above the supporting row as well, so both have to be
 --- satisfied at once.
 ---
---- The glyph still takes a column, so the reading is still fitted against
---- what is left rather than against the whole panel, and the budget is the
---- one the ladder implies: **a reading may step down one size to make room,
---- and no further.** Two steps is the panel telling us it cannot hold both.
+--- **The reading's font is no longer what this search protects.** It comes
+--- from the body band now, which is derived from the panel and does not
+--- consult the content at all, so nothing the glyph does can shrink the
+--- number. What the glyph has to fit is its own slot: the search is for the
+--- largest cell that lives in the right slot without reaching the left one.
 ---
 --- Sized by search rather than by formula because the answer is not smooth:
---- a glyph one pixel narrower can be the difference between the reading
---- keeping XXLSIZE and dropping to DBLSIZE, and there is no expression for
---- where that edge falls that is not just this loop written out.
----@param themeBuilder table
+--- a glyph one pixel narrower can be the difference between it fitting its
+--- slot and being shed, and there is no expression for where that edge falls
+--- that is not just this loop written out.
 ---@param primitives table Owns what is too small to read as a battery.
----@param content integer Full content width.
----@param room integer Vertical room the ladder left.
----@param tall integer Vertical pixels the glyph's own column has.
+---@param slot integer Width the glyph's own slot has.
+---@param tall integer Vertical pixels the body band gives it.
 ---@return integer? width
 ---@return integer? height
----@return any font Reading font once the glyph has taken its column.
----@return any unitFont
----@return boolean showUnit
-function txBattery.glyphFor(themeBuilder, primitives, content, room, tall)
-  local digits, unit = txBattery.DIGITS, txBattery.UNIT
-  local bare, bareUnitFont, bareShowsUnit =
-    themeBuilder.fitReadingUnit(digits, unit, content, room)
-  local step = themeBuilder.readingStep(bare)
-  local floorStep = step and math.min(step + 1, #themeBuilder.READING_FONTS)
-  local floorHeight = floorStep
-    and themeBuilder.fontHeight(themeBuilder.READING_FONTS[floorStep])
-    or 0
-
-  -- As tall as its column allows, capped so a cell beside an XXLSIZE reading
+function txBattery.glyphFor(primitives, slot, tall)
+  -- As tall as its band allows, capped so a cell beside an XXLSIZE reading
   -- is an indicator rather than a second reading.
   local ideal = math.min(txBattery.GLYPH_MAX_HEIGHT, tall)
 
   for height = ideal, primitives.GLYPH_MIN_HEIGHT, -1 do
     local width = math.max(primitives.GLYPH_MIN_WIDTH,
       math.floor(height / primitives.GLYPH_ASPECT + 0.5))
-    local left = content - width - txBattery.GLYPH_GAP
-    local font, rider, showUnit, fits =
-      themeBuilder.fitReadingUnit(digits, unit, left, room)
-    -- Two conditions, and the second is not implied by the first. A reading
-    -- already at the bottom of the ladder passes a test that only asks how
-    -- far it stepped, because there is nowhere further for it to step, and
-    -- the glyph would take width the reading needed.
-    --
-    -- The unit is not part of the budget. It costs the reading nothing by
-    -- construction, so a glyph that squeezes the unit out has not made the
-    -- number smaller -- it has spent redundancy, which is the cheap thing.
-    if fits and themeBuilder.fontHeight(font) >= floorHeight then
-      return width, height, font, rider, showUnit
-    end
+    if width <= slot then return width, height end
   end
 
-  return nil, nil, bare, bareUnitFont, bareShowsUnit
+  return nil, nil
 end
 
 --- Compute the content regions for the current rectangle.
@@ -287,7 +257,6 @@ function txBattery.regionsFor(theme, themeBuilder, primitives, rect, layout,
   local spacing = theme.spacing
   local frame = themeBuilder.frame(theme, rect, fonts)
   local labelHeight = frame.labelHeight
-  local top = frame.top
   -- Composition comes from the shared ladder, so a panel of this size carries
   -- the same rows as any other panel of this size, whichever component drew
   -- it. What this component wants is a veto, not a vote.
@@ -295,87 +264,137 @@ function txBattery.regionsFor(theme, themeBuilder, primitives, rect, layout,
   local showVisual = layout.showVisual and ladder.visual
   local showDetail = layout.showDetail and ladder.rows > 0
   local wantsGlyph = layout.visual == "battery"
+  local showBar = showVisual and layout.visual == "bar"
 
+  -- A bar is exempt from the arrangement and keeps the panel's floor. Its
+  -- length *is* the reading, and a track that stops short of the panel edge
+  -- measures against a scale the eye cannot see.
   local barY = math.max(1, rect.h - frame.bottom - spacing.barHeight)
-  local detailY = math.max(1, barY - labelHeight - 2)
 
-  -- The column an upright cell stands in: from under the header down to the
-  -- supporting row where there is one, or to the panel's own bottom where
-  -- there is not.
-  local glyphFloor = showDetail and (detailY - txBattery.GLYPH_GAP)
-    or (rect.h - frame.bottom)
-  local glyphRoom = math.max(0, glyphFloor - top)
+  -- The bands and the font come from the shared ladder, so this panel is
+  -- banded the same way every panel of its size is, whichever component drew
+  -- it.
+  local bands = ladder.bands
 
-  -- `88.8` is the widest number a transmitter pack produces. The `V` is not
-  -- part of it: it rides beside it in its own label at a smaller font, and is
-  -- dropped only where there is no room for the pair.
-  local value, unitFont, showUnit, glyphWidth, glyphHeight
+  -- The font comes from the band, which comes from the panel, so it does not
+  -- consult the reading at all and cannot change as the voltage does.
+  local value = themeBuilder.bandFont(bands.body.h)
+  local unitFont = themeBuilder.unitFont(value)
+  local valueHeight = themeBuilder.fontHeight(value)
+
+  -- Half the content is what either element may claim, whichever slots the
+  -- panel settles on. The right slot's centre moves between 70% and 75%, but
+  -- its half never grows, so sizing the glyph against the half is the answer
+  -- both arrangements accept.
+  local half = math.floor(frame.content / 2)
+
+  local glyphWidth, glyphHeight
   if wantsGlyph and showVisual then
-    glyphWidth, glyphHeight, value, unitFont, showUnit = txBattery.glyphFor(
-      themeBuilder, primitives, frame.content, ladder.room, glyphRoom)
+    glyphWidth, glyphHeight = txBattery.glyphFor(primitives, half, bands.body.h)
     -- A panel that cannot hold a glyph sheds it, the way it sheds any other
     -- visual. It does not fall back to a bar: the layout asked for a
     -- battery, and a bar in its place is a different answer to the question.
     if not glyphWidth then showVisual = false end
-  else
-    value, unitFont, showUnit = themeBuilder.fitReadingUnit(
-      txBattery.DIGITS, txBattery.UNIT, frame.content, ladder.room)
   end
 
-  local valueHeight = themeBuilder.fontHeight(value)
-  if top + valueHeight > rect.h then top = math.max(0, rect.h - valueHeight) end
+  -- **The slot is reserved on the basis that this layout could ever show a
+  -- battery, not on whether one is being drawn.** The range comes from a live
+  -- `getGeneralSettings` subscription rather than from anything known when
+  -- the panel is built, so a reading placed on the whole content box now and
+  -- on the left slot two frames later would move exactly once per power-up,
+  -- and again whenever a pilot edits the battery meter range in flight. That
+  -- is the objection this arrangement exists to avoid, so the slot is held
+  -- open and the panel accepts an empty right half where no range ever
+  -- arrives.
+  local reserveSlot = wantsGlyph and showVisual
 
-  local glyphX, glyphY, detailUnderGlyph, glyphBorder
+  -- The unit is redundancy and is bought with width, never with a size. The
+  -- number it rides beside has already been chosen by the band.
+  local function widthOf(room)
+    local rides = themeBuilder.readingWidth(
+      value, txBattery.DIGITS, unitFont, txBattery.UNIT) <= room
+    return rides, themeBuilder.readingWidth(
+      value, txBattery.DIGITS, unitFont, rides and txBattery.UNIT or nil)
+  end
+
+  -- Asked of `88.8`, the widest a transmitter pack prints, so the arrangement
+  -- is fixed for the life of the panel rather than flipping as the voltage
+  -- crosses a digit.
+  local showUnit, valueWidth = widthOf(reserveSlot and half or frame.content)
+  local slots, separated
+  if reserveSlot then
+    slots, separated = themeBuilder.slotsFor(frame, valueWidth, glyphWidth)
+    if not separated then
+      -- **No pair of slots separates them, so the glyph goes.** A band-derived
+      -- font does not consult the content, so the reading cannot be made
+      -- narrower to accommodate a cell, and `1 x 2` is the span where that
+      -- bites: 105 px of content, a DBLSIZE `88.8` that wants 93 of them, and
+      -- half a panel is 52. Shedding the visualization is what the panel
+      -- already does when it cannot hold one, and it is the answer
+      -- `navigation` reaches at `1 x 1` for the same reason.
+      showVisual, reserveSlot = false, false
+      glyphWidth, glyphHeight, slots = nil, nil, nil
+      showUnit, valueWidth = widthOf(frame.content)
+    end
+  end
+
+  local leftCentre = reserveSlot
+    and select(1, themeBuilder.slotCentres(frame, slots))
+    or (frame.pad + math.floor(frame.content / 2))
+  local rightCentre = reserveSlot
+    and select(2, themeBuilder.slotCentres(frame, slots))
+    or nil
+
+  -- Two boxes sharing an optical centre stack to the taller of them, so the
+  -- block the band centres is simply the deeper of reading and glyph.
+  local blockHeight = math.max(valueHeight, glyphHeight or 0)
+  local blockTop = themeBuilder.bodyTop(ladder, blockHeight)
+  local valueY = blockTop + math.floor((blockHeight - valueHeight) / 2)
+
+  local glyphX, glyphY, glyphBorder
   if glyphWidth then
     -- The stroke is answered here, where the reading's font is known, so the
     -- cell is outlined for the number it stands beside rather than for the
     -- span it happens to be at.
     glyphBorder = primitives.batteryStroke(themeBuilder, value, glyphWidth)
-    glyphX = frame.pad + frame.content - glyphWidth
-    if showDetail then
-      -- The percentage sits on the supporting row every other panel of this
-      -- size uses, and the cell stands directly above it, so the right column
-      -- reads as one indicator without the row drifting away from where the
-      -- dashboard puts supporting rows.
-      glyphY = math.max(top, detailY - txBattery.GLYPH_GAP - glyphHeight)
-      -- Under the cell only if it fits under the cell. An upright battery is
-      -- half as wide as it is tall, so this is a narrower column than a lying
-      -- one gave and the percentage stays beneath the reading more often.
-      detailUnderGlyph = themeBuilder.textWidth(fonts.label, "100%") <= glyphWidth
-    else
-      glyphY = top + math.max(0, math.floor((valueHeight - glyphHeight) / 2))
-    end
+    glyphX = themeBuilder.slotX(rightCentre, glyphWidth)
+    glyphY = blockTop + math.floor((blockHeight - glyphHeight) / 2)
   end
+
+  -- One item on a row centres across the whole content box, exactly as a lone
+  -- reading does. The percentage used to sit under the glyph where it fitted
+  -- there, which made the supporting row's position depend on what was above
+  -- it; a row derived from the panel does not.
+  local detailY = showBar and math.max(1, barY - labelHeight - 2)
+    or themeBuilder.centreInBand(bands.tertiary, labelHeight)
 
   return {
     frame = frame,
     pad = frame.pad,
     content = frame.content,
-    valueY = top,
+    bands = bands,
+    labelY = themeBuilder.clampToPanel(
+      themeBuilder.centreInBand(bands.label, labelHeight), fonts.label, rect.h),
+    valueY = valueY,
+    valueX = themeBuilder.slotX(leftCentre, valueWidth),
     value = value,
     unitFont = unitFont,
     showUnit = showUnit,
-    -- The reading's own column, which is what is left once the glyph has
-    -- taken its share. Written down rather than recomputed, because the
-    -- label's width is what decides whether LVGL wraps it.
-    valueWidth = glyphWidth and (frame.content - glyphWidth - txBattery.GLYPH_GAP)
-      or frame.content,
+    valueWidth = valueWidth,
     glyphX = glyphX,
     glyphY = glyphY,
     glyphWidth = glyphWidth,
     glyphHeight = glyphHeight,
     glyphBorder = glyphBorder,
-    detailUnderGlyph = detailUnderGlyph == true,
-    detailX = detailUnderGlyph and glyphX or frame.pad,
-    detailWidth = detailUnderGlyph and glyphWidth
-      or (glyphWidth and (frame.content - glyphWidth - txBattery.GLYPH_GAP)
-        or frame.content),
+    detailUnderGlyph = false,
+    detailX = frame.pad,
+    detailWidth = frame.content,
     detailY = detailY,
     barY = barY,
     showVisual = showVisual,
     showDetail = showDetail,
     showGlyph = glyphWidth ~= nil,
-    showBar = showVisual and layout.visual == "bar",
+    showBar = showBar,
   }
 end
 
@@ -429,11 +448,11 @@ function txBattery.create(parent, rect, settings, services)
     services.themeBuilder)
 
   context.value = primitives.value(panel.root, theme, {
-    x = area.pad,
+    x = area.valueX,
     y = area.valueY,
-    -- Its own column, not the panel's. A label's width is what LVGL wraps
-    -- against, so a reading handed the full content width while a glyph sits
-    -- in part of it would be measured against space it does not have.
+    -- Exactly what the reading and its unit occupy, because it is centred on
+    -- a slot rather than started at an edge: a label given more width than it
+    -- needs would centre the slot on the wrong point.
     w = area.valueWidth,
     text = "--",
     color = presentation.value,
@@ -444,7 +463,7 @@ function txBattery.create(parent, rect, settings, services)
   -- for the reason every optional object here is: whether it is shown can
   -- change on a reflow and rebuilding an object is not free.
   context.unit = primitives.unit(panel.root, theme, {
-    x = area.pad,
+    x = area.valueX,
     y = area.valueY,
     text = txBattery.UNIT,
     color = theme.color.textMuted,
@@ -634,14 +653,14 @@ function txBattery.update(context, rect)
   context.primitives.placeHeader(context.label, context.badge, area.frame,
     context.themeBuilder, context.fonts, context.settings.label)
   context.value:set({
-    x = area.pad,
+    x = area.valueX,
     y = area.valueY,
     w = area.valueWidth,
     font = function() return area.value end,
   })
 
   context.primitives.reconcileUnit(context.unit, area.showUnit,
-    context.themeBuilder, area.pad, area.valueY, area.value, context.text,
+    context.themeBuilder, area.valueX, area.valueY, area.value, context.text,
     area.unitFont, area.showUnit == context.showUnit)
   context.showUnit = area.showUnit
   context.unitAnchor = nil
