@@ -398,11 +398,12 @@ end
 local function testSettingsVocabulary()
   local catalog = settingsCatalog()
   local kinds = componentTypes()
-  -- Eleven components ship. `heartbeat` and `placeholder` were built to prove
+  -- Twelve components ship, two of them diagnostic. `heartbeat` and
+  -- `placeholder` were built to prove
   -- the host contract and are fixtures under `tests/fixtures/components`, so
   -- they are not read here: the vocabulary rules below are about what a
   -- person configures on a radio.
-  assertEqual(#kinds, 11, "the catalogue changed size; the spec names eleven")
+  assertEqual(#kinds, 12, "the catalogue changed size; the spec names twelve")
 
   for kind, settings in pairs(catalog) do
     local declared = {}

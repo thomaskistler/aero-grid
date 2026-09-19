@@ -39,7 +39,11 @@
 ---@field theme AeroGridTheme Active resolved theme passed to every component.
 ---@field themeMode string Mode selected in native widget settings.
 ---@field services table Shared objects handed to components.
+---@field rejected table[] Placements that would not build, with the reason.
 ---@field layoutPath? string
+---@field layoutOrigin? string Which filename answered: model, dashboard, default, none.
+---@field modelFilename? string Model filename the layout name was derived from.
+---@field themeSource? string Whether the layout or the widget option chose the mode.
 ---@field errorLabel? any
 ---@field page any Container holding one generation of the dashboard.
 ---@field reloadState? "clear"|"rebuild"
@@ -326,6 +330,15 @@ local function buildServices(context, placement)
     state = function(name, accentName)
       return builder.state(theme, name, accentName)
     end,
+    -- The host's own state, for the diagnostics view and nothing else.
+    --
+    -- The live context, not a copy. A diagnostics view reporting on a
+    -- snapshot assembled for it would be reporting on a world built
+    -- separately from the one the dashboard is using, and would be
+    -- confidently wrong at exactly the moment it is being trusted. Handing it
+    -- over costs one table field per component and nothing else; a component
+    -- that abuses it is isolated like any other.
+    host = context,
     -- Shared data services. Any of these may be absent when its module failed
     -- to load, so a component must tolerate nil rather than assume.
     telemetry = byId.telemetry,
@@ -343,6 +356,22 @@ end
 ---@param placement table
 local function buildComponent(context, placement)
   local host = context.componentHost
+
+  --- Record a placement that will not be built, and why.
+  ---
+  --- A component that never constructs leaves nothing behind but an error in
+  --- a banner that may have scrolled, and it is absent from `components`
+  --- because there is no instance to put there. So the reason is kept where
+  --- it is known. Without this the diagnostics view could report every panel
+  --- that works and no panel that does not, which is the wrong half.
+  local function reject(reason)
+    addError(context, placement.id .. ": " .. tostring(reason))
+    context.rejected[#context.rejected + 1] = {
+      placement = placement,
+      reason = tostring(reason),
+    }
+  end
+
   local component, componentError = loadModule(
     context.path, "components/" .. placement.type .. ".lua")
   local contractValid, contractError
@@ -352,22 +381,22 @@ local function buildComponent(context, placement)
   end
 
   if not component then
-    addError(context, placement.id .. ": " .. tostring(componentError))
+    reject(componentError)
     return
   end
   if not contractValid then
-    addError(context, placement.id .. ": " .. tostring(contractError))
+    reject(contractError)
     return
   end
   if not host.supportsSpan(component, placement.colSpan, placement.rowSpan) then
-    addError(context, placement.id .. ": component does not support span "
+    reject("component does not support span "
       .. host.spanName(placement.colSpan, placement.rowSpan))
     return
   end
 
   local rect, rectError = componentRect(context, placement)
   if not rect then
-    addError(context, placement.id .. ": " .. tostring(rectError))
+    reject(rectError)
     return
   end
 
@@ -407,7 +436,7 @@ local function buildComponent(context, placement)
   else
     -- Discard whatever the failed component managed to build.
     container:clear()
-    addError(context, placement.id .. ": " .. tostring(instance))
+    reject(instance)
   end
 end
 
@@ -444,11 +473,13 @@ local function advanceLoad(context)
     end
 
     local modelInfo = model.getInfo()
-    local content, readError, filename = context.layoutStore.read(
+    local content, readError, filename, origin = context.layoutStore.read(
       context.path, modelInfo and modelInfo.filename or "default",
       context.dashboardId)
 
     context.layoutPath = filename
+    context.layoutOrigin = origin
+    context.modelFilename = modelInfo and modelInfo.filename or nil
     if not content then return fail(readError) end
 
     context.source = content
@@ -513,6 +544,10 @@ local function advanceLoad(context)
 
     -- A layout may pin its own theme; otherwise the native option decides.
     local themeConfig = validated.theme or {}
+    -- Which of the two asked for this palette. The resolved theme records the
+    -- mode it settled on and not where the request came from, and the widget
+    -- option was inert for a while while looking exactly like a working one.
+    context.themeSource = themeConfig.mode and "layout" or "option"
     context.theme = context.themeBuilder.build(
       themeConfig.mode or context.themeMode, themeConfig.overrides)
     for _, warning in ipairs(context.theme.warnings) do
@@ -625,6 +660,7 @@ end
 ---@param context AeroGridContext
 local function beginLoad(context)
   context.components = {}
+  context.rejected = {}
   context.errors = {}
   context.notices = {}
   context.errorLabel = nil
@@ -653,6 +689,7 @@ local function create(zone, widgetOptions, path)
     dashboardId = widgetOptions.DashID,
     themeMode = widgetOptions.Theme,
     components = {},
+    rejected = {},
     errors = {},
     notices = {},
     width = zone.w,
@@ -935,6 +972,7 @@ local function refresh(context)
     context.page = nil
     context.canvas = nil
     context.components = {}
+    context.rejected = {}
     context.errors = {}
     context.notices = {}
     context.errorLabel = nil

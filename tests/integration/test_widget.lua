@@ -126,6 +126,7 @@ for _, name in ipairs({"create", "update", "refresh", "background", "event"}) do
 end
 local themeModule = assert(loadfile(sourcePath .. "lib/theme.lua"))()
 local primitivesModule = assert(loadfile(sourcePath .. "lib/primitives.lua"))()
+local layoutStoreModule = assert(loadfile(sourcePath .. "lib/layout_store.lua"))()
 
 assertEqual(definition.name, "AeroGrid")
 assertEqual(definition.useLvgl, true)
@@ -3229,6 +3230,32 @@ local function testInstructionBudget()
   exercise("service probes", makeWidget("budget-probes", probeGridLayout()), 16,
     {"telemetry", "model", "control", "extrema", "navigation"})
 
+  -- Sixteen diagnostics panels, which is the worst case for the view that
+  -- reports on the host. It must not cost the dashboard anything when it is
+  -- not showing, which it cannot, because a component no layout places is
+  -- never loaded; the question this answers is the other half, that it does
+  -- not become the most expensive thing on the dashboard when it is.
+  local diagnosticsGrid = {"version: 1", "grid:", "  columns: 4", "  rows: 4",
+    "components:"}
+  local sections = {"identity", "theme", "components", "sources"}
+  for index = 1, 16 do
+    local col, row = (index - 1) % 4, math.floor((index - 1) / 4)
+    for _, line in ipairs({
+      "  - id: d" .. index,
+      "    type: host-diagnostics",
+      "    col: " .. col,
+      "    row: " .. row,
+      "    colSpan: 1",
+      "    rowSpan: 1",
+      "    config:",
+      "      section: " .. sections[(index - 1) % 4 + 1],
+    }) do
+      diagnosticsGrid[#diagnosticsGrid + 1] = line
+    end
+  end
+  exercise("host diagnostics x16",
+    makeWidget("budget-diagnostics", table.concat(diagnosticsGrid, "\n") .. "\n"), 16)
+
   -- A layout whose components all demand every frame defeats staggering, so
   -- the per-frame cap is the only thing bounding cost. Prove it holds.
   local greedyPath = makeWidget("budget-greedy", fullGridLayout(16, "greedy"), {
@@ -3739,6 +3766,347 @@ local function assertDeclaresWhatItDraws(cells, link, alt, nav, when)
   check(nav, "the bearing row", nav.showDetail, "detail")
   check(nav, "the origin row", nav.showDetail, "origin")
   check(nav, "the coordinate row", nav.showCoordinates, "coordinates")
+end
+
+--- The diagnostics view reports the host's own state, not a second opinion.
+---
+--- This is the hazard the whole view has to avoid. A panel that resolved the
+--- layout filename a second time, or rebuilt the theme to see what it would
+--- say, would be describing a world assembled for it rather than the one the
+--- dashboard is running, and would be confidently wrong at exactly the moment
+--- somebody is trusting it. So the assertions below compare what is drawn
+--- against the live context, never against a string this test also knows: a
+--- view that recomputed anything would have to agree with the host by
+--- accident to pass.
+local function testHostDiagnosticsReportsTheHost()
+  resetRadio()
+  local source = assert(hostIo.open(sourcePath .. "layouts/host.yaml", "r"))
+  local yaml = source:read("a")
+  source:close()
+
+  local widgetPath = makeWidget("hostdiag", yaml)
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  settle(context, 30)
+
+  local function linesOf(id)
+    local panel = entryById(context, id).instance
+    local out = {}
+    for index = 1, panel.visibleLines do
+      out[#out + 1] = panel.rows[index].properties.text
+    end
+    return table.concat(out, "\n"), panel
+  end
+
+  local identity, identityPanel = linesOf("identity")
+  assert(identityPanel.visibleLines > 0, "the identity panel showed no lines")
+  assert(string.find(identity, context.layoutPath, 1, true),
+    "the panel does not show the layout the host opened: " .. identity)
+  assertEqual(context.layoutOrigin, "default",
+    "this widget has no model-specific layout, so the fallback answered")
+  assert(string.find(identity, "-> " .. context.layoutOrigin, 1, true),
+    "the panel does not say which candidate name answered: " .. identity)
+  assert(string.find(identity, "main.lua ", 1, true),
+    "the panel does not stamp the running source: " .. identity)
+  -- The stamp is the answer to stale bytecode, so it has to be a reading of
+  -- the file rather than a placeholder.
+  assert(string.find(identity, "2026%-09%-18"),
+    "the panel shows no modification time: " .. identity)
+  -- No bytecode beside this package, so the loudest line must be absent.
+  -- `make build` deletes it precisely so this stays true on a card.
+  assert(not string.find(identity, "RUNNING main.luac", 1, true),
+    "the panel reported bytecode that is not there: " .. identity)
+
+  -- `host.yaml` states no theme block, so the widget option is what decided.
+  local theme = linesOf("theme")
+  assert(string.find(theme, "mode: " .. context.theme.mode, 1, true),
+    "the panel disagrees with the resolved theme: " .. theme)
+  assertEqual(context.themeSource, "option")
+  assert(string.find(theme, "asked by: " .. context.themeSource, 1, true),
+    "the panel does not say who chose the palette: " .. theme)
+
+  -- Every placement the host built, including these panels themselves.
+  local components = linesOf("components")
+  assert(string.find(components, #context.components .. " panels", 1, true),
+    "the panel miscounts the dashboard: " .. components)
+  for _, entry in ipairs(context.components) do
+    assert(string.find(components, entry.placement.id, 1, true),
+      "the panel omits " .. entry.placement.id .. ": " .. components)
+  end
+
+  local sources = linesOf("sources")
+  assert(string.find(sources, "sources, ", 1, true)
+    or string.find(sources, "no sources subscribed", 1, true),
+    "the sources panel said nothing at all: " .. sources)
+
+  -- The panel sheds lines it has no room for rather than drawing past its
+  -- own bottom edge. Nothing else can see this: a label overflowing a panel
+  -- is clipped by the box it sits in, so it is invisible on screen and
+  -- invisible to every assertion about what is drawn. What is checkable is
+  -- that the last line the panel claims to show actually fits inside it.
+  local panel = entryById(context, "identity").instance
+  local height = panelOf(entryById(context, "identity")).h
+  local lineHeight = themeModule.fontHeight(panel.fonts.label)
+  assert(panel.visibleLines > 0, "the panel shed every line")
+  assert(panel.visibleLines < 12,
+    "a two-cell panel claimed every line the component can build")
+  local last = panel.rows[panel.visibleLines].properties
+  assert(last.y + lineHeight <= height,
+    "the last line the panel shows is drawn past its own bottom edge: y "
+    .. tostring(last.y) .. " plus " .. tostring(lineHeight)
+    .. " in " .. tostring(height))
+  assert(panel.rows[panel.visibleLines + 1].hidden,
+    "a line beyond what fits was left visible")
+
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+end
+
+--- Which of the three candidate filenames answered, at each of the three.
+---
+--- The search tries the model-specific name, then the dashboard-scoped name,
+--- then `default.yaml`, and until now it reported only the path it settled
+--- on. That is not the same fact: a dashboard called `main` on a model called
+--- `main` produces two candidates that read alike, and a layout silently
+--- falling back to `default.yaml` looks exactly like one that was found.
+--- The diagnostics view reports the branch, so each branch is driven here.
+local function testLayoutOriginIsReported()
+  resetRadio()
+  local layout = [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: identity
+    type: host-diagnostics
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      section: identity
+]]
+
+  -- `makeWidget` writes `layouts/default.yaml`, which is the last candidate,
+  -- so this package starts at the bottom of the search.
+  local widgetPath = makeWidget("origin", layout)
+  local modelName = radio.modelFilename
+
+  local function originOf()
+    local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+      DEFAULT_OPTIONS, widgetPath)
+    assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+    settle(context, 20)
+    local panel = entryById(context, "identity").instance
+    local shown = {}
+    for index = 1, panel.visibleLines do
+      shown[#shown + 1] = panel.rows[index].properties.text
+    end
+    return context.layoutOrigin, table.concat(shown, "\n"), context.layoutPath
+  end
+
+  local origin, lines, path = originOf()
+  assertEqual(origin, "default")
+  assert(string.find(lines, "-> default", 1, true), lines)
+  assert(string.find(path, "default.yaml", 1, true), path)
+
+  -- Adding the dashboard-scoped name makes the middle branch answer. The
+  -- default file is still there, which is the point: the path changes and so
+  -- does the reason, and only one of those was visible before.
+  writeFile(widgetPath .. "layouts/main.yaml", layout)
+  origin, lines, path = originOf()
+  assertEqual(origin, "dashboard",
+    "a dashboard-scoped layout did not take precedence over the default")
+  assert(string.find(lines, "-> dashboard", 1, true), lines)
+
+  -- And the model-specific name beats both.
+  local specific = layoutStoreModule.path(widgetPath, modelName, "main")
+  writeFile(specific, layout)
+  origin, lines, path = originOf()
+  assertEqual(origin, "model",
+    "a model-specific layout did not take precedence")
+  assert(string.find(lines, "-> model", 1, true), lines)
+  assertEqual(path, specific)
+end
+
+--- The bytecode alarm, which is the single most useful line in the view.
+---
+--- EdgeTX compiles a `.luac` beside every script it loads and prefers it
+--- afterwards, so a radio can run code that is no longer on the card. That
+--- cost an evening once: fixes appeared to do nothing and the widget reported
+--- an error at a line number that no longer existed in the source. `make
+--- build` deletes the bytecode for exactly that reason, but a card assembled
+--- any other way will not have, and nothing on screen says so.
+---
+--- So the alarm is driven by putting a `.luac` where the radio would have
+--- left one. Asserting only its absence, which is the state every other test
+--- runs in, would be asserting a condition that has never been anything else.
+local function testHostDiagnosticsWarnsAboutBytecode()
+  resetRadio()
+  local layout = [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: identity
+    type: host-diagnostics
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      section: identity
+]]
+
+  local function identityLines(widgetPath)
+    local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+      DEFAULT_OPTIONS, widgetPath)
+    assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+    settle(context, 20)
+    local panel = entryById(context, "identity").instance
+    local out = {}
+    for index = 1, panel.visibleLines do
+      out[#out + 1] = panel.rows[index].properties.text
+    end
+    return table.concat(out, "\n")
+  end
+
+  local clean = makeWidget("bytecode-clean", layout)
+  assert(not string.find(identityLines(clean), "RUNNING main.luac", 1, true),
+    "a package with no bytecode reported some")
+
+  local stale = makeWidget("bytecode-stale", layout)
+  writeFile(stale .. "main.luac", "not really bytecode")
+  local warned = identityLines(stale)
+  assert(string.find(warned, "RUNNING main.luac", 1, true),
+    "a package with bytecode beside its source did not say so: " .. warned)
+end
+
+--- The view reports a failed component, a fallback palette and an unbound
+--- source, which are the three things it exists to make visible.
+local function testHostDiagnosticsReportsFailures()
+  resetRadio()
+  local widgetPath = makeWidget("hostdiag-bad", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+theme:
+  mode: neon
+components:
+  - id: probe
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: Alt
+      source: NoSuchSensor
+  - id: broken
+    type: raiser
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: Broken
+  - id: panels
+    type: host-diagnostics
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      section: components
+  - id: wires
+    type: host-diagnostics
+    col: 2
+    row: 2
+    colSpan: 1
+    rowSpan: 2
+    config:
+      section: sources
+  - id: later
+    type: latebreak
+    col: 3
+    row: 2
+    colSpan: 1
+    rowSpan: 2
+    config:
+      label: Later
+]], {
+    ["raiser.lua"] = [==[
+local raiser = {id = "raiser", apiVersion = 1, supportedSpans = {"any"},
+  settings = {{key = "label", type = "string", default = ""}}}
+function raiser.create() error("deliberate failure") end
+return raiser
+]==],
+    -- Builds, then raises on its first refresh, which is the other way a
+    -- component dies and the only one the host keeps an entry for.
+    ["latebreak.lua"] = [==[
+local latebreak = {id = "latebreak", apiVersion = 1, supportedSpans = {"any"},
+  settings = {{key = "label", type = "string", default = ""}}}
+function latebreak.create() return {ticks = 0} end
+function latebreak.refresh() error("deliberate late failure") end
+return latebreak
+]==],
+  })
+
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  settle(context, 30)
+
+  local function linesOf(id)
+    local panel = entryById(context, id).instance
+    local out = {}
+    for index = 1, panel.visibleLines do
+      out[#out + 1] = panel.rows[index].properties.text
+    end
+    return table.concat(out, "\n")
+  end
+
+  -- A component that failed during create is otherwise only an error banner,
+  -- which may have scrolled past before anyone looked at the screen.
+  assertEqual(entryById(context, "broken"), nil,
+    "a component that raises in create is dropped, not kept disabled")
+  assertEqual(#context.rejected, 1,
+    "the host did not record the placement it could not build")
+  local panels = linesOf("panels")
+  assert(string.find(panels, "2 failed", 1, true),
+    "the panel does not count the failure: " .. panels)
+  assert(string.find(panels, "broken raiser 2x2 REJECTED", 1, true),
+    "the panel does not report the failed component: " .. panels)
+
+  -- A source nothing can bind. The name is shown exactly as the layout
+  -- spelled it, which is the half that is invisible on a panel: a typo and a
+  -- missing sensor look identical there, and this at least shows the
+  -- spelling that was asked for.
+  local wires = linesOf("wires")
+  assert(string.find(wires, "1 unbound", 1, true),
+    "the panel does not count the unbound source: " .. wires)
+  assert(string.find(wires, "NoSuchSensor UNBOUND", 1, true),
+    "the panel does not report the unbound source: " .. wires)
+
+  -- A component that builds and then raises later is a different casualty
+  -- from one that never built: the host keeps it, disabled, in `components`,
+  -- where the one that never built is only in `rejected`. Both have to
+  -- appear, and until this covered it only the rejected half ever did.
+  local later = entryById(context, "later")
+  assert(later and later.failed,
+    "the component that raises on refresh was not disabled")
+  panels = linesOf("panels")
+  assert(string.find(panels, "later latebreak 1x2 FAILED", 1, true),
+    "the panel does not report the component that failed after building: "
+    .. panels)
+
+  -- `neon` is not a mode, so the host fell back to Modern and reports
+  -- `modern`; the fallback is invisible unless what was asked for is kept.
+  assertEqual(context.theme.mode, "modern")
+  assertEqual(context.theme.requested, "neon",
+    "the theme did not record the mode it was asked for")
 end
 
 --- A row that comes back shows what is true now, not what was true when it
@@ -5095,6 +5463,10 @@ testMissingServiceModule()
 testCoreComponents()
 testTrimPanelShedsText()
 testShedRowsComeBackCurrent()
+testHostDiagnosticsReportsTheHost()
+testLayoutOriginIsReported()
+testHostDiagnosticsWarnsAboutBytecode()
+testHostDiagnosticsReportsFailures()
 testComponentsDegrade()
 testCoreComponentsReflow()
 testMetricPresetDetail()

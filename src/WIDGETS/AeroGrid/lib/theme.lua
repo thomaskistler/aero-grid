@@ -646,6 +646,11 @@ function theme.build(mode, overrides, env)
   local accent = "cyan"
   local tokens
 
+  -- What was asked for, kept apart from what was settled on. A mode this
+  -- does not have falls back to Modern, and the result then reports `modern`
+  -- as though that is what the layout said, so the fallback is invisible in
+  -- the mode alone. The diagnostics view reads this.
+  local requested = mode
   if mode ~= nil and not theme.MODES[mode] then
     warnings[#warnings + 1] = "unknown theme mode " .. tostring(mode)
     mode = nil
@@ -689,6 +694,7 @@ function theme.build(mode, overrides, env)
 
   return {
     mode = mode,
+    requested = requested,
     rgb = tokens,
     color = toDisplay(tokens),
     -- Kept apart from `color` because these are per state rather than per

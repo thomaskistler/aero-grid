@@ -154,6 +154,19 @@ components:
       source: RxBt
       label: Probe
 
+  # The two diagnostic panels sit together, because what they have in common
+  # is that they print rows rather than a reading, and a single cell is the
+  # hardest case for that.
+  - id: g-host-diagnostics
+    type: host-diagnostics
+    col: 3
+    row: 2
+    colSpan: 1
+    rowSpan: 1
+    config:
+      section: identity
+      label: Host
+
   # The same component three times, differing only in its visualization, so the
   # three can be compared without remembering what the fourth looked like.
   - id: g-metric-radial

@@ -1,0 +1,73 @@
+# What the host actually loaded, in four panels.
+#
+# Nothing in this project has run on a radio. This screen exists so the first
+# hardware session can answer "what is loaded and what did it resolve to" by
+# reading it, instead of inferring it from pixels, which is what cost an
+# evening on an arc drifting by its own radius and another on a radio running
+# bytecode that was no longer on the card.
+#
+# Reached the way everything else here is reached: a Dashboard ID on its own
+# screen, paged to. It cannot be a widget setting, because in App mode the
+# widget menu is unreachable from the main view at all.
+#
+# It states no `theme` block, so it follows the widget's own Theme option and
+# shows the palette the dashboard beside it is using rather than a second one.
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  # Which file, chosen by which of the three candidate names, and what is
+  # actually executing. The last of those is the one that ends a stale
+  # bytecode session in a minute rather than an evening.
+  - id: identity
+    type: host-diagnostics
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      section: identity
+      label: LOADED
+      accent: cyan
+
+  # The palette, who asked for it, and every notice the theme recorded.
+  # Notices are deliberately kept off the error overlay, so until this screen
+  # existed they were visible nowhere.
+  - id: theme
+    type: host-diagnostics
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      section: theme
+      label: THEME
+      accent: green
+
+  # Every placement, and which of them failed. A failed component is otherwise
+  # an error banner that may have scrolled.
+  - id: components
+    type: host-diagnostics
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      section: components
+      label: PANELS
+      accent: amber
+
+  # Every source any panel asked for, spelled as the layout spelled it, and
+  # whether it bound. A misspelled sensor name is indistinguishable from a
+  # missing sensor on a panel.
+  - id: sources
+    type: host-diagnostics
+    col: 2
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      section: sources
+      label: SOURCES
+      accent: orange
