@@ -254,6 +254,9 @@ claim("UNIT", "radio/src/dataconstants.h", "enum TelemetryUnit", {
   CELLS = 38,
   DATETIME = 39,
   GPS = 40,
+  -- A sensor whose value is a string rather than a number. Crossfire and
+  -- ELRS publish the aircraft's flight mode this way, as `FM`.
+  TEXT = 42,
 })
 
 --------------------------------------------------------------------------
@@ -842,7 +845,22 @@ function support.radio(hostIo)
       [0] = {name = "Rates", min = -100, max = 100, prec = 1, unit = UNIT.RAW},
     },
     flightMode = 1,
-    flightModeName = "Sport",
+    --- firmware: `MAX_FLIGHT_MODES` is 9 and `LEN_FLIGHT_MODE_NAME` is 10 on
+    --- colour targets (`radio/src/dataconstants.h`). `luaGetFlightMode` reads
+    --- `g_model.flightModeData[mode].name`, so every mode has its own name and
+    --- an unnamed one is the empty string.
+    ---
+    --- Named per index rather than one name for every mode, because a mock
+    --- that answered the same name whatever it was asked cannot tell a host
+    --- reading the active mode apart from one reading all nine, and the
+    --- dashboard now does both.
+    flightModeNames = {
+      [0] = "Normal",
+      [1] = "Sport",
+      [2] = "",
+      [3] = "Launch",
+      [4] = "LongRange7",
+    },
   }
 
   -- Sixteen generic sensors, so a layout that fills the grid can reference a
@@ -896,6 +914,19 @@ function support.radio(hostIo)
 
   -- Link sensors. FrSky populates RSSI in dB; ELRS populates 1RSS in dBm
   -- alongside RQly as a percentage, and the two protocols never both apply.
+  --- firmware: Crossfire and ELRS publish the aircraft's flight mode as a
+  --- text sensor named `FM`: `CS(FLIGHT_MODE_ID, 0, STR_SENSOR_FLIGHT_MODE,
+  --- UNIT_TEXT, 0)` in `radio/src/telemetry/crossfire.cpp`, where
+  --- `STR_SENSOR_FLIGHT_MODE` is `"FM"` (`telemetry/sensor_names.h`).
+  --- `getValue` pushes the stored string rather than a number for it:
+  --- `case UNIT_TEXT: lua_pushstring(L, telemetryItems[...].text)`
+  --- (`radio/src/lua/api_general.cpp`). The text is capped at
+  --- `TELEMETRY_SENSOR_TEXT_LENGTH`, which is 16.
+  ---
+  --- It is here because nothing in this harness has ever carried a text
+  --- sensor, so the telemetry service's handling of one was entirely
+  --- unexercised whether or not a component ever reads it.
+  radio.fields.FM = {id = 145, name = "FM", desc = "Flight mode", unit = UNIT.TEXT}
   radio.fields.RSSI = {id = 140, name = "RSSI", desc = "RSSI", unit = UNIT.DB}
   radio.fields.RQly = {id = 141, name = "RQly", desc = "Link quality", unit = UNIT.PERCENT}
   radio.fields["RQly-"] = {
@@ -904,6 +935,9 @@ function support.radio(hostIo)
   radio.fields["1RSS"] = {id = 143, name = "1RSS", desc = "Antenna 1", unit = UNIT.DBM}
   radio.values[140] = 78
   radio.values[141] = 96
+  -- A string, because `getValue` pushes one for a `UNIT_TEXT` sensor. A
+  -- number here would let the service treat text as a reading and pass.
+  radio.values[145] = "ANGLE"
   radio.values[142] = 62
   radio.values[143] = -72
   radio.sensors[21] = {name = "RSSI", prec = 0}
@@ -981,8 +1015,23 @@ function support.radio(hostIo)
     return rssi, radio.rfAlarms.warning, radio.rfAlarms.critical
   end
 
-  function getFlightMode()
-    return radio.flightMode, radio.flightModeName
+  --- firmware: `luaGetFlightMode` takes an optional mode index and falls back
+  --- to `mixerCurrentFlightMode` when it is absent or out of range:
+  --- `if (mode < 0 || mode >= MAX_FLIGHT_MODES) mode = mixerCurrentFlightMode`
+  --- (`radio/src/lua/api_general.cpp`). It always returns two values, the
+  --- index and `g_model.flightModeData[mode].name`, and an unnamed mode
+  --- returns an empty string rather than nothing.
+  ---
+  --- The argument is honoured here because the dashboard reads every mode's
+  --- name to size its panel. A mock that ignored it would answer the active
+  --- mode's name nine times and the panel would be sized from one name while
+  --- claiming to be sized from all of them.
+  function getFlightMode(index)
+    local mode = index
+    if type(mode) ~= "number" or mode < 0 or mode >= 9 then
+      mode = radio.flightMode
+    end
+    return mode, radio.flightModeNames[mode] or ""
   end
 
   model = {
@@ -1074,6 +1123,7 @@ function support.radio(hostIo)
     radio.values[131] = 4.09
     radio.values[140] = 78
     radio.values[141] = 96
+    radio.values[145] = "ANGLE"
     radio.values[109].lat = scaffold.MODEL_LATITUDE
     radio.values[109].lon = scaffold.MODEL_LONGITUDE
     radio.values[109]["pilot-lat"] = scaffold.PILOT_LATITUDE

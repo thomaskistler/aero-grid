@@ -62,7 +62,11 @@ components:
     config:
       label: MODE
       accent: green
-      showIndex: true
+      # No `showIndex` here. This panel is one row tall and asked for the mode
+      # number anyway, and got nothing: no single-row span has space beneath
+      # the reading at any width. The setting is refused at load now, and this
+      # grid is full, so the panel keeps its row and loses the request rather
+      # than displacing a neighbour.
 
   # A transmitter pack only estimates a charge once a layout states the range
   # it should be read against, so the bar and the percentage stay dark without

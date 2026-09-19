@@ -400,7 +400,8 @@ local function buildComponent(context, placement)
     return
   end
 
-  local settings, warnings = host.resolveSettings(component, placement.config)
+  local settings, warnings = host.resolveSettings(component, placement.config,
+    {colSpan = placement.colSpan, rowSpan = placement.rowSpan})
   for _, warning in ipairs(warnings) do
     addError(context, placement.id .. ": " .. warning)
   end

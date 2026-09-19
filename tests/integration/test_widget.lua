@@ -3035,7 +3035,10 @@ local function testInstructionBudget()
     {
       type = "flight-mode",
       services = {"model"},
-      config = function() return {"showIndex: true"} end,
+      -- No `showIndex`: this exercise is sixteen single cells, and a single
+      -- row has no space for the mode number at any width, so asking for it
+      -- is refused at load.
+      config = function() return {"label: Mode"} end,
     },
     {
       type = "tx-battery",
@@ -3665,8 +3668,6 @@ components:
     row: 1
     colSpan: 1
     rowSpan: 1
-    config:
-      showIndex: true
   - id: battery
     type: tx-battery
     col: 1
@@ -4109,6 +4110,152 @@ return latebreak
     "the theme did not record the mode it was asked for")
 end
 
+--- The mode number is drawn where there is a row for it, and nowhere else.
+local function testFlightModeIndexRow()
+  resetRadio()
+  local widgetPath = makeWidget("fm-index", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: tall
+    type: flight-mode
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      showIndex: true
+  - id: quiet
+    type: flight-mode
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+]])
+
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  settle(context, 20)
+
+  -- The fixture's active mode is 1, named Sport.
+  local tall = entryById(context, "tall").instance
+  assertEqual(tall.showDetail, true, "a two-row panel shed its supporting row")
+  assertEqual(tall.detailLabel.properties.text, "#1",
+    "the mode number is not drawn, or still repeats the header's word")
+  assertEqual(tall.detailLabel.hidden, false)
+
+  -- The same span without the setting draws no row content at all, rather
+  -- than an empty label that has been written to anyway.
+  local quiet = entryById(context, "quiet").instance
+  assertEqual(quiet.rendered.detail, nil,
+    "a panel that never asked for the mode number computed one")
+  assertEqual(quiet.detailLabel.properties.text, "")
+
+  -- The reading fits: the fixture model's widest mode name is ten characters
+  -- and this is the span that used to lose nearly half of it.
+  local widest = "LongRange7"
+  local font = tall.value.properties.font()
+  assert(themeModule.textWidth(font, widest)
+      <= tall.value.properties.w,
+    "the widest mode name is drawn past the panel: needs "
+      .. themeModule.textWidth(font, widest) .. " of "
+      .. tall.value.properties.w)
+
+  -- Shrink until the ladder takes the row away. The setting is still stated,
+  -- and the panel must stop declaring and painting the row rather than
+  -- writing into a hidden label, which is what it used to do.
+  local zone = context.zone
+  zone.h = 150
+  local passes = 0
+  repeat
+    definition.refresh(context)
+    passes = passes + 1
+    assert(passes < 100, "reflow never finished")
+  until not context.reflowIndex
+  settle(context, 20)
+
+  assertEqual(tall.showDetail, false,
+    "a shortened panel kept a supporting row it has no space for")
+  assertEqual(tall.rendered.detail, nil,
+    "a shed mode number was still being formatted every frame")
+  assert(tall.detailLabel.hidden, "a shed row was left on screen")
+
+  -- Not formatted, and not written either. Writing an empty string into a
+  -- hidden label leaves no trace on screen, so nothing about what is drawn
+  -- can see it; the harness counts writes for exactly this.
+  local writes = tall.detailLabel.writes
+  radio.flightMode = 2
+  settle(context, 20)
+  assertEqual(tall.detailLabel.writes, writes,
+    "a shed row was painted while the mode changed underneath it")
+
+  -- And the row comes back with the right number rather than whatever it
+  -- held when it was shed.
+  radio.flightMode = 3
+  settle(context, 20)
+  zone.h = 272
+  passes = 0
+  repeat
+    definition.refresh(context)
+    passes = passes + 1
+    assert(passes < 100, "reflow never finished")
+  until not context.reflowIndex
+  settle(context, 20)
+
+  assertEqual(tall.showDetail, true, "the supporting row never came back")
+  assertEqual(tall.detailLabel.properties.text, "#3",
+    "a revealed mode number still reports the mode it was shed with")
+  resetRadio()
+end
+
+--- The reading is sized from the model the host actually read.
+---
+--- `regionsFor` is measured directly elsewhere; this is the wiring. A
+--- component that never asked the model for its names would fall back to the
+--- ten characters the firmware allows, which still fits at every span, so
+--- nothing about fitting can see the difference. What can is that a model
+--- with short mode names gets a larger reading.
+local function testFlightModeSizesFromTheModel()
+  local layout = [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: mode
+    type: flight-mode
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+]]
+
+  local function fontFor(names)
+    resetRadio()
+    radio.flightModeNames = names
+    local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+      DEFAULT_OPTIONS, makeWidget("fm-sizing", layout))
+    assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+    settle(context, 20)
+    local panel = entryById(context, "mode").instance
+    return panel.value.properties.font(), panel.widest
+  end
+
+  local shortFont, shortWidest = fontFor({[0] = "Up", [1] = "Down"})
+  local longFont, longWidest = fontFor({[0] = "Up", [4] = "LongRange7"})
+
+  assertEqual(shortWidest, "Down",
+    "the panel did not take its widest name from the model")
+  assertEqual(longWidest, "LongRange7")
+  assert(themeModule.fontHeight(shortFont) > themeModule.fontHeight(longFont),
+    "a model whose mode names are short gained nothing: both readings are "
+      .. edgetx.fontName(shortFont))
+  resetRadio()
+end
+
 --- A row that comes back shows what is true now, not what was true when it
 --- was shed.
 ---
@@ -4538,7 +4685,16 @@ local function testCoreComponents()
 
   local mode = entryById(context, "mode").instance
   assertEqual(mode.text, "Sport")
-  assertEqual(mode.detail, "MODE 1")
+  -- Declared only where it is drawn. This panel sheds the row, so the key is
+  -- absent rather than computed and written into a hidden label.
+  assertEqual(mode.rendered.detail, nil,
+    "a shed mode number was still being formatted every frame")
+  -- A single cell has no supporting row, so there is no mode number here and
+  -- asserting its text would assert something nobody can see. This used to
+  -- read `MODE 1` on a panel that draws no such row.
+  assertEqual(mode.showDetail, false,
+    "a single-cell flight mode found room for a supporting row")
+  assert(mode.detailLabel.hidden, "a shed row was left on screen")
 
   -- The transmitter pack: voltage is authoritative, the percentage is an
   -- estimate and says so.
@@ -5463,6 +5619,8 @@ testMissingServiceModule()
 testCoreComponents()
 testTrimPanelShedsText()
 testShedRowsComeBackCurrent()
+testFlightModeIndexRow()
+testFlightModeSizesFromTheModel()
 testHostDiagnosticsReportsTheHost()
 testLayoutOriginIsReported()
 testHostDiagnosticsWarnsAboutBytecode()

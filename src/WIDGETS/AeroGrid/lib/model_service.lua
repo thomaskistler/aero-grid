@@ -248,6 +248,9 @@ end
 
 --- Subscribe to the active flight mode.
 ---@return AeroGridFlightMode
+--- firmware: `MAX_FLIGHT_MODES`, `radio/src/dataconstants.h`.
+modelService.FLIGHT_MODES = 9
+
 function modelService:flightMode()
   if self.flightModeView then return self.flightModeView end
 
@@ -258,6 +261,51 @@ function modelService:flightMode()
   }, modelService.readFlightMode)
 
   return self.flightModeView
+end
+
+--- The widest flight mode name this model can produce.
+---
+--- A panel sizes its reading from the widest string it can ever print, so
+--- that switching modes never resizes it. For this the widest is not a
+--- constant: `LEN_FLIGHT_MODE_NAME` allows ten characters, but a model whose
+--- modes are all called `NORM` and `SPORT` would be sized for ten it never
+--- uses, and lose two font steps at `2 x 2` for nothing.
+---
+--- So the names are read once, here. `luaGetFlightMode` takes an optional
+--- index and returns that mode's configured name, falling back to the active
+--- mode when the index is out of range
+--- (`radio/src/lua/api_general.cpp`), and `MAX_FLIGHT_MODES` is 9
+--- (`radio/src/dataconstants.h`). An unnamed mode returns the empty string
+--- and is drawn as `FM<n>`, so that is what is measured for it.
+---
+--- Read once rather than watched: a model change destroys and rebuilds every
+--- widget, because `LayoutFactory::deleteCustomScreens` runs before
+--- `loadModel` and `loadCustomScreens` after it, so the set of names cannot
+--- change underneath a component that is still alive.
+---@return string widest
+function modelService:widestFlightModeName()
+  if self.widestMode then return self.widestMode end
+
+  local read = self.env.getFlightMode
+  -- Seeded empty rather than with a plausible default, so that a firmware
+  -- without the call and a firmware answering nothing are the same case and
+  -- neither is hidden behind a name this never actually read.
+  local widest = ""
+
+  if read then
+    for index = 0, modelService.FLIGHT_MODES - 1 do
+      local ok, _, name = pcall(read, index)
+      if not ok or type(name) ~= "string" or name == "" then
+        name = "FM" .. tostring(index)
+      end
+      if #name > #widest then widest = name end
+    end
+  end
+
+  if widest == "" then widest = "FM0" end
+
+  self.widestMode = widest
+  return widest
 end
 
 --- Read the transmitter battery voltage.

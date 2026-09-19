@@ -796,6 +796,128 @@ local function testComponentDocumentationLoads()
       .. " review works through the catalogue")
 end
 
+--- The reading is sized from the model's own widest mode name, and fits.
+---
+--- `flight-mode` used to offer three forms of ten, six and four characters.
+--- They were never renderings: `fitReading` chose a font from whichever form
+--- fitted, and the component then drew the **whole** name at that font, so a
+--- ten-character name at `2 x 2` needed about 400 pixels of a 226 pixel panel
+--- and lost nearly half of itself over the edge. Nothing noticed, because
+--- every test used `Sport`, which fits at every span under either behaviour.
+--- That is the shape of assertion this replaces: one that was true before the
+--- fix as well.
+---
+--- Shortening the name is not available. A truncated mode name is a different
+--- name, not an abbreviation of one, so the font steps down instead.
+local function testFlightModeSizing()
+  local flightMode = loadModule("components/flight-mode.lua")
+  local resolved = theme.build("modern")
+
+  local function modelWith(names)
+    return modelService.new(services.environment({
+      getFlightMode = function(index)
+        if type(index) ~= "number" or index < 0 or index >= 9 then index = 0 end
+        return index, names[index] or ""
+      end,
+    }), services)
+  end
+
+  -- Read from every mode, not just the active one. A service that answered
+  -- the active mode's name nine times would size from `Norm` and clip
+  -- `LongRange7`, which is exactly what it must not do.
+  assertEqual(modelWith({[0] = "Norm", [4] = "LongRange7"})
+    :widestFlightModeName(), "LongRange7")
+  -- An unnamed mode is drawn as FM<n>, so that is its width, not zero. Named
+  -- one mode with something shorter, so the widest name in the model is an
+  -- unnamed one: measuring those as empty would answer "Up" instead.
+  assertEqual(modelWith({[0] = "Up"}):widestFlightModeName(), "FM1")
+  assertEqual(modelWith({}):widestFlightModeName(), "FM0")
+  -- Without the firmware call there is nothing to read and a sane default.
+  assertEqual(modelService.new(services.environment({}), services)
+    :widestFlightModeName(), "FM0")
+
+  -- Every declared span must fit the widest name the model can show. This is
+  -- the assertion the old behaviour fails: four of the eight spans clipped.
+  local GUTTER, CELLS, WIDTH, HEIGHT = 4, 4, 480, 272
+  local cellWidth = math.floor((WIDTH - GUTTER * (CELLS - 1)) / CELLS)
+  local cellHeight = math.floor((HEIGHT - GUTTER * (CELLS - 1)) / CELLS)
+
+  for _, widest in ipairs({"LongRange7", "Norm"}) do
+    local checked = 0
+    for _, span in ipairs(flightMode.supportedSpans) do
+      local cols, rows = string.match(span, "(%d)x(%d)")
+      cols, rows = tonumber(cols), tonumber(rows)
+      local rect = {
+        x = 0, y = 0,
+        w = cellWidth * cols + GUTTER * (cols - 1),
+        h = cellHeight * rows + GUTTER * (rows - 1),
+      }
+      local fonts = theme.typography(cols, rows)
+      local layout = flightMode.presentationFor(cols, rows)
+      local area = flightMode.regionsFor(
+        resolved, theme, rect, layout, fonts, widest)
+
+      assert(theme.textWidth(area.name, widest) <= area.content,
+        widest .. " at " .. span .. " needs "
+          .. theme.textWidth(area.name, widest) .. " of " .. area.content
+          .. " pixels, so the name is drawn past the panel edge")
+      checked = checked + 1
+    end
+    assertEqual(checked, 8, "not every declared span was measured")
+  end
+
+  -- And the point of reading the model rather than assuming ten characters:
+  -- a model with short names keeps the larger reading.
+  local function fontAt(widest)
+    local rect = {x = 0, y = 0,
+      w = cellWidth * 2 + GUTTER, h = cellHeight * 2 + GUTTER}
+    local fonts = theme.typography(2, 2)
+    return flightMode.regionsFor(resolved, theme, rect,
+      flightMode.presentationFor(2, 2), fonts, widest).name
+  end
+  assert(theme.fontHeight(fontAt("Norm")) > theme.fontHeight(fontAt("LongRange7")),
+    "a model with short mode names gained nothing from reading its names")
+end
+
+--- A mode number needs a row, and no single-row span has one.
+local function testFlightModeIndexNeedsARow()
+  local flightMode = loadModule("components/flight-mode.lua")
+
+  -- The refusal, which is the behaviour being added. Accepting it and then
+  -- ignoring it is the worst of the three options, because a layout author
+  -- reads the setting back and believes it.
+  local refused = flightMode.validateSettings({showIndex = true},
+    {colSpan = 4, rowSpan = 1})
+  assertEqual(#refused, 1,
+    "showIndex on a single row was accepted; no single row has space beneath"
+      .. " the reading at any width")
+  assert(string.find(refused[1], "two rows tall", 1, true), refused[1])
+  assert(string.find(refused[1], "drop showIndex", 1, true),
+    "the message must say what to do about it: " .. refused[1])
+
+  -- Two rows is where it works, and a panel that never asked has nothing to
+  -- be told about.
+  assertEqual(#flightMode.validateSettings({showIndex = true},
+    {colSpan = 1, rowSpan = 2}), 0, "showIndex was refused on two rows")
+  assertEqual(#flightMode.validateSettings({}, {colSpan = 1, rowSpan = 1}), 0,
+    "a panel that never asked for the mode number was told off anyway")
+  -- Without a span nothing can be said, and saying nothing is correct.
+  assertEqual(#flightMode.validateSettings({showIndex = true}), 0)
+
+  -- And the span has to reach it through the host, or the rule above is
+  -- correct and never consulted.
+  local _, warnings = componentHost.resolveSettings(
+    flightMode, {showIndex = true}, {colSpan = 4, rowSpan = 1})
+  assertEqual(#warnings, 1,
+    "the placement's span did not reach validateSettings, so a rule that"
+      .. " depends on it can never fire")
+  assert(string.find(warnings[1], "two rows tall", 1, true), warnings[1])
+
+  local _, allowed = componentHost.resolveSettings(
+    flightMode, {showIndex = true}, {colSpan = 1, rowSpan = 2})
+  assertEqual(#allowed, 0)
+end
+
 --- A raising callback disables only its own component, and only reports once.
 local function testLifecycleIsolation()
   local entry = {
@@ -1757,6 +1879,78 @@ local function telemetryHarness()
 
   harness.service = telemetryService.new(harness.env, services)
   return harness
+end
+
+--- A text sensor is a reading whose value is a string.
+---
+--- Crossfire and ELRS publish the aircraft's flight mode this way, as `FM`
+--- with `UNIT_TEXT` (`telemetry/crossfire.cpp`), and `getValue` pushes the
+--- stored string rather than a number for it: `case UNIT_TEXT:
+--- lua_pushstring(L, telemetryItems[...].text)`
+--- (`radio/src/lua/api_general.cpp`). The service has mapped unit 42 to a
+--- `text` kind since it was written and **nothing had ever exercised it**,
+--- because no fixture carried a text sensor. That is covered here whether or
+--- not a component ever reads one.
+---
+--- The absent case is checked alongside, because it is the common one: FrSky
+--- S.Port publishes no flight mode sensor at all, so a layout naming `FM` on
+--- a FrSky link gets nothing and must say so rather than reading zero.
+local function testTelemetryTextSensor()
+  local harness = telemetryHarness()
+  -- firmware: `STR_SENSOR_FLIGHT_MODE` is "FM" (`telemetry/sensor_names.h`)
+  -- and `UNIT_TEXT` is 42 in `enum TelemetryUnit`
+  -- (`radio/src/dataconstants.h`).
+  harness.fields.FM = {id = 145, name = "FM", unit = 42}
+  harness.values[145] = "ANGLE"
+
+  local service = harness.service
+  local mode = service:subscribe("FM")
+  local absent = service:subscribe("Fmod")
+
+  service:update(0)
+
+  -- The shape, which is what nothing had checked: a string in `raw`, no
+  -- numeric value, and a kind that says which to read.
+  assertEqual(mode.kind, "text")
+  assertEqual(mode.raw, "ANGLE")
+  assertEqual(mode.value, nil,
+    "a text sensor must offer no numeric value; a component reading one"
+      .. " would get a number for a string and format it")
+  assertEqual(mode.available, true)
+  assertEqual(mode.state, "normal")
+
+  -- A text sensor is telemetry, so it is subject to the link rules like any
+  -- other reading rather than being treated as always-present.
+  assertEqual(mode.telemetry, true)
+
+  -- The common case on FrSky, which publishes no flight mode sensor at all.
+  assertEqual(absent.known, false)
+  assertEqual(absent.state, "unavailable")
+  assertEqual(absent.raw, nil)
+  assertEqual(absent.value, nil)
+
+  -- A new string is a new reading, and the revision has to move or a panel
+  -- comparing declarations would never repaint.
+  local before = mode.revision
+  harness.values[145] = "ACRO"
+  service:update(1)
+  assertEqual(mode.raw, "ACRO")
+  assert(mode.revision > before,
+    "a changed string did not count as a new reading")
+
+  -- And the same string twice is not.
+  local settled = mode.revision
+  service:update(2)
+  assertEqual(mode.revision, settled,
+    "an unchanged string counted as a new reading")
+
+  -- A dropped link keeps the last string and marks it stale, exactly as a
+  -- numeric reading is kept rather than replaced with nothing.
+  harness.rssi = 0
+  harness.values[145] = nil
+  service:update(3)
+  assertEqual(mode.raw, "ACRO", "a dropped link discarded the last mode")
+  assertEqual(mode.state, "stale")
 end
 
 --- Freshness is the subtle part of EdgeTX telemetry: the firmware returns zero
@@ -3401,6 +3595,9 @@ end
 testSnapshotsAreImmutable()
 testServiceScheduling()
 testTelemetryFreshness()
+testTelemetryTextSensor()
+testFlightModeSizing()
+testFlightModeIndexNeedsARow()
 testTelemetryLinkHeuristics()
 testTelemetryPollingIsBounded()
 testModelService()

@@ -35,7 +35,7 @@ catalogue has none.
 | --- | --- | --- | --- | --- |
 | `label` | string | `MODE` | any text | The panel's heading. Four characters, because a single-cell header has room for about five and `FLIGHT MODE` needs eleven. A header too long for its panel is shortened by the shared header rather than overflowing. |
 | `accent` | string | `green` | `cyan`, `green`, `amber`, `orange` | The stripe down the left edge. Green is the default because a flight mode is a statement of healthy current state, which is what the palette reserves green for. `cyan` is reserved for electrical readings, so prefer one of the other three. |
-| `showIndex` | boolean | `false` | `true`, `false` | Adds a supporting row reading `MODE <n>`, where `<n>` is EdgeTX's flight mode number. Only drawn where there is room for it — see below. |
+| `showIndex` | boolean | `false` | `true`, `false` | Adds a supporting row reading `#<n>`, where `<n>` is EdgeTX's flight mode number. **Needs a panel two rows tall.** On a single-row panel it is refused at load with the panel named, because no single row has space beneath the reading at any width. |
 
 Anything else is rejected at load with the layout, panel and key named.
 
@@ -44,47 +44,39 @@ Anything else is rejected at load with the layout, panel and key named.
 The panel always draws its heading and the mode name. The mode number is a
 supporting row and is the first thing to go.
 
-| Span | Panel | Reading | Supporting row |
-| --- | --- | --- | --- |
-| `1x1` | 117 x 65 | `MIDSIZE` | shed |
-| `2x1` | 238 x 65 | `MIDSIZE` | shed |
-| `3x1` | 359 x 65 | `MIDSIZE` | shed |
-| `4x1` | 480 x 65 | `MIDSIZE` | shed |
-| `1x2` | 117 x 134 | `DBLSIZE` | shown |
-| `2x2` | 238 x 134 | `XXLSIZE` | shown |
-| `3x2` | 359 x 134 | `XXLSIZE` | shown |
-| `4x2` | 480 x 134 | `XXLSIZE` | shown |
+**A single row never shows the mode number**, however wide the panel is, so
+`showIndex` on any `Nx1` span is refused at load rather than ignored. If you
+want the number, give the panel two rows.
 
-**A single row never shows the mode number**, however wide the panel is.
-`showIndex: true` on any `Nx1` panel changes nothing you can see. If you want
-the number, give the panel two rows.
+### Your longest mode name decides the size
 
-The reading's size comes from the panel, not from the mode you are in, so
-switching modes never resizes anything.
+The reading is sized so that **the longest mode name your model has** fits
+across the panel. It is never sized from the mode you happen to be in, so
+switching modes never resizes anything, and it is never clipped: where a name
+cannot fit at one size, the font steps down instead.
 
-### Long names are clipped rather than shrunk
+That means the size depends on your model, not just on the span. These are the
+two ends of it:
 
-A flight mode name can be up to ten characters. The reading's size is chosen
-from the room available, and the name is then drawn at that size whether or
-not it fits across the panel. Where it does not, the overrun is cut off at the
-panel edge.
-
-| Span | Room for | A ten-character name |
+| Span | Names up to 4 characters | Names up to 10 characters |
 | --- | --- | --- |
-| `1x1` | ~6 characters | clipped |
-| `2x1`, `3x1`, `4x1` | 10 characters | fits |
-| `1x2` | ~4 characters | clipped |
-| `2x2` | ~5 characters | clipped |
-| `3x2` | ~8 characters | clipped |
-| `4x2` | 10 characters | fits |
+| `1x1` | `MIDSIZE` | `SMLSIZE` |
+| `2x1`, `3x1`, `4x1` | `MIDSIZE` | `MIDSIZE` |
+| `1x2` | `DBLSIZE` | `SMLSIZE` |
+| `2x2` | `XXLSIZE` | `MIDSIZE` |
+| `3x2` | `XXLSIZE` | `DBLSIZE` |
+| `4x2` | `XXLSIZE` | `XXLSIZE` |
+
+An unnamed mode counts as `FM0` through `FM8`, three characters.
+
+So **one long mode name shrinks the reading for all of them**. If a panel looks
+smaller than you expected, the usual cause is a single ten-character mode name
+you forgot about; shortening it brings every mode up a size. If you want both
+the long name and the large font, `4x2` carries ten characters at `XXLSIZE`.
 
 The widths behind this are estimated rather than measured — the Lua API cannot
 measure text outside a draw callback — so treat the character counts as close
 rather than exact.
-
-In practice, if your mode names are short (`NORM`, `SPORT`, `LAUNCH`) any span
-is fine. If they are long and you want to read all of them, use `2x1` or wider
-on a single row, or `4x2`.
 
 ## States
 
@@ -115,8 +107,9 @@ firmware lacks the call.
     showIndex: true
 ```
 
-Two cells square, so the mode number is shown beneath the name. Keep the mode
-names to about five characters at this span, or move to `4x2`.
+Two cells square, so the mode number is shown beneath the name as `#1`. With
+short mode names the reading is `XXLSIZE` here; a ten-character name anywhere
+in the model brings it down to `MIDSIZE`.
 
 ## See also
 

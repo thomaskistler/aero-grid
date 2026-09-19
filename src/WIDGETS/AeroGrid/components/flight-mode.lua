@@ -45,26 +45,74 @@ local flightMode = {
   },
 }
 
---- Longest flight mode name EdgeTX will report, used to size the reading.
---- `LEN_FLIGHT_MODE_NAME` is 10 on colour targets; an unnamed mode falls back
---- to "FM<n>", which is always shorter.
+--- Widest name to size the reading from, when the model cannot be read.
+--- `LEN_FLIGHT_MODE_NAME` is 10 on colour targets
+--- (`radio/src/dataconstants.h`); an unnamed mode is drawn as `FM<n>`, which
+--- is always shorter.
 local WIDEST_NAME = "MMMMMMMMMM"
 
---- Forms of the reading, longest first.
+--- One form, and it is the real widest name rather than a short stand-in.
 ---
---- A flight mode name is text rather than a measurement, so a shorter form
---- gives up characters of a name and not magnitude of a reading. EdgeTX will
---- clip a name longer than the form allows, which is the same thing a narrower
---- panel would do to it anyway.
-local FORMS = {WIDEST_NAME, "MMMMMM", "MMMM"}
+--- This used to offer three forms of ten, six and four characters. They were
+--- never renderings: `fitReading` chose a font from the form that fitted, and
+--- the component then drew the **whole** name at that font. A ten-character
+--- name at `2 x 2` needed about 400 pixels of a 226 pixel panel and lost
+--- nearly half of itself over the edge, silently.
+---
+--- Shortening the name instead is not available. The specification's rule is
+--- that a form may drop redundancy and never magnitude, and a truncated mode
+--- name is not an abbreviation of that name but a different one: `ACRO` and
+--- `ACROTRAINER` must not both read `ACRO`. There is no redundancy in a name
+--- to give up, so the font steps down instead, which is what one form makes
+--- `fitReading` do.
+---
+--- The form is the widest name **this model** has rather than the widest the
+--- firmware allows, because sizing every panel for ten characters costs two
+--- font steps at `2 x 2` for a model whose modes are all called `NORM`. It is
+--- still independent of the mode currently selected, so switching modes never
+--- resizes anything.
+---@param widest string
+---@return string[]
+local function formsFor(widest)
+  return {widest}
+end
+
+--- Refuse a mode number on a panel that has nowhere to put one.
+---
+--- The mode number is a supporting row, and the shared ladder grants no
+--- supporting row at any single-row span: a 65 pixel panel has no room under
+--- the reading whatever its width, so `showIndex` on a `4 x 1` is as inert as
+--- on a `1 x 1`. It used to be accepted and ignored, which is the worst of
+--- the three options, because a layout author reads the setting back and
+--- believes it.
+---@param settings AeroGridFlightModeSettings
+---@param span? table Placement span, when the host knows it.
+---@return string[] messages
+function flightMode.validateSettings(settings, span)
+  local messages = {}
+  if not settings.showIndex then return messages end
+  if type(span) ~= "table" or type(span.rowSpan) ~= "number" then
+    return messages
+  end
+
+  if span.rowSpan < 2 then
+    messages[#messages + 1] = "showIndex needs a panel two rows tall;"
+      .. " a single row has no space beneath the reading at any width."
+      .. " Give the panel rowSpan 2, or drop showIndex."
+  end
+
+  return messages
+end
 
 --- Describe how the component presents itself at a given span.
 ---@param colSpan integer
 ---@param rowSpan integer
 ---@return table
 function flightMode.presentationFor(colSpan, rowSpan)
-  local cells = (colSpan or 1) * (rowSpan or 1)
-  return {showDetail = cells >= 2}
+  -- Nothing of its own. The ladder decides whether there is a supporting row,
+  -- and it grants none at any single-row span whatever the width, so a
+  -- private `cells >= 2` rule here only said the same thing less well.
+  return {showDetail = true}
 end
 
 --- Compute the content regions for the current rectangle.
@@ -73,8 +121,10 @@ end
 ---@param rect AeroGridRect
 ---@param layout table
 ---@param fonts table
+---@param widest? string Widest name this model can show; defaults to the
+--- widest the firmware allows.
 ---@return table
-function flightMode.regionsFor(theme, themeBuilder, rect, layout, fonts)
+function flightMode.regionsFor(theme, themeBuilder, rect, layout, fonts, widest)
   local frame = themeBuilder.frame(theme, rect, fonts)
   local labelHeight = frame.labelHeight
   local top = frame.top
@@ -85,7 +135,7 @@ function flightMode.regionsFor(theme, themeBuilder, rect, layout, fonts)
   local showDetail = layout.showDetail and ladder.rows > 0
 
   local name, formIndex = themeBuilder.fitReading(
-    FORMS, frame.content, ladder.room)
+    formsFor(widest or WIDEST_NAME), frame.content, ladder.room)
   local nameHeight = themeBuilder.fontHeight(name)
 
   if top + nameHeight > rect.h then
@@ -117,8 +167,14 @@ function flightMode.create(parent, rect, settings, services)
   local span = services.span
   local layout = flightMode.presentationFor(span.colSpan, span.rowSpan)
   local presentation = services.state("normal", settings.accent)
+
+  local modelService = services.model
+  -- Read once, before the panel is measured, because the panel is measured
+  -- from it. A model change rebuilds every widget, so it cannot go stale.
+  local widest = modelService and modelService:widestFlightModeName() or nil
+
   local area = flightMode.regionsFor(
-    theme, services.themeBuilder, rect, layout, fonts)
+    theme, services.themeBuilder, rect, layout, fonts, widest)
 
   local context = {
     theme = theme,
@@ -131,9 +187,11 @@ function flightMode.create(parent, rect, settings, services)
     stateName = "normal",
     text = "--",
     detail = "",
+    widest = widest,
+    -- What the panel currently draws, so `render` declares only that.
+    showDetail = area.showDetail,
   }
 
-  local modelService = services.model
   if modelService then context.feed = modelService:flightMode() end
 
   local panel = primitives.panel(parent, rect, theme, presentation)
@@ -182,9 +240,14 @@ function flightMode.render(context, out)
 
   out.state = available and "normal" or "unavailable"
   out.text = available and tostring(feed.name) or "--"
-  out.detail = ""
-  if context.settings.showIndex and available then
-    out.detail = "MODE " .. tostring(feed.index)
+
+  -- Declared only when the panel has a row to put it in. This used to be
+  -- written and painted whatever the span, which is the invisible work the
+  -- other five components stopped doing, and this one was not in that set.
+  if context.showDetail and context.settings.showIndex then
+    -- `#` rather than `MODE`, because the header already says MODE and the
+    -- default configuration read `MODE` over `MODE 0`.
+    out.detail = available and ("#" .. tostring(feed.index)) or "#--"
   end
 end
 
@@ -196,12 +259,14 @@ function flightMode.apply(context, drawn)
 
   context.stateName = drawn.state
   context.text = drawn.text
-  context.detail = drawn.detail
+  context.detail = drawn.detail or ""
 
   context.value:set({text = drawn.text, color = presentation.value})
   context.label:set({color = presentation.label})
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
-  context.detailLabel:set({text = drawn.detail})
+  if context.showDetail then
+    context.detailLabel:set({text = context.detail})
+  end
   context.primitives.stylePanel(context.panel, presentation)
 end
 
@@ -218,7 +283,7 @@ end
 ---@param rect AeroGridRect
 function flightMode.update(context, rect)
   local area = flightMode.regionsFor(context.theme, context.themeBuilder,
-    rect, context.layout, context.fonts)
+    rect, context.layout, context.fonts, context.widest)
 
   context.primitives.resizePanel(context.panel, rect)
   context.primitives.placeHeader(context.label, context.badge, area.frame)
@@ -229,12 +294,11 @@ function flightMode.update(context, rect)
     font = function() return area.name end,
   })
 
-  if area.showDetail then
-    context.detailLabel:set({x = area.pad, y = area.detailY, w = area.content})
-    lvgl.show(context.detailLabel)
-  else
-    lvgl.hide(context.detailLabel)
-  end
+  local settled = area.showDetail == context.showDetail
+  context.showDetail = area.showDetail
+  -- The shared helper rather than a sixth private copy of it.
+  context.primitives.reconcile(context.detailLabel, area.showDetail,
+    {x = area.pad, y = area.detailY, w = area.content}, settled)
 end
 
 return flightMode

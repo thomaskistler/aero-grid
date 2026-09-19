@@ -39,17 +39,19 @@ components:
     config:
       label: 1x1
 
-  # The same span with the mode number asked for. A single cell sheds the
-  # supporting row, so asking for it changes nothing on screen.
-  - id: one-by-one-index
+  # The same span with a longer name to size from. `showIndex` used to be set
+  # here, to show that a single cell ignores it; it is now refused at load
+  # instead, with the panel and the reason named, so the demonstration belongs
+  # in the loader's output rather than on the screen.
+  - id: one-by-one-plain
     type: flight-mode
     col: 1
     row: 0
     colSpan: 1
     rowSpan: 1
     config:
-      label: IDX
-      showIndex: true
+      label: 1x1
+      accent: amber
 
   # Two cells wide is the narrowest span that fits the longest name EdgeTX
   # can report. `3x1` and `4x1` resolve identically, only wider.
