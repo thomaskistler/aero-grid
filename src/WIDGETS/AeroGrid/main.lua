@@ -713,7 +713,31 @@ local function create(zone, widgetOptions, path)
 end
 
 --- Components repositioned per widget callback during a reflow.
-local REFLOW_BATCH = 4
+---
+--- Three, and the value is measured rather than chosen. Reflow cost is linear
+--- in the batch: 2084 instructions per component for the most expensive one
+--- in the catalogue, plus 196 of per-callback overhead, so the worst callback
+--- is 2280 at a batch of 1 and 12700 at 6. It was 4, which made a reflow the
+--- most expensive callback in the dashboard at 8532.
+---
+--- Three is where the saving stops. Below it the headline does not move at
+--- all, because the binding constraint becomes the staged loader building one
+--- `trim-panel` at 7508, and no batch size affects that. A batch of 2 or 1
+--- therefore settles a reflow more slowly for nothing.
+---
+--- What it costs is passes. Sixteen components settle in six callbacks rather
+--- than four, and `MainWindow::run` calls `ViewMain::refreshWidgets` once per
+--- `MENU_TASK_PERIOD`, which is 50 ms (`radio/src/tasks.cpp:50`), so a full
+--- reflow takes about 300 ms rather than 200. A reflow only happens when the
+--- host zone moves or resizes, which is a screen change: nobody is reading a
+--- value at that moment.
+---
+--- The headroom is the real argument. Reflow is the only per-callback cost
+--- that multiplies one component's work by a constant, so the constant is the
+--- cheapest protection against a future component being expensive to move. At
+--- 4, a component costing 3750 to reposition breaches the suite's ceiling; at
+--- 3 it takes 4935 to do the same.
+local REFLOW_BATCH = 3
 
 --- Begin repositioning after EdgeTX changes the host zone.
 --- Like loading, this is spread over callbacks: a full grid costs more than

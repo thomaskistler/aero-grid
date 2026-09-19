@@ -943,7 +943,7 @@ Two lessons generalised past their PRs and are recorded where they will be read 
 
 | | Value | Where |
 | --- | --- | --- |
-| Worst callback | 8532 of 20000 | `trim-panel` reflow at sixteen cells |
+| Worst callback | 7509 of 20000 | the staged loader building one `trim-panel` at sixteen cells |
 | Worst steady frame | 2562 of 20000 | `navigation` at sixteen cells |
 
 The worst steady frame used to be a `trim-panel` and is not any more. Both figures are asserted by the suite and are measured at the largest layout the schema permits. Note the second-worst callback is 7361, and it is the loader's own header stage rather than any component — which means component work is no longer the binding constraint on a full grid, and the next person looking for headroom should know that before optimising a panel.
@@ -974,11 +974,10 @@ Items 4 and 5 are decisions rather than work, and can be taken at a desk. Everyt
 
 These came out of the presentation and consistency pass and were not done, each for a stated reason. They are recorded here rather than in an issue tracker because the reasoning is the part worth keeping — the work itself is small in every case.
 
-**Recommended next, of these: `REFLOW_BATCH`.** It is a one-line change with a real trade behind it, it is the only item here that would give budget back, and it has never been examined at all.
+`REFLOW_BATCH` was the recommended item here and has been taken; see [Why `REFLOW_BATCH` is three](#why-reflow_batch-is-three). Of what remains, **the reveal frame** is the one with a property worth having rather than a number: it would make a whole class of staleness unreachable by construction instead of by discipline.
 
 | Item | Why it was left | What taking it would involve |
 | --- | --- | --- |
-| **`REFLOW_BATCH` has never been measured** | It is set to 4 and nothing has ever asked whether that is right. It is the direct multiplier on the worst callback: a component costing 1798 instructions to reposition produces an 8532-instruction callback because four of them share one. Three would cut the headline figure by roughly a quarter. | Decide the trade rather than the number: a smaller batch means more callbacks to settle a reflow, so a zone change takes longer to finish. Measure how many callbacks a full grid already takes, and whether a user can see the difference. |
 | **Reveal costs a frame of stale content in four components** | `cell-battery`, `link-status`, `metric` and `navigation` each drop their last drawn record when a shed row reappears, so the *next* refresh repaints it. `trim-panel` no longer needs to, because it stops declaring a row it has shed and the comparison notices the missing key by counting. | Give the other four the same property, which means changing what each declares rather than adding another discard. The result is that the discard becomes unnecessary everywhere rather than in one place — unreachable by construction, which is the same argument the render declaration was built on. |
 | **`primitives.arcBounds` has no production caller** | It converts an arc's centre into the rectangle it occupies. Six tests use it; nothing in the widget does. It therefore ships to the radio to serve the test suite, which is the wrong direction of dependency. | Decide whether it is a test helper that belongs in the suite, or a primitive that components *should* be using and are not. Components do lay out in corner coordinates while EdgeTX positions arcs by centre, so the second is plausible and worth checking before deleting anything. |
 | **`link-status` thresholds change unit at runtime** | With `reading: auto`, the leading source can resolve to RSSI in dBm or to link quality in percent, and `warning` and `critical` are bare numbers either way. The settings vocabulary made the label honest — "in the leading source's unit" — rather than fixing it. | Either pin the threshold to a named source, or carry two thresholds and select with the reading. Both change behaviour for an existing layout, which is why it was documented instead. |
@@ -1006,7 +1005,7 @@ These came out of the presentation and consistency pass and were not done, each 
 | `lvgl.image` cannot report a failed decode | Milestone 6 | `StaticImage` clears its source silently, so `model-identity` checks the file with `fstat` beforehand and keeps the model name visible when `fstat` is unavailable |
 | `actions/checkout@v4` and `setup-python@v5` target Node 20 | CI | Non-blocking deprecation warning |
 | `primitives.arcBounds` has no production caller | Presentation pass | Six tests use it and the widget does not, so it ships to a radio to serve the suite. See [Deliberately set aside](#deliberately-set-aside) |
-| `REFLOW_BATCH` has never been measured | Presentation pass | Set to 4, and the direct multiplier on the worst callback. The recommended next item. See [Deliberately set aside](#deliberately-set-aside) |
+| ~~`REFLOW_BATCH` has never been measured~~ | Presentation pass | Closed. Measured across batch sizes 1 to 16 and set to 3, which is where the saving stops. See [Why `REFLOW_BATCH` is three](#why-reflow_batch-is-three) |
 | `link-status` thresholds change unit at runtime | Presentation pass | With `reading: auto` the leading source may be RSSI in dBm or quality in percent, and the thresholds are bare numbers either way. The label says so; the setting does not |
 | Three development components ship | Presentation pass | `heartbeat`, `placeholder` and `service-probe` are in the catalogue and the galleries. Whether they belong in a release was never asked |
 | ~~Panels are outlined on every state, including healthy~~ | Milestone 4 | Closed. A resting panel is an elevated fill with no stroke; the border is reserved for focus, editing, warning and critical, and is built at the focus weight because a radio will not change a border's weight after the object exists |
@@ -1130,15 +1129,43 @@ Status last verified on 2026-09-18:
 
 The design system is in place: the host owns every color, resolves one theme per dashboard, and hands each component a `services` table carrying the theme, shared primitives, span-appropriate typography, a state resolver, and the five shared data services. The `metric` component is the reference implementation and now reads real telemetry; the temporary `demo` setting is gone. Milestone 4's remaining item is a physical readability review, which requires hardware.
 
-Measured cost on the largest layout the schema permits, sixteen single-cell components: worst callback 8532 of 20000 instructions, worst steady frame 2562. Both are asserted by the test suite. Fourteen layouts are exercised, thirteen of them at sixteen components: metrics with sixteen distinct live sources, sixteen diagnostic panels spanning all five services, sixteen components that demand a refresh every frame, one layout per catalogue component type, and the shipped ten-component dashboard.
+Measured cost on the largest layout the schema permits, sixteen single-cell components: worst callback 7509 of 20000 instructions, worst steady frame 2562. Both are asserted by the test suite. Fourteen layouts are exercised, thirteen of them at sixteen components: metrics with sixteen distinct live sources, sixteen diagnostic panels spanning all five services, sixteen components that demand a refresh every frame, one layout per catalogue component type, and the shipped ten-component dashboard.
 
-The worst callback is a `trim-panel` reflow, which repositions four indicators for each of the four components in a reflow batch. **Every other layout's worst callback is the loader's own header stage rather than any component**, between 6209 and 7361, which is worth knowing before optimising a panel: on a full grid, component work stopped being the binding constraint. The three telemetry components at sixteen cells reach 6721, 6593 and 6337, all of them in that header stage, and their worst steady frames are 2290, 2380 and 2562. Removing the services' subscription caps raises the worst steady frame to 6200, which is what the caps are for.
+**The worst callback is the staged loader, not any component's own work.** It is the callback that builds one `trim-panel` with four indicators, at 7509. Every layout's second-worst is the loader's header stage, between 6209 and 7361. The three telemetry components at sixteen cells reach 6721, 6593 and 6337, all of them in that header stage, and their worst steady frames are 2290, 2380 and 2562. Removing the services' subscription caps raises the worst steady frame to 6200, which is what the caps are for. On a full grid, component work is no longer the binding constraint, which is worth knowing before optimising a panel.
 
-**Why `trim-panel`'s reflow is the worst callback, and why it stays that
-way.** It is not a defect and not worth optimising further. Reflow is batched
-four components to a callback, so the figure is four `update` calls plus the
-host's own work. At sixteen cells a `trim-panel` showing one indicator costs
-872 instructions to reposition, which sits in the middle of the catalogue
+### Why `REFLOW_BATCH` is three
+
+It was 4, nothing had ever measured it, and it made a reflow the most expensive callback in the dashboard. It is the only per-callback cost the dashboard chooses rather than earns, so it was worth measuring properly rather than assuming a smaller number is better.
+
+Measured at single-instruction resolution on sixteen `trim-panel` components, the largest layout the schema permits using the most expensive component to reposition:
+
+| Batch | Worst reflow callback | Callbacks to settle | Total reflow work | Headline worst callback |
+| --- | --- | --- | --- | --- |
+| 1 | 2280 | 16 | 34641 | 7509 |
+| 2 | 4364 | 8 | 34057 | 7509 |
+| **3** | **6448** | **6** | **33911** | **7509** |
+| 4 | 8532 | 4 | 33765 | 8532 |
+| 5 | 10616 | 4 | 33765 | 10616 |
+| 6 | 12700 | 3 | 33692 | 12700 |
+| 8 | 16868 | 2 | — | exceeds the suite's ceiling |
+
+**The relationship is linear and the per-callback overhead is negligible.** Each step adds exactly 2084 instructions, which is what one `trim-panel` costs to reposition, and the intercept is 196. So a batch of *n* costs `2084n + 196`, and the overhead the schema pays for splitting the work is under a tenth of one component. Total reflow work is 2.6% higher at a batch of 1 than at 4, which is that overhead paid sixteen times instead of four.
+
+**Three is where the saving stops.** Below it the headline does not move at all, because the binding constraint becomes the loader building one component at 7509, and no batch size affects that — the component stage already builds one component per callback. A batch of 2 or 1 therefore settles a reflow more slowly and buys nothing.
+
+**What it costs is passes.** Sixteen components settle in six callbacks rather than four. `MainWindow::run` calls `ViewMain::refreshWidgets` once per `MENU_TASK_PERIOD`, which is 50 ms (`radio/src/tasks.cpp:50`), so a full reflow takes about 300 ms rather than 200. A reflow runs only when the host zone moves or resizes — a screen change or a dashboard change — so the extra 100 ms is spent at a moment nobody is reading a value.
+
+**The headroom is the real argument, not the 12%.** Both 8532 and 7509 are comfortable against 20000. But reflow is the only per-callback cost that multiplies one component's work by a constant, which makes the constant the cheapest protection against a future component being expensive to move. At 4, a component costing 3750 instructions to reposition breaches the suite's ceiling; at 3 it takes 4935 to do the same.
+
+The suite asserts the conclusion rather than the number: **a reflow may not be the most expensive callback the dashboard makes.** That comparison fails at a batch of 4 and at 5, which a fixed ceiling chosen today would not have done, and it is paired with an assertion that a reflow was measured at all — without which a zero compares less than everything and the whole check passes having proved nothing. That hole was real and was found by breaking the recording and watching the comparison stay green.
+
+This question is closed. Re-open it only with a measurement.
+
+**Why a `trim-panel` reflow is the most expensive of them, and why that
+stays.** It is not a defect and not worth optimising further. Reflow is
+batched three components to a callback, so the figure is three `update` calls
+plus the host's own work. At sixteen cells a `trim-panel` showing one
+indicator costs 872 instructions to reposition, which sits in the middle of the catalogue
 between `cell-battery` at 769 and `model-identity` at 902. Showing four costs
 1798. The excess is entirely the three extra indicators, at 309 each, and each
 indicator is a caption, a bipolar bar of three objects and a readout. A panel
@@ -1152,7 +1179,8 @@ accidental. The panel used to hide the caption and readout rows a narrow cell
 cannot fit, and then keep positioning them on every reflow, formatting them
 four times a frame, and writing them into labels nobody could see: about 740
 instructions of work with no reader, which took the worst callback from 9268
-to 8532 when removed. Invisible work is the hazard here, because it leaves no
+to 8532 when removed, before the batch measurement took it to 6448. Invisible
+work is the hazard here, because it leaves no
 trace on screen and so no assertion about what is drawn can see it. The test
 harness counts writes and visibility calls per object for exactly that reason,
 and those counters are swapped out while a callback is measured, on the same
@@ -1586,5 +1614,4 @@ Deliverable: layouts created and safely maintained entirely on the radio.
 - Phase 2 collision and resize-anchor behavior.
 - Numeric performance budgets after simulator and physical-radio baselining.
 - Whether a source is persisted by name or by numeric identifier. The specification says identifier; the implementation uses names throughout. See [Source settings](#source-settings).
-- Whether `REFLOW_BATCH` should be 4. Never examined, and the direct multiplier on the worst callback. See [Deliberately set aside](#deliberately-set-aside).
 - Whether the three development components ship in a release.
