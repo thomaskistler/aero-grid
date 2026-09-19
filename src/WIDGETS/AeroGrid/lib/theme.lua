@@ -872,6 +872,68 @@ function theme.fitReading(forms, width, room)
   return ordered[#ordered], #forms
 end
 
+--- Fit a heading to its column, stepping the font down rather than wrapping.
+---
+--- A Lua label is `lv_label_create` with a font style and nothing else
+--- (`etx_label_create`, `gui/colorlcd/libui/etx_lv_theme.cpp`), so its long
+--- mode is LVGL's default, which `lv_label_constructor` sets to
+--- `LV_LABEL_LONG_WRAP`. A height of zero is not zero either:
+--- `LvglSimpleWidgetObject::parseParam` turns it into `LV_SIZE_CONTENT`. So a
+--- heading wider than its column **wrapped and grew downward over the
+--- reading**: `TRANSMITTER` in a single cell's 52 pixel column took three
+--- lines and 51 pixels of a 65 pixel panel. Nothing about the text changed,
+--- so no assertion about what a label says could see it.
+---
+--- Lua cannot call `lv_label_set_long_mode`, so clipping and dots are not
+--- available to choose. The levers are the text, the width and the font, and
+--- of those only the font is free: a heading is a name the layout author
+--- chose, and shortening `TRANSMITTER` to `TRANS` is the same loss of
+--- identity as `ACROTRAINER` to `ACRO`.
+---
+--- So the font steps down first, which costs nothing. Where even the smallest
+--- font cannot fit the name, it is cut to what fits **and the caller is told
+--- what was dropped**, so the author can choose a shorter heading. Being told
+--- is what makes it an abbreviation rather than a quiet corruption.
+---@param text any
+---@param width? integer Column available; nil or zero fits nothing.
+---@param font any Preferred font, stepped down from.
+---@return string text Text that fits.
+---@return any font Font it fits at.
+---@return string? dropped Full text, when it had to be cut.
+function theme.fitHeading(text, width, font)
+  local wanted = string.upper(tostring(text == nil and "" or text))
+  if wanted == "" then return wanted, font end
+  if type(width) ~= "number" or width <= 0 then return wanted, font end
+
+  -- The overwhelmingly common case, and the one every panel pays for at
+  -- build: a short heading at the font the panel already chose. Answered
+  -- before any ladder is built, because building one to discard it is a cost
+  -- every component pays for the rare heading that needs it.
+  if theme.textWidth(font, wanted) <= width then return wanted, font end
+
+  local ladder = {}
+  local height = theme.fontHeight(font)
+  for _, candidate in ipairs({SMLSIZE, TINSIZE}) do
+    if theme.fontHeight(candidate) < height then
+      ladder[#ladder + 1] = candidate
+    end
+  end
+  if #ladder == 0 then ladder[1] = font end
+
+  for _, candidate in ipairs(ladder) do
+    if theme.textWidth(candidate, wanted) <= width then
+      return wanted, candidate
+    end
+  end
+
+  -- Nothing fits. Cut to the smallest font's capacity rather than wrapping
+  -- over the reading, and hand back what was lost so it can be reported.
+  local smallest = ladder[#ladder]
+  local advance = math.max(1, theme.textWidth(smallest, "M"))
+  local room = math.max(1, math.floor(width / advance))
+  return string.sub(wanted, 1, room), smallest, wanted
+end
+
 --- Choose the longest of several wordings that fits a width.
 ---
 --- Supporting rows were the one place nothing was fitted. The dominant reading

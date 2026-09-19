@@ -302,7 +302,8 @@ function trimPanel.create(parent, rect, settings, services)
   context.panel = panel
 
   context.label, context.badge = primitives.header(
-    panel.root, theme, area.frame, fonts, settings.label, presentation)
+    panel.root, theme, area.frame, fonts, settings.label, presentation,
+    services.themeBuilder)
 
   local control = services.control
   local scale = settings.scale
@@ -445,7 +446,8 @@ function trimPanel.update(context, rect)
     rect, context.count, context.fonts)
 
   primitives.resizePanel(context.panel, rect)
-  primitives.placeHeader(context.label, context.badge, area.frame)
+  primitives.placeHeader(context.label, context.badge, area.frame,
+    context.themeBuilder, context.fonts)
 
   local reconcile = primitives.reconcile
   local captionsChanged = area.showCaption ~= context.showCaption

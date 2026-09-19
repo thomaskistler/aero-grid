@@ -338,7 +338,8 @@ function diagnostics.create(parent, rect, settings, services)
   if type(title) ~= "string" or title == "" then title = section end
 
   context.title, context.badge = primitives.header(
-    context.panel.root, theme, area.frame, fonts, title, presentation)
+    context.panel.root, theme, area.frame, fonts, title, presentation,
+    services.themeBuilder)
 
   -- Every line object is created once, up to the cap, so a later enlargement
   -- reveals lines instead of forcing a rebuild, and the cost of building this
@@ -383,7 +384,8 @@ function diagnostics.update(context, rect)
     rect, context.fonts)
 
   primitives.resizePanel(context.panel, rect)
-  primitives.placeHeader(context.title, context.badge, area.frame)
+  primitives.placeHeader(context.title, context.badge, area.frame,
+    context.themeBuilder, context.fonts)
 
   for index = 1, MAX_LINES do
     primitives.reconcile(context.rows[index], index <= area.lines, {

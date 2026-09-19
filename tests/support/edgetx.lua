@@ -611,11 +611,48 @@ function support.lvgl()
   --- exposes it. It exists so a test can see work that leaves no trace on
   --- screen, such as a panel repositioning a label it has hidden, which is
   --- otherwise invisible to every assertion and therefore free to grow.
+  --- firmware: a Lua label is `lv_label_create` with a font style and nothing
+  --- else (`etx_label_create`, `gui/colorlcd/libui/etx_lv_theme.cpp`), so its
+  --- long mode is LVGL's default, which `lv_label_constructor` sets to
+  --- `LV_LABEL_LONG_WRAP` (`thirdparty/lvgl/src/widgets/lv_label.c`). And a
+  --- height of zero is not zero: `LvglSimpleWidgetObject::parseParam` turns it
+  --- into `LV_SIZE_CONTENT` (`lua/lua_lvgl_widget.cpp`).
+  ---
+  --- Together those mean a label with an explicit width and `h = 0` whose
+  --- text is wider than that width **wraps onto another line and grows
+  --- downward**, into whatever the panel draws beneath it. Nothing about the
+  --- text's content changes, so no assertion about what a label says can see
+  --- it; only its height can.
+  ---
+  --- The line count is estimated from the same mean advance the dashboard
+  --- uses, because this harness cannot measure glyphs either. The estimate is
+  --- this harness's own; the behaviour being modelled -- that overflow grows
+  --- the object rather than clipping it -- is the firmware's.
+  local ADVANCE_RATIO = 0.58
+
+  local function wrappedHeight(properties)
+    local text = properties.text
+    local width = properties.w
+    if type(text) ~= "string" or text == "" then return nil end
+    if type(width) ~= "number" or width <= 0 then return nil end
+
+    local heights = firmware.FONT_HEIGHT
+    local height = heights[properties.font and properties.font() or nil]
+    if type(height) ~= "number" then height = heights[firmware.SMLSIZE] end
+
+    local needed = math.floor(#text * height * ADVANCE_RATIO + 0.5)
+    local lines = math.max(1, math.ceil(needed / width))
+    return lines * height, lines
+  end
+
   local function setChecked(object, changes)
     assertUsable(object)
     object.writes = object.writes + 1
     checkProperties(object.kind, changes)
     for key, value in pairs(changes) do object.properties[key] = value end
+    if object.kind == "label" then
+      object.drawnHeight, object.lines = wrappedHeight(object.properties)
+    end
     if object.round then object.round.refresh(changes) end
   end
 
@@ -623,6 +660,11 @@ function support.lvgl()
   --- budget harness does before it measures, and the counters have to go
   --- with it: a real object's setter is C++, so counting the call in Lua
   --- would bill the script for work the radio does not do.
+  --- No wrap recomputation here, for the same reason there is no write
+  --- counting: this is the setter the budget harness swaps in before it
+  --- measures, and LVGL lays a label out in C. Charging a Lua stand-in for
+  --- it to a widget callback measures the fixture and slowly squeezes the
+  --- thing being measured.
   local function setUnchecked(object, changes)
     assertUsable(object)
     for key, value in pairs(changes) do object.properties[key] = value end
@@ -653,6 +695,12 @@ function support.lvgl()
       set = validateProperties and setChecked or setUnchecked,
       clear = clearObject,
     }
+
+    -- A label's drawn height follows its text, because `h = 0` is
+    -- `LV_SIZE_CONTENT` and the default long mode wraps.
+    if kind == "label" then
+      object.drawnHeight, object.lines = wrappedHeight(properties)
+    end
 
     if kind == "arc" then object.round = newRoundGeometry(properties) end
     -- A rectangle's border width and corner radius reach LVGL when the object

@@ -353,7 +353,11 @@ function variableIndicator.create(parent, rect, settings, services)
 
   context.label, context.badge = primitives.header(panel.root, theme,
     area.frame, fonts, variableIndicator.labelText(context, reading),
-    presentation)
+    presentation,
+    services.themeBuilder)
+  -- The heading is refitted whenever it changes, so the column it has to
+  -- fit is kept beside it.
+  context.frame = area.frame
 
   context.value = primitives.value(panel.root, theme, {
     x = area.pad,
@@ -533,7 +537,10 @@ function variableIndicator.apply(context, drawn)
   context.labelValue = drawn.label
 
   context.value:set({text = drawn.text, color = presentation.value})
-  context.label:set({text = drawn.label, color = presentation.label})
+  -- Through the fitter, not straight into the label: this heading comes from
+  -- the model at runtime and is exactly the kind that overflows its column.
+  context.primitives.setHeading(context.label, context.themeBuilder,
+    context.frame, context.fonts, drawn.label, presentation.label)
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
   if context.showDetail then
     context.detailLabel:set({text = context.detail})
@@ -573,7 +580,9 @@ function variableIndicator.update(context, rect)
     rect, context.layout, context.fonts, context.sample)
 
   primitives.resizePanel(context.panel, rect)
-  primitives.placeHeader(context.label, context.badge, area.frame)
+  primitives.placeHeader(context.label, context.badge, area.frame,
+    context.themeBuilder, context.fonts)
+  context.frame = area.frame
   context.value:set({
     x = area.pad,
     y = area.valueY,

@@ -440,7 +440,8 @@ function cellBattery.create(parent, rect, settings, services)
   context.panel = panel
 
   context.label, context.badge = primitives.header(
-    panel.root, theme, area.frame, fonts, settings.label, presentation)
+    panel.root, theme, area.frame, fonts, settings.label, presentation,
+    services.themeBuilder)
 
   context.value = primitives.value(panel.root, theme, {
     x = area.pad,
@@ -601,7 +602,8 @@ function cellBattery.update(context, rect)
     rect, context.layout, context.fonts, context.sample)
 
   context.primitives.resizePanel(context.panel, rect)
-  context.primitives.placeHeader(context.label, context.badge, area.frame)
+  context.primitives.placeHeader(context.label, context.badge, area.frame,
+    context.themeBuilder, context.fonts)
   context.value:set({
     x = area.pad,
     y = area.valueY,

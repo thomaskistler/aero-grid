@@ -4563,6 +4563,196 @@ local function testReconcileBar()
   root:clear()
 end
 
+--- A heading never wraps down over the reading, however long it is.
+---
+--- A Lua label is `lv_label_create` with a font style and nothing else
+--- (`etx_label_create`), so its long mode is LVGL's default, which
+--- `lv_label_constructor` sets to `LV_LABEL_LONG_WRAP`. And `h = 0` is not
+--- zero: `LvglSimpleWidgetObject::parseParam` turns it into
+--- `LV_SIZE_CONTENT`. So a heading wider than its column used to wrap onto
+--- further lines and grow downward, over the reading it labels. Nothing about
+--- the text changed, so no assertion about what a label says could see it --
+--- only its drawn height can, which is why the harness models that.
+---
+--- Driven at the narrowest case there is: a single cell, whose heading column
+--- is what the badge leaves, with the badge showing.
+local function testHeadingNeverWraps()
+  resetRadio()
+
+  -- First, that the harness can see the thing at all. Every assertion below
+  -- is of the form "one line", which a mock that always answered one line
+  -- would satisfy without checking anything. So an unfitted label is built
+  -- directly and held to wrapping, which is what the firmware does and what
+  -- the components must therefore avoid.
+  local box = lvgl.box({x = 0, y = 0, w = 120, h = 60})
+  local overflowing = primitivesModule.label(box, themeModule.build("modern"), {
+    x = 0, y = 0, w = 40,
+    text = "A HEADING FAR TOO LONG FOR FORTY PIXELS",
+    font = firmware.SMLSIZE,
+  })
+  assert(overflowing.lines > 1,
+    "the harness does not model LVGL's wrapping, so every assertion below"
+      .. " that a heading takes one line would pass without checking")
+  assert(overflowing.drawnHeight > themeModule.fontHeight(firmware.SMLSIZE),
+    "a wrapped label did not grow, so the growth this exists to prevent"
+      .. " cannot be seen either")
+  box:clear()
+
+  local widgetPath = makeWidget("heading", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: short
+    type: tx-battery
+    col: 0
+    row: 0
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: TX
+      warning: 9.0
+  - id: long
+    type: tx-battery
+    col: 1
+    row: 0
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: BATTERY
+      warning: 9.0
+  - id: huge
+    type: tx-battery
+    col: 2
+    row: 0
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: TRANSMITTER BATTERY PACK
+      warning: 9.0
+]])
+
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  settle(context, 30)
+
+  local short = entryById(context, "short").instance
+  local long = entryById(context, "long").instance
+  local huge = entryById(context, "huge").instance
+
+  -- The badge is showing, so the heading column is the narrow one. Without
+  -- this the panels are not the case being tested.
+  for _, panel in ipairs({short, long, huge}) do
+    assertEqual(panel.stateName, "warning")
+    assertEqual(panel.badge.properties.text, "WARN",
+      "the badge is not showing, so the heading column is not the narrow one")
+  end
+
+  local column = short.label.properties.w
+  assert(column > 0 and column < 60,
+    "a single cell's heading column should be narrow: " .. column)
+
+  -- One line each, which is the whole point. `TRANSMITTER` used to take
+  -- three lines and 51 pixels of a 65 pixel panel.
+  for id, panel in pairs({short = short, long = long, huge = huge}) do
+    assertEqual(panel.label.lines, 1,
+      id .. "'s heading wrapped onto " .. tostring(panel.label.lines)
+        .. " lines and grew down over the reading")
+    assert(panel.label.drawnHeight <= themeModule.fontHeight(
+      panel.fonts.label),
+      id .. "'s heading is taller than one row of its own font")
+  end
+
+  -- A heading that fits is left exactly as the author wrote it, at the font
+  -- the panel would have used anyway. Stepping a short heading down would be
+  -- a cost paid for nothing.
+  assertEqual(short.label.properties.text, "TX")
+  assertEqual(short.label.properties.font(), short.fonts.label)
+  assertEqual(short.label.headingDropped, nil)
+
+  -- A heading that does not fit steps the font down first, because that
+  -- costs nothing and keeps the whole name.
+  assertEqual(long.label.properties.text, "BATTERY",
+    "a heading was cut when a smaller font would have carried it whole")
+  assert(themeModule.fontHeight(long.label.properties.font())
+      < themeModule.fontHeight(long.fonts.label),
+    "the heading kept its font and must therefore have overflowed")
+  assertEqual(long.label.headingDropped, nil)
+
+  -- And one that does not fit even at the smallest font is cut rather than
+  -- wrapped, and the host says so, because cutting a name the author chose
+  -- is a loss and a silent loss is the thing this project does not do.
+  assert(#huge.label.properties.text < #"TRANSMITTER BATTERY PACK",
+    "a heading nothing could fit was drawn whole, so it must have wrapped")
+  assertEqual(huge.label.headingDropped, "TRANSMITTER BATTERY PACK")
+
+  local said = false
+  for _, notice in ipairs(context.notices) do
+    if string.find(notice.text, "TRANSMITTER BATTERY PACK", 1, true)
+        and string.find(notice.text, "huge", 1, true) then
+      said = true
+    end
+  end
+  assert(said, "a heading was cut and nobody was told; notices were: "
+    .. table.concat((function()
+      local out = {}
+      for _, notice in ipairs(context.notices) do out[#out + 1] = notice.text end
+      return out
+    end)(), " | "))
+end
+
+--- A heading refits when a reflow changes the column it has.
+---
+--- The column is what the badge leaves, so it moves with the panel. A
+--- heading fitted once at build would wrap the first time the zone changed,
+--- which is the same shape as a reading sized once and never again.
+local function testHeadingRefitsOnReflow()
+  resetRadio()
+  local widgetPath = makeWidget("heading-reflow", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: panel
+    type: tx-battery
+    col: 0
+    row: 0
+    colSpan: 4
+    rowSpan: 2
+    config:
+      label: TRANSMITTER
+]])
+
+  local zone = {x = 0, y = 0, w = 480, h = 272}
+  local context = createLoaded(zone, DEFAULT_OPTIONS, widgetPath)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  settle(context, 20)
+
+  local panel = entryById(context, "panel").instance
+  -- Four cells wide: the whole heading fits at the panel's own font.
+  assertEqual(panel.label.properties.text, "TRANSMITTER")
+  assertEqual(panel.label.properties.font(), panel.fonts.label)
+  assertEqual(panel.label.lines, 1)
+
+  zone.w = 160
+  local passes = 0
+  repeat
+    definition.refresh(context)
+    passes = passes + 1
+    assert(passes < 100, "reflow never finished")
+  until not context.reflowIndex
+  settle(context, 20)
+
+  assertEqual(panel.label.lines, 1,
+    "the heading wrapped after a reflow narrowed its column")
+  assert(themeModule.fontHeight(panel.label.properties.font())
+      < themeModule.fontHeight(panel.fonts.label),
+    "the heading kept the font it was built with and must have overflowed")
+end
+
 --- A row that comes back shows what is true now, not what was true when it
 --- was shed.
 ---
@@ -5949,6 +6139,8 @@ testTxBatteryRangeComesFromTheRadio()
 testTxBatteryWithoutAnyRange()
 testFlightTimerShedsItsDetail()
 testReconcileBar()
+testHeadingNeverWraps()
+testHeadingRefitsOnReflow()
 testFlightModeSizesFromTheModel()
 testHostDiagnosticsReportsTheHost()
 testLayoutOriginIsReported()

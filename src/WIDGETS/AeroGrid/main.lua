@@ -421,6 +421,20 @@ local function buildComponent(context, placement)
     {x = 0, y = 0, w = rect.w, h = rect.h}, settings, services)
 
   if ok then
+    -- A heading too long for its column is cut to fit, because the
+    -- alternative is LVGL wrapping it down over the reading. Cutting a name
+    -- the author chose is a loss, so it is reported rather than done
+    -- quietly: being told is what makes it an abbreviation instead of a
+    -- corruption, and the author can pick a shorter heading.
+    local label = type(instance) == "table"
+      and (instance.label or instance.title) or nil
+    local dropped = type(label) == "table" and label.headingDropped or nil
+    if dropped then
+      addNotice(context, "warning", placement.id .. ": heading "
+        .. tostring(dropped) .. " does not fit this panel and is drawn as "
+        .. tostring(label.properties and label.properties.text or ""))
+    end
+
     local interval = host.refreshInterval(component)
     context.components[#context.components + 1] = {
       placement = placement,

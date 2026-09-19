@@ -182,7 +182,8 @@ function probe.create(parent, rect, settings, services)
   -- into the corner EdgeTX paints its menu button over, because only the
   -- shared helper knows that corner exists.
   context.title, context.badge = primitives.header(
-    context.panel.root, theme, area.frame, fonts, title, presentation)
+    context.panel.root, theme, area.frame, fonts, title, presentation,
+    services.themeBuilder)
 
   -- Every row object is created once, up to the cap, so a later enlargement
   -- reveals rows instead of forcing a rebuild.
@@ -260,7 +261,8 @@ function probe.update(context, rect)
     context.theme, context.themeBuilder, rect, context.fonts)
 
   context.primitives.resizePanel(context.panel, rect)
-  context.primitives.placeHeader(context.title, context.badge, area.frame)
+  context.primitives.placeHeader(context.title, context.badge, area.frame,
+    context.themeBuilder, context.fonts)
 
   local reconcile = context.primitives.reconcile
   local before = context.visibleRows

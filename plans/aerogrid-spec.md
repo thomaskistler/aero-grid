@@ -1216,6 +1216,54 @@ It ships as four sections, one per panel, on the `host` dashboard:
 
 **Panels shed lines.** A two-cell panel shows about five, so each section is ordered by what someone is there to find: the bytecode alarm above the layout path, failures above the roll call, unbound sources above bound ones, and a count on the first line that says whether anything was shed. A list that pushes the one broken component off the bottom is worse than no list.
 
+### Text reaches a label only through something that measured it
+
+Four defects shared one shape: a string drawn without being measured. A flight
+mode's name sized from a probe rather than the name itself, supporting rows
+handed to LVGL at whatever length they came out, a navigation origin the same,
+and the panel heading, which went through no fitting at all.
+
+The last was the worst and the least visible. A Lua label is
+`lv_label_create` with a font style and nothing else (`etx_label_create`,
+`gui/colorlcd/libui/etx_lv_theme.cpp`), so its long mode is LVGL's default,
+which `lv_label_constructor` sets to `LV_LABEL_LONG_WRAP`
+(`thirdparty/lvgl/src/widgets/lv_label.c`). A height of zero is not zero
+either: `LvglSimpleWidgetObject::parseParam` turns it into `LV_SIZE_CONTENT`
+(`lua/lua_lvgl_widget.cpp`). So a heading wider than its column wrapped and
+grew downward over the reading it labels. `TRANSMITTER` in a single cell's 52
+pixel column took three lines and 51 pixels of a 65 pixel panel. Nothing about
+the text changed, so no assertion about what a label says could see it.
+
+**Lua cannot choose a different long mode.** `lv_label_set_long_mode` is not
+exposed, so clipping and dots are not available. The only levers are the text,
+the width and the font.
+
+So `theme.fitHeading` steps the font down first, which costs nothing and keeps
+the whole name, and cuts the name only where even the smallest font cannot
+carry it -- reporting what was dropped, because a heading is a name the author
+chose and losing part of it silently is the `ACRO` against `ACROTRAINER`
+problem. Being told is what makes it an abbreviation rather than a corruption.
+The column is what the badge leaves, so it is refitted on every reflow rather
+than fixed at build.
+
+**Where the string goes decides who can get it wrong.** Every other string in
+the dashboard is already measured: the reading by the shared ladder,
+supporting rows by `fitLabel`. The heading was the one string the *host*
+writes, in `primitives.header`, which is why eleven of twelve components never
+touched it and could not have got it right or wrong. Fixing the host fixed
+eleven components. The two that rewrite their heading at runtime go through
+`primitives.setHeading`, and a test forbids writing it directly.
+
+**This is detectable rather than unrepresentable, and that is worth saying.**
+The render declaration made its mistake impossible: a component cannot compare
+a field it never declared, because the host derives the comparison. The same
+move is not available here, because the host does not own paint -- a component
+holds its own LVGL objects and calls `set` on them. Making this
+unrepresentable would mean the host owning drawing as well as deciding, which
+is a much larger change than this defect justifies. Detectable is what is
+available: the host writes the heading, and a directory-reading test fails on
+a component that writes its own.
+
 ### Why `REFLOW_BATCH` is three
 
 It was 4, nothing had ever measured it, and it made a reflow the most expensive callback in the dashboard. It is the only per-callback cost the dashboard chooses rather than earns, so it was worth measuring properly rather than assuming a smaller number is better.
