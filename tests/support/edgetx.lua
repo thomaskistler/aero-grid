@@ -455,6 +455,87 @@ end
 ---@param options? table `{roles = <role name to 24-bit colour>}`, to test a
 ---   palette other than the one the firmware ships.
 ---@return table handle
+--- Per-character advances, as a fraction of a font's line height.
+---
+--- **What this models, and what it does not.** EdgeTX measures text by
+--- summing the real advance of every glyph: `luaLcdSizeText` calls
+--- `getTextWidth`, which is `lv_txt_get_width(s, len, getFont(flags), 0,
+--- LV_TEXT_FLAG_EXPAND)` over the font's own `glyph_dsc`. This reproduces
+--- the **shape** of that -- a proportional font where a decimal point is a
+--- fifth of a line height and an `m` is two thirds -- and it does not
+--- reproduce the **numbers**, because it cannot.
+---
+--- The ratios below are real, measured out of
+--- `radio/src/fonts/lvgl/std/lv_font_en_STD.c`, whose `glyph_dsc` is
+--- uncompressed in the tree: `adv_w` is in sixteenths and
+--- `lv_font_fmt_txt_get_glyph_dsc` rounds it with `(adv_w + 8) >> 4`, so a
+--- digit is 9 px of a 21 px line and a `.` is 4. Every other font the
+--- dashboard actually draws with -- XXS, XS, L, bold XL, bold XXL -- is
+--- LZ4-compressed in `lz4_fonts.h` and its advances are not readable from
+--- source at all. So one font's proportions are applied to every size, and
+--- the bold faces in particular will be wider on a radio than they are
+--- here.
+---
+--- That is a limitation worth stating loudly rather than papering over: a
+--- mock that looked exact and was not would be worse than this one. What it
+--- buys is the thing that matters, which is that it disagrees with the 0.58
+--- flat estimate -- `7.9` is 22 px here against the estimate's 37 -- so a
+--- test can tell measured placement from estimated placement. A model that
+--- merely repeated the estimate could not.
+local ADVANCE = {
+  ["'"] = 0.134, [","] = 0.149, [";"] = 0.161, ["j"] = 0.182,
+  [":"] = 0.185, ["i"] = 0.185, ["l"] = 0.185, ["|"] = 0.185,
+  [" "] = 0.188, ["!"] = 0.196, ["."] = 0.199, ["["] = 0.202,
+  ["]"] = 0.202, ["I"] = 0.208, ["-"] = 0.211, ["`"] = 0.235,
+  ['"'] = 0.244, ["t"] = 0.250, ["r"] = 0.259, ["{"] = 0.259,
+  ["}"] = 0.259, ["("] = 0.262, [")"] = 0.265, ["f"] = 0.265,
+  ["\\"] = 0.313, ["/"] = 0.316, ["^"] = 0.319, ["*"] = 0.327,
+  ["_"] = 0.345, ["?"] = 0.360, ["y"] = 0.360, ["v"] = 0.369,
+  ["x"] = 0.378, ["z"] = 0.378, ["<"] = 0.387, ["k"] = 0.387,
+  ["s"] = 0.393, [">"] = 0.399, ["c"] = 0.399, ["e"] = 0.405,
+  ["L"] = 0.411, ["a"] = 0.414, ["="] = 0.420, ["J"] = 0.420,
+  ["h"] = 0.420, ["n"] = 0.420, ["u"] = 0.420, ["F"] = 0.423,
+  ["+"] = 0.432, ["E"] = 0.435, ["o"] = 0.435, ["q"] = 0.435,
+  ["S"] = 0.452, ["T"] = 0.455, ["Z"] = 0.455, ["Y"] = 0.458,
+  ["#"] = 0.470, ["R"] = 0.470, ["&"] = 0.473, ["B"] = 0.473,
+  ["K"] = 0.479, ["X"] = 0.479, ["P"] = 0.482, ["V"] = 0.485,
+  ["U"] = 0.494, ["A"] = 0.497, ["C"] = 0.497, ["D"] = 0.500,
+  ["G"] = 0.518, ["~"] = 0.518, ["O"] = 0.524, ["Q"] = 0.524,
+  ["H"] = 0.545, ["N"] = 0.545, ["%"] = 0.560, ["w"] = 0.571,
+  ["M"] = 0.667, ["m"] = 0.667, ["W"] = 0.676, ["@"] = 0.685,
+}
+
+--- Digits and `$` share one advance, which is what makes a reading's width
+--- depend on how many decimal points it has rather than how large it is.
+for _, digit in ipairs({"$", "0", "1", "2", "3", "4", "5", "6", "7", "8",
+    "9", "b", "d", "g", "p"}) do
+  ADVANCE[digit] = 0.4286
+end
+
+--- Anything outside the table gets a digit's width, which is the middle of
+--- the range and the commonest character in a reading.
+local DEFAULT_ADVANCE = 0.4286
+
+--- Width of a string at a line height, from the advances above.
+---
+--- **One model, both callers.** `sizeText` and the wrap model used to hold
+--- separate opinions about the same firmware function: this one summed real
+--- per-glyph advances while the wrap model charged a flat 0.58 per
+--- character. The firmware has no such split -- `lv_txt_get_size` breaks a
+--- line and then measures it with `lv_txt_get_width`, the very call
+--- `luaLcdSizeText` exposes (`thirdparty/lvgl/src/misc/lv_txt.c`) -- so a
+--- fixture carrying two models had one of them contradicting the firmware it
+--- cites. The generous one was the wrap model, which reported labels
+--- wrapping that a radio draws on a single line.
+local function advanceWidth(text, height)
+  local width = 0
+  for index = 1, #text do
+    local ratio = ADVANCE[string.sub(text, index, index)] or DEFAULT_ADVANCE
+    width = width + ratio * height
+  end
+  return math.floor(width + 0.5)
+end
+
 function support.lcd(options)
   options = options or {}
 
@@ -509,66 +590,6 @@ function support.lcd(options)
   local roles = {}
   for name, role in pairs(theme) do roles[role] = palette[name] end
 
-  --- Per-character advances, as a fraction of a font's line height.
-  ---
-  --- **What this models, and what it does not.** EdgeTX measures text by
-  --- summing the real advance of every glyph: `luaLcdSizeText` calls
-  --- `getTextWidth`, which is `lv_txt_get_width(s, len, getFont(flags), 0,
-  --- LV_TEXT_FLAG_EXPAND)` over the font's own `glyph_dsc`. This reproduces
-  --- the **shape** of that -- a proportional font where a decimal point is a
-  --- fifth of a line height and an `m` is two thirds -- and it does not
-  --- reproduce the **numbers**, because it cannot.
-  ---
-  --- The ratios below are real, measured out of
-  --- `radio/src/fonts/lvgl/std/lv_font_en_STD.c`, whose `glyph_dsc` is
-  --- uncompressed in the tree: `adv_w` is in sixteenths and
-  --- `lv_font_fmt_txt_get_glyph_dsc` rounds it with `(adv_w + 8) >> 4`, so a
-  --- digit is 9 px of a 21 px line and a `.` is 4. Every other font the
-  --- dashboard actually draws with -- XXS, XS, L, bold XL, bold XXL -- is
-  --- LZ4-compressed in `lz4_fonts.h` and its advances are not readable from
-  --- source at all. So one font's proportions are applied to every size, and
-  --- the bold faces in particular will be wider on a radio than they are
-  --- here.
-  ---
-  --- That is a limitation worth stating loudly rather than papering over: a
-  --- mock that looked exact and was not would be worse than this one. What it
-  --- buys is the thing that matters, which is that it disagrees with the 0.58
-  --- flat estimate -- `7.9` is 22 px here against the estimate's 37 -- so a
-  --- test can tell measured placement from estimated placement. A model that
-  --- merely repeated the estimate could not.
-  local ADVANCE = {
-    ["'"] = 0.134, [","] = 0.149, [";"] = 0.161, ["j"] = 0.182,
-    [":"] = 0.185, ["i"] = 0.185, ["l"] = 0.185, ["|"] = 0.185,
-    [" "] = 0.188, ["!"] = 0.196, ["."] = 0.199, ["["] = 0.202,
-    ["]"] = 0.202, ["I"] = 0.208, ["-"] = 0.211, ["`"] = 0.235,
-    ['"'] = 0.244, ["t"] = 0.250, ["r"] = 0.259, ["{"] = 0.259,
-    ["}"] = 0.259, ["("] = 0.262, [")"] = 0.265, ["f"] = 0.265,
-    ["\\"] = 0.313, ["/"] = 0.316, ["^"] = 0.319, ["*"] = 0.327,
-    ["_"] = 0.345, ["?"] = 0.360, ["y"] = 0.360, ["v"] = 0.369,
-    ["x"] = 0.378, ["z"] = 0.378, ["<"] = 0.387, ["k"] = 0.387,
-    ["s"] = 0.393, [">"] = 0.399, ["c"] = 0.399, ["e"] = 0.405,
-    ["L"] = 0.411, ["a"] = 0.414, ["="] = 0.420, ["J"] = 0.420,
-    ["h"] = 0.420, ["n"] = 0.420, ["u"] = 0.420, ["F"] = 0.423,
-    ["+"] = 0.432, ["E"] = 0.435, ["o"] = 0.435, ["q"] = 0.435,
-    ["S"] = 0.452, ["T"] = 0.455, ["Z"] = 0.455, ["Y"] = 0.458,
-    ["#"] = 0.470, ["R"] = 0.470, ["&"] = 0.473, ["B"] = 0.473,
-    ["K"] = 0.479, ["X"] = 0.479, ["P"] = 0.482, ["V"] = 0.485,
-    ["U"] = 0.494, ["A"] = 0.497, ["C"] = 0.497, ["D"] = 0.500,
-    ["G"] = 0.518, ["~"] = 0.518, ["O"] = 0.524, ["Q"] = 0.524,
-    ["H"] = 0.545, ["N"] = 0.545, ["%"] = 0.560, ["w"] = 0.571,
-    ["M"] = 0.667, ["m"] = 0.667, ["W"] = 0.676, ["@"] = 0.685,
-  }
-
-  --- Digits and `$` share one advance, which is what makes a reading's width
-  --- depend on how many decimal points it has rather than how large it is.
-  for _, digit in ipairs({"$", "0", "1", "2", "3", "4", "5", "6", "7", "8",
-      "9", "b", "d", "g", "p"}) do
-    ADVANCE[digit] = 0.4286
-  end
-
-  --- Anything outside the table gets a digit's width, which is the middle of
-  --- the range and the commonest character in a reading.
-  local DEFAULT_ADVANCE = 0.4286
 
   --- `lcd.sizeText(text, flags)`: the width and the line height.
   ---
@@ -582,12 +603,7 @@ function support.lcd(options)
     if type(height) ~= "number" then height = firmware.FONT_HEIGHT[firmware.SMLSIZE] end
     if type(text) ~= "string" or text == "" then return 0, height end
 
-    local width = 0
-    for index = 1, #text do
-      local ratio = ADVANCE[string.sub(text, index, index)] or DEFAULT_ADVANCE
-      width = width + ratio * height
-    end
-    return math.floor(width + 0.5), height
+    return advanceWidth(text, height), height
   end
 
   lcd = {
@@ -807,12 +823,8 @@ function support.lvgl()
   --- text's content changes, so no assertion about what a label says can see
   --- it; only its height can.
   ---
-  --- The line count is estimated from the same mean advance the dashboard
-  --- uses, because this harness cannot measure glyphs either. The estimate is
-  --- this harness's own; the behaviour being modelled -- that overflow grows
-  --- the object rather than clipping it -- is the firmware's.
-  local ADVANCE_RATIO = 0.58
-
+  --- The line count is measured with the same per-glyph advances `sizeText`
+  --- sums, because the firmware uses one function for both.
   local function wrappedHeight(properties)
     local text = properties.text
     local width = properties.w
@@ -835,8 +847,17 @@ function support.lvgl()
     -- cannot wrap.
     if type(width) ~= "number" or width <= 0 then return height, 1 end
 
-    local needed = math.floor(#text * height * ADVANCE_RATIO + 0.5)
-    local lines = math.max(1, math.ceil(needed / width))
+    -- Measured with the same per-glyph advances `sizeText` sums, because
+    -- the firmware uses one function for both: `lv_txt_get_size` breaks a
+    -- line with `_lv_txt_get_next_line` and then measures it with
+    -- `lv_txt_get_width`, the very call `luaLcdSizeText` exposes
+    -- (`thirdparty/lvgl/src/misc/lv_txt.c`).
+    --
+    -- This used to charge a flat ratio per character while `sizeText` beside
+    -- it charged the real ones, so one fixture held two disagreeing models
+    -- of the same firmware function -- and the wrap model was the generous
+    -- one, which reports a label wrapping that a radio draws on one line.
+    local lines = math.max(1, math.ceil(advanceWidth(text, height) / width))
     return lines * height, lines
   end
 
