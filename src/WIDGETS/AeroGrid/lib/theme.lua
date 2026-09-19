@@ -764,6 +764,151 @@ function theme.textWidth(font, text)
   return math.floor(length * theme.fontHeight(font) * ADVANCE_RATIO + 0.5)
 end
 
+--- Distance from the bottom of a font's line box to its baseline.
+---
+--- `getFontHeight` is `lv_font_get_line_height`, so `lcd.sizeText` hands Lua a
+--- line height and nothing else: **EdgeTX does not expose ascent or baseline
+--- to a script at all**. The numbers are fixed properties of the generated
+--- fonts, read from `radio/src/fonts/lvgl/std/lv_font_en_*.c`, and the flags
+--- map to those files through `api_general.cpp` and `gui/colorlcd/fonts.cpp`:
+--- TINSIZE is `FONT(XXS)`, SMLSIZE `FONT(XS)`, MIDSIZE `FONT(L)`, DBLSIZE
+--- `FONT(bold XL)` and XXLSIZE `FONT(bold XXL)`. Their line heights are 12,
+--- 17, 29, 40 and 69, which is where `fontHeight` above comes from, and the
+--- table below is the `base_line` beside each.
+---
+--- With both, a baseline is exact rather than approximate: `lv_draw_sw_letter`
+--- places a glyph at `pos.y + (line_height - base_line) - box_h - ofs_y`, so
+--- the baseline of a label whose top is `y` sits at `y + line_height -
+--- base_line`.
+---@param font any
+---@return integer
+function theme.fontBaseLine(font)
+  if font == XXLSIZE then return 15 end
+  if font == DBLSIZE then return 9 end
+  if font == MIDSIZE then return 6 end
+  if font == SMLSIZE then return 4 end
+  if font == TINSIZE then return 3 end
+  return 5
+end
+
+--- Pixels from the top of a font's line box down to its baseline.
+---@param font any
+---@return integer
+function theme.fontAscent(font)
+  return theme.fontHeight(font) - theme.fontBaseLine(font)
+end
+
+--- The font a unit rides at beside a reading of a given size.
+---
+--- Two steps down the reading ladder wherever there are two, which lands the
+--- unit between two fifths and three fifths of the number's line height at
+--- every pairing this dashboard produces: 29 against 69, 17 against 40, 17
+--- against 29, 12 against 17. A unit larger than that competes with the
+--- number, and a unit smaller stops being legible at arm's length.
+---@param font any
+---@return any
+function theme.unitFont(font)
+  if font == XXLSIZE then return MIDSIZE end
+  if font == DBLSIZE then return SMLSIZE end
+  if font == MIDSIZE then return SMLSIZE end
+  return TINSIZE
+end
+
+--- Where the top of a unit's label goes so its baseline meets the reading's.
+---
+--- Aligning the two **tops** is wrong by the difference in ascent, which for
+--- an XXLSIZE reading beside a MIDSIZE unit is 54 against 23: the unit would
+--- float 31 pixels above where it belongs. Aligning **bottoms** is wrong by
+--- the difference in `base_line`, which is smaller but still 9 pixels for
+--- that pair, so the unit would sit visibly low. Neither approximation is
+--- needed, because both terms are known.
+---@param readingFont any
+---@param unitFont any
+---@param readingY integer Top of the reading's label.
+---@return integer
+function theme.unitTop(readingFont, unitFont, readingY)
+  return readingY + theme.fontAscent(readingFont) - theme.fontAscent(unitFont)
+end
+
+--- Air between a reading and the unit riding beside it.
+--- A fifth of the unit's line height, so it scales with the pair rather than
+--- being generous beside a small unit and tight beside a large one.
+---@param unitFont any
+---@return integer
+function theme.unitGap(unitFont)
+  return math.max(2, math.floor(theme.fontHeight(unitFont) / 5 + 0.5))
+end
+
+--- Width a reading and its inline unit occupy together.
+---@param font any
+---@param digits any
+---@param unitFont any
+---@param unit any
+---@return integer
+function theme.readingWidth(font, digits, unitFont, unit)
+  local width = theme.textWidth(font, digits)
+  if unit == nil or unit == "" then return width end
+  return width + theme.unitGap(unitFont) + theme.textWidth(unitFont, unit)
+end
+
+--- Choose the font for a reading that carries its unit beside it.
+---
+--- **The unit never costs the reading a size.** It rides at whatever font the
+--- number was going to take, or it is dropped. That is the specification's own
+--- order -- a form may drop redundancy, never magnitude -- and the unit is
+--- redundancy, because the panel's heading names what is being measured.
+---
+--- What changes is how often that happens. A unit used to be a character of
+--- the reading itself, so a `V` beside an XXLSIZE number cost 40 pixels; at
+--- two steps down it costs 23 including its gap. It therefore fits in a great
+--- many places it did not, which is the whole of the improvement. Buying it
+--- with a size of the number would be paying for redundancy with magnitude,
+--- and the first thing a pilot reads is how big the number is.
+---
+--- The caller passes the widest digits it will ever print, never the current
+--- ones, so neither the font nor the unit's presence changes as the value
+--- does.
+--- **Some units cannot be dropped**, and those callers say so. A distance's
+--- unit changes with its range, so `1.23km` and `1.23m` are different
+--- readings rather than one abbreviated; the unit is magnitude there, not
+--- redundancy. For those the pair is what the ladder is walked against, and
+--- the number steps down until both fit, because the alternative is a
+--- distance with no scale on it.
+---@param digits string Widest digits the caller will ever print.
+---@param unit any Unit text, or nil/empty for none.
+---@param width integer Pixels available.
+---@param room integer Vertical pixels the composition left.
+---@param required? boolean The unit carries magnitude and may not be dropped.
+---@return any font
+---@return any unitFont
+---@return boolean showUnit
+---@return boolean fits Whether what will be drawn actually fits.
+function theme.fitReadingUnit(digits, unit, width, room, required)
+  local bare = unit == nil or unit == ""
+  if required and not bare then
+    local ordered = theme.READING_FONTS
+    local start = #ordered
+    for index = 1, #ordered do
+      if theme.fontHeight(ordered[index]) <= room then start = index break end
+    end
+    for step = start, #ordered do
+      local font = ordered[step]
+      local rider = theme.unitFont(font)
+      if theme.readingWidth(font, digits, rider, unit) <= width then
+        return font, rider, true, true
+      end
+    end
+    local last = ordered[#ordered]
+    return last, theme.unitFont(last), true, false
+  end
+
+  local font, _, fits = theme.fitReading({digits}, width, room)
+  local rider = theme.unitFont(font)
+  local showUnit = fits and not bare
+    and theme.readingWidth(font, digits, rider, unit) <= width
+  return font, rider, showUnit, fits
+end
+
 --- Choose the largest font in which a string fits both a width and a height.
 --- `fitPrimary` only answers the vertical question, which leaves a long value
 --- in a narrow cell overflowing sideways. Callers pass the widest string the
@@ -865,11 +1010,30 @@ function theme.readingStep(font)
   return nil
 end
 
+--- **It can fail, and it says so.** When even the shortest form will not fit
+--- at the smallest font, there is no font that fits and nothing honest to
+--- return, so it returns the smallest of each and a third value of `false`.
+--- Measuring the answer again in the caller is how `tx-battery` came to take
+--- width for a battery the reading needed, so the verdict is here rather than
+--- in every caller's own guard.
+---
+--- **Two kinds of caller, and they are allowed to differ.** One *draws*: it
+--- has offered every form it has, and when none of them fits at the smallest
+--- font there is nothing further it can do, so it draws the smallest and the
+--- verdict is information rather than a decision. `flight-timer`,
+--- `flight-mode` and `model-identity` are all of this kind. The other
+--- *allocates*: it is deciding whether to spend the panel's width on
+--- something else -- a battery, a unit -- and for it the verdict is the
+--- decision, because spending width the reading has already failed to fit in
+--- makes a bad situation worse. `glyphFor` and `fitReadingUnit` are of this
+--- kind. The difference is not two assumptions about one function; it is one
+--- answer used for two purposes.
 ---@param forms string[] Lossless wordings, longest first.
 ---@param width integer Pixels available.
 ---@param room integer Vertical pixels the composition left.
 ---@return any font
 ---@return integer index Form chosen, from 1.
+---@return boolean fits Whether the chosen form actually fits the width.
 function theme.fitReading(forms, width, room)
   local ordered = theme.READING_FONTS
   local start = #ordered
@@ -882,12 +1046,12 @@ function theme.fitReading(forms, width, room)
   for step = start, #ordered do
     for index = 1, #forms do
       if theme.textWidth(ordered[step], forms[index]) <= width then
-        return ordered[step], index
+        return ordered[step], index, true
       end
     end
   end
 
-  return ordered[#ordered], #forms
+  return ordered[#ordered], #forms, false
 end
 
 --- Fit a heading to its column, stepping the font down rather than wrapping.

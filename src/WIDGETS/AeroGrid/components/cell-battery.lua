@@ -342,7 +342,7 @@ end
 ---@param rect AeroGridRect
 ---@param layout table
 ---@param fonts table
----@param sample string Widest value text this component can render.
+---@param sample table Widest digits this component prints, and its unit.
 ---@return table
 function cellBattery.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
   local spacing = theme.spacing
@@ -356,7 +356,8 @@ function cellBattery.regionsFor(theme, themeBuilder, rect, layout, fonts, sample
   local showVisual = layout.showVisual and layout.visual ~= "none" and ladder.visual
   local showDetail = layout.showDetail and ladder.rows > 0
 
-  local value, formIndex = themeBuilder.fitReading(sample, frame.content, ladder.room)
+  local value, unitFont, showUnit = themeBuilder.fitReadingUnit(
+    sample.digits, sample.unit, frame.content, ladder.room)
   local valueHeight = themeBuilder.fontHeight(value)
   if top + valueHeight > rect.h then top = math.max(0, rect.h - valueHeight) end
 
@@ -371,7 +372,8 @@ function cellBattery.regionsFor(theme, themeBuilder, rect, layout, fonts, sample
     content = frame.content,
     valueY = top,
     value = value,
-    formIndex = formIndex,
+    unitFont = unitFont,
+    showUnit = showUnit,
     detailY = math.max(1, barY - labelHeight - 2),
     detailWidth = detailWidth,
     packX = frame.pad + frame.content - detailWidth,
@@ -422,13 +424,16 @@ function cellBattery.create(parent, rect, settings, services)
     end
   end
 
-  -- A pack reading is the widest thing this component can print, so the forms
-  -- come from that rather than from whichever value is showing now. The unit
-  -- is redundant with the panel's own label and may go; the two decimals may
-  -- not, because cells are compared against each other and 3.8 V hides a
-  -- difference that matters where 3.82 V does not.
-  local sample = cellBattery.isPerCell(settings)
-    and {"4.44V", "4.44"} or {"88.8V", "88.8"}
+  -- The widest number this component can print, taken from what it reads
+  -- rather than from whatever is showing now, so the reading does not resize
+  -- as the pack drains. The two decimals are not negotiable: cells are
+  -- compared against each other, and 3.8 V hides a difference that matters
+  -- where 3.82 V does not. The unit rides beside the number rather than
+  -- being part of it.
+  local sample = {
+    digits = cellBattery.isPerCell(settings) and "4.44" or "88.8",
+    unit = "V",
+  }
   context.sample = sample
 
   local area = cellBattery.regionsFor(
@@ -450,6 +455,14 @@ function cellBattery.create(parent, rect, settings, services)
     text = "--",
     color = presentation.value,
     font = area.value,
+  })
+
+  context.unit = primitives.unit(panel.root, theme, {
+    x = area.pad,
+    y = area.valueY,
+    text = sample.unit,
+    color = theme.color.textMuted,
+    font = area.unitFont,
   })
 
   context.countLabel = primitives.label(panel.root, theme, {
@@ -484,6 +497,9 @@ function cellBattery.create(parent, rect, settings, services)
     lvgl.hide(context.countLabel)
     lvgl.hide(context.packLabel)
   end
+  if not area.showUnit then lvgl.hide(context.unit) end
+  context.showUnit = area.showUnit
+  context.area = area
   -- What the panel currently shows, so a reflow that changes nothing about
   -- visibility does not tell every object again what it already is.
   context.showVisual = area.showVisual
@@ -545,7 +561,9 @@ function cellBattery.render(context, out)
   out.state = cellBattery.resolveState(settings, value, context.perCell, stale)
   -- Two decimals: cells are compared against each other, and 3.8 V hides a
   -- difference that matters where 3.82 V does not.
-  out.text = type(value) == "number" and string.format("%.2fV", value) or "--"
+  -- Digits alone. The `V` is its own label beside them, so there is no
+  -- longer a shorter form of this string to measure and then not draw.
+  out.text = type(value) == "number" and string.format("%.2f", value) or "--"
   out.fraction = cellBattery.fraction(settings, value, summary.count)
   out.value = value
 
@@ -572,6 +590,10 @@ function cellBattery.apply(context, drawn)
   context.packText = drawn.pack
 
   context.value:set({text = drawn.text, color = presentation.value})
+  -- The unit follows what the number says, so it stays attached to a short
+  -- reading instead of holding station at the widest one's edge.
+  context.primitives.followUnit(context, context.themeBuilder,
+    context.area, context.area.value, drawn.text)
   context.label:set({color = presentation.label})
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
   context.primitives.stylePanel(context.panel, presentation)
@@ -610,6 +632,13 @@ function cellBattery.update(context, rect)
     w = area.content,
     font = function() return area.value end,
   })
+
+  context.primitives.reconcileUnit(context.unit, area.showUnit,
+    context.themeBuilder, area.pad, area.valueY, area.value, context.text,
+    area.unitFont, area.showUnit == context.showUnit)
+  context.showUnit = area.showUnit
+  context.unitAnchor = nil
+  context.area = area
 
   --- Show or hide a supporting row, positioning it only when visible.
   local reconcile = context.primitives.reconcile

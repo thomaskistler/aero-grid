@@ -127,16 +127,16 @@ less width than a horizontal one did.
 
 With the default `visual: battery`:
 
-| Span | Panel | Reading | Battery | Outline | Percentage |
-| --- | --- | --- | --- | --- | --- |
-| `1x1` | 117 x 65 | `MIDSIZE` `7.9V` | shed | — | shed |
-| `2x1` | 238 x 65 | `MIDSIZE` `7.9V` | 20 x 40 | 2 px | shed |
-| `3x1` | 359 x 65 | `MIDSIZE` `7.9V` | 20 x 40 | 2 px | shed |
-| `4x1` | 480 x 65 | `MIDSIZE` `7.9V` | 20 x 40 | 2 px | shed |
-| `1x2` | 117 x 134 | `MIDSIZE` `7.9` | 25 x 50 | 2 px | under the reading |
-| `2x2` | 238 x 134 | `XXLSIZE` `7.9` | 25 x 50 | 4 px | under the reading |
-| `3x2` | 359 x 134 | `XXLSIZE` `7.9V` | 25 x 50 | 4 px | under the reading |
-| `4x2` | 480 x 134 | `XXLSIZE` `7.9V` | 25 x 50 | 4 px | under the reading |
+| Span | Panel | Reading | Unit | Battery | Outline | Percentage |
+| --- | --- | --- | --- | --- | --- | --- |
+| `1x1` | 117 x 65 | `MIDSIZE` `7.9` | `SMLSIZE` `V` | shed | — | shed |
+| `2x1` | 238 x 65 | `MIDSIZE` `7.9` | `SMLSIZE` `V` | 20 x 40 | 2 px | shed |
+| `3x1` | 359 x 65 | `MIDSIZE` `7.9` | `SMLSIZE` `V` | 20 x 40 | 2 px | shed |
+| `4x1` | 480 x 65 | `MIDSIZE` `7.9` | `SMLSIZE` `V` | 20 x 40 | 2 px | shed |
+| `1x2` | 117 x 134 | `MIDSIZE` `7.9` | shed | 25 x 50 | 2 px | under the reading |
+| `2x2` | 238 x 134 | `XXLSIZE` `7.9` | `MIDSIZE` `V` | 25 x 50 | 4 px | under the reading |
+| `3x2` | 359 x 134 | `XXLSIZE` `7.9` | `MIDSIZE` `V` | 25 x 50 | 4 px | under the reading |
+| `4x2` | 480 x 134 | `XXLSIZE` `7.9` | `MIDSIZE` `V` | 25 x 50 | 4 px | under the reading |
 
 **`1x2` and `2x2` are the row worth reading twice.** The cells are the same
 size and the outlines are not, because the readings are not: a `1x2` is a
@@ -153,10 +153,15 @@ An upright cell is at most 25 pixels wide here and `100%` needs 39 at the
 label font, so there is nowhere on the right to put it. On a narrow panel it
 loses its `EST` before it loses its number.
 
-**At `1x2` and `2x2` the reading drops the `V`.** The unit is safe to drop
-because the heading already says this is a battery, and the battery beside it
-says so again. The digits are never dropped: `7.9` and `7.9V` are the same
-reading, where `8` would be a different one.
+**The `V` is its own label beside the number**, at a smaller size, sitting on
+the number's baseline. It is not part of the reading, so the reading is digits
+alone and the `V` cannot be measured and then not drawn.
+
+**`1x2` is the one span that drops it.** The reading is 67 pixels of the 74
+that panel leaves beside its battery, and the `V` and its gap need the 13 that
+are not there. It is safe to drop because the heading already says this is a
+battery and the battery beside it says so again. The digits are never dropped:
+`7.9` and `7.9V` are the same reading, where `8` would be a different one.
 
 The voltage itself is always shown, at every span and in every state.
 

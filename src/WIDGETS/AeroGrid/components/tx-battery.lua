@@ -60,22 +60,25 @@ local txBattery = {
   },
 }
 
---- Lossless forms of the reading, longest first. The unit is redundant with
---- the panel's label; the digits are not.
-txBattery.FORMS = {"88.8V", "88.8"}
+--- Widest digits this panel prints. The unit is no longer part of the string:
+--- it rides beside the number in its own label at a smaller font, so there is
+--- one form rather than two and nothing to choose wrongly between.
+txBattery.DIGITS = "88.8"
 
---- Print the reading in the form the fitter chose.
+--- The unit, which every transmitter pack is measured in.
+txBattery.UNIT = "V"
+
+--- Print the reading. Digits only: the unit is a separate label.
 ---
---- Form 1 is `88.8V` and form 2 is `88.8`, which is the same reading without
---- a unit the panel's own label already carries. The digits are never
---- dropped: `7.9` and `7.9V` are one reading, where `8` would be another.
+--- This used to choose between `88.8V` and `88.8` on the strength of a form
+--- index the fitter returned and the printing ignored, which is how a 116
+--- pixel string came to be drawn in a 105 pixel column. There is nothing to
+--- choose now, so there is nothing to get wrong.
 ---@param value any
----@param formIndex? integer
 ---@return string
-function txBattery.reading(value, formIndex)
+function txBattery.reading(value)
   if type(value) ~= "number" or value ~= value then return "--" end
-  if formIndex == 2 then return string.format("%.1f", value) end
-  return string.format("%.1fV", value)
+  return string.format("%.1f", value)
 end
 
 --- Resolve the voltage range to measure the estimate against.
@@ -227,17 +230,18 @@ txBattery.GLYPH_MAX_HEIGHT = 50
 --- where that edge falls that is not just this loop written out.
 ---@param themeBuilder table
 ---@param primitives table Owns what is too small to read as a battery.
----@param forms string[]
 ---@param content integer Full content width.
 ---@param room integer Vertical room the ladder left.
 ---@param tall integer Vertical pixels the glyph's own column has.
 ---@return integer? width
 ---@return integer? height
 ---@return any font Reading font once the glyph has taken its column.
----@return integer formIndex
-function txBattery.glyphFor(themeBuilder, primitives, forms, content, room,
-    tall)
-  local bare, bareForm = themeBuilder.fitReading(forms, content, room)
+---@return any unitFont
+---@return boolean showUnit
+function txBattery.glyphFor(themeBuilder, primitives, content, room, tall)
+  local digits, unit = txBattery.DIGITS, txBattery.UNIT
+  local bare, bareUnitFont, bareShowsUnit =
+    themeBuilder.fitReadingUnit(digits, unit, content, room)
   local step = themeBuilder.readingStep(bare)
   local floorStep = step and math.min(step + 1, #themeBuilder.READING_FONTS)
   local floorHeight = floorStep
@@ -252,20 +256,22 @@ function txBattery.glyphFor(themeBuilder, primitives, forms, content, room,
     local width = math.max(primitives.GLYPH_MIN_WIDTH,
       math.floor(height / primitives.GLYPH_ASPECT + 0.5))
     local left = content - width - txBattery.GLYPH_GAP
-    local font, formIndex = themeBuilder.fitReading(forms, left, room)
-    -- Two conditions, and the second is not implied by the first.
-    -- `fitReading` returns the smallest font on the ladder when nothing fits
-    -- rather than failing, so a reading already at SMLSIZE passes a test that
-    -- only asks how far it stepped -- there is nowhere further for it to
-    -- step. Asking whether it actually fits is what stops the glyph taking
-    -- width the reading needed and leaving it to wrap.
-    if themeBuilder.fontHeight(font) >= floorHeight
-        and themeBuilder.textWidth(font, forms[formIndex]) <= left then
-      return width, height, font, formIndex
+    local font, rider, showUnit, fits =
+      themeBuilder.fitReadingUnit(digits, unit, left, room)
+    -- Two conditions, and the second is not implied by the first. A reading
+    -- already at the bottom of the ladder passes a test that only asks how
+    -- far it stepped, because there is nowhere further for it to step, and
+    -- the glyph would take width the reading needed.
+    --
+    -- The unit is not part of the budget. It costs the reading nothing by
+    -- construction, so a glyph that squeezes the unit out has not made the
+    -- number smaller -- it has spent redundancy, which is the cheap thing.
+    if fits and themeBuilder.fontHeight(font) >= floorHeight then
+      return width, height, font, rider, showUnit
     end
   end
 
-  return nil, nil, bare, bareForm
+  return nil, nil, bare, bareUnitFont, bareShowsUnit
 end
 
 --- Compute the content regions for the current rectangle.
@@ -293,9 +299,6 @@ function txBattery.regionsFor(theme, themeBuilder, primitives, rect, layout,
   local barY = math.max(1, rect.h - frame.bottom - spacing.barHeight)
   local detailY = math.max(1, barY - labelHeight - 2)
 
-  -- "88.8V" is the widest reading a transmitter pack produces, and "88.8" is
-  -- the same reading without a unit the panel's own label already carries.
-  -- Nothing shorter is offered: a digit here is magnitude.
   -- The column an upright cell stands in: from under the header down to the
   -- supporting row where there is one, or to the panel's own bottom where
   -- there is not.
@@ -303,18 +306,20 @@ function txBattery.regionsFor(theme, themeBuilder, primitives, rect, layout,
     or (rect.h - frame.bottom)
   local glyphRoom = math.max(0, glyphFloor - top)
 
-  local value, formIndex, glyphWidth, glyphHeight
+  -- `88.8` is the widest number a transmitter pack produces. The `V` is not
+  -- part of it: it rides beside it in its own label at a smaller font, and is
+  -- dropped only where there is no room for the pair.
+  local value, unitFont, showUnit, glyphWidth, glyphHeight
   if wantsGlyph and showVisual then
-    glyphWidth, glyphHeight, value, formIndex = txBattery.glyphFor(
-      themeBuilder, primitives, txBattery.FORMS, frame.content, ladder.room,
-      glyphRoom)
+    glyphWidth, glyphHeight, value, unitFont, showUnit = txBattery.glyphFor(
+      themeBuilder, primitives, frame.content, ladder.room, glyphRoom)
     -- A panel that cannot hold a glyph sheds it, the way it sheds any other
     -- visual. It does not fall back to a bar: the layout asked for a
     -- battery, and a bar in its place is a different answer to the question.
     if not glyphWidth then showVisual = false end
   else
-    value, formIndex = themeBuilder.fitReading(
-      txBattery.FORMS, frame.content, ladder.room)
+    value, unitFont, showUnit = themeBuilder.fitReadingUnit(
+      txBattery.DIGITS, txBattery.UNIT, frame.content, ladder.room)
   end
 
   local valueHeight = themeBuilder.fontHeight(value)
@@ -348,7 +353,8 @@ function txBattery.regionsFor(theme, themeBuilder, primitives, rect, layout,
     content = frame.content,
     valueY = top,
     value = value,
-    formIndex = formIndex,
+    unitFont = unitFont,
+    showUnit = showUnit,
     -- The reading's own column, which is what is left once the glyph has
     -- taken its share. Written down rather than recomputed, because the
     -- label's width is what decides whether LVGL wraps it.
@@ -401,10 +407,8 @@ function txBattery.create(parent, rect, settings, services)
     stateName = "normal",
     text = "--",
     detail = "",
-    -- `render` needs these: the form the fitter chose decides whether the
-    -- unit is printed, and the percentage is fitted to the column it lands
+    -- `render` needs this: the percentage is fitted to the column it lands
     -- in, which is the glyph's when it sits under one.
-    formIndex = area.formIndex,
     detailWidth = area.detailWidth,
   }
 
@@ -434,6 +438,17 @@ function txBattery.create(parent, rect, settings, services)
     text = "--",
     color = presentation.value,
     font = area.value,
+  })
+
+  -- Created whenever the panel could ever show it, and hidden until it does,
+  -- for the reason every optional object here is: whether it is shown can
+  -- change on a reflow and rebuilding an object is not free.
+  context.unit = primitives.unit(panel.root, theme, {
+    x = area.pad,
+    y = area.valueY,
+    text = txBattery.UNIT,
+    color = theme.color.textMuted,
+    font = area.unitFont,
   })
 
   context.detailLabel = primitives.label(panel.root, theme, {
@@ -471,6 +486,9 @@ function txBattery.create(parent, rect, settings, services)
   end
 
   if not area.showDetail then lvgl.hide(context.detailLabel) end
+  if not area.showUnit then lvgl.hide(context.unit) end
+  context.showUnit = area.showUnit
+  context.area = area
   -- What the panel currently shows, so `render` declares only that and a
   -- reflow that changes nothing about visibility does not tell every object
   -- again what it already is.
@@ -521,7 +539,7 @@ function txBattery.render(context, out)
   -- only showed above 9.9 V, because `7.9V` happens to fit where `10.0V` does
   -- not. The same shape as the flight mode's name: measure one string, draw
   -- another.
-  out.text = txBattery.reading(value, context.formIndex)
+  out.text = txBattery.reading(value)
   -- Whether there is a range at all is part of what the panel draws: it
   -- decides whether the bar and the percentage appear, and it can change
   -- after the panel is built.
@@ -558,6 +576,11 @@ function txBattery.apply(context, drawn)
   context.detail = drawn.detail or ""
 
   context.value:set({text = drawn.text, color = presentation.value})
+  -- The unit follows what the number actually says. A unit holding station at
+  -- the width of `88.8` while the panel reads `7.9` has stopped being
+  -- attached to it.
+  context.primitives.followUnit(context, context.themeBuilder,
+    context.area, context.area.value, drawn.text)
   context.label:set({color = presentation.label})
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
   if context.showDetail then
@@ -617,6 +640,12 @@ function txBattery.update(context, rect)
     font = function() return area.value end,
   })
 
+  context.primitives.reconcileUnit(context.unit, area.showUnit,
+    context.themeBuilder, area.pad, area.valueY, area.value, context.text,
+    area.unitFont, area.showUnit == context.showUnit)
+  context.showUnit = area.showUnit
+  context.unitAnchor = nil
+
   context.primitives.reconcile(context.detailLabel, area.showDetail,
     {x = area.detailX, y = area.detailY, w = area.detailWidth},
     area.showDetail == context.showDetail)
@@ -626,13 +655,12 @@ function txBattery.update(context, rect)
   -- applies when the row merely moved column: the percentage is fitted to its
   -- width, so a narrower column wants it written again.
   if area.showDetail ~= context.showDetail
-      or area.formIndex ~= context.formIndex
       or area.detailWidth ~= context.detailWidth then
     context.rendered = nil
   end
   context.showDetail = area.showDetail
-  context.formIndex = area.formIndex
   context.detailWidth = area.detailWidth
+  context.area = area
 
   local ranged = txBattery.hasRange(context.settings, context.range)
   local fraction = txBattery.fraction(

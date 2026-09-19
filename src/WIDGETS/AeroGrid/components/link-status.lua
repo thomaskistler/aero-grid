@@ -411,7 +411,8 @@ function linkStatus.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
   local showVisual = layout.showVisual and layout.visual ~= "none" and ladder.visual
   local showDetail = layout.showDetail and ladder.rows > 0
 
-  local value, formIndex = themeBuilder.fitReading(sample, frame.content, ladder.room)
+  local value, unitFont, showUnit = themeBuilder.fitReadingUnit(
+    sample.digits, sample.unit, frame.content, ladder.room)
   local valueHeight = themeBuilder.fontHeight(value)
   if top + valueHeight > rect.h then top = math.max(0, rect.h - valueHeight) end
 
@@ -426,7 +427,8 @@ function linkStatus.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     content = frame.content,
     valueY = top,
     value = value,
-    formIndex = formIndex,
+    unitFont = unitFont,
+    showUnit = showUnit,
     detailY = math.max(1, barY - labelHeight - 2),
     detailWidth = detailWidth,
     linkX = frame.pad + detailWidth + 4,
@@ -500,17 +502,25 @@ function linkStatus.create(parent, rect, settings, services)
     context.sessionExtrema = extrema:sessionExtrema(leading)
   end
 
-  -- A dBm reading is the widest thing this panel prints, and the forms come
+  -- A dBm reading is the widest thing this panel prints, and the sample comes
   -- from that rather than from the current value so the reading never resizes
-  -- as the link fades. The unit may go, since the panel's label and its
-  -- supporting row both name the source; the digits may not.
-  context.sample = {"-100dBm", "-100"}
+  -- as the link fades. `dBm` is the widest unit it can carry -- a link quality
+  -- reads in percent and an FrSky RSSI in plain dB -- so fitting against it
+  -- means a narrower unit never has to be reconsidered.
+  context.sample = {digits = "-100", unit = "dBm"}
 
   local area = linkStatus.regionsFor(
     theme, services.themeBuilder, rect, layout, fonts, context.sample)
   context.detailWidth = area.detailWidth
   context.linkWidth = area.linkWidth
   context.showDetail = area.showDetail
+  -- Built hidden: the unit is not known yet, so nothing here could decide
+  -- whether it fits. `showUnitRoom` records that the panel fitted a `dBm` and
+  -- has somewhere to put one; `apply` decides the rest.
+  context.showUnitRoom = area.showUnit
+  context.showUnit = false
+  context.unitText = ""
+  context.area = area
 
   local panel = primitives.panel(parent, rect, theme, presentation)
   context.panel = panel
@@ -526,6 +536,16 @@ function linkStatus.create(parent, rect, settings, services)
     text = "--",
     color = presentation.value,
     font = area.value,
+  })
+
+  -- The unit is whatever the source resolves to, which is not known yet, so
+  -- it is built empty and filled once the telemetry service answers.
+  context.unit = primitives.unit(panel.root, theme, {
+    x = area.pad,
+    y = area.valueY,
+    text = "",
+    color = theme.color.textMuted,
+    font = area.unitFont,
   })
 
   context.detailLabel = primitives.label(panel.root, theme, {
@@ -560,6 +580,7 @@ function linkStatus.create(parent, rect, settings, services)
     lvgl.hide(context.detailLabel)
     lvgl.hide(context.linkLabel)
   end
+  lvgl.hide(context.unit)
   -- What the panel currently shows, so a reflow that changes nothing about
   -- visibility does not tell every object again what it already is.
   context.showVisual = area.showVisual
@@ -590,12 +611,15 @@ function linkStatus.render(context, out)
     if type(digits) ~= "number" or digits < 0 then digits = 0 end
     if digits > 3 then digits = 3 end
     text = string.format("%." .. digits .. "f", reading.value)
-    if reading.unitText ~= "" then text = text .. reading.unitText end
   elseif reading.sourceState == "absent" then
     -- A source the protocol does not have reads N/A, never zero.
     text = "N/A"
   end
   out.text = text
+  -- Declared only where it is drawn, like every other optional element. The
+  -- unit is the source's own -- `dBm`, `dB` or `%` -- and it arrives with the
+  -- reading rather than being known when the panel is built.
+  out.unit = reading.unitText or ""
   out.value = reading.value
   out.primary = reading.primary
 
@@ -624,6 +648,24 @@ function linkStatus.apply(context, drawn)
   context.linkDetail = drawn.link
 
   context.value:set({text = drawn.text, color = presentation.value})
+  -- The unit is the source's own -- `dBm`, `dB` or a percentage -- and it
+  -- arrives when the source resolves rather than when the panel is built, so
+  -- whether there is room for it is settled here, once, when it turns up.
+  local unitText = drawn.unit or ""
+  if unitText ~= context.unitText then
+    context.unitText = unitText
+    local shows = context.showUnitRoom and context.primitives.unitFits(
+      context.themeBuilder, context.area.value, context.sample.digits,
+      context.area.unitFont, unitText, context.area.content)
+    context.unit:set({text = unitText})
+    if shows ~= context.showUnit then
+      if shows then lvgl.show(context.unit) else lvgl.hide(context.unit) end
+      context.showUnit = shows
+      context.unitAnchor = nil
+    end
+  end
+  context.primitives.followUnit(context, context.themeBuilder,
+    context.area, context.area.value, drawn.text)
   context.label:set({color = presentation.label})
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
   context.primitives.stylePanel(context.panel, presentation)
@@ -662,6 +704,17 @@ function linkStatus.update(context, rect)
     w = area.content,
     font = function() return area.value end,
   })
+
+  context.showUnitRoom = area.showUnit
+  local shows = area.showUnit and context.primitives.unitFits(
+    context.themeBuilder, area.value, context.sample.digits, area.unitFont,
+    context.unitText, area.content)
+  context.primitives.reconcileUnit(context.unit, shows, context.themeBuilder,
+    area.pad, area.valueY, area.value, context.text, area.unitFont,
+    shows == context.showUnit)
+  context.showUnit = shows
+  context.unitAnchor = nil
+  context.area = area
 
   --- Show or hide a supporting row, positioning it only when visible.
   local reconcile = context.primitives.reconcile

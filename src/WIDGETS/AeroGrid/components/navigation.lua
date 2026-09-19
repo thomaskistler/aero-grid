@@ -73,7 +73,12 @@ local navigation = {
 --- so dropping it would be dropping magnitude. Nor can a decimal go, since
 --- `1.23km` as `1km` discards 230 metres of a number a pilot is flying by.
 --- Where it will not fit, the font steps down instead.
-navigation.FORMS = {"888.88km"}
+navigation.DIGITS = "888.88"
+
+--- Widest unit a distance carries. `km` is two characters where `m` is one,
+--- so fitting against it means a reading that switches to metres never has to
+--- be reconsidered.
+navigation.UNIT = "km"
 
 --- Presentations this component knows how to draw, from least to most.
 local PRESENTATIONS = {
@@ -177,6 +182,19 @@ function navigation.distanceText(view, formatter)
   if type(view) ~= "table" then return "--" end
   if type(view.distance) ~= "number" then return "--" end
   return formatter(view) or "--"
+end
+
+--- The distance split into the number and the unit riding beside it.
+---@param view any
+---@param formatter fun(view: table): string?, string
+---@return string digits
+---@return string unit
+function navigation.distanceParts(view, formatter)
+  if type(view) ~= "table" or type(view.distance) ~= "number" then
+    return "--", ""
+  end
+  local digits, unit = formatter(view)
+  return digits or "--", unit or ""
 end
 
 --- Wordings for the supporting bearing row, longest first.
@@ -301,11 +319,30 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     valueWidth = math.max(1, (centreX - radius) - frame.pad - 4)
   end
 
-  -- One form. A distance has no redundancy: the unit is not decoration here
-  -- because it changes with range, so `1.23km` and `1.23m` are different
-  -- readings, and dropping a decimal turns 1.23 km into 1 km, which is 230
-  -- metres of a number a pilot is flying by.
-  local value, formIndex = themeBuilder.fitReading(sample, valueWidth, available)
+  -- A distance has no redundancy: dropping a decimal turns 1.23 km into
+  -- 1 km, which is 230 metres of a number a pilot is flying by. Nor is its
+  -- unit redundancy, because it changes with range -- `1.23km` and `1.23m`
+  -- are different readings -- so unlike a voltage's it is never dropped, and
+  -- a panel with no room for it has no room for the reading either.
+  local value, unitFont, _, fits = themeBuilder.fitReadingUnit(
+    sample.digits, sample.unit, valueWidth, available, true)
+
+  -- The dial gives its room back rather than clipping the distance. A
+  -- compass is a shape and survives being absent; a distance that runs off
+  -- the panel is a number a pilot cannot read at the moment they need it, and
+  -- the unit cannot be dropped to buy the space because it carries the scale.
+  -- This was reachable at a single cell asking for a dial, where even the
+  -- smallest font needs 75 pixels of the 63 the dial left.
+  if not fits and showCompass then
+    showCompass = false
+    radius = 0
+    centreX = rect.w - frame.pad
+    centreY = top
+    valueWidth = frame.content
+    value, unitFont = themeBuilder.fitReadingUnit(
+      sample.digits, sample.unit, valueWidth, available, true)
+  end
+
   local valueHeight = themeBuilder.fontHeight(value)
   if top + valueHeight > rect.h then top = math.max(0, rect.h - valueHeight) end
 
@@ -325,7 +362,8 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     valueY = top,
     valueWidth = valueWidth,
     value = value,
-    formIndex = formIndex,
+    unitFont = unitFont,
+    showUnit = true,
     detailY = math.max(1, detailY),
     detailWidth = detailWidth,
     originX = frame.pad + detailWidth + 4,
@@ -383,7 +421,7 @@ function navigation.create(parent, rect, settings, services)
 
   -- The widest distance this component can print, so the font is chosen from
   -- that rather than from the current reading.
-  context.sample = navigation.FORMS
+  context.sample = {digits = navigation.DIGITS, unit = navigation.UNIT}
 
   local area = navigation.regionsFor(
     theme, services.themeBuilder, rect, layout, fonts, context.sample)
@@ -404,6 +442,17 @@ function navigation.create(parent, rect, settings, services)
     font = area.value,
   })
 
+  -- The unit changes with range, so it is built empty and written whenever
+  -- the reading is. A distance never sheds it: a number without `m` or `km`
+  -- beside it is not the same reading shortened, it is a different one.
+  context.unit = primitives.unit(panel.root, theme, {
+    x = area.pad,
+    y = area.valueY,
+    text = "",
+    color = theme.color.textMuted,
+    font = area.unitFont,
+  })
+
   context.detailLabel = primitives.label(panel.root, theme, {
     x = area.pad,
     y = area.detailY,
@@ -418,6 +467,10 @@ function navigation.create(parent, rect, settings, services)
   context.detailWidth = area.detailWidth
   context.originWidth = area.originWidth
   context.showDetail = area.showDetail
+  context.area = area
+  -- A distance always carries its unit, because the unit is its scale.
+  context.showUnit = true
+  context.unitText = ""
   context.originLabel = primitives.label(panel.root, theme, {
     x = area.originX,
     y = area.detailY,
@@ -501,8 +554,10 @@ function navigation.render(context, out)
 
   out.state = navigation.resolveState(context.settings, view)
   out.text = "--"
+  out.unit = ""
   if service and type(view) == "table" then
-    out.text = navigation.distanceText(view, service.describeDistance)
+    out.text, out.unit = navigation.distanceParts(
+      view, service.describeDistanceParts)
   end
   -- Only what this panel draws. Both supporting rows are shed on a small
   -- panel and the coordinate row on all but the detailed arrangement, and
@@ -543,6 +598,12 @@ function navigation.apply(context, drawn)
   context.bearing = drawn.bearing
 
   context.value:set({text = drawn.text, color = presentation.value})
+  if (drawn.unit or "") ~= context.unitText then
+    context.unitText = drawn.unit or ""
+    context.unit:set({text = context.unitText})
+  end
+  context.primitives.followUnit(context, context.themeBuilder,
+    context.area, context.area.value, drawn.text)
   context.label:set({color = presentation.label})
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
   context.primitives.stylePanel(context.panel, presentation)
@@ -581,6 +642,11 @@ function navigation.update(context, rect)
   context.primitives.resizePanel(context.panel, rect)
   context.primitives.placeHeader(context.label, context.badge, area.frame,
     context.themeBuilder, context.fonts, context.settings.label)
+  context.primitives.placeUnit(context.unit, context.themeBuilder,
+    area.pad, area.valueY, area.value, context.text, area.unitFont)
+  context.unit:set({font = function() return area.unitFont end})
+  context.unitAnchor = nil
+  context.area = area
   context.value:set({
     x = area.pad,
     y = area.valueY,

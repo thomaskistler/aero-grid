@@ -127,6 +127,34 @@ claim("FONT_HEIGHT", "radio/src/fonts/lvgl/std/",
     [firmware.TINSIZE] = 12,
   })
 
+--- Baseline offsets of the same font set: pixels from the bottom of a
+--- font's line box up to the baseline its glyphs sit on.
+---
+--- **EdgeTX does not expose this to Lua.** The only font metric a script can
+--- ask for is `lcd.sizeText`, and its second return is `getFontHeight`, which
+--- is `lv_font_get_line_height` (`gui/colorlcd/fonts.cpp`). There is no
+--- binding for ascent or baseline anywhere in `radio/src/lua/`.
+---
+--- It is nonetheless exactly knowable, because these are compile-time
+--- constants of the fonts the firmware ships, in the same generated files the
+--- line heights above come from. `decompressFont` copies `base_line` straight
+--- from the stored font into the `lv_font_t`, and
+--- `lv_draw_sw_letter` places a glyph at
+--- `pos.y + (line_height - base_line) - box_h - ofs_y`, so a label whose top
+--- is `y` puts its baseline at `y + line_height - base_line`.
+---
+--- Without them, two labels of different sizes can only be aligned by their
+--- tops or their bottoms, and both are wrong: see the test that measures how
+--- wrong.
+claim("FONT_BASE_LINE", "radio/src/fonts/lvgl/std/",
+  "lv_font_en_{bold_XXL,bold_XL,L,XS,XXS}.c lv_font_t.base_line", {
+    [firmware.XXLSIZE] = 15,
+    [firmware.DBLSIZE] = 9,
+    [firmware.MIDSIZE] = 6,
+    [firmware.SMLSIZE] = 4,
+    [firmware.TINSIZE] = 3,
+  })
+
 local FONT_NAMES = {
   [firmware.TINSIZE] = "TINSIZE",
   [firmware.SMLSIZE] = "SMLSIZE",
@@ -670,11 +698,23 @@ function support.lvgl()
     local text = properties.text
     local width = properties.w
     if type(text) ~= "string" or text == "" then return nil end
-    if type(width) ~= "number" or width <= 0 then return nil end
 
     local heights = firmware.FONT_HEIGHT
     local height = heights[properties.font and properties.font() or nil]
     if type(height) ~= "number" then height = heights[firmware.SMLSIZE] end
+
+    -- firmware: a width of zero, or none at all, is not zero. `parseParam`
+    -- turns `w == 0` into `LV_SIZE_CONTENT` (`lua/lua_lvgl_widget.cpp`) and a
+    -- label that was never given one keeps LVGL's default, which is the same
+    -- thing. A label sized to its own content has no edge to wrap at, so it
+    -- is one line however long its text is -- and it is the caller's job to
+    -- have put it somewhere that much text fits.
+    --
+    -- Answering nil here instead, as this did, is worse than wrong: a test
+    -- asking how many lines a content-sized label took got no answer rather
+    -- than the answer, and `assertEqual(lines, 1)` failed on a label that
+    -- cannot wrap.
+    if type(width) ~= "number" or width <= 0 then return height, 1 end
 
     local needed = math.floor(#text * height * ADVANCE_RATIO + 0.5)
     local lines = math.max(1, math.ceil(needed / width))

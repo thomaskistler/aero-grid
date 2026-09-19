@@ -293,10 +293,29 @@ end
 ---@param metres any
 ---@return string
 function navigationService.formatDistance(metres)
-  if type(metres) ~= "number" or metres ~= metres then return "--" end
-  if metres >= 10000 then return string.format("%.1fkm", metres / 1000) end
-  if metres >= 1000 then return string.format("%.2fkm", metres / 1000) end
-  return string.format("%.0fm", metres)
+  local digits, unit = navigationService.distanceParts(metres)
+  return digits .. unit
+end
+
+--- Split a distance into its digits and its unit.
+---
+--- The unit rides beside the reading in its own label now, so the two are
+--- produced separately rather than concatenated and pulled apart again. A
+--- distance's unit is **not** redundancy the way a voltage's is: it changes
+--- with range, so `1.23km` and `1.23m` are different readings and the unit
+--- has to be shown wherever the number is.
+---@param metres any
+---@return string digits
+---@return string unit
+function navigationService.distanceParts(metres)
+  if type(metres) ~= "number" or metres ~= metres then return "--", "" end
+  if metres >= 10000 then
+    return string.format("%.1f", metres / 1000), "km"
+  end
+  if metres >= 1000 then
+    return string.format("%.2f", metres / 1000), "km"
+  end
+  return string.format("%.0f", metres), "m"
 end
 
 --- Format a distance for display, honoring where it came from.
@@ -305,11 +324,21 @@ end
 ---@param view AeroGridNavigation
 ---@return string?
 function navigationService.describeDistance(view)
-  if type(view.distance) ~= "number" then return nil end
+  local digits, unit = navigationService.describeDistanceParts(view)
+  if digits == nil then return nil end
+  return digits .. unit
+end
+
+--- The same, split into the number and the unit riding beside it.
+---@param view AeroGridNavigation
+---@return string? digits
+---@return string unit
+function navigationService.describeDistanceParts(view)
+  if type(view.distance) ~= "number" then return nil, "" end
   if view.distanceSource == "source" then
-    return string.format("%.1f%s", view.distance, view.distanceUnit)
+    return string.format("%.1f", view.distance), view.distanceUnit or ""
   end
-  return navigationService.formatDistance(view.distance)
+  return navigationService.distanceParts(view.distance)
 end
 
 --- Describe the subscribed GPS sources as diagnostic rows.
