@@ -1,0 +1,113 @@
+# Review harness for `flight-mode`. Not a dashboard.
+#
+# The span galleries compare components against each other, which is the wrong
+# tool for judging one on its own. This puts one component in front of you at
+# the spans where it presents differently, so the ladder steps, the shed rows
+# and the clipping are all on one page.
+#
+# Naming and placement, chosen to survive eleven of these: one review screen,
+# whose Dashboard ID names the component under review, replacing itself each
+# time rather than accumulating. `MAX_CUSTOM_SCREENS` is 10 and the fixture
+# already carries nine, so a screen per component was never available;
+# `customScreens[MAX_CUSTOM_SCREENS]` indexed by `i < MAX_CUSTOM_SCREENS`
+# (`radio/src/gui/colorlcd/mainview/layout.cpp`) makes ten the ceiling. Each
+# review layout stays in the repository and keeps being loaded by the suite,
+# so nothing is lost by pointing the screen at the next one.
+#
+# Eight declared spans do not fit on a 4 x 4 grid: they would need thirty
+# cells. These six are the ones that present differently. `3x1` is omitted
+# because it resolves exactly as `2x1` does, and `4x2` because it resolves as
+# `3x2` does but with room to spare.
+#
+# Every panel shows the same flight mode, because the mode is radio-wide.
+# `flight-mode` reaches only `normal` and `unavailable`, and `unavailable`
+# needs a radio whose firmware has no `getFlightMode`, so it cannot be staged
+# from a layout at all. There is no configuration that produces it here.
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  # The narrowest span it declares. The reading is sized from a six-character
+  # form, so a longer mode name is drawn past the panel and clipped.
+  - id: one-by-one
+    type: flight-mode
+    col: 0
+    row: 0
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: 1x1
+
+  # The same span with the mode number asked for. A single cell sheds the
+  # supporting row, so asking for it changes nothing on screen.
+  - id: one-by-one-index
+    type: flight-mode
+    col: 1
+    row: 0
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: IDX
+      showIndex: true
+
+  # Two cells wide is the narrowest span that fits the longest name EdgeTX
+  # can report. `3x1` and `4x1` resolve identically, only wider.
+  - id: two-by-one
+    type: flight-mode
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: 2x1
+
+  # Full width, one row. Still `MIDSIZE`: a single row caps the reading
+  # whatever the width, which is the ladder deciding composition from the box.
+  - id: four-by-one
+    type: flight-mode
+    col: 0
+    row: 1
+    colSpan: 4
+    rowSpan: 1
+    config:
+      label: 4x1 FULL WIDTH
+      accent: cyan
+
+  # Two rows tall and one wide: the supporting row appears, and the reading
+  # steps to `DBLSIZE` sized from a four-character form.
+  - id: one-by-two
+    type: flight-mode
+    col: 0
+    row: 2
+    colSpan: 1
+    rowSpan: 2
+    config:
+      label: 1x2
+      showIndex: true
+
+  # The largest reading the ladder offers, still sized from a four-character
+  # form. This is the span where the clipping is most visible.
+  - id: two-by-two
+    type: flight-mode
+    col: 1
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: 2x2
+      accent: amber
+      showIndex: true
+
+  # A header longer than a narrow panel can carry, beside the same span with
+  # a short one, so the header's own shedding is comparable rather than
+  # remembered.
+  - id: long-label
+    type: flight-mode
+    col: 3
+    row: 2
+    colSpan: 1
+    rowSpan: 2
+    config:
+      label: FLIGHT MODE
+      accent: orange
