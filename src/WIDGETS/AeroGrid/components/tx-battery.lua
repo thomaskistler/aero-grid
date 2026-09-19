@@ -320,8 +320,12 @@ function txBattery.regionsFor(theme, themeBuilder, primitives, rect, layout,
   local valueHeight = themeBuilder.fontHeight(value)
   if top + valueHeight > rect.h then top = math.max(0, rect.h - valueHeight) end
 
-  local glyphX, glyphY, detailUnderGlyph
+  local glyphX, glyphY, detailUnderGlyph, glyphBorder
   if glyphWidth then
+    -- The stroke is answered here, where the reading's font is known, so the
+    -- cell is outlined for the number it stands beside rather than for the
+    -- span it happens to be at.
+    glyphBorder = primitives.batteryStroke(themeBuilder, value, glyphWidth)
     glyphX = frame.pad + frame.content - glyphWidth
     if showDetail then
       -- The percentage sits on the supporting row every other panel of this
@@ -354,6 +358,7 @@ function txBattery.regionsFor(theme, themeBuilder, primitives, rect, layout,
     glyphY = glyphY,
     glyphWidth = glyphWidth,
     glyphHeight = glyphHeight,
+    glyphBorder = glyphBorder,
     detailUnderGlyph = detailUnderGlyph == true,
     detailX = detailUnderGlyph and glyphX or frame.pad,
     detailWidth = detailUnderGlyph and glyphWidth
@@ -461,6 +466,7 @@ function txBattery.create(parent, rect, settings, services)
       h = area.glyphHeight,
       fraction = 0,
       color = presentation.accent,
+      border = area.glyphBorder,
     })
   end
 

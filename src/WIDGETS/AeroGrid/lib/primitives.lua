@@ -808,17 +808,47 @@ function primitives.batteryBackdropRgb(theme, state)
   return (theme.alertRgb and theme.alertRgb[state]) or theme.rgb.surface
 end
 
---- Weight of the outline, as a fraction of the cell's width.
---- Thick enough to read as a drawn cell rather than a hairline box, and
---- derived from the width so a large battery is not outlined like a small one.
---- It is applied at build and never restated: a border width only reaches
---- LVGL through `LvglWidgetBorderedObject::setOpacity`, which runs behind
---- `changedValue`, so a thickness passed to a later `set` updates the C++
---- member and stops there.
----@param width integer
+--- Line heights per pixel of outline.
+---
+--- The stroke has to look right against **the number beside it**, not against
+--- the panel: the ladder puts different fonts at the same span, so a cell
+--- drawn from its span would carry the same weight beside a MIDSIZE reading
+--- as beside an XXLSIZE one, which is what made it look heavy at small sizes.
+--- Sixteen leaves the largest reading's cell where it already was and thins
+--- every smaller one: 4 pixels at XXLSIZE, 3 at DBLSIZE, 2 at MIDSIZE and
+--- below.
+primitives.GLYPH_STROKE_RATIO = 16
+
+--- Thinnest outline that still reads as a drawn cell rather than a hairline.
+primitives.GLYPH_STROKE_MIN = 2
+
+--- Widths per pixel of outline, as a ceiling.
+--- The stroke is taken out of the interior twice over, so a narrow cell has
+--- to be outlined more lightly than its reading would ask for or there is
+--- nothing left inside to show a level in.
+primitives.GLYPH_STROKE_WIDTH_RATIO = 6
+
+--- Weight of a cell's outline, for the reading it stands beside.
+---
+--- Fixed when the glyph is built and never restated, which is not a choice: a
+--- border width only reaches LVGL through
+--- `LvglWidgetBorderedObject::setOpacity`, which runs behind `changedValue`,
+--- so a thickness passed to a later `set` updates the C++ member and stops
+--- there. The reading's font is known at build, so this can be answered then.
+---@param themeBuilder table
+---@param font any The font the reading resolved to.
+---@param width integer The cell's own width.
 ---@return integer
-function primitives.batteryBorder(width)
-  return math.max(2, math.floor(width / 7 + 0.5))
+function primitives.batteryStroke(themeBuilder, font, width)
+  local fromFont = math.floor(
+    themeBuilder.fontHeight(font) / primitives.GLYPH_STROKE_RATIO + 0.5)
+  local fromWidth = math.floor(width / primitives.GLYPH_STROKE_WIDTH_RATIO)
+
+  if fromWidth < fromFont then fromFont = fromWidth end
+  if fromFont < primitives.GLYPH_STROKE_MIN then
+    return primitives.GLYPH_STROKE_MIN
+  end
+  return fromFont
 end
 
 --- Work out the parts of an upright battery of a given size.
@@ -830,15 +860,18 @@ end
 ---@param y integer
 ---@param width integer
 ---@param height integer Total height, terminal included.
+---@param border integer Outline weight, from `batteryStroke`. Passed in
+--- rather than derived here, because it is fixed when the glyph is built and
+--- a later reflow recomputing it would produce an interior that disagrees
+--- with the outline LVGL is actually drawing.
 ---@return table
-function primitives.batteryGeometry(x, y, width, height)
+function primitives.batteryGeometry(x, y, width, height, border)
   -- The terminal sits on top, a little under half the width and a twelfth of
   -- the height, which keeps it a contact rather than a second cell at every
   -- size this draws at.
   local nubWidth = math.max(4, math.floor(width * 0.45 + 0.5))
   local nubHeight = math.max(2, math.floor(height / 12 + 0.5))
   local bodyHeight = math.max(1, height - nubHeight)
-  local border = primitives.batteryBorder(width)
   local inset = border + primitives.GLYPH_GAP
 
   return {
@@ -890,11 +923,12 @@ end
 --- level, because nothing needs to be.
 ---@param parent any
 ---@param theme AeroGridTheme
----@param options table x, y, w, h, fraction, color
+---@param options table x, y, w, h, fraction, color, border
 ---@return table glyph
 function primitives.batteryGlyph(parent, theme, options)
+  local border = options.border or primitives.GLYPH_STROKE_MIN
   local geometry = primitives.batteryGeometry(
-    options.x, options.y, options.w, options.h)
+    options.x, options.y, options.w, options.h, border)
   local color = options.color or theme.color.cyan
 
   local shell = lvgl.rectangle(parent, {
@@ -931,7 +965,7 @@ function primitives.batteryGlyph(parent, theme, options)
   })
 
   local glyph = primitives.batteryGeometry(
-    options.x, options.y, options.w, options.h)
+    options.x, options.y, options.w, options.h, border)
   glyph.shell = shell
   glyph.nub = nub
   glyph.fill = fill
@@ -960,9 +994,16 @@ end
 
 --- Move and resize a glyph without rebuilding it.
 ---
---- The outline's weight is deliberately not restated: it never reaches LVGL
---- after build, so passing it would write a value the radio ignores and make
---- the fixture disagree with the screen.
+--- **The outline keeps the weight it was built with.** It is not restated
+--- because restating it would change nothing on a radio -- a border width
+--- never reaches LVGL after build -- and the interior is measured from the
+--- weight that is actually drawn, so recomputing it here would inset the
+--- level against an outline that does not exist.
+---
+--- The consequence is worth knowing: a reflow that moves the reading to a
+--- different font leaves the cell outlined for the font it was built beside.
+--- A zone change from 238 x 134 to 238 x 110 steps the reading from XXLSIZE
+--- to DBLSIZE and the stroke stays at 4 where a fresh build would give 3.
 ---@param glyph table
 ---@param x integer
 ---@param y integer
@@ -970,7 +1011,7 @@ end
 ---@param height integer
 ---@param fraction number Refilled against the new interior.
 function primitives.placeBatteryGlyph(glyph, x, y, width, height, fraction)
-  local next = primitives.batteryGeometry(x, y, width, height)
+  local next = primitives.batteryGeometry(x, y, width, height, glyph.border)
   for key, value in pairs(next) do glyph[key] = value end
 
   local level = primitives.batteryFill(glyph, fraction)
