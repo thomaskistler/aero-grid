@@ -427,13 +427,19 @@ local function testSettingsVocabulary()
       end
     end
 
-    -- Thresholds without a direction do not say which way is the alarm, and
-    -- five components had been hard-coding the answer privately.
-    if declared.warning or declared.critical then
-      assert(declared.direction, kind
-        .. " declares thresholds but no direction")
-      assert(declared.direction.choices, kind
-        .. ".direction declares no choices")
+    -- A setting must have more than one answer a layout could sensibly give.
+    -- `direction` was added to every component with thresholds, and on five
+    -- of them the physics fixes the answer: a voltage and a link only alarm
+    -- downward, a distance only upward, and a timer's direction is EdgeTX's
+    -- own `countdown` flag rather than anything a layout decides. A setting
+    -- with one valid value is not configuration, it is noise, and it makes a
+    -- reader wonder what the other value would do.
+    for key, setting in pairs(declared) do
+      if type(setting.choices) == "table" then
+        assert(#setting.choices > 1, kind .. "." .. key
+          .. " offers one choice, so it is a fact rather than a setting;"
+          .. " remove it and document the behaviour")
+      end
     end
 
     -- A threshold's unit is not recoverable from a bare number, so the label

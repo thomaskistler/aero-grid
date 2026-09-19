@@ -8,72 +8,80 @@ measured pack voltage (`MIXSRC_TX_VOLTAGE`, "Transmitter battery voltage
 [volts]"). It needs no telemetry and no link: the panel reads correctly on a
 bench with nothing bound. For the aircraft's pack, use `cell-battery`.
 
-**Voltage is the only thing this panel actually knows.** The bar and the
-percentage are estimates, and they only appear once you tell the panel what
-empty and full mean for your radio — see below, because this is the single
-thing most likely to surprise you.
+**Voltage is the only thing this panel measures.** The bar and the percentage
+are estimates against a voltage range, and that range comes from your radio's
+own battery meter setting, so they work without you configuring anything.
 
 ## Settings
 
 | Key | Type | Default | Values | What it does |
 | --- | --- | --- | --- | --- |
-| `label` | string | `TX` | any text | The panel's heading. Two characters, because `TX BATTERY` needs ten and a single-cell header has room for about five. |
+| `label` | string | `TX` | any text | The panel's heading. The default is `TX`; a single-cell header has room for about five characters, so `TX BATTERY` needs a wider panel. |
 | `accent` | string | `cyan` | `cyan`, `green`, `amber`, `orange` | The stripe down the left edge. Cyan because the palette reserves it for electrical data, and this is a battery. |
-| `packEmpty` | number | *none* | volts | The whole-pack voltage you consider empty. **No default** — see below. |
-| `packFull` | number | *none* | volts | The whole-pack voltage you consider full. **No default.** |
+| `packEmpty` | number | *the radio's* | volts | Overrides the empty end of the radio's battery meter range. |
+| `packFull` | number | *the radio's* | volts | Overrides the full end. |
 | `warning` | number | *none* | volts | At or below this, the panel goes `warning`. |
 | `critical` | number | *none* | volts | At or below this, the panel goes `critical`. |
-| `direction` | string | `falling` | `falling` | Which way the thresholds count. A battery only ever gets worse downward, so there is nothing else to choose. |
 | `visual` | string | `bar` | `bar`, `none` | Whether the estimate is drawn as a bar. |
 | `showPercent` | boolean | `false` | `true`, `false` | Whether the estimate is also written as a percentage. |
 
 Anything else is rejected at load with the layout, panel and key named.
 
-## The range is what switches everything else on
+## Where the range comes from
 
-**Without `packEmpty` and `packFull`, there is no bar and no percentage,
-however you set `visual` and `showPercent`.**
+**Your radio already knows this, and the panel uses it.** EdgeTX carries a
+battery meter range at **SYS → Hardware → Battery meter range**, set to suit
+whatever pack your radio has — 6.4 to 8.4 V for a 2S LiPo, 4.6 to 6.0 V for
+four alkaline cells. If your battery icon looks sensible, this is already
+right, and the bar and percentage work with no configuration at all.
 
-That is deliberate rather than an oversight. Battery chemistry and cell count
-vary by radio — a 2S LiPo, a 1S Li-ion, six AA cells — and EdgeTX does not
-tell Lua which one you have. A panel that guessed would draw a confident
-percentage derived from nothing, on the one reading that decides whether you
-are about to lose control of the aircraft.
+You only need `packEmpty` and `packFull` if you want something different from
+what the radio is using — a modified pack, or a dashboard you are writing for
+someone else's radio.
 
-So the estimate is off until you state the range, and the voltage is shown
-either way:
+**State both or neither.** Half a range is not a range: a stated `packEmpty`
+with the radio's `packFull` would measure against two different packs, so a
+lone one is ignored and the radio's pair is used. An inverted pair, where
+empty is above full, is ignored the same way.
 
-| `packEmpty`/`packFull` | `visual` | `showPercent` | What you get |
-| --- | --- | --- | --- |
-| not stated | `bar` | `true` | **Voltage only.** Both switches are ignored. |
-| not stated | anything | anything | **Voltage only.** |
-| stated | `bar` | `false` | Voltage and a bar |
-| stated | `bar` | `true` | Voltage, a bar, and `72% EST` |
-| stated | `none` | `true` | Voltage and `72% EST`, no bar |
-| stated | `none` | `false` | Voltage only, by choice |
+| `packEmpty`/`packFull` | Range used |
+| --- | --- |
+| neither stated | the radio's |
+| both stated, `packFull` above `packEmpty` | yours |
+| only one stated | the radio's |
+| both stated but inverted | the radio's |
+| neither stated, and the radio cannot be asked | **none** — see below |
 
-`packFull` must be greater than `packEmpty`; if it is not, the range counts as
-unstated.
+Changing the range in radio settings takes effect without restarting: the
+panel re-reads it, so the percentage follows within a second or so.
 
-The percentage is labelled `EST` on screen, because it is an estimate of a
-rough linear fit and not a measurement. A LiPo's discharge curve is nothing
-like a straight line, so treat the number as an indication of headroom rather
-than a fuel gauge.
+### When there is no range at all
 
-### Choosing the numbers
+On firmware that does not offer `getGeneralSettings`, a panel that states no
+range has nothing to measure against. It shows the voltage — which is the
+part it actually measures — and draws no bar and no percentage, whatever
+`visual` and `showPercent` say.
 
-The defaults in the shipped layouts are for a **2S LiPo**: `packEmpty: 6.6`,
-`packFull: 8.4`. If your radio has a different pack, these are wrong for you.
+That is deliberate. A guessed range would put a confident percentage on the
+one reading that tells you whether you are about to lose control of the
+aircraft.
 
-| Pack | Empty | Full |
-| --- | --- | --- |
-| 2S LiPo / Li-ion | 6.6 | 8.4 |
-| 1S Li-ion | 3.3 | 4.2 |
-| 6 x AA NiMH | 6.0 | 8.4 |
+The percentage is labelled `EST` on screen because it is a linear fit, and a
+LiPo's discharge curve is not a straight line. Treat it as an indication of
+headroom rather than a fuel gauge.
 
-Set `warning` and `critical` from the same numbers. A useful starting point is
-`warning` around 15% and `critical` around 5% of your stated range — for a 2S
-pack, about 6.9 V and 6.7 V.
+### Thresholds
+
+`warning` and `critical` are separate from the range and have no defaults,
+because what counts as low depends on your pack and on how much margin you
+want. They are voltages, and they always count **downward** — a battery only
+ever gets worse in one direction, so there is nothing to configure about it.
+
+A useful starting point is about 15% and 5% of your range: for a 2S pack read
+against 6.4 to 8.4 V, roughly 6.7 V and 6.5 V.
+
+`critical` is tested before `warning`, so setting them the wrong way round
+sends the panel straight to critical and the warning band never appears.
 
 ## What it draws, and what it sheds
 
@@ -110,10 +118,6 @@ The voltage itself is always shown, at every span and in every state.
 | `stale` | The radio stopped answering; the last voltage is kept | Muted reading, `STALE` badge |
 | `unavailable` | No voltage has ever been read | `--` and an `N/A` badge |
 
-`critical` is tested before `warning`, so if you set them the wrong way round
-— `critical` above `warning` — the panel goes straight to critical and the
-warning band never appears.
-
 ## Resolution
 
 EdgeTX stores this voltage in units of 100 mV and hands Lua the value scaled
@@ -134,17 +138,16 @@ caps the reading at 25.5 V, which is above any transmitter pack.
   config:
     label: TX
     accent: cyan
-    packEmpty: 6.6
-    packFull: 8.4
-    warning: 6.9
-    critical: 6.7
+    warning: 6.7
+    critical: 6.5
     visual: bar
     showPercent: true
 ```
 
-A 2S pack, two cells square, so the voltage reads at `XXLSIZE` with a bar and
-a percentage beneath it. Drop `packEmpty` and `packFull` and you get the
-voltage alone, whatever the last two lines say.
+Two cells square, so the voltage reads at `XXLSIZE` with a bar and a
+percentage beneath it. No range is stated, so it uses whatever your radio's
+battery meter is set to — which is the normal case. Add `packEmpty` and
+`packFull` only if you want to override that.
 
 ## See also
 

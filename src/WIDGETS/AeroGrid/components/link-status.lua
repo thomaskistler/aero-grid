@@ -82,8 +82,7 @@ local linkStatus = {
     {key = "warning", label = "Warning, in the chosen reading's unit", type = "number"},
     {key = "critical", label = "Critical, in the chosen reading's unit", type = "number"},
     -- A link only ever gets worse downward.
-    {key = "direction", label = "Threshold direction", type = "string",
-      default = "falling", choices = {"falling"}},
+    -- No `direction`. RSSI and link quality both only alarm downward.
     {key = "extrema", label = "Minimum tracked", type = "string",
       default = "none", choices = {"none", "source", "flight"}},
     {key = "extremaSource", label = "Minimum source", type = "string", default = ""},

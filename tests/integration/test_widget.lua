@@ -4272,20 +4272,17 @@ components:
   resetRadio()
 end
 
---- Without a stated range there is no bar and no percentage, however the
---- layout sets their own switches.
+--- The radio's own battery meter range is the default; a layout overrides it.
 ---
---- This is the documented trap and the thing most likely to surprise someone
---- configuring the panel: `visual: bar` and `showPercent: true` are both
---- asked for and neither appears. It is deliberate -- chemistry and cell count
---- vary by radio and EdgeTX tells Lua neither, so a guessed range would draw
---- a confident percentage derived from nothing -- but a deliberate silence
---- still has to be checked, because it is indistinguishable from a broken one.
+--- EdgeTX carries a battery meter range at SYS then Hardware then Battery
+--- meter range, set per radio to suit its pack, and it is already right on
+--- any radio whose battery icon is sensible. This component used to ask a
+--- layout to restate it and drew nothing until one did, which made a dark bar
+--- the normal case rather than the exceptional one.
 ---
---- Both panels are the same span with the same switches, so the range is the
---- only difference between them and the assertions cannot pass for some other
---- reason.
-local function testTxBatteryRangeGatesTheEstimate()
+--- Four panels of one span, so the only difference between them is where the
+--- range comes from.
+local function testTxBatteryRangeComesFromTheRadio()
   resetRadio()
   local widgetPath = makeWidget("tx-range", [[
 version: 1
@@ -4293,7 +4290,7 @@ grid:
   columns: 4
   rows: 4
 components:
-  - id: ranged
+  - id: stated
     type: tx-battery
     col: 0
     row: 0
@@ -4304,7 +4301,7 @@ components:
       packFull: 8.4
       visual: bar
       showPercent: true
-  - id: unranged
+  - id: quiet
     type: tx-battery
     col: 2
     row: 0
@@ -4324,6 +4321,16 @@ components:
       packFull: 6.6
       visual: bar
       showPercent: true
+  - id: half
+    type: tx-battery
+    col: 2
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      packEmpty: 6.6
+      visual: bar
+      showPercent: true
 ]])
 
   local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
@@ -4331,37 +4338,95 @@ components:
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
   settle(context, 30)
 
-  local ranged = entryById(context, "ranged").instance
-  local unranged = entryById(context, "unranged").instance
+  local stated = entryById(context, "stated").instance
+  local quiet = entryById(context, "quiet").instance
   local inverted = entryById(context, "inverted").instance
+  local half = entryById(context, "half").instance
 
-  -- The voltage is the authoritative reading and is shown either way. The
-  -- fixture transmitter reads 7.9 V.
-  assertEqual(ranged.text, "7.9V")
-  assertEqual(unranged.text, "7.9V",
-    "an unranged panel lost the reading it does know")
-  assertEqual(inverted.text, "7.9V")
+  -- The voltage is authoritative and is shown by all of them. The fixture
+  -- transmitter reads 7.9 V.
+  for _, panel in ipairs({stated, quiet, inverted, half}) do
+    assertEqual(panel.text, "7.9V")
+  end
 
-  -- With a range: a bar, and the percentage the documentation works through.
-  -- 7.9 of 6.6..8.4 is 1.3/1.8, which rounds to 72.
-  assert(ranged.bar, "a ranged panel built no bar")
-  assertEqual(ranged.detail, "72% EST")
-  assertEqual(ranged.detailLabel.properties.text, "72% EST")
+  -- Stated: the layout's 6.6 to 8.4, so 7.9 is 1.3 of 1.8, which is 72.
+  assertEqual(stated.detailLabel.properties.text, "72% EST")
+  assertEqual(stated.barShown, true)
 
-  -- Without one: neither, though both were asked for.
-  assertEqual(unranged.bar, nil,
-    "an unranged panel built a bar, which can only be drawn from a range"
-      .. " it does not have")
-  assertEqual(unranged.detailLabel.properties.text, "",
-    "an unranged panel wrote a percentage estimated from nothing")
+  -- Stated nothing: the radio's own 6.4 to 8.4, so 7.9 is 1.5 of 2.0, which
+  -- is 75. A different number from the layout's, which is what proves it came
+  -- from the radio rather than from a default that happens to match.
+  assertEqual(quiet.detailLabel.properties.text, "75% EST",
+    "a panel that stated no range did not fall back to the radio's")
+  assertEqual(quiet.barShown, true,
+    "a panel that stated no range drew no bar, which is what this change"
+      .. " exists to stop being the normal case")
 
-  -- An inverted range is not a range, and must be refused the same way
-  -- rather than producing a negative or backwards fill.
-  assertEqual(inverted.bar, nil,
-    "an inverted range was treated as a usable one")
-  assertEqual(inverted.detailLabel.properties.text, "")
+  -- Half a range is not a range, and must not be mixed with the radio's
+  -- other end: that would measure against two different packs.
+  assertEqual(half.detailLabel.properties.text, "75% EST",
+    "a stated empty was mixed with the radio's full")
+
+  -- An inverted range is not a range either, and falls back rather than
+  -- producing a backwards fill.
+  assertEqual(inverted.detailLabel.properties.text, "75% EST",
+    "an inverted range was treated as usable")
+
+  -- And the pilot changing it in radio settings is seen, because the range is
+  -- subscribed rather than read once. Nothing rebuilds a widget for that.
+  radio.battMin, radio.battMax = 5.4, 8.4
+  settle(context, 60)
+  assertEqual(quiet.detailLabel.properties.text, "83% EST",
+    "the radio's range was read once and went stale when the pilot changed it")
+  assertEqual(stated.detailLabel.properties.text, "72% EST",
+    "a layout that states its own range was moved by a radio setting")
 
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  resetRadio()
+end
+
+--- Without any range at all there is still no estimate.
+---
+--- The firmware without `getGeneralSettings` is the case that matters: a
+--- layout that states nothing then has nothing to measure against, and a
+--- guessed percentage on the one reading that says whether the aircraft is
+--- about to stop answering is worse than no percentage.
+local function testTxBatteryWithoutAnyRange()
+  resetRadio()
+  local real = getGeneralSettings
+  getGeneralSettings = nil
+
+  local widgetPath = makeWidget("tx-norange", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: quiet
+    type: tx-battery
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      visual: bar
+      showPercent: true
+]])
+
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  local ok, err = pcall(settle, context, 30)
+  getGeneralSettings = real
+  assert(ok, "a component raised without getGeneralSettings: " .. tostring(err))
+
+  local quiet = entryById(context, "quiet").instance
+  assertEqual(quiet.text, "7.9V", "the voltage it does know was lost")
+  assertEqual(quiet.barShown, false,
+    "a bar was drawn with nothing to measure it against")
+  assertEqual(quiet.detailLabel.properties.text, "",
+    "a percentage was estimated from nothing")
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  resetRadio()
 end
 
 --- A timer's supporting caption is drawn where there is room and nowhere else.
@@ -5880,7 +5945,8 @@ testCoreComponents()
 testTrimPanelShedsText()
 testShedRowsComeBackCurrent()
 testFlightModeIndexRow()
-testTxBatteryRangeGatesTheEstimate()
+testTxBatteryRangeComesFromTheRadio()
+testTxBatteryWithoutAnyRange()
 testFlightTimerShedsItsDetail()
 testReconcileBar()
 testFlightModeSizesFromTheModel()

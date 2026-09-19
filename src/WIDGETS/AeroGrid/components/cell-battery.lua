@@ -71,8 +71,9 @@ local cellBattery = {
     {key = "critical", label = "Critical volts per cell", type = "number", default = 3.3},
     -- Cell voltages only ever count downward, but it is stated rather than
     -- assumed so every threshold in the catalogue reads the same way.
-    {key = "direction", label = "Threshold direction", type = "string",
-      default = "falling", choices = {"falling"}},
+    -- No `direction`. A cell only ever alarms downward, so the setting had
+    -- one valid value and told a reader nothing except to wonder what the
+    -- other one would do. The behaviour is documented instead.
     {key = "cells", label = "Expected cells", type = "number", default = 0},
     {key = "showPack", label = "Show pack voltage", type = "boolean", default = true},
     {key = "showCount", label = "Show cell count", type = "boolean", default = true},

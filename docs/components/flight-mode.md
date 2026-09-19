@@ -33,7 +33,7 @@ catalogue has none.
 
 | Key | Type | Default | Values | What it does |
 | --- | --- | --- | --- | --- |
-| `label` | string | `MODE` | any text | The panel's heading. Four characters, because a single-cell header has room for about five and `FLIGHT MODE` needs eleven. A header too long for its panel is shortened by the shared header rather than overflowing. |
+| `label` | string | `MODE` | any text | The panel's heading. The default is `MODE`; a single-cell header has room for about five characters, so `FLIGHT MODE` needs a wider panel. |
 | `accent` | string | `green` | `cyan`, `green`, `amber`, `orange` | The stripe down the left edge. Green is the default because a flight mode is a statement of healthy current state, which is what the palette reserves green for. `cyan` is reserved for electrical readings, so prefer one of the other three. |
 | `showIndex` | boolean | `false` | `true`, `false` | Adds a supporting row reading `#<n>`, where `<n>` is EdgeTX's flight mode number. **Needs a panel two rows tall.** On a single-row panel it is refused at load with the panel named, because no single row has space beneath the reading at any width. |
 

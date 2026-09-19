@@ -59,8 +59,8 @@ local navigation = {
     {key = "critical", label = "Critical distance, metres", type = "number"},
     -- Distance is the one threshold in the catalogue that counts upward:
     -- further away is worse.
-    {key = "direction", label = "Threshold direction", type = "string",
-      default = "rising", choices = {"rising"}},
+    -- No `direction`. Distance from home only alarms upward, which is the
+    -- one threshold in the catalogue that counts that way.
     {key = "accent", label = "Accent", type = "string", default = "cyan",
       choices = {"cyan", "green", "amber", "orange"}},
   },

@@ -56,8 +56,11 @@ local flightTimer = {
     -- A countdown is judged on the time it has left and a count-up timer on
     -- the time it has used, so the direction follows the timer rather than
     -- the layout and cannot be stated.
-    {key = "direction", label = "Threshold direction", type = "string",
-      default = "timer", choices = {"timer"}},
+    -- No `direction`. It is real here -- a countdown alarms on the time it
+    -- has left and a count-up timer on the time it has used -- but EdgeTX
+    -- already says which a timer is, through `model.getTimer`, and
+    -- `resolveState` has always read that rather than the setting. Stating
+    -- it was restating the radio.
   },
 }
 
