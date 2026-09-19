@@ -96,6 +96,14 @@ local function makeWidget(name, layoutYaml, extraComponents)
   if layoutYaml then
     writeFile(directory .. "/layouts/default.yaml", layoutYaml)
   end
+  -- `heartbeat` and `placeholder` exist to exercise the host contract, not to
+  -- fly, so they are fixtures rather than shipped components. They are copied
+  -- into every scratch package because that is what they are for: a layout
+  -- placing one still has to load, refresh, reflow and be torn down like any
+  -- other component, and that coverage is the whole reason they exist.
+  os.execute("cp -R '" .. root .. "/tests/fixtures/components/.' '"
+    .. directory .. "/components/'")
+
   for filename, source in pairs(extraComponents or {}) do
     writeFile(directory .. "/components/" .. filename, source)
   end
@@ -449,7 +457,10 @@ local function testSpanGalleryIsComplete()
   end
 
   -- A gallery that compared one component would satisfy every assertion above.
-  assert(compared >= 13,
+  -- Eleven, not thirteen: `heartbeat` and `placeholder` are fixtures now and
+  -- are not in the shipped directory this reads, so they cannot be missing
+  -- from a gallery they no longer belong in.
+  assert(compared >= 11,
     "only " .. compared .. " components were compared at 1 x 1")
 end
 
@@ -2411,15 +2422,32 @@ components:
     ["placeholder"] = {"      label: Probe"},
   }
 
-  local sweepTypes = {
-    "metric", "flight-timer", "flight-mode", "tx-battery",
-    "variable-indicator", "trim-panel", "model-identity",
-    "cell-battery", "link-status", "navigation",
-    -- The two development components ship in the package too, so a layout
-    -- may place them. Both drew at a raw (8, 6) until they were routed
-    -- through the shared frame like everything else.
-    "heartbeat", "placeholder",
-  }
+  -- Read from both component directories rather than listed here. A hand-kept
+  -- list cannot drift out of step with itself, which is why the guard below
+  -- could never be shown to do anything: it was checking the list against the
+  -- list. Reading the directories means a component added to either one is
+  -- swept from the moment it exists, and one that disappears is noticed.
+  --
+  -- Both directories, because `heartbeat` and `placeholder` are fixtures now
+  -- and the host must still treat a layout that places one exactly like any
+  -- other component. Both drew at a raw (8, 6) until they were routed through
+  -- the shared frame, which is the kind of thing this sweep is for.
+  local sweepTypes = {}
+  for _, directory in ipairs({sourcePath .. "components",
+      root .. "/tests/fixtures/components"}) do
+    local listingPath = root .. "/build/sweep-types.txt"
+    os.execute("ls '" .. directory .. "' > '" .. listingPath .. "'")
+    local listing = assert(hostIo.open(listingPath, "r"))
+    for name in listing:lines() do
+      local stem = string.match(name, "^(.+)%.lua$")
+      if stem then sweepTypes[#sweepTypes + 1] = stem end
+    end
+    listing:close()
+    os.remove(listingPath)
+  end
+  assert(#sweepTypes >= 13, "only " .. #sweepTypes
+    .. " component types were found to sweep")
+
   local checked = {}
 
   for _, kind in ipairs(sweepTypes) do

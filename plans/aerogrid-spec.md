@@ -135,6 +135,9 @@ The initial release should provide these components:
 | `tx-battery` | Transmitter voltage and optional battery indication | Simple; primarily intended for the status rail |
 | `trim-panel` | One or more effective trim positions in a centered dashboard panel | Specialized |
 | `variable-indicator` | Global variable or bounded numeric source as a value, bar, or radial indicator | Generic |
+| `service-probe` | The live state of one shared service, for diagnosis on the radio | Diagnostic |
+
+Eleven components ship. Two more, `heartbeat` and `placeholder`, live under `tests/fixtures/components`: they were written to prove the host contract — that a component loads, refreshes, reflows and is torn down correctly — and never to be flown. They are copied into every scratch widget package the suite builds, so that coverage keeps running, but a release does not carry a panel whose purpose is to animate a dot. `service-probe` is the exception among the three and ships, because milestone 9 wants a host diagnostics view and it is the only thing that can inspect a service on a radio.
 
 The `metric` component provides built-in presets without creating separate implementations:
 
@@ -557,7 +560,7 @@ Additional types may be added without changing the layout schema. Each setting d
 
 ### Settings vocabulary
 
-Thirteen components written to the same contract by different sessions produced five names for "how should this look", four meanings for `min`, and a per-component setting for a dashboard-wide singleton. Names are part of the contract, not decoration: a layout author reads one component and expects the next to answer the same question the same way. The rules below are what the vocabulary converged on.
+Eleven shipped components and two fixtures, written to the same contract by different sessions, produced five names for "how should this look", four meanings for `min`, and a per-component setting for a dashboard-wide singleton. Names are part of the contract, not decoration: a layout author reads one component and expects the next to answer the same question the same way. The rules below are what the vocabulary converged on.
 
 **One name per concept.** Three questions exist and each has exactly one key:
 
@@ -990,12 +993,11 @@ Items 4 and 5 are decisions rather than work, and can be taken at a desk. Everyt
 
 These came out of the presentation and consistency pass and were not done, each for a stated reason. They are recorded here rather than in an issue tracker because the reasoning is the part worth keeping — the work itself is small in every case.
 
-`REFLOW_BATCH` and the reveal frame were the recommended items here and both have been taken; see [Why `REFLOW_BATCH` is three](#why-reflow_batch-is-three) and the render-declaration entry under fixture discipline. `primitives.arcBounds` is gone with them. What is left is whether the three development components ship, and the physical readability review, which needs hardware.
+`REFLOW_BATCH` and the reveal frame were the recommended items here and both have been taken; see [Why `REFLOW_BATCH` is three](#why-reflow_batch-is-three) and the render-declaration entry under fixture discipline. `primitives.arcBounds` is gone with them. What is left is the physical readability review, which needs hardware.
 
 | Item | Why it was left | What taking it would involve |
 | --- | --- | --- |
 | **`link-status` thresholds change unit at runtime** | With `reading: auto`, the leading source can resolve to RSSI in dBm or to link quality in percent, and `warning` and `critical` are bare numbers either way. The settings vocabulary made the label honest — "in the leading source's unit" — rather than fixing it. | Either pin the threshold to a named source, or carry two thresholds and select with the reading. Both change behaviour for an existing layout, which is why it was documented instead. |
-| **Three development components ship** | `heartbeat`, `placeholder` and `service-probe` are in the catalogue, in the galleries, and carry the same settings discipline, `choices` and header geometry as real panels. Whether they should be in a release at all was never asked. | `service-probe` has a genuine diagnostic use and milestone 9 wants a diagnostics view; the other two are scaffolding. Decide per component rather than as a group. |
 | **The physical readability review** | Needs hardware. It is milestone 4's last open item and has been open since milestone 4. | See [Nothing has run on a radio](#nothing-has-run-on-a-radio). It is larger than one milestone's loose end. |
 
 ### Open items carried forward
@@ -1021,7 +1023,7 @@ These came out of the presentation and consistency pass and were not done, each 
 | ~~`primitives.arcBounds` has no production caller~~ | Presentation pass | Closed by deletion. It was also wrong — it placed the outer edge at `radius + thickness / 2` where `lv_draw_arc.c` puts it at `radius` — and nothing caught that, because its only callers were tests using the same arithmetic. The tests now measure the arc the mock drew |
 | ~~`REFLOW_BATCH` has never been measured~~ | Presentation pass | Closed. Measured across batch sizes 1 to 16 and set to 3, which is where the saving stops. See [Why `REFLOW_BATCH` is three](#why-reflow_batch-is-three) |
 | ~~`link-status` thresholds change unit at runtime~~ | Presentation pass | Closed. A threshold is refused at load unless `reading` names a source, through the new `validateSettings` contract hook. The shipped dashboard was relying on the old behaviour and would have sat permanently critical on a protocol with no quality sensor |
-| Three development components ship | Presentation pass | `heartbeat`, `placeholder` and `service-probe` are in the catalogue and the galleries. Whether they belong in a release was never asked |
+| ~~Three development components ship~~ | Presentation pass | Decided per component. `service-probe` ships: milestone 9 wants a host diagnostics view and it is the only thing that inspects a service on a radio. `heartbeat` and `placeholder` are now fixtures under `tests/fixtures/components`, copied into every scratch package so the host-contract coverage they exist for keeps running |
 | ~~Panels are outlined on every state, including healthy~~ | Milestone 4 | Closed. A resting panel is an elevated fill with no stroke; the border is reserved for focus, editing, warning and critical, and is built at the focus weight because a radio will not change a border's weight after the object exists |
 | ~~A `1 x 1` metric fits its value vertically but width is unchecked~~ | Milestone 6 | Closed. `theme.fitText` fits a value by measured width as well as height, choosing the font from the widest string the component can ever produce so geometry stays stable |
 | ~~`lvgl.arc` is positioned by its top-left corner~~ | Milestone 7 | Closed, and it never was. EdgeTX positions an arc by its **centre**, so every radial drawn before this milestone was one radius up and to the left of its intended place. See below |
@@ -1255,7 +1257,7 @@ Shared data services share the same allowance, and are bounded the same way. The
 
 EdgeTX refreshes widgets on every main loop pass, so steady-state cost is paid tens of times per second and is shared by every component on the dashboard. Two mechanisms keep it bounded.
 
-A component declares `refreshInterval`, in 10ms ticks, stating how often it actually needs servicing. A numeric telemetry readout is indistinguishable at 5 Hz and 50 Hz in flight, so `metric` declares 20 ticks and `heartbeat`, which animates, declares 10. Absent or zero means every frame.
+A component declares `refreshInterval`, in 10ms ticks, stating how often it actually needs servicing. A numeric telemetry readout is indistinguishable at 5 Hz and 50 Hz in flight, so `metric` declares 20 ticks, where the `heartbeat` fixture, which animates, declares 10. Absent or zero means every frame.
 
 Components that share an interval are then **phase staggered**: each is assigned an offset derived from its position in the layout, so they fall due on different frames instead of all at once. Staggering preserves each component's exact declared rate, which simple batching would not.
 
