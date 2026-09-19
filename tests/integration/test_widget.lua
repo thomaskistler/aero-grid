@@ -2317,6 +2317,209 @@ end
 --- Nothing failed and nothing was reported; the number was simply painted over.
 --- A layout author cannot predict that, because it depends on which font
 --- fitText chose, so it has to be a checked invariant rather than advice.
+--- Nothing a pilot reads is drawn on top of anything else.
+---
+--- **This exists because four other measures reported a panel healthy while
+--- two things sat on top of each other.** A unit was printed twelve pixels
+--- inside its own reading for a whole revision of the design mocks: the slot
+--- margins were comfortable, the fonts were right, the bands held, and the
+--- defect was invisible to every one of them. Nothing here is subtle enough
+--- to need an eye, so it should never have needed one.
+---
+--- **And it covers more than text, which is the lesson that cost the most.**
+--- The design generator grew a check of exactly this shape and it compared
+--- labels with labels. A reading sized from a body band that ran down to the
+--- panel floor lay straight across its own bar, and the check could not see
+--- it, because a bar is not a label. A blind spot the size of every non-text
+--- object is worse than no check, because it is trusted.
+---
+--- Backgrounds are excluded rather than reported: a panel's surface is a
+--- filled rectangle under everything by construction, its accent is a stripe
+--- down the edge the content box already starts after, and a bar's fill is
+--- drawn inside its own track. Those are the three overlaps that are the
+--- design rather than a defect, and each is excluded by what it is rather
+--- than by name.
+local function testNothingIsDrawnOverAnythingElse()
+  --- Every drawn thing in one panel, as a box, with labels measured by ink.
+  ---
+  --- Ink rather than line height, because a line box carries descent and
+  --- leading that no glyph marks: charging a reading for slack it does not
+  --- draw would report a collision the screen does not have.
+  local function drawnBoxes(entry)
+    local found = {}
+    local root = entry.instance.panel and entry.instance.panel.root
+
+    --- Clip a box to its container, or drop it if nothing is left.
+    ---
+    --- **A container is not decoration here.** The panel's accent stripe is
+    --- two quarter-circle arcs inside a box one accent-width wide: unclipped
+    --- each arc reaches a full diameter across the panel and appears to lie
+    --- over the heading, and the container is the whole reason it does not.
+    --- Walking the tree without honouring it reports eleven collisions that
+    --- are not on the screen.
+    local function clipTo(box, clip)
+      if not clip then return box end
+      local x = math.max(box.x, clip.x)
+      local y = math.max(box.y, clip.y)
+      local right = math.min(box.x + box.w, clip.x + clip.w)
+      local bottom = math.min(box.y + box.h, clip.y + clip.h)
+      if right <= x or bottom <= y then return nil end
+      box.x, box.y, box.w, box.h = x, y, right - x, bottom - y
+      return box
+    end
+
+    local function walk(object, offsetX, offsetY, clip)
+      for _, child in ipairs(object.children) do
+        local x = offsetX + (child.properties.x or 0)
+        local y = offsetY + (child.properties.y or 0)
+        local inner = clip
+        if child.properties.w and child.properties.h then
+          inner = clipTo({x = x, y = y,
+            w = child.properties.w, h = child.properties.h}, clip)
+        end
+        if not child.hidden then
+          local text = tostring(child.properties.text or "")
+          if child.kind == "label" and text ~= "" then
+            local font = child.properties.font
+            local size = type(font) == "function" and font() or font
+            found[#found + 1] = clipTo({
+              label = true,
+              what = '"' .. text .. '"',
+              x = x,
+              y = y,
+              -- Measured the way the radio draws it, not estimated.
+              -- `theme.textWidth` is deliberately generous so text shrinks
+              -- rather than clips, and a check fed the generous number
+              -- reports a reading lying across its own unit on every panel
+              -- that has one. Generosity belongs in deciding whether
+              -- something fits, never in deciding where it is.
+              --
+              -- And never past its own column. A Lua label's long mode is
+              -- LVGL's default wrap, so text too wide for the width it was
+              -- given comes back down the panel rather than out across it.
+              -- Sideways is the one direction it cannot go, and reporting it
+              -- there would be reporting a collision the screen does not
+              -- have. The downward growth is a real defect and is what the
+              -- `lines` assertions elsewhere exist for.
+              w = math.min(themeModule.measureText(size, text),
+                child.properties.w or math.huge),
+              h = themeModule.fontAscent(size),
+            }, clip)
+          elseif child.kind == "arc" then
+            local drawn = child.round.drawn
+            local diameter = child.round.radius() * 2
+            found[#found + 1] = clipTo({
+              what = "a dial",
+              x = offsetX + drawn.x,
+              y = offsetY + drawn.y,
+              w = diameter,
+              h = diameter,
+            }, clip)
+          elseif child.kind == "rectangle" or child.kind == "image" then
+            found[#found + 1] = clipTo({
+              what = "a " .. child.kind,
+              x = x,
+              y = y,
+              w = child.properties.w or 0,
+              h = child.properties.h or 0,
+            }, clip)
+          end
+        end
+        walk(child, x, y, inner)
+      end
+    end
+
+    if root then walk(root, 0, 0, nil) end
+    return found
+  end
+
+  local function check(label, context)
+    for _, entry in ipairs(context.components) do
+      local rect = boundsOf(entry)
+      local boxes = drawnBoxes(entry)
+      local where = label .. ": " .. entry.placement.id
+
+      -- The panel's own furniture. A surface spans the panel and an accent
+      -- stripe runs down its leading edge inside the padding, and both are
+      -- under the content by design.
+      -- The accent is a stripe one accent-width wide built from a straight
+      -- run and two corner arcs, all of it inside the left padding, so the
+      -- test is where it is rather than what it is called.
+      local accentWidth = math.max(4, themeModule.modern and 6 or 6)
+      local surface = {}
+      for index, box in ipairs(boxes) do
+        if not box.label then
+          local spansPanel = box.w >= rect.w - 2 and box.h >= rect.h - 2
+          local inAccentColumn = box.x + box.w <= accentWidth + 2
+          if spansPanel or inAccentColumn then surface[index] = true end
+        end
+      end
+
+      for first = 1, #boxes do
+        for second = first + 1, #boxes do
+          local a, b = boxes[first], boxes[second]
+          -- One of the pair has to be text. Two shapes overlapping is a
+          -- bar's fill inside its track or a level inside a cell, which is
+          -- how those are built.
+          if (a.label or b.label) and not surface[first] and not surface[second]
+              and not (a.label and b.label and a.what == b.what) then
+            local overlapX = math.min(a.x + a.w, b.x + b.w) - math.max(a.x, b.x)
+            local overlapY = math.min(a.y + a.h, b.y + b.h) - math.max(a.y, b.y)
+            assert(overlapX <= 0 or overlapY <= 0, where .. " draws "
+              .. a.what .. " over " .. b.what .. ", "
+              .. overlapX .. " by " .. overlapY .. " pixels at ("
+              .. math.max(a.x, b.x) .. "," .. math.max(a.y, b.y) .. ")")
+          end
+        end
+      end
+
+      -- And nothing readable leaves the panel it belongs to.
+      if rect then
+        for _, box in ipairs(boxes) do
+          if box.label then
+            assert(box.y >= 0 and box.y + box.h <= rect.h, where
+              .. " draws " .. box.what .. " off the panel vertically, "
+              .. box.y .. " to " .. (box.y + box.h) .. " in " .. rect.h)
+          end
+        end
+      end
+    end
+  end
+
+  -- Every shipped layout, because the directory is the list. A layout is
+  -- covered the moment it is added, exactly like the load coverage.
+  local listingPath = root .. "/build/collide-layouts.txt"
+  os.execute("ls '" .. sourcePath .. "layouts' > '" .. listingPath .. "'")
+  local listing = assert(hostIo.open(listingPath, "r"))
+  local names = {}
+  for name in listing:lines() do
+    local stem = string.match(name, "^(.+)%.yaml$")
+    if stem then names[#names + 1] = stem end
+  end
+  listing:close()
+  os.remove(listingPath)
+  assert(#names > 1, "no shipped layouts were found to check")
+
+  for _, stem in ipairs(names) do
+    for _, mode in ipairs({{"full screen", {x = 0, y = 0, w = 480, h = 272}},
+        {"app mode", appZone()}}) do
+      resetRadio()
+      local source = assert(hostIo.open(
+        sourcePath .. "layouts/" .. stem .. ".yaml", "r"))
+      local yaml = source:read("a")
+      source:close()
+
+      local widget = makeWidget("collide-" .. stem .. "-"
+        .. string.gsub(mode[1], " ", ""), yaml)
+      local context = createLoaded(mode[2], DEFAULT_OPTIONS, widget)
+      pump(context, 60)
+      assertEqual(#context.errors, 0,
+        stem .. ": " .. table.concat(context.errors, "\n"))
+      check(mode[1] .. " layout " .. stem, context)
+    end
+  end
+end
+
 local function testNothingReadableUnderTheMenuButton()
   --- Every label a component actually draws, with its rendered box.
   local function readableLabels(entry)
@@ -4740,7 +4943,14 @@ components:
       packFull: 8.4
 ]])
 
-  local zone = {x = 0, y = 0, w = 480, h = 272}
+  -- **Both zones are chosen so the cell comes out the same size.** The cell's
+  -- height is its body band and its width is half that rounded, so a band of
+  -- 40 px and a band of 39 both round to a 20 px cell -- and 40 is exactly
+  -- where the reading steps from MIDSIZE up to DBLSIZE. That one-pixel band
+  -- difference is the only place left where the font can move while the cell
+  -- holds still, now that both derive from the same band. A 480 x 184 zone
+  -- lands on the first and 480 x 180 on the second.
+  local zone = {x = 0, y = 0, w = 480, h = 184}
   local context = createLoaded(zone, DEFAULT_OPTIONS, widgetPath)
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
   settle(context, 60)
@@ -4765,15 +4975,15 @@ components:
     settle(context, 60)
   end
 
-  -- A shorter zone, chosen because it steps the reading down a size while
-  -- leaving the cell exactly as big as it was.
-  reflow(480, 220)
+  -- Four pixels shorter, which takes the body band from 40 to 39 and the
+  -- reading from DBLSIZE to MIDSIZE while the cell stays 20 px wide.
+  reflow(480, 180)
 
   assert(themeModule.fontHeight(pack.value.properties.font())
       < themeModule.fontHeight(builtFont),
     "the reading did not change size, so this reflow is not the case this"
       .. " test exists for and the assertions below prove nothing")
-  assertEqual(glyph.width, 25,
+  assertEqual(glyph.width, 20,
     "the cell changed size, so the stroke would have been free to change")
 
   -- The limitation, stated.
@@ -7013,5 +7223,9 @@ testNavigationSeesItsSensorAppear()
 testProtocolWithoutRssi()
 testTelemetryComponentsReflow()
 testInstructionBudget()
+
+-- Last of the checks, because it builds every shipped layout in both zones
+-- and leaves the radio somewhere the tests above do not expect to find it.
+testNothingIsDrawnOverAnythingElse()
 
 print("AeroGrid widget integration test passed")

@@ -143,9 +143,19 @@ for _, typeName in ipairs(ORDER) do
     -- padding is asymmetric -- the left clears the accent stripe and the
     -- right has nothing to clear -- so a centred group centred on the panel
     -- would sit a couple of pixels off.
-    local frame = themeModule.frame(context.theme,
-      {x = 0, y = 0, w = bounds.w, h = bounds.h},
+    local rect = {x = 0, y = 0, w = bounds.w, h = bounds.h}
+    local frame = themeModule.frame(context.theme, rect,
       themeModule.typography(colSpan, rowSpan))
+
+    -- **The widget's own bands, not a second opinion about them.** The
+    -- renderer used to recompute the proportional bands from the panel's
+    -- dimensions, and it got two things wrong that the widget gets right: a
+    -- bar takes the floor rather than a proportional share, and a heading
+    -- overflowing its band pushes the body down. The corrected arithmetic
+    -- exists in `theme.bands`, so the honest thing is to report what the
+    -- dashboard actually computed and let the page render that.
+    local ladder = themeModule.ladder(context.theme, rect, frame)
+    local bands = ladder.bands
 
     -- The widest reading the component can ever print, which is what its
     -- own fitter sizes from. The current value is usually much shorter --
@@ -183,11 +193,12 @@ for _, typeName in ipairs(ORDER) do
       "  {component = %q, span = %q, zone = %q, w = %d, h = %d,"
         .. " pad = %d, content = %d, widest = %q, widestUnit = %q,"
         .. " widestAt = {%s}, compact = %d, top = %d, bottom = %d,"
-        .. " labelHeight = %d, objects = {\n",
+        .. " labelHeight = %d, bodyY = %d, bodyH = %d,"
+        .. " objects = {\n",
       typeName, span, zone.name, bounds.w, bounds.h,
       frame.pad, frame.content, widest, widestUnit,
       table.concat(widths, ", "), frame.compact, frame.top, frame.bottom,
-      frame.labelHeight)
+      frame.labelHeight, bands.body.y, bands.body.h)
 
     local function walk(object, depth)
       for _, child in ipairs(object.children) do

@@ -755,7 +755,12 @@ function primitives.followUnit(context, themeBuilder, area, font, text)
   if length == context.unitAnchor then return end
   context.unitAnchor = length
 
-  primitives.placeUnit(context.unit, themeBuilder, area.pad, area.valueY,
+  -- `area.valueX`, not `area.pad`. The reading is centred on a slot derived
+  -- from the panel rather than started at the panel's left inset, so the
+  -- inset stopped being where the number begins. Reading the wrong one put a
+  -- unit fifteen pixels inside its own number -- the same defect shape, for
+  -- the seventh time: a position derived from something that moved.
+  primitives.placeUnit(context.unit, themeBuilder, area.valueX, area.valueY,
     font, text, area.unitFont)
 end
 

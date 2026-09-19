@@ -24,11 +24,15 @@ because a decision that drifted is exactly the kind a guide exists to pin down.
 | The shared responsive ladder, the abbreviation rule, shedding | Implemented and shipped |
 | The battery glyph: vertical, one colour, outline scaled to the reading's font | Implemented and shipped |
 | The unit inline beside the reading, placed by measurement | Implemented and shipped |
-| **Content flow: slots, bands, band-derived fonts, the clamp, the fallback** | **Agreed from mocks. No component implements any of it.** |
+| Content flow: proportional bands, the band-derived font, the clamp | Implemented and shared by every component |
+| Content flow: the two slots and the build-time fallback | Implemented in `theme`; **`tx-battery` is the only component on them** |
 
-Everything under [Content flow](#content-flow) is a design decision that has been made
-and not built. The dashboard today anchors content to panel edges. A reader must not
-mistake that section for a description of what a radio currently draws.
+The vertical half of [Content flow](#content-flow) — bands, the band-derived font and the
+clamp — is live for every component, because a font rule applied by some and not others
+would reintroduce exactly the cross-panel disagreement the shared ladder exists to remove.
+The horizontal half is live in `theme` but only `tx-battery` is on it; every other
+component still starts its reading at the content box's left edge and says so where it
+returns its geometry.
 
 ## How to check the numbers in this document
 
@@ -412,15 +416,37 @@ changes — but that depends on every component remembering to pass its widest f
 band-derived font does not consult the content at all, so it cannot resize with it. The
 guarantee holds by construction rather than by discipline.
 
-Against today's ladder over the twenty-four Full screen cases: **14 get larger, 10 are
-unchanged, and none gets smaller.** That inverted the prediction, and the reason is a fact
-about the panels rather than about the rule — a 53 px panel sheds its tertiary row, so its
-body band is 36 px and holds `MIDSIZE` where today's ladder gives `SMLSIZE`.
+**What it changes, measured through the real host over all forty-eight
+component-span-zone cases: 46 unchanged, 2 smaller, none larger.** The band-derived font
+is very nearly the rule the dashboard already had. On `tx-battery` the two-row spans drop
+from `XXLSIZE` to `DBLSIZE`, because a body band is half a panel's extent and half of a
+134 px panel is 62 against `XXLSIZE`'s 69. That is the largest reading on the dashboard
+getting smaller, and it was accepted knowingly.
 
-App mode goes further and is worth a separate look: over its taller panels the same rule
-moves 12 of 24 cases by **two** sizes, `SMLSIZE` to `DBLSIZE` on a 65 px panel. Whether
-that is an improvement or a panel with nothing but a number on it is a judgement that has
-not been made.
+> **This table said the opposite until the rule was implemented, and the correction is
+> worth recording rather than quietly making.** It claimed 14 of 24 readings would grow
+> and none shrink, and the user chose the rule partly on that. The number was an artefact
+> of two errors in the generator that produced it, both of which over-measured the body
+> band:
+>
+> - **A bar was not charged for the floor it occupies.** The tertiary quarter was reserved
+>   only for supporting rows, so any panel drawing a bar got a three-quarter body band
+>   running down to the panel's own floor. A reading sized against that band lies straight
+>   across the bar. The generator's own collision check could not see it, **because that
+>   check compared labels with labels and a bar is not a label** — a blind spot the size of
+>   every non-text object, in the check that made the page trustworthy.
+> - **A heading overflowing its band did not push the body down.** On a short panel the
+>   label quarter is smaller than any available font, so the heading keeps its size and
+>   spills; the body has to start below where the heading actually ends, not below its
+>   nominal quarter.
+>
+> Correct both and the band comes out close to the room the older ladder already computed,
+> which is why the fonts barely move. Both the generator and the integration suite now
+> check non-text objects.
+
+So the honest summary is that **the vertical half of the arrangement is nearly a no-op and
+the horizontal half is where the value is.** The slots are what stop a reading and a
+visualization contesting one column, and that is worth having on its own.
 
 **Rejected: choosing the font by ink.** `theme.fontHeight` is LVGL's line height — ascent
 plus descent plus leading — and every reading in the catalogue is digits, a minus, a point
@@ -494,15 +520,36 @@ has not been made.
 
 ## Checking a layout mechanically
 
-**Every visible label should be checked against every other as an ink rectangle, and against
-the panel's own edges.** This is cheap, it catches a whole family of defects at once, and it
-found one that four other measures on the same page reported as healthy: a unit printed twelve
-pixels inside its own reading while the slot margins were comfortable, the fonts were right and
-the bands held.
+**Every visible label is checked against every other drawn thing — labels, bars, cells,
+dials, tracks and markers — as a rectangle, and against the panel's own edges.**
+`testNothingIsDrawnOverAnythingElse` does this over every shipped layout in both zones, so
+a layout is covered the moment it is added.
 
-It also caught the heading falling off the top of every 53 px panel, which is what produced the
-clamp rule above. Neither needed an eye, and neither should have needed one.
+It is cheap, it catches a whole family of defects at once, and it found one that four other
+measures on the same page reported as healthy: a unit printed twelve pixels inside its own
+reading while the slot margins were comfortable, the fonts were right and the bands held.
+It also caught the heading falling off the top of every 53 px panel, which is what produced
+the clamp rule above. Neither needed an eye, and neither should have needed one.
 
-See the specification's fixture discipline for the defect shape behind the first of those: **a
+**It covers non-text objects because the first version of it did not**, and that omission
+let a reading lie across its own bar through a whole revision of the design mocks — see the
+band-derived font above. A check that is trusted and blind in one direction is worse than no
+check.
+
+Four details it took two attempts to get right, each of which produced false failures:
+
+- **Measure a label the way the radio draws it.** `theme.textWidth` is deliberately generous
+  so text shrinks rather than clips; fed to a collision check it reports every reading as
+  lying across its own unit.
+- **A label cannot draw past its own width.** A Lua label's long mode is LVGL's default
+  wrap, so text too wide for its column comes back down the panel rather than out across it.
+  Sideways is the one direction it cannot go.
+- **Honour containers.** The accent stripe is two quarter-circle arcs inside a box one
+  accent-width wide; unclipped, each appears to lie over the heading.
+- **Exclude backgrounds by what they are, not by name.** A panel's surface spans the panel,
+  its accent sits inside the left padding, and a bar's fill is drawn inside its own track.
+  Those three overlaps are the design.
+
+See the specification's fixture discipline for the defect shape behind the unit: **a
 position derived from a size must be recomputed when the size changes, never carried as an
 offset.**

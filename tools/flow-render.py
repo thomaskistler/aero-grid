@@ -312,26 +312,57 @@ def slot_margin(flowed, pad, content, widest_at, bands=None):
     return vx - (centre + widest // 2)
 
 
-def bands_for(compact, panel_h, bottom, has_label, has_tertiary):
+def bands_for(compact, panel_h, bottom, has_label, has_tertiary,
+              floor_h=0, content_top=None, body=None):
     """The proportional vertical bands, as (top, height) pairs.
 
+    **`body` is the widget's own answer, and it wins when it is offered.**
+    This function reimplemented `theme.bands` and got two things wrong that
+    the dashboard gets right, which is how the page came to promise fourteen
+    readings would grow when the implementation grows none. A generator that
+    re-derives what the code already computes will drift from it; the
+    geometry rig now reports the real band and the page renders that.
+
     Label a quarter, body a half, tertiary a quarter; and where a part is
-    absent its quarter goes to the body, so the splits are 1/4:1/2:1/4,
-    1/4:3/4, 3/4:1/4 or 4/4. Derived from the panel exactly as the halves
-    are, which is the point of the rule: a band does not move because of
-    what is in it.
+    absent its quarter goes to the body. Derived from the panel exactly as
+    the slots are, which is the point of the rule: a band does not move
+    because of what is in it.
+
+    **Two corrections, and they are why the font table on this page changed.**
+    The first version of this function over-measured the body band in two
+    ways, and the fonts it predicted were wrong as a result -- it promised
+    fourteen readings would grow and none shrink, where the implementation
+    measures none growing and two shrinking.
+
+    *A bar is floor furniture, not band contents.* The tertiary quarter was
+    reserved only for supporting rows, so a panel drawing a bar got a
+    three-quarter body running down to the panel's own floor -- and a reading
+    sized against that band lies straight across the bar. A bar's height is
+    fixed by the theme and does not grow with the panel, so it takes what it
+    needs rather than a proportion.
+
+    *A heading that overflows its band pushes the body down.* On a short panel
+    the label quarter is smaller than any font the dashboard has, so the
+    heading keeps its size and spills. The body has to start below where the
+    heading actually ends, not below its nominal quarter.
     """
     top = compact
     extent = max(1, (panel_h - bottom) - compact)
     quarter = extent // 4
 
     label_h = quarter if has_label else 0
-    tert_h = quarter if has_tertiary else 0
-    body_h = extent - label_h - tert_h
+    tert_h = quarter if has_tertiary else floor_h
+    body_top = top + label_h
+    if has_label and content_top is not None and content_top > body_top:
+        body_top = content_top
+    body_h = max(1, (top + extent) - tert_h - body_top)
+    if body is not None:
+        body_top, body_h = body
+        tert_h = max(0, (top + extent) - (body_top + body_h))
     return {
         "label": (top, label_h),
-        "body": (top + label_h, body_h),
-        "tertiary": (top + label_h + body_h, tert_h),
+        "body": (body_top, body_h),
+        "tertiary": (body_top + body_h, tert_h),
         "extent": extent,
     }
 
@@ -466,7 +497,8 @@ SLOT_TIGHT = (0.30, 0.70)
 
 def halves(objects, panel_w, panel_h, pad, content, widest_at=None,
            compact=0, bottom=0, vertical=False, slots=SLOT_STRICT,
-           font_rule="line", centre_rule="box"):
+           font_rule="line", centre_rule="box", content_top=None,
+           body=None):
     """The user's third arrangement: two slots derived from the panel.
 
     The reading is centred in the panel's left half and a secondary element
@@ -535,8 +567,14 @@ def halves(objects, panel_w, panel_h, pad, content, widest_at=None,
     bands = None
     if vertical:
         heading = next((o for o in out if o.role == "heading"), None)
+        # A bar takes the floor, not a share. `bounds` is the whole visual
+        # extent, and a visual that spans the content width is a bar.
+        floor_h = 0
+        if bounds is not None and spans:
+            floor_h = (panel_h - bottom) - bounds[1]
         bands = bands_for(compact, panel_h, bottom,
-                          heading is not None, bool(supporting))
+                          heading is not None, bool(supporting),
+                          floor_h, content_top, body)
         bands["split"] = has_visual
 
         if heading is not None:
@@ -678,7 +716,8 @@ def row_margin(flowed, pad, content):
 
 
 def arrange(objects, panel_w, panel_h, pad, content, widest_at=None,
-            compact=0, bottom=0, font_rule="line", centre_rule="box"):
+            compact=0, bottom=0, font_rule="line", centre_rule="box",
+            content_top=None, body=None):
     """The settled arrangement: tightened slots, strict halves as fallback.
 
     Tightening moves the two slot centres to 30% and 70%, which is closer
@@ -716,7 +755,8 @@ def arrange(objects, panel_w, panel_h, pad, content, widest_at=None,
     out, steps, fits, bands = halves(
         objects, panel_w, panel_h, pad, content, widest_at, compact, bottom,
         vertical=True, slots=SLOT_TIGHT,
-        font_rule=font_rule, centre_rule=centre_rule)
+        font_rule=font_rule, centre_rule=centre_rule,
+        content_top=content_top, body=body)
     margin = slot_margin(out, pad, content, widest_at, bands)
     rows_margin = row_margin(out, pad, content)
     worst = min([m for m in (margin, rows_margin) if m is not None],
@@ -725,7 +765,8 @@ def arrange(objects, panel_w, panel_h, pad, content, widest_at=None,
         out, steps, fits, bands = halves(
             objects, panel_w, panel_h, pad, content, widest_at, compact,
             bottom, vertical=True, slots=SLOT_STRICT,
-            font_rule=font_rule, centre_rule=centre_rule)
+            font_rule=font_rule, centre_rule=centre_rule,
+            content_top=content_top, body=body)
         return out, steps, fits, bands, SLOT_STRICT, margin, rows_margin
     return out, steps, fits, bands, SLOT_TIGHT, margin, rows_margin
 
@@ -1035,47 +1076,88 @@ def band_fill(flowed, bands):
     return 100 * guide[1] // bands["body"][1]
 
 
-def ink_boxes(objects):
-    """Every visible label as an ink rectangle."""
+def ink_boxes(objects, content=0):
+    """Every visible drawn thing as a rectangle, labels measured by ink.
+
+    **Labels and everything else**, which is the correction that matters. The
+    first version of this collected only labels, and a reading lying straight
+    across its own bar was therefore invisible to it -- a blind spot the size
+    of every non-text object, in the check this page's credibility rested on.
+    It was found by implementing the rule and watching the widget's own suite
+    reject geometry this one had reported healthy.
+
+    A panel's surface and its accent are excluded by what they are: the
+    surface spans the content box and the accent sits inside the padding.
+    Both are under the content by construction rather than by accident.
+    """
     out = []
     for o in objects:
-        if o.hidden or o.kind != "label" or not o.text:
+        if o.hidden:
             continue
-        off, height = ink_span(o)
-        out.append((o, o.x, o.y + off, o.x + o.textW, o.y + off + height))
+        if o.role in ("surface", "accent", "container"):
+            continue
+        if o.kind == "label":
+            if not o.text:
+                continue
+            off, height = ink_span(o)
+            out.append((o, o.x, o.y + off, o.x + o.textW,
+                        o.y + off + height, True))
+        elif o.kind == "arc":
+            radius = o.radius or 0
+            out.append((o, o.x, o.y, o.x + radius * 2, o.y + radius * 2,
+                        False))
+        elif o.kind in ("rectangle", "image"):
+            out.append((o, o.x, o.y, o.x + (o.w or 0), o.y + (o.h or 0),
+                        False))
     return out
 
 
-def collisions(objects, panel_h):
-    """Labels that overlap each other, and labels that leave the panel.
+def collisions(objects, panel_h, content=0):
+    """Labels that overlap anything, and labels that leave the panel.
 
-    **This check is the reason the page is worth anything.** It was added
-    after a reader spotted a unit printed over its own reading, which was
-    invisible to every other measure on the page: the slot margins were
-    comfortable, the fonts were right, the bands held, and two labels were
-    still on top of each other. Nothing here is subtle enough to need an
-    eye, so it should never have needed one.
+    **This check is the reason the page is worth anything, and it is also the
+    reason one of its numbers was wrong for a revision.** It was added after a
+    reader spotted a unit printed over its own reading, which was invisible to
+    every other measure here: the slot margins were comfortable, the fonts
+    were right, the bands held, and two labels were on top of each other.
+
+    Then it compared labels only, and a reading sized against a body band that
+    ran down to the panel floor lay across its own bar without a word. It now
+    compares a label against every drawn thing.
+
+    One of each pair has to be text. Two shapes overlapping is a bar's fill
+    inside its track or a level inside a cell, which is how those are built.
     """
-    bs = ink_boxes(objects)
+    bs = ink_boxes(objects, content)
     hits = []
     for i in range(len(bs)):
         for j in range(i + 1, len(bs)):
             a, b = bs[i], bs[j]
+            if not (a[5] or b[5]):
+                continue
             ox = min(a[3], b[3]) - max(a[1], b[1])
             oy = min(a[4], b[4]) - max(a[2], b[2])
             if ox > 0 and oy > 0:
-                hits.append(f"{a[0].role} <code>{html.escape(a[0].text)}</code>"
-                            f" over {b[0].role} "
-                            f"<code>{html.escape(b[0].text)}</code>, "
+                hits.append(f"{describe(a)} over {describe(b)}, "
                             f"{ox}&times;{oy}&nbsp;px")
-    for o, _x0, y0, _x1, y1 in bs:
+    for entry in bs:
+        o, _x0, y0, _x1, y1, is_label = entry
+        if not is_label:
+            continue
         if y0 < 0:
-            hits.append(f"{o.role} <code>{html.escape(o.text)}</code> "
-                        f"{-y0}&nbsp;px above the panel top")
+            hits.append(f"{describe(entry)} {-y0}&nbsp;px above the panel top")
         if y1 > panel_h:
-            hits.append(f"{o.role} <code>{html.escape(o.text)}</code> "
-                        f"{y1 - panel_h}&nbsp;px below the panel floor")
+            hits.append(f"{describe(entry)} {y1 - panel_h}&nbsp;px below the "
+                        f"panel floor")
     return hits
+
+
+def describe(entry):
+    """Name one box for a failure message."""
+    o = entry[0]
+    if entry[5]:
+        return f"{o.role} <code>{html.escape(o.text)}</code>"
+    return f"{o.role or o.kind} ({o.kind})"
 
 
 def collide_audit():
@@ -1152,7 +1234,8 @@ for case in cases:
         flowed, steps, fits, bands, used, margin, rmargin = arrange(
             objects, w, h, pad, content, widest_at,
             int(case.compact), int(case.bottom), font_rule=rule,
-            centre_rule="box")
+            centre_rule="box", content_top=int(case.top),
+            body=(int(case.bodyY), int(case.bodyH)))
         variants[rule] = (flowed, steps, fits, bands, used, margin,
                           rmargin)
 
@@ -1199,7 +1282,9 @@ for case in cases:
         # have done alongside what it does.
         s_out, _, _, s_bands = halves(
             objects, w, h, pad, content, widest_at, int(case.compact),
-            int(case.bottom), vertical=True, slots=SLOT_STRICT)
+            int(case.bottom), vertical=True, slots=SLOT_STRICT,
+            content_top=int(case.top),
+            body=(int(case.bodyY), int(case.bodyH)))
         strict_margin = slot_margin(s_out, pad, content, widest_at, s_bands)
         strict_rmargin = row_margin(s_out, pad, content)
         if margin is not None:
@@ -1211,7 +1296,7 @@ for case in cases:
     halves_steps.append((case.zone, case.component, case.span, steps, fits))
     case_index[(case.zone, case.component, case.span)] = (
         objects, w, h, pad, content, int(case.compact), int(case.bottom),
-        widest_at)
+        widest_at, int(case.top), (int(case.bodyY), int(case.bodyH)))
 
     kind = "none"
     if bounds is not None:
@@ -1250,7 +1335,7 @@ def descender_case(key=("widget", "metric-radial", "2x1")):
     entry = case_index.get(key)
     if entry is None:
         return "", 0
-    objects, w, h, pad, content, compact, bottom, widest_at = entry
+    objects, w, h, pad, content, compact, bottom, widest_at, top, body = entry
     made = [o.copy() for o in objects]
     unit = next((o for o in made if o.role == "unit" and not o.hidden), None)
     if unit is None:
@@ -1292,13 +1377,13 @@ def optical_pair(key=("widget", "navigation", "4x2")):
     entry = case_index.get(key)
     if entry is None:
         return "", 0, None
-    objects, w, h, pad, content, compact, bottom, widest_at = entry
+    objects, w, h, pad, content, compact, bottom, widest_at, top, body = entry
     cells, centres = [], []
     for label, rule in (("on the line box &mdash; settled rule", "box"),
                         ("on the ink", "ink")):
         flowed, _, _, bands, _, _, _ = arrange(
             objects, w, h, pad, content, widest_at, compact, bottom,
-            font_rule="ink", centre_rule=rule)
+            font_rule="ink", centre_rule=rule, content_top=top, body=body)
         read = next((o for o in flowed if o.role == "reading"), None)
         vb = visual_bounds(flowed)
         off, ink_h = ink_span(read)
@@ -1411,10 +1496,11 @@ def label_band_case(key=("widget", "link-status", "1x1")):
     entry = case_index.get(key)
     if entry is None:
         return "", 0
-    objects, w, h, pad, content, compact, bottom, widest_at = entry
+    objects, w, h, pad, content, compact, bottom, widest_at, top, body = entry
 
     flowed, _, _, bands, _, _, _ = arrange(
-        objects, w, h, pad, content, widest_at, compact, bottom)
+        objects, w, h, pad, content, widest_at, compact, bottom,
+        content_top=top, body=body)
 
     # What it would have done unclamped, kept only to show what was fixed.
     loose = [o.copy() for o in flowed]
@@ -1482,9 +1568,10 @@ def per_row_case(key=("widget", "navigation", "2x2")):
     entry = case_index.get(key)
     if entry is None:
         return ""
-    objects, w, h, pad, content, compact, bottom, widest_at = entry
+    objects, w, h, pad, content, compact, bottom, widest_at, top, body = entry
     whole, _, _, wb, _, _, _ = arrange(
-        objects, w, h, pad, content, widest_at, compact, bottom)
+        objects, w, h, pad, content, widest_at, compact, bottom,
+        content_top=top, body=body)
     # Per row: the body falls back on its own evidence, each row on its own.
     mixed, _, _, mb = halves(
         objects, w, h, pad, content, widest_at, compact, bottom,
@@ -1632,7 +1719,8 @@ for case in cases:
           for k in case.widestAt.keys()} if case.widest else None
     moved, _, ok, _bands, _slots, _m, _rm = arrange(
         objs, cw, ch, cpad, ccontent, wa,
-        int(case.compact), int(case.bottom))
+        int(case.compact), int(case.bottom), content_top=int(case.top),
+        body=(int(case.bodyY), int(case.bodyH)))
     fit_total += 1
     fit_ok += 1 if ok else 0
     if f"{case.component} {case.span}" == worst_offset_case:
