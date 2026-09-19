@@ -154,25 +154,6 @@ components:
       source: RxBt
       label: Probe
 
-  - id: g-placeholder
-    type: placeholder
-    col: 3
-    row: 2
-    colSpan: 1
-    rowSpan: 1
-    config:
-      label: Placeholder
-      subtitle: Subtitle
-
-  - id: g-heartbeat
-    type: heartbeat
-    col: 0
-    row: 3
-    colSpan: 1
-    rowSpan: 1
-    config:
-      label: Heartbeat
-
   # The same component three times, differing only in its visualization, so the
   # three can be compared without remembering what the fourth looked like.
   - id: g-metric-radial
