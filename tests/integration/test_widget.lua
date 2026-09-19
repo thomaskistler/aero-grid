@@ -3056,6 +3056,8 @@ local function testInstructionBudget()
 
   local worst, worstName = 0, "none"
   local worstSteady, worstSteadyName = 0, "none"
+  local worstReflow, worstReflowName = 0, "none"
+  local worstOther, worstOtherName = 0, "none"
 
   local function record(name, cost)
     assert(cost < CEILING, string.format(
@@ -3066,6 +3068,15 @@ local function testInstructionBudget()
     if string.find(name, "steady", 1, true) and cost > worstSteady then
       worstSteady = cost
       worstSteadyName = name
+    end
+    -- Reflow is tracked apart from everything else because `REFLOW_BATCH`
+    -- decides it and nothing else, so it is the one cost the dashboard can
+    -- move by changing a constant. See the assertion after the exercises.
+    if string.find(name, "reflow", 1, true) then
+      if cost > worstReflow then worstReflow = cost; worstReflowName = name end
+    elseif cost > worstOther then
+      worstOther = cost
+      worstOtherName = name
     end
   end
 
@@ -3204,10 +3215,40 @@ return greedy
   })
   exercise("greedy", greedyPath, 16)
 
+  -- A reflow must not be the most expensive thing the dashboard does.
+  --
+  -- This pins the conclusion of measuring `REFLOW_BATCH` rather than a number
+  -- somebody liked. Reflow cost is linear in the batch, so it is the one
+  -- callback whose cost is chosen rather than earned, and choosing it larger
+  -- than the work it competes with buys nothing: the dashboard still cannot
+  -- start faster than its slowest loader stage. At a batch of 4 the worst
+  -- reflow was 8532 against a slowest stage of 7508 and this failed; at 3 it
+  -- is 6448 and passes; below 3 it falls further for no gain, because the
+  -- loader does not move.
+  --
+  -- It is deliberately a comparison and not a ceiling. A ceiling that the old
+  -- value also satisfied would prove nothing, and a ceiling chosen today
+  -- becomes a number nobody dares touch. If the loader is ever made cheaper,
+  -- this starts failing, and that is correct: it would mean reflow had become
+  -- the binding constraint again and the batch is due another measurement.
+  -- Without this, the comparison below passes when nothing reflowed at all:
+  -- a zero is less than everything. Found by breaking the recording and
+  -- watching the comparison stay green.
+  assert(worstReflow > 0,
+    "no reflow callback was measured, so the comparison below proves nothing")
+  assert(worstOther > 0, "no other callback was measured")
+
+  assert(worstReflow < worstOther, string.format(
+    "%s used %d, more than the dashboard's most expensive other callback"
+    .. " (%s at %d), so REFLOW_BATCH is set higher than it buys anything",
+    worstReflowName, worstReflow, worstOtherName, worstOther))
+
   print(string.format("  budget headroom: worst callback %s used %d of %d",
     worstName, worst, BUDGET))
   print(string.format("  steady state:    worst frame %s used %d of %d",
     worstSteadyName, worstSteady, BUDGET))
+  print(string.format("  reflow:          worst %s used %d, against %s at %d",
+    worstReflowName, worstReflow, worstOtherName, worstOther))
 end
 
 --- A component created large and then shrunk must hide what no longer fits,
