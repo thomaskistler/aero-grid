@@ -847,13 +847,31 @@ end
 --- font before it clips. A panel that needs two steps is telling us its
 --- column is genuinely too narrow for the reading, which happens where a dial
 --- takes half the width, and a smaller number is better than half a number.
+--- The ladder a reading is sized from, largest first.
+---
+--- Exported because a component that puts something beside its reading has to
+--- reason about what the reading would give up to make room, and the only
+--- honest way to say "one size smaller" is against the same list the fitter
+--- walks. A second copy of this list would be a second ladder.
+theme.READING_FONTS = {XXLSIZE, DBLSIZE, MIDSIZE, SMLSIZE}
+
+--- Where a font sits on the reading ladder, counting from 1 at the largest.
+---@param font any
+---@return integer? step
+function theme.readingStep(font)
+  for index = 1, #theme.READING_FONTS do
+    if theme.READING_FONTS[index] == font then return index end
+  end
+  return nil
+end
+
 ---@param forms string[] Lossless wordings, longest first.
 ---@param width integer Pixels available.
 ---@param room integer Vertical pixels the composition left.
 ---@return any font
 ---@return integer index Form chosen, from 1.
 function theme.fitReading(forms, width, room)
-  local ordered = {XXLSIZE, DBLSIZE, MIDSIZE, SMLSIZE}
+  local ordered = theme.READING_FONTS
   local start = #ordered
 
   for index = 1, #ordered do

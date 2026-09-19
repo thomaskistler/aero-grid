@@ -50,8 +50,12 @@ local txBattery = {
     {key = "warning", label = "Warning volts", type = "number"},
     {key = "critical", label = "Critical volts", type = "number"},
     -- No `direction`. A transmitter pack only ever alarms downward.
-    {key = "visual", label = "Visualization", type = "string", default = "bar",
-      choices = {"bar", "none"}},
+    -- A battery rather than a bar, because a bar says "some of something"
+    -- and this panel is about which something. The bar stays available: on a
+    -- panel four cells wide a glyph is a small shape in a lot of space, and a
+    -- track running the width reads better there.
+    {key = "visual", label = "Visualization", type = "string",
+      default = "battery", choices = {"battery", "bar", "none"}},
     {key = "showPercent", label = "Show estimate", type = "boolean", default = false},
   },
 }
@@ -59,6 +63,20 @@ local txBattery = {
 --- Lossless forms of the reading, longest first. The unit is redundant with
 --- the panel's label; the digits are not.
 txBattery.FORMS = {"88.8V", "88.8"}
+
+--- Print the reading in the form the fitter chose.
+---
+--- Form 1 is `88.8V` and form 2 is `88.8`, which is the same reading without
+--- a unit the panel's own label already carries. The digits are never
+--- dropped: `7.9` and `7.9V` are one reading, where `8` would be another.
+---@param value any
+---@param formIndex? integer
+---@return string
+function txBattery.reading(value, formIndex)
+  if type(value) ~= "number" or value ~= value then return "--" end
+  if formIndex == 2 then return string.format("%.1f", value) end
+  return string.format("%.1fV", value)
+end
 
 --- Resolve the voltage range to measure the estimate against.
 ---
@@ -180,14 +198,78 @@ function txBattery.presentationFor(colSpan, rowSpan)
   return {showVisual = cells >= 2, showDetail = cells >= 2}
 end
 
+--- Vertical air between the reading and the glyph beside it, and between the
+--- glyph and the percentage beneath it.
+txBattery.GLYPH_GAP = 6
+
+--- Tallest glyph this panel will draw.
+--- A battery beside an XXLSIZE reading would be half the height of the panel
+--- if it simply tracked the font, and a battery is an indicator rather than
+--- the reading. Thirty pixels is about the height of a MIDSIZE line.
+txBattery.GLYPH_MAX_HEIGHT = 30
+
+--- Choose the largest glyph the panel can afford beside its reading.
+---
+--- The glyph takes a column, so the reading is fitted against what is left
+--- rather than against the whole panel. That costs the reading size, and the
+--- rule for how much is the one the ladder already implies: **a reading may
+--- step down one size to make room for the glyph, and no further.** Two steps
+--- is the panel telling us it is too narrow to hold both, and a `1 x 2` says
+--- exactly that -- content 105 pixels, of which a DBLSIZE `88.8` needs 93.
+---
+--- Sized by search rather than by formula because the answer is not smooth:
+--- a glyph one pixel narrower can be the difference between the reading
+--- keeping XXLSIZE and dropping to DBLSIZE, and there is no expression for
+--- where that edge falls that is not just this loop written out.
+---@param themeBuilder table
+---@param primitives table Owns what is too small to read as a battery.
+---@param forms string[]
+---@param content integer Full content width.
+---@param room integer Vertical room the ladder left.
+---@return integer? width
+---@return integer? height
+---@return any font Reading font once the glyph has taken its column.
+---@return integer formIndex
+function txBattery.glyphFor(themeBuilder, primitives, forms, content, room)
+  local bare, bareForm = themeBuilder.fitReading(forms, content, room)
+  local step = themeBuilder.readingStep(bare)
+  local floorStep = step and math.min(step + 1, #themeBuilder.READING_FONTS)
+  local floorHeight = floorStep
+    and themeBuilder.fontHeight(themeBuilder.READING_FONTS[floorStep])
+    or 0
+
+  local ideal = math.min(txBattery.GLYPH_MAX_HEIGHT,
+    math.floor(themeBuilder.fontHeight(bare) * 0.5 + 0.5))
+
+  for height = ideal, primitives.GLYPH_MIN_HEIGHT, -1 do
+    local width = height * 2
+    local left = content - width - txBattery.GLYPH_GAP
+    local font, formIndex = themeBuilder.fitReading(forms, left, room)
+    -- Two conditions, and the second is not implied by the first.
+    -- `fitReading` returns the smallest font on the ladder when nothing fits
+    -- rather than failing, so a reading already at SMLSIZE passes a test that
+    -- only asks how far it stepped -- there is nowhere further for it to
+    -- step. Asking whether it actually fits is what stops the glyph taking
+    -- width the reading needed and leaving it to wrap.
+    if themeBuilder.fontHeight(font) >= floorHeight
+        and themeBuilder.textWidth(font, forms[formIndex]) <= left then
+      return width, height, font, formIndex
+    end
+  end
+
+  return nil, nil, bare, bareForm
+end
+
 --- Compute the content regions for the current rectangle.
 ---@param theme AeroGridTheme
 ---@param themeBuilder table
+---@param primitives table
 ---@param rect AeroGridRect
 ---@param layout table
 ---@param fonts table
 ---@return table
-function txBattery.regionsFor(theme, themeBuilder, rect, layout, fonts)
+function txBattery.regionsFor(theme, themeBuilder, primitives, rect, layout,
+    fonts)
   local spacing = theme.spacing
   local frame = themeBuilder.frame(theme, rect, fonts)
   local labelHeight = frame.labelHeight
@@ -198,16 +280,47 @@ function txBattery.regionsFor(theme, themeBuilder, rect, layout, fonts)
   local ladder = themeBuilder.ladder(theme, rect, frame)
   local showVisual = layout.showVisual and ladder.visual
   local showDetail = layout.showDetail and ladder.rows > 0
+  local wantsGlyph = layout.visual == "battery"
+
+  local barY = math.max(1, rect.h - frame.bottom - spacing.barHeight)
+  local detailY = math.max(1, barY - labelHeight - 2)
 
   -- "88.8V" is the widest reading a transmitter pack produces, and "88.8" is
   -- the same reading without a unit the panel's own label already carries.
   -- Nothing shorter is offered: a digit here is magnitude.
-  local value, formIndex = themeBuilder.fitReading(
-    txBattery.FORMS, frame.content, ladder.room)
+  local value, formIndex, glyphWidth, glyphHeight
+  if wantsGlyph and showVisual then
+    glyphWidth, glyphHeight, value, formIndex = txBattery.glyphFor(
+      themeBuilder, primitives, txBattery.FORMS, frame.content, ladder.room)
+    -- A panel that cannot hold a glyph sheds it, the way it sheds any other
+    -- visual. It does not fall back to a bar: the layout asked for a
+    -- battery, and a bar in its place is a different answer to the question.
+    if not glyphWidth then showVisual = false end
+  else
+    value, formIndex = themeBuilder.fitReading(
+      txBattery.FORMS, frame.content, ladder.room)
+  end
+
   local valueHeight = themeBuilder.fontHeight(value)
   if top + valueHeight > rect.h then top = math.max(0, rect.h - valueHeight) end
 
-  local barY = math.max(1, rect.h - frame.bottom - spacing.barHeight)
+  local glyphX, glyphY, detailUnderGlyph
+  if glyphWidth then
+    glyphX = frame.pad + frame.content - glyphWidth
+    if showDetail then
+      -- The percentage sits on the supporting row every other panel of this
+      -- size uses, and the glyph sits directly above it, so the right column
+      -- reads as one indicator without the row drifting away from where the
+      -- dashboard puts supporting rows.
+      glyphY = math.max(top, detailY - txBattery.GLYPH_GAP - glyphHeight)
+      -- Under the glyph only if it fits under the glyph. `72% EST` is 79
+      -- pixels at the label font and a `1 x 2`'s glyph is 26 wide, so there
+      -- it stays beneath the reading where it is today.
+      detailUnderGlyph = themeBuilder.textWidth(fonts.label, "100%") <= glyphWidth
+    else
+      glyphY = top + math.max(0, math.floor((valueHeight - glyphHeight) / 2))
+    end
+  end
 
   return {
     frame = frame,
@@ -216,11 +329,26 @@ function txBattery.regionsFor(theme, themeBuilder, rect, layout, fonts)
     valueY = top,
     value = value,
     formIndex = formIndex,
-    formIndex = formIndex,
-    detailY = math.max(1, barY - labelHeight - 2),
+    -- The reading's own column, which is what is left once the glyph has
+    -- taken its share. Written down rather than recomputed, because the
+    -- label's width is what decides whether LVGL wraps it.
+    valueWidth = glyphWidth and (frame.content - glyphWidth - txBattery.GLYPH_GAP)
+      or frame.content,
+    glyphX = glyphX,
+    glyphY = glyphY,
+    glyphWidth = glyphWidth,
+    glyphHeight = glyphHeight,
+    detailUnderGlyph = detailUnderGlyph == true,
+    detailX = detailUnderGlyph and glyphX or frame.pad,
+    detailWidth = detailUnderGlyph and glyphWidth
+      or (glyphWidth and (frame.content - glyphWidth - txBattery.GLYPH_GAP)
+        or frame.content),
+    detailY = detailY,
     barY = barY,
     showVisual = showVisual,
     showDetail = showDetail,
+    showGlyph = glyphWidth ~= nil,
+    showBar = showVisual and layout.visual == "bar",
   }
 end
 
@@ -236,9 +364,10 @@ function txBattery.create(parent, rect, settings, services)
   local fonts = services.fonts
   local span = services.span
   local layout = txBattery.presentationFor(span.colSpan, span.rowSpan)
+  layout.visual = settings.visual
   local presentation = services.state("normal", settings.accent)
   local area = txBattery.regionsFor(
-    theme, services.themeBuilder, rect, layout, fonts)
+    theme, services.themeBuilder, primitives, rect, layout, fonts)
 
   local context = {
     theme = theme,
@@ -251,6 +380,11 @@ function txBattery.create(parent, rect, settings, services)
     stateName = "normal",
     text = "--",
     detail = "",
+    -- `render` needs these: the form the fitter chose decides whether the
+    -- unit is printed, and the percentage is fitted to the column it lands
+    -- in, which is the glyph's when it sits under one.
+    formIndex = area.formIndex,
+    detailWidth = area.detailWidth,
   }
 
   local modelService = services.model
@@ -272,16 +406,19 @@ function txBattery.create(parent, rect, settings, services)
   context.value = primitives.value(panel.root, theme, {
     x = area.pad,
     y = area.valueY,
-    w = area.content,
+    -- Its own column, not the panel's. A label's width is what LVGL wraps
+    -- against, so a reading handed the full content width while a glyph sits
+    -- in part of it would be measured against space it does not have.
+    w = area.valueWidth,
     text = "--",
     color = presentation.value,
     font = area.value,
   })
 
   context.detailLabel = primitives.label(panel.root, theme, {
-    x = area.pad,
+    x = area.detailX,
     y = area.detailY,
-    w = area.content,
+    w = area.detailWidth,
     text = "",
     color = theme.color.textFaint,
     font = fonts.label,
@@ -292,11 +429,20 @@ function txBattery.create(parent, rect, settings, services)
   -- built only when the layout stated a range, which was safe while that was
   -- the only source; the radio's range arrives on the service's first update,
   -- after this runs, so deciding here would have meant no bar ever.
-  if layout.showVisual and settings.visual ~= "none" then
+  if layout.showVisual and settings.visual == "bar" then
     context.bar = primitives.bar(panel.root, theme, {
       x = area.pad,
       y = area.barY,
       w = area.content,
+      fraction = 0,
+      color = presentation.accent,
+    })
+  elseif settings.visual == "battery" and area.showGlyph then
+    context.glyph = primitives.batteryGlyph(panel.root, theme, {
+      x = area.glyphX,
+      y = area.glyphY,
+      w = area.glyphWidth,
+      h = area.glyphHeight,
       fraction = 0,
       color = presentation.accent,
     })
@@ -311,11 +457,22 @@ function txBattery.create(parent, rect, settings, services)
   -- Whether the bar is *showing* is the box's answer and the range's answer
   -- together, and the second only arrives once the service has run.
   context.barShown = false
+  context.glyphShown = false
   context.barX, context.barY, context.barWidth = area.pad, area.barY, area.content
+  context.glyphRect = {x = area.glyphX, y = area.glyphY,
+    w = area.glyphWidth, h = area.glyphHeight}
 
   if context.bar and not area.showVisual then
     lvgl.hide(context.bar.track)
     lvgl.hide(context.bar.fill)
+  end
+  if context.glyph then
+    -- Built hidden and revealed by `apply`, for the same reason the bar is:
+    -- whether there is a range to measure against is only known once the
+    -- service has run, which is after this.
+    lvgl.hide(context.glyph.shell)
+    lvgl.hide(context.glyph.nub)
+    lvgl.hide(context.glyph.fill)
   end
 
   local _, drawn = primitives.changed(context, txBattery.render)
@@ -335,7 +492,14 @@ function txBattery.render(context, out)
   local stale = type(feed) == "table" and feed.stale == true
 
   out.state = txBattery.resolveState(settings, value, stale)
-  out.text = type(value) == "number" and string.format("%.1fV", value) or "--"
+  -- The form the fitter chose, not the longest one. The fitter was picking
+  -- `88.8` at a `1 x 2` -- DBLSIZE, 93 pixels of a 105 pixel column -- and
+  -- this printed `88.8V`, which is 116 and wraps onto a second line over
+  -- whatever is beneath it. It has been true since the forms were written and
+  -- only showed above 9.9 V, because `7.9V` happens to fit where `10.0V` does
+  -- not. The same shape as the flight mode's name: measure one string, draw
+  -- another.
+  out.text = txBattery.reading(value, context.formIndex)
   -- Whether there is a range at all is part of what the panel draws: it
   -- decides whether the bar and the percentage appear, and it can change
   -- after the panel is built.
@@ -350,7 +514,13 @@ function txBattery.render(context, out)
   -- a hidden label.
   if context.showDetail and out.ranged and settings.showPercent
       and type(value) == "number" then
-    out.detail = string.format("%d%% EST", math.floor(out.fraction * 100 + 0.5))
+    local percent = math.floor(out.fraction * 100 + 0.5)
+    -- `EST` says the number is a linear fit rather than a gauge, so it is the
+    -- first thing to go when the column is narrow -- which under a glyph it
+    -- usually is. Fitted rather than assumed, like every other supporting row.
+    out.detail = context.themeBuilder.fitLabel(
+      {percent .. "% EST", percent .. "%"},
+      context.fonts.label, context.detailWidth)
   end
 end
 
@@ -384,6 +554,20 @@ function txBattery.apply(context, drawn)
       context.barX, context.barY, context.barWidth, drawn.fraction)
     context.barShown = barShown
   end
+
+  -- And the glyph, on the same terms: an outline with no fill in it is a
+  -- claim that the pack is empty, which is worse than showing nothing.
+  local glyphShown = context.glyph ~= nil and context.showVisual and drawn.ranged
+  if glyphShown then
+    context.primitives.setBatteryGlyph(
+      context.glyph, drawn.fraction, presentation.accent)
+  end
+  if context.glyph and glyphShown ~= context.glyphShown then
+    local rect = context.glyphRect
+    context.primitives.reconcileBatteryGlyph(context.glyph, glyphShown,
+      rect.x, rect.y, rect.w, rect.h, drawn.fraction)
+    context.glyphShown = glyphShown
+  end
 end
 
 --- Advance the component, repainting only when something drawn changed.
@@ -399,7 +583,7 @@ end
 ---@param rect AeroGridRect
 function txBattery.update(context, rect)
   local area = txBattery.regionsFor(context.theme, context.themeBuilder,
-    rect, context.layout, context.fonts)
+    context.primitives, rect, context.layout, context.fonts)
 
   context.primitives.resizePanel(context.panel, rect)
   context.primitives.placeHeader(context.label, context.badge, area.frame,
@@ -407,27 +591,51 @@ function txBattery.update(context, rect)
   context.value:set({
     x = area.pad,
     y = area.valueY,
-    w = area.content,
+    w = area.valueWidth,
     font = function() return area.value end,
   })
 
   context.primitives.reconcile(context.detailLabel, area.showDetail,
-    {x = area.pad, y = area.detailY, w = area.content},
+    {x = area.detailX, y = area.detailY, w = area.detailWidth},
     area.showDetail == context.showDetail)
 
   -- A row that has just reappeared holds whatever it had when it was shed,
-  -- and `render` stopped declaring its key while it was hidden.
-  if area.showDetail ~= context.showDetail then context.rendered = nil end
+  -- and `render` stopped declaring its key while it was hidden. The same
+  -- applies when the row merely moved column: the percentage is fitted to its
+  -- width, so a narrower column wants it written again.
+  if area.showDetail ~= context.showDetail
+      or area.formIndex ~= context.formIndex
+      or area.detailWidth ~= context.detailWidth then
+    context.rendered = nil
+  end
   context.showDetail = area.showDetail
+  context.formIndex = area.formIndex
+  context.detailWidth = area.detailWidth
+
+  local ranged = txBattery.hasRange(context.settings, context.range)
+  local fraction = txBattery.fraction(
+    context.settings, context.reading, context.range)
 
   context.barX, context.barY, context.barWidth = area.pad, area.barY, area.content
-  local barShown = context.bar ~= nil and area.showVisual
-    and txBattery.hasRange(context.settings, context.range)
+  local barShown = context.bar ~= nil and area.showVisual and ranged
   context.primitives.reconcileBar(context.bar, barShown,
-    area.pad, area.barY, area.content,
-    txBattery.fraction(context.settings, context.reading, context.range),
+    area.pad, area.barY, area.content, fraction,
     barShown == context.barShown)
   context.barShown = barShown
+
+  -- A reflow can take the glyph away entirely: a panel narrowed to one cell
+  -- has nowhere to put it, and the reading has first claim on the width.
+  local glyphShown = context.glyph ~= nil and area.showVisual
+    and area.showGlyph and ranged
+  if area.showGlyph then
+    context.glyphRect = {x = area.glyphX, y = area.glyphY,
+      w = area.glyphWidth, h = area.glyphHeight}
+  end
+  local rect2 = context.glyphRect
+  context.primitives.reconcileBatteryGlyph(context.glyph, glyphShown,
+    rect2.x, rect2.y, rect2.w, rect2.h, fraction,
+    glyphShown == context.glyphShown)
+  context.glyphShown = glyphShown
   context.showVisual = area.showVisual
 end
 

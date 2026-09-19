@@ -774,6 +774,196 @@ function primitives.setBarMarker(bar, fraction)
   lvgl.show(marker)
 end
 
+--------------------------------------------------------------------------
+-- Battery glyph
+--------------------------------------------------------------------------
+
+--- Smallest battery this host will draw, in pixels.
+--- Below roughly this size a rounded outline with a nub stops reading as a
+--- battery and starts reading as a smudge, so a panel that cannot give the
+--- glyph this much sheds it the way it sheds any other visual.
+primitives.GLYPH_MIN_WIDTH = 26
+primitives.GLYPH_MIN_HEIGHT = 13
+
+--- Pixels of the outline, and of the gap between the outline and the fill.
+--- One of each, so the interior is inset by two on every side.
+primitives.GLYPH_BORDER = 1
+primitives.GLYPH_GAP = 1
+
+--- Proportions of a battery: how much wider than tall, and how big the nub is.
+primitives.GLYPH_ASPECT = 1.8
+
+--- Work out the parts of a battery glyph of a given size.
+---
+--- Separate from building it so a component can ask what a glyph would
+--- occupy before deciding whether to have one, and so the arithmetic is
+--- testable without an LVGL object anywhere near it.
+---@param x integer
+---@param y integer
+---@param width integer Total width, nub included.
+---@param height integer
+---@return table
+function primitives.batteryGeometry(x, y, width, height)
+  -- The nub is a twelfth of the width and half the height, which keeps it a
+  -- terminal rather than a second cell at every size this draws at.
+  local nubWidth = math.max(2, math.floor(width / 12 + 0.5))
+  local nubHeight = math.max(3, math.floor(height / 2 + 0.5))
+  local bodyWidth = math.max(1, width - nubWidth)
+  local inset = primitives.GLYPH_BORDER + primitives.GLYPH_GAP
+
+  return {
+    x = x,
+    y = y,
+    width = width,
+    height = height,
+    bodyWidth = bodyWidth,
+    nubX = x + bodyWidth,
+    nubY = y + math.floor((height - nubHeight) / 2),
+    nubWidth = nubWidth,
+    nubHeight = nubHeight,
+    inset = inset,
+    interiorX = x + inset,
+    interiorY = y + inset,
+    interiorWidth = math.max(1, bodyWidth - inset * 2),
+    interiorHeight = math.max(1, height - inset * 2),
+  }
+end
+
+--- Convert a 0..1 fraction into the width of a glyph's fill.
+---@param glyph table
+---@param fraction any
+---@return integer
+function primitives.batteryFill(glyph, fraction)
+  return primitives.barFill(glyph.interiorWidth, fraction)
+end
+
+--- Create a battery outline with a proportional fill.
+---
+--- A battery rather than a bar because a bar says "some of something" and a
+--- battery says which something, which is the whole of what this panel is
+--- for. `cell-battery` wants the same shape, which is why this is here beside
+--- the bar rather than inside `tx-battery`.
+---
+--- Three rectangles, because `lvgl.box` accepts a `color` and silently
+--- ignores it: `LvglWidgetBox::build` creates a bare `lv_obj` and its
+--- `setColor` is the base class's empty virtual, so only a filled
+--- `lvgl.rectangle` paints.
+---
+--- **The outline's weight is fixed at build and never restated.** A border
+--- width only reaches LVGL through `LvglWidgetBorderedObject::setOpacity`,
+--- which runs behind `changedValue` and so ignores a thickness passed to a
+--- later `set`. The fill carries the state instead, which is what the bar
+--- does and what the reading does, so there is nothing here that wants a
+--- heavier outline anyway.
+---@param parent any
+---@param theme AeroGridTheme
+---@param options table x, y, w, h, fraction, color
+---@return table glyph
+function primitives.batteryGlyph(parent, theme, options)
+  local geometry = primitives.batteryGeometry(
+    options.x, options.y, options.w, options.h)
+  local outline = options.outline or theme.color.track
+
+  local shell = lvgl.rectangle(parent, {
+    x = geometry.x,
+    y = geometry.y,
+    w = geometry.bodyWidth,
+    h = geometry.height,
+    color = outline,
+    filled = false,
+    thickness = primitives.GLYPH_BORDER,
+    rounded = 2,
+  })
+
+  local nub = lvgl.rectangle(parent, {
+    x = geometry.nubX,
+    y = geometry.nubY,
+    w = geometry.nubWidth,
+    h = geometry.nubHeight,
+    color = outline,
+    filled = true,
+    rounded = 1,
+  })
+
+  -- Created after the shell so it draws over it, and inset by the border and
+  -- a pixel of air, so a full battery still shows its own outline rather
+  -- than merging into one solid block.
+  local fill = lvgl.rectangle(parent, {
+    x = geometry.interiorX,
+    y = geometry.interiorY,
+    w = primitives.batteryFill(geometry, options.fraction),
+    h = geometry.interiorHeight,
+    color = options.color or theme.color.cyan,
+    filled = true,
+    rounded = 1,
+  })
+
+  local glyph = primitives.batteryGeometry(
+    options.x, options.y, options.w, options.h)
+  glyph.shell = shell
+  glyph.nub = nub
+  glyph.fill = fill
+  return glyph
+end
+
+--- Update a glyph's fill proportion and colour.
+---@param glyph table
+---@param fraction number
+---@param color? integer
+function primitives.setBatteryGlyph(glyph, fraction, color)
+  local changes = {w = primitives.batteryFill(glyph, fraction)}
+  if color then changes.color = color end
+  glyph.fill:set(changes)
+end
+
+--- Move and resize a glyph without rebuilding it.
+---@param glyph table
+---@param x integer
+---@param y integer
+---@param width integer
+---@param height integer
+---@param fraction number Refilled against the new interior.
+function primitives.placeBatteryGlyph(glyph, x, y, width, height, fraction)
+  local next = primitives.batteryGeometry(x, y, width, height)
+  for key, value in pairs(next) do glyph[key] = value end
+
+  glyph.shell:set({x = glyph.x, y = glyph.y,
+    w = glyph.bodyWidth, h = glyph.height})
+  glyph.nub:set({x = glyph.nubX, y = glyph.nubY,
+    w = glyph.nubWidth, h = glyph.nubHeight})
+  glyph.fill:set({x = glyph.interiorX, y = glyph.interiorY,
+    w = primitives.batteryFill(glyph, fraction), h = glyph.interiorHeight})
+end
+
+--- Show or hide a glyph, positioning it only when it is visible.
+---
+--- All three rectangles together, for the reason `reconcileBar` exists: a
+--- shape made of several objects that move as one cannot be reconciled one
+--- object at a time without something eventually being left behind. That is
+--- exactly how `metric` came to hide a bar and leave its marker floating.
+---@param glyph? table
+---@param visible boolean
+---@param x integer
+---@param y integer
+---@param width integer
+---@param height integer
+---@param fraction number
+---@param settled? boolean Visibility is known not to have moved.
+function primitives.reconcileBatteryGlyph(glyph, visible, x, y, width, height,
+    fraction, settled)
+  if not glyph then return end
+
+  if visible then
+    primitives.placeBatteryGlyph(glyph, x, y, width, height, fraction)
+  end
+  if settled then return end
+
+  local change = visible and lvgl.show or lvgl.hide
+  change(glyph.shell)
+  change(glyph.nub)
+  change(glyph.fill)
+end
+
 --- Create a centered bipolar bar with a persistent neutral marker.
 ---
 --- Trims and signed global variables are read against their own centre, so the

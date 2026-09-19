@@ -69,8 +69,12 @@ components:
       # than displacing a neighbour.
 
   # A transmitter pack only estimates a charge once a layout states the range
-  # it should be read against, so the bar and the percentage stay dark without
-  # these. A 2S pack is flat at 6.6 V and full at 8.4 V.
+  # it should be read against, so the battery and the percentage stay dark
+  # without these. A 2S pack is flat at 6.6 V and full at 8.4 V.
+  #
+  # The range could be left out entirely now that the radio's own battery
+  # meter is the default, but this dashboard is read on a simulator whose
+  # radio settings are not the pilot's, so it states its own.
   - id: tx
     type: tx-battery
     col: 0
@@ -79,12 +83,19 @@ components:
     rowSpan: 1
     config:
       label: TX
-      accent: green
+      # Cyan rather than green. The palette reserves cyan for electrical data
+      # and green for healthy state, and this layout was still overriding the
+      # component's own corrected default with the colour the vocabulary work
+      # took away from it. It matters more now: the accent is what the
+      # battery fills with, so a green fill reads as a verdict on the pack
+      # rather than as a measurement of it.
+      accent: cyan
       packEmpty: 6.6
       packFull: 8.4
       warning: 7.2
       critical: 6.8
-      visual: bar
+      # No `visual`: the default is the battery glyph, which is what this
+      # panel is meant to show off.
       # No `showPercent`: this panel is one row tall and the percentage needs
       # a row beneath the reading, which no 65 pixel panel has at any width.
       # It was stated here and silently ignored until the loader started

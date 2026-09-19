@@ -443,6 +443,16 @@ A typical telemetry component should contain only the elements it needs from thi
 
 Components must define responsive presentations for the spans they support. A 1 x 1 component may show only a value and label; a 2 x 1 variant may add units and a trend; a larger variant may add history or related measurements. Unsupported spans must be rejected by component metadata rather than producing a cramped layout.
 
+#### A visualization beside the reading, not beneath it
+
+A bar sits under the reading and costs it nothing but height, which the ladder already accounts for. A **battery glyph** sits beside it and costs it width, and width is what decides the reading's font, so a panel that adds one has to fit the reading against the column that is left rather than against the panel.
+
+The rule is the ladder's own logic read sideways: **a reading may step down one size to make room for something beside it, and no further.** Two steps is the panel saying it is too narrow to hold both, and the shape is shed the way any other visual is. Holding to that, the battery costs `tx-battery` one font size at exactly one span -- `1 x 2`, whose 105 pixels of content cannot carry a DBLSIZE `88.8` and a battery at the same time -- and costs nothing at the other seven, because dropping a unit the panel's own heading already states buys back more width than the glyph takes.
+
+The glyph is sized by search rather than by formula. The answer is not smooth: a glyph one pixel narrower can be the difference between a reading keeping XXLSIZE and dropping to DBLSIZE, and there is no expression for where that edge falls that is not the loop written out longhand.
+
+`primitives.batteryGlyph` is three rectangles, because `lvgl.box` accepts a `color` and silently ignores it. Its outline is built at its final weight and never restated, since a border width only reaches LVGL through `LvglWidgetBorderedObject::setOpacity` and is discarded by a later `set`; the **fill** carries the state, the way a bar's fill does and its track does not. An outline with no fill is a picture of a flat pack, so a panel with no range to measure against hides the whole glyph rather than drawing it empty.
+
 ### States
 
 - `normal`: Elevated panel with a semantic measurement accent, and no outline.

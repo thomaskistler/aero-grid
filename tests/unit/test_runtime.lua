@@ -3235,16 +3235,16 @@ local function testTxBatteryComposition()
   local battery = loadModule("components/tx-battery.lua")
   local resolved = theme.build("modern")
 
-  -- span, reading font, form index, bar, percentage
+  -- span, reading font, form index, glyph w x h, percentage under the glyph
   local documented = {
-    {"1x1", "MIDSIZE", 1, false, false},
-    {"2x1", "MIDSIZE", 1, true, false},
-    {"3x1", "MIDSIZE", 1, true, false},
-    {"4x1", "MIDSIZE", 1, true, false},
-    {"1x2", "DBLSIZE", 2, true, true},
-    {"2x2", "XXLSIZE", 1, true, true},
-    {"3x2", "XXLSIZE", 1, true, true},
-    {"4x2", "XXLSIZE", 1, true, true},
+    {"1x1", "MIDSIZE", 1, nil, nil, false},
+    {"2x1", "MIDSIZE", 1, 30, 15, false},
+    {"3x1", "MIDSIZE", 1, 30, 15, false},
+    {"4x1", "MIDSIZE", 1, 30, 15, false},
+    {"1x2", "MIDSIZE", 2, 32, 16, false},
+    {"2x2", "XXLSIZE", 2, 60, 30, true},
+    {"3x2", "XXLSIZE", 1, 60, 30, true},
+    {"4x2", "XXLSIZE", 1, 60, 30, true},
   }
 
   local GUTTER, CELLS, WIDTH, HEIGHT = 4, 4, 480, 272
@@ -3255,7 +3255,8 @@ local function testTxBatteryComposition()
     "the documented table and the declared spans disagree in length")
 
   for index, row in ipairs(documented) do
-    local span, font, form, bar, percent = row[1], row[2], row[3], row[4], row[5]
+    local span, font, form = row[1], row[2], row[3]
+    local glyphWidth, glyphHeight, under = row[4], row[5], row[6]
     assertEqual(battery.supportedSpans[index], span,
       "the documented table is in a different order from supportedSpans")
 
@@ -3267,32 +3268,71 @@ local function testTxBatteryComposition()
       h = cellHeight * rows + GUTTER * (rows - 1),
     }
     local fonts = theme.typography(cols, rows)
-    local area = battery.regionsFor(resolved, theme, rect,
-      battery.presentationFor(cols, rows), fonts)
+    local layout = battery.presentationFor(cols, rows)
+    layout.visual = "battery"
+    local area = battery.regionsFor(
+      resolved, theme, primitives, rect, layout, fonts)
 
     assertEqual(edgetx.fontName(area.value), font,
       span .. " does not draw its reading at the documented size")
     assertEqual(area.formIndex, form,
       span .. " uses a different form from the documented one")
-    assertEqual(area.showVisual, bar,
-      span .. " disagrees with the documentation about showing a bar")
-    assertEqual(area.showDetail, percent,
-      span .. " disagrees with the documentation about showing a percentage")
+    assertEqual(area.glyphWidth, glyphWidth,
+      span .. " draws a glyph of a different width from the documented one")
+    assertEqual(area.glyphHeight, glyphHeight,
+      span .. " draws a glyph of a different height from the documented one")
+    assertEqual(area.detailUnderGlyph, under,
+      span .. " disagrees with the documentation about where the percentage"
+        .. " sits")
 
-    -- The reading has to fit whatever else the panel shows.
+    -- The reading has to fit the column it actually has, which is what is
+    -- left once the glyph has taken its share -- not the panel's full width.
+    -- This is the assertion that would have caught the reading being fitted
+    -- as `88.8` and drawn as `88.8V`.
     assert(theme.textWidth(area.value, battery.FORMS[area.formIndex])
-        <= area.content,
-      span .. " draws its reading past the panel edge")
+        <= area.valueWidth,
+      span .. " draws its reading past its own column")
+
+    -- And a glyph, where there is one, has to fit beside it.
+    if area.glyphWidth then
+      assert(area.glyphX + area.glyphWidth <= area.pad + area.content,
+        span .. " draws its battery past the panel edge")
+      assert(area.glyphX >= area.pad + area.valueWidth,
+        span .. " draws its battery over the reading")
+    end
   end
 
-  -- The documented claim that only `1x2` drops the unit, which is the one
-  -- place the panel is narrow enough to need the space.
-  local dropped = 0
-  for _, row in ipairs(documented) do
-    if row[3] == 2 then dropped = dropped + 1 end
+  -- The form the fitter chose is the form that is printed. The reading was
+  -- fitted as `88.8` at a `1 x 2` and printed as `88.8V`, which is 116 pixels
+  -- of a 105 pixel column and wraps -- invisible below 10 V because `7.9V`
+  -- happens to fit where `10.0V` does not.
+  assertEqual(battery.reading(7.9, 1), "7.9V")
+  assertEqual(battery.reading(7.9, 2), "7.9")
+  assertEqual(battery.reading(10.0, 2), "10.0")
+  assertEqual(battery.reading(nil, 1), "--")
+
+  -- The widest reading in the chosen form, against the column it lands in.
+  -- `7.9V` fits everywhere and proves nothing; `88.8V` is what the fitter was
+  -- asked about and is what has to fit.
+  for index, row in ipairs(documented) do
+    local cols, rows = string.match(row[1], "(%d)x(%d)")
+    cols, rows = tonumber(cols), tonumber(rows)
+    local rect = {
+      x = 0, y = 0,
+      w = cellWidth * cols + GUTTER * (cols - 1),
+      h = cellHeight * rows + GUTTER * (rows - 1),
+    }
+    local layout = battery.presentationFor(cols, rows)
+    layout.visual = "battery"
+    local area = battery.regionsFor(resolved, theme, primitives, rect, layout,
+      theme.typography(cols, rows))
+    local widest = battery.reading(88.8, area.formIndex)
+    assert(theme.textWidth(area.value, widest) <= area.valueWidth,
+      row[1] .. " wraps its widest reading " .. widest .. ": "
+        .. theme.textWidth(area.value, widest) .. " into " .. area.valueWidth)
+    assertEqual(index <= #documented, true)
   end
-  assertEqual(dropped, 1,
-    "the documentation says exactly one span drops the unit")
+
   assertEqual(battery.FORMS[2], "88.8",
     "the shorter form is no longer the unitless one the page describes")
 end
