@@ -359,7 +359,12 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     frame = frame,
     pad = frame.pad,
     content = frame.content,
-    valueY = top,
+    -- Centred in the body band. The font came from that band, so this is
+    -- where it belongs: sizing a reading against a band and then drawing it
+    -- at the panel's old content top is how a bar first found itself under
+    -- its own reading.
+    valueY = themeBuilder.bodyTop(
+      ladder, themeBuilder.fontHeight(value)),
     valueWidth = valueWidth,
     value = value,
     unitFont = unitFont,

@@ -148,7 +148,7 @@ function primitives.header(parent, theme, frame, fonts, text, presentation,
 
   local label = primitives.label(parent, theme, {
     x = frame.labelX,
-    y = frame.compact,
+    y = frame.labelY,
     w = frame.labelWidth,
     text = heading,
     color = presentation.label,
@@ -162,7 +162,7 @@ function primitives.header(parent, theme, frame, fonts, text, presentation,
 
   local badge = primitives.badge(parent, theme, {
     x = frame.badgeX,
-    y = frame.compact,
+    y = frame.labelY,
     w = frame.badgeWidth,
     text = "",
     color = theme.color.amber,
@@ -214,7 +214,7 @@ end
 ---@param frame table
 ---@param text? any Heading currently shown; omitted leaves the text alone.
 function primitives.placeHeader(label, badge, frame, themeBuilder, fonts, text)
-  local changes = {x = frame.labelX, y = frame.compact, w = frame.labelWidth}
+  local changes = {x = frame.labelX, y = frame.labelY, w = frame.labelWidth}
 
   -- The column is what the badge leaves, so a reflow can change it and a
   -- heading that fitted before may not now. Refitted here rather than left,
@@ -231,7 +231,7 @@ function primitives.placeHeader(label, badge, frame, themeBuilder, fonts, text)
   end
 
   label:set(changes)
-  badge:set({x = frame.badgeX, y = frame.compact, w = frame.badgeWidth})
+  badge:set({x = frame.badgeX, y = frame.labelY, w = frame.badgeWidth})
   if frame.labelHidden then lvgl.hide(label) else lvgl.show(label) end
 end
 

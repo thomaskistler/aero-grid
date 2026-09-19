@@ -1020,10 +1020,41 @@ function theme.ladder(resolved, rect, frame)
   local used = fixed + (visual and barHeight or 0)
   local rows = used + rowHeight + theme.fontHeight(MIDSIZE) <= rect.h and 1 or 0
 
+  -- **The reading's room is its band, not what is left over.** The panel
+  -- divides into proportional bands -- a label quarter, a body half, a
+  -- tertiary quarter, with an absent part giving its quarter to the body --
+  -- and the body is what the reading is sized against. That inverts the older
+  -- rule: the composition used to come from the box and the font from the
+  -- composition, and now the band comes from the panel and the font from the
+  -- band, so the font does not consult the content at all and cannot resize
+  -- with it. The stability the fitter had to be careful to preserve now holds
+  -- by construction.
+  --
+  -- It stays here rather than moving into each component, because two panels
+  -- of one size agreeing is the whole reason this function exists. A band
+  -- rule applied by some components and not others would reintroduce exactly
+  -- the disagreement it replaced.
+  -- The tertiary quarter is reserved whenever the panel's floor is spoken
+  -- for, which is a supporting row or a bar. **A bar is floor furniture, not
+  -- a band's contents**: its length is the reading, so it spans the panel and
+  -- sits at the bottom, and a body band that runs down to meet it puts the
+  -- number on top of it. That is not hypothetical -- it is what a `metric` at
+  -- `2 x 1` did the first time the band chose its font, a DBLSIZE reading
+  -- ending five pixels below the bar's own top edge.
+  --
+  -- The design mocks did not predict it, and the reason is worth keeping: the
+  -- collision check that found everything else on that page compares labels
+  -- with labels and labels with the panel edge. A bar is not a label, so a
+  -- reading lying across one was invisible to it, and the mocks' banded-font
+  -- table is correspondingly optimistic for every panel that draws a bar.
+  local bands = theme.bands(frame, rect, true, rows > 0,
+    visual and barHeight or 0)
+
   return {
     rows = rows,
     visual = visual,
-    room = math.max(1, rect.h - used - rows * rowHeight),
+    bands = bands,
+    room = bands.body.h,
   }
 end
 
@@ -1314,7 +1345,17 @@ function theme.frame(resolved, rect, fonts, reserved)
   local badgeX = math.max(pad, rect.w - padRight - badgeWidth)
   local labelHeight = theme.fontHeight(fonts.label)
   local labelX = pad
-  local top = compact + labelHeight + 2
+  -- The header sits in the label band -- the top quarter of the panel's
+  -- vertical extent -- rather than at the panel's own top inset. On a short
+  -- panel that quarter is smaller than the font, and the band yields: the
+  -- heading keeps its size, overflows the band, and is clamped so its glyphs
+  -- stay on the panel. See `theme.clampToPanel` for why the band is the thing
+  -- that gives way and not the font.
+  local extent = math.max(1, (rect.h - 4) - compact)
+  local labelY = theme.clampToPanel(
+    theme.centreInBand({y = compact, h = math.floor(extent / 4)}, labelHeight),
+    fonts.label, rect.h)
+  local top = math.max(compact + labelHeight + 2, labelY + labelHeight + 2)
 
   if reserved then
     -- The header shares the obstructed band, so it moves along to its right
@@ -1349,6 +1390,7 @@ function theme.frame(resolved, rect, fonts, reserved)
     compact = compact,
     content = content,
     labelHeight = labelHeight,
+    labelY = labelY,
     badgeWidth = badgeWidth,
     badgeX = badgeX,
     labelX = labelX,
@@ -1362,6 +1404,228 @@ function theme.frame(resolved, rect, fonts, reserved)
     bottom = 4,
     reserved = reserved,
   }
+end
+
+--- Where the two content slots are centred, as fractions of the content width.
+---
+--- Positions come from the **panel**, never from what is in them. That is the
+--- whole of the arrangement: a slot cannot move because its contents changed
+--- width, so a reading gaining a digit does not shift the battery beside it,
+--- and across a row of equal-width panels every reading lands at the same x.
+--- Two earlier proposals were rejected for failing exactly that, and the
+--- design guide records both with the geometry that ruled them out.
+---
+--- Tightened is the arrangement; strict is the fallback. Strict cannot
+--- collide *provided each element fits its half*, because the two own
+--- disjoint regions; tightening trades that guarantee for the elements
+--- sitting closer together.
+theme.SLOT_TIGHT = {0.30, 0.70}
+theme.SLOT_STRICT = {0.25, 0.75}
+
+--- The x coordinates the two slots are centred on.
+---@param frame table Result of theme.frame.
+---@param slots? table One of theme.SLOT_TIGHT or theme.SLOT_STRICT.
+---@return integer left
+---@return integer right
+function theme.slotCentres(frame, slots)
+  slots = slots or theme.SLOT_TIGHT
+  return frame.pad + math.floor(frame.content * slots[1] + 0.5),
+    frame.pad + math.floor(frame.content * slots[2] + 0.5)
+end
+
+--- Left edge of a block of `width` centred on `centre`.
+---@param centre integer
+---@param width integer
+---@return integer
+function theme.slotX(centre, width)
+  return centre - math.floor(width / 2)
+end
+
+--- Whether the two slots can hold this pair without the elements meeting.
+---
+--- **Asked of the widest string the component can ever print, never of the
+--- value on screen, and decided once at build.** Deciding it from the current
+--- reading would make the arrangement a function of the data: a voltage
+--- crossing `9.9` to `10.0` would flip the whole panel between two layouts and
+--- every element in it would jump. That is the moves-when-content-changes
+--- objection that ruled out centring, in a worse form, because a drift becomes
+--- a switch.
+---
+--- Asking the widest form instead fixes the arrangement for the life of the
+--- panel, so one with room to spare today keeps the layout it will need at its
+--- widest, and nothing it can ever display rearranges it.
+---
+--- **It can fail, and it says so.** Strict halves cannot collide only while
+--- each element fits its own half; where the reading is wider than half the
+--- content, no pair of slots separates them and there is nothing honest to
+--- return. A caller that ignores the verdict gets strict halves and an
+--- overlap; a caller deciding whether to keep a visualization at all has to
+--- check it, and now can. The failing answer being indistinguishable from a
+--- good one is the shape that has cost this project a defect three times.
+---@param frame table Result of theme.frame.
+---@param readingWidth integer Widest the reading and its unit will ever be.
+---@param visualWidth integer Width of the element in the right slot.
+---@return table slots theme.SLOT_TIGHT, or theme.SLOT_STRICT where they meet.
+---@return boolean fits Whether either arrangement actually separates them.
+function theme.slotsFor(frame, readingWidth, visualWidth)
+  for _, slots in ipairs({theme.SLOT_TIGHT, theme.SLOT_STRICT}) do
+    local left, right = theme.slotCentres(frame, slots)
+    local readingEnd = left + math.ceil(readingWidth / 2)
+    local visualStart = right - math.floor(visualWidth / 2)
+    if visualStart >= readingEnd then return slots, true end
+  end
+  return theme.SLOT_STRICT, false
+end
+
+--- The proportional vertical bands a panel divides into.
+---
+--- A label band of one quarter, a body of one half and a tertiary of one
+--- quarter, with an absent part giving its quarter to the body. Derived from
+--- the panel exactly as the slots are, and for the same reason: a band does
+--- not move because of what is in it.
+---
+--- The body band never fails, which was not obvious in advance. A 53 px panel
+--- looks as though a half of it could not hold a MIDSIZE reading, but those
+--- panels shed their tertiary row at every width, so the split is 1/4 : 3/4
+--- and the body gets 36 px. The rule rescues itself where it looked weakest.
+---@param frame table Result of theme.frame.
+---@param rect AeroGridRect
+---@param hasLabel boolean
+---@param hasTertiary boolean
+---@return table bands `{label, body, tertiary}`, each `{y, h}`.
+function theme.bands(frame, rect, hasLabel, hasTertiary, floorHeight)
+  local top = frame.compact
+  local extent = math.max(1, (rect.h - frame.bottom) - top)
+  local quarter = math.floor(extent / 4)
+  local labelHeight = hasLabel and quarter or 0
+  -- A quarter where the band holds a supporting row, and only what the
+  -- furniture needs where it holds a bar. **A bar is not proportional
+  -- content**: its height is fixed by the theme and does not grow with the
+  -- panel, so charging it a quarter of a tall panel takes room the reading
+  -- would have had. On a 238 x 65 panel that difference is four pixels and it
+  -- costs the reading a whole font size, which is the thing shedding a row is
+  -- supposed to buy.
+  local tertiaryHeight = hasTertiary and quarter or (floorHeight or 0)
+
+  -- **Where the heading's font overflows its band, the body yields too.** The
+  -- label band is a quarter, and on a short panel a quarter is smaller than
+  -- any font the dashboard has, so the heading keeps its size and spills
+  -- downward. `theme.clampToPanel` keeps it on the panel; this keeps it off
+  -- the reading. Without it a 40 px panel drew its heading through its own
+  -- number, which is the same "the font wins" decision followed one step
+  -- further than the mocks followed it.
+  local bodyTop = top + labelHeight
+  if hasLabel and frame.top > bodyTop then bodyTop = frame.top end
+  local bodyHeight = math.max(1, (top + extent) - tertiaryHeight - bodyTop)
+
+  return {
+    label = {y = top, h = labelHeight},
+    body = {y = bodyTop, h = bodyHeight},
+    tertiary = {y = bodyTop + bodyHeight, h = tertiaryHeight},
+    extent = extent,
+  }
+end
+
+--- The largest reading font whose line height fits a band.
+---
+--- This inverts the older rule. There the composition came from the box and
+--- the font from the composition; here the band comes from the panel and the
+--- font from the band, which means the font does not consult the content at
+--- all and therefore cannot resize with it. The stability guarantee the
+--- fitter had to be careful to preserve now holds by construction.
+---
+--- Chosen by **line height**, not by the ink the glyphs actually mark. Ink
+--- was measured against it at every span: it reaches 86% of a 36 px band
+--- against line height's 63%, but it cannot move a 51 px band at all, because
+--- the ladder steps 40 to 69 with nothing between. That gap is the ladder's
+--- granularity rather than the metric, so the alternative is blocked rather
+--- than wrong, and the design guide records what reopens it.
+---@param height integer Band height in pixels.
+---@return any font
+function theme.bandFont(height)
+  local ordered = theme.READING_FONTS
+  for index = 1, #ordered do
+    if theme.fontHeight(ordered[index]) <= height then return ordered[index] end
+  end
+  return ordered[#ordered]
+end
+
+--- Where a block of `height` starts, to sit centred in a band.
+---
+--- **The font wins.** Where the block is taller than its band it stays centred
+--- and overflows symmetrically rather than being shrunk to fit: a reading may
+--- drop redundancy and never magnitude, and shrinking a number to satisfy a
+--- decorative band is paying magnitude for layout.
+---@param band table `{y, h}`.
+---@param height integer
+---@return integer
+function theme.centreInBand(band, height)
+  return band.y + math.floor((band.h - height) / 2)
+end
+
+--- Where a block of `height` starts, to sit centred in the panel's body band.
+---
+--- The counterpart to the band-derived font, and the two are not separable.
+--- Sizing a reading against its band and then drawing it at the panel's old
+--- content top puts a larger number where a smaller one used to be, which is
+--- how a `metric` bar first found itself underneath its own reading. A font
+--- chosen from a band belongs in that band.
+---@param ladder table Result of theme.ladder.
+---@param height integer
+---@return integer
+function theme.bodyTop(ladder, height)
+  local band = ladder.bands.body
+  -- Never above the band's own top. Where the block is taller than its band,
+  -- centring would push it up into the heading -- or, in App mode, up under
+  -- the menu button, which is what it did the first time: a `metric` reading
+  -- centred in a band shorter than itself landed one pixel above the
+  -- obstruction the frame had already moved the band below. So the overflow
+  -- goes downward only, which is the same decision `clampToPanel` makes at
+  -- the panel's own edge: the font wins, and then it is clamped.
+  return math.max(band.y, theme.centreInBand(band, height))
+end
+
+--- Keep a label's glyphs on the panel, whatever its band says.
+---
+--- **The font wins, and then it is clamped.** On a 53 px panel the label band
+--- is 11 px and the heading is SMLSIZE at 17, while the smallest font the
+--- dashboard has is TINSIZE at 12 -- so "let the band win" is not an available
+--- answer there, in any component. Centring the heading in a band smaller than
+--- itself puts a pixel of it above the panel's top edge, where it is simply
+--- clipped. The band yields; the panel does not.
+---
+--- The alternative, falling back to the older stacking below a size threshold,
+--- was rejected deliberately: two layout rules with a threshold between them
+--- is a worse thing to own than one rule that bends at the bottom of its
+--- range, because every component and every future addition would then have to
+--- be reasoned about twice, on either side of a line whose position is itself
+--- arbitrary.
+---
+--- Only the ascent is protected. A line box's descent and leading carry no
+--- glyphs for the strings this dashboard draws, so clamping the box rather
+--- than the ink would push every heading down for slack nothing marks.
+---@param y integer
+---@param font any
+---@param panelHeight integer
+---@return integer
+function theme.clampToPanel(y, font, panelHeight)
+  local ink = theme.fontAscent(font)
+  local top = math.max(0, y)
+  return math.min(top, math.max(0, panelHeight - ink))
+end
+
+--- Top of a block of `height` centred on a reading's optical centre.
+---
+--- The reading's **line box**, not its ink. That was decided from rendered
+--- mocks -- baseline, top and centre drawn side by side at every span -- and
+--- confirmed when the band font was chosen: had the font come from ink, the
+--- box and the glyphs would have disagreed by 4 px on a DBLSIZE reading.
+---@param readingY integer
+---@param readingFont any
+---@param height integer
+---@return integer
+function theme.opticalTop(readingY, readingFont, height)
+  return readingY + math.floor((theme.fontHeight(readingFont) - height) / 2)
 end
 
 --- Font roles for a component span.

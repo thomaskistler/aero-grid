@@ -4613,15 +4613,15 @@ components:
     type: tx-battery
     col: 0
     row: 0
-    colSpan: 1
-    rowSpan: 2
+    colSpan: 2
+    rowSpan: 1
     config:
       label: SMALL
       packEmpty: 6.6
       packFull: 8.4
   - id: large
     type: tx-battery
-    col: 1
+    col: 2
     row: 0
     colSpan: 2
     rowSpan: 2
@@ -4645,15 +4645,22 @@ components:
   local smallFont = small.value.properties.font()
   local largeFont = large.value.properties.font()
 
-  -- The precondition, and it is the whole of what makes this test mean
-  -- anything: two different fonts, two cells of identical size.
+  -- The precondition: two different fonts. Two panels can no longer be made
+  -- to differ in font while holding their cells the same size, because both
+  -- now come from the same body band and move together -- so the width is
+  -- held still in the second assertion below instead of in the layout.
   assert(themeModule.fontHeight(smallFont) < themeModule.fontHeight(largeFont),
     "both panels resolved the same reading font, so nothing below can tell a"
       .. " font-derived stroke from a constant one")
-  assertEqual(small.glyph.width, large.glyph.width,
-    "the two cells are different widths, so a width-derived stroke would"
-      .. " pass this test as well")
-  assertEqual(small.glyph.height, large.glyph.height)
+
+  -- Width held constant, font varied, which is the isolation the old layout
+  -- used to provide. Without this, everything below is also satisfied by a
+  -- stroke derived purely from the cell's width.
+  local held = large.glyph.width
+  assert(primitivesModule.batteryStroke(themeModule, smallFont, held)
+      < primitivesModule.batteryStroke(themeModule, largeFont, held),
+    "at one cell width the two fonts produced the same stroke, so the"
+      .. " thickness does not follow the reading at all")
 
   assert(small.glyph.border < large.glyph.border, "the same stroke ("
     .. small.glyph.border .. ") was drawn beside a "
@@ -4670,8 +4677,13 @@ components:
     "the geometry disagrees about the stroke but the screen does not")
 
   -- Thinning the outline is only worth anything if the interior grows with
-  -- it, because the interior is what shows the charge.
-  assert(small.glyph.interiorWidth > large.glyph.interiorWidth,
+  -- it, because the interior is what shows the charge. Asked of the geometry
+  -- at one width, since the two cells are no longer the same size.
+  local lightInterior = held - 2 * primitivesModule.batteryStroke(
+    themeModule, smallFont, held)
+  local heavyInterior = held - 2 * primitivesModule.batteryStroke(
+    themeModule, largeFont, held)
+  assert(lightInterior > heavyInterior,
     "the lighter outline bought the level no room")
 
   -- And the level is still a proportion rather than a line: the fixture
@@ -5149,16 +5161,29 @@ local function testBatteryGlyphLeavesTheReadingRoom()
   for index = 1, #spans do
     local panel = entryById(context, "p" .. index).instance
     local glyph = panel.glyph
-    assert(glyph, "panel " .. index .. " drew no battery")
+    local span = spans[index][1] .. "x" .. spans[index][2]
 
-    local reading = panel.value.properties
-    local right = reading.x + reading.w
-    assert(glyph.x >= right, "panel " .. index
-      .. " puts its battery at " .. glyph.x
-      .. ", inside a reading column that ends at " .. right)
+    -- **`1 x 2` sheds its cell, and that is the arrangement working.** The
+    -- reading's font comes from the body band and does not consult the
+    -- content, so it cannot be made narrower to accommodate a glyph: a
+    -- DBLSIZE `88.8` wants 93 px and half of this panel's 105 px of content
+    -- is 52. No pair of slots separates them, so the visualization goes, the
+    -- way it goes on any panel that cannot hold one.
+    if span == "1x2" then
+      assertEqual(glyph, nil, span
+        .. " drew a battery its reading leaves no room for")
+    else
+      assert(glyph, "panel " .. index .. " (" .. span .. ") drew no battery")
 
-    -- And the reading stays on one line, which is the wrap the narrowed
-    -- column would cause if the label kept the panel's full width.
+      local reading = panel.value.properties
+      local right = reading.x + reading.w
+      assert(glyph.x >= right, "panel " .. index
+        .. " puts its battery at " .. glyph.x
+        .. ", inside a reading column that ends at " .. right)
+    end
+
+    -- And the reading stays on one line, which is the wrap a narrowed column
+    -- would cause if the label kept the panel's full width.
     assertEqual(panel.value.lines, 1,
       "panel " .. index .. " wrapped its reading into "
         .. tostring(panel.value.lines) .. " lines")

@@ -573,7 +573,12 @@ function metric.regionsFor(theme, themeBuilder, rect, layout, fonts, sample,
     labelWidth = frame.labelWidth,
     badgeWidth = badgeWidth,
     badgeX = frame.badgeX,
-    valueY = top,
+    -- Centred in the body band. The font came from that band, so this is
+    -- where it belongs: sizing a reading against a band and then drawing it
+    -- at the panel's old content top is how a bar first found itself under
+    -- its own reading.
+    valueY = themeBuilder.bodyTop(
+      ladder, themeBuilder.fontHeight(primary)),
     valueWidth = valueWidth,
     primary = primary,
     formIndex = formIndex,

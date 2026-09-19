@@ -3591,16 +3591,25 @@ local function testTxBatteryComposition()
   -- from the cell would give those two rows the same number.
   local documented = {
     {"1x1", "MIDSIZE", true, nil, nil, nil, false},
-    {"2x1", "MIDSIZE", true, 20, 40, 2, false},
-    {"3x1", "MIDSIZE", true, 20, 40, 2, false},
-    {"4x1", "MIDSIZE", true, 20, 40, 2, false},
-    -- The one span that sheds its unit. A MIDSIZE `88.8` is 67 pixels and
-    -- the cell leaves 74, so the `V` and its gap do not fit in the 7 that
-    -- remain. The panel's own heading says what is being measured.
-    {"1x2", "MIDSIZE", false, 25, 50, 2, false},
-    {"2x2", "XXLSIZE", true, 25, 50, 4, false},
-    {"3x2", "XXLSIZE", true, 25, 50, 4, false},
-    {"4x2", "XXLSIZE", true, 25, 50, 4, false},
+    {"2x1", "MIDSIZE", true, 17, 34, 2, false},
+    {"3x1", "MIDSIZE", true, 17, 34, 2, false},
+    {"4x1", "MIDSIZE", true, 17, 34, 2, false},
+    -- **`1 x 2` sheds its cell rather than its reading.** The font comes from
+    -- the body band and does not consult the content, so it cannot be made
+    -- narrower to make room: a DBLSIZE `88.8` wants 93 px and half of this
+    -- panel's 105 px of content is 52. No pair of slots separates the two, so
+    -- the visualization goes, which is the answer `navigation` reaches at
+    -- `1 x 1` for the same reason. It is the reverse of the old trade, where
+    -- the cell stayed and the number paid for it.
+    {"1x2", "DBLSIZE", true, nil, nil, nil, false},
+    -- **And the two-row spans read a size smaller than they did.** A body
+    -- band is half a panel's extent, and half of this one is 62 px against
+    -- XXLSIZE's 69, so the band cannot hold the font the old ladder gave it.
+    -- This is the cost of the arrangement, it is the largest reading on the
+    -- dashboard, and it is the opposite of what the design mocks predicted.
+    {"2x2", "DBLSIZE", true, 25, 50, 3, false},
+    {"3x2", "DBLSIZE", true, 25, 50, 3, false},
+    {"4x2", "DBLSIZE", true, 25, 50, 3, false},
   }
 
   local GUTTER, CELLS, WIDTH, HEIGHT = 4, 4, 480, 272
