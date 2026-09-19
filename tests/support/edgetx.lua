@@ -1024,13 +1024,24 @@ function support.radio(hostIo)
     return loadfile(filename)
   end
 
-  --- luaFstat returns one table of size, attrib and time, and returns no
-  --- values at all for a file it cannot stat. Only `size` is read by the
-  --- dashboard, so the other two are carried for shape rather than for any
-  --- behaviour, and nothing asserts them.
+  --- firmware: `luaFstat` (`radio/src/lua/api_filesystem.cpp`) returns one
+  --- table of `size`, `attrib` and `time`, and returns no values at all for a
+  --- file it cannot stat. `time` is a date-time table unpacked from FatFs's
+  --- packed `fdate` and `ftime`: year is the field plus 1980, and seconds are
+  --- the field doubled, which is why FAT timestamps are even. The host
+  --- diagnostics view reads `time.year` and the fields beside it, so the
+  --- table is populated rather than carried empty: a mock that answered `{}`
+  --- would let that view report a blank timestamp and pass.
+  ---
+  --- The values are this harness's own, not a claim about any particular
+  --- file. Only the shape and the ranges are the firmware's.
   function fstat(filename)
     local function stat(size)
-      return {size = size, attrib = 32, time = {}}
+      return {
+        size = size,
+        attrib = 32,
+        time = {year = 2026, mon = 9, day = 18, hour = 17, min = 4, sec = 0},
+      }
     end
 
     -- The radio's own SD card comes first, so a test can describe a model

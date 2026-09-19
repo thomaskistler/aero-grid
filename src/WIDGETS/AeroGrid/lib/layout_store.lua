@@ -84,23 +84,33 @@ end
 ---@param dashboardId string Native Dashboard ID option.
 ---@return string? content
 ---@return string? error
----@return string filename Selected specific or fallback layout path.
+---@return string filename
+---@return string origin One of `model`, `dashboard`, `default`, or `none`. Selected specific or fallback layout path.
 function layoutStore.read(widgetPath, modelFilename, dashboardId)
   local base = string.sub(widgetPath, -1) == "/" and widgetPath or widgetPath .. "/"
   local filename = layoutStore.path(widgetPath, modelFilename, dashboardId)
   local content, readError = readFile(filename)
+  -- Which of the three names answered. The path alone does not say: a
+  -- dashboard called `main` on a model called `main` produces two candidate
+  -- filenames that look alike, and once the search has run there is nothing
+  -- left to show which one the radio actually opened.
+  local origin = "model"
 
   if not content then
+    origin = "dashboard"
     filename = base .. "layouts/" .. sanitize(dashboardId) .. ".yaml"
     content, readError = readFile(filename)
   end
 
   if not content then
+    origin = "default"
     filename = base .. "layouts/default.yaml"
     content, readError = readFile(filename)
   end
 
-  return content, readError, filename
+  if not content then origin = "none" end
+
+  return content, readError, filename, origin
 end
 
 --- Read, parse, and validate a layout, falling back to default.yaml.
