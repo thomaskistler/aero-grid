@@ -4385,6 +4385,300 @@ components:
   resetRadio()
 end
 
+--- The battery glyph fills in proportion to the voltage that produced it.
+---
+--- The shape to watch here is asserting that a glyph exists: an outline with
+--- a zero-width fill satisfies that and is a picture of an empty pack. So the
+--- fill's width is pinned against a number worked out from the voltage and
+--- the range, independently of the component, and against the glyph's own
+--- interior rather than against itself.
+local function testBatteryGlyphFillsFromTheVoltage()
+  resetRadio()
+  -- Without `getGeneralSettings` the only range is the one a layout states,
+  -- which is what makes the `unranged` panel below genuinely unranged. With
+  -- it present every panel inherits the radio's 6.4 to 8.4 and the case that
+  -- matters here cannot be reached at all.
+  local realSettings = getGeneralSettings
+  getGeneralSettings = nil
+
+  local widgetPath = makeWidget("glyph", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: healthy
+    type: tx-battery
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      packEmpty: 6.6
+      packFull: 8.4
+      showPercent: true
+  - id: alarmed
+    type: tx-battery
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      packEmpty: 6.6
+      packFull: 8.4
+      critical: 8.0
+      showPercent: true
+  - id: unranged
+    type: tx-battery
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: NO RANGE
+  - id: tiny
+    type: tx-battery
+    col: 2
+    row: 2
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: TINY
+      packEmpty: 6.6
+      packFull: 8.4
+]])
+
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  settle(context, 30)
+
+  local healthy = entryById(context, "healthy").instance
+  local alarmed = entryById(context, "alarmed").instance
+  local unranged = entryById(context, "unranged").instance
+  local tiny = entryById(context, "tiny").instance
+
+  -- The fixture transmitter reads 7.9 V against 6.6 to 8.4, so 1.3 of 1.8.
+  local fraction = (7.9 - 6.6) / (8.4 - 6.6)
+  local glyph = healthy.glyph
+  assert(glyph, "a two by two panel drew no battery")
+  assertEqual(healthy.glyphShown, true)
+
+  local expected = math.floor(glyph.interiorWidth * fraction + 0.5)
+  assertEqual(glyph.fill.properties.w, expected,
+    "the fill is not the voltage's share of the battery's interior")
+
+  -- And the number is a real proportion rather than either extreme, which is
+  -- what makes the assertion above worth making.
+  assert(expected > 0 and expected < glyph.interiorWidth,
+    "the fixture voltage produced a full or empty battery, so a fill stuck"
+      .. " at one end would satisfy this test")
+
+  -- The fill stays inside the outline it is drawn in, on every side.
+  assert(glyph.fill.properties.x >= glyph.x + primitivesModule.GLYPH_BORDER,
+    "the fill starts on or outside the outline")
+  assert(glyph.fill.properties.x + glyph.fill.properties.w
+      <= glyph.x + glyph.bodyWidth - primitivesModule.GLYPH_BORDER,
+    "a full fill would paint over the outline's right edge")
+  assert(glyph.fill.properties.h < glyph.height,
+    "the fill is as tall as the outline, so it covers the top and bottom")
+
+  -- The outline is drawn as an outline. A filled rectangle here would be a
+  -- solid block that no fill inside it could be seen against.
+  assertEqual(glyph.shell.properties.filled, false)
+  assertEqual(glyph.shell.painted.borderWidth, primitivesModule.GLYPH_BORDER,
+    "the outline reached LVGL at a different weight from the one asked for")
+
+  -- The nub is what makes it a battery rather than a rounded box, and it
+  -- sits outside the body, centred on it.
+  assertEqual(glyph.nub.properties.filled, true)
+  assertEqual(glyph.nub.properties.x, glyph.x + glyph.bodyWidth)
+  assert(glyph.nub.properties.h < glyph.height,
+    "the terminal is as tall as the battery, so it reads as a second cell")
+
+  -- State reaches the fill, which is the whole reason the glyph is not a
+  -- static picture. 7.9 is at or below the critical 8.0.
+  assertEqual(alarmed.stateName, "critical")
+  assertEqual(alarmed.glyph.fill.properties.color,
+    context.theme.color.critical,
+    "a critical pack did not fill red")
+  assert(healthy.glyph.fill.properties.color
+      ~= alarmed.glyph.fill.properties.color,
+    "both panels fill the same colour, so the state is not reaching the fill")
+
+  -- The outline does not take the state colour. It is the container, the way
+  -- a bar's track is, and a red outline around a red fill says nothing twice.
+  assertEqual(alarmed.glyph.shell.properties.color, context.theme.color.track)
+
+  -- A panel with no range has nothing to fill from, and an empty outline is a
+  -- claim that the pack is flat. All three parts go, not just the fill.
+  --
+  -- This is a weak assertion on its own and it is worth saying why: the glyph
+  -- is *built* hidden, so a reconcile that forgot to hide one of its parts
+  -- would satisfy every line below. The shed on reflow is where the hiding
+  -- actually happens, and that is covered separately.
+  assertEqual(unranged.glyphShown, false)
+  assertEqual(unranged.glyph.shell.hidden, true)
+  assertEqual(unranged.glyph.nub.hidden, true)
+  assertEqual(unranged.glyph.fill.hidden, true)
+
+  -- The three parts move together when the glyph is revealed, which is the
+  -- direction this build does exercise: `healthy` was built hidden and shown
+  -- once the range arrived.
+  for name, part in pairs({shell = glyph.shell, nub = glyph.nub,
+      fill = glyph.fill}) do
+    assertEqual(part.hidden, false,
+      "the battery was revealed and its " .. name .. " was left hidden")
+  end
+
+  -- A single cell has no room for a battery beside its reading, and sheds it
+  -- the way it sheds any other visual rather than drawing an unreadable one.
+  assertEqual(tiny.glyph, nil,
+    "a single cell drew a battery in space it does not have")
+
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  getGeneralSettings = realSettings
+end
+
+--- A panel narrowed until the battery no longer fits takes all of it away.
+---
+--- The build-time case cannot see this: a glyph is built hidden, so a
+--- reconcile that forgot one of its three parts would still look right on a
+--- panel that never showed it. Only a glyph that was on screen and then went
+--- away exercises the hiding, and that is exactly the omission that left
+--- `metric` hiding a bar and leaving its marker floating over the panel.
+local function testBatteryGlyphShedsWhole()
+  resetRadio()
+  local widgetPath = makeWidget("glyph-shed", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: pack
+    type: tx-battery
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: TX
+      packEmpty: 6.6
+      packFull: 8.4
+      showPercent: true
+]])
+
+  local zone = {x = 0, y = 0, w = 480, h = 272}
+  local context = createLoaded(zone, DEFAULT_OPTIONS, widgetPath)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  settle(context, 60)
+
+  local pack = entryById(context, "pack").instance
+  local glyph = pack.glyph
+  assert(glyph, "the panel drew no battery to shed")
+
+  -- The precondition. Without a battery on screen the shed below is not a
+  -- shed, and every assertion after it would pass on a panel that never had
+  -- one.
+  assertEqual(pack.glyphShown, true, "the battery was not showing to start")
+  assertEqual(glyph.shell.hidden, false)
+  assertEqual(glyph.nub.hidden, false)
+  assertEqual(glyph.fill.hidden, false)
+  local shownWidth = glyph.fill.properties.w
+  assert(shownWidth > 0, "the battery was showing an empty fill")
+
+  local function reflow(width, height)
+    zone.w, zone.h = width, height
+    local passes = 0
+    repeat
+      definition.refresh(context)
+      passes = passes + 1
+      assert(passes < 100, "reflow never finished")
+    until not context.reflowIndex
+    settle(context, 60)
+  end
+
+  -- Down to a zone whose two by two panel is a single cell's worth of width.
+  -- The reading has first claim on it, so the battery goes.
+  -- Narrow enough that even the smallest battery would take width the
+  -- reading cannot give up: its column is already at the bottom of the
+  -- ladder, so there is no step left to pay with.
+  reflow(140, 140)
+  assertEqual(pack.glyphShown, false,
+    "a panel with no room for a battery kept drawing one")
+  for name, part in pairs({shell = glyph.shell, nub = glyph.nub,
+      fill = glyph.fill}) do
+    assertEqual(part.hidden, true,
+      "the battery was shed and its " .. name .. " stayed on screen")
+  end
+
+  -- And it comes back whole, in the right place, rather than coming back as
+  -- whichever parts happened to be hidden.
+  reflow(480, 272)
+  assertEqual(pack.glyphShown, true, "the battery never came back")
+  for name, part in pairs({shell = glyph.shell, nub = glyph.nub,
+      fill = glyph.fill}) do
+    assertEqual(part.hidden, false,
+      "the battery came back and its " .. name .. " stayed hidden")
+  end
+  assertEqual(glyph.fill.properties.w, shownWidth,
+    "the battery came back with a different fill from the one it left with")
+  assertEqual(glyph.nub.properties.x, glyph.x + glyph.bodyWidth,
+    "the terminal came back detached from the body")
+
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+end
+
+--- The reading and the battery do not overlap, at any span that has both.
+---
+--- Two labels in one panel is the arrangement this component did not have
+--- before, and the failure it invites is arithmetic rather than visible: a
+--- reading fitted to the full content width and a glyph placed at the right
+--- edge of the same width both fit individually and collide.
+local function testBatteryGlyphLeavesTheReadingRoom()
+  resetRadio()
+  local lines = {"version: 1", "grid:", "  columns: 4", "  rows: 4",
+    "components:"}
+  local spans = {{2, 1, 0, 0}, {2, 1, 2, 0}, {1, 2, 0, 1}, {2, 2, 1, 1}}
+  for index, span in ipairs(spans) do
+    lines[#lines + 1] = "  - id: p" .. index
+    lines[#lines + 1] = "    type: tx-battery"
+    lines[#lines + 1] = "    col: " .. span[3]
+    lines[#lines + 1] = "    row: " .. span[4]
+    lines[#lines + 1] = "    colSpan: " .. span[1]
+    lines[#lines + 1] = "    rowSpan: " .. span[2]
+    lines[#lines + 1] = "    config:"
+    lines[#lines + 1] = "      packEmpty: 6.6"
+    lines[#lines + 1] = "      packFull: 8.4"
+  end
+
+  local widgetPath = makeWidget("glyph-room", table.concat(lines, "\n"))
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  settle(context, 30)
+
+  for index = 1, #spans do
+    local panel = entryById(context, "p" .. index).instance
+    local glyph = panel.glyph
+    assert(glyph, "panel " .. index .. " drew no battery")
+
+    local reading = panel.value.properties
+    local right = reading.x + reading.w
+    assert(glyph.x >= right, "panel " .. index
+      .. " puts its battery at " .. glyph.x
+      .. ", inside a reading column that ends at " .. right)
+
+    -- And the reading stays on one line, which is the wrap the narrowed
+    -- column would cause if the label kept the panel's full width.
+    assertEqual(panel.value.lines, 1,
+      "panel " .. index .. " wrapped its reading into "
+        .. tostring(panel.value.lines) .. " lines")
+  end
+
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+end
+
 --- Without any range at all there is still no estimate.
 ---
 --- The firmware without `getGeneralSettings` is the case that matters: a
@@ -6154,6 +6448,9 @@ testShedRowsComeBackCurrent()
 testFlightModeIndexRow()
 testTxBatteryRangeComesFromTheRadio()
 testTxBatteryWithoutAnyRange()
+testBatteryGlyphFillsFromTheVoltage()
+testBatteryGlyphLeavesTheReadingRoom()
+testBatteryGlyphShedsWhole()
 testFlightTimerShedsItsDetail()
 testReconcileBar()
 testHeadingNeverWraps()
