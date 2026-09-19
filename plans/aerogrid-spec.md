@@ -970,10 +970,12 @@ Two lessons generalised past their PRs and are recorded where they will be read 
 
 | | Value | Where |
 | --- | --- | --- |
-| Worst callback | 7518 of 20000 | the staged loader building one `trim-panel` at sixteen cells |
+| Worst callback | 7882 of 20000 | the staged loader building one `trim-panel` at sixteen cells |
 | Worst steady frame | 2520 of 20000 | the shipped ten-component dashboard |
 
-The worst steady frame used to be a `trim-panel` and is not any more. Both figures are asserted by the suite and are measured at the largest layout the schema permits. Note the second-worst callback is 7361, and it is the loader's own header stage rather than any component — which means component work is no longer the binding constraint on a full grid, and the next person looking for headroom should know that before optimising a panel.
+The worst steady frame used to be a `trim-panel` and is not any more. Both figures are asserted by the suite and are measured at the largest layout the schema permits. Note the second-worst callback is the loader's own header stage rather than any component -- which means component work is no longer the binding constraint on a full grid, and the next person looking for headroom should know that before optimising a panel.
+
+The worst callback rose 85 when the heading notice started working. It had been reading a field off the label, which is a table here and userdata on a radio, so it was always nil there and the notice never fired: the work it appeared not to cost was work it was not doing.
 
 ### Verification state
 
@@ -1091,9 +1093,9 @@ Two more lessons came from the tests rather than the firmware:
 
 ### Fixture discipline
 
-Five defects reached a radio while this suite stayed green. They are listed below, and they are one defect: **a fixture encoded what we assumed, so it could not fail when the assumption was wrong.** A green suite told us nothing, because the mock and the code under test agreed with each other and both were wrong about the radio.
+Six defects reached a radio while this suite stayed green, and a seventh was found in the tree before it could. They are listed below, and they are one defect: **a fixture encoded what we assumed, so it could not fail when the assumption was wrong.** A green suite told us nothing, because the mock and the code under test agreed with each other and both were wrong about the radio.
 
-The rule has three parts, because the failures came in three shapes.
+The rule has grown a part for each shape the failures came in, and each part is here because something shipped.
 
 **A fixture that stands in for firmware must reproduce that firmware's arithmetic, ordering and data shape, and must cite the file it came from.** Not the result we expect it to produce: the behaviour. A mock that records the coordinates it is handed cannot see an object move. A mock whose `clear()` is an immediate flag cannot reproduce a deferred cleanup. A mock that returns its input unchanged cannot distinguish two encodings that are only the same number here. Where the firmware raises, the mock raises; where the firmware caps a value at 99, so does the mock; where the firmware accepts a fixed set of keys, the mock rejects everything else.
 
@@ -1104,6 +1106,8 @@ The rule has three parts, because the failures came in three shapes.
 The hard part is that invisible work is invisible to assertions as well as to eyes: nothing about what is *drawn* can see a panel repositioning a label it has hidden, so the cost grows unnoticed and the only symptom is a number on a budget report. The harness therefore counts writes and visibility calls per object, which is its own bookkeeping and not a claim about firmware, so a test can assert that a shed row costs nothing to keep shed. Those counters are swapped out rather than branched around while a callback is measured, for the same reason property validation is: see the mock rule below. Branching cost 261 instructions of a measured callback before they were swapped, which is the same mistake as charging a Lua stand-in for a C++ call, made by the tool built to detect it.
 
 **A document that states a contract must be executed, not read.** The layout example in this specification did not load for at least two milestones, and nobody noticed because nothing ran it: it named a setting no component declares, gave a source as a numeric identifier the telemetry service rejects, and asked `link-status` for a `4 x 3` span it does not support, so the host would have dropped that panel. Two of those three survived being corrected by hand, which is the point — reading an example carefully is not the same as running it. The suite now extracts every fenced YAML block from this file at test time and puts it through `yaml.parse`, `layout.validate`, `componentHost.resolveSettings` and, for a theme block, `theme.build`. It is extracted rather than copied into the test, because a copy is a second source of truth and would drift from the document exactly as the document drifted from the code. A block that matches no known kind fails rather than being skipped, and an extraction that finds nothing fails rather than passing over an empty string, because a test that reads a document it cannot find is a vacuous assertion wearing a new hat.
+
+**A fixture must model what an object *is*, not only what it accepts.** This one cost a user a dashboard of error banners, and it is the narrowest shape yet. The LVGL stand-in already refused a property key `parseParam` does not accept, which models what an object accepts through `set`. Nothing modelled what the object is. An object handed back by `lvgl.*` is userdata: `LvglWidgetObjectBase::getRef` allocates one pointer with `lua_newuserdata` and attaches `lvgl_base_mt` or `lvgl_mt`, and neither metatable declares `__newindex`, so a field assigned onto a label raises and a field read off one is always nil. The stand-in was a plain Lua table, which accepts any name you invent and returns it again. So `label.headingText = text` in `primitives.header` stored the heading happily here and broke **every panel on the radio at once**, with the suite green; and `label.headingText` in `placeHeader` read back the truth here and nil there, so a reflow silently never refitted. The write was loud and the read was silent, and both came from the same wrong idea about what the fixture was standing in for. The mock now seals its objects with a `__newindex` that raises in the radio's own words, and reaches its own bookkeeping through `rawset`, which is the honest admission that `properties`, `writes` and the rest are the fixture's fields and not the firmware's. Ask of any stand-in not only *what does the real thing accept* but *what kind of thing is it*, because the second question is the one nobody asked for eight milestones.
 
 **A comment must not explain a test's behaviour with a claim about the radio that nobody has checked.** This is the least obvious of the three and the most corrosive. A global variable test asserted that switching flight mode left a value unmoved, and explained the non-movement as EdgeTX resolving inheritance. The explanation was invented. The value did not move because the fixture ignored the flight mode argument entirely and answered the same number for every mode, so the assertion could not have failed however wrong the host was. A vacuous assertion is inert; a vacuous assertion with a confident explanation actively stops the next reader checking, because it answers the question they were about to ask. If a comment states what the radio does, it is a claim, and it carries the same obligation as a value: cite it or do not write it.
 
@@ -1117,6 +1121,7 @@ The hard part is that invisible work is invisible to assertions as well as to ey
 | 4 | Healthy panels drew yellow and warnings drew critical red | The theme fixture invented EdgeTX role colours to match the role *names*. The firmware ships `ACTIVE` yellow, `EDIT` green and `WARNING` red |
 | 5 | Every panel of every theme drew dark red | `lcd.getColor` returned a bare RGB565 where the firmware returns an `LcdFlags` word, so the suite exercised a decode path that does not exist on a radio |
 | 6 | Supporting rows overran their boxes unchecked | Six assertions pinned the text of rows their panel does not draw. The text was computed for a hidden label, so it was correct, asserted, and invisible |
+| 7 | Every panel on the radio failed to build: `attempt to index a userdata value (local 'label')` | The LVGL stand-in was a plain Lua table, so a field written onto a label was stored. On a radio an object is userdata with no `__newindex` and the assignment raises |
 
 Defect 5 also produced the clearest example of the second shape. The assertion checked only that the derived canvas *differed* from Modern's, which is trivially satisfied when every colour is wrong in the same way. With the bug reintroduced, the entire suite passed.
 
@@ -1264,6 +1269,16 @@ is a much larger change than this defect justifies. Detectable is what is
 available: the host writes the heading, and a directory-reading test fails on
 a component that writes its own.
 
+**The heading text is held beside the label rather than on it.** The first
+version of this stored it and its dropped flag as fields on the label object,
+which is a plain table here and userdata on a radio, so every panel failed to
+build and the suite noticed nothing. `primitives.header` now appends what it
+had to cut to a list the host drains after each panel is built -- a by-product
+of the drawing rather than a second opinion assembled beside it -- and
+`placeHeader` is handed the text to refit instead of asking the label, because
+asking returned nil on a radio and a reflow therefore never refitted. See the
+fixture discipline rule about modelling what an object *is*.
+
 ### Why `REFLOW_BATCH` is three
 
 It was 4, nothing had ever measured it, and it made a reflow the most expensive callback in the dashboard. It is the only per-callback cost the dashboard chooses rather than earns, so it was worth measuring properly rather than assuming a smaller number is better.
@@ -1361,6 +1376,10 @@ Every stage is bounded by a fixed amount of work rather than by the size of the 
 The regression test measures every callback with a 200-instruction count hook, mirroring the firmware, and fails if any exceeds 75% of the budget. It exercises **the largest layout the schema permits**, sixteen single-cell components, not just the shipped one. Measuring only the shipped layout previously hid a loader that passed on five components and failed on twelve.
 
 Component authors must respect the same ceiling: `create`, `update`, `refresh`, `background`, and `event` each run inside the host's callback and share its allowance. Avoid per-character string loops, which are the most common way to exhaust it.
+
+**Anything the harness does to observe must be excluded from what it measures, and a number that moves when only the harness changed is the harness.** This has now caught the instrument charging us for its own work three times: property validation standing in for `parseParam`, which is C++ and free on a radio; the per-object write and visibility counters, which cost 261 instructions of a measured callback while they were branched around rather than swapped out; and sealing every object against field assignment, which a radio's userdata is already and pays nothing to become, and which cost 276 of the worst callback and 126 of the steady frame before it was moved behind the same switch. The last of those was very nearly reported as a regression in the widget. Before attributing a movement to the code, change nothing in the code and see whether it still moves.
+
+Current figures are in **Current cost**, and they are measured with the count hook set to every instruction rather than every 200, because the 200-instruction hook the firmware uses rounds a reading to the nearest 200 and hides exactly the size of change most of this work produces.
 
 Shared data services share the same allowance, and are bounded the same way. The test measures three sixteen-component layouts: metrics with sixteen distinct live telemetry sources, sixteen diagnostic panels spanning all five services, and sixteen components demanding a refresh every frame. Each exercise declares which services it must actually run, and the test fails if one of them never updated during the sampled frames, so a layout that quietly subscribed to nothing cannot make the service layer measure zero.
 

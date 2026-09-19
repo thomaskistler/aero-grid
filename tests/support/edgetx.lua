@@ -332,6 +332,24 @@ claim("PROPERTY_KEYS", LVGL_H, "LvglWidget* parseParam overrides", {
 claim("COLOR_PROPERTY_KEYS", LVGL_CPP,
   "LvglWidgetObjectBase::parseParam color", {color = true, bgColor = true})
 
+--- The error a radio raises when a field is assigned onto an LVGL object.
+---
+--- Every object Lua receives from `lvgl.*` is userdata, not a table:
+--- `LvglWidgetObjectBase::getRef` calls `lua_newuserdata` for a single
+--- pointer and attaches a metatable, and userdata carries no fields of its
+--- own. The metatables are `lvgl_base_mt` and `lvgl_mt`
+--- (`lua/api_colorlcd_lvgl.cpp`), and neither declares `__newindex` -- they
+--- hold `__gc`, `__index` pointing at themselves, and the object methods.
+---
+--- Lua 5.3 handles an assignment to userdata in `luaV_finishset`: with no
+--- `__newindex` to call there is nowhere to put the value, so it raises
+--- `luaG_typeerror(L, t, "index")`. The value is silently accepted by any
+--- stand-in that is a plain table, which is what let a field written onto a
+--- label pass every test here and break every panel on the radio.
+claim("OBJECT_FIELD_WRITE_MESSAGE", "radio/src/lua/api_colorlcd_lvgl.cpp",
+  "lvgl_base_mt / lvgl_mt have no __newindex",
+  "attempt to index a userdata value")
+
 --------------------------------------------------------------------------
 -- Seal the namespace
 --------------------------------------------------------------------------
@@ -511,11 +529,11 @@ function support.lvgl()
     local pending = pendingClears
     pendingClears = {}
     for _, object in ipairs(pending) do
-      object.clearRequest = false
+      rawset(object, "clearRequest", false)
       for _, child in ipairs(object.children) do
-        child.invalid = true
+        rawset(child, "invalid", true)
       end
-      object.children = {}
+      rawset(object, "children", {})
     end
   end
 
@@ -602,6 +620,24 @@ function support.lvgl()
     if object.invalid then error(firmware.INVALID_OBJECT_MESSAGE, 0) end
   end
 
+  --- Refuse a field written onto an LVGL object, the way a radio does.
+  ---
+  --- `__metatable` is set so nothing can lift the seal with `setmetatable`,
+  --- and the message carries the radio's own wording plus the key, because a
+  --- bare type error tells a reader what happened and not what they wrote.
+  --- The harness reaches its own bookkeeping with `rawset`, which is the
+  --- honest admission that those fields are the fixture's and not the
+  --- firmware's.
+  local objectSeal = {
+    __metatable = false,
+    __newindex = function(object, key)
+      error(firmware.OBJECT_FIELD_WRITE_MESSAGE .. " (assigning '"
+        .. tostring(key) .. "' to a " .. tostring(object.kind)
+        .. "). LVGL objects are userdata on a radio and hold no fields;"
+        .. " keep host bookkeeping beside the object, never on it.", 0)
+    end,
+  }
+
   -- The body is repeated rather than shared, and validation is exchanged
   -- rather than tested for, because both a second call and an upvalue test
   -- cost the measured callback instructions the radio never pays. parseParam
@@ -647,11 +683,13 @@ function support.lvgl()
 
   local function setChecked(object, changes)
     assertUsable(object)
-    object.writes = object.writes + 1
+    rawset(object, "writes", object.writes + 1)
     checkProperties(object.kind, changes)
     for key, value in pairs(changes) do object.properties[key] = value end
     if object.kind == "label" then
-      object.drawnHeight, object.lines = wrappedHeight(object.properties)
+      local drawn, lines = wrappedHeight(object.properties)
+      rawset(object, "drawnHeight", drawn)
+      rawset(object, "lines", lines)
     end
     if object.round then object.round.refresh(changes) end
   end
@@ -673,9 +711,9 @@ function support.lvgl()
 
   local function clearObject(object)
     assertUsable(object)
-    object.cleared = true
+    rawset(object, "cleared", true)
     if not object.clearRequest then
-      object.clearRequest = true
+      rawset(object, "clearRequest", true)
       pendingClears[#pendingClears + 1] = object
     end
   end
@@ -695,7 +733,20 @@ function support.lvgl()
       set = validateProperties and setChecked or setUnchecked,
       clear = clearObject,
     }
-
+    -- What an LVGL object *is*, not merely what it accepts.
+    --
+    -- Everything above this line is this harness's own inspection surface,
+    -- and it is set before the seal goes on because a radio has no equivalent
+    -- to set. What a radio hands back is userdata -- see
+    -- firmware.OBJECT_FIELD_WRITE_MESSAGE -- and userdata holds no fields, so
+    -- decorating one with a Lua value raises rather than being stored.
+    --
+    -- The refusing setter already models what an object accepts through
+    -- `set`. This models what the object is, which is a different thing and
+    -- the one that was missing: a field written straight onto a label passed
+    -- every test here and broke every panel on the radio, because a table
+    -- takes any name you give it and userdata takes none.
+    --
     -- A label's drawn height follows its text, because `h = 0` is
     -- `LV_SIZE_CONTENT` and the default long mode wraps.
     if kind == "label" then
@@ -717,6 +768,14 @@ function support.lvgl()
       }
     end
 
+    -- Sealed last, so everything above is a plain store rather than a
+    -- `rawset` call. Behind the same switch as property validation, and for
+    -- the same reason: a radio's object is userdata already and pays nothing
+    -- to become so, while sealing every object this host builds, and reaching
+    -- past the seal afterwards, cost 276 instructions of the worst callback.
+    -- A number that moves when only the harness changed is the harness.
+    if validateProperties then setmetatable(object, objectSeal) end
+
     if parent then parent.children[#parent.children + 1] = object end
     objects[#objects + 1] = object
     return object
@@ -729,17 +788,17 @@ function support.lvgl()
     end
   end
 
-  local function plainHide(object) object.hidden = true end
-  local function plainShow(object) object.hidden = false end
+  local function plainHide(object) rawset(object, "hidden", true) end
+  local function plainShow(object) rawset(object, "hidden", false) end
 
   local function countedHide(object)
-    object.visibilityCalls = object.visibilityCalls + 1
-    object.hidden = true
+    rawset(object, "visibilityCalls", object.visibilityCalls + 1)
+    rawset(object, "hidden", true)
   end
 
   local function countedShow(object)
-    object.visibilityCalls = object.visibilityCalls + 1
-    object.hidden = false
+    rawset(object, "visibilityCalls", object.visibilityCalls + 1)
+    rawset(object, "hidden", false)
   end
 
   lvgl = {
@@ -765,7 +824,7 @@ function support.lvgl()
   function handle.setPropertyValidation(enabled)
     validateProperties = enabled
     local method = enabled and setChecked or setUnchecked
-    for _, object in ipairs(objects) do object.set = method end
+    for _, object in ipairs(objects) do rawset(object, "set", method) end
   end
 
   --- Swap the visibility counters in or out. Swapped rather than branched,

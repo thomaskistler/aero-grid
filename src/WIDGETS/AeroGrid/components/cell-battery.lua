@@ -603,7 +603,7 @@ function cellBattery.update(context, rect)
 
   context.primitives.resizePanel(context.panel, rect)
   context.primitives.placeHeader(context.label, context.badge, area.frame,
-    context.themeBuilder, context.fonts)
+    context.themeBuilder, context.fonts, context.settings.label)
   context.value:set({
     x = area.pad,
     y = area.valueY,

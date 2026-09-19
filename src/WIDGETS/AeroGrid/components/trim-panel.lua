@@ -447,7 +447,7 @@ function trimPanel.update(context, rect)
 
   primitives.resizePanel(context.panel, rect)
   primitives.placeHeader(context.label, context.badge, area.frame,
-    context.themeBuilder, context.fonts)
+    context.themeBuilder, context.fonts, context.settings.label)
 
   local reconcile = primitives.reconcile
   local captionsChanged = area.showCaption ~= context.showCaption
