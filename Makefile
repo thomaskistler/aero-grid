@@ -11,7 +11,7 @@ WIDGET_DESTINATION := $(SDCARD_DIR)/WIDGETS/AeroGrid
 LUA_FILES := $(shell find src/WIDGETS tests -type f -name '*.lua' | sort)
 LUA_COMPILER ?= $(shell command -v edgetx-luac 2>/dev/null || command -v luac5.3 2>/dev/null || command -v luac 2>/dev/null)
 
-.PHONY: help setup test check build clean
+.PHONY: help setup test check build mocks clean
 
 help:
 	@printf '%s\n' \
@@ -20,6 +20,7 @@ help:
 	  'make test    Run pure Lua and mocked EdgeTX behavior tests' \
 	  'make check   Run behavior tests and syntax validation' \
 	  'make build   Recreate build/sdcard from fixture and widget sources' \
+	  'make mocks   Render build/flow-mocks.html from the real panel geometry' \
 	  'make clean   Remove generated build output'
 
 setup: $(VENV_STAMP)
@@ -55,6 +56,17 @@ build:
 	@find "$(SDCARD_DIR)" -name '*.luac' -delete
 	@find "$(SDCARD_DIR)" -name '*.lua' -exec touch {} +
 	@printf 'Built simulator SD image at %s\n' "$(SDCARD_DIR)"
+
+# Design mocks. Builds every panel through the real host, walks the geometry
+# back out of the LVGL mock, and renders it beside a proposed arrangement. The
+# page is an artefact for looking at, not a test, so nothing depends on it.
+mocks: $(VENV_STAMP)
+	@mkdir -p "$(BUILD_DIR)"
+	@"$(VENV_DIR)/bin/python" -c "import sys;from pathlib import Path;\
+	from lupa import LuaRuntime;l=LuaRuntime(unpack_returned_tuples=True);\
+	l.execute(Path('tools/flow-geometry.lua').read_text(), str(Path('.').resolve()))" \
+	  > "$(BUILD_DIR)/flow-cases.lua"
+	@"$(VENV_DIR)/bin/python" tools/flow-render.py
 
 clean:
 	@rm -rf "$(BUILD_DIR)"
