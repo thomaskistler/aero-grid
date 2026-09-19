@@ -266,6 +266,15 @@ function navigation.originText(view, themeBuilder, font, width)
   return themeBuilder.fitLabel(variants, font, width)
 end
 
+--- Widest dial this component will draw.
+---
+--- A compass given every pixel of a two-row panel is taller than the number
+--- beside it, and a dial is an indicator rather than the reading. The same
+--- fifty pixels `tx-battery` caps its cell at, for the same reason and so
+--- that two panels of different components put comparable weight on their
+--- secondary element.
+navigation.DIAL_MAX_DIAMETER = 50
+
 --- Format the coordinates row.
 ---@param view any
 ---@return string
@@ -301,83 +310,184 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     and ladder.room - rowHeight >= themeBuilder.fontHeight(MIDSIZE)
   local showCompass = layout.showCompass
 
-  local available = math.max(1, ladder.room
-    - (showCoordinates and rowHeight or 0))
+  local bands = ladder.bands
+  local available = bands.body.h
 
-  -- The dial is square, so it is bounded by whichever of the two axes runs
-  -- out first, and it is dropped entirely when what remains is too small to
-  -- read a direction from.
-  local radius = math.floor(math.min(math.floor(frame.content / 2), available) / 2)
+  -- Half the content is what either element may claim, whichever slot set
+  -- the panel settles on: the right centre moves between 70% and 75%, but
+  -- the half never grows.
+  local half = math.floor(frame.content / 2)
+
+  -- **The dial is bounded by its band, not by the panel.** It used to take
+  -- whatever vertical room the ladder left after the rows, and stand from the
+  -- content top downward, which put it straight through the supporting row
+  -- beneath it -- 44 by 2 pixels at `2 x 2` and `4 x 2`. A body band is half
+  -- the panel's extent and the rows own the quarter below it, so sizing
+  -- against the band is what keeps the two apart, by construction rather
+  -- than by a clearance somebody has to remember.
+  -- **A dial is an indicator beside the reading, not a second reading.** Let
+  -- it take the whole body band and it becomes the largest thing on the
+  -- panel, and it fills the band exactly -- which leaves the supporting rows
+  -- nowhere to overflow to when their own quarter cannot hold them, and they
+  -- overflow upward into it. `tx-battery` caps its cell at the same size and
+  -- for the same reason.
+  local radius = math.floor(
+    math.min(half, available, navigation.DIAL_MAX_DIAMETER) / 2)
   if radius < 10 then showCompass = false end
   if not showCompass then radius = 0 end
-
-  local centreX = rect.w - frame.pad - radius
-  local centreY = top + radius
-
-  local valueWidth = frame.content
-  if showCompass then
-    valueWidth = math.max(1, (centreX - radius) - frame.pad - 4)
-  end
 
   -- A distance has no redundancy: dropping a decimal turns 1.23 km into
   -- 1 km, which is 230 metres of a number a pilot is flying by. Nor is its
   -- unit redundancy, because it changes with range -- `1.23km` and `1.23m`
   -- are different readings -- so unlike a voltage's it is never dropped, and
   -- a panel with no room for it has no room for the reading either.
+  -- What the reading would be with the whole box to itself, which is the
+  -- yardstick the shedding rule is written against: **a reading may step
+  -- down one size to make room for something beside it, and no further.**
+  -- Two steps is the panel saying it cannot hold both.
+  local bare = themeBuilder.fitReadingUnit(
+    sample.digits, sample.unit, frame.content, available, true)
+  local floorStep = themeBuilder.readingStep(bare)
+  floorStep = floorStep
+    and math.min(floorStep + 1, #themeBuilder.READING_FONTS) or nil
+
+  local valueWidth = showCompass and half or frame.content
   local value, unitFont, _, fits = themeBuilder.fitReadingUnit(
     sample.digits, sample.unit, valueWidth, available, true)
+
+  -- The dial costs more than the rule allows, so the dial goes. Measured
+  -- against what the reading would have been rather than against a fixed
+  -- size, so the trade is the same one at every span.
+  if showCompass and floorStep
+      and (themeBuilder.readingStep(value) or 1) > floorStep then
+    showCompass, radius = false, 0
+    valueWidth = frame.content
+    value, unitFont, _, fits = themeBuilder.fitReadingUnit(
+      sample.digits, sample.unit, valueWidth, available, true)
+  end
 
   -- The dial gives its room back rather than clipping the distance. A
   -- compass is a shape and survives being absent; a distance that runs off
   -- the panel is a number a pilot cannot read at the moment they need it, and
   -- the unit cannot be dropped to buy the space because it carries the scale.
-  -- This was reachable at a single cell asking for a dial, where even the
-  -- smallest font needs 75 pixels of the 63 the dial left.
   if not fits and showCompass then
-    showCompass = false
-    radius = 0
-    centreX = rect.w - frame.pad
-    centreY = top
+    showCompass, radius = false, 0
     valueWidth = frame.content
     value, unitFont = themeBuilder.fitReadingUnit(
       sample.digits, sample.unit, valueWidth, available, true)
   end
 
+  -- Asked of the widest distance this component can ever print, so the
+  -- arrangement is fixed for the life of the panel rather than flipping as
+  -- the aircraft flies away from home.
+  local widest = themeBuilder.readingWidth(
+    value, sample.digits, unitFont, sample.unit)
+  local slots, separated
+  if showCompass then
+    slots, separated = themeBuilder.slotsFor(frame, widest, radius * 2)
+    -- Neither arrangement separates them, so the dial goes -- the same
+    -- answer this component already reaches when the distance will not fit
+    -- beside it, and the same one `tx-battery` reaches at `1 x 2`.
+    if not separated then
+      showCompass, radius, slots = false, 0, nil
+      valueWidth = frame.content
+      value, unitFont = themeBuilder.fitReadingUnit(
+        sample.digits, sample.unit, valueWidth, available, true)
+    end
+  end
+
+  local leftCentre = showCompass
+    and select(1, themeBuilder.slotCentres(frame, slots))
+    or (frame.pad + math.floor(frame.content / 2))
+  local rightCentre = showCompass
+    and select(2, themeBuilder.slotCentres(frame, slots))
+    or nil
+
+  -- Reading and dial share the body band and are centred on each other, so
+  -- the block the band centres is the deeper of the two.
   local valueHeight = themeBuilder.fontHeight(value)
-  if top + valueHeight > rect.h then top = math.max(0, rect.h - valueHeight) end
+  local blockHeight = math.max(valueHeight, radius * 2)
+  local blockTop = themeBuilder.bodyTop(ladder, blockHeight)
+  local valueY = blockTop + math.floor((blockHeight - valueHeight) / 2)
 
-  local stack = frame.bottom
-  local coordinatesY = rect.h - stack - labelHeight
-  if showCoordinates then stack = stack + labelHeight + 2 end
-  local detailY = rect.h - stack - labelHeight
+  -- **The supporting row keeps its column split, and that is a finding
+  -- rather than an omission.** The rule says a row of two takes the panel's
+  -- two slot centres, and it was written that way and measured. Two boxes
+  -- centred 40% of the content apart can each be at most 40% wide before
+  -- they meet, so the row reaches 80% of the panel where a column split
+  -- reaches all of it -- and `fitLabel` spends the difference on shorter
+  -- wording. It cost `LAST KNOWN` to `LAST`, `NO HOME POS` to `NO HOME` and
+  -- `NO GPS SOURCE` to `NO GPS`.
+  --
+  -- That last one is not a cosmetic loss. The specification puts the
+  -- distinction between a sensor that is absent and one returning nonsense
+  -- in this row precisely because it "has room for words and is fitted to
+  -- its width", while the badge above it carries only the state. A rule that
+  -- takes the words away contradicts the rule that put them there, so the
+  -- row waits for that to be resolved rather than being quietly degraded.
+  local rowLeft = frame.pad
+  local rowRight = frame.pad + math.floor((frame.content - 4) * 0.4) + 4
 
-  -- The bearing takes the left of the detail row and the origin caption the
-  -- right, so the two can never draw over one another.
-  local detailWidth = math.max(1, math.floor((frame.content - 4) * 0.4))
+  local centreX = rightCentre or (rect.w - frame.pad)
+  local centreY = blockTop + math.floor(blockHeight / 2)
+
+  -- **Both supporting rows live in the tertiary band**, which is the quarter
+  -- the panel reserved for them, rather than being stacked up from the
+  -- panel's floor. Two rows where there are two, one where the second was
+  -- shed, and the pair is centred in the band so the group sits where the
+  -- rule puts it rather than where the bottom margin leaves it.
+  local rowHeights = labelHeight * (showCoordinates and 2 or 1)
+    + (showCoordinates and 2 or 0)
+  -- **Two rows do not fit a quarter, and the band yields symmetrically.**
+  -- Two SMLSIZE rows need 36 px of a 31 px band on a 134 px panel, so the
+  -- pair overflows its band by three pixels at each end -- which is the
+  -- font-wins rule, and the reason the dial above is capped rather than
+  -- allowed to fill the body band: an uncapped dial ends exactly where this
+  -- band begins, and the overflow has nowhere to go. Clamping downward
+  -- instead pushes the second row through the panel's floor.
+  local rowsTop = themeBuilder.centreInBand(bands.tertiary, rowHeights)
+  local detailY = rowsTop
+  local coordinatesY = rowsTop + labelHeight + 2
 
   return {
     frame = frame,
     pad = frame.pad,
     content = frame.content,
-    -- Centred in the body band. The font came from that band, so this is
-    -- where it belongs: sizing a reading against a band and then drawing it
-    -- at the panel's old content top is how a bar first found itself under
-    -- its own reading.
-    -- Stated rather than inferred from the inset. `tx-battery` is the first
-    -- component on the panel-derived slots and its reading no longer starts
-    -- at the padding, so the shared helpers that place a unit read this
-    -- instead of assuming. The components still to be converted say so here.
-    valueX = frame.pad,
-    valueY = themeBuilder.bodyTop(
-      ladder, themeBuilder.fontHeight(value)),
+    -- The slot's centre, a property of the panel. Where the reading starts
+    -- depends on what it currently says, so `primitives.centreReading` owns
+    -- that and computes it from the measured string.
+    valueCentre = leftCentre,
+    valueX = themeBuilder.slotX(leftCentre, valueWidth),
+    valueY = valueY,
     valueWidth = valueWidth,
     value = value,
     unitFont = unitFont,
     showUnit = true,
+    -- **The supporting row is a row of two, so it takes the same two slot
+    -- centres the reading and the dial use** -- the bearing on the left, the
+    -- orientation on the right. The row used to be split by a flat 40% of
+    -- the content with each half left-aligned in its own box, which is a
+    -- second arrangement inside a panel that already has one. Where there is
+    -- no dial there is one slot, and the row of two shares the panel the way
+    -- a lone reading does: left of centre and right of centre.
+    -- The budget each item's wording is fitted to, which is a different
+    -- question from where it is drawn. Two items centred on centres that are
+    -- a fixed distance apart can each have half that distance before they
+    -- meet, so the budget is derived from the centres rather than from the
+    -- panel's half -- a half-width box on each of two centres 40% apart
+    -- overlaps by a tenth of the panel. The estimate answers this question
+    -- and the measurement answers the placement.
+    detailWidth = math.max(1, math.floor((frame.content - 4) * 0.4)),
+    originWidth = math.max(1, frame.content
+      - math.floor((frame.content - 4) * 0.4) - 4),
+    -- Left-aligned in their own columns, so the centres the shared helper
+    -- would use are the columns' own. When the row rule is settled these
+    -- become slot centres and nothing else here changes.
+    originX = frame.pad + math.floor((frame.content - 4) * 0.4) + 4,
+    -- A row of one item centres across the whole content box, exactly as a
+    -- lone reading does.
+    coordinatesCentre = frame.pad + math.floor(frame.content / 2),
     detailY = math.max(1, detailY),
-    detailWidth = detailWidth,
-    originX = frame.pad + detailWidth + 4,
-    originWidth = math.max(1, frame.content - detailWidth - 4),
     coordinatesY = math.max(1, coordinatesY),
     radius = radius,
     centreX = centreX,
@@ -612,18 +722,30 @@ function navigation.apply(context, drawn)
     context.unitText = drawn.unit or ""
     context.unit:set({text = context.unitText})
   end
-  context.primitives.followUnit(context, context.themeBuilder,
+  context.primitives.centreReading(context, context.themeBuilder,
     context.area, context.area.value, drawn.text)
   context.label:set({color = presentation.label})
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
   context.primitives.stylePanel(context.panel, presentation)
 
+  -- Every row takes the panel's slot centres, keyed on what it says. A
+  -- bearing changes every time the aircraft turns, so the helpers measure
+  -- only when the wording actually moves.
+  -- The coordinates are a row of one and centre across the content box the
+  -- way a lone reading does. The bearing and the origin are a row of two and
+  -- keep their columns; see `regionsFor` for why that is pending rather than
+  -- done.
+  local area, fonts = context.area, context.fonts
   if context.showDetail then
     context.detailLabel:set({text = drawn.detail})
     context.originLabel:set({text = drawn.origin})
   end
   if context.showCoordinates then
     context.coordinatesLabel:set({text = drawn.coordinates})
+    context.primitives.centreLabel(context, "coordinatesAnchor",
+      context.themeBuilder, context.coordinatesLabel,
+      area.coordinatesCentre, area.coordinatesY, fonts.label,
+      drawn.coordinates)
   end
 
   if context.showCompass then
@@ -653,12 +775,18 @@ function navigation.update(context, rect)
   context.primitives.placeHeader(context.label, context.badge, area.frame,
     context.themeBuilder, context.fonts, context.settings.label)
   context.primitives.placeUnit(context.unit, context.themeBuilder,
-    area.pad, area.valueY, area.value, context.text, area.unitFont)
+    area.valueX, area.valueY, area.value, context.text, area.unitFont)
   context.unit:set({font = function() return area.unitFont end})
+  -- Every anchor is about a slot and a font that have just moved, so all of
+  -- them are discarded rather than trusted. A panel that reflowed while its
+  -- distance and bearing held steady would otherwise keep the positions it
+  -- had at the old span.
   context.unitAnchor = nil
+  context.readingAnchor, context.readingUnitAnchor = nil, nil
+  context.coordinatesAnchor = nil
   context.area = area
   context.value:set({
-    x = area.pad,
+    x = area.valueX,
     y = area.valueY,
     w = area.valueWidth,
     font = function() return area.value end,

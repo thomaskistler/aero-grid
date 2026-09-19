@@ -807,8 +807,21 @@ function primitives.centreReading(context, themeBuilder, area, font, text)
   -- and says so by leaving `valueCentre` unset rather than by being named
   -- here.
   if area.valueCentre == nil then return end
-  if text == context.readingAnchor then return end
-  context.readingAnchor = text
+
+  -- **Keyed on everything the placement depends on, not on the reading
+  -- alone.** The group's width is the number plus its unit, and a unit is
+  -- not always a constant: `navigation`'s changes with range, so `778 m`
+  -- becoming `1.23 km` widens the group while the digit count holds. An
+  -- anchor that watched only the number would have held the group still
+  -- across exactly that change -- the ninth instance of the shape whose
+  -- eighth was an anchor keyed on a proxy, in the component converted
+  -- immediately after it was written down.
+  local unit = (context.showUnit and area.showUnit) and (context.unitText or "")
+    or ""
+  if text == context.readingAnchor and unit == context.readingUnitAnchor then
+    return
+  end
+  context.readingAnchor, context.readingUnitAnchor = text, unit
 
   local width = themeBuilder.measureText(font, text)
   local x = area.valueCentre - math.floor(width / 2)
@@ -820,9 +833,9 @@ function primitives.centreReading(context, themeBuilder, area, font, text)
   -- exists to line up: a panel with a unit and one without would put their
   -- digits in different places.
   local span = width
-  if context.showUnit and area.showUnit then
+  if unit ~= "" then
     span = span + themeBuilder.unitGap(area.unitFont)
-      + themeBuilder.measureText(area.unitFont, context.unitText or "")
+      + themeBuilder.measureText(area.unitFont, unit)
   end
 
   context.value:set({x = x, w = math.max(1, span)})
@@ -830,6 +843,38 @@ function primitives.centreReading(context, themeBuilder, area, font, text)
   primitives.placeUnit(context.unit, themeBuilder, x, area.valueY, font, text,
     area.unitFont)
   context.unitAnchor = text
+end
+
+--- Centre one supporting label on a slot, keyed on what it says.
+---
+--- The slot centres are a property of the panel, so every row uses them: a
+--- row of one item centres across the whole content box exactly as a lone
+--- reading does, and a row of two takes the same two centres the reading and
+--- its visual use. The component decides which centre each item gets; this
+--- owns the measuring, the anchoring and the write, so nine components can
+--- adopt the rule without nine copies of it.
+---
+--- Anchored on the text itself. A supporting row changes as often as a
+--- reading does -- a bearing every time the aircraft turns -- so measuring
+--- on every update would pay for a placement that mostly does not move.
+---@param context table The component's own context, for the anchor.
+---@param key string Where to keep this label's anchor on the context.
+---@param themeBuilder table
+---@param label any
+---@param centre integer Slot centre this label is centred on.
+---@param y integer
+---@param font any
+---@param text any What the label now says.
+function primitives.centreLabel(context, key, themeBuilder, label, centre, y,
+    font, text)
+  if label == nil then return end
+  text = tostring(text == nil and "" or text)
+  if text == context[key] then return end
+  context[key] = text
+
+  local width = themeBuilder.measureText(font, text)
+  label:set({x = centre - math.floor(width / 2), y = y,
+    w = math.max(1, width)})
 end
 
 --- Show or hide a unit, placing it only when it is visible.

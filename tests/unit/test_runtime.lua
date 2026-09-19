@@ -3594,14 +3594,15 @@ local function testTxBatteryComposition()
     {"2x1", "MIDSIZE", true, 17, 34, 2, false},
     {"3x1", "MIDSIZE", true, 17, 34, 2, false},
     {"4x1", "MIDSIZE", true, 17, 34, 2, false},
-    -- **`1 x 2` sheds its cell rather than its reading.** The font comes from
-    -- the body band and does not consult the content, so it cannot be made
-    -- narrower to make room: a DBLSIZE `88.8` wants 93 px and half of this
-    -- panel's 105 px of content is 52. No pair of slots separates the two, so
-    -- the visualization goes, which is the answer `navigation` reaches at
-    -- `1 x 1` for the same reason. It is the reverse of the old trade, where
-    -- the cell stayed and the number paid for it.
-    {"1x2", "DBLSIZE", true, nil, nil, nil, false},
+    -- **`1 x 2` keeps its cell and sheds its unit**, which is the
+    -- abbreviation rule in its documented order: redundancy goes before
+    -- anything else, and the `V` is redundancy because the panel's own
+    -- heading names what is being measured. It used to shed the cell here,
+    -- on the strength of an estimated width that called a DBLSIZE `88.8V`
+    -- wider than half the panel. Measured, the pair needs 93 px of a 52 px
+    -- half and the bare number 68, so the number and the cell fit together
+    -- once the `V` goes.
+    {"1x2", "DBLSIZE", false, 25, 50, 3, false},
     -- **And the two-row spans read a size smaller than they did.** A body
     -- band is half a panel's extent, and half of this one is 62 px against
     -- XXLSIZE's 69, so the band cannot hold the font the old ladder gave it.
@@ -4466,6 +4467,20 @@ local function testTelemetryContentFitsPanel()
           what .. " " .. case.name .. ": the dial overflows the panel")
         assert(nav.pad + nav.valueWidth <= box.x,
           what .. " " .. case.name .. ": the dial overlaps the reading")
+
+        -- **And the dial clears the rows beneath it.** This is the one the
+        -- catalogue had no check for: a dial is not a label, so the
+        -- integration suite's collision check sees it, but no shipped layout
+        -- draws this component with two supporting rows *and* a compass, so
+        -- nothing exercised the pair. The dial used to be sized against
+        -- whatever vertical room was left and stand from the content top
+        -- downward, which put it 44 by 2 pixels through the row below at
+        -- `2 x 2` and `4 x 2`.
+        if nav.showDetail then
+          assert(box.y + box.h <= nav.detailY, what .. " " .. case.name
+            .. ": the dial runs " .. (box.y + box.h - nav.detailY)
+            .. " px into the supporting row beneath it")
+        end
       end
     end
   end

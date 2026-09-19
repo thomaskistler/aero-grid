@@ -3633,12 +3633,16 @@ components:
     assert(object.properties.y < bounds.h, "visible content escaped the panel")
   end
 
-  -- Narrow enough that the number and its unit no longer fit side by side:
-  -- an 88 pixel panel gives the reading 76 and a MIDSIZE `25.0` with a
-  -- SMLSIZE `V` beside it needs 80. The number keeps its size; the unit goes,
-  -- because the heading names what is being measured and the digits are the
-  -- reading.
-  zone.w = 180
+  -- Narrow enough that the number and its unit no longer fit side by side.
+  -- Measured rather than estimated, now that the pair is: the reading's
+  -- column comes out at 36 px, a SMLSIZE `25.0` is 25 of those and the same
+  -- reading with a TINSIZE `V` beside it is 32. The number keeps its size;
+  -- the unit goes, because the heading names what is being measured and the
+  -- digits are the reading.
+  --
+  -- It used to be 180, which the estimate called too narrow and a radio does
+  -- not: measured, the pair still fits at 120.
+  zone.w = 100
   zone.h = 272
   settle()
   assertEqual(instance.unit.hidden, true,
@@ -4047,7 +4051,39 @@ end
 --- read off the **glyph's own drawn position** -- independent evidence, since
 --- the glyph is placed from its geometry rather than from a text width.
 local function testReadingsSitInTheirSlots()
-  local battery = assert(loadfile(sourcePath .. "components/tx-battery.lua"))()
+  --- What each component slots, and how to build a layout that shows it.
+  ---
+  --- **Adding a component here is a declaration, not new test code.** Nine
+  --- more are due on the slots and the check below should cover each one the
+  --- moment it arrives, rather than growing a ninth near-copy of itself.
+  local SLOTTED = {
+    {
+      type = "tx-battery",
+      config = {"label: TX", "packEmpty: 6.6", "packFull: 8.4"},
+      -- Both arrangements: a compact visual beside the reading, and a
+      -- full-width bar that leaves the reading the whole box.
+      variants = {{"visual: battery"}, {"visual: bar"}},
+      -- What stands in the right slot when there is one.
+      visual = function(panel)
+        return panel.glyphShown and panel.glyph
+          and {x = panel.glyph.x, w = panel.glyph.width} or nil
+      end,
+    },
+    {
+      type = "navigation",
+      config = {"label: HOME", "source: GPS"},
+      variants = {{}},
+      visual = function(panel)
+        if not (panel.showCompass and panel.compass) then return nil end
+        -- An arc stores its corner rather than its centre and walks when it
+        -- is updated, so the ring's own drawn position is asked for rather
+        -- than the centre the caller passed.
+        local drawn = panel.compass.ring.round.drawn
+        local diameter = panel.compass.ring.round.radius() * 2
+        return {x = drawn.x, w = diameter}
+      end,
+    },
+  }
 
   -- Written out rather than read from `theme`, so a change to the rule has
   -- to be made here too, deliberately.
@@ -4059,20 +4095,35 @@ local function testReadingsSitInTheirSlots()
   local cellWidth = math.floor((WIDTH - GUTTER * (CELLS - 1)) / CELLS)
   local cellHeight = math.floor((HEIGHT - GUTTER * (CELLS - 1)) / CELLS)
 
-  for _, visual in ipairs({"battery", "bar"}) do
-    for _, span in ipairs(battery.supportedSpans) do
+  for _, subject in ipairs(SLOTTED) do
+    local module = assert(loadfile(
+      sourcePath .. "components/" .. subject.type .. ".lua"))()
+    local cases = {}
+    for index, extra in ipairs(subject.variants) do
+      for _, span in ipairs(module.supportedSpans) do
+        cases[#cases + 1] = {span = span, extra = extra, index = index}
+      end
+    end
+
+    for _, case in ipairs(cases) do
+      local span, extra = case.span, case.extra
       local cols, rows = string.match(span, "(%d)x(%d)")
       cols, rows = tonumber(cols), tonumber(rows)
 
       resetRadio()
-      local widgetPath = makeWidget("slot-" .. visual .. "-" .. span,
-        table.concat({
-          "version: 1", "grid:", "  columns: 4", "  rows: 4", "components:",
-          "  - id: pack", "    type: tx-battery", "    col: 0", "    row: 0",
-          "    colSpan: " .. cols, "    rowSpan: " .. rows, "    config:",
-          "      label: TX", "      packEmpty: 6.6", "      packFull: 8.4",
-          "      visual: " .. visual,
-        }, "\n") .. "\n")
+      local lines = {
+        "version: 1", "grid:", "  columns: 4", "  rows: 4", "components:",
+        "  - id: pack", "    type: " .. subject.type, "    col: 0",
+        "    row: 0", "    colSpan: " .. cols, "    rowSpan: " .. rows,
+        "    config:",
+      }
+      for _, line in ipairs(subject.config) do
+        lines[#lines + 1] = "      " .. line
+      end
+      for _, line in ipairs(extra) do lines[#lines + 1] = "      " .. line end
+      local widgetPath = makeWidget(
+        "slot-" .. subject.type .. "-" .. case.index .. "-" .. span,
+        table.concat(lines, "\n") .. "\n")
 
       local context = createLoaded({x = 0, y = 0, w = WIDTH, h = HEIGHT},
         DEFAULT_OPTIONS, widgetPath)
@@ -4080,7 +4131,8 @@ local function testReadingsSitInTheirSlots()
       settle(context, 30)
 
       local panel = entryById(context, "pack").instance
-      local where = "tx-battery " .. span .. " with a " .. visual
+      local where = subject.type .. " " .. span
+        .. (extra[1] and (" with " .. extra[1]) or "")
 
       local reading = panel.value.properties
       local text = tostring(reading.text)
@@ -4102,12 +4154,12 @@ local function testReadingsSitInTheirSlots()
       local centre = reading.x + drawn / 2
 
       local expected, arrangement
-      local glyph = panel.glyphShown and panel.glyph or nil
+      local glyph = subject.visual(panel)
       if glyph then
         -- Which slot set is in force, read off the glyph rather than
         -- recomputed. Its centre lands on one fraction or the other, and
         -- whichever it is, the reading has to agree with it.
-        local glyphCentre = glyph.x + glyph.width / 2
+        local glyphCentre = glyph.x + glyph.w / 2
         local tight = PAD + math.floor(content * TIGHT_RIGHT + 0.5)
         local strict = PAD + math.floor(content * STRICT_RIGHT + 0.5)
         if math.abs(glyphCentre - tight) <= 1 then
@@ -4117,7 +4169,7 @@ local function testReadingsSitInTheirSlots()
           expected = PAD + math.floor(content * STRICT_LEFT + 0.5)
           arrangement = "strict halves"
         else
-          assert(false, where .. ": the battery is at " .. glyphCentre
+          assert(false, where .. ": the visual is at " .. glyphCentre
             .. ", which is neither slot (" .. tight .. " or " .. strict .. ")")
         end
       else
@@ -5495,24 +5547,19 @@ local function testBatteryGlyphLeavesTheReadingRoom()
     local glyph = panel.glyph
     local span = spans[index][1] .. "x" .. spans[index][2]
 
-    -- **`1 x 2` sheds its cell, and that is the arrangement working.** The
-    -- reading's font comes from the body band and does not consult the
-    -- content, so it cannot be made narrower to accommodate a glyph: a
-    -- DBLSIZE `88.8` wants 93 px and half of this panel's 105 px of content
-    -- is 52. No pair of slots separates them, so the visualization goes, the
-    -- way it goes on any panel that cannot hold one.
-    if span == "1x2" then
-      assertEqual(glyph, nil, span
-        .. " drew a battery its reading leaves no room for")
-    else
-      assert(glyph, "panel " .. index .. " (" .. span .. ") drew no battery")
+    -- **`1 x 2` keeps its cell and sheds its unit instead**, which is the
+    -- abbreviation rule in order: redundancy goes first, and the `V` is
+    -- redundancy because the heading names what is measured. It used to shed
+    -- the cell here on the strength of an estimated width; measured, a
+    -- DBLSIZE `88.8` is 68 px of this panel's 52 px half with the `V` and
+    -- 68 without, so the number and the cell fit once the unit goes.
+    assert(glyph, "panel " .. index .. " (" .. span .. ") drew no battery")
 
-      local reading = panel.value.properties
-      local right = reading.x + reading.w
-      assert(glyph.x >= right, "panel " .. index
-        .. " puts its battery at " .. glyph.x
-        .. ", inside a reading column that ends at " .. right)
-    end
+    local reading = panel.value.properties
+    local right = reading.x + reading.w
+    assert(glyph.x >= right, "panel " .. index
+      .. " puts its battery at " .. glyph.x
+      .. ", inside a reading column that ends at " .. right)
 
     -- And the reading stays on one line, which is the wrap a narrowed column
     -- would cause if the label kept the panel's full width.

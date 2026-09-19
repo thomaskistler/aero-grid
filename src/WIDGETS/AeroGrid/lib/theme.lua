@@ -901,10 +901,28 @@ end
 ---@param unitFont any
 ---@param unit any
 ---@return integer
+--- **Measured, not estimated, and the slot rule is what forced it.** The
+--- estimate is generous by design so that text shrinks rather than clips,
+--- which is the right bias when the alternative is a clipped reading and no
+--- way to know. It is the wrong bias when the answer can simply be correct:
+--- generosity then refuses things that fit.
+---
+--- `navigation` at `2 x 2` is where that stopped being theoretical. Its
+--- widest distance, `888.88km`, measures 113 px at `DBLSIZE` and its slot is
+--- 113 px, so it fits exactly -- and the estimate calls it 160 and sheds the
+--- dial beside it. A panel lost a compass to a safety margin protecting it
+--- from a problem it did not have.
+---
+--- This is one function rather than the whole boundary. The remaining
+--- fitters -- `fitText`, `fitReading`, `fitHeading`, `fitLabel` -- still
+--- estimate, because their callers ask about strings they may abbreviate
+--- rather than about a pair that must fit or lose its neighbour. Every
+--- caller of this one runs at build or reflow, never per frame, so the
+--- measurement costs nothing a panel pays repeatedly.
 function theme.readingWidth(font, digits, unitFont, unit)
-  local width = theme.textWidth(font, digits)
+  local width = theme.measureText(font, digits)
   if unit == nil or unit == "" then return width end
-  return width + theme.unitGap(unitFont) + theme.textWidth(unitFont, unit)
+  return width + theme.unitGap(unitFont) + theme.measureText(unitFont, unit)
 end
 
 --- Choose the font for a reading that carries its unit beside it.
