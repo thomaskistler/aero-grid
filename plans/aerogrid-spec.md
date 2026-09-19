@@ -456,6 +456,8 @@ The glyph is sized by search rather than by formula. The answer is not smooth: a
 
 `primitives.batteryGlyph` is three rectangles, because `lvgl.box` accepts a `color` and silently ignores it. Its outline is built at its final weight and never restated, since a border width only reaches LVGL through `LvglWidgetBorderedObject::setOpacity` and is discarded by a later `set`; the **fill** carries the state, the way a bar's fill does and its track does not. An outline with no fill is a picture of a flat pack, so a panel with no range to measure against hides the whole glyph rather than drawing it empty.
 
+**A compact visual sits on the optical centre of the reading's line box.** Not its baseline, and not its top. This was decided from rendered mocks rather than argued: the three were drawn side by side from the real geometry at every span, and the centre is the one that reads as belonging to the number rather than hanging off it. It applies to every compact visual in every component -- a battery, a dial, a compass -- so two panels of different components at the same span place theirs identically. A visual that spans the panel's width, which is to say a bar, has nothing to centre against and is unaffected.
+
 ### States
 
 - `normal`: Elevated panel with a semantic measurement accent, and no outline.

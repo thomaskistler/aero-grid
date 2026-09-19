@@ -166,51 +166,103 @@ def visual_bounds(objects):
     return min(xs), min(ys), max(xe), max(ye)
 
 
-GAP = 10
+#: Air between the reading and a visual following it, left-aligned.
+#: Slack collects after the group, so the gap only has to separate two
+#: things rather than carry the arrangement.
+GAP_LEFT = 10
+
+#: The gap when the group is centred. Centring puts the slack on both sides
+#: instead of after, which is what lets the elements sit further apart.
+#:
+#: **A single constant does not work, and neither does a pure proportion.**
+#: A proportion was tried first -- a third of the reading's line height --
+#: because that is what keeps the gap consistent against the number it
+#: separates. Measured across the cases that actually occur it gave 6 px at
+#: SMLSIZE and 9 at MIDSIZE, which is *less* than the left-aligned 10 and so
+#: exactly the opposite of the intent: the centred variant would have looked
+#: tighter than the one it is meant to open up.
+#:
+#: So it is a floor with a proportional term above it. The floor is what
+#: guarantees the centred variant is never tighter than the left-aligned one;
+#: the proportion is what stops a large reading looking crowded. Over the
+#: range that occurs -- a compact visual costs the reading a size, so it is
+#: never beside an XXLSIZE number -- the floor binds at SMLSIZE and MIDSIZE
+#: and the proportion binds at DBLSIZE: 14, 14 and 20 px.
+GAP_CENTRE_MIN = 14
+GAP_CENTRE_DIVISOR = 2
 
 
-def reflow(objects, panel_w, panel_h, align):
+def centre_gap(reading):
+    return max(GAP_CENTRE_MIN, reading.lineH // GAP_CENTRE_DIVISOR)
+
+
+def reflow(objects, panel_w, panel_h, pad, content, justify):
     """Apply the proposed rule to a copy of the drawn geometry.
 
-    The rule: the reading keeps the top left; a secondary element follows it
-    to the right instead of being pinned to the right edge; supporting rows
-    follow underneath instead of being pinned to the bottom.
+    The rule: the reading leads; a secondary element **follows** it rather
+    than being pinned to the right edge; supporting rows **follow** the block
+    above them rather than being pinned to the panel floor.
 
-    `align` decides how a secondary element sits against the reading, which
-    is the one genuine choice the rule leaves open.
+    `justify` is the open question the page now asks. `left` keeps the group
+    at the content box's left edge and lets the slack collect after it.
+    `centre` centres the group in the content box, which puts the slack on
+    both sides and buys room for a wider gap between the elements.
+
+    A secondary element always sits on the **optical centre** of the
+    reading's line box. That was an open choice and is not any more.
     """
     out = [o.copy() for o in objects]
     reading = next((o for o in out if o.role == "reading"), None)
     if reading is None:
         return out
 
-    right = content_right(out)
+    centred = justify == "centre"
+    gap = centre_gap(reading) if centred else GAP_LEFT
+
+    unit = next((o for o in out if o.role == "unit" and not o.hidden), None)
     bounds = visual_bounds(out)
 
+    # The reading and its unit move together: the unit is placed against the
+    # reading's drawn end, so it is part of the group rather than beside it.
+    group = [reading] + ([unit] if unit else [])
+    group_right = content_right(out)
+
     moved_visual_bottom = None
+    flowed_visual = False
+
     if bounds is not None:
         vx, vy, vxe, vye = bounds
         vw, vh = vxe - vx, vye - vy
 
         # A bar spans the panel's width by design; following the reading would
         # make it a stub. Only a compact visual flows.
-        spans_width = vw >= (panel_w - PAD * 2) - 2
+        spans_width = vw >= content - 2
         if not spans_width:
-            dx = (right + GAP) - vx
-            if align == "top":
-                dy = reading.y - vy
-            elif align == "baseline":
-                ascent = FONTS[reading.font][1] if reading.font else 0
-                dy = (reading.y + ascent - vh) - vy
-            else:  # optical centre of the reading's line box
-                dy = (reading.y + (reading.lineH - vh) // 2) - vy
+            dx = (group_right + gap) - vx
+            dy = (reading.y + (reading.lineH - vh) // 2) - vy
             for o in out:
                 if o.role == "visual" and not o.hidden:
                     o.x += dx
                     o.y += dy
             moved_visual_bottom = vye + dy
+            group_right = vxe + dx
+            flowed_visual = True
         else:
             moved_visual_bottom = vye
+
+    if centred:
+        # Centre the whole group -- reading, unit and whatever followed it --
+        # in the content box. Measured from the reading's left edge to the
+        # group's real right edge, so a short reading is centred on what is
+        # drawn rather than on the column it was given.
+        group_width = group_right - reading.x
+        shift = (pad + (content - group_width) // 2) - reading.x
+        if shift > 0:
+            for o in out:
+                if o.role in ("reading", "unit"):
+                    o.x += shift
+                elif o.role == "visual" and not o.hidden and flowed_visual:
+                    o.x += shift
 
     # Supporting rows follow the block above them rather than the panel floor.
     supporting = [o for o in out if o.role == "supporting" and not o.hidden]
@@ -219,10 +271,20 @@ def reflow(objects, panel_w, panel_h, align):
         if moved_visual_bottom is not None:
             block_bottom = max(block_bottom, moved_visual_bottom)
         top = min(o.y for o in supporting)
-        dy = (block_bottom + GAP) - top
+        dy = (block_bottom + gap) - top
         if dy < 0:
             for o in supporting:
                 o.y += dy
+
+        if centred:
+            # A supporting row is a box with text left-aligned inside it, so
+            # centring the arrangement has to centre the text rather than the
+            # box. Where the row is two columns -- a bearing beside an origin,
+            # a cell count beside a pack voltage -- each is centred in its own
+            # column, which is what keeps the two from colliding.
+            for o in supporting:
+                if o.w and o.textW < o.w:
+                    o.x += (o.w - o.textW) // 2
     return out
 
 
@@ -331,10 +393,12 @@ def hole_of(objects, panel_w):
     return [(right, vy, vx - right, vye - vy)]
 
 
-ALIGNS = [
-    ("centre", "optical centre"),
-    ("baseline", "baseline"),
-    ("top", "top"),
+#: The two arrangements the page now asks about. Vertical alignment is not
+#: among them any more: optical centre was chosen, so offering it as a choice
+#: would only invite reopening it.
+JUSTIFY = [
+    ("left-aligned", "left"),
+    ("centred", "centre"),
 ]
 
 cases = rows(G.CASES)
@@ -348,23 +412,21 @@ for case in cases:
     classify(objects, w, h)
     hole = hole_of(objects, w)
 
-    variants = []
-    for key, label in ALIGNS:
-        variants.append((label, reflow(objects, w, h, key)))
-
-    # Only show the alignment choice where it can actually be seen: a panel
-    # whose visual spans the width has nothing to align.
+    pad, content = int(case.pad), int(case.content)
     bounds = visual_bounds(objects)
-    spans = bounds is not None and (bounds[2] - bounds[0]) >= (w - PAD * 2) - 2
-    if bounds is None or spans:
-        variants = variants[:1]
-        variants[0] = ("proposed", variants[0][1])
+    spans = bounds is not None and (bounds[2] - bounds[0]) >= content - 2
+
+    variants = [(label, reflow(objects, w, h, pad, content, key))
+                for label, key in JUSTIFY]
 
     gap_note = ""
     if hole:
+        reading = next((o for o in objects if o.role == "reading"), None)
+        gap = centre_gap(reading) if reading else GAP_LEFT
         gap_note = (
             f'<p class="note gap">Slack between the reading and the '
-            f'visual today: <strong>{hole[0][2]} px</strong>.</p>'
+            f'visual today: <strong>{hole[0][2]} px</strong>. '
+            f'Gap in the centred variant: {gap} px.</p>'
         )
 
     cells = [
@@ -373,7 +435,7 @@ for case in cases:
     ]
     for label, flowed in variants:
         cells.append(
-            f'<figure><figcaption>proposed &mdash; {label}</figcaption>'
+            f'<figure><figcaption>flow &mdash; {label}</figcaption>'
             f'<div class="frame">{svg_of(flowed, w, h)}</div></figure>'
         )
 
@@ -406,6 +468,33 @@ def slack_table():
 
 slack_table = slack_table()
 
+# How far the centred reading ends up from the left-aligned heading, over
+# the cases that actually centre anything. Measured rather than described,
+# because "it may look misaligned" is not something a reader can weigh.
+offsets = []
+for case in cases:
+    if case.zone != "widget":
+        continue
+    objs = [Obj(o) for o in rows(case.objects)]
+    cw, ch = int(case.w), int(case.h)
+    cpad, ccontent = int(case.pad), int(case.content)
+    classify(objs, cw, ch)
+    cb = visual_bounds(objs)
+    if cb is None or (cb[2] - cb[0]) >= ccontent - 2:
+        continue
+    head = next((o for o in objs if o.role == "heading"), None)
+    moved = reflow(objs, cw, ch, cpad, ccontent, "centre")
+    cread = next((o for o in moved if o.role == "reading"), None)
+    if head and cread:
+        offsets.append((cread.x - head.x, f"{case.component} {case.span}", cw))
+worst_offset, worst_offset_case, worst_offset_w = max(offsets, default=(0, "-", 1))
+worst_offset_pct = round(worst_offset * 100 / worst_offset_w)
+
+gap_xxl = max(GAP_CENTRE_MIN, FONTS["XXLSIZE"][0] // GAP_CENTRE_DIVISOR)
+gap_dbl = max(GAP_CENTRE_MIN, FONTS["DBLSIZE"][0] // GAP_CENTRE_DIVISOR)
+gap_mid = max(GAP_CENTRE_MIN, FONTS["MIDSIZE"][0] // GAP_CENTRE_DIVISOR)
+gap_sml = max(GAP_CENTRE_MIN, FONTS["SMLSIZE"][0] // GAP_CENTRE_DIVISOR)
+
 # Counted rather than written down, so the prose cannot drift from the mocks
 # the way a hand-typed figure did on the first pass.
 widget_rows = [r for r in slack_rows if r[0] == "widget"]
@@ -427,6 +516,7 @@ page = f"""<!doctype html>
   h2 {{ font-size: 17px; margin: 44px 0 10px; padding-top: 18px;
     border-top: 1px solid #2b333d; }}
   h3 {{ font-size: 15px; font-weight: 600; margin: 26px 0 8px; }}
+  h3.plain {{ color: #cdd5dd; margin-top: 22px; }}
   .span {{ color: {PALETTE['cyan']}; font-weight: 600; }}
   .px {{ color: #7d8794; font-weight: 400; font-size: 13px; }}
   .intro {{ max-width: 62em; color: #b9c2cc; }}
@@ -478,10 +568,14 @@ component has been changed to do.</div>
 
 <h2>The rule, as implemented for these mocks</h2>
 <ul>
-  <li>The reading keeps the top left. Nothing moves it.</li>
-  <li>A secondary element <strong>follows</strong> the reading to the right
-      &mdash; at the reading's measured end, plus its unit, plus 10 px
-      &mdash; rather than being pinned to the right edge.</li>
+  <li>The reading leads. In the left-aligned variant it keeps the content
+      box's left edge; in the centred variant the whole group moves together
+      and the reading still leads it.</li>
+  <li>A secondary element <strong>follows</strong> the reading &mdash; at
+      the reading's measured end, plus its unit, plus a gap &mdash; rather
+      than being pinned to the right edge.</li>
+  <li>A secondary element sits on the <strong>optical centre</strong> of the
+      reading's line box. Settled, not offered.</li>
   <li>Supporting rows <strong>follow</strong> the block above them rather
       than being pinned to the panel floor.</li>
   <li>A visual that spans the panel's width by design &mdash; a bar &mdash;
@@ -489,12 +583,62 @@ component has been changed to do.</div>
       that is the first place the rule does more harm than good.</li>
 </ul>
 
-<h2>The open choice: how a secondary element sits against the reading</h2>
-<p class="intro">Where a panel has a compact visual, three vertical
-alignments are shown rather than one chosen. <code>navigation</code> at
-<code>2x2</code> and <code>4x2</code> is where the decision is most
-visible, because its dial is the largest secondary element in the
-catalogue.</p>
+<h2>Settled: a secondary element sits on the reading's optical centre</h2>
+<p class="intro">This page previously offered baseline, top and optical
+centre side by side. <strong>Optical centre was chosen</strong>, so the other
+two are gone rather than left here to be re-argued. It is now a rule of the
+design system: a compact visual is vertically centred on the reading's line
+box, at every span and in every component.</p>
+
+<h2>The open question: left-aligned, or centred</h2>
+<p class="intro">Both columns below apply the flow rule. They differ only in
+where the group sits.</p>
+<ul>
+  <li><strong>Left-aligned</strong> keeps the group at the content box's left
+      edge and lets all the slack collect after it. The gap between reading
+      and visual is a flat 10&nbsp;px, because the gap only has to separate
+      two things rather than carry the arrangement.</li>
+  <li><strong>Centred</strong> centres the group in the content box, putting
+      the slack on both sides. That is what buys room for a wider gap.</li>
+</ul>
+
+<h3 class="plain">The gap in the centred variant, and what it took to
+choose it</h3>
+<p class="intro">A pure proportion was the obvious answer and it was wrong.
+A third of the reading's line height keeps the gap consistent against the
+number it separates, but measured across the cases that actually occur it
+gives <strong>6&nbsp;px at <code>SMLSIZE</code> and 9 at
+<code>MIDSIZE</code></strong> &mdash; <em>less</em> than the left-aligned
+10, so the centred variant would have looked tighter than the one it is
+meant to open up.</p>
+<p class="intro">So it is a floor of <strong>{gap_sml}&nbsp;px</strong> with
+a proportional term above it, half the reading's line height. A compact
+visual costs the reading a font size, so it is never drawn beside an
+<code>XXLSIZE</code> number; over the range that does occur the floor binds
+at <code>SMLSIZE</code> and <code>MIDSIZE</code> and the proportion binds at
+<code>DBLSIZE</code> &mdash; <strong>{gap_sml}, {gap_mid} and
+{gap_dbl}&nbsp;px</strong>. Each case below prints the gap it used, so the
+claim is checkable rather than asserted.</p>
+
+<div class="warn"><strong>Two things to look at that a static page cannot
+settle.</strong>
+<p><strong>The header does not centre.</strong> The heading stays left and
+the badge stays right, both fixed &mdash; the badge column is reserved on
+every panel whether or not a badge is showing, and the specification is
+explicit that the heading's width must not depend on the state. So a centred
+reading sits under a left-aligned heading, and the gap between them is not
+small: <strong>{worst_offset} px</strong> on
+<code>{worst_offset_case}</code>, which is
+{worst_offset_pct}% of that panel's width. Whether that reads as centred or
+as an orphaned heading is visible in the mocks and nowhere else.</p>
+<p><strong>Centred content moves when it changes width.</strong> Left
+alignment degrades predictably: elements stay where they are and the last one
+sheds. A centred group re-centres whenever anything in it changes width, so a
+voltage going from <code>9.9</code> to <code>10.0</code> shifts the number
+<em>and</em> the battery beside it, every time. On a reading that changes a
+digit rarely that is nothing; on one that crosses a digit boundary in flight
+it is a visible twitch at the moment attention is on it. No static page can
+show that, which is why it is written here instead.</p></div>
 
 <h2>Full screen &mdash; what the shipped dashboards are</h2>
 <p class="intro">The <code>sim</code> and <code>sim2</code> screens the user

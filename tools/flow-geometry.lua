@@ -139,9 +139,19 @@ for _, typeName in ipairs(ORDER) do
     end
 
     local bounds = entry.container.properties
+    -- The content box, taken from the real frame rather than assumed. Its
+    -- padding is asymmetric -- the left clears the accent stripe and the
+    -- right has nothing to clear -- so a centred group centred on the panel
+    -- would sit a couple of pixels off.
+    local frame = themeModule.frame(context.theme,
+      {x = 0, y = 0, w = bounds.w, h = bounds.h},
+      themeModule.typography(colSpan, rowSpan))
+
     out[#out + 1] = string.format(
-      "  {component = %q, span = %q, zone = %q, w = %d, h = %d, objects = {\n",
-      typeName, span, zone.name, bounds.w, bounds.h)
+      "  {component = %q, span = %q, zone = %q, w = %d, h = %d,"
+        .. " pad = %d, content = %d, objects = {\n",
+      typeName, span, zone.name, bounds.w, bounds.h,
+      frame.pad, frame.content)
 
     local function walk(object, depth)
       for _, child in ipairs(object.children) do
