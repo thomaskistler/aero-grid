@@ -277,6 +277,21 @@ def bands_for(compact, panel_h, bottom, has_label, has_tertiary):
     }
 
 
+def band_font(band_h):
+    """The largest reading font that fits a band.
+
+    This is the new rule and it inverts the old one. Today the composition
+    comes from the box and the font from the composition; here the band comes
+    from the panel and the font from the band. The ladder's floor is
+    `SMLSIZE`, as `theme.READING_FONTS` has it -- a reading never drops to
+    `TINSIZE`, which is a supporting row's size.
+    """
+    for font in LADDER:
+        if FONTS[font][0] <= band_h:
+            return font
+    return LADDER[-1]
+
+
 def centre_in_band(band, height):
     """Where a block of `height` starts to sit centred in a band.
 
@@ -369,6 +384,46 @@ def halves(objects, panel_w, panel_h, pad, content, widest_at=None,
 
         if heading is not None:
             heading.y = centre_in_band(bands["label"], heading.lineH)
+
+        # The font follows the band. A reading occupying four quarters is
+        # drawn larger than one occupying two, which is the whole of the new
+        # rule -- and it is what settles the collision the bands created,
+        # because a font chosen to fit its band cannot overflow it.
+        banded = band_font(bands["body"][1])
+        if banded != reading.font:
+            ratio = FONTS[banded][0] / FONTS[reading.font][0]
+            apply_font(reading, banded)
+            apply_font(unit, TO_UNIT.get(banded, banded))
+            # The secondary element is sized against the reading today, so it
+            # follows the reading's new size rather than keeping its own.
+            if has_visual:
+                vb = visual_bounds(out)
+                ax, ay = vb[0], vb[1]
+                for o in out:
+                    if o.role != "visual" or o.hidden:
+                        continue
+                    if o.kind == "arc":
+                        o.radius = max(6, int(o.radius * ratio))
+                        o.thickness = max(2, int(round(
+                            (o.thickness or 2) * ratio)))
+                    else:
+                        o.w = max(2, int(round((o.w or 0) * ratio)))
+                        o.h = max(2, int(round((o.h or 0) * ratio)))
+                    o.x = ax + int(round((o.x - ax) * ratio))
+                    o.y = ay + int(round((o.y - ay) * ratio))
+            # Re-place horizontally: the group's width changed with the font.
+            group2 = reading.textW + (GAP_UNIT + unit.textW if unit else 0)
+            target2 = left_centre if has_visual else pad + content // 2
+            dx2 = (target2 - group2 // 2) - reading.x
+            for o in (reading, unit):
+                if o is not None:
+                    o.x += dx2
+            if has_visual:
+                vb = visual_bounds(out)
+                vdx2 = (right_centre - (vb[2] - vb[0]) // 2) - vb[0]
+                for o in out:
+                    if o.role == "visual" and not o.hidden:
+                        o.x += vdx2
 
         # The reading and whatever shares its band move together, so the
         # optical-centre relationship between them survives the move.
@@ -498,6 +553,21 @@ def reflow(objects, panel_w, panel_h, pad, content, justify):
 
 
 def svg_of(objects, w, h, ghost=None, bands=None, pad=0, content=0):
+    """Draw one panel.
+
+    **Draw order matters and has caught this file out twice.** A panel's
+    surface is an opaque filled rectangle, so anything emitted before it is
+    painted over and silently disappears. The slack overlay went first and
+    was invisible; the band guides went first and were invisible. Both were
+    found by rasterising the output and looking at it, not by reading the
+    code, because nothing about the emitted SVG is wrong -- the rects are
+    there, correct, and underneath.
+
+    The order is therefore: **panel content first, annotations last.** Guides
+    and overlays exist to be seen against the content, so they go over it. If
+    a third annotation is ever added, it goes at the bottom of this function
+    with the others.
+    """
     parts = [
         f'<svg class="panel" width="{w}" height="{h}" viewBox="0 0 {w} {h}">'
     ]
@@ -638,6 +708,7 @@ cases = rows(G.CASES)
 by_zone = {"widget": [], "appmode": []}
 slack_rows = []
 halves_steps = []
+ladder_rows = []
 findings = []
 
 for case in cases:
@@ -660,6 +731,19 @@ for case in cases:
     halved, steps, fits, bands = halves(
         objects, w, h, pad, content, widest_at,
         int(case.compact), int(case.bottom), vertical=True)
+
+    # Today's font against the banded one, for the table that made the
+    # shared ladder judgeable on paper last time.
+    before = next((o for o in objects if o.role == "reading"), None)
+    after = next((o for o in halved if o.role == "reading"), None)
+    if before is not None and after is not None:
+        ladder_rows.append((
+            case.zone, case.component, case.span,
+            before.font, after.font,
+            LADDER.index(after.font) - LADDER.index(before.font)
+            if before.font in LADDER and after.font in LADDER else 0,
+            bands["body"][1] if bands else 0,
+        ))
     step_note = ""
     if not fits:
         step_note = (' <span class="cost">will not fit</span>')
@@ -704,6 +788,28 @@ for case in cases:
         f'{gap_note}<div class="row">{"".join(cells)}</div></section>'
     )
 
+def ladder_table():
+    lines = ['<table><thead><tr><th>component</th><th>span</th>'
+             '<th>body band</th><th>today</th><th>banded</th><th>change</th>'
+             '</tr></thead><tbody>']
+    for zone, name, span, old, new, delta, band_h in ladder_rows:
+        if zone != "widget":
+            continue
+        if delta < 0:
+            note, cls = f"+{-delta} larger", ' class="better"'
+        elif delta > 0:
+            note, cls = f"&minus;{delta} smaller", ' class="has-slack"'
+        else:
+            note, cls = "unchanged", ""
+        lines.append(
+            f'<tr{cls}><td><code>{html.escape(name)}</code></td>'
+            f'<td>{html.escape(span)}</td><td>{band_h} px</td>'
+            f'<td>{old}</td><td>{new}</td><td>{note}</td></tr>'
+        )
+    lines.append('</tbody></table>')
+    return "".join(lines)
+
+
 def slack_table():
     lines = ['<table><thead><tr><th>zone</th><th>component</th><th>span</th>'
              '<th>slack</th><th>visual</th></tr></thead><tbody>']
@@ -719,6 +825,13 @@ def slack_table():
 
 
 slack_table = slack_table()
+ladder_table = ladder_table()
+
+_w = [r for r in ladder_rows if r[0] == "widget"]
+ladder_same = sum(1 for r in _w if r[5] == 0)
+ladder_larger = sum(1 for r in _w if r[5] < 0)
+ladder_smaller = sum(1 for r in _w if r[5] > 0)
+ladder_total = len(_w)
 
 # How far the centred reading ends up from the left-aligned heading, over
 # the cases that actually centre anything. Measured rather than described,
@@ -820,6 +933,10 @@ page = f"""<!doctype html>
   .cost {{ color: {PALETTE['critical']}; font-weight: 600;
     text-transform: none; letter-spacing: 0; }}
   td.bad {{ color: {PALETTE['amber']}; }}
+  tr.better td {{ color: #d8dee6; }}
+  tr.better td:last-child {{ color: {PALETTE['green']}; font-weight: 600; }}
+  tr.has-slack td:last-child {{ color: {PALETTE['amber']};
+    font-weight: 600; }}
   code {{ background: #1b2129; padding: 1px 5px; border-radius: 3px;
     font-size: 12.5px; }}
   ul {{ max-width: 62em; color: #b9c2cc; }}
@@ -972,6 +1089,65 @@ label band is wrong on every component and cannot be made right by any font
 the dashboard has. A rule that applies at two rows and falls back to today's
 stacking at one is a legitimate answer; a rule that claims to be universal
 would not be.</div>
+
+<h3 class="plain">What the band-derived font does to the ladder</h3>
+<p class="intro"><strong>This is the most important table on the page.</strong>
+The font now comes from the band, and the band from the panel &mdash; which
+inverts today's rule, where the composition comes from the box and the font
+from the composition. Every component at every span, today's reading font
+against the banded one:</p>
+
+{ladder_table}
+
+<p class="intro"><strong>{ladder_larger} of {ladder_total} get larger,
+{ladder_same} are unchanged, and none gets smaller.</strong> That is the
+opposite of what was expected, and the reason is worth following, because it
+is a fact about the panels rather than about the rule.</p>
+
+<ul>
+  <li><strong>A 53&nbsp;px panel has no tertiary row</strong> &mdash; it
+      sheds it, at every width. So the split is 1/4 : 3/4 and the body gets
+      36&nbsp;px, which holds <code>MIDSIZE</code> at 29. Today's ladder
+      gives those panels <code>SMLSIZE</code>. The band is more generous than
+      the ladder, not less.</li>
+  <li><strong><code>XXLSIZE</code> is not lost at <code>2x2</code>, because
+      it is not there to lose.</strong> A Full screen <code>2x2</code> is
+      111&nbsp;px, and today's ladder already gives it <code>DBLSIZE</code>.
+      The 69&nbsp;px <code>XXLSIZE</code> reading belongs to the 134&nbsp;px
+      App mode panel, not to this one. The banded font matches today's
+      exactly at every <code>2x2</code> and <code>4x2</code>, except
+      <code>navigation</code>, which gains a size.</li>
+  <li><strong><code>navigation</code> is the one that changes at the large
+      spans</strong>, from <code>MIDSIZE</code> to <code>DBLSIZE</code>. It
+      draws two tertiary rows where the others draw one, so today's ladder
+      charges it for both; the band charges a flat quarter whatever is in
+      it.</li>
+</ul>
+
+<div class="warn"><strong>App mode goes the other way and is worth a
+separate look.</strong> The same table over App mode's taller panels moves
+12 of 24 cases by <strong>two</strong> sizes &mdash; <code>SMLSIZE</code> to
+<code>DBLSIZE</code> on a 65&nbsp;px panel, because a 59&nbsp;px extent gives
+a 45&nbsp;px body band and <code>DBLSIZE</code> is 40. Whether a 40&nbsp;px
+reading on a 65&nbsp;px panel is an improvement or a panel with nothing but
+a number on it is a judgement, and it is the largest single change this
+proposal would make anywhere.</div>
+
+<p class="intro"><strong>The stability guarantee survives, and for free.</strong>
+Today's fitter sizes a reading against the widest string a component can ever
+print, so a value never resizes as it changes. A band-derived font does not
+consult the content at all, so it cannot resize with it &mdash; the guarantee
+holds by construction rather than by discipline. That is the strongest
+argument for the new rule, and it is stronger than the one it replaces:
+today's guarantee depends on every component remembering to pass its widest
+form, and this one does not.</p>
+
+<p class="intro"><strong>The secondary element follows the reading's new
+size.</strong> It is sized against the reading today, so a larger reading
+means a larger glyph and a larger dial. On the 53&nbsp;px panels, where the
+reading gains a size, <code>navigation</code>'s dial grows with it &mdash;
+and that is the element with the least room to spare, so it is the one to
+look at in the mocks rather than to reason about here.</p>
 
 <h3 class="plain">How far the reading ends up from its heading</h3>
 <p class="intro">The heading is immovably left, so every arrangement that
