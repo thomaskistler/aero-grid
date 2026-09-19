@@ -393,7 +393,7 @@ function modelIdentity.update(context, rect)
 
   context.primitives.resizePanel(context.panel, rect)
   context.primitives.placeHeader(context.label, context.badge, area.frame,
-    context.themeBuilder, context.fonts)
+    context.themeBuilder, context.fonts, context.settings.label)
 
   local primitives = context.primitives
   -- The name stays visible when there is no image, whatever the arrangement

@@ -9,6 +9,31 @@ local primitives = {}
 --- Width reserved for a panel's state badge on its header row.
 primitives.BADGE_WIDTH = 56
 
+--- Headings that had to be cut, waiting for the host to collect them.
+---
+--- This is the host's own bookkeeping and it lives here, beside the objects,
+--- because it cannot live on them: an LVGL object is userdata on a radio and
+--- holds no fields, so `label.headingDropped = x` raises rather than being
+--- stored. Writing it there passed every test in a suite whose stand-in was a
+--- plain table, and broke every panel on the first radio that ran it.
+---
+--- A list rather than a value because a dashboard builds many panels, and a
+--- drain rather than a read because what the host wants is exactly the
+--- headings this build produced: the report is a by-product of the drawing,
+--- not a second opinion assembled alongside it. `header` is the only writer,
+--- so it holds at most one entry per panel per build and cannot grow while
+--- the dashboard is merely running.
+primitives.headingReports = {}
+
+--- Collect and clear the headings cut since the last call.
+---@return table[] reports Each carries `requested` and `drawn`.
+function primitives.takeHeadingReports()
+  local reports = primitives.headingReports
+  if #reports == 0 then return reports end
+  primitives.headingReports = {}
+  return reports
+end
+
 --- Apply changes to an arc, always restating its centre.
 ---
 --- An arc is positioned by its centre, but the firmware stores the corner as
@@ -129,10 +154,11 @@ function primitives.header(parent, theme, frame, fonts, text, presentation,
     color = presentation.label,
     font = font,
   })
-  -- Kept so a reflow can refit against the new column, and so the host can
-  -- report a heading it had to cut.
-  label.headingText = text
-  label.headingDropped = dropped
+  -- Kept for the host to collect, beside the object rather than on it.
+  if dropped then
+    local reports = primitives.headingReports
+    reports[#reports + 1] = {requested = dropped, drawn = heading}
+  end
 
   local badge = primitives.badge(parent, theme, {
     x = frame.badgeX,
@@ -170,8 +196,6 @@ function primitives.setHeading(label, themeBuilder, frame, fonts, text, color)
   local heading, font, dropped =
     themeBuilder.fitHeading(text, frame.labelWidth, fonts.label)
 
-  label.headingText = text
-  label.headingDropped = dropped
   local changes = {text = heading, font = function() return font end}
   if color ~= nil then changes.color = color end
   label:set(changes)
@@ -179,10 +203,17 @@ function primitives.setHeading(label, themeBuilder, frame, fonts, text, color)
 end
 
 --- Reposition an existing header row after a geometry change.
+---
+--- `text` is the heading the panel currently shows, and the caller passes it
+--- because the label cannot be asked. On a radio a label is userdata, so
+--- `label.headingText` reads as nil rather than returning what was drawn:
+--- reading it here meant a reflow silently never refitted, which is the same
+--- defect as writing it, one step quieter.
 ---@param label any
 ---@param badge any
 ---@param frame table
-function primitives.placeHeader(label, badge, frame, themeBuilder, fonts)
+---@param text? any Heading currently shown; omitted leaves the text alone.
+function primitives.placeHeader(label, badge, frame, themeBuilder, fonts, text)
   local changes = {x = frame.labelX, y = frame.compact, w = frame.labelWidth}
 
   -- The column is what the badge leaves, so a reflow can change it and a
@@ -192,10 +223,9 @@ function primitives.placeHeader(label, badge, frame, themeBuilder, fonts)
   -- Refitted on every reflow, for the same reason: the column is what the
   -- badge leaves and a reflow can move it, and checking whether it moved
   -- costs more than refitting does.
-  if themeBuilder and fonts and label.headingText ~= nil then
-    local heading, font, dropped = themeBuilder.fitHeading(
-      label.headingText, frame.labelWidth, fonts.label)
-    label.headingDropped = dropped
+  if themeBuilder and fonts and text ~= nil then
+    local heading, font = themeBuilder.fitHeading(
+      text, frame.labelWidth, fonts.label)
     changes.text = heading
     changes.font = function() return font end
   end

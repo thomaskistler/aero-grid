@@ -262,7 +262,7 @@ function probe.update(context, rect)
 
   context.primitives.resizePanel(context.panel, rect)
   context.primitives.placeHeader(context.title, context.badge, area.frame,
-    context.themeBuilder, context.fonts)
+    context.themeBuilder, context.fonts, context.settings.label)
 
   local reconcile = context.primitives.reconcile
   local before = context.visibleRows

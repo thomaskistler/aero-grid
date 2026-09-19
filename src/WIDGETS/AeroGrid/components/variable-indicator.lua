@@ -580,8 +580,10 @@ function variableIndicator.update(context, rect)
     rect, context.layout, context.fonts, context.sample)
 
   primitives.resizePanel(context.panel, rect)
+  -- The heading is the global variable's own name rather than the setting,
+  -- so the refit is given what the panel currently shows.
   primitives.placeHeader(context.label, context.badge, area.frame,
-    context.themeBuilder, context.fonts)
+    context.themeBuilder, context.fonts, context.labelValue)
   context.frame = area.frame
   context.value:set({
     x = area.pad,

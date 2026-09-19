@@ -4670,7 +4670,6 @@ components:
   -- a cost paid for nothing.
   assertEqual(short.label.properties.text, "TX")
   assertEqual(short.label.properties.font(), short.fonts.label)
-  assertEqual(short.label.headingDropped, nil)
 
   -- A heading that does not fit steps the font down first, because that
   -- costs nothing and keeps the whole name.
@@ -4679,14 +4678,32 @@ components:
   assert(themeModule.fontHeight(long.label.properties.font())
       < themeModule.fontHeight(long.fonts.label),
     "the heading kept its font and must therefore have overflowed")
-  assertEqual(long.label.headingDropped, nil)
 
   -- And one that does not fit even at the smallest font is cut rather than
   -- wrapped, and the host says so, because cutting a name the author chose
   -- is a loss and a silent loss is the thing this project does not do.
   assert(#huge.label.properties.text < #"TRANSMITTER BATTERY PACK",
     "a heading nothing could fit was drawn whole, so it must have wrapped")
-  assertEqual(huge.label.headingDropped, "TRANSMITTER BATTERY PACK")
+
+  -- Whether a heading was cut is asked of the host's notices rather than of
+  -- the label, because a label on a radio is userdata and answers nothing.
+  -- Only the panel that lost characters is named: a cut reported for a
+  -- heading that fitted would send an author looking for a defect in the one
+  -- place there is not one.
+  local function noticedHeading(id)
+    for _, notice in ipairs(context.notices) do
+      if string.find(notice.text, "heading", 1, true)
+          and string.find(notice.text, id .. ":", 1, true) then
+        return notice.text
+      end
+    end
+    return nil
+  end
+
+  assertEqual(noticedHeading("short"), nil,
+    "a heading that fitted was reported as cut")
+  assertEqual(noticedHeading("long"), nil,
+    "a heading carried whole by a smaller font was reported as cut")
 
   local said = false
   for _, notice in ipairs(context.notices) do

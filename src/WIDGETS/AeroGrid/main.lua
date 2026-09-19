@@ -420,21 +420,31 @@ local function buildComponent(context, placement)
   local ok, instance = pcall(component.create, container,
     {x = 0, y = 0, w = rect.w, h = rect.h}, settings, services)
 
-  if ok then
-    -- A heading too long for its column is cut to fit, because the
-    -- alternative is LVGL wrapping it down over the reading. Cutting a name
-    -- the author chose is a loss, so it is reported rather than done
-    -- quietly: being told is what makes it an abbreviation instead of a
-    -- corruption, and the author can pick a shorter heading.
-    local label = type(instance) == "table"
-      and (instance.label or instance.title) or nil
-    local dropped = type(label) == "table" and label.headingDropped or nil
-    if dropped then
+  -- A heading too long for its column is cut to fit, because the alternative
+  -- is LVGL wrapping it down over the reading. Cutting a name the author
+  -- chose is a loss, so it is reported rather than done quietly: being told
+  -- is what makes it an abbreviation instead of a corruption, and the author
+  -- can pick a shorter heading.
+  --
+  -- Collected from the primitive that did the cutting rather than read back
+  -- off the label. A label is userdata on a radio and answers no questions
+  -- about itself, so asking it produced nil there and the truth here.
+  --
+  -- Drained whether or not the panel survived. A component that raises after
+  -- drawing its header leaves a report behind, and a report left behind is
+  -- one the next panel would be blamed for.
+  local reports = context.primitives.headingReports
+  if #reports > 0 then
+    for _, report in ipairs(reports) do
       addNotice(context, "warning", placement.id .. ": heading "
-        .. tostring(dropped) .. " does not fit this panel and is drawn as "
-        .. tostring(label.properties and label.properties.text or ""))
+        .. tostring(report.requested)
+        .. " does not fit this panel and is drawn as "
+        .. tostring(report.drawn))
     end
+    context.primitives.headingReports = {}
+  end
 
+  if ok then
     local interval = host.refreshInterval(component)
     context.components[#context.components + 1] = {
       placement = placement,

@@ -408,8 +408,10 @@ function flightTimer.update(context, rect)
     rect, context.layout, context.fonts)
 
   context.primitives.resizePanel(context.panel, rect)
+  -- The heading is the model's timer name rather than the setting, so the
+  -- refit is given what the panel currently shows.
   context.primitives.placeHeader(context.label, context.badge, area.frame,
-    context.themeBuilder, context.fonts)
+    context.themeBuilder, context.fonts, context.labelValue)
   context.frame = area.frame
   context.value:set({
     x = area.pad,

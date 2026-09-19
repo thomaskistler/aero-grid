@@ -367,6 +367,24 @@ local function componentTypes()
   return types
 end
 
+--- Lua sources in one directory under the widget, by file name.
+--- Read from the directory for the same reason `componentTypes` is: a list
+--- written by hand stops covering the host the moment somebody adds a file.
+local function sourceFiles(directory)
+  local listingPath = root .. "/build/source-listing.txt"
+  os.execute("ls '" .. root .. "/src/WIDGETS/AeroGrid/" .. directory
+    .. "' > '" .. listingPath .. "'")
+  local listing = assert(io.open(listingPath, "r"))
+  local names = {}
+  for name in listing:lines() do
+    if string.match(name, "%.lua$") then names[#names + 1] = name end
+  end
+  listing:close()
+  os.remove(listingPath)
+  assert(#names > 0, "no sources were found in " .. directory)
+  return names
+end
+
 --- Names that were retired because another key already asked their question.
 --- Listed by what replaced them, so a reintroduction says where to go.
 local RETIRED_KEYS = {
@@ -1008,6 +1026,120 @@ local function testInertSettingsAreRefused()
   assertEqual(#quiet, 0,
     "a layout that stated neither showPack nor showCount was reported for"
       .. " both: " .. table.concat(quiet, "; "))
+end
+
+--- Nothing in the host reaches an LVGL object by name.
+---
+--- An object handed back by `lvgl.*` is userdata on a radio, not a table:
+--- `LvglWidgetObjectBase::getRef` calls `lua_newuserdata` for one pointer and
+--- attaches `lvgl_base_mt` or `lvgl_mt`, neither of which declares
+--- `__newindex`. So `label.headingText = text` raises there, and
+--- `label.headingText` reads as nil. A stand-in that is a plain Lua table
+--- does both silently and correctly-looking, which is how a field written
+--- onto every panel's heading label passed this suite and then broke every
+--- panel on the first radio that ran it.
+---
+--- The fixture now refuses the write, which catches any path a test walks.
+--- This catches the paths no test walks, and catches reads as well, because
+--- the read was the quieter half of the same defect: `placeHeader` asked the
+--- label what its heading was, got nil on the radio, and therefore never
+--- refitted on a reflow while looking entirely healthy here.
+---
+--- The rule is that the only things an object understands are its methods.
+--- Every object name is collected from where it is constructed, and then any
+--- use of it with a dot rather than a colon is a violation.
+local function testLvglObjectsAreNeverReachedByName()
+  -- Constructors whose result is an object rather than one of the small
+  -- tables this host builds around several of them. `panel`, `bar`, `radial`,
+  -- `compass` and `accentArc` return plain Lua tables and are deliberately
+  -- absent: those are ours, and holding fields is what they are for. The
+  -- object inside one, such as `band.arc`, is reached through the helper that
+  -- owns it rather than by name.
+  local OBJECT_MAKERS = {"label", "value", "badge", "image", "marker"}
+  local LVGL_MAKERS = {"box", "rectangle", "label", "arc", "image"}
+
+  local primitives = loadModule("lib/primitives.lua")
+  for _, name in ipairs(OBJECT_MAKERS) do
+    assert(type(primitives[name]) == "function",
+      "primitives." .. name .. " is not a function, so this test is"
+        .. " guarding a constructor that no longer exists under that name")
+  end
+
+  -- Every production source, read from the directories rather than from a
+  -- list, so a file written tomorrow is held to this from the moment it
+  -- exists. That is the lesson from the documentation check: a rule that
+  -- names its subjects is a rule the next subject escapes.
+  local sources = {"main.lua"}
+  for _, name in ipairs(sourceFiles("lib")) do
+    sources[#sources + 1] = "lib/" .. name
+  end
+  for _, kind in ipairs(componentTypes()) do
+    sources[#sources + 1] = "components/" .. kind .. ".lua"
+  end
+
+  local checked, names = 0, 0
+  for _, relative in ipairs(sources) do
+    local handle = assert(io.open(
+      root .. "/src/WIDGETS/AeroGrid/" .. relative, "r"))
+    local source = handle:read("a")
+    handle:close()
+    checked = checked + 1
+
+    -- Comments are stripped before anything is matched. They are where the
+    -- firmware citations live, and a citation naming `lv_arc.c` reads as the
+    -- object `arc` followed by a field `c` to any pattern simple enough to
+    -- be worth writing. A rule that fires on a comment is a rule people
+    -- learn to work around.
+    source = string.gsub(source, "%-%-[^\n]*", "")
+
+    local held = {}
+    local function hold(name) if name then held[name] = true end end
+
+    for _, maker in ipairs(OBJECT_MAKERS) do
+      for name in string.gmatch(source,
+          "([%w_]+%.?[%w_]*)%s*=%s*[%w_]*%.?primitives%." .. maker .. "%(") do
+        hold(name)
+      end
+      for name in string.gmatch(source,
+          "local%s+([%w_]+)%s*=%s*primitives%." .. maker .. "%(") do
+        hold(name)
+      end
+    end
+    for _, maker in ipairs(LVGL_MAKERS) do
+      for name in string.gmatch(source,
+          "([%w_]+%.?[%w_]*)%s*=%s*lvgl%." .. maker .. "%(") do
+        hold(name)
+      end
+    end
+    -- `header` hands back a label and a badge together.
+    for first, second in string.gmatch(source,
+        "([%w_]+%.?[%w_]*)%s*,%s*([%w_]+%.?[%w_]*)%s*=%s*"
+          .. "[%w_]*%.?primitives%.header%(") do
+      hold(first)
+      hold(second)
+    end
+
+    for name in pairs(held) do
+      -- `local` leaves the bare name; a field of `context` keeps its prefix.
+      -- Either way the object is that name, and a dot after it is a field.
+      names = names + 1
+      -- A frontier, because `ring` is a suffix of `string` and the first
+      -- version of this reported `primitives` for reaching `ring.upper`.
+      local pattern = "%f[%w_]" .. string.gsub(name, "%.", "%%.")
+        .. "%.([%w_]+)"
+      for field in string.gmatch(source, pattern) do
+        assert(false, relative .. " reaches " .. name .. "." .. field
+          .. ", but an LVGL object is userdata on a radio and has no fields."
+          .. " Writing one raises and reading one is always nil."
+          .. " Keep host bookkeeping beside the object, not on it.")
+      end
+    end
+  end
+
+  assert(checked >= 24, "only " .. checked .. " sources were read")
+  assert(names >= 20,
+    "only " .. names .. " object names were found, so this test is looking"
+      .. " at far less of the host than it should be")
 end
 
 --- No component writes its own heading text into the label.
@@ -2003,6 +2135,7 @@ testSettingsResolution()
 testSettingsVocabulary()
 testInertSettingsAreRefused()
 testHeadingIsNeverWrittenDirectly()
+testLvglObjectsAreNeverReachedByName()
 testReflowGoesThroughReconcile()
 testRenderConsultsWhatIsShown()
 testLinkThresholdsNeedAStatedReading()
