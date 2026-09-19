@@ -390,6 +390,33 @@ def ink_span(obj):
     return 0, ascent
 
 
+def clamp_to_panel(y, obj, panel_h):
+    """Keep a label's ink inside the panel, whatever its band says.
+
+    **The font wins, and then it is clamped.** On a 53 px panel the label
+    band is 11 px and the heading is drawn at `SMLSIZE`, 17 -- and the
+    smallest font the dashboard has is `TINSIZE` at 12, so "let the band
+    win" is not an available answer there. Centring the heading in a band
+    smaller than itself puts a pixel of it above the panel's top edge, where
+    it is simply clipped.
+
+    So the band yields and the panel does not. The bands stop being exactly
+    proportional at the bottom of the size range, and nothing is ever drawn
+    off the panel.
+
+    The alternative -- falling back to today's stacking below a threshold --
+    was rejected deliberately. **Two layout rules with a size threshold
+    between them is a worse thing to own than one rule that bends at the
+    bottom of its range**: every component, every span and every future
+    addition then has to be reasoned about twice, once on each side of a
+    line whose position is itself arbitrary.
+    """
+    off, ink = ink_span(obj)
+    top = max(0, y + off)
+    top = min(top, max(0, panel_h - ink))
+    return top - off
+
+
 def optical_dy(reading, vy, vye, centre_rule):
     """How far a secondary element moves to sit on the reading's centre.
 
@@ -513,7 +540,9 @@ def halves(objects, panel_w, panel_h, pad, content, widest_at=None,
         bands["split"] = has_visual
 
         if heading is not None:
-            heading.y = centre_in_band(bands["label"], heading.lineH)
+            heading.y = clamp_to_panel(
+                centre_in_band(bands["label"], heading.lineH),
+                heading, panel_h)
 
         # The font follows the band. A reading occupying four quarters is
         # drawn larger than one occupying two, which is the whole of the new
@@ -953,17 +982,20 @@ def hole_of(objects, panel_w):
     return [(right, vy, vx - right, vye - vy)]
 
 
-#: Two columns were removed after the user chose an arrangement, and both
-#: removals are stated in the page rather than left as silent absences.
+#: Every column this page has offered has now been decided, and each
+#: removal is stated in the page rather than left as a silent absence.
 #:
-#: `flow -- left-aligned` and strict `halves` are gone because the decision
-#: between them is made: tightened halves, with strict halves kept only as
-#: the fallback for a panel whose widest content cannot take the tighter
-#: slots. `flow -- centred` went earlier, dominated on both counts the page
-#: measures. What remains is the one open question.
+#: `flow -- centred` went first, dominated on both counts the page measures.
+#: `flow -- left-aligned` and strict `halves` went when the arrangement was
+#: settled as tightened halves with strict halves kept only as the fallback.
+#: `font by ink` went last: the font is chosen by line height.
+#:
+#: The ink rendering is kept in the generator rather than deleted, because
+#: the only reason it could not reach the 80% the user asked for was the
+#: ladder having no step between 40 and 69 px. If the ladder ever gains one,
+#: the question reopens and this is what answers it.
 FONT_RULES = [
     ("by line height", "line"),
-    ("by ink", "ink"),
 ]
 
 cases = rows(G.CASES)
@@ -1125,12 +1157,6 @@ for case in cases:
                           rmargin)
 
     before = next((o for o in objects if o.role == "reading"), None)
-    line_read = next((o for o in variants["line"][0]
-                      if o.role == "reading"), None)
-    ink_read = next((o for o in variants["ink"][0]
-                     if o.role == "reading"), None)
-    moved = (line_read is not None and ink_read is not None
-             and line_read.font != ink_read.font)
 
     for label, rule in FONT_RULES:
         flowed, steps, fits, bands, used, margin, rmargin = variants[rule]
@@ -1146,22 +1172,14 @@ for case in cases:
             notes.append(f'<span class="cost">&minus;{steps} size'
                          f'{"s" if steps > 1 else ""}</span>')
         read = next((o for o in flowed if o.role == "reading"), None)
-        badge = ""
-        if read is not None and bands and rule == "ink":
-            if moved:
-                badge = (f'<span class="grew">{line_read.font} &rarr; '
-                         f'{ink_read.font}</span>')
-            else:
-                badge = ('<span class="stuck">unchanged &mdash; '
-                         + stuck_reason(bands["body"][1], read.font)
-                         + '</span>')
         cells.append(
-            f'<figure><figcaption>font {label} '
-            f'{"".join(notes)}</figcaption>'            f'<div class="frame">'
+            f'<figure><figcaption>banded, font {label} '
+            f'{"".join(notes)}</figcaption>'
+            f'<div class="frame">'
             f'{svg_of(flowed, w, h, bands=bands, pad=pad, content=content, ink=ink_guide(flowed))}'
             f'</div>'
             f'<p class="cap">{read.font if read else "&mdash;"}, ink fills '
-            f'<strong>{fill}%</strong> of the body band {badge}</p>'
+            f'<strong>{fill}%</strong> of the body band</p>'
             f'</figure>'
         )
 
@@ -1383,12 +1401,12 @@ def slack_table():
 
 
 def label_band_case(key=("widget", "link-status", "1x1")):
-    """The small-panel label band, and the three answers to it.
+    """The small-panel label band: what was chosen, and what it replaced.
 
-    A quarter of a 53 px panel is 11 px; the smallest font the dashboard has
-    is `TINSIZE` at 12 and the heading is drawn at `SMLSIZE` at 17. So "let
-    the band win" is not on the table here -- there is no font that fits --
-    and what is left is where the overflow goes.
+    A quarter of a 53 px panel is 11 px; the heading is `SMLSIZE` at 17 and
+    the smallest font the dashboard has is `TINSIZE` at 12. So "let the band
+    win" was never on the table -- there is no font that fits -- and the
+    question was only where the overflow goes.
     """
     entry = case_index.get(key)
     if entry is None:
@@ -1397,32 +1415,26 @@ def label_band_case(key=("widget", "link-status", "1x1")):
 
     flowed, _, _, bands, _, _, _ = arrange(
         objects, w, h, pad, content, widest_at, compact, bottom)
-    head = next((o for o in flowed if o.role == "heading"), None)
-    above = max(0, -(head.y + ink_span(head)[0])) if head else 0
 
-    clamped = [o.copy() for o in flowed]
-    ch = next((o for o in clamped if o.role == "heading"), None)
-    if ch is not None:
-        ch.y += above
-
-    stacked = [o.copy() for o in objects]
+    # What it would have done unclamped, kept only to show what was fixed.
+    loose = [o.copy() for o in flowed]
+    lh = next((o for o in loose if o.role == "heading"), None)
+    above = 0
+    if lh is not None and bands:
+        lh.y = centre_in_band(bands["label"], lh.lineH)
+        above = max(0, -(lh.y + ink_span(lh)[0]))
 
     cells = [
-        figure("font wins &mdash; rendered everywhere on this page",
+        figure("rejected &mdash; unclamped, the band centred blindly",
+               svg_of(loose, w, h, bands=bands, pad=pad, content=content,
+                      ink=ink_guide(loose)),
+               f"<strong>{above}&nbsp;px of the heading falls off the top of "
+               f"the panel</strong> and is clipped"),
+        figure("chosen &mdash; font wins, clamped to the panel",
                svg_of(flowed, w, h, bands=bands, pad=pad, content=content,
                       ink=ink_guide(flowed)),
-               f"the heading overflows its {bands['label'][1]}&nbsp;px band "
-               f"symmetrically, and <strong>{above}&nbsp;px of it falls off "
-               f"the top of the panel</strong>"),
-        figure("font wins, clamped to the panel",
-               svg_of(clamped, w, h, bands=bands, pad=pad, content=content,
-                      ink=ink_guide(clamped)),
-               "the same font, pushed down so nothing is clipped &mdash; the "
-               "overflow all goes downward, toward the reading"),
-        figure("fall back to today's stacking below a size",
-               svg_of(stacked, w, h),
-               "no bands at all on a 53&nbsp;px panel; the arrangement "
-               "applies at two rows and not at one"),
+               "the same font, pushed down so nothing leaves the panel; the "
+               "band yields and the overflow all goes inward"),
     ]
     return "".join(cells), above
 
@@ -1647,7 +1659,7 @@ widest = max(slack_rows, key=lambda r: r[3])
 
 page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
-<title>AeroGrid content flow &mdash; design mocks</title>
+<title>AeroGrid content flow &mdash; the decided arrangement</title>
 <style>
   body {{ background: {PALETTE['canvas']}; color: #e8ecf1;
     font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -1712,7 +1724,7 @@ page = f"""<!doctype html>
   .key {{ display: inline-block; width: 22px; height: 11px;
     vertical-align: -1px; margin-right: 7px; border-radius: 2px; }}
 </style></head><body>
-<h1>Content flow &mdash; fonts by ink or by line height</h1>
+<h1>Content flow &mdash; the decided arrangement</h1>
 <p class="intro">Every panel below is drawn at its true pixel size from the
 real theme, the real region arithmetic and the real measured text widths.</p>
 
@@ -1729,25 +1741,29 @@ not EdgeTX's.</div>
 the widget implements any of this.</strong> The arrangement is agreed and
 unbuilt; the font rule is the question on this page.</div>
 
-<h2>What this page is asking</h2>
-<p class="intro"><strong>One question: should a reading's font be chosen by
-its line height or by its ink?</strong> Everything else on the page is
-settled, and the columns that used to offer it have been removed.</p>
+<h2>What this page is now</h2>
+<p class="intro"><strong>Every question this page asked has been
+answered.</strong> It is no longer a comparison; it is the record of what
+was decided, rendered from real geometry so the decisions can be checked
+rather than remembered. Two columns per case: what the dashboard draws
+today, and what the agreed rule produces.</p>
 
-<div class="warn"><strong>Two columns were removed, and saying so rather
-than letting them vanish.</strong>
+<div class="warn"><strong>Four columns have been removed as they were
+decided, and each removal is stated rather than left as a silent
+absence.</strong>
 <ul>
-<li><code>flow &mdash; left-aligned</code> and strict <code>halves</code> are
-    gone because the arrangement is decided: <strong>tightened halves</strong>,
-    with strict halves kept only as a fallback. Both still exist in the
-    generator; neither is an open choice.</li>
-<li><code>flow &mdash; centred</code> went earlier. It is dominated on both
-    counts this page measures &mdash; {worst_offset}&nbsp;px of heading gap
-    against halves' {halves_offset} &mdash; and it re-centres whenever its
-    contents change width, which is the objection halves was chosen to
-    avoid.</li>
+<li><code>flow &mdash; centred</code> went first, dominated on both counts
+    this page measures &mdash; {worst_offset}&nbsp;px of heading gap against
+    the slotted {halves_offset} &mdash; and it re-centres whenever its
+    contents change width.</li>
+<li><code>flow &mdash; left-aligned</code> and strict <code>halves</code>
+    went when the arrangement was settled as <strong>tightened
+    halves</strong>, with strict halves kept only as the fallback.</li>
+<li><code>font by ink</code> went last, when the font was settled as
+    <strong>chosen by line height</strong>.</li>
 </ul>
-If you want either back, each is a one-line change.</div>
+All four still exist in the generator; none is an open choice, and each is a
+one-line change if one should be reopened.</div>
 
 <h2>Settled, and recorded rather than re-offered</h2>
 <ul>
@@ -1766,12 +1782,14 @@ If you want either back, each is a one-line change.</div>
       body.</li>
   <li><strong>The font comes from the band</strong>, and the band from the
       panel &mdash; which inverts today's rule, where the composition comes
-      from the box and the font from the composition. <em>How</em> the band
-      is measured is the open question below.</li>
+      from the box and the font from the composition. It is the largest font
+      whose <strong>line height</strong> fits the band.</li>
+  <li><strong>Where no font fits a band, the font wins and is clamped to the
+      panel.</strong> The band yields; nothing is ever drawn off the
+      panel.</li>
   <li><strong>A secondary element sits on the optical centre of the
-      reading.</strong> Not its baseline, not its top. Decided from rendered
-      mocks. <em>Centre of what</em> turns out to depend on the answer to
-      this page's question, which is the last section here.</li>
+      reading's line box.</strong> Not its baseline, not its top. Decided
+      from rendered mocks.</li>
   <li><strong>A bar is exempt.</strong> A bar's length <em>is</em> the
       reading, and a track that stops short of the panel edge measures
       against a scale the eye cannot see.</li>
@@ -1822,97 +1840,79 @@ so it cannot be shortened. With the dial gone the panel has one element, and
 a one-element panel does not split. The overlap is an artefact of forcing
 the split on a panel that would not take it.</p></div>
 
-<h2>The open question: by line height, or by ink</h2>
-<p class="intro">The user's observation was that fonts should use at least
-80% of their vertical allotment. Not implemented as a literal filter, because
-<code>height &ge; 0.8 &times; band</code> together with
+<h2>Decided: the font comes from the band's line height</h2>
+<div class="real"><strong>Chosen, with the alternative rendered beside
+it.</strong> The reading's font is the largest whose <em>line height</em>
+fits its band. The ink alternative was drawn as a third column at every
+span, on real geometry, and is not on this page any more &mdash; the page is
+for open questions, and keeping a settled one as a choice invites
+re-litigating it. What follows is the record of what was measured, so the
+decision can be checked rather than remembered.</div>
+
+<p class="intro">The question came from an observation that fonts should use
+at least 80% of their vertical allotment. Not implemented as a literal
+filter, because <code>height &ge; 0.8 &times; band</code> together with
 <code>height &le; band</code> is a window a five-step ladder often has no
-member in. <strong>The question underneath it is measurable, and the answer
-is that the band is being measured against the wrong thing.</strong></p>
+member in. The measurable question underneath it was whether the band is
+measured against the right thing.</p>
 
 <p class="intro"><code>theme.fontHeight</code> is LVGL's line height: ascent
 plus descent plus leading. What a reading puts on the panel is its
 <em>ascent</em> &mdash; and every reading in this catalogue is digits, a
 minus, a decimal point or a colon, none of which descend. So a band sized
-against line height carries slack nothing draws into. Ascent is
-<code>line_height &minus; base_line</code>, both compile-time constants of
-the shipped fonts, the pair already used for baseline alignment.</p>
+against line height genuinely does carry slack nothing draws into, and the
+observation was correct on its own terms:</p>
+
+<table><thead><tr><th>band</th><th>by line height</th><th>ink fills</th>
+<th>by ink</th><th>ink fills</th><th>descender past the band</th></tr></thead>
+<tbody>{ink_band_rows}</tbody></table>
+
+<p class="intro">Choosing by line height fills
+{line_worst}&ndash;{line_best}% of a band with ink; by ink it reaches
+{ink_best}% on the 36&nbsp;px band, and it would have moved the font on
+{ink_moved_cases} of {ink_case_total} panels.</p>
+
+<div class="warn"><strong>The 80% target was unreachable on the larger band
+anyway, and not because of the measurement.</strong> A 51&nbsp;px body band
+takes <code>DBLSIZE</code>, 31&nbsp;px of ink and 60% of the band. The next
+step up is <code>XXLSIZE</code> at 54&nbsp;px of ink, which fits by neither
+measure. There the gap is the <strong>ladder's granularity</strong> rather
+than the metric: the steps are 12, 17, 29, 40 and 69&nbsp;px, and between 40
+and 69 there is nothing.
+<p><strong>So the ink option is not dead, it is blocked.</strong> If the
+ladder ever gains a step between 40 and 69&nbsp;px the question reopens, and
+the rendering that answered it is still in the generator rather than deleted
+&mdash; one line brings the column back.</p></div>
+
+<p class="intro"><strong>Two consequences follow from the choice, and both
+are now closed.</strong></p>
+<ul>
+  <li><strong>The descender question does not arise.</strong> It was
+      measured on a constructed <code>mph</code> panel, since nothing in the
+      catalogue descends at all: with the text placed on its line box the
+      <code>p</code> reached {descender_box}&nbsp;px past the band floor,
+      because centring a line box already reserves the descent whether or
+      not anything uses it. The {descender_ink}&nbsp;px cost only appeared
+      when the <em>placement</em> moved to ink as well. Neither happens
+      now.</li>
+  <li><strong>The optical centre stays on the line box</strong>, exactly as
+      it was settled from mocks. Choosing by ink would have split the two
+      &mdash; on <code>{optical_case[1]} {optical_case[2]}</code> the dial
+      sat {optical_gap:.0f}&nbsp;px off the digits' middle &mdash; and that
+      was the strongest argument against changing only half of the
+      measurement. It is moot.</li>
+</ul>
 
 <div class="legend">
   <span><span class="key" style="background:{PALETTE['cyan']};opacity:.45">
     </span>the band</span>
   <span><span class="key" style="background:{PALETTE['green']};opacity:.45">
     </span>where the reading's glyphs actually sit</span>
-  <span><span class="grew">green</span> the ink rule moved the font</span>
-  <span><span class="stuck">amber</span> it did not, and why</span>
 </div>
-<p class="intro">Each panel below carries both. <strong>The gap between the
-green box and the cyan one is the slack the 80% question is about.</strong>
-Where the two columns look identical, they are: the ladder had no step to
-move to, and each such panel says so under it rather than leaving you to
-wonder whether the page is broken.</p>
-
-<p class="intro"><strong>The ink rule moves the font on {ink_moved_cases} of
-{ink_case_total} panels.</strong> Per distinct band, which is where the
-pattern is clearer than per component:</p>
-<table><thead><tr><th>band</th><th>by line height</th><th>ink fills</th>
-<th>by ink</th><th>ink fills</th><th>descender past the band</th></tr></thead>
-<tbody>{ink_band_rows}</tbody></table>
-
-<p class="intro"><strong>Choosing by line height fills
-{line_worst}&ndash;{line_best}% of a band with ink. Choosing by ink reaches
-{ink_best}%</strong> on the bands where the ladder has a step to move to
-&mdash; {ink_moves} of the {ink_band_count} distinct body bands the Full
-screen panels produce.</p>
-
-<div class="warn"><strong>The 80% target is unreachable on the larger band,
-and not because of the measurement.</strong> A 51&nbsp;px body band takes
-<code>DBLSIZE</code>, which is 31&nbsp;px of ink and 60% of the band. The
-next step up is <code>XXLSIZE</code> at 54&nbsp;px of ink, which does not fit
-by either measure. So there the gap is the <strong>ladder's
-granularity</strong> rather than the metric: the steps are 12, 17, 29, 40 and
-69&nbsp;px, and between 40 and 69 there is nothing. Reaching 80% on every
-band would mean a denser ladder, which is a different change from this one
-and a larger one.</div>
-
-<h3 class="plain">What it costs &mdash; a descender against the band floor</h3>
-<div class="warn"><strong>This panel is constructed, and it is the only
-constructed thing on the page.</strong> Nothing in the catalogue descends:
-every unit it prints is <code>V</code>, <code>A</code>, <code>m</code> or
-<code>dBm</code>, every heading is upper case, every reading is digits. So
-the one thing the ink rule gives up cannot be shown from real geometry at
-all &mdash; and showing only real geometry would make the cost look
-theoretical. The panel below is real in every respect except its unit
-string, which is replaced with <code>mph</code>. The rule is being decided
-for components nobody has written yet, and <code>mph</code> is not an exotic
-unit to expect one of them to print.</div>
-<div class="row">{descender_figs}</div>
-<p class="intro"><strong>And the result is not the one I expected, so it is
-worth stating carefully.</strong> With the font chosen by ink and the text
-still placed by its line box, the <code>p</code> descends
-{descender_box}&nbsp;px past the band floor &mdash; because centring a line
-box already reserves the descent, whether or not anything uses it. The cost
-only appears when the <em>placement</em> moves to ink as well, and then it
-is {descender_ink}&nbsp;px.</p>
-<p class="intro">So the two halves of this change are coupled: choosing the
-font by ink is free, and placing by ink is what makes a band stop being
-private. That is an argument for deciding both together rather than
-adopting the font rule and leaving the placement alone, which is what the
-mocks below currently show.</p>
-
-<h3 class="plain">What it costs &mdash; it reopens the optical centre</h3>
-<p class="intro">The settled rule centres a secondary element on the
-reading's <strong>line box</strong>. That was decided from rendered mocks,
-before any of this. If the font is chosen by ink, the line box and the ink
-stop agreeing: all of a line box's slack is below the glyphs, so centring
-the box drops the element below the number's visual middle. On
-<code>{optical_case[1]} {optical_case[2]}</code>, where it is most
-visible:</p>
-<div class="row">{optical_figs}</div>
-<p class="intro"><strong>This is a follow-on decision, not part of the
-question above</strong> &mdash; the mocks in the catalogue below all centre
-on the line box, as settled. If the ink rule is adopted, the optical-centre
-rule wants revisiting, and it is yours to revisit rather than mine to
+<p class="intro">Both guides are drawn on every panel below. The gap between
+the green box and the cyan one is the slack the 80% question was about, kept
+visible because it is a real property of the chosen rule rather than an
+argument against it.</p>
 change.</p>
 
 <h3 class="plain">And the reading sits high in its own band</h3>
@@ -1980,21 +1980,28 @@ costs more panels their tightening. Here is what the other reading does, on
 the panel that takes the fallback:</p>
 <div class="row">{per_row_figs}</div>
 
-<h2>The label band on a small panel, and the three answers to it</h2>
-<div class="warn"><strong>Found by a reader of the last revision, and the
-mechanical check that should have found it is now on this page.</strong> On
-every {"" if label_band_above else "no "}53&nbsp;px panel the heading
-overflows its band upward and <strong>{label_band_above}&nbsp;px of it falls
-off the top of the panel</strong>.</div>
+<h2>Decided: the label band yields, and the font is clamped to the panel</h2>
+<div class="real"><strong>Chosen: font wins, clamped.</strong> Where a band
+cannot hold even the smallest font, the font is kept and its position is
+clamped so nothing leaves the panel. The bands stop being exactly
+proportional there, and nothing overflows.</div>
 <p class="intro">A quarter of a 53&nbsp;px panel is 11&nbsp;px. The heading
 is drawn at <code>SMLSIZE</code>, 17&nbsp;px, and the smallest font the
 dashboard has is <code>TINSIZE</code> at 12. <strong>So "let the band win"
-is not one of the options here</strong> &mdash; there is no font that fits
-that band &mdash; and what is left is where the overflow goes:</p>
+was never available</strong> &mdash; there is no font that fits &mdash; and
+the only question was where the overflow goes. Unclamped, it went upward and
+{label_band_above}&nbsp;px of the heading was clipped by the panel's own
+edge:</p>
 <div class="row">{label_band_figs}</div>
-<p class="intro">This is the unresolved small-panel band question presenting
-itself concretely rather than a defect in any component, and it wants
-choosing rather than nudging.</p>
+
+<div class="warn"><strong>The third answer &mdash; fall back to today's
+stacking below a size &mdash; was rejected, and the reason is worth keeping.
+Two layout rules with a size threshold between them is a worse thing to own
+than one rule that bends at the bottom of its range.</strong> Every
+component, every span and every future addition would then have to be
+reasoned about twice, once on each side of a line whose position is itself
+arbitrary. A rule that degrades gracefully at its smallest size stays one
+rule.</div>
 
 <h2>Nothing overlaps, and this is how that is known</h2>
 <p class="intro">Every visible label in every column is checked against
