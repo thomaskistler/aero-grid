@@ -593,15 +593,28 @@ Runtime or derived values belong in the component context and are not persisted.
 
 ### Source settings
 
-A source setting persists the numeric EdgeTX source identifier, not the current telemetry value. The component reads the selected source at runtime:
+**A source setting persists the sensor's name, not its numeric identifier and not its value.** `telemetryService:subscribe` takes a name, rejects anything that is not a string, resolves it once through `getFieldInfo`, and holds the identifier only for as long as the dashboard is loaded.
 
-```lua
-local value, isCurrent, isFresh = getSourceValue(config.source)
+```yaml
+- id: pack
+  type: cell-battery
+  col: 0
+  row: 0
+  colSpan: 2
+  rowSpan: 1
+  config:
+    source: Cels
 ```
 
-The YAML may also record `sourceName` as optional human-readable and recovery metadata. The numeric identifier is authoritative for normal operation. On model or firmware changes, the loader may use the name to recover a source when the stored identifier is invalid, but it must not silently change a valid identifier.
+This section previously specified the opposite — a numeric identifier, authoritative, with a name beside it as recovery metadata — and no code was ever written towards it. The specification was wrong, for two reasons.
 
-**This section is aspirational and the implementation does the opposite.** `telemetryService:subscribe` takes a source *name* and rejects anything that is not a string; every shipped layout names its sources; and `<key>Name` survives only as a key the settings loader will not report as unknown. Nothing has been built towards the numeric form, and hand-authored YAML is the reason — a name is what a person can write and read, and phase 1 has no editor to write anything else. The question is live rather than settled: an identifier survives a sensor being renamed and a name does not, which is exactly what recovery metadata was for. It has to be decided before the on-radio editor is built, because the editor is the thing that would persist an identifier.
+**A telemetry source identifier is not stable across rediscovery.** EdgeTX allocates a sensor into the first free slot as it first arrives: `setTelemetryValue` calls `availableTelemetryIndex`, which returns the lowest index whose sensor is not in use (`radio/src/telemetry/telemetry_sensors.cpp`). The source identifier follows directly from that slot, as `MIXSRC_FIRST_TELEM + 3 * index` (`radio/src/dataconstants.h`). So the identifier records *what order the sensors happened to arrive in*, not which sensor it is. Delete the sensors and let them be rediscovered — which a pilot does after changing a receiver, or by accident — and the numbers shift under every layout that stored them. A stored `216` silently becomes a different sensor; a stored `Cels` either resolves or reports that it cannot. We watched the simulator re-detect its sensors during this work, and the layouts kept working precisely because they name them.
+
+**A numeric identifier cannot be authored by hand.** This specification states elsewhere that phase 1 dashboards are externally authored YAML, read-only on the radio, and that is the whole delivery mechanism until the editor exists. Nobody can write `216` from memory, and nobody reading a layout back can tell what it selected. The document was contradicting its own goal as well as the code.
+
+The trade this gives up is real and is accepted: a *renamed* sensor breaks a layout that names it, where an identifier would have survived. That is the rarer event, it is the one a person causes deliberately, and it fails loudly — the panel reports an unavailable source rather than quietly reading the wrong one. Being wrong noisily beats being wrong silently on a source a pilot is flying by.
+
+`<key>Name` is retained only as a key the settings loader will not report as unknown, so an older layout carrying one still loads. Nothing reads it.
 
 ### Native host options
 
@@ -652,9 +665,9 @@ Interactive LVGL controls are only available while the Lua widget is in temporar
 
 ### Source resolution
 
-- Persist the numeric EdgeTX source identifier and an optional readable source name.
-- Use the valid numeric identifier as authoritative.
-- If an identifier becomes invalid, offer explicit recovery by matching the stored name; do not silently bind a different valid source.
+- Persist the sensor's name. See [Source settings](#source-settings) for why it is the name and not the identifier.
+- Resolve the name to an identifier at subscribe time and hold it no longer than the dashboard is loaded.
+- A name that does not resolve is an unavailable source, reported as such. Never bind a different source in its place.
 - Preserve the source's reported unit and precision unless the user selects a supported conversion.
 - Handle numeric, cells-table, and GPS-table source values without treating them as interchangeable.
 
@@ -736,7 +749,7 @@ session:
 
 Every key above is one the named component declares, every span is one the named component supports, and this example is loaded by the test suite rather than being read and believed. That is not a stylistic point: since the settings vocabulary work, a key a component does not declare is reported at load with the layout, component and key named. The version of this example printed here until 2026-09-18 did not load cleanly — it produced `main-battery: source must be a string; showLabel is not a setting of this component` — and it was the most likely thing for someone to copy. Correcting it by inspection was not enough: it also gave `link-status` a `4 x 3` span that the component does not declare, so the host would have dropped the panel from the dashboard. That was found by the test, not by reading, which is the argument for the test.
 
-The second half of that message is the more interesting one. The example showed sources as numeric identifiers with a `sourceName` companion, as described under [Source settings](#source-settings), and that is not what the implementation does: `telemetryService:subscribe` takes a name and rejects anything that is not a string, and every shipped layout names its sources. The spec section describes an intended end state that nothing has been built towards. The two have to be reconciled before the on-radio editor exists, because the editor is the thing that would write an identifier.
+The second half of that message is the more interesting one. The example showed sources as numeric identifiers with a `sourceName` companion, because [Source settings](#source-settings) used to specify that. It was the specification that was wrong, and it has since been corrected to describe what exists and why: a source identifier records the order sensors happened to arrive in and moves when they are rediscovered, and nobody can hand-author one.
 
 ### Schema rules
 
@@ -752,7 +765,7 @@ The second half of that message is the more interesting one. The example showed 
 - Config keys correspond to stable keys in the component's `settings` schema.
 - Missing config keys receive component defaults. An unknown config key is preserved when saving, for forward compatibility, but is reported at load with the layout, component and key named: in practice it is a typo or a rename left behind, and silence is how a renamed setting reaches a radio still doing nothing.
 - A config value outside a setting's declared `choices` is reported the same way and falls back to the setting's default.
-- Source identifiers are stored as integers. An adjacent `<key>Name` value may preserve a readable source name.
+- Sources are stored as sensor names. A `<key>Name` companion from an older layout is accepted and ignored.
 
 ## YAML Handling
 
@@ -843,7 +856,7 @@ The loader must validate every layout before creating components:
 - Coordinates and spans are integers in range.
 - Rectangles do not overlap.
 - Configuration values meet component-defined constraints where available.
-- Source values are valid numeric identifiers or can be recovered explicitly from stored source names.
+- Source values are names that resolve against the model's sensors, or are reported as unavailable.
 - Configured sources return the value shape required by the component.
 - Threshold units and ranges are valid.
 - A navigation bearing is shown only when valid model and pilot/home GPS coordinates are available.
@@ -1583,7 +1596,7 @@ Deliverable: layouts created and safely maintained entirely on the radio.
 - Separate Dashboard IDs load separate screens for the same model without internal paging.
 - Phase 2 supports adding, moving, resizing, configuring, and removing components.
 - Component settings forms are generated from component metadata rather than hard-coded in the host.
-- A source setting can select an EdgeTX telemetry/input source, persist its identifier, and read its live value after reload.
+- A source setting can select an EdgeTX telemetry/input source, persist its name, and read its live value after reload, including after the sensors have been rediscovered in a different order.
 - Telemetry components distinguish current, stale, unavailable, and valid zero values.
 - Altitude and speed presets use the shared metric component while preserving domain-appropriate labels and supporting values.
 - Navigation shows a north-up direction from home to model and never presents it as aircraft-relative orientation.
@@ -1615,5 +1628,4 @@ Deliverable: layouts created and safely maintained entirely on the radio.
 - Which default YAML dashboard examples ship for aircraft, helicopter, and long-range use.
 - Phase 2 collision and resize-anchor behavior.
 - Numeric performance budgets after simulator and physical-radio baselining.
-- Whether a source is persisted by name or by numeric identifier. The specification says identifier; the implementation uses names throughout. See [Source settings](#source-settings).
 - Whether the three development components ship in a release.

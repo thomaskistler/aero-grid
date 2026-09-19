@@ -587,11 +587,25 @@ local function checkThemeExample(body, label)
   return resolved
 end
 
+--- Check a single component entry, which is a layout's component sequence cut
+--- down to one. Spliced into the smallest document that can carry it, so the
+--- same validation runs: a component example naming a setting that does not
+--- exist is exactly as wrong as a whole layout doing it, and there is no
+--- reason for the document to be able to carry one unchecked.
+---@param body string
+---@param label string
+local function checkComponentExample(body, label)
+  local indented = string.gsub("\n" .. body, "\n", "\n  ")
+  local document = "version: 1\ngrid:\n  columns: 4\n  rows: 4\ncomponents:"
+    .. indented .. "\n"
+  return checkLayoutExample(document, label)
+end
+
 local function testSpecificationExamplesLoad()
   local blocks = specificationExamples()
   assert(#blocks > 0, "no YAML examples were found in the specification")
 
-  local layouts, themes = 0, 0
+  local layouts, themes, entries = 0, 0, 0
   for index, body in ipairs(blocks) do
     local label = "specification example " .. index
     assert(#body > 0, label .. " is empty")
@@ -608,9 +622,14 @@ local function testSpecificationExamplesLoad()
     elseif string.match(body, "^theme:") then
       themes = themes + 1
       checkThemeExample(body, label)
+    elseif string.match(body, "^%- id:") then
+      entries = entries + 1
+      checkComponentExample(body, label)
     else
       -- An unclassified example is one nothing checks, which is the state
       -- this test exists to end. Failing is the point: add a branch here.
+      -- It has already caught one: a bare component entry added to the
+      -- source-settings section, which no branch covered until one did.
       error(label .. " is neither a layout nor a theme block, so nothing"
         .. " checks it. Its first line is: "
         .. tostring(string.match(body, "^([^\n]*)")))
