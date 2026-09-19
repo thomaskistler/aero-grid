@@ -489,6 +489,141 @@ local function testSettingsVocabulary()
   end
 end
 
+--- Every YAML example in the specification is loaded, not trusted.
+---
+--- The specification's layout example did not load for at least two
+--- milestones. It named `showLabel`, which no component declares, and a
+--- numeric source identifier, which `telemetryService` rejects, and it was
+--- the single most copyable thing in the document. Nothing read it, so
+--- nothing could say so.
+---
+--- The examples are extracted from the document at test time rather than
+--- copied here. A copy would be a second source of truth and would drift
+--- from the document exactly as the document drifted from the code, which is
+--- the failure this exists to prevent.
+local function specificationExamples()
+  local path = root .. "/plans/aerogrid-spec.md"
+  local handle = io.open(path, "r")
+  assert(handle, "the specification was not found at " .. path)
+  local text = handle:read("a")
+  handle:close()
+  assert(type(text) == "string" and #text > 0,
+    "the specification is empty, so every example below would pass vacuously")
+
+  local blocks = {}
+  for body in string.gmatch(text, "\n```yaml\n(.-)\n```") do
+    blocks[#blocks + 1] = body
+  end
+  return blocks
+end
+
+--- Check one complete layout document exactly as the host would.
+---@param body string
+---@param label string
+local function checkLayoutExample(body, label)
+  local document = yaml.parse(body)
+  assert(type(document) == "table", label .. " did not parse")
+
+  local normalized, errors = layout.validate(document, grid)
+  assert(normalized, label .. " was rejected: "
+    .. table.concat(errors or {}, "; "))
+  assertEqual(#errors, 0, label .. ": " .. table.concat(errors, "; "))
+
+  -- An example that declares nothing would satisfy every assertion below by
+  -- having nothing to satisfy them with.
+  assert(#normalized.components > 0, label .. " declares no components")
+
+  for _, placement in ipairs(normalized.components) do
+    local where = label .. ": " .. placement.id
+    local chunk = loadfile(root .. "/src/WIDGETS/AeroGrid/components/"
+      .. placement.type .. ".lua")
+    assert(chunk, where .. ": no component file for type " .. placement.type)
+    local module = chunk()
+
+    local valid, moduleError = componentHost.validateModule(module, placement.type)
+    assert(valid, where .. ": " .. tostring(moduleError))
+    assert(componentHost.supportsSpan(module, placement.colSpan, placement.rowSpan),
+      where .. ": " .. placement.type .. " does not support "
+      .. componentHost.spanName(placement.colSpan, placement.rowSpan))
+
+    -- Undeclared keys and values outside a declared choice list are both
+    -- reported here, which is what the example used to trip over.
+    local _, warnings = componentHost.resolveSettings(module, placement.config)
+    assertEqual(#warnings, 0, where .. ": " .. table.concat(warnings, "; "))
+  end
+
+  return normalized
+end
+
+--- Check a theme block, which is a fragment of a layout rather than one.
+---@param body string
+---@param label string
+local function checkThemeExample(body, label)
+  local fragment = yaml.parse(body)
+  assert(type(fragment) == "table" and type(fragment.theme) == "table",
+    label .. " did not parse as a theme block")
+
+  -- Validated in place, as a layout carrying it would be, then built. The
+  -- validator accepts any overrides table; only the build rejects a key that
+  -- is not customizable or a value that is not a colour, so a theme example
+  -- checked only by the validator would prove almost nothing.
+  local document = {
+    version = 1,
+    grid = {columns = 4, rows = 4},
+    components = {},
+    theme = fragment.theme,
+  }
+  local normalized, errors = layout.validate(document, grid)
+  assert(normalized, label .. " was rejected: "
+    .. table.concat(errors or {}, "; "))
+  assertEqual(#errors, 0, label .. ": " .. table.concat(errors, "; "))
+
+  local resolved = theme.build(normalized.theme.mode, normalized.theme.overrides, {})
+  assertEqual(#resolved.warnings, 0,
+    label .. ": " .. table.concat(resolved.warnings, "; "))
+  assertEqual(resolved.mode, fragment.theme.mode,
+    label .. " asked for a theme mode the host does not have")
+
+  return resolved
+end
+
+local function testSpecificationExamplesLoad()
+  local blocks = specificationExamples()
+  assert(#blocks > 0, "no YAML examples were found in the specification")
+
+  local layouts, themes = 0, 0
+  for index, body in ipairs(blocks) do
+    local label = "specification example " .. index
+    assert(#body > 0, label .. " is empty")
+
+    if string.match(body, "^version:") then
+      layouts = layouts + 1
+      local normalized = checkLayoutExample(body, label)
+      -- The example carries a session block, and a block that stopped
+      -- reaching the host would still parse.
+      if string.match(body, "\nsession:") then
+        assert(normalized.session and normalized.session.armSource,
+          label .. ": a session block did not survive validation")
+      end
+    elseif string.match(body, "^theme:") then
+      themes = themes + 1
+      checkThemeExample(body, label)
+    else
+      -- An unclassified example is one nothing checks, which is the state
+      -- this test exists to end. Failing is the point: add a branch here.
+      error(label .. " is neither a layout nor a theme block, so nothing"
+        .. " checks it. Its first line is: "
+        .. tostring(string.match(body, "^([^\n]*)")))
+    end
+  end
+
+  -- Both kinds have to still be present. Deleting the layout example from
+  -- the document would otherwise leave this test passing over whatever
+  -- remained.
+  assert(layouts > 0, "the specification carries no complete layout example")
+  assert(themes > 0, "the specification carries no theme example")
+end
+
 --- A raising callback disables only its own component, and only reports once.
 local function testLifecycleIsolation()
   local entry = {
@@ -1330,6 +1465,7 @@ testComponentContract()
 testSupportedSpans()
 testSettingsResolution()
 testSettingsVocabulary()
+testSpecificationExamplesLoad()
 testLifecycleIsolation()
 testColorConversion()
 testModernTheme()
