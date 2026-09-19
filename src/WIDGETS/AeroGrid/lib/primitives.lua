@@ -779,82 +779,115 @@ end
 --------------------------------------------------------------------------
 
 --- Smallest battery this host will draw, in pixels.
---- Below roughly this size a rounded outline with a nub stops reading as a
---- battery and starts reading as a smudge, so a panel that cannot give the
---- glyph this much sheds it the way it sheds any other visual.
-primitives.GLYPH_MIN_WIDTH = 26
-primitives.GLYPH_MIN_HEIGHT = 13
+--- It stands upright, so the height is what has to be found and the width
+--- follows it. Below roughly this size the level inside stops being readable
+--- and the shape stops being a battery, so a panel that cannot give it this
+--- much sheds it the way it sheds any other visual.
+primitives.GLYPH_MIN_HEIGHT = 26
+primitives.GLYPH_MIN_WIDTH = 13
 
---- Pixels of the outline, and of the gap between the outline and the fill.
---- One of each, so the interior is inset by two on every side.
-primitives.GLYPH_BORDER = 1
+--- How much taller than wide a cell stands.
+primitives.GLYPH_ASPECT = 2
+
+--- Pixels between the outline and the level inside it.
 primitives.GLYPH_GAP = 1
 
---- Proportions of a battery: how much wider than tall, and how big the nub is.
-primitives.GLYPH_ASPECT = 1.8
-
---- Work out the parts of a battery glyph of a given size.
+--- The level a cell has to stand out from, in 24 bits.
 ---
---- Separate from building it so a component can ask what a glyph would
---- occupy before deciding whether to have one, and so the arithmetic is
---- testable without an LVGL object anywhere near it.
+--- The empty part of a cell is the panel showing through, so what the level
+--- is read against is whatever tint the panel is wearing. Returned from the
+--- theme's `rgb` mirror rather than its display values, because `contrast` is
+--- arithmetic on colour channels and a display value is an `LcdFlags` word
+--- rather than a colour. The resolved theme keeps both for this reason, and
+--- confusing them is how a first pass at this measured the Modern critical
+--- accent against its own alarm tint at 1.01 when the true figure is 3.14.
+---@param theme AeroGridTheme
+---@param state? string State name, for the tint the panel is wearing.
+---@return integer
+function primitives.batteryBackdropRgb(theme, state)
+  return (theme.alertRgb and theme.alertRgb[state]) or theme.rgb.surface
+end
+
+--- Weight of the outline, as a fraction of the cell's width.
+--- Thick enough to read as a drawn cell rather than a hairline box, and
+--- derived from the width so a large battery is not outlined like a small one.
+--- It is applied at build and never restated: a border width only reaches
+--- LVGL through `LvglWidgetBorderedObject::setOpacity`, which runs behind
+--- `changedValue`, so a thickness passed to a later `set` updates the C++
+--- member and stops there.
+---@param width integer
+---@return integer
+function primitives.batteryBorder(width)
+  return math.max(2, math.floor(width / 7 + 0.5))
+end
+
+--- Work out the parts of an upright battery of a given size.
+---
+--- Separate from building it so a component can ask what a glyph would occupy
+--- before deciding whether to have one, and so the arithmetic is testable
+--- without an LVGL object anywhere near it.
 ---@param x integer
 ---@param y integer
----@param width integer Total width, nub included.
----@param height integer
+---@param width integer
+---@param height integer Total height, terminal included.
 ---@return table
 function primitives.batteryGeometry(x, y, width, height)
-  -- The nub is a twelfth of the width and half the height, which keeps it a
-  -- terminal rather than a second cell at every size this draws at.
-  local nubWidth = math.max(2, math.floor(width / 12 + 0.5))
-  local nubHeight = math.max(3, math.floor(height / 2 + 0.5))
-  local bodyWidth = math.max(1, width - nubWidth)
-  local inset = primitives.GLYPH_BORDER + primitives.GLYPH_GAP
+  -- The terminal sits on top, a little under half the width and a twelfth of
+  -- the height, which keeps it a contact rather than a second cell at every
+  -- size this draws at.
+  local nubWidth = math.max(4, math.floor(width * 0.45 + 0.5))
+  local nubHeight = math.max(2, math.floor(height / 12 + 0.5))
+  local bodyHeight = math.max(1, height - nubHeight)
+  local border = primitives.batteryBorder(width)
+  local inset = border + primitives.GLYPH_GAP
 
   return {
     x = x,
     y = y,
     width = width,
     height = height,
-    bodyWidth = bodyWidth,
-    nubX = x + bodyWidth,
-    nubY = y + math.floor((height - nubHeight) / 2),
+    border = border,
+    bodyY = y + nubHeight,
+    bodyHeight = bodyHeight,
+    nubX = x + math.floor((width - nubWidth) / 2),
+    nubY = y,
     nubWidth = nubWidth,
     nubHeight = nubHeight,
     inset = inset,
     interiorX = x + inset,
-    interiorY = y + inset,
-    interiorWidth = math.max(1, bodyWidth - inset * 2),
-    interiorHeight = math.max(1, height - inset * 2),
+    interiorY = y + nubHeight + inset,
+    interiorWidth = math.max(1, width - inset * 2),
+    interiorHeight = math.max(1, bodyHeight - inset * 2),
   }
 end
 
---- Convert a 0..1 fraction into the width of a glyph's fill.
+--- Convert a 0..1 fraction into the height of a glyph's level.
 ---@param glyph table
 ---@param fraction any
 ---@return integer
 function primitives.batteryFill(glyph, fraction)
-  return primitives.barFill(glyph.interiorWidth, fraction)
+  return primitives.barFill(glyph.interiorHeight, fraction)
 end
 
---- Create a battery outline with a proportional fill.
+--- Create an upright battery with a proportional level inside it.
 ---
 --- A battery rather than a bar because a bar says "some of something" and a
---- battery says which something, which is the whole of what this panel is
+--- battery says which something, which is the whole of what a pack panel is
 --- for. `cell-battery` wants the same shape, which is why this is here beside
 --- the bar rather than inside `tx-battery`.
 ---
---- Three rectangles, because `lvgl.box` accepts a `color` and silently
---- ignores it: `LvglWidgetBox::build` creates a bare `lv_obj` and its
---- `setColor` is the base class's empty virtual, so only a filled
---- `lvgl.rectangle` paints.
+--- Four rectangles, because `lvgl.box` accepts a `color` and silently ignores
+--- it: `LvglWidgetBox::build` creates a bare `lv_obj` and its `setColor` is
+--- the base class's empty virtual, so only a filled `lvgl.rectangle` paints.
 ---
---- **The outline's weight is fixed at build and never restated.** A border
---- width only reaches LVGL through `LvglWidgetBorderedObject::setOpacity`,
---- which runs behind `changedValue` and so ignores a thickness passed to a
---- later `set`. The fill carries the state instead, which is what the bar
---- does and what the reading does, so there is nothing here that wants a
---- heavier outline anyway.
+--- **The outline, the terminal and the level are one colour, and the state
+--- carries it**, so a critical pack is red throughout. The empty part of the
+--- cell is the panel showing through, which is the thing to check rather than
+--- assume: a red cell on a red-tinted panel is the case most likely to
+--- disappear. Measured, the Modern critical accent stands at **3.14** against
+--- its own alarm tint and the EdgeTX one at **4.05**, and the worst pairing
+--- across both palettes and every state is 3.07. Nothing is drawn behind the
+--- level, because nothing needs to be.
 ---@param parent any
 ---@param theme AeroGridTheme
 ---@param options table x, y, w, h, fraction, color
@@ -862,17 +895,17 @@ end
 function primitives.batteryGlyph(parent, theme, options)
   local geometry = primitives.batteryGeometry(
     options.x, options.y, options.w, options.h)
-  local outline = options.outline or theme.color.track
+  local color = options.color or theme.color.cyan
 
   local shell = lvgl.rectangle(parent, {
     x = geometry.x,
-    y = geometry.y,
-    w = geometry.bodyWidth,
-    h = geometry.height,
-    color = outline,
+    y = geometry.bodyY,
+    w = geometry.width,
+    h = geometry.bodyHeight,
+    color = color,
     filled = false,
-    thickness = primitives.GLYPH_BORDER,
-    rounded = 2,
+    thickness = geometry.border,
+    rounded = 3,
   })
 
   local nub = lvgl.rectangle(parent, {
@@ -880,20 +913,19 @@ function primitives.batteryGlyph(parent, theme, options)
     y = geometry.nubY,
     w = geometry.nubWidth,
     h = geometry.nubHeight,
-    color = outline,
+    color = color,
     filled = true,
     rounded = 1,
   })
 
-  -- Created after the shell so it draws over it, and inset by the border and
-  -- a pixel of air, so a full battery still shows its own outline rather
-  -- than merging into one solid block.
+  -- Grown from the bottom, because a cell drains downward.
+  local height = primitives.batteryFill(geometry, options.fraction)
   local fill = lvgl.rectangle(parent, {
     x = geometry.interiorX,
-    y = geometry.interiorY,
-    w = primitives.batteryFill(geometry, options.fraction),
-    h = geometry.interiorHeight,
-    color = options.color or theme.color.cyan,
+    y = geometry.interiorY + geometry.interiorHeight - height,
+    w = geometry.interiorWidth,
+    h = height,
+    color = color,
     filled = true,
     rounded = 1,
   })
@@ -906,17 +938,31 @@ function primitives.batteryGlyph(parent, theme, options)
   return glyph
 end
 
---- Update a glyph's fill proportion and colour.
+--- Update a glyph's level and colour.
+--- The outline and the terminal take the colour too, so a state change moves
+--- the whole cell rather than just what is inside it.
 ---@param glyph table
 ---@param fraction number
 ---@param color? integer
 function primitives.setBatteryGlyph(glyph, fraction, color)
-  local changes = {w = primitives.batteryFill(glyph, fraction)}
-  if color then changes.color = color end
+  local height = primitives.batteryFill(glyph, fraction)
+  local changes = {
+    y = glyph.interiorY + glyph.interiorHeight - height,
+    h = height,
+  }
+  if color then
+    changes.color = color
+    glyph.shell:set({color = color})
+    glyph.nub:set({color = color})
+  end
   glyph.fill:set(changes)
 end
 
 --- Move and resize a glyph without rebuilding it.
+---
+--- The outline's weight is deliberately not restated: it never reaches LVGL
+--- after build, so passing it would write a value the radio ignores and make
+--- the fixture disagree with the screen.
 ---@param glyph table
 ---@param x integer
 ---@param y integer
@@ -927,12 +973,17 @@ function primitives.placeBatteryGlyph(glyph, x, y, width, height, fraction)
   local next = primitives.batteryGeometry(x, y, width, height)
   for key, value in pairs(next) do glyph[key] = value end
 
-  glyph.shell:set({x = glyph.x, y = glyph.y,
-    w = glyph.bodyWidth, h = glyph.height})
+  local level = primitives.batteryFill(glyph, fraction)
+  glyph.shell:set({x = glyph.x, y = glyph.bodyY,
+    w = glyph.width, h = glyph.bodyHeight})
   glyph.nub:set({x = glyph.nubX, y = glyph.nubY,
     w = glyph.nubWidth, h = glyph.nubHeight})
-  glyph.fill:set({x = glyph.interiorX, y = glyph.interiorY,
-    w = primitives.batteryFill(glyph, fraction), h = glyph.interiorHeight})
+  glyph.fill:set({
+    x = glyph.interiorX,
+    y = glyph.interiorY + glyph.interiorHeight - level,
+    w = glyph.interiorWidth,
+    h = level,
+  })
 end
 
 --- Show or hide a glyph, positioning it only when it is visible.

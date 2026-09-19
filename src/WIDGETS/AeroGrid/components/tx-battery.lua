@@ -202,20 +202,24 @@ end
 --- glyph and the percentage beneath it.
 txBattery.GLYPH_GAP = 6
 
---- Tallest glyph this panel will draw.
---- A battery beside an XXLSIZE reading would be half the height of the panel
---- if it simply tracked the font, and a battery is an indicator rather than
---- the reading. Thirty pixels is about the height of a MIDSIZE line.
-txBattery.GLYPH_MAX_HEIGHT = 30
+--- Tallest cell this panel will draw.
+--- An upright battery given every pixel of a two-row panel would be taller
+--- than the number beside it, and a battery is an indicator rather than the
+--- reading. Fifty pixels stands a little above an XXLSIZE line's ascent.
+txBattery.GLYPH_MAX_HEIGHT = 50
 
 --- Choose the largest glyph the panel can afford beside its reading.
 ---
---- The glyph takes a column, so the reading is fitted against what is left
---- rather than against the whole panel. That costs the reading size, and the
---- rule for how much is the one the ladder already implies: **a reading may
---- step down one size to make room for the glyph, and no further.** Two steps
---- is the panel telling us it is too narrow to hold both, and a `1 x 2` says
---- exactly that -- content 105 pixels, of which a DBLSIZE `88.8` needs 93.
+--- The cell stands upright, so **height is what is searched and width follows
+--- it**. That is the whole of what turning it vertical changed here: a lying
+--- battery was bounded by the width the reading left, and an upright one is
+--- bounded by the room above the supporting row as well, so both have to be
+--- satisfied at once.
+---
+--- The glyph still takes a column, so the reading is still fitted against
+--- what is left rather than against the whole panel, and the budget is the
+--- one the ladder implies: **a reading may step down one size to make room,
+--- and no further.** Two steps is the panel telling us it cannot hold both.
 ---
 --- Sized by search rather than by formula because the answer is not smooth:
 --- a glyph one pixel narrower can be the difference between the reading
@@ -226,11 +230,13 @@ txBattery.GLYPH_MAX_HEIGHT = 30
 ---@param forms string[]
 ---@param content integer Full content width.
 ---@param room integer Vertical room the ladder left.
+---@param tall integer Vertical pixels the glyph's own column has.
 ---@return integer? width
 ---@return integer? height
 ---@return any font Reading font once the glyph has taken its column.
 ---@return integer formIndex
-function txBattery.glyphFor(themeBuilder, primitives, forms, content, room)
+function txBattery.glyphFor(themeBuilder, primitives, forms, content, room,
+    tall)
   local bare, bareForm = themeBuilder.fitReading(forms, content, room)
   local step = themeBuilder.readingStep(bare)
   local floorStep = step and math.min(step + 1, #themeBuilder.READING_FONTS)
@@ -238,11 +244,13 @@ function txBattery.glyphFor(themeBuilder, primitives, forms, content, room)
     and themeBuilder.fontHeight(themeBuilder.READING_FONTS[floorStep])
     or 0
 
-  local ideal = math.min(txBattery.GLYPH_MAX_HEIGHT,
-    math.floor(themeBuilder.fontHeight(bare) * 0.5 + 0.5))
+  -- As tall as its column allows, capped so a cell beside an XXLSIZE reading
+  -- is an indicator rather than a second reading.
+  local ideal = math.min(txBattery.GLYPH_MAX_HEIGHT, tall)
 
   for height = ideal, primitives.GLYPH_MIN_HEIGHT, -1 do
-    local width = height * 2
+    local width = math.max(primitives.GLYPH_MIN_WIDTH,
+      math.floor(height / primitives.GLYPH_ASPECT + 0.5))
     local left = content - width - txBattery.GLYPH_GAP
     local font, formIndex = themeBuilder.fitReading(forms, left, room)
     -- Two conditions, and the second is not implied by the first.
@@ -288,10 +296,18 @@ function txBattery.regionsFor(theme, themeBuilder, primitives, rect, layout,
   -- "88.8V" is the widest reading a transmitter pack produces, and "88.8" is
   -- the same reading without a unit the panel's own label already carries.
   -- Nothing shorter is offered: a digit here is magnitude.
+  -- The column an upright cell stands in: from under the header down to the
+  -- supporting row where there is one, or to the panel's own bottom where
+  -- there is not.
+  local glyphFloor = showDetail and (detailY - txBattery.GLYPH_GAP)
+    or (rect.h - frame.bottom)
+  local glyphRoom = math.max(0, glyphFloor - top)
+
   local value, formIndex, glyphWidth, glyphHeight
   if wantsGlyph and showVisual then
     glyphWidth, glyphHeight, value, formIndex = txBattery.glyphFor(
-      themeBuilder, primitives, txBattery.FORMS, frame.content, ladder.room)
+      themeBuilder, primitives, txBattery.FORMS, frame.content, ladder.room,
+      glyphRoom)
     -- A panel that cannot hold a glyph sheds it, the way it sheds any other
     -- visual. It does not fall back to a bar: the layout asked for a
     -- battery, and a bar in its place is a different answer to the question.
@@ -309,13 +325,13 @@ function txBattery.regionsFor(theme, themeBuilder, primitives, rect, layout,
     glyphX = frame.pad + frame.content - glyphWidth
     if showDetail then
       -- The percentage sits on the supporting row every other panel of this
-      -- size uses, and the glyph sits directly above it, so the right column
+      -- size uses, and the cell stands directly above it, so the right column
       -- reads as one indicator without the row drifting away from where the
       -- dashboard puts supporting rows.
       glyphY = math.max(top, detailY - txBattery.GLYPH_GAP - glyphHeight)
-      -- Under the glyph only if it fits under the glyph. `72% EST` is 79
-      -- pixels at the label font and a `1 x 2`'s glyph is 26 wide, so there
-      -- it stays beneath the reading where it is today.
+      -- Under the cell only if it fits under the cell. An upright battery is
+      -- half as wide as it is tall, so this is a narrower column than a lying
+      -- one gave and the percentage stays beneath the reading more often.
       detailUnderGlyph = themeBuilder.textWidth(fonts.label, "100%") <= glyphWidth
     else
       glyphY = top + math.max(0, math.floor((valueHeight - glyphHeight) / 2))

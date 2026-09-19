@@ -2921,6 +2921,70 @@ local function testLabelFitting()
   end
 end
 
+--- A battery stays visible in every state, on every palette.
+---
+--- The user asked for the outline, the terminal and the level to share one
+--- state colour, so a critical pack is red throughout. The empty part of the
+--- cell is then the panel showing through, and a red cell on a red-tinted
+--- panel is the case most likely to disappear. This is that case, held to a
+--- number.
+---
+--- A first pass at this measured 1.01 for exactly that pairing and led to a
+--- backing rectangle being added to fix a problem that was not there. The
+--- reading was taken on `resolved.color`, whose values are `LcdFlags` words
+--- rather than colours; `theme.contrast` is arithmetic on colour channels and
+--- the resolved theme carries `rgb` and `alertRgb` for this purpose. Every
+--- value below is a 24-bit one.
+local function testBatteryStaysVisible()
+  -- 3 is roughly where two colours stop being tellable apart at a glance from
+  -- arm's length. The worst pairing this palette produces is 3.07, so the
+  -- cell clears it everywhere, and a change that made any state worse would
+  -- be caught here rather than on a radio.
+  local LEAST = 3
+
+  --- What the cell is drawn in, which is the state's own accent.
+  local function cellRgb(resolved, state, accent)
+    if state == "warning" then return resolved.rgb.amber end
+    if state == "critical" then return resolved.rgb.critical end
+    if state == "stale" or state == "unavailable" then
+      return resolved.rgb.textFaint
+    end
+    return resolved.rgb[accent]
+  end
+
+  local checked, worst, where = 0, 99, ""
+  for _, mode in ipairs({"modern", "edgetx"}) do
+    local resolved = theme.build(mode)
+    for _, state in ipairs({"normal", "warning", "critical", "stale",
+        "unavailable"}) do
+      local backdrop = primitives.batteryBackdropRgb(resolved, state)
+      for _, accent in ipairs({"cyan", "green", "amber", "orange"}) do
+        local ratio = theme.contrast(cellRgb(resolved, state, accent), backdrop)
+        checked = checked + 1
+        if ratio < worst then
+          worst, where = ratio, mode .. "/" .. state .. "/" .. accent
+        end
+        assert(ratio >= LEAST, mode .. "/" .. state .. "/" .. accent
+          .. ": the cell is indistinguishable from the panel it stands on, at "
+          .. string.format("%.2f", ratio))
+      end
+    end
+  end
+
+  assert(checked >= 40, "only " .. checked .. " combinations were checked")
+
+  -- The margin is recorded rather than merely cleared, so a change that eats
+  -- most of it is visible in the diff even while the test still passes.
+  assert(worst < 3.5, "the worst pairing is now " .. string.format("%.2f", worst)
+    .. " at " .. where .. ", so this test no longer describes the palette")
+
+  -- And the pairing the whole question was about, named rather than left to
+  -- be inferred from the loop.
+  local modern = theme.build("modern")
+  assert(theme.contrast(modern.rgb.critical, modern.alertRgb.critical) >= LEAST,
+    "a red cell on a red panel stopped being readable")
+end
+
 --- A reading that holds no redundancy offers exactly one form.
 ---
 --- This is the magnitude rule, checked at the only place it can be: the forms
@@ -3235,16 +3299,20 @@ local function testTxBatteryComposition()
   local battery = loadModule("components/tx-battery.lua")
   local resolved = theme.build("modern")
 
-  -- span, reading font, form index, glyph w x h, percentage under the glyph
+  -- span, reading font, form index, cell w x h, percentage under the cell
+  --
+  -- The cell stands upright, so it is half as wide as it is tall. That is
+  -- what took the percentage out from under it at every span: `100%` needs 39
+  -- pixels at the label font and the widest cell here is 25.
   local documented = {
     {"1x1", "MIDSIZE", 1, nil, nil, false},
-    {"2x1", "MIDSIZE", 1, 30, 15, false},
-    {"3x1", "MIDSIZE", 1, 30, 15, false},
-    {"4x1", "MIDSIZE", 1, 30, 15, false},
-    {"1x2", "MIDSIZE", 2, 32, 16, false},
-    {"2x2", "XXLSIZE", 2, 60, 30, true},
-    {"3x2", "XXLSIZE", 1, 60, 30, true},
-    {"4x2", "XXLSIZE", 1, 60, 30, true},
+    {"2x1", "MIDSIZE", 1, 20, 40, false},
+    {"3x1", "MIDSIZE", 1, 20, 40, false},
+    {"4x1", "MIDSIZE", 1, 20, 40, false},
+    {"1x2", "MIDSIZE", 2, 25, 50, false},
+    {"2x2", "XXLSIZE", 2, 25, 50, false},
+    {"3x2", "XXLSIZE", 1, 25, 50, false},
+    {"4x2", "XXLSIZE", 1, 25, 50, false},
   }
 
   local GUTTER, CELLS, WIDTH, HEIGHT = 4, 4, 480, 272
@@ -3293,12 +3361,18 @@ local function testTxBatteryComposition()
         <= area.valueWidth,
       span .. " draws its reading past its own column")
 
-    -- And a glyph, where there is one, has to fit beside it.
+    -- And a cell, where there is one, has to fit beside it and stand upright.
     if area.glyphWidth then
       assert(area.glyphX + area.glyphWidth <= area.pad + area.content,
         span .. " draws its battery past the panel edge")
       assert(area.glyphX >= area.pad + area.valueWidth,
         span .. " draws its battery over the reading")
+      assert(area.glyphHeight > area.glyphWidth,
+        span .. " draws a battery wider than it is tall")
+      local floor = area.showDetail and area.detailY or rect.h
+      assert(area.glyphY + area.glyphHeight <= floor, span
+        .. " draws its battery over the row beneath it: ends at "
+        .. (area.glyphY + area.glyphHeight) .. ", row at " .. floor)
     end
   end
 
@@ -3335,6 +3409,34 @@ local function testTxBatteryComposition()
 
   assertEqual(battery.FORMS[2], "88.8",
     "the shorter form is no longer the unitless one the page describes")
+
+  -- The cell's column ends where the percentage begins, at every height a
+  -- reflow can produce rather than only at the eight the grid can.
+  --
+  -- This is worth sweeping rather than sampling: at the spans a 4 x 4 grid
+  -- makes, the cell's own height cap binds before the room does, so the panel
+  -- sizes a layout can ask for never exercise the floor at all. A zone in App
+  -- mode is whatever the screen leaves, and a short two-row panel is where a
+  -- cell would grow down through the row beneath it.
+  local swept = 0
+  for height = 70, 200, 2 do
+    for _, width in ipairs({117, 238, 480}) do
+      local rect = {x = 0, y = 0, w = width, h = height}
+      local layout = battery.presentationFor(width > 200 and 2 or 1, 2)
+      layout.visual = "battery"
+      local area = battery.regionsFor(resolved, theme, primitives, rect,
+        layout, theme.typography(width > 200 and 2 or 1, 2))
+      if area.glyphHeight and area.showDetail then
+        swept = swept + 1
+        assert(area.glyphY + area.glyphHeight <= area.detailY,
+          "a " .. width .. " by " .. height .. " panel stands its battery "
+            .. (area.glyphY + area.glyphHeight - area.detailY)
+            .. " pixels into the row beneath it")
+      end
+    end
+  end
+  assert(swept >= 50, "only " .. swept
+    .. " panels in the sweep both drew a battery and showed a percentage")
 end
 
 --- The transmitter estimate is optional and must stay off until a layout
@@ -4103,6 +4205,7 @@ testExtremaService()
 testNavigationService()
 testFontHeightsMatchTheFirmware()
 testTextFitting()
+testBatteryStaysVisible()
 testLosslessReadingsOfferOneForm()
 testRedrawDecision()
 testSharedLadder()

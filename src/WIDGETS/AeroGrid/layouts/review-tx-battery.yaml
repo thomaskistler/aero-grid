@@ -6,24 +6,31 @@
 # the fixture already carries ten. The previous review layout stays in the
 # repository and keeps being loaded by the shipped-layout test.
 #
-# This pass is about the battery glyph replacing the bar, so the arrangement
-# below is chosen to show the three things that are hard to imagine from a
-# description and impossible to judge from a diff.
+# This pass turns the battery upright, thickens its outline, and gives the
+# outline, the terminal and the level one colour that the state carries. The
+# arrangement below is chosen to show the three things that are hard to
+# imagine from a description and impossible to judge from a diff.
 #
-# **The fill carries the state.** Two panels of the same span sit side by
-# side, one healthy and one critical, so a red fill can be compared against a
-# cyan one rather than remembered. The fixture transmitter reads 7.9 V, so the
-# thresholds are rigged either side of it and each panel stays in its state
-# rather than flickering through it.
+# **The whole cell carries the state.** Two panels of the same span sit side
+# by side, one healthy and one critical, so an entirely red cell can be
+# compared against a cyan one rather than remembered. The fixture transmitter
+# reads 7.9 V, so the thresholds are rigged either side of it and each panel
+# stays in its state rather than flickering through it.
 #
-# **The glyph costs the reading width, and only in one place.** A `2 x 2`
-# keeps XXLSIZE and drops the `V`; a `1 x 2` steps from DBLSIZE to MIDSIZE,
-# because 105 pixels of content cannot hold a DBLSIZE reading and a battery
-# side by side. Both are here, adjacent, which is the only way to see whether
-# that trade is acceptable.
+# **The critical panel is the one to look at hardest.** The empty part of the
+# cell is the panel showing through, so a red cell on a red-tinted panel is
+# what would disappear. Measured it does not -- 3.14 on the Modern palette,
+# against a worst case of 3.07 anywhere -- but a number is not a pair of eyes,
+# and this is the panel that tests it.
+#
+# **The cell costs the reading less width than the lying one did**, being half
+# as wide as it is tall, but it has taken the percentage out from under it at
+# every span: `100%` needs 39 pixels at the label font and the widest cell
+# here is 25. Every panel below with a percentage shows it beneath the
+# reading instead.
 #
 # **The bar is still there if you want it.** The bottom row holds a bar
-# against a glyph at the same span, which is the comparison that decides
+# against a cell at the same span, which is the comparison that decides
 # whether keeping both was right.
 version: 1
 grid:
@@ -60,9 +67,9 @@ components:
       critical: 8.0
       showPercent: true
 
-  # One cell wide and two tall. The percentage cannot fit under a 32 pixel
-  # battery, so it stays under the reading, and the reading steps down one
-  # size to make room. This is the span where the arrangement bends.
+  # One cell wide and two tall. The narrowest panel that still stands a
+  # battery beside its reading, and the one where the reading pays a size for
+  # it.
   - id: narrow
     type: tx-battery
     col: 0
@@ -88,8 +95,9 @@ components:
       packEmpty: 6.6
       packFull: 8.4
 
-  # A single row, where there is no percentage at any width. The battery is
-  # centred on the reading rather than sitting above a row that is not there.
+  # A single row, where there is no percentage at any width. The cell is
+  # centred on the reading rather than standing above a row that is not there,
+  # and it is shorter, because its column ends at the panel's own bottom.
   - id: wide
     type: tx-battery
     col: 2
