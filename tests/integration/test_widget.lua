@@ -4449,7 +4449,10 @@ components:
     config:
       rssiSource: RSSI
       qualitySource: RQly
-      reading: auto
+      # Stated, not `auto`: the thresholds below are percentages, and a
+      # threshold whose unit depends on which source resolved first is
+      # refused at load.
+      reading: quality
       warning: 50
       critical: 30
       extrema: source
@@ -4879,9 +4882,9 @@ components:
     config:
       rssiSource: RSSI
       qualitySource: RQly
+      # `auto` is the subject here, so it carries no thresholds: their unit
+      # is exactly what `auto` leaves undecided.
       reading: auto
-      warning: 50
-      critical: 30
   - id: rssionly
     type: link-status
     col: 2
