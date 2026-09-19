@@ -154,8 +154,9 @@ label font, so there is nowhere on the right to put it. On a narrow panel it
 loses its `EST` before it loses its number.
 
 **The `V` is its own label beside the number**, at a smaller size, sitting on
-the number's baseline. It is not part of the reading, so the reading is digits
-alone and the `V` cannot be measured and then not drawn.
+the number's baseline and immediately after the digits. It is not part of the
+reading, so the reading is digits alone and the `V` cannot be measured and
+then not drawn.
 
 **`1x2` is the one span that drops it.** The reading is 67 pixels of the 74
 that panel leaves beside its battery, and the `V` and its gap need the 13 that

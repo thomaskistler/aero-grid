@@ -29,13 +29,22 @@
 # here is 25. Every panel below with a percentage shows it beneath the
 # reading instead.
 #
-# **The `V` is now its own label riding beside the number**, at two steps down
-# the reading ladder and sitting on the number's baseline. The `2x2` panels
-# show it at `MIDSIZE` beside an `XXLSIZE` number and the `2x1` at `SMLSIZE`
-# beside a `MIDSIZE` one, so the pairing can be judged at two sizes rather
-# than one. The `1x2` panel is the single span that drops it: 67 pixels of
-# reading in the 74 the battery leaves, and the `V` needs the 13 that are
-# not there.
+# **The `V` rides immediately after the number.** Where it stands is now
+# measured with `lcd.sizeText` rather than estimated: the estimate charges
+# every character 0.58 of a line height, so a decimal point costs what a digit
+# does, and `7.9` came out 68% too wide -- roughly 48 pixels of empty space at
+# `XXLSIZE`, which is the gap that was reported. The explicit gap on top is a
+# twelfth of the unit's height, one or two pixels, because a glyph's advance
+# already carries its own bearing.
+#
+# The `2x2` panels show the pairing at `MIDSIZE` beside an `XXLSIZE` number
+# and the `2x1` at `SMLSIZE` beside a `MIDSIZE` one, so it can be judged at
+# two sizes rather than one. The `1x2` panel still sheds its `V`, and
+# deliberately: **whether** the pair fits is still decided on the generous
+# estimate, and only **where** the unit goes is measured. The two want
+# opposite errors -- a fit that guesses high sheds a unit that would have
+# fitted, which is recoverable, where one that guesses low draws a unit off
+# the edge of the panel.
 #
 # **The bar is still there if you want it.** The bottom row holds a bar
 # against a cell at the same span, which is the comparison that decides

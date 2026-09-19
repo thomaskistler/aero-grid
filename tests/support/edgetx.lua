@@ -509,6 +509,87 @@ function support.lcd(options)
   local roles = {}
   for name, role in pairs(theme) do roles[role] = palette[name] end
 
+  --- Per-character advances, as a fraction of a font's line height.
+  ---
+  --- **What this models, and what it does not.** EdgeTX measures text by
+  --- summing the real advance of every glyph: `luaLcdSizeText` calls
+  --- `getTextWidth`, which is `lv_txt_get_width(s, len, getFont(flags), 0,
+  --- LV_TEXT_FLAG_EXPAND)` over the font's own `glyph_dsc`. This reproduces
+  --- the **shape** of that -- a proportional font where a decimal point is a
+  --- fifth of a line height and an `m` is two thirds -- and it does not
+  --- reproduce the **numbers**, because it cannot.
+  ---
+  --- The ratios below are real, measured out of
+  --- `radio/src/fonts/lvgl/std/lv_font_en_STD.c`, whose `glyph_dsc` is
+  --- uncompressed in the tree: `adv_w` is in sixteenths and
+  --- `lv_font_fmt_txt_get_glyph_dsc` rounds it with `(adv_w + 8) >> 4`, so a
+  --- digit is 9 px of a 21 px line and a `.` is 4. Every other font the
+  --- dashboard actually draws with -- XXS, XS, L, bold XL, bold XXL -- is
+  --- LZ4-compressed in `lz4_fonts.h` and its advances are not readable from
+  --- source at all. So one font's proportions are applied to every size, and
+  --- the bold faces in particular will be wider on a radio than they are
+  --- here.
+  ---
+  --- That is a limitation worth stating loudly rather than papering over: a
+  --- mock that looked exact and was not would be worse than this one. What it
+  --- buys is the thing that matters, which is that it disagrees with the 0.58
+  --- flat estimate -- `7.9` is 22 px here against the estimate's 37 -- so a
+  --- test can tell measured placement from estimated placement. A model that
+  --- merely repeated the estimate could not.
+  local ADVANCE = {
+    ["'"] = 0.134, [","] = 0.149, [";"] = 0.161, ["j"] = 0.182,
+    [":"] = 0.185, ["i"] = 0.185, ["l"] = 0.185, ["|"] = 0.185,
+    [" "] = 0.188, ["!"] = 0.196, ["."] = 0.199, ["["] = 0.202,
+    ["]"] = 0.202, ["I"] = 0.208, ["-"] = 0.211, ["`"] = 0.235,
+    ['"'] = 0.244, ["t"] = 0.250, ["r"] = 0.259, ["{"] = 0.259,
+    ["}"] = 0.259, ["("] = 0.262, [")"] = 0.265, ["f"] = 0.265,
+    ["\\"] = 0.313, ["/"] = 0.316, ["^"] = 0.319, ["*"] = 0.327,
+    ["_"] = 0.345, ["?"] = 0.360, ["y"] = 0.360, ["v"] = 0.369,
+    ["x"] = 0.378, ["z"] = 0.378, ["<"] = 0.387, ["k"] = 0.387,
+    ["s"] = 0.393, [">"] = 0.399, ["c"] = 0.399, ["e"] = 0.405,
+    ["L"] = 0.411, ["a"] = 0.414, ["="] = 0.420, ["J"] = 0.420,
+    ["h"] = 0.420, ["n"] = 0.420, ["u"] = 0.420, ["F"] = 0.423,
+    ["+"] = 0.432, ["E"] = 0.435, ["o"] = 0.435, ["q"] = 0.435,
+    ["S"] = 0.452, ["T"] = 0.455, ["Z"] = 0.455, ["Y"] = 0.458,
+    ["#"] = 0.470, ["R"] = 0.470, ["&"] = 0.473, ["B"] = 0.473,
+    ["K"] = 0.479, ["X"] = 0.479, ["P"] = 0.482, ["V"] = 0.485,
+    ["U"] = 0.494, ["A"] = 0.497, ["C"] = 0.497, ["D"] = 0.500,
+    ["G"] = 0.518, ["~"] = 0.518, ["O"] = 0.524, ["Q"] = 0.524,
+    ["H"] = 0.545, ["N"] = 0.545, ["%"] = 0.560, ["w"] = 0.571,
+    ["M"] = 0.667, ["m"] = 0.667, ["W"] = 0.676, ["@"] = 0.685,
+  }
+
+  --- Digits and `$` share one advance, which is what makes a reading's width
+  --- depend on how many decimal points it has rather than how large it is.
+  for _, digit in ipairs({"$", "0", "1", "2", "3", "4", "5", "6", "7", "8",
+      "9", "b", "d", "g", "p"}) do
+    ADVANCE[digit] = 0.4286
+  end
+
+  --- Anything outside the table gets a digit's width, which is the middle of
+  --- the range and the commonest character in a reading.
+  local DEFAULT_ADVANCE = 0.4286
+
+  --- `lcd.sizeText(text, flags)`: the width and the line height.
+  ---
+  --- Ungated, unlike every other drawing entry point in `api_colorlcd.cpp`.
+  --- `luaLcdSizeText` carries no `luaLcdAllowed` or `luaLcdBuffer` check
+  --- because it touches neither: it reads font metrics and returns. That is
+  --- why a widget may call it from `create` and `update` rather than only
+  --- while painting.
+  local function sizeText(text, flags)
+    local height = firmware.FONT_HEIGHT[flags]
+    if type(height) ~= "number" then height = firmware.FONT_HEIGHT[firmware.SMLSIZE] end
+    if type(text) ~= "string" or text == "" then return 0, height end
+
+    local width = 0
+    for index = 1, #text do
+      local ratio = ADVANCE[string.sub(text, index, index)] or DEFAULT_ADVANCE
+      width = width + ratio * height
+    end
+    return math.floor(width + 0.5), height
+  end
+
   lcd = {
     -- EdgeTX accepts lcd.RGB(r, g, b) or a single packed lcd.RGB(rgb), and
     -- returns a flag word either way.
@@ -522,13 +603,51 @@ function support.lcd(options)
       if rgb == nil then return nil end
       return toLcdFlags(rgb)
     end,
+    sizeText = sizeText,
   }
+
+  --- Swap the glyph summing out while a callback is being measured.
+  ---
+  --- `sizeText` is C on a radio -- `lv_txt_get_width` over a decompressed
+  --- font -- and costs a script nothing beyond the call itself. Here it is a
+  --- Lua loop over the string: measured, 101 instructions against the 34 a
+  --- radio pays for the same call. Leaving it in the measured path would
+  --- bill the dashboard 67 instructions per call for the fixture's own
+  --- arithmetic, which is the mistake property validation and the write
+  --- counters are both swapped out to avoid.
+  ---
+  --- The stand-in answers exactly what the summing would, from a cache, so a
+  --- measured callback lays out identically to an unmeasured one. Charging
+  --- nothing is the point; answering differently would not be.
+  ---
+  --- Nested by font and then by string rather than keyed on a concatenation
+  --- of the two: building that key was itself most of what the stand-in
+  --- cost, and a fixture that charges for the thing it is trying not to
+  --- charge for has only moved the problem.
+  local measured = {}
+  local function cachedSizeText(text, flags)
+    local byFont = measured[flags]
+    if byFont == nil then byFont = {} measured[flags] = byFont end
+    local width = byFont[text]
+    if width == nil then
+      width = sizeText(text, flags)
+      byFont[text] = width
+    end
+    return width, firmware.FONT_HEIGHT[flags]
+      or firmware.FONT_HEIGHT[firmware.SMLSIZE]
+  end
+
+  local function setTextMeasurement(enabled)
+    lcd.sizeText = enabled and sizeText or cachedSizeText
+  end
 
   return {
     toRgb565 = toRgb565,
     toLcdFlags = toLcdFlags,
     roles = roles,
     palette = palette,
+    sizeText = sizeText,
+    setTextMeasurement = setTextMeasurement,
   }
 end
 

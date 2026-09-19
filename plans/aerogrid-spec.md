@@ -1039,7 +1039,7 @@ These came out of the presentation and consistency pass and were not done, each 
 | Steady-state refresh cost scales with component count | Milestone 6 | 2562 of 20000 at sixteen `navigation` panels, and 2535 on the shipped ten-component dashboard. Watch it as the catalogue grows |
 | A cells source's real shape is unverified | Milestone 7 | `cell-battery` assumes a contiguous array of per-cell voltages and validates every entry, but no receiver has produced one yet |
 | A protocol without an RSSI sensor is detected indirectly | Milestone 7 | `link-status` relies on `telemetryService` observing a source contradict `getRSSI()`. Until something contradicts it, a genuinely dead link and a missing RSSI sensor are indistinguishable, and both read as no link |
-| Text width is estimated, not measured | Milestone 6 | The Lua API exposes no text measurement outside a draw callback, so `theme.textWidth` assumes a mean advance of 0.58 of the line height. Deliberately generous, so it shrinks text that would have fitted rather than clipping text that does not. Every font choice in the dashboard now descends from this one constant through the shared ladder, which makes a hardware check more valuable rather than less |
+| Text width is estimated everywhere except where the unit is placed | Milestone 6, narrowed in the unit pass | The premise was wrong: `lcd.sizeText` measures text and is **not** gated on a draw callback. `luaLcdSizeText` carries no `luaLcdAllowed` or `luaLcdBuffer` check, because it reads font metrics and returns. Unit placement now uses it; every other fitting decision still uses the 0.58 estimate, and converting them is a decision for the user with the numbers below in front of them |
 | A trim's axis is unknown to the dashboard | Milestone 6 | EdgeTX exposes no axis metadata for a trim source, so `trim-panel` takes an orientation with a per-indicator override instead of matching on trim names |
 | `lvgl.image` cannot report a failed decode | Milestone 6 | `StaticImage` clears its source silently, so `model-identity` checks the file with `fstat` beforehand and keeps the model name visible when `fstat` is unavailable |
 | `actions/checkout@v4` and `setup-python@v5` target Node 20 | CI | Non-blocking deprecation warning |
@@ -1374,6 +1374,30 @@ A component file under `components/<type>.lua` returns a table describing itself
 The host creates one LVGL container per placement and passes it as `parent`, with a container-local rectangle starting at the origin. A component therefore cannot draw over a neighbour or reach the dashboard root. Contract fields are read with `rawget`, so a module with a raising `__index` cannot break the host.
 
 Every callback is dispatched under `pcall`. The first failure permanently disables that one component and reports it, so a broken module cannot repeatedly raise or disable the surrounding dashboard. A component that fails during `create` has its container cleared, leaving no partial drawing behind.
+
+### Measuring text, against estimating it
+
+`lcd.sizeText(text, flags)` returns the real rendered width. `luaLcdSizeText` calls `getTextWidth`, which is `lv_txt_get_width(s, len, getFont(flags), 0, LV_TEXT_FLAG_EXPAND)` -- a sum of the font's own per-glyph advances. Three properties make it usable from a widget rather than only from a paint: it carries **no `luaLcdAllowed` or `luaLcdBuffer` guard**, alone among the drawing entry points in `api_colorlcd.cpp`, because it touches neither; our size constants **are** the flags it wants, since `SMLSIZE` is `FONT(XS)` and `getFont` indexes on exactly that; and the font it consults is decompressed once and cached by `decompressFont`, so a call is a C loop over the string rather than a decode.
+
+**The estimate is 0.58 of a line height per character, and it is generous by design.** That is right for deciding whether something fits -- erring that way shrinks text that would have fitted rather than clipping text that does not -- and wrong for deciding where something starts, where the generosity is simply a gap. Against the real advances of `lv_font_en_STD.c`, the one font in the tree whose `glyph_dsc` is uncompressed:
+
+| reading | estimated | measured | over by |
+| --- | --- | --- | --- |
+| `7.9` | 37 | 22 | **+68%** |
+| `88.8` | 49 | 31 | +58% |
+| `-100` | 49 | 31 | +58% |
+| `dBm` | 37 | 33 | +12% |
+| `m` | 12 | 14 | **-14%** |
+
+A digit is 0.429 of a line height and a decimal point 0.199, so the error grows with how many points a reading holds rather than how large it is. At XXLSIZE that put `7.9`'s right edge roughly 48 pixels beyond where the radio draws it, which is the gap a user reported between a number and its unit.
+
+**Unit placement is measured. Nothing else is, yet.** Converting the rest is a larger change than it looks, and these are the numbers it turns on.
+
+- **Cost.** Measured through the harness, `theme.textWidth` is 27 instructions and `theme.measureText` is 34 when `lcd.sizeText` costs what it costs on a radio -- **+7 per call**. There are twelve call sites; the hot ones are inside `fitReading`, which walks a ladder of up to five fonts against up to three forms, so a single fitting decision could pay it fifteen times.
+- **What it would change.** Across seven components at every span they declare, **17 of 112 pairs would resolve to a larger font**, every one of them larger and none smaller, which is what removing generosity predicts. `flight-timer` gains a size at nine spans and `navigation` at seven. Those are improvements, but they are visible ones, and they would arrive across the whole catalogue at once.
+- **What it would not fix.** The mock cannot reproduce the radio's advances. Every font the dashboard draws with is LZ4-compressed in `lz4_fonts.h`; only `STD`, which the dashboard does not use, is readable. Converting the ladder would move every font decision onto numbers the suite can only model, where today they descend from one constant the suite knows exactly.
+
+The decision is the user's. What is recorded here is that the measurement exists, that it is reachable, and what it costs.
 
 ### Instruction budget
 
