@@ -1055,6 +1055,9 @@ function support.radio(hostIo)
     radio.values[100] = 24.0
     radio.values[103] = 10
     radio.values[106] = 100
+    -- Vertical speed was missing here, so a test that moved it left the next
+    -- one reading its value. Found when one did.
+    radio.values[120] = 2.5
     radio.values[300] = 1024
     radio.values[130] = {4.11, 4.13, 4.09, 4.12}
     radio.values[131] = 4.09

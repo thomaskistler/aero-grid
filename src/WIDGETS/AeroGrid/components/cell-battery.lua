@@ -570,17 +570,15 @@ function cellBattery.update(context, rect)
   --- Show or hide a supporting row, positioning it only when visible.
   local reconcile = context.primitives.reconcile
 
-  -- A resize changes how much room each row has, so let both wordings be
-  -- re-chosen on the refresh that follows.
-  if area.detailWidth ~= context.detailWidth
-      or area.showDetail ~= context.showDetail then
-    context.detailWidth = area.detailWidth
-    context.showDetail = area.showDetail
-    -- A row that just became visible still holds whatever it had when it was
-    -- hidden, so discard what was last drawn and let the next refresh fit it
-    -- again. Dropping the record is enough: the comparison is against it.
-    context.rendered = nil
-  end
+  -- A resize changes how much room each row has and whether there is a row at
+  -- all. Both are recorded and nothing else is done, because `render` reads
+  -- both: it declares no count or pack key while the row is shed, so the key
+  -- reappearing is what tells `changed` to repaint, and it refits against the
+  -- new width, so a wording that has to change is a value that has changed.
+  -- There used to be a discard here. It was removed once no test could be
+  -- made to fail without it.
+  context.detailWidth = area.detailWidth
+  context.showDetail = area.showDetail
 
   reconcile(context.countLabel, area.showDetail,
     {x = area.pad, y = area.detailY, w = area.detailWidth})
