@@ -98,6 +98,37 @@ function modelIdentity.fileExists(path)
   return ok and type(info) == "table", true
 end
 
+--- Refuse a label list on a panel that has nowhere to put one.
+---
+--- The labels are a supporting row, and no single-row span grants one: a 65
+--- pixel panel has no space beneath the name whatever its width. This panel
+--- declares taller spans than most, up to `4 x 4`, so the setting works
+--- almost everywhere; the four it does not work on are worth saying rather
+--- than leaving the author to wonder.
+---
+--- Only a layout that stated it is told. The default is false, so today the
+--- distinction changes nothing here, but `cell-battery` defaults its two to
+--- true and there the difference is the whole point.
+---@param settings AeroGridIdentitySettings
+---@param span? table Placement span, when the host knows it.
+---@param config? table What the layout actually stated.
+---@return string[] messages
+function modelIdentity.validateSettings(settings, span, config)
+  local messages = {}
+  if type(config) ~= "table" or not config.showLabels then return messages end
+  if type(span) ~= "table" or type(span.rowSpan) ~= "number" then
+    return messages
+  end
+
+  if span.rowSpan < 2 then
+    messages[#messages + 1] = "showLabels needs a panel two rows tall;"
+      .. " a single row has no space beneath the name at any width."
+      .. " Give the panel rowSpan 2, or drop showLabels."
+  end
+
+  return messages
+end
+
 --- Compute the content regions for the current rectangle.
 ---@param theme AeroGridTheme
 ---@param themeBuilder table
@@ -219,6 +250,11 @@ function modelIdentity.create(parent, rect, settings, services)
     font = fonts.label,
   })
 
+  -- What the panel currently draws, so `render` declares only that.
+  context.showName = area.showName
+  context.showLabels = area.showLabels
+  context.showImage = area.showImage
+
   if not area.showName then lvgl.hide(context.value) end
   if not area.showLabels then lvgl.hide(context.labelsLabel) end
 
@@ -274,8 +310,13 @@ function modelIdentity.render(context, out)
   out.state = available and "normal" or "unavailable"
   local name = available and feed.name or ""
   out.text = name ~= "" and name or "--"
-  out.labels = ""
-  if context.layout.showLabels and available then out.labels = feed.labels or "" end
+  -- Gated on `area`, which is what the box granted, rather than on `layout`,
+  -- which is only what the span asked for. A panel whose ladder sheds the row
+  -- was still writing the label list into a hidden label every time the model
+  -- changed, which is the work this stopped doing everywhere else.
+  if context.showLabels and available then
+    out.labels = feed.labels or ""
+  end
   -- The path decides whether an image is created, so it is part of what the
   -- panel draws even though it is not text.
   out.bitmapPath = available and feed.bitmapPath or nil
@@ -289,12 +330,14 @@ function modelIdentity.apply(context, drawn)
 
   context.stateName = drawn.state
   context.text = drawn.text
-  context.labelsText = drawn.labels
+  context.labelsText = drawn.labels or ""
 
   context.value:set({text = drawn.text, color = presentation.value})
   context.label:set({color = presentation.label})
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
-  context.labelsLabel:set({text = drawn.labels})
+  if context.showLabels then
+    context.labelsLabel:set({text = context.labelsText})
+  end
   context.primitives.stylePanel(context.panel, presentation)
 
   if drawn.state ~= "normal" or not context.area.showImage then return end
@@ -350,39 +393,35 @@ function modelIdentity.update(context, rect)
   context.primitives.resizePanel(context.panel, rect)
   context.primitives.placeHeader(context.label, context.badge, area.frame)
 
+  local primitives = context.primitives
+  -- The name stays visible when there is no image, whatever the arrangement
+  -- asked for, because a panel showing neither is a panel showing nothing.
   local nameVisible = area.showName or not context.image
-  if nameVisible then
-    context.value:set({
-      x = area.pad,
-      y = context.image and area.nameY or area.frame.top,
-      w = area.content,
-      font = function() return area.nameFont end,
-    })
-    lvgl.show(context.value)
-  else
-    lvgl.hide(context.value)
-  end
 
-  if area.showLabels then
-    context.labelsLabel:set({x = area.pad, y = area.labelsY, w = area.content})
-    lvgl.show(context.labelsLabel)
-  else
-    lvgl.hide(context.labelsLabel)
-  end
+  primitives.reconcile(context.value, nameVisible, {
+    x = area.pad,
+    y = context.image and area.nameY or area.frame.top,
+    w = area.content,
+    font = function() return area.nameFont end,
+  }, nameVisible == context.showName)
 
-  if context.image then
-    if area.showImage then
-      context.image:set({
-        x = area.pad,
-        y = area.imageY,
-        w = area.content,
-        h = area.imageHeight,
-      })
-      lvgl.show(context.image)
-    else
-      lvgl.hide(context.image)
-    end
-  end
+  primitives.reconcile(context.labelsLabel, area.showLabels,
+    {x = area.pad, y = area.labelsY, w = area.content},
+    area.showLabels == context.showLabels)
+
+  primitives.reconcile(context.image, area.showImage, {
+    x = area.pad,
+    y = area.imageY,
+    w = area.content,
+    h = area.imageHeight,
+  }, area.showImage == context.showImage)
+
+  -- A row that has just reappeared holds whatever it had when it was shed,
+  -- and `render` stopped declaring its key while it was hidden.
+  if area.showLabels ~= context.showLabels then context.rendered = nil end
+  context.showName = nameVisible
+  context.showLabels = area.showLabels
+  context.showImage = area.showImage
 end
 
 return modelIdentity

@@ -560,6 +560,9 @@ function linkStatus.create(parent, rect, settings, services)
     lvgl.hide(context.detailLabel)
     lvgl.hide(context.linkLabel)
   end
+  -- What the panel currently shows, so a reflow that changes nothing about
+  -- visibility does not tell every object again what it already is.
+  context.showVisual = area.showVisual
   if context.bar and not area.showVisual then
     lvgl.hide(context.bar.track)
     lvgl.hide(context.bar.fill)
@@ -674,17 +677,11 @@ function linkStatus.update(context, rect)
   reconcile(context.linkLabel, area.showDetail,
     {x = area.linkX, y = area.detailY, w = area.linkWidth})
 
-  if context.bar then
-    if area.showVisual then
-      context.primitives.placeBar(context.bar, area.pad, area.barY, area.content,
-        linkStatus.fraction(context.settings, context.reading))
-      lvgl.show(context.bar.track)
-      lvgl.show(context.bar.fill)
-    else
-      lvgl.hide(context.bar.track)
-      lvgl.hide(context.bar.fill)
-    end
-  end
+  context.primitives.reconcileBar(context.bar, area.showVisual,
+    area.pad, area.barY, area.content,
+    linkStatus.fraction(context.settings, context.reading),
+    area.showVisual == context.showVisual)
+  context.showVisual = area.showVisual
 end
 
 return linkStatus

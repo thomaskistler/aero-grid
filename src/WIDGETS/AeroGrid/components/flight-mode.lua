@@ -87,10 +87,14 @@ end
 --- believes it.
 ---@param settings AeroGridFlightModeSettings
 ---@param span? table Placement span, when the host knows it.
+---@param config? table What the layout actually stated.
 ---@return string[] messages
-function flightMode.validateSettings(settings, span)
+function flightMode.validateSettings(settings, span, config)
   local messages = {}
-  if not settings.showIndex then return messages end
+  -- Only a layout that asked for it is told it cannot have it. The default is
+  -- false, so today these are the same thing; it is written this way because
+  -- the next component to do this defaults to true and they are not.
+  if not (config and config.showIndex) then return messages end
   if type(span) ~= "table" or type(span.rowSpan) ~= "number" then
     return messages
   end

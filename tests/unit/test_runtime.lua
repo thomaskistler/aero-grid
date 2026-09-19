@@ -886,7 +886,7 @@ local function testFlightModeIndexNeedsARow()
   -- ignoring it is the worst of the three options, because a layout author
   -- reads the setting back and believes it.
   local refused = flightMode.validateSettings({showIndex = true},
-    {colSpan = 4, rowSpan = 1})
+    {colSpan = 4, rowSpan = 1}, {showIndex = true})
   assertEqual(#refused, 1,
     "showIndex on a single row was accepted; no single row has space beneath"
       .. " the reading at any width")
@@ -897,11 +897,20 @@ local function testFlightModeIndexNeedsARow()
   -- Two rows is where it works, and a panel that never asked has nothing to
   -- be told about.
   assertEqual(#flightMode.validateSettings({showIndex = true},
-    {colSpan = 1, rowSpan = 2}), 0, "showIndex was refused on two rows")
-  assertEqual(#flightMode.validateSettings({}, {colSpan = 1, rowSpan = 1}), 0,
-    "a panel that never asked for the mode number was told off anyway")
+    {colSpan = 1, rowSpan = 2}, {showIndex = true}), 0,
+    "showIndex was refused on two rows")
+  assertEqual(#flightMode.validateSettings({}, {colSpan = 1, rowSpan = 1}, {}),
+    0, "a panel that never asked for the mode number was told off anyway")
   -- Without a span nothing can be said, and saying nothing is correct.
-  assertEqual(#flightMode.validateSettings({showIndex = true}), 0)
+  assertEqual(#flightMode.validateSettings({showIndex = true}, nil,
+    {showIndex = true}), 0)
+
+  -- The host fills defaults in before this runs, so `settings` cannot say
+  -- whether the layout asked. A setting that arrives only as a default is
+  -- the panel shedding a row, which is normal and silent.
+  assertEqual(#flightMode.validateSettings({showIndex = true},
+    {colSpan = 4, rowSpan = 1}, {}), 0,
+    "a default the layout never stated was reported as an ignored request")
 
   -- And the span has to reach it through the host, or the rule above is
   -- correct and never consulted.
@@ -915,6 +924,179 @@ local function testFlightModeIndexNeedsARow()
   local _, allowed = componentHost.resolveSettings(
     flightMode, {showIndex = true}, {colSpan = 1, rowSpan = 2})
   assertEqual(#allowed, 0)
+end
+
+--- A setting that cannot apply at this span says so, and only when asked for.
+---
+--- No single-row span grants a supporting row: a 65 pixel panel has no space
+--- beneath the reading whatever its width. Five settings across four
+--- components drive such a row, and all five were accepted and silently
+--- ignored there, which is worse than either refusing or working -- a layout
+--- author reads the setting back and believes it.
+---
+--- The second half is the part that needed care. `showPack` and `showCount`
+--- default to **true**, so a panel that never mentioned them arrives with
+--- them set, and complaining then would report the panel's own shedding as
+--- an ignored request and fail every existing layout. The host therefore
+--- hands `validateSettings` the layout's own config beside the resolved
+--- settings, and only a stated value is refused.
+local function testInertSettingsAreRefused()
+  local single = {colSpan = 4, rowSpan = 1}
+  local tall = {colSpan = 1, rowSpan = 2}
+
+  local cases = {
+    {"tx-battery", "showPercent"},
+    {"variable-indicator", "showName"},
+    {"cell-battery", "showPack"},
+    {"cell-battery", "showCount"},
+    {"model-identity", "showLabels"},
+    {"flight-mode", "showIndex"},
+  }
+
+  for _, case in ipairs(cases) do
+    local kind, key = case[1], case[2]
+    local module = loadModule("components/" .. kind .. ".lua")
+    assert(type(module.validateSettings) == "function",
+      kind .. " states no rule for " .. key .. " at a span that cannot"
+        .. " show it")
+
+    local stated = {[key] = true}
+
+    -- Stated on a single row: refused, by name, with what to do about it.
+    local refused = module.validateSettings(stated, single, stated)
+    assertEqual(#refused, 1,
+      kind .. "." .. key .. " was accepted on a single row, where no panel"
+        .. " has space beneath the reading at any width")
+    assert(string.find(refused[1], key, 1, true), refused[1])
+    assert(string.find(refused[1], "two rows tall", 1, true), refused[1])
+    assert(string.find(refused[1], "drop " .. key, 1, true),
+      "the message must say what to do about it: " .. refused[1])
+
+    -- Stated on two rows: allowed, because there it works.
+    assertEqual(#module.validateSettings(stated, tall, stated), 0,
+      kind .. "." .. key .. " was refused on a panel that can show it")
+
+    -- Arrived as a default the layout never mentioned: silent, because that
+    -- is the panel shedding a row rather than a request being ignored.
+    assertEqual(#module.validateSettings(stated, single, {}), 0,
+      kind .. "." .. key .. " reported a default the layout never stated as"
+        .. " an ignored request, which would fail every existing layout")
+
+    -- Without a span nothing can be said, and saying nothing is correct.
+    assertEqual(#module.validateSettings(stated, nil, stated), 0)
+  end
+
+  -- The host is what carries the config through, so the rule above is
+  -- correct and never consulted if it does not.
+  local module = loadModule("components/tx-battery.lua")
+  local _, warnings = componentHost.resolveSettings(
+    module, {showPercent = true}, single)
+  assertEqual(#warnings, 1,
+    "the layout's own config did not reach validateSettings, so a rule that"
+      .. " depends on what was stated can never fire")
+
+  -- And a layout that states nothing gets the defaults without being told
+  -- off for them, through the host as well as directly.
+  local _, quiet = componentHost.resolveSettings(
+    loadModule("components/cell-battery.lua"), {source = "Cels"}, single)
+  assertEqual(#quiet, 0,
+    "a layout that stated neither showPack nor showCount was reported for"
+      .. " both: " .. table.concat(quiet, "; "))
+end
+
+--- No component reaches for `lvgl.show` or `lvgl.hide` inside `update`.
+---
+--- A reflow is where visibility is decided, and every component used to
+--- decide it by hand: eleven copies of the same show-or-hide pair across
+--- seven components, and one component reconciling a bar's two objects
+--- separately and forgetting its marker. `primitives.reconcile` and
+--- `primitives.reconcileBar` are the shared versions, and this is what stops
+--- a twelfth copy appearing.
+---
+--- Read from the component directory rather than a list, so a component
+--- written tomorrow is held to it from the moment it exists.
+---
+--- `create` is deliberately not checked. Hiding an object at build time is a
+--- statement of its initial state rather than a reconciliation, there is no
+--- previous visibility to compare against, and `reconcile` there would only
+--- be the same call spelled longer.
+local function testReflowGoesThroughReconcile()
+  local kinds = componentTypes()
+  assert(#kinds > 0, "no components were found to check")
+
+  local checked = 0
+  for _, kind in ipairs(kinds) do
+    local path = root .. "/src/WIDGETS/AeroGrid/components/" .. kind .. ".lua"
+    local handle = assert(io.open(path, "r"))
+    local source = handle:read("a")
+    handle:close()
+
+    -- The component's own `update`, which is everything from its definition
+    -- to the next one at column zero.
+    local body = string.match(source, "\nfunction [%w]+%.update%b()(.-)\n[%w]")
+    if body then
+      checked = checked + 1
+      local offender = string.match(body, "(lvgl%.[sh][a-z]+)%s*%(")
+      assert(not offender, kind .. " calls " .. tostring(offender)
+        .. " inside update; use primitives.reconcile or reconcileBar, which"
+        .. " know about the settled case and about a bar's marker")
+    end
+  end
+
+  -- Every component has an `update`, so a pattern that silently matched none
+  -- of them would otherwise pass this having checked nothing.
+  assertEqual(checked, #kinds,
+    "only " .. checked .. " of " .. #kinds .. " components' update bodies"
+      .. " were found, so the rest went unchecked")
+end
+
+--- A component declares what it draws, and nothing it has shed.
+---
+--- The reveal work gave five components the property that a shed row is not
+--- declared, so `primitives.changed` sees it reappear and nothing formats
+--- text for a hidden label. The six components that work was not applied to
+--- kept doing it, which is how `flight-mode` came to format a mode number
+--- every frame for a panel with no room to show one.
+---
+--- This checks the mechanism is reached rather than the wording: a `render`
+--- that writes a supporting row must consult what the panel is showing. It is
+--- a weaker statement than the per-component tests elsewhere, and that is the
+--- point -- it holds for a component nobody has written a test for yet.
+local function testRenderConsultsWhatIsShown()
+  local kinds = componentTypes()
+
+  -- Components whose `render` declares only the dominant reading have no
+  -- supporting row to gate, and are named rather than detected so that one
+  -- losing its rows is a failure rather than a silent exemption.
+  local NO_SUPPORTING_ROW = {
+    ["host-diagnostics"] = true,
+    ["service-probe"] = true,
+  }
+
+  local checked, exempt = 0, 0
+  for _, kind in ipairs(kinds) do
+    local path = root .. "/src/WIDGETS/AeroGrid/components/" .. kind .. ".lua"
+    local handle = assert(io.open(path, "r"))
+    local source = handle:read("a")
+    handle:close()
+
+    local body = string.match(source, "\nfunction [%w]+%.render%b()(.-)\n[%w]")
+    if NO_SUPPORTING_ROW[kind] then
+      exempt = exempt + 1
+      assert(not body, kind .. " has a render function but is listed as"
+        .. " having no supporting row to gate")
+    else
+      assert(body, kind .. " has no render function, so the redraw"
+        .. " comparison cannot be derived from what it draws")
+      checked = checked + 1
+      assert(string.find(body, "context%.show%w+"),
+        kind .. "'s render never consults what the panel is showing, so it"
+          .. " formats text for rows the panel has shed")
+    end
+  end
+
+  assertEqual(checked + exempt, #kinds)
+  assert(checked >= 10, "only " .. checked .. " components were checked")
 end
 
 --- A raising callback disables only its own component, and only reports once.
@@ -1758,6 +1940,9 @@ testComponentContract()
 testSupportedSpans()
 testSettingsResolution()
 testSettingsVocabulary()
+testInertSettingsAreRefused()
+testReflowGoesThroughReconcile()
+testRenderConsultsWhatIsShown()
 testLinkThresholdsNeedAStatedReading()
 testSpecificationExamplesLoad()
 testComponentDocumentationLoads()

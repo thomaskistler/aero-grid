@@ -288,6 +288,44 @@ function cellBattery.packVariants(summary, settings)
   return {volts .. " PACK", volts}
 end
 
+--- Refuse a supporting row on a panel that has nowhere to put one.
+---
+--- No single-row span grants a supporting row: a 65 pixel panel has no space
+--- beneath the reading whatever its width, so asking for one on a `4 x 1` is
+--- as inert as asking on a `1 x 1`. Accepting it and ignoring it is the worst
+--- of the three options, because a layout author reads the setting back and
+--- believes it.
+---
+--- Only a layout that **stated** it is told. These settings arrive filled
+--- from their defaults, and a default that cannot apply here is the panel
+--- shedding a row, which is normal and silent.
+---@param settings AeroGridCellSettings
+---@param span? table Placement span, when the host knows it.
+---@param config? table What the layout actually stated.
+---@return string[] messages
+function cellBattery.validateSettings(settings, span, config)
+  local messages = {}
+  if type(config) ~= "table" then return messages end
+  if type(span) ~= "table" or type(span.rowSpan) ~= "number" then
+    return messages
+  end
+  if span.rowSpan >= 2 then return messages end
+
+  if config.showPack then
+    messages[#messages + 1] = "showPack needs a panel two rows tall;"
+      .. " a single row has no space beneath the reading at any width."
+      .. " Give the panel rowSpan 2, or drop showPack."
+  end
+
+  if config.showCount then
+    messages[#messages + 1] = "showCount needs a panel two rows tall;"
+      .. " a single row has no space beneath the reading at any width."
+      .. " Give the panel rowSpan 2, or drop showCount."
+  end
+
+  return messages
+end
+
 --- Describe how the component presents itself at a given span.
 ---@param colSpan integer
 ---@param rowSpan integer
@@ -444,6 +482,9 @@ function cellBattery.create(parent, rect, settings, services)
     lvgl.hide(context.countLabel)
     lvgl.hide(context.packLabel)
   end
+  -- What the panel currently shows, so a reflow that changes nothing about
+  -- visibility does not tell every object again what it already is.
+  context.showVisual = area.showVisual
   if context.bar and not area.showVisual then
     lvgl.hide(context.bar.track)
     lvgl.hide(context.bar.fill)
@@ -585,18 +626,12 @@ function cellBattery.update(context, rect)
   reconcile(context.packLabel, area.showDetail,
     {x = area.packX, y = area.detailY, w = area.detailWidth})
 
-  if context.bar then
-    if area.showVisual then
-      context.primitives.placeBar(context.bar, area.pad, area.barY, area.content,
-        cellBattery.fraction(context.settings, context.reading,
-          context.summary.count or 0))
-      lvgl.show(context.bar.track)
-      lvgl.show(context.bar.fill)
-    else
-      lvgl.hide(context.bar.track)
-      lvgl.hide(context.bar.fill)
-    end
-  end
+  context.primitives.reconcileBar(context.bar, area.showVisual,
+    area.pad, area.barY, area.content,
+    cellBattery.fraction(context.settings, context.reading,
+      context.summary.count or 0),
+    area.showVisual == context.showVisual)
+  context.showVisual = area.showVisual
 end
 
 return cellBattery

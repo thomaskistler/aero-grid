@@ -85,7 +85,10 @@ components:
       warning: 7.2
       critical: 6.8
       visual: bar
-      showPercent: true
+      # No `showPercent`: this panel is one row tall and the percentage needs
+      # a row beneath the reading, which no 65 pixel panel has at any width.
+      # It was stated here and silently ignored until the loader started
+      # saying so.
 
   - id: rates
     type: variable-indicator
@@ -97,7 +100,7 @@ components:
       binding: global
       index: 0
       label: GVAR
-      showName: true
+      # `showName` likewise: one row, nowhere to put the name.
       accent: amber
 
   # No visualization and a second reading beside the first: ground speed
@@ -131,6 +134,7 @@ components:
       source: Cels
       label: CELLS
       reading: lowest
-      showPack: true
-      showCount: true
+      # `showPack` and `showCount` are both true by default and both need a
+      # supporting row, which this one-row panel does not have. Stating them
+      # here asked for something and got nothing.
       visual: bar

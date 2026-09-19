@@ -231,8 +231,16 @@ function componentHost.resolveSettings(module, config, span)
   -- The placement's span is offered alongside, because some settings are only
   -- meaningless at a particular size: `flight-mode`'s mode number needs a
   -- supporting row and no single-row span has one, however wide.
+  --
+  -- And the layout's own config, because "did the author ask for this" is a
+  -- different question from "what is this set to". A setting that defaults to
+  -- true and cannot apply at this span is the panel shedding a row, which is
+  -- normal; the same setting *stated* by a layout that then gets nothing is a
+  -- request being ignored. Only the second is worth complaining about, and by
+  -- this point `settings` has been filled from the defaults and can no longer
+  -- tell them apart.
   if type(rawget(module, "validateSettings")) == "function" then
-    local ok, reported = pcall(module.validateSettings, settings, span)
+    local ok, reported = pcall(module.validateSettings, settings, span, config)
     if not ok then
       warnings[#warnings + 1] = "validateSettings raised: " .. tostring(reported)
     elseif type(reported) == "table" then
