@@ -147,11 +147,47 @@ for _, typeName in ipairs(ORDER) do
       {x = 0, y = 0, w = bounds.w, h = bounds.h},
       themeModule.typography(colSpan, rowSpan))
 
+    -- The widest reading the component can ever print, which is what its
+    -- own fitter sizes from. The current value is usually much shorter --
+    -- `7.9` against `88.8` -- so asking whether *this* reading fits a slot
+    -- would answer a question nobody has.
+    local instance = entry.instance
+    local widest, widestUnit = "", ""
+    local sample = instance and instance.sample
+    if type(sample) == "table" then
+      if type(sample.digits) == "string" then
+        widest, widestUnit = sample.digits, sample.unit or ""
+      elseif type(sample[1]) == "string" then
+        widest = sample[1]
+      end
+    end
+    if widest == "" then
+      local module = entry.module
+      widest = type(module.DIGITS) == "string" and module.DIGITS or ""
+      widestUnit = type(module.UNIT) == "string" and module.UNIT or ""
+    end
+
+    -- Measured at every ladder font rather than scaled from one, so the
+    -- question "would this fit in half a panel, and at what size" is answered
+    -- with `lcd.sizeText` on the real string rather than an average advance.
+    local widths = {}
+    for _, name in ipairs({"XXLSIZE", "DBLSIZE", "MIDSIZE", "SMLSIZE",
+        "TINSIZE"}) do
+      local flags = edgetx.firmware[name]
+      widths[#widths + 1] = string.format("%s = {%d, %d}", name,
+        themeModule.measureText(flags, widest),
+        themeModule.measureText(flags, widestUnit))
+    end
+
     out[#out + 1] = string.format(
       "  {component = %q, span = %q, zone = %q, w = %d, h = %d,"
-        .. " pad = %d, content = %d, objects = {\n",
+        .. " pad = %d, content = %d, widest = %q, widestUnit = %q,"
+        .. " widestAt = {%s}, compact = %d, top = %d, bottom = %d,"
+        .. " labelHeight = %d, objects = {\n",
       typeName, span, zone.name, bounds.w, bounds.h,
-      frame.pad, frame.content)
+      frame.pad, frame.content, widest, widestUnit,
+      table.concat(widths, ", "), frame.compact, frame.top, frame.bottom,
+      frame.labelHeight)
 
     local function walk(object, depth)
       for _, child in ipairs(object.children) do

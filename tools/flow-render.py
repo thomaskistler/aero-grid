@@ -196,6 +196,215 @@ def centre_gap(reading):
     return max(GAP_CENTRE_MIN, reading.lineH // GAP_CENTRE_DIVISOR)
 
 
+#: The reading ladder, largest first, mirroring `theme.READING_FONTS`.
+LADDER = ["XXLSIZE", "DBLSIZE", "MIDSIZE", "SMLSIZE"]
+
+
+def scaled_width(textW, from_font, to_font):
+    """The same string's width at another size.
+
+    Exact under the model the geometry was measured with: `lcd.sizeText` in
+    the fixture charges each character a fixed fraction of the line height,
+    so a string's width is linear in that height. It is an approximation of a
+    radio, in the same way and to the same degree as everything else on this
+    page.
+    """
+    return int(round(textW * FONTS[to_font][0] / FONTS[from_font][0]))
+
+
+def fit_into(reading, widest_at, width):
+    """The largest ladder font whose widest reading and unit fit `width`.
+
+    Sized from the **widest** string the component can ever print, not from
+    what it happens to say now, because that is what the dashboard's own
+    fitter does and it is the only question worth asking: a `tx-battery`
+    reading `7.9` must still hold `88.8` without resizing under the pilot.
+    Asking whether the current value fits would have reported no cost at all.
+
+    Returns the font, how many sizes it gave up, and **whether it fits at
+    all**. The third value is not decoration: the first version of this
+    returned the smallest font and a step count of zero when nothing fitted,
+    so a reading that could not live in half a panel was reported as costing
+    nothing. That is the same shape as `theme.fitReading` returning the
+    smallest font whether or not the text fits, which cost this project a
+    defect once already.
+    """
+    start = LADDER.index(reading.font) if reading.font in LADDER else 0
+    for step in range(start, len(LADDER)):
+        font = LADDER[step]
+        digits, unit = widest_at.get(font, (0, 0))
+        need = digits + (GAP_UNIT + unit if unit else 0)
+        if need <= width:
+            return font, step - start, True
+    return LADDER[-1], len(LADDER) - 1 - start, False
+
+
+#: The air a unit keeps from its reading, from `theme.unitGap`. Small, because
+#: a glyph's advance already carries its own bearing.
+GAP_UNIT = 2
+
+
+def apply_font(obj, font):
+    """Resize a label, keeping its measured width consistent with its size."""
+    if obj is None or obj.font == font:
+        return
+    obj.textW = scaled_width(obj.textW, obj.font, font)
+    obj.lineH = FONTS[font][0]
+    obj.font = font
+
+
+def bands_for(compact, panel_h, bottom, has_label, has_tertiary):
+    """The proportional vertical bands, as (top, height) pairs.
+
+    Label a quarter, body a half, tertiary a quarter; and where a part is
+    absent its quarter goes to the body, so the splits are 1/4:1/2:1/4,
+    1/4:3/4, 3/4:1/4 or 4/4. Derived from the panel exactly as the halves
+    are, which is the point of the rule: a band does not move because of
+    what is in it.
+    """
+    top = compact
+    extent = max(1, (panel_h - bottom) - compact)
+    quarter = extent // 4
+
+    label_h = quarter if has_label else 0
+    tert_h = quarter if has_tertiary else 0
+    body_h = extent - label_h - tert_h
+    return {
+        "label": (top, label_h),
+        "body": (top + label_h, body_h),
+        "tertiary": (top + label_h + body_h, tert_h),
+        "extent": extent,
+    }
+
+
+def centre_in_band(band, height):
+    """Where a block of `height` starts to sit centred in a band.
+
+    **The font wins.** Where the block is taller than its band it stays
+    centred and overflows symmetrically rather than being shrunk to fit. The
+    specification is explicit that a reading may drop redundancy and never
+    magnitude, and shrinking a number to satisfy a decorative band is paying
+    magnitude for layout. The consequence is that on a small panel the bands
+    stop being proportional -- which is a finding rather than a failure, and
+    the guides in the rendering show exactly where it happens.
+    """
+    top, band_h = band
+    return top + (band_h - height) // 2
+
+
+def halves(objects, panel_w, panel_h, pad, content, widest_at=None,
+           compact=0, bottom=0, vertical=False):
+    """The user's third arrangement: two slots derived from the panel.
+
+    The reading is centred in the panel's left half and a secondary element
+    in its right half. Unlike both other proposals the positions come from
+    the **panel** rather than from the content, so a slot does not move when
+    what is in it changes width, and across a row of equal panels every
+    reading lands at the same x.
+
+    **A panel with only a reading does not split.** The halves exist to give
+    two elements stable slots; with one element there is no second slot to
+    protect, and leaving the right half empty would make a one-element panel
+    look like a two-element panel with something missing.
+    """
+    out = [o.copy() for o in objects]
+    reading = next((o for o in out if o.role == "reading"), None)
+    if reading is None:
+        return out, 0, True, None
+
+    unit = next((o for o in out if o.role == "unit" and not o.hidden), None)
+    bounds = visual_bounds(out)
+    spans = bounds is not None and (bounds[2] - bounds[0]) >= content - 2
+    has_visual = bounds is not None and not spans
+
+    half = content // 2
+    left_centre = pad + half // 2
+    right_centre = pad + half + half // 2
+
+    # The slot the reading has to live in, and what that costs it.
+    slot = (half - GAP_UNIT * 2) if has_visual else content
+    steps, fits = 0, True
+    if widest_at:
+        font, steps, fits = fit_into(reading, widest_at, slot)
+    else:
+        font = reading.font
+    apply_font(reading, font)
+    apply_font(unit, TO_UNIT.get(font, font))
+
+    group = reading.textW + (GAP_UNIT + unit.textW if unit else 0)
+    target = left_centre if has_visual else pad + content // 2
+    dx = (target - group // 2) - reading.x
+    for o in (reading, unit):
+        if o is not None:
+            o.x += dx
+
+    moved_visual_bottom = bounds[3] if bounds is not None else None
+    if has_visual:
+        vx, vy, vxe, vye = bounds
+        vdx = (right_centre - (vxe - vx) // 2) - vx
+        vdy = (reading.y + (reading.lineH - (vye - vy)) // 2) - vy
+        for o in out:
+            if o.role == "visual" and not o.hidden:
+                o.x += vdx
+                o.y += vdy
+        moved_visual_bottom = vye + vdy
+
+    # The supporting row sits at the bottom, centred as one group across the
+    # content box. Taken literally from the description, which is the only
+    # honest way to show what it does to a two-column row.
+    supporting = [o for o in out if o.role == "supporting" and not o.hidden]
+    if supporting:
+        left = min(o.x for o in supporting)
+        right = max(o.x + o.textW for o in supporting)
+        shift = (pad + (content - (right - left)) // 2) - left
+        for o in supporting:
+            o.x += shift
+
+    bands = None
+    if vertical:
+        heading = next((o for o in out if o.role == "heading"), None)
+        bands = bands_for(compact, panel_h, bottom,
+                          heading is not None, bool(supporting))
+        bands["split"] = has_visual
+
+        if heading is not None:
+            heading.y = centre_in_band(bands["label"], heading.lineH)
+
+        # The reading and whatever shares its band move together, so the
+        # optical-centre relationship between them survives the move.
+        block_top = reading.y
+        block_bottom = reading.y + reading.lineH
+        if has_visual:
+            vb = visual_bounds(out)
+            block_top = min(block_top, vb[1])
+            block_bottom = max(block_bottom, vb[3])
+        dy = centre_in_band(bands["body"], block_bottom - block_top) - block_top
+        for o in out:
+            if o.role in ("reading", "unit") or (
+                    o.role == "visual" and not o.hidden and has_visual):
+                o.y += dy
+
+        if supporting:
+            rows_top = min(o.y for o in supporting)
+            rows_bottom = max(o.y + o.lineH for o in supporting)
+            dy = centre_in_band(bands["tertiary"],
+                                rows_bottom - rows_top) - rows_top
+            for o in supporting:
+                o.y += dy
+
+    return out, steps, fits, bands
+
+
+#: The unit's font for a given reading font, mirroring `theme.unitFont`:
+#: two steps down the ladder wherever there are two.
+TO_UNIT = {
+    "XXLSIZE": "MIDSIZE",
+    "DBLSIZE": "SMLSIZE",
+    "MIDSIZE": "SMLSIZE",
+    "SMLSIZE": "TINSIZE",
+}
+
+
 def reflow(objects, panel_w, panel_h, pad, content, justify):
     """Apply the proposed rule to a copy of the drawn geometry.
 
@@ -288,7 +497,7 @@ def reflow(objects, panel_w, panel_h, pad, content, justify):
     return out
 
 
-def svg_of(objects, w, h, ghost=None):
+def svg_of(objects, w, h, ghost=None, bands=None, pad=0, content=0):
     parts = [
         f'<svg class="panel" width="{w}" height="{h}" viewBox="0 0 {w} {h}">'
     ]
@@ -368,6 +577,30 @@ def svg_of(objects, w, h, ghost=None):
                 f'<rect x="{o.x}" y="{o.y}" width="{o.w}" height="{o.h}" '
                 f'fill="none" stroke="#666" stroke-dasharray="3 3" />'
             )
+    # The guides last, over the content. Drawn under it they were invisible:
+    # the panel's surface is an opaque filled rectangle and paints over
+    # anything emitted before it. The whole value of the guides is seeing
+    # where a band is against where its contents actually sit.
+    if bands:
+        for key in ("label", "body", "tertiary"):
+            top, height = bands[key]
+            if height <= 0:
+                continue
+            parts.append(
+                f'<rect class="band" x="1" y="{top}" width="{w - 2}" '
+                f'height="{height}" />'
+            )
+        # Only where the panel actually splits. A one-element panel centres
+        # across the whole box, so drawing the divider there would show a
+        # rule that is not being applied.
+        if bands.get("split"):
+            half = content // 2
+            body_top, body_h = bands["body"]
+            parts.append(
+                f'<line class="split" x1="{pad + half}" y1="{body_top}" '
+                f'x2="{pad + half}" y2="{body_top + body_h}" />'
+            )
+
     # Last, so the panel's own surface does not paint over it.
     if ghost:
         for gx, gy, gw, gh in ghost:
@@ -404,6 +637,7 @@ JUSTIFY = [
 cases = rows(G.CASES)
 by_zone = {"widget": [], "appmode": []}
 slack_rows = []
+halves_steps = []
 findings = []
 
 for case in cases:
@@ -416,8 +650,24 @@ for case in cases:
     bounds = visual_bounds(objects)
     spans = bounds is not None and (bounds[2] - bounds[0]) >= content - 2
 
-    variants = [(label, reflow(objects, w, h, pad, content, key))
+    variants = [(label, reflow(objects, w, h, pad, content, key), None)
                 for label, key in JUSTIFY]
+    # Widths of the widest reading the component can print, at the font it
+    # is currently drawn in, so the slot question is asked of the string the
+    # fitter actually sized for.
+    widest_at = {k: (int(case.widestAt[k][1]), int(case.widestAt[k][2]))
+                 for k in case.widestAt.keys()} if case.widest else None
+    halved, steps, fits, bands = halves(
+        objects, w, h, pad, content, widest_at,
+        int(case.compact), int(case.bottom), vertical=True)
+    step_note = ""
+    if not fits:
+        step_note = (' <span class="cost">will not fit</span>')
+    elif steps:
+        step_note = (f' <span class="cost">&minus;{steps} size'
+                     f'{"s" if steps > 1 else ""}</span>')
+    variants.append(("halves" + step_note, halved, bands))
+    halves_steps.append((case.zone, case.component, case.span, steps, fits))
 
     gap_note = ""
     if hole:
@@ -433,10 +683,12 @@ for case in cases:
         f'<figure><figcaption>today</figcaption>'
         f'<div class="frame">{svg_of(objects, w, h, hole)}</div></figure>'
     ]
-    for label, flowed in variants:
+    for label, flowed, bands_of in variants:
         cells.append(
             f'<figure><figcaption>flow &mdash; {label}</figcaption>'
-            f'<div class="frame">{svg_of(flowed, w, h)}</div></figure>'
+            f'<div class="frame">'
+            f'{svg_of(flowed, w, h, bands=bands_of, pad=pad, content=content)}'
+            f'</div></figure>'
         )
 
     kind = "none"
@@ -490,6 +742,31 @@ for case in cases:
 worst_offset, worst_offset_case, worst_offset_w = max(offsets, default=(0, "-", 1))
 worst_offset_pct = round(worst_offset * 100 / worst_offset_w)
 
+# The same panel under halves, so the three arrangements are compared on one
+# number rather than three descriptions.
+halves_offset = 0
+fit_ok = fit_total = 0
+for case in cases:
+    if case.zone != "widget":
+        continue
+    objs = [Obj(o) for o in rows(case.objects)]
+    cw, ch = int(case.w), int(case.h)
+    cpad, ccontent = int(case.pad), int(case.content)
+    classify(objs, cw, ch)
+    if not any(o.role == "reading" for o in objs):
+        continue
+    wa = {k: (int(case.widestAt[k][1]), int(case.widestAt[k][2]))
+          for k in case.widestAt.keys()} if case.widest else None
+    moved, _, ok, _bands = halves(objs, cw, ch, cpad, ccontent, wa)
+    fit_total += 1
+    fit_ok += 1 if ok else 0
+    if f"{case.component} {case.span}" == worst_offset_case:
+        head = next((o for o in objs if o.role == "heading"), None)
+        hr = next((o for o in moved if o.role == "reading"), None)
+        if head and hr:
+            halves_offset = hr.x - head.x
+halves_offset_pct = round(halves_offset * 100 / worst_offset_w)
+
 gap_xxl = max(GAP_CENTRE_MIN, FONTS["XXLSIZE"][0] // GAP_CENTRE_DIVISOR)
 gap_dbl = max(GAP_CENTRE_MIN, FONTS["DBLSIZE"][0] // GAP_CENTRE_DIVISOR)
 gap_mid = max(GAP_CENTRE_MIN, FONTS["MIDSIZE"][0] // GAP_CENTRE_DIVISOR)
@@ -534,8 +811,15 @@ page = f"""<!doctype html>
   .panel {{ display: block; }}
   .hole {{ fill: {PALETTE['amber']}; fill-opacity: .16;
     stroke: {PALETTE['amber']}; stroke-opacity: .5; stroke-dasharray: 3 3; }}
+  .band {{ fill: none; stroke: {PALETTE['cyan']}; stroke-opacity: .30;
+    stroke-width: 1; stroke-dasharray: 2 3; }}
+  .split {{ stroke: {PALETTE['cyan']}; stroke-opacity: .22;
+    stroke-width: 1; stroke-dasharray: 2 3; }}
   .note {{ font-size: 13px; color: #9aa4b0; margin: 4px 0 10px; }}
   .gap strong {{ color: {PALETTE['amber']}; }}
+  .cost {{ color: {PALETTE['critical']}; font-weight: 600;
+    text-transform: none; letter-spacing: 0; }}
+  td.bad {{ color: {PALETTE['amber']}; }}
   code {{ background: #1b2129; padding: 1px 5px; border-radius: 3px;
     font-size: 12.5px; }}
   ul {{ max-width: 62em; color: #b9c2cc; }}
@@ -590,7 +874,7 @@ two are gone rather than left here to be re-argued. It is now a rule of the
 design system: a compact visual is vertically centred on the reading's line
 box, at every span and in every component.</p>
 
-<h2>The open question: left-aligned, or centred</h2>
+<h2>The open question: left-aligned, centred, or halves</h2>
 <p class="intro">Both columns below apply the flow rule. They differ only in
 where the group sits.</p>
 <ul>
@@ -600,7 +884,110 @@ where the group sits.</p>
       two things rather than carry the arrangement.</li>
   <li><strong>Centred</strong> centres the group in the content box, putting
       the slack on both sides. That is what buys room for a wider gap.</li>
+  <li><strong>Halves</strong> splits the panel: the reading centred in the
+      left half, the secondary element centred in the right. A panel with
+      only a reading <strong>does not split</strong> &mdash; the reading
+      centres across the whole panel, because the halves exist to give two
+      elements stable slots and with one element there is no second slot to
+      protect.</li>
 </ul>
+
+<div class="real"><strong>Why halves is different in kind.</strong> Left and
+centred both derive positions from <em>content width</em>. Halves derives
+them from the <em>panel</em>. A slot does not move because its contents
+changed, and across a row of equal-width panels every reading lands at the
+same x &mdash; which answers both objections to centring at once. What
+follows is what it costs.</div>
+
+<h3 class="plain">Does half a panel hold a reading?</h3>
+<p class="intro">Asked of the <strong>widest</strong> string each component
+can print, not what it happens to say &mdash; a <code>tx-battery</code>
+reading <code>7.9</code> must still hold <code>88.8</code> without resizing
+under the pilot. Measured with <code>lcd.sizeText</code> at every font on the
+ladder.</p>
+<p class="intro"><strong>{fit_ok} of {fit_total} cases fit with no change of
+size at all.</strong> The exception is <code>navigation</code> at
+<code>1x1</code>: <code>888.88km</code> needs 60&nbsp;px and half that panel
+is 48, and the reading is already at <code>SMLSIZE</code>, the bottom of the
+reading ladder, so there is nothing left to give.</p>
+<p class="intro">That case resolves itself, and worth knowing why. The
+component already drops its dial rather than let a distance clip &mdash; a
+distance's unit changes with range, so it cannot be shortened. With the dial
+gone the panel has one element, and under this rule a one-element panel does
+not split. So <code>navigation</code> at <code>1x1</code> centres across the
+whole panel and the slot problem never arises.</p>
+
+<h3 class="plain">Vertical bands, and where they meet fixed font heights</h3>
+<p class="intro">The halves column also applies proportional vertical bands:
+label a quarter, primary and secondary a half, tertiary a quarter &mdash;
+and where a part is absent its quarter goes to the body. The faint dashed
+guides in that column are the bands; the content is where it actually sits.
+<strong>The gap between the two is the finding.</strong></p>
+
+<p class="intro"><strong>The font wins.</strong> Where a block is taller than
+its band it stays centred and overflows rather than shrinking. The
+specification is explicit that a reading may drop redundancy and never
+magnitude, and shrinking a number to satisfy a decorative band is paying
+magnitude for layout. So the bands are advisory, and on a small panel they
+stop being proportional.</p>
+
+<table><thead><tr><th>panel</th><th>bands L/B/T</th><th>what overflows</th>
+</tr></thead><tbody>
+<tr><td>117&times;53, 238&times;53</td><td>11 / 36 / &mdash;</td>
+  <td class="bad">label by 6&nbsp;px, on every component</td></tr>
+<tr><td>238&times;111, 480&times;111</td><td>25 / 51 / 25</td>
+  <td class="bad">tertiary by 11&nbsp;px, <code>navigation</code> only</td></tr>
+</tbody></table>
+
+<p class="intro"><strong>The small-panel failure cannot be fixed by
+shrinking.</strong> A quarter of a 53&nbsp;px panel is 11&nbsp;px and the
+smallest font the dashboard has is <code>TINSIZE</code> at 12. There is no
+font that fits that band, so "let the band win" is not an option there
+&mdash; only "let the font win", which is what is rendered, or "fall back to
+today's stacking below some size".</p>
+
+<p class="intro"><strong>The body band never fails</strong>, which was not
+obvious in advance. A 53&nbsp;px panel looks as if a half &mdash; 23&nbsp;px
+&mdash; could not hold a 29&nbsp;px <code>MIDSIZE</code> reading. But those
+panels shed their tertiary row, so the split is 1/4 : 3/4 and the body gets
+36, which holds the tallest block any of them draws. The proportional rule
+rescues itself exactly where it looked weakest.</p>
+
+<p class="intro"><strong><code>navigation</code>'s tertiary is the one case
+that could be shrunk.</strong> It puts two rows there &mdash; a bearing
+beside an orientation, with coordinates beneath &mdash; needing 36&nbsp;px in
+a 25&nbsp;px band. Two <code>TINSIZE</code> rows would be 24 and would fit,
+at the cost of making the smallest text on the panel smaller still. Rendered
+as overflow rather than shrunk, so you can see what is being traded.</p>
+
+<p class="intro"><strong>The dial fits its band.</strong> It was worth
+checking, since today it is sized against the whole content box: at
+<code>2x2</code> and <code>4x2</code> the body block including the dial is
+44&nbsp;px against a 51&nbsp;px band.</p>
+
+<div class="warn"><strong>So the honest summary is that the proportional
+model works above a size and not below it.</strong> At 111&nbsp;px panels it
+holds everywhere except <code>navigation</code>'s tertiary. At 53&nbsp;px the
+label band is wrong on every component and cannot be made right by any font
+the dashboard has. A rule that applies at two rows and falls back to today's
+stacking at one is a legitimate answer; a rule that claims to be universal
+would not be.</div>
+
+<h3 class="plain">How far the reading ends up from its heading</h3>
+<p class="intro">The heading is immovably left, so every arrangement that
+moves the reading rightwards opens a gap under it. On the panel where it is
+worst, <code>{worst_offset_case}</code>:</p>
+<table><thead><tr><th>arrangement</th><th>reading&rsquo;s distance from the
+heading</th></tr></thead><tbody>
+<tr><td>left-aligned</td><td>0 px &mdash; they share an edge</td></tr>
+<tr class="has-slack"><td>centred</td><td>{worst_offset} px
+  ({worst_offset_pct}% of the panel)</td></tr>
+<tr><td>halves</td><td>{halves_offset} px
+  ({halves_offset_pct}% of the panel)</td></tr>
+</tbody></table>
+<p class="intro">Halves sits about half as far out as fully centred, because
+it centres in a half rather than in the whole. Whether that is close enough
+to the heading to read as deliberate is the judgement the mocks are for.</p>
 
 <h3 class="plain">The gap in the centred variant, and what it took to
 choose it</h3>
@@ -684,8 +1071,41 @@ reading ends and where the visual begins. Zero means the rule would change
 nothing there.</p>
 {slack_table}
 
+<h2>The objection that ruled out centring, and whether halves escapes it</h2>
+<div class="warn"><p>Centring was marked down because a centred group
+re-centres whenever its contents change width. Halves derives positions from
+the panel, so it does not have that problem &mdash; <strong>except in one
+place, and it is worth knowing before committing to the rule.</strong></p>
+
+<p>Under this rule a panel with two elements splits and a panel with one does
+not. So anything that makes a visual appear or disappear changes the
+arrangement. Across the catalogue that is almost always a question of
+<em>space</em>, which only changes when the zone does. <strong>One component
+gates its visual on <em>data</em>:</strong> <code>tx-battery</code> hides its
+battery until there is a voltage range to measure against, and that range is
+a live subscription to <code>getGeneralSettings</code> rather than something
+read once.</p>
+
+<p>Two consequences. The range is not known when the panel is built, so the
+battery appears a frame or two later and <strong>the reading moves from the
+panel's centre to its left half during start-up, every time</strong>. And a
+pilot editing SYS &rarr; Hardware &rarr; Battery meter range would move it
+again, in flight &mdash; which is precisely the objection that ruled out
+centring, reappearing in the arrangement chosen to avoid it.</p>
+
+<p>It is confined to one component and is fixable &mdash; reserving the slot
+whenever the layout could ever show a visual, rather than when one is
+currently drawn, would hold the reading still at the cost of a permanently
+empty right half on a panel that never gets a range. That is a real trade and
+the user should make it rather than discover it.</p></div>
+
 <h2>Found while building this &mdash; not fixed</h2>
 <ul>
+  <li><strong>The same component places its reading by two rules at two
+      spans.</strong> <code>tx-battery</code> sheds its battery at
+      <code>1x1</code> and <code>metric</code> its radial, so those panels
+      centre across the whole box while their larger siblings split. Both are
+      in the page; judge whether it reads as inconsistent or as sensible.</li>
   <li><strong>A taller panel drawing less than a shorter one.</strong> A
       <code>tx-battery</code> at <code>2x1</code> is 65 px tall in App mode
       and 53 in Full screen, and it is the <em>taller</em> one that sheds its
