@@ -2937,15 +2937,23 @@ local function testCompassGeometry()
   assertEqual(compass.ring.last.startAngle, compass.ring.last.endAngle,
     "an unknown bearing must draw a zero length pointer")
 
-  -- EdgeTX positions an arc by its centre: LvglWidgetRoundObject::setPos
-  -- stores x - radius, so a component laying out in corner coordinates has to
-  -- convert, and this is where that conversion lives.
-  local box = primitives.arcBounds(100, 60, 20)
-  assertEqual(box.x, 80)
-  assertEqual(box.y, 40)
-  assertEqual(box.w, 40)
-  assertEqual(box.h, 40)
-  assertEqual(primitives.arcBounds(100, 60, 20, 6).x, 77)
+end
+
+--- The square an arc of a given centre and radius covers.
+---
+--- `radius` is the arc's *outer* edge: `lv_draw_arc.c` sets `rout = radius`
+--- and `rin = radius - w`, so the stroke is drawn inside it and a thickness
+--- adds nothing to the box. The widget used to carry a `primitives.arcBounds`
+--- that added half the thickness, which was both wrong and called by nothing
+--- but tests. It is a test's own arithmetic over a planned region, so it
+--- lives here; where there is a real object, measure the object instead.
+local function arcSquare(centreX, centreY, radius)
+  return {
+    x = centreX - radius,
+    y = centreY - radius,
+    w = radius * 2,
+    h = radius * 2,
+  }
 end
 
 --- Navigation presentations, and the three degraded states that each need
@@ -3039,7 +3047,7 @@ local function testNavigationRegions()
   assertEqual(large.showCompass, true)
   assertEqual(large.showCoordinates, true)
   -- The dial sits inside its own panel, measured from its centre.
-  local box = primitives.arcBounds(large.centreX, large.centreY, large.radius)
+  local box = arcSquare(large.centreX, large.centreY, large.radius)
   assert(box.x >= 0 and box.y >= 0, "the dial was placed off the panel")
   assert(box.x + box.w <= 238, "the dial overflowed the panel")
   assert(box.y + box.h <= 134, "the dial overflowed the panel")
@@ -3172,7 +3180,7 @@ local function testTelemetryContentFitsPanel()
           .. case.name .. ": the coordinates row overflows the panel")
       end
       if nav.showCompass then
-        local box = primitives.arcBounds(nav.centreX, nav.centreY, nav.radius)
+        local box = arcSquare(nav.centreX, nav.centreY, nav.radius)
         assert(box.x >= 0 and box.y >= 0,
           what .. " " .. case.name .. ": the dial was placed off the panel")
         assert(box.x + box.w <= case.w and box.y + box.h <= case.h,

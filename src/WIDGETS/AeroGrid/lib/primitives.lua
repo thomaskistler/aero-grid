@@ -772,7 +772,9 @@ end
 --- `LvglWidgetArc::build` calls `setPos(x, y)` on a round object, and
 --- `LvglWidgetRoundObject::setPos` stores `x - radius, y - radius`, so a
 --- caller passing a corner draws the arc one radius up and to the left of
---- where it meant to. Use `primitives.arcBounds` to place one inside a panel.
+--- where it meant to. The square it covers is centre plus or minus `radius`;
+--- `lv_draw_arc.c` sets `rout = radius` and draws the stroke inward, so
+--- thickness does not widen it.
 ---@param parent any
 ---@param theme AeroGridTheme
 ---@param options table
@@ -815,20 +817,6 @@ function primitives.placeRadial(radial, centreX, centreY, radius)
   radial.centreY = centreY
   radial.radius = radius
   setRound(radial.arc, centreX, centreY, {radius = radius})
-end
-
---- Report the rectangle an arc of a given centre and radius occupies.
---- Components lay out in corner coordinates, so this is the translation
---- between the two, in one place rather than in every caller.
----@param centreX integer
----@param centreY integer
----@param radius integer
----@param thickness? integer Stroke width, when the painted box is wanted.
----@return table rect
-function primitives.arcBounds(centreX, centreY, radius, thickness)
-  local half = math.floor((thickness or 0) / 2)
-  local extent = radius + half
-  return {x = centreX - extent, y = centreY - extent, w = extent * 2, h = extent * 2}
 end
 
 --- Convert a 0..1 fraction into arc degrees.

@@ -39,6 +39,22 @@ io = {
   close = function(handle) return handle:close() end,
 }
 
+--- The square an arc covers, read from where the mock drew it.
+---
+--- `round.drawn` is what `LvglWidgetRoundObject::setPos` stored, so this
+--- measures the object rather than repeating the firmware's arithmetic over
+--- the arguments Lua passed. `radius` is the outer edge: `lv_draw_arc.c`
+--- draws the stroke inward from it, so a thickness does not widen the box.
+local function arcSquareOf(arc)
+  local radius = arc.round.radius()
+  return {
+    x = arc.round.drawn.x,
+    y = arc.round.drawn.y,
+    w = radius * 2,
+    h = radius * 2,
+  }
+end
+
 local function assertEqual(actual, expected, message)
   if actual ~= expected then
     error((message or "values differ") .. ": expected " .. tostring(expected)
@@ -1808,10 +1824,16 @@ components:
   -- EdgeTX positions an arc by its centre: LvglWidgetArc::build calls setPos,
   -- and LvglWidgetRoundObject::setPos stores x - radius. A test that read x
   -- as a corner would pass while the arc was drawn a radius off the panel.
-  local arc = dial.instance.radial.arc.properties
+  --
+  -- Measured from the object the mock actually drew rather than recomputed
+  -- from what Lua passed. Recomputing is how the widget came to carry an
+  -- `arcBounds` helper that no component called and that put the outer edge
+  -- half a stroke too far out: the only thing checking it was a test that
+  -- used the same arithmetic.
+  local arc = dial.instance.radial.arc
   local bounds = boundsOf(dial)
-  local firstRadius = arc.radius
-  local box = primitivesModule.arcBounds(arc.x, arc.y, arc.radius)
+  local firstRadius = arc.properties.radius
+  local box = arcSquareOf(arc)
   assert(box.x >= 0 and box.y >= 0, "radial was drawn off its own panel")
   assert(box.x + box.w <= bounds.w, "radial overflows its panel")
   assert(box.y + box.h <= bounds.h, "radial overflows its panel")
@@ -1824,10 +1846,11 @@ components:
   zone.h = 160
   definition.refresh(context)
 
-  local resized = dial.instance.radial.arc.properties
+  local resized = dial.instance.radial.arc
   local newBounds = boundsOf(dial)
-  local newBox = primitivesModule.arcBounds(resized.x, resized.y, resized.radius)
-  assert(resized.radius < firstRadius, "radial did not shrink with the panel")
+  local newBox = arcSquareOf(resized)
+  assert(resized.properties.radius < firstRadius,
+    "radial did not shrink with the panel")
   assert(newBox.x >= 0 and newBox.y >= 0, "radial left its panel after reflow")
   assert(newBox.x + newBox.w <= newBounds.w, "radial overflowed after reflow")
   assert(newBox.y + newBox.h <= newBounds.h, "radial overflowed after reflow")
@@ -1899,9 +1922,15 @@ local function testTelemetryDrivesComponents()
   assertEqual(pack.value.properties.text, "24.0")
   assertEqual(pack.badge.properties.text, "")
 
-  -- A metric without a configured unit takes the sensor's own.
-  assertEqual(current.unit.properties.text, "A")
-  -- And without a configured precision, the sensor's precision.
+  -- This panel is one row tall and sheds its unit row, so the unit is not on
+  -- screen here and asserting its text would assert nothing anyone can see.
+  -- What is true here is that the row is shed; the sensor's unit is checked
+  -- at a span that keeps it, in testMetricTakesTheSensorUnit.
+  assertEqual(current.showUnit, false,
+    "a one-row metric found space for a unit row")
+  assert(current.unit.hidden, "a shed unit row was left on screen")
+  -- Without a configured precision, the sensor's precision. This is the
+  -- dominant reading, which every span draws.
   assertEqual(current.text, "10.0", "the sensor precision was ignored")
 
   radio.values[100] = 20.5
@@ -3657,6 +3686,205 @@ local function settle(context, count)
   end
 end
 
+--- Every declared key belongs to a row that is drawn, and every drawn row has
+--- one.
+---
+--- This is the property, stated once. A component declares what it paints and
+--- `primitives.changed` compares exactly that, so a key present for a row
+--- that is shed is work with no reader, and a row that is drawn with no key
+--- is a row nothing can repaint. Checked at both sizes, because the shed
+--- direction and the revealed direction fail differently.
+local function assertDeclaresWhatItDraws(cells, link, alt, nav, when)
+  local function check(component, what, shown, key)
+    local declared = component.rendered[key] ~= nil
+    assertEqual(declared, shown, when .. ": " .. what
+      .. (shown and " is drawn but declares no " or " declares a ")
+      .. key .. (shown and " key" or " key it does not draw"))
+  end
+
+  check(cells, "the cell count", cells.showDetail, "count")
+  check(cells, "the pack row", cells.showDetail, "pack")
+  check(link, "the link detail row", link.showDetail, "detail")
+  check(link, "the link row", link.showDetail, "link")
+  check(alt, "the metric's range row", alt.showRange, "range")
+  check(alt, "the metric's secondary", alt.showSecondary, "secondary")
+  check(nav, "the bearing row", nav.showDetail, "detail")
+  check(nav, "the origin row", nav.showDetail, "origin")
+  check(nav, "the coordinate row", nav.showCoordinates, "coordinates")
+end
+
+--- A row that comes back shows what is true now, not what was true when it
+--- was shed.
+---
+--- Four components shed supporting rows on a small panel, and `apply` does
+--- not write a row it is not drawing. So a value that moves while a row is
+--- hidden leaves that row holding an old wording, and the row is only correct
+--- again if something forces a repaint when it reappears.
+---
+--- Three of the four forced it by discarding the last drawn record in
+--- `update`. That works and it is remembering rather than construction: the
+--- fourth, `trim-panel`, gets it for free by not declaring a row it has shed,
+--- so the key reappearing is itself the change `primitives.changed` sees.
+--- All four now do that, and the discards are gone.
+---
+--- The care this needs is in what moves when. The value is moved **while the
+--- row is hidden** and nothing at all is moved at the reveal, because a
+--- change in the same window as the reveal would repaint under any
+--- implementation and prove nothing. Under a component that declares a row it
+--- does not draw, the moved value is recorded while hidden and never
+--- painted, so the reveal finds the record already matching and repaints
+--- nothing. That is the stale row this is looking for.
+local function testShedRowsComeBackCurrent()
+  resetRadio()
+  local widgetPath = makeWidget("reveal", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: cells
+    type: cell-battery
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      source: Cels
+      showCount: true
+      showPack: true
+  - id: link
+    type: link-status
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      rssiSource: RSSI
+      qualitySource: RQly
+      reading: quality
+  - id: alt
+    type: metric
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: Alt
+      source: Alt
+      unit: m
+      precision: 0
+      extrema: source
+      extremaSource: Alt+
+      secondarySource: VSpd
+      secondaryLabel: VS
+  - id: nav
+    type: navigation
+    col: 2
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      source: GPS
+      presentation: detailed
+]])
+
+  local zone = {x = 0, y = 0, w = 480, h = 272}
+  local context = createLoaded(zone, DEFAULT_OPTIONS, widgetPath)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+
+  radio.values[130] = {4.11, 4.09, 4.12}
+  radio.values[140] = -70
+  radio.values[141] = 88
+  radio.values[106] = 120
+  radio.values[120] = 2.5
+  radio.values[109] = {
+    lat = 47.3769, lon = 8.5417,
+    ["pilot-lat"] = 47.3700, ["pilot-lon"] = 8.5400,
+  }
+  settle(context, 60)
+
+  local cells = entryById(context, "cells").instance
+  local link = entryById(context, "link").instance
+  local alt = entryById(context, "alt").instance
+  local nav = entryById(context, "nav").instance
+
+  -- The precondition: every row under test is on screen at this span. Without
+  -- this the shed below is not a shed and the reveal is not a reveal.
+  assertEqual(cells.showDetail, true, "the cell panel shed its rows too early")
+  assertEqual(link.showDetail, true, "the link panel shed its rows too early")
+  assertEqual(alt.showRange, true, "the metric shed its range row too early")
+  assertEqual(alt.showSecondary, true, "the metric shed its secondary too early")
+  assertEqual(nav.showDetail, true, "the nav panel shed its rows too early")
+  assertEqual(nav.showCoordinates, true, "the nav panel shed its coordinates")
+
+  local function reflow(width, height)
+    zone.w, zone.h = width, height
+    local passes = 0
+    repeat
+      definition.refresh(context)
+      passes = passes + 1
+      assert(passes < 100, "reflow never finished")
+    until not context.reflowIndex
+    settle(context, 60)
+  end
+
+  reflow(240, 140)
+
+  assertEqual(cells.showDetail, false, "the cell panel kept rows it cannot fit")
+  assertEqual(link.showDetail, false, "the link panel kept rows it cannot fit")
+  assertEqual(alt.showRange, false, "the metric kept a range row it cannot fit")
+  assertEqual(alt.showSecondary, false, "the metric kept a row it cannot fit")
+  assertEqual(nav.showDetail, false, "the nav panel kept rows it cannot fit")
+  assertEqual(nav.showCoordinates, false, "the nav panel kept its coordinates")
+
+  assertDeclaresWhatItDraws(cells, link, alt, nav, "shed")
+
+  -- Everything moves here, while the rows are hidden and nothing is drawing
+  -- them, and nothing moves after this point.
+  radio.values[130] = {4.11, 4.09, 4.12, 4.10, 4.08}
+  radio.values[140] = -95
+  radio.values[141] = 42
+  radio.values[120] = -3.5
+  radio.values[109] = {
+    lat = 47.4000, lon = 8.6000,
+    ["pilot-lat"] = 47.3700, ["pilot-lon"] = 8.5400,
+  }
+  settle(context, 60)
+
+  reflow(480, 272)
+
+  assertDeclaresWhatItDraws(cells, link, alt, nav, "revealed")
+  assertEqual(cells.showDetail, true, "the cell rows never came back")
+  assertEqual(link.showDetail, true, "the link rows never came back")
+  assertEqual(alt.showSecondary, true, "the metric's secondary never came back")
+  assertEqual(nav.showDetail, true, "the nav rows never came back")
+  assertEqual(nav.showCoordinates, true, "the coordinate row never came back")
+
+  -- Five cells now, not three. A stale row would still say 3S.
+  assertEqual(cells.countLabel.properties.text, "5S",
+    "a revealed cell count still reports the pack it was shed with")
+  -- With quality leading, the supporting row names RSSI, which fell from
+  -- -70 to -95 while the row was not on screen.
+  assert(string.find(link.linkLabel.properties.text, "-95", 1, true),
+    "a revealed link row still reports the RSSI it was shed with: "
+    .. tostring(link.linkLabel.properties.text))
+  -- The vertical speed reversed while the row was not on screen.
+  assert(string.find(alt.secondary.properties.text, "-3", 1, true),
+    "a revealed secondary row still reports the value it was shed with: "
+    .. tostring(alt.secondary.properties.text))
+  -- The model moved, so both the bearing row and the coordinates changed.
+  assert(string.find(nav.coordinatesLabel.properties.text, "47.4", 1, true),
+    "a revealed coordinate row still reports the position it was shed with: "
+    .. tostring(nav.coordinatesLabel.properties.text))
+  assertEqual(nav.detailLabel.properties.text, nav.detail,
+    "a revealed bearing row disagrees with what the panel last declared")
+  assertEqual(cells.countLabel.properties.text, cells.countText,
+    "a revealed cell count disagrees with what the panel last declared")
+
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  resetRadio()
+end
+
 --- A trim panel sheds text it has no room for, and stops producing it.
 ---
 --- Four indicators each carry a caption, a bar and a readout, and a cell too
@@ -4835,6 +5063,7 @@ testDiagnosticsFitTheirPanels()
 testMissingServiceModule()
 testCoreComponents()
 testTrimPanelShedsText()
+testShedRowsComeBackCurrent()
 testComponentsDegrade()
 testCoreComponentsReflow()
 testMetricPresetDetail()

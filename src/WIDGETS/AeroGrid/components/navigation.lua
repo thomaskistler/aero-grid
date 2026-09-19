@@ -454,6 +454,11 @@ function navigation.create(parent, rect, settings, services)
   if context.coordinatesLabel and not area.showCoordinates then
     lvgl.hide(context.coordinatesLabel)
   end
+  -- Recorded after the rows are built, because whether there is a row at all
+  -- is decided by the span and whether it is showing by the box.
+  context.showCoordinates = context.coordinatesLabel ~= nil
+    and area.showCoordinates == true
+  context.showCompass = context.compass ~= nil and area.showCompass == true
   if context.compass and not area.showCompass then
     navigation.hideCompass(context)
   end
@@ -498,12 +503,29 @@ function navigation.render(context, out)
   if service and type(view) == "table" then
     out.text = navigation.distanceText(view, service.describeDistance)
   end
-  out.detail = navigation.bearingText(view, context.themeBuilder,
-    context.fonts.label, context.detailWidth)
-  out.origin = navigation.originText(view, context.themeBuilder,
-    context.fonts.label, context.originWidth)
-  out.coordinates = navigation.coordinateText(view)
-  out.bearing = type(view) == "table" and view.bearing or nil
+  -- Only what this panel draws. Both supporting rows are shed on a small
+  -- panel and the coordinate row on all but the detailed arrangement, and
+  -- fitting a caption to a width nobody sees is work with no reader. It also
+  -- makes the reveal safe by construction: the key is absent while the row is
+  -- shed, so `changed` sees it reappear and repaints with a wording fitted to
+  -- the width the row now has. This used to be unconditional and `update`
+  -- discarded the last record to compensate, which worked only as long as
+  -- nobody forgot.
+  if context.showDetail then
+    out.detail = navigation.bearingText(view, context.themeBuilder,
+      context.fonts.label, context.detailWidth)
+    out.origin = navigation.originText(view, context.themeBuilder,
+      context.fonts.label, context.originWidth)
+  end
+  if context.showCoordinates then
+    out.coordinates = navigation.coordinateText(view)
+  end
+  -- The dial is shed on a panel too small for it, and a bearing declared
+  -- while it is shed is a number that moves the whole declaration every time
+  -- the model turns, repainting a panel whose visible parts have not changed.
+  if context.showCompass then
+    out.bearing = type(view) == "table" and view.bearing or nil
+  end
 end
 
 --- Paint the panel from what `render` collected, and from nothing else.
@@ -528,11 +550,11 @@ function navigation.apply(context, drawn)
     context.detailLabel:set({text = drawn.detail})
     context.originLabel:set({text = drawn.origin})
   end
-  if context.coordinatesLabel then
+  if context.showCoordinates then
     context.coordinatesLabel:set({text = drawn.coordinates})
   end
 
-  if context.compass then
+  if context.showCompass then
     -- A bearing that does not exist hides the pointer rather than resting it
     -- at north, which would read as a real due-north fix.
     context.primitives.setCompass(
@@ -569,22 +591,16 @@ function navigation.update(context, rect)
 
   reconcile(context.detailLabel, area.showDetail,
     {x = area.pad, y = area.detailY, w = area.detailWidth})
-  -- A resize changes how much room each caption has, so let both be
-  -- re-chosen on the refresh that follows.
-  if area.detailWidth ~= context.detailWidth then
-    context.detailWidth = area.detailWidth
-    context.rendered = nil
-  end
-  if area.originWidth ~= context.originWidth then
-    context.originWidth = area.originWidth
-    context.rendered = nil
-  end
-  if area.showDetail ~= context.showDetail then
-    context.showDetail = area.showDetail
-    -- A row that just became visible still holds whatever it had when it was
-    -- hidden, so discard what was last drawn and let the next refresh fit it.
-    context.rendered = nil
-  end
+  -- Recorded and nothing more. `render` reads all four, so a row that is shed
+  -- declares nothing, a row that reappears declares a key that was missing,
+  -- and a caption whose width moved declares whatever that width now fits.
+  -- The discards that used to be here are gone with the guesswork.
+  context.detailWidth = area.detailWidth
+  context.originWidth = area.originWidth
+  context.showDetail = area.showDetail
+  context.showCoordinates = context.coordinatesLabel ~= nil
+    and area.showCoordinates == true
+  context.showCompass = context.compass ~= nil and area.showCompass == true
   reconcile(context.originLabel, area.showDetail,
     {x = area.originX, y = area.detailY, w = area.originWidth})
   reconcile(context.coordinatesLabel, area.showCoordinates,

@@ -376,13 +376,22 @@ function metric.render(context, out)
 
   -- The sensor's unit is likewise only known once the source resolves, so the
   -- label follows it rather than being fixed when the panel was built.
-  if context.unit and settings.unit == "" then
+  if context.showUnit and settings.unit == "" then
     out.unit = feed and feed.unitText or ""
   end
   -- The detail row moves independently of the primary reading: an extreme
   -- changes on its own schedule and a secondary sensor has its own source.
-  if context.range then out.range = metric.detailText(context) end
-  if context.secondary then out.secondary = metric.secondaryText(context) end
+  --
+  -- Gated on whether the row is showing, not on whether it was built. A panel
+  -- shrinks its rows away and this used to go on formatting them, which was
+  -- work with no reader; it also meant a revealed row was already current by
+  -- accident rather than by design, which is why this component alone needed
+  -- no discard. Now the key is simply absent while the row is shed, and
+  -- reappears when it is not, which is what `changed` compares.
+  if context.showRange then out.range = metric.detailText(context) end
+  if context.showSecondary then
+    out.secondary = metric.secondaryText(context)
+  end
 end
 
 --- Paint the panel from what `render` collected, and from nothing else.
@@ -400,15 +409,15 @@ function metric.apply(context, drawn)
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
   context.primitives.stylePanel(context.panel, presentation)
 
-  if context.unit and drawn.unit then
+  if context.showUnit and drawn.unit then
     context.unitText = drawn.unit
     context.unit:set({text = drawn.unit})
   end
-  if context.range and drawn.range then
+  if context.showRange and drawn.range then
     context.rangeText = drawn.range
     context.range:set({text = drawn.range})
   end
-  if context.secondary and drawn.secondary then
+  if context.showSecondary and drawn.secondary then
     context.secondaryText = drawn.secondary
     context.secondary:set({text = drawn.secondary})
   end
@@ -710,6 +719,13 @@ function metric.create(parent, rect, settings, services)
   if context.secondary and not area.showSecondary then
     lvgl.hide(context.secondary)
   end
+  -- A row exists when the span allows one and shows when the box has space
+  -- for it. Only the second decides what is drawn, so only the second is
+  -- what `render` is allowed to read.
+  context.showUnit = context.unit ~= nil and area.showUnit == true
+  context.showRange = context.range ~= nil and area.showRange == true
+  context.showSecondary = context.secondary ~= nil
+    and area.showSecondary == true
   if not area.showVisual then
     if context.bar then
       lvgl.hide(context.bar.track)
@@ -758,6 +774,11 @@ function metric.update(context, rect)
 
   --- Show or hide an optional element, positioning it only when visible.
   local reconcile = context.primitives.reconcile
+
+  context.showUnit = context.unit ~= nil and area.showUnit == true
+  context.showRange = context.range ~= nil and area.showRange == true
+  context.showSecondary = context.secondary ~= nil
+    and area.showSecondary == true
 
   reconcile(context.unit, area.showUnit,
     {x = area.pad, y = area.unitY, w = area.valueWidth})

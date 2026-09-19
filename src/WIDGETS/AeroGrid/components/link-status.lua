@@ -627,22 +627,12 @@ function linkStatus.update(context, rect)
   --- Show or hide a supporting row, positioning it only when visible.
   local reconcile = context.primitives.reconcile
 
-  -- A resize changes how much room each row has, so let both wordings be
-  -- re-chosen on the refresh that follows.
-  if area.detailWidth ~= context.detailWidth then
-    context.detailWidth = area.detailWidth
-    context.rendered = nil
-  end
-  if area.linkWidth ~= context.linkWidth then
-    context.linkWidth = area.linkWidth
-    context.rendered = nil
-  end
-  if area.showDetail ~= context.showDetail then
-    context.showDetail = area.showDetail
-    -- A row that just became visible still holds whatever it had when it was
-    -- hidden, so discard what was last drawn and let the next refresh fit it.
-    context.rendered = nil
-  end
+  -- Recorded and nothing more, as in `cell-battery`: `render` reads all three
+  -- and declares no detail or link key while the row is shed, so the reveal
+  -- is a key reappearing rather than something this has to remember to do.
+  context.detailWidth = area.detailWidth
+  context.linkWidth = area.linkWidth
+  context.showDetail = area.showDetail
 
   reconcile(context.detailLabel, area.showDetail,
     {x = area.pad, y = area.detailY, w = area.detailWidth})
