@@ -356,6 +356,8 @@ The host creates one LVGL box or equivalent parent object for each rectangle. Co
 
 ## Visual Design Direction
 
+**The decisions this section records, together with their rejected alternatives and the reasoning behind both, live in [`aerogrid-design-guide.md`](aerogrid-design-guide.md).** That document is written for someone building a component or a layout and states plainly which parts are implemented and which are agreed but unbuilt; this section remains authoritative on behaviour and the guide on appearance. The content-flow rules in particular -- panel-derived slots, proportional bands, band-derived fonts -- are agreed and **implemented by no component**, and only the guide says so.
+
 The default interface should feel like a modern flight instrument rather than a collection of legacy widget boxes. The supplied references establish the intended direction: dense and glanceable, with strong numeric hierarchy, restrained color, crisp panel boundaries, and minimal decoration.
 
 The primary reference viewport is 480 x 272, matching the TX16S and several other color-screen targets. The same layout model must scale to other supported color displays without scaling type directly from viewport width.
