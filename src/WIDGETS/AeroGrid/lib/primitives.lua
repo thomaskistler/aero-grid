@@ -751,9 +751,15 @@ end
 function primitives.followUnit(context, themeBuilder, area, font, text)
   if not context.showUnit then return end
 
-  local length = #text
-  if length == context.unitAnchor then return end
-  context.unitAnchor = length
+  -- Anchored on the text itself, not on its length. Two strings of one
+  -- length are not one width: `--` and `12` are both two characters and
+  -- differ by 12 pixels at DBLSIZE, because a dash is a fifth of a line
+  -- height and a digit is three sevenths. A length anchor therefore held the
+  -- unit still across exactly the change every telemetry component makes
+  -- when its sensor goes quiet. Comparing the strings costs no more: Lua
+  -- interns short strings, so this is a pointer comparison.
+  if text == context.unitAnchor then return end
+  context.unitAnchor = text
 
   -- `area.valueX`, not `area.pad`. The reading is centred on a slot derived
   -- from the panel rather than started at the panel's left inset, so the
@@ -762,6 +768,68 @@ function primitives.followUnit(context, themeBuilder, area, font, text)
   -- the seventh time: a position derived from something that moved.
   primitives.placeUnit(context.unit, themeBuilder, area.valueX, area.valueY,
     font, text, area.unitFont)
+end
+
+--- Centre a reading on its slot, and bring its unit with it.
+---
+--- **The drawn string, measured.** Two separate things used to push the
+--- number left of the slot it was supposed to sit in, and they compounded:
+--- the width came from `theme.textWidth`, which over-reports by design so
+--- that text shrinks rather than clips, and it was the width of the *widest*
+--- string the component can ever print rather than the one on screen. Half
+--- of each error went straight into the left edge. On a `2 x 1` transmitter
+--- panel that put the reading at 22% of the panel where the rule asks for
+--- 32%, and on the bar panel beside it at 41% where the rule asks for 51%.
+---
+--- So the estimate is for deciding whether something fits and the
+--- measurement is for deciding where it starts -- the boundary drawn in #46,
+--- applied here. The widest string still chooses the **font**, through the
+--- build-time slot fallback, which is what keeps a reading from resizing as
+--- it changes.
+---
+--- The consequence, accepted deliberately: a reading gaining a digit
+--- re-centres, because its centre is now a property of the string. The slot
+--- does not move and neither does anything beside it, so this is the number
+--- settling into its place rather than the whole group drifting -- which was
+--- the objection that ruled out centred content in the first place.
+---
+--- **Guarded on the text, so the measurement is not a per-frame cost.** A
+--- voltage changes a few times a minute and a panel refreshes far more
+--- often, so re-measuring on every update would pay for a placement that
+--- almost never moves.
+---@param context table The component's own context, for `value` and `unit`.
+---@param themeBuilder table
+---@param area table Regions, for `valueCentre`, `valueY` and `unitFont`.
+---@param font any The font the reading is drawn in.
+---@param text string What the reading now says.
+function primitives.centreReading(context, themeBuilder, area, font, text)
+  -- A component that does not slot its reading has nothing to centre it on,
+  -- and says so by leaving `valueCentre` unset rather than by being named
+  -- here.
+  if area.valueCentre == nil then return end
+  if text == context.readingAnchor then return end
+  context.readingAnchor = text
+
+  local width = themeBuilder.measureText(font, text)
+  local x = area.valueCentre - math.floor(width / 2)
+
+  -- The box has to hold the unit as well as the number, or LVGL wraps the
+  -- pair; the number is what is centred, and the unit rides past the slot.
+  -- Centring the pair instead would line up the *groups* across a row of
+  -- panels and therefore not the numbers, and the numbers are what the rule
+  -- exists to line up: a panel with a unit and one without would put their
+  -- digits in different places.
+  local span = width
+  if context.showUnit and area.showUnit then
+    span = span + themeBuilder.unitGap(area.unitFont)
+      + themeBuilder.measureText(area.unitFont, context.unitText or "")
+  end
+
+  context.value:set({x = x, w = math.max(1, span)})
+  context.valueX = x
+  primitives.placeUnit(context.unit, themeBuilder, x, area.valueY, font, text,
+    area.unitFont)
+  context.unitAnchor = text
 end
 
 --- Show or hide a unit, placing it only when it is visible.

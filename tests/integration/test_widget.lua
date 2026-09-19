@@ -4030,6 +4030,121 @@ end
 --- against the live context, never against a string this test also knows: a
 --- view that recomputed anything would have to agree with the host by
 --- accident to pass.
+--- A reading sits where its slot says, at every span and both arrangements.
+---
+--- **There were no assertions about slot placement at all**, and that is how
+--- a reading came to sit 23.5 px outside its slot on a shipped dashboard.
+--- Three checks passed it: nothing overlapped, because the shift moved the
+--- number *away* from the battery; nothing left its panel, because the panel
+--- is wider than the number; and nothing wrapped. A rule about where things
+--- go needs an assertion about where they went.
+---
+--- **The expected centre is derived here from the panel, not by asking the
+--- widget.** Calling `theme.slotCentres` would restate the implementation and
+--- pass for any consistent wrong answer, which is the shape that has cost
+--- this project twice already. So the fractions are written out, the content
+--- box is rebuilt from the padding constants, and the arrangement in force is
+--- read off the **glyph's own drawn position** -- independent evidence, since
+--- the glyph is placed from its geometry rather than from a text width.
+local function testReadingsSitInTheirSlots()
+  local battery = assert(loadfile(sourcePath .. "components/tx-battery.lua"))()
+
+  -- Written out rather than read from `theme`, so a change to the rule has
+  -- to be made here too, deliberately.
+  local TIGHT_LEFT, TIGHT_RIGHT = 0.30, 0.70
+  local STRICT_LEFT, STRICT_RIGHT = 0.25, 0.75
+  local PAD, PAD_RIGHT = 8, 4
+
+  local GUTTER, CELLS, WIDTH, HEIGHT = 4, 4, 480, 272
+  local cellWidth = math.floor((WIDTH - GUTTER * (CELLS - 1)) / CELLS)
+  local cellHeight = math.floor((HEIGHT - GUTTER * (CELLS - 1)) / CELLS)
+
+  for _, visual in ipairs({"battery", "bar"}) do
+    for _, span in ipairs(battery.supportedSpans) do
+      local cols, rows = string.match(span, "(%d)x(%d)")
+      cols, rows = tonumber(cols), tonumber(rows)
+
+      resetRadio()
+      local widgetPath = makeWidget("slot-" .. visual .. "-" .. span,
+        table.concat({
+          "version: 1", "grid:", "  columns: 4", "  rows: 4", "components:",
+          "  - id: pack", "    type: tx-battery", "    col: 0", "    row: 0",
+          "    colSpan: " .. cols, "    rowSpan: " .. rows, "    config:",
+          "      label: TX", "      packEmpty: 6.6", "      packFull: 8.4",
+          "      visual: " .. visual,
+        }, "\n") .. "\n")
+
+      local context = createLoaded({x = 0, y = 0, w = WIDTH, h = HEIGHT},
+        DEFAULT_OPTIONS, widgetPath)
+      assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+      settle(context, 30)
+
+      local panel = entryById(context, "pack").instance
+      local where = "tx-battery " .. span .. " with a " .. visual
+
+      local reading = panel.value.properties
+      local text = tostring(reading.text)
+      assert(text ~= "" and text ~= "--",
+        where .. ": no reading was drawn, so there is nothing to place")
+
+      local font = reading.font
+      if type(font) == "function" then font = font() end
+
+      -- Rebuilt from the panel, not read back from the component.
+      local panelWidth = cellWidth * cols + GUTTER * (cols - 1)
+      local panelHeight = cellHeight * rows + GUTTER * (rows - 1)
+      local content = panelWidth - PAD - PAD_RIGHT
+
+      -- Measured the way the radio draws it, which is the whole point: the
+      -- estimate is generous and half of its generosity lands in the left
+      -- edge of anything centred with it.
+      local drawn = lcd.sizeText(text, font)
+      local centre = reading.x + drawn / 2
+
+      local expected, arrangement
+      local glyph = panel.glyphShown and panel.glyph or nil
+      if glyph then
+        -- Which slot set is in force, read off the glyph rather than
+        -- recomputed. Its centre lands on one fraction or the other, and
+        -- whichever it is, the reading has to agree with it.
+        local glyphCentre = glyph.x + glyph.width / 2
+        local tight = PAD + math.floor(content * TIGHT_RIGHT + 0.5)
+        local strict = PAD + math.floor(content * STRICT_RIGHT + 0.5)
+        if math.abs(glyphCentre - tight) <= 1 then
+          expected = PAD + math.floor(content * TIGHT_LEFT + 0.5)
+          arrangement = "tightened"
+        elseif math.abs(glyphCentre - strict) <= 1 then
+          expected = PAD + math.floor(content * STRICT_LEFT + 0.5)
+          arrangement = "strict halves"
+        else
+          assert(false, where .. ": the battery is at " .. glyphCentre
+            .. ", which is neither slot (" .. tight .. " or " .. strict .. ")")
+        end
+      else
+        -- One element does not split: it centres across the whole box.
+        expected = PAD + content / 2
+        arrangement = "unsplit"
+      end
+
+      assert(math.abs(centre - expected) <= 1, string.format(
+        "%s (%s) centres its reading %q at %.1f, %.1f px from the %.1f its"
+          .. " slot asks for -- %.1f%% of the panel against %.1f%%",
+        where, arrangement, text, centre, centre - expected, expected,
+        100 * centre / panelWidth, 100 * expected / panelWidth))
+
+      -- And the unit came with it. This is the defect shape that keeps
+      -- reappearing, and moving the reading is exactly what perturbs it.
+      if panel.unit and not panel.unit.hidden then
+        local unitFont = panel.unit.properties.font
+        if type(unitFont) == "function" then unitFont = unitFont() end
+        assertEqual(panel.unit.properties.x,
+          reading.x + drawn + themeModule.unitGap(unitFont),
+          where .. ": the unit did not follow the reading to its slot")
+      end
+    end
+  end
+end
+
 local function testHostDiagnosticsReportsTheHost()
   resetRadio()
   local source = assert(hostIo.open(sourcePath .. "layouts/host.yaml", "r"))
@@ -5207,8 +5322,15 @@ local function testUnitsRideBesideEveryReading()
         -- And the pair fits the column, measured together. Measuring the
         -- number alone is what let a 116 pixel string into a 105 pixel
         -- column for three milestones.
-        local pairWidth = themeModule.readingWidth(
-          readingFont, reading, unitFont, unit)
+        --
+        -- Measured rather than estimated, because the column is now measured
+        -- too: a label is sized to the string it actually draws, and LVGL
+        -- wraps against the same real advances. Asking the estimate here
+        -- would compare a generous number against an exact one and report
+        -- overflow on panels that have none.
+        local pairWidth = themeModule.measureText(readingFont, reading)
+          + themeModule.unitGap(unitFont)
+          + themeModule.measureText(unitFont, unit)
         local column = readingLabel.properties.w
         assert(pairWidth <= column, where .. " draws " .. reading .. " "
           .. unit .. " needing " .. pairWidth .. " in a column of " .. column)
@@ -7226,6 +7348,7 @@ testInstructionBudget()
 
 -- Last of the checks, because it builds every shipped layout in both zones
 -- and leaves the radio somewhere the tests above do not expect to find it.
+testReadingsSitInTheirSlots()
 testNothingIsDrawnOverAnythingElse()
 
 print("AeroGrid widget integration test passed")

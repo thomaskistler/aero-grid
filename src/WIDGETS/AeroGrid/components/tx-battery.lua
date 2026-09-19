@@ -376,6 +376,13 @@ function txBattery.regionsFor(theme, themeBuilder, primitives, rect, layout,
     labelY = themeBuilder.clampToPanel(
       themeBuilder.centreInBand(bands.label, labelHeight), fonts.label, rect.h),
     valueY = valueY,
+    -- **The slot's centre, which is a property of the panel.** Where the
+    -- reading actually starts depends on what it currently says, so it is
+    -- computed from the measured string when the string is known rather than
+    -- from the widest one at build. `primitives.centreReading` owns that.
+    valueCentre = leftCentre,
+    -- Where a `--` reading sits until the first real value arrives. The
+    -- widest string still sizes the box, so nothing wraps before then.
     valueX = themeBuilder.slotX(leftCentre, valueWidth),
     value = value,
     unitFont = unitFont,
@@ -595,10 +602,12 @@ function txBattery.apply(context, drawn)
   context.detail = drawn.detail or ""
 
   context.value:set({text = drawn.text, color = presentation.value})
-  -- The unit follows what the number actually says. A unit holding station at
-  -- the width of `88.8` while the panel reads `7.9` has stopped being
-  -- attached to it.
-  context.primitives.followUnit(context, context.themeBuilder,
+  -- The reading is centred on its slot, so where it starts depends on what
+  -- it says: both the number and the unit beside it move together when the
+  -- digit count changes. Guarded on the text inside the helper, so a panel
+  -- whose voltage is steady pays nothing.
+  context.unitText = txBattery.UNIT
+  context.primitives.centreReading(context, context.themeBuilder,
     context.area, context.area.value, drawn.text)
   context.label:set({color = presentation.label})
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
@@ -663,7 +672,12 @@ function txBattery.update(context, rect)
     context.themeBuilder, area.valueX, area.valueY, area.value, context.text,
     area.unitFont, area.showUnit == context.showUnit)
   context.showUnit = area.showUnit
+  -- Both anchors are about a slot and a font that have just moved, so they
+  -- are discarded rather than trusted. Without clearing the reading's, a
+  -- panel that reflowed while its voltage held steady would keep the
+  -- position it had at the old span.
   context.unitAnchor = nil
+  context.readingAnchor = nil
 
   context.primitives.reconcile(context.detailLabel, area.showDetail,
     {x = area.detailX, y = area.detailY, w = area.detailWidth},
