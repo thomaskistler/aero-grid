@@ -49,8 +49,7 @@ local txBattery = {
     {key = "packFull", label = "Full volts, whole pack", type = "number"},
     {key = "warning", label = "Warning volts", type = "number"},
     {key = "critical", label = "Critical volts", type = "number"},
-    {key = "direction", label = "Threshold direction", type = "string",
-      default = "falling", choices = {"falling"}},
+    -- No `direction`. A transmitter pack only ever alarms downward.
     {key = "visual", label = "Visualization", type = "string", default = "bar",
       choices = {"bar", "none"}},
     {key = "showPercent", label = "Show estimate", type = "boolean", default = false},
@@ -61,27 +60,64 @@ local txBattery = {
 --- the panel's label; the digits are not.
 txBattery.FORMS = {"88.8V", "88.8"}
 
---- Report whether a usable voltage range was configured.
+--- Resolve the voltage range to measure the estimate against.
+---
+--- The radio already knows this. EdgeTX carries a battery meter range at SYS
+--- then Hardware then Battery meter range, set per radio to suit its pack --
+--- 6.4 to 8.4 for a 2S LiPo, 4.6 to 6.0 for four alkaline cells -- and it is
+--- already correct on any radio whose battery icon is sensible. Asking a
+--- layout to restate it was asking for something the radio had.
+---
+--- So the radio's range is the default and the layout's is an override, which
+--- stays useful for a modified pack or a dashboard written for someone
+--- else's radio. Both ends come from one place: half a range is not a range,
+--- and mixing a stated empty with the radio's full would produce a
+--- confident percentage measured against two different packs.
+---@param settings AeroGridTxBatterySettings
+---@param range? table `modelService:batteryRange()` view, when there is one.
+---@return number? empty
+---@return number? full
+---@return string source One of `layout`, `radio`, or `none`.
+function txBattery.rangeFor(settings, range)
+  local low, high = settings.packEmpty, settings.packFull
+  if type(low) == "number" and type(high) == "number" and high > low then
+    return low, high, "layout"
+  end
+
+  if type(range) == "table" and range.available
+      and type(range.empty) == "number" and type(range.full) == "number"
+      and range.full > range.empty then
+    return range.empty, range.full, "radio"
+  end
+
+  -- A firmware without `getGeneralSettings` and a layout that states nothing
+  -- leave nothing to measure against, which is where this component started
+  -- and is still the honest answer.
+  return nil, nil, "none"
+end
+
+--- Report whether a usable voltage range is available at all.
 --- Without one there is no estimate, so neither the bar nor the percentage is
 --- drawn however the layout set their own switches.
 ---@param settings AeroGridTxBatterySettings
+---@param range? table
 ---@return boolean
-function txBattery.hasRange(settings)
-  local low = settings.packEmpty
-  local high = settings.packFull
-  return type(low) == "number" and type(high) == "number" and high > low
+function txBattery.hasRange(settings, range)
+  local low = select(1, txBattery.rangeFor(settings, range))
+  return low ~= nil
 end
 
 --- Convert a voltage into a 0..1 fraction of the configured range.
 ---@param settings AeroGridTxBatterySettings
 ---@param value any
+---@param range? table
 ---@return number
-function txBattery.fraction(settings, value)
-  if not txBattery.hasRange(settings) then return 0 end
+function txBattery.fraction(settings, value, range)
+  local low, high = txBattery.rangeFor(settings, range)
+  if not low then return 0 end
   if type(value) ~= "number" or value ~= value then return 0 end
 
-  local fraction = (value - settings.packEmpty)
-    / (settings.packFull - settings.packEmpty)
+  local fraction = (value - low) / (high - low)
   if fraction < 0 then return 0 end
   if fraction > 1 then return 1 end
   return fraction
@@ -215,11 +251,16 @@ function txBattery.create(parent, rect, settings, services)
     stateName = "normal",
     text = "--",
     detail = "",
-    ranged = txBattery.hasRange(settings),
   }
 
   local modelService = services.model
-  if modelService then context.feed = modelService:txVoltage() end
+  if modelService then
+    context.feed = modelService:txVoltage()
+    -- Subscribed rather than read once: a pilot can change the meter range in
+    -- radio settings while the dashboard is running, and nothing rebuilds a
+    -- widget for that the way a model change does.
+    context.range = modelService:batteryRange()
+  end
 
   local panel = primitives.panel(parent, rect, theme, presentation)
   context.panel = panel
@@ -245,9 +286,12 @@ function txBattery.create(parent, rect, settings, services)
     font = fonts.label,
   })
 
-  -- The bar is an estimate, so it exists only when a range makes it mean
-  -- something.
-  if layout.showVisual and settings.visual ~= "none" and context.ranged then
+  -- The bar is an estimate, so it is built whenever the panel could ever have
+  -- a range to measure against, and hidden until one arrives. It used to be
+  -- built only when the layout stated a range, which was safe while that was
+  -- the only source; the radio's range arrives on the service's first update,
+  -- after this runs, so deciding here would have meant no bar ever.
+  if layout.showVisual and settings.visual ~= "none" then
     context.bar = primitives.bar(panel.root, theme, {
       x = area.pad,
       y = area.barY,
@@ -263,6 +307,11 @@ function txBattery.create(parent, rect, settings, services)
   -- again what it already is.
   context.showVisual = area.showVisual
   context.showDetail = area.showDetail
+  -- Whether the bar is *showing* is the box's answer and the range's answer
+  -- together, and the second only arrives once the service has run.
+  context.barShown = false
+  context.barX, context.barY, context.barWidth = area.pad, area.barY, area.content
+
   if context.bar and not area.showVisual then
     lvgl.hide(context.bar.track)
     lvgl.hide(context.bar.fill)
@@ -286,7 +335,11 @@ function txBattery.render(context, out)
 
   out.state = txBattery.resolveState(settings, value, stale)
   out.text = type(value) == "number" and string.format("%.1fV", value) or "--"
-  out.fraction = txBattery.fraction(settings, value)
+  -- Whether there is a range at all is part of what the panel draws: it
+  -- decides whether the bar and the percentage appear, and it can change
+  -- after the panel is built.
+  out.ranged = txBattery.hasRange(settings, context.range)
+  out.fraction = txBattery.fraction(settings, value, context.range)
   out.value = value
 
   -- One decimal: a transmitter pack reported to three flickers constantly and
@@ -294,7 +347,7 @@ function txBattery.render(context, out)
   -- Declared only where it is drawn. Every single-row span sheds this row,
   -- so a `4 x 1` was formatting a percentage every frame and writing it into
   -- a hidden label.
-  if context.showDetail and context.ranged and settings.showPercent
+  if context.showDetail and out.ranged and settings.showPercent
       and type(value) == "number" then
     out.detail = string.format("%d%% EST", math.floor(out.fraction * 100 + 0.5))
   end
@@ -319,8 +372,16 @@ function txBattery.apply(context, drawn)
   end
   context.primitives.stylePanel(context.panel, presentation)
 
-  if context.bar then
+  -- A bar with nothing to measure against is not a quiet bar, it is a
+  -- confident one drawn from nothing, so it stays away until a range exists.
+  local barShown = context.bar ~= nil and context.showVisual and drawn.ranged
+  if barShown then
     context.primitives.setBar(context.bar, drawn.fraction, presentation.accent)
+  end
+  if context.bar and barShown ~= context.barShown then
+    context.primitives.reconcileBar(context.bar, barShown,
+      context.barX, context.barY, context.barWidth, drawn.fraction)
+    context.barShown = barShown
   end
 end
 
@@ -357,10 +418,14 @@ function txBattery.update(context, rect)
   if area.showDetail ~= context.showDetail then context.rendered = nil end
   context.showDetail = area.showDetail
 
-  context.primitives.reconcileBar(context.bar, area.showVisual,
+  context.barX, context.barY, context.barWidth = area.pad, area.barY, area.content
+  local barShown = context.bar ~= nil and area.showVisual
+    and txBattery.hasRange(context.settings, context.range)
+  context.primitives.reconcileBar(context.bar, barShown,
     area.pad, area.barY, area.content,
-    txBattery.fraction(context.settings, context.reading),
-    area.showVisual == context.showVisual)
+    txBattery.fraction(context.settings, context.reading, context.range),
+    barShown == context.barShown)
+  context.barShown = barShown
   context.showVisual = area.showVisual
 end
 

@@ -844,6 +844,11 @@ function support.radio(hostIo)
     globalDetails = {
       [0] = {name = "Rates", min = -100, max = 100, prec = 1, unit = UNIT.RAW},
     },
+    --- The radio's battery meter range, as a 2S LiPo, which is what the
+    --- fixture transmitter has. Every radio carries one of these.
+    battMin = 6.4,
+    battMax = 8.4,
+    battWarn = 6.6,
     flightMode = 1,
     --- firmware: `MAX_FLIGHT_MODES` is 9 and `LEN_FLIGHT_MODE_NAME` is 10 on
     --- colour targets (`radio/src/dataconstants.h`). `luaGetFlightMode` reads
@@ -1026,6 +1031,32 @@ function support.radio(hostIo)
   --- name to size its panel. A mock that ignored it would answer the active
   --- mode's name nine times and the panel would be sized from one name while
   --- claiming to be sized from all of them.
+  --- firmware: `luaGetGeneralSettings` (`radio/src/lua/api_general.cpp`)
+  --- returns one table, with the battery figures already in volts:
+  ---
+  ---     lua_pushtablenumber(L, "battWarn", (g_eeGeneral.vBatWarn) * 0.1f);
+  ---     lua_pushtablenumber(L, "battMin", (90+g_eeGeneral.vBatMin) * 0.1f);
+  ---     lua_pushtablenumber(L, "battMax", (120+g_eeGeneral.vBatMax) * 0.1f);
+  ---
+  --- The settings screen holds the range between 3.0 V and 16.0 V and will
+  --- not let the two cross, so a range from a real radio is always the right
+  --- way round (`radio/src/gui/colorlcd/radio/radio_hardware.cpp`).
+  ---
+  --- A fresh table each call, because the firmware builds one with
+  --- `lua_newtable` every time; a mock handing back the same table would let
+  --- a component keep a reference and never notice the pilot changing it.
+  function getGeneralSettings()
+    return {
+      battWarn = radio.battWarn,
+      battMin = radio.battMin,
+      battMax = radio.battMax,
+      imperial = 0,
+      language = "EN",
+      voice = "en",
+      gtimer = 0,
+    }
+  end
+
   function getFlightMode(index)
     local mode = index
     if type(mode) ~= "number" or mode < 0 or mode >= 9 then
@@ -1124,6 +1155,9 @@ function support.radio(hostIo)
     radio.values[140] = 78
     radio.values[141] = 96
     radio.values[145] = "ANGLE"
+    radio.battMin = 6.4
+    radio.battMax = 8.4
+    radio.battWarn = 6.6
     radio.values[109].lat = scaffold.MODEL_LATITUDE
     radio.values[109].lon = scaffold.MODEL_LONGITUDE
     radio.values[109]["pilot-lat"] = scaffold.PILOT_LATITUDE

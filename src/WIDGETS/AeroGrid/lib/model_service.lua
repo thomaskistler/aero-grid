@@ -332,6 +332,76 @@ function modelService:readTxVoltage(state, now)
   state.age = 0
 end
 
+--- Read the radio's own battery meter range.
+---
+--- Every radio already carries this, at SYS then Hardware then Battery meter
+--- range, and it is correct on any radio whose battery icon is sensible: 6.4
+--- to 8.4 for a 2S LiPo, 4.6 to 6.0 for four alkaline cells. Asking a layout
+--- to restate it was asking for something the radio already knows.
+---
+--- firmware: `luaGetGeneralSettings` (`radio/src/lua/api_general.cpp`) hands
+--- these over already converted to volts:
+---
+---     lua_pushtablenumber(L, "battMin", (90+g_eeGeneral.vBatMin) * 0.1f);
+---     lua_pushtablenumber(L, "battMax", (120+g_eeGeneral.vBatMax) * 0.1f);
+---
+--- so the stored fields' offsets are the firmware's business and not ours.
+--- The settings screen holds them between 3.0 V and 16.0 V and will not let
+--- the two cross -- `batMin`'s maximum is `vBatMax + 29 + 90` against
+--- `batMax`'s displayed `vBatMax + 120`, a tenth of a volt apart
+--- (`radio/src/gui/colorlcd/radio/radio_hardware.cpp`) -- so a range read
+--- from the radio is always the right way round. It is validated anyway,
+--- because a firmware without the call is the case that matters and it
+--- returns nothing at all.
+---@param state table
+function modelService:readBatteryRange(state)
+  local read = self.env.getGeneralSettings
+  if not read then
+    state.available = false
+    return
+  end
+
+  local ok, general = pcall(read)
+  if not ok or type(general) ~= "table" then
+    state.available = false
+    return
+  end
+
+  local low, high = general.battMin, general.battMax
+  if type(low) ~= "number" or type(high) ~= "number" or high <= low then
+    state.available = false
+    return
+  end
+
+  state.available = true
+  state.empty = low
+  state.full = high
+  -- The radio's own warning level, which is a different question from the
+  -- range and is offered beside it rather than folded into it.
+  state.warn = type(general.battWarn) == "number" and general.battWarn or nil
+end
+
+--- Subscribe to the radio's battery meter range.
+---
+--- Read on the service's own interval rather than once, because a pilot can
+--- change it in radio settings while the dashboard is running and nothing
+--- rebuilds a widget for that: `LayoutFactory::deleteCustomScreens` runs on a
+--- model load, and radio settings is not one. Once would have meant a
+--- percentage that stayed wrong until the next model change.
+---@return table view
+function modelService:batteryRange()
+  if self.batteryRangeView then return self.batteryRangeView end
+
+  self.batteryRangeView = self:add({
+    available = false,
+    empty = nil,
+    full = nil,
+    warn = nil,
+  }, modelService.readBatteryRange)
+
+  return self.batteryRangeView
+end
+
 --- Subscribe to the transmitter battery voltage.
 --- Shaped like a telemetry reading so a component can render either without
 --- special casing, even though this source never depends on the link.
