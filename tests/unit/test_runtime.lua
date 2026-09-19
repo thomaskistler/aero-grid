@@ -506,20 +506,23 @@ end
 --- copied here. A copy would be a second source of truth and would drift
 --- from the document exactly as the document drifted from the code, which is
 --- the failure this exists to prevent.
-local function specificationExamples()
-  local path = root .. "/plans/aerogrid-spec.md"
+local function yamlBlocksIn(path)
   local handle = io.open(path, "r")
-  assert(handle, "the specification was not found at " .. path)
+  assert(handle, "no document at " .. path)
   local text = handle:read("a")
   handle:close()
   assert(type(text) == "string" and #text > 0,
-    "the specification is empty, so every example below would pass vacuously")
+    path .. " is empty, so every example in it would pass vacuously")
 
   local blocks = {}
   for body in string.gmatch(text, "\n```yaml\n(.-)\n```") do
     blocks[#blocks + 1] = body
   end
   return blocks
+end
+
+local function specificationExamples()
+  return yamlBlocksIn(root .. "/plans/aerogrid-spec.md")
 end
 
 --- Check one complete layout document exactly as the host would.
@@ -694,6 +697,103 @@ local function testLinkThresholdsNeedAStatedReading()
   -- is the same mistake written more quietly.
   assertEqual(#warningsFor({warning = 50}), 1,
     "a threshold with no reading stated was accepted")
+end
+
+--- Every shipped component has documentation, and its examples load.
+---
+--- Two failures to prevent, and the second is the one that rots quietly. An
+--- example that stops loading is caught the same way the specification's are,
+--- by running it rather than reading it. A component with no documentation
+--- file at all is caught by reading the component directory rather than a
+--- list, because a list is what lets the eleventh component be quietly
+--- undocumented: nothing would be wrong, there would simply be less.
+--- Components reviewed and documented so far, and the ones still owed.
+---
+--- The review is one component per pull request, so this starts as debt and
+--- is meant to empty. It is an explicit list rather than a silent gap for one
+--- reason: a component that is not on it and has no page fails immediately,
+--- so a component added to the catalogue tomorrow cannot be quietly
+--- undocumented. Removing the last name here should delete this table too.
+local UNDOCUMENTED = {
+  ["cell-battery"] = true,
+  ["flight-timer"] = true,
+  ["host-diagnostics"] = true,
+  ["link-status"] = true,
+  ["metric"] = true,
+  ["model-identity"] = true,
+  ["navigation"] = true,
+  ["service-probe"] = true,
+  ["trim-panel"] = true,
+  ["tx-battery"] = true,
+  ["variable-indicator"] = true,
+}
+
+local function testComponentDocumentationLoads()
+  local kinds = componentTypes()
+  assert(#kinds > 0, "no components were found to document")
+
+  local known = {}
+  for _, kind in ipairs(kinds) do known[kind] = true end
+  -- A name here that is not a component is a rename nobody finished, and it
+  -- would excuse a real component from ever being documented.
+  for kind in pairs(UNDOCUMENTED) do
+    assert(known[kind], kind .. " is listed as undocumented but is not a"
+      .. " component; the list is excusing something that does not exist")
+  end
+
+  local documented = 0
+  for _, kind in ipairs(kinds) do
+    local path = root .. "/docs/components/" .. kind .. ".md"
+    local handle = io.open(path, "r")
+    if not handle then
+      assert(UNDOCUMENTED[kind], kind .. " ships with no documentation at "
+        .. path .. ", and is not on the list of components still owed one")
+    end
+    if handle then
+      handle:close()
+      assert(not UNDOCUMENTED[kind], kind .. " is documented but is still"
+        .. " listed as owing documentation; remove it from UNDOCUMENTED")
+      documented = documented + 1
+
+    local blocks = yamlBlocksIn(path)
+    assert(#blocks > 0, kind .. " is documented with no example at all, so"
+      .. " nothing in its documentation can be checked by running it")
+
+    for index, body in ipairs(blocks) do
+      local label = kind .. " example " .. index
+      assert(#body > 0, label .. " is empty")
+
+      if string.match(body, "^version:") then
+        checkLayoutExample(body, label)
+      elseif string.match(body, "^%- id:") then
+        -- Checked before the example is validated, so the failure names the
+        -- real problem rather than whichever setting the other component
+        -- happens not to declare. A page about one component whose example
+        -- places a different one is worse than no example: it is confidently
+        -- wrong, and it is exactly what copying the previous page produces.
+        local declared = string.match(body, "\n%s*type:%s*([%w%-]+)")
+        assertEqual(declared, kind,
+          label .. " places a " .. tostring(declared)
+          .. " on the page documenting " .. kind)
+        checkComponentExample(body, label)
+      else
+        error(label .. " is neither a layout nor a component entry, so"
+          .. " nothing checks it. Its first line is: "
+          .. tostring(string.match(body, "^([^\n]*)")))
+        end
+      end
+    end
+  end
+
+  -- The count is pinned so that a page disappearing is a failure rather than
+  -- a quieter suite.
+  local owed = 0
+  for _ in pairs(UNDOCUMENTED) do owed = owed + 1 end
+  assertEqual(documented + owed, #kinds,
+    "every component is either documented or listed as owing a page")
+  assertEqual(documented, 1,
+    "the number of documented components changed; update this count as the"
+      .. " review works through the catalogue")
 end
 
 --- A raising callback disables only its own component, and only reports once.
@@ -1539,6 +1639,7 @@ testSettingsResolution()
 testSettingsVocabulary()
 testLinkThresholdsNeedAStatedReading()
 testSpecificationExamplesLoad()
+testComponentDocumentationLoads()
 testLifecycleIsolation()
 testColorConversion()
 testModernTheme()

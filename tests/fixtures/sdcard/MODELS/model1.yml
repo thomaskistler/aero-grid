@@ -708,7 +708,7 @@ screenData:
                      0:
                         type: String
                         value: 
-                           stringValue: host
+                           stringValue: review-flight-mode
                      1:
                         type: String
                         value: 
@@ -724,7 +724,7 @@ screenData:
                      0:
                         type: String
                         value: 
-                           stringValue: span1x1
+                           stringValue: host
                      1:
                         type: String
                         value: 
@@ -740,7 +740,7 @@ screenData:
                      0:
                         type: String
                         value: 
-                           stringValue: span2x1
+                           stringValue: span1x1
                      1:
                         type: String
                         value: 
@@ -756,12 +756,28 @@ screenData:
                      0:
                         type: String
                         value: 
-                           stringValue: span2x2
+                           stringValue: span2x1
                      1:
                         type: String
                         value: 
                            stringValue: 
    8:
+      LayoutId: Layout1x1AM
+      layoutData: 
+         zones: 
+            0:
+               widgetName: AeroGrid
+               widgetData: 
+                  options: 
+                     0:
+                        type: String
+                        value: 
+                           stringValue: span2x2
+                     1:
+                        type: String
+                        value: 
+                           stringValue: 
+   9:
       LayoutId: Layout1x1AM
       layoutData: 
          zones: 
