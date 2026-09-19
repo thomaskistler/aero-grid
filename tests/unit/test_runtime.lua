@@ -724,7 +724,6 @@ local UNDOCUMENTED = {
   ["navigation"] = true,
   ["service-probe"] = true,
   ["trim-panel"] = true,
-  ["tx-battery"] = true,
   ["variable-indicator"] = true,
 }
 
@@ -791,7 +790,7 @@ local function testComponentDocumentationLoads()
   for _ in pairs(UNDOCUMENTED) do owed = owed + 1 end
   assertEqual(documented + owed, #kinds,
     "every component is either documented or listed as owing a page")
-  assertEqual(documented, 1,
+  assertEqual(documented, 2,
     "the number of documented components changed; update this count as the"
       .. " review works through the catalogue")
 end
@@ -2840,6 +2839,84 @@ local function testTimerSemantics()
   assertEqual(timer.detailText(nil, tostring), "NO TIMER")
 end
 
+--- The composition table in `docs/components/tx-battery.md` is true.
+---
+--- That page tells someone configuring a dashboard which spans show the bar
+--- and which show the percentage, and which span drops the unit. Those are
+--- the facts a layout is written against, and nothing checked them: the
+--- existing coverage is of `hasRange`, `fraction` and `resolveState`, which
+--- are the arithmetic rather than the composition.
+---
+--- Written as the documented table rather than as the rule that produces it,
+--- because restating `cells >= 2` here would pass for any implementation that
+--- happened to contain those words and would say nothing about what a person
+--- sees.
+local function testTxBatteryComposition()
+  local battery = loadModule("components/tx-battery.lua")
+  local resolved = theme.build("modern")
+
+  -- span, reading font, form index, bar, percentage
+  local documented = {
+    {"1x1", "MIDSIZE", 1, false, false},
+    {"2x1", "MIDSIZE", 1, true, false},
+    {"3x1", "MIDSIZE", 1, true, false},
+    {"4x1", "MIDSIZE", 1, true, false},
+    {"1x2", "DBLSIZE", 2, true, true},
+    {"2x2", "XXLSIZE", 1, true, true},
+    {"3x2", "XXLSIZE", 1, true, true},
+    {"4x2", "XXLSIZE", 1, true, true},
+  }
+
+  local GUTTER, CELLS, WIDTH, HEIGHT = 4, 4, 480, 272
+  local cellWidth = math.floor((WIDTH - GUTTER * (CELLS - 1)) / CELLS)
+  local cellHeight = math.floor((HEIGHT - GUTTER * (CELLS - 1)) / CELLS)
+
+  assertEqual(#documented, #battery.supportedSpans,
+    "the documented table and the declared spans disagree in length")
+
+  for index, row in ipairs(documented) do
+    local span, font, form, bar, percent = row[1], row[2], row[3], row[4], row[5]
+    assertEqual(battery.supportedSpans[index], span,
+      "the documented table is in a different order from supportedSpans")
+
+    local cols, rows = string.match(span, "(%d)x(%d)")
+    cols, rows = tonumber(cols), tonumber(rows)
+    local rect = {
+      x = 0, y = 0,
+      w = cellWidth * cols + GUTTER * (cols - 1),
+      h = cellHeight * rows + GUTTER * (rows - 1),
+    }
+    local fonts = theme.typography(cols, rows)
+    local area = battery.regionsFor(resolved, theme, rect,
+      battery.presentationFor(cols, rows), fonts)
+
+    assertEqual(edgetx.fontName(area.value), font,
+      span .. " does not draw its reading at the documented size")
+    assertEqual(area.formIndex, form,
+      span .. " uses a different form from the documented one")
+    assertEqual(area.showVisual, bar,
+      span .. " disagrees with the documentation about showing a bar")
+    assertEqual(area.showDetail, percent,
+      span .. " disagrees with the documentation about showing a percentage")
+
+    -- The reading has to fit whatever else the panel shows.
+    assert(theme.textWidth(area.value, battery.FORMS[area.formIndex])
+        <= area.content,
+      span .. " draws its reading past the panel edge")
+  end
+
+  -- The documented claim that only `1x2` drops the unit, which is the one
+  -- place the panel is narrow enough to need the space.
+  local dropped = 0
+  for _, row in ipairs(documented) do
+    if row[3] == 2 then dropped = dropped + 1 end
+  end
+  assertEqual(dropped, 1,
+    "the documentation says exactly one span drops the unit")
+  assertEqual(battery.FORMS[2], "88.8",
+    "the shorter form is no longer the unitless one the page describes")
+end
+
 --- The transmitter estimate is optional and must stay off until a layout
 --- states the voltage range it should be measured against.
 local function testTxBatteryEstimate()
@@ -3615,6 +3692,7 @@ testBipolarGeometry()
 testMetricPresets()
 testTimerSemantics()
 testTxBatteryEstimate()
+testTxBatteryComposition()
 testVariableNormalization()
 testTrimPresentation()
 testIdentityPresentation()

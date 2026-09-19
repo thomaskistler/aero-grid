@@ -4256,6 +4256,98 @@ components:
   resetRadio()
 end
 
+--- Without a stated range there is no bar and no percentage, however the
+--- layout sets their own switches.
+---
+--- This is the documented trap and the thing most likely to surprise someone
+--- configuring the panel: `visual: bar` and `showPercent: true` are both
+--- asked for and neither appears. It is deliberate -- chemistry and cell count
+--- vary by radio and EdgeTX tells Lua neither, so a guessed range would draw
+--- a confident percentage derived from nothing -- but a deliberate silence
+--- still has to be checked, because it is indistinguishable from a broken one.
+---
+--- Both panels are the same span with the same switches, so the range is the
+--- only difference between them and the assertions cannot pass for some other
+--- reason.
+local function testTxBatteryRangeGatesTheEstimate()
+  resetRadio()
+  local widgetPath = makeWidget("tx-range", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: ranged
+    type: tx-battery
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      packEmpty: 6.6
+      packFull: 8.4
+      visual: bar
+      showPercent: true
+  - id: unranged
+    type: tx-battery
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      visual: bar
+      showPercent: true
+  - id: inverted
+    type: tx-battery
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      packEmpty: 8.4
+      packFull: 6.6
+      visual: bar
+      showPercent: true
+]])
+
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  settle(context, 30)
+
+  local ranged = entryById(context, "ranged").instance
+  local unranged = entryById(context, "unranged").instance
+  local inverted = entryById(context, "inverted").instance
+
+  -- The voltage is the authoritative reading and is shown either way. The
+  -- fixture transmitter reads 7.9 V.
+  assertEqual(ranged.text, "7.9V")
+  assertEqual(unranged.text, "7.9V",
+    "an unranged panel lost the reading it does know")
+  assertEqual(inverted.text, "7.9V")
+
+  -- With a range: a bar, and the percentage the documentation works through.
+  -- 7.9 of 6.6..8.4 is 1.3/1.8, which rounds to 72.
+  assert(ranged.bar, "a ranged panel built no bar")
+  assertEqual(ranged.detail, "72% EST")
+  assertEqual(ranged.detailLabel.properties.text, "72% EST")
+
+  -- Without one: neither, though both were asked for.
+  assertEqual(unranged.bar, nil,
+    "an unranged panel built a bar, which can only be drawn from a range"
+      .. " it does not have")
+  assertEqual(unranged.detailLabel.properties.text, "",
+    "an unranged panel wrote a percentage estimated from nothing")
+
+  -- An inverted range is not a range, and must be refused the same way
+  -- rather than producing a negative or backwards fill.
+  assertEqual(inverted.bar, nil,
+    "an inverted range was treated as a usable one")
+  assertEqual(inverted.detailLabel.properties.text, "")
+
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+end
+
 --- A row that comes back shows what is true now, not what was true when it
 --- was shed.
 ---
@@ -5620,6 +5712,7 @@ testCoreComponents()
 testTrimPanelShedsText()
 testShedRowsComeBackCurrent()
 testFlightModeIndexRow()
+testTxBatteryRangeGatesTheEstimate()
 testFlightModeSizesFromTheModel()
 testHostDiagnosticsReportsTheHost()
 testLayoutOriginIsReported()
