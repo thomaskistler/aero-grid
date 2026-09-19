@@ -22,7 +22,7 @@ own battery meter setting, so they work without you configuring anything.
 | `packFull` | number | *the radio's* | volts | Overrides the full end. |
 | `warning` | number | *none* | volts | At or below this, the panel goes `warning`. |
 | `critical` | number | *none* | volts | At or below this, the panel goes `critical`. |
-| `visual` | string | `bar` | `bar`, `none` | Whether the estimate is drawn as a bar. |
+| `visual` | string | `battery` | `battery`, `bar`, `none` | How the estimate is drawn. See below. |
 | `showPercent` | boolean | `false` | `true`, `false` | Whether the estimate is also written as a percentage. |
 
 Anything else is rejected at load with the layout, panel and key named.
@@ -83,28 +83,57 @@ against 6.4 to 8.4 V, roughly 6.7 V and 6.5 V.
 `critical` is tested before `warning`, so setting them the wrong way round
 sends the panel straight to critical and the warning band never appears.
 
+## The battery
+
+By default the estimate is drawn as a **battery**: an outline with a nub, to
+the right of the voltage, filled left to right in proportion to the estimate
+and coloured by state. A critical pack fills red.
+
+The percentage, where it is shown, sits **beneath the battery**, so the right
+of the panel reads as one indicator and the voltage keeps the left to itself.
+
+`visual: bar` draws the older horizontal track across the bottom of the panel
+instead, which is worth having on a very wide panel where a small glyph sits
+in a lot of empty space. `visual: none` draws neither.
+
+**The battery takes width from the reading.** It is beside the voltage rather
+than beneath it, so the voltage is sized against the column that is left. The
+rule is that the reading may step down **one** size to make room and no
+further; where it would cost two, the panel has told you it is too narrow for
+both, and the battery is shed rather than the reading being made unreadable.
+
+In practice this costs one size at exactly one span, `1x2`, and nothing
+anywhere else.
+
 ## What it draws, and what it sheds
 
-| Span | Panel | Reading | Bar | Percentage |
+With the default `visual: battery`:
+
+| Span | Panel | Reading | Battery | Percentage |
 | --- | --- | --- | --- | --- |
 | `1x1` | 117 x 65 | `MIDSIZE` `7.9V` | shed | shed |
-| `2x1` | 238 x 65 | `MIDSIZE` `7.9V` | shown | shed |
-| `3x1` | 359 x 65 | `MIDSIZE` `7.9V` | shown | shed |
-| `4x1` | 480 x 65 | `MIDSIZE` `7.9V` | shown | shed |
-| `1x2` | 117 x 134 | `DBLSIZE` `7.9` | shown | shown |
-| `2x2` | 238 x 134 | `XXLSIZE` `7.9V` | shown | shown |
-| `3x2` | 359 x 134 | `XXLSIZE` `7.9V` | shown | shown |
-| `4x2` | 480 x 134 | `XXLSIZE` `7.9V` | shown | shown |
+| `2x1` | 238 x 65 | `MIDSIZE` `7.9V` | 30 x 15 | shed |
+| `3x1` | 359 x 65 | `MIDSIZE` `7.9V` | 30 x 15 | shed |
+| `4x1` | 480 x 65 | `MIDSIZE` `7.9V` | 30 x 15 | shed |
+| `1x2` | 117 x 134 | `MIDSIZE` `7.9` | 32 x 16 | under the reading |
+| `2x2` | 238 x 134 | `XXLSIZE` `7.9` | 60 x 30 | under the battery |
+| `3x2` | 359 x 134 | `XXLSIZE` `7.9V` | 60 x 30 | under the battery |
+| `4x2` | 480 x 134 | `XXLSIZE` `7.9V` | 60 x 30 | under the battery |
 
 **No single-row panel shows the percentage**, however wide it is:
 `showPercent: true` on a `4x1` is as inert as on a `1x1`, because the
 percentage needs a row beneath the reading and no 65-pixel panel has one. A
-single cell shows neither the percentage nor the bar.
+single cell shows neither the percentage nor a visual of any kind.
 
-**At `1x2` the reading drops the `V`.** That is the one place the panel is
-narrow enough to need the space, and the unit is safe to drop because the
-heading already says this is a battery. The digits are never dropped: `7.9`
-and `7.9V` are the same reading, where `8` would be a different one.
+**At `1x2` the percentage stays under the reading** rather than under the
+battery. `72% EST` is 79 pixels at the label font and that panel's battery is
+32 wide, so there is nowhere to put it on the right. It also loses the `EST`
+before it loses the number, because the column is narrow.
+
+**At `1x2` and `2x2` the reading drops the `V`.** The unit is safe to drop
+because the heading already says this is a battery, and the battery beside it
+says so again. The digits are never dropped: `7.9` and `7.9V` are the same
+reading, where `8` would be a different one.
 
 The voltage itself is always shown, at every span and in every state.
 
@@ -112,11 +141,16 @@ The voltage itself is always shown, at every span and in every state.
 
 | State | When | What you see |
 | --- | --- | --- |
-| `normal` | A voltage above `warning`, or no thresholds stated | The voltage in the reading colour, no badge |
-| `warning` | Voltage at or below `warning` | Amber accent, tinted panel, `WARN` badge |
-| `critical` | Voltage at or below `critical` | Red accent, tinted panel, `CRIT` badge |
+| `normal` | A voltage above `warning`, or no thresholds stated | The voltage in the reading colour, battery fills in the accent, no badge |
+| `warning` | Voltage at or below `warning` | Amber accent, tinted panel, amber fill, `WARN` badge |
+| `critical` | Voltage at or below `critical` | Red accent, tinted panel, red fill, `CRIT` badge |
 | `stale` | The radio stopped answering; the last voltage is kept | Muted reading, `STALE` badge |
 | `unavailable` | No voltage has ever been read | `--` and an `N/A` badge |
+
+The battery's **outline** never takes the state colour. It is the container,
+the way a bar's track is, and a red outline around a red fill says the same
+thing twice. With no range to measure against the whole battery is hidden
+rather than drawn empty, because an empty battery is a claim about the pack.
 
 ## Resolution
 
@@ -140,19 +174,20 @@ caps the reading at 25.5 V, which is above any transmitter pack.
     accent: cyan
     warning: 6.7
     critical: 6.5
-    visual: bar
+    visual: battery
     showPercent: true
 ```
 
-Two cells square, so the voltage reads at `XXLSIZE` with a bar and a
-percentage beneath it. No range is stated, so it uses whatever your radio's
+Two cells square, so the voltage reads at `XXLSIZE` on the left with a battery
+to its right and the percentage beneath the battery. No range is stated, so it uses whatever your radio's
 battery meter is set to — which is the normal case. Add `packEmpty` and
 `packFull` only if you want to override that.
 
 ## See also
 
-- `review-tx-battery` is a shipped layout that puts this panel at six spans
-  and in three states on one screen, including a ranged and an unranged panel
-  side by side, which is the quickest way to see the table above.
+- `review-tx-battery` is a shipped layout that puts this panel at five spans
+  and in three states on one screen, including a healthy and a critical panel
+  side by side and a bar next to a battery at the same span, which is the
+  quickest way to see the table above.
 - `cell-battery` is the equivalent for the aircraft's pack, read per cell over
   telemetry.
