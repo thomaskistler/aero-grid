@@ -672,14 +672,19 @@ testGalleriesAreReachable()
   -- And the components that read the radio rather than the link.
   assertEqual(entryById(context, "flight-clock").instance.text, "1:30")
   assertEqual(entryById(context, "mode").instance.text, "Sport")
-  assertEqual(entryById(context, "radio-battery").instance.text, "7.9V")
+  -- Digits alone: the `V` is its own label riding beside them.
+  local radioBattery = entryById(context, "radio-battery").instance
+  assertEqual(radioBattery.text, "7.9")
+  assertEqual(radioBattery.unit.properties.text, "V")
   assertEqual(entryById(context, "rates").instance.text, "4.5")
   assertEqual(entryById(context, "identity").instance.text, "Test Model")
   assertEqual(entryById(context, "trims").instance.indicators[1].valueText, "+23%")
 
   -- The three telemetry components, reading what the radio really reports.
   local pack = entryById(context, "pack").instance
-  assertEqual(pack.text, "4.09V", "the lowest cell is the safety reading")
+  -- Digits alone, with the `V` riding beside them in its own label.
+  assertEqual(pack.text, "4.09", "the lowest cell is the safety reading")
+  assertEqual(pack.unit.properties.text, "V")
   -- The shipped pack is 2 x 1, which is 65 px tall, and sheds its supporting
   -- row to keep the reading large. This used to assert the row's text anyway:
   -- the label was hidden and its content was still being computed, so the
@@ -692,11 +697,11 @@ testGalleriesAreReachable()
 
   local link = entryById(context, "link").instance
   assertEqual(link.primaryName, "quality", "auto must prefer link quality")
-  assertEqual(link.text, "96%")
+  assertEqual(link.text, "96")
   assertEqual(link.stateName, "normal")
 
   local nav = entryById(context, "nav").instance
-  assertEqual(nav.text, "778m")
+  assertEqual(nav.text, "778")
   -- Both supporting wordings share one row, and on a 2 x 2 panel neither full
   -- wording fits. The bearing needs 89 px of the 87 it is given, so it sheds
   -- its compass point and keeps the number, which is the measurement; the
@@ -1382,7 +1387,7 @@ components:
   assertEqual(pack.summary.shape, "invalid")
   -- The explicit lowest-cell source keeps a reading alive, so the panel is not
   -- unavailable; the row is what reports that the table itself is gone.
-  assertEqual(pack.text, "4.09V")
+  assertEqual(pack.text, "4.09")
   assertRow(pack, pack.countText, pack.detailWidth, "BAD CELLS",
     "nonsense from a cells source")
   assert(pack.countText ~= wrong.countText,
@@ -3404,12 +3409,32 @@ components:
   settle()
 
   local bounds = boundsOf(entryById(context, "big"))
-  assertEqual(instance.unit.hidden, true, "shed unit was left visible")
   assertEqual(instance.range.hidden, true, "shed range was left visible")
+
+  -- The unit survives this, and that is the change rather than a slip. It
+  -- rides beside the reading now instead of taking a row beneath it, so a
+  -- panel losing height loses rows and keeps the unit. What it costs is
+  -- width, and width is what takes it away.
+  assertEqual(instance.unit.hidden, false,
+    "the unit was shed by a panel that only lost height, which it no longer"
+      .. " pays for")
 
   for _, object in ipairs({instance.label, instance.value, instance.badge}) do
     assert(object.properties.y < bounds.h, "visible content escaped the panel")
   end
+
+  -- Narrow enough that the number and its unit no longer fit side by side:
+  -- an 88 pixel panel gives the reading 76 and a MIDSIZE `25.0` with a
+  -- SMLSIZE `V` beside it needs 80. The number keeps its size; the unit goes,
+  -- because the heading names what is being measured and the digits are the
+  -- reading.
+  zone.w = 180
+  zone.h = 272
+  settle()
+  assertEqual(instance.unit.hidden, true,
+    "a panel too narrow for the pair kept its unit")
+  assert(instance.value.lines == 1,
+    "the reading wrapped, so the unit was shed and bought nothing")
 
   -- Growing again must restore what was shed rather than leave it hidden.
   zone.w = 480
@@ -4344,9 +4369,10 @@ components:
   local half = entryById(context, "half").instance
 
   -- The voltage is authoritative and is shown by all of them. The fixture
-  -- transmitter reads 7.9 V.
+  -- transmitter reads 7.9 V, and the unit rides beside the digits.
   for _, panel in ipairs({stated, quiet, inverted, half}) do
-    assertEqual(panel.text, "7.9V")
+    assertEqual(panel.text, "7.9")
+    assertEqual(panel.unit.properties.text, "V")
   end
 
   -- Stated: the layout's 6.6 to 8.4, so 7.9 is 1.3 of 1.8, which is 72.
@@ -4752,6 +4778,230 @@ components:
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 end
 
+--- The unit stays attached to the number as the number changes width.
+---
+--- A unit is placed at the reading's left edge plus the reading's width, so
+--- a reading that grows a character and a unit that does not move leaves a
+--- gap, and one that shrinks leaves the unit overlapping it. Nothing else in
+--- this suite could see that: every other assertion measures the pair at the
+--- widest the panel can print, which is the case where a stationary unit
+--- happens to be right.
+---
+--- Driven with a reading that changes length rather than merely value, since
+--- the position depends on length alone.
+local function testUnitFollowsTheReadingWidth()
+  resetRadio()
+  local widgetPath = makeWidget("unit-follow", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: tx
+    type: tx-battery
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: TX
+      packEmpty: 6.6
+      packFull: 8.4
+]])
+
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  settle(context, 30)
+
+  local tx = entryById(context, "tx").instance
+  assert(tx.unit and not tx.unit.hidden, "the panel drew no unit to follow")
+
+  local function unitGap()
+    local reading = tx.value.properties
+    local right = reading.x + themeModule.textWidth(
+      reading.font(), reading.text)
+    return tx.unit.properties.x - right
+  end
+
+  -- The fixture reads 7.9 V: three characters.
+  assertEqual(tx.text, "7.9")
+  local narrowGap = unitGap()
+  local narrowX = tx.unit.properties.x
+  assert(narrowGap >= 2 and narrowGap <= 8,
+    "the unit sits " .. narrowGap .. " pixels from a three character reading")
+
+  -- Four characters. The reading grows and the unit has to grow with it.
+  radio.values[320] = 10.0
+  settle(context, 30)
+  assertEqual(tx.text, "10.0",
+    "the reading did not change length, so this test proves nothing")
+  assert(tx.unit.properties.x > narrowX, "the reading grew a character and"
+    .. " the unit stayed at " .. tx.unit.properties.x
+    .. ", which leaves it sitting inside the number")
+  assertEqual(unitGap(), narrowGap,
+    "the unit followed the reading but not by the width it gained")
+
+  -- And back, because a unit that only ever moves right would pass the line
+  -- above and then overlap a reading that shortened.
+  radio.values[320] = 7.9
+  settle(context, 30)
+  assertEqual(tx.text, "7.9")
+  assertEqual(tx.unit.properties.x, narrowX,
+    "the reading shrank and the unit stayed out at "
+      .. tx.unit.properties.x .. ", leaving a gap")
+
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  resetRadio()
+end
+
+--- Every component that carries a unit draws it beside the reading, smaller.
+---
+--- Six components print a unit on their dominant reading, and until now each
+--- did it differently: five glued it onto the reading string and one drew it
+--- on a row of its own. This is the assertion that keeps them one shape.
+---
+--- Three things are checked of each, and none of them is "a unit is drawn",
+--- which was true before and is satisfied by gluing it back on:
+---
+---   * the unit is its **own object**, so the reading string is digits alone;
+---   * its font is **smaller** than the reading's;
+---   * the pair **fits** the column, measured together rather than apart.
+---
+--- Driven at two spans, because #44's lesson is that a rule which varies with
+--- size proves nothing when asserted at one size. The two chosen resolve to
+--- different reading fonts, so a unit font that ignored the reading would be
+--- caught.
+local function testUnitsRideBesideEveryReading()
+  resetRadio()
+  radio.values[130] = {4.11, 4.09, 4.12}
+  radio.values[140] = -70
+  radio.values[141] = 88
+  radio.values[106] = 120
+  radio.values[120] = 2.5
+  radio.values[109] = {
+    lat = 47.3769, lon = 8.5417,
+    ["pilot-lat"] = 47.3700, ["pilot-lon"] = 8.5400,
+  }
+
+  -- Six panels of the span under test in a 4 x 4 grid, which is the only
+  -- shape the schema allows. Three fit at 2 x 2, so the six are split across
+  -- two layouts rather than crammed into one.
+  local function layoutAt(colSpan, rowSpan, from, count)
+    local lines = {"version: 1", "grid:", "  columns: 4", "  rows: 4",
+      "components:"}
+    local panels = {
+      {id = "alt", type = "metric",
+        config = "      source: Alt\n      unit: m\n      precision: 0\n"},
+      {id = "cells", type = "cell-battery",
+        config = "      source: Cels\n      reading: lowest\n"},
+      {id = "link", type = "link-status",
+        config = "      rssiSource: 1RSS\n      qualitySource: RQly\n"
+          .. "      reading: rssi\n"},
+      {id = "nav", type = "navigation",
+        config = "      source: GPS\n      presentation: distance\n"},
+      {id = "tx", type = "tx-battery",
+        config = "      packEmpty: 6.6\n      packFull: 8.4\n"},
+      {id = "gv", type = "variable-indicator",
+        config = "      binding: source\n      source: Curr\n"
+          .. "      rangeMin: 0\n      rangeMax: 120\n"},
+    }
+    local chosen = {}
+    for index = from, math.min(from + count - 1, #panels) do
+      chosen[#chosen + 1] = panels[index]
+    end
+
+    local col, row = 0, 0
+    for _, panel in ipairs(chosen) do
+      if col + colSpan > 4 then col, row = 0, row + rowSpan end
+      lines[#lines + 1] = "  - id: " .. panel.id
+      lines[#lines + 1] = "    type: " .. panel.type
+      lines[#lines + 1] = "    col: " .. col
+      lines[#lines + 1] = "    row: " .. row
+      lines[#lines + 1] = "    colSpan: " .. colSpan
+      lines[#lines + 1] = "    rowSpan: " .. rowSpan
+      lines[#lines + 1] = "    config:"
+      lines[#lines + 1] = string.gsub(panel.config, "\n$", "")
+      col = col + colSpan
+    end
+    return table.concat(lines, "\n"), chosen
+  end
+
+  local seenFonts = {}
+  local checked = 0
+
+  for _, span in ipairs({{2, 2, 1}, {2, 2, 4}, {2, 1, 1}, {2, 1, 4}}) do
+    local text, panels = layoutAt(span[1], span[2], span[3], 3)
+    local widgetPath = makeWidget(
+      "units-" .. span[1] .. "x" .. span[2] .. "-" .. span[3], text)
+    local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+      DEFAULT_OPTIONS, widgetPath)
+    assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+    settle(context, 60)
+
+    for _, panel in ipairs(panels) do
+      local instance = entryById(context, panel.id).instance
+      local where = panel.type .. " at " .. span[1] .. "x" .. span[2]
+
+      -- Its own object. A component that glued the unit back onto the
+      -- reading would have no unit label at all.
+      assert(instance.unit, where .. " draws no separate unit")
+
+      local readingLabel = instance.value
+      local reading = readingLabel.properties.text
+      local unit = instance.unit.properties.text
+
+      if not instance.unit.hidden and unit ~= "" then
+        checked = checked + 1
+        local readingFont = readingLabel.properties.font()
+        local unitFont = instance.unit.properties.font()
+        seenFonts[edgetx.fontName(readingFont)] = true
+
+        assert(themeModule.fontHeight(unitFont)
+            < themeModule.fontHeight(readingFont),
+          where .. " draws its unit at " .. edgetx.fontName(unitFont)
+            .. ", which is not smaller than the reading's "
+            .. edgetx.fontName(readingFont))
+
+        -- The reading is digits alone. If the unit were still glued on, the
+        -- panel would be printing it twice.
+        assert(not string.find(reading, unit, 1, true),
+          where .. " prints its unit inside the reading (" .. reading
+            .. ") as well as beside it")
+
+        -- And the pair fits the column, measured together. Measuring the
+        -- number alone is what let a 116 pixel string into a 105 pixel
+        -- column for three milestones.
+        local pairWidth = themeModule.readingWidth(
+          readingFont, reading, unitFont, unit)
+        local column = readingLabel.properties.w
+        assert(pairWidth <= column, where .. " draws " .. reading .. " "
+          .. unit .. " needing " .. pairWidth .. " in a column of " .. column)
+
+        -- Neither label wraps, which is the failure no assertion about text
+        -- content can see.
+        assertEqual(readingLabel.lines, 1, where .. " wrapped its reading")
+        assertEqual(instance.unit.lines, 1, where .. " wrapped its unit")
+
+        -- The baseline, which is the whole point of the arrangement.
+        assertEqual(
+          instance.unit.properties.y + themeModule.fontAscent(unitFont),
+          readingLabel.properties.y + themeModule.fontAscent(readingFont),
+          where .. " does not sit its unit on the reading's baseline")
+      end
+    end
+  end
+
+  -- The two spans really did produce different reading sizes, or the whole
+  -- exercise collapsed into one case.
+  local sizes = 0
+  for _ in pairs(seenFonts) do sizes = sizes + 1 end
+  assert(sizes >= 2, "every panel resolved the same reading font, so this"
+    .. " test says nothing about a rule that varies with size")
+  assert(checked >= 8,
+    "only " .. checked .. " panels actually drew a unit to check")
+end
+
 --- A panel narrowed until the battery no longer fits takes all of it away.
 ---
 --- The build-time case cannot see this: a glyph is built hidden, so a
@@ -4926,7 +5176,7 @@ components:
   assert(ok, "a component raised without getGeneralSettings: " .. tostring(err))
 
   local quiet = entryById(context, "quiet").instance
-  assertEqual(quiet.text, "7.9V", "the voltage it does know was lost")
+  assertEqual(quiet.text, "7.9", "the voltage it does know was lost")
   assertEqual(quiet.barShown, false,
     "a bar was drawn with nothing to measure it against")
   assertEqual(quiet.detailLabel.properties.text, "",
@@ -5573,9 +5823,19 @@ components:
     "a reflow hid a caption that was already hidden")
   assertEqual(trims.indicators[1].value.visibilityCalls, valueCalls,
     "a reflow hid a readout that was already hidden")
-  assert(tight.unit.hidden, "a short metric found room for its unit")
-  assertEqual(tight.unit.writes, unitWrites,
-    "reconcile repositioned a row its component had hidden")
+  -- The metric's unit used to be shed here, and it is not any more: it rides
+  -- beside the reading instead of taking a row, so a narrower panel keeps it
+  -- until the pair genuinely will not fit, and at 116 pixels an `m` beside a
+  -- DBLSIZE `100` still does. What replaces that assertion is the invariant
+  -- the unit brought with it -- a rider that is drawn is repositioned only
+  -- when the reading's own width changed -- because a unit that rewrites its
+  -- position every frame is exactly the invisible work this test exists for.
+  assert(not tight.unit.hidden,
+    "the metric shed a unit it has room for, so the line below is measuring"
+      .. " a hidden object")
+  assertEqual(tight.unit.writes, unitWrites + 1,
+    "a reflow moved the unit more than once, or not at all: it moved "
+      .. (tight.unit.writes - unitWrites) .. " times")
   zone.w = 240
   passes = 0
   repeat
@@ -5727,7 +5987,7 @@ local function testCoreComponents()
   -- The transmitter pack: voltage is authoritative, the percentage is an
   -- estimate and says so.
   local battery = entryById(context, "battery").instance
-  assertEqual(battery.text, "7.9V")
+  assertEqual(battery.text, "7.9")
   -- A single cell sheds the supporting row, so the percentage is not on
   -- screen here; its wording is checked at a span that shows it, in
   -- testTxBatteryRangeGatesTheEstimate.
@@ -5745,7 +6005,7 @@ local function testCoreComponents()
   -- A global variable takes its name, bounds, precision, and unit from
   -- EdgeTX, and AeroGrid never writes one.
   local gv = entryById(context, "gv").instance
-  assertEqual(gv.text, "10%")
+  assertEqual(gv.text, "10")
   assertEqual(gv.labelValue, "GV2")
   -- This panel is one row tall and sheds its supporting row, so the name
   -- and flight mode are not on screen here. They are checked at a span that
@@ -5765,21 +6025,34 @@ local function testCoreComponents()
   -- limitation and calling it firmware behaviour.
   radio.flightMode, radio.flightModeName = 2, "Land"
   settle(context, 12)
-  assertEqual(gv.text, "60%", "the value stored for the new flight mode was not read")
+  assertEqual(gv.text, "60", "the value stored for the new flight mode was not read")
 
   -- A mode with no value of its own does inherit, and that is a different
   -- observation from never having looked.
   radio.flightMode, radio.flightModeName = 3, "Cruise"
   settle(context, 12)
-  assertEqual(gv.text, "10%", "an inherited value was not inherited")
+  assertEqual(gv.text, "10", "an inherited value was not inherited")
 
   radio.flightMode, radio.flightModeName = 1, "Sport"
   settle(context, 12)
-  assertEqual(gv.text, "10%")
+  assertEqual(gv.text, "10")
+  -- The unit rides beside the digits rather than being glued to them, and it
+  -- is drawn smaller than the number it belongs to.
+  assertEqual(gv.unit.properties.text, "%")
+  assertEqual(gv.showUnit, true)
+  assert(themeModule.fontHeight(gv.unit.properties.font())
+      < themeModule.fontHeight(gv.value.properties.font()),
+    "the unit is drawn at or above the size of the reading it rides beside")
 
   -- The same component bound to a telemetry source instead.
   local dial = entryById(context, "dial").instance
-  assertEqual(dial.text, "10.0A")
+  assertEqual(dial.text, "10.0")
+  -- The sensor's own unit, which arrives with the source rather than being
+  -- known when the panel was built. A single character still fits beside a
+  -- reading squeezed in next to a dial.
+  assertEqual(dial.unit.properties.text, "A")
+  assertEqual(dial.showUnit, true,
+    "a unit that arrived after the panel was built never appeared")
   assert(dial.radial, "the radial presentation was not built")
   -- 10 of 0..120 is a small part of a 270 degree sweep.
   assertEqual(dial.radial.arc.properties.endAngle, 135 + 23)
@@ -6098,7 +6371,7 @@ local function testTelemetryComponents()
   -- The pack is judged by its worst cell, and the summed pack voltage is
   -- supporting detail rather than the headline.
   local pack = entryById(context, "pack").instance
-  assertEqual(pack.text, "4.09V")
+  assertEqual(pack.text, "4.09")
   assertEqual(pack.countText, "4S")
   assertEqual(pack.packText, "16.4V PACK")
   assertEqual(pack.stateName, "normal")
@@ -6110,7 +6383,7 @@ local function testTelemetryComponents()
   radio.values[130] = {4.11, 3.25, 4.09, 4.12}
   radio.values[131] = 3.25
   settle(context, 12)
-  assertEqual(pack.text, "3.25V")
+  assertEqual(pack.text, "3.25")
   assertEqual(pack.stateName, "critical")
   assertEqual(pack.badge.properties.text, "CRIT")
 
@@ -6125,7 +6398,7 @@ local function testTelemetryComponents()
   -- thing on every protocol where RSSI does not.
   local link = entryById(context, "link").instance
   assertEqual(link.primaryName, "quality")
-  assertEqual(link.text, "96%")
+  assertEqual(link.text, "96")
   assertEqual(link.stateName, "normal")
   -- Both link panels are 2 x 1, which is 65 px tall, and shed their supporting
   -- rows to keep the reading large. What those rows say is covered at a span
@@ -6145,7 +6418,9 @@ local function testTelemetryComponents()
   -- one protocol's numbers into another's.
   local elrs = entryById(context, "elrs").instance
   assertEqual(elrs.primaryName, "rssi")
-  assertEqual(elrs.text, "-72dBm")
+  assertEqual(elrs.text, "-72")
+  assertEqual(elrs.unit.properties.text, "dBm",
+    "the unit the source resolved to never reached the label beside it")
   assertEqual(elrs.stateName, "normal")
   radio.values[143] = -95
   settle(context, 12)
@@ -6155,7 +6430,7 @@ local function testTelemetryComponents()
   -- Navigation computes distance and bearing from the pilot position EdgeTX
   -- recorded, and says in words what the direction means.
   local nav = entryById(context, "nav").instance
-  assertEqual(nav.text, "778m")
+  assertEqual(nav.text, "778")
   -- Fitted to the row rather than overrunning it. Whichever wording is chosen
   -- has to fit, which is the property that matters; pinning the string alone
   -- would pass on a helper that always returned the shortest one.
@@ -6178,7 +6453,7 @@ local function testTelemetryComponents()
   -- A configured native distance sensor wins over the computed one, because
   -- the receiver may compute it from data this dashboard never sees.
   local native = entryById(context, "native").instance
-  assertEqual(native.text, "812.0m")
+  assertEqual(native.text, "812.0")
   assertEqual(native.feed.distanceSource, "source")
 
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
@@ -6209,7 +6484,7 @@ local function testTelemetryDegrades()
   pump(context, 40)
 
   assertEqual(pack.stateName, "stale", "a dropped link hid the last cells")
-  assertEqual(pack.text, "4.09V", "a stale poll overwrote the reading")
+  assertEqual(pack.text, "4.09", "a stale poll overwrote the reading")
   assertEqual(pack.badge.properties.text, "STALE")
 
   assertEqual(link.stateName, "critical", "a dead link is the measurement")
@@ -6219,7 +6494,7 @@ local function testTelemetryDegrades()
   assertEqual(link.badge.properties.text, "CRIT")
 
   assertEqual(nav.stateName, "stale")
-  assertEqual(nav.text, "778m", "the last known position was discarded")
+  assertEqual(nav.text, "778", "the last known position was discarded")
   assertEqual(nav.origin, "LAST KNOWN")
 
   -- Reconnect. Nothing may be left marked once readings arrive again.
@@ -6271,7 +6546,7 @@ local function testTelemetryDegrades()
   radio.values[130] = {0, -1, 99}
   pump(context, 40)
   assertEqual(pack.summary.shape, "invalid")
-  assertEqual(pack.text, "4.09V")
+  assertEqual(pack.text, "4.09")
   assertEqual(pack.countText, "BAD CELLS")
   assert(themeModule.textWidth(pack.fonts.label, pack.countText)
     <= pack.detailWidth, "the cell-count row overran its box")
@@ -6367,12 +6642,12 @@ local function testRefreshSeesEverythingItDraws()
   radio.values[130] = {3.80, 4.10, 4.10, 4.10}
   radio.values[131] = 3.80
   settle(context, 20)
-  assertEqual(pack.text, "3.80V")
+  assertEqual(pack.text, "3.80")
   assertEqual(pack.packText, "16.1V PACK")
 
   radio.values[130] = {3.80, 3.90, 3.90, 3.90}
   settle(context, 20)
-  assertEqual(pack.text, "3.80V", "the lowest cell should not have moved")
+  assertEqual(pack.text, "3.80", "the lowest cell should not have moved")
   assertEqual(pack.packText, "15.5V PACK", "the pack row froze on an old sum")
 
   -- Link quality sits pinned at 100 for most of a flight while RSSI falls
@@ -6381,11 +6656,11 @@ local function testRefreshSeesEverythingItDraws()
   radio.values[141] = 100
   radio.values[140] = 70
   settle(context, 20)
-  assertEqual(link.text, "100%")
+  assertEqual(link.text, "100")
 
   radio.values[140] = 41
   settle(context, 20)
-  assertEqual(link.text, "100%", "link quality should not have moved")
+  assertEqual(link.text, "100", "link quality should not have moved")
 
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
   resetRadio()
@@ -6442,7 +6717,7 @@ components:
   }
   settle(context, 60)
   assertEqual(nav.stateName, "normal")
-  assertEqual(nav.text, "778m")
+  assertEqual(nav.text, "778")
 
   radio.fields.LateGps = nil
   radio.values[150] = nil
@@ -6501,7 +6776,7 @@ components:
   local link = entryById(context, "link").instance
   assertEqual(link.primaryName, "quality",
     "auto must fall back to the source the protocol actually has")
-  assertEqual(link.text, "96%", "a live reading was discarded as a dead link")
+  assertEqual(link.text, "96", "a live reading was discarded as a dead link")
   assertEqual(link.stateName, "normal")
   assertEqual(link.badge.properties.text, "")
 
@@ -6665,6 +6940,8 @@ testBatteryGlyphLeavesTheReadingRoom()
 testBatteryGlyphShedsWhole()
 testBatteryStrokeFollowsTheReading()
 testBatteryStrokeSurvivesReflow()
+testUnitsRideBesideEveryReading()
+testUnitFollowsTheReadingWidth()
 testFlightTimerShedsItsDetail()
 testReconcileBar()
 testHeadingNeverWraps()

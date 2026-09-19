@@ -1987,7 +1987,10 @@ local function testContentFitsPanel()
     {name = "2x2", w = 238, h = 134, colSpan = 2, rowSpan = 2},
     {name = "2x1", w = 238, h = 65, colSpan = 2, rowSpan = 1},
     {name = "1x1", w = 117, h = 65, colSpan = 1, rowSpan = 1},
-    {name = "tiny", w = 60, h = 40, colSpan = 1, rowSpan = 1},
+    -- Smaller than any span the grid can produce: a single cell is 117 by
+    -- 65. Kept as a stress case, and marked so the assertions can ask it the
+    -- question it can actually answer.
+    {name = "tiny", w = 60, h = 40, colSpan = 1, rowSpan = 1, synthetic = true},
   }
 
   for _, case in ipairs(cases) do
@@ -2004,17 +2007,23 @@ local function testContentFitsPanel()
       .. " in " .. case.h)
 
     -- Assertions use the resolved flags: a short panel sheds optional detail.
+    -- The unit rides beside the reading now, so it shares the reading's rows
+    -- rather than taking one below it, and the property to hold is that their
+    -- baselines meet rather than that one sits under the other.
     if area.showUnit then
-      assert(area.unitY >= valueBottom, case.name
-        .. ": unit overlaps the value, unit at " .. area.unitY
-        .. ", value ends at " .. valueBottom)
-      assert(area.unitY + heightOf(fonts.unit) <= case.h, case.name
+      assertEqual(area.unitY + heightOf(area.unitFont)
+          - theme.fontBaseLine(area.unitFont),
+        area.valueY + heightOf(area.primary)
+          - theme.fontBaseLine(area.primary),
+        case.name .. ": the unit does not sit on the reading's baseline")
+      assert(area.unitY + heightOf(area.unitFont) <= case.h, case.name
         .. ": unit overflows the panel")
+      assert(heightOf(area.unitFont) < heightOf(area.primary), case.name
+        .. ": the unit is drawn at or above the reading's own size")
     end
 
     if area.showVisual then
-      local unitBottom = area.showUnit
-        and (area.unitY + heightOf(fonts.unit)) or valueBottom
+      local unitBottom = valueBottom
       assert(area.barY >= unitBottom, case.name
         .. ": bar overlaps content above it")
       assert(area.barY + 4 <= case.h, case.name .. ": bar overflows the panel")
@@ -2865,6 +2874,144 @@ local function testFontHeightsMatchTheFirmware()
   end
 end
 
+--- `fitReading`'s verdict is accurate, in both directions.
+---
+--- The function returns the smallest font on the ladder when nothing fits,
+--- rather than failing, which is the only thing it can do -- but a caller
+--- that reads only the font cannot tell that case from a comfortable fit.
+--- `tx-battery` could not, and took width for a battery the reading needed.
+---
+--- So the verdict has to be right, and "right" is two claims: true only when
+--- the returned form genuinely fits at the returned font, and false only when
+--- no form fits at any font the room allows. Asserting one direction would
+--- pass a function that always answered true.
+local function testFitReadingReportsWhetherItFits()
+  local ROOM = 200
+
+  -- Comfortable: a short reading in a wide column.
+  local font, index, fits = theme.fitReading({"88.8"}, 400, ROOM)
+  assertEqual(fits, true)
+  assertEqual(index, 1)
+  assert(theme.textWidth(font, "88.8") <= 400,
+    "the verdict was true for a form that does not fit")
+
+  -- Impossible: the widest reading this dashboard prints, in a column
+  -- narrower than it needs at the smallest font on the ladder.
+  local smallest = theme.READING_FONTS[#theme.READING_FONTS]
+  local tooNarrow = theme.textWidth(smallest, "888.88km") - 1
+  local narrowFont, _, narrowFits =
+    theme.fitReading({"888.88km"}, tooNarrow, ROOM)
+  assertEqual(narrowFits, false,
+    "the verdict was true for a reading nothing could fit")
+  assertFont(narrowFont, smallest,
+    "a reading nothing could fit was not drawn at the smallest font")
+
+  -- Exactly on the boundary, which is where an off-by-one lives: a column of
+  -- exactly the width needed fits, and one pixel less does not.
+  local exact = theme.textWidth(smallest, "888.88km")
+  assertEqual(select(3, theme.fitReading({"888.88km"}, exact, ROOM)), true,
+    "a column of exactly the width needed was called too narrow")
+  assertEqual(select(3, theme.fitReading({"888.88km"}, exact - 1, ROOM)), false,
+    "a column one pixel too narrow was called wide enough")
+
+  -- And the verdict follows the *form* that was chosen, not the longest
+  -- offered: a caller whose short form fits gets true.
+  local _, chosen, formFits =
+    theme.fitReading({"888.88km", "88"}, exact - 1, ROOM)
+  assertEqual(formFits, true,
+    "a caller offering a form that fits was told nothing fits")
+  assertEqual(chosen, 2)
+
+  -- The verdict is checked across the whole ladder rather than at one size,
+  -- because a rule that varies with size proves nothing at a single one.
+  local checked = 0
+  for _, ladderFont in ipairs(theme.READING_FONTS) do
+    local room = theme.fontHeight(ladderFont)
+    local need = theme.textWidth(ladderFont, "88.8")
+    local got, _, verdict = theme.fitReading({"88.8"}, need, room)
+    checked = checked + 1
+    assertFont(got, ladderFont,
+      "a column of exactly the width needed moved the font")
+    assertEqual(verdict, true, edgetx.fontName(ladderFont)
+      .. " was told its exact width does not fit")
+  end
+  assertEqual(checked, #theme.READING_FONTS)
+end
+
+--- A unit sits on its reading's baseline, not its top and not its bottom.
+---
+--- **EdgeTX gives Lua no way to ask for this.** `lcd.sizeText` returns a
+--- width and `getFontHeight`, which is `lv_font_get_line_height`; nothing in
+--- `radio/src/lua/` exposes ascent or baseline. So the alternative to knowing
+--- the numbers is aligning the two labels by their tops or by their bottoms,
+--- and this measures how wrong each is rather than asserting that one of them
+--- looks acceptable.
+---
+--- For the pairs this dashboard actually produces:
+---
+---     reading + unit        tops wrong by   bottoms wrong by
+---     XXLSIZE + MIDSIZE          31 px             9 px
+---     DBLSIZE + SMLSIZE          18 px             5 px
+---     MIDSIZE + SMLSIZE          10 px             2 px
+---     SMLSIZE + TINSIZE           4 px             1 px
+---
+--- Nine pixels is most of a MIDSIZE line's descender, so bottom alignment is
+--- not a near miss at the size that matters most; the unit would sit visibly
+--- below the number. The numbers are knowable, so neither approximation is
+--- needed, and this test is what stops one creeping back in.
+local function testUnitSitsOnTheBaseline()
+  local citation = edgetx.citation("FONT_BASE_LINE")
+
+  for font, base in pairs(firmware.FONT_BASE_LINE) do
+    assertEqual(theme.fontBaseLine(font), base,
+      edgetx.fontName(font) .. " has a different baseline from the font the"
+        .. " radio ships (" .. citation.file .. ")")
+    assertEqual(theme.fontAscent(font), theme.fontHeight(font) - base,
+      edgetx.fontName(font) .. "'s ascent is not its line height less its"
+        .. " baseline")
+  end
+
+  local checked = 0
+  for _, reading in ipairs(theme.READING_FONTS) do
+    local rider = theme.unitFont(reading)
+    checked = checked + 1
+
+    -- The rider is smaller. A unit at the reading's own size is a second
+    -- reading rather than a unit.
+    assert(theme.fontHeight(rider) < theme.fontHeight(reading),
+      edgetx.fontName(reading) .. " rides with a unit at "
+        .. edgetx.fontName(rider) .. ", which is not smaller than it")
+
+    -- Their baselines meet, at every y the caller might place the reading at.
+    for _, y in ipairs({0, 7, 25, 104}) do
+      local unitY = theme.unitTop(reading, rider, y)
+      assertEqual(unitY + theme.fontAscent(rider), y + theme.fontAscent(reading),
+        edgetx.fontName(reading) .. " and " .. edgetx.fontName(rider)
+          .. " do not share a baseline when the reading's top is " .. y)
+    end
+
+    -- And the two approximations are wrong, by enough to be worth the table.
+    -- Asserting they differ from the truth is what stops someone replacing
+    -- `unitTop` with `y` or with `height - unitHeight` and finding the suite
+    -- still green.
+    local trueTop = theme.unitTop(reading, rider, 0)
+    assert(trueTop > 0, edgetx.fontName(reading)
+      .. ": aligning tops is exactly right, so this pair proves nothing")
+    local bottoms = theme.fontHeight(reading) - theme.fontHeight(rider)
+    assert(bottoms ~= trueTop, edgetx.fontName(reading)
+      .. ": aligning bottoms is exactly right, so this pair proves nothing")
+  end
+
+  assertEqual(checked, #theme.READING_FONTS)
+
+  -- The pair that matters most is the one the approximation is worst on.
+  local worst = theme.fontHeight(XXLSIZE) - theme.fontHeight(MIDSIZE)
+    - theme.unitTop(XXLSIZE, MIDSIZE, 0)
+  assertEqual(worst, 9,
+    "the error in bottom alignment at the largest reading moved, so the"
+      .. " table in this comment is stale")
+end
+
 --- Text must be fitted by measured width as well as height, because a long
 --- reading in a narrow cell clips sideways where a short one would not.
 local function testTextFitting()
@@ -3068,7 +3215,6 @@ local function testLosslessReadingsOfferOneForm()
   local cases = {
     {"flight-timer", "FORMS",
       "a clock has no redundancy: every shorter form drops a field"},
-    {"tx-battery", "FORMS", nil},
   }
 
   for _, case in ipairs(cases) do
@@ -3080,20 +3226,12 @@ local function testLosslessReadingsOfferOneForm()
     end
   end
 
-  -- `tx-battery` is the counter-example that keeps the rule honest: its unit
-  -- really is redundant with its label, so it may abbreviate, and a test that
-  -- simply demanded one form everywhere would be wrong about it.
-  local tx = loadModule("components/tx-battery.lua")
-  assertEqual(#tx.FORMS, 2, "tx-battery lost the abbreviation it may have")
-  assertEqual(tx.FORMS[2], "88.8",
-    "tx-battery's shorter form drops something other than its unit")
-
-  -- A distance cannot shorten, because its unit changes with range: `1.23km`
-  -- and `1.23m` are different readings, so the unit is not decoration either.
+  -- A distance cannot shorten, and unlike a voltage it cannot drop its unit
+  -- either: the unit changes with range, so `1.23km` and `1.23m` are
+  -- different readings rather than one abbreviated.
   local navigation = loadModule("components/navigation.lua")
-  assertEqual(#navigation.FORMS, 1,
-    "navigation offered a shorter distance, which could only lose magnitude")
-  assertEqual(navigation.FORMS[1], "888.88km")
+  assertEqual(navigation.DIGITS, "888.88")
+  assertEqual(navigation.UNIT, "km")
 
   -- And a metric, whose unit is a separate label entirely.
   local metric = loadModule("components/metric.lua")
@@ -3371,7 +3509,7 @@ local function testTxBatteryComposition()
   local battery = loadModule("components/tx-battery.lua")
   local resolved = theme.build("modern")
 
-  -- span, reading font, form index, cell w x h, outline, percentage under
+  -- span, reading font, unit shown, cell w x h, outline, percentage under
   --
   -- The cell stands upright, so it is half as wide as it is tall. That is
   -- what took the percentage out from under it at every span: `100%` needs 39
@@ -3382,14 +3520,17 @@ local function testTxBatteryComposition()
   -- they stand beside are different sizes. A stroke derived from the span or
   -- from the cell would give those two rows the same number.
   local documented = {
-    {"1x1", "MIDSIZE", 1, nil, nil, nil, false},
-    {"2x1", "MIDSIZE", 1, 20, 40, 2, false},
-    {"3x1", "MIDSIZE", 1, 20, 40, 2, false},
-    {"4x1", "MIDSIZE", 1, 20, 40, 2, false},
-    {"1x2", "MIDSIZE", 2, 25, 50, 2, false},
-    {"2x2", "XXLSIZE", 2, 25, 50, 4, false},
-    {"3x2", "XXLSIZE", 1, 25, 50, 4, false},
-    {"4x2", "XXLSIZE", 1, 25, 50, 4, false},
+    {"1x1", "MIDSIZE", true, nil, nil, nil, false},
+    {"2x1", "MIDSIZE", true, 20, 40, 2, false},
+    {"3x1", "MIDSIZE", true, 20, 40, 2, false},
+    {"4x1", "MIDSIZE", true, 20, 40, 2, false},
+    -- The one span that sheds its unit. A MIDSIZE `88.8` is 67 pixels and
+    -- the cell leaves 74, so the `V` and its gap do not fit in the 7 that
+    -- remain. The panel's own heading says what is being measured.
+    {"1x2", "MIDSIZE", false, 25, 50, 2, false},
+    {"2x2", "XXLSIZE", true, 25, 50, 4, false},
+    {"3x2", "XXLSIZE", true, 25, 50, 4, false},
+    {"4x2", "XXLSIZE", true, 25, 50, 4, false},
   }
 
   local GUTTER, CELLS, WIDTH, HEIGHT = 4, 4, 480, 272
@@ -3400,7 +3541,7 @@ local function testTxBatteryComposition()
     "the documented table and the declared spans disagree in length")
 
   for index, row in ipairs(documented) do
-    local span, font, form = row[1], row[2], row[3]
+    local span, font, showUnit = row[1], row[2], row[3]
     local glyphWidth, glyphHeight = row[4], row[5]
     local border, under = row[6], row[7]
     assertEqual(battery.supportedSpans[index], span,
@@ -3421,8 +3562,8 @@ local function testTxBatteryComposition()
 
     assertEqual(edgetx.fontName(area.value), font,
       span .. " does not draw its reading at the documented size")
-    assertEqual(area.formIndex, form,
-      span .. " uses a different form from the documented one")
+    assertEqual(area.showUnit, showUnit,
+      span .. " disagrees with the documentation about showing its unit")
     assertEqual(area.glyphWidth, glyphWidth,
       span .. " draws a glyph of a different width from the documented one")
     assertEqual(area.glyphHeight, glyphHeight,
@@ -3434,13 +3575,22 @@ local function testTxBatteryComposition()
       span .. " disagrees with the documentation about where the percentage"
         .. " sits")
 
-    -- The reading has to fit the column it actually has, which is what is
-    -- left once the glyph has taken its share -- not the panel's full width.
-    -- This is the assertion that would have caught the reading being fitted
-    -- as `88.8` and drawn as `88.8V`.
-    assert(theme.textWidth(area.value, battery.FORMS[area.formIndex])
-        <= area.valueWidth,
-      span .. " draws its reading past its own column")
+    -- The reading and whatever rides beside it have to fit the column they
+    -- actually have, which is what is left once the glyph has taken its
+    -- share -- not the panel's full width. This is the assertion that would
+    -- have caught the reading being fitted as `88.8` and drawn as `88.8V`.
+    local carried = theme.readingWidth(area.value, battery.DIGITS,
+      area.unitFont, area.showUnit and battery.UNIT or nil)
+    assert(carried <= area.valueWidth, span
+      .. " draws its reading and unit past its own column: " .. carried
+      .. " into " .. area.valueWidth)
+
+    -- And the unit really is smaller than the number it rides beside, which
+    -- is the whole of what makes it a rider rather than a second reading.
+    if area.showUnit then
+      assert(theme.fontHeight(area.unitFont) < theme.fontHeight(area.value),
+        span .. " draws its unit at or above the reading's own size")
+    end
 
     -- And a cell, where there is one, has to fit beside it and stand upright.
     if area.glyphWidth then
@@ -3457,39 +3607,16 @@ local function testTxBatteryComposition()
     end
   end
 
-  -- The form the fitter chose is the form that is printed. The reading was
-  -- fitted as `88.8` at a `1 x 2` and printed as `88.8V`, which is 116 pixels
-  -- of a 105 pixel column and wraps -- invisible below 10 V because `7.9V`
-  -- happens to fit where `10.0V` does not.
-  assertEqual(battery.reading(7.9, 1), "7.9V")
-  assertEqual(battery.reading(7.9, 2), "7.9")
-  assertEqual(battery.reading(10.0, 2), "10.0")
-  assertEqual(battery.reading(nil, 1), "--")
+  -- The reading is digits and nothing else. There is no longer a form to
+  -- choose between, which is what stopped `88.8` being measured and `88.8V`
+  -- being drawn -- 116 pixels into a 105 pixel column, invisible below 10 V
+  -- because `7.9V` happens to fit where `10.0V` does not.
+  assertEqual(battery.reading(7.9), "7.9")
+  assertEqual(battery.reading(10.0), "10.0")
+  assertEqual(battery.reading(nil), "--")
 
-  -- The widest reading in the chosen form, against the column it lands in.
-  -- `7.9V` fits everywhere and proves nothing; `88.8V` is what the fitter was
-  -- asked about and is what has to fit.
-  for index, row in ipairs(documented) do
-    local cols, rows = string.match(row[1], "(%d)x(%d)")
-    cols, rows = tonumber(cols), tonumber(rows)
-    local rect = {
-      x = 0, y = 0,
-      w = cellWidth * cols + GUTTER * (cols - 1),
-      h = cellHeight * rows + GUTTER * (rows - 1),
-    }
-    local layout = battery.presentationFor(cols, rows)
-    layout.visual = "battery"
-    local area = battery.regionsFor(resolved, theme, primitives, rect, layout,
-      theme.typography(cols, rows))
-    local widest = battery.reading(88.8, area.formIndex)
-    assert(theme.textWidth(area.value, widest) <= area.valueWidth,
-      row[1] .. " wraps its widest reading " .. widest .. ": "
-        .. theme.textWidth(area.value, widest) .. " into " .. area.valueWidth)
-    assertEqual(index <= #documented, true)
-  end
-
-  assertEqual(battery.FORMS[2], "88.8",
-    "the shorter form is no longer the unitless one the page describes")
+  assertEqual(battery.reading(88.8), battery.DIGITS,
+    "the widest number the fitter is asked about is not the widest it prints")
 
   -- The cell's column ends where the percentage begins, at every height a
   -- reflow can produce rather than only at the eight the grid can.
@@ -4091,7 +4218,8 @@ local function testNavigationRegions()
   local layout = navigation.presentationFor("detailed")
 
   local large = navigation.regionsFor(resolved, theme,
-    {x = 0, y = 0, w = 238, h = 134}, layout, fonts, {"888.88km"})
+    {x = 0, y = 0, w = 238, h = 134}, layout, fonts,
+    {digits = "888.88", unit = "km"})
   assertEqual(large.showCompass, true)
   assertEqual(large.showCoordinates, true)
   -- The dial sits inside its own panel, measured from its centre.
@@ -4105,11 +4233,13 @@ local function testNavigationRegions()
   -- A panel that cannot afford everything sheds the coordinates first and the
   -- dial next, and never the distance.
   local short = navigation.regionsFor(resolved, theme,
-    {x = 0, y = 0, w = 238, h = 62}, layout, fonts, {"888.88km"})
+    {x = 0, y = 0, w = 238, h = 62}, layout, fonts,
+    {digits = "888.88", unit = "km"})
   assertEqual(short.showCoordinates, false)
 
   local tiny = navigation.regionsFor(resolved, theme,
-    {x = 0, y = 0, w = 58, h = 40}, layout, fonts, {"888.88km"})
+    {x = 0, y = 0, w = 58, h = 40}, layout, fonts,
+    {digits = "888.88", unit = "km"})
   assertEqual(tiny.showCompass, false, "an unreadable dial was kept")
   assertEqual(tiny.radius, 0)
   assertEqual(tiny.valueWidth, tiny.content, "the reading did not reclaim the room")
@@ -4132,7 +4262,10 @@ local function testTelemetryContentFitsPanel()
     {name = "2x1", w = 238, h = 65, colSpan = 2, rowSpan = 1},
     {name = "1x1", w = 117, h = 65, colSpan = 1, rowSpan = 1},
     {name = "shrunk", w = 158, h = 68, colSpan = 2, rowSpan = 2},
-    {name = "tiny", w = 60, h = 40, colSpan = 1, rowSpan = 1},
+    -- Smaller than any span the grid can produce: a single cell is 117 by
+    -- 65. Kept as a stress case, and marked so the assertions can ask it the
+    -- question it can actually answer.
+    {name = "tiny", w = 60, h = 40, colSpan = 1, rowSpan = 1, synthetic = true},
   }
 
   for _, case in ipairs(cases) do
@@ -4142,12 +4275,8 @@ local function testTelemetryContentFitsPanel()
 
     --- Shared assertions: the reading fits its own region in both axes, and
     --- clears the header above it and whatever row sits below it.
-    local function assertReading(what, area, valueFont, valueWidth, forms)
-      -- The component may draw a shorter form than the longest it offered, so
-      -- the assertion is against the form it actually chose. Checking the
-      -- longest would fail a panel that correctly abbreviated, and checking
-      -- only the shortest would pass one that never abbreviated at all.
-      local sample = forms[area.formIndex or 1]
+    --- @param reading table `digits`, and `unit` where the panel has one.
+    local function assertReading(what, area, valueFont, valueWidth, reading)
       local bottom = area.valueY + heightOf(valueFont)
       assert(bottom <= case.h, what .. " " .. case.name
         .. ": the reading overflows the panel, ends at " .. bottom)
@@ -4156,13 +4285,32 @@ local function testTelemetryContentFitsPanel()
       assert(area.pad + valueWidth <= case.w, what .. " " .. case.name
         .. ": the reading runs past the right edge")
 
-      -- Width matters as much as height: the widest string this component can
-      -- ever print has to fit the column it was given, or it clips sideways.
-      -- The smallest font is the honest answer when nothing fits.
-      assert(theme.textWidth(valueFont, sample) <= valueWidth
-        or valueFont == SMLSIZE, what .. " " .. case.name
-        .. ": the reading was fitted by height alone and clips at "
-        .. theme.textWidth(valueFont, sample) .. " in " .. valueWidth)
+      -- Width matters as much as height, and the width that matters is the
+      -- number **and whatever rides beside it**. Measuring the digits alone
+      -- would pass a panel whose unit hangs over the edge, which is the whole
+      -- of what an inline unit can get wrong.
+      local carried = theme.readingWidth(valueFont, reading.digits,
+        area.unitFont, area.showUnit and reading.unit or nil)
+      if case.synthetic then
+        -- Narrower than any real panel, so the widest reading genuinely does
+        -- not fit and the only honest question is whether the component spent
+        -- everything it had. Asserting the fit here would be asserting that a
+        -- 60 pixel panel is a 117 pixel one.
+        assertEqual(valueFont, theme.READING_FONTS[#theme.READING_FONTS],
+          what .. " " .. case.name
+            .. ": a panel too narrow for its reading kept a larger font")
+      else
+        assert(carried <= valueWidth, what .. " " .. case.name
+          .. ": the reading and its unit clip at "
+          .. carried .. " in " .. valueWidth)
+      end
+
+      -- A unit that is not smaller than its number is a second reading.
+      if area.showUnit then
+        assert(heightOf(area.unitFont) < heightOf(valueFont),
+          what .. " " .. case.name
+            .. ": the unit is drawn at or above the reading's own size")
+      end
 
       if area.showDetail then
         assert(bottom <= area.detailY, what .. " " .. case.name
@@ -4181,9 +4329,10 @@ local function testTelemetryContentFitsPanel()
     local cellLayout = cellBattery.presentationFor(case.colSpan, case.rowSpan)
     cellLayout.visual = "bar"
     local cells = cellBattery.regionsFor(
-      resolved, theme, rect, cellLayout, fonts, {"4.44V", "4.44"})
+      resolved, theme, rect, cellLayout, fonts,
+      {digits = "4.44", unit = "V"})
     assertReading("cell-battery", cells, cells.value, cells.content,
-      {"4.44V", "4.44"})
+      {digits = "4.44", unit = "V"})
     if cells.showDetail then
       assert(cells.detailY + labelHeight <= cells.barY, "cell-battery "
         .. case.name .. ": the detail row overlaps the bar")
@@ -4198,9 +4347,10 @@ local function testTelemetryContentFitsPanel()
     local linkLayout = linkStatus.presentationFor(case.colSpan, case.rowSpan)
     linkLayout.visual = "bar"
     local link = linkStatus.regionsFor(
-      resolved, theme, rect, linkLayout, fonts, {"-100dBm", "-100"})
+      resolved, theme, rect, linkLayout, fonts,
+      {digits = "-100", unit = "dBm"})
     assertReading("link-status", link, link.value, link.content,
-      {"-100dBm", "-100"})
+      {digits = "-100", unit = "dBm"})
     if link.showDetail then
       assert(link.detailY + labelHeight <= link.barY, "link-status "
         .. case.name .. ": the detail row overlaps the bar")
@@ -4211,9 +4361,11 @@ local function testTelemetryContentFitsPanel()
     for _, presentation in ipairs({"distance", "bearing", "compass", "detailed"}) do
       local navLayout = navigationComponent.presentationFor(presentation)
       local nav = navigationComponent.regionsFor(
-        resolved, theme, rect, navLayout, fonts, {"888.88km"})
+        resolved, theme, rect, navLayout, fonts,
+        {digits = "888.88", unit = "km"})
       local what = "navigation/" .. presentation
-      assertReading(what, nav, nav.value, nav.valueWidth, {"888.88km"})
+      assertReading(what, nav, nav.value, nav.valueWidth,
+        {digits = navigationComponent.DIGITS, unit = navigationComponent.UNIT})
 
       if nav.showDetail then
         assert(nav.detailY + labelHeight <= case.h,
@@ -4249,7 +4401,8 @@ local function testTelemetryContentFitsPanel()
   local cellLayout = cellBattery.presentationFor(2, 1)
   cellLayout.visual = "bar"
   local shedCells = cellBattery.regionsFor(
-    resolved, theme, squeezed, cellLayout, wideFonts, {"4.44V", "4.44"})
+    resolved, theme, squeezed, cellLayout, wideFonts,
+    {digits = "4.44", unit = "V"})
   assertEqual(shedCells.showDetail, false,
     "cell-battery kept a supporting row a short panel could not afford")
   assert(heightOf(shedCells.value) >= heightOf(MIDSIZE),
@@ -4258,14 +4411,16 @@ local function testTelemetryContentFitsPanel()
   local linkLayout = linkStatus.presentationFor(2, 1)
   linkLayout.visual = "bar"
   local shedLink = linkStatus.regionsFor(
-    resolved, theme, squeezed, linkLayout, wideFonts, {"-100dBm", "-100"})
+    resolved, theme, squeezed, linkLayout, wideFonts,
+    {digits = "-100", unit = "dBm"})
   assertEqual(shedLink.showDetail, false,
     "link-status kept a supporting row a short panel could not afford")
   assert(heightOf(shedLink.value) >= heightOf(MIDSIZE),
     "link-status shed a row without buying its reading any size")
 
   local shedNav = navigationComponent.regionsFor(resolved, theme, squeezed,
-    navigationComponent.presentationFor("detailed"), wideFonts, {"888.88km"})
+    navigationComponent.presentationFor("detailed"), wideFonts,
+    {digits = navigationComponent.DIGITS, unit = navigationComponent.UNIT})
   assertEqual(shedNav.showCoordinates, false,
     "navigation kept a coordinates row a short panel could not afford")
   assert(heightOf(shedNav.value) >= heightOf(MIDSIZE),
@@ -4285,6 +4440,8 @@ testControlService()
 testExtremaService()
 testNavigationService()
 testFontHeightsMatchTheFirmware()
+testFitReadingReportsWhetherItFits()
+testUnitSitsOnTheBaseline()
 testTextFitting()
 testBatteryStrokeScalesWithFont()
 testBatteryStaysVisible()

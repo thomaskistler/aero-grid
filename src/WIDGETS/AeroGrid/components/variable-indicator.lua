@@ -254,7 +254,8 @@ function variableIndicator.regionsFor(
     valueWidth = math.max(1, radialX - frame.pad - 4)
   end
 
-  local value, formIndex = themeBuilder.fitReading(sample, valueWidth, ladder.room)
+  local value, unitFont, showUnit = themeBuilder.fitReadingUnit(
+    sample.digits, sample.unit, valueWidth, ladder.room)
   local valueHeight = themeBuilder.fontHeight(value)
   if top + valueHeight > rect.h then top = math.max(0, rect.h - valueHeight) end
 
@@ -267,7 +268,8 @@ function variableIndicator.regionsFor(
     valueY = top,
     valueWidth = valueWidth,
     value = value,
-    formIndex = formIndex,
+    unitFont = unitFont,
+    showUnit = showUnit,
     detailY = math.max(1, barY - labelHeight - 2),
     barY = barY,
     radius = radius,
@@ -338,11 +340,10 @@ function variableIndicator.create(parent, rect, settings, services)
   if not reading.available then sample = "-" .. sample .. "0" end
   -- The unit is redundant with the panel's label and with the configured name
   -- on the supporting row, so it may go. The digits may not: a rates value of
-  -- 4.5 shown as 4 is a different number, not a shorter one.
-  local forms = {sample}
-  if reading.unitText ~= "" then
-    forms = {sample .. reading.unitText, sample}
-  end
+  -- 4.5 shown as 4 is a different number, not a shorter one. It rides beside
+  -- the number now rather than being glued onto it, which is what stopped the
+  -- fitter measuring one string and this drawing another.
+  local forms = {digits = sample, unit = reading.unitText}
   context.sample = forms
 
   local area = variableIndicator.regionsFor(
@@ -358,6 +359,11 @@ function variableIndicator.create(parent, rect, settings, services)
   -- The heading is refitted whenever it changes, so the column it has to
   -- fit is kept beside it.
   context.frame = area.frame
+  -- Built hidden. The unit is not known yet, so nothing here could decide
+  -- whether it fits; `apply` decides once it arrives.
+  context.showUnit = false
+  context.unitText = ""
+  context.area = area
 
   context.value = primitives.value(panel.root, theme, {
     x = area.pad,
@@ -366,6 +372,17 @@ function variableIndicator.create(parent, rect, settings, services)
     text = "--",
     color = presentation.value,
     font = area.value,
+  })
+
+  -- The unit comes from `getGlobalVariableDetails`, so it is known here, but
+  -- the label is still written by `apply` so there is one path that puts text
+  -- into it rather than two.
+  context.unit = primitives.unit(panel.root, theme, {
+    x = area.pad,
+    y = area.valueY,
+    text = "",
+    color = theme.color.textMuted,
+    font = area.unitFont,
   })
 
   context.detailLabel = primitives.label(panel.root, theme, {
@@ -413,6 +430,7 @@ function variableIndicator.create(parent, rect, settings, services)
   context.showVisual = area.showVisual
 
   if not area.showDetail then lvgl.hide(context.detailLabel) end
+  lvgl.hide(context.unit)
   if not area.showVisual then variableIndicator.hideVisual(context) end
 
   -- The first paint goes through the same path as every later one, so the
@@ -497,9 +515,8 @@ function variableIndicator.render(context, out)
   end
 
   out.text = variableIndicator.format(reading.value, reading.precision)
-  if reading.available and reading.unitText ~= "" then
-    out.text = out.text .. reading.unitText
-  end
+  -- Always declared, because whether it can be shown is decided from it.
+  out.unit = reading.available and reading.unitText or ""
 
   -- The configured name is supporting text: it names the thing, while the
   -- header carries whatever the pilot chose to call it.
@@ -537,6 +554,24 @@ function variableIndicator.apply(context, drawn)
   context.labelValue = drawn.label
 
   context.value:set({text = drawn.text, color = presentation.value})
+  -- A global variable's unit arrives from EdgeTX after the panel is built, so
+  -- whether there is room for it cannot be settled at build time. It is
+  -- settled here, once, when the unit first turns up.
+  local unitText = drawn.unit or ""
+  if unitText ~= context.unitText then
+    context.unitText = unitText
+    local shows = context.primitives.unitFits(context.themeBuilder,
+      context.area.value, context.sample.digits, context.area.unitFont,
+      unitText, context.area.valueWidth)
+    context.unit:set({text = unitText})
+    if shows ~= context.showUnit then
+      if shows then lvgl.show(context.unit) else lvgl.hide(context.unit) end
+      context.showUnit = shows
+      context.unitAnchor = nil
+    end
+  end
+  context.primitives.followUnit(context, context.themeBuilder,
+    context.area, context.area.value, drawn.text)
   -- Through the fitter, not straight into the label: this heading comes from
   -- the model at runtime and is exactly the kind that overflows its column.
   context.primitives.setHeading(context.label, context.themeBuilder,
@@ -591,6 +626,17 @@ function variableIndicator.update(context, rect)
     w = area.valueWidth,
     font = function() return area.value end,
   })
+
+  -- A reflow can change the column and the reading's font, so whether the
+  -- unit still fits is asked again with the unit that is actually in hand.
+  local shows = context.primitives.unitFits(context.themeBuilder, area.value,
+    context.sample.digits, area.unitFont, context.unitText, area.valueWidth)
+  context.primitives.reconcileUnit(context.unit, shows, context.themeBuilder,
+    area.pad, area.valueY, area.value, context.text, area.unitFont,
+    shows == context.showUnit)
+  context.showUnit = shows
+  context.unitAnchor = nil
+  context.area = area
 
   primitives.reconcile(context.detailLabel, area.showDetail,
     {x = area.pad, y = area.detailY, w = area.content},

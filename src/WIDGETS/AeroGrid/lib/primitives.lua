@@ -633,6 +633,158 @@ function primitives.value(parent, theme, options)
   })
 end
 
+--------------------------------------------------------------------------
+-- The unit that rides beside a reading
+--------------------------------------------------------------------------
+
+--- Create the unit label that sits beside a dominant reading.
+---
+--- Beside rather than beneath, at a smaller font, sharing the number's
+--- baseline. Five components printed their unit into the reading string and
+--- one drew it on its own row underneath; this is the one shape, and it is
+--- here rather than in any of them because the next component to grow a unit
+--- should not have to invent it again.
+---@param parent any
+---@param theme AeroGridTheme
+---@param options table x, y, text, color, font
+---@return any
+function primitives.unit(parent, theme, options)
+  local font = options.font
+  return lvgl.label(parent, {
+    x = options.x,
+    y = options.y,
+    -- No width. A unit is as wide as it is: given a column it would be
+    -- padded to it, and given a column narrower than itself it would wrap,
+    -- which for a two-character string beside a number is the worst of both.
+    text = tostring(options.text or ""),
+    color = options.color or theme.color.textMuted,
+    font = function() return font end,
+  })
+end
+
+--- Put the unit beside a reading whose text is known, on its baseline.
+---
+--- The x follows the reading's **drawn** text rather than the widest it could
+--- be, because a unit that keeps its distance from a short number has stopped
+--- being attached to it. The reading is repainted only when what it says
+--- changes, so the unit moves exactly when it should and not once more.
+---
+--- The y is exact rather than approximate. `theme.unitTop` derives it from
+--- each font's ascent, which EdgeTX does not report but which is a fixed
+--- property of the fonts it ships.
+---@param unit any
+---@param themeBuilder table
+---@param readingX integer
+---@param readingY integer
+---@param readingFont any
+---@param text any What the reading currently says.
+---@param unitFont any
+function primitives.placeUnit(unit, themeBuilder, readingX, readingY,
+    readingFont, text, unitFont, withFont)
+  local changes = {
+    x = readingX + themeBuilder.textWidth(readingFont, text)
+      + themeBuilder.unitGap(unitFont),
+    y = themeBuilder.unitTop(readingFont, unitFont, readingY),
+  }
+  -- The font goes in the same call rather than a second one. A reflow that
+  -- moves the reading to another size moves the rider too, and telling the
+  -- label its position and then its font is two writes into one object for
+  -- one change.
+  if withFont then changes.font = function() return unitFont end end
+  unit:set(changes)
+end
+
+--- Decide whether a unit that only became known at runtime can be shown.
+---
+--- A global variable's unit and a telemetry sensor's both arrive after the
+--- panel is built -- the first from `getGlobalVariableDetails`, the second
+--- once the source resolves -- so a panel that decided at build time decided
+--- against a unit of `""` and never showed one. This is the same late arrival
+--- the bar's range has, answered the same way: build the object, and let the
+--- answer change once when the truth turns up.
+---
+--- Measured against the **widest digits** the panel can print rather than
+--- what it currently says, so the unit does not appear and vanish as the
+--- number changes length.
+---@param themeBuilder table
+---@param font any Reading font.
+---@param digits string Widest digits the panel will print.
+---@param unitFont any
+---@param unit any
+---@param width integer The reading's own column.
+---@return boolean
+function primitives.unitFits(themeBuilder, font, digits, unitFont, unit, width)
+  if unit == nil or unit == "" then return false end
+  return themeBuilder.readingWidth(font, digits, unitFont, unit) <= width
+end
+
+--- Keep a unit beside a reading, moving it only when the reading's width
+--- actually changed.
+---
+--- `theme.textWidth` is length times the font's line height times a constant,
+--- so the unit's x is a pure function of how many characters the reading has.
+--- Moving it on every repaint therefore wrote the same two numbers into the
+--- same label tens of times a second: measured at sixteen `link-status`
+--- panels refreshing every frame, that was 480 instructions of the steady
+--- frame for no pixel changed.
+---
+--- The anchor lives on the component's own context, which is a plain Lua
+--- table. It cannot live on the label: an LVGL object is userdata on a radio
+--- and holds no fields.
+--- The reading's font is passed rather than read off `area`, because the
+--- components do not agree on what to call it: five say `value` and `metric`
+--- says `primary`. Reaching for one of those names put `metric`'s unit
+--- against a nil font, which the fixture measured as SMLSIZE and placed 38
+--- pixels off the baseline it was supposed to share.
+---@param context table The component's own context.
+---@param themeBuilder table
+---@param area table Regions, for `pad`, `valueY` and `unitFont`.
+---@param font any The font the reading is drawn in.
+---@param text string What the reading now says. Always a string: every
+--- component's `render` writes `out.text` through `string.format` or a
+--- literal, so there is nothing here to coerce and a `tostring` per panel per
+--- frame would be the fixture-cost mistake made in the widget.
+function primitives.followUnit(context, themeBuilder, area, font, text)
+  if not context.showUnit then return end
+
+  local length = #text
+  if length == context.unitAnchor then return end
+  context.unitAnchor = length
+
+  primitives.placeUnit(context.unit, themeBuilder, area.pad, area.valueY,
+    font, text, area.unitFont)
+end
+
+--- Show or hide a unit, placing it only when it is visible.
+---
+--- The change table is deliberately empty of position: `placeUnit` owns the x
+--- and the y, and a second opinion stated here would be a second answer to
+--- the same question. Only the font is reconciled, because a reflow can move
+--- the reading to a different size and the rider follows it.
+---@param unit? any
+---@param visible boolean
+---@param themeBuilder table
+---@param readingX integer
+---@param readingY integer
+---@param readingFont any
+---@param text any What the reading currently says.
+---@param unitFont any
+---@param settled? boolean Visibility is known not to have moved.
+function primitives.reconcileUnit(unit, visible, themeBuilder, readingX,
+    readingY, readingFont, text, unitFont, settled)
+  if not unit then return end
+
+  if visible then
+    primitives.placeUnit(unit, themeBuilder, readingX, readingY, readingFont,
+      text, unitFont, true)
+  end
+  -- Whatever `followUnit` was remembering is about a column and a font that
+  -- have just moved, so it is discarded rather than trusted.
+  if settled then return end
+
+  if visible then lvgl.show(unit) else lvgl.hide(unit) end
+end
+
 --- Create a horizontal progress bar with a muted track.
 --- An optional marker fraction draws a persistent tick, which a range that
 --- crosses zero needs so the reader can see which side of zero a value is on.

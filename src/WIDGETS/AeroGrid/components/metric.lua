@@ -409,10 +409,23 @@ function metric.apply(context, drawn)
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
   context.primitives.stylePanel(context.panel, presentation)
 
-  if context.showUnit and drawn.unit then
+  -- A sensor's unit arrives with its source rather than when the panel was
+  -- built, so whether there is room beside the reading for it is settled here
+  -- the first time one turns up.
+  if context.unit and drawn.unit and drawn.unit ~= context.unitText then
     context.unitText = drawn.unit
     context.unit:set({text = drawn.unit})
+    local shows = context.area.showUnit and context.primitives.unitFits(
+      context.themeBuilder, context.area.primary, context.sample[1],
+      context.area.unitFont, drawn.unit, context.area.valueWidth)
+    if shows ~= context.showUnit then
+      if shows then lvgl.show(context.unit) else lvgl.hide(context.unit) end
+      context.showUnit = shows
+      context.unitAnchor = nil
+    end
   end
+  context.primitives.followUnit(context, context.themeBuilder,
+    context.area, context.area.primary, drawn.text)
   if context.showRange and drawn.range then
     context.rangeText = drawn.range
     context.range:set({text = drawn.range})
@@ -493,7 +506,8 @@ end
 ---@param fonts table
 ---@param sample? string[] Lossless forms of the reading, longest first.
 ---@return table
-function metric.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
+function metric.regionsFor(theme, themeBuilder, rect, layout, fonts, sample,
+    unit)
   local spacing = theme.spacing
   local frame = themeBuilder.frame(theme, rect, fonts)
   local pad = frame.pad
@@ -511,7 +525,12 @@ function metric.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
   -- it. What this component wants is a veto, not a vote: it may decline a row
   -- the ladder granted, and cannot claim one it did not.
   local ladder = themeBuilder.ladder(theme, rect, frame)
-  local showUnit = layout.showUnit and ladder.rows > 0
+  -- The unit no longer takes a row of its own, so it no longer needs one
+  -- granted. What is left is a question about width, and it is answered here
+  -- rather than by the component, so `area.showUnit` means the same thing in
+  -- every panel: **the unit we know about fits beside the reading**. A
+  -- sensor's unit arrives later than this, and the component asks again
+  -- through `primitives.unitFits` when it does.
   local showVisual = layout.showVisual and layout.visual ~= "none" and ladder.visual
   local showRange = layout.showRange and ladder.rows > 0
   local showSecondary = layout.showSecondary and showRange
@@ -524,11 +543,16 @@ function metric.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     valueWidth = math.max(1, radialX - pad - 4)
   end
 
-  -- The unit sits under the reading and comes out of the same room.
-  local available = math.max(1, ladder.room
-    - (showUnit and themeBuilder.fontHeight(fonts.unit) or 0))
-  local primary, formIndex = themeBuilder.fitReading(
-    sample or {""}, valueWidth, available)
+  -- The unit rides beside the reading rather than beneath it, so it costs
+  -- the composition no height at all. It used to take a whole row out of the
+  -- reading's room, which is why a metric drew a smaller number than its
+  -- neighbours at the same span.
+  local available = ladder.room
+  local digits = (sample or {""})[1] or ""
+  local primary, unitFont, fitsUnit = themeBuilder.fitReadingUnit(
+    digits, unit, valueWidth, available)
+  local showUnit = layout.showUnit and fitsUnit
+  local formIndex = 1
   local primaryHeight = themeBuilder.fontHeight(primary)
 
   if top + primaryHeight > rect.h then
@@ -553,7 +577,8 @@ function metric.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     valueWidth = valueWidth,
     primary = primary,
     formIndex = formIndex,
-    unitY = math.max(1, top + primaryHeight),
+    unitFont = unitFont,
+    unitY = themeBuilder.unitTop(primary, unitFont, top),
     barY = barY,
     rangeY = math.max(1, barY - labelHeight - 2),
     detailWidth = detailWidth,
@@ -632,8 +657,10 @@ function metric.create(parent, rect, settings, services)
   end
 
   local sample = metric.widestSample(settings, metric.digitsFor(context))
+  context.unitText = tostring(settings.unit or "")
   local area = metric.regionsFor(
-    theme, services.themeBuilder, rect, layout, fonts, sample)
+    theme, services.themeBuilder, rect, layout, fonts, sample,
+    context.unitText)
   context.sample = sample
 
   local panel = primitives.panel(parent, rect, theme, presentation)
@@ -658,15 +685,19 @@ function metric.create(parent, rect, settings, services)
   -- when the layout names none, because the sensor supplies one once it
   -- resolves.
   if layout.showUnit then
-    context.unitText = tostring(settings.unit or "")
-    context.unit = primitives.label(panel.root, theme, {
+    context.unit = primitives.unit(panel.root, theme, {
       x = area.pad,
       y = area.unitY,
-      w = area.valueWidth,
       text = context.unitText,
-      color = theme.color.textFaint,
-      font = fonts.unit,
+      color = theme.color.textMuted,
+      font = area.unitFont,
     })
+    -- Shown straight away when the layout named a unit, because then there
+    -- is one to show and `regionsFor` has already said it fits. A sensor's
+    -- own unit arrives when its source resolves, which is after this, so a
+    -- panel that named none starts hidden and `apply` reveals it.
+    if not area.showUnit then lvgl.hide(context.unit) end
+    context.showUnit = area.showUnit
   end
 
   if layout.showVisual and settings.visual == "radial" then
@@ -722,8 +753,9 @@ function metric.create(parent, rect, settings, services)
   end
   -- A row exists when the span allows one and shows when the box has space
   -- for it. Only the second decides what is drawn, so only the second is
-  -- what `render` is allowed to read.
-  context.showUnit = context.unit ~= nil and area.showUnit == true
+  -- what `render` is allowed to read. The unit is not among them any more:
+  -- it depends on a unit that has not arrived, so `apply` settles it.
+  context.area = area
   context.showRange = context.range ~= nil and area.showRange == true
   context.showSecondary = context.secondary ~= nil
     and area.showSecondary == true
@@ -764,7 +796,7 @@ end
 function metric.update(context, rect)
   local theme = context.theme
   local area = metric.regionsFor(theme, context.themeBuilder, rect,
-    context.layout, context.fonts, context.sample)
+    context.layout, context.fonts, context.sample, context.unitText)
 
   context.primitives.resizePanel(context.panel, rect)
   context.primitives.placeHeader(context.label, context.badge, area.frame,
@@ -780,13 +812,19 @@ function metric.update(context, rect)
   --- Show or hide an optional element, positioning it only when visible.
   local reconcile = context.primitives.reconcile
 
-  context.showUnit = context.unit ~= nil and area.showUnit == true
   context.showRange = context.range ~= nil and area.showRange == true
   context.showSecondary = context.secondary ~= nil
     and area.showSecondary == true
+  context.area = area
 
-  reconcile(context.unit, area.showUnit,
-    {x = area.pad, y = area.unitY, w = area.valueWidth})
+  local shows = area.showUnit and context.unit ~= nil
+    and context.primitives.unitFits(context.themeBuilder, area.primary,
+      context.sample[1], area.unitFont, context.unitText, area.valueWidth)
+  context.primitives.reconcileUnit(context.unit, shows, context.themeBuilder,
+    area.pad, area.valueY, area.primary, context.text or "--",
+    area.unitFont, shows == context.showUnit)
+  context.showUnit = shows
+  context.unitAnchor = nil
   reconcile(context.range, area.showRange,
     {x = area.pad, y = area.rangeY, w = area.detailWidth})
   reconcile(context.secondary, area.showSecondary,
