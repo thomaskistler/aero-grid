@@ -253,6 +253,29 @@ def apply_font(obj, font):
     obj.font = font
 
 
+def place_unit(reading, unit):
+    """Put the unit back where the reading now ends.
+
+    **This is the defect this project has now hit six times**, and the sixth
+    was in this file: something decides a size and something else draws at a
+    position computed for the old one. Resizing a reading from `SMLSIZE` to
+    `MIDSIZE` widens `-72` by 13 px, and a unit shifted by the reading's
+    delta rather than re-placed against its new end lands 13 px inside the
+    digits. It showed as `dBm` printed over `-72` on exactly the panels
+    where the band moved the font, and not on the panels where it did not --
+    which is why two spans of the same width behaved differently.
+
+    So placement is derived from the reading's current width every time,
+    mirroring `theme.placeUnit`, rather than carried along as an offset. The
+    vertical is the shared baseline from #45: both sit so that
+    `y + ascent` is the same line.
+    """
+    if reading is None or unit is None:
+        return
+    unit.x = reading.x + reading.textW + GAP_UNIT
+    unit.y = reading.y + FONTS[reading.font][1] - FONTS[unit.font][1]
+
+
 def slot_margin(flowed, pad, content, widest_at, bands=None):
     """Pixels between the reading's slot and the secondary's, at the widest.
 
@@ -348,6 +371,42 @@ def ink_font(band_h):
     return LADDER[-1]
 
 
+def ink_span(obj):
+    """Where an object's ink sits within its line box, as (offset, height).
+
+    LVGL lays a label out in a line box of `line_height`, with the baseline
+    `base_line` up from its floor -- so the glyphs occupy the top `ascent`
+    pixels and the remaining `base_line` is descent and leading. Every
+    reading in this catalogue is digits, a minus, a point or a colon, none of
+    which descend, so that tail is empty. The offset is therefore zero and
+    the height is the ascent: **the ink is flush with the top of the line box
+    and the slack is all underneath it.**
+
+    That asymmetry is the whole of the finding below. Centring the line box
+    centres the slack along with the ink, which lifts the digits above the
+    middle of whatever they are centred in.
+    """
+    height, ascent = FONTS.get(obj.font, (17, 13))
+    return 0, ascent
+
+
+def optical_dy(reading, vy, vye, centre_rule):
+    """How far a secondary element moves to sit on the reading's centre.
+
+    Under `box` that centre is the middle of the reading's line box, which
+    is the settled rule. Under `ink` it is the middle of the glyphs alone.
+    They differ by half the `base_line`, and since that slack is all below
+    the digits, centring on the box drops the element below the number's
+    visual middle.
+    """
+    ink_off, ink_h = ink_span(reading)
+    if centre_rule == "ink":
+        top, height = reading.y + ink_off, ink_h
+    else:
+        top, height = reading.y, reading.lineH
+    return (top + (height - (vye - vy)) // 2) - vy
+
+
 def centre_in_band(band, height):
     """Where a block of `height` starts to sit centred in a band.
 
@@ -379,7 +438,8 @@ SLOT_TIGHT = (0.30, 0.70)
 
 
 def halves(objects, panel_w, panel_h, pad, content, widest_at=None,
-           compact=0, bottom=0, vertical=False, slots=SLOT_STRICT):
+           compact=0, bottom=0, vertical=False, slots=SLOT_STRICT,
+           font_rule="line", centre_rule="box"):
     """The user's third arrangement: two slots derived from the panel.
 
     The reading is centred in the panel's left half and a secondary element
@@ -420,31 +480,30 @@ def halves(objects, panel_w, panel_h, pad, content, widest_at=None,
     group = reading.textW + (GAP_UNIT + unit.textW if unit else 0)
     target = left_centre if has_visual else pad + content // 2
     dx = (target - group // 2) - reading.x
-    for o in (reading, unit):
-        if o is not None:
-            o.x += dx
+    reading.x += dx
+    place_unit(reading, unit)
 
     moved_visual_bottom = bounds[3] if bounds is not None else None
     if has_visual:
         vx, vy, vxe, vye = bounds
         vdx = (right_centre - (vxe - vx) // 2) - vx
-        vdy = (reading.y + (reading.lineH - (vye - vy)) // 2) - vy
+        vdy = optical_dy(reading, vy, vye, centre_rule)
         for o in out:
             if o.role == "visual" and not o.hidden:
                 o.x += vdx
                 o.y += vdy
         moved_visual_bottom = vye + vdy
 
-    # The supporting row sits at the bottom, centred as one group across the
-    # content box. Taken literally from the description, which is the only
-    # honest way to show what it does to a two-column row.
+    # Every row uses the panel's two slots, not just the body. A row holding
+    # one item centres it across the whole content box, exactly as a lone
+    # reading does; a row holding two puts them on the same 30% and 70%
+    # centres the reading and its visual use. That makes the arrangement one
+    # rule applied at every level rather than a body rule plus a footer
+    # special case -- which is worth more than the appearance, because it is
+    # the difference between something extensible and something to memorise.
     supporting = [o for o in out if o.role == "supporting" and not o.hidden]
-    if supporting:
-        left = min(o.x for o in supporting)
-        right = max(o.x + o.textW for o in supporting)
-        shift = (pad + (content - (right - left)) // 2) - left
-        for o in supporting:
-            o.x += shift
+    for items in group_rows(supporting):
+        slot_row(items, pad, content, slots)
 
     bands = None
     if vertical:
@@ -460,7 +519,8 @@ def halves(objects, panel_w, panel_h, pad, content, widest_at=None,
         # drawn larger than one occupying two, which is the whole of the new
         # rule -- and it is what settles the collision the bands created,
         # because a font chosen to fit its band cannot overflow it.
-        banded = band_font(bands["body"][1])
+        banded = (ink_font if font_rule == "ink" else band_font)(
+            bands["body"][1])
         if banded != reading.font:
             ratio = FONTS[banded][0] / FONTS[reading.font][0]
             apply_font(reading, banded)
@@ -486,20 +546,38 @@ def halves(objects, panel_w, panel_h, pad, content, widest_at=None,
             group2 = reading.textW + (GAP_UNIT + unit.textW if unit else 0)
             target2 = left_centre if has_visual else pad + content // 2
             dx2 = (target2 - group2 // 2) - reading.x
-            for o in (reading, unit):
-                if o is not None:
-                    o.x += dx2
+            reading.x += dx2
+            place_unit(reading, unit)
             if has_visual:
                 vb = visual_bounds(out)
                 vdx2 = (right_centre - (vb[2] - vb[0]) // 2) - vb[0]
+                # And re-centre it vertically. Both the reading's box and the
+                # element's height changed with the font, so the optical
+                # centring struck before the change no longer holds -- and
+                # this page exists partly to show what that centring does,
+                # so it has to be the real relationship and not a stale one.
+                vdy2 = optical_dy(reading, vb[1], vb[3], centre_rule)
                 for o in out:
                     if o.role == "visual" and not o.hidden:
                         o.x += vdx2
+                        o.y += vdy2
 
         # The reading and whatever shares its band move together, so the
         # optical-centre relationship between them survives the move.
-        block_top = reading.y
-        block_bottom = reading.y + reading.lineH
+        #
+        # **What counts as the block's extent is the placement question.**
+        # Under `box` it is the reading's line box, which is the settled
+        # rule; under `ink` it is only the part of that box a digit actually
+        # marks. They differ by `base_line`, all of it below the glyphs, so
+        # centring the box lifts the digits above the band's middle by half
+        # of it. The band guides in the rendering show the difference.
+        ink_off, ink_h = ink_span(reading)
+        if centre_rule == "ink":
+            block_top = reading.y + ink_off
+            block_bottom = block_top + ink_h
+        else:
+            block_top = reading.y
+            block_bottom = reading.y + reading.lineH
         if has_visual:
             vb = visual_bounds(out)
             block_top = min(block_top, vb[1])
@@ -519,6 +597,108 @@ def halves(objects, panel_w, panel_h, pad, content, widest_at=None,
                 o.y += dy
 
     return out, steps, fits, bands
+
+
+def group_rows(items):
+    """Supporting labels grouped into the rows they are drawn on.
+
+    Grouped by their drawn `y` rather than by any declared structure,
+    because the dump is geometry: what makes two labels a row is that the
+    component put them on the same line.
+    """
+    byline = {}
+    for o in items:
+        byline.setdefault(o.y, []).append(o)
+    return [sorted(v, key=lambda o: o.x) for _, v in sorted(byline.items())]
+
+
+def slot_row(items, pad, content, slots):
+    """Place one row of supporting labels on the panel's slots.
+
+    One item centres across the whole content box; two go on the same two
+    slot centres the reading and its visual use. **Three or more is left
+    alone** -- the rule names two slots and inventing a third placement for
+    a case that does not occur would be making up a rule rather than showing
+    one. Nothing in the catalogue draws three on a line.
+    """
+    if not items:
+        return
+    if len(items) == 1:
+        o = items[0]
+        o.x = pad + (content - o.textW) // 2
+        return
+    if len(items) != 2:
+        return
+    for o, frac in zip(items, slots):
+        o.x = pad + int(round(content * frac)) - o.textW // 2
+
+
+def row_margin(flowed, pad, content):
+    """The tightest clearance between two items sharing a supporting row.
+
+    `None` where no row holds two, so the question does not arise. Measured
+    at the strings the component is drawn with: unlike the reading, the
+    geometry dump carries no widest form for a supporting label, and the
+    page says so rather than implying a guarantee it has not checked.
+    """
+    supporting = [o for o in flowed if o.role == "supporting" and not o.hidden]
+    margins = [b.x - (a.x + a.textW)
+               for items in group_rows(supporting) if len(items) == 2
+               for a, b in [items]]
+    return min(margins) if margins else None
+
+
+def arrange(objects, panel_w, panel_h, pad, content, widest_at=None,
+            compact=0, bottom=0, font_rule="line", centre_rule="box"):
+    """The settled arrangement: tightened slots, strict halves as fallback.
+
+    Tightening moves the two slot centres to 30% and 70%, which is closer
+    than strict halves' 25% and 75% and therefore no longer guarantees the
+    two elements cannot meet. Where they would, the panel falls back to
+    strict halves, which cannot collide by construction.
+
+    **The fallback is decided from the widest string the component can ever
+    print, not from the value on screen, and that is the whole point of
+    writing this down.** Deciding it from the current reading would make the
+    arrangement a function of the data: a voltage crossing from `9.9` to
+    `10.0` would flip the panel between two layouts and every element in it
+    would jump. That is the moves-when-content-changes objection that ruled
+    out the centred variant, in a worse form -- a drift becomes a switch.
+
+    Asking the widest form instead fixes the arrangement once, at build. A
+    panel with room to spare today keeps the layout it will need at its
+    widest, and nothing it can ever display will rearrange it. So the
+    fallback is a property of the component and its span, not of the moment,
+    and `navigation` at `2x2` is a strict-halves panel permanently: it is
+    not that it sometimes overlaps, it is that its content does not fit the
+    tighter arrangement.
+
+    Returns the arrangement plus the slots it settled on, so the page can
+    mark which panels took the fallback.
+
+    **The fallback is per panel, not per row.** A supporting row whose two
+    items would meet could fall back on its own, leaving a panel with a
+    tightened body over a strict footer -- and the columns would then not
+    line up down the panel, which is the one thing slot-derived positions
+    are for. So any overlap anywhere puts the whole panel on strict halves.
+    It costs more panels their tightening, and the page shows what the other
+    reading would have done.
+    """
+    out, steps, fits, bands = halves(
+        objects, panel_w, panel_h, pad, content, widest_at, compact, bottom,
+        vertical=True, slots=SLOT_TIGHT,
+        font_rule=font_rule, centre_rule=centre_rule)
+    margin = slot_margin(out, pad, content, widest_at, bands)
+    rows_margin = row_margin(out, pad, content)
+    worst = min([m for m in (margin, rows_margin) if m is not None],
+                default=None)
+    if worst is not None and worst < 0:
+        out, steps, fits, bands = halves(
+            objects, panel_w, panel_h, pad, content, widest_at, compact,
+            bottom, vertical=True, slots=SLOT_STRICT,
+            font_rule=font_rule, centre_rule=centre_rule)
+        return out, steps, fits, bands, SLOT_STRICT, margin, rows_margin
+    return out, steps, fits, bands, SLOT_TIGHT, margin, rows_margin
 
 
 #: The unit's font for a given reading font, mirroring `theme.unitFont`:
@@ -623,7 +803,7 @@ def reflow(objects, panel_w, panel_h, pad, content, justify):
     return out
 
 
-def svg_of(objects, w, h, ghost=None, bands=None, pad=0, content=0):
+def svg_of(objects, w, h, ghost=None, bands=None, pad=0, content=0, ink=None):
     """Draw one panel.
 
     **Draw order matters and has caught this file out twice.** A panel's
@@ -743,6 +923,12 @@ def svg_of(objects, w, h, ghost=None, bands=None, pad=0, content=0):
             )
 
     # Last, so the panel's own surface does not paint over it.
+    if ink:
+        top, height = ink
+        parts.append(
+            f'<rect class="ink" x="1" y="{top}" width="{w - 2}" '
+            f'height="{height}" />'
+        )
     if ghost:
         for gx, gy, gw, gh in ghost:
             parts.append(
@@ -767,14 +953,17 @@ def hole_of(objects, panel_w):
     return [(right, vy, vx - right, vye - vy)]
 
 
-#: Only the left-aligned flow remains of the two content-derived
-#: arrangements. Centring was removed rather than kept: it is dominated on
-#: both counts the page measures -- 186 px of heading gap against the halved
-#: 91 -- and it carries the re-centres-when-content-changes objection that
-#: halves exists to avoid. Saying so in the page, because a column vanishing
-#: without explanation reads as a decision made for the reader.
-JUSTIFY = [
-    ("left-aligned", "left"),
+#: Two columns were removed after the user chose an arrangement, and both
+#: removals are stated in the page rather than left as silent absences.
+#:
+#: `flow -- left-aligned` and strict `halves` are gone because the decision
+#: between them is made: tightened halves, with strict halves kept only as
+#: the fallback for a panel whose widest content cannot take the tighter
+#: slots. `flow -- centred` went earlier, dominated on both counts the page
+#: measures. What remains is the one open question.
+FONT_RULES = [
+    ("by line height", "line"),
+    ("by ink", "ink"),
 ]
 
 cases = rows(G.CASES)
@@ -783,7 +972,124 @@ slack_rows = []
 halves_steps = []
 ladder_rows = []
 collide_rows = []
+fallback_rows = []
+collide_log = []
+case_index = {}
 findings = []
+
+#: The one constructed case on the page. Nothing in the catalogue prints a
+#: descender -- every unit is `V`, `A`, `m` or `dBm` and every heading is
+#: upper case -- so the cost of choosing a font by ink cannot be shown from
+#: real geometry. It is shown from an invented one instead, and labelled as
+#: invented wherever it appears, because a rule has to survive a component
+#: nobody has written yet.
+CONSTRUCTED_UNIT = "mph"
+
+
+def ink_guide(flowed):
+    """Where the reading's glyphs actually sit, for the overlay."""
+    reading = next((o for o in flowed if o.role == "reading"), None)
+    if reading is None:
+        return None
+    off, height = ink_span(reading)
+    return (reading.y + off, height)
+
+
+def band_fill(flowed, bands):
+    """What fraction of the body band the reading's glyphs cover."""
+    guide = ink_guide(flowed)
+    if guide is None or not bands or bands["body"][1] <= 0:
+        return 0
+    return 100 * guide[1] // bands["body"][1]
+
+
+def ink_boxes(objects):
+    """Every visible label as an ink rectangle."""
+    out = []
+    for o in objects:
+        if o.hidden or o.kind != "label" or not o.text:
+            continue
+        off, height = ink_span(o)
+        out.append((o, o.x, o.y + off, o.x + o.textW, o.y + off + height))
+    return out
+
+
+def collisions(objects, panel_h):
+    """Labels that overlap each other, and labels that leave the panel.
+
+    **This check is the reason the page is worth anything.** It was added
+    after a reader spotted a unit printed over its own reading, which was
+    invisible to every other measure on the page: the slot margins were
+    comfortable, the fonts were right, the bands held, and two labels were
+    still on top of each other. Nothing here is subtle enough to need an
+    eye, so it should never have needed one.
+    """
+    bs = ink_boxes(objects)
+    hits = []
+    for i in range(len(bs)):
+        for j in range(i + 1, len(bs)):
+            a, b = bs[i], bs[j]
+            ox = min(a[3], b[3]) - max(a[1], b[1])
+            oy = min(a[4], b[4]) - max(a[2], b[2])
+            if ox > 0 and oy > 0:
+                hits.append(f"{a[0].role} <code>{html.escape(a[0].text)}</code>"
+                            f" over {b[0].role} "
+                            f"<code>{html.escape(b[0].text)}</code>, "
+                            f"{ox}&times;{oy}&nbsp;px")
+    for o, _x0, y0, _x1, y1 in bs:
+        if y0 < 0:
+            hits.append(f"{o.role} <code>{html.escape(o.text)}</code> "
+                        f"{-y0}&nbsp;px above the panel top")
+        if y1 > panel_h:
+            hits.append(f"{o.role} <code>{html.escape(o.text)}</code> "
+                        f"{y1 - panel_h}&nbsp;px below the panel floor")
+    return hits
+
+
+def collide_audit():
+    """Every label overlap and every label off the panel, in every column."""
+    lines = ['<table><thead><tr><th>zone</th><th>component</th><th>span</th>'
+             '<th>column</th><th>what collides</th></tr></thead><tbody>']
+    clean = True
+    for zone, name, span, col, hits in collide_log:
+        if not hits:
+            continue
+        clean = False
+        lines.append(
+            f'<tr class="has-slack"><td>{zone}</td>'
+            f'<td><code>{html.escape(name)}</code></td>'
+            f'<td>{html.escape(span)}</td><td>{col}</td>'
+            f'<td>{"; ".join(hits)}</td></tr>'
+        )
+    if clean:
+        lines.append('<tr><td colspan="5">nothing overlaps and nothing '
+                     'leaves a panel, in any column</td></tr>')
+    lines.append('</tbody></table>')
+    return "".join(lines)
+
+
+def next_up(font):
+    """The next larger font on the reading ladder, or None at the top."""
+    i = LADDER.index(font) if font in LADDER else 0
+    return LADDER[i - 1] if i > 0 else None
+
+
+def stuck_reason(band_h, font):
+    """Why choosing by ink did not move this band's font.
+
+    Computed rather than written down. The obvious caption here is "the
+    ladder has nothing between 40 and 69 px", which is true of one band and
+    not of the others, and a hand-typed reason that is right once is exactly
+    the drift this file has already been caught by.
+    """
+    up = next_up(font)
+    if up is None:
+        return "already the largest reading font there is"
+    line_h, ink_h = FONTS[up]
+    return (f"the next step up, {up}, is {ink_h}&nbsp;px of ink in a "
+            f"{band_h}&nbsp;px band &mdash; the ladder has nothing between "
+            f"{FONTS[font][0]} and {line_h}&nbsp;px")
+
 
 for case in cases:
     objects = [Obj(o) for o in rows(case.objects)]
@@ -795,24 +1101,72 @@ for case in cases:
     bounds = visual_bounds(objects)
     spans = bounds is not None and (bounds[2] - bounds[0]) >= content - 2
 
-    variants = [(label, reflow(objects, w, h, pad, content, key), None)
-                for label, key in JUSTIFY]
     # Widths of the widest reading the component can print, at the font it
     # is currently drawn in, so the slot question is asked of the string the
     # fitter actually sized for.
     widest_at = {k: (int(case.widestAt[k][1]), int(case.widestAt[k][2]))
                  for k in case.widestAt.keys()} if case.widest else None
-    halved, steps, fits, bands = halves(
-        objects, w, h, pad, content, widest_at,
-        int(case.compact), int(case.bottom), vertical=True)
-    tight, _, _, tbands = halves(
-        objects, w, h, pad, content, widest_at,
-        int(case.compact), int(case.bottom), vertical=True, slots=SLOT_TIGHT)
 
-    # Today's font against the banded one, for the table that made the
-    # shared ladder judgeable on paper last time.
+    cells = [
+        f'<figure><figcaption>today</figcaption>'
+        f'<div class="frame">{svg_of(objects, w, h, hole)}</div>'
+        f'<p class="cap">as shipped</p></figure>'
+    ]
+    collide_log.append((case.zone, case.component, case.span, "today",
+                        collisions(objects, h)))
+
+    variants = {}
+    for label, rule in FONT_RULES:
+        flowed, steps, fits, bands, used, margin, rmargin = arrange(
+            objects, w, h, pad, content, widest_at,
+            int(case.compact), int(case.bottom), font_rule=rule,
+            centre_rule="box")
+        variants[rule] = (flowed, steps, fits, bands, used, margin,
+                          rmargin)
+
     before = next((o for o in objects if o.role == "reading"), None)
-    after = next((o for o in halved if o.role == "reading"), None)
+    line_read = next((o for o in variants["line"][0]
+                      if o.role == "reading"), None)
+    ink_read = next((o for o in variants["ink"][0]
+                     if o.role == "reading"), None)
+    moved = (line_read is not None and ink_read is not None
+             and line_read.font != ink_read.font)
+
+    for label, rule in FONT_RULES:
+        flowed, steps, fits, bands, used, margin, rmargin = variants[rule]
+        fill = band_fill(flowed, bands)
+        hits = collisions(flowed, h)
+        collide_log.append((case.zone, case.component, case.span, label, hits))
+        notes = []
+        if used == SLOT_STRICT and margin is not None:
+            notes.append('<span class="fb">strict-halves fallback</span>')
+        if not fits:
+            notes.append('<span class="cost">will not fit</span>')
+        elif steps:
+            notes.append(f'<span class="cost">&minus;{steps} size'
+                         f'{"s" if steps > 1 else ""}</span>')
+        read = next((o for o in flowed if o.role == "reading"), None)
+        badge = ""
+        if read is not None and bands and rule == "ink":
+            if moved:
+                badge = (f'<span class="grew">{line_read.font} &rarr; '
+                         f'{ink_read.font}</span>')
+            else:
+                badge = ('<span class="stuck">unchanged &mdash; '
+                         + stuck_reason(bands["body"][1], read.font)
+                         + '</span>')
+        cells.append(
+            f'<figure><figcaption>font {label} '
+            f'{"".join(notes)}</figcaption>'            f'<div class="frame">'
+            f'{svg_of(flowed, w, h, bands=bands, pad=pad, content=content, ink=ink_guide(flowed))}'
+            f'</div>'
+            f'<p class="cap">{read.font if read else "&mdash;"}, ink fills '
+            f'<strong>{fill}%</strong> of the body band {badge}</p>'
+            f'</figure>'
+        )
+
+    flowed, steps, fits, bands, used, margin, rmargin = variants["line"]
+    after = next((o for o in flowed if o.role == "reading"), None)
     if before is not None and after is not None:
         ladder_rows.append((
             case.zone, case.component, case.span,
@@ -821,47 +1175,25 @@ for case in cases:
             if before.font in LADDER and after.font in LADDER else 0,
             bands["body"][1] if bands else 0,
         ))
-    step_note = ""
-    if not fits:
-        step_note = (' <span class="cost">will not fit</span>')
-    elif steps:
-        step_note = (f' <span class="cost">&minus;{steps} size'
-                     f'{"s" if steps > 1 else ""}</span>')
-    variants.append(("halves" + step_note, halved, bands))
-    variants.append(("halves tightened", tight, tbands))
-
-    # Whether the two slots can still meet, asked of the widest string each
-    # component prints rather than what it happens to say. Strict halves
-    # cannot collide by construction; tightened can, and this is what says
-    # whether it does.
-    gapmin = slot_margin(tight, pad, content, widest_at, tbands)
-    if gapmin is not None:
-        collide_rows.append((
-            case.zone, case.component, case.span, gapmin,
-            slot_margin(halved, pad, content, widest_at, bands)))
+    if margin is not None or rmargin is not None:
+        # The tightened margins come back from `arrange` whether or not the
+        # fallback was taken, so the tables can show what the panel would
+        # have done alongside what it does.
+        s_out, _, _, s_bands = halves(
+            objects, w, h, pad, content, widest_at, int(case.compact),
+            int(case.bottom), vertical=True, slots=SLOT_STRICT)
+        strict_margin = slot_margin(s_out, pad, content, widest_at, s_bands)
+        strict_rmargin = row_margin(s_out, pad, content)
+        if margin is not None:
+            collide_rows.append((case.zone, case.component, case.span,
+                                 margin, strict_margin))
+        fallback_rows.append((case.zone, case.component, case.span,
+                              used == SLOT_STRICT, margin, strict_margin,
+                              rmargin, strict_rmargin))
     halves_steps.append((case.zone, case.component, case.span, steps, fits))
-
-    gap_note = ""
-    if hole:
-        reading = next((o for o in objects if o.role == "reading"), None)
-        gap = centre_gap(reading) if reading else GAP_LEFT
-        gap_note = (
-            f'<p class="note gap">Slack between the reading and the '
-            f'visual today: <strong>{hole[0][2]} px</strong>. '
-            f'Gap in the centred variant: {gap} px.</p>'
-        )
-
-    cells = [
-        f'<figure><figcaption>today</figcaption>'
-        f'<div class="frame">{svg_of(objects, w, h, hole)}</div></figure>'
-    ]
-    for label, flowed, bands_of in variants:
-        cells.append(
-            f'<figure><figcaption>flow &mdash; {label}</figcaption>'
-            f'<div class="frame">'
-            f'{svg_of(flowed, w, h, bands=bands_of, pad=pad, content=content)}'
-            f'</div></figure>'
-        )
+    case_index[(case.zone, case.component, case.span)] = (
+        objects, w, h, pad, content, int(case.compact), int(case.bottom),
+        widest_at)
 
     kind = "none"
     if bounds is not None:
@@ -873,8 +1205,97 @@ for case in cases:
         f'<section><h3>{html.escape(case.component)} '
         f'<span class="span">{html.escape(case.span)}</span> '
         f'<span class="px">{w} &times; {h} px</span></h3>'
-        f'{gap_note}<div class="row">{"".join(cells)}</div></section>'
+        f'<div class="row">{"".join(cells)}</div></section>'
     )
+
+def figure(caption, svg, cap=""):
+    return (f'<figure><figcaption>{caption}</figcaption>'
+            f'<div class="frame">{svg}</div>'
+            f'<p class="cap">{cap}</p></figure>')
+
+
+def descender_case(key=("widget", "metric-radial", "2x1")):
+    """The cost of choosing by ink, rendered on a constructed unit.
+
+    **Nothing in the catalogue descends.** Every unit it prints is `V`, `A`,
+    `m` or `dBm`; every heading is upper case; every reading is digits, a
+    minus, a point or a colon. So the one thing choosing a font by its ink
+    gives up cannot be shown from real geometry at all, and showing only
+    real geometry would make the cost look theoretical.
+
+    The panel below is therefore real in every respect except its unit
+    string, which is replaced with `mph`. It is labelled as constructed
+    wherever it appears. The rule is being decided for components nobody has
+    written yet, and `mph` is not an exotic unit to expect one of them to
+    print.
+    """
+    entry = case_index.get(key)
+    if entry is None:
+        return "", 0
+    objects, w, h, pad, content, compact, bottom, widest_at = entry
+    made = [o.copy() for o in objects]
+    unit = next((o for o in made if o.role == "unit" and not o.hidden), None)
+    if unit is None:
+        return "", 0
+    # Widened under the same model the rest of the page measures with, so
+    # the constructed string is no more exact and no less than a real one.
+    per_char = unit.textW / max(1, len(unit.text))
+    unit.text = CONSTRUCTED_UNIT
+    unit.textW = int(round(per_char * len(CONSTRUCTED_UNIT)))
+
+    cells, overflow = [], {}
+    modes = [("by line height, placed on the line box", "line", "box"),
+             ("by ink, placed on the line box", "ink", "box"),
+             ("by ink, placed on the ink", "ink", "ink")]
+    for label, rule, place in modes:
+        flowed, _, _, bands, _, _, _ = arrange(
+            made, w, h, pad, content, widest_at, compact, bottom,
+            font_rule=rule, centre_rule=place)
+        u = next((o for o in flowed if o.role == "unit" and not o.hidden),
+                 None)
+        band_floor = bands["body"][0] + bands["body"][1] if bands else h
+        # A descender reaches the bottom of the line box, which is where
+        # `base_line` is measured from.
+        past = max(0, (u.y + u.lineH) - band_floor) if u is not None else 0
+        overflow[(rule, place)] = past
+        note = (f'<span class="stuck">the <code>p</code> drops '
+                f'{past}&nbsp;px past the band floor</span>'
+                if past else 'stays inside the band')
+        cells.append(figure(
+            f'font {label}',
+            svg_of(flowed, w, h, bands=bands, pad=pad, content=content,
+                   ink=ink_guide(flowed)),
+            f'{u.font if u else "&mdash;"} unit &mdash; {note}'))
+    return "".join(cells), overflow
+
+
+def optical_pair(key=("widget", "navigation", "4x2")):
+    """Centring the dial on the reading's line box against on its ink."""
+    entry = case_index.get(key)
+    if entry is None:
+        return "", 0, None
+    objects, w, h, pad, content, compact, bottom, widest_at = entry
+    cells, centres = [], []
+    for label, rule in (("on the line box &mdash; settled rule", "box"),
+                        ("on the ink", "ink")):
+        flowed, _, _, bands, _, _, _ = arrange(
+            objects, w, h, pad, content, widest_at, compact, bottom,
+            font_rule="ink", centre_rule=rule)
+        read = next((o for o in flowed if o.role == "reading"), None)
+        vb = visual_bounds(flowed)
+        off, ink_h = ink_span(read)
+        ink_mid = read.y + off + ink_h / 2
+        vis_mid = (vb[1] + vb[3]) / 2 if vb else ink_mid
+        centres.append(vis_mid - ink_mid)
+        cells.append(figure(
+            f'dial centred {label}',
+            svg_of(flowed, w, h, bands=bands, pad=pad, content=content,
+                   ink=ink_guide(flowed)),
+            f'dial sits {abs(vis_mid - ink_mid):.0f}&nbsp;px '
+            f'{"below" if vis_mid > ink_mid else "above"} the digits&rsquo; '
+            f'middle'))
+    return "".join(cells), centres[0], key
+
 
 def ladder_table():
     lines = ['<table><thead><tr><th>component</th><th>span</th>'
@@ -961,10 +1382,163 @@ def slack_table():
     return "".join(lines)
 
 
+def label_band_case(key=("widget", "link-status", "1x1")):
+    """The small-panel label band, and the three answers to it.
+
+    A quarter of a 53 px panel is 11 px; the smallest font the dashboard has
+    is `TINSIZE` at 12 and the heading is drawn at `SMLSIZE` at 17. So "let
+    the band win" is not on the table here -- there is no font that fits --
+    and what is left is where the overflow goes.
+    """
+    entry = case_index.get(key)
+    if entry is None:
+        return "", 0
+    objects, w, h, pad, content, compact, bottom, widest_at = entry
+
+    flowed, _, _, bands, _, _, _ = arrange(
+        objects, w, h, pad, content, widest_at, compact, bottom)
+    head = next((o for o in flowed if o.role == "heading"), None)
+    above = max(0, -(head.y + ink_span(head)[0])) if head else 0
+
+    clamped = [o.copy() for o in flowed]
+    ch = next((o for o in clamped if o.role == "heading"), None)
+    if ch is not None:
+        ch.y += above
+
+    stacked = [o.copy() for o in objects]
+
+    cells = [
+        figure("font wins &mdash; rendered everywhere on this page",
+               svg_of(flowed, w, h, bands=bands, pad=pad, content=content,
+                      ink=ink_guide(flowed)),
+               f"the heading overflows its {bands['label'][1]}&nbsp;px band "
+               f"symmetrically, and <strong>{above}&nbsp;px of it falls off "
+               f"the top of the panel</strong>"),
+        figure("font wins, clamped to the panel",
+               svg_of(clamped, w, h, bands=bands, pad=pad, content=content,
+                      ink=ink_guide(clamped)),
+               "the same font, pushed down so nothing is clipped &mdash; the "
+               "overflow all goes downward, toward the reading"),
+        figure("fall back to today's stacking below a size",
+               svg_of(stacked, w, h),
+               "no bands at all on a 53&nbsp;px panel; the arrangement "
+               "applies at two rows and not at one"),
+    ]
+    return "".join(cells), above
+
+
+def fallback_table():
+    """Which panels took the strict-halves fallback, and what forced it."""
+    lines = ['<table><thead><tr><th>component</th><th>span</th>'
+             '<th>body, tightened</th><th>rows, tightened</th>'
+             '<th>body, strict</th><th>rows, strict</th>'
+             '<th>arrangement</th><th>forced by</th></tr></thead><tbody>']
+
+    def cell(v):
+        return f"{v} px" if v is not None else "&mdash;"
+
+    for zone, name, span, fell, tight, strict, rt, rs in fallback_rows:
+        if zone != "widget":
+            continue
+        if fell:
+            why = []
+            if tight is not None and tight < 0:
+                why.append("the body")
+            if rt is not None and rt < 0:
+                why.append("a supporting row")
+            note, cls = "strict halves", ' class="has-slack"'
+            forced = " and ".join(why) or "&mdash;"
+        else:
+            note, cls, forced = "tightened", '', "&mdash;"
+        lines.append(
+            f'<tr{cls}><td><code>{html.escape(name)}</code></td>'
+            f'<td>{html.escape(span)}</td><td>{cell(tight)}</td>'
+            f'<td>{cell(rt)}</td><td>{cell(strict)}</td><td>{cell(rs)}</td>'
+            f'<td>{note}</td><td>{forced}</td></tr>'
+        )
+    lines.append('</tbody></table>')
+    return "".join(lines)
+
+
+def per_row_case(key=("widget", "navigation", "2x2")):
+    """One panel under the two readings of where the fallback belongs.
+
+    Per panel is what the page renders everywhere; per row is the
+    alternative, and the point of showing it on the panel that takes the
+    fallback is that you can see the columns stop lining up.
+    """
+    entry = case_index.get(key)
+    if entry is None:
+        return ""
+    objects, w, h, pad, content, compact, bottom, widest_at = entry
+    whole, _, _, wb, _, _, _ = arrange(
+        objects, w, h, pad, content, widest_at, compact, bottom)
+    # Per row: the body falls back on its own evidence, each row on its own.
+    mixed, _, _, mb = halves(
+        objects, w, h, pad, content, widest_at, compact, bottom,
+        vertical=True, slots=SLOT_STRICT)
+    tight_rows, _, _, _ = halves(
+        objects, w, h, pad, content, widest_at, compact, bottom,
+        vertical=True, slots=SLOT_TIGHT)
+    by_y = {o.y: o.x for o in tight_rows
+            if o.role == "supporting" and not o.hidden}
+    if row_margin(tight_rows, pad, content) is None or \
+            (row_margin(tight_rows, pad, content) or 0) >= 0:
+        for o in mixed:
+            if o.role == "supporting" and not o.hidden and o.y in by_y:
+                o.x = by_y[o.y]
+    return (
+        figure("fallback per panel &mdash; rendered",
+               svg_of(whole, w, h, bands=wb, pad=pad, content=content),
+               "body and rows both strict, so the columns line up")
+        + figure("fallback per row &mdash; the alternative",
+                 svg_of(mixed, w, h, bands=mb, pad=pad, content=content),
+                 "body strict, supporting rows still tightened &mdash; the "
+                 "columns no longer agree down the panel")
+    )
+
+
 slack_table = slack_table()
 ladder_table = ladder_table()
 collide_table = collide_table()
 ink_table = ink_table()
+fallback_table = fallback_table()
+collide_audit = collide_audit()
+label_band_figs, label_band_above = label_band_case()
+per_row_figs = per_row_case()
+descender_figs, descender_over = descender_case()
+descender_box = descender_over.get(("ink", "box"), 0)
+descender_ink = descender_over.get(("ink", "ink"), 0)
+optical_figs, optical_gap, optical_case = optical_pair()
+
+# Which panels took the fallback, counted rather than typed.
+_fb = [r for r in fallback_rows if r[0] == "widget"]
+fb_taken = [f"{r[1]} {r[2]}" for r in _fb if r[3]]
+fb_total = len(_fb)
+fb_list = ", ".join(f"<code>{html.escape(n)}</code>" for n in fb_taken)
+
+# How many rendered cases the ink rule actually moves, which is the
+# difference the page exists to show.
+ink_moved_cases = 0
+ink_case_total = 0
+for _z, _n, _s, _old, _new, _d, _bh in ladder_rows:
+    if _z != "widget" or _bh <= 0:
+        continue
+    ink_case_total += 1
+    if ink_font(_bh) != band_font(_bh):
+        ink_moved_cases += 1
+
+# Supporting rows, at the strings the components are drawn with.
+_rw = [r for r in fallback_rows if r[0] == "widget" and r[6] is not None]
+row_total = len(_rw)
+row_worst = min((r[6] for r in _rw), default=0)
+row_worst_case = min(_rw, key=lambda r: r[6])[1:3] if _rw else ("", "")
+row_forced = sum(1 for r in _rw if r[6] < 0)
+# A clearance is easier to judge as characters than as pixels, so it is
+# converted with the same per-character model the geometry was measured
+# under rather than described as "comfortable".
+_per_char = FONTS["SMLSIZE"][0] * 0.58
+row_worst_chars = int(row_worst / _per_char) if _per_char else 0
 
 # How full each distinct band is, before and after, and whether a descender
 # would leave it. Digits have none; units and labels do.
@@ -972,11 +1546,15 @@ _bands = sorted({r[6] for r in ladder_rows if r[0] == "widget" and r[6] > 0})
 ink_rows = []
 for _b in _bands:
     _line, _ink = band_font(_b), ink_font(_b)
-    _over = FONTS[_ink][0] - FONTS[_ink][1] - (_b - FONTS[_ink][1]) // 2
+    # How far a descender would reach past the band floor **if the glyphs
+    # were centred in the band**. Under line-box centring it reaches
+    # nothing, because centring the box already reserves the descent -- so
+    # this column measures the cost of adopting ink for placement as well as
+    # for the font choice, which is the only way the cost arises.
+    _ink_top = (_b - FONTS[_ink][1]) // 2
+    _over = max(0, _ink_top + FONTS[_ink][0] - _b)
     ink_rows.append((_b, _line, 100 * FONTS[_line][1] // _b,
-                     _ink, 100 * FONTS[_ink][1] // _b,
-                     max(0, FONTS[_ink][0] - FONTS[_ink][1]
-                         - (_b - FONTS[_ink][1]) // 2)))
+                     _ink, 100 * FONTS[_ink][1] // _b, _over))
 ink_band_count = len(ink_rows)
 ink_band_rows = "".join(
     '<tr{cls}><td>{band} px</td><td>{line}</td><td>{occ_l}%</td>'
@@ -1040,7 +1618,9 @@ for case in cases:
         continue
     wa = {k: (int(case.widestAt[k][1]), int(case.widestAt[k][2]))
           for k in case.widestAt.keys()} if case.widest else None
-    moved, _, ok, _bands = halves(objs, cw, ch, cpad, ccontent, wa)
+    moved, _, ok, _bands, _slots, _m, _rm = arrange(
+        objs, cw, ch, cpad, ccontent, wa,
+        int(case.compact), int(case.bottom))
     fit_total += 1
     fit_ok += 1 if ok else 0
     if f"{case.component} {case.span}" == worst_offset_case:
@@ -1118,8 +1698,21 @@ page = f"""<!doctype html>
   tr.has-slack td {{ color: #d8dee6; }}
   tr.has-slack td:nth-child(4) {{ color: {PALETTE['amber']};
     font-weight: 600; }}
+  .ink {{ fill: {PALETTE['green']}; fill-opacity: .10;
+    stroke: {PALETTE['green']}; stroke-opacity: .55; stroke-width: 1; }}
+  .cap {{ font-size: 11.5px; color: #7d8794; margin: 5px 0 0;
+    max-width: 30em; line-height: 1.45; }}
+  .cap strong {{ color: #cdd5dd; }}
+  .grew {{ color: {PALETTE['green']}; font-weight: 600; }}
+  .stuck {{ color: {PALETTE['amber']}; }}
+  .fb {{ color: {PALETTE['cyan']}; font-weight: 600;
+    text-transform: none; letter-spacing: 0; margin-left: 6px; }}
+  .legend {{ display: flex; gap: 26px; flex-wrap: wrap; font-size: 12.5px;
+    color: #9aa4b0; margin: 10px 0 4px; }}
+  .key {{ display: inline-block; width: 22px; height: 11px;
+    vertical-align: -1px; margin-right: 7px; border-radius: 2px; }}
 </style></head><body>
-<h1>Content flow &mdash; design mocks</h1>
+<h1>Content flow &mdash; fonts by ink or by line height</h1>
 <p class="intro">Every panel below is drawn at its true pixel size from the
 real theme, the real region arithmetic and the real measured text widths.</p>
 
@@ -1130,113 +1723,301 @@ colour and string is what the dashboard produces right now. Text is set to
 its measured width so the proportions hold, though the browser's glyphs are
 not EdgeTX's.</div>
 
-<div class="warn"><strong>What is speculative:</strong> every
-<em>proposed</em> column is a transformation applied in
-<code>build/flow-render.py</code> to that same geometry. <strong>Nothing in
-the widget implements this rule.</strong> It is a proposal for you to judge,
-and the numbers under it are what the rule would produce, not what any
-component has been changed to do.</div>
+<div class="warn"><strong>What is speculative:</strong> both
+<em>font</em> columns are transformations applied in
+<code>tools/flow-render.py</code> to that same geometry. <strong>Nothing in
+the widget implements any of this.</strong> The arrangement is agreed and
+unbuilt; the font rule is the question on this page.</div>
 
-<h2>The rule, as implemented for these mocks</h2>
+<h2>What this page is asking</h2>
+<p class="intro"><strong>One question: should a reading's font be chosen by
+its line height or by its ink?</strong> Everything else on the page is
+settled, and the columns that used to offer it have been removed.</p>
+
+<div class="warn"><strong>Two columns were removed, and saying so rather
+than letting them vanish.</strong>
 <ul>
-  <li>The reading leads. In the left-aligned variant it keeps the content
-      box's left edge; in the centred variant the whole group moves together
-      and the reading still leads it.</li>
-  <li>A secondary element <strong>follows</strong> the reading &mdash; at
-      the reading's measured end, plus its unit, plus a gap &mdash; rather
-      than being pinned to the right edge.</li>
-  <li>A secondary element sits on the <strong>optical centre</strong> of the
-      reading's line box. Settled, not offered.</li>
-  <li>Supporting rows <strong>follow</strong> the block above them rather
-      than being pinned to the panel floor.</li>
-  <li>A visual that spans the panel's width by design &mdash; a bar &mdash;
-      is left alone. Following the reading would turn it into a stub, and
-      that is the first place the rule does more harm than good.</li>
+<li><code>flow &mdash; left-aligned</code> and strict <code>halves</code> are
+    gone because the arrangement is decided: <strong>tightened halves</strong>,
+    with strict halves kept only as a fallback. Both still exist in the
+    generator; neither is an open choice.</li>
+<li><code>flow &mdash; centred</code> went earlier. It is dominated on both
+    counts this page measures &mdash; {worst_offset}&nbsp;px of heading gap
+    against halves' {halves_offset} &mdash; and it re-centres whenever its
+    contents change width, which is the objection halves was chosen to
+    avoid.</li>
 </ul>
+If you want either back, each is a one-line change.</div>
 
-<h2>Settled: a secondary element sits on the reading's optical centre</h2>
-<p class="intro">This page previously offered baseline, top and optical
-centre side by side. <strong>Optical centre was chosen</strong>, so the other
-two are gone rather than left here to be re-argued. It is now a rule of the
-design system: a compact visual is vertically centred on the reading's line
-box, at every span and in every component.</p>
-
-<h2>The open question: left-aligned, centred, or halves</h2>
-<p class="intro">Both columns below apply the flow rule. They differ only in
-where the group sits.</p>
+<h2>Settled, and recorded rather than re-offered</h2>
 <ul>
-  <li><strong>Left-aligned</strong> keeps the group at the content box's left
-      edge and lets all the slack collect after it. The gap between reading
-      and visual is a flat 10&nbsp;px, because the gap only has to separate
-      two things rather than carry the arrangement.</li>
-  <li><strong>Halves</strong> splits the panel: the reading centred in the
-      left half, the secondary element centred in the right. A panel with
-      only a reading <strong>does not split</strong> &mdash; the reading
-      centres across the whole panel, because the halves exist to give two
-      elements stable slots and with one element there is no second slot to
+  <li><strong>Tightened halves.</strong> Two slots derived from the panel,
+      centred at <strong>30% and 70%</strong> of the content width. Positions
+      come from the panel, not from the content, so a slot does not move
+      when what is in it changes and every reading in a row of equal panels
+      lands at the same x.</li>
+  <li><strong>Strict halves as the fallback</strong>, at 25% and 75%, for a
+      panel whose widest content will not take the tighter slots.</li>
+  <li><strong>A panel with only a reading does not split.</strong> The
+      reading centres across the whole box; there is no second slot to
       protect.</li>
-  <li><strong>Halves tightened</strong> is the same split with the two slots
-      moved inward, so the elements sit closer together.</li>
+  <li><strong>Proportional vertical bands.</strong> Label a quarter, body a
+      half, tertiary a quarter, and an absent part gives its quarter to the
+      body.</li>
+  <li><strong>The font comes from the band</strong>, and the band from the
+      panel &mdash; which inverts today's rule, where the composition comes
+      from the box and the font from the composition. <em>How</em> the band
+      is measured is the open question below.</li>
+  <li><strong>A secondary element sits on the optical centre of the
+      reading.</strong> Not its baseline, not its top. Decided from rendered
+      mocks. <em>Centre of what</em> turns out to depend on the answer to
+      this page's question, which is the last section here.</li>
+  <li><strong>A bar is exempt.</strong> A bar's length <em>is</em> the
+      reading, and a track that stops short of the panel edge measures
+      against a scale the eye cannot see.</li>
 </ul>
 
-<div class="warn"><strong>The <em>centred</em> column has been removed.</strong>
-It is dominated on both things this page measures: its reading sits
-{worst_offset}&nbsp;px from its heading against the halved
-{halves_offset}, and it re-centres whenever its contents change width, which
-is the objection halves was chosen to avoid. Saying so rather than letting a
-column vanish &mdash; if you want it back, it is a one-line change.</div>
+<h2>The fallback, and why it is decided from the widest string</h2>
+<p class="intro">Strict halves cannot collide <em>provided each element fits
+its half</em>: the two own disjoint regions, so no string can reach the
+other. Tightening gives that up &mdash; centres 40% apart instead of 50%
+have overlapping territory, and only the actual widths keep them separate.
+Where they would meet, the panel falls back to strict halves.</p>
 
-<h3 class="plain">Where the tightened slots are</h3>
-<p class="intro">The slots are centred at <strong>30% and 70% of the content
-width</strong>, against strict halves' 25% and 75% &mdash; 40% apart instead
-of 50%. Worth noting that the two readings of the instruction agree: three
-fifths across the left half is 0.6 &times; 50% = 30%, and two fifths across
-the right half is 50% + 0.4 &times; 50% = 70%. The literal reading and the
-summary give the same number, so there is nothing to choose between.</p>
+<div class="real"><strong>The fallback is chosen at build, from the widest
+string the component can ever print &mdash; not from the value on screen.
+This is the part that matters and the part most likely to be reinvented
+wrongly.</strong>
+<p>Deciding it from the current reading would make the arrangement a
+function of the data. A voltage crossing from <code>9.9</code> to
+<code>10.0</code> would flip the panel between two layouts and every element
+in it would jump &mdash; the moves-when-content-changes objection that ruled
+out the centred variant, in a worse form, because a drift becomes a
+switch.</p>
+<p>Asking the widest form instead fixes the arrangement once. A panel with
+room to spare today keeps the layout it will need at its widest, and nothing
+it can ever display rearranges it. So the fallback is a property of the
+component and its span rather than of the moment:
+<strong>{fb_list or "no panel"}</strong> {"is" if len(fb_taken) == 1 else "are"}
+{"a" if len(fb_taken) == 1 else ""} strict-halves panel{"" if len(fb_taken) == 1 else "s"}
+permanently. It is not that they sometimes overlap; it is that their content
+does not fit the tighter arrangement.</p></div>
 
-<h3 class="plain">What tightening spends</h3>
-<p class="intro"><strong>Strict halves cannot collide.</strong> Each element
-owns a disjoint region, so no string, however wide, can reach the other.
-Moving the centres inward gives that up: the two now have overlapping
-territory and only the actual widths keep them apart. Measured against the
-<strong>widest</strong> string each component can print, at the font it is
-drawn in:</p>
+<p class="intro">Measured against the <strong>widest</strong> string each
+component can print, at the font it is drawn in. {len(fb_taken)} of
+{fb_total} panels take the fallback, and they are marked in the mocks:</p>
+
+{fallback_table}
+
+<div class="warn"><strong><code>navigation</code> at <code>1x1</code> is
+marked as a fallback and the fallback does not rescue it</strong> &mdash;
+15&nbsp;px of overlap under strict halves as well as 26 under tightened.
+That is not a failure of either: <code>888.88km</code> needs 60&nbsp;px, half
+that panel is 48, and the reading is already at <code>SMLSIZE</code>, the
+bottom of the reading ladder. Strict halves' guarantee assumes each element
+fits its half, and here one does not.
+<p>It resolves itself on a radio. The component already drops its dial
+rather than let a distance clip &mdash; a distance's unit changes with range,
+so it cannot be shortened. With the dial gone the panel has one element, and
+a one-element panel does not split. The overlap is an artefact of forcing
+the split on a panel that would not take it.</p></div>
+
+<h2>The open question: by line height, or by ink</h2>
+<p class="intro">The user's observation was that fonts should use at least
+80% of their vertical allotment. Not implemented as a literal filter, because
+<code>height &ge; 0.8 &times; band</code> together with
+<code>height &le; band</code> is a window a five-step ladder often has no
+member in. <strong>The question underneath it is measurable, and the answer
+is that the band is being measured against the wrong thing.</strong></p>
+
+<p class="intro"><code>theme.fontHeight</code> is LVGL's line height: ascent
+plus descent plus leading. What a reading puts on the panel is its
+<em>ascent</em> &mdash; and every reading in this catalogue is digits, a
+minus, a decimal point or a colon, none of which descend. So a band sized
+against line height carries slack nothing draws into. Ascent is
+<code>line_height &minus; base_line</code>, both compile-time constants of
+the shipped fonts, the pair already used for baseline alignment.</p>
+
+<div class="legend">
+  <span><span class="key" style="background:{PALETTE['cyan']};opacity:.45">
+    </span>the band</span>
+  <span><span class="key" style="background:{PALETTE['green']};opacity:.45">
+    </span>where the reading's glyphs actually sit</span>
+  <span><span class="grew">green</span> the ink rule moved the font</span>
+  <span><span class="stuck">amber</span> it did not, and why</span>
+</div>
+<p class="intro">Each panel below carries both. <strong>The gap between the
+green box and the cyan one is the slack the 80% question is about.</strong>
+Where the two columns look identical, they are: the ladder had no step to
+move to, and each such panel says so under it rather than leaving you to
+wonder whether the page is broken.</p>
+
+<p class="intro"><strong>The ink rule moves the font on {ink_moved_cases} of
+{ink_case_total} panels.</strong> Per distinct band, which is where the
+pattern is clearer than per component:</p>
+<table><thead><tr><th>band</th><th>by line height</th><th>ink fills</th>
+<th>by ink</th><th>ink fills</th><th>descender past the band</th></tr></thead>
+<tbody>{ink_band_rows}</tbody></table>
+
+<p class="intro"><strong>Choosing by line height fills
+{line_worst}&ndash;{line_best}% of a band with ink. Choosing by ink reaches
+{ink_best}%</strong> on the bands where the ladder has a step to move to
+&mdash; {ink_moves} of the {ink_band_count} distinct body bands the Full
+screen panels produce.</p>
+
+<div class="warn"><strong>The 80% target is unreachable on the larger band,
+and not because of the measurement.</strong> A 51&nbsp;px body band takes
+<code>DBLSIZE</code>, which is 31&nbsp;px of ink and 60% of the band. The
+next step up is <code>XXLSIZE</code> at 54&nbsp;px of ink, which does not fit
+by either measure. So there the gap is the <strong>ladder's
+granularity</strong> rather than the metric: the steps are 12, 17, 29, 40 and
+69&nbsp;px, and between 40 and 69 there is nothing. Reaching 80% on every
+band would mean a denser ladder, which is a different change from this one
+and a larger one.</div>
+
+<h3 class="plain">What it costs &mdash; a descender against the band floor</h3>
+<div class="warn"><strong>This panel is constructed, and it is the only
+constructed thing on the page.</strong> Nothing in the catalogue descends:
+every unit it prints is <code>V</code>, <code>A</code>, <code>m</code> or
+<code>dBm</code>, every heading is upper case, every reading is digits. So
+the one thing the ink rule gives up cannot be shown from real geometry at
+all &mdash; and showing only real geometry would make the cost look
+theoretical. The panel below is real in every respect except its unit
+string, which is replaced with <code>mph</code>. The rule is being decided
+for components nobody has written yet, and <code>mph</code> is not an exotic
+unit to expect one of them to print.</div>
+<div class="row">{descender_figs}</div>
+<p class="intro"><strong>And the result is not the one I expected, so it is
+worth stating carefully.</strong> With the font chosen by ink and the text
+still placed by its line box, the <code>p</code> descends
+{descender_box}&nbsp;px past the band floor &mdash; because centring a line
+box already reserves the descent, whether or not anything uses it. The cost
+only appears when the <em>placement</em> moves to ink as well, and then it
+is {descender_ink}&nbsp;px.</p>
+<p class="intro">So the two halves of this change are coupled: choosing the
+font by ink is free, and placing by ink is what makes a band stop being
+private. That is an argument for deciding both together rather than
+adopting the font rule and leaving the placement alone, which is what the
+mocks below currently show.</p>
+
+<h3 class="plain">What it costs &mdash; it reopens the optical centre</h3>
+<p class="intro">The settled rule centres a secondary element on the
+reading's <strong>line box</strong>. That was decided from rendered mocks,
+before any of this. If the font is chosen by ink, the line box and the ink
+stop agreeing: all of a line box's slack is below the glyphs, so centring
+the box drops the element below the number's visual middle. On
+<code>{optical_case[1]} {optical_case[2]}</code>, where it is most
+visible:</p>
+<div class="row">{optical_figs}</div>
+<p class="intro"><strong>This is a follow-on decision, not part of the
+question above</strong> &mdash; the mocks in the catalogue below all centre
+on the line box, as settled. If the ink rule is adopted, the optical-centre
+rule wants revisiting, and it is yours to revisit rather than mine to
+change.</p>
+
+<h3 class="plain">And the reading sits high in its own band</h3>
+<p class="intro">The same asymmetry shows without any secondary element at
+all. Because a line box's slack is all underneath the glyphs, centring the
+box in a band puts the digits above the band's middle &mdash; the green box
+sits high against the cyan one on every panel below, under both rules, and
+more so under the ink rule where the box is larger. <strong>That is a
+finding rather than a rendering artefact</strong>, and the honest reading of
+it is that adopting ink for the font choice and not for the placement is
+half a change.</p>
+
+<h2>Every row uses the panel's slots, not just the body</h2>
+<p class="intro">The 30% and 70% centres are a property of the panel, so
+every row uses them. <strong>What is implemented, so the reading is
+checkable:</strong></p>
+<ul>
+  <li>A row holding <strong>one</strong> item centres it across the whole
+      content box &mdash; exactly what a lone reading does.</li>
+  <li>A row holding <strong>two</strong> puts them on the same two slot
+      centres the reading and its visual use.</li>
+  <li>A row holding <strong>three or more is left alone.</strong> The rule
+      names two slots, and inventing a third placement for a case that does
+      not occur would be making up a rule rather than showing one. Nothing
+      in the catalogue draws three on a line.</li>
+</ul>
+<p class="intro">That makes the arrangement one rule applied at every level
+rather than a body rule plus a footer special case, which is worth more than
+the appearance: it is the difference between something extensible and a set
+of exceptions to memorise.</p>
+
+<h3 class="plain">Does the two-column protection still hold?</h3>
+<p class="intro"><code>cell-battery</code>, <code>link-status</code> and
+<code>navigation</code> split their supporting row left and right
+specifically so the two halves cannot collide, and that was the original
+reason for pinning them to the edges. Moving them to 30% and 70% changes
+that protection, so it is measured rather than assumed. The tightest
+clearance anywhere is <strong>{row_worst}&nbsp;px</strong>, on
+<code>{row_worst_case[0]} {row_worst_case[1]}</code>, across
+{row_total} rows; {row_forced} rows force a fallback.</p>
+
+<div class="warn"><strong>That number is measured at the strings the
+components are drawn with, and not at their widest &mdash; state it plainly
+rather than implying a guarantee.</strong> The geometry dump carries a
+widest form for the <em>reading</em>, because the component's own fitter
+needs one, and carries nothing equivalent for a supporting label. So the
+body clearances in the table above are worst-case and the row clearances are
+not.
+<p>What can be said is the headroom. {row_worst}&nbsp;px is about
+<strong>{row_worst_chars} more characters</strong> at <code>SMLSIZE</code>
+under the same width model the rest of the page uses, on the tightest row in
+the catalogue. <code>LQ 88%</code> becoming <code>LQ 100%</code> spends one
+of them. That is comfortable, but it is headroom rather than a proof, and
+making it a proof means the components declaring their widest supporting
+strings the way they already declare their widest reading.</p></div>
+
+<h3 class="plain">Per panel or per row &mdash; and which is rendered</h3>
+<p class="intro">If a supporting row's two items would meet, that row could
+fall back to strict halves on its own. Then a panel could have a tightened
+body over a strict footer, and the columns would stop lining up down the
+panel &mdash; which is the one thing slot-derived positions are for.
+<strong>So the fallback is per panel: any overlap anywhere puts the whole
+panel on strict halves.</strong> It is the more consistent of the two and it
+costs more panels their tightening. Here is what the other reading does, on
+the panel that takes the fallback:</p>
+<div class="row">{per_row_figs}</div>
+
+<h2>The label band on a small panel, and the three answers to it</h2>
+<div class="warn"><strong>Found by a reader of the last revision, and the
+mechanical check that should have found it is now on this page.</strong> On
+every {"" if label_band_above else "no "}53&nbsp;px panel the heading
+overflows its band upward and <strong>{label_band_above}&nbsp;px of it falls
+off the top of the panel</strong>.</div>
+<p class="intro">A quarter of a 53&nbsp;px panel is 11&nbsp;px. The heading
+is drawn at <code>SMLSIZE</code>, 17&nbsp;px, and the smallest font the
+dashboard has is <code>TINSIZE</code> at 12. <strong>So "let the band win"
+is not one of the options here</strong> &mdash; there is no font that fits
+that band &mdash; and what is left is where the overflow goes:</p>
+<div class="row">{label_band_figs}</div>
+<p class="intro">This is the unresolved small-panel band question presenting
+itself concretely rather than a defect in any component, and it wants
+choosing rather than nudging.</p>
+
+<h2>Nothing overlaps, and this is how that is known</h2>
+<p class="intro">Every visible label in every column is checked against
+every other, as ink rectangles, and against the panel's own edges. It is
+mechanical, it runs on all {len(collide_log)} rendered panels, and it exists
+because a reader found a unit printed over its own reading that no other
+measure on this page could see: the slot margins were comfortable, the fonts
+were right, the bands held, and two labels were on top of each other.</p>
+{collide_audit}
+
+<h2>The arrangement, for reference</h2>
+<ul>
+  <li>The reading is centred on the left slot, the secondary element on the
+      right, and a panel with one element centres it across the whole
+      box.</li>
+  <li>Supporting rows sit at the bottom, centred as one group.</li>
+  <li>Worth noting that the two readings of the tightening instruction agree:
+      three fifths across the left half is 0.6 &times; 50% = 30%, and two
+      fifths across the right half is 50% + 0.4 &times; 50% = 70%. The
+      literal reading and the summary give the same number.</li>
+</ul>
 
 {collide_table}
-
-<p class="intro">{collide_tight} of {collide_total} cases overlap when
-tightened, against {collide_strict} under strict halves.</p>
-<ul>
-  <li><code>tx-battery</code> and <code>metric-radial</code> are comfortable
-      everywhere &mdash; 29&nbsp;px clear at the tightest.</li>
-  <li><strong><code>navigation</code> at <code>2x2</code> is the case
-      tightening breaks</strong>: 19&nbsp;px clear under strict halves,
-      5&nbsp;px of overlap when tightened. A <code>888.88km</code> distance
-      and the dial would meet.</li>
-  <li><strong><code>navigation</code> at <code>1x1</code> overlaps under
-      both</strong>, by 15&nbsp;px strict and 26 tightened &mdash; so that
-      one is not tightening's fault. It is the same panel whose reading does
-      not fit half a box at all, and the real component already resolves it
-      by dropping the dial rather than clipping a distance whose unit carries
-      its scale. A one-element panel does not split, so the collision never
-      happens on a radio.</li>
-</ul>
-<p class="intro"><strong>The fractions have not been widened back to hide
-this.</strong> One span of one component overlaps by five pixels, and the
-answer might reasonably be that <code>navigation</code> falls back to strict
-halves rather than that the tightening is wrong &mdash; it is already the
-component that yields its dial when a distance will not fit, so it has a
-precedent for being the exception. That is a decision to make rather than
-one to paper over.</p>
-<p class="intro">Tightening is horizontal only. It changes no band and no
-font, which the table below should confirm.</p>
-
-<div class="real"><strong>Why halves is different in kind.</strong> Left and
-centred both derive positions from <em>content width</em>. Halves derives
-them from the <em>panel</em>. A slot does not move because its contents
-changed, and across a row of equal-width panels every reading lands at the
-same x &mdash; which answers both objections to centring at once. What
-follows is what it costs.</div>
 
 <h3 class="plain">Does half a panel hold a reading?</h3>
 <p class="intro">Asked of the <strong>widest</strong> string each component
@@ -1371,119 +2152,6 @@ reading gains a size, <code>navigation</code>'s dial grows with it &mdash;
 and that is the element with the least room to spare, so it is the one to
 look at in the mocks rather than to reason about here.</p>
 
-<h3 class="plain">"At least 80% of their vertical allotment"</h3>
-<p class="intro">Not implemented as a literal filter, because
-<code>fontHeight &ge; 0.8 &times; band</code> together with
-<code>fontHeight &le; band</code> is a window a five-step ladder often has no
-member in. The question underneath it is measurable, and the answer is that
-<strong>the band is being measured against the wrong thing.</strong></p>
-
-<p class="intro"><code>theme.fontHeight</code> is LVGL's line height: ascent
-plus descent plus leading. What a reading puts on the panel is its
-<em>ascent</em> &mdash; and every reading in this catalogue is digits, a
-minus, a decimal point or a colon, none of which descend. So a band sized
-against line height carries slack nothing draws into. Ascent is
-<code>line_height &minus; base_line</code>, both compile-time constants of
-the shipped fonts, the pair already used for baseline alignment.</p>
-
-{ink_table}
-
-<p class="intro">Per distinct band, which is where the pattern is clearer
-than per component:</p>
-<table><thead><tr><th>band</th><th>by line height</th><th>ink fills</th>
-<th>by ink</th><th>ink fills</th><th>descender past the band</th></tr></thead>
-<tbody>{ink_band_rows}</tbody></table>
-
-<p class="intro"><strong>Choosing by line height fills
-{line_worst}&ndash;{line_best}% of a band with ink. Choosing by ink reaches
-{ink_best}%</strong> on the bands where the ladder has a step to move to
-&mdash; {ink_moves} of the {ink_band_count} distinct body bands the Full
-screen panels produce.</p>
-
-<div class="warn"><strong>The 80% target is unreachable on the larger
-band, and not because of the measurement.</strong> A 51&nbsp;px body band
-takes <code>DBLSIZE</code>, which is 31&nbsp;px of ink and 60% of the band.
-The next step up is <code>XXLSIZE</code> at 54&nbsp;px of ink, which does not
-fit by either measure. So there the gap is the <strong>ladder's
-granularity</strong> rather than the metric: the steps are 12, 17, 29, 40 and
-69&nbsp;px, and between 40 and 69 there is nothing. Reaching 80% on every
-band would mean a denser ladder, which is a different change from this one
-and a larger one.</div>
-
-<p class="intro"><strong>What choosing by ink costs.</strong> A descender now
-crosses the band's floor, by up to 7&nbsp;px. Readings are safe &mdash; no
-digit, minus, point or colon descends &mdash; but a unit does: the
-<code>p</code> in <code>mph</code>, and any heading with a <code>y</code> or
-a <code>g</code>. The unit rides two ladder steps below the reading, so its
-own descender is 4&nbsp;px at <code>SMLSIZE</code> rather than 9, and on the
-53&nbsp;px panels that still lands inside the panel. It does leave the
-<em>band</em>, so bands stop being private the moment fonts are chosen by
-ink.</p>
-
-<div class="warn"><strong>This reopens a settled rule, so it is flagged
-rather than changed.</strong> The optical-centre rule centres a secondary
-element on the reading's <strong>line box</strong>. That was decided from
-rendered mocks and is in the specification. If the font is chosen by ink, the
-line box and the ink stop agreeing &mdash; a <code>DBLSIZE</code> line box is
-40&nbsp;px around 31&nbsp;px of ink, so centring on the box puts a dial
-4&nbsp;px below the visual centre of the digits beside it. The mocks still
-centre on the line box, as settled. If ink-chosen fonts are adopted, that
-rule wants revisiting, and it is yours to revisit rather than mine to
-change.</div>
-
-<h3 class="plain">How far the reading ends up from its heading</h3>
-<p class="intro">The heading is immovably left, so every arrangement that
-moves the reading rightwards opens a gap under it. On the panel where it is
-worst, <code>{worst_offset_case}</code>:</p>
-<table><thead><tr><th>arrangement</th><th>reading&rsquo;s distance from the
-heading</th></tr></thead><tbody>
-<tr><td>left-aligned</td><td>0 px &mdash; they share an edge</td></tr>
-<tr class="has-slack"><td>centred</td><td>{worst_offset} px
-  ({worst_offset_pct}% of the panel)</td></tr>
-<tr><td>halves</td><td>{halves_offset} px
-  ({halves_offset_pct}% of the panel)</td></tr>
-</tbody></table>
-<p class="intro">Halves sits about half as far out as fully centred, because
-it centres in a half rather than in the whole. Whether that is close enough
-to the heading to read as deliberate is the judgement the mocks are for.</p>
-
-<h3 class="plain">The gap in the centred variant, and what it took to
-choose it</h3>
-<p class="intro">A pure proportion was the obvious answer and it was wrong.
-A third of the reading's line height keeps the gap consistent against the
-number it separates, but measured across the cases that actually occur it
-gives <strong>6&nbsp;px at <code>SMLSIZE</code> and 9 at
-<code>MIDSIZE</code></strong> &mdash; <em>less</em> than the left-aligned
-10, so the centred variant would have looked tighter than the one it is
-meant to open up.</p>
-<p class="intro">So it is a floor of <strong>{gap_sml}&nbsp;px</strong> with
-a proportional term above it, half the reading's line height. A compact
-visual costs the reading a font size, so it is never drawn beside an
-<code>XXLSIZE</code> number; over the range that does occur the floor binds
-at <code>SMLSIZE</code> and <code>MIDSIZE</code> and the proportion binds at
-<code>DBLSIZE</code> &mdash; <strong>{gap_sml}, {gap_mid} and
-{gap_dbl}&nbsp;px</strong>. Each case below prints the gap it used, so the
-claim is checkable rather than asserted.</p>
-
-<div class="warn"><strong>Two things to look at that a static page cannot
-settle.</strong>
-<p><strong>The header does not centre.</strong> The heading stays left and
-the badge stays right, both fixed &mdash; the badge column is reserved on
-every panel whether or not a badge is showing, and the specification is
-explicit that the heading's width must not depend on the state. So a centred
-reading sits under a left-aligned heading, and the gap between them is not
-small: <strong>{worst_offset} px</strong> on
-<code>{worst_offset_case}</code>, which is
-{worst_offset_pct}% of that panel's width. Whether that reads as centred or
-as an orphaned heading is visible in the mocks and nowhere else.</p>
-<p><strong>Centred content moves when it changes width.</strong> Left
-alignment degrades predictably: elements stay where they are and the last one
-sheds. A centred group re-centres whenever anything in it changes width, so a
-voltage going from <code>9.9</code> to <code>10.0</code> shifts the number
-<em>and</em> the battery beside it, every time. On a reading that changes a
-digit rarely that is nothing; on one that crosses a digit boundary in flight
-it is a visible twitch at the moment attention is on it. No static page can
-show that, which is why it is written here instead.</p></div>
 
 <h2>Full screen &mdash; what the shipped dashboards are</h2>
 <p class="intro">The <code>sim</code> and <code>sim2</code> screens the user
@@ -1559,11 +2227,38 @@ the user should make it rather than discover it.</p></div>
 
 <h2>Found while building this &mdash; not fixed</h2>
 <ul>
-  <li><strong>The same component places its reading by two rules at two
-      spans.</strong> <code>tx-battery</code> sheds its battery at
-      <code>1x1</code> and <code>metric</code> its radial, so those panels
-      centre across the whole box while their larger siblings split. Both are
-      in the page; judge whether it reads as inconsistent or as sensible.</li>
+  <li><strong>A unit printed over its own reading, in the proposed columns
+      only.</strong> Reported by a reader of the last revision on
+      <code>link-status</code>, where <code>dBm</code> landed 12&nbsp;px
+      inside <code>-72</code> at <code>1x1</code> and <code>2x1</code> but
+      not at <code>2x2</code>. <strong>It was this page's defect, not the
+      dashboard's</strong> &mdash; all {len(collide_log) // 3} shipped panels
+      are clean. When the band moved the reading's font, the transformation
+      widened the reading and then shifted the unit by the reading's
+      displacement rather than re-placing it against the reading's new end,
+      so the unit kept an offset computed at the old size. The overlap is
+      exactly the growth minus the gap: <code>-72</code> gains 13&nbsp;px
+      from <code>SMLSIZE</code> to <code>MIDSIZE</code> and the gap is 1.
+      <strong>Width was not the discriminator and neither was the span</strong>
+      &mdash; it was whether the band-derived font differed from today's,
+      which is why two panels of the same width behaved differently.
+      <em>This is the sixth appearance of one defect shape in this project:
+      something decides a size and something else draws at a position
+      computed for the old one.</em> The fix derives the unit's position
+      from the reading's current width every time, and the audit above now
+      checks mechanically for it.</li>
+  <li><strong>The heading falls {label_band_above}&nbsp;px off the top of
+      every 53&nbsp;px panel</strong> under the banded rule. Not a component
+      defect &mdash; the small-panel label band has no font that fits it,
+      and this is that unresolved question presenting concretely. Three
+      answers are rendered above.</li>
+  <li><strong><code>navigation</code>'s two supporting rows survive the
+      slot rule</strong>, which was worth checking since they are the rows
+      that already overflow their band by 11&nbsp;px. It draws a bearing
+      beside an orientation on one line and coordinates on a second, so the
+      first takes the two slots and the second centres. The band overflow is
+      unchanged by this &mdash; it is vertical and the slot rule is
+      horizontal.</li>
   <li><strong>A taller panel drawing less than a shorter one.</strong> A
       <code>tx-battery</code> at <code>2x1</code> is 65 px tall in App mode
       and 53 in Full screen, and it is the <em>taller</em> one that sheds its
@@ -1582,10 +2277,7 @@ the user should make it rather than discover it.</p></div>
       <strong>{widget_compact}</strong> have a compact visual and would move,
       <strong>{widget_bar}</strong> draw a full-width bar and are exempt, and
       <strong>{widget_none}</strong> have no visual at all &mdash; and only
-      <strong>{widget_slack}</strong> actually carry any slack to reclaim. So
-      the sweep is narrower than eleven components, though a
-      <code>metric</code> with <code>visual: radial</code> is a different case
-      from the same component with <code>visual: bar</code>.</li>
+      <strong>{widget_slack}</strong> actually carry any slack to reclaim.</li>
 </ul>
 </body></html>
 """
