@@ -63,6 +63,21 @@ local navigation = {
     -- one threshold in the catalogue that counts that way.
     {key = "accent", label = "Accent", type = "string", default = "cyan",
       choices = {"cyan", "green", "amber", "orange"}},
+    -- **A review flag, not a preference, and it defaults to what ships.**
+    -- The slot rule says a row of two takes the panel's two slot centres,
+    -- and applying it here costs the row the panel's outer fifth: two boxes
+    -- centred 40% of the content apart can each be 40% wide before they
+    -- meet, where a column split reaches all of it. `fitLabel` spends the
+    -- difference on shorter wording, and the wordings it gives up carry
+    -- meaning the badge above deliberately does not -- `NO GPS SOURCE`
+    -- becomes `NO GPS`, which is a missing sensor reading as a missing fix.
+    --
+    -- That is a judgement about what a pilot needs to read, so it is made by
+    -- looking rather than by argument, and this is what puts both on a
+    -- screen at once. It is expected to be removed once the choice is made,
+    -- along with whichever arrangement loses.
+    {key = "rowLayout", label = "Supporting row (review)", type = "string",
+      default = "columns", choices = {"columns", "slots"}},
   },
 }
 
@@ -331,8 +346,22 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
   -- nowhere to overflow to when their own quarter cannot hold them, and they
   -- overflow upward into it. `tx-battery` caps its cell at the same size and
   -- for the same reason.
+  -- **The rows are measured before the dial is sized, and the dial has to
+  -- clear them.** Two supporting rows need more than the quarter they were
+  -- given, so they overflow their band upward -- into the bottom of the body
+  -- band, where the dial lives. Sizing the dial against the band alone left
+  -- it touching the caption by a pixel, which the collision check found the
+  -- moment a long enough caption was put on a screen. The row's own top is
+  -- the bound, so the two cannot meet however the bands fall out.
+  local rowsHeight = labelHeight * (showCoordinates and 2 or 1)
+    + (showCoordinates and 2 or 0)
+  local rowsTop = showDetail
+    and themeBuilder.centreInBand(bands.tertiary, rowsHeight)
+    or (rect.h - frame.bottom)
+  local dialRoom = math.max(0, (rowsTop - 4) - bands.body.y)
+
   local radius = math.floor(
-    math.min(half, available, navigation.DIAL_MAX_DIAMETER) / 2)
+    math.min(half, available, dialRoom, navigation.DIAL_MAX_DIAMETER) / 2)
   if radius < 10 then showCompass = false end
   if not showCompass then radius = 0 end
 
@@ -425,8 +454,24 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
   -- its width", while the badge above it carries only the state. A rule that
   -- takes the words away contradicts the rule that put them there, so the
   -- row waits for that to be resolved rather than being quietly degraded.
-  local rowLeft = frame.pad
-  local rowRight = frame.pad + math.floor((frame.content - 4) * 0.4) + 4
+  -- Two arrangements for one row, and the default is the one that ships.
+  local slotted = layout.rowLayout == "slots"
+  local rowLeft, rowRight, detailWidth, originWidth
+  if slotted then
+    rowLeft, rowRight = themeBuilder.slotCentres(
+      frame, slots or themeBuilder.SLOT_TIGHT)
+    -- Two boxes centred this far apart can each be half that distance wide
+    -- before they meet, so that is the budget each wording is fitted to. It
+    -- is narrower than a column split gives, and the difference is what
+    -- there is to look at.
+    detailWidth = math.max(1, rowRight - rowLeft - 4)
+    originWidth = detailWidth
+  else
+    detailWidth = math.max(1, math.floor((frame.content - 4) * 0.4))
+    originWidth = math.max(1, frame.content - detailWidth - 4)
+    rowLeft = frame.pad + math.floor(detailWidth / 2)
+    rowRight = frame.pad + detailWidth + 4 + math.floor(originWidth / 2)
+  end
 
   local centreX = rightCentre or (rect.w - frame.pad)
   local centreY = blockTop + math.floor(blockHeight / 2)
@@ -436,16 +481,12 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
   -- panel's floor. Two rows where there are two, one where the second was
   -- shed, and the pair is centred in the band so the group sits where the
   -- rule puts it rather than where the bottom margin leaves it.
-  local rowHeights = labelHeight * (showCoordinates and 2 or 1)
-    + (showCoordinates and 2 or 0)
   -- **Two rows do not fit a quarter, and the band yields symmetrically.**
   -- Two SMLSIZE rows need 36 px of a 31 px band on a 134 px panel, so the
   -- pair overflows its band by three pixels at each end -- which is the
-  -- font-wins rule, and the reason the dial above is capped rather than
-  -- allowed to fill the body band: an uncapped dial ends exactly where this
-  -- band begins, and the overflow has nowhere to go. Clamping downward
-  -- instead pushes the second row through the panel's floor.
-  local rowsTop = themeBuilder.centreInBand(bands.tertiary, rowHeights)
+  -- font-wins rule. Clamping downward instead pushes the second row through
+  -- the panel's floor, and clamping upward is what the dial is bounded
+  -- against above.
   local detailY = rowsTop
   local coordinatesY = rowsTop + labelHeight + 2
 
@@ -477,13 +518,16 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     -- panel's half -- a half-width box on each of two centres 40% apart
     -- overlaps by a tenth of the panel. The estimate answers this question
     -- and the measurement answers the placement.
-    detailWidth = math.max(1, math.floor((frame.content - 4) * 0.4)),
-    originWidth = math.max(1, frame.content
-      - math.floor((frame.content - 4) * 0.4) - 4),
-    -- Left-aligned in their own columns, so the centres the shared helper
-    -- would use are the columns' own. When the row rule is settled these
-    -- become slot centres and nothing else here changes.
-    originX = frame.pad + math.floor((frame.content - 4) * 0.4) + 4,
+    detailWidth = detailWidth,
+    originWidth = originWidth,
+    -- Where each item of the row is centred. Under the column split those
+    -- are the columns' own centres, so the same shared helper places the row
+    -- either way and the arrangement is the only thing that differs.
+    slottedRows = slotted,
+    detailCentre = rowLeft,
+    originCentre = rowRight,
+    detailX = rowLeft - math.floor(detailWidth / 2),
+    originX = rowRight - math.floor(originWidth / 2),
     -- A row of one item centres across the whole content box, exactly as a
     -- lone reading does.
     coordinatesCentre = frame.pad + math.floor(frame.content / 2),
@@ -512,6 +556,9 @@ function navigation.create(parent, rect, settings, services)
   local presentationName = navigation.presentation(
     settings.presentation, span.colSpan, span.rowSpan)
   local layout = navigation.presentationFor(presentationName)
+  -- The review flag rides on the layout table, which is what `regionsFor`
+  -- already receives and what `update` keeps across a reflow.
+  layout.rowLayout = settings.rowLayout
   local presentation = services.state("normal", settings.accent)
 
   local context = {
@@ -574,7 +621,7 @@ function navigation.create(parent, rect, settings, services)
   })
 
   context.detailLabel = primitives.label(panel.root, theme, {
-    x = area.pad,
+    x = area.slottedRows and area.detailX or area.pad,
     y = area.detailY,
     w = area.detailWidth,
     text = "",
@@ -739,6 +786,18 @@ function navigation.apply(context, drawn)
   if context.showDetail then
     context.detailLabel:set({text = drawn.detail})
     context.originLabel:set({text = drawn.origin})
+    -- Centred on the slots only when the panel is slotting its row. Under
+    -- the column split each item keeps the left edge of its own column,
+    -- which is what ships and what the alternative is being compared
+    -- against.
+    if area.slottedRows then
+      context.primitives.centreLabel(context, "detailAnchor",
+        context.themeBuilder, context.detailLabel, area.detailCentre,
+        area.detailY, fonts.label, drawn.detail)
+      context.primitives.centreLabel(context, "originAnchor",
+        context.themeBuilder, context.originLabel, area.originCentre,
+        area.detailY, fonts.label, drawn.origin)
+    end
   end
   if context.showCoordinates then
     context.coordinatesLabel:set({text = drawn.coordinates})
@@ -783,6 +842,7 @@ function navigation.update(context, rect)
   -- had at the old span.
   context.unitAnchor = nil
   context.readingAnchor, context.readingUnitAnchor = nil, nil
+  context.detailAnchor, context.originAnchor = nil, nil
   context.coordinatesAnchor = nil
   context.area = area
   context.value:set({
@@ -796,7 +856,8 @@ function navigation.update(context, rect)
   local reconcile = context.primitives.reconcile
 
   reconcile(context.detailLabel, area.showDetail,
-    {x = area.pad, y = area.detailY, w = area.detailWidth})
+    {x = area.slottedRows and area.detailX or area.pad,
+     y = area.detailY, w = area.detailWidth})
   -- Recorded and nothing more. `render` reads all four, so a row that is shed
   -- declares nothing, a row that reappears declares a key that was missing,
   -- and a caption whose width moved declares whatever that width now fits.

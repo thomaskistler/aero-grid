@@ -708,7 +708,7 @@ screenData:
                      0:
                         type: String
                         value: 
-                           stringValue: review-tx-battery
+                           stringValue: review-navigation-row
                      1:
                         type: String
                         value: 
