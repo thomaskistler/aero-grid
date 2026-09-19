@@ -1,0 +1,142 @@
+# Review harness for `tx-battery`. Not a dashboard.
+#
+# One review screen exists at a time and its Dashboard ID names the component
+# under review; this replaces `review-flight-mode` as the screen's target
+# rather than adding a tenth screen, because `MAX_CUSTOM_SCREENS` is 10 and
+# the fixture already carries ten. The previous review layout stays in the
+# repository and keeps being loaded by the shipped-layout test.
+#
+# Two things are being judged here, and the second is the reason this
+# component needed a screen more than `flight-mode` did.
+#
+# The spans: eight are declared, and the six below are the ones that present
+# differently. `3x1` resolves as `2x1` does and `3x2`/`4x2` as `2x2` does,
+# only wider.
+#
+# The setting interactions: `packEmpty`/`packFull`, `visual` and `showPercent`
+# do not compose the way a layout author would guess. Without a stated range
+# there is no estimate, so the bar and the percentage stay away however their
+# own switches are set. That is invisible in a layout file and obvious here,
+# side by side with a panel that states one.
+#
+# Unlike `flight-mode`, every state this component reaches is reachable from a
+# layout, because the thresholds are voltages. The fixture transmitter reads
+# 7.9 V, so the thresholds below are rigged to sit either side of it and each
+# panel stays in its state rather than flickering through it.
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  # A stated range, so everything this component can draw is drawn.
+  - id: ranged
+    type: tx-battery
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: 2x1 RANGED
+      packEmpty: 6.6
+      packFull: 8.4
+      visual: bar
+      showPercent: true
+
+  # The same span and the same switches with no range stated. `visual: bar`
+  # and `showPercent: true` are both asked for and neither appears, because
+  # without a range there is nothing for them to mean.
+  - id: unranged
+    type: tx-battery
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: 2x1 NO RANGE
+      visual: bar
+      showPercent: true
+
+  # The narrowest span. No bar and no supporting row at any single cell.
+  - id: smallest
+    type: tx-battery
+    col: 0
+    row: 1
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: 1x1
+      packEmpty: 6.6
+      packFull: 8.4
+
+  # Warning: 7.9 V is at or below 8.0, and stays there.
+  - id: warned
+    type: tx-battery
+    col: 1
+    row: 1
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: WARN
+      packEmpty: 6.6
+      packFull: 8.4
+      warning: 8.0
+
+  # Critical, with the tinted surface and the accent both carrying the state.
+  - id: alarmed
+    type: tx-battery
+    col: 2
+    row: 1
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: 2x1 CRITICAL
+      packEmpty: 6.6
+      packFull: 8.4
+      warning: 8.2
+      critical: 8.0
+
+  # Two rows tall and one wide: the reading steps to DBLSIZE and drops the
+  # unit, because the panel's own label carries it and a digit would not be
+  # redundant. The supporting row appears here for the first time.
+  - id: tall
+    type: tx-battery
+    col: 0
+    row: 2
+    colSpan: 1
+    rowSpan: 2
+    config:
+      label: 1x2
+      packEmpty: 6.6
+      packFull: 8.4
+      showPercent: true
+
+  # The largest reading, with everything shown.
+  - id: full
+    type: tx-battery
+    col: 1
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: 2x2 FULL
+      packEmpty: 6.6
+      packFull: 8.4
+      visual: bar
+      showPercent: true
+
+  # A range and a percentage but no bar. The estimate is a number rather than
+  # a shape, which is the configuration for a panel too short to spend a row
+  # on a bar but still wanting the reading.
+  - id: numeric
+    type: tx-battery
+    col: 3
+    row: 2
+    colSpan: 1
+    rowSpan: 2
+    config:
+      label: NO BAR
+      accent: amber
+      packEmpty: 6.6
+      packFull: 8.4
+      visual: none
+      showPercent: true
