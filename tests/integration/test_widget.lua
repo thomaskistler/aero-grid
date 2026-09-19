@@ -4464,54 +4464,69 @@ components:
   assert(glyph, "a two by two panel drew no battery")
   assertEqual(healthy.glyphShown, true)
 
-  local expected = math.floor(glyph.interiorWidth * fraction + 0.5)
-  assertEqual(glyph.fill.properties.w, expected,
-    "the fill is not the voltage's share of the battery's interior")
+  -- The cell stands upright, so the level is a **height** and it grows from
+  -- the bottom, because a cell drains downward.
+  local expected = math.floor(glyph.interiorHeight * fraction + 0.5)
+  assertEqual(glyph.fill.properties.h, expected,
+    "the level is not the voltage's share of the battery's interior")
+  assertEqual(glyph.fill.properties.y,
+    glyph.interiorY + glyph.interiorHeight - expected,
+    "the level grows from the top, so a full cell would drain upward")
 
   -- And the number is a real proportion rather than either extreme, which is
   -- what makes the assertion above worth making.
-  assert(expected > 0 and expected < glyph.interiorWidth,
-    "the fixture voltage produced a full or empty battery, so a fill stuck"
+  assert(expected > 0 and expected < glyph.interiorHeight,
+    "the fixture voltage produced a full or empty battery, so a level stuck"
       .. " at one end would satisfy this test")
 
-  -- The fill stays inside the outline it is drawn in, on every side.
-  assert(glyph.fill.properties.x >= glyph.x + primitivesModule.GLYPH_BORDER,
-    "the fill starts on or outside the outline")
-  assert(glyph.fill.properties.x + glyph.fill.properties.w
-      <= glyph.x + glyph.bodyWidth - primitivesModule.GLYPH_BORDER,
-    "a full fill would paint over the outline's right edge")
-  assert(glyph.fill.properties.h < glyph.height,
-    "the fill is as tall as the outline, so it covers the top and bottom")
+  -- The level stays inside the outline it is drawn in, on every side.
+  assert(glyph.fill.properties.y >= glyph.bodyY + glyph.border,
+    "the level starts on or above the outline")
+  assert(glyph.fill.properties.y + glyph.fill.properties.h
+      <= glyph.bodyY + glyph.bodyHeight - glyph.border,
+    "a full level would paint over the outline's bottom edge")
+  assert(glyph.fill.properties.w < glyph.width,
+    "the level is as wide as the outline, so it covers the sides")
 
-  -- The outline is drawn as an outline. A filled rectangle here would be a
-  -- solid block that no fill inside it could be seen against.
+  -- The outline is drawn as an outline, at the weight it asked for. A filled
+  -- rectangle here would be a solid block with nothing visible inside it.
   assertEqual(glyph.shell.properties.filled, false)
-  assertEqual(glyph.shell.painted.borderWidth, primitivesModule.GLYPH_BORDER,
+  assertEqual(glyph.shell.painted.borderWidth, glyph.border,
     "the outline reached LVGL at a different weight from the one asked for")
+  assert(glyph.border >= 2,
+    "the outline is a hairline rather than the drawn cell the mock shows")
 
-  -- The nub is what makes it a battery rather than a rounded box, and it
-  -- sits outside the body, centred on it.
+  -- The terminal sits on top, centred, and is a contact rather than a second
+  -- cell.
   assertEqual(glyph.nub.properties.filled, true)
-  assertEqual(glyph.nub.properties.x, glyph.x + glyph.bodyWidth)
-  assert(glyph.nub.properties.h < glyph.height,
-    "the terminal is as tall as the battery, so it reads as a second cell")
+  assertEqual(glyph.nub.properties.y, glyph.y)
+  assert(glyph.nub.properties.y + glyph.nub.properties.h <= glyph.bodyY,
+    "the terminal overlaps the body it sits on")
+  assert(glyph.nub.properties.w < glyph.width,
+    "the terminal is as wide as the battery, so it reads as a cap")
 
-  -- State reaches the fill, which is the whole reason the glyph is not a
-  -- static picture. 7.9 is at or below the critical 8.0.
+  -- State reaches the whole cell, which is what the user asked for: a
+  -- critical pack is red throughout rather than red inside a grey box.
   assertEqual(alarmed.stateName, "critical")
-  assertEqual(alarmed.glyph.fill.properties.color,
-    context.theme.color.critical,
-    "a critical pack did not fill red")
+  for name, part in pairs({outline = alarmed.glyph.shell,
+      terminal = alarmed.glyph.nub, level = alarmed.glyph.fill}) do
+    assertEqual(part.properties.color, context.theme.color.critical,
+      "a critical pack's " .. name .. " did not go red")
+  end
   assert(healthy.glyph.fill.properties.color
       ~= alarmed.glyph.fill.properties.color,
-    "both panels fill the same colour, so the state is not reaching the fill")
+    "both panels fill the same colour, so the state is not reaching the cell")
 
-  -- The outline does not take the state colour. It is the container, the way
-  -- a bar's track is, and a red outline around a red fill says nothing twice.
-  assertEqual(alarmed.glyph.shell.properties.color, context.theme.color.track)
+  -- The empty part of the cell is the panel showing through, so a red cell on
+  -- a red-tinted panel is what has to be checked. In 24 bits, because
+  -- `contrast` is arithmetic on colour channels and `theme.color` holds
+  -- `LcdFlags` words.
+  assert(themeModule.contrast(context.theme.rgb.critical,
+      context.theme.alertRgb.critical) >= 3,
+    "a critical cell is indistinguishable from the panel it stands on")
 
   -- A panel with no range has nothing to fill from, and an empty outline is a
-  -- claim that the pack is flat. All three parts go, not just the fill.
+  -- claim that the pack is flat. All four parts go, not just the level.
   --
   -- This is a weak assertion on its own and it is worth saying why: the glyph
   -- is *built* hidden, so a reconcile that forgot to hide one of its parts
@@ -4584,8 +4599,8 @@ components:
   assertEqual(glyph.shell.hidden, false)
   assertEqual(glyph.nub.hidden, false)
   assertEqual(glyph.fill.hidden, false)
-  local shownWidth = glyph.fill.properties.w
-  assert(shownWidth > 0, "the battery was showing an empty fill")
+  local shownWidth = glyph.fill.properties.h
+  assert(shownWidth > 0, "the battery was showing an empty cell")
 
   local function reflow(width, height)
     zone.w, zone.h = width, height
@@ -4621,9 +4636,9 @@ components:
     assertEqual(part.hidden, false,
       "the battery came back and its " .. name .. " stayed hidden")
   end
-  assertEqual(glyph.fill.properties.w, shownWidth,
-    "the battery came back with a different fill from the one it left with")
-  assertEqual(glyph.nub.properties.x, glyph.x + glyph.bodyWidth,
+  assertEqual(glyph.fill.properties.h, shownWidth,
+    "the battery came back with a different level from the one it left with")
+  assertEqual(glyph.nub.properties.y, glyph.y,
     "the terminal came back detached from the body")
 
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
