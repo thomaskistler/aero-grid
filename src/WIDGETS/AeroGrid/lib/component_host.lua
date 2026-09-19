@@ -167,7 +167,7 @@ end
 ---@param config any Raw config mapping from the layout file.
 ---@return table settings
 ---@return string[] warnings
-function componentHost.resolveSettings(module, config)
+function componentHost.resolveSettings(module, config, span)
   local settings = {}
   local warnings = {}
   local declared = {}
@@ -227,8 +227,12 @@ function componentHost.resolveSettings(module, config)
   -- component may state one itself. `choices` catches a value that is wrong
   -- on its own; this catches a pair that is wrong together, which is the only
   -- kind of authoring mistake the schema cannot see.
+  --
+  -- The placement's span is offered alongside, because some settings are only
+  -- meaningless at a particular size: `flight-mode`'s mode number needs a
+  -- supporting row and no single-row span has one, however wide.
   if type(rawget(module, "validateSettings")) == "function" then
-    local ok, reported = pcall(module.validateSettings, settings)
+    local ok, reported = pcall(module.validateSettings, settings, span)
     if not ok then
       warnings[#warnings + 1] = "validateSettings raised: " .. tostring(reported)
     elseif type(reported) == "table" then

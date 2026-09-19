@@ -1154,6 +1154,33 @@ Measured cost on the largest layout the schema permits, sixteen single-cell comp
 
 **The worst callback is the staged loader, not any component's own work.** It is the callback that builds one `trim-panel` with four indicators, at 7509. Every layout's second-worst is the loader's header stage, between 6209 and 7361. The three telemetry components at sixteen cells reach 6721, 6593 and 6337, all of them in that header stage, and their worst steady frames are 2290, 2380 and 2562. Removing the services' subscription caps raises the worst steady frame to 6200, which is what the caps are for. On a full grid, component work is no longer the binding constraint, which is worth knowing before optimising a panel.
 
+### Aircraft-reported state: deferred, with the research kept
+
+**The dashboard shows nothing the aircraft reports about its own state.** `flight-mode` shows EdgeTX's own flight modes — the transmitter's up-to-nine mixer modes, each with its own trims, selected by a switch and named in Model Setup. `luaGetFlightMode` returns `mixerCurrentFlightMode` and `g_model.flightModeData[mode].name` (`radio/src/lua/api_general.cpp`), so it is transmitter-side and needs no telemetry at all. `variable-indicator` uses the term in the same sense, because a global variable holds one value per mode.
+
+It is **not** arming state, not the flight controller's mode — Angle, Acro, Horizon, Rescue — and not gyro or stabilisation state. Those live on the aircraft and can only arrive as telemetry, and no component reads them. That is a gap in the catalogue rather than a decision, and it is recorded here so it can be seen without being noticed as an absence.
+
+A component for it is **deferred, not rejected**. The condition for revisiting is the component-by-component review pass over the existing eleven being complete. The research is below because it is the expensive part and would otherwise be redone.
+
+**What the radio actually publishes.** This table is the design constraint: the same sensor name carries a different shape on different links.
+
+| Protocol | Flight mode | Arming | Evidence |
+| --- | --- | --- | --- |
+| Crossfire / ELRS | `FM`, `UNIT_TEXT` | none | `CS(FLIGHT_MODE_ID, 0, STR_SENSOR_FLIGHT_MODE, UNIT_TEXT, 0)`, `telemetry/crossfire.cpp`; frame `0x21`, `telemetry/crossfire.h` |
+| Spektrum | `FM`, `UNIT_TEXT` | none | `SS(I2C_PSEUDO_TX, 8, uint32, STR_SENSOR_FLIGHT_MODE, UNIT_TEXT, 0)`, `telemetry/spektrum.cpp` |
+| FlySky AFHDS2A | `FM`, `UNIT_RAW` — a mode **index** | `Arm`, `UNIT_RAW` | `telemetry/flysky_ibus.cpp` |
+| FrSky S.Port | absent | absent | no entry in `telemetry/frsky_sport.cpp` |
+
+`STR_SENSOR_FLIGHT_MODE` is `"FM"` and `STR_SENSOR_ARM` is `"Arm"` (`telemetry/sensor_names.h`). A text sensor's value is capped at `TELEMETRY_SENSOR_TEXT_LENGTH`, which is 16, and EdgeTX stores a hash of the string in the numeric slot "so changes can be detected quickly" (`telemetry/telemetry_sensors.cpp`). Lua receives the string itself, not the hash: `case UNIT_TEXT: lua_pushstring(L, telemetryItems[...].text)` (`radio/src/lua/api_general.cpp`). `getFieldInfo` reports the unit for a telemetry source, so a component can tell a text sensor from a numeric one before reading it.
+
+**Arming is not separately published on ELRS.** The only `Arm` sensor EdgeTX defines is FlySky's. Flight controllers are understood to encode arming inside the `FM` string, but **that vocabulary is the flight controller's and is not in the EdgeTX tree**, so a component that recognised specific mode strings would be designed against a guess. That is the fixture-discipline mistake in a new place, and it is the single most important thing recorded here.
+
+**The proposal, if it is built.** A component that displays any `UNIT_TEXT` sensor and lets the *layout* map strings to states — `critical: "!ERR"` — rather than an "aircraft mode" component with a built-in vocabulary. The vocabulary then lives where someone who knows their flight controller can state it, and the component is honest about what it knows: it shows the string the aircraft sent.
+
+`metric` cannot absorb this. It formats a number to a precision and normalises it to a range; thresholds, extrema and `fraction` are all meaningless for text, and its ladder sizes the reading from the widest **numeric** form. Fitting text into it would make one name cover two components, which is what the settings vocabulary work undid.
+
+**Groundwork already in place.** The telemetry service maps `UNIT_TEXT` to a `text` kind and holds the string in `raw` with no numeric value. That path existed and had never been exercised by anything, so the test fixture now carries an `FM` text sensor and the service's handling of one is covered, including the common case of the sensor being absent. That is worth having whether or not the component is ever built.
+
 ### The host diagnostics view
 
 Nothing in this project has ever run on a radio. When it does and something looks wrong, the only evidence available is pixels, and inferring from pixels is what cost an evening on an arc drifting by its own radius and another on a radio running bytecode that was no longer on the card. The `host-diagnostics` component exists so a hardware session can answer "what is loaded and what did it resolve to" by reading it instead of deducing it.
