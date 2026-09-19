@@ -2874,6 +2874,76 @@ local function testFontHeightsMatchTheFirmware()
   end
 end
 
+--- Width is asked of the radio, and the estimate is only a fallback.
+---
+--- The two differ enough to tell apart, which is the point: `theme.textWidth`
+--- charges every character 0.58 of a line height, so a decimal point costs
+--- what a digit does, and against the real advances of the font EdgeTX ships
+--- `7.9` comes out 68% too wide. That generosity is correct when deciding
+--- whether something fits and wrong when deciding where something starts.
+---
+--- The mock's `lcd.sizeText` is a proportional model rather than the radio's
+--- own numbers -- it cannot be more, since every font the dashboard draws
+--- with is LZ4-compressed in the tree. What it reproduces faithfully is the
+--- shape: a narrow `.`, a wide `m`, and a total that depends on which
+--- characters a string holds rather than only how many.
+local function testWidthIsMeasuredNotEstimated()
+  -- The estimate is length times height times a constant, so two strings of
+  -- the same length measure the same however different they look.
+  assertEqual(theme.textWidth(MIDSIZE, "8.8"), theme.textWidth(MIDSIZE, "888"))
+
+  -- Measurement does not, and that difference is what a test can see.
+  assert(theme.measureText(MIDSIZE, "8.8")
+      < theme.measureText(MIDSIZE, "888"),
+    "a decimal point measures as wide as a digit, so this is the estimate"
+      .. " wearing a different name")
+
+  -- The estimate is generous rather than merely different, in the direction
+  -- the specification asks for: it never reports less than the truth for the
+  -- readings this dashboard prints.
+  local checked = 0
+  for _, sample in ipairs({"7.9", "10.0", "88.8", "-100", "888.88", "1:04:12"}) do
+    for _, font in ipairs(theme.READING_FONTS) do
+      checked = checked + 1
+      assert(theme.textWidth(font, sample) >= theme.measureText(font, sample),
+        "the estimate under-reports " .. sample .. " at "
+          .. edgetx.fontName(font) .. ", which would clip rather than shrink")
+    end
+  end
+  assert(checked >= 24, "only " .. checked .. " pairs were compared")
+
+  -- The gap between them is the user's complaint, stated as a number. At the
+  -- largest reading a `7.9` was placed tens of pixels further right than the
+  -- radio draws it.
+  local slack = theme.textWidth(XXLSIZE, "7.9") - theme.measureText(XXLSIZE, "7.9")
+  assert(slack > 20, "the estimate is only " .. slack
+    .. " pixels generous at XXLSIZE, so this change buys nothing and the"
+    .. " gap the user reported has another cause")
+
+  -- Empty and absent text measure zero rather than raising, because a panel
+  -- with no reading yet still places its unit.
+  assertEqual(theme.measureText(MIDSIZE, ""), 0)
+  assertEqual(theme.measureText(MIDSIZE, nil), 0)
+
+  -- Without `lcd.sizeText` the estimate answers, because a host that cannot
+  -- measure still has to produce a number rather than nil.
+  local realLcd = lcd
+  lcd = {RGB = realLcd.RGB, getColor = realLcd.getColor}
+  local fallback = theme.measureText(MIDSIZE, "8.8")
+  lcd = realLcd
+  assertEqual(fallback, theme.textWidth(MIDSIZE, "8.8"),
+    "a host without lcd.sizeText did not fall back to the estimate")
+
+  -- And a host whose `sizeText` answers something unusable is the same case.
+  local broken = {RGB = realLcd.RGB, getColor = realLcd.getColor,
+    sizeText = function() return nil end}
+  lcd = broken
+  local refused = theme.measureText(MIDSIZE, "8.8")
+  lcd = realLcd
+  assertEqual(refused, theme.textWidth(MIDSIZE, "8.8"),
+    "a sizeText that answered nil was believed")
+end
+
 --- `fitReading`'s verdict is accurate, in both directions.
 ---
 --- The function returns the smallest font on the ladder when nothing fits,
@@ -4440,6 +4510,7 @@ testControlService()
 testExtremaService()
 testNavigationService()
 testFontHeightsMatchTheFirmware()
+testWidthIsMeasuredNotEstimated()
 testFitReadingReportsWhetherItFits()
 testUnitSitsOnTheBaseline()
 testTextFitting()

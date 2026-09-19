@@ -748,20 +748,66 @@ function theme.fitPrimary(available)
 end
 
 --- Mean character advance as a fraction of a font's line height.
---- EdgeTX's fonts are proportional and the Lua API offers no text measurement
---- outside a draw callback, so width has to be estimated. The ratio is
---- deliberately generous: overestimating shrinks a reading that would have
---- fit, while underestimating clips it, and the specification requires text to
---- abbreviate or reduce before it clips.
+--- EdgeTX's fonts are proportional, so width has to be estimated where it is
+--- not measured. The ratio is deliberately generous: overestimating shrinks a
+--- reading that would have fit, while underestimating clips it, and the
+--- specification requires text to abbreviate or reduce before it clips.
 local ADVANCE_RATIO = 0.58
 
 --- Estimate the rendered width of a string in a given font.
+---
+--- **Generous on purpose, and therefore wrong for placement.** Every
+--- character is charged the same 0.58 of a line height, so a decimal point
+--- costs what a digit does. Against the real advances of the font EdgeTX
+--- ships, `7.9` comes out **68% too wide** and `88.8` 58% too wide -- at
+--- XXLSIZE that is roughly 48 pixels of empty space. Deciding *whether*
+--- something fits may err that way. Deciding *where* something starts may
+--- not: see `theme.measureText`.
 ---@param font any
 ---@param text any
 ---@return integer
 function theme.textWidth(font, text)
   local length = #tostring(text == nil and "" or text)
   return math.floor(length * theme.fontHeight(font) * ADVANCE_RATIO + 0.5)
+end
+
+--- Measure the rendered width of a string, asking the radio where it can.
+---
+--- `lcd.sizeText(text, flags)` is `luaLcdSizeText`, which calls
+--- `getTextWidth` -> `lv_txt_get_width(s, len, getFont(flags), 0,
+--- LV_TEXT_FLAG_EXPAND)`: it sums the real per-glyph advances out of the font
+--- and nothing else. Three things make it usable here where the estimate used
+--- to be the only option:
+---
+---  * it takes no draw context. Unlike every other `lcd` drawing function it
+---    carries no `luaLcdAllowed` or `luaLcdBuffer` guard, so it answers from
+---    a `create` or an `update` as readily as from a paint;
+---  * our size constants are the flags it wants. `SMLSIZE` and the rest are
+---    `FONT(XS)` and friends, which is exactly what `getFont` indexes;
+---  * the font it consults is decompressed once and cached, so the cost is a
+---    C loop over the string rather than a decode per call.
+---
+--- The estimate remains the fallback, because a host without `lcd.sizeText`
+--- -- the unit tests are one -- still has to produce a number.
+--- **Fitting still estimates, and that is the boundary rather than an
+--- oversight.** `readingWidth` and the ladder ask whether something fits, and
+--- there the generous answer is the safe one: a fit that guesses high sheds a
+--- unit that would have fitted, where one that guesses low draws it off the
+--- edge. Because the estimate never reports less than the measurement for the
+--- readings this dashboard prints, anything the fit accepts the placement can
+--- certainly draw -- so the two cannot disagree in the direction that clips.
+---@param font any
+---@param text any
+---@return integer
+function theme.measureText(font, text)
+  local sizeText = type(lcd) == "table" and lcd.sizeText
+  if type(sizeText) ~= "function" then
+    return theme.textWidth(font, text)
+  end
+
+  local width = sizeText(tostring(text == nil and "" or text), font)
+  if type(width) ~= "number" then return theme.textWidth(font, text) end
+  return width
 end
 
 --- Distance from the bottom of a font's line box to its baseline.
@@ -831,12 +877,22 @@ function theme.unitTop(readingFont, unitFont, readingY)
 end
 
 --- Air between a reading and the unit riding beside it.
---- A fifth of the unit's line height, so it scales with the pair rather than
---- being generous beside a small unit and tight beside a large one.
+---
+--- A twelfth of the unit's line height, which is one pixel at SMLSIZE and
+--- TINSIZE and two at MIDSIZE. It was a fifth, and that was chosen while the
+--- reading's width was being estimated 58% high: the gap was never what the
+--- user was looking at, it was an overlong measurement with a gap on the end,
+--- and shrinking the constant alone would have left most of the space.
+---
+--- It is small rather than zero because a glyph's advance already carries its
+--- own right side bearing, so a number and a unit set flush are not actually
+--- touching -- the mock shows them close, and close is what this is. A
+--- proportional gap on top of a proportional bearing keeps the pair looking
+--- the same at every size.
 ---@param unitFont any
 ---@return integer
 function theme.unitGap(unitFont)
-  return math.max(2, math.floor(theme.fontHeight(unitFont) / 5 + 0.5))
+  return math.max(1, math.floor(theme.fontHeight(unitFont) / 12 + 0.5))
 end
 
 --- Width a reading and its inline unit occupy together.

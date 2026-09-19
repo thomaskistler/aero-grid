@@ -682,7 +682,11 @@ end
 function primitives.placeUnit(unit, themeBuilder, readingX, readingY,
     readingFont, text, unitFont, withFont)
   local changes = {
-    x = readingX + themeBuilder.textWidth(readingFont, text)
+    -- Measured, not estimated. The estimate is generous by design so that a
+    -- reading shrinks rather than clips, and generosity in a decision about
+    -- where something *starts* is just a gap: `7.9` at XXLSIZE was estimated
+    -- 48 pixels wider than the radio draws it, and the unit sat that far out.
+    x = readingX + themeBuilder.measureText(readingFont, text)
       + themeBuilder.unitGap(unitFont),
     y = themeBuilder.unitTop(readingFont, unitFont, readingY),
   }

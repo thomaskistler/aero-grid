@@ -19,6 +19,7 @@ local radioMock = edgetx.radio(hostIo)
 
 local toRgb565 = lcdMock.toRgb565
 local edgeTxRoles = lcdMock.roles
+local setTextMeasurement = lcdMock.setTextMeasurement
 
 local settleLvgl = lvglMock.settle
 local setPropertyValidation = lvglMock.setPropertyValidation
@@ -2918,10 +2919,16 @@ local function testInstructionBudget()
     -- and costs a script nothing. Counting it here would measure the fixture.
     setPropertyValidation(false)
     setCallCounting(false)
+    -- `lcd.sizeText` is C on a radio and free to a script; here it sums the
+    -- string in Lua. Swapped for a stand-in that answers the same number from
+    -- a cache, so the measurement is of the dashboard rather than of the
+    -- fixture's arithmetic.
+    setTextMeasurement(false)
     -- Count exactly as the firmware does: a hook every 200 instructions.
     debug.sethook(function() ticks = ticks + 1 end, "", 200)
     local ok, err = pcall(fn, ...)
     debug.sethook()
+    setTextMeasurement(true)
     setCallCounting(true)
     setPropertyValidation(true)
     assert(ok, "callback raised: " .. tostring(err))
@@ -4817,10 +4824,14 @@ components:
   local tx = entryById(context, "tx").instance
   assert(tx.unit and not tx.unit.hidden, "the panel drew no unit to follow")
 
+  --- Where the reading actually ends, asked of the same measurement the
+  --- radio would use rather than of the estimate. Measuring the gap with
+  --- `textWidth` here is what let the old one pass: the estimate is 58%
+  --- generous, so it put the reading's right edge well beyond where it is
+  --- drawn and made a 48 pixel gap look like a small one.
   local function unitGap()
     local reading = tx.value.properties
-    local right = reading.x + themeModule.textWidth(
-      reading.font(), reading.text)
+    local right = reading.x + lcd.sizeText(reading.text, reading.font())
     return tx.unit.properties.x - right
   end
 
@@ -4828,8 +4839,10 @@ components:
   assertEqual(tx.text, "7.9")
   local narrowGap = unitGap()
   local narrowX = tx.unit.properties.x
-  assert(narrowGap >= 2 and narrowGap <= 8,
-    "the unit sits " .. narrowGap .. " pixels from a three character reading")
+  assertEqual(narrowGap, themeModule.unitGap(tx.unit.properties.font()),
+    "the unit does not begin where the reading ends plus the stated gap")
+  assert(narrowGap <= 3, "the unit sits " .. narrowGap
+    .. " pixels from the number, which is a gap rather than a rider")
 
   -- Four characters. The reading grows and the unit has to grow with it.
   radio.values[320] = 10.0
@@ -4988,6 +5001,19 @@ local function testUnitsRideBesideEveryReading()
           instance.unit.properties.y + themeModule.fontAscent(unitFont),
           readingLabel.properties.y + themeModule.fontAscent(readingFont),
           where .. " does not sit its unit on the reading's baseline")
+
+        -- And the horizontal placement, held to the same standard: the unit
+        -- begins where the reading *ends*, measured the way the radio
+        -- measures, plus the stated gap and nothing else.
+        --
+        -- Asserting that the unit is merely to the right of the reading is
+        -- what the 48 pixel gap satisfied, so this pins the distance instead.
+        local drawnRight = readingLabel.properties.x
+          + lcd.sizeText(reading, readingFont)
+        assertEqual(instance.unit.properties.x - drawnRight,
+          themeModule.unitGap(unitFont), where
+            .. " places its unit against an estimate rather than against"
+            .. " where the reading is drawn")
       end
     end
   end
