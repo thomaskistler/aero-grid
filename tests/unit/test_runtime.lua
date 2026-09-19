@@ -1010,6 +1010,61 @@ local function testInertSettingsAreRefused()
       .. " both: " .. table.concat(quiet, "; "))
 end
 
+--- No component writes its own heading text into the label.
+---
+--- This is the fourth defect of the shape "a string is drawn without being
+--- measured", after a flight mode's name, the supporting rows, and a
+--- navigation origin. The reading goes through the ladder and supporting rows
+--- through `fitLabel`; the heading went through neither, straight into a
+--- label whose long mode LVGL defaults to wrapping.
+---
+--- The host writes the heading, in `primitives.header`, so eleven of the
+--- twelve components never touch it and cannot get it wrong. Two rewrite
+--- theirs at runtime -- a timer taking its name from the model, a variable
+--- indicator from the radio -- and they go through `primitives.setHeading`.
+--- This is what stops a thirteenth writing it directly.
+---
+--- It is honestly weaker than the render declaration in #24, which made its
+--- mistake unrepresentable rather than merely detectable. The difference is
+--- that the host owns the redraw comparison and can derive it, but it does
+--- not own paint: a component holds its own LVGL objects and calls `set` on
+--- them. Making this unrepresentable would mean the host owning drawing as
+--- well as deciding, which is a larger change than this defect justifies.
+--- Detectable is what is available, so detectable is what this does.
+local function testHeadingIsNeverWrittenDirectly()
+  local kinds = componentTypes()
+  local checked = 0
+
+  for _, kind in ipairs(kinds) do
+    local path = root .. "/src/WIDGETS/AeroGrid/components/" .. kind .. ".lua"
+    local handle = assert(io.open(path, "r"))
+    local source = handle:read("a")
+    handle:close()
+    checked = checked + 1
+
+    -- `context.label` and `context.title` are the header label, whichever a
+    -- component calls it. Anything else is a row the component owns.
+    for _, name in ipairs({"label", "title"}) do
+      -- Every write to the header label, not just the first: a component may
+      -- set its colour in one place and its text in another.
+      for changes in string.gmatch(source,
+          "context%." .. name .. ":set%((%b{})%)") do
+        -- `text` as a key, rather than anywhere in the line. The first
+        -- version of this searched the whole call and matched `context`,
+        -- which contains the word, and so failed on a component setting
+        -- nothing but a colour.
+        assert(not string.match(changes, "[{,%s]text%s*="),
+          kind .. " writes its heading straight into the label: "
+            .. changes .. " -- use primitives.setHeading, which fits it to"
+            .. " the column the badge leaves")
+      end
+    end
+  end
+
+  assertEqual(checked, #kinds)
+  assert(checked >= 11, "only " .. checked .. " components were read")
+end
+
 --- No component reaches for `lvgl.show` or `lvgl.hide` inside `update`.
 ---
 --- A reflow is where visibility is decided, and every component used to
@@ -1947,6 +2002,7 @@ testSupportedSpans()
 testSettingsResolution()
 testSettingsVocabulary()
 testInertSettingsAreRefused()
+testHeadingIsNeverWrittenDirectly()
 testReflowGoesThroughReconcile()
 testRenderConsultsWhatIsShown()
 testLinkThresholdsNeedAStatedReading()

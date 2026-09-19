@@ -107,15 +107,32 @@ end
 ---@param presentation table Result of theme.state.
 ---@return any label
 ---@return any badge
-function primitives.header(parent, theme, frame, fonts, text, presentation)
+function primitives.header(parent, theme, frame, fonts, text, presentation,
+    themeBuilder)
+  -- Fitted, because nothing else was fitting it. Every other string in this
+  -- dashboard is either sized by the ladder or shortened by `fitLabel`; the
+  -- heading went through neither and was handed to LVGL, whose default long
+  -- mode wraps and whose content height then grows over the reading.
+  local fit = themeBuilder and themeBuilder.fitHeading
+  local heading, font, dropped = text, fonts.label, nil
+  if fit then
+    heading, font, dropped = fit(text, frame.labelWidth, fonts.label)
+  else
+    heading = string.upper(tostring(text == nil and "" or text))
+  end
+
   local label = primitives.label(parent, theme, {
     x = frame.labelX,
     y = frame.compact,
     w = frame.labelWidth,
-    text = string.upper(tostring(text == nil and "" or text)),
+    text = heading,
     color = presentation.label,
-    font = fonts.label,
+    font = font,
   })
+  -- Kept so a reflow can refit against the new column, and so the host can
+  -- report a heading it had to cut.
+  label.headingText = text
+  label.headingDropped = dropped
 
   local badge = primitives.badge(parent, theme, {
     x = frame.badgeX,
@@ -128,15 +145,62 @@ function primitives.header(parent, theme, frame, fonts, text, presentation)
 
   if frame.labelHidden then lvgl.hide(label) end
 
-  return label, badge
+  return label, badge, dropped
+end
+
+--- Set a heading's text, fitted to the column it has.
+---
+--- The two components that rewrite their own heading at runtime -- a timer
+--- taking its name from the model, a variable indicator from the radio --
+--- have to go through this rather than writing the label directly, or they
+--- reintroduce exactly the overflow `header` now prevents.
+---@param label any
+---@param themeBuilder table
+---@param frame table
+---@param fonts table
+---@param text any
+---@param color? any
+---@return string? dropped
+function primitives.setHeading(label, themeBuilder, frame, fonts, text, color)
+  -- Refitted every time rather than guarded on the text being unchanged. The
+  -- guard was written, measured, and removed: `fitHeading` answers a heading
+  -- that already fits in one width comparison, which is cheaper than the two
+  -- the guard itself cost, so skipping the work was four instructions worse
+  -- than doing it on the layout it was meant to help.
+  local heading, font, dropped =
+    themeBuilder.fitHeading(text, frame.labelWidth, fonts.label)
+
+  label.headingText = text
+  label.headingDropped = dropped
+  local changes = {text = heading, font = function() return font end}
+  if color ~= nil then changes.color = color end
+  label:set(changes)
+  return dropped
 end
 
 --- Reposition an existing header row after a geometry change.
 ---@param label any
 ---@param badge any
 ---@param frame table
-function primitives.placeHeader(label, badge, frame)
-  label:set({x = frame.labelX, y = frame.compact, w = frame.labelWidth})
+function primitives.placeHeader(label, badge, frame, themeBuilder, fonts)
+  local changes = {x = frame.labelX, y = frame.compact, w = frame.labelWidth}
+
+  -- The column is what the badge leaves, so a reflow can change it and a
+  -- heading that fitted before may not now. Refitted here rather than left,
+  -- because a heading that only fits at the span it was built at is a
+  -- heading that wraps the first time the zone moves.
+  -- Refitted on every reflow, for the same reason: the column is what the
+  -- badge leaves and a reflow can move it, and checking whether it moved
+  -- costs more than refitting does.
+  if themeBuilder and fonts and label.headingText ~= nil then
+    local heading, font, dropped = themeBuilder.fitHeading(
+      label.headingText, frame.labelWidth, fonts.label)
+    label.headingDropped = dropped
+    changes.text = heading
+    changes.font = function() return font end
+  end
+
+  label:set(changes)
   badge:set({x = frame.badgeX, y = frame.compact, w = frame.badgeWidth})
   if frame.labelHidden then lvgl.hide(label) else lvgl.show(label) end
 end
