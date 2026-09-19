@@ -77,8 +77,10 @@ local linkStatus = {
     -- In the unit of whichever source leads, which is what `reading` selects:
     -- a percentage under `quality` and dBm or dB under `rssi`. There is no
     -- one unit to name here, so the layout has to know which source it chose.
-    {key = "warning", label = "Warning, in the leading source's unit", type = "number"},
-    {key = "critical", label = "Critical, in the leading source's unit", type = "number"},
+    -- The unit is whichever source `reading` names, so `reading` has to name
+    -- one. See `validateSettings`.
+    {key = "warning", label = "Warning, in the chosen reading's unit", type = "number"},
+    {key = "critical", label = "Critical, in the chosen reading's unit", type = "number"},
     -- A link only ever gets worse downward.
     {key = "direction", label = "Threshold direction", type = "string",
       default = "falling", choices = {"falling"}},
@@ -182,6 +184,39 @@ function linkStatus.resolveState(settings, reading)
   end
 
   return "normal"
+end
+
+--- Reject a threshold whose unit would depend on which source resolved first.
+---
+--- This panel can lead with RSSI, in dBm and typically negative, or with link
+--- quality, in percent and always positive. `reading: auto` picks whichever is
+--- available, so `warning: 50` means "below 50 dBm" on one radio and "below
+--- 50 percent" on another, decided by which sensor the protocol happens to
+--- publish. The number is not wrong in a way anyone can see: it is a
+--- plausible value for both, and the panel alarms at the wrong moment rather
+--- than failing.
+---
+--- The vocabulary work documented this by naming the unit "the leading
+--- source's", which described the trap accurately and left it in place. A
+--- threshold whose meaning is decided at runtime is not a setting, so it is
+--- refused at load instead, and the author is told to state which reading
+--- they meant.
+---@param settings AeroGridLinkSettings
+---@return string[] messages
+function linkStatus.validateSettings(settings)
+  local messages = {}
+  if settings.reading ~= "auto" then return messages end
+
+  for _, key in ipairs({"warning", "critical"}) do
+    if type(settings[key]) == "number" then
+      messages[#messages + 1] = key
+        .. " cannot be used with reading: auto, because its unit would be"
+        .. " dBm or percent depending on which source resolved first."
+        .. " Set reading to rssi or quality."
+    end
+  end
+
+  return messages
 end
 
 --- Collect the current state of both sources and the link itself.

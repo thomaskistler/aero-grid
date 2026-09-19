@@ -223,6 +223,21 @@ function componentHost.resolveSettings(module, config)
     end
   end
 
+  -- A rule that spans two settings cannot be expressed per setting, so a
+  -- component may state one itself. `choices` catches a value that is wrong
+  -- on its own; this catches a pair that is wrong together, which is the only
+  -- kind of authoring mistake the schema cannot see.
+  if type(rawget(module, "validateSettings")) == "function" then
+    local ok, reported = pcall(module.validateSettings, settings)
+    if not ok then
+      warnings[#warnings + 1] = "validateSettings raised: " .. tostring(reported)
+    elseif type(reported) == "table" then
+      for _, message in ipairs(reported) do
+        warnings[#warnings + 1] = tostring(message)
+      end
+    end
+  end
+
   return settings, warnings
 end
 

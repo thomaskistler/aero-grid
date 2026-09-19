@@ -643,6 +643,54 @@ local function testSpecificationExamplesLoad()
   assert(themes > 0, "the specification carries no theme example")
 end
 
+--- A threshold whose unit is decided at runtime is refused at load.
+---
+--- `link-status` leads with RSSI, in dBm and usually negative, or with link
+--- quality, in percent and always positive. Under `reading: auto` the choice
+--- is made by whichever source the protocol publishes, so `warning: 50` is a
+--- perfectly plausible number in both units and means a different thing in
+--- each. Nothing downstream can catch it: the panel alarms at the wrong
+--- moment rather than failing.
+---
+--- The shipped dashboard had exactly this. Its thresholds were percentages
+--- under `reading: auto`, and `auto` falls back to RSSI when no quality
+--- sensor exists, where every reading is below 30, so that panel would have
+--- sat permanently critical on any protocol without one.
+local function testLinkThresholdsNeedAStatedReading()
+  local module = loadModule("components/link-status.lua")
+
+  local function warningsFor(config)
+    local _, warnings = componentHost.resolveSettings(module, config)
+    return warnings
+  end
+
+  -- The rejection, which is the behaviour being added.
+  local refused = warningsFor({reading = "auto", warning = 50, critical = 30})
+  assertEqual(#refused, 2,
+    "both thresholds must be refused, not just the first")
+  assert(string.find(refused[1], "reading: auto", 1, true), refused[1])
+  assert(string.find(refused[1], "dBm or percent", 1, true), refused[1])
+  assert(string.find(refused[1], "Set reading to rssi or quality", 1, true),
+    "the message must say what to do about it: " .. refused[1])
+
+  -- `auto` is only refused when a threshold depends on it. A panel that
+  -- states no threshold has nothing whose unit could be ambiguous, and
+  -- refusing that would make `auto` unusable rather than unambiguous.
+  assertEqual(#warningsFor({reading = "auto"}), 0,
+    "auto was refused on a panel that states no threshold")
+
+  -- And a stated reading carries its thresholds, in either unit.
+  assertEqual(#warningsFor({reading = "quality", warning = 50, critical = 30}), 0,
+    "a percentage threshold under quality was refused")
+  assertEqual(#warningsFor({reading = "rssi", warning = -90, critical = -100}), 0,
+    "a dBm threshold under rssi was refused")
+
+  -- The default is `auto`, so a layout that states thresholds and no reading
+  -- is the same mistake written more quietly.
+  assertEqual(#warningsFor({warning = 50}), 1,
+    "a threshold with no reading stated was accepted")
+end
+
 --- A raising callback disables only its own component, and only reports once.
 local function testLifecycleIsolation()
   local entry = {
@@ -1484,6 +1532,7 @@ testComponentContract()
 testSupportedSpans()
 testSettingsResolution()
 testSettingsVocabulary()
+testLinkThresholdsNeedAStatedReading()
 testSpecificationExamplesLoad()
 testLifecycleIsolation()
 testColorConversion()

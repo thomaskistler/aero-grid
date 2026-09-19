@@ -68,7 +68,11 @@ components:
     config:
       rssiSource: RSSI
       qualitySource: RQly
-      reading: auto
+      # Stated rather than left to `auto`, because the thresholds below are
+      # percentages. Under `auto` a radio with no link-quality sensor falls
+      # back to RSSI in dBm, where every reading is below 30 and the panel
+      # would have sat permanently critical.
+      reading: quality
       label: Link
       barMin: 0
       barMax: 100
