@@ -253,6 +253,42 @@ def apply_font(obj, font):
     obj.font = font
 
 
+def slot_margin(flowed, pad, content, widest_at, bands=None):
+    """Pixels between the reading's slot and the secondary's, at the widest.
+
+    Measured from the **widest** string the component can print, at the font
+    it is actually drawn in, because the question is whether the two can ever
+    meet rather than whether they meet today. A negative answer is a
+    collision. `None` means the panel has no secondary element and the
+    question does not arise.
+    """
+    # Only where the panel actually splits. A full-width bar is exempt from
+    # the rule, so measuring a margin against one answers a question nobody
+    # asked -- and answers it alarmingly, since a bar starts at the padding
+    # and every reading is therefore "past" it.
+    if not (bands and bands.get("split")):
+        return None
+    reading = next((o for o in flowed if o.role == "reading"), None)
+    if reading is None:
+        return None
+    parts = [o for o in flowed if o.role == "visual" and not o.hidden]
+    if not parts:
+        return None
+    vx = min(o.x for o in parts)
+
+    unit = next((o for o in flowed if o.role == "unit" and not o.hidden), None)
+    if widest_at and reading.font in widest_at:
+        digits, unit_w = widest_at[reading.font]
+        widest = digits + (GAP_UNIT + unit_w if unit else 0)
+    else:
+        widest = reading.textW + (GAP_UNIT + unit.textW if unit else 0)
+
+    # The reading is centred on its slot, so its widest form grows both ways.
+    centre = reading.x + (reading.textW
+                          + (GAP_UNIT + unit.textW if unit else 0)) // 2
+    return vx - (centre + widest // 2)
+
+
 def bands_for(compact, panel_h, bottom, has_label, has_tertiary):
     """The proportional vertical bands, as (top, height) pairs.
 
@@ -292,6 +328,26 @@ def band_font(band_h):
     return LADDER[-1]
 
 
+def ink_font(band_h):
+    """The largest reading font whose **ink** fits a band.
+
+    `theme.fontHeight` is LVGL's line height: ascent plus descent plus
+    leading. What a reading puts on the panel is its ascent, and for digits
+    -- which is what every reading in this catalogue is -- there is no
+    descender at all. So a band sized against line height carries slack that
+    nothing draws into, and choosing by line height picks a font smaller than
+    the band can actually hold.
+
+    Ascent is `line_height - base_line`, both compile-time constants of the
+    generated fonts, the same pair used for baseline alignment in #45.
+    """
+    for font in LADDER:
+        ascent = FONTS[font][1]
+        if ascent <= band_h:
+            return font
+    return LADDER[-1]
+
+
 def centre_in_band(band, height):
     """Where a block of `height` starts to sit centred in a band.
 
@@ -307,8 +363,23 @@ def centre_in_band(band, height):
     return top + (band_h - height) // 2
 
 
+#: Where the two slots are centred, as fractions of the content width.
+#:
+#: Strict halves puts them at the middle of each half -- 25% and 75% -- which
+#: guarantees the two can never meet, because each owns a disjoint region.
+#: The tightened reading of "3/5 across the left half, 2/5 across the right"
+#: moves both inward to 30% and 70%, so they sit 40% apart instead of 50%.
+#:
+#: That guarantee is what tightening spends. Two centres 40% apart do not own
+#: disjoint regions, so a wide reading and a wide secondary can meet in the
+#: middle. Every case is checked against the widest string each component can
+#: print, and the margins are in the page.
+SLOT_STRICT = (0.25, 0.75)
+SLOT_TIGHT = (0.30, 0.70)
+
+
 def halves(objects, panel_w, panel_h, pad, content, widest_at=None,
-           compact=0, bottom=0, vertical=False):
+           compact=0, bottom=0, vertical=False, slots=SLOT_STRICT):
     """The user's third arrangement: two slots derived from the panel.
 
     The reading is centred in the panel's left half and a secondary element
@@ -333,8 +404,8 @@ def halves(objects, panel_w, panel_h, pad, content, widest_at=None,
     has_visual = bounds is not None and not spans
 
     half = content // 2
-    left_centre = pad + half // 2
-    right_centre = pad + half + half // 2
+    left_centre = pad + int(round(content * slots[0]))
+    right_centre = pad + int(round(content * slots[1]))
 
     # The slot the reading has to live in, and what that costs it.
     slot = (half - GAP_UNIT * 2) if has_visual else content
@@ -696,12 +767,14 @@ def hole_of(objects, panel_w):
     return [(right, vy, vx - right, vye - vy)]
 
 
-#: The two arrangements the page now asks about. Vertical alignment is not
-#: among them any more: optical centre was chosen, so offering it as a choice
-#: would only invite reopening it.
+#: Only the left-aligned flow remains of the two content-derived
+#: arrangements. Centring was removed rather than kept: it is dominated on
+#: both counts the page measures -- 186 px of heading gap against the halved
+#: 91 -- and it carries the re-centres-when-content-changes objection that
+#: halves exists to avoid. Saying so in the page, because a column vanishing
+#: without explanation reads as a decision made for the reader.
 JUSTIFY = [
     ("left-aligned", "left"),
-    ("centred", "centre"),
 ]
 
 cases = rows(G.CASES)
@@ -709,6 +782,7 @@ by_zone = {"widget": [], "appmode": []}
 slack_rows = []
 halves_steps = []
 ladder_rows = []
+collide_rows = []
 findings = []
 
 for case in cases:
@@ -731,6 +805,9 @@ for case in cases:
     halved, steps, fits, bands = halves(
         objects, w, h, pad, content, widest_at,
         int(case.compact), int(case.bottom), vertical=True)
+    tight, _, _, tbands = halves(
+        objects, w, h, pad, content, widest_at,
+        int(case.compact), int(case.bottom), vertical=True, slots=SLOT_TIGHT)
 
     # Today's font against the banded one, for the table that made the
     # shared ladder judgeable on paper last time.
@@ -751,6 +828,17 @@ for case in cases:
         step_note = (f' <span class="cost">&minus;{steps} size'
                      f'{"s" if steps > 1 else ""}</span>')
     variants.append(("halves" + step_note, halved, bands))
+    variants.append(("halves tightened", tight, tbands))
+
+    # Whether the two slots can still meet, asked of the widest string each
+    # component prints rather than what it happens to say. Strict halves
+    # cannot collide by construction; tightened can, and this is what says
+    # whether it does.
+    gapmin = slot_margin(tight, pad, content, widest_at, tbands)
+    if gapmin is not None:
+        collide_rows.append((
+            case.zone, case.component, case.span, gapmin,
+            slot_margin(halved, pad, content, widest_at, bands)))
     halves_steps.append((case.zone, case.component, case.span, steps, fits))
 
     gap_note = ""
@@ -810,6 +898,55 @@ def ladder_table():
     return "".join(lines)
 
 
+def ink_table():
+    """Band height, the two font choices, and what each fills the band with."""
+    seen = {}
+    for zone, name, span, old, new, delta, band_h in ladder_rows:
+        if zone != "widget" or band_h <= 0:
+            continue
+        seen.setdefault((name, span), (old, new, band_h))
+
+    lines = ['<table><thead><tr><th>component</th><th>span</th>'
+             '<th>body band</th><th>today</th>'
+             '<th>banded by line height</th><th>ink fills</th>'
+             '<th>banded by ink</th><th>ink fills</th></tr></thead><tbody>']
+    for (name, span), (old, banded, band_h) in seen.items():
+        inked = ink_font(band_h)
+        occ_line = 100 * FONTS[banded][1] // band_h
+        occ_ink = 100 * FONTS[inked][1] // band_h
+        cls = ' class="better"' if inked != banded else ''
+        lines.append(
+            f'<tr{cls}><td><code>{html.escape(name)}</code></td>'
+            f'<td>{html.escape(span)}</td><td>{band_h} px</td>'
+            f'<td>{old}</td><td>{banded}</td><td>{occ_line}%</td>'
+            f'<td>{inked}</td><td>{occ_ink}%</td></tr>'
+        )
+    lines.append('</tbody></table>')
+    return "".join(lines)
+
+
+def collide_table():
+    lines = ['<table><thead><tr><th>component</th><th>span</th>'
+             '<th>strict halves</th><th>tightened</th><th></th>'
+             '</tr></thead><tbody>']
+    for zone, name, span, tight, strict in collide_rows:
+        if zone != "widget":
+            continue
+        note, cls = "", ""
+        if tight is not None and tight < 0:
+            note, cls = f"overlap of {-tight} px", ' class="has-slack"'
+        elif tight is not None and tight < 8:
+            note = "close"
+        lines.append(
+            f'<tr{cls}><td><code>{html.escape(name)}</code></td>'
+            f'<td>{html.escape(span)}</td>'
+            f'<td>{strict if strict is not None else "&mdash;"} px</td>'
+            f'<td>{tight} px</td><td>{note}</td></tr>'
+        )
+    lines.append('</tbody></table>')
+    return "".join(lines)
+
+
 def slack_table():
     lines = ['<table><thead><tr><th>zone</th><th>component</th><th>span</th>'
              '<th>slack</th><th>visual</th></tr></thead><tbody>']
@@ -826,6 +963,39 @@ def slack_table():
 
 slack_table = slack_table()
 ladder_table = ladder_table()
+collide_table = collide_table()
+ink_table = ink_table()
+
+# How full each distinct band is, before and after, and whether a descender
+# would leave it. Digits have none; units and labels do.
+_bands = sorted({r[6] for r in ladder_rows if r[0] == "widget" and r[6] > 0})
+ink_rows = []
+for _b in _bands:
+    _line, _ink = band_font(_b), ink_font(_b)
+    _over = FONTS[_ink][0] - FONTS[_ink][1] - (_b - FONTS[_ink][1]) // 2
+    ink_rows.append((_b, _line, 100 * FONTS[_line][1] // _b,
+                     _ink, 100 * FONTS[_ink][1] // _b,
+                     max(0, FONTS[_ink][0] - FONTS[_ink][1]
+                         - (_b - FONTS[_ink][1]) // 2)))
+ink_band_count = len(ink_rows)
+ink_band_rows = "".join(
+    '<tr{cls}><td>{band} px</td><td>{line}</td><td>{occ_l}%</td>'
+    '<td>{ink}</td><td>{occ_i}%</td><td>{over}</td></tr>'.format(
+        cls=' class="better"' if line != ink else "",
+        band=band, line=line, occ_l=occ_l, ink=ink, occ_i=occ_i,
+        over=f"+{over} px" if over else "none")
+    for band, line, occ_l, ink, occ_i, over in ink_rows
+)
+ink_moves = sum(1 for r in ink_rows if r[1] != r[3])
+ink_best = max((r[4] for r in ink_rows), default=0)
+ink_worst = min((r[4] for r in ink_rows), default=0)
+line_worst = min((r[2] for r in ink_rows), default=0)
+line_best = max((r[2] for r in ink_rows), default=0)
+
+_c = [r for r in collide_rows if r[0] == "widget"]
+collide_tight = sum(1 for r in _c if r[3] is not None and r[3] < 0)
+collide_strict = sum(1 for r in _c if r[4] is not None and r[4] < 0)
+collide_total = len(_c)
 
 _w = [r for r in ladder_rows if r[0] == "widget"]
 ladder_same = sum(1 for r in _w if r[5] == 0)
@@ -999,15 +1169,67 @@ where the group sits.</p>
       edge and lets all the slack collect after it. The gap between reading
       and visual is a flat 10&nbsp;px, because the gap only has to separate
       two things rather than carry the arrangement.</li>
-  <li><strong>Centred</strong> centres the group in the content box, putting
-      the slack on both sides. That is what buys room for a wider gap.</li>
   <li><strong>Halves</strong> splits the panel: the reading centred in the
       left half, the secondary element centred in the right. A panel with
       only a reading <strong>does not split</strong> &mdash; the reading
       centres across the whole panel, because the halves exist to give two
       elements stable slots and with one element there is no second slot to
       protect.</li>
+  <li><strong>Halves tightened</strong> is the same split with the two slots
+      moved inward, so the elements sit closer together.</li>
 </ul>
+
+<div class="warn"><strong>The <em>centred</em> column has been removed.</strong>
+It is dominated on both things this page measures: its reading sits
+{worst_offset}&nbsp;px from its heading against the halved
+{halves_offset}, and it re-centres whenever its contents change width, which
+is the objection halves was chosen to avoid. Saying so rather than letting a
+column vanish &mdash; if you want it back, it is a one-line change.</div>
+
+<h3 class="plain">Where the tightened slots are</h3>
+<p class="intro">The slots are centred at <strong>30% and 70% of the content
+width</strong>, against strict halves' 25% and 75% &mdash; 40% apart instead
+of 50%. Worth noting that the two readings of the instruction agree: three
+fifths across the left half is 0.6 &times; 50% = 30%, and two fifths across
+the right half is 50% + 0.4 &times; 50% = 70%. The literal reading and the
+summary give the same number, so there is nothing to choose between.</p>
+
+<h3 class="plain">What tightening spends</h3>
+<p class="intro"><strong>Strict halves cannot collide.</strong> Each element
+owns a disjoint region, so no string, however wide, can reach the other.
+Moving the centres inward gives that up: the two now have overlapping
+territory and only the actual widths keep them apart. Measured against the
+<strong>widest</strong> string each component can print, at the font it is
+drawn in:</p>
+
+{collide_table}
+
+<p class="intro">{collide_tight} of {collide_total} cases overlap when
+tightened, against {collide_strict} under strict halves.</p>
+<ul>
+  <li><code>tx-battery</code> and <code>metric-radial</code> are comfortable
+      everywhere &mdash; 29&nbsp;px clear at the tightest.</li>
+  <li><strong><code>navigation</code> at <code>2x2</code> is the case
+      tightening breaks</strong>: 19&nbsp;px clear under strict halves,
+      5&nbsp;px of overlap when tightened. A <code>888.88km</code> distance
+      and the dial would meet.</li>
+  <li><strong><code>navigation</code> at <code>1x1</code> overlaps under
+      both</strong>, by 15&nbsp;px strict and 26 tightened &mdash; so that
+      one is not tightening's fault. It is the same panel whose reading does
+      not fit half a box at all, and the real component already resolves it
+      by dropping the dial rather than clipping a distance whose unit carries
+      its scale. A one-element panel does not split, so the collision never
+      happens on a radio.</li>
+</ul>
+<p class="intro"><strong>The fractions have not been widened back to hide
+this.</strong> One span of one component overlaps by five pixels, and the
+answer might reasonably be that <code>navigation</code> falls back to strict
+halves rather than that the tightening is wrong &mdash; it is already the
+component that yields its dial when a distance will not fit, so it has a
+precedent for being the exception. That is a decision to make rather than
+one to paper over.</p>
+<p class="intro">Tightening is horizontal only. It changes no band and no
+font, which the table below should confirm.</p>
 
 <div class="real"><strong>Why halves is different in kind.</strong> Left and
 centred both derive positions from <em>content width</em>. Halves derives
@@ -1148,6 +1370,66 @@ means a larger glyph and a larger dial. On the 53&nbsp;px panels, where the
 reading gains a size, <code>navigation</code>'s dial grows with it &mdash;
 and that is the element with the least room to spare, so it is the one to
 look at in the mocks rather than to reason about here.</p>
+
+<h3 class="plain">"At least 80% of their vertical allotment"</h3>
+<p class="intro">Not implemented as a literal filter, because
+<code>fontHeight &ge; 0.8 &times; band</code> together with
+<code>fontHeight &le; band</code> is a window a five-step ladder often has no
+member in. The question underneath it is measurable, and the answer is that
+<strong>the band is being measured against the wrong thing.</strong></p>
+
+<p class="intro"><code>theme.fontHeight</code> is LVGL's line height: ascent
+plus descent plus leading. What a reading puts on the panel is its
+<em>ascent</em> &mdash; and every reading in this catalogue is digits, a
+minus, a decimal point or a colon, none of which descend. So a band sized
+against line height carries slack nothing draws into. Ascent is
+<code>line_height &minus; base_line</code>, both compile-time constants of
+the shipped fonts, the pair already used for baseline alignment.</p>
+
+{ink_table}
+
+<p class="intro">Per distinct band, which is where the pattern is clearer
+than per component:</p>
+<table><thead><tr><th>band</th><th>by line height</th><th>ink fills</th>
+<th>by ink</th><th>ink fills</th><th>descender past the band</th></tr></thead>
+<tbody>{ink_band_rows}</tbody></table>
+
+<p class="intro"><strong>Choosing by line height fills
+{line_worst}&ndash;{line_best}% of a band with ink. Choosing by ink reaches
+{ink_best}%</strong> on the bands where the ladder has a step to move to
+&mdash; {ink_moves} of the {ink_band_count} distinct body bands the Full
+screen panels produce.</p>
+
+<div class="warn"><strong>The 80% target is unreachable on the larger
+band, and not because of the measurement.</strong> A 51&nbsp;px body band
+takes <code>DBLSIZE</code>, which is 31&nbsp;px of ink and 60% of the band.
+The next step up is <code>XXLSIZE</code> at 54&nbsp;px of ink, which does not
+fit by either measure. So there the gap is the <strong>ladder's
+granularity</strong> rather than the metric: the steps are 12, 17, 29, 40 and
+69&nbsp;px, and between 40 and 69 there is nothing. Reaching 80% on every
+band would mean a denser ladder, which is a different change from this one
+and a larger one.</div>
+
+<p class="intro"><strong>What choosing by ink costs.</strong> A descender now
+crosses the band's floor, by up to 7&nbsp;px. Readings are safe &mdash; no
+digit, minus, point or colon descends &mdash; but a unit does: the
+<code>p</code> in <code>mph</code>, and any heading with a <code>y</code> or
+a <code>g</code>. The unit rides two ladder steps below the reading, so its
+own descender is 4&nbsp;px at <code>SMLSIZE</code> rather than 9, and on the
+53&nbsp;px panels that still lands inside the panel. It does leave the
+<em>band</em>, so bands stop being private the moment fonts are chosen by
+ink.</p>
+
+<div class="warn"><strong>This reopens a settled rule, so it is flagged
+rather than changed.</strong> The optical-centre rule centres a secondary
+element on the reading's <strong>line box</strong>. That was decided from
+rendered mocks and is in the specification. If the font is chosen by ink, the
+line box and the ink stop agreeing &mdash; a <code>DBLSIZE</code> line box is
+40&nbsp;px around 31&nbsp;px of ink, so centring on the box puts a dial
+4&nbsp;px below the visual centre of the digits beside it. The mocks still
+centre on the line box, as settled. If ink-chosen fonts are adopted, that
+rule wants revisiting, and it is yours to revisit rather than mine to
+change.</div>
 
 <h3 class="plain">How far the reading ends up from its heading</h3>
 <p class="intro">The heading is immovably left, so every arrangement that
