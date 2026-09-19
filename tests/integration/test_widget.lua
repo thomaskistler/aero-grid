@@ -4555,6 +4555,203 @@ components:
   getGeneralSettings = realSettings
 end
 
+--- The outline's weight follows the reading it stands beside.
+---
+--- The contract is that the stroke **varies with the font**, so an assertion
+--- at one size proves nothing: a constant satisfies it. Both ends of the
+--- ladder are driven here, and the two panels are chosen so the cell is
+--- exactly the same size in each -- 25 by 50 at both -- which leaves the
+--- reading's font as the only thing that differs. A stroke derived from the
+--- span, or from the cell's own width, would give them the same weight.
+---
+--- That was the defect: the ladder puts a MIDSIZE reading on a one-cell-wide
+--- panel two rows tall and an XXLSIZE one on a two-cell panel of the same
+--- height, and both carried a four pixel outline. Beside the smaller number
+--- it read as heavy, and it ate the interior that shows the charge.
+local function testBatteryStrokeFollowsTheReading()
+  resetRadio()
+  local widgetPath = makeWidget("glyph-stroke", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: small
+    type: tx-battery
+    col: 0
+    row: 0
+    colSpan: 1
+    rowSpan: 2
+    config:
+      label: SMALL
+      packEmpty: 6.6
+      packFull: 8.4
+  - id: large
+    type: tx-battery
+    col: 1
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: LARGE
+      packEmpty: 6.6
+      packFull: 8.4
+]])
+
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  settle(context, 30)
+
+  local small = entryById(context, "small").instance
+  local large = entryById(context, "large").instance
+
+  -- Read off the label rather than out of the component's own bookkeeping,
+  -- so this is the font the panel is drawing in rather than the one it
+  -- believes it chose.
+  local smallFont = small.value.properties.font()
+  local largeFont = large.value.properties.font()
+
+  -- The precondition, and it is the whole of what makes this test mean
+  -- anything: two different fonts, two cells of identical size.
+  assert(themeModule.fontHeight(smallFont) < themeModule.fontHeight(largeFont),
+    "both panels resolved the same reading font, so nothing below can tell a"
+      .. " font-derived stroke from a constant one")
+  assertEqual(small.glyph.width, large.glyph.width,
+    "the two cells are different widths, so a width-derived stroke would"
+      .. " pass this test as well")
+  assertEqual(small.glyph.height, large.glyph.height)
+
+  assert(small.glyph.border < large.glyph.border, "the same stroke ("
+    .. small.glyph.border .. ") was drawn beside a "
+    .. edgetx.fontName(smallFont) .. " reading and a "
+    .. edgetx.fontName(largeFont) .. " one")
+
+  -- And what LVGL was actually given, rather than what the geometry says.
+  -- A border width only reaches the firmware at build, so the painted value
+  -- is the one on screen.
+  assertEqual(small.glyph.shell.painted.borderWidth, small.glyph.border)
+  assertEqual(large.glyph.shell.painted.borderWidth, large.glyph.border)
+  assert(small.glyph.shell.painted.borderWidth
+      < large.glyph.shell.painted.borderWidth,
+    "the geometry disagrees about the stroke but the screen does not")
+
+  -- Thinning the outline is only worth anything if the interior grows with
+  -- it, because the interior is what shows the charge.
+  assert(small.glyph.interiorWidth > large.glyph.interiorWidth,
+    "the lighter outline bought the level no room")
+
+  -- And the level is still a proportion rather than a line: the fixture
+  -- reads 7.9 V of 6.6 to 8.4, so neither end.
+  for id, panel in pairs({small = small, large = large}) do
+    local level = panel.glyph.fill.properties.h
+    assert(level > 0 and level < panel.glyph.interiorHeight, id
+      .. " draws a full or empty cell, so its level says nothing")
+    assert(panel.glyph.interiorWidth >= 4, id
+      .. " has a " .. panel.glyph.interiorWidth
+      .. " pixel interior, which is a line rather than a level")
+  end
+
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+end
+
+--- A cell keeps the outline it was built with when the reading resizes.
+---
+--- This pins a limitation rather than a feature, and it is here because the
+--- alternative is that nobody knows about it. A border width only reaches
+--- LVGL when the object is built -- `LvglWidgetBorderedObject::setOpacity` is
+--- its only writer and it runs behind `changedValue` -- so a stroke chosen
+--- from the reading's font is chosen once. A reflow can move the reading to a
+--- different font while leaving the cell the same size, and when it does, the
+--- outline stays as it was.
+---
+--- Measured: a 238 by 134 zone reads at XXLSIZE with a 4 pixel outline, and
+--- 238 by 110 reads at DBLSIZE where a fresh build would give 3. One pixel,
+--- on a zone change, and only in App mode, which is why it is recorded rather
+--- than worked around. Fixing it means drawing the outline as four filled
+--- rectangles so its weight is geometry rather than a border style; if that
+--- is ever done, this test should fail and be deleted.
+---
+--- What must **not** drift is the interior. It is measured from the stroke
+--- that is actually drawn, so if the two ever disagree the level is inset
+--- against an outline that is not there, and a gap or an overlap appears.
+local function testBatteryStrokeSurvivesReflow()
+  resetRadio()
+  local widgetPath = makeWidget("glyph-stale", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: pack
+    type: tx-battery
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: TX
+      packEmpty: 6.6
+      packFull: 8.4
+]])
+
+  local zone = {x = 0, y = 0, w = 480, h = 272}
+  local context = createLoaded(zone, DEFAULT_OPTIONS, widgetPath)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  settle(context, 60)
+
+  local pack = entryById(context, "pack").instance
+  local glyph = pack.glyph
+  assert(glyph, "the panel drew no battery")
+
+  local builtStroke = glyph.border
+  local builtFont = pack.value.properties.font()
+  local painted = glyph.shell.painted.borderWidth
+  assertEqual(painted, builtStroke)
+
+  local function reflow(width, height)
+    zone.w, zone.h = width, height
+    local passes = 0
+    repeat
+      definition.refresh(context)
+      passes = passes + 1
+      assert(passes < 100, "reflow never finished")
+    until not context.reflowIndex
+    settle(context, 60)
+  end
+
+  -- A shorter zone, chosen because it steps the reading down a size while
+  -- leaving the cell exactly as big as it was.
+  reflow(480, 220)
+
+  assert(themeModule.fontHeight(pack.value.properties.font())
+      < themeModule.fontHeight(builtFont),
+    "the reading did not change size, so this reflow is not the case this"
+      .. " test exists for and the assertions below prove nothing")
+  assertEqual(glyph.width, 25,
+    "the cell changed size, so the stroke would have been free to change")
+
+  -- The limitation, stated.
+  assertEqual(glyph.border, builtStroke,
+    "the stroke changed on a reflow, which a radio cannot do; if the outline"
+      .. " is now drawn as filled rectangles rather than a border, delete"
+      .. " this test")
+  assertEqual(glyph.shell.painted.borderWidth, builtStroke,
+    "the mock let a border width through after build, which the firmware"
+      .. " does not")
+
+  -- And the thing that must stay true: the interior is measured from the
+  -- stroke that is on screen, so the level sits inside the outline rather
+  -- than floating away from it.
+  assertEqual(glyph.inset, builtStroke + primitivesModule.GLYPH_GAP,
+    "the interior was inset against a stroke the screen does not have")
+  assertEqual(glyph.fill.properties.x, glyph.interiorX)
+  assert(glyph.fill.properties.x >= glyph.x + glyph.shell.painted.borderWidth,
+    "the level overlaps the outline it is drawn inside")
+
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+end
+
 --- A panel narrowed until the battery no longer fits takes all of it away.
 ---
 --- The build-time case cannot see this: a glyph is built hidden, so a
@@ -6466,6 +6663,8 @@ testTxBatteryWithoutAnyRange()
 testBatteryGlyphFillsFromTheVoltage()
 testBatteryGlyphLeavesTheReadingRoom()
 testBatteryGlyphShedsWhole()
+testBatteryStrokeFollowsTheReading()
+testBatteryStrokeSurvivesReflow()
 testFlightTimerShedsItsDetail()
 testReconcileBar()
 testHeadingNeverWraps()

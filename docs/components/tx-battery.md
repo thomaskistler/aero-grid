@@ -93,6 +93,14 @@ bottom in proportion to the estimate.
 together — so a critical pack is red throughout rather than red inside a grey
 box.
 
+**Its outline is drawn to suit the number beside it**, not the panel it is on.
+A cell standing next to a large reading is outlined heavily and one next to a
+small reading lightly, so the two look like they belong together. That matters
+because the same span can resolve to different reading sizes — a `1x2` and a
+`2x2` produce cells of identical size but very different numbers — and a
+single weight looked heavy beside the smaller one while eating the interior
+that shows the charge.
+
 The empty part of the cell is simply the panel showing through. That is the
 case worth checking, because in the warning and critical states the panel is
 tinted and a red cell on a red panel is what would disappear — and measured,
@@ -119,16 +127,21 @@ less width than a horizontal one did.
 
 With the default `visual: battery`:
 
-| Span | Panel | Reading | Battery | Percentage |
-| --- | --- | --- | --- | --- |
-| `1x1` | 117 x 65 | `MIDSIZE` `7.9V` | shed | shed |
-| `2x1` | 238 x 65 | `MIDSIZE` `7.9V` | 20 x 40 | shed |
-| `3x1` | 359 x 65 | `MIDSIZE` `7.9V` | 20 x 40 | shed |
-| `4x1` | 480 x 65 | `MIDSIZE` `7.9V` | 20 x 40 | shed |
-| `1x2` | 117 x 134 | `MIDSIZE` `7.9` | 25 x 50 | under the reading |
-| `2x2` | 238 x 134 | `XXLSIZE` `7.9` | 25 x 50 | under the reading |
-| `3x2` | 359 x 134 | `XXLSIZE` `7.9V` | 25 x 50 | under the reading |
-| `4x2` | 480 x 134 | `XXLSIZE` `7.9V` | 25 x 50 | under the reading |
+| Span | Panel | Reading | Battery | Outline | Percentage |
+| --- | --- | --- | --- | --- | --- |
+| `1x1` | 117 x 65 | `MIDSIZE` `7.9V` | shed | — | shed |
+| `2x1` | 238 x 65 | `MIDSIZE` `7.9V` | 20 x 40 | 2 px | shed |
+| `3x1` | 359 x 65 | `MIDSIZE` `7.9V` | 20 x 40 | 2 px | shed |
+| `4x1` | 480 x 65 | `MIDSIZE` `7.9V` | 20 x 40 | 2 px | shed |
+| `1x2` | 117 x 134 | `MIDSIZE` `7.9` | 25 x 50 | 2 px | under the reading |
+| `2x2` | 238 x 134 | `XXLSIZE` `7.9` | 25 x 50 | 4 px | under the reading |
+| `3x2` | 359 x 134 | `XXLSIZE` `7.9V` | 25 x 50 | 4 px | under the reading |
+| `4x2` | 480 x 134 | `XXLSIZE` `7.9V` | 25 x 50 | 4 px | under the reading |
+
+**`1x2` and `2x2` are the row worth reading twice.** The cells are the same
+size and the outlines are not, because the readings are not: a `1x2` is a
+`MIDSIZE` number and a `2x2` an `XXLSIZE` one. `DBLSIZE` readings, which
+appear on shorter panels than the grid produces, are outlined at 3 px.
 
 **No single-row panel shows the percentage**, however wide it is:
 `showPercent: true` on a `4x1` is as inert as on a `1x1`, because the

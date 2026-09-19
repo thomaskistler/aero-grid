@@ -2921,6 +2921,78 @@ local function testLabelFitting()
   end
 end
 
+--- A cell's outline is lighter beside a smaller number, all the way down.
+---
+--- The integration test drives the two fonts the grid actually produces. This
+--- walks the whole ladder, including the two the component cannot currently
+--- reach, because `theme.fitReading` will hand back any of the five and a
+--- stroke that only behaved at the two in use would be a trap for whoever
+--- reaches the others.
+---
+--- Asserted as a shape -- never heavier beside a smaller number, and strictly
+--- lighter at the ends -- rather than as five numbers. Pinning the numbers
+--- would fail on any change to the ratio while saying nothing about whether
+--- the ratio was still doing its job, and the numbers are pinned where they
+--- matter anyway, in the documented table.
+local function testBatteryStrokeScalesWithFont()
+  local ladder = theme.READING_FONTS
+  assert(#ladder >= 4, "the reading ladder is shorter than this test assumes")
+
+  -- Wide enough that the width ceiling never binds, so what is measured is
+  -- the font's contribution alone.
+  local ROOMY = 60
+
+  local previous, checked = nil, 0
+  for index = #ladder, 1, -1 do
+    local font = ladder[index]
+    local stroke = primitives.batteryStroke(theme, font, ROOMY)
+    checked = checked + 1
+
+    assert(stroke >= primitives.GLYPH_STROKE_MIN, edgetx.fontName(font)
+      .. " is outlined at " .. stroke
+      .. ", which is a hairline rather than a drawn cell")
+    if previous then
+      assert(stroke >= previous, edgetx.fontName(font)
+        .. " is outlined more lightly than the smaller font below it")
+    end
+    previous = stroke
+  end
+
+  assertEqual(checked, #ladder)
+
+  -- The ends differ, which is what makes it a scale rather than a constant
+  -- with a floor.
+  local lightest = primitives.batteryStroke(theme, ladder[#ladder], ROOMY)
+  local heaviest = primitives.batteryStroke(theme, ladder[1], ROOMY)
+  assert(heaviest > lightest, "the largest and smallest readings are outlined"
+    .. " identically, at " .. heaviest)
+
+  -- A narrow cell is outlined more lightly than its reading asks for,
+  -- because the stroke is taken out of the interior twice over. Without this
+  -- the smallest cell the host will draw has a 13 pixel body outlined at 4,
+  -- leaving 3 pixels of interior.
+  local narrow = primitives.batteryStroke(
+    theme, ladder[1], primitives.GLYPH_MIN_WIDTH)
+  assert(narrow < heaviest, "the narrowest cell is outlined as heavily as the"
+    .. " widest, at " .. narrow)
+
+  -- And the interior it leaves is still a level rather than a line.
+  local geometry = primitives.batteryGeometry(0, 0,
+    primitives.GLYPH_MIN_WIDTH, primitives.GLYPH_MIN_HEIGHT, narrow)
+  assert(geometry.interiorWidth >= 4, "the smallest cell has a "
+    .. geometry.interiorWidth .. " pixel interior")
+  assert(geometry.interiorHeight >= 8, "the smallest cell has a "
+    .. geometry.interiorHeight .. " pixel interior height, so a level in it"
+    .. " could not be read as a proportion")
+
+  -- A level partway up that interior lands somewhere distinguishable from
+  -- both ends, which is the property the interior exists for.
+  local level = primitives.batteryFill(geometry, 0.5)
+  assert(level > 1 and level < geometry.interiorHeight - 1,
+    "half a charge in the smallest cell draws at " .. level
+      .. " of " .. geometry.interiorHeight .. ", which reads as empty or full")
+end
+
 --- A battery stays visible in every state, on every palette.
 ---
 --- The user asked for the outline, the terminal and the level to share one
@@ -3299,20 +3371,25 @@ local function testTxBatteryComposition()
   local battery = loadModule("components/tx-battery.lua")
   local resolved = theme.build("modern")
 
-  -- span, reading font, form index, cell w x h, percentage under the cell
+  -- span, reading font, form index, cell w x h, outline, percentage under
   --
   -- The cell stands upright, so it is half as wide as it is tall. That is
   -- what took the percentage out from under it at every span: `100%` needs 39
   -- pixels at the label font and the widest cell here is 25.
+  --
+  -- The outline column is the interesting one. `1x2` and `2x2` draw cells of
+  -- exactly the same size and outline them differently, because the readings
+  -- they stand beside are different sizes. A stroke derived from the span or
+  -- from the cell would give those two rows the same number.
   local documented = {
-    {"1x1", "MIDSIZE", 1, nil, nil, false},
-    {"2x1", "MIDSIZE", 1, 20, 40, false},
-    {"3x1", "MIDSIZE", 1, 20, 40, false},
-    {"4x1", "MIDSIZE", 1, 20, 40, false},
-    {"1x2", "MIDSIZE", 2, 25, 50, false},
-    {"2x2", "XXLSIZE", 2, 25, 50, false},
-    {"3x2", "XXLSIZE", 1, 25, 50, false},
-    {"4x2", "XXLSIZE", 1, 25, 50, false},
+    {"1x1", "MIDSIZE", 1, nil, nil, nil, false},
+    {"2x1", "MIDSIZE", 1, 20, 40, 2, false},
+    {"3x1", "MIDSIZE", 1, 20, 40, 2, false},
+    {"4x1", "MIDSIZE", 1, 20, 40, 2, false},
+    {"1x2", "MIDSIZE", 2, 25, 50, 2, false},
+    {"2x2", "XXLSIZE", 2, 25, 50, 4, false},
+    {"3x2", "XXLSIZE", 1, 25, 50, 4, false},
+    {"4x2", "XXLSIZE", 1, 25, 50, 4, false},
   }
 
   local GUTTER, CELLS, WIDTH, HEIGHT = 4, 4, 480, 272
@@ -3324,7 +3401,8 @@ local function testTxBatteryComposition()
 
   for index, row in ipairs(documented) do
     local span, font, form = row[1], row[2], row[3]
-    local glyphWidth, glyphHeight, under = row[4], row[5], row[6]
+    local glyphWidth, glyphHeight = row[4], row[5]
+    local border, under = row[6], row[7]
     assertEqual(battery.supportedSpans[index], span,
       "the documented table is in a different order from supportedSpans")
 
@@ -3349,6 +3427,9 @@ local function testTxBatteryComposition()
       span .. " draws a glyph of a different width from the documented one")
     assertEqual(area.glyphHeight, glyphHeight,
       span .. " draws a glyph of a different height from the documented one")
+    assertEqual(area.glyphBorder, border,
+      span .. " outlines its cell at a different weight from the documented"
+        .. " one")
     assertEqual(area.detailUnderGlyph, under,
       span .. " disagrees with the documentation about where the percentage"
         .. " sits")
@@ -4205,6 +4286,7 @@ testExtremaService()
 testNavigationService()
 testFontHeightsMatchTheFirmware()
 testTextFitting()
+testBatteryStrokeScalesWithFont()
 testBatteryStaysVisible()
 testLosslessReadingsOfferOneForm()
 testRedrawDecision()
