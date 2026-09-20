@@ -789,13 +789,28 @@ end
 ---
 --- The estimate remains the fallback, because a host without `lcd.sizeText`
 --- -- the unit tests are one -- still has to produce a number.
---- **Fitting still estimates, and that is the boundary rather than an
---- oversight.** `readingWidth` and the ladder ask whether something fits, and
---- there the generous answer is the safe one: a fit that guesses high sheds a
---- unit that would have fitted, where one that guesses low draws it off the
---- edge. Because the estimate never reports less than the measurement for the
---- readings this dashboard prints, anything the fit accepts the placement can
---- certainly draw -- so the two cannot disagree in the direction that clips.
+--- **Fitting still estimates, and the cost of that is larger than this
+--- comment used to admit.** `fitReading` asks whether something fits using
+--- the estimate while `readingWidth` places it using the measurement, and the
+--- two disagree by more than a rounding: `88.8` at XXLSIZE estimates 160 px
+--- and measures 79. The estimate is a constant ratio of the line height, and
+--- a line height of 69 buys far more advance than bold digits actually use,
+--- so the overstatement grows with the font and bites hardest exactly where a
+--- size is worth most.
+---
+--- The direction is safe -- the estimate never reports less than the
+--- measurement for the readings this dashboard prints, so anything the fit
+--- accepts the placement can certainly draw, and the two cannot disagree in
+--- the direction that clips. What it is not is free: a fit that guesses high
+--- sheds a unit that would have fitted, and steps a reading down a size that
+--- would have fitted. `tx-battery` takes its font from the band rather than
+--- from this ladder for that reason, which is a component working around a
+--- shared helper rather than a component with a special visualization.
+---
+--- `measureText` already falls back to this estimate where `lcd.sizeText` is
+--- absent, so fitting could measure and keep the fallback. That would change
+--- what several panels draw, so it is a decision rather than a tidy-up, and
+--- it is recorded here rather than made here.
 ---@param font any
 ---@param text any
 ---@return integer

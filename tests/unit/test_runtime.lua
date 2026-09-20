@@ -2001,7 +2001,7 @@ local function testContentFitsPanel()
       theme.build("modern"), theme, {x = 0, y = 0, w = case.w, h = case.h},
       layout, fonts)
 
-    local valueBottom = area.valueY + heightOf(area.primary)
+    local valueBottom = area.valueY + heightOf(area.value)
     assert(valueBottom <= case.h, case.name
       .. ": value overflows the panel, ends at " .. valueBottom
       .. " in " .. case.h)
@@ -2013,12 +2013,12 @@ local function testContentFitsPanel()
     if area.showUnit then
       assertEqual(area.unitY + heightOf(area.unitFont)
           - theme.fontBaseLine(area.unitFont),
-        area.valueY + heightOf(area.primary)
-          - theme.fontBaseLine(area.primary),
+        area.valueY + heightOf(area.value)
+          - theme.fontBaseLine(area.value),
         case.name .. ": the unit does not sit on the reading's baseline")
       assert(area.unitY + heightOf(area.unitFont) <= case.h, case.name
         .. ": unit overflows the panel")
-      assert(heightOf(area.unitFont) < heightOf(area.primary), case.name
+      assert(heightOf(area.unitFont) < heightOf(area.value), case.name
         .. ": the unit is drawn at or above the reading's own size")
     end
 
@@ -2029,8 +2029,8 @@ local function testContentFitsPanel()
       assert(area.barY + 4 <= case.h, case.name .. ": bar overflows the panel")
     end
 
-    if area.showRange then
-      assert(area.rangeY + heightOf(fonts.label) <= area.barY, case.name
+    if area.showDetail then
+      assert(area.detailY + heightOf(fonts.label) <= area.barY, case.name
         .. ": range overlaps the bar")
     end
 
@@ -2048,7 +2048,7 @@ local function testContentFitsPanel()
     theme.build("modern"), theme, {x = 0, y = 0, w = 238, h = 134},
     {showUnit = true, showVisual = true, showRange = true, visual = "bar"},
     theme.typography(2, 2))
-  assert(heightOf(short.primary) < heightOf(tall.primary),
+  assert(heightOf(short.value) < heightOf(tall.value),
     "a short panel did not reduce its primary font")
 end
 
