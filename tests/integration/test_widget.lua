@@ -4359,6 +4359,9 @@ local function testReadingsSitInTheirSlots()
     },
     {
       type = "tx-battery",
+      -- Battery glyph against bar: the two arrangements this component
+      -- offers, alike but for the visualization.
+      sameReadingAcross = {1, 2},
       config = {"label: TX", "packEmpty: 6.6", "packFull: 8.4"},
       -- Both arrangements: a compact visual beside the reading, and a
       -- full-width bar that leaves the reading the whole box.
@@ -4417,6 +4420,10 @@ local function testReadingsSitInTheirSlots()
     },
     {
       type = "metric",
+      -- Radial against bar. The third variant adds a secondary source and
+      -- so is not alike in every other respect, which is why the pair is
+      -- named rather than assumed to be the first two of however many.
+      sameReadingAcross = {1, 2},
       config = {"label: ALT", "source: Alt", "rangeMin: 0", "rangeMax: 400",
         "precision: 0"},
       -- A radial is a compact visual and takes the right slot; a bar spans
@@ -4447,6 +4454,8 @@ local function testReadingsSitInTheirSlots()
     },
     {
       type = "variable-indicator",
+      -- Radial against bar.
+      sameReadingAcross = {1, 2},
       config = {"binding: global", "index: 0", "label: GV"},
       variants = {{"visual: radial"}, {"visual: bar"}},
       visual = function(panel)
@@ -4490,6 +4499,7 @@ local function testReadingsSitInTheirSlots()
     local module = assert(loadfile(
       sourcePath .. "components/" .. subject.type .. ".lua"))()
     local cases = {}
+    local byVisual = {}
     for index, extra in ipairs(subject.variants) do
       for _, span in ipairs(module.supportedSpans) do
         -- **A variant may name the spans it applies to.** Some settings are
@@ -4621,6 +4631,40 @@ local function testReadingsSitInTheirSlots()
           reading.x + drawn + themeModule.unitGap(unitFont),
           where .. ": the unit did not follow the reading to its slot")
       end
+
+      byVisual[span] = byVisual[span] or {}
+      byVisual[span][case.index] = font
+    end
+
+    -- **A decoration does not cost the reading a size.** Declared as a pair
+    -- of variant indices that differ only in which visualization is drawn,
+    -- so the comparison is between two panels alike in every other respect
+    -- and a difference can only have come from the visual.
+    --
+    -- The reading used to be fitted into half the panel wherever a compact
+    -- visual might sit beside it, and shed the visual afterwards if that had
+    -- still not been enough -- so a reading could pay a size for a dial it
+    -- did not get. Which of the two the panel ends up drawing is not the
+    -- claim here; the claim is that the number is the same size either way.
+    if subject.sameReadingAcross then
+      local a, b = subject.sameReadingAcross[1], subject.sameReadingAcross[2]
+      local compared = 0
+      for span, fonts in pairs(byVisual) do
+        if fonts[a] and fonts[b] then
+          compared = compared + 1
+          assertEqual(edgetx.fontName(fonts[a]),
+            edgetx.fontName(fonts[b]), string.format(
+            "%s at %s reads %s with one visualization and %s with the"
+              .. " other, so the reading is paying for the decoration"
+              .. " beside it -- magnitude is the first thing a pilot reads"
+              .. " and it is not what a panel spends to keep a dial",
+            subject.type, span, edgetx.fontName(fonts[a]),
+            edgetx.fontName(fonts[b])))
+        end
+      end
+      assert(compared >= 4, subject.type
+        .. ": only " .. compared .. " spans compared the two"
+        .. " visualizations, so the pair is declared but barely built")
     end
   end
 end
@@ -6941,11 +6985,22 @@ local function testCoreComponents()
   local dial = entryById(context, "dial").instance
   assertEqual(dial.text, "10.0")
   -- The sensor's own unit, which arrives with the source rather than being
-  -- known when the panel was built. A single character still fits beside a
-  -- reading squeezed in next to a dial.
+  -- known when the panel was built.
   assertEqual(dial.unit.properties.text, "A")
-  assertEqual(dial.showUnit, true,
-    "a unit that arrived after the panel was built never appeared")
+  -- **And it does not fit, because the reading is no longer squeezed.** This
+  -- panel is a single cell carrying a dial, and the reading used to be
+  -- fitted into half of it so the dial would have somewhere to go: SMLSIZE
+  -- `120.0` at 33 px, with room for a TINSIZE `A` beside it. A reading now
+  -- takes the size the whole panel allows, which is MIDSIZE at 55 px, and
+  -- the pair would need 65 of the 58 its slot has.
+  --
+  -- So the unit goes and the number is a size larger, which is the order the
+  -- specification states: a form may drop redundancy, never magnitude. The
+  -- heading above says what is being measured; the digits are the reading.
+  -- Asserted rather than left implied, because it is the visible cost of the
+  -- rule and a reader deserves to find it written down.
+  assertEqual(dial.showUnit, false,
+    "the unit rode beside a reading that has no room for it")
   assert(dial.radial, "the radial presentation was not built")
   -- 10 of 0..120 is a small part of a 270 degree sweep.
   assertEqual(dial.radial.arc.properties.endAngle, 135 + 23)

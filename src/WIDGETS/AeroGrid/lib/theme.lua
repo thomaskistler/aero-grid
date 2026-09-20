@@ -1531,17 +1531,35 @@ end
 --- overlap; a caller deciding whether to keep a visualization at all has to
 --- check it, and now can. The failing answer being indistinguishable from a
 --- good one is the shape that has cost this project a defect three times.
+---
+--- **Both edges, not only the shared one.** A reading centred on the left
+--- slot has a panel edge on one side and the visualization on the other, and
+--- this used to check only the second. That was safe only because the
+--- reading was fitted into half the panel before it ever arrived here, so it
+--- could not reach the first. Readings now take the size the whole panel
+--- allows -- a decoration does not cost magnitude -- and a `-120.00` at
+--- MIDSIZE in a single cell is 74 pixels wide against a left slot with 26 to
+--- its left. It cleared the dial and hung eleven pixels off the panel.
+---
+--- So the verdict is what it always claimed to be: whether this pair of
+--- slots can hold both elements. Answering for one boundary and being read
+--- as answering for the arrangement is the same shape as every other defect
+--- in this file's history.
 ---@param frame table Result of theme.frame.
 ---@param readingWidth integer Widest the reading and its unit will ever be.
 ---@param visualWidth integer Width of the element in the right slot.
 ---@return table slots theme.SLOT_TIGHT, or theme.SLOT_STRICT where they meet.
 ---@return boolean fits Whether either arrangement actually separates them.
 function theme.slotsFor(frame, readingWidth, visualWidth)
+  local halfReading = math.ceil(readingWidth / 2)
   for _, slots in ipairs({theme.SLOT_TIGHT, theme.SLOT_STRICT}) do
     local left, right = theme.slotCentres(frame, slots)
-    local readingEnd = left + math.ceil(readingWidth / 2)
+    local readingStart = left - halfReading
+    local readingEnd = left + halfReading
     local visualStart = right - math.floor(visualWidth / 2)
-    if visualStart >= readingEnd then return slots, true end
+    if visualStart >= readingEnd and readingStart >= frame.pad then
+      return slots, true
+    end
   end
   return theme.SLOT_STRICT, false
 end
@@ -1778,14 +1796,20 @@ function theme.panel(resolved, rect, fonts, spec, out)
   -- that carries magnitude -- a distance's `km` -- is part of the reading
   -- and the pair is what the ladder is walked against; one that is
   -- redundancy is bought with width after the font is chosen.
-  local room = compact and half or frame.content
+  --
+  -- **Fitted against the whole content box, never against the slot.** The
+  -- reading does not know there is a dial and must not: a reading that
+  -- shrinks to make room for a decoration has paid for the decoration with
+  -- magnitude, and magnitude is the first thing a pilot reads. Whether the
+  -- dial survives is settled below, by the one place that knows how wide the
+  -- reading turned out to be.
   local font, formIndex, unitFont, showUnit
   if spec.unit ~= nil then
     font, unitFont, showUnit = theme.fitReadingUnit(
-      spec.forms[1], spec.unit, room, ladder.room, spec.unitRequired)
+      spec.forms[1], spec.unit, frame.content, ladder.room, spec.unitRequired)
     formIndex = 1
   else
-    font, formIndex = theme.fitReading(spec.forms, room, ladder.room)
+    font, formIndex = theme.fitReading(spec.forms, frame.content, ladder.room)
   end
 
   -- **One name for the reading's band.** Three components called this
@@ -1801,27 +1825,26 @@ function theme.panel(resolved, rect, fonts, spec, out)
 
   -- Asked of the widest string the component can ever print, so a panel's
   -- arrangement is fixed for its life rather than flipping as its value
-  -- changes. Where neither pair of slots separates the two, the visual goes:
-  -- the reading's font came from the band and cannot be narrowed to make
-  -- room, and magnitude is kept before decoration.
+  -- changes.
+  --
+  -- **This is the only place the dial's fate is decided, and it is the place
+  -- that knows the reading's width.** It used to be decided twice: once
+  -- above, by fitting the reading into half a panel so a dial would have
+  -- somewhere to go, and again here, by shedding the dial if that had not
+  -- been enough. A reading could therefore lose a size to buy room for a
+  -- visualization that was then dropped anyway -- paying for something it
+  -- did not get. Splitting one question across two places is the seam that
+  -- has produced eight defects in this dashboard, so it is answered once.
+  --
+  -- The reading has already taken the size the panel allows. If the dial
+  -- separates from it, the panel carries both; if it does not, the dial
+  -- goes. Nothing is refitted, because nothing was narrowed.
   local slots
   if compact then
     local separated
     slots, separated = theme.slotsFor(frame, width, size)
     if not separated then
       compact, size, slots, visual = false, 0, nil, false
-      if spec.unit ~= nil then
-        font, unitFont, showUnit = theme.fitReadingUnit(
-          spec.forms[1], spec.unit, frame.content, ladder.room,
-          spec.unitRequired)
-        width = theme.readingWidth(font, spec.forms[1], unitFont,
-          showUnit and spec.unit or nil)
-      else
-        font, formIndex = theme.fitReading(
-          spec.forms, frame.content, ladder.room)
-        width = theme.measureText(font, spec.forms[formIndex])
-      end
-      height = theme.fontHeight(font)
     end
   end
 
@@ -1878,7 +1901,19 @@ function theme.panel(resolved, rect, fonts, spec, out)
   -- room. **A slotted reading's room is its slot, not the panel** -- asking
   -- the whole box would tell a unit arriving at runtime that it fits beside
   -- a reading sharing the panel with a dial.
-  out.valueBudget = compact and half or frame.content
+  --
+  -- It is not simply half the panel, because the reading is no longer fitted
+  -- to half the panel. It is centred on the left slot, so what it can occupy
+  -- is symmetric about that centre: bounded on one side by the content edge
+  -- and on the other by where the dial begins. The slots that decided the
+  -- dial's fate are the slots that answer this, so the two cannot drift.
+  if compact then
+    local visualStart = slotRight - math.floor(size / 2)
+    out.valueBudget = 2 * math.max(1,
+      math.min(slotLeft - frame.pad, visualStart - slotLeft))
+  else
+    out.valueBudget = frame.content
+  end
   out.valueY = blockTop + math.floor((blockHeight - height) / 2)
 
   -- A bar spans the panel by design and sits on its floor rather than in a
