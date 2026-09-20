@@ -1687,10 +1687,25 @@ local function testMetricStates()
   metricModule.setValue(current, 115)
   assertEqual(current.stateName, "critical")
 
-  -- Geometry must stay stable as values and states change.
-  local before = pack.value.properties.w
+  -- **Geometry must stay stable as values and states change, and what
+  -- "stable" means has moved.** The reading is centred on a slot now, and
+  -- its label is exactly as wide as the string it draws -- so the width does
+  -- change with the value, deliberately, and asserting it did not would be
+  -- asserting the old arrangement. What may not move is the centre: the slot
+  -- is a property of the panel, so a value gaining a digit grows the number
+  -- about its middle rather than shifting it.
+  local function readingCentre(instance)
+    local font = instance.value.properties.font
+    if type(font) == "function" then font = font() end
+    local text = tostring(instance.value.properties.text or "")
+    return instance.value.properties.x + lcd.sizeText(text, font) / 2
+  end
+
+  local before = readingCentre(pack)
   metricModule.setValue(pack, 22.5)
-  assertEqual(pack.value.properties.w, before, "value width shifted")
+  assert(math.abs(readingCentre(pack) - before) <= 1, string.format(
+    "the reading's centre moved from %.1f to %.1f when its value changed",
+    before, readingCentre(pack)))
 end
 
 --- Zone changes reflow every component through the renamed update callback.
@@ -4247,6 +4262,52 @@ local function testReadingsSitInTheirSlots()
           {label = panel.detailLabel, slot = "left"},
           {label = panel.linkLabel, slot = "right"},
         }
+      end,
+    },
+    {
+      type = "metric",
+      config = {"label: ALT", "source: Alt", "rangeMin: 0", "rangeMax: 400",
+        "precision: 0"},
+      -- A radial is a compact visual and takes the right slot; a bar spans
+      -- the panel and is exempt, so the same component splits under one
+      -- setting and not the other. The third variant configures a secondary
+      -- source, which is what turns the supporting row from one item into
+      -- two -- without it the two-slot case is never exercised, and a defect
+      -- in it passes unseen.
+      variants = {{"visual: radial"}, {"visual: bar"},
+        {"visual: bar", "secondarySource: VSpd"}},
+      visual = function(panel)
+        if not (panel.showVisual and panel.radial) then return nil end
+        -- A radial is one arc, where a compass is a ring and a pointer.
+        local drawn = panel.radial.arc.round.drawn
+        local diameter = panel.radial.arc.round.radius() * 2
+        return {x = drawn.x, w = diameter}
+      end,
+      rows = function(panel)
+        if not panel.showRange then return {} end
+        if panel.showSecondary then
+          return {
+            {label = panel.range, slot = "left"},
+            {label = panel.secondary, slot = "right"},
+          }
+        end
+        return {{label = panel.range, slot = "whole"}}
+      end,
+    },
+    {
+      type = "variable-indicator",
+      config = {"binding: global", "index: 0", "label: GV"},
+      variants = {{"visual: radial"}, {"visual: bar"}},
+      visual = function(panel)
+        if not (panel.showVisual and panel.radial) then return nil end
+        -- A radial is one arc, where a compass is a ring and a pointer.
+        local drawn = panel.radial.arc.round.drawn
+        local diameter = panel.radial.arc.round.radius() * 2
+        return {x = drawn.x, w = diameter}
+      end,
+      rows = function(panel)
+        if not panel.showDetail then return {} end
+        return {{label = panel.detailLabel, slot = "whole"}}
       end,
     },
     {

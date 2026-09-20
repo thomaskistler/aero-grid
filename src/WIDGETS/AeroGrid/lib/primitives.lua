@@ -816,8 +816,13 @@ function primitives.centreReading(context, themeBuilder, area, font, text)
   -- across exactly that change -- the ninth instance of the shape whose
   -- eighth was an anchor keyed on a proxy, in the component converted
   -- immediately after it was written down.
-  local unit = (context.showUnit and area.showUnit) and (context.unitText or "")
-    or ""
+  -- **What the panel is drawing, not what it expected to draw.** `showUnit`
+  -- on the region is a build-time answer, and a unit that arrives later --
+  -- a global variable's, a telemetry sensor's -- makes it stale: the panel
+  -- shows a unit the group's width was computed without, so the box is too
+  -- narrow for the pair and LVGL wraps it. The context's own flag is the one
+  -- `apply` keeps current.
+  local unit = context.showUnit and (context.unitText or "") or ""
   if text == context.readingAnchor and unit == context.readingUnitAnchor then
     return
   end
@@ -840,9 +845,14 @@ function primitives.centreReading(context, themeBuilder, area, font, text)
 
   context.value:set({x = x, w = math.max(1, span)})
   context.valueX = x
-  primitives.placeUnit(context.unit, themeBuilder, x, area.valueY, font, text,
-    area.unitFont)
-  context.unitAnchor = text
+  -- A component may not have built a unit at all: `metric` creates one only
+  -- where its layout asks for it, so a panel with no unit reaches here with
+  -- nothing to move.
+  if context.unit then
+    primitives.placeUnit(context.unit, themeBuilder, x, area.valueY, font,
+      text, area.unitFont)
+    context.unitAnchor = text
+  end
 end
 
 --- Centre one supporting label on a slot, keyed on what it says.

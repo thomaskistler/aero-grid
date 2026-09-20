@@ -246,18 +246,50 @@ function variableIndicator.regionsFor(
     and (radial or ladder.visual)
   local showDetail = layout.showDetail and ladder.rows > 0
 
+  -- A radial is a compact visual and takes the right slot; a bar spans the
+  -- panel and is exempt, so a barred panel never splits.
+  local split = showVisual and radial
+  local half = math.floor(frame.content / 2)
   local radius = math.max(6, math.floor(math.min(rect.w, rect.h) / 5))
-  local radialX = math.max(frame.pad, rect.w - frame.pad - radius * 2)
+  -- Bounded by the slot it lives in as well as by the panel, so a radial on
+  -- a narrow panel shrinks rather than reaching into the reading.
+  if split then radius = math.min(radius, math.floor(half / 2)) end
 
-  local valueWidth = frame.content
-  if showVisual and radial then
-    valueWidth = math.max(1, radialX - frame.pad - 4)
-  end
+  local valueWidth = split and half or frame.content
 
   local value, unitFont, showUnit = themeBuilder.fitReadingUnit(
     sample.digits, sample.unit, valueWidth, ladder.room)
   local valueHeight = themeBuilder.fontHeight(value)
-  if top + valueHeight > rect.h then top = math.max(0, rect.h - valueHeight) end
+
+  -- Asked of the widest string this component can print, so the arrangement
+  -- is fixed for the life of the panel rather than flipping as the value
+  -- changes.
+  local readingWidth = themeBuilder.readingWidth(
+    value, sample.digits, unitFont, showUnit and sample.unit or nil)
+  local slots, separated
+  if split then
+    slots, separated = themeBuilder.slotsFor(frame, readingWidth, radius * 2)
+    -- Neither arrangement separates them, so the visualization goes, which
+    -- is what every other converted component does in the same position.
+    if not separated then
+      showVisual, split, slots = false, false, nil
+      valueWidth = frame.content
+    end
+  end
+
+  local readingCentre = split
+    and select(1, themeBuilder.slotCentres(frame, slots))
+    or (frame.pad + math.floor(frame.content / 2))
+  local radialCentreX = split
+    and select(2, themeBuilder.slotCentres(frame, slots))
+    or (rect.w - frame.pad - radius)
+
+  -- Reading and radial share the body band and are centred on each other, so
+  -- the block the band centres is the deeper of the two.
+  local blockHeight = math.max(valueHeight, split and radius * 2 or 0)
+  local blockTop = themeBuilder.bodyTop(ladder, blockHeight)
+  local valueY = blockTop + math.floor((blockHeight - valueHeight) / 2)
+  local radialCentreY = blockTop + math.floor(blockHeight / 2)
 
   local barY = math.max(1, rect.h - frame.bottom - spacing.barHeight)
 
@@ -265,29 +297,34 @@ function variableIndicator.regionsFor(
     frame = frame,
     pad = frame.pad,
     content = frame.content,
-    -- Centred in the body band. The font came from that band, so this is
-    -- where it belongs: sizing a reading against a band and then drawing it
-    -- at the panel's old content top is how a bar first found itself under
-    -- its own reading.
-    -- Stated rather than inferred from the inset. `tx-battery` is the first
-    -- component on the panel-derived slots and its reading no longer starts
-    -- at the padding, so the shared helpers that place a unit read this
-    -- instead of assuming. The components still to be converted say so here.
-    valueX = frame.pad,
-    valueY = themeBuilder.bodyTop(
-      ladder, themeBuilder.fontHeight(value)),
-    valueWidth = valueWidth,
+    -- The slot's centre, a property of the panel. Where the reading starts
+    -- depends on what it currently says, so `primitives.centreReading` owns
+    -- that and computes it from the measured string.
+    valueCentre = readingCentre,
+    valueX = themeBuilder.slotX(readingCentre, readingWidth),
+    -- **The room the reading has, which is not the width it draws in.** The
+    -- drawn box hugs the measured string so the slot centres it; the budget
+    -- is the slot itself, and it is what a later question about whether a
+    -- unit still fits has to be asked against. Collapsing the two made that
+    -- question circular -- a unit that arrives after build, as a global
+    -- variable's does, was measured against a box sized without it and never
+    -- fitted.
+    valueBudget = valueWidth,
+    valueY = valueY,
+    valueWidth = readingWidth,
     value = value,
     unitFont = unitFont,
     showUnit = showUnit,
     detailY = math.max(1, barY - labelHeight - 2),
+    -- A row of one, so it centres across the whole content box.
+    detailCentre = frame.pad + math.floor(frame.content / 2),
     barY = barY,
     radius = radius,
-    radialX = radialX,
-    radialY = top,
+    radialX = radialCentreX - radius,
+    radialY = radialCentreY - radius,
     -- EdgeTX positions an arc by its centre; the corner only reserves space.
-    radialCentreX = radialX + radius,
-    radialCentreY = top + radius,
+    radialCentreX = radialCentreX,
+    radialCentreY = radialCentreY,
     showVisual = showVisual,
     showDetail = showDetail,
   }
@@ -376,7 +413,7 @@ function variableIndicator.create(parent, rect, settings, services)
   context.area = area
 
   context.value = primitives.value(panel.root, theme, {
-    x = area.pad,
+    x = area.valueX,
     y = area.valueY,
     w = area.valueWidth,
     text = "--",
@@ -388,7 +425,7 @@ function variableIndicator.create(parent, rect, settings, services)
   -- the label is still written by `apply` so there is one path that puts text
   -- into it rather than two.
   context.unit = primitives.unit(panel.root, theme, {
-    x = area.pad,
+    x = area.valueX,
     y = area.valueY,
     text = "",
     color = theme.color.textMuted,
@@ -572,7 +609,7 @@ function variableIndicator.apply(context, drawn)
     context.unitText = unitText
     local shows = context.primitives.unitFits(context.themeBuilder,
       context.area.value, context.sample.digits, context.area.unitFont,
-      unitText, context.area.valueWidth)
+      unitText, context.area.valueBudget)
     context.unit:set({text = unitText})
     if shows ~= context.showUnit then
       if shows then lvgl.show(context.unit) else lvgl.hide(context.unit) end
@@ -580,7 +617,7 @@ function variableIndicator.apply(context, drawn)
       context.unitAnchor = nil
     end
   end
-  context.primitives.followUnit(context, context.themeBuilder,
+  context.primitives.centreReading(context, context.themeBuilder,
     context.area, context.area.value, drawn.text)
   -- Through the fitter, not straight into the label: this heading comes from
   -- the model at runtime and is exactly the kind that overflows its column.
@@ -589,6 +626,11 @@ function variableIndicator.apply(context, drawn)
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
   if context.showDetail then
     context.detailLabel:set({text = context.detail})
+    -- A row of one item centres across the content box, exactly as a lone
+    -- reading does.
+    context.primitives.centreLabel(context, "detailAnchor",
+      context.themeBuilder, context.detailLabel, context.area.detailCentre,
+      context.area.detailY, context.fonts.label, context.detail)
   end
   primitives.stylePanel(context.panel, presentation)
 
@@ -631,7 +673,7 @@ function variableIndicator.update(context, rect)
     context.themeBuilder, context.fonts, context.labelValue)
   context.frame = area.frame
   context.value:set({
-    x = area.pad,
+    x = area.valueX,
     y = area.valueY,
     w = area.valueWidth,
     font = function() return area.value end,
@@ -640,12 +682,15 @@ function variableIndicator.update(context, rect)
   -- A reflow can change the column and the reading's font, so whether the
   -- unit still fits is asked again with the unit that is actually in hand.
   local shows = context.primitives.unitFits(context.themeBuilder, area.value,
-    context.sample.digits, area.unitFont, context.unitText, area.valueWidth)
+    context.sample.digits, area.unitFont, context.unitText, area.valueBudget)
   context.primitives.reconcileUnit(context.unit, shows, context.themeBuilder,
-    area.pad, area.valueY, area.value, context.text, area.unitFont,
+    area.valueX, area.valueY, area.value, context.text, area.unitFont,
     shows == context.showUnit)
   context.showUnit = shows
+  -- Every anchor is about a slot and a font that have just moved.
   context.unitAnchor = nil
+  context.readingAnchor, context.readingUnitAnchor = nil, nil
+  context.detailAnchor = nil
   context.area = area
 
   primitives.reconcile(context.detailLabel, area.showDetail,
