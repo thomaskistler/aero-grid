@@ -4423,7 +4423,13 @@ local function testNavigationRegions()
     {digits = "888.88", unit = "km"})
   assertEqual(tiny.showCompass, false, "an unreadable dial was kept")
   assertEqual(tiny.radius, 0)
-  assertEqual(tiny.valueWidth, tiny.content, "the reading did not reclaim the room")
+  -- The *room*, not the drawn box. A panel this small cannot hold `888.88km`
+  -- at any font on the ladder, so the box it draws in is wider than the
+  -- panel and clamping happens downstream; what this pins is that shedding
+  -- the dial handed the whole content box back to the reading rather than
+  -- leaving it with the half it would have had beside one.
+  assertEqual(tiny.valueBudget, tiny.content,
+    "the reading did not reclaim the room")
 end
 
 --- Every region of the three telemetry components, at every span they claim,
@@ -4545,7 +4551,12 @@ local function testTelemetryContentFitsPanel()
         resolved, theme, rect, navLayout, fonts,
         {digits = "888.88", unit = "km"})
       local what = "navigation/" .. presentation
-      assertReading(what, nav, nav.value, nav.valueWidth,
+      -- The room, as `cell-battery` and `link-status` pass their `content`
+      -- above. This asked for `valueWidth` while that field meant both the
+      -- room and the drawn box, and kept asking for it after they were
+      -- separated -- which is the same name meaning two things, the defect
+      -- that separating them was meant to end.
+      assertReading(what, nav, nav.value, nav.valueBudget,
         {digits = navigationComponent.DIGITS, unit = navigationComponent.UNIT})
 
       if nav.showDetail then

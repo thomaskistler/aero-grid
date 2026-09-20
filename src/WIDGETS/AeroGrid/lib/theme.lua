@@ -1132,30 +1132,14 @@ end
 --- therefore offer only lossless forms, and where the shortest of them still
 --- will not fit, the font steps down instead.
 ---
---- One step is the intent, and it is what happens almost everywhere: a
---- reading two sizes below its neighbours is the disagreement this exists to
---- remove. It is not a cap, because the alternative to stepping again is
---- clipping, and the specification is explicit that text reduces to a smaller
---- font before it clips. A panel that needs two steps is telling us its
---- column is genuinely too narrow for the reading, which happens where a dial
---- takes half the width, and a smaller number is better than half a number.
 --- The ladder a reading is sized from, largest first.
 ---
---- Exported because a component that puts something beside its reading has to
---- reason about what the reading would give up to make room, and the only
---- honest way to say "one size smaller" is against the same list the fitter
---- walks. A second copy of this list would be a second ladder.
+--- It no longer has to answer what a reading would give up for something
+--- beside it, because a reading gives up nothing: it takes the size the
+--- panel allows and the decoration fits in what is left or is shed. The
+--- companion `readingStep`, which existed only so `navigation` could say
+--- "one size smaller than that", went with the rule it served.
 theme.READING_FONTS = {XXLSIZE, DBLSIZE, MIDSIZE, SMLSIZE}
-
---- Where a font sits on the reading ladder, counting from 1 at the largest.
----@param font any
----@return integer? step
-function theme.readingStep(font)
-  for index = 1, #theme.READING_FONTS do
-    if theme.READING_FONTS[index] == font then return index end
-  end
-  return nil
-end
 
 --- **It can fail, and it says so.** When even the shortest form will not fit
 --- at the smallest font, there is no font that fits and nothing honest to

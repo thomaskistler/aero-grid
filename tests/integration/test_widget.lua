@@ -7811,17 +7811,32 @@ local function testTelemetryComponentsReflow()
   assertEqual(nav.compass.ring.hidden, false, "the dial was never shown")
   assertEqual(nav.coordinatesLabel.hidden, false, "coordinates were never shown")
   local firstRadius = nav.compass.ring.properties.radius
+  local function readingFont()
+    local font = nav.value.properties.font
+    if type(font) == "function" then font = font() end
+    return font
+  end
+  assertFont(readingFont(), DBLSIZE, "the full-size panel's distance")
 
   zone.w = 320
   zone.h = 140
   drain()
   settle(context, 10)
   assertContained("shrunk")
-  -- Supporting rows are shed before the dominant reading is touched, and the
-  -- dial shrinks with the panel rather than overflowing it.
+  -- Supporting rows are shed before the dominant reading is touched.
   assertEqual(nav.coordinatesLabel.hidden, true, "shed coordinates stayed visible")
-  assert(nav.compass.ring.properties.radius < firstRadius,
-    "the dial did not shrink with its panel")
+
+  -- **And then the dial is shed rather than the distance shrunk.** This used
+  -- to assert the dial merely got smaller, which it did: the reading was
+  -- fitted into half the panel first, so at 158 x 68 it took SMLSIZE and
+  -- left room for a radius of 18. The distance now takes the size the whole
+  -- panel allows -- MIDSIZE -- and the compass has nowhere to go beside it,
+  -- so it goes. A shape survives being absent and a number a pilot is flying
+  -- by does not survive being small.
+  assertEqual(nav.compass.ring.hidden, true,
+    "the dial kept its room on a panel whose distance needed it")
+  assertFont(readingFont(), MIDSIZE,
+    "the distance shrank to keep a compass beside it")
 
   zone.w = 480
   zone.h = 272

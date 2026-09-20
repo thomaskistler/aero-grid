@@ -363,30 +363,21 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
   -- unit redundancy, because it changes with range -- `1.23km` and `1.23m`
   -- are different readings -- so unlike a voltage's it is never dropped, and
   -- a panel with no room for it has no room for the reading either.
-  -- What the reading would be with the whole box to itself, which is the
-  -- yardstick the shedding rule is written against: **a reading may step
-  -- down one size to make room for something beside it, and no further.**
-  -- Two steps is the panel saying it cannot hold both.
-  local bare = themeBuilder.fitReadingUnit(
-    sample.digits, sample.unit, frame.content, available, true)
-  local floorStep = themeBuilder.readingStep(bare)
-  floorStep = floorStep
-    and math.min(floorStep + 1, #themeBuilder.READING_FONTS) or nil
-
-  local valueWidth = showCompass and half or frame.content
+  -- **Fitted against the whole content box, never against the slot.** The
+  -- distance does not know there is a dial beside it and must not: a
+  -- reading narrowed to make room for a decoration has paid for the
+  -- decoration with magnitude, and magnitude is the first thing a pilot
+  -- reads. Whether the dial survives is settled below, once the reading's
+  -- width is known.
+  --
+  -- This component used to hold its own version of the shedding rule -- the
+  -- reading fitted into half the panel and allowed to step down one size to
+  -- keep the compass, the compass shed at two. That rule is gone from the
+  -- rest of the dashboard and it is gone here; it could charge the distance
+  -- a size for a dial the panel then dropped anyway.
+  local valueWidth = frame.content
   local value, unitFont, _, fits = themeBuilder.fitReadingUnit(
     sample.digits, sample.unit, valueWidth, available, true)
-
-  -- The dial costs more than the rule allows, so the dial goes. Measured
-  -- against what the reading would have been rather than against a fixed
-  -- size, so the trade is the same one at every span.
-  if showCompass and floorStep
-      and (themeBuilder.readingStep(value) or 1) > floorStep then
-    showCompass, radius = false, 0
-    valueWidth = frame.content
-    value, unitFont, _, fits = themeBuilder.fitReadingUnit(
-      sample.digits, sample.unit, valueWidth, available, true)
-  end
 
   -- The dial gives its room back rather than clipping the distance. A
   -- compass is a shape and survives being absent; a distance that runs off
@@ -394,9 +385,6 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
   -- the unit cannot be dropped to buy the space because it carries the scale.
   if not fits and showCompass then
     showCompass, radius = false, 0
-    valueWidth = frame.content
-    value, unitFont = themeBuilder.fitReadingUnit(
-      sample.digits, sample.unit, valueWidth, available, true)
   end
 
   -- Asked of the widest distance this component can ever print, so the
@@ -410,12 +398,8 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     -- Neither arrangement separates them, so the dial goes -- the same
     -- answer this component already reaches when the distance will not fit
     -- beside it, and the same one `tx-battery` reaches at `1 x 2`.
-    if not separated then
-      showCompass, radius, slots = false, 0, nil
-      valueWidth = frame.content
-      value, unitFont = themeBuilder.fitReadingUnit(
-        sample.digits, sample.unit, valueWidth, available, true)
-    end
+    -- Nothing is refitted, because nothing was narrowed.
+    if not separated then showCompass, radius, slots = false, 0, nil end
   end
 
   local leftCentre = showCompass
@@ -473,9 +457,18 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     -- depends on what it currently says, so `primitives.centreReading` owns
     -- that and computes it from the measured string.
     valueCentre = leftCentre,
-    valueX = themeBuilder.slotX(leftCentre, valueWidth),
+    valueX = themeBuilder.slotX(leftCentre, widest),
     valueY = valueY,
-    valueWidth = valueWidth,
+    -- **The box the reading draws in, which hugs the measured string, and
+    -- separately the room it was given.** This component carried one number
+    -- for both, which was survivable only while the reading was fitted to
+    -- half the panel: the budget was then a box the dial could sit beside.
+    -- A reading fitted against the whole panel has a budget that spans it,
+    -- and a box of that width drawn from the left slot runs straight
+    -- through the compass. Every other component separated these when it
+    -- moved onto the shared builder; this is the last one.
+    valueWidth = widest,
+    valueBudget = valueWidth,
     value = value,
     unitFont = unitFont,
     showUnit = true,
