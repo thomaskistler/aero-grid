@@ -2967,6 +2967,52 @@ local function testWidthIsMeasuredNotEstimated()
     "a sizeText that answered nil was believed")
 end
 
+--- `slotsFor` answers for the arrangement, not for one of its boundaries.
+---
+--- The function decides whether a panel keeps its visualization at all, and
+--- until now it had no test of its own: it was covered only through whatever
+--- the components happened to draw. That was survivable while a reading was
+--- fitted into half a panel before it ever reached here, because then it
+--- could not reach the far edge. Readings take the size the whole panel
+--- allows now, so both boundaries are live and both have to be answered.
+---
+--- A reading is centred on the left slot. It has the panel's content edge on
+--- one side and the visualization on the other, and a verdict of "these
+--- separate" that consults only the second is not a verdict about the
+--- arrangement -- it is a verdict about one half of it, read as though it
+--- covered both.
+local function testSlotsForAnswersForBothEdges()
+  local fonts = theme.typography(1, 1)
+  local built = theme.build("modern")
+  local frame = theme.frame(built, {x = 0, y = 0, w = 117, h = 53}, fonts)
+  local left = theme.slotCentres(frame, theme.SLOT_STRICT)
+  local room = left - frame.pad
+
+  -- Comfortable: a narrow reading and a small dial separate, and the panel
+  -- holds both.
+  local _, roomy = theme.slotsFor(frame, 20, 20)
+  assertEqual(roomy, true, "a narrow reading beside a small dial was refused")
+
+  -- **The far edge.** Wide enough that centring it on the left slot pushes
+  -- it off the panel, but paired with a dial small enough that the two never
+  -- touch each other. Checking only the gap between them calls this a good
+  -- arrangement, and it is a reading hanging off the side of the panel.
+  local overhang = (room + 8) * 2
+  local _, hangs = theme.slotsFor(frame, overhang, 4)
+  assertEqual(hangs, false, string.format(
+    "a reading %d px wide was accepted on a slot with %d px to the panel"
+      .. " edge, so it is drawn %d px off the side -- the verdict answered"
+      .. " for the gap against the dial and was read as answering for the"
+      .. " arrangement", overhang, room, overhang // 2 - room))
+
+  -- And the near edge still fails for its own reason, so the check above has
+  -- not merely replaced one blind spot with another: a reading that fits the
+  -- panel but collides with the dial is refused too.
+  local _, collides = theme.slotsFor(frame, room * 2, frame.content)
+  assertEqual(collides, false,
+    "a reading that fits the panel but meets the dial was accepted")
+end
+
 --- `fitReading`'s verdict is accurate, in both directions.
 ---
 --- The function returns the smallest font on the ladder when nothing fits,
@@ -4590,6 +4636,7 @@ testExtremaService()
 testNavigationService()
 testFontHeightsMatchTheFirmware()
 testWidthIsMeasuredNotEstimated()
+testSlotsForAnswersForBothEdges()
 testFitReadingReportsWhetherItFits()
 testUnitSitsOnTheBaseline()
 testTextFitting()

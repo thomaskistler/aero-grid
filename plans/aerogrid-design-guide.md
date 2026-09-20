@@ -175,16 +175,20 @@ At a smaller size — two ladder steps down where there are two — sharing the 
 baseline, and **positioned from the reading's measured width** using `lcd.sizeText`
 rather than an estimate.
 
-`theme.textWidth` estimates at 0.58 of a line height per character, and that ratio is
-deliberately generous so text shrinks rather than clips. **Generosity is correct when
-deciding whether something fits and wrong when deciding where something starts.** A
-digit is 0.429 of a line height and a decimal point 0.199, so at `XXLSIZE` the estimate
-put `7.9`'s right edge roughly 48 px beyond where the radio draws it — which is the gap
-a user reported between a number and its unit.
+`theme.textWidth` estimates at 0.58 of a line height per character. That was called
+deliberately generous, so text shrinks rather than clips — but one allowance per character
+is only generous for characters narrower than the allowance. A digit is 0.429 of a line
+height and a decimal point 0.199, so at `XXLSIZE` the estimate put `7.9`'s right edge
+roughly 48 px beyond where the radio draws it, which is the gap a user reported between a
+number and its unit. A capital `M` is 0.667, and there the estimate reports **less** than
+the truth: `model-identity` sizes against a row of `M`, and at `1 x 2` was drawing its name
+eleven pixels past the panel.
 
 `lcd.sizeText` calls `getTextWidth`, which is `lv_txt_get_width` over the real font, with
-no draw context and no LCD state. Every fitting decision elsewhere in the dashboard still
-uses the estimate; converting them is an open item, not a decision.
+no draw context and no LCD state. **Fitting measures too, now.** The open item recorded
+here — that every fitting decision still used the estimate — was closed once the
+under-reporting was found, because the generosity argument that justified leaving it only
+ever held for digits.
 
 **Rejected: `metric` offering a single abbreviation form.** The specification explained
 that `metric` offered one form because it drew its unit as a separate label and its
@@ -269,14 +273,17 @@ the loop written out longhand.
 
 ### Shedding
 
-**A reading may step down one size to make room for something beside it, and no further.**
-Two steps is the panel saying it is too narrow to hold both, and the shape is shed the way
-any other visual is.
+**A reading is never shrunk to make room for something beside it.** It takes the size the
+whole panel allows; the visualization then fits in what is left, or it is shed.
 
-Holding to that, the battery costs `tx-battery` one font size at exactly one span —
-`1 x 2`, whose 105 px of content cannot carry a `DBLSIZE` `88.8` and a battery at the same
-time — and costs nothing at the other seven, because dropping a unit the panel's own
-heading already states buys back more width than the glyph takes.
+This replaces an earlier rule that allowed one step down and shed only at two. That rule
+could charge a reading for something it never got — narrowed to half the panel so a dial
+would have room, then the dial shed anyway, leaving a smaller number and no dial.
+
+`tx-battery` already worked this way, taking its font from the band rather than from the
+fitting ladder, so the decision makes it the pattern rather than the exception. The cost is
+two panels: `metric` and `variable-indicator` at `1 x 2` each trade their dial for two font
+sizes. The user was shown that trade and chose it.
 
 ---
 
