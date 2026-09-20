@@ -347,65 +347,25 @@ end
 ---@param fonts table
 ---@param sample table Widest digits this component prints, and its unit.
 ---@return table
-function cellBattery.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
-  local spacing = theme.spacing
-  local frame = themeBuilder.frame(theme, rect, fonts)
-  local labelHeight = frame.labelHeight
-  local top = frame.top
-  -- Composition comes from the shared ladder, so a panel of this size carries
-  -- the same rows as any other panel of this size, whichever component drew
-  -- it. What this component wants is a veto, not a vote.
-  local ladder = themeBuilder.ladder(theme, rect, frame)
-  local showVisual = layout.showVisual and layout.visual ~= "none" and ladder.visual
-  local showDetail = layout.showDetail and ladder.rows > 0
-
-  local value, unitFont, showUnit = themeBuilder.fitReadingUnit(
-    sample.digits, sample.unit, frame.content, ladder.room)
-  local valueHeight = themeBuilder.fontHeight(value)
-  if top + valueHeight > rect.h then top = math.max(0, rect.h - valueHeight) end
-
-  local barY = math.max(1, rect.h - frame.bottom - spacing.barHeight)
-
-  -- **A row of two takes the panel's two slot centres**: the cell count on
-  -- the left, the pack voltage on the right. Each gets half the distance
-  -- between the centres, which is narrower than the half-content columns
-  -- this replaced, and `fitLabel` sheds wording in the order this component
-  -- declares it.
-  local rowLeft, rowRight = themeBuilder.slotCentres(frame)
-  local rowBudget = math.max(1, rowRight - rowLeft - 4)
-
-  -- A lone reading does not split. This component's only visualization is a
-  -- bar, which spans the panel by design and is exempt, so there is never a
-  -- second element to leave room for.
-  local readingCentre = frame.pad + math.floor(frame.content / 2)
-  local readingWidth = themeBuilder.readingWidth(
-    value, sample.digits, unitFont, showUnit and sample.unit or nil)
-
-  return {
-    frame = frame,
-    pad = frame.pad,
-    content = frame.content,
-    -- The slot's centre, a property of the panel. Where the reading starts
-    -- depends on what it currently says, so `primitives.centreReading` owns
-    -- that and computes it from the measured string.
-    valueCentre = readingCentre,
-    valueX = themeBuilder.slotX(readingCentre, readingWidth),
-    valueY = themeBuilder.bodyTop(
-      ladder, themeBuilder.fontHeight(value)),
-    valueWidth = readingWidth,
-    value = value,
-    unitFont = unitFont,
-    showUnit = showUnit,
-    detailY = math.max(1, barY - labelHeight - 2),
-    detailWidth = rowBudget,
-    countCentre = rowLeft,
-    countX = rowLeft - math.floor(rowBudget / 2),
-    packCentre = rowRight,
-    packX = rowRight - math.floor(rowBudget / 2),
-    barY = barY,
-    showVisual = showVisual,
-    showDetail = showDetail,
-  }
+function cellBattery.regionsFor(theme, themeBuilder, rect, layout, fonts,
+    sample, out)
+  -- The whole arrangement, from the shared builder. Like `link-status`, this
+  -- component's only visualization is a bar, so the reading never splits.
+  local area = themeBuilder.panel(theme, rect, fonts, {
+    -- Built through this component's own builder, which the host may have
+    -- wrapped to lay the panel out around the menu button's corner.
+    frame = themeBuilder.frame(theme, rect, fonts),
+    forms = {sample.digits},
+    unit = sample.unit,
+    draws = {
+      rows = layout.showDetail == true,
+      visual = layout.showVisual == true and layout.visual ~= "none",
+    },
+    bar = true,
+    -- The cell count on the left, the pack voltage on the right.
+    rowItems = 2,
+  }, out or {})
+  return area
 end
 
 --- Build the component's LVGL objects.
@@ -497,7 +457,7 @@ function cellBattery.create(parent, rect, settings, services)
   })
 
   context.countLabel = primitives.label(panel.root, theme, {
-    x = area.countX,
+    x = area.detailX,
     y = area.detailY,
     w = area.detailWidth,
     text = "",
@@ -506,7 +466,7 @@ function cellBattery.create(parent, rect, settings, services)
   })
 
   context.packLabel = primitives.label(panel.root, theme, {
-    x = area.packX,
+    x = area.rowRightX,
     y = area.detailY,
     w = area.detailWidth,
     text = "",
@@ -635,10 +595,10 @@ function cellBattery.apply(context, drawn)
     -- Both items take the panel's slot centres, keyed on what they say so a
     -- steady pack pays nothing.
     context.primitives.centreLabel(context, "countAnchor",
-      context.themeBuilder, context.countLabel, context.area.countCentre,
+      context.themeBuilder, context.countLabel, context.area.detailCentre,
       context.area.detailY, context.fonts.label, drawn.count)
     context.primitives.centreLabel(context, "packAnchor",
-      context.themeBuilder, context.packLabel, context.area.packCentre,
+      context.themeBuilder, context.packLabel, context.area.rowRightCentre,
       context.area.detailY, context.fonts.label, drawn.pack)
   end
 
@@ -696,9 +656,9 @@ function cellBattery.update(context, rect)
   context.showDetail = area.showDetail
 
   reconcile(context.countLabel, area.showDetail,
-    {x = area.countX, y = area.detailY, w = area.detailWidth})
+    {x = area.detailX, y = area.detailY, w = area.detailWidth})
   reconcile(context.packLabel, area.showDetail,
-    {x = area.packX, y = area.detailY, w = area.detailWidth})
+    {x = area.rowRightX, y = area.detailY, w = area.detailWidth})
 
   context.primitives.reconcileBar(context.bar, area.showVisual,
     area.pad, area.barY, area.content,

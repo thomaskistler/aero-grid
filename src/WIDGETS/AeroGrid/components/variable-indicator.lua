@@ -232,102 +232,51 @@ end
 ---@param sample string Widest value text this indicator can render.
 ---@return table
 function variableIndicator.regionsFor(
-    theme, themeBuilder, rect, layout, fonts, sample)
-  local spacing = theme.spacing
-  local frame = themeBuilder.frame(theme, rect, fonts)
-  local labelHeight = frame.labelHeight
-  local top = frame.top
-  -- Composition comes from the shared ladder, so a panel of this size carries
-  -- the same rows as any other panel of this size, whichever component drew
-  -- it. What this component wants is a veto, not a vote.
-  local ladder = themeBuilder.ladder(theme, rect, frame)
+    theme, themeBuilder, rect, layout, fonts, sample, out)
+  -- The whole arrangement, from the shared builder. A radial is a compact
+  -- visual and takes the right slot; a bar spans the panel and is exempt, so
+  -- the same component splits under one setting and not the other.
   local radial = layout.visual == "radial"
-  local showVisual = layout.showVisual and layout.visual ~= "none"
-    and (radial or ladder.visual)
-  local showDetail = layout.showDetail and ladder.rows > 0
+  local area = themeBuilder.panel(theme, rect, fonts, {
+    -- Built through this component's own builder, which the host may have
+    -- wrapped to lay the panel out around the menu button's corner.
+    frame = themeBuilder.frame(theme, rect, fonts),
+    forms = {sample.digits},
+    unit = sample.unit,
+    draws = {
+      rows = layout.showDetail == true,
+      visual = layout.showVisual == true and layout.visual ~= "none",
+    },
+    -- The supporting row sits above the panel's floor whichever
+    -- visualization is drawn: this component reserves the bar's strip even
+    -- when it draws a radial, so the row lands in the same place either way
+    -- and a reflow between the two does not move it.
+    bar = true,
+    -- A radial is square, so its size is a diameter; the builder bounds it
+    -- by the slot it has to live in as well as by the panel.
+    compact = radial and function(panelRect)
+      return math.max(12, math.floor(math.min(panelRect.w, panelRect.h) / 5) * 2)
+    end or nil,
+    rowItems = 1,
+  }, out or {})
 
-  -- A radial is a compact visual and takes the right slot; a bar spans the
-  -- panel and is exempt, so a barred panel never splits.
-  local split = showVisual and radial
-  local half = math.floor(frame.content / 2)
-  local radius = math.max(6, math.floor(math.min(rect.w, rect.h) / 5))
-  -- Bounded by the slot it lives in as well as by the panel, so a radial on
-  -- a narrow panel shrinks rather than reaching into the reading.
-  if split then radius = math.min(radius, math.floor(half / 2)) end
-
-  local valueWidth = split and half or frame.content
-
-  local value, unitFont, showUnit = themeBuilder.fitReadingUnit(
-    sample.digits, sample.unit, valueWidth, ladder.room)
-  local valueHeight = themeBuilder.fontHeight(value)
-
-  -- Asked of the widest string this component can print, so the arrangement
-  -- is fixed for the life of the panel rather than flipping as the value
-  -- changes.
-  local readingWidth = themeBuilder.readingWidth(
-    value, sample.digits, unitFont, showUnit and sample.unit or nil)
-  local slots, separated
-  if split then
-    slots, separated = themeBuilder.slotsFor(frame, readingWidth, radius * 2)
-    -- Neither arrangement separates them, so the visualization goes, which
-    -- is what every other converted component does in the same position.
-    if not separated then
-      showVisual, split, slots = false, false, nil
-      valueWidth = frame.content
-    end
+  -- The dial under this component's own names. EdgeTX positions an arc by
+  -- its centre; the corner only reserves space.
+  if area.visualSize then
+    area.radius = math.floor(area.visualSize / 2)
+    area.radialX = area.visualCentreX - area.radius
+    area.radialY = area.visualCentreY - area.radius
+  else
+    -- A bar panel still reports a radius, because `create` sizes the object
+    -- it may later reveal from it.
+    area.radius = math.max(6, math.floor(math.min(rect.w, rect.h) / 5))
+    area.visualCentreX = rect.w - area.frame.pad - area.radius
+    area.visualCentreY = area.valueY + math.floor(
+      themeBuilder.fontHeight(area.value) / 2)
+    area.radialX = area.visualCentreX - area.radius
+    area.radialY = area.visualCentreY - area.radius
   end
-
-  local readingCentre = split
-    and select(1, themeBuilder.slotCentres(frame, slots))
-    or (frame.pad + math.floor(frame.content / 2))
-  local radialCentreX = split
-    and select(2, themeBuilder.slotCentres(frame, slots))
-    or (rect.w - frame.pad - radius)
-
-  -- Reading and radial share the body band and are centred on each other, so
-  -- the block the band centres is the deeper of the two.
-  local blockHeight = math.max(valueHeight, split and radius * 2 or 0)
-  local blockTop = themeBuilder.bodyTop(ladder, blockHeight)
-  local valueY = blockTop + math.floor((blockHeight - valueHeight) / 2)
-  local radialCentreY = blockTop + math.floor(blockHeight / 2)
-
-  local barY = math.max(1, rect.h - frame.bottom - spacing.barHeight)
-
-  return {
-    frame = frame,
-    pad = frame.pad,
-    content = frame.content,
-    -- The slot's centre, a property of the panel. Where the reading starts
-    -- depends on what it currently says, so `primitives.centreReading` owns
-    -- that and computes it from the measured string.
-    valueCentre = readingCentre,
-    valueX = themeBuilder.slotX(readingCentre, readingWidth),
-    -- **The room the reading has, which is not the width it draws in.** The
-    -- drawn box hugs the measured string so the slot centres it; the budget
-    -- is the slot itself, and it is what a later question about whether a
-    -- unit still fits has to be asked against. Collapsing the two made that
-    -- question circular -- a unit that arrives after build, as a global
-    -- variable's does, was measured against a box sized without it and never
-    -- fitted.
-    valueBudget = valueWidth,
-    valueY = valueY,
-    valueWidth = readingWidth,
-    value = value,
-    unitFont = unitFont,
-    showUnit = showUnit,
-    detailY = math.max(1, barY - labelHeight - 2),
-    -- A row of one, so it centres across the whole content box.
-    detailCentre = frame.pad + math.floor(frame.content / 2),
-    barY = barY,
-    radius = radius,
-    radialX = radialCentreX - radius,
-    radialY = radialCentreY - radius,
-    -- EdgeTX positions an arc by its centre; the corner only reserves space.
-    radialCentreX = radialCentreX,
-    radialCentreY = radialCentreY,
-    showVisual = showVisual,
-    showDetail = showDetail,
-  }
+  return area
 end
 
 --- Build the component's LVGL objects.
@@ -443,8 +392,8 @@ function variableIndicator.create(parent, rect, settings, services)
 
   if visualName == "radial" then
     context.radial = primitives.radial(panel.root, theme, {
-      x = area.radialCentreX,
-      y = area.radialCentreY,
+      x = area.visualCentreX,
+      y = area.visualCentreY,
       radius = area.radius,
       color = presentation.accent,
       fraction = 0,
@@ -725,8 +674,8 @@ function variableIndicator.update(context, rect)
       area.content, context.bipolar.h, fraction)
   end
   if context.radial then
-    primitives.placeRadial(context.radial, area.radialCentreX,
-      area.radialCentreY, area.radius)
+    primitives.placeRadial(context.radial, area.visualCentreX,
+      area.visualCentreY, area.radius)
   end
 
   if not settled then variableIndicator.showVisual(context) end

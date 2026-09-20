@@ -1713,7 +1713,18 @@ end
 --- `frame`: this component's frame, from its own `themeBuilder.frame`.
 --- `forms`: reading wordings, longest first, widest the component can print.
 --- `draws`: `{rows = boolean, visual = boolean}` -- what will be drawn.
---- `bar`: true where the visualization is a full-width bar.
+--- `bar`: true where the visualization is a full-width bar, which spans the
+---   panel by design and is exempt from the slot rule.
+--- `compact`: `function(rect, half) -> size` for a visual that stands beside
+---   the reading and therefore takes the right slot. Its absence is what
+---   says a panel has one element rather than two.
+--- `unit`: a unit that rides beside the reading, or nil for none.
+--- `unitRequired`: the unit carries magnitude and may not be dropped -- a
+---   distance's `km` against a voltage's `V`.
+--- `rowItems`: 1 or 2, what the supporting row will actually hold. Not what
+---   the component could put there: a row of two on a panel drawing one
+---   puts a lone caption on the left slot, which is a defect this project
+---   has already shipped once.
 ---@param out table The component's own region table, overwritten in place.
 ---@return table out
 function theme.panel(resolved, rect, fonts, spec, out)
@@ -1733,8 +1744,28 @@ function theme.panel(resolved, rect, fonts, spec, out)
   local rows = draws.rows == true and ladder.rows > 0
   local visual = draws.visual == true and ladder.visual
 
-  local font, formIndex = theme.fitReading(
-    spec.forms, frame.content, ladder.room)
+  -- **A reading beside a compact visual gets a slot; one on its own gets the
+  -- box.** A bar spans the panel by design and is exempt, so only a compact
+  -- visual makes this a two-element panel. The visual is bounded by the slot
+  -- it lives in as well as by the panel, so a narrow panel shrinks it rather
+  -- than letting it reach across the middle into the reading.
+  local half = math.floor(frame.content / 2)
+  local compact = visual and spec.compact ~= nil
+  local size = compact and math.min(spec.compact(rect, half), half) or 0
+
+  -- The reading's forms, or the reading and a unit it may not drop. A unit
+  -- that carries magnitude -- a distance's `km` -- is part of the reading
+  -- and the pair is what the ladder is walked against; one that is
+  -- redundancy is bought with width after the font is chosen.
+  local room = compact and half or frame.content
+  local font, formIndex, unitFont, showUnit
+  if spec.unit ~= nil then
+    font, unitFont, showUnit = theme.fitReadingUnit(
+      spec.forms[1], spec.unit, room, ladder.room, spec.unitRequired)
+    formIndex = 1
+  else
+    font, formIndex = theme.fitReading(spec.forms, room, ladder.room)
+  end
 
   -- **One name for the reading's band.** Three components called this
   -- `valueY`, `nameY` and `clockY`, and one carried two of them for one
@@ -1742,8 +1773,52 @@ function theme.panel(resolved, rect, fonts, spec, out)
   -- for it has to write the alias itself, which is the point: the divergence
   -- has to be deliberate to happen at all.
   local height = theme.fontHeight(font)
-  local centre = frame.pad + math.floor(frame.content / 2)
-  local width = theme.measureText(font, spec.forms[formIndex])
+  local width = spec.unit ~= nil
+    and theme.readingWidth(font, spec.forms[formIndex], unitFont,
+      showUnit and spec.unit or nil)
+    or theme.measureText(font, spec.forms[formIndex])
+
+  -- Asked of the widest string the component can ever print, so a panel's
+  -- arrangement is fixed for its life rather than flipping as its value
+  -- changes. Where neither pair of slots separates the two, the visual goes:
+  -- the reading's font came from the band and cannot be narrowed to make
+  -- room, and magnitude is kept before decoration.
+  local slots
+  if compact then
+    local separated
+    slots, separated = theme.slotsFor(frame, width, size)
+    if not separated then
+      compact, size, slots, visual = false, 0, nil, false
+      if spec.unit ~= nil then
+        font, unitFont, showUnit = theme.fitReadingUnit(
+          spec.forms[1], spec.unit, frame.content, ladder.room,
+          spec.unitRequired)
+        width = theme.readingWidth(font, spec.forms[1], unitFont,
+          showUnit and spec.unit or nil)
+      else
+        font, formIndex = theme.fitReading(
+          spec.forms, frame.content, ladder.room)
+        width = theme.measureText(font, spec.forms[formIndex])
+      end
+      height = theme.fontHeight(font)
+    end
+  end
+
+  -- Computed once, and only where a compact visual makes them mean
+  -- anything. The reading and the visual both want them, and asking twice is
+  -- two multiplications and two roundings per panel per reflow -- the kind of
+  -- cost that turns a shared helper into a more expensive copy. A bar-backed
+  -- panel has no slots at all and must not pay for them; the two-item
+  -- supporting row asks separately because it splits whether or not the body
+  -- above it does.
+  local slotLeft, slotRight
+  local centre
+  if compact then
+    slotLeft, slotRight = theme.slotCentres(frame, slots)
+    centre = slotLeft
+  else
+    centre = frame.pad + math.floor(frame.content / 2)
+  end
 
   out.frame = frame
   out.pad = frame.pad
@@ -1753,17 +1828,37 @@ function theme.panel(resolved, rect, fonts, spec, out)
   -- A lone reading centres across the whole content box. A reading with a
   -- compact visual beside it takes the left slot, which is the caller's
   -- business until a component in this set has one.
+  -- Reading and visual share the body band and are centred on each other, so
+  -- the block the band centres is the deeper of the two.
+  local blockHeight = math.max(height, size)
+  local blockTop = theme.bodyTop(ladder, blockHeight)
+
   out.value = font
   out.formIndex = formIndex
+  out.unitFont = unitFont
+  out.showUnit = showUnit == true
   out.valueCentre = centre
   out.valueX = theme.slotX(centre, width)
   out.valueWidth = width
+  -- Only where there is one. A panel with no compact visual writes three
+  -- nils per reflow otherwise, and `out` is reused rather than rebuilt so
+  -- they have to be cleared rather than simply absent -- which is the cost
+  -- of the table the component owns, paid where it is actually owed.
+  if compact then
+    out.visualSize = size
+    out.visualCentreX = slotRight
+    out.visualCentreY = blockTop + math.floor(blockHeight / 2)
+  elseif out.visualSize ~= nil then
+    out.visualSize, out.visualCentreX, out.visualCentreY = nil, nil, nil
+  end
   -- The room the reading had, which is not the width it draws in: the drawn
   -- box hugs the measured string so its slot can centre it, and a later
   -- question about whether a unit still fits has to be asked against the
-  -- room.
-  out.valueBudget = frame.content
-  out.valueY = theme.bodyTop(ladder, height)
+  -- room. **A slotted reading's room is its slot, not the panel** -- asking
+  -- the whole box would tell a unit arriving at runtime that it fits beside
+  -- a reading sharing the panel with a dial.
+  out.valueBudget = compact and half or frame.content
+  out.valueY = blockTop + math.floor((blockHeight - height) / 2)
 
   -- A bar spans the panel by design and sits on its floor rather than in a
   -- band; a supporting row sits in the tertiary band above it.
@@ -1771,12 +1866,38 @@ function theme.panel(resolved, rect, fonts, spec, out)
   out.barY = barY
   out.showVisual = visual
   out.showDetail = rows
+  -- A bar owns the panel's floor, so a supporting row sits above it; where
+  -- there is no bar the row takes the tertiary band the panel reserved.
+  -- Asked of what the component draws rather than of `spec.bar`, because a
+  -- panel that can draw a bar and currently does not still keeps its floor
+  -- clear for one.
   out.detailY = spec.bar and math.max(1, barY - frame.labelHeight - 2)
     or theme.centreInBand(ladder.bands.tertiary, frame.labelHeight)
-  -- A row of one item centres across the content box, exactly as a lone
-  -- reading does. A row of two takes the panel's two slot centres, and the
-  -- caller asks for those directly.
-  out.detailCentre = centre
+  -- **A row of one centres across the content box; a row of two takes the
+  -- panel's two slot centres.** Which it is is the component's to say,
+  -- because a span knows only what is permitted -- `metric` may carry a
+  -- secondary reading at `2 x 2` and whether it does depends on a source
+  -- being configured. Two boxes centred that far apart can each be half the
+  -- distance between them before they meet, and that is the budget each
+  -- wording is fitted to.
+  if spec.rowItems == 2 then
+    -- The row's own slots, which are the tightened pair whatever the body
+    -- fell back to: a row is two labels and cannot collide the way a reading
+    -- and a dial can.
+    local left, right = theme.slotCentres(frame)
+    local budget = math.max(1, right - left - 4)
+    out.detailCentre, out.detailWidth = left, budget
+    out.detailX = left - math.floor(budget / 2)
+    out.rowRightCentre, out.rowRightWidth = right, budget
+    out.rowRightX = right - math.floor(budget / 2)
+  else
+    out.detailCentre = frame.pad + math.floor(frame.content / 2)
+    out.detailWidth = frame.content
+    out.detailX = frame.pad
+    if out.rowRightCentre ~= nil then
+      out.rowRightCentre, out.rowRightWidth, out.rowRightX = nil, nil, nil
+    end
+  end
 
   return out
 end

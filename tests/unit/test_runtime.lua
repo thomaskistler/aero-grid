@@ -4073,7 +4073,7 @@ local function testLinkClassification()
   local function link(reading, width)
     return linkStatus.linkText({
       themeBuilder = theme, fonts = {label = SMLSIZE},
-      linkWidth = width or 400,
+      rowRightWidth = width or 400,
     }, reading)
   end
 
@@ -4422,7 +4422,7 @@ local function testTelemetryContentFitsPanel()
       assert(cells.detailY + labelHeight <= cells.barY, "cell-battery "
         .. case.name .. ": the detail row overlaps the bar")
       assertColumns("cell-battery", cells,
-        cells.detailWidth, cells.packX, cells.detailWidth)
+        cells.detailWidth, cells.rowRightX, cells.detailWidth)
     end
     if cells.showVisual then
       assert(cells.barY + resolved.spacing.barHeight <= case.h,
@@ -4440,7 +4440,7 @@ local function testTelemetryContentFitsPanel()
       assert(link.detailY + labelHeight <= link.barY, "link-status "
         .. case.name .. ": the detail row overlaps the bar")
       assertColumns("link-status", link,
-        link.detailWidth, link.linkX, link.linkWidth)
+        link.detailWidth, link.rowRightX, link.rowRightWidth)
     end
 
     for _, presentation in ipairs({"distance", "bearing", "compass", "detailed"}) do
