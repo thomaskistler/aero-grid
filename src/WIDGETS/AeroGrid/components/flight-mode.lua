@@ -146,14 +146,33 @@ function flightMode.regionsFor(theme, themeBuilder, rect, layout, fonts, widest)
     top = math.max(0, rect.h - nameHeight)
   end
 
+  -- **A lone reading does not split.** This component draws no
+  -- visualization at all -- a flight mode is a name, and there is nothing to
+  -- gauge -- so the name centres across the whole content box and its
+  -- supporting row, which carries one item, centres the same way.
+  local readingCentre = frame.pad + math.floor(frame.content / 2)
+  local nameWidth = themeBuilder.measureText(
+    name, formsFor(widest or WIDEST_NAME)[formIndex])
+
   return {
     frame = frame,
     pad = frame.pad,
     content = frame.content,
-    nameY = top,
+    -- The slot's centre, a property of the panel. Where the name starts
+    -- depends on what it currently reads, so `primitives.centreReading` owns
+    -- that and computes it from the measured string.
+    valueCentre = readingCentre,
+    valueX = themeBuilder.slotX(readingCentre, nameWidth),
+    valueWidth = nameWidth,
+    -- The room the name has, which is not the width it draws in. The drawn
+    -- box hugs the measured string so the slot centres it; the budget is
+    -- the box the fitter sized against.
+    valueBudget = frame.content,
+    nameY = themeBuilder.bodyTop(ladder, nameHeight),
     name = name,
     formIndex = formIndex,
     detailY = math.max(1, rect.h - frame.bottom - labelHeight),
+    detailCentre = readingCentre,
     showDetail = showDetail,
   }
 end
@@ -194,6 +213,9 @@ function flightMode.create(parent, rect, settings, services)
     widest = widest,
     -- What the panel currently draws, so `render` declares only that.
     showDetail = area.showDetail,
+    -- Kept, because the name is centred on a slot and `apply` needs to know
+    -- where that slot is.
+    area = area,
   }
 
   if modelService then context.feed = modelService:flightMode() end
@@ -206,7 +228,7 @@ function flightMode.create(parent, rect, settings, services)
     services.themeBuilder)
 
   context.value = primitives.value(panel.root, theme, {
-    x = area.pad,
+    x = area.valueX,
     y = area.nameY,
     w = area.content,
     text = "--",
@@ -267,10 +289,21 @@ function flightMode.apply(context, drawn)
   context.detail = drawn.detail or ""
 
   context.value:set({text = drawn.text, color = presentation.value})
+  -- The name is centred on its slot, so where it starts depends on what it
+  -- reads: a longer mode name grows about its middle rather than running
+  -- rightwards. Keyed on the text, so a mode that has not changed costs
+  -- nothing beyond the comparison.
+  context.primitives.centreReading(context, context.themeBuilder,
+    context.area, context.area.name, drawn.text)
   context.label:set({color = presentation.label})
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
   if context.showDetail then
     context.detailLabel:set({text = context.detail})
+    -- A row of one item centres across the content box, as a lone reading
+    -- does.
+    context.primitives.centreLabel(context, "detailAnchor",
+      context.themeBuilder, context.detailLabel, context.area.detailCentre,
+      context.area.detailY, context.fonts.label, context.detail)
   end
   context.primitives.stylePanel(context.panel, presentation)
 end
@@ -293,18 +326,32 @@ function flightMode.update(context, rect)
   context.primitives.resizePanel(context.panel, rect)
   context.primitives.placeHeader(context.label, context.badge, area.frame,
     context.themeBuilder, context.fonts, context.settings.label)
+  context.area = area
   context.value:set({
-    x = area.pad,
+    x = area.valueX,
     y = area.nameY,
-    w = area.content,
+    -- The width the name draws in, not the room it had. A box given the
+    -- whole content box and an x centred for a shorter string reaches past
+    -- the panel's right edge by the difference.
+    w = area.valueWidth,
     font = function() return area.name end,
   })
+  -- Re-placed from the string the panel is actually showing, because the one
+  -- above was sized from the widest name this model can produce.
+  context.readingAnchor, context.readingUnitAnchor = nil, nil
+  context.primitives.centreReading(context, context.themeBuilder, area,
+    area.name, context.text)
 
   local settled = area.showDetail == context.showDetail
   context.showDetail = area.showDetail
   -- The shared helper rather than a sixth private copy of it.
   context.primitives.reconcile(context.detailLabel, area.showDetail,
     {x = area.pad, y = area.detailY, w = area.content}, settled)
+  -- The row's anchor is about a slot and a font that have just moved.
+  context.detailAnchor = nil
+  context.primitives.centreLabel(context, "detailAnchor", context.themeBuilder,
+    area.showDetail and context.detailLabel or nil, area.detailCentre,
+    area.detailY, context.fonts.label, context.detail)
 end
 
 return flightMode

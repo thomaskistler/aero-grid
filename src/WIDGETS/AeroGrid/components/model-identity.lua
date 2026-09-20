@@ -174,10 +174,27 @@ function modelIdentity.regionsFor(theme, themeBuilder, rect, layout, fonts)
     nameY = top
   end
 
+  -- **The picture spans the content box, so it is exempt the way a bar is,
+  -- and nothing here splits.** The name is not beside the image, it is above
+  -- or below it, so there is no second element competing for horizontal
+  -- room. The name centres across the whole content box and the label row,
+  -- which carries one item, centres the same way.
+  local readingCentre = frame.pad + math.floor(frame.content / 2)
+  local nameWidth = themeBuilder.measureText(nameFont, FORMS[formIndex])
+
   return {
     frame = frame,
     pad = frame.pad,
     content = frame.content,
+    -- The slot's centre, a property of the panel. Where the name starts
+    -- depends on what it currently reads, so `primitives.centreReading` owns
+    -- that and computes it from the measured string.
+    valueCentre = readingCentre,
+    valueX = themeBuilder.slotX(readingCentre, nameWidth),
+    valueWidth = nameWidth,
+    -- The room the name has, which is not the width it draws in.
+    valueBudget = frame.content,
+    labelsCentre = readingCentre,
     nameY = nameY,
     nameFont = nameFont,
     formIndex = formIndex,
@@ -234,9 +251,9 @@ function modelIdentity.create(parent, rect, settings, services)
     services.themeBuilder)
 
   context.value = primitives.value(panel.root, theme, {
-    x = area.pad,
+    x = area.valueX,
     y = area.nameY,
-    w = area.content,
+    w = area.valueWidth,
     text = "--",
     color = presentation.value,
     font = area.nameFont,
@@ -334,10 +351,20 @@ function modelIdentity.apply(context, drawn)
   context.labelsText = drawn.labels or ""
 
   context.value:set({text = drawn.text, color = presentation.value})
+  -- The name is centred on its slot, so where it starts depends on what it
+  -- reads. Keyed on the text, so a model that has not been renamed costs
+  -- nothing beyond the comparison.
+  context.primitives.centreReading(context, context.themeBuilder,
+    context.area, context.area.nameFont, drawn.text)
   context.label:set({color = presentation.label})
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
   if context.showLabels then
     context.labelsLabel:set({text = context.labelsText})
+    -- A row of one item centres across the content box, as a lone reading
+    -- does.
+    context.primitives.centreLabel(context, "labelsAnchor",
+      context.themeBuilder, context.labelsLabel, context.area.labelsCentre,
+      context.area.labelsY, context.fonts.label, context.labelsText)
   end
   context.primitives.stylePanel(context.panel, presentation)
 
@@ -369,7 +396,8 @@ function modelIdentity.revealName(context)
   if context.image then return end
 
   local area = context.area
-  context.value:set({x = area.pad, y = area.frame.top, w = area.content})
+  context.value:set({x = area.valueX, y = area.frame.top,
+    w = area.valueWidth})
   lvgl.show(context.value)
 end
 
@@ -401,15 +429,27 @@ function modelIdentity.update(context, rect)
   local nameVisible = area.showName or not context.image
 
   primitives.reconcile(context.value, nameVisible, {
-    x = area.pad,
+    x = area.valueX,
     y = context.image and area.nameY or area.frame.top,
-    w = area.content,
+    -- The width the name draws in, not the room it had: a box given the
+    -- whole content box and an x centred for a shorter string reaches past
+    -- the panel's right edge by the difference.
+    w = area.valueWidth,
     font = function() return area.nameFont end,
   }, nameVisible == context.showName)
+  -- Every anchor is about a slot and a font that have just moved, and the
+  -- box above was sized from the widest name rather than the current one.
+  context.readingAnchor, context.readingUnitAnchor = nil, nil
+  context.labelsAnchor = nil
+  primitives.centreReading(context, context.themeBuilder, area,
+    area.nameFont, context.text)
 
   primitives.reconcile(context.labelsLabel, area.showLabels,
     {x = area.pad, y = area.labelsY, w = area.content},
     area.showLabels == context.showLabels)
+  primitives.centreLabel(context, "labelsAnchor", context.themeBuilder,
+    area.showLabels and context.labelsLabel or nil, area.labelsCentre,
+    area.labelsY, context.fonts.label, context.labelsText)
 
   primitives.reconcile(context.image, area.showImage, {
     x = area.pad,
