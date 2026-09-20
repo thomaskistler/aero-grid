@@ -3790,8 +3790,11 @@ components:
   -- digits are the reading.
   --
   -- It used to be 180, which the estimate called too narrow and a radio does
-  -- not: measured, the pair still fits at 120.
-  zone.w = 100
+  -- not: measured, the pair still fits at 120. And then 100, for the same
+  -- reason once more -- fitting itself now measures, so the reading no
+  -- longer steps down at a width where the font had room all along, and the
+  -- pair survives further than it did.
+  zone.w = 90
   zone.h = 272
   settle()
   assertEqual(instance.unit.hidden, true,
@@ -5013,9 +5016,13 @@ components:
   -- is not the question.
   local widest = "LongRange7"
   local font = tall.value.properties.font()
-  assert(themeModule.textWidth(font, widest) <= tall.area.valueBudget,
+  -- Measured, because being drawn past the panel is a fact about advances
+  -- rather than about the estimate of them, and the fitting that chose this
+  -- font measured too. Asserting the estimate here would demand the panel
+  -- hold about half again as much as it draws.
+  assert(themeModule.measureText(font, widest) <= tall.area.valueBudget,
     "the widest mode name is drawn past the panel: needs "
-      .. themeModule.textWidth(font, widest) .. " of "
+      .. themeModule.measureText(font, widest) .. " of "
       .. tall.area.valueBudget)
 
   -- Shrink until the ladder takes the row away. The setting is still stated,

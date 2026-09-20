@@ -789,28 +789,34 @@ end
 ---
 --- The estimate remains the fallback, because a host without `lcd.sizeText`
 --- -- the unit tests are one -- still has to produce a number.
---- **Fitting still estimates, and the cost of that is larger than this
---- comment used to admit.** `fitReading` asks whether something fits using
---- the estimate while `readingWidth` places it using the measurement, and the
---- two disagree by more than a rounding: `88.8` at XXLSIZE estimates 160 px
---- and measures 79. The estimate is a constant ratio of the line height, and
---- a line height of 69 buys far more advance than bold digits actually use,
---- so the overstatement grows with the font and bites hardest exactly where a
---- size is worth most.
+--- **Fitting measures too, and the estimate is only the fallback.** It used
+--- to decide whether something fits while `readingWidth` decided where to
+--- put it, and the two disagreed by far more than a rounding. The estimate is
+--- one allowance per character, sized between a digit and a capital: at
+--- MIDSIZE it allows 16.8 px where `8` advances 12 and `M` advances 19.
 ---
---- The direction is safe -- the estimate never reports less than the
---- measurement for the readings this dashboard prints, so anything the fit
---- accepts the placement can certainly draw, and the two cannot disagree in
---- the direction that clips. What it is not is free: a fit that guesses high
---- sheds a unit that would have fitted, and steps a reading down a size that
---- would have fitted. `tx-battery` takes its font from the band rather than
---- from this ladder for that reason, which is a component working around a
---- shared helper rather than a component with a special visualization.
+--- So it was wrong in **both** directions, and the safety argument that used
+--- to sit here -- that it never reports less than the measurement, so
+--- anything the fit accepts the placement can draw -- was simply false.
 ---
---- `measureText` already falls back to this estimate where `lcd.sizeText` is
---- absent, so fitting could measure and keep the fallback. That would change
---- what several panels draw, so it is a decision rather than a tidy-up, and
---- it is recorded here rather than made here.
+---  * On digits it over-reports, by about half again at the larger fonts:
+---    `88.8` at XXLSIZE estimates 160 px and advances 102. That costs
+---    nothing but sizes -- a unit shed that would have fitted, a reading
+---    stepped down that had room. `tx-battery` took its font from the band
+---    rather than from this ladder to escape it, which is a component
+---    working around a shared helper rather than one with a special
+---    visualization.
+---  * On capitals it under-reports, and that clips. `model-identity` sizes
+---    its panel against a row of `M` because that is the widest name EdgeTX
+---    will store, and at `1 x 2` the estimate called `MMMMMM` 101 px where
+---    MIDSIZE draws it in 116 -- eleven pixels past 105 px of content, in
+---    the component whose entire reading is the name.
+---
+--- Measuring removes both, and removes the disagreement as well: the
+--- function that decides the font and the function that places the string
+--- now answer from the same advances. The estimate remains underneath, in
+--- `measureText`, for a host with no `lcd.sizeText` -- which is a host that
+--- can only guess anyway.
 ---@param font any
 ---@param text any
 ---@return integer
@@ -1186,7 +1192,7 @@ function theme.fitReading(forms, width, room)
   -- The target the box allows, then down until something fits.
   for step = start, #ordered do
     for index = 1, #forms do
-      if theme.textWidth(ordered[step], forms[index]) <= width then
+      if theme.measureText(ordered[step], forms[index]) <= width then
         return ordered[step], index, true
       end
     end

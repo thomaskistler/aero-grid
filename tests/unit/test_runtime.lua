@@ -880,9 +880,15 @@ local function testFlightModeSizing()
       local area = flightMode.regionsFor(
         resolved, theme, rect, layout, fonts, widest)
 
-      assert(theme.textWidth(area.name, widest) <= area.content,
+      -- **Measured, because the contract is about what is drawn.** This
+      -- used to ask `textWidth`, which is the estimate: a constant ratio of
+      -- the line height, over-reporting `LongRange7` at DBLSIZE as 232
+      -- pixels where the font actually advances 170. Asserting the estimate
+      -- pinned a number no pixel depends on, and it was stricter than the
+      -- panel edge rather than equal to it.
+      assert(theme.measureText(area.name, widest) <= area.content,
         widest .. " at " .. span .. " needs "
-          .. theme.textWidth(area.name, widest) .. " of " .. area.content
+          .. theme.measureText(area.name, widest) .. " of " .. area.content
           .. " pixels, so the name is drawn past the panel edge")
       checked = checked + 1
     end
@@ -2898,9 +2904,12 @@ local function testWidthIsMeasuredNotEstimated()
     "a decimal point measures as wide as a digit, so this is the estimate"
       .. " wearing a different name")
 
-  -- The estimate is generous rather than merely different, in the direction
-  -- the specification asks for: it never reports less than the truth for the
-  -- readings this dashboard prints.
+  -- **The estimate is generous on digits, and only on digits.** It is one
+  -- allowance per character, sized between a digit and a capital, so the
+  -- direction of its error depends on what the string holds. This used to be
+  -- asserted as a general property of "the readings this dashboard prints",
+  -- which was a claim about every component made by looking at one kind of
+  -- string.
   local checked = 0
   for _, sample in ipairs({"7.9", "10.0", "88.8", "-100", "888.88", "1:04:12"}) do
     for _, font in ipairs(theme.READING_FONTS) do
@@ -2911,6 +2920,20 @@ local function testWidthIsMeasuredNotEstimated()
     end
   end
   assert(checked >= 24, "only " .. checked .. " pairs were compared")
+
+  -- And the counterexample, which is not hypothetical: `model-identity`
+  -- sizes its panel against a row of `M`, because `LEN_MODEL_NAME` is 15 and
+  -- that is the widest name EdgeTX will store. A capital advances wider than
+  -- the allowance, so the estimate reports less than the truth for exactly
+  -- the string that component fits against -- and a fit that believes it
+  -- draws past the panel edge rather than shrinking. Pinned here so the
+  -- boundary above cannot be read as a general guarantee again.
+  for _, font in ipairs(theme.READING_FONTS) do
+    assert(theme.textWidth(font, "MMMMMM") < theme.measureText(font, "MMMMMM"),
+      "the estimate no longer under-reports capitals at "
+        .. edgetx.fontName(font) .. ", so the reason fitting measures has"
+        .. " changed and the comment above is now telling a different story")
+  end
 
   -- The gap between them is the user's complaint, stated as a number. At the
   -- largest reading a `7.9` was placed tens of pixels further right than the
@@ -2958,17 +2981,23 @@ end
 local function testFitReadingReportsWhetherItFits()
   local ROOM = 200
 
+  -- **Measured, not estimated, because that is what the function now asks.**
+  -- A test that builds its boundary with a different width function than the
+  -- code is testing a coincidence: these agreed only while `fitReading` also
+  -- estimated, and the estimate over-reports by about half again at the
+  -- larger fonts. Derived from `measureText` so the boundary here is the
+  -- boundary there.
   -- Comfortable: a short reading in a wide column.
   local font, index, fits = theme.fitReading({"88.8"}, 400, ROOM)
   assertEqual(fits, true)
   assertEqual(index, 1)
-  assert(theme.textWidth(font, "88.8") <= 400,
+  assert(theme.measureText(font, "88.8") <= 400,
     "the verdict was true for a form that does not fit")
 
   -- Impossible: the widest reading this dashboard prints, in a column
   -- narrower than it needs at the smallest font on the ladder.
   local smallest = theme.READING_FONTS[#theme.READING_FONTS]
-  local tooNarrow = theme.textWidth(smallest, "888.88km") - 1
+  local tooNarrow = theme.measureText(smallest, "888.88km") - 1
   local narrowFont, _, narrowFits =
     theme.fitReading({"888.88km"}, tooNarrow, ROOM)
   assertEqual(narrowFits, false,
@@ -2978,7 +3007,7 @@ local function testFitReadingReportsWhetherItFits()
 
   -- Exactly on the boundary, which is where an off-by-one lives: a column of
   -- exactly the width needed fits, and one pixel less does not.
-  local exact = theme.textWidth(smallest, "888.88km")
+  local exact = theme.measureText(smallest, "888.88km")
   assertEqual(select(3, theme.fitReading({"888.88km"}, exact, ROOM)), true,
     "a column of exactly the width needed was called too narrow")
   assertEqual(select(3, theme.fitReading({"888.88km"}, exact - 1, ROOM)), false,
@@ -2997,7 +3026,7 @@ local function testFitReadingReportsWhetherItFits()
   local checked = 0
   for _, ladderFont in ipairs(theme.READING_FONTS) do
     local room = theme.fontHeight(ladderFont)
-    local need = theme.textWidth(ladderFont, "88.8")
+    local need = theme.measureText(ladderFont, "88.8")
     local got, _, verdict = theme.fitReading({"88.8"}, need, room)
     checked = checked + 1
     assertFont(got, ladderFont,
@@ -3411,26 +3440,47 @@ local function testReadingForms()
   assertEqual(wideIndex, 1, "a reading abbreviated on a panel with room for it")
 
   -- And abbreviating is preferred to shrinking, which is the whole mechanism:
-  -- at 226 px the full form does not fit at the target size, so the unit goes
-  -- and the reading stays the size its neighbours are.
-  local kept, keptIndex = theme.fitReading({"-100dBm", "-100"}, 226, 80)
+  -- at this width the full form does not fit at the target size, so the unit
+  -- goes and the reading stays the size its neighbours are.
+  --
+  -- **The width is 150 because 226 no longer constructs this case.** A room
+  -- of 80 chooses XXLSIZE, where `-100dBm` advances 212 px and `-100`
+  -- advances 103. While fitting estimated, 226 px was narrow enough to force
+  -- the abbreviation; measured, the full form fits there with 14 px to spare
+  -- and the first assertion above already covers that. A width between the
+  -- two is what actually exercises dropping redundancy rather than
+  -- magnitude.
+  local kept, keptIndex = theme.fitReading({"-100dBm", "-100"}, 150, 80)
   assertEqual(keptIndex, 2, "the reading shrank instead of dropping its unit")
-  assertFont(kept, theme.fitReading({"100"}, 226, 80),
+  assertFont(kept, theme.fitReading({"100"}, 150, 80),
     "abbreviating did not keep the reading at its neighbours' size")
 
   -- With nothing to give up, the font steps instead. Offering one form is how
   -- a component says its reading holds no redundancy.
-  local only = theme.fitReading({"-88:88:88"}, 226, 80)
+  local only = theme.fitReading({"-88:88:88"}, 150, 80)
   assert(theme.fontHeight(only) < theme.fontHeight(kept),
     "a reading with no shorter form kept a size it does not fit")
 
   -- Whatever comes back must actually fit, or the panel clips. This is the
   -- property; asserting a particular font would pass on a helper that always
   -- returned the smallest.
+  -- **`MMMMMM` is in this list because it is the case the old check could not
+  -- have caught.** The estimate is a per-character allowance sized between a
+  -- digit and a capital: at MIDSIZE it allows 16.8 px where `8` advances 12
+  -- and `M` advances 19. So it over-reports digits and *under*-reports
+  -- capitals, and `model-identity` sizes its panel against a row of `M`
+  -- because that is the widest name EdgeTX will store. At `1 x 2` that chose
+  -- MIDSIZE for a form the estimate called 101 px and the font draws in 116,
+  -- against 105 px of content -- eleven pixels past the panel, in a
+  -- component whose whole reading is the name. Every form here used to be
+  -- digits, so nothing in the suite stood where that happened.
   for _, width in ipairs({400, 226, 160, 105, 60, 30}) do
-    for _, forms in ipairs({{"100"}, {"-100dBm", "-100"}, {"888.88km"}}) do
+    for _, forms in ipairs({{"100"}, {"-100dBm", "-100"}, {"888.88km"},
+        {"MMMMMMMMMMMMMMM", "MMMMMMMMMM", "MMMMMM"}}) do
       local chosen, at = theme.fitReading(forms, width, 80)
-      local needed = theme.textWidth(chosen, forms[at])
+      -- Measured, because "actually fits" is a claim about the pixels the
+      -- font advances and not about the estimate of them.
+      local needed = theme.measureText(chosen, forms[at])
       assert(needed <= width or chosen == SMLSIZE, string.format(
         "fitReading returned %q at %s, needing %d px of %d",
         forms[at], edgetx.fontName(chosen), needed, width))
