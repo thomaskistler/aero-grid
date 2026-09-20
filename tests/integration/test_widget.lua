@@ -2339,6 +2339,87 @@ end
 --- drawn inside its own track. Those are the three overlaps that are the
 --- design rather than a defect, and each is excluded by what it is rather
 --- than by name.
+--- Every state a supporting row reports stays distinguishable at its
+--- narrowest wording.
+---
+--- **This replaces a rule that could not be checked with one that can.** The
+--- specification used to defend the absent-sensor-versus-no-fix distinction
+--- by saying the supporting row "has room for words and is fitted to its
+--- width". That was true of a row that spanned the panel, and the slot rule
+--- narrowed it to 40% of the content -- so the sentence became a claim about
+--- a width nobody was measuring, defending a distinction nobody was checking.
+---
+--- The property that actually matters was never the width. It is that the
+--- **shortest** form of each state differs from the shortest form of every
+--- other, because the shortest form is what a cramped panel prints. A row can
+--- be as narrow as the layout likes and still say which of two failures
+--- occurred, provided its vocabulary was built that way.
+---
+--- So the rule is: **a component that words a state must keep its shortest
+--- wordings mutually distinct**, and this is what holds it to that. It is
+--- also what any of the remaining components will be held to when their rows
+--- move onto the slots.
+local function testSupportingWordingsStayDistinct()
+  local navigationComponent = assert(loadfile(
+    sourcePath .. "components/navigation.lua"))()
+
+  -- The states this row reports, each named by what a pilot would have to do
+  -- about it. Distinguishing them is the whole purpose of the row: the badge
+  -- above says only that something is wrong.
+  local STATES = {
+    {"no GPS sensor configured at all",
+      {known = false, fix = false, home = false}},
+    {"sensor present, no satellite fix",
+      {known = true, fix = false, home = false}},
+    {"fix acquired, home not yet set",
+      {known = true, fix = true, home = false}},
+    {"flying, oriented from home",
+      {known = true, fix = true, home = true}},
+    {"position known but telemetry gone quiet",
+      {known = true, fix = true, home = true, state = "stale"}},
+  }
+
+  local seen = {}
+  for _, entry in ipairs(STATES) do
+    local variants = navigationComponent.originVariants(entry[2])
+    local shortest = variants[#variants]
+
+    assert(type(shortest) == "string" and shortest ~= "",
+      entry[1] .. " has no wording at all")
+
+    local owner = seen[shortest]
+    assert(owner == nil, string.format(
+      "%q is the narrowest wording for two different states -- %s and %s --"
+        .. " so a panel too narrow for the longer forms cannot say which"
+        .. " happened, and the row stops carrying the distinction the badge"
+        .. " above it deliberately does not",
+      shortest, owner or "", entry[1]))
+    seen[shortest] = entry[1]
+  end
+
+  -- And the narrowest row in the catalogue really does reach the shortest
+  -- forms, or the assertions above are about strings nothing prints.
+  local GUTTER, CELLS, WIDTH, HEIGHT = 4, 4, 480, 272
+  local cellWidth = math.floor((WIDTH - GUTTER * (CELLS - 1)) / CELLS)
+  local cellHeight = math.floor((HEIGHT - GUTTER * (CELLS - 1)) / CELLS)
+  local rect = {x = 0, y = 0,
+    w = cellWidth * 2 + GUTTER, h = cellHeight * 2 + GUTTER}
+  local fonts = themeModule.typography(2, 2)
+  local area = navigationComponent.regionsFor(themeModule.build("modern"),
+    themeModule, rect, navigationComponent.presentationFor("detailed"), fonts,
+    {digits = navigationComponent.DIGITS, unit = navigationComponent.UNIT})
+
+  local shortened = 0
+  for _, entry in ipairs(STATES) do
+    local full = navigationComponent.originVariants(entry[2])[1]
+    local drawn = navigationComponent.originText(entry[2], themeModule,
+      fonts.label, area.originWidth)
+    if drawn ~= full then shortened = shortened + 1 end
+  end
+  assert(shortened > 0, "no state was shortened at the narrowest row, so the"
+    .. " distinctness check above is not exercising the case it exists for")
+end
+
 local function testNothingIsDrawnOverAnythingElse()
   --- Every drawn thing in one panel, as a box, with labels measured by ink.
   ---
@@ -4082,6 +4163,23 @@ local function testReadingsSitInTheirSlots()
         local diameter = panel.compass.ring.round.radius() * 2
         return {x = drawn.x, w = diameter}
       end,
+      -- **Supporting rows are slotted too, so they are checked too.** A row
+      -- of two takes the same two centres the reading and the visual use,
+      -- and a row of one centres across the whole content box. Declared
+      -- here, so a component that slots a row says so rather than having a
+      -- second test written for it.
+      rows = function(panel)
+        local found = {}
+        if panel.showDetail then
+          found[#found + 1] = {label = panel.detailLabel, slot = "left"}
+          found[#found + 1] = {label = panel.originLabel, slot = "right"}
+        end
+        if panel.showCoordinates then
+          found[#found + 1] =
+            {label = panel.coordinatesLabel, slot = "whole"}
+        end
+        return found
+      end,
     },
   }
 
@@ -4183,6 +4281,34 @@ local function testReadingsSitInTheirSlots()
           .. " slot asks for -- %.1f%% of the panel against %.1f%%",
         where, arrangement, text, centre, centre - expected, expected,
         100 * centre / panelWidth, 100 * expected / panelWidth))
+
+      -- Every slotted supporting row sits on the centre its slot names,
+      -- measured the same way the reading is. A row of two takes the two
+      -- slot centres and a row of one centres across the content box.
+      for _, row in ipairs(subject.rows and subject.rows(panel) or {}) do
+        local label = row.label
+        if label and not label.hidden then
+          local rowText = tostring(label.properties.text or "")
+          if rowText ~= "" then
+            local rowFont = label.properties.font
+            if type(rowFont) == "function" then rowFont = rowFont() end
+            local rowCentre =
+              label.properties.x + lcd.sizeText(rowText, rowFont) / 2
+            local want
+            if row.slot == "left" then
+              want = PAD + math.floor(content * TIGHT_LEFT + 0.5)
+            elseif row.slot == "right" then
+              want = PAD + math.floor(content * TIGHT_RIGHT + 0.5)
+            else
+              want = PAD + content / 2
+            end
+            assert(math.abs(rowCentre - want) <= 1, string.format(
+              "%s centres its %s supporting item %q at %.1f, %.1f px from"
+                .. " the %.1f its slot asks for",
+              where, row.slot, rowText, rowCentre, rowCentre - want, want))
+          end
+        end
+      end
 
       -- And the unit came with it. This is the defect shape that keeps
       -- reappearing, and moving the reading is exactly what perturbs it.
@@ -6925,7 +7051,18 @@ local function testTelemetryDegrades()
 
   assertEqual(nav.stateName, "stale")
   assertEqual(nav.text, "778", "the last known position was discarded")
-  assertEqual(nav.origin, "LAST KNOWN")
+  -- **`LAST` rather than `LAST KNOWN`, and that is the slot rule's price.**
+  -- A two-item row is centred on the panel's two slot centres, so each item
+  -- can be half the distance between them before they meet -- 40% of the
+  -- content where the column split it replaces reached 100%. The user chose
+  -- that on a radio with both drawn side by side.
+  --
+  -- What the narrowing must never cost is meaning, and the assertion that
+  -- guards it is `testSupportingWordingsStayDistinct`: the shortest form of
+  -- every state this row reports has to stay distinct from the shortest form
+  -- of every other. `LAST` is less informative than `LAST KNOWN`; it is not
+  -- confusable with `NO FIX`.
+  assertEqual(nav.origin, "LAST")
 
   -- Reconnect. Nothing may be left marked once readings arrive again.
   radio.rssi = 80
@@ -6965,7 +7102,7 @@ local function testTelemetryDegrades()
   assert(string.match(nav.origin, "^NO HOME"), nav.origin)
   assertEqual(nav.text, "--")
   assertEqual(nav.detail, "BRG --", "a bearing was invented without a home")
-  assertEqual(nav.origin, "NO HOME POS")
+  assertEqual(nav.origin, "NO HOME")
   assertEqual(nav.coordinates, "47.37690 8.54170",
     "the position itself is still known")
 
@@ -7125,7 +7262,7 @@ components:
   local nav = entryById(context, "nav").instance
   assertEqual(nav.stateName, "unavailable")
   assertEqual(nav.badge.properties.text, "N/A")
-  assertEqual(nav.origin, "NO GPS SOURCE")
+  assertEqual(nav.origin, "NO GPS")
 
   -- The sensor arrives, but without a position yet: this is the cold start,
   -- and it is a different message from a layout naming a sensor that is not
@@ -7396,6 +7533,7 @@ testInstructionBudget()
 -- Last of the checks, because it builds every shipped layout in both zones
 -- and leaves the radio somewhere the tests above do not expect to find it.
 testReadingsSitInTheirSlots()
+testSupportingWordingsStayDistinct()
 testNothingIsDrawnOverAnythingElse()
 
 print("AeroGrid widget integration test passed")
