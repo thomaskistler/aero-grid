@@ -131,61 +131,33 @@ end
 ---@param widest? string Widest name this model can show; defaults to the
 --- widest the firmware allows.
 ---@return table
-function flightMode.regionsFor(theme, themeBuilder, rect, layout, fonts, widest)
-  local frame = themeBuilder.frame(theme, rect, fonts)
-  local labelHeight = frame.labelHeight
-  local top = frame.top
-  -- Composition comes from the shared ladder, so a panel of this size carries
-  -- the same rows as any other panel of this size, whichever component drew
-  -- it. What this component wants is a veto, not a vote.
+function flightMode.regionsFor(theme, themeBuilder, rect, layout, fonts,
+    widest, out)
+  -- The whole arrangement, from the shared builder: frame, bands, the font
+  -- its band affords, where the name sits and where its supporting row goes.
+  -- What is left below is the two things that are this component's own.
   --
-  -- **And the veto is exercised before the bands are cut, not after.** The
-  -- mode number is off unless a layout asks for it, so this panel usually
-  -- draws no supporting row at all -- and it was still being charged the
-  -- tertiary quarter for one, which cost the name a font size at every
-  -- two-row span. The ladder is told what will be drawn and reserves from
-  -- that.
-  local ladder = themeBuilder.ladder(theme, rect, frame,
-    {rows = layout.showDetail == true})
-  local showDetail = layout.showDetail and ladder.rows > 0
+  -- `draws` rather than a span rule: the mode number is off unless a layout
+  -- asks for it, and a row nobody fills still costs a quarter of the panel
+  -- if the bands are told otherwise.
+  local forms = formsFor(widest or WIDEST_NAME)
+  local area = themeBuilder.panel(theme, rect, fonts, {
+    -- Built through this component's own builder, which the host may have
+    -- wrapped to lay the panel out around the menu button's corner.
+    frame = themeBuilder.frame(theme, rect, fonts),
+    forms = forms,
+    draws = {rows = layout.showDetail == true, visual = false},
+  }, out or {})
 
-  local name, formIndex = themeBuilder.fitReading(
-    formsFor(widest or WIDEST_NAME), frame.content, ladder.room)
-  local nameHeight = themeBuilder.fontHeight(name)
+  -- A flight mode is a name and there is nothing to gauge, so this panel has
+  -- no visualization at any span and its supporting row sits on the panel's
+  -- floor rather than in a band above a bar.
+  area.detailY = math.max(1, rect.h - area.frame.bottom - area.frame.labelHeight)
 
-  if top + nameHeight > rect.h then
-    top = math.max(0, rect.h - nameHeight)
-  end
-
-  -- **A lone reading does not split.** This component draws no
-  -- visualization at all -- a flight mode is a name, and there is nothing to
-  -- gauge -- so the name centres across the whole content box and its
-  -- supporting row, which carries one item, centres the same way.
-  local readingCentre = frame.pad + math.floor(frame.content / 2)
-  local nameWidth = themeBuilder.measureText(
-    name, formsFor(widest or WIDEST_NAME)[formIndex])
-
-  return {
-    frame = frame,
-    pad = frame.pad,
-    content = frame.content,
-    -- The slot's centre, a property of the panel. Where the name starts
-    -- depends on what it currently reads, so `primitives.centreReading` owns
-    -- that and computes it from the measured string.
-    valueCentre = readingCentre,
-    valueX = themeBuilder.slotX(readingCentre, nameWidth),
-    valueWidth = nameWidth,
-    -- The room the name has, which is not the width it draws in. The drawn
-    -- box hugs the measured string so the slot centres it; the budget is
-    -- the box the fitter sized against.
-    valueBudget = frame.content,
-    nameY = themeBuilder.bodyTop(ladder, nameHeight),
-    name = name,
-    formIndex = formIndex,
-    detailY = math.max(1, rect.h - frame.bottom - labelHeight),
-    detailCentre = readingCentre,
-    showDetail = showDetail,
-  }
+  -- The name under its own word, because `render` and `apply` read it. The
+  -- band is `valueY` in every component now; this is the reading itself.
+  area.name = area.value
+  return area
 end
 
 --- Build the component's LVGL objects.
@@ -241,7 +213,7 @@ function flightMode.create(parent, rect, settings, services)
 
   context.value = primitives.value(panel.root, theme, {
     x = area.valueX,
-    y = area.nameY,
+    y = area.valueY,
     w = area.content,
     text = "--",
     color = presentation.value,
@@ -316,7 +288,11 @@ function flightMode.apply(context, drawn)
     context.area, context.area.name, drawn.text)
   context.label:set({color = presentation.label})
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
-  if context.showDetail then
+  -- `showDetail` and the label agree by construction: both follow
+  -- `showIndex`, which cannot change without rebuilding the widget. Asking
+  -- for the label as well makes a disagreement a hidden row rather than a
+  -- crash, which matters because the two are decided in different functions.
+  if context.showDetail and context.detailLabel then
     context.detailLabel:set({text = context.detail})
     -- A row of one item centres across the content box, as a lone reading
     -- does.
@@ -348,7 +324,7 @@ function flightMode.update(context, rect)
   context.area = area
   context.value:set({
     x = area.valueX,
-    y = area.nameY,
+    y = area.valueY,
     -- The width the name draws in, not the room it had. A box given the
     -- whole content box and an x centred for a shorter string reaches past
     -- the panel's right edge by the difference.
