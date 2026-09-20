@@ -416,7 +416,7 @@ function metric.apply(context, drawn)
     context.unitText = drawn.unit
     context.unit:set({text = drawn.unit})
     local shows = context.area.showUnit and context.primitives.unitFits(
-      context.themeBuilder, context.area.primary, context.sample[1],
+      context.themeBuilder, context.area.value, context.sample[1],
       context.area.unitFont, drawn.unit, context.area.valueBudget)
     if shows ~= context.showUnit then
       if shows then lvgl.show(context.unit) else lvgl.hide(context.unit) end
@@ -428,7 +428,7 @@ function metric.apply(context, drawn)
     end
   end
   context.primitives.centreReading(context, context.themeBuilder,
-    context.area, context.area.primary, drawn.text)
+    context.area, context.area.value, drawn.text)
   if context.showRange and drawn.range then
     context.rangeText = drawn.range
     context.range:set({text = drawn.range})
@@ -436,14 +436,14 @@ function metric.apply(context, drawn)
     -- says so a steady reading pays nothing.
     context.primitives.centreLabel(context, "rangeAnchor",
       context.themeBuilder, context.range, context.area.detailCentre,
-      context.area.rangeY, context.fonts.label, drawn.range)
+      context.area.detailY, context.fonts.label, drawn.range)
   end
   if context.showSecondary and drawn.secondary then
     context.secondaryText = drawn.secondary
     context.secondary:set({text = drawn.secondary})
     context.primitives.centreLabel(context, "secondaryAnchor",
-      context.themeBuilder, context.secondary, context.area.secondaryCentre,
-      context.area.rangeY, context.fonts.label, drawn.secondary)
+      context.themeBuilder, context.secondary, context.area.rowRightCentre,
+      context.area.detailY, context.fonts.label, drawn.secondary)
   end
 
   if context.bar then
@@ -502,6 +502,16 @@ function metric.widestSample(settings, digits)
 end
 
 --- Compute every content region from the current rectangle.
+--- The radial's diameter, as a function of the panel rather than a closure
+--- built per call. A dial is square, so one number describes it; the builder
+--- bounds it by the slot it has to live in as well as by the panel.
+---@param panelRect AeroGridRect
+---@return integer
+local function radialSize(panelRect)
+  return math.max(12,
+    math.floor(math.min(panelRect.w, panelRect.h) / 5) * 2)
+end
+
 --- Regions are derived in one place so `create` and `update` cannot disagree,
 --- and so the badge, value, unit, and visualization never share pixels.
 ---
@@ -518,153 +528,56 @@ end
 ---@param sample? string[] Lossless forms of the reading, longest first.
 ---@return table
 function metric.regionsFor(theme, themeBuilder, rect, layout, fonts, sample,
-    unit)
-  local spacing = theme.spacing
-  local frame = themeBuilder.frame(theme, rect, fonts)
-  local pad = frame.pad
-  local compact = frame.compact
-  local bottomPad = frame.bottom
-
-  local content = frame.content
-  local badgeWidth = frame.badgeWidth
-  local labelHeight = frame.labelHeight
-  local unitHeight = themeBuilder.fontHeight(fonts.unit)
-  local top = frame.top
-
-  -- Composition comes from the shared ladder, so a panel of this size carries
-  -- the same rows as any other panel of this size, whichever component drew
-  -- it. What this component wants is a veto, not a vote: it may decline a row
-  -- the ladder granted, and cannot claim one it did not.
-  local ladder = themeBuilder.ladder(theme, rect, frame)
-  -- The unit no longer takes a row of its own, so it no longer needs one
-  -- granted. What is left is a question about width, and it is answered here
-  -- rather than by the component, so `area.showUnit` means the same thing in
-  -- every panel: **the unit we know about fits beside the reading**. A
-  -- sensor's unit arrives later than this, and the component asks again
-  -- through `primitives.unitFits` when it does.
-  local showVisual = layout.showVisual and layout.visual ~= "none" and ladder.visual
-  local showRange = layout.showRange and ladder.rows > 0
-  local showSecondary = layout.showSecondary and showRange
-
-  -- **A radial is a compact visual and takes the right slot; a bar spans the
-  -- panel and is exempt.** So this is the first component where a reading
-  -- and its visualization both want horizontal room, and the slot rule is
-  -- what settles it: each owns a centre derived from the panel rather than a
-  -- column carved out of the content.
-  local radial = showVisual and layout.visual == "radial"
-  local half = math.floor(content / 2)
-  local radius = math.max(6, math.floor(math.min(rect.w, rect.h) / 5))
-  -- Bounded by the slot it has to live in as well as by the panel, so a
-  -- radial on a narrow panel shrinks rather than reaching across the middle
-  -- into the reading.
-  if radial then radius = math.min(radius, math.floor(half / 2)) end
-
-  local valueWidth = radial and half or content
+    unit, out)
+  -- The whole arrangement, from the shared builder. A radial is a compact
+  -- visual and takes the right slot; a bar spans the panel and is exempt, so
+  -- the same component splits under one setting and not the other.
+  local area = themeBuilder.panel(theme, rect, fonts, {
+    -- Built through this component's own builder, which the host may have
+    -- wrapped to lay the panel out around the menu button's corner.
+    frame = themeBuilder.frame(theme, rect, fonts),
+    -- Only the longest form is offered, because a reading carrying a unit is
+    -- fitted as a pair and `fitReadingUnit` takes one string. The shorter
+    -- forms exist for `primitives.reconcile` to fall back to at draw time,
+    -- which is a question about the value rather than about the panel.
+    forms = {(sample or {""})[1] or ""},
+    unit = unit,
+    draws = {
+      rows = layout.showRange == true,
+      visual = layout.showVisual == true and layout.visual ~= "none",
+    },
+    bar = true,
+    compact = layout.visual == "radial" and radialSize or nil,
+    -- **A row of two only where there will be two.** Whether this panel
+    -- carries a secondary reading depends on a source being configured,
+    -- which is why `create` resolves it onto the layout before asking.
+    rowItems = layout.showSecondary == true and 2 or 1,
+  }, out or {})
 
   -- The unit rides beside the reading rather than beneath it, so it costs
-  -- the composition no height at all. It used to take a whole row out of the
-  -- reading's room, which is why a metric drew a smaller number than its
-  -- neighbours at the same span.
-  local available = ladder.room
-  local digits = (sample or {""})[1] or ""
-  local primary, unitFont, fitsUnit = themeBuilder.fitReadingUnit(
-    digits, unit, valueWidth, available)
-  local showUnit = layout.showUnit and fitsUnit
-  local formIndex = 1
-  local primaryHeight = themeBuilder.fontHeight(primary)
+  -- the composition no height at all. Where its top sits depends on the two
+  -- fonts, which is this component's business: it is the only one that
+  -- prints a unit as a separate object.
+  area.unitY = themeBuilder.unitTop(area.value, area.unitFont, area.valueY)
+  -- The row was granted or it was not, and a secondary cannot be drawn into
+  -- a row that does not exist.
+  area.showSecondary = layout.showSecondary == true and area.showDetail
 
-  if top + primaryHeight > rect.h then
-    top = math.max(0, rect.h - primaryHeight)
+  -- The dial under this component's own names. EdgeTX positions an arc by
+  -- its centre; the corner only reserves space.
+  if area.visualSize then
+    area.radius = math.floor(area.visualSize / 2)
+  else
+    -- A bar panel still reports a radius, because `create` sizes the object
+    -- it may later reveal from it.
+    area.radius = math.max(6, math.floor(math.min(rect.w, rect.h) / 5))
+    area.visualCentreX = rect.w - area.frame.pad - area.radius
+    area.visualCentreY = area.valueY
+      + math.floor(themeBuilder.fontHeight(area.value) / 2)
   end
-
-  local barY = math.max(1, rect.h - bottomPad - spacing.barHeight)
-
-  -- The panel's two slot centres. A row of two -- extrema on the left, the
-  -- secondary reading on the right -- takes both; a row of one centres
-  -- across the whole content box the way a lone reading does.
-  local rowLeft, rowRight = themeBuilder.slotCentres(frame)
-  local rowBudget = math.max(1, rowRight - rowLeft - 4)
-  local detailWidth = showSecondary and rowBudget or content
-  local detailCentre = showSecondary and rowLeft
-    or (pad + math.floor(content / 2))
-
-  -- Asked of the widest string this component can print, so the arrangement
-  -- is fixed for the life of the panel rather than flipping as the value
-  -- changes.
-  local readingWidth = themeBuilder.readingWidth(
-    primary, digits, unitFont, showUnit and unit or nil)
-  local slots, separated
-  if radial then
-    slots, separated = themeBuilder.slotsFor(frame, readingWidth, radius * 2)
-    -- Neither arrangement separates them, so the visualization goes -- the
-    -- same answer every other converted component reaches, and the same one
-    -- this component already reaches on a panel too small for a radial.
-    if not separated then
-      showVisual, radial, slots = false, false, nil
-      valueWidth = content
-    end
-  end
-
-  local readingCentre = radial
-    and select(1, themeBuilder.slotCentres(frame, slots))
-    or (pad + math.floor(content / 2))
-  local radialCentreX = radial
-    and select(2, themeBuilder.slotCentres(frame, slots))
-    or (rect.w - pad - radius)
-
-  -- Reading and radial share the body band and are centred on each other, so
-  -- the block the band centres is the deeper of the two.
-  local blockHeight = math.max(primaryHeight, radial and radius * 2 or 0)
-  local blockTop = themeBuilder.bodyTop(ladder, blockHeight)
-  local valueY = blockTop + math.floor((blockHeight - primaryHeight) / 2)
-  local radialCentreY = blockTop + math.floor(blockHeight / 2)
-
-  return {
-    frame = frame,
-    pad = pad,
-    compact = compact,
-    content = content,
-    labelWidth = frame.labelWidth,
-    badgeWidth = badgeWidth,
-    badgeX = frame.badgeX,
-    -- The slot's centre, a property of the panel. Where the reading starts
-    -- depends on what it currently says, so `primitives.centreReading` owns
-    -- that and computes it from the measured string.
-    valueCentre = readingCentre,
-    valueX = themeBuilder.slotX(readingCentre, readingWidth),
-    -- **The room the reading has, which is not the width it draws in.** The
-    -- drawn box hugs the measured string so the slot centres it; the budget
-    -- is the slot itself, and it is what a later question about whether a
-    -- unit still fits has to be asked against. Collapsing the two made that
-    -- question circular -- a unit that arrives after build, as a global
-    -- variable's does, was measured against a box sized without it and never
-    -- fitted.
-    valueBudget = valueWidth,
-    valueY = valueY,
-    valueWidth = readingWidth,
-    primary = primary,
-    formIndex = formIndex,
-    unitFont = unitFont,
-    unitY = themeBuilder.unitTop(primary, unitFont, valueY),
-    barY = barY,
-    rangeY = math.max(1, barY - labelHeight - 2),
-    detailWidth = detailWidth,
-    detailCentre = detailCentre,
-    detailX = detailCentre - math.floor(detailWidth / 2),
-    secondaryCentre = rowRight,
-    secondaryX = rowRight - math.floor(rowBudget / 2),
-    radius = radius,
-    radialX = radialCentreX - radius,
-    radialY = radialCentreY - radius,
-    -- EdgeTX positions an arc by its centre, so the corner above is only ever
-    -- used to reserve space; the arc itself is placed from here.
-    radialCentreX = radialCentreX,
-    radialCentreY = radialCentreY,
-    showUnit = showUnit,
-    showVisual = showVisual,
-    showRange = showRange,
-    showSecondary = showSecondary,
-  }
+  area.radialX = area.visualCentreX - area.radius
+  area.radialY = area.visualCentreY - area.radius
+  return area
 end
 
 --- Build the component's LVGL objects.
@@ -757,7 +670,7 @@ function metric.create(parent, rect, settings, services)
     w = area.valueWidth,
     text = "--",
     color = presentation.value,
-    font = area.primary,
+    font = area.value,
   })
 
   -- Optional elements are created whenever the span could ever want them, and
@@ -783,8 +696,8 @@ function metric.create(parent, rect, settings, services)
 
   if layout.showVisual and settings.visual == "radial" then
     context.radial = primitives.radial(panel.root, theme, {
-      x = area.radialCentreX,
-      y = area.radialCentreY,
+      x = area.visualCentreX,
+      y = area.visualCentreY,
       radius = area.radius,
       color = presentation.accent,
       fraction = 0,
@@ -803,7 +716,7 @@ function metric.create(parent, rect, settings, services)
     context.rangeText = metric.detailText(context)
     context.range = primitives.label(panel.root, theme, {
       x = area.detailX,
-      y = area.rangeY,
+      y = area.detailY,
       w = area.detailWidth,
       text = context.rangeText,
       color = theme.color.textFaint,
@@ -813,22 +726,22 @@ function metric.create(parent, rect, settings, services)
     -- the wording changes, and a panel whose range never changes would
     -- otherwise keep the left-aligned position it was built at.
     primitives.centreLabel(context, "rangeAnchor", services.themeBuilder,
-      context.range, area.detailCentre, area.rangeY, fonts.label,
+      context.range, area.detailCentre, area.detailY, fonts.label,
       context.rangeText)
   end
 
   if layout.showSecondary and context.secondaryFeed then
     context.secondaryText = metric.secondaryText(context)
     context.secondary = primitives.label(panel.root, theme, {
-      x = area.secondaryX,
-      y = area.rangeY,
+      x = area.rowRightX,
+      y = area.detailY,
       w = area.detailWidth,
       text = context.secondaryText,
       color = theme.color.textFaint,
       font = fonts.label,
     })
     primitives.centreLabel(context, "secondaryAnchor", services.themeBuilder,
-      context.secondary, area.secondaryCentre, area.rangeY, fonts.label,
+      context.secondary, area.rowRightCentre, area.detailY, fonts.label,
       context.secondaryText)
   end
 
@@ -837,7 +750,7 @@ function metric.create(parent, rect, settings, services)
   if not context.feed then metric.setValue(context, nil) end
 
   if context.unit and not area.showUnit then lvgl.hide(context.unit) end
-  if context.range and not area.showRange then lvgl.hide(context.range) end
+  if context.range and not area.showDetail then lvgl.hide(context.range) end
   if context.secondary and not area.showSecondary then
     lvgl.hide(context.secondary)
   end
@@ -846,7 +759,7 @@ function metric.create(parent, rect, settings, services)
   -- what `render` is allowed to read. The unit is not among them any more:
   -- it depends on a unit that has not arrived, so `apply` settles it.
   context.area = area
-  context.showRange = context.range ~= nil and area.showRange == true
+  context.showRange = context.range ~= nil and area.showDetail == true
   context.showSecondary = context.secondary ~= nil
     and area.showSecondary == true
   -- What the panel currently shows, so a reflow that changes nothing about
@@ -896,35 +809,35 @@ function metric.update(context, rect)
     y = area.valueY,
     w = area.valueWidth,
     -- LVGL takes the font as a callback, matching how it was created.
-    font = function() return area.primary end,
+    font = function() return area.value end,
   })
 
   --- Show or hide an optional element, positioning it only when visible.
   local reconcile = context.primitives.reconcile
 
-  context.showRange = context.range ~= nil and area.showRange == true
+  context.showRange = context.range ~= nil and area.showDetail == true
   context.showSecondary = context.secondary ~= nil
     and area.showSecondary == true
   context.area = area
 
   local shows = area.showUnit and context.unit ~= nil
-    and context.primitives.unitFits(context.themeBuilder, area.primary,
+    and context.primitives.unitFits(context.themeBuilder, area.value,
       context.sample[1], area.unitFont, context.unitText, area.valueBudget)
   context.primitives.reconcileUnit(context.unit, shows, context.themeBuilder,
-    area.valueX, area.valueY, area.primary, context.text or "--",
+    area.valueX, area.valueY, area.value, context.text or "--",
     area.unitFont, shows == context.showUnit)
   context.showUnit = shows
   context.unitAnchor = nil
-  reconcile(context.range, area.showRange,
-    {x = area.detailX, y = area.rangeY, w = area.detailWidth})
+  reconcile(context.range, area.showDetail,
+    {x = area.detailX, y = area.detailY, w = area.detailWidth})
   context.primitives.centreLabel(context, "rangeAnchor", context.themeBuilder,
     context.showRange and context.range or nil, area.detailCentre,
-    area.rangeY, context.fonts.label, context.rangeText)
+    area.detailY, context.fonts.label, context.rangeText)
   reconcile(context.secondary, area.showSecondary,
-    {x = area.secondaryX, y = area.rangeY, w = area.detailWidth})
+    {x = area.rowRightX, y = area.detailY, w = area.detailWidth})
   context.primitives.centreLabel(context, "secondaryAnchor",
     context.themeBuilder, context.showSecondary and context.secondary or nil,
-    area.secondaryCentre, area.rangeY, context.fonts.label,
+    area.rowRightCentre, area.detailY, context.fonts.label,
     context.secondaryText)
 
   context.primitives.reconcileBar(context.bar, area.showVisual,
@@ -936,10 +849,10 @@ function metric.update(context, rect)
   if context.radial then
     -- The arc must shrink with the panel or it will overflow a smaller zone.
     reconcile(context.radial.arc, area.showVisual,
-      {x = area.radialCentreX, y = area.radialCentreY, radius = area.radius})
+      {x = area.visualCentreX, y = area.visualCentreY, radius = area.radius})
     if area.showVisual then
-      context.radial.centreX = area.radialCentreX
-      context.radial.centreY = area.radialCentreY
+      context.radial.centreX = area.visualCentreX
+      context.radial.centreY = area.visualCentreY
       context.radial.radius = area.radius
     end
   end
