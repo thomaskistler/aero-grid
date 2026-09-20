@@ -736,10 +736,12 @@ end
 --- table. It cannot live on the label: an LVGL object is userdata on a radio
 --- and holds no fields.
 --- The reading's font is passed rather than read off `area`, because the
---- components do not agree on what to call it: five say `value` and `metric`
---- says `primary`. Reaching for one of those names put `metric`'s unit
---- against a nil font, which the fixture measured as SMLSIZE and placed 38
---- pixels off the baseline it was supposed to share.
+--- components did not agree on what to call it: five said `value` and
+--- `metric` said `primary`. Reaching for one of those names put `metric`'s
+--- unit against a nil font, which the fixture measured as SMLSIZE and placed
+--- 38 pixels off the baseline it was supposed to share. They agree on
+--- `value` now, and the font is still passed -- being handed what to draw
+--- with is what made this immune to the disagreement in the first place.
 ---@param context table The component's own context.
 ---@param themeBuilder table
 ---@param area table Regions, for `pad`, `valueY` and `unitFont`.
@@ -774,16 +776,19 @@ end
 ---
 --- **The drawn string, measured.** Two separate things used to push the
 --- number left of the slot it was supposed to sit in, and they compounded:
---- the width came from `theme.textWidth`, which over-reports by design so
---- that text shrinks rather than clips, and it was the width of the *widest*
+--- the width came from `theme.textWidth`, which over-reports digits, and it
+--- was the width of the *widest*
 --- string the component can ever print rather than the one on screen. Half
 --- of each error went straight into the left edge. On a `2 x 1` transmitter
 --- panel that put the reading at 22% of the panel where the rule asks for
 --- 32%, and on the bar panel beside it at 41% where the rule asks for 51%.
 ---
---- So the estimate is for deciding whether something fits and the
---- measurement is for deciding where it starts -- the boundary drawn in #46,
---- applied here. The widest string still chooses the **font**, through the
+--- The boundary drawn in #46 put the estimate on deciding whether something
+--- fits and the measurement on deciding where it starts. That boundary is
+--- gone: fitting measures as well, because the estimate was wrong in both
+--- directions and clipped `model-identity` outright. Both questions are now
+--- answered from the same advances, which is what they should always have
+--- been. The widest string still chooses the **font**, through the
 --- build-time slot fallback, which is what keeps a reading from resizing as
 --- it changes.
 ---
