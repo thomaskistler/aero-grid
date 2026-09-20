@@ -4,10 +4,10 @@
 
 - Draft specification
 - Date: 2026-09-07
-- Status last updated: 2026-09-18
+- Status last updated: 2026-09-20
 - EdgeTX source: `../edgetx`
 - Project root: `aero-grid/`
-- Implementation: Phase 1, milestones 1 to 8 complete, plus a presentation and consistency pass over the whole catalogue
+- Implementation: Phase 1, milestones 1 to 8 complete, plus a presentation and consistency pass over the whole catalogue and a shared standard panel that six of the twelve components are built from
 - Next work: Milestone 9, hardening, and hardware verification. Nothing in this project has run on a radio.
 - Everything is merged into `main`; there is no branch in flight. See [Resuming work](#resuming-work) for the state and the exact next steps.
 
@@ -114,6 +114,20 @@ EdgeTX 1 x 1 or App mode zone
 ```
 
 Only the dashboard host is registered as an EdgeTX widget. Dashboard components are ordinary Lua modules loaded and managed by the host.
+
+### The standard panel
+
+Most components are variations of one arrangement: a heading, a dominant reading, an optional compact visual beside it, and an optional supporting row beneath. The decisions that arrangement rests on have always lived in `theme` -- the frame, the ladder, the bands, the band-derived font, the two slots, the fitting. The **assembly** did not: every component repeated the same sequence of calls, and the same band was called `valueY` in one file, `nameY` in another and `clockY` in a third.
+
+`theme.panel(resolved, rect, fonts, spec, out)` performs that assembly once. Three properties of its interface are deliberate and are the reason it exists rather than conveniences:
+
+- **It fills a table the caller owns.** A reflow runs every panel on the screen inside one callback, and a helper that returned a fresh table would allocate once per panel per reflow.
+- **It is told what the panel draws, never what its span permits.** `spec.draws` carries the component's own answer, and `theme.ladder` may only narrow it. The interface has no way to express "permitted", because the gap between the two is a recurring defect in this project rather than a subtlety.
+- **It builds nothing itself that the component was handed.** It takes `spec.frame` rather than calling `theme.frame`, because the host wraps that function per component to lay a panel out around the menu button's corner, and a shared helper reaching for the module's own copy draws the heading under the button.
+
+Six components are on it: `cell-battery`, `flight-mode`, `flight-timer`, `link-status`, `metric` and `variable-indicator`. Three keep their own arrangement -- `navigation` because it draws two supporting rows and centres them as a group, `tx-battery` for reasons recorded in the design guide, and `model-identity` for no reason at all beyond never having been assigned a conversion. Three have no reading to place and are exempt: `trim-panel`, `host-diagnostics` and `service-probe`.
+
+**A component is expected to carry special code only where it has a special visualization** -- the compass, the battery glyph, the trim cells. A flag on the builder for one component's preference is the thing this is meant to replace, not a way of extending it: a builder that can express everything expresses nothing.
 
 ### Bundled EdgeTX widget baseline
 
@@ -960,7 +974,7 @@ This would allow independently registered EdgeTX widgets to occupy configurable 
 
 ## Resuming Work
 
-State as of 2026-09-18. This section is the entry point after a break: it records where the code lives, what is proven, and what to do next.
+State as of 2026-09-20. This section is the entry point after a break: it records where the code lives, what is proven, and what to do next.
 
 ### Where the work is
 
@@ -978,7 +992,7 @@ The judgements most exposed by this are the ones that were made *because* of how
 
 - **The alert tints.** `warning` and `critical` now tint the panel's surface instead of drawing a coloured frame, on the argument that area is noticed in peripheral vision where an outline has to be looked at. Every tint is held to the same text and elevation minimums as the resting surface, and that is checked numerically for both palettes. Whether a tinted field is actually noticed while looking elsewhere, on a moving aircraft, has never been tested.
 - **The panel as a card.** Elevation of 1.316 canvas to surface, 8 px corners, no resting outline. Chosen from ratios.
-- **Estimated text width.** The Lua API cannot measure text outside a draw callback, so `theme.textWidth` assumes a mean advance of 0.58 of the line height. Every font choice in the dashboard descends from that constant, and it has never met a real font.
+- **Text width.** This entry used to say that the Lua API cannot measure text outside a draw callback, so every font choice descended from an assumed mean advance of 0.58 of a line height that had never met a real font. Both halves are now false: `lcd.sizeText` carries no draw-context guard and answers from the font's own advances, and both fitting and placement use it. The estimate survives only where `lcd.sizeText` is absent. What remains untested on hardware is not the width but the *typography* -- whether a reading that now measures its way to a larger font is comfortable rather than merely larger.
 - **The responsive ladder.** Which rows a panel keeps at each span is decided from measured box geometry, but whether the result is readable is a question for eyes.
 
 This is carried in the open-items table as milestone 4's physical readability review, which undersells it. It is not one milestone's loose end; it is the standing condition of the whole project.
@@ -1162,6 +1176,8 @@ The second reserved a band. `theme.ladder` grants a supporting row from the pane
 
 So the interface carries the answer rather than the question. `theme.ladder` takes what the component will draw and may only narrow its own grant with it -- a component cannot claim a row the panel cannot hold, which is the whole point of deciding composition centrally. Where that cannot be arranged, the test is `testUnusedRowsCostNothing`: the same panel with its optional row off must read *larger* than with it on, and a panel that draws no row must have built no object for one.
 
+**The third instance is in that interface, and it is the reason to keep looking.** `theme.panel` takes `spec.bar`, which decides whether a supporting row sits above the panel's floor or in the tertiary band. Whether a bar is *drawn* depends on whether the ladder granted a visual -- and the ladder is walked **inside** the builder, after the component has already had to answer. To tell it the truth a component must walk the ladder itself first, which is the work the builder exists to absorb. `variable-indicator` escapes by answering `true` unconditionally, which is correct for that component because its row sits above the floor whichever visual is drawn; that is agreement by circumstance, not by construction. So an interface designed specifically to make this seam unreachable still contains one instance of it, in the one field that was not derived from `draws`. **The lesson is that closing a seam in the data does not close it in the ordering**: `draws` says what the panel draws, and `bar` asks a question whose answer is not known until the builder has decided.
+
 **A declaration that does not construct the case is not coverage.** Two of this suite's checks are declarations rather than tests: a component states what it slots and what it words, and the check covers it. That is right, and it introduced a failure mode the tests it replaced did not have -- a declaration can name a case the declared configuration never builds, and then the check watches nothing while reporting a component covered.
 
 It was found by breaking something and watching nothing happen. `metric`'s supporting row was moved off its slot deliberately, and the whole suite stayed green: the component was declared with a source but no *secondary* source, so it only ever drew a one-item row, and the two-item arrangement the break corrupted was never constructed. The declaration named `metric`; the coverage was of half of it. Adding a variant that configures a secondary source makes the same break fail by name.
@@ -1173,6 +1189,10 @@ The corollary is about the components rather than the tests, and it generalises 
 **A document that states a contract must be executed, not read.** The layout example in this specification did not load for at least two milestones, and nobody noticed because nothing ran it: it named a setting no component declares, gave a source as a numeric identifier the telemetry service rejects, and asked `link-status` for a `4 x 3` span it does not support, so the host would have dropped that panel. Two of those three survived being corrected by hand, which is the point — reading an example carefully is not the same as running it. The suite now extracts every fenced YAML block from this file at test time and puts it through `yaml.parse`, `layout.validate`, `componentHost.resolveSettings` and, for a theme block, `theme.build`. It is extracted rather than copied into the test, because a copy is a second source of truth and would drift from the document exactly as the document drifted from the code. A block that matches no known kind fails rather than being skipped, and an extraction that finds nothing fails rather than passing over an empty string, because a test that reads a document it cannot find is a vacuous assertion wearing a new hat.
 
 **A fixture must model what an object *is*, not only what it accepts.** This one cost a user a dashboard of error banners, and it is the narrowest shape yet. The LVGL stand-in already refused a property key `parseParam` does not accept, which models what an object accepts through `set`. Nothing modelled what the object is. An object handed back by `lvgl.*` is userdata: `LvglWidgetObjectBase::getRef` allocates one pointer with `lua_newuserdata` and attaches `lvgl_base_mt` or `lvgl_mt`, and neither metatable declares `__newindex`, so a field assigned onto a label raises and a field read off one is always nil. The stand-in was a plain Lua table, which accepts any name you invent and returns it again. So `label.headingText = text` in `primitives.header` stored the heading happily here and broke **every panel on the radio at once**, with the suite green; and `label.headingText` in `placeHeader` read back the truth here and nil there, so a reflow silently never refitted. The write was loud and the read was silent, and both came from the same wrong idea about what the fixture was standing in for. The mock now seals its objects with a `__newindex` that raises in the radio's own words, and reaches its own bookkeeping through `rawset`, which is the honest admission that `properties`, `writes` and the rest are the fixture's fields and not the firmware's. Ask of any stand-in not only *what does the real thing accept* but *what kind of thing is it*, because the second question is the one nobody asked for eight milestones.
+
+**The thing that checks is also a thing that can be wrong, and it fails silently by agreeing.** Three times now the apparatus has been the defect. A collision check could not see non-text objects, so a reading lay across its own bar through a whole revision of the design mocks. A declaration named a component but not the configuration that builds its two-item row, so the check watched a case that was never constructed. And a verification harness written to compare two checkouts used a shell `cd` that persisted between invocations, so it compared one tree against itself and reported agreement -- which was then used to correct a true finding into a false one.
+
+The shape is that all three failed towards *pass*. A check that is broken towards failure announces itself on the next run; a check that is broken towards success is indistinguishable from the thing it is supposed to be proving, and the stronger the rest of the discipline is, the more weight its agreement carries. The defence is not more checks but the same rule applied one level up: **break the thing the check covers and watch it fail by name** -- and for a comparison, make it disagree on purpose before trusting it when it agrees. A harness that has never been seen to report a difference has not been shown to be capable of reporting one.
 
 **A comment must not explain a test's behaviour with a claim about the radio that nobody has checked.** This is the least obvious of the three and the most corrosive. A global variable test asserted that switching flight mode left a value unmoved, and explained the non-movement as EdgeTX resolving inheritance. The explanation was invented. The value did not move because the fixture ignored the flight mode argument entirely and answered the same number for every mode, so the assertion could not have failed however wrong the host was. A vacuous assertion is inert; a vacuous assertion with a confident explanation actively stops the next reader checking, because it answers the question they were about to ask. If a comment states what the radio does, it is a claim, and it carries the same obligation as a value: cite it or do not write it.
 
