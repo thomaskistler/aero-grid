@@ -112,11 +112,14 @@ end
 ---@param colSpan integer
 ---@param rowSpan integer
 ---@return table
-function flightMode.presentationFor(colSpan, rowSpan)
-  -- Nothing of its own. The ladder decides whether there is a supporting row,
-  -- and it grants none at any single-row span whatever the width, so a
-  -- private `cells >= 2` rule here only said the same thing less well.
-  return {showDetail = true}
+--- @param showIndex? boolean Whether the layout asked for the mode number.
+function flightMode.presentationFor(colSpan, rowSpan, showIndex)
+  -- The ladder decides whether a panel of this size *can* carry a supporting
+  -- row, and grants none at any single-row span whatever the width. What it
+  -- cannot know is whether this panel will put anything in one: the mode
+  -- number is off by default, and a row nobody fills is a reserved quarter
+  -- and an empty label.
+  return {showDetail = showIndex == true}
 end
 
 --- Compute the content regions for the current rectangle.
@@ -135,7 +138,15 @@ function flightMode.regionsFor(theme, themeBuilder, rect, layout, fonts, widest)
   -- Composition comes from the shared ladder, so a panel of this size carries
   -- the same rows as any other panel of this size, whichever component drew
   -- it. What this component wants is a veto, not a vote.
-  local ladder = themeBuilder.ladder(theme, rect, frame)
+  --
+  -- **And the veto is exercised before the bands are cut, not after.** The
+  -- mode number is off unless a layout asks for it, so this panel usually
+  -- draws no supporting row at all -- and it was still being charged the
+  -- tertiary quarter for one, which cost the name a font size at every
+  -- two-row span. The ladder is told what will be drawn and reserves from
+  -- that.
+  local ladder = themeBuilder.ladder(theme, rect, frame,
+    {rows = layout.showDetail == true})
   local showDetail = layout.showDetail and ladder.rows > 0
 
   local name, formIndex = themeBuilder.fitReading(
@@ -188,7 +199,8 @@ function flightMode.create(parent, rect, settings, services)
   local primitives = services.primitives
   local fonts = services.fonts
   local span = services.span
-  local layout = flightMode.presentationFor(span.colSpan, span.rowSpan)
+  local layout = flightMode.presentationFor(span.colSpan, span.rowSpan,
+    settings.showIndex)
   local presentation = services.state("normal", settings.accent)
 
   local modelService = services.model
@@ -236,16 +248,23 @@ function flightMode.create(parent, rect, settings, services)
     font = area.name,
   })
 
-  context.detailLabel = primitives.label(panel.root, theme, {
-    x = area.pad,
-    y = area.detailY,
-    w = area.content,
-    text = "",
-    color = theme.color.textFaint,
-    font = fonts.label,
-  })
-
-  if not area.showDetail then lvgl.hide(context.detailLabel) end
+  -- Built only where the layout asked for the mode number. It used to be
+  -- built on every panel and hidden on most of them, which is an object and
+  -- a write per reflow for a row that can never be filled -- the invisible
+  -- work the specification forbids, in the component that was swept for it.
+  -- A panel that can gain the row on a reflow still gets one, because
+  -- `showIndex` cannot change without rebuilding the widget.
+  if settings.showIndex then
+    context.detailLabel = primitives.label(panel.root, theme, {
+      x = area.pad,
+      y = area.detailY,
+      w = area.content,
+      text = "",
+      color = theme.color.textFaint,
+      font = fonts.label,
+    })
+    if not area.showDetail then lvgl.hide(context.detailLabel) end
+  end
 
   local _, drawn = primitives.changed(context, flightMode.render)
   flightMode.apply(context, drawn)

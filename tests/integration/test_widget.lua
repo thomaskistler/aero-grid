@@ -4199,6 +4199,114 @@ end
 --- box is rebuilt from the padding constants, and the arrangement in force is
 --- read off the **glyph's own drawn position** -- independent evidence, since
 --- the glyph is placed from its geometry rather than from a text width.
+--- A panel that draws no supporting row does not reserve a band for one.
+---
+--- **This is its own check because every other measure is satisfied by the
+--- bug.** A reading centred in a band 31 pixels shorter than the panel
+--- actually has is correctly centred, correctly sized for that band, and
+--- inside the panel -- so the positional check, the collision check and the
+--- containment check all pass. The only symptom is a font one step smaller
+--- than the panel could carry, and nothing was comparing the reservation
+--- with what got drawn.
+---
+--- It is the second instance of one seam: `theme.ladder` decides from what a
+--- panel's height *permits*, a component decides what it *draws*, and the
+--- two were never reconciled. The first instance was `metric` arranging a
+--- two-item supporting row on a panel drawing one item; this is the same
+--- disagreement one layer down, in the band rather than the placement.
+---
+--- Three components default their supporting row off -- `flight-mode`'s mode
+--- number, `model-identity`'s label list, `tx-battery`'s estimate -- and all
+--- three were charged a quarter of the panel for a row they would never
+--- fill.
+local function testUnusedRowsCostNothing()
+  -- Each component, the setting that turns its supporting row on, and how to
+  -- read back whether the panel drew one. Declared rather than special-cased
+  -- so a component that gains an optional row is covered by adding a line.
+  local OPTIONAL = {
+    {
+      type = "flight-mode",
+      setting = "showIndex",
+      config = {"label: MODE"},
+      label = function(panel) return panel.detailLabel end,
+      drew = function(panel) return panel.showDetail end,
+    },
+    {
+      type = "model-identity",
+      setting = "showLabels",
+      config = {"label: MODEL"},
+      label = function(panel) return panel.labelsLabel end,
+      drew = function(panel) return panel.showLabels end,
+    },
+    {
+      type = "tx-battery",
+      setting = "showPercent",
+      config = {"label: TX", "packEmpty: 6.6", "packFull: 8.4"},
+      label = function(panel) return panel.detailLabel end,
+      drew = function(panel) return panel.showDetail end,
+    },
+  }
+
+  -- Two rows, because a single-row panel is granted no supporting row at all
+  -- and would pass this check without exercising it.
+  for _, subject in ipairs(OPTIONAL) do
+    local fonts = {}
+    for _, asked in ipairs({false, true}) do
+      resetRadio()
+      local lines = {
+        "version: 1", "grid:", "  columns: 4", "  rows: 4", "components:",
+        "  - id: panel", "    type: " .. subject.type, "    col: 0",
+        "    row: 0", "    colSpan: 4", "    rowSpan: 2", "    config:",
+      }
+      for _, line in ipairs(subject.config) do
+        lines[#lines + 1] = "      " .. line
+      end
+      if asked then
+        lines[#lines + 1] = "      " .. subject.setting .. ": true"
+      end
+
+      local widgetPath = makeWidget(
+        "unused-" .. subject.type .. "-" .. tostring(asked),
+        table.concat(lines, "\n") .. "\n")
+      local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+        DEFAULT_OPTIONS, widgetPath)
+      assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+      settle(context, 30)
+
+      local panel = entryById(context, "panel").instance
+      local where = subject.type .. " with " .. subject.setting
+        .. " " .. tostring(asked)
+
+      assertEqual(subject.drew(panel) == true, asked, where
+        .. ": the panel disagrees with its own setting about whether it"
+        .. " draws a supporting row")
+
+      -- No row means no object for one. An object built to be hidden is the
+      -- invisible work the specification forbids, and it is what made this
+      -- bug survive a sweep that was meant to end exactly that.
+      if not asked then
+        assertEqual(subject.label(panel), nil, where
+          .. ": built a label for a row it will never fill")
+      end
+
+      local font = panel.value.properties.font
+      fonts[asked] = type(font) == "function" and font() or font
+    end
+
+    -- **The reservation shows up here and nowhere else.** A panel that draws
+    -- no row has a three-quarter body band where one that draws a row has a
+    -- half, so the reading is larger -- and if the band is cut regardless,
+    -- these two are identical and the panel silently pays for a row it never
+    -- draws.
+    assert(themeModule.fontHeight(fonts[false])
+        > themeModule.fontHeight(fonts[true]), subject.type
+      .. ": a panel drawing no supporting row reads at "
+      .. edgetx.fontName(fonts[false])
+      .. ", the same size as one that does -- so its band was reserved for a"
+      .. " row it never draws")
+  end
+end
+
 local function testReadingsSitInTheirSlots()
   --- What each component slots, and how to build a layout that shows it.
   ---
@@ -4882,12 +4990,18 @@ components:
     "the mode number is not drawn, or still repeats the header's word")
   assertEqual(tall.detailLabel.hidden, false)
 
-  -- The same span without the setting draws no row content at all, rather
-  -- than an empty label that has been written to anyway.
+  -- The same span without the setting draws no row at all -- and now builds
+  -- no label for one either, where it used to build one and write an empty
+  -- string into it. That object cost a reserved quarter of the panel as well
+  -- as itself: the band was cut for a row that could never be filled, which
+  -- took a font size off the name above it.
   local quiet = entryById(context, "quiet").instance
   assertEqual(quiet.rendered.detail, nil,
     "a panel that never asked for the mode number computed one")
-  assertEqual(quiet.detailLabel.properties.text, "")
+  assertEqual(quiet.detailLabel, nil,
+    "a panel that never asked for the mode number built a label for it")
+  assertEqual(quiet.showDetail, false,
+    "a panel with no mode number to show reserved a row for one")
 
   -- The reading fits: the fixture model's widest mode name is ten characters
   -- and this is the span that used to lose nearly half of it.
@@ -5432,14 +5546,14 @@ components:
       packFull: 8.4
 ]])
 
-  -- **Both zones are chosen so the cell comes out the same size.** The cell's
-  -- height is its body band and its width is half that rounded, so a band of
-  -- 40 px and a band of 39 both round to a 20 px cell -- and 40 is exactly
-  -- where the reading steps from MIDSIZE up to DBLSIZE. That one-pixel band
-  -- difference is the only place left where the font can move while the cell
-  -- holds still, now that both derive from the same band. A 480 x 184 zone
-  -- lands on the first and 480 x 180 on the second.
-  local zone = {x = 0, y = 0, w = 480, h = 184}
+  -- **Both zones are chosen so the cell comes out the same size**, which is
+  -- what isolates the stroke: the font moves and the cell does not, so a
+  -- stroke that followed the cell rather than the reading would pass every
+  -- assertion below. The cell is capped at 50 px tall and therefore 25 wide
+  -- across a range of panel heights, while the body band keeps growing --
+  -- so a 480 x 224 zone reads at XXLSIZE and a 480 x 172 zone at DBLSIZE,
+  -- both with a 25 px cell.
+  local zone = {x = 0, y = 0, w = 480, h = 224}
   local context = createLoaded(zone, DEFAULT_OPTIONS, widgetPath)
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
   settle(context, 60)
@@ -5464,15 +5578,18 @@ components:
     settle(context, 60)
   end
 
-  -- Four pixels shorter, which takes the body band from 40 to 39 and the
-  -- reading from DBLSIZE to MIDSIZE while the cell stays 20 px wide.
-  reflow(480, 180)
+  -- Shorter, which takes the reading from XXLSIZE down to DBLSIZE while the
+  -- cell stays 25 px wide. Both zones were found by sweeping rather than
+  -- chosen: the band and the cell both derive from the panel's height, so
+  -- the pairs where one moves and the other does not are narrow and are not
+  -- where anybody would look first.
+  reflow(480, 172)
 
   assert(themeModule.fontHeight(pack.value.properties.font())
       < themeModule.fontHeight(builtFont),
     "the reading did not change size, so this reflow is not the case this"
       .. " test exists for and the assertions below prove nothing")
-  assertEqual(glyph.width, 20,
+  assertEqual(glyph.width, 25,
     "the cell changed size, so the stroke would have been free to change")
 
   -- The limitation, stated.
@@ -5525,6 +5642,12 @@ components:
       label: TX
       packEmpty: 6.6
       packFull: 8.4
+      # The estimate, which gives this panel a supporting row and therefore
+      # a half-height body band. Without it the band is three quarters, the
+      # reading reaches XXLSIZE, and an XXLSIZE `88.8` fills the half so
+      # completely that the `V` is shed -- leaving no unit for this test to
+      # follow. The row is what keeps the pair on the panel.
+      showPercent: true
 ]])
 
   local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
@@ -5869,19 +5992,25 @@ local function testBatteryGlyphLeavesTheReadingRoom()
     local glyph = panel.glyph
     local span = spans[index][1] .. "x" .. spans[index][2]
 
-    -- **`1 x 2` keeps its cell and sheds its unit instead**, which is the
-    -- abbreviation rule in order: redundancy goes first, and the `V` is
-    -- redundancy because the heading names what is measured. It used to shed
-    -- the cell here on the strength of an estimated width; measured, a
-    -- DBLSIZE `88.8` is 68 px of this panel's 52 px half with the `V` and
-    -- 68 without, so the number and the cell fit once the unit goes.
-    assert(glyph, "panel " .. index .. " (" .. span .. ") drew no battery")
+    -- **`1 x 2` sheds its cell, and that is the reading winning rather than
+    -- the panel failing.** These panels state no `showPercent`, so there is
+    -- no supporting row and the body band is the panel's full three
+    -- quarters -- which admits XXLSIZE, and an XXLSIZE `88.8` is 102 px of
+    -- this panel's 52 px half. No pair of slots separates a reading that
+    -- wide from a cell, so the visualization goes. The specification's order
+    -- is magnitude before decoration, and a cell is decoration.
+    if span == "1x2" then
+      assertEqual(glyph, nil, span
+        .. " drew a battery beside a reading that fills the panel")
+    else
+      assert(glyph, "panel " .. index .. " (" .. span .. ") drew no battery")
 
-    local reading = panel.value.properties
-    local right = reading.x + reading.w
-    assert(glyph.x >= right, "panel " .. index
-      .. " puts its battery at " .. glyph.x
-      .. ", inside a reading column that ends at " .. right)
+      local reading = panel.value.properties
+      local right = reading.x + reading.w
+      assert(glyph.x >= right, "panel " .. index
+        .. " puts its battery at " .. glyph.x
+        .. ", inside a reading column that ends at " .. right)
+    end
 
     -- And the reading stays on one line, which is the wrap a narrowed column
     -- would cause if the label kept the panel's full width.
@@ -6734,7 +6863,12 @@ local function testCoreComponents()
   -- read `MODE 1` on a panel that draws no such row.
   assertEqual(mode.showDetail, false,
     "a single-cell flight mode found room for a supporting row")
-  assert(mode.detailLabel.hidden, "a shed row was left on screen")
+  -- **No label at all, rather than a hidden one.** This panel did not ask
+  -- for the mode number, so there is nothing for a row to hold at any span,
+  -- and building an object to hide it is the invisible work the
+  -- specification forbids.
+  assertEqual(mode.detailLabel, nil,
+    "a panel that never asked for the mode number built a label for it")
 
   -- The transmitter pack: voltage is authoritative, the percentage is an
   -- estimate and says so.
@@ -7730,6 +7864,7 @@ testInstructionBudget()
 -- and leaves the radio somewhere the tests above do not expect to find it.
 testReadingsSitInTheirSlots()
 testSupportingWordingsStayDistinct()
+testUnusedRowsCostNothing()
 testNothingIsDrawnOverAnythingElse()
 
 print("AeroGrid widget integration test passed")
