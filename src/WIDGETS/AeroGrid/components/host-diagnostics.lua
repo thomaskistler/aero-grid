@@ -22,6 +22,24 @@
 --- It costs the dashboard nothing when it is not showing, because a component
 --- no layout places is never loaded. When it is showing it builds a fixed
 --- number of line objects and repaints only the lines whose text changed.
+---
+--- **The content-flow rule does not apply here, and this is an exemption
+--- rather than an omission.** That rule arranges a panel around a reading:
+--- the reading takes one slot, a compact visual the other, and supporting
+--- rows the same two centres. This panel has no reading and no visual. It is
+--- a list of lines of running text, each as long as the fact it reports, and
+--- what it is for is being read densely by somebody holding a radio that is
+--- behaving oddly.
+---
+--- Centring those lines would be actively worse. A column of left-aligned
+--- text is scanned down its first character; centring gives every line a
+--- different left edge, so finding the line that says `bytecode:` means
+--- reading all of them. The rule exists to make panels agree with one
+--- another at a glance, and this panel is not glanced at.
+---
+--- The same applies to `service-probe`, which is the same shape. Neither is a
+--- shipped component -- no dashboard layout places either -- so neither is
+--- part of the set the arrangement was designed for.
 
 ---@class AeroGridDiagnosticsSettings
 ---@field section "identity"|"theme"|"components"|"sources"

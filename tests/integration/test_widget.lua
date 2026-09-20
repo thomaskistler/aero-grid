@@ -4219,6 +4219,34 @@ local function testReadingsSitInTheirSlots()
       end,
     },
     {
+      type = "flight-mode",
+      config = {"label: MODE"},
+      -- Draws no visualization at all: a flight mode is a name and there is
+      -- nothing to gauge, so the reading never splits. The mode number is a
+      -- supporting row the component grants only on a two-row panel, so it
+      -- cannot be asked for here without failing validation at every single
+      -- row -- the spans this check walks include those.
+      variants = {{}, {"showIndex: true", minRows = 2}},
+      visual = function() return nil end,
+      rows = function(panel)
+        if not panel.showDetail then return {} end
+        return {{label = panel.detailLabel, slot = "whole"}}
+      end,
+    },
+    {
+      type = "model-identity",
+      config = {"label: MODEL"},
+      -- Its picture spans the content box, so it is exempt the way a bar is
+      -- and the name never splits. The second variant turns on the label row
+      -- so the row case is actually constructed.
+      variants = {{}, {"showLabels: true", minRows = 2}},
+      visual = function() return nil end,
+      rows = function(panel)
+        if not panel.showLabels then return {} end
+        return {{label = panel.labelsLabel, slot = "whole"}}
+      end,
+    },
+    {
       type = "tx-battery",
       config = {"label: TX", "packEmpty: 6.6", "packFull: 8.4"},
       -- Both arrangements: a compact visual beside the reading, and a
@@ -4353,7 +4381,16 @@ local function testReadingsSitInTheirSlots()
     local cases = {}
     for index, extra in ipairs(subject.variants) do
       for _, span in ipairs(module.supportedSpans) do
-        cases[#cases + 1] = {span = span, extra = extra, index = index}
+        -- **A variant may name the spans it applies to.** Some settings are
+        -- refused at load rather than shed at draw: `flight-mode`'s mode
+        -- number and `model-identity`'s label row both need two rows, and
+        -- asking for them on a single row fails validation rather than
+        -- producing a panel without them. A variant that cannot be built is
+        -- not coverage of anything, so it says where it belongs.
+        local rows = tonumber(string.match(span, "%dx(%d)")) or 1
+        if rows >= (type(extra) == "table" and extra.minRows or 1) then
+          cases[#cases + 1] = {span = span, extra = extra, index = index}
+        end
       end
     end
 
@@ -4854,13 +4891,18 @@ components:
 
   -- The reading fits: the fixture model's widest mode name is ten characters
   -- and this is the span that used to lose nearly half of it.
+  --
+  -- Asked of the panel's own room rather than of the label's box. The name
+  -- is centred on a slot now, so its box is exactly as wide as the string it
+  -- draws -- and comparing the widest possible name against a box sized for
+  -- the current one asks whether `Normal` is as wide as `LongRange7`, which
+  -- is not the question.
   local widest = "LongRange7"
   local font = tall.value.properties.font()
-  assert(themeModule.textWidth(font, widest)
-      <= tall.value.properties.w,
+  assert(themeModule.textWidth(font, widest) <= tall.area.valueBudget,
     "the widest mode name is drawn past the panel: needs "
       .. themeModule.textWidth(font, widest) .. " of "
-      .. tall.value.properties.w)
+      .. tall.area.valueBudget)
 
   -- Shrink until the ladder takes the row away. The setting is still stated,
   -- and the panel must stop declaring and painting the row rather than
