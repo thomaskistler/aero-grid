@@ -1676,6 +1676,111 @@ function theme.opticalTop(readingY, readingFont, height)
   return readingY + math.floor((theme.fontHeight(readingFont) - height) / 2)
 end
 
+--- Lay out a standard panel into a table the component owns.
+---
+--- **Most panels are one arrangement with different words in it**: a
+--- heading, a reading, an optional visualization beside it, an optional
+--- supporting row beneath. Every decision that arrangement needs already
+--- lives here -- the frame, the ladder, the bands, the band font, the slots,
+--- the fitter -- and the *assembly* of those decisions was copied into each
+--- component, which is why the same band was called `valueY`, `nameY` and
+--- `clockY` in three files and why one mistake had to be fixed in nine.
+---
+--- **It fills `out` rather than returning a fresh table.** A reflow runs
+--- `REFLOW_BATCH` components per callback, and the reflow callback has about
+--- four hundred instructions of headroom against the slowest loader stage;
+--- allocating a region table and its sub-tables per component per reflow is
+--- the one cost that could make sharing this more expensive than copying it.
+--- The component keeps one table for the life of the panel and this
+--- overwrites it.
+---
+--- **`spec.draws` is what the panel will put on the screen, never what its
+--- height would permit.** That distinction is a defect shape this project
+--- has now paid for twice -- once placing a row, once reserving a band -- so
+--- the interface does not offer the other question. A component that wants a
+--- supporting row says it draws one; the ladder may still refuse it on a
+--- panel too short to hold it, because composition is decided here so that
+--- two panels of one size agree.
+---
+--- What it deliberately does not do: compasses, battery glyphs, trim cells,
+--- and anything a diagnostics view draws. A builder that can express every
+--- panel expresses nothing, and those are the components whose arrangement
+--- is genuinely their own.
+---@param resolved AeroGridTheme
+---@param rect AeroGridRect
+---@param fonts table Typography roles for this span.
+---@param spec table
+--- `frame`: this component's frame, from its own `themeBuilder.frame`.
+--- `forms`: reading wordings, longest first, widest the component can print.
+--- `draws`: `{rows = boolean, visual = boolean}` -- what will be drawn.
+--- `bar`: true where the visualization is a full-width bar.
+---@param out table The component's own region table, overwritten in place.
+---@return table out
+function theme.panel(resolved, rect, fonts, spec, out)
+  -- **`spec.frame`, not `theme.frame`.** The host wraps `frame` per component
+  -- to lay a panel out around the corner EdgeTX paints its menu button over,
+  -- and that wrapper is reachable only through the `themeBuilder` a component
+  -- was handed. Calling the module's own function here skips it, and the
+  -- panel in the grid's top left draws its heading under the button -- which
+  -- is precisely the defect the shared frame exists to prevent, reintroduced
+  -- by the helper meant to share it.
+  local frame = spec.frame
+  local draws = spec.draws
+  local ladder = theme.ladder(resolved, rect, frame, draws)
+
+  -- The component's intent, narrowed by what the panel can hold. A component
+  -- may decline what it was granted and may not claim what it was not.
+  local rows = draws.rows == true and ladder.rows > 0
+  local visual = draws.visual == true and ladder.visual
+
+  local font, formIndex = theme.fitReading(
+    spec.forms, frame.content, ladder.room)
+
+  -- **One name for the reading's band.** Three components called this
+  -- `valueY`, `nameY` and `clockY`, and one carried two of them for one
+  -- thing. The name is `valueY` here and a component that wants another word
+  -- for it has to write the alias itself, which is the point: the divergence
+  -- has to be deliberate to happen at all.
+  local height = theme.fontHeight(font)
+  local centre = frame.pad + math.floor(frame.content / 2)
+  local width = theme.measureText(font, spec.forms[formIndex])
+
+  out.frame = frame
+  out.pad = frame.pad
+  out.content = frame.content
+  out.ladder = ladder
+
+  -- A lone reading centres across the whole content box. A reading with a
+  -- compact visual beside it takes the left slot, which is the caller's
+  -- business until a component in this set has one.
+  out.value = font
+  out.formIndex = formIndex
+  out.valueCentre = centre
+  out.valueX = theme.slotX(centre, width)
+  out.valueWidth = width
+  -- The room the reading had, which is not the width it draws in: the drawn
+  -- box hugs the measured string so its slot can centre it, and a later
+  -- question about whether a unit still fits has to be asked against the
+  -- room.
+  out.valueBudget = frame.content
+  out.valueY = theme.bodyTop(ladder, height)
+
+  -- A bar spans the panel by design and sits on its floor rather than in a
+  -- band; a supporting row sits in the tertiary band above it.
+  local barY = math.max(1, rect.h - frame.bottom - resolved.spacing.barHeight)
+  out.barY = barY
+  out.showVisual = visual
+  out.showDetail = rows
+  out.detailY = spec.bar and math.max(1, barY - frame.labelHeight - 2)
+    or theme.centreInBand(ladder.bands.tertiary, frame.labelHeight)
+  -- A row of one item centres across the content box, exactly as a lone
+  -- reading does. A row of two takes the panel's two slot centres, and the
+  -- caller asks for those directly.
+  out.detailCentre = centre
+
+  return out
+end
+
 --- Font roles for a component span.
 --- Sizes are EdgeTX globals, read at call time so tests can install mocks.
 ---@param colSpan integer

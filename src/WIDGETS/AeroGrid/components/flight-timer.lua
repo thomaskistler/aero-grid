@@ -173,66 +173,28 @@ end
 ---@param layout table
 ---@param fonts table
 ---@return table
-function flightTimer.regionsFor(theme, themeBuilder, rect, layout, fonts)
-  local spacing = theme.spacing
-  local frame = themeBuilder.frame(theme, rect, fonts)
-  local labelHeight = frame.labelHeight
-  local top = frame.top
+function flightTimer.regionsFor(theme, themeBuilder, rect, layout, fonts, out)
+  -- The whole arrangement, from the shared builder. A timer's only
+  -- visualization is a bar, which spans the panel by design and is exempt
+  -- from the slot rule, so the clock never splits and centres across the
+  -- whole content box.
+  local area = themeBuilder.panel(theme, rect, fonts, {
+    -- Built through this component's own builder, which the host may have
+    -- wrapped to lay the panel out around the menu button's corner.
+    frame = themeBuilder.frame(theme, rect, fonts),
+    forms = flightTimer.FORMS,
+    draws = {
+      rows = layout.showDetail == true,
+      visual = layout.showVisual == true,
+    },
+    bar = true,
+  }, out or {})
 
-  -- Composition comes from the shared ladder, so a panel of this size carries
-  -- the same rows as any other panel of this size, whichever component drew
-  -- it. What this component wants is a veto, not a vote.
-  local ladder = themeBuilder.ladder(theme, rect, frame)
-  local showDetail = layout.showDetail and ladder.rows > 0
-  local showVisual = layout.showVisual and ladder.visual
-
-  -- "-88:88:88" is the widest clock this component can produce, so the font is
-  -- chosen from that rather than from the current reading; otherwise the
-  -- digits would resize the first time an hour or a minus sign appeared.
-  --
-  -- It is the only form offered. A clock has no redundancy in it: dropping
-  -- the hours field turns 1:04:12 into 04:12, which is not a shorter reading
-  -- but a different one, and one a pilot would believe. Where it will not fit,
-  -- the font steps down instead.
-  local clock, formIndex = themeBuilder.fitReading(
-    flightTimer.FORMS, frame.content, ladder.room)
-  local clockHeight = themeBuilder.fontHeight(clock)
-
-  if top + clockHeight > rect.h then
-    top = math.max(0, rect.h - clockHeight)
-  end
-
-  local barY = math.max(1, rect.h - frame.bottom - spacing.barHeight)
-
-  -- **A lone reading does not split.** This component's only visualization
-  -- is a bar, which spans the panel by design and is exempt from the rule,
-  -- so there is never a second element to leave room for and the clock
-  -- centres across the whole content box. Its supporting row carries one
-  -- item and centres the same way.
-  local readingCentre = frame.pad + math.floor(frame.content / 2)
-  local clockWidth = themeBuilder.measureText(
-    clock, flightTimer.FORMS[formIndex])
-
-  return {
-    frame = frame,
-    pad = frame.pad,
-    content = frame.content,
-    -- The slot's centre, a property of the panel. Where the clock starts
-    -- depends on what it currently reads, so `primitives.centreReading` owns
-    -- that and computes it from the measured string.
-    valueCentre = readingCentre,
-    valueX = themeBuilder.slotX(readingCentre, clockWidth),
-    valueY = themeBuilder.bodyTop(ladder, clockHeight),
-    valueWidth = clockWidth,
-    clockY = themeBuilder.bodyTop(ladder, clockHeight),
-    clock = clock,
-    formIndex = formIndex,
-    detailY = math.max(1, barY - labelHeight - 2),
-    detailCentre = readingCentre,
-    barY = barY,
-    showDetail = showDetail,
-    showVisual = showVisual,
-  }
+  -- The clock under its own word, because `render` and `apply` read it. It
+  -- used to carry `clockY` beside `valueY` for one band, which is exactly
+  -- the divergence the shared name exists to stop.
+  area.clock = area.value
+  return area
 end
 
 --- Build the component's LVGL objects.
@@ -296,7 +258,7 @@ function flightTimer.create(parent, rect, settings, services)
 
   context.value = primitives.value(panel.root, theme, {
     x = area.valueX,
-    y = area.clockY,
+    y = area.valueY,
     w = area.valueWidth,
     text = context.text,
     color = presentation.value,
@@ -436,8 +398,10 @@ end
 ---@param context AeroGridTimerContext
 ---@param rect AeroGridRect
 function flightTimer.update(context, rect)
+  -- Into the table this panel already owns, rather than a fresh one per
+  -- reflow: see `theme.panel`.
   local area = flightTimer.regionsFor(context.theme, context.themeBuilder,
-    rect, context.layout, context.fonts)
+    rect, context.layout, context.fonts, context.area)
 
   context.primitives.resizePanel(context.panel, rect)
   -- The heading is the model's timer name rather than the setting, so the
@@ -447,7 +411,7 @@ function flightTimer.update(context, rect)
   context.frame = area.frame
   context.value:set({
     x = area.valueX,
-    y = area.clockY,
+    y = area.valueY,
     w = area.valueWidth,
     font = function() return area.clock end,
   })
