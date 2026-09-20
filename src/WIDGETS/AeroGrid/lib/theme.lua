@@ -1021,11 +1021,26 @@ end
 --- The reading then takes what the composition leaves. Deciding the font from
 --- the box rather than from the string is what makes two panels of one size
 --- agree, because they are answering the same question.
+--- **A component may say what it will actually draw, and should.** The rows
+--- this grants are a permission -- what a panel of this height can afford --
+--- and a component is free to decline one. Declining it used to free the
+--- *placement* and not the *reservation*: the tertiary quarter was still
+--- taken out of the body band, so a panel that draws no supporting row was
+--- charged for one, and its reading came from a band 31 pixels shorter than
+--- the panel actually had. Three components default their row off, and all
+--- three lost a font size to a row nobody asked for.
+---
+--- So `draws` is what the panel will put on the screen, and the bands are
+--- reserved from that. It is optional, because a component that always draws
+--- what it is granted has nothing to correct; where it is given, it may only
+--- take rows away. A component cannot grant itself a row the panel cannot
+--- hold, which is the whole point of deciding composition here.
 ---@param resolved AeroGridTheme
 ---@param rect AeroGridRect
 ---@param frame table Result of theme.frame.
+---@param draws? table `{rows = boolean}`: what the component will draw.
 ---@return table ladder `{rows, visual, room}`
-function theme.ladder(resolved, rect, frame)
+function theme.ladder(resolved, rect, frame, draws)
   local spacing = resolved.spacing
   local rowHeight = frame.labelHeight + 2
   local barHeight = spacing.barHeight + 2
@@ -1065,7 +1080,13 @@ function theme.ladder(resolved, rect, frame)
   -- with labels and labels with the panel edge. A bar is not a label, so a
   -- reading lying across one was invisible to it, and the mocks' banded-font
   -- table is correspondingly optimistic for every panel that draws a bar.
-  local bands = theme.bands(frame, rect, true, rows > 0,
+  -- Reserved from what the panel draws, not from what it was permitted. A
+  -- component may decline a granted row; it may not claim one it was not
+  -- granted, so this only ever narrows.
+  local drawsRows = rows > 0
+  if draws ~= nil and draws.rows == false then drawsRows = false end
+
+  local bands = theme.bands(frame, rect, true, drawsRows,
     visual and barHeight or 0)
 
   return {

@@ -196,9 +196,17 @@ end
 ---@param colSpan integer
 ---@param rowSpan integer
 ---@return table
-function txBattery.presentationFor(colSpan, rowSpan)
+--- @param showPercent? boolean Whether the layout asked for the estimate.
+function txBattery.presentationFor(colSpan, rowSpan, showPercent)
   local cells = (colSpan or 1) * (rowSpan or 1)
-  return {showVisual = cells >= 2, showDetail = cells >= 2}
+  -- The estimate is the only thing this panel's supporting row carries, and
+  -- it is off by default. A row nobody fills is a reserved quarter of the
+  -- panel and an empty label, so the span's permission is narrowed by what
+  -- the layout actually asked for.
+  return {
+    showVisual = cells >= 2,
+    showDetail = cells >= 2 and showPercent == true,
+  }
 end
 
 --- Tallest cell this panel will draw.
@@ -260,7 +268,13 @@ function txBattery.regionsFor(theme, themeBuilder, primitives, rect, layout,
   -- Composition comes from the shared ladder, so a panel of this size carries
   -- the same rows as any other panel of this size, whichever component drew
   -- it. What this component wants is a veto, not a vote.
-  local ladder = themeBuilder.ladder(theme, rect, frame)
+  --
+  -- **And the ladder is told what will be drawn.** The percentage is off
+  -- unless a layout asks for it, and reserving its quarter regardless cost
+  -- the voltage a font size at every two-row span -- a band cut for a row
+  -- that was never going to be filled.
+  local ladder = themeBuilder.ladder(theme, rect, frame,
+    {rows = layout.showDetail == true})
   local showVisual = layout.showVisual and ladder.visual
   local showDetail = layout.showDetail and ladder.rows > 0
   local wantsGlyph = layout.visual == "battery"
@@ -416,7 +430,8 @@ function txBattery.create(parent, rect, settings, services)
   local primitives = services.primitives
   local fonts = services.fonts
   local span = services.span
-  local layout = txBattery.presentationFor(span.colSpan, span.rowSpan)
+  local layout = txBattery.presentationFor(span.colSpan, span.rowSpan,
+    settings.showPercent)
   layout.visual = settings.visual
   local presentation = services.state("normal", settings.accent)
   local area = txBattery.regionsFor(
@@ -477,14 +492,19 @@ function txBattery.create(parent, rect, settings, services)
     font = area.unitFont,
   })
 
-  context.detailLabel = primitives.label(panel.root, theme, {
-    x = area.detailX,
-    y = area.detailY,
-    w = area.detailWidth,
-    text = "",
-    color = theme.color.textFaint,
-    font = fonts.label,
-  })
+  -- Built only where the layout asked for the estimate: on every other
+  -- panel it was an object built to be hidden, and a row that could never be
+  -- filled.
+  if settings.showPercent then
+    context.detailLabel = primitives.label(panel.root, theme, {
+      x = area.detailX,
+      y = area.detailY,
+      w = area.detailWidth,
+      text = "",
+      color = theme.color.textFaint,
+      font = fonts.label,
+    })
+  end
 
   -- The bar is an estimate, so it is built whenever the panel could ever have
   -- a range to measure against, and hidden until one arrives. It used to be
@@ -511,7 +531,9 @@ function txBattery.create(parent, rect, settings, services)
     })
   end
 
-  if not area.showDetail then lvgl.hide(context.detailLabel) end
+  if context.detailLabel and not area.showDetail then
+    lvgl.hide(context.detailLabel)
+  end
   if not area.showUnit then lvgl.hide(context.unit) end
   context.showUnit = area.showUnit
   context.area = area

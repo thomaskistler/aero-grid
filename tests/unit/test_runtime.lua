@@ -3594,23 +3594,23 @@ local function testTxBatteryComposition()
     {"2x1", "MIDSIZE", true, 17, 34, 2, false},
     {"3x1", "MIDSIZE", true, 17, 34, 2, false},
     {"4x1", "MIDSIZE", true, 17, 34, 2, false},
-    -- **`1 x 2` keeps its cell and sheds its unit**, which is the
-    -- abbreviation rule in its documented order: redundancy goes before
-    -- anything else, and the `V` is redundancy because the panel's own
-    -- heading names what is being measured. It used to shed the cell here,
-    -- on the strength of an estimated width that called a DBLSIZE `88.8V`
-    -- wider than half the panel. Measured, the pair needs 93 px of a 52 px
-    -- half and the bare number 68, so the number and the cell fit together
-    -- once the `V` goes.
-    {"1x2", "DBLSIZE", false, 25, 50, 3, false},
-    -- **And the two-row spans read a size smaller than they did.** A body
-    -- band is half a panel's extent, and half of this one is 62 px against
-    -- XXLSIZE's 69, so the band cannot hold the font the old ladder gave it.
-    -- This is the cost of the arrangement, it is the largest reading on the
-    -- dashboard, and it is the opposite of what the design mocks predicted.
-    {"2x2", "DBLSIZE", true, 25, 50, 3, false},
-    {"3x2", "DBLSIZE", true, 25, 50, 3, false},
-    {"4x2", "DBLSIZE", true, 25, 50, 3, false},
+    -- **The two-row spans read at XXLSIZE, and did not until the band stopped
+    -- being cut for a row this panel does not draw.** The estimate is off by
+    -- default, so with no layout asking for it there is nothing for a
+    -- supporting row to hold -- and the tertiary quarter was reserved anyway,
+    -- leaving a 62 px body band against XXLSIZE's 69. Told what the panel
+    -- draws rather than what its height permits, the band is 93 px and the
+    -- largest reading on the dashboard comes back.
+    --
+    -- `1 x 2` and `2 x 2` shed the `V`, which is the abbreviation rule in
+    -- its documented order: an XXLSIZE `88.8` is 102 px of a 105 px box at
+    -- `1 x 2` and of a 113 px half at `2 x 2`, and the unit is redundancy
+    -- because the panel's own heading names what is measured. Magnitude is
+    -- kept and redundancy spent, which is the trade the rule names.
+    {"1x2", "XXLSIZE", false, nil, nil, nil, false},
+    {"2x2", "XXLSIZE", false, 25, 50, 4, false},
+    {"3x2", "XXLSIZE", true, 25, 50, 4, false},
+    {"4x2", "XXLSIZE", true, 25, 50, 4, false},
   }
 
   local GUTTER, CELLS, WIDTH, HEIGHT = 4, 4, 480, 272
@@ -3710,7 +3710,10 @@ local function testTxBatteryComposition()
   for height = 70, 200, 2 do
     for _, width in ipairs({117, 238, 480}) do
       local rect = {x = 0, y = 0, w = width, h = height}
-      local layout = battery.presentationFor(width > 200 and 2 or 1, 2)
+      -- `showPercent` true, because the row only exists when a layout asks
+      -- for it: without that this sweep builds panels with no supporting
+      -- row, finds nothing to clear, and passes while checking nothing.
+      local layout = battery.presentationFor(width > 200 and 2 or 1, 2, true)
       layout.visual = "battery"
       local area = battery.regionsFor(resolved, theme, primitives, rect,
         layout, theme.typography(width > 200 and 2 or 1, 2))

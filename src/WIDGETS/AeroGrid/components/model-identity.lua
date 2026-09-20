@@ -146,7 +146,13 @@ function modelIdentity.regionsFor(theme, themeBuilder, rect, layout, fonts)
 
   -- Composition comes from the shared ladder, like every other panel of this
   -- size. The image takes what the text leaves, below.
-  local ladder = themeBuilder.ladder(theme, rect, frame)
+  --
+  -- **The ladder is told what will be drawn.** The label row is off unless a
+  -- layout asks for it, and reserving its quarter regardless cost the name a
+  -- font size at every two-row span -- a band cut for a row that was never
+  -- going to be filled.
+  local ladder = themeBuilder.ladder(theme, rect, frame,
+    {rows = layout.showLabels == true})
   showLabels = showLabels and ladder.rows > 0
 
   local nameFont, formIndex = themeBuilder.fitReading(
@@ -259,14 +265,19 @@ function modelIdentity.create(parent, rect, settings, services)
     font = area.nameFont,
   })
 
-  context.labelsLabel = primitives.label(panel.root, theme, {
-    x = area.pad,
-    y = area.labelsY,
-    w = area.content,
-    text = "",
-    color = theme.color.textFaint,
-    font = fonts.label,
-  })
+  -- Built only where the layout asked for the label list. It used to be
+  -- built on every panel and hidden on most, which is an object and a write
+  -- per reflow for a row that can never be filled.
+  if layout.showLabels then
+    context.labelsLabel = primitives.label(panel.root, theme, {
+      x = area.pad,
+      y = area.labelsY,
+      w = area.content,
+      text = "",
+      color = theme.color.textFaint,
+      font = fonts.label,
+    })
+  end
 
   -- What the panel currently draws, so `render` declares only that.
   context.showName = area.showName
@@ -274,7 +285,9 @@ function modelIdentity.create(parent, rect, settings, services)
   context.showImage = area.showImage
 
   if not area.showName then lvgl.hide(context.value) end
-  if not area.showLabels then lvgl.hide(context.labelsLabel) end
+  if context.labelsLabel and not area.showLabels then
+    lvgl.hide(context.labelsLabel)
+  end
 
   context.area = area
   -- The first paint goes through the same path as every later one.
