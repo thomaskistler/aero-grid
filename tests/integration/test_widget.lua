@@ -1371,7 +1371,7 @@ components:
   -- `NOT CELLS` against `BAD CELLS` and `DOWN` against `NO RSS` all survive
   -- at this width; `testSupportingWordingsStayDistinct` is what holds them
   -- to it.
-  assertRow(link, link.linkDetail, link.linkWidth, "78dB",
+  assertRow(link, link.linkDetail, link.rowRightWidth, "78dB",
     "a healthy link names its secondary source")
   assertRow(pack, pack.countText, pack.detailWidth, "4S",
     "the cell count")
@@ -1415,7 +1415,7 @@ components:
   pump(context, 40)
   assertEqual(link.stateName, "critical")
   assertEqual(link.badge.properties.text, "CRIT")
-  assertRow(link, link.linkDetail, link.linkWidth, "NO LINK",
+  assertRow(link, link.linkDetail, link.rowRightWidth, "NO LINK",
     "a dead link says so in words")
 
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
