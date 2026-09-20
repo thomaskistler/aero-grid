@@ -252,8 +252,11 @@ end
 ---
 --- That distinction used to be three nine-character badges, which did not fit
 --- the badge column at any span and made the column too wide for every other
---- panel's header. It belongs here, in a row that has room for words and is
---- fitted to the width it actually has.
+--- panel's header. It belongs here, in a row fitted to the width it actually
+--- has -- and what carries the distinction is the vocabulary rather than the
+--- room: `NOT CELS`, `BAD CELS` and `NO CELS` stay distinct from one another
+--- at the narrowest row this component draws, which is what
+--- `testSupportingWordingsStayDistinct` holds them to.
 ---@param summary table
 ---@param settings AeroGridCellSettings
 ---@return string[]
@@ -362,31 +365,43 @@ function cellBattery.regionsFor(theme, themeBuilder, rect, layout, fonts, sample
   if top + valueHeight > rect.h then top = math.max(0, rect.h - valueHeight) end
 
   local barY = math.max(1, rect.h - frame.bottom - spacing.barHeight)
-  -- The detail row carries the cell count on the left and the pack voltage on
-  -- the right, so neither can draw over the other.
-  local detailWidth = math.max(1, math.floor((frame.content - 4) / 2))
+
+  -- **A row of two takes the panel's two slot centres**: the cell count on
+  -- the left, the pack voltage on the right. Each gets half the distance
+  -- between the centres, which is narrower than the half-content columns
+  -- this replaced, and `fitLabel` sheds wording in the order this component
+  -- declares it.
+  local rowLeft, rowRight = themeBuilder.slotCentres(frame)
+  local rowBudget = math.max(1, rowRight - rowLeft - 4)
+
+  -- A lone reading does not split. This component's only visualization is a
+  -- bar, which spans the panel by design and is exempt, so there is never a
+  -- second element to leave room for.
+  local readingCentre = frame.pad + math.floor(frame.content / 2)
+  local readingWidth = themeBuilder.readingWidth(
+    value, sample.digits, unitFont, showUnit and sample.unit or nil)
 
   return {
     frame = frame,
     pad = frame.pad,
     content = frame.content,
-    -- Centred in the body band. The font came from that band, so this is
-    -- where it belongs: sizing a reading against a band and then drawing it
-    -- at the panel's old content top is how a bar first found itself under
-    -- its own reading.
-    -- Stated rather than inferred from the inset. `tx-battery` is the first
-    -- component on the panel-derived slots and its reading no longer starts
-    -- at the padding, so the shared helpers that place a unit read this
-    -- instead of assuming. The components still to be converted say so here.
-    valueX = frame.pad,
+    -- The slot's centre, a property of the panel. Where the reading starts
+    -- depends on what it currently says, so `primitives.centreReading` owns
+    -- that and computes it from the measured string.
+    valueCentre = readingCentre,
+    valueX = themeBuilder.slotX(readingCentre, readingWidth),
     valueY = themeBuilder.bodyTop(
       ladder, themeBuilder.fontHeight(value)),
+    valueWidth = readingWidth,
     value = value,
     unitFont = unitFont,
     showUnit = showUnit,
     detailY = math.max(1, barY - labelHeight - 2),
-    detailWidth = detailWidth,
-    packX = frame.pad + frame.content - detailWidth,
+    detailWidth = rowBudget,
+    countCentre = rowLeft,
+    countX = rowLeft - math.floor(rowBudget / 2),
+    packCentre = rowRight,
+    packX = rowRight - math.floor(rowBudget / 2),
     barY = barY,
     showVisual = showVisual,
     showDetail = showDetail,
@@ -459,16 +474,22 @@ function cellBattery.create(parent, rect, settings, services)
     services.themeBuilder)
 
   context.value = primitives.value(panel.root, theme, {
-    x = area.pad,
+    x = area.valueX,
     y = area.valueY,
-    w = area.content,
+    w = area.valueWidth,
     text = "--",
     color = presentation.value,
     font = area.value,
   })
 
+  -- Recorded as well as drawn. The reading is centred on its slot and the
+  -- unit rides past it, so the helper that places the pair has to know how
+  -- wide the pair is -- and an LVGL object is userdata on a radio, with no
+  -- readable text to ask. This component's unit never changes, unlike
+  -- `link-status`, whose telemetry answers with one.
+  context.unitText = sample.unit
   context.unit = primitives.unit(panel.root, theme, {
-    x = area.pad,
+    x = area.valueX,
     y = area.valueY,
     text = sample.unit,
     color = theme.color.textMuted,
@@ -476,7 +497,7 @@ function cellBattery.create(parent, rect, settings, services)
   })
 
   context.countLabel = primitives.label(panel.root, theme, {
-    x = area.pad,
+    x = area.countX,
     y = area.detailY,
     w = area.detailWidth,
     text = "",
@@ -602,7 +623,7 @@ function cellBattery.apply(context, drawn)
   context.value:set({text = drawn.text, color = presentation.value})
   -- The unit follows what the number says, so it stays attached to a short
   -- reading instead of holding station at the widest one's edge.
-  context.primitives.followUnit(context, context.themeBuilder,
+  context.primitives.centreReading(context, context.themeBuilder,
     context.area, context.area.value, drawn.text)
   context.label:set({color = presentation.label})
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
@@ -611,6 +632,14 @@ function cellBattery.apply(context, drawn)
   if context.showDetail then
     context.countLabel:set({text = drawn.count})
     context.packLabel:set({text = drawn.pack})
+    -- Both items take the panel's slot centres, keyed on what they say so a
+    -- steady pack pays nothing.
+    context.primitives.centreLabel(context, "countAnchor",
+      context.themeBuilder, context.countLabel, context.area.countCentre,
+      context.area.detailY, context.fonts.label, drawn.count)
+    context.primitives.centreLabel(context, "packAnchor",
+      context.themeBuilder, context.packLabel, context.area.packCentre,
+      context.area.detailY, context.fonts.label, drawn.pack)
   end
 
   if context.bar then
@@ -637,17 +666,20 @@ function cellBattery.update(context, rect)
   context.primitives.placeHeader(context.label, context.badge, area.frame,
     context.themeBuilder, context.fonts, context.settings.label)
   context.value:set({
-    x = area.pad,
+    x = area.valueX,
     y = area.valueY,
-    w = area.content,
+    w = area.valueWidth,
     font = function() return area.value end,
   })
 
   context.primitives.reconcileUnit(context.unit, area.showUnit,
-    context.themeBuilder, area.pad, area.valueY, area.value, context.text,
+    context.themeBuilder, area.valueX, area.valueY, area.value, context.text,
     area.unitFont, area.showUnit == context.showUnit)
   context.showUnit = area.showUnit
+  -- Every anchor is about a slot and a font that have just moved.
   context.unitAnchor = nil
+  context.readingAnchor, context.readingUnitAnchor = nil, nil
+  context.countAnchor, context.packAnchor = nil, nil
   context.area = area
 
   --- Show or hide a supporting row, positioning it only when visible.
@@ -664,7 +696,7 @@ function cellBattery.update(context, rect)
   context.showDetail = area.showDetail
 
   reconcile(context.countLabel, area.showDetail,
-    {x = area.pad, y = area.detailY, w = area.detailWidth})
+    {x = area.countX, y = area.detailY, w = area.detailWidth})
   reconcile(context.packLabel, area.showDetail,
     {x = area.packX, y = area.detailY, w = area.detailWidth})
 

@@ -1362,11 +1362,20 @@ components:
       "%s needs %d px of %d", what, needed, width))
   end
 
-  assertRow(link, link.linkDetail, link.linkWidth, "RSSI 78dB",
+  -- **`78dB` rather than `RSSI 78dB`, and the same for the pack sum below.**
+  -- A two-item supporting row is centred on the panel's two slot centres, so
+  -- each item gets half the distance between them -- 86 px here against the
+  -- 148 the column split gave. `fitLabel` sheds the source prefix, which is
+  -- detail: the unit still says what kind of measurement it is, and the
+  -- states that must stay distinguishable from one another still are.
+  -- `NOT CELLS` against `BAD CELLS` and `DOWN` against `NO RSS` all survive
+  -- at this width; `testSupportingWordingsStayDistinct` is what holds them
+  -- to it.
+  assertRow(link, link.linkDetail, link.linkWidth, "78dB",
     "a healthy link names its secondary source")
   assertRow(pack, pack.countText, pack.detailWidth, "4S",
     "the cell count")
-  assertRow(pack, pack.packText, pack.detailWidth, "16.4V PACK",
+  assertRow(pack, pack.packText, pack.detailWidth, "16.4V",
     "the pack sum")
 
   -- A cells source answering with a plain number is a configuration mistake,
@@ -1380,7 +1389,11 @@ components:
   local wrong = entryById(context, "notcells").instance
   assertEqual(wrong.summary.shape, "number")
   assertEqual(wrong.badge.properties.text, "N/A")
-  assertRow(wrong, wrong.countText, wrong.detailWidth, "NOT CELLS",
+  -- One variant further down the list than the column split reached, and
+  -- still the spelling this component declares rather than a truncation.
+  -- What matters is that it stays distinct from `BAD CELS` and `NO CELS`,
+  -- which is the distinction the specification puts in this row.
+  assertRow(wrong, wrong.countText, wrong.detailWidth, "NOT CELS",
     "a plain number from a cells source")
 
   radio.values[130] = {0, -1, 99}
@@ -1389,7 +1402,7 @@ components:
   -- The explicit lowest-cell source keeps a reading alive, so the panel is not
   -- unavailable; the row is what reports that the table itself is gone.
   assertEqual(pack.text, "4.09")
-  assertRow(pack, pack.countText, pack.detailWidth, "BAD CELLS",
+  assertRow(pack, pack.countText, pack.detailWidth, "BAD CELS",
     "nonsense from a cells source")
   assert(pack.countText ~= wrong.countText,
     "a sensor fault and a configuration mistake read the same")
@@ -1402,7 +1415,7 @@ components:
   pump(context, 40)
   assertEqual(link.stateName, "critical")
   assertEqual(link.badge.properties.text, "CRIT")
-  assertRow(link, link.linkDetail, link.linkWidth, "LINK DOWN",
+  assertRow(link, link.linkDetail, link.linkWidth, "NO LINK",
     "a dead link says so in words")
 
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
@@ -2360,65 +2373,105 @@ end
 --- also what any of the remaining components will be held to when their rows
 --- move onto the slots.
 local function testSupportingWordingsStayDistinct()
-  local navigationComponent = assert(loadfile(
-    sourcePath .. "components/navigation.lua"))()
-
-  -- The states this row reports, each named by what a pilot would have to do
-  -- about it. Distinguishing them is the whole purpose of the row: the badge
-  -- above says only that something is wrong.
-  local STATES = {
-    {"no GPS sensor configured at all",
-      {known = false, fix = false, home = false}},
-    {"sensor present, no satellite fix",
-      {known = true, fix = false, home = false}},
-    {"fix acquired, home not yet set",
-      {known = true, fix = true, home = false}},
-    {"flying, oriented from home",
-      {known = true, fix = true, home = true}},
-    {"position known but telemetry gone quiet",
-      {known = true, fix = true, home = true, state = "stale"}},
+  --- Every component that words a state, and the states it words.
+  ---
+  --- **A declaration, like the positional check.** A component whose
+  --- supporting row names more than one failure adds itself here; nine are
+  --- still to convert and each should be covered the moment it arrives.
+  local WORDED = {
+    {
+      type = "navigation",
+      -- How to ask this component for one state's wordings. Declared,
+      -- because a component's own signature is its own business: this one
+      -- takes a view table and `cell-battery` takes a summary and settings.
+      variantsFor = function(module, state)
+        return module.originVariants(state)
+      end,
+      states = {
+        {"no GPS sensor configured at all",
+          {known = false, fix = false, home = false}},
+        {"sensor present, no satellite fix",
+          {known = true, fix = false, home = false}},
+        {"fix acquired, home not yet set",
+          {known = true, fix = true, home = false}},
+        {"flying, oriented from home",
+          {known = true, fix = true, home = true}},
+        {"position known but telemetry gone quiet",
+          {known = true, fix = true, home = true, state = "stale"}},
+      },
+    },
+    {
+      type = "cell-battery",
+      variantsFor = function(module, state)
+        return module.countVariants({shape = state}, {showCount = true})
+      end,
+      states = {
+        {"a source answering with a plain number", "number"},
+        {"a source answering with nonsense values", "invalid"},
+        {"a source answering with no cells at all", "empty"},
+      },
+    },
+    {
+      type = "link-status",
+      -- Its wordings are built inside `linkText`, which needs a whole
+      -- context, so the vocabulary is declared here as the component
+      -- declares it and checked for the property that matters.
+      variantsFor = function(_, state) return state end,
+      states = {
+        {"the link is down", {"LINK DOWN", "NO LINK", "DOWN"}},
+        {"no RSSI sensor exists",
+          {"NO RSSI SENSOR", "NO RSSI SENSE", "NO RSSI", "NO RSS"}},
+      },
+    },
   }
 
-  local seen = {}
-  for _, entry in ipairs(STATES) do
-    local variants = navigationComponent.originVariants(entry[2])
-    local shortest = variants[#variants]
+  for _, subject in ipairs(WORDED) do
+    local module = assert(loadfile(
+      sourcePath .. "components/" .. subject.type .. ".lua"))()
+    local seen = {}
+    for _, entry in ipairs(subject.states) do
+      local variants = subject.variantsFor(module, entry[2])
+      local shortest = variants[#variants]
 
-    assert(type(shortest) == "string" and shortest ~= "",
-      entry[1] .. " has no wording at all")
+      assert(type(shortest) == "string" and shortest ~= "",
+        subject.type .. ": " .. entry[1] .. " has no wording at all")
 
-    local owner = seen[shortest]
-    assert(owner == nil, string.format(
-      "%q is the narrowest wording for two different states -- %s and %s --"
-        .. " so a panel too narrow for the longer forms cannot say which"
-        .. " happened, and the row stops carrying the distinction the badge"
-        .. " above it deliberately does not",
-      shortest, owner or "", entry[1]))
-    seen[shortest] = entry[1]
+      local owner = seen[shortest]
+      assert(owner == nil, string.format(
+        "%s: %q is the narrowest wording for two different states -- %s and"
+          .. " %s -- so a panel too narrow for the longer forms cannot say"
+          .. " which happened, and the row stops carrying the distinction"
+          .. " the badge above it deliberately does not",
+        subject.type, shortest, owner or "", entry[1]))
+      seen[shortest] = entry[1]
+    end
   end
 
   -- And the narrowest row in the catalogue really does reach the shortest
   -- forms, or the assertions above are about strings nothing prints.
+  local navigationModule = assert(loadfile(
+    sourcePath .. "components/navigation.lua"))()
   local GUTTER, CELLS, WIDTH, HEIGHT = 4, 4, 480, 272
   local cellWidth = math.floor((WIDTH - GUTTER * (CELLS - 1)) / CELLS)
   local cellHeight = math.floor((HEIGHT - GUTTER * (CELLS - 1)) / CELLS)
   local rect = {x = 0, y = 0,
     w = cellWidth * 2 + GUTTER, h = cellHeight * 2 + GUTTER}
   local fonts = themeModule.typography(2, 2)
-  local area = navigationComponent.regionsFor(themeModule.build("modern"),
-    themeModule, rect, navigationComponent.presentationFor("detailed"), fonts,
-    {digits = navigationComponent.DIGITS, unit = navigationComponent.UNIT})
+  local area = navigationModule.regionsFor(themeModule.build("modern"),
+    themeModule, rect, navigationModule.presentationFor("detailed"), fonts,
+    {digits = navigationModule.DIGITS, unit = navigationModule.UNIT})
 
   local shortened = 0
-  for _, entry in ipairs(STATES) do
-    local full = navigationComponent.originVariants(entry[2])[1]
-    local drawn = navigationComponent.originText(entry[2], themeModule,
+  for _, entry in ipairs(WORDED[1].states) do
+    local full = navigationModule.originVariants(entry[2])[1]
+    local drawn = navigationModule.originText(entry[2], themeModule,
       fonts.label, area.originWidth)
     if drawn ~= full then shortened = shortened + 1 end
   end
   assert(shortened > 0, "no state was shortened at the narrowest row, so the"
     .. " distinctness check above is not exercising the case it exists for")
 end
+
 
 local function testNothingIsDrawnOverAnythingElse()
   --- Every drawn thing in one panel, as a box, with labels measured by ink.
@@ -4179,6 +4232,34 @@ local function testReadingsSitInTheirSlots()
             {label = panel.coordinatesLabel, slot = "whole"}
         end
         return found
+      end,
+    },
+    {
+      type = "link-status",
+      config = {"label: LINK", "rssiSource: RSSI", "qualitySource: RQly"},
+      -- Its only visualization is a bar, which spans the panel by design and
+      -- is exempt from the rule, so the reading never splits.
+      variants = {{"visual: bar"}, {"visual: none"}},
+      visual = function() return nil end,
+      rows = function(panel)
+        if not panel.showDetail then return {} end
+        return {
+          {label = panel.detailLabel, slot = "left"},
+          {label = panel.linkLabel, slot = "right"},
+        }
+      end,
+    },
+    {
+      type = "cell-battery",
+      config = {"label: PACK", "source: Cels"},
+      variants = {{"visual: bar"}, {"visual: none"}},
+      visual = function() return nil end,
+      rows = function(panel)
+        if not panel.showDetail then return {} end
+        return {
+          {label = panel.countLabel, slot = "left"},
+          {label = panel.packLabel, slot = "right"},
+        }
       end,
     },
   }
@@ -6929,7 +7010,7 @@ local function testTelemetryComponents()
   local pack = entryById(context, "pack").instance
   assertEqual(pack.text, "4.09")
   assertEqual(pack.countText, "4S")
-  assertEqual(pack.packText, "16.4V PACK")
+  assertEqual(pack.packText, "16.4V")
   assertEqual(pack.stateName, "normal")
   assertEqual(pack.summary.count, 4)
   assertEqual(pack.summary.shape, "cells")
@@ -7114,7 +7195,7 @@ local function testTelemetryDegrades()
   pump(context, 40)
   assertEqual(pack.summary.shape, "invalid")
   assertEqual(pack.text, "4.09")
-  assertEqual(pack.countText, "BAD CELLS")
+  assertEqual(pack.countText, "BAD CELS")
   assert(themeModule.textWidth(pack.fonts.label, pack.countText)
     <= pack.detailWidth, "the cell-count row overran its box")
   assertEqual(pack.packText, "", "a pack sum was computed from nonsense")
@@ -7210,12 +7291,12 @@ local function testRefreshSeesEverythingItDraws()
   radio.values[131] = 3.80
   settle(context, 20)
   assertEqual(pack.text, "3.80")
-  assertEqual(pack.packText, "16.1V PACK")
+  assertEqual(pack.packText, "16.1V")
 
   radio.values[130] = {3.80, 3.90, 3.90, 3.90}
   settle(context, 20)
   assertEqual(pack.text, "3.80", "the lowest cell should not have moved")
-  assertEqual(pack.packText, "15.5V PACK", "the pack row froze on an old sum")
+  assertEqual(pack.packText, "15.5V", "the pack row froze on an old sum")
 
   -- Link quality sits pinned at 100 for most of a flight while RSSI falls
   -- away, so the supporting RSSI row is exactly the one that must keep up.

@@ -417,32 +417,46 @@ function linkStatus.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
   if top + valueHeight > rect.h then top = math.max(0, rect.h - valueHeight) end
 
   local barY = math.max(1, rect.h - frame.bottom - spacing.barHeight)
-  -- The link state is the longest supporting string this panel prints, so it
-  -- takes the wider half of the detail row.
-  local detailWidth = math.max(1, math.floor((frame.content - 4) / 3))
+
+  -- **A row of two takes the panel's two slot centres.** The row used to be
+  -- split a third to two thirds, on the grounds that the link state is the
+  -- longest string the panel prints; under the slot rule both items get the
+  -- same budget, which is half the distance between the centres. The wordings
+  -- that no longer fit are shed by `fitLabel` in the order this component
+  -- declares them, and the shortest of those stay distinct from one another
+  -- so the narrowing costs detail and never meaning.
+  local rowLeft, rowRight = themeBuilder.slotCentres(frame)
+  local rowBudget = math.max(1, rowRight - rowLeft - 4)
+
+  -- A lone reading does not split: this component's only visualization is a
+  -- bar, which spans the panel by design and is exempt from the rule, so
+  -- there is never a second element to leave room for.
+  local readingCentre = frame.pad + math.floor(frame.content / 2)
+  local readingWidth = themeBuilder.readingWidth(
+    value, sample.digits, unitFont, showUnit and sample.unit or nil)
 
   return {
     frame = frame,
     pad = frame.pad,
     content = frame.content,
-    -- Centred in the body band. The font came from that band, so this is
-    -- where it belongs: sizing a reading against a band and then drawing it
-    -- at the panel's old content top is how a bar first found itself under
-    -- its own reading.
-    -- Stated rather than inferred from the inset. `tx-battery` is the first
-    -- component on the panel-derived slots and its reading no longer starts
-    -- at the padding, so the shared helpers that place a unit read this
-    -- instead of assuming. The components still to be converted say so here.
-    valueX = frame.pad,
+    -- The slot's centre, a property of the panel. Where the reading starts
+    -- depends on what it currently says, so `primitives.centreReading` owns
+    -- that and computes it from the measured string.
+    valueCentre = readingCentre,
+    valueX = themeBuilder.slotX(readingCentre, readingWidth),
     valueY = themeBuilder.bodyTop(
       ladder, themeBuilder.fontHeight(value)),
+    valueWidth = readingWidth,
     value = value,
     unitFont = unitFont,
     showUnit = showUnit,
     detailY = math.max(1, barY - labelHeight - 2),
-    detailWidth = detailWidth,
-    linkX = frame.pad + detailWidth + 4,
-    linkWidth = math.max(1, frame.content - detailWidth - 4),
+    detailWidth = rowBudget,
+    detailCentre = rowLeft,
+    detailX = rowLeft - math.floor(rowBudget / 2),
+    linkWidth = rowBudget,
+    linkCentre = rowRight,
+    linkX = rowRight - math.floor(rowBudget / 2),
     barY = barY,
     showVisual = showVisual,
     showDetail = showDetail,
@@ -540,9 +554,9 @@ function linkStatus.create(parent, rect, settings, services)
     services.themeBuilder)
 
   context.value = primitives.value(panel.root, theme, {
-    x = area.pad,
+    x = area.valueX,
     y = area.valueY,
-    w = area.content,
+    w = area.valueWidth,
     text = "--",
     color = presentation.value,
     font = area.value,
@@ -551,7 +565,7 @@ function linkStatus.create(parent, rect, settings, services)
   -- The unit is whatever the source resolves to, which is not known yet, so
   -- it is built empty and filled once the telemetry service answers.
   context.unit = primitives.unit(panel.root, theme, {
-    x = area.pad,
+    x = area.valueX,
     y = area.valueY,
     text = "",
     color = theme.color.textMuted,
@@ -559,7 +573,7 @@ function linkStatus.create(parent, rect, settings, services)
   })
 
   context.detailLabel = primitives.label(panel.root, theme, {
-    x = area.pad,
+    x = area.detailX,
     y = area.detailY,
     w = area.detailWidth,
     text = "",
@@ -674,7 +688,7 @@ function linkStatus.apply(context, drawn)
       context.unitAnchor = nil
     end
   end
-  context.primitives.followUnit(context, context.themeBuilder,
+  context.primitives.centreReading(context, context.themeBuilder,
     context.area, context.area.value, drawn.text)
   context.label:set({color = presentation.label})
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
@@ -683,6 +697,14 @@ function linkStatus.apply(context, drawn)
   if context.showDetail then
     context.detailLabel:set({text = drawn.detail})
     context.linkLabel:set({text = drawn.link})
+    -- Both items of the row take the panel's slot centres, keyed on what
+    -- they say so a steady link pays nothing.
+    context.primitives.centreLabel(context, "detailAnchor",
+      context.themeBuilder, context.detailLabel, context.area.detailCentre,
+      context.area.detailY, context.fonts.label, drawn.detail)
+    context.primitives.centreLabel(context, "linkAnchor",
+      context.themeBuilder, context.linkLabel, context.area.linkCentre,
+      context.area.detailY, context.fonts.label, drawn.link)
   end
 
   if context.bar then
@@ -720,7 +742,7 @@ function linkStatus.update(context, rect)
     context.themeBuilder, area.value, context.sample.digits, area.unitFont,
     context.unitText, area.content)
   context.primitives.reconcileUnit(context.unit, shows, context.themeBuilder,
-    area.pad, area.valueY, area.value, context.text, area.unitFont,
+    area.valueX, area.valueY, area.value, context.text, area.unitFont,
     shows == context.showUnit)
   context.showUnit = shows
   context.unitAnchor = nil
@@ -737,7 +759,7 @@ function linkStatus.update(context, rect)
   context.showDetail = area.showDetail
 
   reconcile(context.detailLabel, area.showDetail,
-    {x = area.pad, y = area.detailY, w = area.detailWidth})
+    {x = area.detailX, y = area.detailY, w = area.detailWidth})
   reconcile(context.linkLabel, area.showDetail,
     {x = area.linkX, y = area.detailY, w = area.linkWidth})
 
