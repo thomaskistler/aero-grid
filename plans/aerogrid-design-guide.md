@@ -25,7 +25,7 @@ because a decision that drifted is exactly the kind a guide exists to pin down.
 | The battery glyph: vertical, one colour, outline scaled to the reading's font | Implemented and shipped |
 | The unit inline beside the reading, placed by measurement | Implemented and shipped |
 | Content flow: proportional bands, the band-derived font, the clamp | Implemented and shared by every component |
-| Content flow: the two slots and the build-time fallback | Implemented in `theme`; **`tx-battery` is the only component on them** |
+| Content flow: the two slots and the build-time fallback | Implemented in `theme`; **`tx-battery` and `navigation` are on them, nine components are not** |
 
 The vertical half of [Content flow](#content-flow) — bands, the band-derived font and the
 clamp — is live for every component, because a font rule applied by some and not others
@@ -373,15 +373,58 @@ This makes the arrangement one rule applied at every level rather than a body ru
 footer special case — the difference between something extensible and a set of exceptions
 to memorise.
 
+#### What the two-item row cost, and why it was chosen anyway
+
 `cell-battery`, `link-status` and `navigation` split their supporting row into a left and a
-right column, originally edge-anchored so the two could never collide. Under the slot rule
-the tightest clearance anywhere is **34 px**, on `navigation 2x2`, across six rows, and no
-row forces a fallback. **That figure is measured at the strings those components are drawn
-with, not at their widest** — the geometry carries a widest form for the *reading*, because
-the component's own fitter needs one, and nothing equivalent for a supporting label. 34 px
-is about three more `SMLSIZE` characters of headroom; `LQ 88%` becoming `LQ 100%` spends
-one. Comfortable, but headroom rather than proof. Making it a proof means components
-declaring their widest supporting strings the way they already declare their widest reading.
+right column, originally edge-anchored so the two could never collide. **That split was
+built, measured, backed out, rebuilt behind a flag, and finally replaced** — the longest
+route any decision in this document took, and the only one settled on a radio rather than
+from a description.
+
+The cost is arithmetic and it is not small. Two boxes centred 40% of the content apart can
+each be **40% wide** before they meet; the column split reached **100%**. `fitLabel` spends
+the difference on shorter wording, and on a `2x2` panel every long form in `navigation`'s
+vocabulary goes:
+
+| state | column split | slots |
+| --- | --- | --- |
+| no GPS sensor configured | `NO GPS SOURCE` | **`NO GPS`** |
+| sensor present, no fix | `NO FIX` | `NO FIX` |
+| fix, home not yet set | `NO HOME POSITION` | **`NO HOME`** |
+| flying, oriented from home | `NORTH UP FROM HOME` | **`NORTH UP`** |
+| telemetry gone quiet | `LAST KNOWN` | **`LAST`** |
+
+Four of five states lose their full wording — seven characters on the worst. At `4x2` and
+wider the row is 184 px and every form survives, so this is a cost the narrow spans pay
+alone.
+
+**It was rejected once, on exactly that basis.** The specification puts the
+absent-sensor-versus-no-fix distinction in this row *because the row has room for words*,
+and a rule that takes the words away contradicts the rule that put them there. So the
+implementation was backed out and both arrangements were put on a review screen instead —
+same data, same span, side by side, with the top pair rigged to a GPS source no radio has
+so that `NO GPS SOURCE` against `NO GPS` was the first thing visible. **The user chose the
+narrower row with that cost in front of them.**
+
+**The contradiction was then closed rather than absorbed**, which is the part worth copying.
+The defence was never really the width: it is that the *shortest* wording of each state
+differs from the shortest wording of every other, because the shortest form is what a
+cramped panel prints. `NO GPS` and `NO FIX` are six characters each and say different
+things. `link-status` keeps `DOWN` against `NO RSS` the same way. That property is
+checkable where "has room for words" was not, so the specification now states it and
+`testSupportingWordingsStayDistinct` holds every component to it — including the nine whose
+rows have yet to move.
+
+**Shortening may cost detail. It may never cost meaning.**
+
+Clearances under the rule: the tightest anywhere is **34 px**, on `navigation 2x2`, across
+six rows, with no row forcing a fallback. **That figure is measured at the strings those
+components are drawn with, not at their widest** — the geometry carries a widest form for
+the *reading*, because the component's own fitter needs one, and nothing equivalent for a
+supporting label. 34 px is about three more `SMLSIZE` characters of headroom; `LQ 88%`
+becoming `LQ 100%` spends one. Comfortable, but headroom rather than proof. Making it a
+proof means components declaring their widest supporting strings the way they already
+declare their widest reading.
 
 ### Proportional vertical bands
 
