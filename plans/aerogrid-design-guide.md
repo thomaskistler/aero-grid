@@ -128,7 +128,10 @@ longest: `NOT CELLS` and `BAD CELLS` were nine characters separating two failure
 of one component, and the column is paid for by every header on the dashboard rather
 than by the state that uses it. **A badge names the state; the supporting row says why.**
 Distinctions such as a cells sensor returning a number against one returning nonsense
-belong in the row, which has room for words and is fitted to its width.
+belong in the row, which is fitted to whatever width its panel gives it and words them at
+whatever length fits. **What carries the distinction is the vocabulary, not the room** —
+see [the two-item row](#what-the-two-item-row-cost-and-why-it-was-chosen-anyway), where
+that sentence once said "room for words" and stopped being true.
 
 ---
 

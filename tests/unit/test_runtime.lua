@@ -4255,7 +4255,9 @@ local function testNavigationPresentation()
   local noHome = {source = "GPS", known = true, fix = true, home = false,
     state = "normal", latitude = 47.3769, longitude = 8.5417}
   -- No badge at all: the panel is not in a failed state, and the origin
-  -- caption below says which part is missing at a length a row has room for.
+  -- caption below says which part is missing. Asked of the component
+  -- directly, so this is the full wording rather than whatever a particular
+  -- panel's row width leaves of it.
   assertEqual(navigation.resolveState({}, noHome), "normal")
   assertEqual(navigation.bearingText(noHome), "BRG --")
   assertEqual(navigation.originText(noHome), "NO HOME POSITION")

@@ -1269,10 +1269,19 @@ end
 ---
 --- So the vocabulary was cut rather than the column widened, to one rule:
 --- **a badge names the state, and the panel's supporting row says why.** A
---- badge is read at a glance from arm's length and has room for one word. A
---- detail row has room for a sentence, is fitted to its width, and is where
---- the difference between a cells sensor that returned a number and one that
---- returned nonsense actually belongs.
+--- badge is read at a glance from arm's length and is one word from a closed
+--- set the theme owns. A detail row is a vocabulary the component owns, is
+--- fitted to whatever width its panel gives it, and is where the difference
+--- between a cells sensor that returned a number and one that returned
+--- nonsense actually belongs.
+---
+--- **The row's defence is its vocabulary and not its width**, which matters
+--- because the width changed: a two-item row now takes the panel's two slot
+--- centres and gets 40% of the content where the column split it replaced
+--- reached all of it. `NOT CELS`, `BAD CELS` and `NO CELS` still say three
+--- different things at that width. A component whose shortest wordings
+--- collapse onto one another has lost the distinction however wide its panel
+--- happens to be.
 ---
 --- Components therefore no longer override it. `NOT CELLS` against
 --- `BAD CELLS` spent nine characters separating two failure modes of one

@@ -143,8 +143,16 @@ end
 ---@param settings AeroGridNavigationSettings
 --- No source, no fix and no home are three different causes with three
 --- different fixes, and the origin caption below the reading says which in
---- words. The badge says only what state the panel is in, because a badge has
---- room for one word and the caption has room for a sentence.
+--- words. The badge says only what state the panel is in, because a badge is
+--- one word from a closed set and a caption is a vocabulary this component
+--- owns.
+---
+--- **What lets the caption carry that is the vocabulary, not the room.** The
+--- caption is now half a supporting row on a slotted panel, so on a narrow
+--- span it prints `NO GPS` rather than `NO GPS SOURCE`; the distinction
+--- survives because the shortest form of each cause differs from the
+--- shortest form of every other, which is what
+--- `testSupportingWordingsStayDistinct` holds this component to.
 ---@param view any Navigation subscription.
 ---@return string stateName
 function navigation.resolveState(settings, view)
@@ -424,21 +432,6 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
   local blockTop = themeBuilder.bodyTop(ladder, blockHeight)
   local valueY = blockTop + math.floor((blockHeight - valueHeight) / 2)
 
-  -- **The supporting row keeps its column split, and that is a finding
-  -- rather than an omission.** The rule says a row of two takes the panel's
-  -- two slot centres, and it was written that way and measured. Two boxes
-  -- centred 40% of the content apart can each be at most 40% wide before
-  -- they meet, so the row reaches 80% of the panel where a column split
-  -- reaches all of it -- and `fitLabel` spends the difference on shorter
-  -- wording. It cost `LAST KNOWN` to `LAST`, `NO HOME POS` to `NO HOME` and
-  -- `NO GPS SOURCE` to `NO GPS`.
-  --
-  -- That last one is not a cosmetic loss. The specification puts the
-  -- distinction between a sensor that is absent and one returning nonsense
-  -- in this row precisely because it "has room for words and is fitted to
-  -- its width", while the badge above it carries only the state. A rule that
-  -- takes the words away contradicts the rule that put them there, so the
-  -- row waits for that to be resolved rather than being quietly degraded.
   -- **A row of two takes the panel's two slot centres**, the same 30% and
   -- 70% the reading and the dial use, so the arrangement is one rule at
   -- every level of the panel rather than a body rule with a footer
