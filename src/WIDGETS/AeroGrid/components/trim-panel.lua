@@ -221,6 +221,29 @@ function trimPanel.regionsFor(theme, themeBuilder, rect, count, fonts)
 end
 
 --- Resolve one indicator cell's rectangle and the boxes inside it.
+---
+--- **This component is outside the slot rule, and the reason is structural
+--- rather than an exemption granted to it.** The rule places a panel's
+--- reading on one slot, a compact visual beside it on the other, and the
+--- panel's supporting rows on the same two centres. This panel has none of
+--- those three: it draws no reading at all -- there is no `primitives.value`
+--- anywhere in it -- and its captions and readouts belong to repeated items
+--- rather than to the panel, which is the one case the specification allows
+--- a component to look like several things at once.
+---
+--- What the rule exists to produce, it already has. Every position here is
+--- derived from the panel: the cells divide the content box evenly, a
+--- vertical bar is centred in its cell and a horizontal one spans it, so
+--- nothing moves because its contents changed width.
+---
+--- The one change that could be argued for is centring each cell's caption
+--- and readout over the bar they belong to. It was implemented and reverted.
+--- An LVGL label is left-aligned within its box, so moving the box centres
+--- nothing without also measuring the text -- and a readout changes every
+--- frame, which puts that measurement in the dashboard's largest callback.
+--- Merely computing the cell's centre, before any measuring, cost 200
+--- instructions of that callback. A cosmetic change is not worth the budget
+--- of the panel that has least of it.
 ---@param area table
 ---@param index integer One-based indicator position.
 ---@param vertical boolean Bar axis for this indicator.
