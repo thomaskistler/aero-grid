@@ -4207,6 +4207,18 @@ local function testReadingsSitInTheirSlots()
   --- moment it arrives, rather than growing a ninth near-copy of itself.
   local SLOTTED = {
     {
+      type = "flight-timer",
+      config = {"label: FLIGHT", "timer: 0"},
+      -- Its only visualization is a bar, which spans the panel and is
+      -- exempt, so the clock never splits and centres across the whole box.
+      variants = {{}},
+      visual = function() return nil end,
+      rows = function(panel)
+        if not panel.showDetail then return {} end
+        return {{label = panel.detailLabel, slot = "whole"}}
+      end,
+    },
+    {
       type = "tx-battery",
       config = {"label: TX", "packEmpty: 6.6", "packFull: 8.4"},
       -- Both arrangements: a compact visual beside the reading, and a

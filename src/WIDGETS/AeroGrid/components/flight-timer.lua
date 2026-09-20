@@ -204,14 +204,31 @@ function flightTimer.regionsFor(theme, themeBuilder, rect, layout, fonts)
 
   local barY = math.max(1, rect.h - frame.bottom - spacing.barHeight)
 
+  -- **A lone reading does not split.** This component's only visualization
+  -- is a bar, which spans the panel by design and is exempt from the rule,
+  -- so there is never a second element to leave room for and the clock
+  -- centres across the whole content box. Its supporting row carries one
+  -- item and centres the same way.
+  local readingCentre = frame.pad + math.floor(frame.content / 2)
+  local clockWidth = themeBuilder.measureText(
+    clock, flightTimer.FORMS[formIndex])
+
   return {
     frame = frame,
     pad = frame.pad,
     content = frame.content,
-    clockY = top,
+    -- The slot's centre, a property of the panel. Where the clock starts
+    -- depends on what it currently reads, so `primitives.centreReading` owns
+    -- that and computes it from the measured string.
+    valueCentre = readingCentre,
+    valueX = themeBuilder.slotX(readingCentre, clockWidth),
+    valueY = themeBuilder.bodyTop(ladder, clockHeight),
+    valueWidth = clockWidth,
+    clockY = themeBuilder.bodyTop(ladder, clockHeight),
     clock = clock,
     formIndex = formIndex,
     detailY = math.max(1, barY - labelHeight - 2),
+    detailCentre = readingCentre,
     barY = barY,
     showDetail = showDetail,
     showVisual = showVisual,
@@ -272,11 +289,15 @@ function flightTimer.create(parent, rect, settings, services)
   -- The heading is refitted whenever it changes, so the column it has to
   -- fit is kept beside it.
   context.frame = area.frame
+  -- Kept, because the clock is centred on a slot and `apply` needs to know
+  -- where that slot is. This component had no reason to remember its regions
+  -- while everything it drew started at the padding.
+  context.area = area
 
   context.value = primitives.value(panel.root, theme, {
-    x = area.pad,
+    x = area.valueX,
     y = area.clockY,
-    w = area.content,
+    w = area.valueWidth,
     text = context.text,
     color = presentation.value,
     font = area.clock,
@@ -377,6 +398,12 @@ function flightTimer.apply(context, drawn)
   context.labelValue = drawn.label
 
   context.value:set({text = drawn.text, color = presentation.value})
+  -- The clock is centred on its slot, so where it starts depends on what it
+  -- reads: a timer crossing into hours grows about its middle rather than
+  -- running rightwards. Keyed on the text, so a steady second costs nothing
+  -- beyond the comparison.
+  context.primitives.centreReading(context, context.themeBuilder,
+    context.area, context.area.clock, drawn.text)
   -- Through the fitter, not straight into the label: this heading comes from
   -- the model at runtime and is exactly the kind that overflows its column.
   context.primitives.setHeading(context.label, context.themeBuilder,
@@ -384,6 +411,11 @@ function flightTimer.apply(context, drawn)
   context.badge:set({text = presentation.badge or "", color = presentation.accent})
   if context.showDetail then
     context.detailLabel:set({text = context.detail})
+    -- A row of one item centres across the content box, exactly as a lone
+    -- reading does.
+    context.primitives.centreLabel(context, "detailAnchor",
+      context.themeBuilder, context.detailLabel, context.area.detailCentre,
+      context.area.detailY, context.fonts.label, context.detail)
   end
   context.primitives.stylePanel(context.panel, presentation)
 
@@ -414,16 +446,23 @@ function flightTimer.update(context, rect)
     context.themeBuilder, context.fonts, context.labelValue)
   context.frame = area.frame
   context.value:set({
-    x = area.pad,
+    x = area.valueX,
     y = area.clockY,
-    w = area.content,
+    w = area.valueWidth,
     font = function() return area.clock end,
   })
+  context.area = area
+  -- Every anchor is about a slot and a font that have just moved.
+  context.readingAnchor, context.readingUnitAnchor = nil, nil
+  context.detailAnchor = nil
 
   local primitives = context.primitives
   primitives.reconcile(context.detailLabel, area.showDetail,
     {x = area.pad, y = area.detailY, w = area.content},
     area.showDetail == context.showDetail)
+  primitives.centreLabel(context, "detailAnchor", context.themeBuilder,
+    area.showDetail and context.detailLabel or nil, area.detailCentre,
+    area.detailY, context.fonts.label, context.detail)
 
   local showVisual = area.showVisual and context.bar ~= nil
   primitives.reconcileBar(context.bar, area.showVisual,
