@@ -680,10 +680,17 @@ said two moved and that all of them were App mode, which was the narrow case set
 
 Measured through the real host over every component at every span it declares, in both
 zones and at an obstructed and an unobstructed placement, the reading's font changes on
-**168 of 1088 panels: 116 in App mode and 52 in Full screen, every one of them larger.**
+**165 of 1088 panels: 113 in App mode and 52 in Full screen, every one of them larger and
+none smaller.**
 That sweep is not something `make mocks` builds — the generator renders six components at
 four spans — so it is a figure from a one-off probe rather than one the page can reproduce,
 and the figure this document stands on is the one above it: five bands of twenty-five.
+
+**Sixteen panels also change what they draw rather than only how large it is**, and every
+one of them is a panel shedding something. Seven drop an inline unit, seven drop a compact
+visual, two drop a compass, and one — `variable-indicator` at a single cell — drops its dial
+and gains the unit back, because a panel holding one element does not split and the whole
+content box is then available to measure the unit against.
 
 **The user saw it by eye on two separate components and asked for it.** That is what
 decided it; the arithmetic above is what makes it checkable.
