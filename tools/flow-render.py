@@ -1641,7 +1641,19 @@ row_worst_chars = int(row_worst / _per_char) if _per_char else 0
 
 # How full each distinct band is, before and after, and whether a descender
 # would leave it. Digits have none; units and labels do.
-_bands = sorted({r[6] for r in ladder_rows if r[0] == "widget" and r[6] > 0})
+#
+# **The bands come from the generator's own enumeration, not from the cases
+# on this page.** They used to be the distinct bands among the six components
+# rendered here, at four spans, in one zone, all of them placed in the grid's
+# top left cell -- which is 24 panels of the 272 the schema permits, and the
+# one cell EdgeTX covers with its menu button. That set was missing four of
+# the bands this dashboard builds and carried five it does not, and the
+# conclusion drawn from it named two sizes that never occur. `BANDS` walks
+# every placement of every span in both zones through `theme.ladder`, with
+# the supporting row taken and declined, and is checked against every panel
+# the real host built here.
+_bands = [int(r.band) for r in rows(G.BANDS)]
+_band_where = {int(r.band): str(r.where) for r in rows(G.BANDS)}
 ink_rows = []
 for _b in _bands:
     _line, _ink = band_font(_b), ink_font(_b)
@@ -1652,17 +1664,21 @@ for _b in _bands:
     # for the font choice, which is the only way the cost arises.
     _ink_top = (_b - FONTS[_ink][1]) // 2
     _over = max(0, _ink_top + FONTS[_ink][0] - _b)
-    ink_rows.append((_b, _line, 100 * FONTS[_line][1] // _b,
-                     _ink, 100 * FONTS[_ink][1] // _b, _over))
+    ink_rows.append((_b, _line, 100.0 * FONTS[_line][1] / _b,
+                     _ink, 100.0 * FONTS[_ink][1] / _b, _over,
+                     _band_where.get(_b, "")))
 ink_band_count = len(ink_rows)
 ink_band_rows = "".join(
-    '<tr{cls}><td>{band} px</td><td>{line}</td><td>{occ_l}%</td>'
-    '<td>{ink}</td><td>{occ_i}%</td><td>{over}</td></tr>'.format(
+    '<tr{cls}><td>{band} px</td><td>{line}</td><td>{occ_l:.1f}%</td>'
+    '<td>{ink}</td><td>{occ_i:.1f}%</td><td>{over}</td>'
+    '<td class="where">{where}</td></tr>'.format(
         cls=' class="better"' if line != ink else "",
         band=band, line=line, occ_l=occ_l, ink=ink, occ_i=occ_i,
-        over=f"+{over} px" if over else "none")
-    for band, line, occ_l, ink, occ_i, over in ink_rows
+        over=f"+{over} px" if over else "none",
+        where=html.escape(where))
+    for band, line, occ_l, ink, occ_i, over, where in ink_rows
 )
+ink_moved_bands = ", ".join(f"{r[0]} px" for r in ink_rows if r[1] != r[3])
 ink_moves = sum(1 for r in ink_rows if r[1] != r[3])
 ink_best = max((r[4] for r in ink_rows), default=0)
 ink_worst = min((r[4] for r in ink_rows), default=0)
@@ -1928,14 +1944,14 @@ so it cannot be shortened. With the dial gone the panel has one element, and
 a one-element panel does not split. The overlap is an artefact of forcing
 the split on a panel that would not take it.</p></div>
 
-<h2>Decided: the font comes from the band's line height</h2>
-<div class="real"><strong>Chosen, with the alternative rendered beside
-it.</strong> The reading's font is the largest whose <em>line height</em>
-fits its band. The ink alternative was drawn as a third column at every
-span, on real geometry, and is not on this page any more &mdash; the page is
-for open questions, and keeping a settled one as a choice invites
-re-litigating it. What follows is the record of what was measured, so the
-decision can be checked rather than remembered.</div>
+<h2>Decided: the font comes from the band's ink</h2>
+<div class="real"><strong>Chosen, and it was chosen the other way
+first.</strong> The reading's font is the largest whose <em>ink</em> &mdash;
+its ascent &mdash; fits its band, and the reading is placed by centring that
+ink rather than its line box. Line height was chosen first, on two band
+sizes that this dashboard does not build; the record of that is below,
+because a guide that lists only the winners invites proposing the losers
+again.</div>
 
 <p class="intro">The question came from an observation that fonts should use
 at least 80% of their vertical allotment. Not implemented as a literal
@@ -1952,43 +1968,51 @@ against line height genuinely does carry slack nothing draws into, and the
 observation was correct on its own terms:</p>
 
 <table><thead><tr><th>band</th><th>by line height</th><th>ink fills</th>
-<th>by ink</th><th>ink fills</th><th>descender past the band</th></tr></thead>
+<th>by ink</th><th>ink fills</th><th>descender past the band</th>
+<th>where it occurs</th></tr></thead>
 <tbody>{ink_band_rows}</tbody></table>
 
-<p class="intro">Choosing by line height fills
-{line_worst}&ndash;{line_best}% of a band with ink; by ink it reaches
-{ink_best}% on the 36&nbsp;px band, and it would have moved the font on
-{ink_moved_cases} of {ink_case_total} panels.</p>
+<p class="intro">Every band this dashboard can build, walked over both zones,
+all sixteen spans, every placement of each, and the supporting row both taken
+and declined. There are {ink_band_count} of them. Choosing by line height
+fills {line_worst:.1f}&ndash;{line_best:.1f}% of a band with ink; by ink the
+worst is {ink_worst:.1f}% and the best {ink_best:.1f}%. The two rules
+disagree on {ink_moves} bands: {ink_moved_bands}.</p>
 
-<div class="warn"><strong>The 80% target was unreachable on the larger band
-anyway, and not because of the measurement.</strong> A 51&nbsp;px body band
-takes <code>DBLSIZE</code>, 31&nbsp;px of ink and 60% of the band. The next
-step up is <code>XXLSIZE</code> at 54&nbsp;px of ink, which fits by neither
-measure. There the gap is the <strong>ladder's granularity</strong> rather
-than the metric: the steps are 12, 17, 29, 40 and 69&nbsp;px, and between 40
-and 69 there is nothing.
-<p><strong>So the ink option is not dead, it is blocked.</strong> If the
-ladder ever gains a step between 40 and 69&nbsp;px the question reopens, and
-the rendering that answered it is still in the generator rather than deleted
-&mdash; one line brings the column back.</p></div>
+<div class="warn"><strong>The rejection rested on two bands this dashboard
+never builds.</strong> It was argued on 36&nbsp;px, where ink buys a size,
+and on 51&nbsp;px, where it buys nothing because the ladder steps 40 to 69
+with nothing between &mdash; and the second was read as the ladder's
+granularity blocking the metric. 36&nbsp;px is not in the table above. 51 is,
+and there the two rules do still agree, so half of the old argument survives
+as a fact about one band rather than as a verdict on the rule.
+<p><strong>What was wrong was the case set, not the arithmetic.</strong> The
+bands were taken from the panels rendered on this page: six components, four
+spans, one zone, every one of them in the grid's top left cell. The walk
+above is the whole schema, and it is checked against every panel the real
+host built here.</p></div>
 
 <p class="intro"><strong>Two consequences follow from the choice, and both
-are now closed.</strong></p>
+were paid rather than avoided.</strong></p>
 <ul>
-  <li><strong>The descender question does not arise.</strong> It was
-      measured on a constructed <code>mph</code> panel, since nothing in the
-      catalogue descends at all: with the text placed on its line box the
-      <code>p</code> reached {descender_box}&nbsp;px past the band floor,
-      because centring a line box already reserves the descent whether or
-      not anything uses it. The {descender_ink}&nbsp;px cost only appeared
-      when the <em>placement</em> moved to ink as well. Neither happens
-      now.</li>
-  <li><strong>The optical centre stays on the line box</strong>, exactly as
-      it was settled from mocks. Choosing by ink would have split the two
-      &mdash; on <code>{optical_case[1]} {optical_case[2]}</code> the dial
-      sat {optical_gap:.0f}&nbsp;px off the digits' middle &mdash; and that
-      was the strongest argument against changing only half of the
-      measurement. It is moot.</li>
+  <li><strong>The descender question is real and is now an
+      assertion.</strong> Measured on a constructed <code>mph</code> panel,
+      because nothing in the catalogue descends by itself: placed on its
+      line box the <code>p</code> reached {descender_box}&nbsp;px past the
+      band floor, and placed on its ink it reaches {descender_ink}&nbsp;px.
+      Centring a line box reserved the descent whether or not anything used
+      it; centring ink does not, so the space below a reading's baseline
+      belongs to whatever is drawn beneath. That is safe only while nothing
+      descends into it, and the widget's suite constructs the strings that
+      can &mdash; every unit this dashboard renders that descends, and the
+      model name, which is free text.</li>
+  <li><strong>The optical centre moved to the ink too.</strong> Centring the
+      dial on a line box while the font came from ink would have split the
+      two &mdash; on <code>{optical_case[1]} {optical_case[2]}</code> the
+      dial sat {optical_gap:.0f}&nbsp;px off the digits' middle. Adopting
+      ink for the font and not for the placement is half a change, which is
+      what the last section of this page said before either half was
+      taken.</li>
 </ul>
 
 <div class="legend">

@@ -1645,7 +1645,7 @@ function theme.bands(frame, rect, hasLabel, hasTertiary, floorHeight)
   }
 end
 
---- The largest reading font whose line height fits a band.
+--- The largest reading font whose ink fits a band.
 ---
 --- This inverts the older rule. There the composition came from the box and
 --- the font from the composition; here the band comes from the panel and the
@@ -1653,12 +1653,26 @@ end
 --- all and therefore cannot resize with it. The stability guarantee the
 --- fitter had to be careful to preserve now holds by construction.
 ---
---- Chosen by **line height**, not by the ink the glyphs actually mark. Ink
---- was measured against it at every span: it reaches 86% of a 36 px band
---- against line height's 63%, but it cannot move a 51 px band at all, because
---- the ladder steps 40 to 69 with nothing between. That gap is the ladder's
---- granularity rather than the metric, so the alternative is blocked rather
---- than wrong, and the design guide records what reopens it.
+--- Chosen by **ink** -- the font's ascent -- rather than by its line height,
+--- which carries a descent and a leading that no digit, minus, point or
+--- colon in this catalogue draws into. On the twenty-one body bands this
+--- dashboard can build, the two rules disagree on four: 23 px takes MIDSIZE
+--- rather than SMLSIZE, 34 px DBLSIZE rather than MIDSIZE, and 54 and 62 px
+--- XXLSIZE rather than DBLSIZE. A 62 px band drew a reading filling half of
+--- it where the next font up fills 87%.
+---
+--- **This was decided the other way first**, on a 36 px band and a 51 px
+--- band, and the correction is worth knowing rather than quietly made: 36 px
+--- is not a band this dashboard builds at all, and the enumeration that said
+--- it was had been taken over the panels one generator happened to render.
+--- The design guide carries the record.
+---
+--- **What it costs is a strip nothing reserves**, between a reading's
+--- baseline and the bottom of its line box. Whatever is drawn beneath a
+--- reading may sit there, which is safe only while nothing descends into it
+--- -- so `testReadingsDoNotDescendOverAnything` constructs the strings that
+--- can: the units `telemetry_service` renders with a descender, and
+--- `model-identity`'s model name, which is free text.
 ---@param height integer Band height in pixels.
 ---@return any font
 function theme.bandFont(height)
@@ -1731,20 +1745,6 @@ function theme.clampToPanel(y, font, panelHeight)
   local ink = theme.fontAscent(font)
   local top = math.max(0, y)
   return math.min(top, math.max(0, panelHeight - ink))
-end
-
---- Top of a block of `height` centred on a reading's optical centre.
----
---- The reading's **line box**, not its ink. That was decided from rendered
---- mocks -- baseline, top and centre drawn side by side at every span -- and
---- confirmed when the band font was chosen: had the font come from ink, the
---- box and the glyphs would have disagreed by 4 px on a DBLSIZE reading.
----@param readingY integer
----@param readingFont any
----@param height integer
----@return integer
-function theme.opticalTop(readingY, readingFont, height)
-  return readingY + math.floor((theme.fontHeight(readingFont) - height) / 2)
 end
 
 --- Lay out a standard panel into a table the component owns.
