@@ -269,12 +269,12 @@ function txBattery.regionsFor(theme, themeBuilder, primitives, rect, layout,
   -- the same rows as any other panel of this size, whichever component drew
   -- it. What this component wants is a veto, not a vote.
   --
-  -- **And the ladder is told what will be drawn.** The percentage is off
-  -- unless a layout asks for it, and reserving its quarter regardless cost
-  -- the voltage a font size at every two-row span -- a band cut for a row
-  -- that was never going to be filled.
-  local ladder = themeBuilder.ladder(theme, rect, frame,
-    {rows = layout.showDetail == true})
+  -- The ladder is not told what will be drawn, because the bands no longer
+  -- ask: a panel reserves its bottom quarter whether or not the percentage
+  -- is on. This component used to declare it and gain a font size at every
+  -- two-row span; that gain is what the fixed-bands rule gives back, and the
+  -- design guide records the user choosing consistency over it.
+  local ladder = themeBuilder.ladder(theme, rect, frame)
   local showVisual = layout.showVisual and ladder.visual
   local showDetail = layout.showDetail and ladder.rows > 0
   local wantsGlyph = layout.visual == "battery"

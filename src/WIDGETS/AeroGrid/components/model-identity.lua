@@ -171,12 +171,9 @@ function modelIdentity.regionsFor(theme, themeBuilder, rect, layout, fonts)
   -- Composition comes from the shared ladder, like every other panel of this
   -- size. The image takes what the text leaves, below.
   --
-  -- **The ladder is told what will be drawn.** The label row is off unless a
-  -- layout asks for it, and reserving its quarter regardless cost the name a
-  -- font size at every two-row span -- a band cut for a row that was never
-  -- going to be filled.
-  local ladder = themeBuilder.ladder(theme, rect, frame,
-    {rows = layout.showLabels == true})
+  -- The ladder is not told what will be drawn, because the bands no longer
+  -- ask: the bottom quarter is reserved whether or not the label row is on.
+  local ladder = themeBuilder.ladder(theme, rect, frame)
   showLabels = showLabels and ladder.rows > 0
 
   local nameFont, formIndex = themeBuilder.fitReading(

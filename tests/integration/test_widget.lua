@@ -2842,28 +2842,28 @@ local function testNothingIsDrawnOverAnythingElse()
   end
 end
 
---- A two-row footer gets a band as tall as it is, so the reading clears it.
+--- A two-row footer fits the quarter it is granted, and clears the reading.
 ---
---- Every component but this one draws a single supporting row, which is
---- shorter than the quarter of the panel the band reserves for it.
---- `navigation` draws two and centres them as a group: 36 px against a
---- quarter of 31 on a two-row panel. A band that reserved the quarter
---- reported more body than the panel had, the rows overflowed upward into
---- the bottom of it, and the reading was sized against the difference.
+--- `navigation` is the only component that draws two supporting rows, and it
+--- centres them as a group: 32 px of ink against a tertiary quarter that is
+--- 31 px at a two-row span and 48 at a three-row one. Under fixed bands the
+--- quarter does not grow to fit what is put in it, so the second row is
+--- granted by the band that has to hold it -- which makes a three-row span
+--- the narrowest one that draws both.
 ---
---- **It was invisible while a reading was measured as a line box**, because a
---- line box never reached its band's floor -- the descent and leading
---- absorbed the error. Measured as ink it does reach it: in the corner
---- EdgeTX paints its menu button over, a `2 x 2` body band is 54 px and
---- XXLSIZE is 54 px of ink, so the distance ended three pixels inside the
---- bearing row.
+--- **This is where the rule bites hardest, so it is checked at both ends.**
+--- At `2 x 3` the group has 48 px and 16 to spare; the panel is built in the
+--- menu button's corner and in a clear cell, because the obstructed one is
+--- where the band is tightest and a check that only built the roomy case
+--- could not tell a fix from a panel that never had the problem.
 ---
---- Both placements, because the obstructed one is where it bit and the clear
---- one is where the panel has room to spare -- a check that only built the
---- tight case could not tell a fix from a panel that never had the problem.
+--- It also carries the specification's promise about a missing home: the
+--- coordinates stay visible and only the two values measured from home are
+--- withheld. That is a property of the coordinate row, so it belongs at a
+--- span that draws one.
 local function testTwoRowFooterClearsTheReading()
   for _, place in ipairs({{"the menu button's corner", 0, 0},
-      {"a clear cell", 2, 2}}) do
+      {"a clear cell", 2, 1}}) do
     resetRadio()
     local widget = makeWidget("two-row-footer-" .. place[2] .. place[3],
       table.concat({
@@ -2871,7 +2871,7 @@ local function testTwoRowFooterClearsTheReading()
       "  - id: nav\n    type: navigation\n",
       "    col: ", tostring(place[2]), "\n",
       "    row: ", tostring(place[3]), "\n",
-      "    colSpan: 2\n    rowSpan: 2\n",
+      "    colSpan: 2\n    rowSpan: 3\n",
       "    config:\n      label: HOME\n      source: GPS\n",
       "      presentation: detailed\n",
     }))
@@ -2880,9 +2880,9 @@ local function testTwoRowFooterClearsTheReading()
     pump(context, 60)
 
     local nav = entryById(context, "nav").instance
-    local where = "navigation 2 x 2 in " .. place[1]
-    -- The preconditions. Without both of these the assertion below is about
-    -- a panel that draws one row, or none, and cannot fail.
+    local where = "navigation 2 x 3 in " .. place[1]
+    -- The preconditions. Without both of these the assertions below are
+    -- about a panel that draws one row, or none, and cannot fail.
     assertEqual(nav.showDetail, true, where .. " drew no supporting row")
     assertEqual(nav.showCoordinates, true,
       where .. " drew one supporting row, not two")
@@ -2897,8 +2897,216 @@ local function testTwoRowFooterClearsTheReading()
     -- enough for in the first place.
     assert(rowTop < nav.coordinatesLabel.properties.y, where
       .. ": the coordinates do not sit below the bearing row")
+    -- Both rows inside the quarter they were granted, which is the property
+    -- the fixed-bands rule turns on: a band that is always reserved is only
+    -- honest if what it holds actually fits it.
+    local band = nav.area.bands.tertiary
+    assert(rowTop >= band.y, where .. ": the bearing row starts at " .. rowTop
+      .. ", above its own band at " .. band.y)
+    local lastRow = nav.coordinatesLabel.properties.y
+      + themeModule.fontAscent(nav.fonts.label)
+    assert(lastRow <= band.y + band.h, where .. ": the coordinate row ends at "
+      .. lastRow .. ", below its own band at " .. (band.y + band.h))
     assertNothingOverlaps(where, context)
+
+    -- **A missing home withholds what is measured from home and nothing
+    -- else.** The fix is perfectly good, so the coordinates stay on screen.
+    radio.values[109]["pilot-lat"] = 0
+    radio.values[109]["pilot-lon"] = 0
+    pump(context, 40)
+    assertEqual(nav.origin, "NO HOME")
+    assertEqual(nav.text, "--", "a distance was measured from nowhere")
+    assertEqual(nav.detail, "BRG --", "a bearing was invented without a home")
+    assertEqual(nav.coordinates, "47.37690 8.54170",
+      where .. ": the position itself is still known")
+    assertEqual(nav.coordinatesLabel.properties.text, "47.37690 8.54170",
+      where .. ": the coordinates were computed and not drawn")
   end
+  resetRadio()
+end
+
+--- The always-reserved quarter is empty when nothing draws into it, and holds
+--- both its tenants when something does.
+---
+--- The fixed-bands rule reserves the bottom quarter of every panel whether or
+--- not a supporting row is drawn there. That is only worth having if the
+--- reservation is honest in both directions:
+---
+---  * **empty means empty.** Nothing may be drawn into the quarter on a panel
+---    that declares no row, and nothing else may quietly grow into it. A band
+---    that something expands into is the redistribution this rule removed,
+---    reappearing as a leak instead of as arithmetic.
+---  * **occupied means it fits.** A bar is floor furniture -- its length is
+---    the reading, so it spans the panel and sits on the floor -- and the
+---    floor is this band's own floor, so a bar is drawn *inside* the quarter
+---    rather than beneath it. A panel drawing a bar and a supporting row puts
+---    both in the quarter, the row above the bar, and both have to fit.
+---
+--- That second question is the one `theme.bands` used to answer with
+--- `floorHeight`: the band was sized to the bar rather than the bar placed in
+--- the band. Removing the parameter makes the question real rather than
+--- assumed, so it is measured here.
+local function testTertiaryQuarterHoldsItsFurniture()
+  --- Everything drawn that reaches into a panel's tertiary band.
+  local function occupants(entry, bounds)
+    local fonts = themeModule.typography(
+      entry.placement.colSpan, entry.placement.rowSpan)
+    local panel = {x = 0, y = 0, w = bounds.w, h = bounds.h}
+    local band = themeModule.ladder(entry.instance.theme, panel,
+      themeModule.frame(entry.instance.theme, panel, fonts)).bands.tertiary
+
+    local found = {}
+    local function walk(object, offsetX, offsetY)
+      for _, child in ipairs(object.children) do
+        local x = offsetX + (child.properties.x or 0)
+        local y = offsetY + (child.properties.y or 0)
+        if not child.hidden then
+          local text = tostring(child.properties.text or "")
+          local height, what
+          if child.kind == "label" and text ~= "" then
+            local font = child.properties.font
+            if type(font) == "function" then font = font() end
+            height = themeModule.fontAscent(font)
+            what = '"' .. text .. '"'
+          elseif child.kind == "rectangle" or child.kind == "image" then
+            height = child.properties.h or 0
+            what = child.kind
+            -- The panel's own surface spans it and the accent stripe runs
+            -- its whole height inside the left padding. Both are under the
+            -- content by construction and belong to no band.
+            local spansPanel = (child.properties.w or 0) >= bounds.w - 2
+              and height >= bounds.h - 2
+            local inAccent = x + (child.properties.w or 0) <= 8
+            if spansPanel or inAccent then what = nil end
+          end
+          if what and height and y + height > band.y
+              and y < band.y + band.h then
+            found[#found + 1] = {what = what, top = y, bottom = y + height}
+          end
+        end
+        walk(child, x, y)
+      end
+    end
+    walk(entry.container, 0, 0)
+    return found, band
+  end
+
+  -- Each case says whether the panel draws a supporting row, so the check
+  -- knows which way the quarter should come out. A declaration that never
+  -- builds the case is not coverage, so the bar variants carry the sources
+  -- that make a second row real.
+  local CASES = {
+    {name = "flight-mode bare", type = "flight-mode",
+      config = {"label: MODE"}, row = false, bar = false},
+    {name = "tx-battery bare", type = "tx-battery",
+      config = {"label: TX", "packEmpty: 6.6", "packFull: 8.4"},
+      row = false, bar = false},
+    {name = "model-identity bare", type = "model-identity",
+      config = {"presentation: name", "label: MODEL"},
+      row = false, bar = false},
+    {name = "flight-mode row", type = "flight-mode",
+      config = {"label: MODE", "showIndex: true"}, row = true, bar = false},
+    {name = "tx-battery row", type = "tx-battery",
+      config = {"label: TX", "packEmpty: 6.6", "packFull: 8.4",
+        "showPercent: true"}, row = true, bar = false},
+    {name = "metric bar", type = "metric",
+      config = {"label: ALT", "source: Alt", "unit: m", "rangeMin: 0",
+        "rangeMax: 400", "precision: 0", "visual: bar"},
+      row = true, bar = true},
+    {name = "cell-battery bar and row", type = "cell-battery",
+      config = {"source: Cels", "label: PACK", "reading: lowest",
+        "visual: bar", "showPack: true", "showCount: true"},
+      row = true, bar = true},
+  }
+
+  local sawEmpty, sawOccupied, sawBarAndRow = 0, 0, 0
+
+  for _, case in ipairs(CASES) do
+    -- Two-row spans, because a one-row panel is granted no supporting row at
+    -- all and would report an empty quarter whatever the component asked
+    -- for. Only three components declare a three-row span, so a `2 x 3`
+    -- sweep would be a sweep over a different set for every case.
+    for _, span in ipairs({{2, 2}, {4, 2}}) do
+      for _, mode in ipairs({{"full screen", fullScreenZone},
+          {"app mode", appZone}}) do
+        resetRadio()
+        local lines = {"version: 1", "grid:", "  columns: 4", "  rows: 4",
+          "components:", "  - id: subject", "    type: " .. case.type,
+          -- Clear of the menu button, so the quarter is measured on a panel
+          -- nothing else is interfering with.
+          "    col: " .. (4 - span[1]), "    row: " .. (4 - span[2]),
+          "    colSpan: " .. span[1], "    rowSpan: " .. span[2],
+          "    config:"}
+        for _, line in ipairs(case.config) do
+          lines[#lines + 1] = "      " .. line
+        end
+        local widget = makeWidget("quarter-" .. string.gsub(case.name, " ", "")
+          .. "-" .. span[1] .. "x" .. span[2] .. "-"
+          .. string.gsub(mode[1], " ", ""),
+          table.concat(lines, "\n") .. "\n")
+        local context = createLoaded(mode[2](), DEFAULT_OPTIONS, widget)
+        assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+        pump(context, 60)
+
+        local entry = entryById(context, "subject")
+        local bounds = boundsOf(entry)
+        local inside, band = occupants(entry, bounds)
+        local where = mode[1] .. " " .. case.name .. " "
+          .. span[1] .. "x" .. span[2]
+
+        if case.row then
+          assert(#inside > 0, where
+            .. ": the panel declares a supporting row and its tertiary"
+            .. " quarter is empty, so the row is somewhere else")
+          sawOccupied = sawOccupied + 1
+          -- Everything in it is inside it. A band that is always reserved is
+          -- only honest if what it holds actually fits.
+          for _, box in ipairs(inside) do
+            assert(box.top >= band.y and box.bottom <= band.y + band.h, where
+              .. ": " .. box.what .. " runs from " .. box.top .. " to "
+              .. box.bottom .. ", outside its band at " .. band.y .. ".."
+              .. (band.y + band.h))
+          end
+          if case.bar then
+            local bars, labels = 0, 0
+            for _, box in ipairs(inside) do
+              if box.what == "rectangle" then bars = bars + 1
+              else labels = labels + 1 end
+            end
+            if bars > 0 and labels > 0 then
+              sawBarAndRow = sawBarAndRow + 1
+              -- The row sits above the bar rather than on it.
+              for _, box in ipairs(inside) do
+                if box.what ~= "rectangle" then
+                  for _, other in ipairs(inside) do
+                    if other.what == "rectangle" then
+                      assert(box.bottom <= other.top, where
+                        .. ": a supporting row runs to " .. box.bottom
+                        .. " and the bar starts at " .. other.top)
+                    end
+                  end
+                end
+              end
+            end
+          end
+        else
+          assertEqual(#inside, 0, where
+            .. ": the panel draws no supporting row and its tertiary quarter"
+            .. " holds "
+            .. (inside[1] and inside[1].what or "") .. " -- something grew"
+            .. " into a band that is supposed to stay empty")
+          sawEmpty = sawEmpty + 1
+        end
+      end
+    end
+  end
+
+  -- None of the three sweeps may be vacuous.
+  assert(sawEmpty > 0, "no panel with an empty quarter was ever built")
+  assert(sawOccupied > 0, "no panel with an occupied quarter was ever built")
+  assert(sawBarAndRow > 0,
+    "no panel drawing a bar and a supporting row was ever built, so the"
+      .. " case those two share a band was never constructed")
   resetRadio()
 end
 
@@ -4579,27 +4787,33 @@ end
 --- box is rebuilt from the padding constants, and the arrangement in force is
 --- read off the **glyph's own drawn position** -- independent evidence, since
 --- the glyph is placed from its geometry rather than from a text width.
---- A panel that draws no supporting row does not reserve a band for one.
+--- A panel lays its reading out in the same place whether or not it draws a
+--- supporting row.
 ---
---- **This is its own check because every other measure is satisfied by the
---- bug.** A reading centred in a band 31 pixels shorter than the panel
---- actually has is correctly centred, correctly sized for that band, and
---- inside the panel -- so the positional check, the collision check and the
---- containment check all pass. The only symptom is a font one step smaller
---- than the panel could carry, and nothing was comparing the reservation
---- with what got drawn.
+--- **This test used to assert the exact opposite and was renamed with the
+--- rule it checks.** It was `testUnusedRowsCostNothing`, and it held that a
+--- panel drawing no supporting row must read *larger* than one that does,
+--- because the tertiary quarter was given to the body when nothing was going
+--- to be drawn in it. That was a real defect at the time -- three components
+--- default their row off and all three were charged a quarter of the panel
+--- for a row they would never fill -- and fixing it was correct given the
+--- rule then in force.
 ---
---- It is the second instance of one seam: `theme.ladder` decides from what a
---- panel's height *permits*, a component decides what it *draws*, and the
---- two were never reconciled. The first instance was `metric` arranging a
---- two-item supporting row on a panel drawing one item; this is the same
---- disagreement one layer down, in the band rather than the placement.
+--- The rule changed. The user put the result on a radio and rejected it: a
+--- redistributing band makes two panels of one size lay out differently
+--- according to what is *in* them, so a reading sits at one height on a
+--- panel with a row and at another on the panel beside it without. The bands
+--- are fixed proportions now, and the property worth holding is the reverse
+--- of what this once held.
 ---
---- Three components default their supporting row off -- `flight-mode`'s mode
---- number, `model-identity`'s label list, `tx-battery`'s estimate -- and all
---- three were charged a quarter of the panel for a row they would never
---- fill.
-local function testUnusedRowsCostNothing()
+--- **The position is the assertion, not the font.** A font comparison was
+--- what this used before and it is the weaker claim: both panels reach the
+--- top of the ladder on a tall enough panel, so equal fonts are satisfied by
+--- a band that is wrong in a way the ladder cannot express. Two readings on
+--- the same line is the property itself.
+local function testReadingsIgnoreTheRowBeneathThem()
+testTertiaryQuarterHoldsItsFurniture()
+
   -- Each component, the setting that turns its supporting row on, and how to
   -- read back whether the panel drew one. Declared rather than special-cased
   -- so a component that gains an optional row is covered by adding a line.
@@ -4674,32 +4888,25 @@ local function testUnusedRowsCostNothing()
       tops[asked] = panel.value.properties.y
     end
 
-    -- **The reservation shows up in where the reading sits.** A panel that
-    -- draws no row has a three-quarter body band where one that draws a row
-    -- has a half. Both bands start at the same pixel, so the deeper one
-    -- centres its reading lower; if the tertiary quarter is cut regardless,
-    -- the two land on the same line and the panel is silently paying for a
-    -- row it never draws.
-    --
-    -- **This used to compare the two fonts, and that stopped being able to
-    -- fail.** It was a good proxy while the band was measured as a line box:
-    -- 62 px held DBLSIZE and 87 px held XXLSIZE, so a cut band showed up as
-    -- a smaller number. Measured as ink, 62 px holds XXLSIZE too -- and
-    -- XXLSIZE is the top of the ladder, so both panels read at the same size
-    -- whether or not the band was cut. The proxy agreed with the property
-    -- until it did not, which is the shape this suite keeps finding. The
-    -- position is the property itself.
-    assert(tops[false] > tops[true], subject.type
+    -- **The reading lands on the same line either way.** Both panels have a
+    -- label quarter, a body half and a tertiary quarter, and the tertiary
+    -- quarter is reserved whether or not anything is drawn in it -- so the
+    -- body band is the same band and the reading is centred in the same
+    -- place. This is the property the user asked for, stated as the thing a
+    -- pilot can see: two panels of one size, one with a row and one without,
+    -- with their numbers on one line.
+    assertEqual(tops[false], tops[true], subject.type
       .. ": a panel drawing no supporting row puts its reading at "
-      .. tops[false] .. ", the same line as one that does -- so its band was"
-      .. " reserved for a row it never draws")
+      .. tops[false] .. " and one that draws a row puts it at " .. tops[true]
+      .. ", so the layout still depends on what is in the panel")
 
-    -- And the font may never go the wrong way, which is what the comparison
-    -- above was really guarding.
-    assert(themeModule.fontHeight(fonts[false])
-        >= themeModule.fontHeight(fonts[true]), subject.type
-      .. ": a panel drawing no supporting row reads at "
-      .. edgetx.fontName(fonts[false]) .. ", smaller than one that does")
+    -- And at the same size, which follows from the same band but is worth
+    -- pinning separately: a font is what a reader notices first, and an
+    -- equal position with unequal fonts would mean the two were centred
+    -- alike by coincidence rather than sized alike by rule.
+    assertFont(fonts[false], fonts[true], subject.type
+      .. ": a panel drawing no supporting row reads at a different size from"
+      .. " one that does")
   end
 end
 
@@ -5995,9 +6202,12 @@ components:
   -- stroke that followed the cell rather than the reading would pass every
   -- assertion below. The cell is capped at 50 px tall and therefore 25 wide
   -- across a range of panel heights, while the body band keeps growing --
-  -- so a 480 x 224 zone reads at XXLSIZE and a 480 x 172 zone at DBLSIZE,
-  -- both with a 25 px cell.
-  local zone = {x = 0, y = 0, w = 480, h = 224}
+  -- so a 480 x 240 zone reads at XXLSIZE and a 480 x 232 zone at DBLSIZE,
+  -- both with a 25 px cell. **Re-swept for the fixed-bands rule**, which
+  -- moved every band and with it the height at which the reading steps: the
+  -- old pair, 224 and 172, now reads at one size on both and the test would
+  -- have stopped covering anything without failing.
+  local zone = {x = 0, y = 0, w = 480, h = 240}
   local context = createLoaded(zone, DEFAULT_OPTIONS, widgetPath)
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
   settle(context, 60)
@@ -6027,7 +6237,7 @@ components:
   -- chosen: the band and the cell both derive from the panel's height, so
   -- the pairs where one moves and the other does not are narrow and are not
   -- where anybody would look first.
-  reflow(480, 172)
+  reflow(480, 232)
 
   assert(themeModule.fontHeight(pack.value.properties.font())
       < themeModule.fontHeight(builtFont),
@@ -6961,7 +7171,14 @@ components:
   assertEqual(alt.showRange, true, "the metric shed its range row too early")
   assertEqual(alt.showSecondary, true, "the metric shed its secondary too early")
   assertEqual(nav.showDetail, true, "the nav panel shed its rows too early")
-  assertEqual(nav.showCoordinates, true, "the nav panel shed its coordinates")
+  -- **One supporting row at this span, not two.** A `2 x 2` panel's tertiary
+  -- quarter is 31 px and this component's two-row group is 32 px of ink, so
+  -- the coordinates are shed by the band that would have to hold them. The
+  -- row that sheds and returns here is therefore the bearing, which is what
+  -- the assertions below follow. Two rows at a three-row span are covered by
+  -- testTwoRowFooterClearsTheReading.
+  assertEqual(nav.showCoordinates, false,
+    "a 2 x 2 nav panel kept two rows in a quarter that holds one")
 
   local function reflow(width, height)
     zone.w, zone.h = width, height
@@ -6981,7 +7198,6 @@ components:
   assertEqual(alt.showRange, false, "the metric kept a range row it cannot fit")
   assertEqual(alt.showSecondary, false, "the metric kept a row it cannot fit")
   assertEqual(nav.showDetail, false, "the nav panel kept rows it cannot fit")
-  assertEqual(nav.showCoordinates, false, "the nav panel kept its coordinates")
 
   assertDeclaresWhatItDraws(cells, link, alt, nav, "shed")
 
@@ -7004,7 +7220,6 @@ components:
   assertEqual(link.showDetail, true, "the link rows never came back")
   assertEqual(alt.showSecondary, true, "the metric's secondary never came back")
   assertEqual(nav.showDetail, true, "the nav rows never came back")
-  assertEqual(nav.showCoordinates, true, "the coordinate row never came back")
 
   -- Five cells now, not three. A stale row would still say 3S.
   assertEqual(cells.countLabel.properties.text, "5S",
@@ -7018,10 +7233,13 @@ components:
   assert(string.find(alt.secondary.properties.text, "-3", 1, true),
     "a revealed secondary row still reports the value it was shed with: "
     .. tostring(alt.secondary.properties.text))
-  -- The model moved, so both the bearing row and the coordinates changed.
-  assert(string.find(nav.coordinatesLabel.properties.text, "47.4", 1, true),
-    "a revealed coordinate row still reports the position it was shed with: "
-    .. tostring(nav.coordinatesLabel.properties.text))
+  -- The model moved while the row was hidden, so the bearing measured from
+  -- home moved with it: 009 degrees before, 054 after. Pinned rather than
+  -- merely required to differ, because "not 009" is satisfied by every wrong
+  -- answer as well as the right one.
+  assertEqual(nav.detailLabel.properties.text, "BRG 054",
+    "a revealed bearing row still reports the bearing it was shed with: "
+    .. tostring(nav.detailLabel.properties.text))
   assertEqual(nav.detailLabel.properties.text, nav.detail,
     "a revealed bearing row disagrees with what the panel last declared")
   assertEqual(cells.countLabel.properties.text, cells.countText,
@@ -7388,38 +7606,33 @@ local function testCoreComponents()
   -- The sensor's own unit, which arrives with the source rather than being
   -- known when the panel was built.
   assertEqual(dial.unit.properties.text, "A")
-  -- **The dial goes and the unit stays, and both follow from one step of
-  -- font.** This panel is a single cell, 117 x 65, and its body band is
-  -- 34 px. Measured as ink that band holds DBLSIZE -- 31 px of glyph, 91% of
-  -- the band -- where a line height of 40 did not fit and MIDSIZE was taken
-  -- instead.
+  -- **The dial stays and the unit goes, and both follow from one step of
+  -- font.** This panel is a single cell, 117 x 65. Its extent is 59 px, so
+  -- its bands are a 14 px label, a 26 px body and a 14 px tertiary, and a
+  -- 26 px body holds MIDSIZE at 23 px of ink and not DBLSIZE at 31.
   --
   -- The reading takes that size, because a reading is never shrunk to make
-  -- room for something beside it. Its widest form is `-1200`, which DBLSIZE
-  -- draws in 77 px, and neither pair of slots separates 77 px of number from
-  -- a 26 px dial inside a 105 px content box: tightened, the reading's left
-  -- edge lands at 1 px, inside the panel's own 8 px padding, and at strict
-  -- halves it lands at -5. So the dial is shed. Magnitude wins and the
-  -- decoration goes, which is the order the specification states and the
-  -- order this panel's `2 x 2` sibling follows for the same reason.
+  -- room for something beside it. Its widest form is `-1200`, which MIDSIZE
+  -- draws in 56 px, and the tightened slots do separate 56 px of number from
+  -- a 26 px dial inside a 105 px content box -- so the dial survives. Being
+  -- a two-element panel, the reading is then measured against its slot
+  -- rather than the whole box: 58 px, against 65 px for `-1200` and an
+  -- SMLSIZE `A`. So the unit goes, which is the documented order -- a form
+  -- may drop redundancy, never magnitude, and the heading above says what is
+  -- being measured.
   --
-  -- A panel holding one element does not split, so the reading centres
-  -- across the whole content box and the unit is measured against 105 px
-  -- rather than against half a panel. `-1200` with an SMLSIZE `A` and its
-  -- one pixel of air comes to 86, so the unit rides after all. It did not
-  -- before: MIDSIZE `-1200` was 56 px in a 58 px slot, and 65 px of pair
-  -- would not fit beside the dial that panel still had.
-  assertEqual(dial.showVisual, false,
-    "a single cell kept its dial beside a DBLSIZE reading")
-  assertEqual(dial.showUnit, true,
-    "the unit was dropped on a panel with the whole content box to itself")
-  -- And a shed dial is off the screen rather than merely unmentioned. The
-  -- arc object still exists, because a reflow to a wider panel reveals it,
-  -- but nothing about it is on screen and `apply` returns before touching
-  -- it -- which is why the drift coverage moved to a panel that draws one,
-  -- in testRadialDoesNotDrift.
+  -- **This panel has now been each way round twice**, which is worth the
+  -- line: it drew a dial and no unit under the old band rule, lost the dial
+  -- and gained the unit when the band started being measured as ink and grew
+  -- to 34 px, and has gone back to a dial and no unit now that the band is a
+  -- fixed half at 26. Nothing about the panel changed; the band under it did,
+  -- three times.
+  assertEqual(dial.showVisual, true,
+    "a single cell shed the dial its MIDSIZE reading leaves room for")
+  assertEqual(dial.showUnit, false,
+    "the unit rode beside a reading that has no room for it in its slot")
   assert(dial.radial, "the radial presentation was not built")
-  assert(dial.radial.arc.hidden, "a shed dial was left on screen")
+  assertEqual(dial.radial.arc.hidden, false, "the dial was not on screen")
 
   -- Trims are read through EdgeTX's own sources, in stored trim units.
   local trims = entryById(context, "trims").instance
@@ -7802,7 +8015,16 @@ local function testTelemetryComponents()
     "the bearing row overran its box")
   assert(themeModule.textWidth(nav.fonts.label, nav.origin) <= nav.originWidth,
     "the origin caption overran its box")
-  assertEqual(nav.coordinates, "47.37690 8.54170")
+  -- **No coordinates at this span**, and asserting their text here would be
+  -- asserting a string nobody can see. A `2 x 2` panel's tertiary quarter is
+  -- 31 px and two supporting rows are 32 px of ink, so this component draws
+  -- the bearing alone and the coordinates are shed by the band that would
+  -- have had to hold them. They are checked at a three-row span, in
+  -- testTwoRowFooterClearsTheReading.
+  assertEqual(nav.showCoordinates, false,
+    "a 2 x 2 nav panel kept two rows in a quarter that holds one")
+  assertEqual(nav.rendered.coordinates, nil,
+    "a shed coordinate row was still being formatted every frame")
   assertEqual(nav.stateName, "normal")
   -- **This panel sheds its compass, and that is the magnitude rule.** The
   -- panel is 238 x 134 with a 226 px content box, and its 62 px body band
@@ -8032,7 +8254,9 @@ local function testTelemetryDegrades()
   assertEqual(nav.badge.properties.text, "N/A")
   assertEqual(nav.origin, "NO FIX")
   assertEqual(nav.text, "--", "a missing fix was shown as a distance")
-  assertEqual(nav.coordinates, "-- , --")
+  -- The coordinates row is shed at this span, so what it would have said is
+  -- not on screen and is not asserted. The state, the badge and the origin
+  -- caption are what this panel actually reports a lost fix with.
   -- The dial must not point anywhere when there is nowhere to point.
   assertEqual(nav.compass.ring.properties.startAngle,
     nav.compass.ring.properties.endAngle,
@@ -8053,8 +8277,15 @@ local function testTelemetryDegrades()
   assertEqual(nav.text, "--")
   assertEqual(nav.detail, "BRG --", "a bearing was invented without a home")
   assertEqual(nav.origin, "NO HOME")
-  assertEqual(nav.coordinates, "47.37690 8.54170",
-    "the position itself is still known")
+  -- **That the position itself is still known is asserted at a span that
+  -- draws it.** The specification's promise is that a missing home withholds
+  -- only the two values measured from home and leaves the coordinates
+  -- visible; this panel is `2 x 2` and sheds its coordinate row to the
+  -- tertiary quarter, so the promise is checked in
+  -- testTwoRowFooterClearsTheReading, on a three-row panel that draws both
+  -- supporting rows. Asserting the string here would assert something no
+  -- screen shows.
+  assertEqual(nav.showCoordinates, false)
 
   -- A table whose entries cannot be cell voltages. The explicit lowest-cell
   -- source keeps the reading alive, and the count row says the table is gone.
@@ -8373,7 +8604,12 @@ local function testTelemetryComponentsReflow()
   -- dial's own shed and return, which needs a panel that draws one, is
   -- testCompassShedsWhenThePanelNarrows.
   assertEqual(nav.showCompass, false)
-  assertEqual(nav.coordinatesLabel.hidden, false, "coordinates were never shown")
+  -- **The bearing row is the one that sheds and returns here.** A `2 x 2`
+  -- panel's tertiary quarter holds one supporting row, so the coordinates
+  -- are shed at this span whatever the zone does; two rows at a three-row
+  -- span are testTwoRowFooterClearsTheReading.
+  assertEqual(nav.showCoordinates, false)
+  assertEqual(nav.detailLabel.hidden, false, "the bearing row was never shown")
   local function readingFont()
     local font = nav.value.properties.font
     if type(font) == "function" then font = font() end
@@ -8387,13 +8623,19 @@ local function testTelemetryComponentsReflow()
   settle(context, 10)
   assertContained("shrunk")
   -- Supporting rows are shed before the dominant reading is touched.
-  assertEqual(nav.coordinatesLabel.hidden, true, "shed coordinates stayed visible")
+  assertEqual(nav.detailLabel.hidden, true, "a shed bearing row stayed visible")
 
   -- And the reading does step down once the panel genuinely is smaller: a
-  -- 320 x 140 zone gives this panel 158 x 68 and a 34 px body band, which
-  -- holds DBLSIZE and not XXLSIZE.
-  assertFont(readingFont(), DBLSIZE,
+  -- 320 x 140 zone gives this panel 158 x 68, whose extent is 62 px and
+  -- whose body is therefore a 26 px half -- which holds MIDSIZE at 23 px of
+  -- ink and not DBLSIZE at 31.
+  assertFont(readingFont(), MIDSIZE,
     "the distance did not follow the band down")
+  -- And with the distance that much narrower the dial fits beside it again,
+  -- which is the shedding rule running the other way: the decoration comes
+  -- back when the reading stops needing the room.
+  assertEqual(nav.showCompass, true,
+    "a MIDSIZE distance left no room for a dial that fits beside it")
 
   zone.w = 480
   zone.h = 272
@@ -8401,7 +8643,7 @@ local function testTelemetryComponentsReflow()
   settle(context, 10)
   assertContained("restored")
   assertFont(readingFont(), XXLSIZE, "the distance was not restored")
-  assertEqual(nav.coordinatesLabel.hidden, false, "coordinates were not restored")
+  assertEqual(nav.detailLabel.hidden, false, "the bearing row was not restored")
 
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
   resetRadio()
@@ -8499,7 +8741,8 @@ testInstructionBudget()
 -- and leaves the radio somewhere the tests above do not expect to find it.
 testReadingsSitInTheirSlots()
 testSupportingWordingsStayDistinct()
-testUnusedRowsCostNothing()
+testReadingsIgnoreTheRowBeneathThem()
+testTertiaryQuarterHoldsItsFurniture()
 testNothingIsDrawnOverAnythingElse()
 testReadingsDoNotDescendOverAnything()
 testTwoRowFooterClearsTheReading()

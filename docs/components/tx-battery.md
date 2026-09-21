@@ -129,19 +129,37 @@ With the default `visual: battery`:
 
 | Span | Panel | Reading | Unit | Battery | Outline | Percentage |
 | --- | --- | --- | --- | --- | --- | --- |
-| `1x1` | 117 x 65 | `MIDSIZE` `7.9` | `SMLSIZE` `V` | shed | — | shed |
-| `2x1` | 238 x 65 | `MIDSIZE` `7.9` | `SMLSIZE` `V` | 20 x 40 | 2 px | shed |
-| `3x1` | 359 x 65 | `MIDSIZE` `7.9` | `SMLSIZE` `V` | 20 x 40 | 2 px | shed |
-| `4x1` | 480 x 65 | `MIDSIZE` `7.9` | `SMLSIZE` `V` | 20 x 40 | 2 px | shed |
-| `1x2` | 117 x 134 | `MIDSIZE` `7.9` | shed | 25 x 50 | 2 px | under the reading |
-| `2x2` | 238 x 134 | `XXLSIZE` `7.9` | `MIDSIZE` `V` | 25 x 50 | 4 px | under the reading |
+| `1x1` | 117 x 65 | `MIDSIZE` `7.9` | `SMLSIZE` `V` | shed | &mdash; | shed |
+| `2x1` | 238 x 65 | `MIDSIZE` `7.9` | `SMLSIZE` `V` | 13 x 26 | 2 px | shed |
+| `3x1` | 359 x 65 | `MIDSIZE` `7.9` | `SMLSIZE` `V` | 13 x 26 | 2 px | shed |
+| `4x1` | 480 x 65 | `MIDSIZE` `7.9` | `SMLSIZE` `V` | 13 x 26 | 2 px | shed |
+| `1x2` | 117 x 134 | `XXLSIZE` `7.9` | shed | shed | &mdash; | under the reading |
+| `2x2` | 238 x 134 | `XXLSIZE` `7.9` | shed | 25 x 50 | 4 px | under the reading |
 | `3x2` | 359 x 134 | `XXLSIZE` `7.9` | `MIDSIZE` `V` | 25 x 50 | 4 px | under the reading |
 | `4x2` | 480 x 134 | `XXLSIZE` `7.9` | `MIDSIZE` `V` | 25 x 50 | 4 px | under the reading |
 
-**`1x2` and `2x2` are the row worth reading twice.** The cells are the same
-size and the outlines are not, because the readings are not: a `1x2` is a
-`MIDSIZE` number and a `2x2` an `XXLSIZE` one. `DBLSIZE` readings, which
-appear on shorter panels than the grid produces, are outlined at 3 px.
+**`2x2` and `3x2` are the row worth reading twice.** The cells are the same
+size and the readings are the same size, and one shows its `V` and the other
+does not: this panel measures the pair against half the content box, which is
+113 px at `2x2` against the 118 px an `XXLSIZE` `88.8` and a `MIDSIZE` `V`
+need together, and 173 px at `3x2`. Five pixels of panel width decide it.
+
+**`1x2` sheds its battery rather than its reading.** The widest voltage this
+panel prints is 102 px at `XXLSIZE` and half of a 105 px content box is 52, so
+no pair of slots separates the number from a cell. The reading takes the size
+the panel allows and the decoration goes, which is the order the design guide
+states everywhere.
+
+**`DBLSIZE` readings are outlined at 3 px**, and no span the grid produces
+draws one; they appear on panels between the sizes above, which a reflow
+passes through.
+
+> **This table is regenerated from the component, and has been wrong twice.**
+> It carried 20 x 40 cells at the one-row spans and a `MIDSIZE` reading at
+> `1x2` for two revisions of the band rule, because it was corrected by hand
+> against a description rather than rebuilt from the code. `testTxBatteryComposition`
+> is the assertion that this page is true; it and these figures come from the
+> same measurement.
 
 **No single-row panel shows the percentage**, however wide it is:
 `showPercent: true` on a `4x1` is as inert as on a `1x1`, because the
