@@ -1505,6 +1505,10 @@ function support.radio(hostIo)
     -- one reading its value. Found when one did.
     radio.values[120] = 2.5
     radio.values[300] = 1024
+    -- And the transmitter's own voltage, for the same reason and found the
+    -- same way: a test that took it away to give `tx-battery` no reading
+    -- left every later test's transmitter flat.
+    radio.values[320] = 7.9
     radio.values[130] = {4.11, 4.13, 4.09, 4.12}
     radio.values[131] = 4.09
     radio.values[140] = 78

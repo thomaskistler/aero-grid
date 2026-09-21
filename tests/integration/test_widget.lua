@@ -7400,6 +7400,101 @@ local function testReconcileBar()
   root:clear()
 end
 
+--- A unit is drawn only where there is a value for it to qualify.
+---
+--- The panel printed `-- V`, which says the pack is measured in volts and
+--- declines to say how many. A unit is redundancy *about a number*; with no
+--- number it is a label for nothing.
+---
+--- Three things are pinned here and they fail for different reasons:
+---
+--- - **The sentinel takes the unit away.** That is the defect.
+--- - **A zero keeps it.** `0 V` is a measurement, and this specification is
+---   explicit that a valid zero is shown as the reading it is. Keying the
+---   rule on the subscription's availability rather than on the drawn string
+---   would have been right for most components by luck and wrong for
+---   `link-status`, whose genuine zero is the case it exists to separate.
+--- - **The number does not move.** This is the claim the whole decision
+---   rests on, so it is measured rather than reasoned about: the reading's x
+---   is `valueCentre - measureText(font, text) / 2`, its own width and not
+---   the pair's, so taking the unit away shrinks the box and leaves the
+---   digits where they were. Were it false, a sensor dropping and returning
+---   would twitch the reading every time, and hiding would be the wrong
+---   answer.
+---
+--- Driven against the real LVGL mock, because what is being checked is which
+--- object was told what, and the mock counts writes and visibility calls so
+--- that work leaving no trace on screen can still be seen.
+local function testUnitNeedsAValueToQualify()
+  resetRadio()
+  local theme = themeModule.build("modern")
+  local root = lvgl.box({x = 0, y = 0, w = 200, h = 100})
+  local context = {
+    value = primitivesModule.value(root, theme, {x = 0, y = 0, w = 100,
+      font = DBLSIZE, text = "--"}),
+    unit = primitivesModule.unit(root, theme, {x = 0, y = 0, font = TINSIZE,
+      text = "V"}),
+    showUnit = true,
+    unitText = "V",
+  }
+  local area = {valueCentre = 100, valueY = 20, unitFont = TINSIZE}
+
+  local function place(text)
+    primitivesModule.centreReading(context, themeModule, area, DBLSIZE, text)
+  end
+
+  -- A reading, so the unit has something to qualify.
+  place("7.9")
+  assertEqual(context.unit.hidden, false, "a unit was withheld from a reading")
+  local readingX = context.value.properties.x
+  local pairWidth = context.value.properties.w
+
+  -- The same panel with no value. The unit goes; the number does not move.
+  place("--")
+  assertEqual(context.unit.hidden, true, "a unit was drawn beside `--`")
+
+  -- `N/A` is the other spelling of absence, and `link-status` prints it for a
+  -- source the protocol does not publish at all.
+  place("N/A")
+  assertEqual(context.unit.hidden, true, "a unit was drawn beside `N/A`")
+
+  -- Zero is a measurement, not an absence.
+  place("0.0")
+  assertEqual(context.unit.hidden, false,
+    "a reading of zero lost its unit, so the rule read availability rather"
+      .. " than what the panel draws")
+
+  -- **The number does not move.** Same string, same slot, unit and no unit:
+  -- only the box changes. Compared against a panel that never had a unit
+  -- rather than against a remembered number, so a wrong answer cannot agree
+  -- with itself.
+  place("7.9")
+  assertEqual(context.value.properties.x, readingX)
+  assertEqual(context.value.properties.w, pairWidth)
+  local bare = {
+    value = primitivesModule.value(root, theme, {x = 0, y = 0, w = 100,
+      font = DBLSIZE, text = "--"}),
+    showUnit = false,
+  }
+  primitivesModule.centreReading(bare, themeModule, area, DBLSIZE, "7.9")
+  assertEqual(bare.value.properties.x, readingX,
+    "hiding the unit moved the reading, so the reading is placed from the"
+      .. " pair's width rather than its own and hiding is the wrong answer")
+  assert(bare.value.properties.w < pairWidth,
+    "the drawn box did not shrink, so the unit's width is still reserved")
+
+  -- A hidden unit is not repositioned. Placing something nobody can see is
+  -- the invisible work this project has twice paid to remove, and it is
+  -- invisible to assertions as well as to eyes.
+  place("--")
+  local writes = context.unit.writes
+  place("N/A")
+  assertEqual(context.unit.writes, writes,
+    "a hidden unit was re-placed against a reading nobody can see it beside")
+
+  root:clear()
+end
+
 --- A heading never wraps down over the reading, however long it is.
 ---
 --- A Lua label is `lv_label_create` with a font style and nothing else
@@ -8225,6 +8320,197 @@ local function testCoreComponents()
 
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
   resetRadio()
+end
+
+--- No panel in the catalogue draws a unit beside a reading it does not have.
+---
+--- The property, swept over the whole catalogue rather than over the
+--- components someone remembered. The component directory is read from disk,
+--- so a component added later is covered the moment it exists, and every
+--- span it declares is built, because whether a panel is granted a unit is a
+--- function of its box.
+---
+--- **Each component carries the configuration that gives it a unit to draw**,
+--- which is the declaration rule this suite already holds itself to: a
+--- declaration that names a component but not the configuration that builds
+--- its arrangement watches nothing while reporting it covered. Two
+--- components know their unit without being told -- a transmitter pack and a
+--- cell are both measured in volts -- and two learn it from a resolved
+--- sensor or from the layout, so those two are told.
+---
+--- **The absence is a link that never delivered, not a name the radio
+--- rejects.** That distinction is the whole test: a source that never
+--- resolves has no unit either, so the panel draws `--` beside nothing and
+--- every assertion here would pass without the fix. A sensor that resolves
+--- and then never reports is the case that pairs a known unit with no value,
+--- and it is what a pilot sees when the model is switched off.
+local function testUnitsAreNotDrawnBesideAnAbsentReading()
+  local componentHost = assert(loadfile(sourcePath .. "lib/component_host.lua"))()
+
+  -- Live enough to resolve a unit, absent enough to have no value.
+  local UNIT_CONFIG = {
+    ["link-status"] = "      reading: rssi\n      rssiSource: RSSI\n",
+    ["metric"] = "      source: VSpd\n      unit: m/s\n",
+  }
+
+  local listingPath = root .. "/build/unit-components.txt"
+  os.execute("ls '" .. sourcePath .. "components' > '" .. listingPath .. "'")
+  local listing = assert(hostIo.open(listingPath, "r"))
+  local stems = {}
+  for name in listing:lines() do
+    local stem = string.match(name, "^(.+)%.lua$")
+    if stem then stems[#stems + 1] = stem end
+  end
+  listing:close()
+  os.remove(listingPath)
+  assert(#stems > 0, "no components were found to sweep")
+
+  local constructed = {}
+  local built = 0
+  for _, stem in ipairs(stems) do
+    local module = assert(loadfile(sourcePath .. "components/" .. stem .. ".lua"))()
+    for colSpan = 1, 4 do
+      for rowSpan = 1, 4 do
+        if componentHost.supportsSpan(module, colSpan, rowSpan) then
+          resetRadio()
+          -- Every sensor resolves through getFieldInfo and none of them
+          -- delivers, because EdgeTX reports integer zero for a telemetry
+          -- source while telemetry is not streaming and the service withholds
+          -- exactly that. The transmitter's own voltage is radio-local rather
+          -- than link-dependent, so it is taken away separately.
+          radio.rssi = 0
+          radio.values[radio.fields["tx-voltage"].id] = nil
+
+          local widgetPath = makeWidget("unit-sweep", table.concat({
+            "version: 1\ngrid:\n  columns: 4\n  rows: 4\ncomponents:\n",
+            "  - id: probe\n    type: ", stem,
+            "\n    col: 0\n    row: 0\n    colSpan: ", tostring(colSpan),
+            "\n    rowSpan: ", tostring(rowSpan), "\n    config:\n",
+            UNIT_CONFIG[stem] or "",
+          }))
+          local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+            DEFAULT_OPTIONS, widgetPath)
+          settle(context, 40)
+
+          local entry = entryById(context, "probe")
+          if entry then
+            built = built + 1
+            local instance = entry.instance
+            local unit = instance.unit
+            local where = stem .. " " .. colSpan .. "x" .. rowSpan
+            if unit and (instance.unitText or "") ~= "" then
+              -- The unit is known and the value is not, which is the state
+              -- the defect lived in. Without this the sweep could run
+              -- entirely over panels that never learned a unit.
+              assert(primitivesModule.SENTINELS[instance.text],
+                where .. " prints `" .. tostring(instance.text) .. "` for a"
+                  .. " value it does not have, which is not one of the"
+                  .. " sentinels the rule knows, so its unit is drawn beside"
+                  .. " an absent reading")
+              constructed[stem] = true
+              assertEqual(unit.hidden, true,
+                where .. " drew `" .. tostring(instance.text) .. " "
+                  .. tostring(instance.unitText) .. "`, and a unit with no"
+                  .. " value to qualify is a label for nothing")
+            end
+          end
+        end
+      end
+    end
+  end
+
+  assert(built >= 40, "only " .. built .. " panels were swept")
+
+  -- **A sweep that constructed no unit at all would satisfy every assertion
+  -- above.** These four are the components measured to have drawn one beside
+  -- a sentinel before the fix; naming them is what stops the test passing
+  -- because a panel stopped learning its unit rather than because it stopped
+  -- drawing it.
+  for _, stem in ipairs({"tx-battery", "cell-battery", "link-status", "metric"}) do
+    assert(constructed[stem], stem .. " never reached a panel that knew its"
+      .. " unit and had no value, so this swept past the case it exists for")
+  end
+end
+
+--- A reflow does not restore a unit to a reading that still has no value.
+---
+--- The per-frame path and the reflow path are two places that can put a unit
+--- on screen, and a rule that holds in one of them holds nowhere: a panel
+--- that grows into room for a unit asks again whether it fits, and "it fits"
+--- is not the same question as "there is something for it to qualify". Left
+--- alone, resizing the zone brought `-- V` straight back.
+---
+--- Driven through a real zone change rather than by calling `reconcileUnit`
+--- directly, because what is being checked is which path the panel actually
+--- takes when the host reflows it.
+local function testAReflowDoesNotRestoreAnOrphanedUnit()
+  resetRadio()
+  -- A cells sensor the radio knows and has never delivered, which is the
+  -- state that pairs a unit with no value: `cell-battery`'s unit is a
+  -- constant -- a cell is measured in volts whatever the sensor says -- so
+  -- the panel knows it is drawing volts before it has any.
+  radio.values[130] = nil
+  local widgetPath = makeWidget("orphan-unit", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: pack
+    type: cell-battery
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      source: Cels
+]])
+
+  local zone = {x = 0, y = 0, w = 480, h = 272}
+  local context = createLoaded(zone, DEFAULT_OPTIONS, widgetPath)
+  settle(context, 20)
+  local instance = entryById(context, "pack").instance
+
+  local function reflow()
+    local passes = 0
+    repeat
+      definition.refresh(context)
+      passes = passes + 1
+      assert(passes < 100, "reflow never finished")
+    until not context.reflowIndex
+  end
+
+  assert(instance.unit, "this test needs a panel that built a unit")
+  assertEqual(instance.unitText, "V",
+    "this test needs a panel that knows its unit without being told")
+  assertEqual(instance.text, "--",
+    "this test needs a panel with no reading")
+  assertEqual(instance.unit.hidden, true, "a unit was drawn beside `--`")
+
+  -- Narrow enough that the panel could not afford a unit even with a value,
+  -- so the permission genuinely moves rather than staying true throughout --
+  -- which is what makes the widening below a restore rather than a no-op.
+  zone.w = 120
+  zone.h = 120
+  definition.update(context, DEFAULT_OPTIONS)
+  reflow()
+  assertEqual(instance.unit.hidden, true)
+
+  zone.w = 480
+  zone.h = 272
+  definition.update(context, DEFAULT_OPTIONS)
+  reflow()
+  assertEqual(instance.unit.hidden, true,
+    "growing the panel restored a unit to a reading that still has no value")
+
+  -- And the panel is not merely stuck hidden: a reading arriving brings the
+  -- unit back. Without this the assertions above are satisfied by a unit
+  -- that never shows at all, which is the other way to be wrong.
+  radio.values[130] = {4.11, 4.13, 4.09, 4.12}
+  settle(context, 60)
+  assertEqual(instance.text, "4.09", "the pack never delivered a reading")
+  assertEqual(instance.unit.hidden, false,
+    "a reading arrived and its unit stayed away")
 end
 
 --- Every component must degrade visibly rather than raise when the radio
@@ -9271,6 +9557,7 @@ testUnitFollowsTheReadingWidth()
 testFlightTimerShedsItsDetail()
 testClockKeepsItsWidth()
 testReconcileBar()
+testUnitNeedsAValueToQualify()
 testHeadingNeverWraps()
 testHeadingRefitsOnReflow()
 testFlightModeSizesFromTheModel()
@@ -9278,6 +9565,8 @@ testHostDiagnosticsReportsTheHost()
 testLayoutOriginIsReported()
 testHostDiagnosticsWarnsAboutBytecode()
 testHostDiagnosticsReportsFailures()
+testUnitsAreNotDrawnBesideAnAbsentReading()
+testAReflowDoesNotRestoreAnOrphanedUnit()
 testComponentsDegrade()
 testCoreComponentsReflow()
 testMetricPresetDetail()
