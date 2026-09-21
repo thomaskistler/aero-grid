@@ -1,7 +1,7 @@
 semver: 3.0.0
 header: 
    name: "MODEL01"
-   bitmap: ""
+   bitmap: "04530_x10.png"
    labels: ""
 telemetryProtocol: 0
 thrTrim: 0
