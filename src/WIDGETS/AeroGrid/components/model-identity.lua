@@ -193,7 +193,22 @@ function modelIdentity.regionsFor(theme, themeBuilder, rect, layout, fonts)
   -- unchanged.
   local imageTop = top
   local imageHeight = rect.h - top - frame.bottom
-  local nameY = top
+
+  -- **The name sits in the body band, like every other reading.** It used to
+  -- be pinned directly under the heading, which is the panel's content top
+  -- and not where anything else on the dashboard puts a reading: 14 px above
+  -- the band at `2 x 2`, 49 at `2 x 3` and 83 at `4 x 4`, where it read as
+  -- stuck to the heading with the panel empty beneath it.
+  --
+  -- This is the one component that never used the shared vertical rule, and
+  -- the reason it went unnoticed is that it is the one whose reading is a
+  -- name rather than a number, so no cross-panel comparison ever lined it up
+  -- against a neighbour.
+  --
+  -- The ladder is asked with what this panel draws, which is the supporting
+  -- row or not. It has no bar and no compact visual at all, so nothing else
+  -- here is a claim about a visualization.
+  local nameY = themeBuilder.bodyTop(ladder, nameHeight)
 
   if showLabels then imageHeight = imageHeight - labelHeight - 2 end
 
@@ -494,7 +509,7 @@ function modelIdentity.revealName(context)
   if context.image then return end
 
   local area = context.area
-  context.value:set({x = area.valueX, y = area.frame.top,
+  context.value:set({x = area.valueX, y = area.nameY,
     w = area.valueWidth})
   lvgl.show(context.value)
 end
@@ -528,7 +543,13 @@ function modelIdentity.update(context, rect)
 
   primitives.reconcile(context.value, nameVisible, {
     x = area.valueX,
-    y = context.image and area.nameY or area.frame.top,
+    -- The body band, whether or not a picture was asked for. Where one is
+    -- drawn the name is the heading and this object is hidden; where one was
+    -- asked for and could not be drawn the name is the reading, and a
+    -- reading belongs in the band. This used to read the panel's content top
+    -- in exactly that fallback, which put the name under the heading on the
+    -- one path where nothing else was there to explain it.
+    y = area.nameY,
     -- The width the name draws in, not the room it had: a box given the
     -- whole content box and an x centred for a shorter string reaches past
     -- the panel's right edge by the difference.

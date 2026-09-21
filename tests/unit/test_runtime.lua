@@ -3485,6 +3485,70 @@ end
 --- rise into the space the heading vacated would change what every panel in
 --- the catalogue draws. So `top` is asserted to be what it was, span by
 --- span, beside the heading that moved.
+--- Every reading sits in its panel's body band, including the one that is a
+--- name rather than a number.
+---
+--- `model-identity` pinned its name directly under the heading instead, at
+--- the panel's content top. That is not where anything else on the dashboard
+--- puts a reading, and on a tall panel it was far from it: 16 px above the
+--- band at `2 x 2`, 45 at `2 x 3` and 59 at `4 x 4`, the name stuck to the
+--- heading with the panel empty beneath it.
+---
+--- It went unnoticed through eight milestones and four reviews because it is
+--- the only reading in the catalogue that is text, so no cross-panel
+--- comparison ever lined it up against a neighbour and no font assertion
+--- covered it -- the band rule chooses the same font either way, because the
+--- font comes from the band's height and not from where the reading sits in
+--- it. **Nothing about the numbers says the reading is in the wrong place
+--- unless where it sits is asserted.**
+local function testReadingsSitInTheirBand()
+  local resolved = theme.build("modern")
+  local GUTTER, CELLS, WIDTH, HEIGHT = 4, 4, 480, 272
+  local cellWidth = math.floor((WIDTH - GUTTER * (CELLS - 1)) / CELLS)
+  local cellHeight = math.floor((HEIGHT - GUTTER * (CELLS - 1)) / CELLS)
+
+  local identity = loadModule("components/model-identity.lua")
+  local checked = 0
+
+  for _, span in ipairs(identity.supportedSpans) do
+    local cols, rows = string.match(span, "(%d)x(%d)")
+    cols, rows = tonumber(cols), tonumber(rows)
+    local rect = {
+      x = 0, y = 0,
+      w = cellWidth * cols + GUTTER * (cols - 1),
+      h = cellHeight * rows + GUTTER * (rows - 1),
+    }
+    local fonts = theme.typography(cols, rows)
+    -- `presentation: name` is the case this is about. With a picture the
+    -- name is the heading and the body belongs to the picture, which is a
+    -- different arrangement and is settled.
+    local settings = {presentation = "name"}
+    local layout = identity.presentationFor(settings, cols, rows)
+    local area = identity.regionsFor(resolved, theme, rect, layout, fonts,
+      settings)
+
+    -- Asked of the ladder the way every other component asks, and told what
+    -- this panel draws rather than what its span permits: a name-only panel
+    -- draws no supporting row.
+    local frame = theme.frame(resolved, rect, fonts)
+    local ladder = theme.ladder(resolved, rect, frame,
+      {rows = layout.showLabels == true})
+    local expected = theme.bodyTop(ladder, theme.fontHeight(area.nameFont))
+
+    checked = checked + 1
+    assertEqual(area.nameY, expected, string.format(
+      "model-identity at %s draws its name at y=%d where the shared body"
+        .. " band puts a reading of that size at y=%d, %d px away. Every"
+        .. " other reading in the catalogue is centred in this band; a name"
+        .. " pinned under the heading is the one panel that disagrees with"
+        .. " the rest of the dashboard",
+      span, area.nameY, expected, math.abs(area.nameY - expected)))
+  end
+
+  assertEqual(checked, #identity.supportedSpans,
+    "not every declared span was measured")
+end
+
 local function testHeadingIsPinnedToTheTop()
   local resolved = theme.build("modern")
   local GUTTER, CELLS, WIDTH, HEIGHT = 4, 4, 480, 272
@@ -4769,6 +4833,7 @@ testBatteryStrokeScalesWithFont()
 testBatteryStaysVisible()
 testLosslessReadingsOfferOneForm()
 testRedrawDecision()
+testReadingsSitInTheirBand()
 testHeadingIsPinnedToTheTop()
 testSharedLadder()
 testReadingForms()
