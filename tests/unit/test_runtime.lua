@@ -3986,6 +3986,73 @@ local function testTimerSemantics()
   assertEqual(timer.resolveState({}, nil), "unavailable")
   assertEqual(timer.resolveState({}, {available = false}), "unavailable")
   assertEqual(timer.detailText(nil, tostring), "NO TIMER")
+
+  -- **A count-up timer asked for `remaining` says so.** There is no total to
+  -- take a remainder of, so the panel shows elapsed -- which it did in
+  -- silence, and a layout author reading the setting back believed it. It
+  -- cannot be refused at load the way an out-of-range index can, because
+  -- which timers count down is the pilot's model setup rather than the
+  -- layout's, so the panel reports it where this dashboard reports why: the
+  -- supporting row.
+  local countingUp = {available = true, countdown = false, elapsed = 64,
+    value = 64, start = 0}
+  assertEqual(timer.detailVariants(countingUp, tostring)[1], "COUNTING UP",
+    "a count-up timer nobody asked a question of should just count up")
+  assertEqual(
+    timer.detailVariants(countingUp, tostring, {reading = "remaining"})[1],
+    "NO COUNTDOWN",
+    "a count-up timer asked for the time remaining said nothing about it")
+  -- And only that request. `model` and `elapsed` are answerable by a
+  -- count-up timer, so neither is a contradiction to report.
+  for _, reading in ipairs({"model", "elapsed"}) do
+    assertEqual(timer.detailVariants(countingUp, tostring,
+      {reading = reading})[1], "COUNTING UP",
+      "reading: " .. reading .. " was reported as a contradiction")
+  end
+  -- A countdown can answer it, so it is not reported there either.
+  local countdown = {available = true, countdown = true, start = 300,
+    remaining = 90, elapsed = 210, expired = false}
+  assertEqual(
+    timer.detailVariants(countdown, tostring, {reading = "remaining"})[1],
+    "OF 300", "a countdown asked for its remaining was told it has none")
+
+  -- **The shortest wording of each state differs from every other's**, which
+  -- is what lets the narrowest panel still say which happened. The longer
+  -- forms are what `theme.fitLabel` sheds first.
+  local shortest = {}
+  local states = {
+    {"no timer", nil, nil},
+    {"elapsed past zero", {available = true, countdown = true, start = 300,
+      remaining = -15, elapsed = 315, expired = true}, nil},
+    {"counting up", countingUp, nil},
+    {"no countdown to remain", countingUp, {reading = "remaining"}},
+  }
+  for _, case in ipairs(states) do
+    local variants = timer.detailVariants(case[2], tostring, case[3])
+    local narrowest = variants[#variants]
+    local owner = shortest[narrowest]
+    assert(owner == nil, string.format(
+      "flight-timer: %q is the narrowest wording for both %s and %s, so a"
+        .. " panel too narrow for the longer forms cannot say which",
+      narrowest, tostring(owner), case[1]))
+    shortest[narrowest] = case[1]
+  end
+
+  -- An index the firmware does not have is an authoring mistake, and the
+  -- count is a firmware constant: MAX_TIMERS is 3
+  -- (radio/src/dataconstants.h:94).
+  assertEqual(timer.TIMER_COUNT, 3)
+  assertEqual(#timer.validateSettings({}, nil, {timer = 0}), 0)
+  assertEqual(#timer.validateSettings({}, nil, {timer = 2}), 0)
+  assertEqual(#timer.validateSettings({}, nil, {timer = 3}), 1,
+    "the first index past the last real timer was accepted")
+  assertEqual(#timer.validateSettings({}, nil, {timer = -1}), 1)
+  assertEqual(#timer.validateSettings({}, nil, {timer = 1.5}), 1,
+    "a fractional index was accepted")
+  -- A layout that states nothing is not making a request, so there is
+  -- nothing to refuse. The resolved default is in range by construction.
+  assertEqual(#timer.validateSettings({timer = 0}, nil, nil), 0)
+  assertEqual(#timer.validateSettings({timer = 0}, nil, {}), 0)
 end
 
 --- The composition table in `docs/components/tx-battery.md` is true.

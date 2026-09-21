@@ -3110,6 +3110,227 @@ local function testTertiaryQuarterHoldsItsFurniture()
   resetRadio()
 end
 
+--- A timer index the radio does not have is refused at load, by name.
+---
+--- `MAX_TIMERS` is 3 (`radio/src/dataconstants.h:94`) and `luaModelGetTimer`
+--- answers nothing at or above it, so 0, 1 and 2 are the whole set. A layout
+--- asking for `timer: 9` used to load and draw `NO TIMER` -- **which is
+--- exactly what a correctly written layout draws on a radio whose timer is
+--- not configured.** The one the author can fix and the one they cannot
+--- looked identical, and nothing said which was which.
+---
+--- Both halves are checked here, because the refusal is only worth having if
+--- the runtime case still loads silently.
+local function testTimerIndexIsRefusedAtLoad()
+  resetRadio()
+
+  local function load(value)
+    local widget = makeWidget("timer-index-"
+      .. string.gsub(tostring(value), "[^%w]", ""), table.concat({
+      "version: 1\ngrid:\n  columns: 4\n  rows: 4\ncomponents:\n",
+      "  - id: clock\n    type: flight-timer\n",
+      "    col: 0\n    row: 0\n    colSpan: 2\n    rowSpan: 2\n",
+      "    config:\n      timer: ", tostring(value), "\n",
+    }))
+    return createLoaded({x = 0, y = 0, w = 480, h = 272},
+      DEFAULT_OPTIONS, widget)
+  end
+
+  -- Refused, and the message names the panel the way every other refusal
+  -- does, so an author can find it in a grid of twelve.
+  local refused = load(9)
+  assertEqual(#refused.errors, 1,
+    "an index no radio has was accepted: " .. table.concat(refused.errors, "; "))
+  assert(string.find(refused.errors[1], "clock", 1, true),
+    "the refusal does not name the panel: " .. refused.errors[1])
+  assert(string.find(refused.errors[1], "timer", 1, true),
+    "the refusal does not name the setting: " .. refused.errors[1])
+
+  -- The last real index is not refused, which is what stops this being a
+  -- rule that merely forbids large numbers.
+  local accepted = load(2)
+  assertEqual(#accepted.errors, 0,
+    "the last timer a radio has was refused: "
+      .. table.concat(accepted.errors, "; "))
+  pump(accepted, 40)
+  assertEqual(entryById(accepted, "clock").instance.text, "0:12",
+    "timer 2 was accepted and then not read")
+
+  -- And the runtime case is silent, because it is not the author's mistake:
+  -- an index the radio has and the model has not configured draws NO TIMER
+  -- with nothing reported.
+  resetRadio()
+  radio.timers[2] = nil
+  local unconfigured = load(2)
+  assertEqual(#unconfigured.errors, 0,
+    "a timer the model has not set up was reported as an authoring mistake")
+  pump(unconfigured, 40)
+  local panel = entryById(unconfigured, "clock").instance
+  assertEqual(panel.text, "--:--")
+  assertEqual(panel.detail, "NO TIMER")
+  assertEqual(panel.stateName, "unavailable")
+  resetRadio()
+end
+
+--- Every supporting row fits the box its panel gives it.
+---
+--- **The property, rather than the mechanism.** The specification says every
+--- supporting row goes through `theme.fitLabel`, which is not true and was
+--- never quite the point: four of the eight components that draw a row call
+--- it, and routing the other four through it would change nothing, because a
+--- single-wording list comes back out of `fitLabel` unchanged. What matters
+--- is that the row fits, and the mechanism for a row that cannot is to offer
+--- a shorter wording.
+---
+--- Nothing checked the property. `flight-timer` drew `ELAPSED PAST ZERO` at
+--- `1 x 2`, 125 px into a content box of 105 -- and a Lua label's long mode
+--- is LVGL's default wrap, so it did not clip sideways: it was centred on a
+--- box wider than the panel, started 10 px outside the left edge and ran
+--- 10 px past the right, over whatever was beside it. That is the one
+--- sentence the component exists to print, at the narrowest span that draws
+--- a row at all.
+---
+--- Driven through the real host at every span that grants a row, in both
+--- zones, with each component put into the state whose wording is longest.
+--- The states are declared, because a component's longest wording is usually
+--- a failure state and a fixture has to be driven into one.
+local function testSupportingRowsFitTheirBox()
+  --- Each component that draws a supporting row, configured so it draws one,
+  --- and how to drive it into the state that words the most.
+  ---
+  --- **A declaration, and it names the state as well as the component.** A
+  --- declaration that does not construct the case is not coverage: listing
+  --- `flight-timer` without expiring its countdown would check `OF 5:00`,
+  --- which fits everywhere, and report the component covered.
+  local ROWED = {
+    {name = "flight-timer, countdown running", type = "flight-timer",
+      config = {"timer: 0", "label: TIMER"}},
+    {name = "flight-timer, elapsed past zero", type = "flight-timer",
+      config = {"timer: 0", "label: TIMER"},
+      drive = function() radio.timers[0].value = -15 end},
+    {name = "flight-timer, counting up", type = "flight-timer",
+      config = {"timer: 1", "label: TIMER"}},
+    {name = "flight-timer, no countdown to remain", type = "flight-timer",
+      config = {"timer: 1", "label: TIMER", "reading: remaining"}},
+    {name = "flight-timer, no timer", type = "flight-timer",
+      config = {"timer: 2", "label: TIMER"},
+      drive = function() radio.timers[2] = nil end},
+    {name = "flight-mode, mode number", type = "flight-mode",
+      config = {"label: MODE", "showIndex: true"}},
+    {name = "cell-battery, pack and count", type = "cell-battery",
+      config = {"source: Cels", "label: PACK", "showPack: true",
+        "showCount: true"}},
+    {name = "cell-battery, nonsense cells", type = "cell-battery",
+      config = {"source: Cels", "label: PACK", "showPack: true",
+        "showCount: true"},
+      drive = function() radio.values[130] = {0, -1, 99} end},
+    {name = "link-status, link down", type = "link-status",
+      config = {"label: LINK", "rssiSource: 1RSS", "qualitySource: RQly",
+        "reading: rssi"},
+      drive = function() radio.rssi = 0 end},
+    {name = "metric, range and secondary", type = "metric",
+      config = {"label: ALT", "source: Alt", "unit: m", "rangeMin: 0",
+        "rangeMax: 400", "precision: 0", "visual: bar",
+        "secondarySource: Curr", "secondaryLabel: CUR"}},
+    {name = "navigation, no home position", type = "navigation",
+      config = {"label: HOME", "source: GPS", "presentation: detailed"},
+      drive = function()
+        radio.values[109]["pilot-lat"] = 0
+        radio.values[109]["pilot-lon"] = 0
+      end},
+    {name = "tx-battery, percentage", type = "tx-battery",
+      config = {"label: TX", "packEmpty: 6.6", "packFull: 8.4",
+        "showPercent: true"}},
+    {name = "variable-indicator, configured name", type = "variable-indicator",
+      config = {"binding: global", "index: 0", "label: GV", "showName: true"}},
+  }
+
+  local checked, widest, widestWhere = 0, 0, ""
+
+  for _, subject in ipairs(ROWED) do
+    -- Every span that grants a supporting row. One-row panels are granted
+    -- none at any width, so they would report an empty sweep rather than a
+    -- fitting one.
+    for _, span in ipairs({{1, 2}, {2, 2}, {4, 2}}) do
+      for _, mode in ipairs({{"full screen", fullScreenZone},
+          {"app mode", appZone}}) do
+        resetRadio()
+        if subject.drive then subject.drive() end
+
+        local lines = {"version: 1", "grid:", "  columns: 4", "  rows: 4",
+          "components:", "  - id: subject", "    type: " .. subject.type,
+          -- Clear of the menu button, so the row is measured against a
+          -- content box nothing else has narrowed.
+          "    col: " .. (4 - span[1]), "    row: " .. (4 - span[2]),
+          "    colSpan: " .. span[1], "    rowSpan: " .. span[2],
+          "    config:"}
+        for _, line in ipairs(subject.config) do
+          lines[#lines + 1] = "      " .. line
+        end
+
+        local widget = makeWidget("rowfit-"
+          .. string.gsub(subject.name, "[^%w]", "") .. "-"
+          .. span[1] .. "x" .. span[2] .. "-"
+          .. string.gsub(mode[1], " ", ""),
+          table.concat(lines, "\n") .. "\n")
+        local context = createLoaded(mode[2](), DEFAULT_OPTIONS, widget)
+        assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+        pump(context, 60)
+
+        local entry = entryById(context, "subject")
+        local bounds = boundsOf(entry)
+        local frame = themeModule.frame(entry.instance.theme,
+          {x = 0, y = 0, w = bounds.w, h = bounds.h},
+          themeModule.typography(span[1], span[2]))
+        local where = mode[1] .. " " .. subject.name .. " "
+          .. span[1] .. "x" .. span[2]
+
+        -- Every visible label in the panel's lower half is a supporting row.
+        -- Read off the drawing rather than from a field each component names
+        -- differently -- `detail`, `range`, `secondary`, `countText`.
+        local function walk(object, offsetX, offsetY)
+          for _, child in ipairs(object.children) do
+            local x = offsetX + (child.properties.x or 0)
+            local y = offsetY + (child.properties.y or 0)
+            local text = tostring(child.properties.text or "")
+            if child.kind == "label" and not child.hidden and text ~= ""
+                and y > bounds.h / 2 then
+              local font = child.properties.font
+              font = type(font) == "function" and font() or font
+              local width = themeModule.measureText(font, text)
+
+              assert(width <= frame.content, where .. ': draws "' .. text
+                .. '" at ' .. width .. " px into a content box of "
+                .. frame.content .. " -- a row cannot shrink its font, so a"
+                .. " row this wide is centred on a box wider than the panel"
+                .. " and runs off both edges")
+
+              -- And it is on the panel, which is the same fact stated
+              -- against the edge rather than against the box.
+              assert(x >= 0 and x + width <= bounds.w, where .. ': draws "'
+                .. text .. '" from ' .. x .. " to " .. (x + width)
+                .. " on a panel " .. bounds.w .. " px wide")
+
+              checked = checked + 1
+              if width > widest then widest, widestWhere = width, where end
+            end
+            walk(child, x, y)
+          end
+        end
+        walk(entry.container, 0, 0)
+      end
+    end
+  end
+
+  -- Not vacuous: rows were actually drawn, and the narrowest span really was
+  -- reached. Without this a sweep that shed every row would pass.
+  assert(checked >= 60, "only " .. checked
+    .. " supporting rows were drawn, so most of this swept nothing")
+  assert(string.find(widestWhere, "1x2", 1, true) ~= nil
+    or widest > 0, "the widest row found was not measured")
+  resetRadio()
+end
+
 --- A badge ends flush with its panel, the way the heading begins flush.
 ---
 --- **A label draws from its own left edge, so moving its box does not move
@@ -7938,9 +8159,21 @@ end
 
 --- Every component must degrade visibly rather than raise when the radio
 --- cannot answer: a firmware without the API, a source that does not exist, a
---- timer index out of range, and a model bitmap that is not on the card.
+--- timer the model has not configured, and a model bitmap that is not on the
+--- card.
+---
+--- **The timer here is in range and unconfigured, which is the runtime case.**
+--- It used to be `timer: 7`, an index no radio has -- and that is an
+--- authoring mistake rather than a radio that cannot answer, so it is
+--- refused at load now and is covered by `testTimerIndexIsRefusedAtLoad`.
+--- The two look identical on screen, which is exactly why they were confused:
+--- both draw `NO TIMER`. Only one of them is the author's to fix.
 local function testComponentsDegrade()
   resetRadio()
+  -- A timer the radio has and the model has not set up. `luaModelGetTimer`
+  -- answers nothing for an unconfigured slot the same way it does for one
+  -- out of range, so this is the shape a component must survive.
+  radio.timers[2] = nil
   local widgetPath = makeWidget("degrade", [[
 version: 1
 grid:
@@ -7954,7 +8187,7 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      timer: 7
+      timer: 2
   - id: gv
     type: variable-indicator
     col: 2
@@ -8991,6 +9224,8 @@ testReadingsSitInTheirSlots()
 testSupportingWordingsStayDistinct()
 testReadingsIgnoreTheRowBeneathThem()
 testTertiaryQuarterHoldsItsFurniture()
+testTimerIndexIsRefusedAtLoad()
+testSupportingRowsFitTheirBox()
 testBadgesEndFlushWithTheirPanel()
 testNothingIsDrawnOverAnythingElse()
 testReadingsDoNotDescendOverAnything()

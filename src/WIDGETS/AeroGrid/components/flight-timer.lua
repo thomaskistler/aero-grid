@@ -64,6 +64,46 @@ local flightTimer = {
   },
 }
 
+--- Model timers a radio has, from `MAX_TIMERS` in
+--- `radio/src/dataconstants.h:94`. `luaModelGetTimer` answers nothing at all
+--- for an index at or above it (`radio/src/lua/api_model.cpp`), so 0, 1 and
+--- 2 are the whole set on every colour target.
+flightTimer.TIMER_COUNT = 3
+
+--- Refuse a timer index the radio does not have.
+---
+--- **An out-of-range index is an authoring mistake, and it used to load.**
+--- `timer: 9` produced a panel drawing `NO TIMER`, which is the same thing a
+--- correctly written layout draws on a radio whose timer is not configured
+--- -- so the one case the author can fix looked exactly like the one they
+--- cannot, and nothing said which it was.
+---
+--- It belongs here and not at runtime because it is knowable from the layout
+--- alone: the count is a firmware constant, not model state. That is the
+--- line this hook draws, and it is why the count-up timer asked for
+--- `remaining` is reported on the panel instead -- see `detailVariants`.
+---@param settings AeroGridTimerSettings
+---@param span? table
+---@param config? table What the layout actually stated.
+---@return string[] messages
+function flightTimer.validateSettings(settings, span, config)
+  local messages = {}
+  -- Read from the layout rather than the resolved settings: a default that
+  -- is in range is not a request, and only a request can be refused.
+  local stated = config and config.timer
+  if stated == nil then return messages end
+
+  if type(stated) ~= "number" or stated ~= math.floor(stated)
+      or stated < 0 or stated >= flightTimer.TIMER_COUNT then
+    messages[#messages + 1] = "timer must be 0, 1 or 2; a radio has "
+      .. tostring(flightTimer.TIMER_COUNT) .. " model timers and "
+      .. tostring(stated) .. " is not one of them, so the panel would draw"
+      .. " NO TIMER whatever the model is set to."
+  end
+
+  return messages
+end
+
 --- The largest magnitude this panel will print, in seconds.
 ---
 --- **A display clamp, not a limit on the timer.** EdgeTX's own range is
@@ -216,19 +256,79 @@ function flightTimer.resolveState(settings, feed)
   return "normal"
 end
 
---- Describe the timer beneath the clock.
+--- Wordings for the row beneath the clock, longest first.
+---
+--- **This used to be one wording per state with no shorter form**, and the
+--- longest of them did not fit the narrowest panel that draws a row:
+--- `ELAPSED PAST ZERO` is 125 px against a `1 x 2` content box of 105, so it
+--- was centred on a box wider than the panel and ran 10 px off each edge,
+--- over whatever was beside it. A row cannot shrink its font -- it is
+--- already the smallest the dashboard has -- so the only lever is the words.
+---
+--- That sentence is the one this component exists to print: EdgeTX counts a
+--- countdown on into negative numbers, and without the words an expired
+--- timer is a small negative clock that reads like a healthy one. Losing it
+--- at the narrowest span is losing it exactly where the panel is least able
+--- to say anything else.
+---
+--- **The shortest wording of each state differs from the shortest of every
+--- other**, which is what lets a cramped panel still say which of them
+--- happened. That is the specification's rule and
+--- `testSupportingWordingsStayDistinct` holds this component to it.
+---
+--- Two of the four states have one wording, and that is not an oversight: a
+--- wording is only offered where there is something to give up. `OF 5:00`
+--- and `NO TIMER` fit every panel that draws a row, and a single-entry list
+--- through `theme.fitLabel` returns that entry unchanged.
 ---@param feed? AeroGridModelTimer
 ---@param formatTime fun(seconds: any): string
----@return string
-function flightTimer.detailText(feed, formatTime)
-  if type(feed) ~= "table" or not feed.available then return "NO TIMER" end
+---@param settings? AeroGridTimerSettings What the layout asked for.
+---@return string[] variants Longest first.
+function flightTimer.detailVariants(feed, formatTime, settings)
+  if type(feed) ~= "table" or not feed.available then return {"NO TIMER"} end
 
   if feed.countdown then
-    if feed.expired then return "ELAPSED PAST ZERO" end
-    return "OF " .. formatTime(feed.start)
+    -- **The total is magnitude and has no shorter form.** Dropping a field
+    -- of it would report a different duration, which no width is worth. It
+    -- fits every panel that draws a row: the widest a radio can hold is
+    -- `OF 139810:07`, at 81 px of a 105 px box.
+    if feed.expired then return {"ELAPSED PAST ZERO", "PAST ZERO"} end
+    return {"OF " .. formatTime(feed.start)}
   end
 
-  return "COUNTING UP"
+  -- **A count-up timer asked for `remaining` says so.** There is no total to
+  -- take a remainder of, so the panel shows elapsed -- which it did
+  -- silently, and a layout author reading the setting back believed it.
+  -- This cannot be refused at load the way an out-of-range index can: which
+  -- timers count down is the pilot's model setup, not the layout's, so the
+  -- contradiction is only knowable once the radio has answered.
+  --
+  -- It goes in the supporting row because that is where this dashboard puts
+  -- why: a badge names the state and the row says what is behind it.
+  if settings ~= nil and settings.reading == "remaining" then
+    return {"NO COUNTDOWN", "NO TOTAL"}
+  end
+
+  return {"COUNTING UP"}
+end
+
+--- Describe the timer beneath the clock, fitted to the row it will be given.
+---
+--- Fitted rather than written straight into the label, which is what every
+--- supporting row in the catalogue with more than one wording already does.
+--- `theme.fitLabel` takes the longest form that fits.
+---@param feed? AeroGridModelTimer
+---@param formatTime fun(seconds: any): string
+---@param settings? AeroGridTimerSettings
+---@param themeBuilder? table
+---@param font? any
+---@param width? integer Row width; nil keeps the longest wording.
+---@return string
+function flightTimer.detailText(feed, formatTime, settings, themeBuilder,
+    font, width)
+  local variants = flightTimer.detailVariants(feed, formatTime, settings)
+  if themeBuilder == nil or width == nil then return variants[1] end
+  return themeBuilder.fitLabel(variants, font, width)
 end
 
 --- Fraction of a countdown that has been used, for the optional bar.
@@ -423,7 +523,8 @@ function flightTimer.render(context, out)
   -- hidden label, which is the invisible work the reveal work removed from
   -- five components and this one was not among them.
   if context.showDetail then
-    out.detail = flightTimer.detailText(feed, context.formatTime)
+    out.detail = flightTimer.detailText(feed, context.formatTime, settings,
+      context.themeBuilder, context.fonts.label, context.area.detailWidth)
   end
   if context.showVisual then
     out.fraction = flightTimer.fraction(feed)

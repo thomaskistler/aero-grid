@@ -73,23 +73,44 @@ grants it.
 
 ### What the supporting row says
 
-| Timer | Row |
-| --- | --- |
-| a countdown, running | `OF 5:00` — its start value, **not clamped** |
-| a countdown, past zero | `ELAPSED PAST ZERO` |
-| a count-up timer | `COUNTING UP` |
-| no timer configured | `NO TIMER` |
+| Timer | Row | On a one-column panel |
+| --- | --- | --- |
+| a countdown, running | `OF 5:00` — its start value, **not clamped** | same |
+| a countdown, past zero | `ELAPSED PAST ZERO` | `PAST ZERO` |
+| a count-up timer | `COUNTING UP` | same |
+| a count-up timer asked for `reading: remaining` | `NO COUNTDOWN` | `NO TOTAL` |
+| no timer configured | `NO TIMER` | same |
 
-**`ELAPSED PAST ZERO` does not fit a single-column panel.** At `1x2` the row
-is 125 px of a 105 px content box. It is sized to the string rather than to
-the box, so it does not wrap — it is centred and overhangs ten pixels at each
-side, starting two pixels outside the panel's own left edge, over whatever is
-next to it.
+**A row too wide for its panel loses words, not meaning.** A supporting row
+is already at the smallest font the dashboard has, so the only thing left to
+give up is wording. Each state offers its forms longest first and the panel
+takes the longest that fits.
 
-Unlike the other components with supporting rows, this one offers **one
-wording per state and no shorter form**, so there is nothing to shed when the
-row is too narrow. Keep this component two cells wide if a countdown of yours
-can run past zero.
+Two states need a shorter form and the other three do not, which is why only
+two columns above differ. `ELAPSED PAST ZERO` is 125 px against the 105 px
+content box of a `1x2`, the narrowest panel that draws a row at all; the
+shorter `PAST ZERO` is 67.
+
+> **This used to overhang rather than shorten.** The row was centred on a box
+> wider than the panel, so it started ten pixels outside the left edge and ran
+> ten past the right, over whatever was beside it — and a Lua label wraps
+> rather than clipping, so it could not simply be cut off. The page said to
+> keep the component two cells wide if a countdown of yours can run past zero.
+> That advice is no longer needed.
+
+### On a single row there are no words at all
+
+**No one-row panel carries a supporting row, at any width.** That is the
+shared ladder's decision and not this component's: a 65 px panel has nothing
+beneath the clock. So at `1x1` through `4x1` an expired countdown says what it
+can without words — **a minus sign on the clock, a red tint, and a `CRIT`
+badge.**
+
+That is deliberate rather than a gap. The minus sign carries the fact and the
+badge carries the alarm; the sentence is the elaboration, and the elaboration
+is what a panel this size cannot afford. If the distinction between *ninety
+seconds left* and *ninety seconds over* is one you need spelled out, give the
+panel two rows.
 
 ## States
 
