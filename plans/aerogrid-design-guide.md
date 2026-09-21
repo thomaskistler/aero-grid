@@ -642,8 +642,9 @@ placed in the grid's top-left cell. That is 24 of the 272 panels the schema perm
 one cell EdgeTX paints its menu button over.
 
 The generator now walks every placement of every span in both zones through `theme.ladder`,
-with the supporting row both taken and declined, and checks the walk against every panel the
-real host built on the page. **There are twenty-one bands, and they are these:**
+with the supporting row taken, declined, and taken at the height `navigation`'s two rows
+actually need, and checks the walk against every panel the real host built on the page.
+**There are twenty-five bands, and they are these:**
 
 | Band | By line height | Ink fills | By ink | Ink fills | Where it occurs |
 | --- | --- | --- | --- | --- | --- |
@@ -651,27 +652,30 @@ real host built on the page. **There are twenty-one bands, and they are these:**
 | 22 px | `SMLSIZE` | 59.1% | `SMLSIZE` | 59.1% | Full screen, one row, top grid row |
 | **23 px** | `SMLSIZE` | 56.5% | **`MIDSIZE`** | **100.0%** | Full screen, one row, the other three grid rows |
 | **34 px** | `MIDSIZE` | 67.6% | **`DBLSIZE`** | **91.2%** | App mode, one row |
-| 51 px | `DBLSIZE` | 60.8% | `DBLSIZE` | 60.8% | Full screen, two rows, with a row |
-| 52 px | `DBLSIZE` | 59.6% | `DBLSIZE` | 59.6% | Full screen, two rows, with a row |
-| **54 px** | `DBLSIZE` | 57.4% | **`XXLSIZE`** | **100.0%** | App mode, two rows, with a row, under the menu button |
-| **62 px** | `DBLSIZE` | 50.0% | **`XXLSIZE`** | **87.1%** | App mode, two rows, with a row |
-| 70, 71 px | `XXLSIZE` | 76–77% | `XXLSIZE` | 76–77% | Full screen, two rows, no row |
-| 79, 87 px | `XXLSIZE` | 62–68% | `XXLSIZE` | 62–68% | App mode, two rows, no row |
-| 80, 81, 97, 109, 114, 132, 139, 157, 191 px | `XXLSIZE` | 28–68% | `XXLSIZE` | 28–68% | three and four rows, both zones |
+| 40, 41 px | `DBLSIZE` | 75.6–77.5% | `DBLSIZE` | 75.6–77.5% | Full screen, two rows, a two-row footer |
+| 49 px | `DBLSIZE` | 63.3% | `DBLSIZE` | 63.3% | App mode, two rows, a two-row footer, under the button |
+| 51, 52 px | `DBLSIZE` | 59.6–60.8% | `DBLSIZE` | 59.6–60.8% | Full screen, two rows, one row of footer |
+| **54 px** | `DBLSIZE` | 57.4% | **`XXLSIZE`** | **100.0%** | App mode, two rows, one row of footer, under the button |
+| **57 px** | `DBLSIZE` | 54.4% | **`XXLSIZE`** | **94.7%** | App mode, two rows, a two-row footer |
+| **62 px** | `DBLSIZE` | 50.0% | **`XXLSIZE`** | **87.1%** | App mode, two rows, one row of footer |
+| 70, 71 px | `XXLSIZE` | 76.1–77.1% | `XXLSIZE` | 76.1–77.1% | Full screen, two rows, no footer |
+| 79, 87 px | `XXLSIZE` | 62.1–68.4% | `XXLSIZE` | 62.1–68.4% | App mode, two rows, no footer |
+| 80, 81, 97, 109, 114, 132, 139, 157, 191 px | `XXLSIZE` | 28.3–67.5% | `XXLSIZE` | 28.3–67.5% | three and four rows, both zones |
 
 **36 px is genuinely not among them. 51 px is** — so half of the old argument survives, as a
 fact about one band rather than as a verdict on the rule. What does not survive is the
 conclusion: the ladder's granularity is not what blocks ink on the bands this dashboard
 builds.
 
-**Four bands move, and one of them is not in App mode.** The previous account of this change
+**Five bands move, and one of them is not in App mode.** The previous account of this change
 said two moved and that all of them were App mode, which was the narrow case set talking:
 
-- **23 px** is a Full-screen single-row panel, and it moves two steps of ink — `SMLSIZE`
+- **23 px** is a Full-screen single-row panel, and it gains two steps of ink — `SMLSIZE`
   fills 56.5% where `MIDSIZE` fills the band exactly.
 - **34 px** is an App-mode single-row panel, the commonest panel on the dashboard.
-- **54 px** is the App-mode two-row panel in the menu button's corner.
-- **62 px** is an App-mode two-row panel carrying a supporting row — the case where the
+- **54 px** and **49 px** are the App-mode two-row panels in the menu button's corner; the
+  first moves and the second does not, because a two-row footer takes the difference.
+- **57 px** and **62 px** are App-mode two-row panels carrying a footer — the case where the
   reading has least room and a size is worth most.
 
 Measured through the real host over every component at every span it declares, in both
@@ -679,7 +683,7 @@ zones and at an obstructed and an unobstructed placement, the reading's font cha
 **168 of 1088 panels: 116 in App mode and 52 in Full screen, every one of them larger.**
 That sweep is not something `make mocks` builds — the generator renders six components at
 four spans — so it is a figure from a one-off probe rather than one the page can reproduce,
-and the figure this document stands on is the one above it: four bands of twenty-one.
+and the figure this document stands on is the one above it: five bands of twenty-five.
 
 **The user saw it by eye on two separate components and asked for it.** That is what
 decided it; the arithmetic above is what makes it checkable.
@@ -710,6 +714,17 @@ can leave no pair of slots that separates it from a dial. `metric` with `visual:
 `variable-indicator` with `visual: radial` and `navigation`'s compass all shed theirs at two
 columns; `variable-indicator` also sheds at a single cell. The user was shown the threshold
 table and chose it.
+
+**And one band was found to be lying, which is the other thing ink exposed.** The tertiary
+band reserved a quarter of the panel for supporting rows. `navigation` is the only component
+that draws two and centres them as a group — 36 px against a quarter of 31 on a two-row
+panel — so its footer overflowed its band upward into the bottom of the body band, and the
+reading was sized against a band that reported more room than the panel had. A line box
+never reached its band's floor, so nothing met; ink does, and in the menu button's corner
+the distance ended 3 px inside the bearing row. The band is now the larger of the quarter and
+what the rows actually need. That is the rule this guide already states — reserve from what
+the panel draws — applied in the direction nobody had needed yet, and it changes nothing for
+the eleven components whose single row is shorter than a quarter at every span.
 
 **One thing to watch, which nobody has decided.** 22 px and 23 px are both Full-screen
 single-cell bands, one pixel apart because the grid's own rounding makes some rows a pixel

@@ -339,14 +339,23 @@ local function bandsAt(zoneName, col, row, colSpan, rowSpan)
 
   local fonts = themeModule.typography(colSpan, rowSpan)
   local frame = themeModule.frame(resolvedTheme, panel, fonts, reserved)
+  -- Three answers, not two. A panel may draw no supporting row, one, or --
+  -- in `navigation` alone -- two centred as a group, which needs more than
+  -- the quarter the band reserves and therefore narrows the body further.
+  -- A walk that asked only the first two would miss every band that
+  -- component builds.
+  local twoRows = frame.labelHeight * 2 + 2
   return themeModule.ladder(resolvedTheme, panel, frame, {rows = true}).room,
-    themeModule.ladder(resolvedTheme, panel, frame, {rows = false}).room
+    themeModule.ladder(resolvedTheme, panel, frame, {rows = false}).room,
+    themeModule.ladder(resolvedTheme, panel, frame,
+      {rows = true, rowHeight = twoRows}).room
 end
 
 for _, observed in ipairs(hostBands) do
-  local withRow, withoutRow = bandsAt(observed.zone, 0, 0,
+  local withRow, withoutRow, withTwo = bandsAt(observed.zone, 0, 0,
     observed.colSpan, observed.rowSpan)
-  assert(observed.band == withRow or observed.band == withoutRow,
+  assert(observed.band == withRow or observed.band == withoutRow
+      or observed.band == withTwo,
     string.format("the band walk disagrees with the host: %s %s %dx%d drew a"
       .. " %d px body band, and the walk says %d or %d", observed.zone,
       observed.component, observed.colSpan, observed.rowSpan, observed.band,
@@ -359,9 +368,9 @@ for _, zoneName in ipairs({"appmode", "widget"}) do
     for rowSpan = 1, 4 do
       for col = 0, 4 - colSpan do
         for row = 0, 4 - rowSpan do
-          local withRow, withoutRow = bandsAt(zoneName, col, row,
+          local withRow, withoutRow, withTwo = bandsAt(zoneName, col, row,
             colSpan, rowSpan)
-          for _, band in ipairs({withRow, withoutRow}) do
+          for _, band in ipairs({withRow, withoutRow, withTwo}) do
             if not bandWhere[band] then
               bandWhere[band] = {}
               bandOrder[#bandOrder + 1] = band
