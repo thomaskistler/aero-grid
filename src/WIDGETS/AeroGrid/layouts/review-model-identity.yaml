@@ -1,154 +1,150 @@
 # Review harness for `model-identity`. Not a dashboard.
 #
 # One review screen exists at a time and its Dashboard ID names the component
-# under review; this replaces `review-tx-battery` as the screen's target
+# under review; this replaces whatever preceded it as the screen's target
 # rather than adding an eleventh screen, because `MAX_CUSTOM_SCREENS` is 10
-# and the fixture already carries ten. The previous review layouts stay in the
+# and the fixture already carries ten. Earlier review layouts stay in the
 # repository and keep being loaded by the shipped-layout test.
 #
-# **Read this screen against the model name you have set.** Every panel here
-# draws the same name, because there is only one model loaded, so the whole
-# screen changes character with it. The review is not really of these panels;
-# it is of what this component does with *your* name, and the findings it
-# exists to show only appear at certain lengths. Set the model name to
-# something fifteen characters long -- `QUADCOPTER RACE` is a real one -- and
-# then set it to `Hawk`, and compare.
+# **Read this screen against the model name you have set.** Every panel draws
+# the same model and the same picture, because there is only one model
+# loaded. The review is of what this component does with *your* name and
+# *your* picture, so set the name to something fifteen characters long --
+# `QUADCOPTER RACE` is a real one -- and then to `Hawk`, and compare.
 #
-# **The top row is the name at its two extremes.** Both panels are the same
-# span and the same settings, so the only difference is what is beneath them
-# on the radio: nothing. They are there to be looked at with a long name set,
-# because that is when the reading reaches past the panel it belongs to. At
-# `2 x 2` a fifteen-character name is 279 px wide in a 226 px content box and
-# is centred, so it hangs 26 px off the left edge and 27 px off the right --
-# into the panel beside it. The two are placed side by side so that overlap
-# has something to overlap.
+# **The rule this screen exists to show.** Where there is a picture, the
+# picture is the body and the model name moves up into the heading. Where
+# there is not, the name is the reading in the body and the heading is
+# whatever the layout called the panel. So the same name is drawn two
+# different ways depending on whether a picture is there, and the panels are
+# arranged in pairs to make that comparable rather than remembered.
 #
-# **The second row is the vertical question.** This component is the only one
-# whose reading is not placed in the body band. With no picture the name sits
-# directly under the heading, and with a picture it sits on the panel's floor,
-# and neither is where the shared rule would put it. The `name` panel and the
-# `both` panel are the same span so the two positions can be compared against
-# each other and against every other panel on the screen -- which are all
-# banded.
+# **Panels showing a picture set no label**, and cannot: the name takes the
+# heading, so a label would have nowhere to go and the layout validator says
+# so. Their headings below are model names, not captions.
 #
-# **The third row is the picture.** `fill = true` reaches EdgeTX as
-# `StaticImage(..., fillFrame)`, where the zoom is `max(zw, zh)` rather than
-# `min`: the image is scaled until it *covers* the frame and whatever does not
-# fit is cropped. The frames here are 226 x 56 and 468 x 27, which are 4:1 and
-# 17:1. A 4:3 photograph in the wider of them keeps 8% of its height. Both are
-# on the screen at once so the crop can be seen rather than reasoned about,
-# and the `2x3` panel beside them is the only span where the frame is nearly
-# square and the picture survives.
+# **The middle pair is the defect that is left.** Both are `2 x 2` with no
+# picture, side by side, identical apart from their accent. With a
+# fifteen-character name the reading is 279 px wide in a 226 px content box
+# and is centred, so it hangs 26 px past one edge and 27 px past the other --
+# into the panel beside it, which is why there is a panel beside it. This is
+# the one finding the new arrangement does not answer: it only bites where no
+# picture is drawn, because that is the only case where the name is still
+# fitted against imagined widths rather than placed in a heading.
 #
-# **What this screen cannot show, said plainly.** The first version of this
-# layout had two panels at the bottom captioned as pointing at a missing file
-# and at a file that is not a picture. **They cannot.** The bitmap comes from
-# `modelService`, which reads it from the loaded model, and the component has
-# no per-panel setting for it -- so every panel here draws the same file, and
-# those two captions described something that does not happen. They are gone.
+# **They are not in the top-left corner, and that is deliberate.** App mode
+# reserves a corner for the menu button and the top-left panel gives up
+# content width for it. That is correct behaviour, but it makes an identical
+# pair stop being identical, which would sabotage the one comparison this
+# screen exists to make. The corner holds a single panel instead, where the
+# squeeze is visible and costs nothing.
 #
-# Seeing the fallback means changing the model's own bitmap, which changes
-# every panel at once:
+# **The picture is contained, never cropped.** `fill = false` reaches EdgeTX
+# as `StaticImage`'s `fillFrame`, where `setZoom` takes `min(zw, zh)` rather
+# than `max`: the whole picture is scaled to fit inside the frame and the
+# panel shows through at the ends. The frames here are much wider than a
+# 192 x 114 model image, so the letterbox is at the sides on every span on
+# this screen.
 #
-#   * name a file that is not on the card, and every panel falls back to the
-#     model name -- the check works and this is the case it handles;
-#   * name a file that is on the card and is not a decodable picture, and
-#     every panel goes **blank**. `fstat` cannot tell the two apart, so the
-#     fallback does not fire, the name stays hidden because a picture was
-#     asked for, and EdgeTX's `StaticImage` clears its own source without
-#     telling Lua.
-#
-# The second is worth doing once by hand, because an empty panel is the one
-# outcome this component's header comment says it exists to prevent.
+# **What this screen cannot show.** The bitmap comes from the loaded model,
+# not from a panel, so every panel here draws the same file and none of them
+# can be pointed at a different one. Seeing the fallback means changing the
+# model's own bitmap, which changes every panel at once: name a file that is
+# not on the card and every panel falls back to the model name with its
+# configured heading restored, which is the case the check handles. Name a
+# file that is on the card and is not a decodable picture and every panel
+# goes blank, because `fstat` cannot tell the two apart. That second one is
+# worth doing once by hand.
 version: 1
 grid:
   columns: 4
   rows: 4
 components:
-  # Two identical panels, side by side, so a name too wide for one has the
-  # other to reach into. With a fifteen-character model name set this is the
-  # pair that shows it.
-  - id: wide-left
+  # The corner. A single cell is the narrowest heading this component can be
+  # asked to draw a model name into, so it is where the heading's own
+  # abbreviation shows: a fifteen-character name is cut and what was dropped
+  # is reported to the host. Alone in the corner, so the menu button's
+  # reserved width spoils no comparison.
+  - id: corner
     type: model-identity
     col: 0
     row: 0
-    colSpan: 2
+    colSpan: 1
     rowSpan: 1
     config:
-      label: NAME L
+      presentation: image
+
+  # The same span with no picture, so the name is the reading instead. Beside
+  # the panel above, the two treatments of one string can be read together.
+  - id: corner-name
+    type: model-identity
+    col: 1
+    row: 0
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: NAME 1x1
       presentation: name
 
-  - id: wide-right
+  # A wide single row. The frame is 226 x 28 and the picture is drawn at
+  # 46 x 28, so most of this panel is letterbox: the height binds and a short
+  # wide frame cannot use its width. Worth seeing, because it is what a
+  # single row now gives you -- before this change the picture was shed here
+  # and the name was drawn instead.
+  - id: wide-strip
     type: model-identity
     col: 2
     row: 0
     colSpan: 2
     rowSpan: 1
+    config:
+      presentation: image
+
+  # The pair. Identical but for the accent, no picture, at the span where a
+  # long name overhangs furthest.
+  - id: overhang-left
+    type: model-identity
+    col: 0
+    row: 1
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: NAME L
+      presentation: name
+
+  - id: overhang-right
+    type: model-identity
+    col: 2
+    row: 1
+    colSpan: 2
+    rowSpan: 2
     config:
       label: NAME R
       accent: amber
       presentation: name
 
-  # The vertical pair. Same span, same name, and the only difference is
-  # whether a picture is asked for -- which moves the name from just under the
-  # heading to the panel's floor.
-  - id: high
+  # Two rows of picture in a two-cell width: the frame is 226 x 77 and the
+  # picture is drawn at 129 x 77. The largest the aircraft gets on this
+  # screen, and the panel to judge the arrangement by.
+  - id: tall-picture
     type: model-identity
     col: 0
-    row: 1
+    row: 3
     colSpan: 2
     rowSpan: 1
     config:
-      label: NAME ONLY
-      presentation: name
-
-  - id: low
-    type: model-identity
-    col: 2
-    row: 1
-    colSpan: 2
-    rowSpan: 1
-    config:
-      label: WITH PICTURE
       accent: green
-      presentation: both
+      presentation: image
 
-  # The crop. `crop-square` is the tall panel and the two on the right are
-  # the same span as each other, differing only in whether the name is drawn
-  # -- which is what decides how much height the picture gets.
-  - id: crop-square
-    type: model-identity
-    col: 0
-    row: 2
-    colSpan: 2
-    rowSpan: 2
-    config:
-      label: 2x2 BOTH
-      presentation: both
-      showLabels: true
-
-  - id: crop-wide
-    type: model-identity
-    col: 2
-    row: 2
-    colSpan: 2
-    rowSpan: 1
-    config:
-      label: 2x1 BOTH
-      accent: orange
-      presentation: both
-
-  # The same picture with the name taken away, at the same width as the
-  # panel above it. Dropping the name gives the frame 77 px instead of 35, so
-  # the picture keeps 57% of its height here against 26% there -- the two are
-  # stacked so that difference is a comparison rather than a memory.
-  - id: picture-only
+  # The same span with no picture and no long name to fight: `auto` on two
+  # cells shows the name alone, which is the arrangement most single-row
+  # panels on a real dashboard will be in.
+  - id: auto-strip
     type: model-identity
     col: 2
     row: 3
     colSpan: 2
     rowSpan: 1
     config:
-      label: 2x1 IMAGE
-      accent: amber
-      presentation: image
+      label: AUTO 2x1
+      accent: orange

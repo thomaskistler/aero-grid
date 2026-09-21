@@ -7053,6 +7053,26 @@ local function testCoreComponents()
   assert(identity.image, "a model bitmap that exists was not shown")
   assertEqual(identity.image.properties.file, "/IMAGES/plane.png")
 
+  -- **Contained, not cropped.** `fill` is the only thing that decides this
+  -- and it reaches EdgeTX as `StaticImage`'s `fillFrame`, where `setZoom`
+  -- computes `z = fillFrame ? max(zw, zh) : min(zw, zh)`
+  -- (`gui/colorlcd/libui/static.cpp`). The larger zoom covers the frame and
+  -- cuts off whatever does not fit; a model image is 192 x 114 and every
+  -- frame this component produces is wider in proportion, so covering cut
+  -- the aircraft's top and bottom off -- a tenth of its height survived at
+  -- four cells by two. Nothing else observable changes when this flips,
+  -- which is why it is asserted here rather than inferred from a position.
+  assertEqual(identity.image.properties.fill, false,
+    "the model picture is cropped to fill its frame instead of fitted"
+      .. " inside it")
+
+  -- And the name is the heading, because a picture is drawn. The configured
+  -- label has nowhere to go on such a panel and the layout validator refuses
+  -- one; this is the other half of that rule, observed rather than assumed.
+  assertEqual(identity.label.properties.text, "TEST MODEL",
+    "a panel drawing the model picture did not put the model name in its"
+      .. " heading")
+
   -- A bipolar bar measures each side against its own bound.
   local swing = entryById(context, "swing").instance
   assertEqual(swing.text, "4.5")
