@@ -1392,6 +1392,34 @@ local function testModernTheme()
 
   -- No mode at all is Modern without complaint.
   assertEqual(theme.build().mode, "modern")
+
+  -- **And an empty one is Modern without complaint too, which is not the
+  -- same statement.** A Lua widget receives a string option it has never
+  -- been given as `""` rather than as nil: the default is
+  -- `stringValue.clear()` and it is pushed with `lua_pushstring`, so the
+  -- firmware cannot express the difference. Warning about it painted the
+  -- diagnostic banner across the dashboard of every first run, which is the
+  -- one configuration nobody tests because it is the one nobody chooses.
+  --
+  -- Whitespace is the same case reached a different way: a name typed and
+  -- cleared can leave a space, and the user cannot see it.
+  for _, blank in ipairs({"", " ", "   "}) do
+    local unset = theme.build(blank)
+    assertEqual(unset.mode, "modern",
+      string.format("a blank theme option %q did not fall back to Modern",
+        blank))
+    assertEqual(#unset.warnings, 0, string.format(
+      "a blank theme option %q warned, which is the banner every user who"
+        .. " adds this widget and does not open its settings would see: %s",
+      blank, unset.warnings[1] or ""))
+  end
+
+  -- The warning still earns its keep on a mode that is genuinely a name and
+  -- genuinely not ours -- a typo, or a mode we removed. Asserted beside the
+  -- blank cases so that silencing the warning altogether fails here.
+  assertEqual(#theme.build("nonsense").warnings, 1,
+    "a real unknown mode stopped warning, so the blank case was fixed by"
+      .. " removing the warning rather than by narrowing it")
 end
 
 --- EdgeTX mode derives tokens, corrects contrast, and keeps critical red.
