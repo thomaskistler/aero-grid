@@ -8487,19 +8487,38 @@ components:
     "this test needs a panel with no reading")
   assertEqual(instance.unit.hidden, true, "a unit was drawn beside `--`")
 
-  -- Narrow enough that the panel could not afford a unit even with a value,
-  -- so the permission genuinely moves rather than staying true throughout --
-  -- which is what makes the widening below a restore rather than a no-op.
+  -- **A reflow that does not move the permission.** Measured: a 2 x 2
+  -- cell-battery affords a unit at 480 x 272 and still affords it at
+  -- 120 x 120, so this is the reflow that re-places the rider without
+  -- re-deciding anything -- which is exactly where the reflow path
+  -- short-circuits, and where a rider placed unconditionally comes back.
   zone.w = 120
   zone.h = 120
   definition.update(context, DEFAULT_OPTIONS)
   reflow()
+  assert(instance.area.showUnit,
+    "this step must keep the unit permitted, or it is not testing the"
+      .. " short-circuit it was written for")
+  assertEqual(instance.unit.hidden, true,
+    "a reflow put the unit back beside a reading that still has no value")
+
+  -- **And one that does move it.** Measured: the same panel at 240 x 272 is
+  -- too narrow for the pair, so the permission is genuinely withdrawn and
+  -- genuinely returns, which is the other branch.
+  zone.w = 240
+  zone.h = 272
+  definition.update(context, DEFAULT_OPTIONS)
+  reflow()
+  assertEqual(instance.area.showUnit, false,
+    "this step must withdraw the unit's permission, or the widening below"
+      .. " restores nothing and proves nothing")
   assertEqual(instance.unit.hidden, true)
 
   zone.w = 480
   zone.h = 272
   definition.update(context, DEFAULT_OPTIONS)
   reflow()
+  assert(instance.area.showUnit, "the permission never came back")
   assertEqual(instance.unit.hidden, true,
     "growing the panel restored a unit to a reading that still has no value")
 
