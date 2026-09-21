@@ -6,7 +6,7 @@ Models:
     hash: "72110000285d081d"
     name: "MODEL01"
     labels: ""
-    bitmap: ""
+    bitmap: "04530_x10.png"
     lastopen: 1788838257
   model2.yml:
     hash: "72110000285d081e"
