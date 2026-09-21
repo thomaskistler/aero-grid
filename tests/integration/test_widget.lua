@@ -422,12 +422,19 @@ end
 --- The single-cell gallery has to contain the catalogue, or it is not a
 --- comparison.
 ---
---- `span1x1.yaml` exists so a person can see thirteen components at the same
---- span at once and judge whether they belong to the same dashboard. A
---- component missing from it is a component nobody is comparing, and the most
---- likely way for one to go missing is for it to be written after the gallery.
---- The component directory is therefore read from disk rather than listed
---- here, exactly as the layout sweep above reads the layout directory.
+--- `span1x1.yaml` exists so every component can be built at the same span at
+--- once and compared. A component missing from it is a component nothing is
+--- comparing, and the most likely way for one to go missing is for it to be
+--- written after the gallery. The component directory is therefore read from
+--- disk rather than listed here, exactly as the layout sweep above reads the
+--- layout directory.
+---
+--- **It is a test fixture rather than a shipped layout.** The galleries were
+--- retired from the radio because the user does not page to them; the cases
+--- they construct -- eleven components in one grid, which is the densest
+--- arrangement this dashboard can be asked for -- are why they are still
+--- built here. A layout does not have to be on a screen to be worth
+--- building.
 local function testSpanGalleryIsComplete()
   local componentHost = assert(loadfile(sourcePath .. "lib/component_host.lua"))()
 
@@ -443,7 +450,8 @@ local function testSpanGalleryIsComplete()
   os.remove(listingPath)
   assert(#stems > 0, "no components were found to compare")
 
-  local source = assert(hostIo.open(sourcePath .. "layouts/span1x1.yaml", "r"))
+  local source = assert(hostIo.open(
+    root .. "/tests/fixtures/layouts/span1x1.yaml", "r"))
   local gallery = source:read("a")
   source:close()
 
@@ -556,53 +564,85 @@ local function testStatesCoverBothPalettes()
     "both palettes resolve the same warning tint")
 end
 
-local function testGalleriesAreReachable()
-testStatesCoverBothPalettes()
-  local handle = assert(hostIo.open(
-    root .. "/tests/fixtures/sdcard/MODELS/model1.yml", "r"))
-  local model = handle:read("a")
-  handle:close()
+--- Every shipped layout is on a screen, and every review screen is on the
+--- review model.
+---
+--- A layout only ships as a layout, and selecting one means setting the
+--- widget's Dashboard ID. In App mode that is not reachable from the main
+--- view at all: `Widget::openMenu` returns immediately after
+--- `setFullscreen(true)` when the widget is not in the top bar and the view
+--- is App mode (radio/src/gui/colorlcd/mainview/widget.cpp), so there is no
+--- widget menu to open. Reaching a layout would mean going through Model
+--- Setup and Screens once per layout, which is enough friction that nobody
+--- would look at it -- which is the whole point of it existing.
+---
+--- **Two models, because ten screens is the ceiling.** `MAX_CUSTOM_SCREENS`
+--- is 10 (`radio/src/dataconstants.h`), and there are ten reviewable
+--- components plus the dashboards, the two palette screens and the debug
+--- screen. That is eleven and does not fit, so the review screens have a
+--- model of their own and the working model keeps the dashboards, the
+--- palette comparison and the debug screen.
+local function testScreensReachEveryShippedLayout()
+  local function readModel(name)
+    local handle = assert(hostIo.open(
+      root .. "/tests/fixtures/sdcard/MODELS/" .. name, "r"))
+    local text = handle:read("a")
+    handle:close()
+    return text
+  end
 
-  local listingPath = root .. "/build/gallery-layouts.txt"
+  local working = readModel("model1.yml")
+  local review = readModel("model2.yml")
+
+  local listingPath = root .. "/build/screen-layouts.txt"
   os.execute("ls '" .. sourcePath .. "layouts' > '" .. listingPath .. "'")
   local listing = assert(hostIo.open(listingPath, "r"))
-  local galleries = {}
+  local shipped = {}
   for name in listing:lines() do
-    local stem = string.match(name, "^(span%w+)%.yaml$")
-      or string.match(name, "^(states)%.yaml$")
-    if stem then galleries[#galleries + 1] = stem end
+    local stem = string.match(name, "^(.+)%.yaml$")
+    if stem then shipped[#shipped + 1] = stem end
   end
   listing:close()
   os.remove(listingPath)
-  assert(#galleries > 0, "no span galleries were found")
+  assert(#shipped > 0, "no shipped layouts were found")
 
-  for _, stem in ipairs(galleries) do
-    -- The file is written by the simulator and uses CRLF, so the value is
-    -- matched up to the line ending rather than to the end of the line.
-    assert(string.find(model, "stringValue: " .. stem, 1, true),
-      stem .. " ships as a layout but no screen of the tracked model selects"
+  -- Which layouts are selected by a screen on either model. `default` is the
+  -- host's own fallback and is reached by a widget that names nothing, so it
+  -- needs no screen; `services` and `services2` are fixtures for the service
+  -- runtime rather than anything to look at.
+  local EXEMPT = {default = true, services = true, services2 = true}
+
+  local reviews = 0
+  for _, stem in ipairs(shipped) do
+    if not EXEMPT[stem] then
+      local onReview = string.find(review, "stringValue: " .. stem, 1, true)
+      local onWorking = string.find(working, "stringValue: " .. stem, 1, true)
+      assert(onReview or onWorking, stem
+        .. " ships as a layout but no screen of either tracked model selects"
         .. " it, so nothing pages to it")
-  end
 
-  -- Anything under review has to be reachable in a page or two. The galleries
-  -- are reference material for this audit and can sit behind the dashboards
-  -- and the states pages; when `states` was last it took six pages to reach
-  -- and in practice went unseen, which is the whole failure mode a screen
-  -- exists to prevent.
+      -- A review screen belongs on the review model. Putting one back on the
+      -- working model is how the single self-replacing review screen came
+      -- about, which is the arrangement this replaced.
+      if string.match(stem, "^review%-") then
+        reviews = reviews + 1
+        assert(onReview and not onWorking, stem
+          .. " is a review layout but is selected by the working model;"
+          .. " review screens live on the review model")
+      end
+    end
+  end
+  assert(reviews >= 3,
+    "only " .. reviews .. " review layouts were checked")
+
+  -- The dashboards come first, because they are what the radio is for.
   local order = {}
-  for value in string.gmatch(model, "stringValue: ([%w]+)") do
+  for value in string.gmatch(working, "stringValue: ([%w%-]+)") do
     order[#order + 1] = value
   end
   local position = {}
   for index, name in ipairs(order) do
     if not position[name] then position[name] = index end
-  end
-  for _, stem in ipairs(galleries) do
-    if string.match(stem, "^span") then
-      assert(position.states < position[stem], "the " .. stem
-        .. " gallery is paged before the states screens, which are what is"
-        .. " actually being looked at")
-    end
   end
   assert(position.sim == 1 and position.sim2 == 2,
     "the two dashboards are not the first two screens")
@@ -626,22 +666,25 @@ testStatesCoverBothPalettes()
 
   -- EdgeTX stops at MAX_CUSTOM_SCREENS, which is 10 on colour targets
   -- (radio/src/dataconstants.h). A model carrying more is one the radio will
-  -- not load as written.
-  local screens = 0
-  for _ in string.gmatch(model, "\n      LayoutId:") do screens = screens + 1 end
-  assert(screens >= #galleries + 2,
-    "the tracked model has " .. screens .. " screens, too few for the"
-      .. " galleries plus the two dashboards")
-  assert(screens <= 10,
-    "the tracked model has " .. screens .. " screens, more than EdgeTX's"
-      .. " MAX_CUSTOM_SCREENS of 10")
+  -- not load as written. Asserted on both, because the review model is the
+  -- one that will grow: seven components are still to be reviewed and each
+  -- takes a screen.
+  for name, text in pairs({["model1.yml"] = working, ["model2.yml"] = review}) do
+    local screens = 0
+    for _ in string.gmatch(text, "\n      LayoutId:") do screens = screens + 1 end
+    assert(screens >= 1, name .. " carries no screens at all")
+    assert(screens <= 10, name .. " carries " .. screens
+      .. " screens, more than EdgeTX's MAX_CUSTOM_SCREENS of 10")
+  end
 end
+
 
 local function testShippedLayout()
 testShippedLayoutsLoad()
 testSessionArmsTheFlight()
 testSpanGalleryIsComplete()
-testGalleriesAreReachable()
+testStatesCoverBothPalettes()
+testScreensReachEveryShippedLayout()
   resetRadio()
   local zone = {x = 0, y = 0, w = 480, h = 272}
   local context = testRendersInBothModes("shipped", zone, sourcePath, 10)
@@ -2638,27 +2681,53 @@ local function testNothingIsDrawnOverAnythingElse()
   -- Every shipped layout, because the directory is the list. A layout is
   -- covered the moment it is added, exactly like the load coverage.
   local listingPath = root .. "/build/collide-layouts.txt"
-  os.execute("ls '" .. sourcePath .. "layouts' > '" .. listingPath .. "'")
-  local listing = assert(hostIo.open(listingPath, "r"))
   local names = {}
-  for name in listing:lines() do
-    local stem = string.match(name, "^(.+)%.yaml$")
-    if stem then names[#names + 1] = stem end
-  end
-  listing:close()
-  os.remove(listingPath)
-  assert(#names > 1, "no shipped layouts were found to check")
 
-  for _, stem in ipairs(names) do
+  -- **Both the shipped layouts and the retired galleries.** The four span
+  -- galleries were taken off the radio because nobody paged to them, and
+  -- they are still built here because of what they construct: eleven
+  -- components in one grid at one span, which is the densest arrangement
+  -- this dashboard can be asked for and therefore where two things are
+  -- likeliest to meet. Retiring a layout from a screen is a decision about
+  -- the radio; deleting the cases it builds would have been a quiet
+  -- reduction in what this check covers.
+  local function collect(directory, prefix)
+    os.execute("ls '" .. directory .. "' > '" .. listingPath .. "'")
+    local listing = assert(hostIo.open(listingPath, "r"))
+    for name in listing:lines() do
+      local stem = string.match(name, "^(.+)%.yaml$")
+      if stem then
+        names[#names + 1] = {stem = stem, path = directory .. name,
+          label = prefix .. stem}
+      end
+    end
+    listing:close()
+    os.remove(listingPath)
+  end
+
+  collect(sourcePath .. "layouts/", "")
+  collect(root .. "/tests/fixtures/layouts/", "retired ")
+  assert(#names > 1, "no layouts were found to check")
+
+  local galleries = 0
+  for _, entry in ipairs(names) do
+    if string.match(entry.stem, "^span") then galleries = galleries + 1 end
+  end
+  assertEqual(galleries, 4,
+    "the four retired span galleries are no longer being built, so the"
+      .. " densest arrangement in the catalogue is not being checked for"
+      .. " collisions by anything")
+
+  for _, entry in ipairs(names) do
+    local stem = entry.label
     for _, mode in ipairs({{"full screen", {x = 0, y = 0, w = 480, h = 272}},
         {"app mode", appZone()}}) do
       resetRadio()
-      local source = assert(hostIo.open(
-        sourcePath .. "layouts/" .. stem .. ".yaml", "r"))
+      local source = assert(hostIo.open(entry.path, "r"))
       local yaml = source:read("a")
       source:close()
 
-      local widget = makeWidget("collide-" .. stem .. "-"
+      local widget = makeWidget("collide-" .. entry.stem .. "-"
         .. string.gsub(mode[1], " ", ""), yaml)
       local context = createLoaded(mode[2], DEFAULT_OPTIONS, widget)
       pump(context, 60)

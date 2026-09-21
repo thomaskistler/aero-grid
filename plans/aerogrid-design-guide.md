@@ -696,6 +696,35 @@ change mid-flight is not a permission at all, it is data.
 
 ---
 
+## Retired: the span galleries, and what went with them
+
+**Four layouts showed every component at one span — `1x1`, `2x1`, `2x2`, `4x1` — and
+they have been taken off the radio.** The user does not page to them, and ten screens is
+EdgeTX's ceiling, which the per-component review screens now need.
+
+**What is lost is the only view of cross-component agreement.** A gallery put eleven
+panels of the same size side by side, which is where you can see headings landing on the
+same line, readings sitting on the same slot, and badges lining up in the same column.
+That agreement is exactly what the shared ladder and the slot rule exist to produce, and
+it is the thing that is invisible one panel at a time: a heading 13 px too low looks fine
+alone and looks wrong beside four that are not.
+
+**A review screen cannot replace it, because it is the transpose.** A review screen holds
+one component fixed and varies the span; a gallery holds the span fixed and varies the
+component. The first answers "does this component behave across sizes", the second
+answers "do these components agree at one size". Both were worth having and only the
+first is now on the radio.
+
+Two things soften it and neither replaces it. The galleries are still built by the test
+suite from `tests/fixtures/layouts/`, so the collision check still sweeps the densest
+arrangement in the catalogue and the single-cell gallery is still held to containing
+every component that declares that span. And `tools/flow-geometry.lua` renders several
+components at one span into `build/flow-mocks.html`, which is a page rather than a radio
+but does show alignment.
+
+**If cross-component drift reappears, this is the view that would have caught it**, and
+the honest position is that nobody will be looking.
+
 ## Checking a layout mechanically
 
 **Every visible label is checked against every other drawn thing — labels, bars, cells,
