@@ -40,14 +40,25 @@
 # and the `2x3` panel beside them is the only span where the frame is nearly
 # square and the picture survives.
 #
-# **The bottom row is what happens when the picture cannot be drawn.** The
-# left panel asks for an image that is not there, which the component detects
-# with `fstat` and answers by showing the name instead. The right panel asks
-# for one that exists on the card and is not a decodable image, which `fstat`
-# cannot distinguish: the file is present, so the fallback does not fire, the
-# name stays hidden because the layout asked for a picture, and EdgeTX's own
-# `StaticImage` clears its source without telling Lua. That panel is expected
-# to be **empty**, and it is on the screen because an empty panel is the one
+# **What this screen cannot show, said plainly.** The first version of this
+# layout had two panels at the bottom captioned as pointing at a missing file
+# and at a file that is not a picture. **They cannot.** The bitmap comes from
+# `modelService`, which reads it from the loaded model, and the component has
+# no per-panel setting for it -- so every panel here draws the same file, and
+# those two captions described something that does not happen. They are gone.
+#
+# Seeing the fallback means changing the model's own bitmap, which changes
+# every panel at once:
+#
+#   * name a file that is not on the card, and every panel falls back to the
+#     model name -- the check works and this is the case it handles;
+#   * name a file that is on the card and is not a decodable picture, and
+#     every panel goes **blank**. `fstat` cannot tell the two apart, so the
+#     fallback does not fire, the name stays hidden because a picture was
+#     asked for, and EdgeTX's `StaticImage` clears its own source without
+#     telling Lua.
+#
+# The second is worth doing once by hand, because an empty panel is the one
 # outcome this component's header comment says it exists to prevent.
 version: 1
 grid:
@@ -102,8 +113,9 @@ components:
       accent: green
       presentation: both
 
-  # The crop, at the two aspect ratios that bracket it. The first frame is
-  # 4:1 and the second 17:1.
+  # The crop. `crop-square` is the tall panel and the two on the right are
+  # the same span as each other, differing only in whether the name is drawn
+  # -- which is what decides how much height the picture gets.
   - id: crop-square
     type: model-identity
     col: 0
@@ -122,30 +134,21 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      label: 4x1 IMAGE
+      label: 2x1 BOTH
       accent: orange
-      presentation: image
+      presentation: both
 
-  # A missing file, which the component detects and answers with the name.
-  - id: absent
+  # The same picture with the name taken away, at the same width as the
+  # panel above it. Dropping the name gives the frame 77 px instead of 35, so
+  # the picture keeps 57% of its height here against 26% there -- the two are
+  # stacked so that difference is a comparison rather than a memory.
+  - id: picture-only
     type: model-identity
     col: 2
     row: 3
-    colSpan: 1
+    colSpan: 2
     rowSpan: 1
     config:
-      label: NO FILE
-      presentation: image
-
-  # A file that exists and is not a picture. `fstat` says it is there, the
-  # fallback does not fire, and the panel is expected to draw nothing at all.
-  - id: undecodable
-    type: model-identity
-    col: 3
-    row: 3
-    colSpan: 1
-    rowSpan: 1
-    config:
-      label: NOT AN IMAGE
+      label: 2x1 IMAGE
       accent: amber
       presentation: image

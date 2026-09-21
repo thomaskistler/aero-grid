@@ -75,18 +75,28 @@ is not fitted inside the frame, and its shape is not preserved by shrinking it
 — whichever of the two dimensions needs more magnification decides the zoom
 for both, and the excess on the other is cut off.
 
-That matters because the frames are wide and short:
+That matters because the frames are much wider than they are tall. An EdgeTX
+model image is 192 x 114, and these are the frames it lands in on a **Full
+screen** custom screen, which is what the shipped dashboards use:
 
-| Span | Picture frame | What a 4:3 photo keeps |
+| Span | Picture frame | What the picture keeps |
 | --- | --- | --- |
-| `2x2` | 226 x 56 | 33% of its height |
-| `2x3` | 226 x 117 | 69% of its height |
-| `4x4` | 468 x 148 | 42% of its height |
-| `4x2` | 468 x 27 | 8% of its height |
+| `2x2` | 226 x 35 | 26% of its height |
+| `2x3` | 226 x 85 | 63% |
+| `3x3` | 347 x 56 | 27% |
+| `4x3` | 468 x 56 | 20% |
+| `4x4` | 468 x 106 | 38% |
+| `2x4` | 226 x 135 | **100%**, losing one pixel of width |
+| `4x2` | — | the picture is shed: the frame is 14 px and the floor is 24 |
 
-A portrait-shaped source loses its top and bottom; a source already wider than
-the frame loses its sides. **`2x3` is the span to use if you want to recognise
-the picture**, because its frame is closest to square.
+The width is always kept in full and the height is what goes, because every
+frame here is proportionally wider than the picture. **`2x4` is the span to
+use if you want to recognise the picture**; it is the only one that keeps all
+of it.
+
+In App mode the panels are taller, so the same spans keep more — `2x2` keeps
+42% rather than 26%, and `4x2` keeps 10% instead of shedding the picture
+altogether. The table above is the shipped case.
 
 ## When the picture cannot be drawn
 
@@ -101,6 +111,20 @@ is present and not decodable — the wrong format, a truncated download, a text
 file renamed — passes the check, so the fallback does not fire. On
 `presentation: image` the name is hidden because a picture was asked for, and
 the result is a panel that draws nothing at all.
+
+Built through the real host, the three cases come out like this. The first and
+the third are identical in every decision the panel makes; the only difference
+is what is inside the file, which is the one thing it never looks at:
+
+| The bitmap the model names | File check | Image made | Name | What you see |
+| --- | --- | --- | --- | --- |
+| a real picture | passes | yes | hidden | the picture |
+| a file that is not there | fails | no | shown | the model name |
+| a file that is not a picture | **passes** | **yes** | **hidden** | **nothing** |
+
+The bitmap comes from the model, so this is a property of the whole screen
+rather than of one panel: every `model-identity` on it behaves the same way at
+the same time.
 
 If a panel set to `image` comes up empty, the file is there and is not
 readable as an image. Set `presentation` to `both` while you find out, which
@@ -171,9 +195,11 @@ the longest model name EdgeTX will store without overhanging the panel.
 ## See also
 
 - `review-model-identity` is a shipped layout that puts this panel at several
-  spans on one screen, including the two failures above, so they can be looked
-  at rather than read about. Set a fifteen-character model name before opening
-  it, or the screen shows nothing interesting.
+  spans on one screen, so the overhang and the crop can be looked at rather
+  than read about. Set a fifteen-character model name before opening it, or
+  the screen shows nothing interesting. It cannot show the missing-file or
+  unreadable-file cases, because the bitmap belongs to the model rather than
+  to a panel and changing it changes every panel at once.
 - `flight-mode` has the same shape of problem solved the other way: it reads
   the longest name your model actually has and sizes itself to that, so it
   never overhangs.
