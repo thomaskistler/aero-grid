@@ -202,6 +202,101 @@ function primitives.setHeading(label, themeBuilder, frame, fonts, text, color)
   return dropped
 end
 
+--- Where a badge's text starts, so that it ends flush with its column.
+---
+--- **A label draws from its own left edge, so moving its box does not move
+--- its text.** `theme.frame` reserves a right-aligned column wide enough for
+--- the widest word the vocabulary has, and every shorter word then floated
+--- at the column's *left*: at `2 x 2` the column ends at 234, correctly
+--- inset by the panel's right padding, and `CRIT` ended at 213. The heading
+--- opposite it sits flush left, so the header read as lopsided -- and only
+--- the longest word looked right, which is why it read as a defect rather
+--- than as a style.
+---
+--- This is the same LVGL behaviour that made `trim-panel`'s cell centring a
+--- non-change, and it takes the same fix as the reading and the unit rider:
+--- derive the position from the measured string rather than from the box.
+---@param themeBuilder table
+---@param frame table Result of theme.frame.
+---@param font any Badge font.
+---@param text any
+---@return integer x
+---@return integer width
+function primitives.badgeX(themeBuilder, frame, font, text)
+  local width = themeBuilder.measureText(font, text)
+  local right = frame.badgeX + frame.badgeWidth
+  -- Never left of the column, which is what protects the heading. A word
+  -- wider than its own column cannot happen while the column is sized from
+  -- the vocabulary, but a clamped column on a very narrow panel can be
+  -- narrower than the widest word, and the heading is dropped rather than
+  -- overdrawn in that case.
+  local x = right - width
+  if x < frame.badgeX then x = frame.badgeX end
+  return x, width
+end
+
+--- Write a badge's text and colour, and place it flush with its column.
+---
+--- **The position depends on the text, so the two are written together.**
+--- Ten components carried the same line -- `badge:set{text =, color =}` --
+--- and none of them placed it, because placement was `theme.frame`'s job and
+--- the frame only ever knew the box. A position derived from a size has to
+--- be recomputed when the size changes, and a badge's size is its word.
+---
+--- Anchored on the context like the unit rider and the centred rows, so a
+--- badge whose state has not moved costs one comparison rather than a
+--- measurement and a write. The anchor is the text itself: two words of one
+--- length are not one width, which is the mistake `followUnit` made when it
+--- anchored on a string's length.
+---@param context table Component context, which owns the anchor.
+---@param themeBuilder table
+---@param badge any
+---@param frame table
+---@param font any
+---@param text any
+---@param color any
+function primitives.setBadge(context, themeBuilder, badge, frame, font, text,
+    color)
+  if badge == nil then return end
+  text = tostring(text == nil and "" or text)
+
+  -- **Measured three ways, and the plainest won.** The badge is placed from
+  -- its measured width on every `apply`, which is every frame a panel has
+  -- anything to redraw, so two obvious savings were tried against the count
+  -- hook at single-instruction resolution:
+  --
+  --   plain                  worst callback 8098  steady 3503  reflow 7547
+  --   guarded on the word    worst callback 8099  steady 3507  reflow 7547
+  --   width memoised         worst callback 8113  steady 3503  reflow 7520
+  --
+  -- The guard is `setHeading`'s guard again and fails for the same reason:
+  -- `apply` only runs when the panel already has something to redraw, so the
+  -- comparison almost never saves the work it costs. Memoising a five-word
+  -- vocabulary buys the reflow 27 and costs the worst callback 14, and the
+  -- worst callback is the binding constraint on a full grid. So neither is
+  -- here, and this comment is why nobody needs to try them again.
+  -- Held so a reflow can re-place the badge without asking the label, which
+  -- on a radio is userdata and answers nil to every field read.
+  context.badgeText = text
+
+  local changes = {text = text, color = color}
+  if text == "" then
+    -- **An empty badge goes back to its column rather than keeping the
+    -- geometry of the word that just left.** Nothing is drawn either way, so
+    -- this is not about pixels: a box left where `N/A` put it is a position
+    -- derived from a string that is no longer there, and the next thing to
+    -- read it would read a stale one. It is also what makes a resting panel
+    -- byte-identical to one built before badges were placed at all, which is
+    -- how the geometry sweep can show that this change touches only badges
+    -- that are actually drawn.
+    changes.x = frame.badgeX
+    changes.w = frame.badgeWidth
+  else
+    changes.x, changes.w = primitives.badgeX(themeBuilder, frame, font, text)
+  end
+  badge:set(changes)
+end
+
 --- Reposition an existing header row after a geometry change.
 ---
 --- `text` is the heading the panel currently shows, and the caller passes it
@@ -213,7 +308,9 @@ end
 ---@param badge any
 ---@param frame table
 ---@param text? any Heading currently shown; omitted leaves the text alone.
-function primitives.placeHeader(label, badge, frame, themeBuilder, fonts, text)
+---@param badgeText? any Badge currently shown, for the same reason.
+function primitives.placeHeader(label, badge, frame, themeBuilder, fonts, text,
+    badgeText)
   local changes = {x = frame.labelX, y = frame.labelY, w = frame.labelWidth}
 
   -- The column is what the badge leaves, so a reflow can change it and a
@@ -231,7 +328,20 @@ function primitives.placeHeader(label, badge, frame, themeBuilder, fonts, text)
   end
 
   label:set(changes)
-  badge:set({x = frame.badgeX, y = frame.labelY, w = frame.badgeWidth})
+
+  -- **The badge's column moved, so its text has to be re-placed against it.**
+  -- Its right edge is the panel's own, which every reflow changes, and the
+  -- badge is right-aligned within the column rather than drawn from its left
+  -- corner -- so restating the box alone would leave the word at an offset
+  -- computed for the panel's previous width. That is the defect shape this
+  -- project has paid for eight times.
+  local badgeChanges = {x = frame.badgeX, y = frame.labelY,
+    w = frame.badgeWidth}
+  if badgeText ~= nil and badgeText ~= "" and themeBuilder and fonts then
+    badgeChanges.x, badgeChanges.w = primitives.badgeX(
+      themeBuilder, frame, fonts.badge, badgeText)
+  end
+  badge:set(badgeChanges)
   if frame.labelHidden then lvgl.hide(label) else lvgl.show(label) end
 end
 

@@ -3110,6 +3110,157 @@ local function testTertiaryQuarterHoldsItsFurniture()
   resetRadio()
 end
 
+--- A badge ends flush with its panel, the way the heading begins flush.
+---
+--- **A label draws from its own left edge, so moving its box does not move
+--- its text.** `theme.frame` reserves a right-aligned column wide enough for
+--- the widest word the vocabulary has -- `STALE` -- and every shorter word
+--- then sat at that column's *left*. At `2 x 2` the column ended at 234,
+--- correctly inset by the panel's right padding, and `CRIT` ended at 213.
+--- The heading opposite sat flush left, so the header read as lopsided, and
+--- only the longest word looked right.
+---
+--- **The collision check has nothing to say about this, and that is the
+--- point.** Nothing collided: the badge floated *away* from the heading, so
+--- overlap, containment and wrap were all satisfied. It is the shape the
+--- specification already records -- a check that would pass if everything
+--- moved together is not a check on position -- so where something sits
+--- needs an assertion against the panel rather than against its neighbours.
+---
+--- Driven through the `states` layout, which exists to put panels in badged
+--- states, plus a `stale` and an `unavailable` reached by taking the link
+--- away. Both zones, because the badge's right edge is the panel's and the
+--- two zones give a panel different heights.
+local function testBadgesEndFlushWithTheirPanel()
+  local theme = themeModule
+  local source = assert(hostIo.open(
+    sourcePath .. "layouts/states.yaml", "r"))
+  local yaml = source:read("a")
+  source:close()
+
+  -- The vocabulary, read off the theme rather than typed, so a word added to
+  -- it is covered the moment it is added.
+  local vocabulary = {}
+  for _, name in ipairs({"warning", "critical", "stale", "unavailable",
+      "selected", "editing"}) do
+    local state = theme.state(theme.build("modern"), name)
+    if state and type(state.badge) == "string" and state.badge ~= "" then
+      vocabulary[state.badge] = true
+    end
+  end
+  assert(next(vocabulary), "the badge vocabulary came out empty")
+
+  local seen, checked = {}, 0
+
+  local function inspect(where, context)
+    for _, entry in ipairs(context.components) do
+      local instance = entry.instance
+      local badge = instance and instance.badge
+      if badge and not badge.hidden then
+        local word = tostring(badge.properties.text or "")
+        if word ~= "" then
+          local bounds = boundsOf(entry)
+          local font = badge.properties.font
+          font = type(font) == "function" and font() or font
+
+          -- **The assertion.** The badge's ink ends where the panel's right
+          -- padding says it ends, which is exactly where `theme.frame` puts
+          -- the column's own right edge. Pinned against the panel rather
+          -- than against the column, because the column was always right
+          -- and the text inside it was not.
+          local inkEnd = badge.properties.x + theme.measureText(font, word)
+          local frame = theme.frame(instance.theme,
+            {x = 0, y = 0, w = bounds.w, h = bounds.h},
+            theme.typography(entry.placement.colSpan, entry.placement.rowSpan))
+          local columnEnd = frame.badgeX + frame.badgeWidth
+
+          assertEqual(inkEnd, columnEnd, where .. ": " .. entry.placement.id
+            .. ' draws "' .. word .. '" ending at ' .. inkEnd
+            .. ", where its column ends at " .. columnEnd
+            .. " -- the text is left-aligned inside its box again")
+
+          -- And the box never starts left of the column, which is what
+          -- protects the heading beside it.
+          assert(badge.properties.x >= frame.badgeX, where .. ": "
+            .. entry.placement.id .. " placed its badge at "
+            .. badge.properties.x .. ", left of the column at "
+            .. frame.badgeX .. ", where the heading is")
+
+          seen[word] = true
+          checked = checked + 1
+        end
+      end
+    end
+  end
+
+  for _, mode in ipairs({{"full screen", fullScreenZone},
+      {"app mode", appZone}}) do
+    resetRadio()
+    local widget = makeWidget("badge-flush-"
+      .. string.gsub(mode[1], " ", ""), yaml)
+    -- The very table the host holds, because a reflow is driven by mutating
+    -- it. Building a second one and resizing that reflows nothing, and the
+    -- check then watches a panel that never moved while reporting that it
+    -- did -- which is how the first version of this test passed with the
+    -- reflow path deliberately broken.
+    local zone = mode[2]()
+    local context = createLoaded(zone, DEFAULT_OPTIONS, widget)
+    assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+    pump(context, 60)
+    inspect(mode[1] .. " resting", context)
+
+    -- A dead link badges the telemetry panels stale and then unavailable,
+    -- which is how the two remaining words are reached.
+    radio.rssi = 0
+    pump(context, 80)
+    inspect(mode[1] .. " link down", context)
+
+    local widthBefore = {}
+    for _, entry in ipairs(context.components) do
+      widthBefore[entry.placement.id] = boundsOf(entry).w
+    end
+
+    -- **And then the panel moves.** A badge's right edge is its panel's, so
+    -- every reflow changes it -- and the badge is placed from its own
+    -- measured text, which a reflow does not re-measure unless something
+    -- makes it. Restating the box and leaving the word where the previous
+    -- width put it is the defect shape this project has paid for eight
+    -- times: a position derived from a size, carried as an offset.
+    zone.w, zone.h = 360, 200
+    local passes = 0
+    repeat
+      definition.refresh(context)
+      passes = passes + 1
+      assert(passes < 200, "reflow never finished")
+    until not context.reflowIndex
+    pump(context, 40)
+    local moved = false
+    for _, entry in ipairs(context.components) do
+      if boundsOf(entry).w ~= widthBefore[entry.placement.id] then
+        moved = true
+      end
+    end
+    assert(moved, mode[1] .. ": no panel changed width, so the reflow below"
+      .. " is not a reflow and proves nothing")
+    inspect(mode[1] .. " reflowed", context)
+    resetRadio()
+  end
+
+  -- Non-vacuous in two directions: something was actually badged, and the
+  -- words reached were words the vocabulary declares rather than whatever
+  -- happened to be on screen.
+  assert(checked >= 8, "only " .. checked
+    .. " badged panels were found, so this proves very little")
+  local reached = 0
+  for word in pairs(seen) do
+    assert(vocabulary[word], 'a panel drew "' .. word
+      .. '", which is not in the badge vocabulary')
+    reached = reached + 1
+  end
+  assert(reached >= 3, "only " .. reached
+    .. " of the vocabulary was reached, so the narrow words may be untested")
+end
+
 --- Nothing descends into the space measuring by ink leaves unreserved.
 ---
 --- `theme.bandFont` takes the largest font whose **ascent** fits the body
@@ -8840,6 +8991,7 @@ testReadingsSitInTheirSlots()
 testSupportingWordingsStayDistinct()
 testReadingsIgnoreTheRowBeneathThem()
 testTertiaryQuarterHoldsItsFurniture()
+testBadgesEndFlushWithTheirPanel()
 testNothingIsDrawnOverAnythingElse()
 testReadingsDoNotDescendOverAnything()
 testTwoRowFooterClearsTheReading()

@@ -450,7 +450,8 @@ function modelIdentity.apply(context, drawn)
   if heading ~= context.headingText then
     context.headingText = heading
     context.primitives.placeHeader(context.label, context.badge,
-      context.area.frame, context.themeBuilder, context.fonts, heading)
+      context.area.frame, context.themeBuilder, context.fonts, heading,
+        context.badgeText)
   end
 
   context.value:set({text = drawn.text, color = presentation.value})
@@ -460,7 +461,9 @@ function modelIdentity.apply(context, drawn)
   context.primitives.centreReading(context, context.themeBuilder,
     context.area, context.area.nameFont, drawn.text)
   context.label:set({color = presentation.label})
-  context.badge:set({text = presentation.badge or "", color = presentation.accent})
+  context.primitives.setBadge(context, context.themeBuilder, context.badge,
+    context.area.frame, context.fonts.badge, presentation.badge or "",
+    presentation.accent)
   if context.showLabels then
     context.labelsLabel:set({text = context.labelsText})
     -- A row of one item centres across the content box, as a lone reading
@@ -534,7 +537,8 @@ function modelIdentity.update(context, rect)
 
   context.primitives.resizePanel(context.panel, rect)
   context.primitives.placeHeader(context.label, context.badge, area.frame,
-    context.themeBuilder, context.fonts, context.settings.label)
+    context.themeBuilder, context.fonts, context.settings.label,
+      context.badgeText)
 
   local primitives = context.primitives
   -- The name stays visible when there is no image, whatever the arrangement

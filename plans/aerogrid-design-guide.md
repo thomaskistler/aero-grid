@@ -145,6 +145,39 @@ The dashboard never calls `lcd.setColor()`.
 The heading sits left. The badge sits right. **The badge column is reserved on every
 panel whether or not a badge is showing**, so a state change never reflows the heading.
 
+**Corrected: the badge sits right, and for a while only its column did.** The heading
+begins flush at the panel's left inset; the badge now ends flush at its right one. It did
+not: `theme.frame` right-aligned the *column*, and a Lua label draws from its own left
+edge, so every word narrower than the widest floated at the column's left. At `2x2` the
+column ended at 234, correctly inset, and `CRIT` ended at 213 — 21 px short. Only `STALE`,
+which the column is sized for, looked nearly right, which is why this read as a bug rather
+than as a style.
+
+It is the same LVGL behaviour that made `trim-panel`'s cell centring a non-change, and it
+takes the fix the reading and the unit rider already use: **derive the position from the
+measured string, not from the box.** `primitives.setBadge` owns it, so the ten components
+that each carried the same unplaced `badge:set{text =, color =}` no longer place anything.
+
+Two things about it are worth keeping:
+
+- **The collision check had nothing to say**, and could not have. The badge floated *away*
+  from the heading, so overlap, containment and wrap were all satisfied while the badge was
+  in the wrong place. That is the recorded shape — a check that would pass if everything
+  moved together is not a check on position — so the assertion pins the badge's right edge
+  against the panel's rather than against its neighbour.
+- **The column still protects the heading, and is unchanged.** The heading's width is
+  `badgeX - labelX - 4` and none of that moved: measured at every span, the heading has the
+  same room whether the badge is empty, `WARN` or `CRIT`. Moving the word rightward only
+  widened the gap between them.
+
+**Open: the column is a tenth wider than the word it is sized for.** `theme.badgeWidth`
+measures the vocabulary with `theme.textWidth`, the 0.58-per-character estimate, while the
+badge is drawn at its measured width — so the column reserves 49 px for a `STALE` that
+draws in 38. Every heading on the dashboard pays those 11 px. Closing it is the same
+estimate-versus-measurement correction made everywhere else, and it is left open rather
+than taken here because it would widen every heading in the catalogue, which is a change
+to what panels *say* rather than to where the badge sits.
+
 The badge column is exactly as wide as its widest word and is never squeezed. Clamping
 it to a fraction of a narrow panel protects the heading by clipping the badge, which is
 the wrong way round: `CRIT` and `CRI` are not equally alarming, while a shortened source

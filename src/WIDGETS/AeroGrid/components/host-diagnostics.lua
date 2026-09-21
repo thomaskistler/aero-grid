@@ -403,7 +403,8 @@ function diagnostics.update(context, rect)
 
   primitives.resizePanel(context.panel, rect)
   primitives.placeHeader(context.title, context.badge, area.frame,
-    context.themeBuilder, context.fonts, context.settings.label)
+    context.themeBuilder, context.fonts, context.settings.label,
+      context.badgeText)
 
   for index = 1, MAX_LINES do
     primitives.reconcile(context.rows[index], index <= area.lines, {

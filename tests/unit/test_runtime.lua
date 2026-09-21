@@ -1201,6 +1201,50 @@ local function testHeadingIsNeverWrittenDirectly()
   assert(checked >= 11, "only " .. checked .. " components were read")
 end
 
+--- No component writes its badge straight into the label.
+---
+--- The same shape as the heading above, and for the same reason: a badge's
+--- **position depends on its text**, because it is right-aligned within the
+--- column `theme.frame` reserves. Ten components carried the identical line
+--- -- `context.badge:set{text =, color =}` -- and not one of them placed it,
+--- so every word narrower than `STALE` floated at the column's left edge.
+---
+--- Writing the text without placing it is now the whole of the defect, so
+--- this forbids the write rather than checking the placement. What the
+--- placement should be is `testBadgesEndFlushWithTheirPanel`, measured on
+--- real panels.
+local function testBadgeIsNeverWrittenDirectly()
+  local kinds = componentTypes()
+  local checked, withBadges = 0, 0
+
+  for _, kind in ipairs(kinds) do
+    local path = root .. "/src/WIDGETS/AeroGrid/components/" .. kind .. ".lua"
+    local handle = assert(io.open(path, "r"))
+    local source = handle:read("a")
+    handle:close()
+    checked = checked + 1
+    if string.match(source, "primitives%.setBadge") then
+      withBadges = withBadges + 1
+    end
+
+    -- Every write to the badge, not just the first, and `text` as a key
+    -- rather than anywhere in the call: the heading version of this matched
+    -- the word `context` and failed on a component setting only a colour.
+    for changes in string.gmatch(source, "context%.badge:set%((%b{})%)") do
+      assert(not string.match(changes, "[{,%s]text%s*="),
+        kind .. " writes its badge straight into the label: " .. changes
+          .. " -- use primitives.setBadge, which places it flush with the"
+          .. " column rather than leaving it at the column's left edge")
+    end
+  end
+
+  assertEqual(checked, #kinds)
+  -- Non-vacuous: the components that draw badges really do go through the
+  -- helper, so this is forbidding a thing that has an alternative.
+  assert(withBadges >= 10, "only " .. withBadges
+    .. " components route their badge through primitives.setBadge")
+end
+
 --- No component reaches for `lvgl.show` or `lvgl.hide` inside `update`.
 ---
 --- A reflow is where visibility is decided, and every component used to
@@ -2188,6 +2232,7 @@ testSettingsResolution()
 testSettingsVocabulary()
 testInertSettingsAreRefused()
 testHeadingIsNeverWrittenDirectly()
+testBadgeIsNeverWrittenDirectly()
 testLvglObjectsAreNeverReachedByName()
 testReflowGoesThroughReconcile()
 testRenderConsultsWhatIsShown()

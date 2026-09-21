@@ -1013,13 +1013,15 @@ Two lessons generalised past their PRs and are recorded where they will be read 
 
 | | Value | Where |
 | --- | --- | --- |
-| Worst callback | 8018 of 20000 | the staged loader building one `trim-panel` at sixteen cells |
-| Worst steady frame | 3443 of 20000 | sixteen `link-status` panels |
-| Worst reflow | 7479 of 20000 | the shipped dashboard, against the worst other callback at 8018 |
+| Worst callback | 8097 of 20000 | the staged loader building one `trim-panel` at sixteen cells |
+| Worst steady frame | 3503 of 20000 | sixteen `link-status` panels |
+| Worst reflow | 7547 of 20000 | the shipped dashboard, against the worst other callback at 8097 |
 
 Every figure is what the suite itself reports, re-measured with the count hook set to every instruction. All three are asserted by the suite and are measured at the largest layout the schema permits. Note the second-worst callback is the loader's own header stage rather than any component -- which means component work is no longer the binding constraint on a full grid, and the next person looking for headroom should know that before optimising a panel.
 
 **Two of these were wrong, and the correction is the fifth figure in this project to drift.** The worst callback read 7882, which is 136 low and was low on `main` as well as on the branch that found it -- it was not re-measured after whatever moved it. The worst steady frame read 2520 against "the shipped ten-component dashboard", which is a different subject from the one the suite reports: the suite measures three sixteen-component exercises and names the worst of them, and that is `link-status`, not the shipped layout. A figure and its subject drifted apart, which is harder to notice than a figure drifting alone, because the number stays plausible.
+
+All three rose when the badge began being placed from its own measured text rather than drawn from its column's left corner: 79 on the worst callback, 60 on the steady frame and 68 on the reflow. That is the cost of a measurement per badge per repaint, and two ways of avoiding it were measured and rejected -- guarding on the word being unchanged, which is `setHeading`'s guard and fails for the same reason, and memoising the five-word vocabulary, which buys the reflow 27 and costs the worst callback 14. The arithmetic is in `primitives.setBadge` so nobody repeats it.
 
 The worst reflow is the figure that moves. It rose 421 when `navigation` began asking the ladder a second time with the height its two supporting rows need, and a further 135 when the fixed-bands rule took that second call away again and gave the component a row-count decision of its own instead. The worst callback has not moved through either change; the worst steady frame is within 8 instructions of where it was. The assertion that matters is not the number but the comparison -- a reflow may not be the most expensive callback the dashboard makes -- and the margin is 539 instructions.
 
