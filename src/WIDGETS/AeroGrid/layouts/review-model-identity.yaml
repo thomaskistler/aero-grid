@@ -1,0 +1,151 @@
+# Review harness for `model-identity`. Not a dashboard.
+#
+# One review screen exists at a time and its Dashboard ID names the component
+# under review; this replaces `review-tx-battery` as the screen's target
+# rather than adding an eleventh screen, because `MAX_CUSTOM_SCREENS` is 10
+# and the fixture already carries ten. The previous review layouts stay in the
+# repository and keep being loaded by the shipped-layout test.
+#
+# **Read this screen against the model name you have set.** Every panel here
+# draws the same name, because there is only one model loaded, so the whole
+# screen changes character with it. The review is not really of these panels;
+# it is of what this component does with *your* name, and the findings it
+# exists to show only appear at certain lengths. Set the model name to
+# something fifteen characters long -- `QUADCOPTER RACE` is a real one -- and
+# then set it to `Hawk`, and compare.
+#
+# **The top row is the name at its two extremes.** Both panels are the same
+# span and the same settings, so the only difference is what is beneath them
+# on the radio: nothing. They are there to be looked at with a long name set,
+# because that is when the reading reaches past the panel it belongs to. At
+# `2 x 2` a fifteen-character name is 279 px wide in a 226 px content box and
+# is centred, so it hangs 26 px off the left edge and 27 px off the right --
+# into the panel beside it. The two are placed side by side so that overlap
+# has something to overlap.
+#
+# **The second row is the vertical question.** This component is the only one
+# whose reading is not placed in the body band. With no picture the name sits
+# directly under the heading, and with a picture it sits on the panel's floor,
+# and neither is where the shared rule would put it. The `name` panel and the
+# `both` panel are the same span so the two positions can be compared against
+# each other and against every other panel on the screen -- which are all
+# banded.
+#
+# **The third row is the picture.** `fill = true` reaches EdgeTX as
+# `StaticImage(..., fillFrame)`, where the zoom is `max(zw, zh)` rather than
+# `min`: the image is scaled until it *covers* the frame and whatever does not
+# fit is cropped. The frames here are 226 x 56 and 468 x 27, which are 4:1 and
+# 17:1. A 4:3 photograph in the wider of them keeps 8% of its height. Both are
+# on the screen at once so the crop can be seen rather than reasoned about,
+# and the `2x3` panel beside them is the only span where the frame is nearly
+# square and the picture survives.
+#
+# **The bottom row is what happens when the picture cannot be drawn.** The
+# left panel asks for an image that is not there, which the component detects
+# with `fstat` and answers by showing the name instead. The right panel asks
+# for one that exists on the card and is not a decodable image, which `fstat`
+# cannot distinguish: the file is present, so the fallback does not fire, the
+# name stays hidden because the layout asked for a picture, and EdgeTX's own
+# `StaticImage` clears its source without telling Lua. That panel is expected
+# to be **empty**, and it is on the screen because an empty panel is the one
+# outcome this component's header comment says it exists to prevent.
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  # Two identical panels, side by side, so a name too wide for one has the
+  # other to reach into. With a fifteen-character model name set this is the
+  # pair that shows it.
+  - id: wide-left
+    type: model-identity
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: NAME L
+      presentation: name
+
+  - id: wide-right
+    type: model-identity
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: NAME R
+      accent: amber
+      presentation: name
+
+  # The vertical pair. Same span, same name, and the only difference is
+  # whether a picture is asked for -- which moves the name from just under the
+  # heading to the panel's floor.
+  - id: high
+    type: model-identity
+    col: 0
+    row: 1
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: NAME ONLY
+      presentation: name
+
+  - id: low
+    type: model-identity
+    col: 2
+    row: 1
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: WITH PICTURE
+      accent: green
+      presentation: both
+
+  # The crop, at the two aspect ratios that bracket it. The first frame is
+  # 4:1 and the second 17:1.
+  - id: crop-square
+    type: model-identity
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: 2x2 BOTH
+      presentation: both
+      showLabels: true
+
+  - id: crop-wide
+    type: model-identity
+    col: 2
+    row: 2
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: 4x1 IMAGE
+      accent: orange
+      presentation: image
+
+  # A missing file, which the component detects and answers with the name.
+  - id: absent
+    type: model-identity
+    col: 2
+    row: 3
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: NO FILE
+      presentation: image
+
+  # A file that exists and is not a picture. `fstat` says it is there, the
+  # fallback does not fire, and the panel is expected to draw nothing at all.
+  - id: undecodable
+    type: model-identity
+    col: 3
+    row: 3
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: NOT AN IMAGE
+      accent: amber
+      presentation: image
