@@ -635,7 +635,9 @@ function txBattery.apply(context, drawn)
   context.primitives.centreReading(context, context.themeBuilder,
     context.area, context.area.value, drawn.text)
   context.label:set({color = presentation.label})
-  context.badge:set({text = presentation.badge or "", color = presentation.accent})
+  context.primitives.setBadge(context, context.themeBuilder, context.badge,
+    context.area.frame, context.fonts.badge, presentation.badge or "",
+    presentation.accent)
   if context.showDetail then
     context.detailLabel:set({text = context.detail})
   end
@@ -685,7 +687,8 @@ function txBattery.update(context, rect)
 
   context.primitives.resizePanel(context.panel, rect)
   context.primitives.placeHeader(context.label, context.badge, area.frame,
-    context.themeBuilder, context.fonts, context.settings.label)
+    context.themeBuilder, context.fonts, context.settings.label,
+      context.badgeText)
   context.value:set({
     x = area.valueX,
     y = area.valueY,

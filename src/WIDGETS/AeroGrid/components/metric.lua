@@ -406,7 +406,9 @@ function metric.apply(context, drawn)
 
   context.label:set({color = presentation.label})
   context.value:set({text = drawn.text, color = presentation.value})
-  context.badge:set({text = presentation.badge or "", color = presentation.accent})
+  context.primitives.setBadge(context, context.themeBuilder, context.badge,
+    context.area.frame, context.fonts.badge, presentation.badge or "",
+    presentation.accent)
   context.primitives.stylePanel(context.panel, presentation)
 
   -- A sensor's unit arrives with its source rather than when the panel was
@@ -803,7 +805,8 @@ function metric.update(context, rect)
 
   context.primitives.resizePanel(context.panel, rect)
   context.primitives.placeHeader(context.label, context.badge, area.frame,
-    context.themeBuilder, context.fonts, context.settings.label)
+    context.themeBuilder, context.fonts, context.settings.label,
+      context.badgeText)
   context.value:set({
     x = area.pad,
     y = area.valueY,

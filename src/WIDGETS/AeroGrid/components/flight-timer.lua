@@ -370,7 +370,9 @@ function flightTimer.apply(context, drawn)
   -- the model at runtime and is exactly the kind that overflows its column.
   context.primitives.setHeading(context.label, context.themeBuilder,
     context.frame, context.fonts, drawn.label, presentation.label)
-  context.badge:set({text = presentation.badge or "", color = presentation.accent})
+  context.primitives.setBadge(context, context.themeBuilder, context.badge,
+    context.area.frame, context.fonts.badge, presentation.badge or "",
+    presentation.accent)
   if context.showDetail then
     context.detailLabel:set({text = context.detail})
     -- A row of one item centres across the content box, exactly as a lone
@@ -407,7 +409,7 @@ function flightTimer.update(context, rect)
   -- The heading is the model's timer name rather than the setting, so the
   -- refit is given what the panel currently shows.
   context.primitives.placeHeader(context.label, context.badge, area.frame,
-    context.themeBuilder, context.fonts, context.labelValue)
+    context.themeBuilder, context.fonts, context.labelValue, context.badgeText)
   context.frame = area.frame
   context.value:set({
     x = area.valueX,

@@ -319,6 +319,11 @@ function trimPanel.create(parent, rect, settings, services)
     -- and formatting one four times a frame is work with no reader.
     showCaption = area.showCaption,
     showValue = area.showValue,
+    -- The arrangement this panel was built against. Every other component
+    -- that draws a badge already held it; this one did not, because nothing
+    -- it drew outside `create` and `update` needed the frame until the badge
+    -- began being placed from its own measured text.
+    area = area,
   }
 
   local panel = primitives.panel(parent, rect, theme, presentation)
@@ -435,7 +440,9 @@ function trimPanel.apply(context, drawn)
 
   context.stateName = drawn.state
   context.label:set({color = presentation.label})
-  context.badge:set({text = presentation.badge or "", color = presentation.accent})
+  primitives.setBadge(context, context.themeBuilder, context.badge,
+    context.area.frame, context.fonts.badge, presentation.badge or "",
+    presentation.accent)
   primitives.stylePanel(context.panel, presentation)
 
   for index, indicator in ipairs(context.indicators) do
@@ -468,9 +475,11 @@ function trimPanel.update(context, rect)
   local area = trimPanel.regionsFor(context.theme, context.themeBuilder,
     rect, context.count, context.fonts)
 
+  context.area = area
   primitives.resizePanel(context.panel, rect)
   primitives.placeHeader(context.label, context.badge, area.frame,
-    context.themeBuilder, context.fonts, context.settings.label)
+    context.themeBuilder, context.fonts, context.settings.label,
+      context.badgeText)
 
   local reconcile = primitives.reconcile
   local captionsChanged = area.showCaption ~= context.showCaption

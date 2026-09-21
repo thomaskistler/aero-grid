@@ -287,7 +287,9 @@ function flightMode.apply(context, drawn)
   context.primitives.centreReading(context, context.themeBuilder,
     context.area, context.area.name, drawn.text)
   context.label:set({color = presentation.label})
-  context.badge:set({text = presentation.badge or "", color = presentation.accent})
+  context.primitives.setBadge(context, context.themeBuilder, context.badge,
+    context.area.frame, context.fonts.badge, presentation.badge or "",
+    presentation.accent)
   -- `showDetail` and the label agree by construction: both follow
   -- `showIndex`, which cannot change without rebuilding the widget. Asking
   -- for the label as well makes a disagreement a hidden row rather than a
@@ -320,7 +322,8 @@ function flightMode.update(context, rect)
 
   context.primitives.resizePanel(context.panel, rect)
   context.primitives.placeHeader(context.label, context.badge, area.frame,
-    context.themeBuilder, context.fonts, context.settings.label)
+    context.themeBuilder, context.fonts, context.settings.label,
+      context.badgeText)
   context.area = area
   context.value:set({
     x = area.valueX,
