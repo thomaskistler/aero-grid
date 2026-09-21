@@ -46,6 +46,14 @@
 # 192 x 114 model image, so the letterbox is at the sides on every span on
 # this screen.
 #
+# **The `2 x 2` panel is the one to judge the arrangement by.** Its frame is
+# 226 x 77 and the aircraft is drawn at 129 x 77, which is the largest this
+# screen gets. Every other picture here is one row tall: 28 px of height
+# whatever the width, so a 46 x 28 aircraft with the rest letterbox. The
+# strip is worth seeing because it is what a single row gives you, but it is
+# not the arrangement the user chose -- until now this screen had only
+# strips, and the decision had never been looked at properly.
+#
 # **What this screen cannot show.** The bitmap comes from the loaded model,
 # not from a panel, so every panel here draws the same file and none of them
 # can be pointed at a different one. Seeing the fallback means changing the
@@ -86,26 +94,38 @@ components:
       label: NAME 1x1
       presentation: name
 
-  # A wide single row. The frame is 226 x 28 and the picture is drawn at
-  # 46 x 28, so most of this panel is letterbox: the height binds and a short
-  # wide frame cannot use its width. Worth seeing, because it is what a
-  # single row now gives you -- before this change the picture was shed here
-  # and the name was drawn instead.
-  - id: wide-strip
+  # **The panel this screen was missing.** Two cells square: the frame is
+  # 226 x 77 and the aircraft is drawn at 129 x 77, letterboxed at the sides.
+  # The largest picture here and the one the arrangement should be judged on.
+  - id: picture-2x2
     type: model-identity
     col: 2
     row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      accent: green
+      presentation: image
+
+  # A wide single row, for contrast with the panel beside it. The frame is
+  # 226 x 28 and the picture 46 x 28, so most of this panel is letterbox: the
+  # height binds and a short wide frame cannot use its width.
+  - id: wide-strip
+    type: model-identity
+    col: 0
+    row: 1
     colSpan: 2
     rowSpan: 1
     config:
       presentation: image
 
   # The pair. Identical but for the accent, no picture, at the span where a
-  # long name overhangs furthest.
+  # long name overhangs furthest. Kept at two cells square because that is
+  # where the overhang is worst and it is still an open defect.
   - id: overhang-left
     type: model-identity
     col: 0
-    row: 1
+    row: 2
     colSpan: 2
     rowSpan: 2
     config:
@@ -115,36 +135,10 @@ components:
   - id: overhang-right
     type: model-identity
     col: 2
-    row: 1
+    row: 2
     colSpan: 2
     rowSpan: 2
     config:
       label: NAME R
       accent: amber
       presentation: name
-
-  # Two rows of picture in a two-cell width: the frame is 226 x 77 and the
-  # picture is drawn at 129 x 77. The largest the aircraft gets on this
-  # screen, and the panel to judge the arrangement by.
-  - id: tall-picture
-    type: model-identity
-    col: 0
-    row: 3
-    colSpan: 2
-    rowSpan: 1
-    config:
-      accent: green
-      presentation: image
-
-  # The same span with no picture and no long name to fight: `auto` on two
-  # cells shows the name alone, which is the arrangement most single-row
-  # panels on a real dashboard will be in.
-  - id: auto-strip
-    type: model-identity
-    col: 2
-    row: 3
-    colSpan: 2
-    rowSpan: 1
-    config:
-      label: AUTO 2x1
-      accent: orange
