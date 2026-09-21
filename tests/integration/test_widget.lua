@@ -2509,6 +2509,29 @@ local function testSupportingWordingsStayDistinct()
   --- still to convert and each should be covered the moment it arrives.
   local WORDED = {
     {
+      -- **One form per state here, and the check is the same check.** Every
+      -- wording this component offers fits every panel that draws a row, so
+      -- its "shortest" form is its only form -- which is exactly when two
+      -- states are likeliest to be collapsed into one word by someone
+      -- shortening for width. `EXPIRED` and `NO TOTAL` are the pair to
+      -- watch: both are a countdown that cannot report time remaining, for
+      -- opposite reasons.
+      type = "flight-timer",
+      variantsFor = function(module, state)
+        return module.detailVariants(state[1], tostring, state[2])
+      end,
+      states = {
+        {"no timer configured", {nil, nil}},
+        {"a countdown run past zero", {{available = true, countdown = true,
+          start = 300, remaining = -15, elapsed = 315, expired = true}, nil}},
+        {"a timer counting up", {{available = true, countdown = false,
+          elapsed = 64, value = 64, start = 0}, nil}},
+        {"a count-up timer asked for the time remaining",
+          {{available = true, countdown = false, elapsed = 64, value = 64,
+            start = 0}, {reading = "remaining"}}},
+      },
+    },
+    {
       type = "navigation",
       -- How to ask this component for one state's wordings. Declared,
       -- because a component's own signature is its own business: this one
@@ -3186,9 +3209,9 @@ end
 --- `1 x 2`, 125 px into a content box of 105 -- and a Lua label's long mode
 --- is LVGL's default wrap, so it did not clip sideways: it was centred on a
 --- box wider than the panel, started 10 px outside the left edge and ran
---- 10 px past the right, over whatever was beside it. That is the one
---- sentence the component exists to print, at the narrowest span that draws
---- a row at all.
+--- 10 px past the right, over whatever was beside it. That state is the one
+--- this component exists to report, at the narrowest span that draws a row
+--- at all. It says `EXPIRED` now, at 51 px.
 ---
 --- Driven through the real host at every span that grants a row, in both
 --- zones, with each component put into the state whose wording is longest.
@@ -7156,7 +7179,7 @@ components:
   -- An expired countdown says so, where it can.
   radio.timers[0].value = -15
   settle(context, 20)
-  assertEqual(tall.detailLabel.properties.text, "ELAPSED PAST ZERO")
+  assertEqual(tall.detailLabel.properties.text, "EXPIRED")
   assertEqual(tall.stateName, "critical")
 
   -- And a shed caption costs nothing to keep shed while the timer moves

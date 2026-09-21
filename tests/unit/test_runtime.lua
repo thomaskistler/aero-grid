@@ -3972,7 +3972,7 @@ local function testTimerSemantics()
     elapsed = 312, remaining = -12, expired = true,
   }
   assertEqual(timer.resolveState({}, expired), "critical")
-  assertEqual(timer.detailText(expired, tostring), "ELAPSED PAST ZERO")
+  assertEqual(timer.detailText(expired, tostring), "EXPIRED")
 
   -- A count-up timer is judged on time used, and has no total to draw.
   local up = {available = true, countdown = false, value = 200, start = 0,
@@ -4000,7 +4000,7 @@ local function testTimerSemantics()
     "a count-up timer nobody asked a question of should just count up")
   assertEqual(
     timer.detailVariants(countingUp, tostring, {reading = "remaining"})[1],
-    "NO COUNTDOWN",
+    "NO TOTAL",
     "a count-up timer asked for the time remaining said nothing about it")
   -- And only that request. `model` and `elapsed` are answerable by a
   -- count-up timer, so neither is a contradiction to report.
@@ -4016,9 +4016,37 @@ local function testTimerSemantics()
     timer.detailVariants(countdown, tostring, {reading = "remaining"})[1],
     "OF 300", "a countdown asked for its remaining was told it has none")
 
+  -- **One form per state, and each fits every panel that draws a row.** The
+  -- narrowest is a `1 x 2` at 105 px of content, and the widest wording is
+  -- `COUNTING UP` at 84. A row sharing a line would get 86, which they also
+  -- clear, so no arrangement this dashboard can reach breaks them.
+  for _, case in ipairs({
+      {"no timer", nil, nil},
+      {"elapsed past zero", {available = true, countdown = true, start = 300,
+        remaining = -15, elapsed = 315, expired = true}, nil},
+      {"counting up", countingUp, nil},
+      {"no countdown to remain", countingUp, {reading = "remaining"}},
+      {"countdown running", countdown, nil},
+    }) do
+    local variants = timer.detailVariants(case[2], tostring, case[3])
+    assertEqual(#variants, 1, "flight-timer: " .. case[1]
+      .. " offers a ladder, and a form that fits the narrowest panel fits"
+      .. " every other, so the longer form is never the only one that would"
+      .. " have been correct")
+    local width = theme.measureText(SMLSIZE, variants[1])
+    assert(width <= 105, string.format(
+      "flight-timer: %s draws %q at %d px into the 105 px box of a 1 x 2,"
+        .. " the narrowest panel that draws a row at all",
+      case[1], variants[1], width))
+    assert(width <= 86, string.format(
+      "flight-timer: %s draws %q at %d px, past the 86 px a row sharing a"
+        .. " line is given", case[1], variants[1], width))
+  end
+
   -- **The shortest wording of each state differs from every other's**, which
-  -- is what lets the narrowest panel still say which happened. The longer
-  -- forms are what `theme.fitLabel` sheds first.
+  -- is what lets the narrowest panel still say which happened. Shortening
+  -- may cost detail; it may never cost meaning, and that is what stops
+  -- `EXPIRED` and `NO TOTAL` collapsing into one word covering both.
   local shortest = {}
   local states = {
     {"no timer", nil, nil},
@@ -4026,6 +4054,7 @@ local function testTimerSemantics()
       remaining = -15, elapsed = 315, expired = true}, nil},
     {"counting up", countingUp, nil},
     {"no countdown to remain", countingUp, {reading = "remaining"}},
+    {"countdown running", countdown, nil},
   }
   for _, case in ipairs(states) do
     local variants = timer.detailVariants(case[2], tostring, case[3])

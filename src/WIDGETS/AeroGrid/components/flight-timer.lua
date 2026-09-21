@@ -258,28 +258,37 @@ end
 
 --- Wordings for the row beneath the clock, longest first.
 ---
---- **This used to be one wording per state with no shorter form**, and the
---- longest of them did not fit the narrowest panel that draws a row:
---- `ELAPSED PAST ZERO` is 125 px against a `1 x 2` content box of 105, so it
---- was centred on a box wider than the panel and ran 10 px off each edge,
---- over whatever was beside it. A row cannot shrink its font -- it is
---- already the smallest the dashboard has -- so the only lever is the words.
+--- **One form per state, and each fits every panel that draws a row.** The
+--- longest is `COUNTING UP` at 84 px, against the 105 px content box of a
+--- `1 x 2` -- the narrowest panel the ladder grants a row at all -- and
+--- against the 86 px a row sharing a line with another would get. This row
+--- never shares a line, so only the first budget binds; both are quoted
+--- because a form that clears the tighter one cannot be broken by a later
+--- arrangement.
 ---
---- That sentence is the one this component exists to print: EdgeTX counts a
---- countdown on into negative numbers, and without the words an expired
---- timer is a small negative clock that reads like a healthy one. Losing it
---- at the narrowest span is losing it exactly where the panel is least able
---- to say anything else.
+--- **It was a ladder, briefly, and a ladder was the wrong answer.** The row
+--- said `ELAPSED PAST ZERO`, which is 125 px into that 105 px box, so it was
+--- centred on a box wider than its panel and ran ten pixels off each edge --
+--- a Lua label wraps rather than clipping, so it could not simply be cut.
+--- The first fix offered `PAST ZERO` beneath it and let `theme.fitLabel`
+--- choose. That works and it buys nothing: a form short enough to fit the
+--- narrowest panel is short enough for every other, so the longer form was
+--- only ever drawn where the shorter one would also have been correct. The
+--- state is now `EXPIRED`, one word, everywhere.
 ---
---- **The shortest wording of each state differs from the shortest of every
---- other**, which is what lets a cramped panel still say which of them
---- happened. That is the specification's rule and
+--- A ladder earns its place where the *longer* form carries something the
+--- shorter cannot and there is a real panel wide enough to show it. That is
+--- a judgement about wording rather than about width, and this row had none
+--- to make.
+---
+--- **The shortest wording of each state still differs from every other's.**
+--- Shortening may cost detail and may never cost meaning, which is what
+--- stops `EXPIRED` and `NO TOTAL` collapsing into one word that covers both.
 --- `testSupportingWordingsStayDistinct` holds this component to it.
 ---
---- Two of the four states have one wording, and that is not an oversight: a
---- wording is only offered where there is something to give up. `OF 5:00`
---- and `NO TIMER` fit every panel that draws a row, and a single-entry list
---- through `theme.fitLabel` returns that entry unchanged.
+--- The list is still a list and still goes through `theme.fitLabel`, because
+--- every supporting row in the catalogue does; a single-entry list comes
+--- back out of it unchanged.
 ---@param feed? AeroGridModelTimer
 ---@param formatTime fun(seconds: any): string
 ---@param settings? AeroGridTimerSettings What the layout asked for.
@@ -291,8 +300,8 @@ function flightTimer.detailVariants(feed, formatTime, settings)
     -- **The total is magnitude and has no shorter form.** Dropping a field
     -- of it would report a different duration, which no width is worth. It
     -- fits every panel that draws a row: the widest a radio can hold is
-    -- `OF 139810:07`, at 81 px of a 105 px box.
-    if feed.expired then return {"ELAPSED PAST ZERO", "PAST ZERO"} end
+    -- `OF 139810:07`, at 81 px.
+    if feed.expired then return {"EXPIRED"} end
     return {"OF " .. formatTime(feed.start)}
   end
 
@@ -306,7 +315,7 @@ function flightTimer.detailVariants(feed, formatTime, settings)
   -- It goes in the supporting row because that is where this dashboard puts
   -- why: a badge names the state and the row says what is behind it.
   if settings ~= nil and settings.reading == "remaining" then
-    return {"NO COUNTDOWN", "NO TOTAL"}
+    return {"NO TOTAL"}
   end
 
   return {"COUNTING UP"}

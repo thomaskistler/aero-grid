@@ -11,29 +11,35 @@
 #
 # **The row is the reason this component exists.** Its own header says a
 # countdown run past zero is easy to misread as a healthy timer, so the panel
-# states it in words as well as showing the minus sign. `ELAPSED PAST ZERO`
-# is that sentence.
+# states it in words as well as showing the minus sign. `EXPIRED` is that
+# word.
 #
-# **And at `1 x 2` it does not fit.** The row is drawn at `SMLSIZE` and needs
-# 125 px; a single column's content box is 105. The label is sized to the
-# string rather than to the box, so it does not wrap -- it is centred and
-# hangs ten pixels off each side, starting two pixels outside the panel's own
-# left edge. The top-left pair below is that panel beside a wider one drawing
-# the same sentence, so the difference is a comparison rather than a claim.
+# **It used to be `ELAPSED PAST ZERO`, and at `1 x 2` that did not fit.** The
+# row is drawn at `SMLSIZE` and the sentence needed 125 px; a single column's
+# content box is 105. A label is sized to the string rather than to the box
+# and a Lua label wraps rather than clipping, so it was centred and hung ten
+# pixels off each side, starting outside the panel's own left edge. The
+# top-left pair below is that panel beside a wider one, which is now a
+# comparison of two panels agreeing rather than of one overflowing.
 #
-# Unlike `navigation`, `link-status` and `cell-battery`, this component's
-# supporting row offers **one wording per state and no shorter form**, so
-# nothing can be shed when the row is too narrow. Those three hand their
-# wordings to `theme.fitLabel`, which takes the longest that fits. This one
-# does not call it.
+# **Every wording here is one form that fits every panel that draws a row.**
+# The widest is `COUNTING UP` at 84 px against that same 105, and all of them
+# clear the 86 px a row sharing a line would get. They still go through
+# `theme.fitLabel` like every other supporting row in the catalogue; a
+# single-entry list comes back out of it unchanged. A ladder earns its place
+# only where the longer form carries something the shorter cannot, and this
+# component had no such pair to offer.
 #
-# **The clock is sized for a reading no flight will produce.** Its single
-# form is `-88:88:88` -- a negative countdown past ten hours -- and at
-# `1 x 2` that is what holds the reading to `MIDSIZE`: `DBLSIZE` fits the
-# band's height comfortably at 40 px of 50, and is refused because the
-# nine-character form needs 126 px of 105. A real reading at that span is
-# `2:05`, which needs 76. The `1 x 2` panels below are where to judge whether
-# that trade is worth making.
+# **The clock is sized for the widest reading it can print, and no wider.**
+# Its single form is `-99:59`, which is what the display clamp produces at
+# full magnitude with a sign. It used to be `-88:88:88` -- a countdown ten
+# hours past zero -- and that cost a font size at `1 x 2` and produced a
+# defect the harness could not see: at `2 x 2` the nine-character form
+# measured 218 px against a 226 px box, a margin of 8 px, and the bold faces
+# a radio draws with are wider than the model this suite measures from. So
+# the radio stepped that panel down and the `3 x 2` beside it did not, while
+# the harness reported both agreeing. The `1 x 2` and `2 x 2` panels below
+# are where to see that they now agree on both.
 #
 # **What the spans do.** A single row draws no supporting row at any width,
 # so `1 x 1` announces an expired countdown with nothing but a minus sign and

@@ -73,30 +73,27 @@ grants it.
 
 ### What the supporting row says
 
-| Timer | Row | On a one-column panel |
+| Timer | Row | px |
 | --- | --- | --- |
-| a countdown, running | `OF 5:00` — its start value, **not clamped** | same |
-| a countdown, past zero | `ELAPSED PAST ZERO` | `PAST ZERO` |
-| a count-up timer | `COUNTING UP` | same |
-| a count-up timer asked for `reading: remaining` | `NO COUNTDOWN` | `NO TOTAL` |
-| no timer configured | `NO TIMER` | same |
+| a countdown, running | `OF 5:00` — its start value, **not clamped** | 44 |
+| a countdown, past zero | `EXPIRED` | 51 |
+| a count-up timer | `COUNTING UP` | 84 |
+| a count-up timer asked for `reading: remaining` | `NO TOTAL` | 61 |
+| no timer configured | `NO TIMER` | 59 |
 
-**A row too wide for its panel loses words, not meaning.** A supporting row
-is already at the smallest font the dashboard has, so the only thing left to
-give up is wording. Each state offers its forms longest first and the panel
-takes the longest that fits.
+**One wording per state, and every one fits every panel that draws a row.**
+The narrowest such panel is a `1x2`, whose content box is 105 px, and the
+widest wording is `COUNTING UP` at 84. There is nothing to shed, because
+nothing needs shedding.
 
-Two states need a shorter form and the other three do not, which is why only
-two columns above differ. `ELAPSED PAST ZERO` is 125 px against the 105 px
-content box of a `1x2`, the narrowest panel that draws a row at all; the
-shorter `PAST ZERO` is 67.
-
-> **This used to overhang rather than shorten.** The row was centred on a box
-> wider than the panel, so it started ten pixels outside the left edge and ran
-> ten past the right, over whatever was beside it — and a Lua label wraps
-> rather than clipping, so it could not simply be cut off. The page said to
-> keep the component two cells wide if a countdown of yours can run past zero.
-> That advice is no longer needed.
+> **This used to overhang rather than fit.** The past-zero row said
+> `ELAPSED PAST ZERO`, 125 px into that 105 px box, so it was centred on a
+> box wider than the panel and ran ten pixels off each edge — a label wraps
+> rather than clipping, so it could not simply be cut off. The page told you
+> to keep the component two cells wide if a countdown of yours can run past
+> zero. That advice is gone, and so is the sentence: a word that fits the
+> narrowest panel fits every panel, so the long form was only ever drawn
+> where the short one would have been correct too.
 
 ### On a single row there are no words at all
 
@@ -107,8 +104,8 @@ can without words — **a minus sign on the clock, a red tint, and a `CRIT`
 badge.**
 
 That is deliberate rather than a gap. The minus sign carries the fact and the
-badge carries the alarm; the sentence is the elaboration, and the elaboration
-is what a panel this size cannot afford. If the distinction between *ninety
+badge carries the alarm; the word is the elaboration, and the elaboration is
+what a panel this size cannot afford. If the distinction between *ninety
 seconds left* and *ninety seconds over* is one you need spelled out, give the
 panel two rows.
 
