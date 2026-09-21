@@ -189,11 +189,25 @@ not override it.** It was cut from thirteen rather than widening the column to f
 longest: `NOT CELLS` and `BAD CELLS` were nine characters separating two failure modes
 of one component, and the column is paid for by every header on the dashboard rather
 than by the state that uses it. **A badge names the state; the supporting row says why.**
-Distinctions such as a cells sensor returning a number against one returning nonsense
+Distinctions such as a dead link against a protocol with no RSSI sensor
 belong in the row, which is fitted to whatever width its panel gives it and words them at
 whatever length fits. **What carries the distinction is the vocabulary, not the room** —
 see [the two-item row](#what-the-two-item-row-cost-and-why-it-was-chosen-anyway), where
 that sentence once said "room for words" and stopped being true.
+
+**Corrected: `NOT CELLS` against `BAD CELLS` is no longer a distinction the row makes.**
+That pair was the example this passage was built on, twice over — the badge vocabulary
+was cut because those two words were nine characters separating two failure modes, and
+the row was defended because it could carry what the badge could not. Both are still
+true of the *badge*. The row now prints `CELLS ERR` for both, and not for want of width:
+they are 67 and 66 px against budgets of 105 and 86.
+
+**The reason is the reader.** A row says what to do about a state, and a pilot does the
+same thing about a cells source answering with an ordinary voltage and one answering
+with nonsense — both mean the configuration is wrong and both are fixed on the ground.
+`NO CELLS` is the one that asks for something different, which is to wait. So the row
+keeps two wordings where it had three, and the five shapes behind them are still
+separated for the diagnostics view, where the difference *can* be acted on.
 
 ---
 

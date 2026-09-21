@@ -108,6 +108,14 @@ cellBattery.CELL_MAX = 30
 ---   detected yet looks like.
 --- - `invalid`: a table whose entries are not plausible cell voltages.
 --- - `cells`: a usable table, with at least one valid cell.
+---
+--- **Five shapes, two wordings.** `number` and `invalid` print the same row,
+--- `CELLS ERR`, because a pilot does the same thing about both: something is
+--- arriving and it is wrong, so go and fix the configuration. They are still
+--- separated here, and `service-probe` and the host diagnostics view still
+--- report which one arrived -- that is a question someone at a desk can act
+--- on, where the row is read at arm's length in flight. **The distinction is
+--- withheld from the panel, not discarded**; see `countVariants`.
 ---@param raw any Value from a telemetry subscription.
 ---@param out table Table to write the summary into.
 ---@return table out
@@ -245,27 +253,47 @@ end
 --- Wordings for the cell-count row, which is where a shape problem is named.
 ---
 --- "N/A" is the right badge for a source that answered with something this
---- component cannot read, and it is not enough on its own: a cells source that
---- returned a plain number is a configuration mistake, one that returned
---- nonsense is a sensor fault, and one that returned an empty table is a pack
---- that has not been detected yet. Three different fixes.
+--- component cannot read, and it is not enough on its own. What the row adds
+--- is **what the pilot should do about it**, and there are two answers:
 ---
---- That distinction used to be three nine-character badges, which did not fit
---- the badge column at any span and made the column too wide for every other
---- panel's header. It belongs here, in a row fitted to the width it actually
---- has -- and what carries the distinction is the vocabulary rather than the
---- room: `NOT CELS`, `BAD CELS` and `NO CELS` stay distinct from one another
---- at the narrowest row this component draws, which is what
---- `testSupportingWordingsStayDistinct` holds them to.
+--- - `NO CELLS` -- nothing has arrived and may yet. The source answered with
+---   an empty table, which is what a pack that has not been detected looks
+---   like. Wait.
+--- - `CELLS ERR` -- something is arriving and it is wrong. Either the source
+---   is not a cells sensor at all, or it is one reporting implausible
+---   voltages. Go and fix the configuration.
+---
+--- **Three wordings became two, and the reason is the action rather than the
+--- width.** All three fitted: `NOT CELLS`, `BAD CELLS` and `NO CELLS` are 67,
+--- 66 and 59 px against budgets of 105 and 86. But whether the wrong thing
+--- arriving is an ordinary voltage sensor or a nonsense table is a
+--- distinction the pilot cannot act on differently -- both mean the layout or
+--- the receiver is misconfigured, and both are fixed on the ground. A row
+--- that spends a word on a difference nobody can use is spending it twice:
+--- once in the reading and once in the reader.
+---
+--- **The `shape` values stay five.** `summarize` still separates `number`
+--- from `invalid`, `service-probe` and the diagnostics view still report
+--- which arrived, and a future component may still care. Only the
+--- pilot-facing row collapses; the distinction is not thrown away, it is
+--- withheld from a place it cannot be used.
+---
+--- So there are two displayed states here rather than three, and
+--- `testSupportingWordingsStayDistinct` holds *those* two apart. It fires if
+--- they are ever collapsed further, which is the check doing its job rather
+--- than an obstacle: two states that print the same thing and imply the same
+--- action are one state.
 ---@param summary table
 ---@param settings AeroGridCellSettings
 ---@return string[]
 function cellBattery.countVariants(summary, settings)
   local shape = summary.shape
 
-  if shape == "number" then return {"NOT A CELLS SENSOR", "NOT CELLS", "NOT CELS"} end
-  if shape == "invalid" then return {"BAD CELL VALUES", "BAD CELLS", "BAD CELS"} end
-  if shape == "empty" then return {"NO CELLS DETECTED", "NO CELLS", "NO CELS"} end
+  -- One wording, not a ladder. A form that fits the narrowest row fits every
+  -- row, so a longer one would only ever be drawn where the short one was
+  -- also correct.
+  if shape == "number" or shape == "invalid" then return {"CELLS ERR"} end
+  if shape == "empty" then return {"NO CELLS"} end
   if shape ~= "cells" or summary.count == 0 then return {""} end
   if not settings.showCount then return {""} end
 

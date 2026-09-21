@@ -4530,29 +4530,50 @@ local function testCellReadings()
   assertEqual(cellBattery.resolveState(settings, 3.9, 3.9, true), "stale")
   assertEqual(cellBattery.resolveState(settings, nil, nil, false), "unavailable")
 
-  -- Three shape problems with three different fixes, said in the detail row
-  -- rather than in a badge. A cells source returning a plain number is a
-  -- configuration mistake, one returning nonsense is a sensor fault, and an
-  -- empty table is a pack not detected yet. The badge for all three is the
-  -- state, which is the same for all three.
+  -- **Five shapes, two wordings, and the split is the action rather than the
+  -- cause.** `NO CELLS` means nothing has arrived and may yet; `CELLS ERR`
+  -- means something is arriving and is wrong. A pilot waits for the first
+  -- and fixes the configuration for the second. Whether the wrong thing is
+  -- an ordinary voltage sensor or a nonsense table is a difference nobody
+  -- can act on differently, so the row does not spend a word on it -- and
+  -- `summarize` still separates them for the diagnostics view.
   local function count(summary, width)
     return theme.fitLabel(
       cellBattery.countVariants(summary, {showCount = true}), SMLSIZE, width)
   end
 
-  assertEqual(count({shape = "number"}, 400), "NOT A CELLS SENSOR")
-  assertEqual(count({shape = "invalid"}, 400), "BAD CELL VALUES")
-  assertEqual(count({shape = "empty"}, 400), "NO CELLS DETECTED")
+  assertEqual(count({shape = "number"}, 400), "CELLS ERR")
+  assertEqual(count({shape = "invalid"}, 400), "CELLS ERR")
+  assertEqual(count({shape = "empty"}, 400), "NO CELLS")
   -- A source the radio has never seen is not a shape problem, and the row has
   -- nothing of its own to add to the badge.
   assertEqual(count({shape = "none"}, 400), "")
   assertEqual(count({shape = "cells", count = 4}, 400), "4S")
 
-  -- Each wording shortens rather than clipping when the row is narrow. This
-  -- is the whole reason the distinction moved out of the badge: a detail row
-  -- can say it at four widths, a six-character badge cannot say it at all.
-  assertEqual(count({shape = "number"}, 100), "NOT CELLS")
-  assertEqual(count({shape = "number"}, 50), "NOT CELS")
+  -- **One form per displayed state, and it fits the narrowest row.** These
+  -- used to be ladders of three, and every rung fitted: a form short enough
+  -- for the tightest row is short enough for every row, so the longer ones
+  -- were only ever drawn where the short one was also correct. `CELLS ERR`
+  -- is 64 px and `NO CELLS` 59, against 105 px for a row spanning a `1 x 2`
+  -- and 86 for one sharing a line at `2 x 2`.
+  for _, case in ipairs({{"number", "CELLS ERR"}, {"invalid", "CELLS ERR"},
+      {"empty", "NO CELLS"}}) do
+    local variants = cellBattery.countVariants({shape = case[1]},
+      {showCount = true})
+    assertEqual(#variants, 1, case[1] .. " offers a ladder it cannot use")
+    local width = theme.measureText(SMLSIZE, variants[1])
+    assert(width <= 86, string.format("%s draws %q at %d px, past the 86 px"
+      .. " a row sharing a line is given", case[1], variants[1], width))
+    -- The narrow row still says it rather than shortening to nothing.
+    assertEqual(count({shape = case[1]}, 86), case[2])
+  end
+
+  -- **The two that remain must stay apart.** Collapsing them further would
+  -- leave the panel unable to say whether to wait or to go and fix
+  -- something, which is the whole of what this row adds to the badge.
+  assert(count({shape = "empty"}, 400) ~= count({shape = "number"}, 400),
+    "a pack not yet detected and a source answering wrongly print the same"
+      .. " row, so the panel cannot say whether to wait or to fix it")
 
   -- A count below the configured one is called out, and that too shortens.
   local short = {shape = "cells", count = 3}

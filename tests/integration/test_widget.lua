@@ -1398,9 +1398,24 @@ components:
   assertEqual(pack.showDetail, true, "a 2 x 2 cell panel shed its rows")
 
   --- Assert a row says something and fits the box it was given.
+  ---
+  --- **Measured the way the radio draws it, not estimated.**
+  --- `theme.textWidth` charges every character the same 0.58 of a line
+  --- height, so it over-reports text made of narrow glyphs: `CELLS ERR` is
+  --- 89 px by the estimate and 64 as drawn. Fed to a fit check the estimate
+  --- reports rows overflowing that the radio draws with room to spare --
+  --- which is the correction already made to the collision check, for the
+  --- same reason, after it reported every reading as lying across its own
+  --- unit.
+  ---
+  --- Note what this does *not* say: `theme.fitLabel` still chooses between
+  --- wordings on the estimate, so a ladder can still shed a form that would
+  --- have fitted. That is a live finding rather than something this helper
+  --- can settle, and it does not reach a single-wording row, which comes
+  --- back out of `fitLabel` whatever the estimate says.
   local function assertRow(instance, text, width, expected, what)
     assertEqual(text, expected, what)
-    local needed = themeModule.textWidth(instance.fonts.label, text)
+    local needed = themeModule.measureText(instance.fonts.label, text)
     assert(needed <= width, string.format(
       "%s needs %d px of %d", what, needed, width))
   end
@@ -1411,7 +1426,7 @@ components:
   -- 148 the column split gave. `fitLabel` sheds the source prefix, which is
   -- detail: the unit still says what kind of measurement it is, and the
   -- states that must stay distinguishable from one another still are.
-  -- `NOT CELLS` against `BAD CELLS` and `DOWN` against `NO RSS` all survive
+  -- `NO CELLS` against `CELLS ERR`, and `DOWN` against `NO RSS`, all survive
   -- at this width; `testSupportingWordingsStayDistinct` is what holds them
   -- to it.
   assertRow(link, link.linkDetail, link.rowRightWidth, "78dB",
@@ -1421,9 +1436,12 @@ components:
   assertRow(pack, pack.packText, pack.detailWidth, "16.4V",
     "the pack sum")
 
-  -- A cells source answering with a plain number is a configuration mistake,
-  -- and one answering with nonsense is a sensor fault. Both resolve to `N/A`,
-  -- and the supporting row is the only thing that separates them.
+  -- **A cells source answering with a plain number and one answering with
+  -- nonsense print the same row, deliberately.** Both mean something is
+  -- arriving and is wrong, and both are fixed on the ground -- so the row
+  -- says `CELLS ERR` for each, and spends no word on a difference the pilot
+  -- cannot act on. The shapes are still separated inside the component for
+  -- the diagnostics view, which is asserted below.
   --
   -- The number case is configured rather than mutated into: the telemetry
   -- service keeps the last good reading, so a source that has already produced
@@ -1432,11 +1450,7 @@ components:
   local wrong = entryById(context, "notcells").instance
   assertEqual(wrong.summary.shape, "number")
   assertEqual(wrong.badge.properties.text, "N/A")
-  -- One variant further down the list than the column split reached, and
-  -- still the spelling this component declares rather than a truncation.
-  -- What matters is that it stays distinct from `BAD CELS` and `NO CELS`,
-  -- which is the distinction the specification puts in this row.
-  assertRow(wrong, wrong.countText, wrong.detailWidth, "NOT CELS",
+  assertRow(wrong, wrong.countText, wrong.detailWidth, "CELLS ERR",
     "a plain number from a cells source")
 
   radio.values[130] = {0, -1, 99}
@@ -1445,10 +1459,16 @@ components:
   -- The explicit lowest-cell source keeps a reading alive, so the panel is not
   -- unavailable; the row is what reports that the table itself is gone.
   assertEqual(pack.text, "4.09")
-  assertRow(pack, pack.countText, pack.detailWidth, "BAD CELS",
+  assertRow(pack, pack.countText, pack.detailWidth, "CELLS ERR",
     "nonsense from a cells source")
-  assert(pack.countText ~= wrong.countText,
-    "a sensor fault and a configuration mistake read the same")
+  -- **The two shapes stay separated where they can be acted on.** The row is
+  -- the same because the action is the same; `summary.shape` is not, because
+  -- someone at a desk reading the diagnostics view can use the difference.
+  assertEqual(pack.countText, wrong.countText,
+    "two failures with one fix print different rows")
+  assert(pack.summary.shape ~= wrong.summary.shape,
+    "the component stopped telling a wrong sensor from a nonsense table, so"
+      .. " the diagnostics view has nothing left to report")
 
   -- A dead link is reported by the row too, and is checked last because it
   -- marks every other panel stale on its way past.
@@ -2553,13 +2573,26 @@ local function testSupportingWordingsStayDistinct()
       },
     },
     {
+      -- **Two displayed states, where there are five shapes.** `number` and
+      -- `invalid` both print `CELLS ERR`, deliberately: something is
+      -- arriving and it is wrong, and the pilot does the same thing about
+      -- either. They are one state *here* because this check is about what
+      -- the panel says, and two states that print the same thing and imply
+      -- the same action are one state.
+      --
+      -- **This check fired when they were collapsed, and that was it
+      -- working.** It is declared down to two rather than taught to tolerate
+      -- a duplicate, because a check relaxed to fit the code stops being a
+      -- check. `summarize` still separates the five shapes and the
+      -- diagnostics view still reports which arrived; what is asserted here
+      -- is only that the *row* can still say whether to wait or to go and
+      -- fix something.
       type = "cell-battery",
       variantsFor = function(module, state)
         return module.countVariants({shape = state}, {showCount = true})
       end,
       states = {
-        {"a source answering with a plain number", "number"},
-        {"a source answering with nonsense values", "invalid"},
+        {"a source answering with something wrong", "number"},
         {"a source answering with no cells at all", "empty"},
       },
     },
@@ -8791,15 +8824,17 @@ local function testTelemetryDegrades()
   assertEqual(nav.showCoordinates, false)
 
   -- A table whose entries cannot be cell voltages. The explicit lowest-cell
-  -- source keeps the reading alive, and the count row says the table is gone.
-  -- A sensor fault and an undetected pack want different fixes, so they read
-  -- differently; the row shortens to suit its width rather than clipping.
+  -- source keeps the reading alive, and the count row says the table is
+  -- gone. **A pack not yet detected and a source answering wrongly still
+  -- read differently**, because one means wait and the other means go and
+  -- fix something; which *kind* of wrong is not a difference the row spends
+  -- a word on.
   radio.values[130] = {0, -1, 99}
   pump(context, 40)
   assertEqual(pack.summary.shape, "invalid")
   assertEqual(pack.text, "4.09")
-  assertEqual(pack.countText, "BAD CELS")
-  assert(themeModule.textWidth(pack.fonts.label, pack.countText)
+  assertEqual(pack.countText, "CELLS ERR")
+  assert(themeModule.measureText(pack.fonts.label, pack.countText)
     <= pack.detailWidth, "the cell-count row overran its box")
   assertEqual(pack.packText, "", "a pack sum was computed from nonsense")
 
@@ -8859,9 +8894,11 @@ components:
     assertEqual(instance.summary.shape, "number",
       id .. " read a plain number as a cells table")
     assertEqual(instance.stateName, "unavailable")
-    -- The wording shortens to the row it is given, so the assertion is that
-    -- the panel says this at all rather than that it says it at full length.
-    assert(string.match(instance.countText, "^NOT"),
+    -- One wording, which fits every row this component draws, so it is
+    -- pinned rather than matched on a prefix. `CELLS ERR` says something is
+    -- arriving and is wrong; a source the radio has never heard of says
+    -- nothing at all, and that difference is asserted below.
+    assertEqual(instance.countText, "CELLS ERR",
       id .. " reported a shape problem as a missing source")
     assertEqual(instance.text, "--", "a number was shown as a cell voltage")
   end
