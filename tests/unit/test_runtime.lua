@@ -3468,6 +3468,93 @@ end
 --- assertions here are about *agreement between components*, which is the
 --- thing that was broken; a bound like "no larger than the box allows" was
 --- true of the old code too and would prove nothing.
+--- A heading lands in the same place whatever the panel's height.
+---
+--- It used to be centred in the label band, which is a quarter of the
+--- panel's extent, so it drifted downward as panels grew: 0 px from the top
+--- on a one-row panel, 13 on two rows, 21 on three and 30 on four. A column
+--- of panels of different heights had its headings at four different
+--- offsets, which is what the user saw on the radio.
+---
+--- The band is right for a **reading**, where growing with the panel is the
+--- point, and wrong for furniture that says what the panel is.
+---
+--- **And the body must not move with it.** `frame.top` feeds `theme.ladder`,
+--- which decides whether a panel is granted a supporting row, and
+--- `theme.bands`, which decides where the reading sits. Letting the body
+--- rise into the space the heading vacated would change what every panel in
+--- the catalogue draws. So `top` is asserted to be what it was, span by
+--- span, beside the heading that moved.
+local function testHeadingIsPinnedToTheTop()
+  local resolved = theme.build("modern")
+  local GUTTER, CELLS, WIDTH, HEIGHT = 4, 4, 480, 272
+  local cellHeight = math.floor((HEIGHT - GUTTER * (CELLS - 1)) / CELLS)
+
+  -- What `frame.top` was before the heading was pinned, measured on the
+  -- commit that pinned it. Written out rather than recomputed, because a
+  -- test that derives the expectation from the same arithmetic it is
+  -- checking agrees with any arithmetic at all.
+  local TOP_BEFORE = {21, 32, 40, 49}
+
+  local offsets = {}
+  for rows = 1, 4 do
+    local rect = {x = 0, y = 0, w = 117,
+      h = cellHeight * rows + GUTTER * (rows - 1)}
+    local fonts = theme.typography(1, rows)
+    local frame = theme.frame(resolved, rect, fonts)
+
+    offsets[#offsets + 1] = frame.labelY
+    assertEqual(frame.labelY, frame.compact, string.format(
+      "a %d-row panel put its heading %d px below the panel's own top inset,"
+        .. " so a column of panels of different heights has its headings at"
+        .. " different offsets", rows, frame.labelY - frame.compact))
+
+    assertEqual(frame.top, TOP_BEFORE[rows], string.format(
+      "pinning the heading moved where content begins on a %d-row panel."
+        .. " `frame.top` feeds the ladder's row and visual grants and the"
+        .. " body band's position, so this is every reading in the catalogue"
+        .. " moving, not a heading", rows))
+  end
+
+  -- **Two positions remain, and they are the panel's own top inset rather
+  -- than the heading's own idea.** A panel under 80 px tall is `tight` and
+  -- takes 2 px of vertical inset where a taller one takes 6, which is an
+  -- existing rule that governs every vertical measurement on such a panel,
+  -- not something the heading decides. It cannot be flattened to one number
+  -- either: a tight panel's content begins at 21 px and its heading is 17 px
+  -- tall, so a heading pinned to 6 would run 2 px into the body.
+  --
+  -- So the property is that panels sharing a top inset share a heading
+  -- offset -- which is what the user sees as "the heading is always in the
+  -- same place" -- and the residual 4 px belongs to the tight rule.
+  local byInset = {}
+  for rows = 1, 4 do
+    local rect = {x = 0, y = 0, w = 117,
+      h = cellHeight * rows + GUTTER * (rows - 1)}
+    local frame = theme.frame(resolved, rect, theme.typography(1, rows))
+    local seen = byInset[frame.compact]
+    if seen == nil then
+      byInset[frame.compact] = offsets[rows]
+    else
+      assertEqual(offsets[rows], seen, string.format(
+        "two panels with the same %d px top inset put their headings at"
+          .. " different heights", frame.compact))
+    end
+  end
+
+  -- And the spread is the inset's, not the band's. Four offsets became two,
+  -- and the two differ by exactly the tight rule's 4 px.
+  local lowest, highest = offsets[1], offsets[1]
+  for _, value in ipairs(offsets) do
+    if value < lowest then lowest = value end
+    if value > highest then highest = value end
+  end
+  assertEqual(highest - lowest, 4, string.format(
+    "headings span %d px across panel heights; the band-centred rule this"
+      .. " replaced spanned 30, and the tight inset accounts for 4",
+    highest - lowest))
+end
+
 local function testSharedLadder()
   local resolved = theme.build("modern")
 
@@ -4682,6 +4769,7 @@ testBatteryStrokeScalesWithFont()
 testBatteryStaysVisible()
 testLosslessReadingsOfferOneForm()
 testRedrawDecision()
+testHeadingIsPinnedToTheTop()
 testSharedLadder()
 testReadingForms()
 testLabelFitting()

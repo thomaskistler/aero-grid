@@ -1419,17 +1419,40 @@ function theme.frame(resolved, rect, fonts, reserved)
   local badgeX = math.max(pad, rect.w - padRight - badgeWidth)
   local labelHeight = theme.fontHeight(fonts.label)
   local labelX = pad
-  -- The header sits in the label band -- the top quarter of the panel's
-  -- vertical extent -- rather than at the panel's own top inset. On a short
-  -- panel that quarter is smaller than the font, and the band yields: the
-  -- heading keeps its size, overflows the band, and is clamped so its glyphs
-  -- stay on the panel. See `theme.clampToPanel` for why the band is the thing
-  -- that gives way and not the font.
+  -- **The heading is pinned to the top of its band, not centred in it.** A
+  -- heading is furniture: it says what the panel is, and it should land in
+  -- the same place whatever size the panel happens to be. Centring it in a
+  -- band that is a quarter of the panel's extent made it drift down as
+  -- panels grew -- 0 px from the top on a one-row panel, 13 on two rows, 21
+  -- on three and 30 on four, so a column of panels of different heights had
+  -- its headings at four different offsets.
+  --
+  -- The proportional band was designed for the **reading**, where growing
+  -- with the panel is the point. Applying the same rule to the heading is
+  -- what produced the drift.
+  --
+  -- **The band still exists and the body still starts below it.** Only the
+  -- heading's own position moves; the quarter is still reserved and `top` is
+  -- still measured from where a centred heading would have ended. That is
+  -- deliberate rather than incidental: `top` feeds `theme.ladder`, which
+  -- decides whether a panel is granted a supporting row and a
+  -- visualization, and `theme.bands`, which decides where the reading sits.
+  -- Letting the body rise into the space the heading vacated would change
+  -- what every panel in the catalogue draws, which is a different decision
+  -- from where the heading sits.
   local extent = math.max(1, (rect.h - 4) - compact)
-  local labelY = theme.clampToPanel(
+  local centred = theme.clampToPanel(
     theme.centreInBand({y = compact, h = math.floor(extent / 4)}, labelHeight),
     fonts.label, rect.h)
-  local top = math.max(compact + labelHeight + 2, labelY + labelHeight + 2)
+  local top = math.max(compact + labelHeight + 2, centred + labelHeight + 2)
+
+  -- Not clamped, and it cannot need to be. `clampToPanel` exists because a
+  -- heading centred in a band could be pushed off a short panel -- at one
+  -- row the centred value is -1 px and the clamp lifted it to 0. Pinned, the
+  -- heading starts at the panel's own top inset, which is 2 px on a short
+  -- panel and 6 on any other, against a clamp that binds only above
+  -- `rect.h - 13`. The nearest that comes to binding is 2 against 40.
+  local labelY = compact
 
   if reserved then
     -- The header shares the obstructed band, so it moves along to its right
