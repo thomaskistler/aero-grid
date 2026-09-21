@@ -318,6 +318,21 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     and ladder.room - rowHeight >= themeBuilder.fontHeight(MIDSIZE)
   local showCompass = layout.showCompass
 
+  -- **Asked again, now that this panel knows how tall its rows are.** Every
+  -- other component draws one supporting row, which is always shorter than
+  -- the quarter the band reserves; this one draws two and centres them as a
+  -- group, and on a two-row panel that group is 36 px against a quarter of
+  -- 31. A band that reserved the quarter reported more body than the panel
+  -- has, and the reading was sized against the difference.
+  --
+  -- The first call is what decides whether there are rows at all, so it
+  -- cannot be given a height it does not yet know. The second is the one the
+  -- geometry is taken from.
+  local rowsHeight = labelHeight * (showCoordinates and 2 or 1)
+    + (showCoordinates and 2 or 0)
+  ladder = themeBuilder.ladder(theme, rect, frame,
+    {rows = showDetail, rowHeight = showDetail and rowsHeight or nil})
+
   local bands = ladder.bands
   local available = bands.body.h
 
@@ -346,8 +361,6 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
   -- it touching the caption by a pixel, which the collision check found the
   -- moment a long enough caption was put on a screen. The row's own top is
   -- the bound, so the two cannot meet however the bands fall out.
-  local rowsHeight = labelHeight * (showCoordinates and 2 or 1)
-    + (showCoordinates and 2 or 0)
   local rowsTop = showDetail
     and themeBuilder.centreInBand(bands.tertiary, rowsHeight)
     or (rect.h - frame.bottom)

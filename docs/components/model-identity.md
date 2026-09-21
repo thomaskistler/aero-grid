@@ -74,19 +74,24 @@ Asking for a picture does not guarantee one. The panel gives the picture
 whatever height is left after the heading and the labels row have taken
 theirs, and **drops it entirely below 24 px** rather than drawing a slot too
 thin to recognise. The name no longer takes a slice first, so this threshold
-is reached far less often than it was: on a Full screen dashboard every span
-this component supports now keeps its picture.
+is reached far less often than it was: every span this component supports
+keeps its picture, at every placement but one. The exception is a one-row
+panel in the grid's top-left cell in App mode, where EdgeTX's menu button
+pushes the content down and leaves less than 24 px — there the picture is
+shed at `1x1`, `2x1`, `3x1` and `4x1` alike, because the button takes height
+and a wider panel has no more of it.
 
 ### Where the name sits
 
-With a picture, in the heading. With no picture, directly beneath the
-heading.
+With a picture, in the heading. With no picture, in the body band, centred
+the way every other reading on the dashboard is.
 
-The second is not the position every other panel on the dashboard uses, which
-is to centre the reading in the middle half of the panel. This component is
-the only one that does not, and on a tall panel it is visible: at `4x4` with
-no picture the name sits 83 px above where the shared rule would put it, hard
-under the heading with the rest of the panel empty beneath it.
+It was not always: the name used to be pinned directly under the heading,
+which is the panel's content top and not where anything else puts a reading
+— 14 px above the band at `2x2`, 49 at `2x3` and 83 at `4x4`, where it read
+as stuck to the heading with the panel empty beneath it. This is the one
+component whose reading is a name rather than a number, so no cross-panel
+comparison ever lined it up against a neighbour and nothing caught it.
 
 ### How the picture is scaled
 
@@ -97,20 +102,39 @@ smaller than its frame is scaled up to meet it rather than sitting small in
 the middle.
 
 An EdgeTX model image is 192 x 114, which is wider in proportion than it is
-tall — but every frame this component produces is wider still, so the height
-is what binds and the letterbox is at the sides. These are the frames on a
-**Full screen** custom screen, which is what the shipped dashboards use:
+tall. Whether the height or the width binds depends on the span: a one-row
+frame is very wide and very short, so the height binds and the letterbox is
+at the sides; a `1x2` frame is narrow and tall, so the width binds and the
+letterbox is above and below.
+
+These are the frames in **App mode**, which is what the shipped dashboards
+use — every screen on both tracked models is `LayoutId: Layout1x1AM`, and
+`layouts/layout1x1AppMode.cpp` registers that id as "App mode". Measured at
+a placement the menu button does not reach, which is every cell of the grid
+but the top-left one:
 
 | Span | Picture frame | Picture drawn at |
 | --- | --- | --- |
-| `1x1` … `4x1` | 105–468 x 28 | 46 x 28 |
-| `1x2` | 105 x 77 | 105 x 62 |
-| `2x2`, `3x2`, `4x2` | 226–468 x 77 | 129 x 77 |
-| `2x3`, `4x3` | 226–468 x 127 | 214 x 127 |
-| `2x4` | 226 x 177 | 226 x 134 |
-| `4x4` | 468 x 177 | 298 x 177 |
+| `1x1` … `4x1` | 105–468 x 40 | 67 x 40 |
+| `1x2` | 105 x 98 | 105 x 62 |
+| `2x2`, `3x2`, `4x2` | 226–468 x 98 | 165 x 98 |
+| `2x3` | 226 x 159 | 226 x 134 |
+| `3x3`, `4x3` | 347–468 x 159 | 267 x 159 |
+| `2x4` | 226 x 219 | 226 x 134 |
+| `3x4` | 347 x 219 | 347 x 206 |
+| `4x4` | 468 x 219 | 368 x 219 |
 
-A single row gives the picture 28 px of height whatever its width, so a wide
+In the grid's top-left cell the menu button takes 13 px of the frame's
+height at every two-row span, and all of it at every one-row span.
+
+> **This table said Full screen until now, and the figures were Full
+> screen's.** It was corrected into that state on the premise that the
+> shipped dashboards are ordinary custom screens, which they are not: both
+> tracked models carry `Layout1x1AM` on every screen. The premise is the part
+> worth remembering — the figures were computed correctly from the wrong
+> zone, so nothing about them looked wrong.
+
+A single row gives the picture 40 px of height whatever its width, so a wide
 single-row panel is mostly letterbox — it is the arrangement to avoid if the
 picture matters. **Two or more rows is where the aircraft is worth looking
 at.**
