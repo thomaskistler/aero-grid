@@ -3972,7 +3972,7 @@ local function testTimerSemantics()
     elapsed = 312, remaining = -12, expired = true,
   }
   assertEqual(timer.resolveState({}, expired), "critical")
-  assertEqual(timer.detailText(expired, tostring), "ELAPSED PAST ZERO")
+  assertEqual(timer.detailText(expired, tostring), "EXPIRED")
 
   -- A count-up timer is judged on time used, and has no total to draw.
   local up = {available = true, countdown = false, value = 200, start = 0,
@@ -3986,6 +3986,102 @@ local function testTimerSemantics()
   assertEqual(timer.resolveState({}, nil), "unavailable")
   assertEqual(timer.resolveState({}, {available = false}), "unavailable")
   assertEqual(timer.detailText(nil, tostring), "NO TIMER")
+
+  -- **A count-up timer asked for `remaining` says so.** There is no total to
+  -- take a remainder of, so the panel shows elapsed -- which it did in
+  -- silence, and a layout author reading the setting back believed it. It
+  -- cannot be refused at load the way an out-of-range index can, because
+  -- which timers count down is the pilot's model setup rather than the
+  -- layout's, so the panel reports it where this dashboard reports why: the
+  -- supporting row.
+  local countingUp = {available = true, countdown = false, elapsed = 64,
+    value = 64, start = 0}
+  assertEqual(timer.detailVariants(countingUp, tostring)[1], "COUNTING UP",
+    "a count-up timer nobody asked a question of should just count up")
+  assertEqual(
+    timer.detailVariants(countingUp, tostring, {reading = "remaining"})[1],
+    "NO TOTAL",
+    "a count-up timer asked for the time remaining said nothing about it")
+  -- And only that request. `model` and `elapsed` are answerable by a
+  -- count-up timer, so neither is a contradiction to report.
+  for _, reading in ipairs({"model", "elapsed"}) do
+    assertEqual(timer.detailVariants(countingUp, tostring,
+      {reading = reading})[1], "COUNTING UP",
+      "reading: " .. reading .. " was reported as a contradiction")
+  end
+  -- A countdown can answer it, so it is not reported there either.
+  local countdown = {available = true, countdown = true, start = 300,
+    remaining = 90, elapsed = 210, expired = false}
+  assertEqual(
+    timer.detailVariants(countdown, tostring, {reading = "remaining"})[1],
+    "OF 300", "a countdown asked for its remaining was told it has none")
+
+  -- **One form per state, and each fits every panel that draws a row.** The
+  -- narrowest is a `1 x 2` at 105 px of content, and the widest wording is
+  -- `COUNTING UP` at 84. A row sharing a line would get 86, which they also
+  -- clear, so no arrangement this dashboard can reach breaks them.
+  for _, case in ipairs({
+      {"no timer", nil, nil},
+      {"elapsed past zero", {available = true, countdown = true, start = 300,
+        remaining = -15, elapsed = 315, expired = true}, nil},
+      {"counting up", countingUp, nil},
+      {"no countdown to remain", countingUp, {reading = "remaining"}},
+      {"countdown running", countdown, nil},
+    }) do
+    local variants = timer.detailVariants(case[2], tostring, case[3])
+    assertEqual(#variants, 1, "flight-timer: " .. case[1]
+      .. " offers a ladder, and a form that fits the narrowest panel fits"
+      .. " every other, so the longer form is never the only one that would"
+      .. " have been correct")
+    local width = theme.measureText(SMLSIZE, variants[1])
+    assert(width <= 105, string.format(
+      "flight-timer: %s draws %q at %d px into the 105 px box of a 1 x 2,"
+        .. " the narrowest panel that draws a row at all",
+      case[1], variants[1], width))
+    assert(width <= 86, string.format(
+      "flight-timer: %s draws %q at %d px, past the 86 px a row sharing a"
+        .. " line is given", case[1], variants[1], width))
+  end
+
+  -- **The shortest wording of each state differs from every other's**, which
+  -- is what lets the narrowest panel still say which happened. Shortening
+  -- may cost detail; it may never cost meaning, and that is what stops
+  -- `EXPIRED` and `NO TOTAL` collapsing into one word covering both.
+  local shortest = {}
+  local states = {
+    {"no timer", nil, nil},
+    {"elapsed past zero", {available = true, countdown = true, start = 300,
+      remaining = -15, elapsed = 315, expired = true}, nil},
+    {"counting up", countingUp, nil},
+    {"no countdown to remain", countingUp, {reading = "remaining"}},
+    {"countdown running", countdown, nil},
+  }
+  for _, case in ipairs(states) do
+    local variants = timer.detailVariants(case[2], tostring, case[3])
+    local narrowest = variants[#variants]
+    local owner = shortest[narrowest]
+    assert(owner == nil, string.format(
+      "flight-timer: %q is the narrowest wording for both %s and %s, so a"
+        .. " panel too narrow for the longer forms cannot say which",
+      narrowest, tostring(owner), case[1]))
+    shortest[narrowest] = case[1]
+  end
+
+  -- An index the firmware does not have is an authoring mistake, and the
+  -- count is a firmware constant: MAX_TIMERS is 3
+  -- (radio/src/dataconstants.h:94).
+  assertEqual(timer.TIMER_COUNT, 3)
+  assertEqual(#timer.validateSettings({}, nil, {timer = 0}), 0)
+  assertEqual(#timer.validateSettings({}, nil, {timer = 2}), 0)
+  assertEqual(#timer.validateSettings({}, nil, {timer = 3}), 1,
+    "the first index past the last real timer was accepted")
+  assertEqual(#timer.validateSettings({}, nil, {timer = -1}), 1)
+  assertEqual(#timer.validateSettings({}, nil, {timer = 1.5}), 1,
+    "a fractional index was accepted")
+  -- A layout that states nothing is not making a request, so there is
+  -- nothing to refuse. The resolved default is in range by construction.
+  assertEqual(#timer.validateSettings({timer = 0}, nil, nil), 0)
+  assertEqual(#timer.validateSettings({timer = 0}, nil, {}), 0)
 end
 
 --- The composition table in `docs/components/tx-battery.md` is true.
@@ -4434,29 +4530,50 @@ local function testCellReadings()
   assertEqual(cellBattery.resolveState(settings, 3.9, 3.9, true), "stale")
   assertEqual(cellBattery.resolveState(settings, nil, nil, false), "unavailable")
 
-  -- Three shape problems with three different fixes, said in the detail row
-  -- rather than in a badge. A cells source returning a plain number is a
-  -- configuration mistake, one returning nonsense is a sensor fault, and an
-  -- empty table is a pack not detected yet. The badge for all three is the
-  -- state, which is the same for all three.
+  -- **Five shapes, two wordings, and the split is the action rather than the
+  -- cause.** `NO CELLS` means nothing has arrived and may yet; `CELLS ERR`
+  -- means something is arriving and is wrong. A pilot waits for the first
+  -- and fixes the configuration for the second. Whether the wrong thing is
+  -- an ordinary voltage sensor or a nonsense table is a difference nobody
+  -- can act on differently, so the row does not spend a word on it -- and
+  -- `summarize` still separates them for the diagnostics view.
   local function count(summary, width)
     return theme.fitLabel(
       cellBattery.countVariants(summary, {showCount = true}), SMLSIZE, width)
   end
 
-  assertEqual(count({shape = "number"}, 400), "NOT A CELLS SENSOR")
-  assertEqual(count({shape = "invalid"}, 400), "BAD CELL VALUES")
-  assertEqual(count({shape = "empty"}, 400), "NO CELLS DETECTED")
+  assertEqual(count({shape = "number"}, 400), "CELLS ERR")
+  assertEqual(count({shape = "invalid"}, 400), "CELLS ERR")
+  assertEqual(count({shape = "empty"}, 400), "NO CELLS")
   -- A source the radio has never seen is not a shape problem, and the row has
   -- nothing of its own to add to the badge.
   assertEqual(count({shape = "none"}, 400), "")
   assertEqual(count({shape = "cells", count = 4}, 400), "4S")
 
-  -- Each wording shortens rather than clipping when the row is narrow. This
-  -- is the whole reason the distinction moved out of the badge: a detail row
-  -- can say it at four widths, a six-character badge cannot say it at all.
-  assertEqual(count({shape = "number"}, 100), "NOT CELLS")
-  assertEqual(count({shape = "number"}, 50), "NOT CELS")
+  -- **One form per displayed state, and it fits the narrowest row.** These
+  -- used to be ladders of three, and every rung fitted: a form short enough
+  -- for the tightest row is short enough for every row, so the longer ones
+  -- were only ever drawn where the short one was also correct. `CELLS ERR`
+  -- is 64 px and `NO CELLS` 59, against 105 px for a row spanning a `1 x 2`
+  -- and 86 for one sharing a line at `2 x 2`.
+  for _, case in ipairs({{"number", "CELLS ERR"}, {"invalid", "CELLS ERR"},
+      {"empty", "NO CELLS"}}) do
+    local variants = cellBattery.countVariants({shape = case[1]},
+      {showCount = true})
+    assertEqual(#variants, 1, case[1] .. " offers a ladder it cannot use")
+    local width = theme.measureText(SMLSIZE, variants[1])
+    assert(width <= 86, string.format("%s draws %q at %d px, past the 86 px"
+      .. " a row sharing a line is given", case[1], variants[1], width))
+    -- The narrow row still says it rather than shortening to nothing.
+    assertEqual(count({shape = case[1]}, 86), case[2])
+  end
+
+  -- **The two that remain must stay apart.** Collapsing them further would
+  -- leave the panel unable to say whether to wait or to go and fix
+  -- something, which is the whole of what this row adds to the badge.
+  assert(count({shape = "empty"}, 400) ~= count({shape = "number"}, 400),
+    "a pack not yet detected and a source answering wrongly print the same"
+      .. " row, so the panel cannot say whether to wait or to fix it")
 
   -- A count below the configured one is called out, and that too shortens.
   local short = {shape = "cells", count = 3}

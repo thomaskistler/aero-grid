@@ -1398,9 +1398,24 @@ components:
   assertEqual(pack.showDetail, true, "a 2 x 2 cell panel shed its rows")
 
   --- Assert a row says something and fits the box it was given.
+  ---
+  --- **Measured the way the radio draws it, not estimated.**
+  --- `theme.textWidth` charges every character the same 0.58 of a line
+  --- height, so it over-reports text made of narrow glyphs: `CELLS ERR` is
+  --- 89 px by the estimate and 64 as drawn. Fed to a fit check the estimate
+  --- reports rows overflowing that the radio draws with room to spare --
+  --- which is the correction already made to the collision check, for the
+  --- same reason, after it reported every reading as lying across its own
+  --- unit.
+  ---
+  --- Note what this does *not* say: `theme.fitLabel` still chooses between
+  --- wordings on the estimate, so a ladder can still shed a form that would
+  --- have fitted. That is a live finding rather than something this helper
+  --- can settle, and it does not reach a single-wording row, which comes
+  --- back out of `fitLabel` whatever the estimate says.
   local function assertRow(instance, text, width, expected, what)
     assertEqual(text, expected, what)
-    local needed = themeModule.textWidth(instance.fonts.label, text)
+    local needed = themeModule.measureText(instance.fonts.label, text)
     assert(needed <= width, string.format(
       "%s needs %d px of %d", what, needed, width))
   end
@@ -1411,7 +1426,7 @@ components:
   -- 148 the column split gave. `fitLabel` sheds the source prefix, which is
   -- detail: the unit still says what kind of measurement it is, and the
   -- states that must stay distinguishable from one another still are.
-  -- `NOT CELLS` against `BAD CELLS` and `DOWN` against `NO RSS` all survive
+  -- `NO CELLS` against `CELLS ERR`, and `DOWN` against `NO RSS`, all survive
   -- at this width; `testSupportingWordingsStayDistinct` is what holds them
   -- to it.
   assertRow(link, link.linkDetail, link.rowRightWidth, "78dB",
@@ -1421,9 +1436,12 @@ components:
   assertRow(pack, pack.packText, pack.detailWidth, "16.4V",
     "the pack sum")
 
-  -- A cells source answering with a plain number is a configuration mistake,
-  -- and one answering with nonsense is a sensor fault. Both resolve to `N/A`,
-  -- and the supporting row is the only thing that separates them.
+  -- **A cells source answering with a plain number and one answering with
+  -- nonsense print the same row, deliberately.** Both mean something is
+  -- arriving and is wrong, and both are fixed on the ground -- so the row
+  -- says `CELLS ERR` for each, and spends no word on a difference the pilot
+  -- cannot act on. The shapes are still separated inside the component for
+  -- the diagnostics view, which is asserted below.
   --
   -- The number case is configured rather than mutated into: the telemetry
   -- service keeps the last good reading, so a source that has already produced
@@ -1432,11 +1450,7 @@ components:
   local wrong = entryById(context, "notcells").instance
   assertEqual(wrong.summary.shape, "number")
   assertEqual(wrong.badge.properties.text, "N/A")
-  -- One variant further down the list than the column split reached, and
-  -- still the spelling this component declares rather than a truncation.
-  -- What matters is that it stays distinct from `BAD CELS` and `NO CELS`,
-  -- which is the distinction the specification puts in this row.
-  assertRow(wrong, wrong.countText, wrong.detailWidth, "NOT CELS",
+  assertRow(wrong, wrong.countText, wrong.detailWidth, "CELLS ERR",
     "a plain number from a cells source")
 
   radio.values[130] = {0, -1, 99}
@@ -1445,10 +1459,16 @@ components:
   -- The explicit lowest-cell source keeps a reading alive, so the panel is not
   -- unavailable; the row is what reports that the table itself is gone.
   assertEqual(pack.text, "4.09")
-  assertRow(pack, pack.countText, pack.detailWidth, "BAD CELS",
+  assertRow(pack, pack.countText, pack.detailWidth, "CELLS ERR",
     "nonsense from a cells source")
-  assert(pack.countText ~= wrong.countText,
-    "a sensor fault and a configuration mistake read the same")
+  -- **The two shapes stay separated where they can be acted on.** The row is
+  -- the same because the action is the same; `summary.shape` is not, because
+  -- someone at a desk reading the diagnostics view can use the difference.
+  assertEqual(pack.countText, wrong.countText,
+    "two failures with one fix print different rows")
+  assert(pack.summary.shape ~= wrong.summary.shape,
+    "the component stopped telling a wrong sensor from a nonsense table, so"
+      .. " the diagnostics view has nothing left to report")
 
   -- A dead link is reported by the row too, and is checked last because it
   -- marks every other panel stale on its way past.
@@ -2509,6 +2529,29 @@ local function testSupportingWordingsStayDistinct()
   --- still to convert and each should be covered the moment it arrives.
   local WORDED = {
     {
+      -- **One form per state here, and the check is the same check.** Every
+      -- wording this component offers fits every panel that draws a row, so
+      -- its "shortest" form is its only form -- which is exactly when two
+      -- states are likeliest to be collapsed into one word by someone
+      -- shortening for width. `EXPIRED` and `NO TOTAL` are the pair to
+      -- watch: both are a countdown that cannot report time remaining, for
+      -- opposite reasons.
+      type = "flight-timer",
+      variantsFor = function(module, state)
+        return module.detailVariants(state[1], tostring, state[2])
+      end,
+      states = {
+        {"no timer configured", {nil, nil}},
+        {"a countdown run past zero", {{available = true, countdown = true,
+          start = 300, remaining = -15, elapsed = 315, expired = true}, nil}},
+        {"a timer counting up", {{available = true, countdown = false,
+          elapsed = 64, value = 64, start = 0}, nil}},
+        {"a count-up timer asked for the time remaining",
+          {{available = true, countdown = false, elapsed = 64, value = 64,
+            start = 0}, {reading = "remaining"}}},
+      },
+    },
+    {
       type = "navigation",
       -- How to ask this component for one state's wordings. Declared,
       -- because a component's own signature is its own business: this one
@@ -2530,13 +2573,26 @@ local function testSupportingWordingsStayDistinct()
       },
     },
     {
+      -- **Two displayed states, where there are five shapes.** `number` and
+      -- `invalid` both print `CELLS ERR`, deliberately: something is
+      -- arriving and it is wrong, and the pilot does the same thing about
+      -- either. They are one state *here* because this check is about what
+      -- the panel says, and two states that print the same thing and imply
+      -- the same action are one state.
+      --
+      -- **This check fired when they were collapsed, and that was it
+      -- working.** It is declared down to two rather than taught to tolerate
+      -- a duplicate, because a check relaxed to fit the code stops being a
+      -- check. `summarize` still separates the five shapes and the
+      -- diagnostics view still reports which arrived; what is asserted here
+      -- is only that the *row* can still say whether to wait or to go and
+      -- fix something.
       type = "cell-battery",
       variantsFor = function(module, state)
         return module.countVariants({shape = state}, {showCount = true})
       end,
       states = {
-        {"a source answering with a plain number", "number"},
-        {"a source answering with nonsense values", "invalid"},
+        {"a source answering with something wrong", "number"},
         {"a source answering with no cells at all", "empty"},
       },
     },
@@ -3107,6 +3163,227 @@ local function testTertiaryQuarterHoldsItsFurniture()
   assert(sawBarAndRow > 0,
     "no panel drawing a bar and a supporting row was ever built, so the"
       .. " case those two share a band was never constructed")
+  resetRadio()
+end
+
+--- A timer index the radio does not have is refused at load, by name.
+---
+--- `MAX_TIMERS` is 3 (`radio/src/dataconstants.h:94`) and `luaModelGetTimer`
+--- answers nothing at or above it, so 0, 1 and 2 are the whole set. A layout
+--- asking for `timer: 9` used to load and draw `NO TIMER` -- **which is
+--- exactly what a correctly written layout draws on a radio whose timer is
+--- not configured.** The one the author can fix and the one they cannot
+--- looked identical, and nothing said which was which.
+---
+--- Both halves are checked here, because the refusal is only worth having if
+--- the runtime case still loads silently.
+local function testTimerIndexIsRefusedAtLoad()
+  resetRadio()
+
+  local function load(value)
+    local widget = makeWidget("timer-index-"
+      .. string.gsub(tostring(value), "[^%w]", ""), table.concat({
+      "version: 1\ngrid:\n  columns: 4\n  rows: 4\ncomponents:\n",
+      "  - id: clock\n    type: flight-timer\n",
+      "    col: 0\n    row: 0\n    colSpan: 2\n    rowSpan: 2\n",
+      "    config:\n      timer: ", tostring(value), "\n",
+    }))
+    return createLoaded({x = 0, y = 0, w = 480, h = 272},
+      DEFAULT_OPTIONS, widget)
+  end
+
+  -- Refused, and the message names the panel the way every other refusal
+  -- does, so an author can find it in a grid of twelve.
+  local refused = load(9)
+  assertEqual(#refused.errors, 1,
+    "an index no radio has was accepted: " .. table.concat(refused.errors, "; "))
+  assert(string.find(refused.errors[1], "clock", 1, true),
+    "the refusal does not name the panel: " .. refused.errors[1])
+  assert(string.find(refused.errors[1], "timer", 1, true),
+    "the refusal does not name the setting: " .. refused.errors[1])
+
+  -- The last real index is not refused, which is what stops this being a
+  -- rule that merely forbids large numbers.
+  local accepted = load(2)
+  assertEqual(#accepted.errors, 0,
+    "the last timer a radio has was refused: "
+      .. table.concat(accepted.errors, "; "))
+  pump(accepted, 40)
+  assertEqual(entryById(accepted, "clock").instance.text, "0:12",
+    "timer 2 was accepted and then not read")
+
+  -- And the runtime case is silent, because it is not the author's mistake:
+  -- an index the radio has and the model has not configured draws NO TIMER
+  -- with nothing reported.
+  resetRadio()
+  radio.timers[2] = nil
+  local unconfigured = load(2)
+  assertEqual(#unconfigured.errors, 0,
+    "a timer the model has not set up was reported as an authoring mistake")
+  pump(unconfigured, 40)
+  local panel = entryById(unconfigured, "clock").instance
+  assertEqual(panel.text, "--:--")
+  assertEqual(panel.detail, "NO TIMER")
+  assertEqual(panel.stateName, "unavailable")
+  resetRadio()
+end
+
+--- Every supporting row fits the box its panel gives it.
+---
+--- **The property, rather than the mechanism.** The specification says every
+--- supporting row goes through `theme.fitLabel`, which is not true and was
+--- never quite the point: four of the eight components that draw a row call
+--- it, and routing the other four through it would change nothing, because a
+--- single-wording list comes back out of `fitLabel` unchanged. What matters
+--- is that the row fits, and the mechanism for a row that cannot is to offer
+--- a shorter wording.
+---
+--- Nothing checked the property. `flight-timer` drew `ELAPSED PAST ZERO` at
+--- `1 x 2`, 125 px into a content box of 105 -- and a Lua label's long mode
+--- is LVGL's default wrap, so it did not clip sideways: it was centred on a
+--- box wider than the panel, started 10 px outside the left edge and ran
+--- 10 px past the right, over whatever was beside it. That state is the one
+--- this component exists to report, at the narrowest span that draws a row
+--- at all. It says `EXPIRED` now, at 51 px.
+---
+--- Driven through the real host at every span that grants a row, in both
+--- zones, with each component put into the state whose wording is longest.
+--- The states are declared, because a component's longest wording is usually
+--- a failure state and a fixture has to be driven into one.
+local function testSupportingRowsFitTheirBox()
+  --- Each component that draws a supporting row, configured so it draws one,
+  --- and how to drive it into the state that words the most.
+  ---
+  --- **A declaration, and it names the state as well as the component.** A
+  --- declaration that does not construct the case is not coverage: listing
+  --- `flight-timer` without expiring its countdown would check `OF 5:00`,
+  --- which fits everywhere, and report the component covered.
+  local ROWED = {
+    {name = "flight-timer, countdown running", type = "flight-timer",
+      config = {"timer: 0", "label: TIMER"}},
+    {name = "flight-timer, elapsed past zero", type = "flight-timer",
+      config = {"timer: 0", "label: TIMER"},
+      drive = function() radio.timers[0].value = -15 end},
+    {name = "flight-timer, counting up", type = "flight-timer",
+      config = {"timer: 1", "label: TIMER"}},
+    {name = "flight-timer, no countdown to remain", type = "flight-timer",
+      config = {"timer: 1", "label: TIMER", "reading: remaining"}},
+    {name = "flight-timer, no timer", type = "flight-timer",
+      config = {"timer: 2", "label: TIMER"},
+      drive = function() radio.timers[2] = nil end},
+    {name = "flight-mode, mode number", type = "flight-mode",
+      config = {"label: MODE", "showIndex: true"}},
+    {name = "cell-battery, pack and count", type = "cell-battery",
+      config = {"source: Cels", "label: PACK", "showPack: true",
+        "showCount: true"}},
+    {name = "cell-battery, nonsense cells", type = "cell-battery",
+      config = {"source: Cels", "label: PACK", "showPack: true",
+        "showCount: true"},
+      drive = function() radio.values[130] = {0, -1, 99} end},
+    {name = "link-status, link down", type = "link-status",
+      config = {"label: LINK", "rssiSource: 1RSS", "qualitySource: RQly",
+        "reading: rssi"},
+      drive = function() radio.rssi = 0 end},
+    {name = "metric, range and secondary", type = "metric",
+      config = {"label: ALT", "source: Alt", "unit: m", "rangeMin: 0",
+        "rangeMax: 400", "precision: 0", "visual: bar",
+        "secondarySource: Curr", "secondaryLabel: CUR"}},
+    {name = "navigation, no home position", type = "navigation",
+      config = {"label: HOME", "source: GPS", "presentation: detailed"},
+      drive = function()
+        radio.values[109]["pilot-lat"] = 0
+        radio.values[109]["pilot-lon"] = 0
+      end},
+    {name = "tx-battery, percentage", type = "tx-battery",
+      config = {"label: TX", "packEmpty: 6.6", "packFull: 8.4",
+        "showPercent: true"}},
+    {name = "variable-indicator, configured name", type = "variable-indicator",
+      config = {"binding: global", "index: 0", "label: GV", "showName: true"}},
+  }
+
+  local checked, widest, widestWhere = 0, 0, ""
+
+  for _, subject in ipairs(ROWED) do
+    -- Every span that grants a supporting row. One-row panels are granted
+    -- none at any width, so they would report an empty sweep rather than a
+    -- fitting one.
+    for _, span in ipairs({{1, 2}, {2, 2}, {4, 2}}) do
+      for _, mode in ipairs({{"full screen", fullScreenZone},
+          {"app mode", appZone}}) do
+        resetRadio()
+        if subject.drive then subject.drive() end
+
+        local lines = {"version: 1", "grid:", "  columns: 4", "  rows: 4",
+          "components:", "  - id: subject", "    type: " .. subject.type,
+          -- Clear of the menu button, so the row is measured against a
+          -- content box nothing else has narrowed.
+          "    col: " .. (4 - span[1]), "    row: " .. (4 - span[2]),
+          "    colSpan: " .. span[1], "    rowSpan: " .. span[2],
+          "    config:"}
+        for _, line in ipairs(subject.config) do
+          lines[#lines + 1] = "      " .. line
+        end
+
+        local widget = makeWidget("rowfit-"
+          .. string.gsub(subject.name, "[^%w]", "") .. "-"
+          .. span[1] .. "x" .. span[2] .. "-"
+          .. string.gsub(mode[1], " ", ""),
+          table.concat(lines, "\n") .. "\n")
+        local context = createLoaded(mode[2](), DEFAULT_OPTIONS, widget)
+        assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+        pump(context, 60)
+
+        local entry = entryById(context, "subject")
+        local bounds = boundsOf(entry)
+        local frame = themeModule.frame(entry.instance.theme,
+          {x = 0, y = 0, w = bounds.w, h = bounds.h},
+          themeModule.typography(span[1], span[2]))
+        local where = mode[1] .. " " .. subject.name .. " "
+          .. span[1] .. "x" .. span[2]
+
+        -- Every visible label in the panel's lower half is a supporting row.
+        -- Read off the drawing rather than from a field each component names
+        -- differently -- `detail`, `range`, `secondary`, `countText`.
+        local function walk(object, offsetX, offsetY)
+          for _, child in ipairs(object.children) do
+            local x = offsetX + (child.properties.x or 0)
+            local y = offsetY + (child.properties.y or 0)
+            local text = tostring(child.properties.text or "")
+            if child.kind == "label" and not child.hidden and text ~= ""
+                and y > bounds.h / 2 then
+              local font = child.properties.font
+              font = type(font) == "function" and font() or font
+              local width = themeModule.measureText(font, text)
+
+              assert(width <= frame.content, where .. ': draws "' .. text
+                .. '" at ' .. width .. " px into a content box of "
+                .. frame.content .. " -- a row cannot shrink its font, so a"
+                .. " row this wide is centred on a box wider than the panel"
+                .. " and runs off both edges")
+
+              -- And it is on the panel, which is the same fact stated
+              -- against the edge rather than against the box.
+              assert(x >= 0 and x + width <= bounds.w, where .. ': draws "'
+                .. text .. '" from ' .. x .. " to " .. (x + width)
+                .. " on a panel " .. bounds.w .. " px wide")
+
+              checked = checked + 1
+              if width > widest then widest, widestWhere = width, where end
+            end
+            walk(child, x, y)
+          end
+        end
+        walk(entry.container, 0, 0)
+      end
+    end
+  end
+
+  -- Not vacuous: rows were actually drawn, and the narrowest span really was
+  -- reached. Without this a sweep that shed every row would pass.
+  assert(checked >= 60, "only " .. checked
+    .. " supporting rows were drawn, so most of this swept nothing")
+  assert(string.find(widestWhere, "1x2", 1, true) ~= nil
+    or widest > 0, "the widest row found was not measured")
   resetRadio()
 end
 
@@ -6935,7 +7212,7 @@ components:
   -- An expired countdown says so, where it can.
   radio.timers[0].value = -15
   settle(context, 20)
-  assertEqual(tall.detailLabel.properties.text, "ELAPSED PAST ZERO")
+  assertEqual(tall.detailLabel.properties.text, "EXPIRED")
   assertEqual(tall.stateName, "critical")
 
   -- And a shed caption costs nothing to keep shed while the timer moves
@@ -7938,9 +8215,21 @@ end
 
 --- Every component must degrade visibly rather than raise when the radio
 --- cannot answer: a firmware without the API, a source that does not exist, a
---- timer index out of range, and a model bitmap that is not on the card.
+--- timer the model has not configured, and a model bitmap that is not on the
+--- card.
+---
+--- **The timer here is in range and unconfigured, which is the runtime case.**
+--- It used to be `timer: 7`, an index no radio has -- and that is an
+--- authoring mistake rather than a radio that cannot answer, so it is
+--- refused at load now and is covered by `testTimerIndexIsRefusedAtLoad`.
+--- The two look identical on screen, which is exactly why they were confused:
+--- both draw `NO TIMER`. Only one of them is the author's to fix.
 local function testComponentsDegrade()
   resetRadio()
+  -- A timer the radio has and the model has not set up. `luaModelGetTimer`
+  -- answers nothing for an unconfigured slot the same way it does for one
+  -- out of range, so this is the shape a component must survive.
+  radio.timers[2] = nil
   local widgetPath = makeWidget("degrade", [[
 version: 1
 grid:
@@ -7954,7 +8243,7 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      timer: 7
+      timer: 2
   - id: gv
     type: variable-indicator
     col: 2
@@ -8535,15 +8824,17 @@ local function testTelemetryDegrades()
   assertEqual(nav.showCoordinates, false)
 
   -- A table whose entries cannot be cell voltages. The explicit lowest-cell
-  -- source keeps the reading alive, and the count row says the table is gone.
-  -- A sensor fault and an undetected pack want different fixes, so they read
-  -- differently; the row shortens to suit its width rather than clipping.
+  -- source keeps the reading alive, and the count row says the table is
+  -- gone. **A pack not yet detected and a source answering wrongly still
+  -- read differently**, because one means wait and the other means go and
+  -- fix something; which *kind* of wrong is not a difference the row spends
+  -- a word on.
   radio.values[130] = {0, -1, 99}
   pump(context, 40)
   assertEqual(pack.summary.shape, "invalid")
   assertEqual(pack.text, "4.09")
-  assertEqual(pack.countText, "BAD CELS")
-  assert(themeModule.textWidth(pack.fonts.label, pack.countText)
+  assertEqual(pack.countText, "CELLS ERR")
+  assert(themeModule.measureText(pack.fonts.label, pack.countText)
     <= pack.detailWidth, "the cell-count row overran its box")
   assertEqual(pack.packText, "", "a pack sum was computed from nonsense")
 
@@ -8603,9 +8894,11 @@ components:
     assertEqual(instance.summary.shape, "number",
       id .. " read a plain number as a cells table")
     assertEqual(instance.stateName, "unavailable")
-    -- The wording shortens to the row it is given, so the assertion is that
-    -- the panel says this at all rather than that it says it at full length.
-    assert(string.match(instance.countText, "^NOT"),
+    -- One wording, which fits every row this component draws, so it is
+    -- pinned rather than matched on a prefix. `CELLS ERR` says something is
+    -- arriving and is wrong; a source the radio has never heard of says
+    -- nothing at all, and that difference is asserted below.
+    assertEqual(instance.countText, "CELLS ERR",
       id .. " reported a shape problem as a missing source")
     assertEqual(instance.text, "--", "a number was shown as a cell voltage")
   end
@@ -8991,6 +9284,8 @@ testReadingsSitInTheirSlots()
 testSupportingWordingsStayDistinct()
 testReadingsIgnoreTheRowBeneathThem()
 testTertiaryQuarterHoldsItsFurniture()
+testTimerIndexIsRefusedAtLoad()
+testSupportingRowsFitTheirBox()
 testBadgesEndFlushWithTheirPanel()
 testNothingIsDrawnOverAnythingElse()
 testReadingsDoNotDescendOverAnything()

@@ -1517,6 +1517,15 @@ function support.radio(hostIo)
     radio.values[109].lon = scaffold.MODEL_LONGITUDE
     radio.values[109]["pilot-lat"] = scaffold.PILOT_LATITUDE
     radio.values[109]["pilot-lon"] = scaffold.PILOT_LONGITUDE
+    -- **The timers, for the same reason the vertical speed above is here.**
+    -- A test that expires the countdown left the next one reading a timer
+    -- fifteen seconds past zero, so a panel that should have drawn
+    -- `OF 5:00` drew `ELAPSED PAST ZERO` and every width measured against it
+    -- was the wrong string's. Found by a probe that reported an overflow on
+    -- a running timer, which cannot happen.
+    radio.timers[0] = timer("Flight", 300, 90, 1)
+    radio.timers[1] = timer("Up", 0, 64)
+    radio.timers[2] = timer("Glide", 60, 12)
   end
 
   --- Advance the simulated clock.

@@ -1319,22 +1319,33 @@ end
 --- badge is read at a glance from arm's length and is one word from a closed
 --- set the theme owns. A detail row is a vocabulary the component owns, is
 --- fitted to whatever width its panel gives it, and is where the difference
---- between a cells sensor that returned a number and one that returned
---- nonsense actually belongs.
+--- between a pack that has not been detected and a source answering wrongly
+--- actually belongs.
 ---
 --- **The row's defence is its vocabulary and not its width**, which matters
 --- because the width changed: a two-item row now takes the panel's two slot
 --- centres and gets 40% of the content where the column split it replaced
---- reached all of it. `NOT CELS`, `BAD CELS` and `NO CELS` still say three
---- different things at that width. A component whose shortest wordings
---- collapse onto one another has lost the distinction however wide its panel
---- happens to be.
+--- reached all of it. `NO CELLS` against `CELLS ERR`, and `DOWN` against
+--- `NO RSS`, still say different things at that width. A component whose
+--- shortest wordings collapse onto one another has lost the distinction
+--- however wide its panel happens to be.
 ---
---- Components therefore no longer override it. `NOT CELLS` against
+--- **The row says what to do, not merely which failure occurred**, and that
+--- is narrower than it first looks. `cell-battery` once drew `NOT CELS`,
+--- `BAD CELS` and `NO CELS` for three shapes. Two of them -- a source that
+--- is not cells at all, and one reporting nonsense -- are one thing to a
+--- pilot: something is arriving and is wrong, go and fix it. They print one
+--- wording now, and the row is not poorer for it. The five shapes behind
+--- them are still separated where the difference can be used, which is the
+--- diagnostics view.
+---
+--- Components therefore no longer override the badge. `NOT CELLS` against
 --- `BAD CELLS` spent nine characters separating two failure modes of one
---- component, and `NO SENSOR` against `NO SOURCE` were near-identical strings
---- for two situations with the same fix. Every one of those distinctions was
---- already being drawn in the same component's detail row.
+--- component -- and those two have since turned out to be one failure mode
+--- with two causes, which is the stronger version of the same argument.
+--- `NO SENSOR` against `NO SOURCE` were near-identical strings for two
+--- situations with the same fix. Every one of those distinctions was already
+--- being drawn, or has since been found not to be a distinction at all.
 theme.BADGES = {
   stale = "STALE",
   warning = "WARN",
