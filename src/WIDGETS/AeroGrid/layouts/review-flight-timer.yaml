@@ -1,0 +1,119 @@
+# Review harness for `flight-timer`. Slot 3 on the review model.
+#
+# **Read this against the model's own timers.** The review model configures
+# timer 0 as a five-minute countdown that is already past zero and persistent,
+# and timer 1 as an ordinary count-up. That is deliberate: a timer's state
+# belongs to the model rather than to a layout, so a screen cannot conjure an
+# expired countdown any more than `model-identity` could conjure a broken
+# bitmap. Configuring the model is the only way to put these states on a
+# radio, and without it every panel here would read `0:00` and say
+# `COUNTING UP`.
+#
+# **The row is the reason this component exists.** Its own header says a
+# countdown run past zero is easy to misread as a healthy timer, so the panel
+# states it in words as well as showing the minus sign. `ELAPSED PAST ZERO`
+# is that sentence.
+#
+# **And at `1 x 2` it does not fit.** The row is drawn at `SMLSIZE` and needs
+# 125 px; a single column's content box is 105. The label is sized to the
+# string rather than to the box, so it does not wrap -- it is centred and
+# hangs ten pixels off each side, starting two pixels outside the panel's own
+# left edge. The top-left pair below is that panel beside a wider one drawing
+# the same sentence, so the difference is a comparison rather than a claim.
+#
+# Unlike `navigation`, `link-status` and `cell-battery`, this component's
+# supporting row offers **one wording per state and no shorter form**, so
+# nothing can be shed when the row is too narrow. Those three hand their
+# wordings to `theme.fitLabel`, which takes the longest that fits. This one
+# does not call it.
+#
+# **The clock is sized for a reading no flight will produce.** Its single
+# form is `-88:88:88` -- a negative countdown past ten hours -- and at
+# `1 x 2` that is what holds the reading to `MIDSIZE`: `DBLSIZE` fits the
+# band's height comfortably at 40 px of 50, and is refused because the
+# nine-character form needs 126 px of 105. A real reading at that span is
+# `2:05`, which needs 76. The `1 x 2` panels below are where to judge whether
+# that trade is worth making.
+#
+# **What the spans do.** A single row draws no supporting row at any width,
+# so `1 x 1` announces an expired countdown with nothing but a minus sign and
+# the `CRIT` badge. Four cells or more add the progress bar, which a
+# count-up timer has no total for and therefore never draws.
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  # The overflow, and a panel wide enough to hold the same sentence. Both
+  # show the expired countdown; only the narrow one cannot fit the words.
+  - id: expired-narrow
+    type: flight-timer
+    col: 0
+    row: 0
+    colSpan: 1
+    rowSpan: 2
+    config:
+      timer: 0
+      label: 1x2
+
+  - id: expired-wide
+    type: flight-timer
+    col: 1
+    row: 0
+    colSpan: 3
+    rowSpan: 2
+    config:
+      timer: 0
+      label: 3x2 SAME STATE
+      accent: amber
+
+  # The same expired countdown with no supporting row at all. This is the
+  # panel to look at hardest: the sentence the component exists to say is not
+  # here, and what is left is a minus sign and a badge.
+  - id: expired-bare
+    type: flight-timer
+    col: 0
+    row: 2
+    colSpan: 1
+    rowSpan: 1
+    config:
+      timer: 0
+      label: 1x1
+
+  # A count-up timer at the same span, for comparison. No minus sign, no
+  # badge, and the same clock font.
+  - id: counting-bare
+    type: flight-timer
+    col: 1
+    row: 2
+    colSpan: 1
+    rowSpan: 1
+    config:
+      timer: 1
+      label: 1x1 UP
+      accent: green
+
+  # Two cells square, which is where the progress bar appears. The bar is a
+  # countdown's own fraction; a count-up timer has no total and draws none.
+  - id: expired-bar
+    type: flight-timer
+    col: 2
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      timer: 0
+      label: 2x2 WITH BAR
+
+  # A count-up timer on a panel that grants a bar, which it will not draw.
+  # Worth seeing that the panel does not leave a gap where one would go.
+  - id: counting-row
+    type: flight-timer
+    col: 0
+    row: 3
+    colSpan: 2
+    rowSpan: 1
+    config:
+      timer: 1
+      label: 2x1 UP
+      accent: green
