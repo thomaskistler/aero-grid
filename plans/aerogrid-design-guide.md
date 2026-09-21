@@ -501,6 +501,31 @@ the body. So the splits are 1/4 : 1/2 : 1/4, 1/4 : 3/4, 3/4 : 1/4, or the whole 
 Like the slots, the bands come from the panel, so a band does not move because of what is
 in it.
 
+**Corrected: the heading is pinned to the top of its band rather than centred in it.** The
+band is a proportion of the panel, so anything centred in it moves as the panel grows —
+which is right for a reading, where growing with the panel is the point, and wrong for a
+heading, which is furniture that says what the panel is and should land in the same place
+every time. Measured before the correction, on a single column:
+
+| Panel | Label band | Heading top |
+| --- | --- | --- |
+| 1 row | 14 px | 0 px |
+| 2 rows | 31 px | 13 px |
+| 3 rows | 48 px | 21 px |
+| 4 rows | 65 px | 30 px |
+
+Four panel heights, four heading positions, which is what the user saw on the radio. The
+heading now sits at the panel's own top inset: 6 px, or 2 px on a panel under 80 px tall,
+which is the existing tight rule that governs every vertical measurement on those panels
+and not something the heading decides. Four offsets became two, four pixels apart.
+
+**The band itself is unchanged and the body still starts below it.** That is deliberate:
+where content begins feeds the ladder's row and visual grants and the body band's
+position, so letting the body rise into the space the heading vacated would change what
+every panel in the catalogue draws — a catalogue-wide font change arriving by accident
+inside a change about a heading. Verified through `tools/flow-geometry.lua` across every
+component at every span in both zones: headings and badges move, and nothing else does.
+
 The two panel heights the Full screen zone produces:
 
 | Panel | Extent | Label / body / tertiary |
@@ -560,6 +585,12 @@ back; the bands quoted throughout this section are the ones a panel actually get
 > Correct both and the band comes out close to the room the older ladder already computed,
 > which is why the fonts barely move. Both the generator and the integration suite now
 > check non-text objects.
+
+The second of those reads differently now that the heading is pinned to the top of its
+band: the body starts below where a **centred** heading would have ended, which is no
+longer where the heading actually ends. That is the point rather than an oversight — the
+space is still reserved, so the body does not move — but the sentence above describes the
+reasoning at the time and not the arithmetic today.
 
 So the honest summary is that **the vertical half of the arrangement is nearly a no-op and
 the horizontal half is where the value is.** The slots are what stop a reading and a
