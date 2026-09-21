@@ -411,7 +411,7 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
 
   -- Reading and dial share the body band and are centred on each other, so
   -- the block the band centres is the deeper of the two.
-  local valueHeight = themeBuilder.fontHeight(value)
+  local valueHeight = themeBuilder.fontAscent(value)
   local blockHeight = math.max(valueHeight, radius * 2)
   local blockTop = themeBuilder.bodyTop(ladder, blockHeight)
   local valueY = blockTop + math.floor((blockHeight - valueHeight) / 2)

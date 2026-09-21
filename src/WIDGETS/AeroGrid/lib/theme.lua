@@ -1005,7 +1005,7 @@ function theme.fitReadingUnit(digits, unit, width, room, required)
     local ordered = theme.READING_FONTS
     local start = #ordered
     for index = 1, #ordered do
-      if theme.fontHeight(ordered[index]) <= room then start = index break end
+      if theme.fontAscent(ordered[index]) <= room then start = index break end
     end
     for step = start, #ordered do
       local font = ordered[step]
@@ -1190,8 +1190,12 @@ function theme.fitReading(forms, width, room)
   local ordered = theme.READING_FONTS
   local start = #ordered
 
+  -- **The band holds the ink, not the line box.** Same rule as
+  -- `theme.bandFont`, and it has to be the same rule: a font chosen one way
+  -- and a band measured the other is the disagreement the shared ladder
+  -- exists to remove.
   for index = 1, #ordered do
-    if theme.fontHeight(ordered[index]) <= room then start = index break end
+    if theme.fontAscent(ordered[index]) <= room then start = index break end
   end
 
   -- The target the box allows, then down until something fits.
@@ -1660,7 +1664,7 @@ end
 function theme.bandFont(height)
   local ordered = theme.READING_FONTS
   for index = 1, #ordered do
-    if theme.fontHeight(ordered[index]) <= height then return ordered[index] end
+    if theme.fontAscent(ordered[index]) <= height then return ordered[index] end
   end
   return ordered[#ordered]
 end
@@ -1902,7 +1906,16 @@ function theme.panel(resolved, rect, fonts, spec, out)
   -- business until a component in this set has one.
   -- Reading and visual share the body band and are centred on each other, so
   -- the block the band centres is the deeper of the two.
-  local blockHeight = math.max(height, size)
+  --
+  -- **Measured as ink, not as line box.** A font's line height carries a
+  -- descent and a leading that nothing in this catalogue draws into, so
+  -- centring the box centres a rectangle that is taller than the glyphs and
+  -- leaves the number sitting high in its band. `theme.bodyTop` is given the
+  -- ink height for that reason, and the line box is then placed so the ink
+  -- lands where the band wants it -- which for a non-descending string means
+  -- the box top and the ink top are the same pixel.
+  local ink = theme.fontAscent(font)
+  local blockHeight = math.max(ink, size)
   local blockTop = theme.bodyTop(ladder, blockHeight)
 
   out.value = font
@@ -1942,7 +1955,10 @@ function theme.panel(resolved, rect, fonts, spec, out)
   else
     out.valueBudget = frame.content
   end
-  out.valueY = blockTop + math.floor((blockHeight - height) / 2)
+  -- The line box's top, which for a string that does not descend is also
+  -- the ink's top. `height` is the box and `ink` is what is drawn; the block
+  -- was measured in ink, so the offset inside it is too.
+  out.valueY = blockTop + math.floor((blockHeight - ink) / 2)
 
   -- A bar spans the panel by design and sits on its floor rather than in a
   -- band; a supporting row sits in the tertiary band above it.
