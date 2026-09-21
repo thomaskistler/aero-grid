@@ -508,11 +508,92 @@ declare their widest reading.
 ### Proportional vertical bands
 
 The panel's vertical extent divides into **a label band of one quarter, a body band of one
-half, and a tertiary band of one quarter** — and where a part is absent its quarter goes to
-the body. So the splits are 1/4 : 1/2 : 1/4, 1/4 : 3/4, 3/4 : 1/4, or the whole extent.
+half, and a tertiary band of one quarter**. The split is always 1/4 : 1/2 : 1/4. Nothing
+redistributes: a panel that draws no supporting row reserves its bottom quarter anyway and
+leaves it empty.
 
 Like the slots, the bands come from the panel, so a band does not move because of what is
-in it.
+in it — and unlike the slots, that took two attempts to actually be true.
+
+**Corrected: a part used to give its quarter to the body.** The splits were 1/4 : 1/2 : 1/4,
+1/4 : 3/4, 3/4 : 1/4 or the whole extent, chosen by what the panel was going to draw. It
+reads as thrift and it is the content deciding the layout: a panel with a supporting row
+sized its reading against a half and the panel beside it, same size and no row, sized
+against three quarters — so the two drew their numbers at different heights and often at
+different sizes. **The user saw that on a radio and rejected it.** It had been measured here
+and found correct, because every check asked whether a panel was internally consistent and
+none asked whether two panels agreed.
+
+That is the same objection that chose the slots over centred content, one axis round: a
+position derived from the panel cannot move because of what is in it, and a position
+derived from the content can. The horizontal half of that was settled from the start; the
+vertical half said it and did not do it.
+
+**What it cost, measured through the real host over every component at every span it
+declares, in both zones and at an obstructed and a clear placement — 1088 panels:**
+
+| | Panels |
+| --- | --- |
+| Reading steps down one size | 122 |
+| Reading steps up one size | 3 |
+| Unchanged in size | 963 |
+
+The three that grow are `navigation` in App mode at `2x2`, `3x2` and `4x2`, which get back
+the size they had been paying for a band that grew to fit two supporting rows.
+
+Where the drops fall:
+
+| Zone | Span | Change | Panels |
+| --- | --- | --- | --- |
+| App mode | one row | `DBLSIZE` → `MIDSIZE` | 50 |
+| Full screen | one row | `MIDSIZE` → `SMLSIZE` | 52 |
+| Full screen | two rows | `XXLSIZE` → `DBLSIZE` | 20 |
+
+**App mode two-row panels are unaffected**, which is the case the shipped dashboards are
+mostly made of: a half of a 134 px panel's extent is 62 px and `XXLSIZE` is 54 px of ink, so
+the largest reading on the dashboard still fits a half. Full screen's extent is 101 px, a
+half is 51, and 54 does not fit — which is why the same span loses a size in the zone the
+shipped screens do not use.
+
+**Three panels change what they draw rather than how large it is.** A smaller reading leaves
+room beside it, so `metric` and `tx-battery` at Full-screen `1x2` and `2x2` get their unit or
+their battery back, and `variable-indicator` at a single cell gets its dial back and loses
+its unit. Against that, `navigation` loses its compass at every Full-screen one-row span,
+because the dial is bounded by the body band and a half-band leaves it under the 10 px floor
+below which a dial is not worth the pixels.
+
+#### What is in the tertiary quarter
+
+The band is always reserved, so it is worth saying plainly what it holds, because the
+question was previously answered by arithmetic that no longer exists — `theme.bands` took a
+`floorHeight` that sized the band to the bar it would carry, and a `rowHeight` that grew it
+to fit two supporting rows. Both sized a band from its contents. They are gone, so:
+
+- **A supporting row sits in it**, centred.
+- **A bar sits in it too.** A bar is floor furniture — its length *is* the reading, so it
+  spans the panel and sits on the floor — and the panel's floor is this band's own floor. So
+  a bar is drawn *inside* the tertiary quarter rather than beneath it.
+- **A panel with both puts the row above the bar**, and both fit: a bar is 6 px against a
+  quarter of 25 px at the narrowest span that grants a row.
+- **A panel with neither leaves it empty.** Nothing is drawn there and nothing else grows
+  into it.
+
+All four are measured rather than asserted, by `testTertiaryQuarterHoldsItsFurniture`, which
+checks the reservation in both directions: empty means empty, and occupied means what is in
+it is inside it.
+
+**Where the content does not fit its quarter, the content sheds — the band does not grow.**
+`navigation` is the only component that wants more: it draws two supporting rows and centres
+them as a group, 32 px of ink against a quarter of 25 px at a two-row span and 48 px at a
+three-row one. So **a two-row panel draws the bearing alone and a three-row panel draws the
+coordinates as well.**
+
+That cost the shipped `sim` dashboard's own navigation panel its coordinate row, and it is
+the honest consequence of the rule rather than an oversight. The alternatives were the band
+growing — which is the redistribution this removed, in a second place — or the reading
+shrinking to make room, which is paying magnitude for layout. It also closed a real defect:
+the gate that decided the second row asked whether the **body** band had room left, which is
+a question about the wrong band, and the rows then overflowed upward into the reading.
 
 **Corrected: the heading is pinned to the top of its band rather than centred in it.** The
 band is a proportion of the panel, so anything centred in it moves as the panel grows —
@@ -543,14 +624,19 @@ The two panel heights the Full screen zone produces:
 
 | Panel | Extent | Label / body / tertiary |
 | --- | --- | --- |
-| 117×53, 238×53 | 47 px | 11 / 36 / — |
+| 117×53, 238×53 | 47 px | 11 / 25 / 11 |
 | 238×111, 480×111 | 101 px | 25 / 51 / 25 |
 
-**The body band never fails, which was not obvious in advance.** A 53 px panel looks as
-though a half — 23 px — could not hold a 29 px `MIDSIZE` reading. But those panels shed
-their tertiary row at every width, so the split is 1/4 : 3/4 and the body gets 36, which
-holds the tallest block any of them draws. The proportional rule rescues itself exactly
-where it looked weakest.
+**Corrected: the body band does fail on the shortest panel, and the old split is what hid
+it.** This said the body never fails, and the argument was that a 53 px panel sheds its
+tertiary row at every width, so the split becomes 1/4 : 3/4 and the body gets 36 px — enough
+for the tallest block any of them draws. That was true of the redistributing rule and it is
+not a property of the proportional rule at all; it was the redistribution rescuing it.
+
+Under fixed bands a 47 px extent gives a 25 px body, which holds `MIDSIZE` at 23 px of ink
+and nothing larger. That is the cost recorded above, and it is the whole of it: 23 px of ink
+in 25 px of band is a 92% fill, which is a better-used band than most of the catalogue
+manages. The reading is smaller than it was and it is not cramped.
 
 ### The font comes from the band
 
@@ -574,13 +660,20 @@ from `XXLSIZE` to `DBLSIZE`, because a body band is half a panel's extent and ha
 134 px panel is 62 against `XXLSIZE`'s 69. That is the largest reading on the dashboard
 getting smaller, and it was accepted knowingly.
 
-**Corrected: it was accepted for more panels than it was true of.** A quarter of the panel
-is reserved for a supporting row, and `tx-battery`'s percentage row is off unless a layout
-asks for it — so a panel that was never going to draw a row was charged 31 px for one, and
-the 62 px band above was 93 px all along. With the row genuinely off, the two-row spans
-take `XXLSIZE` again. The loss is real only where the row is real, which is what the band
-rule was always meant to say. Three components had this, and eleven cases got their font
-back; the bands quoted throughout this section are the ones a panel actually gets.
+**Corrected once, and then corrected back.** The first correction said the loss had been
+accepted for more panels than it was true of: a quarter is reserved for a supporting row,
+`tx-battery`'s percentage row is off unless a layout asks for it, so a panel that was never
+going to draw a row was charged 31 px for one and the 62 px band was 93 px all along. That
+gave three components their font back at eleven spans, and it is exactly the redistribution
+the user has now rejected — the eleven cases won back a font size by making their layout
+depend on their content.
+
+So the loss is real wherever the *band* is, whether or not the row is. The bands quoted
+throughout this section are the fixed ones. What survives from that correction is the
+observation underneath it, which was sound and is now answered a different way: a reading
+should not be charged for something the panel does not draw. Under fixed bands it is not
+charged for it either — nothing is taken away and given to someone else, so there is no
+charge to allocate. The quarter is simply always there.
 
 > **This table said the opposite until the rule was implemented, and the correction is
 > worth recording rather than quietly making.** It claimed 14 of 24 readings would grow

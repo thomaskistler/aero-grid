@@ -339,27 +339,24 @@ local function bandsAt(zoneName, col, row, colSpan, rowSpan)
 
   local fonts = themeModule.typography(colSpan, rowSpan)
   local frame = themeModule.frame(resolvedTheme, panel, fonts, reserved)
-  -- Three answers, not two. A panel may draw no supporting row, one, or --
-  -- in `navigation` alone -- two centred as a group, which needs more than
-  -- the quarter the band reserves and therefore narrows the body further.
-  -- A walk that asked only the first two would miss every band that
-  -- component builds.
-  local twoRows = frame.labelHeight * 2 + 2
-  return themeModule.ladder(resolvedTheme, panel, frame, {rows = true}).room,
-    themeModule.ladder(resolvedTheme, panel, frame, {rows = false}).room,
-    themeModule.ladder(resolvedTheme, panel, frame,
-      {rows = true, rowHeight = twoRows}).room
+  -- **One answer, where there used to be three.** The walk asked the ladder
+  -- for a panel drawing a supporting row, one drawing none, and one drawing
+  -- `navigation`'s two -- because the band was sized from what was going to
+  -- be put in it and each of those produced a different body. The bands are
+  -- fixed proportions now, so a panel of a given size has exactly one body
+  -- band whatever it draws, which is the whole point of the rule and is why
+  -- this collapsed from three calls to one.
+  return themeModule.ladder(resolvedTheme, panel, frame).room
 end
 
 for _, observed in ipairs(hostBands) do
-  local withRow, withoutRow, withTwo = bandsAt(observed.zone, 0, 0,
+  local band = bandsAt(observed.zone, 0, 0,
     observed.colSpan, observed.rowSpan)
-  assert(observed.band == withRow or observed.band == withoutRow
-      or observed.band == withTwo,
+  assert(observed.band == band,
     string.format("the band walk disagrees with the host: %s %s %dx%d drew a"
-      .. " %d px body band, and the walk says %d or %d", observed.zone,
+      .. " %d px body band, and the walk says %d", observed.zone,
       observed.component, observed.colSpan, observed.rowSpan, observed.band,
-      withRow, withoutRow))
+      band))
 end
 
 local bandOrder, bandWhere = {}, {}
@@ -368,9 +365,8 @@ for _, zoneName in ipairs({"appmode", "widget"}) do
     for rowSpan = 1, 4 do
       for col = 0, 4 - colSpan do
         for row = 0, 4 - rowSpan do
-          local withRow, withoutRow, withTwo = bandsAt(zoneName, col, row,
-            colSpan, rowSpan)
-          for _, band in ipairs({withRow, withoutRow, withTwo}) do
+          local band = bandsAt(zoneName, col, row, colSpan, rowSpan)
+          do
             if not bandWhere[band] then
               bandWhere[band] = {}
               bandOrder[#bandOrder + 1] = band
