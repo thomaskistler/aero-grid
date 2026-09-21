@@ -4735,6 +4735,14 @@ end
 --- A component created large and then shrunk must hide what no longer fits,
 --- and regain it when the panel grows again.
 local function testMetricReconcilesOnResize()
+  -- **A live source, because this test is about width and not about having a
+  -- reading at all.** It named no source until a unit stopped being drawn
+  -- beside an absent value, and every assertion below then described a panel
+  -- printing `-- V`: the unit it asserted survived a height loss was a unit
+  -- with no number to qualify. The shed-and-restore behaviour it exists to
+  -- pin is unchanged, because `metric` sheds on the widest form it can print
+  -- rather than on the one on screen; what changes is that the panel now has
+  -- one.
   local widgetPath = makeWidget("reconcile", [[
 version: 1
 grid:
@@ -4749,6 +4757,7 @@ components:
     rowSpan: 2
     config:
       label: Pack
+      source: S1
       unit: V
       rangeMin: 18
       rangeMax: 25
@@ -4758,8 +4767,13 @@ components:
 
   local zone = {x = 0, y = 0, w = 480, h = 272}
   local context = createLoaded(zone, DEFAULT_OPTIONS, widgetPath)
+  -- Let the telemetry service resolve and deliver, so the panel is drawing a
+  -- number before anything here asks what happens to the unit beside it.
+  pump(context, 20)
   local instance = entryById(context, "big").instance
 
+  assertEqual(instance.text, "3.0",
+    "this test needs a panel with a reading, not a sentinel")
   assert(instance.unit, "unit was never created")
   assert(instance.range, "range was never created")
   assertEqual(instance.unit.hidden, false)
