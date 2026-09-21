@@ -272,6 +272,38 @@ reading was digits alone. That stopped being true when the unit joined the readi
 the passage was corrected with the code rather than left describing a design that no
 longer existed.
 
+### A unit is drawn only where there is a value for it to qualify
+
+A reading with nothing to report prints a sentinel — `--`, or `N/A` where `link-status`
+has a source the protocol does not publish — and a unit beside one is a label for
+nothing. The panel said `-- V`: the pack is measured in volts, and how many is not
+stated. **Four components drew it**: `tx-battery` and `cell-battery`, whose unit is a
+constant they know before any reading exists, and `link-status` and `metric`, which keep
+a resolved sensor's unit while its value is withheld. `navigation` and
+`variable-indicator` look like they belong on that list and do not: both already tie the
+unit to whether there is a distance or a value, and both were measured rather than
+assumed.
+
+**Hidden, not reclaimed, and the number does not move.** The reading is centred on its
+slot by its **own** measured width rather than the pair's, so the unit only widens the
+drawn box; taking it away shrinks that box and leaves the digits on the same pixel.
+Nothing is positioned from that box — supporting rows and compact visuals take the
+panel's own slot centres — so there is no space to reclaim and nothing downstream
+notices. That mattered to the decision rather than being a detail: had the reading been
+placed from the pair, a sensor dropping and returning would have twitched the number
+every time, which is the moves-when-content-changes objection that ruled out centred
+content, and hiding would have been the wrong answer.
+
+**Stale keeps its unit. Zero keeps its unit.** A stale reading still shows its last
+number, and staleness is about how old a measurement is rather than whether there is
+one. A sensor reading exactly zero prints `0`, and `0 V` is a measurement — the
+specification is explicit that a valid zero is shown as the reading it is, and
+`link-status` exists partly to tell a genuine zero from a dead link. So the rule is not
+"the source is unavailable"; it is "the panel is printing a sentinel", which is the only
+form of the question that is true at the moment of drawing, and it lives in
+`primitives` rather than in six components for the reason recorded under the
+permitted-versus-drawn seam.
+
 ---
 
 ## Colour
