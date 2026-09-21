@@ -744,7 +744,6 @@ local UNDOCUMENTED = {
   ["host-diagnostics"] = true,
   ["link-status"] = true,
   ["metric"] = true,
-  ["model-identity"] = true,
   ["navigation"] = true,
   ["service-probe"] = true,
   ["trim-panel"] = true,
@@ -814,7 +813,7 @@ local function testComponentDocumentationLoads()
   for _ in pairs(UNDOCUMENTED) do owed = owed + 1 end
   assertEqual(documented + owed, #kinds,
     "every component is either documented or listed as owing a page")
-  assertEqual(documented, 2,
+  assertEqual(documented, 3,
     "the number of documented components changed; update this count as the"
       .. " review works through the catalogue")
 end
