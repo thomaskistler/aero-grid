@@ -64,10 +64,91 @@ local flightTimer = {
   },
 }
 
+--- The largest magnitude this panel will print, in seconds.
+---
+--- **A display clamp, not a limit on the timer.** EdgeTX's own range is
+--- `TIMER_MAX`, `0xffffff/2` or 8388607 seconds (`radio/src/timers.h:34`),
+--- which is 2330 hours, and `TIMER_MIN` is its negative
+--- (`radio/src/timers.h:36`). A pilot can set anything in that range from
+--- Model Setup, so the range this clamp folds away is genuinely reachable in
+--- firmware -- it is just not reachable in flying.
+---
+--- The reading is what is clamped, and only the reading, because the reading
+--- is the one string whose font is chosen from `FORMS` below. The service's
+--- own `text` is left alone, so `service-probe` keeps reporting what the
+--- radio actually said: a diagnostics view that showed a clamped value would
+--- be reporting on a world assembled for it. The supporting row is fitted to
+--- its own width by `theme.fitLabel` rather than sized from `FORMS`, so it is
+--- not clamped either -- which means a countdown whose total runs past the
+--- clamp still says `OF 5:00:00` beneath a clamped reading, and the panel
+--- tells on itself wherever that row is drawn.
+---
+--- The docs page states what this hides. See `docs/components/flight-timer.md`.
+flightTimer.CLAMP = 99 * 60 + 59
+
 --- Forms of the clock, longest first, and there is deliberately only one.
 --- See the note in `regionsFor`: every shorter form of a clock drops a field,
 --- and a field is magnitude.
-flightTimer.FORMS = {"-88:88:88"}
+---
+--- **This is the widest string the component can actually print**, which is
+--- the clamp above carrying a sign. It was `-88:88:88`, reserving for a
+--- countdown ten hours past zero, and that cost a font size: at `2 x 2` in
+--- App mode it measures 218 px against a 226 px content box, so the clock
+--- stepped down from `XXLSIZE` on a margin of 8 px -- 3.5% -- while the
+--- `3 x 2` beside it had 129 px and did not. Two panels of one height
+--- disagreed, which is the thing the shared ladder exists to prevent.
+---
+--- It is written as a value the component can produce rather than as a row
+--- of eights, so the claim is checkable: `testClockNeverOutgrowsItsForm`
+--- asserts that the clamp's own output is exactly this string. A form is a
+--- claim about the widest thing a component will ever draw, and this project
+--- has now been wrong about that twice in opposite directions -- see the
+--- specification's note on forms.
+flightTimer.FORMS = {"-99:59"}
+
+--- Fold a reading down to the largest magnitude this panel prints.
+---
+--- **The sign survives.** A countdown that has run past zero is negative, and
+--- that is the one state this component exists to make unmistakable: dropping
+--- the sign would turn an hour and forty minutes *past* a landing time into
+--- an hour and forty minutes *remaining*. So the clamp bounds the magnitude
+--- and leaves the direction alone, and `-99:59` is therefore the widest
+--- string it can produce.
+---@param seconds any
+---@return any seconds Clamped where it is a number, unchanged otherwise.
+function flightTimer.clamp(seconds)
+  if type(seconds) ~= "number" then return seconds end
+  if seconds > flightTimer.CLAMP then return flightTimer.CLAMP end
+  if seconds < -flightTimer.CLAMP then return -flightTimer.CLAMP end
+  return seconds
+end
+
+--- Render a second count as this panel's clock: minutes and seconds, always.
+---
+--- **It does not change shape, and that is the whole of why it exists.**
+--- `modelService.formatTime` grows an hours field the moment a reading
+--- passes 3600 seconds, so a clock steps from `59:59` to `1:00:00` -- two
+--- characters wider -- while it is being read. That is a panel reflowing
+--- itself at the moment attention is on it, and it is what forced the old
+--- sizing form to reserve for `-88:88:88`.
+---
+--- So the minutes field simply keeps counting: 90 minutes is `90:00` rather
+--- than `1:30:00`, and both name the same duration. Together with the clamp
+--- above this bounds the string at `-99:59` and fixes the panel's width for
+--- its whole life.
+---
+--- **The service's own formatter is untouched**, and is still what
+--- `service-probe` reports: hours are the right presentation for a
+--- diagnostics line, which is read once and is not being flown by.
+---@param seconds any
+---@return string
+function flightTimer.formatClock(seconds)
+  if type(seconds) ~= "number" then return "--:--" end
+
+  local sign = seconds < 0 and "-" or ""
+  local total = math.floor(math.abs(seconds) + 0.5)
+  return string.format("%s%d:%02d", sign, math.floor(total / 60), total % 60)
+end
 
 --- Describe how the component presents itself at a given span.
 ---@param colSpan integer
@@ -231,12 +312,14 @@ function flightTimer.create(parent, rect, settings, services)
   local modelService = services.model
   if modelService then
     context.feed = modelService:timer(settings.timer)
-    -- Formatting lives with the service so every timer reading agrees.
-    context.formatTime = modelService.formatTime
   end
-  if not context.formatTime then
-    context.formatTime = function() return "--:--" end
-  end
+  -- **This panel's own clock, not the service's.** The service formats for a
+  -- diagnostics line and grows an hours field; this panel needs a string
+  -- whose width is fixed for the life of the panel, because its font was
+  -- chosen from one. `formatClock` answers `--:--` for anything that is not
+  -- a number, so there is nothing to fall back to when the service is
+  -- absent.
+  context.formatTime = flightTimer.formatClock
 
   local panel = primitives.panel(parent, rect, theme, presentation)
   context.panel = panel
@@ -333,8 +416,8 @@ function flightTimer.render(context, out)
   local available = type(feed) == "table" and feed.available == true
 
   out.state = flightTimer.resolveState(settings, feed)
-  out.text = available and context.formatTime(
-    flightTimer.displayValue(settings, feed)) or "--:--"
+  out.text = available and context.formatTime(flightTimer.clamp(
+    flightTimer.displayValue(settings, feed))) or "--:--"
   -- Declared only where it is drawn. A panel too short for a supporting row
   -- was still formatting a second clock every frame and writing it into a
   -- hidden label, which is the invisible work the reveal work removed from
