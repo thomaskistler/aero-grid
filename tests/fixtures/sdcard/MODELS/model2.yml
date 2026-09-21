@@ -632,6 +632,29 @@ telemetrySensors:
          custom: 
             ratio: 0
             offset: 0
+timers:
+   0:
+      start: 300
+      value: -754
+      mode: ON
+      countdownBeep: 0
+      minuteBeep: 0
+      persistent: 1
+      countdownStart: 0
+      showElapsed: 0
+      extraHaptic: 0
+      name: "Glide"
+   1:
+      start: 0
+      value: 64
+      mode: ON
+      countdownBeep: 0
+      minuteBeep: 0
+      persistent: 1
+      countdownStart: 0
+      showElapsed: 0
+      extraHaptic: 0
+      name: "Up"
 screenData: 
    0:
       LayoutId: Layout1x1AM
@@ -682,6 +705,22 @@ screenData:
                         value: 
                            stringValue: 
 
+   3:
+      LayoutId: Layout1x1AM
+      layoutData: 
+         zones: 
+            0:
+               widgetName: AeroGrid
+               widgetData: 
+                  options: 
+                     0:
+                        type: String
+                        value: 
+                           stringValue: review-flight-timer
+                     1:
+                        type: String
+                        value: 
+                           stringValue: 
 topbarData: 
    zones: 
       3:
