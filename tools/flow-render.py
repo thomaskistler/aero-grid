@@ -2272,14 +2272,18 @@ and that is the element with the least room to spare, so it is the one to
 look at in the mocks rather than to reason about here.</p>
 
 
-<h2>Full screen &mdash; what the shipped dashboards are</h2>
-<p class="intro">The <code>sim</code> and <code>sim2</code> screens the user
-pages through are Full screen custom screens, so this is the arrangement they
-are actually looking at.</p>
+<h2>App mode &mdash; what the shipped dashboards are</h2>
+<p class="intro">Every screen on both tracked models carries
+<code>LayoutId: Layout1x1AM</code>, which
+<code>layout1x1AppMode.cpp:53</code> registers as "App mode". So the
+<code>sim</code> and <code>sim2</code> screens the user pages through are
+these, and this is the arrangement they are actually looking at.</p>
 
-{"".join(by_zone["widget"])}
+<div class="warn"><strong>Corrected:</strong> this page put Full screen
+first and said that was what the user pages through. It was not, and the
+ordering is not cosmetic &mdash; a page that leads with the zone nobody
+looks at invites every judgement to be made against the wrong figures.</div>
 
-<h2>App mode &mdash; the same panels, and not the same panels</h2>
 <div class="warn"><strong>Found while building this, not fixed:</strong> a
 panel at the grid's top left in App mode reserves a strip for the menu
 button, and that pushes its content down far enough to change what it draws.
@@ -2290,6 +2294,13 @@ battery</strong> &mdash; the reading starts at y=45 rather than y=21, leaving
 one is worth a look on its own, separately from this rule.</div>
 
 {"".join(by_zone["appmode"])}
+
+<h2>Full screen &mdash; the supported fallback</h2>
+<p class="intro">An ordinary Full screen custom screen keeps EdgeTX's own top
+bar, so its zone is 19 px shorter and no panel is obstructed. It remains
+supported and nothing ships on it, which is why it is second here.</p>
+
+{"".join(by_zone["widget"])}
 
 <h2>Where edge anchoring was doing useful work</h2>
 <ul>

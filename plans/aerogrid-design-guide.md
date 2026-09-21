@@ -24,8 +24,10 @@ because a decision that drifted is exactly the kind a guide exists to pin down.
 | The shared responsive ladder, the abbreviation rule, shedding | Implemented and shipped |
 | The battery glyph: vertical, one colour, outline scaled to the reading's font | Implemented and shipped |
 | The unit inline beside the reading, placed by measurement | Implemented and shipped |
-| Content flow: proportional bands, the band-derived font, the clamp | Implemented and shared by every component |
+| Content flow: fixed bands, the ink-derived font, ink placement, the clamp | Implemented and shared by every component |
 | Content flow: the two slots and the build-time fallback | Implemented and shared by every component that draws a reading |
+| The heading pinned to the top of its band; the badge placed from its measured text | Implemented and shipped |
+| Supporting rows: one form per state wherever one fits | Implemented; **five of the eight row-drawing components route through `theme.fitLabel`** |
 | The standard panel assembled in one place (`theme.panel`) | Implemented; **six of the twelve components are on it** |
 
 Both halves of [Content flow](#content-flow) are now live everywhere. The vertical half —
@@ -43,15 +45,25 @@ being retyped in each component. Where a component stands:
 | | Components |
 | --- | --- |
 | On `theme.panel` | `cell-battery`, `flight-mode`, `flight-timer`, `link-status`, `metric`, `variable-indicator` |
-| Own arrangement, by recorded decision | `navigation`, `tx-battery` |
-| Own arrangement, never converted | `model-identity` |
+| Own arrangement, by recorded decision | `navigation`, `tx-battery`, `model-identity` |
 | Exempt: no reading to place | `trim-panel`, `host-diagnostics`, `service-probe` |
 
 `navigation` keeps its own because it draws **two** supporting rows and centres them as a
 group, which the builder cannot express; the entry below records what was measured.
 `tx-battery` keeps its own for reasons that are now partly obsolete and partly open, also
-below. `model-identity` is the one with no argument behind it: it is standard in shape and
-was simply never assigned to a conversion stage.
+below.
+
+**Corrected: `model-identity` now has an argument, where it used to have none.** This said
+it was standard in shape and had simply never been assigned to a conversion stage. Its
+review changed that. Its body is a *picture* that takes the whole content box rather than a
+reading beside an optional compact visual, and where the picture is drawn the model name
+leaves the body entirely and becomes the panel's heading — so on the same component, at
+different spans, the body holds a full-width image or a centred reading and the heading
+holds a layout-stated label or the model's own name. `theme.panel` describes a heading, a
+reading, an optional visual beside it and an optional row beneath; none of those four is
+what this panel draws when it draws a picture. It is the one component whose *arrangement*
+differs rather than its content, which is a better reason to keep its own than the absence
+of one.
 
 ## How to check the numbers in this document
 
@@ -440,13 +452,20 @@ everywhere, and the table at the top of this document records which components a
 through `theme.panel` and which still write the assembly out themselves. Run `make mocks`
 and open `build/flow-mocks.html` to see every figure below drawn at its true pixel size.
 
-### The problem it solves
+### The problem it solved
 
-Panels are edge-anchored today, so slack collects *between* elements instead of after
-them. A `tx-battery` at `4x2` has its voltage hard left, its battery hard right, and
-**392 px of hole in the middle — 82% of the panel's width**. The slack is largest exactly
-where panels are widest, so every extra cell of width goes into the hole rather than into
-the content.
+**Corrected to the past tense, because the problem is gone and this described it as
+present.** Panels *were* edge-anchored, so slack collected *between* elements instead of
+after them: a `tx-battery` at `4x2` had its voltage hard left, its battery hard right, and
+a hole in the middle that grew with every extra cell of width. The slots were chosen to
+close it and every component that draws a reading is on them.
+
+The figure this paragraph carried — 392 px, 82% of the panel — is **not reproducible by
+`make mocks`**, because the generator renders the arrangement as it is rather than the one
+it replaced, and no code path computes the old hole any more. It is therefore removed
+rather than restated: this document's own rule is that a number it carries must be one the
+generator can produce, and a figure describing a layout that no longer exists cannot be.
+What survives is the shape of the argument, which is still why the slots are there.
 
 ### Two slots, derived from the panel
 
@@ -630,8 +649,8 @@ Where the drops fall:
 
 **App mode two-row panels are unaffected**, which is the case the shipped dashboards are
 mostly made of: a half of a 134 px panel's extent is 62 px and `XXLSIZE` is 54 px of ink, so
-the largest reading on the dashboard still fits a half. Full screen's extent is 101 px, a
-half is 51, and 54 does not fit — which is why the same span loses a size in the zone the
+the largest reading on the dashboard still fits a half. Full screen's extent is 102 px, a
+half is 52, and 54 does not fit — which is why the same span loses a size in the zone the
 shipped screens do not use.
 
 **Three panels change what they draw rather than how large it is.** A smaller reading leaves
@@ -699,36 +718,48 @@ every panel in the catalogue draws — a catalogue-wide font change arriving by 
 inside a change about a heading. Verified through `tools/flow-geometry.lua` across every
 component at every span in both zones: headings and badges move, and nothing else does.
 
-The two panel heights the Full screen zone produces:
+The bands each row count produces, measured at a placement the menu button does not reach.
+**App mode first, because that is what ships** — every screen on both tracked models is
+`LayoutId: Layout1x1AM`:
 
-| Panel | Extent | Label / body / tertiary |
-| --- | --- | --- |
-| 117×53, 238×53 | 47 px | 11 / 25 / 11 |
-| 238×111, 480×111 | 101 px | 25 / 51 / 25 |
+| Zone | Rows | Panel | Extent | Label / body / tertiary |
+| --- | --- | --- | --- | --- |
+| App mode | 1 | 238×65 | 59 px | 14 / 26 / 14 |
+| App mode | 2 | 238×134 | 124 px | 31 / **62** / 31 |
+| App mode | 3 | 238×203 | 193 px | 48 / 97 / 48 |
+| App mode | 4 | 238×272 | 262 px | 65 / 132 / 65 |
+| Full screen | 1 | 238×54 | 48 px | 12 / **17** / 12 |
+| Full screen | 2 | 238×112 | 102 px | 25 / 52 / 25 |
+| Full screen | 3 | 238×170 | 160 px | 40 / 80 / 40 |
+| Full screen | 4 | 238×227 | 217 px | 54 / 109 / 54 |
 
-**Corrected: the body band does fail on the shortest panel, and the old split is what hid
-it.** This said the body never fails, and the argument was that a 53 px panel sheds its
-tertiary row at every width, so the split becomes 1/4 : 3/4 and the body gets 36 px — enough
-for the tallest block any of them draws. That was true of the redistributing rule and it is
-not a property of the proportional rule at all; it was the redistribution rescuing it.
+**Corrected twice, and the second is the one worth noticing.** This table gave two Full
+screen heights as though they were the whole set, and gave them as 47 px and 101 px where
+the real extents are 48 and 102 — so it was the wrong zone *and* off by a pixel inside it.
+A table quoting the zone nobody pages to, to a precision it did not have, is the shape an
+audit exists to catch: it read as authoritative for as long as nobody rebuilt it.
 
-Under fixed bands a 47 px extent gives a 25 px body, which holds `MIDSIZE` at 23 px of ink
-and nothing larger. That is the cost recorded above, and it is the whole of it: 23 px of ink
-in 25 px of band is a 92% fill, which is a better-used band than most of the catalogue
-manages. The reading is smaller than it was and it is not cramped.
+**And the body band does fail on the shortest panel.** This said the body never fails, on
+the argument that a 53 px panel sheds its tertiary row at every width so the split becomes
+1/4 : 3/4 and the body gets 36 px. That was true of the redistributing rule and was never a
+property of the proportional one; it was the redistribution rescuing it. Under fixed bands a
+Full screen single row gives a 17 px body, which holds `SMLSIZE` at 13 px of ink and nothing
+larger — the smallest reading the dashboard draws. In App mode the same span gets 26 px and
+holds `MIDSIZE`. That is the cost recorded above, and it falls hardest in the zone nothing
+ships on.
 
 ### The font comes from the band
 
 **The largest font whose ink fits the body band.** Ink is the font's ascent — the part
 the glyphs actually mark — rather than its line height, which is ascent plus descent plus
-leading. This inverts today's rule, where the composition comes from the box and the font
-from the composition.
+leading. This inverted the rule that came before it, where the composition came from the box
+and the font from the composition.
 
 **It was line height first, and the correction is [below](#decided-the-font-is-chosen-by-ink-and-the-ink-is-what-is-centred).**
 
-**The stability guarantee survives, and becomes structural.** Today's fitter sizes a reading
-against the widest string a component can ever print, so a value never resizes as it
-changes — but that depends on every component remembering to pass its widest form. A
+**The stability guarantee survives, and becomes structural.** The older fitter sized a reading
+against the widest string a component can ever print, so a value never resized as it
+changed — but that depended on every component remembering to pass its widest form. A
 band-derived font does not consult the content at all, so it cannot resize with it. The
 guarantee holds by construction rather than by discipline.
 
@@ -923,16 +954,23 @@ above — it is a statement about the ladder, not about any particular band.
 position is clamped so nothing leaves the panel.** The band yields. Bands stop being exactly
 proportional at the bottom of the size range, and nothing is ever drawn off a panel.
 
-This is not a corner case. A quarter of a 53 px panel is 11 px, the heading is `SMLSIZE` at
-17, and the smallest font the dashboard has is `TINSIZE` at 12 — **so there is no font that
-fits that band on any 53 px panel, in any component.** Unclamped, centring the heading in a
-band smaller than itself put 1 px of it above the panel's top edge, where it was clipped.
+This is not a corner case. A quarter of a single-row panel's extent is 12 px in Full screen
+and 14 in App mode, the heading is `SMLSIZE` at 17, and the smallest font the dashboard has
+is `TINSIZE` at 12 — **so on a one-row panel there is no reading font that fits the label
+band, in either zone, in any component.** Unclamped, centring the heading in a band smaller
+than itself put a pixel of it above the panel's top edge, where it was clipped.
+
+That is now a statement about the clamp rather than about the heading, which no longer
+centres in its band at all — see the correction under
+[Proportional vertical bands](#proportional-vertical-bands).
+The clamp still earns its place, because the band can be smaller than its content wherever
+a proportion meets a font.
 
 A reading is never shrunk to satisfy a band. The specification is explicit that a reading may
 drop redundancy and never magnitude, and shrinking a number to fit a decorative band is
 paying magnitude for layout.
 
-**Rejected: falling back to today's stacking below a size threshold.** Two layout rules with
+**Rejected: falling back to the older stacking below a size threshold.** Two layout rules with
 a size threshold between them is a worse thing to own than one rule that bends at the bottom
 of its range. Every component, every span and every future addition would have to be reasoned
 about twice, once on each side of a line whose position is itself arbitrary.
