@@ -6798,6 +6798,102 @@ components:
   resetRadio()
 end
 
+--- A clock keeps one width for the life of its panel, whatever the timer says.
+---
+--- The unit suite proves the clamp and the formatter in isolation. This
+--- proves they reach the panel: the font is chosen once, from a form, and a
+--- reading that outgrew it would clip or wrap rather than resize -- a Lua
+--- label's long mode is LVGL's default wrap, so text too wide for its column
+--- comes back down the panel over whatever is beneath it.
+---
+--- Driven through the values a radio can actually hold. `TIMER_MAX` is
+--- `0xffffff/2` (`radio/src/timers.h:34`), so every reading below is one a
+--- pilot could set from Model Setup.
+local function testClockKeepsItsWidth()
+  resetRadio()
+  local widgetPath = makeWidget("timer-width", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: clock
+    type: flight-timer
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      timer: 0
+]])
+
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  settle(context, 30)
+
+  local clock = entryById(context, "clock").instance
+  local timerModule = assert(loadfile(
+    sourcePath .. "components/flight-timer.lua"))()
+  local font = clock.value.properties.font
+  font = type(font) == "function" and font() or font
+  local budget = clock.area.valueBudget
+
+  -- The precondition: the font really was chosen from the form, so the
+  -- assertions below are about the string that decided it.
+  assertFont(font, XXLSIZE, "a 2 x 2 clock")
+  local formWidth = themeModule.measureText(font, timerModule.FORMS[1])
+  assert(formWidth <= budget, "the form itself does not fit the panel it"
+    .. " sized: " .. formWidth .. " in " .. budget)
+
+  local TIMER_MAX = math.floor(0xffffff / 2)
+  local cases = {
+    {90, "1:30", "an ordinary countdown"},
+    {-15, "-0:15", "a countdown fifteen seconds past zero"},
+    {3599, "59:59", "one second under an hour"},
+    -- **The shape does not change here**, which is the whole point: the
+    -- shared formatter answers `1:00:00` for this and would widen the
+    -- reading by two characters while a pilot is watching it.
+    {3600, "60:00", "exactly one hour"},
+    {5999, "99:59", "the clamp itself"},
+    {6000, "99:59", "one second past the clamp"},
+    {TIMER_MAX, "99:59", "the largest value the firmware holds"},
+    {-TIMER_MAX - 1, "-99:59", "the smallest value the firmware holds"},
+  }
+
+  local widest = 0
+  for _, case in ipairs(cases) do
+    radio.timers[0].value = case[1]
+    -- A countdown's start has to clear the value, or the service reads it
+    -- as a count-up timer and the sign never arrives.
+    radio.timers[0].start = case[1] > 0 and (case[1] + 60) or 300
+    settle(context, 20)
+
+    assertEqual(clock.text, case[2], case[3] .. " drew the wrong clock")
+    assertEqual(clock.value.properties.text, case[2],
+      case[3] .. ": what was computed is not what was drawn")
+
+    -- The font never moves, because it was chosen once from the form.
+    local now = clock.value.properties.font
+    now = type(now) == "function" and now() or now
+    assertFont(now, font, case[3] .. " resized the clock")
+
+    local width = themeModule.measureText(font, clock.text)
+    assert(width <= formWidth, case[3] .. " drew " .. width
+      .. " px, wider than the " .. formWidth .. " px form its font came from")
+    assert(width <= budget, case[3] .. " drew past its own box")
+    if width > widest then widest = width end
+  end
+
+  -- And the sweep is not vacuous: something in it actually reached the form.
+  assertEqual(widest, formWidth,
+    "no reading in the sweep was as wide as the form, so this proves only"
+      .. " that narrow strings fit")
+
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  resetRadio()
+end
+
 --- A bar is reconciled as one thing, because it is two or three objects.
 ---
 --- Five components wrote the show-or-hide pair out by hand and `metric`
@@ -8715,6 +8811,7 @@ testBatteryStrokeSurvivesReflow()
 testUnitsRideBesideEveryReading()
 testUnitFollowsTheReadingWidth()
 testFlightTimerShedsItsDetail()
+testClockKeepsItsWidth()
 testReconcileBar()
 testHeadingNeverWraps()
 testHeadingRefitsOnReflow()

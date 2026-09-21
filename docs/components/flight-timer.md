@@ -39,13 +39,28 @@ at load.
 
 ## What it draws, and what it sheds
 
-| Span | Clock | Supporting row | Progress bar |
-| --- | --- | --- | --- |
-| `1x1` | `SMLSIZE` | no | no |
-| `2x1`, `3x1` | `SMLSIZE` | **asked for, refused** | no |
-| `4x1` | `SMLSIZE` | **asked for, refused** | yes |
-| `1x2` | `MIDSIZE` | yes | no |
-| `2x2`, `3x2`, `4x2` | `DBLSIZE` | yes | yes |
+These are the frames in **App mode**, which is what the shipped dashboards
+use — every screen on both tracked models is `LayoutId: Layout1x1AM`, and
+`layouts/layout1x1AppMode.cpp` registers that id as "App mode". Measured at a
+placement the menu button does not reach, which is every cell of the grid but
+the top-left one:
+
+| Span | Panel | Clock | Supporting row | Progress bar |
+| --- | --- | --- | --- | --- |
+| `1x1` | 117 x 65 | `MIDSIZE` | no | no |
+| `2x1`, `3x1` | 238–359 x 65 | `MIDSIZE` | **asked for, refused** | no |
+| `4x1` | 480 x 65 | `MIDSIZE` | **asked for, refused** | yes |
+| `1x2` | 117 x 134 | `DBLSIZE` | yes | no |
+| `2x2`, `3x2`, `4x2` | 238–480 x 134 | `XXLSIZE` | yes | yes |
+
+On an ordinary **Full screen** custom screen every panel is shorter, so the
+clock is a size smaller at every span but `1x2`: `SMLSIZE` on one row and
+`DBLSIZE` on two.
+
+> **This table gave the Full screen figures and called them the only
+> figures**, which is the same premise error that put Full-screen crop sizes
+> on the `model-identity` page: the shipped dashboards are App mode. The
+> figures were right for a zone nobody pages to.
 
 **A single row never carries the supporting row**, whatever its width. The
 layout asks for one from two cells upward, and a one-row panel has no space
@@ -60,7 +75,7 @@ grants it.
 
 | Timer | Row |
 | --- | --- |
-| a countdown, running | `OF 5:00` — its start value |
+| a countdown, running | `OF 5:00` — its start value, **not clamped** |
 | a countdown, past zero | `ELAPSED PAST ZERO` |
 | a count-up timer | `COUNTING UP` |
 | no timer configured | `NO TIMER` |
@@ -94,21 +109,54 @@ so in words.
 supporting row at any width. At `1x1` an expired countdown is a minus sign
 and a red badge and nothing else.
 
-## Why the clock is smaller than it looks like it could be
+## The clock reads minutes and seconds, and stops at `99:59`
 
-The panel is sized for `-88:88:88` — a countdown more than ten hours past
-zero. That is the widest reading the format can produce, and a clock has no
-shorter form: dropping a field turns `1:02:34` into `2:34`, which is a
-different time rather than an abbreviation. So the widest case is the only
-case, and every panel is sized for it.
+**The minutes field keeps counting rather than growing an hours field.** An
+hour and a half is `90:00`, not `1:30:00`. Both name the same duration; only
+one of them keeps the same width while you are reading it.
 
-At `1x2` that costs a size. `DBLSIZE` fits the band's height with room to
-spare — 40 px of 50 — and is refused because `-88:88:88` needs 126 px of the
-105 available. A real reading there is `2:05`, which needs 76. Even an hour
-counted up, `1:02:34`, needs only 101 and would fit.
+**And the reading stops at `99:59`, or `-99:59` past zero.** A timer set
+beyond that shows the clamp rather than the true time.
 
-Everywhere else the band's height decides the font and the sizing string
-costs nothing.
+### What that hides, and why it is worth knowing
+
+EdgeTX's timers run to `TIMER_MAX`, which is `0xffffff/2`
+(`radio/src/timers.h:34`) — **8388607 seconds, or 2330 hours** — and
+`TIMER_MIN` is its negative. You can set any of that from Model Setup. So the
+range this panel folds away is real, it is simply not flyable: anything from
+100 minutes upward reads as `99:59`.
+
+**The panel tells on itself wherever it has a supporting row.** The row is
+fitted to its own width rather than sized from the clock's form, so it is not
+clamped: a countdown of five hours draws `99:59` above `OF 300:00`. On a
+single-row panel there is no row at any width, so there the clamp is silent.
+
+**If you fly a timer longer than an hour and forty minutes, this panel is the
+wrong instrument for it.** That is a real limitation and it is stated here
+rather than discovered.
+
+### Why the clock is no longer smaller than it looks like it could be
+
+The panel used to be sized for `-88:88:88` — a countdown more than ten hours
+past zero — and that cost a font size at two spans and produced a defect the
+test suite could not see.
+
+At `2x2` in App mode, `-88:88:88` measures 218 px against a 226 px content
+box. That is **8 px of margin, 3.5%**, and the test harness models glyph
+widths from the one uncompressed font in the EdgeTX tree while the dashboard
+draws in bold faces, which are wider on a radio. So the radio measured it as
+not fitting and stepped the clock down to `DBLSIZE`; the harness measured it
+as fitting and kept `XXLSIZE`. The `3x2` beside it had 129 px of margin and
+both agreed. **Two panels of identical height drew their clocks at different
+sizes on the radio and at the same size under test.**
+
+With the clamp, the widest string the panel can print is `-99:59` at 146 px,
+which is **80 px of margin, 35%**. For that to be wrong a bold face would
+have to be 55% wider than the model, where the disagreement happened at 4%.
+
+At `1x2` the old form cost a size outright: `MIDSIZE` where the band's height
+allows `DBLSIZE`, because `-88:88:88` needed 126 px of the 105 available.
+That span now reads at `DBLSIZE` in both zones.
 
 ## Examples
 

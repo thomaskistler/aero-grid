@@ -3387,6 +3387,100 @@ local function testBatteryStaysVisible()
     "a red cell on a red panel stopped being readable")
 end
 
+--- A clock never outgrows the form its font was chosen from.
+---
+--- **A sizing form is a claim about the future**, and nothing in this suite
+--- could check one: it names the widest string a component will ever print,
+--- and "ever" is not a thing a fixture can build. This project has now been
+--- wrong about it twice, in opposite directions and with opposite costs.
+---
+---  * `model-identity` was sized for **less** than it draws. Its form was a
+---    row of `M`, measured by an estimate that under-reports capitals, and
+---    the model name ran eleven pixels past the panel at `1 x 2`. Sized too
+---    small, so it clipped.
+---  * `flight-timer` was sized for **more** than it draws. Its form was
+---    `-88:88:88`, reserving for a countdown ten hours past zero, which
+---    measures 218 px against a `2 x 2` content box of 226 -- so the clock
+---    stepped down a font on 8 px of margin, and the `3 x 2` beside it with
+---    129 px did not. Sized too large, so it cost a size. Worse, the margin
+---    was inside what the harness cannot resolve: it models glyph advances
+---    from the one uncompressed font in the tree and the dashboard draws in
+---    bold faces, so the radio stepped down where the harness did not. Two
+---    panels of one height disagreed on a radio and agreed here.
+---
+--- Neither was catchable by measuring the form, because in both cases the
+--- form was measured correctly and was the wrong string. What is checkable
+--- is the **loop**: where a component bounds what it can print, the bound's
+--- own output must equal the form. That is what this asserts, and it is why
+--- `flight-timer.FORMS` is `-99:59` -- a value the clamp can actually
+--- produce -- rather than a row of eights that is not even a valid clock.
+---
+--- It only reaches a component that *has* a bound. `model-identity`'s name
+--- comes from the pilot and has none, which is the residue: see the
+--- specification's note on forms.
+local function testClockNeverOutgrowsItsForm()
+  local timer = loadModule("components/flight-timer.lua")
+
+  -- The bound, stated in seconds and as the string it prints.
+  assertEqual(timer.CLAMP, 99 * 60 + 59)
+  assertEqual(timer.formatClock(timer.CLAMP), "99:59")
+  assertEqual(timer.formatClock(-timer.CLAMP), "-99:59")
+
+  -- **The clock does not change shape.** The minutes field keeps counting
+  -- rather than growing an hours field, so a reading crossing an hour does
+  -- not widen by two characters while it is being read. This is what the
+  -- shared formatter does instead, and why this panel does not use it.
+  assertEqual(timer.formatClock(3599), "59:59")
+  assertEqual(timer.formatClock(3600), "60:00",
+    "the clock grew an hours field, so its width is not fixed after all")
+  assertEqual(modelService.formatTime(3600), "1:00:00",
+    "the service stopped reporting hours, which the diagnostics line wants")
+
+  -- **The loop.** The widest string the clamp can produce is the form the
+  -- font was chosen from. Break either and this fails.
+  assertEqual(timer.formatClock(timer.clamp(-math.huge)), timer.FORMS[1],
+    "the clamp can print a string wider than the form sized for it")
+
+  -- And the form is the wider of the two signs, because a sign costs width
+  -- and the negative one is the reachable state this component exists for.
+  assert(theme.measureText(theme.READING_FONTS[1], timer.FORMS[1])
+      >= theme.measureText(theme.READING_FONTS[1],
+        timer.formatClock(timer.CLAMP)),
+    "the form is narrower than the positive clamp, so the sign was forgotten")
+
+  -- The clamp bounds magnitude and leaves direction alone. An expired
+  -- countdown is negative and is the one state this component must never
+  -- let be misread as healthy, so the sign survives whatever the magnitude.
+  assertEqual(timer.clamp(5999), 5999, "a value inside the bound moved")
+  assertEqual(timer.clamp(-5999), -5999)
+  assertEqual(timer.clamp(6000), 5999, "a value past the bound was not folded")
+  assertEqual(timer.clamp(-6000), -5999,
+    "a countdown past zero lost its sign at the clamp, which reports time"
+      .. " remaining where the truth is time overrun")
+
+  -- EdgeTX's own extremes, which a pilot can set from Model Setup: TIMER_MAX
+  -- is 0xffffff/2 (radio/src/timers.h:34) and TIMER_MIN is its negative
+  -- (radio/src/timers.h:36). Both are 2330 hours, so what the clamp folds
+  -- away is genuinely reachable in firmware.
+  local TIMER_MAX = math.floor(0xffffff / 2)
+  assertEqual(timer.clamp(TIMER_MAX), 5999)
+  assertEqual(timer.clamp(-TIMER_MAX - 1), -5999)
+  assertEqual(timer.formatClock(timer.clamp(TIMER_MAX)), "99:59")
+  assertEqual(timer.formatClock(timer.clamp(-TIMER_MAX - 1)), "-99:59")
+
+  -- A value that is not a number passes through, because `formatTime`
+  -- already answers `--:--` for one and a clamp that invented a zero would
+  -- turn an absent timer into a running one.
+  assertEqual(timer.clamp(nil), nil)
+  assertEqual(timer.formatClock(timer.clamp(nil)), "--:--")
+
+  -- **The service is not clamped.** `service-probe` reports what the radio
+  -- said, and a diagnostics view showing a folded value would be reporting
+  -- on a world assembled for it rather than the one the dashboard is in.
+  assertEqual(modelService.formatTime(TIMER_MAX), "2330:10:07",
+    "the shared formatter was clamped, so the diagnostics view now lies")
+end
+
 --- A reading that holds no redundancy offers exactly one form.
 ---
 --- This is the magnitude rule, checked at the only place it can be: the forms
@@ -4898,6 +4992,7 @@ testUnitSitsOnTheBaseline()
 testTextFitting()
 testBatteryStrokeScalesWithFont()
 testBatteryStaysVisible()
+testClockNeverOutgrowsItsForm()
 testLosslessReadingsOfferOneForm()
 testRedrawDecision()
 testReadingsSitInTheirBand()
