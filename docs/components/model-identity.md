@@ -2,7 +2,23 @@
 
 Shows which model is loaded: its name, the picture you assigned it, or both.
 
-## Read this first: what it costs to have a long model name
+## Read this first: the picture changes where the name goes
+
+**With a picture, the picture is the panel and the name is its heading.** The
+aircraft is what you recognise and the name only says which one it is, so the
+picture takes the whole body and the model name moves up to where a panel's
+caption normally goes. The `label` you configured is not drawn there, and
+setting one on a picture panel is refused at load rather than ignored.
+
+**With no picture, nothing changes:** the name is the reading in the body and
+`label` is the heading, as on every other panel.
+
+The two are different treatments of the same string. A heading is
+upper-cased, steps its font down to fit, and is **abbreviated** where even
+the smallest will not fit — so `QUADCOPTER RACE` becomes `QUADCOP` in a
+single cell. A reading is not abbreviated, which is the next section.
+
+## What it costs to have a long model name, with no picture
 
 This is the only panel whose reading is **text you chose** rather than a
 number. Everything else on the dashboard draws digits, and digits are narrow
@@ -14,6 +30,9 @@ It picks its font from three imagined widths — fifteen, ten and six characters
 — takes the largest font at which one of them fits, and then draws your actual
 name at that size whatever length it is. So a name longer than the width it
 settled on is drawn wider than the panel, centred, and overhangs both edges.
+
+**This only happens where no picture is drawn.** Give the panel a picture and
+the name goes to the heading, which abbreviates rather than overhanging.
 
 | Span | Longest all-capitals name that fits |
 | --- | --- |
@@ -29,15 +48,16 @@ everywhere. `QUADCOPTER RACE` fits nowhere except `3x1` and `4x1`, and at
 `2x2` it reaches 26 px past the left edge of the panel and 27 px past the
 right — over whatever is next to it.
 
-**Until this is fixed, keep the name short or give the panel a wide, single
-row.** `3x1` and `4x1` hold the longest name EdgeTX will store.
+**Until this is fixed, keep the name short, give the panel a wide single
+row, or give it a picture.** `3x1` and `4x1` hold the longest name EdgeTX
+will store.
 
 ## Settings
 
 | Key | Type | Default | Values | What it does |
 | --- | --- | --- | --- | --- |
-| `presentation` | string | `auto` | `auto`, `name`, `image`, `both` | Which arrangement to draw. `auto` shows the name alone on a panel smaller than four cells and adds the picture above it on anything larger. |
-| `label` | string | `MODEL` | any text | The panel's heading. |
+| `presentation` | string | `auto` | `auto`, `name`, `image`, `both` | Which arrangement to draw. `auto` shows the name alone on a panel smaller than four cells and the picture on anything larger. **`image` and `both` now describe the same panel** — a picture with the name in the heading — because the name no longer shares the body with the picture. Both keys keep working; prefer `image`, which says what you get. |
+| `label` | string | `MODEL` | any text | The panel's heading — **only where no picture is drawn**. With a picture the model name takes the heading, so a label set alongside `presentation: image` or `both` is refused at load with the panel named. |
 | `accent` | string | `cyan` | `cyan`, `green`, `amber`, `orange` | The stripe down the left edge. |
 | `showLabels` | boolean | `false` | `true`, `false` | Adds a supporting row listing the model's configured labels. **Needs a panel two rows tall**; on a single row it is refused at load with the panel named. |
 
@@ -51,52 +71,49 @@ cells wide in total but only the first is four *cells*, so `4x1` shows the name
 alone.
 
 Asking for a picture does not guarantee one. The panel gives the picture
-whatever height is left after the heading, the name and the labels row have
-taken theirs, and **drops it entirely below 24 px** rather than drawing a
-slot too thin to recognise. On a two-row panel with both the name and the
-labels row that threshold is reached easily, so `showLabels: true` on a small
-panel is a way of losing the picture.
+whatever height is left after the heading and the labels row have taken
+theirs, and **drops it entirely below 24 px** rather than drawing a slot too
+thin to recognise. The name no longer takes a slice first, so this threshold
+is reached far less often than it was: on a Full screen dashboard every span
+this component supports now keeps its picture.
 
 ### Where the name sits
 
-With no picture the name sits directly beneath the heading. With a picture it
-sits on the panel's floor and the picture takes the space above it.
+With a picture, in the heading. With no picture, directly beneath the
+heading.
 
-Neither position is the one every other panel on the dashboard uses, which is
-to centre the reading in the middle half of the panel. This component is the
-only one that does not do that, and on a tall panel it is visible: at `4x4`
-with no picture the name sits 83 px above where the shared rule would put it,
-hard under the heading with the rest of the panel empty beneath it.
+The second is not the position every other panel on the dashboard uses, which
+is to centre the reading in the middle half of the panel. This component is
+the only one that does not, and on a tall panel it is visible: at `4x4` with
+no picture the name sits 83 px above where the shared rule would put it, hard
+under the heading with the rest of the panel empty beneath it.
 
 ### How the picture is scaled
 
-**The picture is scaled to cover the frame and the overflow is cropped.** It
-is not fitted inside the frame, and its shape is not preserved by shrinking it
-— whichever of the two dimensions needs more magnification decides the zoom
-for both, and the excess on the other is cut off.
+**The whole picture is fitted inside the frame and never cropped.** Whichever
+dimension needs the *smaller* magnification decides the zoom for both, so the
+picture keeps its shape and the panel shows through at the ends. A picture
+smaller than its frame is scaled up to meet it rather than sitting small in
+the middle.
 
-That matters because the frames are much wider than they are tall. An EdgeTX
-model image is 192 x 114, and these are the frames it lands in on a **Full
-screen** custom screen, which is what the shipped dashboards use:
+An EdgeTX model image is 192 x 114, which is wider in proportion than it is
+tall — but every frame this component produces is wider still, so the height
+is what binds and the letterbox is at the sides. These are the frames on a
+**Full screen** custom screen, which is what the shipped dashboards use:
 
-| Span | Picture frame | What the picture keeps |
+| Span | Picture frame | Picture drawn at |
 | --- | --- | --- |
-| `2x2` | 226 x 35 | 26% of its height |
-| `2x3` | 226 x 85 | 63% |
-| `3x3` | 347 x 56 | 27% |
-| `4x3` | 468 x 56 | 20% |
-| `4x4` | 468 x 106 | 38% |
-| `2x4` | 226 x 135 | **100%**, losing one pixel of width |
-| `4x2` | — | the picture is shed: the frame is 14 px and the floor is 24 |
+| `1x1` … `4x1` | 105–468 x 28 | 46 x 28 |
+| `1x2` | 105 x 77 | 105 x 62 |
+| `2x2`, `3x2`, `4x2` | 226–468 x 77 | 129 x 77 |
+| `2x3`, `4x3` | 226–468 x 127 | 214 x 127 |
+| `2x4` | 226 x 177 | 226 x 134 |
+| `4x4` | 468 x 177 | 298 x 177 |
 
-The width is always kept in full and the height is what goes, because every
-frame here is proportionally wider than the picture. **`2x4` is the span to
-use if you want to recognise the picture**; it is the only one that keeps all
-of it.
-
-In App mode the panels are taller, so the same spans keep more — `2x2` keeps
-42% rather than 26%, and `4x2` keeps 10% instead of shedding the picture
-altogether. The table above is the shipped case.
+A single row gives the picture 28 px of height whatever its width, so a wide
+single-row panel is mostly letterbox — it is the arrangement to avoid if the
+picture matters. **Two or more rows is where the aircraft is worth looking
+at.**
 
 ## When the picture cannot be drawn
 
@@ -171,11 +188,13 @@ The labels row is on, which costs the picture some height.
   colSpan: 2
   rowSpan: 3
   config:
-    label: MODEL
     accent: green
     presentation: both
     showLabels: true
 ```
+
+No `label` here, and it would be refused: a panel showing the picture puts
+the model name in the heading, so a configured label has nowhere to go.
 
 A wide single row showing the name alone. This is the arrangement that holds
 the longest model name EdgeTX will store without overhanging the panel.

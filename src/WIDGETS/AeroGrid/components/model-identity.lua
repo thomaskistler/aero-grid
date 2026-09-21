@@ -115,7 +115,31 @@ end
 ---@return string[] messages
 function modelIdentity.validateSettings(settings, span, config)
   local messages = {}
-  if type(config) ~= "table" or not config.showLabels then return messages end
+  if type(config) ~= "table" then return messages end
+
+  -- **A label stated on a panel that asks for a picture is not drawn.** The
+  -- model name takes the heading there, so the configured label has nowhere
+  -- to go. Silently overriding it is the shape this project keeps finding --
+  -- a setting read, accepted and then ignored -- so the author is told.
+  --
+  -- Keyed on what the layout asked for rather than on what the panel will
+  -- draw, and deliberately. Whether a picture survives depends on the
+  -- panel's height in pixels, which is the zone's business and not knowable
+  -- here; a panel whose picture is shed falls back to the name in the body
+  -- and does use its label. So this says what the author asked for and what
+  -- that costs, rather than claiming the label is never drawn.
+  --
+  -- `auto` is not included: it means "decide for me", and a label set
+  -- alongside it is used at every span that shows no picture. Only an
+  -- explicit request for one is a request that the label be replaced.
+  if config.label ~= nil
+      and (config.presentation == "image" or config.presentation == "both") then
+    messages[#messages + 1] = "label is not drawn on a panel showing the"
+      .. " model picture; the model name takes the heading there. Drop label,"
+      .. " or use presentation auto or name if you want your own heading."
+  end
+
+  if not config.showLabels then return messages end
   if type(span) ~= "table" or type(span.rowSpan) ~= "number" then
     return messages
   end
@@ -159,30 +183,35 @@ function modelIdentity.regionsFor(theme, themeBuilder, rect, layout, fonts)
     FORMS, frame.content, ladder.room)
   local nameHeight = themeBuilder.fontHeight(nameFont)
 
-  -- The image takes whatever the text does not, and is dropped entirely when
-  -- that leaves it too little to be recognizable. Every row that will be drawn
-  -- has to come out of its height: the image is created after the labels, so
-  -- it paints over anything it is allowed to overlap.
+  -- **Where there is a picture, the picture is the panel.** The aircraft is
+  -- what the user recognizes and the name only says which one it is, so the
+  -- name moves into the heading and the body is the picture's alone. The two
+  -- stop competing for the body, which is what made a long name overhang and
+  -- a wide frame crop: neither is traded against the other any more.
+  --
+  -- The name keeps the body only when there is no picture, and that case is
+  -- unchanged.
   local imageTop = top
   local imageHeight = rect.h - top - frame.bottom
   local nameY = top
 
   if showLabels then imageHeight = imageHeight - labelHeight - 2 end
 
-  if showImage and showName then
-    imageHeight = imageHeight - nameHeight - 2
-    nameY = rect.h - frame.bottom - nameHeight
-      - (showLabels and (labelHeight + 2) or 0)
-  end
+  -- Dropped entirely where what is left would be too small to recognize,
+  -- which is the same floor as before and now reached less often, because
+  -- the name no longer takes a slice first.
   if showImage and imageHeight < 24 then
     showImage = false
     imageHeight = 0
-    nameY = top
   end
 
+  -- Decided after the floor, so a panel whose picture was shed falls back to
+  -- the name in the body rather than showing neither.
+  local nameInBody = showName and not showImage
+
   -- **The picture spans the content box, so it is exempt the way a bar is,
-  -- and nothing here splits.** The name is not beside the image, it is above
-  -- or below it, so there is no second element competing for horizontal
+  -- and nothing here splits.** Where the name is drawn at all it has the
+  -- body to itself, so there is no second element competing for horizontal
   -- room. The name centres across the whole content box and the label row,
   -- which carries one item, centres the same way.
   local readingCentre = frame.pad + math.floor(frame.content / 2)
@@ -207,7 +236,13 @@ function modelIdentity.regionsFor(theme, themeBuilder, rect, layout, fonts)
     imageY = imageTop,
     imageHeight = math.max(1, imageHeight),
     labelsY = math.max(1, rect.h - frame.bottom - labelHeight),
-    showName = showName,
+    -- What the body draws. A panel showing a picture puts its name in the
+    -- heading instead, so the two are different questions and the old single
+    -- `showName` answered both.
+    showName = nameInBody,
+    -- Whether the name belongs to the heading rather than to the body, which
+    -- is what `apply` needs to know to choose the heading's text.
+    nameIsHeading = showImage == true,
     showImage = showImage,
     showLabels = showLabels,
   }
@@ -312,7 +347,19 @@ function modelIdentity.ensureImage(context, path)
     w = area.content,
     h = area.imageHeight,
     file = path,
-    fill = true,
+    -- **Contain, not cover.** `fill` reaches EdgeTX as `StaticImage`'s
+    -- `fillFrame`, and `setZoom` computes
+    -- `z = fillFrame ? max(zw, zh) : min(zw, zh)`. The larger zoom scales
+    -- until the frame is covered and cuts off whatever does not fit; the
+    -- smaller scales until the whole picture is inside it and leaves the
+    -- panel showing at the ends. A model image is the aircraft, and a
+    -- cropped aircraft is a worse answer than a smaller one: at four cells
+    -- by two, covering kept a tenth of the picture's height.
+    --
+    -- `dontEnlarge` defaults false in the same constructor, so a picture
+    -- smaller than its frame is scaled up to meet it rather than sitting
+    -- small in the middle.
+    fill = false,
   })
   context.imagePath = path
 
@@ -363,6 +410,34 @@ function modelIdentity.apply(context, drawn)
   context.text = drawn.text
   context.labelsText = drawn.labels or ""
 
+  -- **The heading says which model where the picture says what it is.** A
+  -- panel drawing a picture has no room for the name below it and no need of
+  -- a word like `MODEL` above it: the picture states the category and the
+  -- name states the individual. So the name takes the heading and the
+  -- configured label is not drawn.
+  --
+  -- It goes through the heading's own fitting, which upper-cases, steps the
+  -- font down and finally abbreviates and reports what it dropped. A model
+  -- name is treated as a heading here and as a reading in the other
+  -- arrangement, and the two therefore do different things to the same
+  -- string -- which is the cost of the picture being the subject when there
+  -- is one.
+  -- Resolved before the heading is chosen, because which text the heading
+  -- carries depends on whether a picture is actually drawn -- and that is
+  -- only known once the file has been looked for. Deciding the heading first
+  -- would show the configured label for one frame and then replace it.
+  modelIdentity.resolveImage(context, drawn)
+
+  local heading = context.settings.label
+  if context.area.nameIsHeading and context.image then
+    heading = drawn.text
+  end
+  if heading ~= context.headingText then
+    context.headingText = heading
+    context.primitives.placeHeader(context.label, context.badge,
+      context.area.frame, context.themeBuilder, context.fonts, heading)
+  end
+
   context.value:set({text = drawn.text, color = presentation.value})
   -- The name is centred on its slot, so where it starts depends on what it
   -- reads. Keyed on the text, so a model that has not been renamed costs
@@ -380,7 +455,17 @@ function modelIdentity.apply(context, drawn)
       context.area.labelsY, context.fonts.label, context.labelsText)
   end
   context.primitives.stylePanel(context.panel, presentation)
+end
 
+--- Decide whether this panel can draw its picture, and build it if so.
+---
+--- Split out of `apply` because the heading's text depends on the answer: a
+--- panel showing a picture puts the model name up there, and one that cannot
+--- keeps its configured label. Asking afterwards drew the label for a frame
+--- and then replaced it.
+---@param context AeroGridIdentityContext
+---@param drawn table
+function modelIdentity.resolveImage(context, drawn)
   if drawn.state ~= "normal" or not context.area.showImage then return end
 
   local path = drawn.bitmapPath
