@@ -2806,10 +2806,19 @@ local function testNothingIsDrawnOverAnythingElse()
       .. " densest arrangement in the catalogue is not being checked for"
       .. " collisions by anything")
 
+  -- **Both zones, and they have to be built one at a time.** A zone is not
+  -- only a rectangle: `appZone` and `fullScreenZone` also set the flag
+  -- `lvgl.isAppMode` answers, which is what decides whether the host lays a
+  -- panel out around the menu button. Written as a table of two pairs, both
+  -- are constructed before either is used, so the second one's flag is in
+  -- force for both and the sweep ran App mode twice while reporting two
+  -- zones. The Full screen half of this check has been vacuous since it was
+  -- written; it is what found the `navigation` overlap this pull request
+  -- fixes, but only because a one-off probe built the zones separately.
   for _, entry in ipairs(names) do
     local stem = entry.label
-    for _, mode in ipairs({{"full screen", {x = 0, y = 0, w = 480, h = 272}},
-        {"app mode", appZone()}}) do
+    for _, mode in ipairs({{"full screen", fullScreenZone},
+        {"app mode", appZone}}) do
       resetRadio()
       local source = assert(hostIo.open(entry.path, "r"))
       local yaml = source:read("a")
@@ -2817,13 +2826,80 @@ local function testNothingIsDrawnOverAnythingElse()
 
       local widget = makeWidget("collide-" .. entry.stem .. "-"
         .. string.gsub(mode[1], " ", ""), yaml)
-      local context = createLoaded(mode[2], DEFAULT_OPTIONS, widget)
+      local context = createLoaded(mode[2](), DEFAULT_OPTIONS, widget)
+      -- **The sweep says which zone it is in, so it has to be in it.** This
+      -- is the fixture checking itself: the zone the host lays out against
+      -- is the flag, not the rectangle, and the flag is global. Without
+      -- this the check reported two zones while building one, and the Full
+      -- screen half proved nothing for as long as it existed.
+      assertEqual(lvgl.isAppMode(), mode[1] == "app mode",
+        stem .. ": the " .. mode[1] .. " sweep built the other zone")
       pump(context, 60)
       assertEqual(#context.errors, 0,
         stem .. ": " .. table.concat(context.errors, "\n"))
       assertNothingOverlaps(mode[1] .. " layout " .. stem, context)
     end
   end
+end
+
+--- A two-row footer gets a band as tall as it is, so the reading clears it.
+---
+--- Every component but this one draws a single supporting row, which is
+--- shorter than the quarter of the panel the band reserves for it.
+--- `navigation` draws two and centres them as a group: 36 px against a
+--- quarter of 31 on a two-row panel. A band that reserved the quarter
+--- reported more body than the panel had, the rows overflowed upward into
+--- the bottom of it, and the reading was sized against the difference.
+---
+--- **It was invisible while a reading was measured as a line box**, because a
+--- line box never reached its band's floor -- the descent and leading
+--- absorbed the error. Measured as ink it does reach it: in the corner
+--- EdgeTX paints its menu button over, a `2 x 2` body band is 54 px and
+--- XXLSIZE is 54 px of ink, so the distance ended three pixels inside the
+--- bearing row.
+---
+--- Both placements, because the obstructed one is where it bit and the clear
+--- one is where the panel has room to spare -- a check that only built the
+--- tight case could not tell a fix from a panel that never had the problem.
+local function testTwoRowFooterClearsTheReading()
+  for _, place in ipairs({{"the menu button's corner", 0, 0},
+      {"a clear cell", 2, 2}}) do
+    resetRadio()
+    local widget = makeWidget("two-row-footer-" .. place[2] .. place[3],
+      table.concat({
+      "version: 1\ngrid:\n  columns: 4\n  rows: 4\ncomponents:\n",
+      "  - id: nav\n    type: navigation\n",
+      "    col: ", tostring(place[2]), "\n",
+      "    row: ", tostring(place[3]), "\n",
+      "    colSpan: 2\n    rowSpan: 2\n",
+      "    config:\n      label: HOME\n      source: GPS\n",
+      "      presentation: detailed\n",
+    }))
+    local context = createLoaded(appZone(), DEFAULT_OPTIONS, widget)
+    assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+    pump(context, 60)
+
+    local nav = entryById(context, "nav").instance
+    local where = "navigation 2 x 2 in " .. place[1]
+    -- The preconditions. Without both of these the assertion below is about
+    -- a panel that draws one row, or none, and cannot fail.
+    assertEqual(nav.showDetail, true, where .. " drew no supporting row")
+    assertEqual(nav.showCoordinates, true,
+      where .. " drew one supporting row, not two")
+
+    local font = nav.value.properties.font
+    font = type(font) == "function" and font() or font
+    local bottom = nav.value.properties.y + themeModule.fontAscent(font)
+    local rowTop = nav.detailLabel.properties.y
+    assert(bottom <= rowTop, where .. ": the distance ends at " .. bottom
+      .. " and the bearing row starts at " .. rowTop)
+    -- And the rows clear each other, which is what the band has to be tall
+    -- enough for in the first place.
+    assert(rowTop < nav.coordinatesLabel.properties.y, where
+      .. ": the coordinates do not sit below the bearing row")
+    assertNothingOverlaps(where, context)
+  end
+  resetRadio()
 end
 
 --- Nothing descends into the space measuring by ink leaves unreserved.
@@ -2876,8 +2952,10 @@ local function testReadingsDoNotDescendOverAnything()
   -- panel sheds the row; this is the case where the reading has least air
   -- beneath it.
   local SPANS = {{2, 1}, {4, 1}, {2, 2}, {4, 2}}
-  local ZONES = {{"full screen", {x = 0, y = 0, w = 480, h = 272}},
-    {"app mode", appZone()}}
+  -- Built rather than stored, because a zone carries the App mode flag as
+  -- well as a rectangle and constructing both up front leaves the second
+  -- one's flag in force for the first.
+  local ZONES = {{"full screen", fullScreenZone}, {"app mode", appZone}}
 
   local drewAUnit, drewAName = 0, 0
 
@@ -2904,7 +2982,7 @@ local function testReadingsDoNotDescendOverAnything()
           "      precision: 0\n      visual: bar\n",
           "      secondarySource: Curr\n      secondaryLabel: CUR\n",
         }))
-        local context = createLoaded(mode[2], DEFAULT_OPTIONS, widget)
+        local context = createLoaded(mode[2](), DEFAULT_OPTIONS, widget)
         pump(context, 60)
         assertEqual(#context.errors, 0,
           unit .. ": " .. table.concat(context.errors, "\n"))
@@ -2945,7 +3023,7 @@ local function testReadingsDoNotDescendOverAnything()
           "      label: MODEL\n",
           "      showLabels: true\n",
         }))
-        local context = createLoaded(mode[2], DEFAULT_OPTIONS, widget)
+        local context = createLoaded(mode[2](), DEFAULT_OPTIONS, widget)
         pump(context, 60)
         assertEqual(#context.errors, 0,
           name .. ": " .. table.concat(context.errors, "\n"))
@@ -8424,5 +8502,6 @@ testSupportingWordingsStayDistinct()
 testUnusedRowsCostNothing()
 testNothingIsDrawnOverAnythingElse()
 testReadingsDoNotDescendOverAnything()
+testTwoRowFooterClearsTheReading()
 
 print("AeroGrid widget integration test passed")

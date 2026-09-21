@@ -1080,7 +1080,9 @@ end
 ---@param resolved AeroGridTheme
 ---@param rect AeroGridRect
 ---@param frame table Result of theme.frame.
----@param draws? table `{rows = boolean}`: what the component will draw.
+---@param draws? table `{rows = boolean, rowHeight = integer}`: what the
+--- component will draw, and how tall its supporting rows are where that is
+--- more than the quarter the band reserves.
 ---@return table ladder `{rows, visual, room}`
 function theme.ladder(resolved, rect, frame, draws)
   local spacing = resolved.spacing
@@ -1129,7 +1131,7 @@ function theme.ladder(resolved, rect, frame, draws)
   if draws ~= nil and draws.rows == false then drawsRows = false end
 
   local bands = theme.bands(frame, rect, true, drawsRows,
-    visual and barHeight or 0)
+    visual and barHeight or 0, draws ~= nil and draws.rowHeight or nil)
 
   return {
     rows = rows,
@@ -1611,8 +1613,10 @@ end
 ---@param rect AeroGridRect
 ---@param hasLabel boolean
 ---@param hasTertiary boolean
+---@param floorHeight? integer Height a bar takes off the panel's floor.
+---@param rowHeight? integer Height the supporting rows actually need.
 ---@return table bands `{label, body, tertiary}`, each `{y, h}`.
-function theme.bands(frame, rect, hasLabel, hasTertiary, floorHeight)
+function theme.bands(frame, rect, hasLabel, hasTertiary, floorHeight, rowHeight)
   local top = frame.compact
   local extent = math.max(1, (rect.h - frame.bottom) - top)
   local quarter = math.floor(extent / 4)
@@ -1624,7 +1628,26 @@ function theme.bands(frame, rect, hasLabel, hasTertiary, floorHeight)
   -- would have had. On a 238 x 65 panel that difference is four pixels and it
   -- costs the reading a whole font size, which is the thing shedding a row is
   -- supposed to buy.
-  local tertiaryHeight = hasTertiary and quarter or (floorHeight or 0)
+  -- **A quarter, or what the rows actually need, whichever is larger.** The
+  -- quarter is a proportion of the panel and the rows are text, so on a
+  -- short panel the proportion can be smaller than the thing it is
+  -- reserving for: `navigation` draws two rows and a two-row group is 36 px
+  -- against a quarter of 31 on a two-row panel. The rows then overflow their
+  -- band upward, into the bottom of the body band -- where the reading is.
+  --
+  -- That was invisible while a reading was measured as a line box, because a
+  -- line box never reached its band's floor. Measured as ink it does: in the
+  -- corner EdgeTX paints its menu button over, a `2 x 2` body band is 54 px
+  -- and XXLSIZE is 54 px of ink, so the number ended three pixels inside the
+  -- bearing row. The band was lying about what was left, which is the same
+  -- defect as reserving a row a panel never draws, in the opposite
+  -- direction.
+  --
+  -- A component that draws one row needs less than a quarter at every span
+  -- this dashboard builds, so this changes nothing for the other eleven.
+  local tertiaryHeight = hasTertiary
+    and math.max(quarter, rowHeight or 0)
+    or (floorHeight or 0)
 
   -- **Where the heading's font overflows its band, the body yields too.** The
   -- label band is a quarter, and on a short panel a quarter is smaller than

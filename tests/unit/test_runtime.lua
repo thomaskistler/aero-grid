@@ -4664,6 +4664,13 @@ local function testTelemetryContentFitsPanel()
     local rect = {x = 0, y = 0, w = case.w, h = case.h}
     local fonts = theme.typography(case.colSpan, case.rowSpan)
     local labelHeight = heightOf(fonts.label)
+    -- What a supporting row actually marks. A row's line box carries a
+    -- descent and a leading below its baseline, and the strings these rows
+    -- print -- a bearing, a caption, a pair of coordinates -- reach none of
+    -- it. Containment against the panel's own edge is a question about
+    -- glyphs, so it is asked of the ink; whether a *descending* string
+    -- would still clear is `testReadingsDoNotDescendOverAnything`.
+    local labelInk = theme.fontAscent(fonts.label)
 
     --- Shared assertions: the reading fits its own region in both axes, and
     --- clears the header above it and whatever row sits below it.
@@ -4771,7 +4778,7 @@ local function testTelemetryContentFitsPanel()
         {digits = navigationComponent.DIGITS, unit = navigationComponent.UNIT})
 
       if nav.showDetail then
-        assert(nav.detailY + labelHeight <= case.h,
+        assert(nav.detailY + labelInk <= case.h,
           what .. " " .. case.name .. ": the bearing row overflows the panel")
         assertColumns(what, nav, nav.detailWidth, nav.originX, nav.originWidth)
       end
@@ -4779,7 +4786,7 @@ local function testTelemetryContentFitsPanel()
         -- The coordinates sit below the bearing row, not on top of it.
         assert(nav.detailY + labelHeight <= nav.coordinatesY, what .. " "
           .. case.name .. ": the coordinates row overlaps the bearing row")
-        assert(nav.coordinatesY + labelHeight <= case.h, what .. " "
+        assert(nav.coordinatesY + labelInk <= case.h, what .. " "
           .. case.name .. ": the coordinates row overflows the panel")
       end
       if nav.showCompass then
