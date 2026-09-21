@@ -1957,6 +1957,77 @@ components:
   assert(newBox.y + newBox.h <= newBounds.h, "radial overflowed after reflow")
 end
 
+--- A dial that is redrawn has to stay where it was put.
+---
+--- The firmware offsets a round object by its own radius on every update, so
+--- a gauge whose value moves crept up and to the left until it left its panel
+--- entirely -- once per reading, which on a live telemetry feed is a few
+--- seconds. That is hard-won constraint 11, and it needs an arc that is drawn
+--- and then driven by real telemetry.
+---
+--- **It lives here because the shipped dashboard no longer has one at a
+--- single cell.** It used to ride along on the `dial` panel of the core
+--- layout, which is a `1 x 1` and sheds its radial now that a 34 px band
+--- holds DBLSIZE. A shed dial is never written to, so the same assertions
+--- would have passed against an object nothing touches -- which is a check
+--- that cannot fail, not a check that holds. The panel here is two cells
+--- wide, which is where the same component and the same range keep both.
+local function testRadialDoesNotDrift()
+  resetRadio()
+  local widgetPath = makeWidget("radial-drift", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: dial
+    type: variable-indicator
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      binding: source
+      source: Curr
+      label: Current
+      visual: radial
+      rangeMin: 0
+      rangeMax: 120
+]])
+
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  pump(context, 60)
+
+  local dial = entryById(context, "dial").instance
+  -- The precondition, and it is the whole reason this moved: an arc nobody
+  -- draws cannot drift.
+  assertEqual(dial.showVisual, true,
+    "the panel shed its dial, so a drift test proves nothing")
+  assertEqual(dial.radial.arc.hidden, false, "the dial was not on screen")
+  -- 10 of 0..120 is a small part of a 270 degree sweep, drawn from 135.
+  assertEqual(dial.radial.arc.properties.endAngle, 135 + 23)
+
+  local arc = dial.radial.arc
+  local expectedX = dial.radial.centreX - dial.radial.radius
+  local expectedY = dial.radial.centreY - dial.radial.radius
+  assertEqual(arc.round.drawn.x, expectedX, "an arc was not built at its centre")
+  assertEqual(arc.round.drawn.y, expectedY, "an arc was not built at its centre")
+  for reading = 1, 8 do
+    radio.values[103] = 10 + reading * 5
+    pump(context, 12)
+  end
+  -- The dial has to have actually moved, and the sweep is pinned rather than
+  -- merely required to differ: 50 of 0 to 120 is 113 degrees of 270, drawn
+  -- from 135. A sweep that changed for the wrong reason would satisfy "it is
+  -- no longer 158".
+  assertEqual(arc.properties.endAngle, 248,
+    "the dial never moved, so a drift test proves nothing")
+  assertEqual(arc.round.drawn.x, expectedX, "the dial drifted horizontally")
+  assertEqual(arc.round.drawn.y, expectedY, "the dial drifted vertically")
+  resetRadio()
+end
+
 --- A component that fails during create must leave no partial drawing behind.
 local function testCreateFailureIsCleaned()
   local widgetPath = makeWidget("halfbuilt", [[
@@ -2531,153 +2602,170 @@ local function testSupportingWordingsStayDistinct()
 end
 
 
-local function testNothingIsDrawnOverAnythingElse()
-  --- Every drawn thing in one panel, as a box, with labels measured by ink.
+--- The collision machinery, shared by every check that needs it.
+---
+--- Hoisted out of `testNothingIsDrawnOverAnythingElse` so that the descender
+--- check below measures panels the same way rather than keeping a second
+--- opinion about what a drawn box is. Two copies of this arithmetic is
+--- exactly how a check comes to be blind in one direction while the other
+--- is not.
+--- Every drawn thing in one panel, as a box, with labels measured by ink.
+---
+--- Ink rather than line height, because a line box carries descent and
+--- leading that no glyph marks: charging a reading for slack it does not
+--- draw would report a collision the screen does not have. Where a string
+--- does carry a descending glyph, what it reaches is added back, measured
+--- from the font's own `ofs_y`.
+local function drawnBoxes(entry)
+  local found = {}
+  local root = entry.instance.panel and entry.instance.panel.root
+
+  --- Clip a box to its container, or drop it if nothing is left.
   ---
-  --- Ink rather than line height, because a line box carries descent and
-  --- leading that no glyph marks: charging a reading for slack it does not
-  --- draw would report a collision the screen does not have.
-  local function drawnBoxes(entry)
-    local found = {}
-    local root = entry.instance.panel and entry.instance.panel.root
-
-    --- Clip a box to its container, or drop it if nothing is left.
-    ---
-    --- **A container is not decoration here.** The panel's accent stripe is
-    --- two quarter-circle arcs inside a box one accent-width wide: unclipped
-    --- each arc reaches a full diameter across the panel and appears to lie
-    --- over the heading, and the container is the whole reason it does not.
-    --- Walking the tree without honouring it reports eleven collisions that
-    --- are not on the screen.
-    local function clipTo(box, clip)
-      if not clip then return box end
-      local x = math.max(box.x, clip.x)
-      local y = math.max(box.y, clip.y)
-      local right = math.min(box.x + box.w, clip.x + clip.w)
-      local bottom = math.min(box.y + box.h, clip.y + clip.h)
-      if right <= x or bottom <= y then return nil end
-      box.x, box.y, box.w, box.h = x, y, right - x, bottom - y
-      return box
-    end
-
-    local function walk(object, offsetX, offsetY, clip)
-      for _, child in ipairs(object.children) do
-        local x = offsetX + (child.properties.x or 0)
-        local y = offsetY + (child.properties.y or 0)
-        local inner = clip
-        if child.properties.w and child.properties.h then
-          inner = clipTo({x = x, y = y,
-            w = child.properties.w, h = child.properties.h}, clip)
-        end
-        if not child.hidden then
-          local text = tostring(child.properties.text or "")
-          if child.kind == "label" and text ~= "" then
-            local font = child.properties.font
-            local size = type(font) == "function" and font() or font
-            found[#found + 1] = clipTo({
-              label = true,
-              what = '"' .. text .. '"',
-              x = x,
-              y = y,
-              -- Measured the way the radio draws it, not estimated.
-              -- `theme.textWidth` is deliberately generous so text shrinks
-              -- rather than clips, and a check fed the generous number
-              -- reports a reading lying across its own unit on every panel
-              -- that has one. Generosity belongs in deciding whether
-              -- something fits, never in deciding where it is.
-              --
-              -- And never past its own column. A Lua label's long mode is
-              -- LVGL's default wrap, so text too wide for the width it was
-              -- given comes back down the panel rather than out across it.
-              -- Sideways is the one direction it cannot go, and reporting it
-              -- there would be reporting a collision the screen does not
-              -- have. The downward growth is a real defect and is what the
-              -- `lines` assertions elsewhere exist for.
-              w = math.min(themeModule.measureText(size, text),
-                child.properties.w or math.huge),
-              h = themeModule.fontAscent(size),
-            }, clip)
-          elseif child.kind == "arc" then
-            local drawn = child.round.drawn
-            local diameter = child.round.radius() * 2
-            found[#found + 1] = clipTo({
-              what = "a dial",
-              x = offsetX + drawn.x,
-              y = offsetY + drawn.y,
-              w = diameter,
-              h = diameter,
-            }, clip)
-          elseif child.kind == "rectangle" or child.kind == "image" then
-            found[#found + 1] = clipTo({
-              what = "a " .. child.kind,
-              x = x,
-              y = y,
-              w = child.properties.w or 0,
-              h = child.properties.h or 0,
-            }, clip)
-          end
-        end
-        walk(child, x, y, inner)
-      end
-    end
-
-    if root then walk(root, 0, 0, nil) end
-    return found
+  --- **A container is not decoration here.** The panel's accent stripe is
+  --- two quarter-circle arcs inside a box one accent-width wide: unclipped
+  --- each arc reaches a full diameter across the panel and appears to lie
+  --- over the heading, and the container is the whole reason it does not.
+  --- Walking the tree without honouring it reports eleven collisions that
+  --- are not on the screen.
+  local function clipTo(box, clip)
+    if not clip then return box end
+    local x = math.max(box.x, clip.x)
+    local y = math.max(box.y, clip.y)
+    local right = math.min(box.x + box.w, clip.x + clip.w)
+    local bottom = math.min(box.y + box.h, clip.y + clip.h)
+    if right <= x or bottom <= y then return nil end
+    box.x, box.y, box.w, box.h = x, y, right - x, bottom - y
+    return box
   end
 
-  local function check(label, context)
-    for _, entry in ipairs(context.components) do
-      local rect = boundsOf(entry)
-      local boxes = drawnBoxes(entry)
-      local where = label .. ": " .. entry.placement.id
-
-      -- The panel's own furniture. A surface spans the panel and an accent
-      -- stripe runs down its leading edge inside the padding, and both are
-      -- under the content by design.
-      -- The accent is a stripe one accent-width wide built from a straight
-      -- run and two corner arcs, all of it inside the left padding, so the
-      -- test is where it is rather than what it is called.
-      local accentWidth = math.max(4, themeModule.modern and 6 or 6)
-      local surface = {}
-      for index, box in ipairs(boxes) do
-        if not box.label then
-          local spansPanel = box.w >= rect.w - 2 and box.h >= rect.h - 2
-          local inAccentColumn = box.x + box.w <= accentWidth + 2
-          if spansPanel or inAccentColumn then surface[index] = true end
+  local function walk(object, offsetX, offsetY, clip)
+    for _, child in ipairs(object.children) do
+      local x = offsetX + (child.properties.x or 0)
+      local y = offsetY + (child.properties.y or 0)
+      local inner = clip
+      if child.properties.w and child.properties.h then
+        inner = clipTo({x = x, y = y,
+          w = child.properties.w, h = child.properties.h}, clip)
+      end
+      if not child.hidden then
+        local text = tostring(child.properties.text or "")
+        if child.kind == "label" and text ~= "" then
+          local font = child.properties.font
+          local size = type(font) == "function" and font() or font
+          found[#found + 1] = clipTo({
+            label = true,
+            what = '"' .. text .. '"',
+            x = x,
+            y = y,
+            -- Measured the way the radio draws it, not estimated.
+            -- `theme.textWidth` is deliberately generous so text shrinks
+            -- rather than clips, and a check fed the generous number
+            -- reports a reading lying across its own unit on every panel
+            -- that has one. Generosity belongs in deciding whether
+            -- something fits, never in deciding where it is.
+            --
+            -- And never past its own column. A Lua label's long mode is
+            -- LVGL's default wrap, so text too wide for the width it was
+            -- given comes back down the panel rather than out across it.
+            -- Sideways is the one direction it cannot go, and reporting it
+            -- there would be reporting a collision the screen does not
+            -- have. The downward growth is a real defect and is what the
+            -- `lines` assertions elsewhere exist for.
+            w = math.min(themeModule.measureText(size, text),
+              child.properties.w or math.huge),
+            -- Ink, plus whatever this particular string reaches below its
+            -- baseline. Almost always the ink alone, because a reading is
+            -- digits, a minus, a point or a colon -- but a `g` or a `p`
+            -- does reach into the space the band rule leaves unreserved,
+            -- and a check that measured every label by its ascent could
+            -- not see it. See testReadingsDoNotDescendOverAnything, which
+            -- constructs the strings that can.
+            h = themeModule.fontAscent(size)
+              + edgetx.textDescent(size, text),
+          }, clip)
+        elseif child.kind == "arc" then
+          local drawn = child.round.drawn
+          local diameter = child.round.radius() * 2
+          found[#found + 1] = clipTo({
+            what = "a dial",
+            x = offsetX + drawn.x,
+            y = offsetY + drawn.y,
+            w = diameter,
+            h = diameter,
+          }, clip)
+        elseif child.kind == "rectangle" or child.kind == "image" then
+          found[#found + 1] = clipTo({
+            what = "a " .. child.kind,
+            x = x,
+            y = y,
+            w = child.properties.w or 0,
+            h = child.properties.h or 0,
+          }, clip)
         end
       end
+      walk(child, x, y, inner)
+    end
+  end
 
-      for first = 1, #boxes do
-        for second = first + 1, #boxes do
-          local a, b = boxes[first], boxes[second]
-          -- One of the pair has to be text. Two shapes overlapping is a
-          -- bar's fill inside its track or a level inside a cell, which is
-          -- how those are built.
-          if (a.label or b.label) and not surface[first] and not surface[second]
-              and not (a.label and b.label and a.what == b.what) then
-            local overlapX = math.min(a.x + a.w, b.x + b.w) - math.max(a.x, b.x)
-            local overlapY = math.min(a.y + a.h, b.y + b.h) - math.max(a.y, b.y)
-            assert(overlapX <= 0 or overlapY <= 0, where .. " draws "
-              .. a.what .. " over " .. b.what .. ", "
-              .. overlapX .. " by " .. overlapY .. " pixels at ("
-              .. math.max(a.x, b.x) .. "," .. math.max(a.y, b.y) .. ")")
-          end
+  if root then walk(root, 0, 0, nil) end
+  return found
+end
+
+local function assertNothingOverlaps(label, context)
+  for _, entry in ipairs(context.components) do
+    local rect = boundsOf(entry)
+    local boxes = drawnBoxes(entry)
+    local where = label .. ": " .. entry.placement.id
+
+    -- The panel's own furniture. A surface spans the panel and an accent
+    -- stripe runs down its leading edge inside the padding, and both are
+    -- under the content by design.
+    -- The accent is a stripe one accent-width wide built from a straight
+    -- run and two corner arcs, all of it inside the left padding, so the
+    -- test is where it is rather than what it is called.
+    local accentWidth = math.max(4, themeModule.modern and 6 or 6)
+    local surface = {}
+    for index, box in ipairs(boxes) do
+      if not box.label then
+        local spansPanel = box.w >= rect.w - 2 and box.h >= rect.h - 2
+        local inAccentColumn = box.x + box.w <= accentWidth + 2
+        if spansPanel or inAccentColumn then surface[index] = true end
+      end
+    end
+
+    for first = 1, #boxes do
+      for second = first + 1, #boxes do
+        local a, b = boxes[first], boxes[second]
+        -- One of the pair has to be text. Two shapes overlapping is a
+        -- bar's fill inside its track or a level inside a cell, which is
+        -- how those are built.
+        if (a.label or b.label) and not surface[first] and not surface[second]
+            and not (a.label and b.label and a.what == b.what) then
+          local overlapX = math.min(a.x + a.w, b.x + b.w) - math.max(a.x, b.x)
+          local overlapY = math.min(a.y + a.h, b.y + b.h) - math.max(a.y, b.y)
+          assert(overlapX <= 0 or overlapY <= 0, where .. " draws "
+            .. a.what .. " over " .. b.what .. ", "
+            .. overlapX .. " by " .. overlapY .. " pixels at ("
+            .. math.max(a.x, b.x) .. "," .. math.max(a.y, b.y) .. ")")
         end
       end
+    end
 
-      -- And nothing readable leaves the panel it belongs to.
-      if rect then
-        for _, box in ipairs(boxes) do
-          if box.label then
-            assert(box.y >= 0 and box.y + box.h <= rect.h, where
-              .. " draws " .. box.what .. " off the panel vertically, "
-              .. box.y .. " to " .. (box.y + box.h) .. " in " .. rect.h)
-          end
+    -- And nothing readable leaves the panel it belongs to.
+    if rect then
+      for _, box in ipairs(boxes) do
+        if box.label then
+          assert(box.y >= 0 and box.y + box.h <= rect.h, where
+            .. " draws " .. box.what .. " off the panel vertically, "
+            .. box.y .. " to " .. (box.y + box.h) .. " in " .. rect.h)
         end
       end
     end
   end
+end
 
+local function testNothingIsDrawnOverAnythingElse()
   -- Every shipped layout, because the directory is the list. A layout is
   -- covered the moment it is added, exactly like the load coverage.
   local listingPath = root .. "/build/collide-layouts.txt"
@@ -2733,9 +2821,151 @@ local function testNothingIsDrawnOverAnythingElse()
       pump(context, 60)
       assertEqual(#context.errors, 0,
         stem .. ": " .. table.concat(context.errors, "\n"))
-      check(mode[1] .. " layout " .. stem, context)
+      assertNothingOverlaps(mode[1] .. " layout " .. stem, context)
     end
   end
+end
+
+--- Nothing descends into the space measuring by ink leaves unreserved.
+---
+--- `theme.bandFont` takes the largest font whose **ascent** fits the body
+--- band, and `theme.bodyTop` centres that ascent rather than the line box.
+--- So the strip between a reading's baseline and the bottom of its line box
+--- belongs to whatever is beneath it: a bar sits there, a supporting row
+--- sits there, and on a short panel the panel's own floor is in it. At
+--- XXLSIZE that strip is 15 px.
+---
+--- **That is safe because nothing in the catalogue descends, and until now
+--- it was a fact rather than an assertion.** Two things put a descender into
+--- a reading without anybody choosing to:
+---
+---  * **A unit.** `telemetry_service`'s own rendering of EdgeTX's
+---    `TelemetryUnit` includes `mph`, `rpm`, `deg` and `g`, every one of
+---    which descends, and `m/s`, `km/h` and `ml/m`, whose `/` descends by a
+---    pixel. Which one arrives is decided by the sensor the pilot selected.
+---  * **Free text.** `model-identity` draws the model's name, which is
+---    whatever the pilot typed into Model Setup.
+---
+--- So the strings are constructed here rather than waited for, and each
+--- panel goes through the same collision and containment check every
+--- shipped layout goes through -- which charges a label its ink *plus* what
+--- its own glyphs reach below the baseline, read from the font's `ofs_y`.
+local function testReadingsDoNotDescendOverAnything()
+  -- **The instrument first.** A check that cannot report a descender would
+  -- agree with everything below while proving nothing, which is the failure
+  -- mode this suite keeps finding in its own apparatus. So it is made to
+  -- disagree on purpose before it is trusted when it agrees.
+  assert(edgetx.textDescent(XXLSIZE, "rpm") > 0,
+    "the fixture cannot see a descender, so nothing below is a check")
+  assert(edgetx.textDescent(XXLSIZE, "km/h") > 0,
+    "the fixture cannot see a solidus descend")
+  for _, safe in ipairs({"-888.88", "1:04:12", "120.0", "%", "V", "dBm"}) do
+    assertEqual(edgetx.textDescent(XXLSIZE, safe), 0,
+      "the fixture reports a descender in " .. safe
+        .. ", so it would report one anywhere")
+  end
+
+  -- Every unit the dashboard can render that reaches below the baseline,
+  -- taken from `telemetry_service`'s own table rather than invented. Each is
+  -- given to a `metric` through its `unit` setting, which is the same string
+  -- a resolved sensor would have produced.
+  local DESCENDING_UNITS = {"rpm", "mph", "deg", "g", "km/h", "m/s", "ml/m"}
+
+  -- A span that draws a bar **and** a supporting row, so there is something
+  -- in the strip below the baseline for a descender to land on. A one-row
+  -- panel sheds the row; this is the case where the reading has least air
+  -- beneath it.
+  local SPANS = {{2, 1}, {4, 1}, {2, 2}, {4, 2}}
+  local ZONES = {{"full screen", {x = 0, y = 0, w = 480, h = 272}},
+    {"app mode", appZone()}}
+
+  local drewAUnit, drewAName = 0, 0
+
+  for _, unit in ipairs(DESCENDING_UNITS) do
+    for _, span in ipairs(SPANS) do
+      for _, mode in ipairs(ZONES) do
+        resetRadio()
+        local widget = makeWidget(
+          "descend-" .. string.gsub(unit, "/", "-")
+            .. "-" .. span[1] .. "x" .. span[2]
+            .. "-" .. string.gsub(mode[1], " ", ""), table.concat({
+          "version: 1\n",
+          "grid:\n  columns: 4\n  rows: 4\n",
+          "components:\n",
+          "  - id: subject\n    type: metric\n",
+          "    col: 0\n    row: 0\n",
+          "    colSpan: ", tostring(span[1]), "\n",
+          "    rowSpan: ", tostring(span[2]), "\n",
+          "    config:\n",
+          "      label: RATE\n",
+          "      source: Alt\n",
+          "      unit: \"", unit, "\"\n",
+          "      rangeMin: 0\n      rangeMax: 400\n",
+          "      precision: 0\n      visual: bar\n",
+          "      secondarySource: Curr\n      secondaryLabel: CUR\n",
+        }))
+        local context = createLoaded(mode[2], DEFAULT_OPTIONS, widget)
+        pump(context, 60)
+        assertEqual(#context.errors, 0,
+          unit .. ": " .. table.concat(context.errors, "\n"))
+
+        local panel = entryById(context, "subject").instance
+        if panel.showUnit then
+          assertEqual(panel.unit.properties.text, unit,
+            "the unit the layout asked for never reached the label")
+          drewAUnit = drewAUnit + 1
+        end
+        assertNothingOverlaps(mode[1] .. " " .. unit .. " "
+          .. span[1] .. "x" .. span[2], context)
+      end
+    end
+  end
+
+  -- And the one reading that is free text. `model-identity` is the only
+  -- panel whose reading is a name rather than a number, and a name is the
+  -- one string on this dashboard nobody here chooses.
+  for _, name in ipairs({"Puppy", "Gypsy Moth", "jjjj", "Q_[g]"}) do
+    for _, span in ipairs({{2, 2}, {4, 2}, {4, 4}}) do
+      for _, mode in ipairs(ZONES) do
+        resetRadio()
+        radio.modelName = name
+        local widget = makeWidget(
+          "descend-name-" .. string.gsub(name, "[^%w]", "") .. "-"
+            .. span[1] .. "x" .. span[2] .. "-"
+            .. string.gsub(mode[1], " ", ""), table.concat({
+          "version: 1\n",
+          "grid:\n  columns: 4\n  rows: 4\n",
+          "components:\n",
+          "  - id: subject\n    type: model-identity\n",
+          "    col: 0\n    row: 0\n",
+          "    colSpan: ", tostring(span[1]), "\n",
+          "    rowSpan: ", tostring(span[2]), "\n",
+          "    config:\n",
+          "      presentation: name\n",
+          "      label: MODEL\n",
+          "      showLabels: true\n",
+        }))
+        local context = createLoaded(mode[2], DEFAULT_OPTIONS, widget)
+        pump(context, 60)
+        assertEqual(#context.errors, 0,
+          name .. ": " .. table.concat(context.errors, "\n"))
+
+        local panel = entryById(context, "subject").instance
+        assertEqual(panel.text, name,
+          "the hostile model name never reached the panel")
+        drewAName = drewAName + 1
+        assertNothingOverlaps(mode[1] .. " name " .. name .. " "
+          .. span[1] .. "x" .. span[2], context)
+      end
+    end
+  end
+
+  -- Neither sweep may be vacuous. A panel that shed every unit, or a name
+  -- that never reached a label, would take this whole check with it.
+  assert(drewAUnit > 0,
+    "every panel shed its unit, so no descending unit was ever drawn")
+  assert(drewAName > 0, "no model name was ever drawn")
+  resetRadio()
 end
 
 local function testNothingReadableUnderTheMenuButton()
@@ -4322,7 +4552,7 @@ local function testUnusedRowsCostNothing()
   -- Two rows, because a single-row panel is granted no supporting row at all
   -- and would pass this check without exercising it.
   for _, subject in ipairs(OPTIONAL) do
-    local fonts = {}
+    local fonts, tops = {}, {}
     for _, asked in ipairs({false, true}) do
       resetRadio()
       local lines = {
@@ -4363,19 +4593,35 @@ local function testUnusedRowsCostNothing()
 
       local font = panel.value.properties.font
       fonts[asked] = type(font) == "function" and font() or font
+      tops[asked] = panel.value.properties.y
     end
 
-    -- **The reservation shows up here and nowhere else.** A panel that draws
-    -- no row has a three-quarter body band where one that draws a row has a
-    -- half, so the reading is larger -- and if the band is cut regardless,
-    -- these two are identical and the panel silently pays for a row it never
-    -- draws.
+    -- **The reservation shows up in where the reading sits.** A panel that
+    -- draws no row has a three-quarter body band where one that draws a row
+    -- has a half. Both bands start at the same pixel, so the deeper one
+    -- centres its reading lower; if the tertiary quarter is cut regardless,
+    -- the two land on the same line and the panel is silently paying for a
+    -- row it never draws.
+    --
+    -- **This used to compare the two fonts, and that stopped being able to
+    -- fail.** It was a good proxy while the band was measured as a line box:
+    -- 62 px held DBLSIZE and 87 px held XXLSIZE, so a cut band showed up as
+    -- a smaller number. Measured as ink, 62 px holds XXLSIZE too -- and
+    -- XXLSIZE is the top of the ladder, so both panels read at the same size
+    -- whether or not the band was cut. The proxy agreed with the property
+    -- until it did not, which is the shape this suite keeps finding. The
+    -- position is the property itself.
+    assert(tops[false] > tops[true], subject.type
+      .. ": a panel drawing no supporting row puts its reading at "
+      .. tops[false] .. ", the same line as one that does -- so its band was"
+      .. " reserved for a row it never draws")
+
+    -- And the font may never go the wrong way, which is what the comparison
+    -- above was really guarding.
     assert(themeModule.fontHeight(fonts[false])
-        > themeModule.fontHeight(fonts[true]), subject.type
+        >= themeModule.fontHeight(fonts[true]), subject.type
       .. ": a panel drawing no supporting row reads at "
-      .. edgetx.fontName(fonts[false])
-      .. ", the same size as one that does -- so its band was reserved for a"
-      .. " row it never draws")
+      .. edgetx.fontName(fonts[false]) .. ", smaller than one that does")
   end
 end
 
@@ -5744,6 +5990,15 @@ end
 ---
 --- Driven with a reading that changes length rather than merely value, since
 --- the position depends on length alone.
+---
+--- **Three cells wide, not two, and the width is what keeps a unit on the
+--- panel.** `tx-battery` measures its pair against half the content box,
+--- because it reserves the other half for a battery. At `2 x 2` that half is
+--- 113 px, and an XXLSIZE `88.8` with a MIDSIZE `V` beside it is 118 -- so
+--- the `V` is shed and there is nothing here to follow. The reading is
+--- XXLSIZE because a 62 px body band holds 54 px of ink; it was DBLSIZE
+--- while the band was measured as a line box. At `3 x 2` the half is 173 and
+--- the pair fits with room to spare.
 local function testUnitFollowsTheReadingWidth()
   resetRadio()
   local widgetPath = makeWidget("unit-follow", [[
@@ -5756,17 +6011,16 @@ components:
     type: tx-battery
     col: 0
     row: 0
-    colSpan: 2
+    colSpan: 3
     rowSpan: 2
     config:
       label: TX
       packEmpty: 6.6
       packFull: 8.4
       # The estimate, which gives this panel a supporting row and therefore
-      # a half-height body band. Without it the band is three quarters, the
-      # reading reaches XXLSIZE, and an XXLSIZE `88.8` fills the half so
-      # completely that the `V` is shed -- leaving no unit for this test to
-      # follow. The row is what keeps the pair on the panel.
+      # a half-height body band. Without it the band is three quarters and
+      # the reading reaches XXLSIZE either way; with it the band is 62 px,
+      # which holds XXLSIZE by ink where it held DBLSIZE by line height.
       showPercent: true
 ]])
 
@@ -7056,45 +7310,38 @@ local function testCoreComponents()
   -- The sensor's own unit, which arrives with the source rather than being
   -- known when the panel was built.
   assertEqual(dial.unit.properties.text, "A")
-  -- **And it does not fit, because the reading is no longer squeezed.** This
-  -- panel is a single cell carrying a dial, and the reading used to be
-  -- fitted into half of it so the dial would have somewhere to go: SMLSIZE
-  -- `120.0` at 33 px, with room for a TINSIZE `A` beside it. A reading now
-  -- takes the size the whole panel allows, which is MIDSIZE at 55 px, and
-  -- the pair would need 65 of the 58 its slot has.
+  -- **The dial goes and the unit stays, and both follow from one step of
+  -- font.** This panel is a single cell, 117 x 65, and its body band is
+  -- 34 px. Measured as ink that band holds DBLSIZE -- 31 px of glyph, 91% of
+  -- the band -- where a line height of 40 did not fit and MIDSIZE was taken
+  -- instead.
   --
-  -- So the unit goes and the number is a size larger, which is the order the
-  -- specification states: a form may drop redundancy, never magnitude. The
-  -- heading above says what is being measured; the digits are the reading.
-  -- Asserted rather than left implied, because it is the visible cost of the
-  -- rule and a reader deserves to find it written down.
-  assertEqual(dial.showUnit, false,
-    "the unit rode beside a reading that has no room for it")
+  -- The reading takes that size, because a reading is never shrunk to make
+  -- room for something beside it. Its widest form is `-1200`, which DBLSIZE
+  -- draws in 77 px, and neither pair of slots separates 77 px of number from
+  -- a 26 px dial inside a 105 px content box: tightened, the reading's left
+  -- edge lands at 1 px, inside the panel's own 8 px padding, and at strict
+  -- halves it lands at -5. So the dial is shed. Magnitude wins and the
+  -- decoration goes, which is the order the specification states and the
+  -- order this panel's `2 x 2` sibling follows for the same reason.
+  --
+  -- A panel holding one element does not split, so the reading centres
+  -- across the whole content box and the unit is measured against 105 px
+  -- rather than against half a panel. `-1200` with an SMLSIZE `A` and its
+  -- one pixel of air comes to 86, so the unit rides after all. It did not
+  -- before: MIDSIZE `-1200` was 56 px in a 58 px slot, and 65 px of pair
+  -- would not fit beside the dial that panel still had.
+  assertEqual(dial.showVisual, false,
+    "a single cell kept its dial beside a DBLSIZE reading")
+  assertEqual(dial.showUnit, true,
+    "the unit was dropped on a panel with the whole content box to itself")
+  -- And a shed dial is off the screen rather than merely unmentioned. The
+  -- arc object still exists, because a reflow to a wider panel reveals it,
+  -- but nothing about it is on screen and `apply` returns before touching
+  -- it -- which is why the drift coverage moved to a panel that draws one,
+  -- in testRadialDoesNotDrift.
   assert(dial.radial, "the radial presentation was not built")
-  -- 10 of 0..120 is a small part of a 270 degree sweep.
-  assertEqual(dial.radial.arc.properties.endAngle, 135 + 23)
-
-  -- A dial that is redrawn has to stay where it was put. The firmware offsets
-  -- a round object by its radius on every update, so a gauge whose value moves
-  -- crept up and to the left until it left its panel entirely -- once per
-  -- reading, which on a live telemetry feed is a few seconds.
-  local arc = dial.radial.arc
-  local expectedX = dial.radial.centreX - dial.radial.radius
-  local expectedY = dial.radial.centreY - dial.radial.radius
-  assertEqual(arc.round.drawn.x, expectedX, "an arc was not built at its centre")
-  assertEqual(arc.round.drawn.y, expectedY, "an arc was not built at its centre")
-  for reading = 1, 8 do
-    radio.values[103] = 10 + reading * 5
-    settle(context, 12)
-  end
-  -- The precondition of a drift test is that the dial actually moved, and it
-  -- is pinned rather than merely required to differ: 50 of 0 to 120 is 113
-  -- degrees of the 270 degree sweep, drawn from 135. A sweep that changed
-  -- for the wrong reason would satisfy "it is no longer 158".
-  assertEqual(arc.properties.endAngle, 248,
-    "the dial never moved, so a drift test proves nothing")
-  assertEqual(arc.round.drawn.x, expectedX, "the dial drifted horizontally")
-  assertEqual(arc.round.drawn.y, expectedY, "the dial drifted vertically")
+  assert(dial.radial.arc.hidden, "a shed dial was left on screen")
 
   -- Trims are read through EdgeTX's own sources, in stored trim units.
   local trims = entryById(context, "trims").instance
@@ -7479,13 +7726,19 @@ local function testTelemetryComponents()
     "the origin caption overran its box")
   assertEqual(nav.coordinates, "47.37690 8.54170")
   assertEqual(nav.stateName, "normal")
-  assert(nav.compass, "the detailed presentation must carry the dial")
-  -- The pointer is a real direction, not a ring resting at north.
-  -- Visibility is the arc's sweep, not its opacity: passing opacity stopped
-  -- the whole ring rendering on a radio.
-  assert(nav.compass.ring.properties.startAngle
-    ~= nav.compass.ring.properties.endAngle,
-    "a known bearing must sweep a visible pointer")
+  -- **This panel sheds its compass, and that is the magnitude rule.** The
+  -- panel is 238 x 134 with a 226 px content box, and its 62 px body band
+  -- holds XXLSIZE once the band is measured as ink. The widest distance this
+  -- component prints is `888.88km`, which XXLSIZE draws in 195 px against
+  -- DBLSIZE's 113, and half of 195 is more than either left slot centre has
+  -- to its left: tightened, the reading's left edge lands at -22, and at
+  -- strict halves at -33. So the dial goes and the distance keeps its size.
+  -- What the dial does when it is drawn -- point at a real bearing, and
+  -- point nowhere when there is none -- is covered at a span that draws one,
+  -- in testCompassPointsWhereTheFixIs.
+  assertEqual(nav.showCompass, false,
+    "a two-column panel kept its compass beside an XXLSIZE distance")
+  assert(nav.compass.ring.hidden, "a shed compass was left on screen")
 
   -- A configured native distance sensor wins over the computed one, because
   -- the receiver may compute it from data this dashboard never sees.
@@ -7497,7 +7750,145 @@ local function testTelemetryComponents()
   resetRadio()
 end
 
---- Telemetry degradation, which is what milestone 7 is actually about: a link
+--- The dial gives its room back when the panel narrows, and takes it again.
+---
+--- Two properties, and the second is the one that used to be got wrong: a
+--- reading is never shrunk to make room for a decoration, so a panel that
+--- cannot hold both sheds the dial; and a dial that was shed comes back at
+--- its full size rather than at whatever it was last given.
+---
+--- **Three cells wide, because two draws no dial at all now.** This cycle
+--- used to ride on the telemetry layout's `2 x 2` navigation panel, which
+--- sheds its compass at every zone size this test uses -- so shed, stayed
+--- shed and restored would all have been the same picture, and the check
+--- could not have failed.
+local function testCompassShedsWhenThePanelNarrows()
+  resetRadio()
+  local widgetPath = makeWidget("compass-shed", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: nav
+    type: navigation
+    col: 0
+    row: 0
+    colSpan: 3
+    rowSpan: 2
+    config:
+      source: GPS
+      label: Nav
+      presentation: detailed
+]])
+
+  local zone = {x = 0, y = 0, w = 480, h = 272}
+  local context = createLoaded(zone, DEFAULT_OPTIONS, widgetPath)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  pump(context, 60)
+
+  local function drain()
+    local passes = 0
+    repeat
+      definition.refresh(context)
+      passes = passes + 1
+      assert(passes < 200, "reflow never finished")
+    until not context.reflowIndex
+  end
+
+  local nav = entryById(context, "nav").instance
+  assertEqual(nav.compass.ring.hidden, false, "the dial was never shown")
+  local firstRadius = nav.compass.ring.properties.radius
+
+  zone.w = 320
+  drain()
+  pump(context, 10)
+  -- **Only the width changed.** A 320 px zone gives this panel a 224 px
+  -- content box and leaves its 62 px body band alone, so the distance stays
+  -- at XXLSIZE: `888.88km` is 195 px there, half of that is 98, and the
+  -- tightened left slot has 67 px to its left. The reading's left edge would
+  -- land at -23, and at strict halves at -34, so the dial goes rather than
+  -- the distance shrinking.
+  assertEqual(nav.compass.ring.hidden, true,
+    "the dial kept its room on a panel whose distance needed it")
+
+  zone.w = 480
+  drain()
+  pump(context, 10)
+  assertEqual(nav.compass.ring.hidden, false, "the dial was not restored")
+  assertEqual(nav.compass.ring.properties.radius, firstRadius,
+    "the dial was not restored to its full size")
+
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  resetRadio()
+end
+---
+--- Two properties of the pointer, both of which the specification states:
+--- the arrow is an absolute north-up bearing from home to model, and it is
+--- hidden when there is no bearing, because a pointer resting at north reads
+--- as a real due-north fix. Visibility is the arc's **sweep** rather than
+--- its opacity -- passing opacity stopped the whole ring rendering on a
+--- radio -- so a zero-length sweep is what "no pointer" means.
+---
+--- **Three cells wide, because two no longer draws a dial at all.** These
+--- assertions used to ride on the `nav` panel of the telemetry layout, which
+--- is `2 x 2`. Its distance takes XXLSIZE now and the dial has nowhere to
+--- stand beside it, so the same assertions would have been reading angles
+--- off a hidden ring that nothing updates -- a check that cannot fail. The
+--- panel is widened here rather than the rule bent.
+local function testCompassPointsWhereTheFixIs()
+  resetRadio()
+  local widgetPath = makeWidget("compass-pointer", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: nav
+    type: navigation
+    col: 0
+    row: 0
+    colSpan: 3
+    rowSpan: 2
+    config:
+      source: GPS
+      label: Nav
+      presentation: detailed
+]])
+
+  local context = createLoaded({x = 0, y = 0, w = 480, h = 272},
+    DEFAULT_OPTIONS, widgetPath)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  pump(context, 60)
+
+  local nav = entryById(context, "nav").instance
+  -- The precondition. Without it every assertion below is about an object
+  -- nobody draws and nothing writes to.
+  assertEqual(nav.showCompass, true,
+    "the panel shed its compass, so this test proves nothing")
+  assertEqual(nav.compass.ring.hidden, false, "the dial was not on screen")
+
+  -- A real fix, 9 degrees from home. Three cells wide gives the row enough
+  -- for the compass point as well as the number, which a `2 x 2` sheds.
+  assertEqual(nav.detail, "BRG 009 N")
+  local ring = nav.compass.ring.properties
+  assert(ring.startAngle ~= ring.endAngle,
+    "a known bearing must sweep a visible pointer")
+
+  -- And nowhere when there is nowhere to point. Zero for both axes is what
+  -- EdgeTX reports before it has a fix, and it is a real place off the coast
+  -- of Africa, so it must never be drawn as one.
+  radio.values[109].lat = 0
+  radio.values[109].lon = 0
+  pump(context, 40)
+  assertEqual(nav.origin, "NO FIX")
+  assertEqual(nav.compass.ring.properties.startAngle,
+    nav.compass.ring.properties.endAngle,
+    "an unknown bearing must draw a zero length pointer")
+
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+  resetRadio()
+end
 --- that drops and returns, a fix that never arrives, a home position EdgeTX
 --- never recorded, a cells source that answers with the wrong shape, and a
 --- protocol that populates no RSSI sensor at all.
@@ -7897,15 +8288,20 @@ local function testTelemetryComponentsReflow()
 
   assertContained("full size")
   local nav = entryById(context, "nav").instance
-  assertEqual(nav.compass.ring.hidden, false, "the dial was never shown")
+  -- **This panel draws no compass at any of the three sizes below**, because
+  -- it is two cells wide and its distance takes XXLSIZE: see
+  -- testTelemetryComponents for the arithmetic. What is left here is the
+  -- supporting row's shed and return, which is what this test is for. The
+  -- dial's own shed and return, which needs a panel that draws one, is
+  -- testCompassShedsWhenThePanelNarrows.
+  assertEqual(nav.showCompass, false)
   assertEqual(nav.coordinatesLabel.hidden, false, "coordinates were never shown")
-  local firstRadius = nav.compass.ring.properties.radius
   local function readingFont()
     local font = nav.value.properties.font
     if type(font) == "function" then font = font() end
     return font
   end
-  assertFont(readingFont(), DBLSIZE, "the full-size panel's distance")
+  assertFont(readingFont(), XXLSIZE, "the full-size panel's distance")
 
   zone.w = 320
   zone.h = 140
@@ -7915,26 +8311,18 @@ local function testTelemetryComponentsReflow()
   -- Supporting rows are shed before the dominant reading is touched.
   assertEqual(nav.coordinatesLabel.hidden, true, "shed coordinates stayed visible")
 
-  -- **And then the dial is shed rather than the distance shrunk.** This used
-  -- to assert the dial merely got smaller, which it did: the reading was
-  -- fitted into half the panel first, so at 158 x 68 it took SMLSIZE and
-  -- left room for a radius of 18. The distance now takes the size the whole
-  -- panel allows -- MIDSIZE -- and the compass has nowhere to go beside it,
-  -- so it goes. A shape survives being absent and a number a pilot is flying
-  -- by does not survive being small.
-  assertEqual(nav.compass.ring.hidden, true,
-    "the dial kept its room on a panel whose distance needed it")
-  assertFont(readingFont(), MIDSIZE,
-    "the distance shrank to keep a compass beside it")
+  -- And the reading does step down once the panel genuinely is smaller: a
+  -- 320 x 140 zone gives this panel 158 x 68 and a 34 px body band, which
+  -- holds DBLSIZE and not XXLSIZE.
+  assertFont(readingFont(), DBLSIZE,
+    "the distance did not follow the band down")
 
   zone.w = 480
   zone.h = 272
   drain()
   settle(context, 10)
   assertContained("restored")
-  assertEqual(nav.compass.ring.hidden, false, "the dial was not restored")
-  assertEqual(nav.compass.ring.properties.radius, firstRadius,
-    "the dial was not restored to its full size")
+  assertFont(readingFont(), XXLSIZE, "the distance was not restored")
   assertEqual(nav.coordinatesLabel.hidden, false, "coordinates were not restored")
 
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
@@ -7977,6 +8365,7 @@ end
 testEdgeTxTheme()
 testCustomTheme()
 testRadialReflow()
+testRadialDoesNotDrift()
 testCreateFailureIsCleaned()
 testFailureIsolation()
 testErrorsClearTheMenuButton()
@@ -8018,6 +8407,8 @@ testComponentsDegrade()
 testCoreComponentsReflow()
 testMetricPresetDetail()
 testTelemetryComponents()
+testCompassPointsWhereTheFixIs()
+testCompassShedsWhenThePanelNarrows()
 testTelemetryDegrades()
 testCellSourceShapes()
 testRefreshSeesEverythingItDraws()
@@ -8032,5 +8423,6 @@ testReadingsSitInTheirSlots()
 testSupportingWordingsStayDistinct()
 testUnusedRowsCostNothing()
 testNothingIsDrawnOverAnythingElse()
+testReadingsDoNotDescendOverAnything()
 
 print("AeroGrid widget integration test passed")

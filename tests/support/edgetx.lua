@@ -164,6 +164,66 @@ local FONT_NAMES = {
   [firmware.BOLD] = "BOLD",
 }
 
+--- How far below the baseline each glyph that descends actually reaches, as
+--- a fraction of the font's line height.
+---
+--- **This is what makes measuring a reading by its ink safe or unsafe.** The
+--- dashboard reserves a band from a font's ascent, so the space between a
+--- label's baseline and the bottom of its line box is not reserved for
+--- anything: whatever is drawn below it may sit there. That is correct for
+--- digits, a minus, a point and a colon, none of which reach it, and wrong
+--- the moment a label carries a `g` or a `p`.
+---
+--- Read out of `lv_font_en_STD.c`, whose `glyph_dsc` is uncompressed in the
+--- tree. `lv_draw_sw_letter` places a glyph at
+--- `pos.y + (line_height - base_line) - box_h - ofs_y`, so a glyph's bottom
+--- edge sits `ofs_y` above the baseline and a negative `ofs_y` is a
+--- descender of that many pixels. STD's line height is 21 and its base line
+--- 5, so the deepest descender in the font -- a bracket at 4 -- still lands
+--- inside the line box, which is why the ratios are scaled rather than
+--- capped by anything other than the box itself.
+---
+--- Same limitation as `ADVANCE` below: this is one font's proportions
+--- applied to every size, because every font the dashboard actually draws
+--- with is LZ4-compressed in `lz4_fonts.h`. It reproduces the shape --
+--- which characters descend, and roughly how far -- rather than the radio's
+--- exact pixels.
+claim("GLYPH_DESCENT", "radio/src/fonts/lvgl/std/",
+  "lv_font_en_STD.c glyph_dsc ofs_y", {
+    ["$"] = 2 / 21, ["("] = 4 / 21, [")"] = 4 / 21, [","] = 3 / 21,
+    ["/"] = 1 / 21, [";"] = 3 / 21, ["@"] = 3 / 21, ["Q"] = 2 / 21,
+    ["["] = 3 / 21, ["\\"] = 1 / 21, ["]"] = 3 / 21, ["_"] = 2 / 21,
+    ["g"] = 3 / 21, ["j"] = 3 / 21, ["p"] = 3 / 21, ["q"] = 3 / 21,
+    ["y"] = 3 / 21, ["{"] = 3 / 21, ["|"] = 2 / 21, ["}"] = 3 / 21,
+  })
+
+--- Pixels a string reaches below its baseline in a given font.
+---
+--- Zero for everything this dashboard's readings are made of. A caller that
+--- has measured a label by its ink adds this to find the bottom edge the
+--- glyphs actually reach.
+---@param font any
+---@param text any
+---@return integer
+function support.textDescent(font, text)
+  local height = firmware.FONT_HEIGHT[font]
+  if not height then return 0 end
+
+  local deepest = 0
+  text = tostring(text == nil and "" or text)
+  for index = 1, #text do
+    local ratio = firmware.GLYPH_DESCENT[string.sub(text, index, index)]
+    if ratio and ratio > deepest then deepest = ratio end
+  end
+  if deepest == 0 then return 0 end
+
+  -- Never past the line box: `base_line` is measured from the bottom of the
+  -- line, so it is the whole of the space below the baseline and a glyph
+  -- cannot be drawn outside the box it is composited into.
+  return math.min(math.floor(deepest * height + 0.5),
+    firmware.FONT_BASE_LINE[font])
+end
+
 --- Name a font constant, so a failure reads as a font rather than as a number.
 --- The real values are four figures, and "expected 1536, got 1280" tells a
 --- reader nothing that "expected XXLSIZE, got DBLSIZE" does not tell them at
@@ -1076,6 +1136,13 @@ function support.radio(hostIo)
 
   local radio = {
     rssi = 80,
+    --- The model's name, which is whatever the pilot typed into Model Setup.
+    --- It lives here rather than being a constant because it is radio state
+    --- like every other value in this table, and because it is the one
+    --- string in the dashboard that a test needs to be able to make
+    --- hostile: it is the only reading that is free text, so it is the only
+    --- reading that can carry a descender.
+    modelName = scaffold.MODEL_NAME,
     -- The model's RF alarm thresholds, which getRSSI reports alongside the
     -- reading. Nothing on the dashboard consults them yet; they are here
     -- because the radio returns them, not because a test needs them.
@@ -1359,7 +1426,7 @@ function support.radio(hostIo)
     getInfo = function()
       return {
         filename = radio.modelFilename,
-        name = scaffold.MODEL_NAME,
+        name = radio.modelName,
         bitmap = scaffold.MODEL_BITMAP,
         labels = scaffold.MODEL_LABELS,
         extendedLimits = false,
@@ -1428,6 +1495,7 @@ function support.radio(hostIo)
   --- Reset the radio to the state every test starts from.
   function handle.reset()
     indexFields()
+    radio.modelName = scaffold.MODEL_NAME
     radio.rssi = 80
     radio.rssiAbsent = false
     radio.values[100] = 24.0
