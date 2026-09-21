@@ -651,6 +651,27 @@ function theme.build(mode, overrides, env)
   -- as though that is what the layout said, so the fallback is invisible in
   -- the mode alone. The diagnostics view reads this.
   local requested = mode
+
+  -- **An empty option is an unset option, not a wrong one.** A string widget
+  -- option reaches a Lua widget as `option->deflt.stringValue`, and
+  -- `LuaWidgetFactory::parseOptionDefaults` sets that default by calling
+  -- `.clear()` on it (`lua/lua_widget_factory.cpp`), so an option the user
+  -- has never touched arrives as the empty string. It is pushed to Lua
+  -- unconditionally with `lua_pushstring(..., stringValue.c_str())`, so
+  -- there is no `nil` to distinguish "unset" from "set to nothing" -- the
+  -- firmware has no representation for the difference and neither can we.
+  --
+  -- Warning about it put red diagnostic text across the dashboard of
+  -- everyone who added this widget and left its settings alone, which is
+  -- every first run.
+  --
+  -- Whitespace goes the same way, because a name typed and then cleared can
+  -- leave a space behind and the user has no way to see the difference.
+  -- **A mode that is genuinely a name and genuinely not ours still warns**,
+  -- which is the whole value of the warning: `nonsense` is someone's typo or
+  -- a mode we removed, and both are worth saying.
+  if type(mode) == "string" and string.match(mode, "^%s*$") then mode = nil end
+
   if mode ~= nil and not theme.MODES[mode] then
     warnings[#warnings + 1] = "unknown theme mode " .. tostring(mode)
     mode = nil
