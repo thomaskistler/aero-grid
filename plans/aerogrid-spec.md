@@ -318,10 +318,6 @@ Components consume immutable snapshots. A service mutates its own state table in
     ├── default.yaml
     ├── services.yaml
     ├── services2.yaml
-    ├── span1x1.yaml
-    ├── span2x1.yaml
-    ├── span2x2.yaml
-    ├── span4x1.yaml
     └── <model-identifier>--<dashboard-id>.yaml
 ```
 
@@ -1032,7 +1028,8 @@ The worst callback rose 85 when the heading notice started working. It had been 
 - Two instances running together are held to owning their own root, page, service registry and telemetry service, because EdgeTX runs every Lua widget in one interpreter state and anything a module kept at its own scope would be shared between dashboards that know nothing about each other.
 - In App mode, every shipped layout is checked to draw nothing readable inside the corner EdgeTX's menu button covers. The directory is read rather than listed, so a new layout is covered as soon as it is added.
 - Every layout under `layouts/` is loaded by the integration suite, not merely the shipped default: each one is built through the real host and components, held to the same containment rules, and refreshed against radio state. A layout is covered as soon as it is added, because the suite reads the directory rather than a list.
-- Four span galleries ship alongside the dashboards, under the Dashboard IDs `span1x1`, `span2x1`, `span2x2` and `span4x1`. They are not dashboards. `sim` and `sim2` are arranged to be useful; a gallery is arranged to make the catalogue disagree with itself where a person can see it, by putting one span in front of them for every component at once. Paging between the four then compares the same components across spans. The single-cell gallery is held to containing every component that declares a `1x1` span, read from the component directory rather than from a list, so a component written later cannot quietly drop out of the comparison.
+- **The four span galleries have been retired from the radio and kept as test fixtures.** They shipped under the Dashboard IDs `span1x1`, `span2x1`, `span2x2` and `span4x1`, each putting every component at one span so the catalogue could be caught disagreeing with itself. The user does not page to them, and ten screens is the ceiling, so they now live in `tests/fixtures/layouts/` rather than on the card. What they construct is still built: the single-cell gallery is still held to containing every component that declares a `1x1` span, read from the component directory rather than from a list, and all four are still swept by the collision check, where they are the densest arrangement in the suite -- eleven components in one grid. Retiring a layout from a screen is a decision about the radio; deleting the cases it builds would have been a quiet reduction in coverage.
+- **Review screens live on a second model.** `MAX_CUSTOM_SCREENS` is 10 (`radio/src/dataconstants.h`), and ten reviewable components plus two dashboards, two palette screens and the debug screen is fourteen. `model1.yml` keeps the dashboards, the palette comparison and the debug screen; `model2.yml` carries one screen per component under review.
 
 ### Immediate next steps
 
