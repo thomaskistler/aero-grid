@@ -312,28 +312,44 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
   -- it. Navigation asks for two rows where every other component asks for
   -- one, so the second is granted only where the first left room for it.
   local ladder = themeBuilder.ladder(theme, rect, frame)
-  local rowHeight = labelHeight + 2
   local showDetail = layout.showDetail and ladder.rows > 0
-  local showCoordinates = layout.showCoordinates and showDetail
-    and ladder.room - rowHeight >= themeBuilder.fontHeight(MIDSIZE)
   local showCompass = layout.showCompass
-
-  -- **Asked again, now that this panel knows how tall its rows are.** Every
-  -- other component draws one supporting row, which is always shorter than
-  -- the quarter the band reserves; this one draws two and centres them as a
-  -- group, and on a two-row panel that group is 36 px against a quarter of
-  -- 31. A band that reserved the quarter reported more body than the panel
-  -- has, and the reading was sized against the difference.
-  --
-  -- The first call is what decides whether there are rows at all, so it
-  -- cannot be given a height it does not yet know. The second is the one the
-  -- geometry is taken from.
-  local rowsHeight = labelHeight * (showCoordinates and 2 or 1)
-    + (showCoordinates and 2 or 0)
-  ladder = themeBuilder.ladder(theme, rect, frame,
-    {rows = showDetail, rowHeight = showDetail and rowsHeight or nil})
-
   local bands = ladder.bands
+
+  --- The marked extent of `count` stacked supporting rows.
+  ---
+  --- Ink, like everything else this dashboard measures: rows are stacked a
+  --- line height apart, and what the group actually marks runs from the top
+  --- of the first row's glyphs to the bottom of the last row's. Two rows are
+  --- 32 px where their line boxes are 36.
+  local function rowsExtent(count)
+    return (count - 1) * (labelHeight + 2) + themeBuilder.fontAscent(fonts.label)
+  end
+
+  -- **The second row is granted by the band that has to hold it.**
+  --
+  -- This asked whether the *body* band had a MIDSIZE reading's worth of room
+  -- left after a row -- which is a question about the wrong band, and it is
+  -- the seam this project keeps finding: the grant and the thing granted
+  -- were measured in different places. The rows live in the tertiary
+  -- quarter, so the tertiary quarter is what decides how many of them there
+  -- are.
+  --
+  -- It did not show while the band grew to fit whatever was put in it. Under
+  -- fixed bands a quarter is a quarter: 31 px at a two-row span in App mode
+  -- and 25 px in Full screen, against 32 px of two-row ink. So a two-row
+  -- panel draws one supporting row and a three-row panel draws two, and
+  -- nothing overflows into the reading above it.
+  --
+  -- **The cost is the coordinates at every two-row span**, including the
+  -- shipped `sim` dashboard's own navigation panel. That is the rule the
+  -- user chose applied to the one component that wanted more than its
+  -- quarter, and the alternative was the reading yielding instead -- which
+  -- is paying magnitude for layout.
+  local showCoordinates = layout.showCoordinates and showDetail
+    and bands.tertiary.h >= rowsExtent(2)
+
+  local rowsHeight = rowsExtent(showCoordinates and 2 or 1)
   local available = bands.body.h
 
   -- Half the content is what either element may claim, whichever slot set
@@ -466,6 +482,11 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     frame = frame,
     pad = frame.pad,
     content = frame.content,
+    -- The bands this panel was laid out against. Exposed because the
+    -- supporting rows are the one thing in the catalogue that can want more
+    -- than the quarter reserved for them, so a check on where they landed
+    -- has to be able to ask what they were granted.
+    bands = bands,
     -- The slot's centre, a property of the panel. Where the reading starts
     -- depends on what it currently says, so `primitives.centreReading` owns
     -- that and computes it from the measured string.

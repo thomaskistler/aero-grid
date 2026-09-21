@@ -1063,28 +1063,30 @@ end
 --- The reading then takes what the composition leaves. Deciding the font from
 --- the box rather than from the string is what makes two panels of one size
 --- agree, because they are answering the same question.
---- **A component may say what it will actually draw, and should.** The rows
---- this grants are a permission -- what a panel of this height can afford --
---- and a component is free to decline one. Declining it used to free the
---- *placement* and not the *reservation*: the tertiary quarter was still
---- taken out of the body band, so a panel that draws no supporting row was
---- charged for one, and its reading came from a band 31 pixels shorter than
---- the panel actually had. Three components default their row off, and all
---- three lost a font size to a row nobody asked for.
+--- **It is not told what the component draws, and no longer needs to be.**
+--- It used to be, and the reason is worth keeping because the interface was
+--- designed around it: the tertiary quarter was reserved only when the panel
+--- actually drew a supporting row, so a component had to declare its
+--- intention or be charged a quarter of the panel for a row it would never
+--- fill. Three components default their row off and all three lost a font
+--- size to that.
 ---
---- So `draws` is what the panel will put on the screen, and the bands are
---- reserved from that. It is optional, because a component that always draws
---- what it is granted has nothing to correct; where it is given, it may only
---- take rows away. A component cannot grant itself a row the panel cannot
---- hold, which is the whole point of deciding composition here.
+--- The bands are fixed proportions now, so there is nothing for a
+--- declaration to correct: a panel reserves its bottom quarter whether or
+--- not it draws into it. The `draws` argument was removed rather than left
+--- accepted and ignored, because an argument that no longer reaches
+--- anything is worse than an absent one -- a caller passes it, believes it
+--- was honoured, and nothing says otherwise.
+---
+--- What a component draws still decides where its *own* row is placed and
+--- whether it is drawn at all. That lives in `theme.panel` and in the
+--- components, which is where it always was; only the band arithmetic has
+--- stopped asking.
 ---@param resolved AeroGridTheme
 ---@param rect AeroGridRect
 ---@param frame table Result of theme.frame.
----@param draws? table `{rows = boolean, rowHeight = integer}`: what the
---- component will draw, and how tall its supporting rows are where that is
---- more than the quarter the band reserves.
----@return table ladder `{rows, visual, room}`
-function theme.ladder(resolved, rect, frame, draws)
+---@return table ladder `{rows, visual, bands, room}`
+function theme.ladder(resolved, rect, frame)
   local spacing = resolved.spacing
   local rowHeight = frame.labelHeight + 2
   local barHeight = spacing.barHeight + 2
@@ -1098,40 +1100,32 @@ function theme.ladder(resolved, rect, frame, draws)
   local rows = used + rowHeight + theme.fontHeight(MIDSIZE) <= rect.h and 1 or 0
 
   -- **The reading's room is its band, not what is left over.** The panel
-  -- divides into proportional bands -- a label quarter, a body half, a
-  -- tertiary quarter, with an absent part giving its quarter to the body --
-  -- and the body is what the reading is sized against. That inverts the older
-  -- rule: the composition used to come from the box and the font from the
-  -- composition, and now the band comes from the panel and the font from the
-  -- band, so the font does not consult the content at all and cannot resize
-  -- with it. The stability the fitter had to be careful to preserve now holds
-  -- by construction.
+  -- divides into fixed proportional bands -- a label quarter, a body half, a
+  -- tertiary quarter -- and the body is what the reading is sized against.
+  -- That inverts the older rule: the composition used to come from the box
+  -- and the font from the composition, and now the band comes from the panel
+  -- and the font from the band, so the font does not consult the content at
+  -- all and cannot resize with it. The stability the fitter had to be careful
+  -- to preserve now holds by construction.
   --
   -- It stays here rather than moving into each component, because two panels
   -- of one size agreeing is the whole reason this function exists. A band
   -- rule applied by some components and not others would reintroduce exactly
   -- the disagreement it replaced.
-  -- The tertiary quarter is reserved whenever the panel's floor is spoken
-  -- for, which is a supporting row or a bar. **A bar is floor furniture, not
-  -- a band's contents**: its length is the reading, so it spans the panel and
-  -- sits at the bottom, and a body band that runs down to meet it puts the
-  -- number on top of it. That is not hypothetical -- it is what a `metric` at
-  -- `2 x 1` did the first time the band chose its font, a DBLSIZE reading
-  -- ending five pixels below the bar's own top edge.
   --
-  -- The design mocks did not predict it, and the reason is worth keeping: the
-  -- collision check that found everything else on that page compares labels
-  -- with labels and labels with the panel edge. A bar is not a label, so a
-  -- reading lying across one was invisible to it, and the mocks' banded-font
-  -- table is correspondingly optimistic for every panel that draws a bar.
-  -- Reserved from what the panel draws, not from what it was permitted. A
-  -- component may decline a granted row; it may not claim one it was not
-  -- granted, so this only ever narrows.
-  local drawsRows = rows > 0
-  if draws ~= nil and draws.rows == false then drawsRows = false end
-
-  local bands = theme.bands(frame, rect, true, drawsRows,
-    visual and barHeight or 0, draws ~= nil and draws.rowHeight or nil)
+  -- **The bands no longer depend on what the panel draws at all**, which is
+  -- why nothing about `draws` reaches them. The tertiary quarter used to be
+  -- reserved only when the floor was spoken for -- by a supporting row or by
+  -- a bar -- and given to the body otherwise, so a panel drawing no row read
+  -- at a size a panel drawing one could not. That is a layout that depends
+  -- on content, and the user rejected it on a radio after it had been
+  -- measured as correct here. `theme.bands` records what went with it.
+  --
+  -- `draws` still narrows the *grants* below, because a component may
+  -- decline a row it was offered and the row's own placement follows that.
+  -- It cannot widen them: a component may not claim a row the panel is too
+  -- short to hold, which is the whole point of deciding composition here.
+  local bands = theme.bands(frame, rect, true)
 
   return {
     rows = rows,
@@ -1600,54 +1594,54 @@ end
 
 --- The proportional vertical bands a panel divides into.
 ---
---- A label band of one quarter, a body of one half and a tertiary of one
---- quarter, with an absent part giving its quarter to the body. Derived from
---- the panel exactly as the slots are, and for the same reason: a band does
---- not move because of what is in it.
+--- **A label band of one quarter, a body of one half, a tertiary of one
+--- quarter, and no redistribution.** The three are fixed proportions of the
+--- panel's extent, and an absent part does not give its share to anything:
+--- a panel that draws no supporting row reserves the bottom quarter anyway
+--- and leaves it empty.
 ---
---- The body band never fails, which was not obvious in advance. A 53 px panel
---- looks as though a half of it could not hold a MIDSIZE reading, but those
---- panels shed their tertiary row at every width, so the split is 1/4 : 3/4
---- and the body gets 36 px. The rule rescues itself where it looked weakest.
+--- **Corrected: a part used to give its quarter to the body.** That made two
+--- panels of one size lay their readings out differently according to what
+--- was *in* them -- a body of a half where a supporting row was drawn and a
+--- body of three quarters where it was not -- so a reading moved up or down
+--- the panel depending on whether the panel beside it had a row. The user
+--- saw that on a radio and rejected it, after it had been measured as
+--- correct here. It is the same objection that produced the slots: a
+--- position derived from the panel cannot move because of what is in it,
+--- and a position derived from the content can.
+---
+--- What it costs is stated rather than discovered: a one-row panel that
+--- draws no supporting row now sizes its reading against a half rather than
+--- three quarters. The design guide carries the figures and the acceptance.
+---
+--- **The bands tile the extent exactly and the rounding goes to the body.**
+--- `floor(extent / 4)` twice leaves one or two pixels over on most panels,
+--- and the body is where a pixel is worth something -- it is measured
+--- against a font ladder, where the label and the tertiary hold one line of
+--- `SMLSIZE` whatever is left.
 ---@param frame table Result of theme.frame.
 ---@param rect AeroGridRect
 ---@param hasLabel boolean
----@param hasTertiary boolean
----@param floorHeight? integer Height a bar takes off the panel's floor.
----@param rowHeight? integer Height the supporting rows actually need.
 ---@return table bands `{label, body, tertiary}`, each `{y, h}`.
-function theme.bands(frame, rect, hasLabel, hasTertiary, floorHeight, rowHeight)
+function theme.bands(frame, rect, hasLabel)
   local top = frame.compact
   local extent = math.max(1, (rect.h - frame.bottom) - top)
   local quarter = math.floor(extent / 4)
   local labelHeight = hasLabel and quarter or 0
-  -- A quarter where the band holds a supporting row, and only what the
-  -- furniture needs where it holds a bar. **A bar is not proportional
-  -- content**: its height is fixed by the theme and does not grow with the
-  -- panel, so charging it a quarter of a tall panel takes room the reading
-  -- would have had. On a 238 x 65 panel that difference is four pixels and it
-  -- costs the reading a whole font size, which is the thing shedding a row is
-  -- supposed to buy.
-  -- **A quarter, or what the rows actually need, whichever is larger.** The
-  -- quarter is a proportion of the panel and the rows are text, so on a
-  -- short panel the proportion can be smaller than the thing it is
-  -- reserving for: `navigation` draws two rows and a two-row group is 36 px
-  -- against a quarter of 31 on a two-row panel. The rows then overflow their
-  -- band upward, into the bottom of the body band -- where the reading is.
+
+  -- **Always reserved, drawn into or not.** This used to be the question
+  -- `hasTertiary` answered, and with it went `floorHeight` -- how much a bar
+  -- takes off the panel's floor -- and `rowHeight`, how much two supporting
+  -- rows need when a quarter will not hold them. All three sized this band
+  -- from what the panel was going to put in it, which is exactly the
+  -- dependence on content this rule removes. A quarter is a quarter.
   --
-  -- That was invisible while a reading was measured as a line box, because a
-  -- line box never reached its band's floor. Measured as ink it does: in the
-  -- corner EdgeTX paints its menu button over, a `2 x 2` body band is 54 px
-  -- and XXLSIZE is 54 px of ink, so the number ended three pixels inside the
-  -- bearing row. The band was lying about what was left, which is the same
-  -- defect as reserving a row a panel never draws, in the opposite
-  -- direction.
-  --
-  -- A component that draws one row needs less than a quarter at every span
-  -- this dashboard builds, so this changes nothing for the other eleven.
-  local tertiaryHeight = hasTertiary
-    and math.max(quarter, rowHeight or 0)
-    or (floorHeight or 0)
+  -- A bar still sits on the panel's floor, which is this band's own floor,
+  -- so a bar is drawn *inside* the tertiary quarter rather than beneath it.
+  -- It is shorter than the quarter at every span this dashboard builds, so
+  -- a panel drawing a bar and a supporting row has room for the row above
+  -- it; `testTertiaryQuarterHoldsItsFurniture` is what holds that.
+  local tertiaryHeight = quarter
 
   -- **Where the heading's font overflows its band, the body yields too.** The
   -- label band is a quarter, and on a short panel a quarter is smaller than
@@ -1831,7 +1825,7 @@ function theme.panel(resolved, rect, fonts, spec, out)
   -- by the helper meant to share it.
   local frame = spec.frame
   local draws = spec.draws
-  local ladder = theme.ladder(resolved, rect, frame, draws)
+  local ladder = theme.ladder(resolved, rect, frame)
 
   -- The component's intent, narrowed by what the panel can hold. A component
   -- may decline what it was granted and may not claim what it was not.

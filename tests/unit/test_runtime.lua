@@ -3875,24 +3875,34 @@ local function testTxBatteryComposition()
   -- exactly the same size and outline them differently, because the readings
   -- they stand beside are different sizes. A stroke derived from the span or
   -- from the cell would give those two rows the same number.
+  -- **The one-row spans read at MIDSIZE, and the band is why.** This panel's
+  -- percentage row is off unless a layout asks for it, and the band used to
+  -- be cut only where a row was going to be drawn -- so a bare panel got
+  -- three quarters of its extent and a DBLSIZE reading. The bands are fixed
+  -- proportions now: a one-row panel's body is a half, 29 px against
+  -- DBLSIZE's 31 px of ink, so the reading steps down. The glyph follows it,
+  -- from 17 x 34 to 13 x 26, because the cell is sized against the reading
+  -- it stands beside rather than against the span.
+  --
+  -- That is the cost of the rule and it was accepted with these figures in
+  -- front of the user: a panel's layout no longer depends on what is in it,
+  -- and two panels of one size agree whether or not either draws a row.
+  --
+  -- **The two-row spans are unaffected**, which is not obvious and is worth
+  -- the line: a half of a 134 px panel's extent is 62 px and XXLSIZE is 54 px
+  -- of ink, so the largest reading on the dashboard still fits a half. It was
+  -- the *line box* of 69 that did not, which is what the ink rule settled.
+  --
+  -- `1 x 2` and `2 x 2` shed the `V`, which is the abbreviation rule in
+  -- its documented order: an XXLSIZE `88.8` is 102 px of a 105 px box at
+  -- `1 x 2` and of a 113 px half at `2 x 2`, and the unit is redundancy
+  -- because the panel's own heading names what is measured. Magnitude is
+  -- kept and redundancy spent, which is the trade the rule names.
   local documented = {
-    {"1x1", "DBLSIZE", true, nil, nil, nil, false},
-    {"2x1", "DBLSIZE", true, 17, 34, 2, false},
-    {"3x1", "DBLSIZE", true, 17, 34, 2, false},
-    {"4x1", "DBLSIZE", true, 17, 34, 2, false},
-    -- **The two-row spans read at XXLSIZE, and did not until the band stopped
-    -- being cut for a row this panel does not draw.** The estimate is off by
-    -- default, so with no layout asking for it there is nothing for a
-    -- supporting row to hold -- and the tertiary quarter was reserved anyway,
-    -- leaving a 62 px body band against XXLSIZE's 69. Told what the panel
-    -- draws rather than what its height permits, the band is 93 px and the
-    -- largest reading on the dashboard comes back.
-    --
-    -- `1 x 2` and `2 x 2` shed the `V`, which is the abbreviation rule in
-    -- its documented order: an XXLSIZE `88.8` is 102 px of a 105 px box at
-    -- `1 x 2` and of a 113 px half at `2 x 2`, and the unit is redundancy
-    -- because the panel's own heading names what is measured. Magnitude is
-    -- kept and redundancy spent, which is the trade the rule names.
+    {"1x1", "MIDSIZE", true, nil, nil, nil, false},
+    {"2x1", "MIDSIZE", true, 13, 26, 2, false},
+    {"3x1", "MIDSIZE", true, 13, 26, 2, false},
+    {"4x1", "MIDSIZE", true, 13, 26, 2, false},
     {"1x2", "XXLSIZE", false, nil, nil, nil, false},
     {"2x2", "XXLSIZE", false, 25, 50, 4, false},
     {"3x2", "XXLSIZE", true, 25, 50, 4, false},
@@ -4600,7 +4610,24 @@ local function testNavigationRegions()
   -- there is room for both.
   assertEqual(large.showCompass, false,
     "a 2 x 2 panel kept its compass beside an XXLSIZE distance")
-  assertEqual(large.showCoordinates, true)
+  -- **And the coordinates go too, because the quarter will not hold them.**
+  -- This panel draws two supporting rows and they are the only two-row
+  -- footer in the catalogue: 32 px of ink against a tertiary quarter of 31.
+  -- The band used to grow to fit them, which is what the fixed-bands rule
+  -- removed, so the second row is now granted by the band that has to hold
+  -- it rather than by the body band above it. A three-row span keeps both --
+  -- asserted below, so this is a threshold rather than a disappearance.
+  assertEqual(large.showCoordinates, false,
+    "a 2 x 2 panel kept two supporting rows in a quarter that holds one")
+  assertEqual(large.showDetail, true,
+    "the bearing row went with the coordinates, which is not the rule")
+
+  local tall = navigation.regionsFor(resolved, theme,
+    {x = 0, y = 0, w = 238, h = 203},
+    navigation.presentationFor("detailed"), theme.typography(2, 3),
+    {digits = "888.88", unit = "km"})
+  assertEqual(tall.showCoordinates, true,
+    "a 2 x 3 panel has a 48 px quarter and still drew one row")
 
   local wide = navigation.regionsFor(resolved, theme,
     {x = 0, y = 0, w = 359, h = 134}, layout, fonts,
