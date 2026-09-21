@@ -1013,10 +1013,15 @@ Two lessons generalised past their PRs and are recorded where they will be read 
 
 | | Value | Where |
 | --- | --- | --- |
-| Worst callback | 7882 of 20000 | the staged loader building one `trim-panel` at sixteen cells |
-| Worst steady frame | 2520 of 20000 | the shipped ten-component dashboard |
+| Worst callback | 8018 of 20000 | the staged loader building one `trim-panel` at sixteen cells |
+| Worst steady frame | 3435 of 20000 | sixteen `link-status` panels |
+| Worst reflow | 7344 of 20000 | the shipped dashboard, against the worst other callback at 8018 |
 
-The worst steady frame used to be a `trim-panel` and is not any more. Both figures are asserted by the suite and are measured at the largest layout the schema permits. Note the second-worst callback is the loader's own header stage rather than any component -- which means component work is no longer the binding constraint on a full grid, and the next person looking for headroom should know that before optimising a panel.
+Every figure is what the suite itself reports, re-measured with the count hook set to every instruction. All three are asserted by the suite and are measured at the largest layout the schema permits. Note the second-worst callback is the loader's own header stage rather than any component -- which means component work is no longer the binding constraint on a full grid, and the next person looking for headroom should know that before optimising a panel.
+
+**Two of these were wrong, and the correction is the fifth figure in this project to drift.** The worst callback read 7882, which is 136 low and was low on `main` as well as on the branch that found it -- it was not re-measured after whatever moved it. The worst steady frame read 2520 against "the shipped ten-component dashboard", which is a different subject from the one the suite reports: the suite measures three sixteen-component exercises and names the worst of them, and that is `link-status`, not the shipped layout. A figure and its subject drifted apart, which is harder to notice than a figure drifting alone, because the number stays plausible.
+
+The worst reflow rose 421 when `navigation` started asking the ladder a second time, with the height its two supporting rows actually need. It is the only figure this change moved: the worst callback did not move at all and the worst steady frame fell 8. The assertion that matters is not the number but the comparison -- a reflow may not be the most expensive callback the dashboard makes -- and the margin is now 674 instructions rather than 1095.
 
 The worst callback rose 85 when the heading notice started working. It had been reading a field off the label, which is a table here and userdata on a radio, so it was always nil there and the notice never fired: the work it appeared not to cost was work it was not doing.
 
@@ -1067,7 +1072,7 @@ These came out of the presentation and consistency pass and were not done, each 
 | The menu button corner has not been seen on a radio | Milestone 8 | Seen and confirmed in the simulator. Measured against the real host and asserted for every shipped layout. Still unseen on hardware |
 | ~~Host notices are collected but not shown anywhere~~ | Milestone 8 | Closed. Contrast corrections and palette fallbacks are listed by the `theme` section of the host diagnostics view, which is where they were always headed |
 | The status rail is deferred, not cancelled | Milestone 8 | EdgeTX's own top bar fills the role at no Lua cost, and the geometry does not favour a dashboard rail. Default settled as off should it return |
-| Steady-state refresh cost scales with component count | Milestone 6 | 2562 of 20000 at sixteen `navigation` panels, and 2535 on the shipped ten-component dashboard. Watch it as the catalogue grows |
+| Steady-state refresh cost scales with component count | Milestone 6 | The worst the suite measures is in [Current cost](#current-cost). Watch it as the catalogue grows |
 | A cells source's real shape is unverified | Milestone 7 | `cell-battery` assumes a contiguous array of per-cell voltages and validates every entry, but no receiver has produced one yet |
 | A protocol without an RSSI sensor is detected indirectly | Milestone 7 | `link-status` relies on `telemetryService` observing a source contradict `getRSSI()`. Until something contradicts it, a genuinely dead link and a missing RSSI sensor are indistinguishable, and both read as no link |
 | Text width is estimated everywhere except where the unit is placed | Milestone 6, narrowed in the unit pass | The premise was wrong: `lcd.sizeText` measures text and is **not** gated on a draw callback. `luaLcdSizeText` carries no `luaLcdAllowed` or `luaLcdBuffer` check, because it reads font metrics and returns. Unit placement now uses it; every other fitting decision still uses the 0.58 estimate, and converting them is a decision for the user with the numbers below in front of them |
@@ -1252,7 +1257,7 @@ Status last verified on 2026-09-18:
 
 The design system is in place: the host owns every color, resolves one theme per dashboard, and hands each component a `services` table carrying the theme, shared primitives, span-appropriate typography, a state resolver, and the five shared data services. The `metric` component is the reference implementation and now reads real telemetry; the temporary `demo` setting is gone. Milestone 4's remaining item is a physical readability review, which requires hardware.
 
-Measured cost on the largest layout the schema permits, sixteen single-cell components: worst callback 7518 of 20000 instructions, worst steady frame 2520. Both are asserted by the test suite. Fourteen layouts are exercised, thirteen of them at sixteen components: metrics with sixteen distinct live sources, sixteen diagnostic panels spanning all five services, sixteen components that demand a refresh every frame, one layout per catalogue component type, and the shipped ten-component dashboard.
+Measured cost is in [Current cost](#current-cost), which is the one place that carries it. It used to be restated here as 7518 and 2520, and both had drifted from what the suite reports; a figure kept in two places is a figure that will disagree with itself. Fourteen layouts are exercised, thirteen of them at sixteen components: metrics with sixteen distinct live sources, sixteen diagnostic panels spanning all five services, sixteen components that demand a refresh every frame, one layout per catalogue component type, and the shipped ten-component dashboard.
 
 **The worst callback is the staged loader, not any component's own work.** It is the callback that builds one `trim-panel` with four indicators, at 7509. Every layout's second-worst is the loader's header stage, between 6209 and 7361. The three telemetry components at sixteen cells reach 6721, 6593 and 6337, all of them in that header stage, and their worst steady frames are 2290, 2380 and 2562. Removing the services' subscription caps raises the worst steady frame to 6200, which is what the caps are for. On a full grid, component work is no longer the binding constraint, which is worth knowing before optimising a panel.
 
