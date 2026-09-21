@@ -663,7 +663,7 @@ function cellBattery.update(context, rect)
     font = function() return area.value end,
   })
 
-  context.primitives.reconcileUnit(context.unit, area.showUnit,
+  context.primitives.reconcileUnit(context, context.unit, area.showUnit,
     context.themeBuilder, area.valueX, area.valueY, area.value, context.text,
     area.unitFont, area.showUnit == context.showUnit)
   context.showUnit = area.showUnit

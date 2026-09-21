@@ -421,7 +421,11 @@ function metric.apply(context, drawn)
       context.themeBuilder, context.area.value, context.sample[1],
       context.area.unitFont, drawn.unit, context.area.valueBudget)
     if shows ~= context.showUnit then
-      if shows then lvgl.show(context.unit) else lvgl.hide(context.unit) end
+      -- Permission only. Whether the unit is *drawn* is settled by
+      -- `centreReading` immediately below, which is the one place that
+      -- knows both this answer and what the reading currently says; a
+      -- show here would be a second opinion, and it would win for one
+      -- frame over a panel with no value to qualify.
       context.showUnit = shows
       -- Every anchor is about a slot and a font that have just moved.
   context.unitAnchor = nil
@@ -826,9 +830,9 @@ function metric.update(context, rect)
   local shows = area.showUnit and context.unit ~= nil
     and context.primitives.unitFits(context.themeBuilder, area.value,
       context.sample[1], area.unitFont, context.unitText, area.valueBudget)
-  context.primitives.reconcileUnit(context.unit, shows, context.themeBuilder,
-    area.valueX, area.valueY, area.value, context.text or "--",
-    area.unitFont, shows == context.showUnit)
+  context.primitives.reconcileUnit(context, context.unit, shows,
+    context.themeBuilder, area.valueX, area.valueY, area.value,
+    context.text or "--", area.unitFont, shows == context.showUnit)
   context.showUnit = shows
   context.unitAnchor = nil
   reconcile(context.range, area.showDetail,

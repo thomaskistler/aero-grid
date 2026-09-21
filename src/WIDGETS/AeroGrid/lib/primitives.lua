@@ -808,6 +808,48 @@ function primitives.placeUnit(unit, themeBuilder, readingX, readingY,
   unit:set(changes)
 end
 
+--- The strings a reading prints in place of a value.
+---
+--- `--` is what every component prints for a value it does not have.
+--- `link-status` additionally prints `N/A`, for a source the protocol does
+--- not publish at all, which is a different cause and the same absence. Both
+--- are the reading saying there is no number.
+---
+--- It is a set rather than a comparison so that adding a sentinel is one
+--- entry here rather than a condition in six components, and
+--- `testReadingsPrintADeclaredSentinel` holds every component's own
+--- formatter to producing a member of it. A component that invents a
+--- seventh spelling of "no value" fails by name instead of quietly drawing
+--- its unit again.
+primitives.SENTINELS = {["--"] = true, ["N/A"] = true}
+
+--- Report whether a reading has a value for a unit to qualify.
+---
+--- **Keyed on what the panel draws, not on what the subscription says.** The
+--- two differ in both directions and only the drawn text is the question a
+--- unit answers:
+---
+--- - A **stale** reading still shows its last number, so it keeps its unit.
+---   Staleness is about how old a measurement is, not about whether there is
+---   one.
+--- - A sensor reading exactly **zero** prints `0`, and `0 V` is a
+---   measurement. Keying on freshness or on availability would have been
+---   right here by accident and wrong for `link-status`, whose genuine zero
+---   this specification is explicit must be shown as the reading it is.
+--- - An **unavailable** source prints the sentinel, and that is the case
+---   with nothing to qualify.
+---
+--- So the test is on the string, at the point of drawing, which is also the
+--- only place both halves are known: whether the panel is *permitted* a unit
+--- is settled when it is built, and whether there is a value is not knowable
+--- until there is one. Asking the permission to carry the answer would be
+--- the tenth instance of the seam this project keeps rediscovering.
+---@param text any What the reading currently says.
+---@return boolean
+function primitives.hasValue(text)
+  return primitives.SENTINELS[text] == nil
+end
+
 --- Decide whether a unit that only became known at runtime can be shown.
 ---
 --- A global variable's unit and a telemetry sensor's both arrive after the
@@ -938,6 +980,21 @@ function primitives.centreReading(context, themeBuilder, area, font, text)
   -- narrow for the pair and LVGL wraps it. The context's own flag is the one
   -- `apply` keeps current.
   local unit = context.showUnit and (context.unitText or "") or ""
+  -- **And whether there is a value for it to qualify.** A unit with no
+  -- number beside it is not a quieter reading, it is a label for nothing:
+  -- the panel drew `-- V`, which says the transmitter is measured in volts
+  -- and declines to say how many. `showUnit` cannot answer this, because it
+  -- is settled when the panel is built and whether a sensor is reporting is
+  -- only known at runtime -- which is exactly the permitted-versus-drawn
+  -- seam, answered here, on the string the panel is actually drawing.
+  --
+  -- The reading does not move when this fires. Its x is
+  -- `valueCentre - measureText(font, text) / 2`, its **own** width rather
+  -- than the pair's; the unit only widens the box below. So a sensor
+  -- dropping and returning takes the unit away and brings it back without
+  -- shifting the number, and the flicker that would otherwise rule this out
+  -- does not arise.
+  if unit ~= "" and not primitives.hasValue(text) then unit = "" end
   if text == context.readingAnchor and unit == context.readingUnitAnchor then
     return
   end
@@ -963,10 +1020,26 @@ function primitives.centreReading(context, themeBuilder, area, font, text)
   -- A component may not have built a unit at all: `metric` creates one only
   -- where its layout asks for it, so a panel with no unit reaches here with
   -- nothing to move.
+  --
+  -- **Placed only when it is drawn.** This used to place unconditionally,
+  -- so a panel whose span sheds its unit went on measuring the reading and
+  -- writing two numbers into a hidden label on every value change -- the
+  -- invisible work this project has twice paid to remove. A revealed unit
+  -- is placed by whoever reveals it.
   if context.unit then
-    primitives.placeUnit(context.unit, themeBuilder, x, area.valueY, font,
-      text, area.unitFont)
-    context.unitAnchor = text
+    local drawn = unit ~= ""
+    if drawn then
+      primitives.placeUnit(context.unit, themeBuilder, x, area.valueY, font,
+        text, area.unitFont)
+      context.unitAnchor = text
+    end
+    -- Visibility is written only when it moves. A reading changes several
+    -- times a second and its unit almost never does, so an unguarded
+    -- `show` here would be a call per panel per value for no pixel changed.
+    if context.unitDrawn ~= drawn then
+      context.unitDrawn = drawn
+      if drawn then lvgl.show(context.unit) else lvgl.hide(context.unit) end
+    end
   end
 end
 
@@ -1008,18 +1081,29 @@ end
 --- and the y, and a second opinion stated here would be a second answer to
 --- the same question. Only the font is reconciled, because a reflow can move
 --- the reading to a different size and the rider follows it.
+---
+--- **`visible` is the caller's permission and nothing more.** Whether there
+--- is a value for the unit to qualify is read from the text the panel is
+--- drawing, through the same `hasValue` the per-frame path uses, so a reflow
+--- cannot restore a unit beside an absent reading. Without it, a panel whose
+--- span granted a unit it had not had would show `-- V` again the moment the
+--- zone changed -- the rule holding in one path and not the other, which is
+--- the shape this project keeps finding.
+---@param context table The component's own context, for the drawn flag.
 ---@param unit? any
----@param visible boolean
+---@param visible boolean Whether the panel is permitted a unit here.
 ---@param themeBuilder table
 ---@param readingX integer
 ---@param readingY integer
 ---@param readingFont any
 ---@param text any What the reading currently says.
 ---@param unitFont any
----@param settled? boolean Visibility is known not to have moved.
-function primitives.reconcileUnit(unit, visible, themeBuilder, readingX,
-    readingY, readingFont, text, unitFont, settled)
+---@param settled? boolean Permission is known not to have moved.
+function primitives.reconcileUnit(context, unit, visible, themeBuilder,
+    readingX, readingY, readingFont, text, unitFont, settled)
   if not unit then return end
+
+  visible = visible and primitives.hasValue(text)
 
   if visible then
     primitives.placeUnit(unit, themeBuilder, readingX, readingY, readingFont,
@@ -1027,8 +1111,9 @@ function primitives.reconcileUnit(unit, visible, themeBuilder, readingX,
   end
   -- Whatever `followUnit` was remembering is about a column and a font that
   -- have just moved, so it is discarded rather than trusted.
-  if settled then return end
+  if settled and visible == context.unitDrawn then return end
 
+  context.unitDrawn = visible
   if visible then lvgl.show(unit) else lvgl.hide(unit) end
 end
 

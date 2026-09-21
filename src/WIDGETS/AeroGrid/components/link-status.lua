@@ -643,7 +643,11 @@ function linkStatus.apply(context, drawn)
       context.area.unitFont, unitText, context.area.content)
     context.unit:set({text = unitText})
     if shows ~= context.showUnit then
-      if shows then lvgl.show(context.unit) else lvgl.hide(context.unit) end
+      -- Permission only. Whether the unit is *drawn* is settled by
+      -- `centreReading` immediately below, which is the one place that
+      -- knows both this answer and what the reading currently says; a
+      -- show here would be a second opinion, and it would win for one
+      -- frame over a panel with no value to qualify.
       context.showUnit = shows
       context.unitAnchor = nil
     end
@@ -704,9 +708,9 @@ function linkStatus.update(context, rect)
   local shows = area.showUnit and context.primitives.unitFits(
     context.themeBuilder, area.value, context.sample.digits, area.unitFont,
     context.unitText, area.content)
-  context.primitives.reconcileUnit(context.unit, shows, context.themeBuilder,
-    area.valueX, area.valueY, area.value, context.text, area.unitFont,
-    shows == context.showUnit)
+  context.primitives.reconcileUnit(context, context.unit, shows,
+    context.themeBuilder, area.valueX, area.valueY, area.value, context.text,
+    area.unitFont, shows == context.showUnit)
   context.showUnit = shows
   context.unitAnchor = nil
   context.area = area
