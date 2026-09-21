@@ -208,7 +208,10 @@ function modelIdentity.regionsFor(theme, themeBuilder, rect, layout, fonts)
   -- The ladder is asked with what this panel draws, which is the supporting
   -- row or not. It has no bar and no compact visual at all, so nothing else
   -- here is a claim about a visualization.
-  local nameY = themeBuilder.bodyTop(ladder, nameHeight)
+  -- The ink, not the line box: see `theme.bodyTop`. A model name is the one
+  -- reading in the catalogue that can descend, and a descender is drawn
+  -- below the ink this centres, which is stated in the guide.
+  local nameY = themeBuilder.bodyTop(ladder, themeBuilder.fontAscent(nameFont))
 
   if showLabels then imageHeight = imageHeight - labelHeight - 2 end
 

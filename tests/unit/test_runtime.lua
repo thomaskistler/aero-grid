@@ -2033,7 +2033,19 @@ local function testContentFitsPanel()
       theme.build("modern"), theme, {x = 0, y = 0, w = case.w, h = case.h},
       layout, fonts)
 
-    local valueBottom = area.valueY + heightOf(area.value)
+    -- **The ink, not the line box.** A reading is placed so that its ink is
+    -- centred in the band, which leaves the box hanging below it by the
+    -- font's descent and leading -- 15 px at XXLSIZE. Nothing is drawn
+    -- there: every reading in the catalogue is digits, a minus, a point or a
+    -- colon, and none of them descend. Measuring the box here would report
+    -- an overlap with a bar that no glyph reaches, which is the same
+    -- disagreement the integration collision check already resolves in
+    -- favour of ink.
+    --
+    -- The one reading that *can* descend is `model-identity`'s model name,
+    -- which is free text. It is asserted below that no component drawing a
+    -- bar draws descending text, so this measure cannot hide a real overlap.
+    local valueBottom = area.valueY + theme.fontAscent(area.value)
     assert(valueBottom <= case.h, case.name
       .. ": value overflows the panel, ends at " .. valueBottom
       .. " in " .. case.h)
@@ -3532,7 +3544,8 @@ local function testReadingsSitInTheirBand()
     local frame = theme.frame(resolved, rect, fonts)
     local ladder = theme.ladder(resolved, rect, frame,
       {rows = layout.showLabels == true})
-    local expected = theme.bodyTop(ladder, theme.fontHeight(area.nameFont))
+    -- Ink, as the component asks and as every other reading is placed.
+    local expected = theme.bodyTop(ladder, theme.fontAscent(area.nameFont))
 
     checked = checked + 1
     assertEqual(area.nameY, expected, string.format(
@@ -3863,10 +3876,10 @@ local function testTxBatteryComposition()
   -- they stand beside are different sizes. A stroke derived from the span or
   -- from the cell would give those two rows the same number.
   local documented = {
-    {"1x1", "MIDSIZE", true, nil, nil, nil, false},
-    {"2x1", "MIDSIZE", true, 17, 34, 2, false},
-    {"3x1", "MIDSIZE", true, 17, 34, 2, false},
-    {"4x1", "MIDSIZE", true, 17, 34, 2, false},
+    {"1x1", "DBLSIZE", true, nil, nil, nil, false},
+    {"2x1", "DBLSIZE", true, 17, 34, 2, false},
+    {"3x1", "DBLSIZE", true, 17, 34, 2, false},
+    {"4x1", "DBLSIZE", true, 17, 34, 2, false},
     -- **The two-row spans read at XXLSIZE, and did not until the band stopped
     -- being cut for a row this panel does not draw.** The estimate is off by
     -- default, so with no layout asking for it there is nothing for a
@@ -4578,15 +4591,30 @@ local function testNavigationRegions()
   local large = navigation.regionsFor(resolved, theme,
     {x = 0, y = 0, w = 238, h = 134}, layout, fonts,
     {digits = "888.88", unit = "km"})
-  assertEqual(large.showCompass, true)
+  -- **The compass is shed at this span, and that is the magnitude rule.**
+  -- The band chooses by ink now, so a 62 px band holds XXLSIZE rather than
+  -- DBLSIZE, and a distance drawn 29 px taller is wide enough that no pair
+  -- of slots separates it from the dial. The reading keeps its size and the
+  -- shape goes, which is the order the specification states and the user
+  -- chose on the radio. `2 x 2` is where it bites: at `3 x 2` and wider
+  -- there is room for both.
+  assertEqual(large.showCompass, false,
+    "a 2 x 2 panel kept its compass beside an XXLSIZE distance")
   assertEqual(large.showCoordinates, true)
+
+  local wide = navigation.regionsFor(resolved, theme,
+    {x = 0, y = 0, w = 359, h = 134}, layout, fonts,
+    {digits = "888.88", unit = "km"})
+  assertEqual(wide.showCompass, true,
+    "a 3 x 2 panel has room for both and drew no compass")
   -- The dial sits inside its own panel, measured from its centre.
-  local box = arcSquare(large.centreX, large.centreY, large.radius)
+  local box = arcSquare(wide.centreX, wide.centreY, wide.radius)
   assert(box.x >= 0 and box.y >= 0, "the dial was placed off the panel")
-  assert(box.x + box.w <= 238, "the dial overflowed the panel")
+  assert(box.x + box.w <= 359, "the dial overflowed the panel")
   assert(box.y + box.h <= 134, "the dial overflowed the panel")
-  -- And never over the reading beside it.
-  assert(large.pad + large.valueWidth <= box.x, "the dial overlaps the value")
+  -- And never over the reading beside it. Measured on the panel that draws
+  -- both, which is no longer the one above.
+  assert(wide.pad + wide.valueWidth <= box.x, "the dial overlaps the value")
 
   -- A panel that cannot afford everything sheds the coordinates first and the
   -- dial next, and never the distance.
@@ -4636,12 +4664,25 @@ local function testTelemetryContentFitsPanel()
     local rect = {x = 0, y = 0, w = case.w, h = case.h}
     local fonts = theme.typography(case.colSpan, case.rowSpan)
     local labelHeight = heightOf(fonts.label)
+    -- What a supporting row actually marks. A row's line box carries a
+    -- descent and a leading below its baseline, and the strings these rows
+    -- print -- a bearing, a caption, a pair of coordinates -- reach none of
+    -- it. Containment against the panel's own edge is a question about
+    -- glyphs, so it is asked of the ink; whether a *descending* string
+    -- would still clear is `testReadingsDoNotDescendOverAnything`.
+    local labelInk = theme.fontAscent(fonts.label)
 
     --- Shared assertions: the reading fits its own region in both axes, and
     --- clears the header above it and whatever row sits below it.
     --- @param reading table `digits`, and `unit` where the panel has one.
     local function assertReading(what, area, valueFont, valueWidth, reading)
-      local bottom = area.valueY + heightOf(valueFont)
+      -- The drawn extent, which is the ink. A reading is centred by its ink
+      -- now, so its line box hangs below the glyphs by the font's descent
+      -- and leading; measuring the box would report a reading sitting on a
+      -- supporting row that no glyph comes near. See
+      -- `testReadingsDoNotDescendOverAnything` for why that is safe here and
+      -- what would make it unsafe.
+      local bottom = area.valueY + theme.fontAscent(valueFont)
       assert(bottom <= case.h, what .. " " .. case.name
         .. ": the reading overflows the panel, ends at " .. bottom)
       assert(area.valueY >= labelHeight, what .. " " .. case.name
@@ -4737,7 +4778,7 @@ local function testTelemetryContentFitsPanel()
         {digits = navigationComponent.DIGITS, unit = navigationComponent.UNIT})
 
       if nav.showDetail then
-        assert(nav.detailY + labelHeight <= case.h,
+        assert(nav.detailY + labelInk <= case.h,
           what .. " " .. case.name .. ": the bearing row overflows the panel")
         assertColumns(what, nav, nav.detailWidth, nav.originX, nav.originWidth)
       end
@@ -4745,7 +4786,7 @@ local function testTelemetryContentFitsPanel()
         -- The coordinates sit below the bearing row, not on top of it.
         assert(nav.detailY + labelHeight <= nav.coordinatesY, what .. " "
           .. case.name .. ": the coordinates row overlaps the bearing row")
-        assert(nav.coordinatesY + labelHeight <= case.h, what .. " "
+        assert(nav.coordinatesY + labelInk <= case.h, what .. " "
           .. case.name .. ": the coordinates row overflows the panel")
       end
       if nav.showCompass then

@@ -66,11 +66,21 @@ make mocks
 
 which writes `build/flow-mocks.html`. Each figure quoted here appears there, computed
 rather than asserted. This matters because hand-typed figures in this project have
-drifted three times: a slack count written as 10/8/6 when the real one was 10/9/5, an
-occupancy range written as 60–71% when it was 60–63%, and a caption asserting "the
-ladder has nothing between 40 and 69 px" on panels where that was not the reason. All
-three were corrected by computing the figure in the generator instead. **Do not add a
+drifted four times: a slack count written as 10/8/6 when the real one was 10/9/5, an
+occupancy range written as 60–71% when it was 60–63%, a caption asserting "the
+ladder has nothing between 40 and 69 px" on panels where that was not the reason, and a
+list of the body bands this dashboard builds that was wrong in twelve of its entries. All
+four were corrected by computing the figure in the generator instead. **Do not add a
 number to this document that the generator cannot produce.**
+
+**A figure the generator can produce may still be produced over the wrong cases.** The
+band list above is the fourth drift and it is a different shape from the other three: it
+was computed rather than typed, and it was computed over the panels this page happens to
+render — six components at four spans in one zone, every one of them in the grid's
+top-left cell, which is 24 of the 272 panels the schema permits and the one cell EdgeTX
+covers with its menu button. The generator now walks the geometry itself rather than
+reading it off the cases, and it checks the walk against every panel the real host built.
+Ask of a generated figure not only whether it was computed, but over what.
 
 Figures outside that section come from the test suite and from EdgeTX's own font
 tables, and are cited where they appear.
@@ -239,21 +249,24 @@ so both are cyan.
 
 ### A compact visual sits beside the reading, not beneath it
 
-**It is vertically centred on the reading's line box.** Not its baseline, not its top.
-The three were drawn side by side from real geometry at every span and the centre is the
-one that reads as belonging to the number rather than hanging off it. It applies to every
-compact visual in every component — a battery, a dial, a compass — so two panels of
-different components at the same span place theirs identically.
+**It is vertically centred on the reading's ink.** Not its baseline, not its top, and no
+longer its line box. The three were drawn side by side from real geometry at every span
+and the centre is the one that reads as belonging to the number rather than hanging off
+it. It applies to every compact visual in every component — a battery, a dial, a compass —
+so two panels of different components at the same span place theirs identically.
 
 **Rejected: baseline alignment and top alignment.** Both were rendered at every span
 before being dropped. Baseline alignment is defensible in principle but EdgeTX exposes no
 ascent to Lua directly, and aligning the boxes was visually worse than centring them at
 every pair of fonts actually used.
 
-**Line box, not ink** — and this was reconsidered and confirmed. When band-derived fonts
-were being chosen, a font selected by ink rather than line height would have split the
-two: on `navigation 4x2` a dial centred on the line box sits 4.5 px off the digits'
-visual middle. The ink option was rejected (below), so line box stands.
+**Corrected: the centre is the ink's, not the line box's.** This said line box, and said
+it had been reconsidered and confirmed — the argument being that a font chosen by ink and
+a visual centred on the box would split the two, since on `navigation 4x2` a dial centred
+on the line box sits 4.5 px off the digits' visual middle. That argument was right and its
+conclusion followed only while ink was rejected. The band is measured as ink now, so the
+block the visual shares with the reading is measured as ink too, and the two halves agree
+again. See [Decided: the font is chosen by ink](#decided-the-font-is-chosen-by-ink-and-the-ink-is-what-is-centred).
 
 A visual that spans the panel's width — a bar — has nothing to centre against and is
 unaffected by any of this.
@@ -541,8 +554,12 @@ where it looked weakest.
 
 ### The font comes from the band
 
-**The largest font whose line height fits the body band.** This inverts today's rule, where
-the composition comes from the box and the font from the composition.
+**The largest font whose ink fits the body band.** Ink is the font's ascent — the part
+the glyphs actually mark — rather than its line height, which is ascent plus descent plus
+leading. This inverts today's rule, where the composition comes from the box and the font
+from the composition.
+
+**It was line height first, and the correction is [below](#decided-the-font-is-chosen-by-ink-and-the-ink-is-what-is-centred).**
 
 **The stability guarantee survives, and becomes structural.** Today's fitter sizes a reading
 against the widest string a component can ever print, so a value never resizes as it
@@ -592,52 +609,137 @@ longer where the heading actually ends. That is the point rather than an oversig
 space is still reserved, so the body does not move — but the sentence above describes the
 reasoning at the time and not the arithmetic today.
 
-So the honest summary is that **the vertical half of the arrangement is nearly a no-op and
-the horizontal half is where the value is.** The slots are what stop a reading and a
-visualization contesting one column, and that is worth having on its own.
+So the honest summary is that **the vertical half of the arrangement was nearly a no-op
+until the band started being measured as ink, and the horizontal half is still where most
+of the value is.** The slots are what stop a reading and a visualization contesting one
+column, and that is worth having on its own.
 
-**Rejected: choosing the font by ink.** `theme.fontHeight` is LVGL's line height — ascent
-plus descent plus leading — and every reading in the catalogue is digits, a minus, a point
-or a colon, none of which descend. So a band sized against line height genuinely does carry
-slack nothing draws into, and the observation that prompted this ("fonts should use at least
-80% of their vertical allotment") was correct on its own terms:
+### Decided: the font is chosen by ink, and the ink is what is centred
 
-It was rejected on these two bands:
+`theme.fontHeight` is LVGL's line height — ascent plus descent plus leading — and every
+reading in the catalogue is digits, a minus, a point or a colon, none of which descend. So
+a band sized against line height carries slack nothing draws into, and the observation that
+prompted this ("fonts should use at least 80% of their vertical allotment") was correct on
+its own terms.
+
+**It was rejected first, and it was rejected on two bands this dashboard does not build.**
+The record of that is kept, because the value of this guide is that it says what was
+refused:
 
 | Band | By line height | Ink fills | By ink | Ink fills |
 | --- | --- | --- | --- | --- |
 | 36 px | `MIDSIZE` | 63% | `DBLSIZE` | 86% |
 | 51 px | `DBLSIZE` | 60% | `DBLSIZE` | 60% |
 
-— because 80% looked unreachable on the larger of them for a reason with nothing to do
-with the measurement: a 51 px band takes `DBLSIZE` at 31 px of ink, the next step up is
-`XXLSIZE` at 54 px, and between 40 and 69 the ladder has nothing. That was read as the
-ladder's granularity rather than the rule's fault.
+The argument was that 80% looked unreachable on the larger of them for a reason with
+nothing to do with the measurement — a 51 px band takes `DBLSIZE` at 31 px of ink, the next
+step up is `XXLSIZE` at 54, and between 40 and 69 the ladder has nothing — and that was read
+as the ladder's granularity rather than the rule's fault.
 
-**Corrected: this dashboard produces neither of those bands.** Enumerating every body band
-over both zones, all sixteen spans and the supporting row both on and off, the bands that
-actually occur are **22, 34, 50, 62, 69, 79, 87, 97, 108, 112, 132, 139, 155 and 191 px**.
-36 and 51 are not among them, and the argument was made on the two sizes where ink happens
-to buy the least.
+**What was wrong was the case set, not the arithmetic.** Those bands came from the panels
+`make mocks` happens to render: six components at four spans in one zone, every one of them
+placed in the grid's top-left cell. That is 24 of the 272 panels the schema permits, and the
+one cell EdgeTX paints its menu button over.
 
-On the bands that do occur, ink and line height disagree twice — and both are cases where
-the panel carries a supporting row, which is to say the cases where the reading has least
-room and a size is worth most:
+The generator now walks every placement of every span in both zones through `theme.ladder`,
+with the supporting row taken, declined, and taken at the height `navigation`'s two rows
+actually need, and checks the walk against every panel the real host built on the page.
+**There are twenty-five bands, and they are these:**
 
-| Band | By line height | Ink fills | By ink | Ink fills |
-| --- | --- | --- | --- | --- |
-| 34 px | `MIDSIZE` | 67.6% | `DBLSIZE` | **91.2%** |
-| 62 px | `DBLSIZE` | 50.0% | `XXLSIZE` | **87.1%** |
+| Band | By line height | Ink fills | By ink | Ink fills | Where it occurs |
+| --- | --- | --- | --- | --- | --- |
+| 16 px | `SMLSIZE` | 81.2% | `SMLSIZE` | 81.2% | App mode, one row, under the menu button |
+| 22 px | `SMLSIZE` | 59.1% | `SMLSIZE` | 59.1% | Full screen, one row, top grid row |
+| **23 px** | `SMLSIZE` | 56.5% | **`MIDSIZE`** | **100.0%** | Full screen, one row, the other three grid rows |
+| **34 px** | `MIDSIZE` | 67.6% | **`DBLSIZE`** | **91.2%** | App mode, one row |
+| 40, 41 px | `DBLSIZE` | 75.6–77.5% | `DBLSIZE` | 75.6–77.5% | Full screen, two rows, a two-row footer |
+| 49 px | `DBLSIZE` | 63.3% | `DBLSIZE` | 63.3% | App mode, two rows, a two-row footer, under the button |
+| 51, 52 px | `DBLSIZE` | 59.6–60.8% | `DBLSIZE` | 59.6–60.8% | Full screen, two rows, one row of footer |
+| **54 px** | `DBLSIZE` | 57.4% | **`XXLSIZE`** | **100.0%** | App mode, two rows, one row of footer, under the button |
+| **57 px** | `DBLSIZE` | 54.4% | **`XXLSIZE`** | **94.7%** | App mode, two rows, a two-row footer |
+| **62 px** | `DBLSIZE` | 50.0% | **`XXLSIZE`** | **87.1%** | App mode, two rows, one row of footer |
+| 70, 71 px | `XXLSIZE` | 76.1–77.1% | `XXLSIZE` | 76.1–77.1% | Full screen, two rows, no footer |
+| 79, 87 px | `XXLSIZE` | 62.1–68.4% | `XXLSIZE` | 62.1–68.4% | App mode, two rows, no footer |
+| 80, 81, 97, 109, 114, 132, 139, 157, 191 px | `XXLSIZE` | 28.3–67.5% | `XXLSIZE` | 28.3–67.5% | three and four rows, both zones |
 
-A 62 px band draws a reading filling half of it where the next font up would fill 87%, and
-`XXLSIZE` is excluded there only because its *line height* is 69 — seven pixels of leading
-and descent that no digit, minus, point or colon in this catalogue ever draws into.
+**36 px is genuinely not among them. 51 px is** — so half of the old argument survives, as a
+fact about one band rather than as a verdict on the rule. What does not survive is the
+conclusion: the ladder's granularity is not what blocks ink on the bands this dashboard
+builds.
 
-So the rejection stands as a record of what was tried, and its conclusion does not: the
-ladder's granularity is not what blocks ink on the bands this dashboard builds. **The
-question is open, not closed.** It is a behaviour change affecting readings on every panel
-that carries a supporting row, so it belongs to the user rather than to whoever reads this
-next; the rendering that answered it is still in `tools/flow-render.py`.
+**Five bands move, and one of them is not in App mode.** The previous account of this change
+said two moved and that all of them were App mode, which was the narrow case set talking:
+
+- **23 px** is a Full-screen single-row panel, and it gains two steps of ink — `SMLSIZE`
+  fills 56.5% where `MIDSIZE` fills the band exactly.
+- **34 px** is an App-mode single-row panel, the commonest panel on the dashboard.
+- **54 px** and **49 px** are the App-mode two-row panels in the menu button's corner; the
+  first moves and the second does not, because a two-row footer takes the difference.
+- **57 px** and **62 px** are App-mode two-row panels carrying a footer — the case where the
+  reading has least room and a size is worth most.
+
+Measured through the real host over every component at every span it declares, in both
+zones and at an obstructed and an unobstructed placement, the reading's font changes on
+**165 of 1088 panels: 113 in App mode and 52 in Full screen, every one of them larger and
+none smaller.**
+That sweep is not something `make mocks` builds — the generator renders six components at
+four spans — so it is a figure from a one-off probe rather than one the page can reproduce,
+and the figure this document stands on is the one above it: five bands of twenty-five.
+
+**Sixteen panels also change what they draw rather than only how large it is**, and every
+one of them is a panel shedding something. Seven drop an inline unit, seven drop a compact
+visual, two drop a compass, and one — `variable-indicator` at a single cell — drops its dial
+and gains the unit back, because a panel holding one element does not split and the whole
+content box is then available to measure the unit against.
+
+**The user saw it by eye on two separate components and asked for it.** That is what
+decided it; the arithmetic above is what makes it checkable.
+
+**Placement moved with it, and both halves had to move together.** A font chosen from ink
+and a block centred by its line box is half a change: the box is taller than the glyphs, so
+centring it leaves the number sitting high in its band, and on `navigation 4x2` a dial
+centred on the line box sits 4.5 px off the digits' visual middle. So `theme.bodyTop` is
+given the ink height and the line box is placed so the ink lands where the band wants it.
+[A compact visual](#a-compact-visual-sits-beside-the-reading-not-beneath-it) centres on the
+same block and therefore on the ink as well.
+
+**What it costs is a strip nothing reserves.** Centring a line box reserved the descent
+whether or not anything used it; centring ink does not, so the space between a reading's
+baseline and the bottom of its line box — 15 px at `XXLSIZE` — belongs to whatever is drawn
+beneath. That is safe only while nothing descends into it, which was a fact about today's
+catalogue and nobody's decision. It is an assertion now:
+`testReadingsDoNotDescendOverAnything` constructs the strings that can descend — every unit
+`telemetry_service` renders that reaches below the baseline, which is `mph`, `rpm`, `deg`,
+`g` and the `/` of `km/h`, `m/s` and `ml/m`, and the model name, which is the one reading on
+this dashboard that is free text. Measured at the tightest of those, an App-mode `metric` at
+`2 x 1` printing `rpm`, the `p` descends 2 px into 6 px of clear space: **4 px of headroom**,
+which is a margin rather than a guarantee, and is exactly why it is checked.
+
+**Three panels lose a circular gauge, and that is the magnitude rule doing its job.** A
+reading is never shrunk to make room for something beside it, so a reading one size larger
+can leave no pair of slots that separates it from a dial. `metric` with `visual: radial`,
+`variable-indicator` with `visual: radial` and `navigation`'s compass all shed theirs at two
+columns; `variable-indicator` also sheds at a single cell. The user was shown the threshold
+table and chose it.
+
+**And one band was found to be lying, which is the other thing ink exposed.** The tertiary
+band reserved a quarter of the panel for supporting rows. `navigation` is the only component
+that draws two and centres them as a group — 36 px against a quarter of 31 on a two-row
+panel — so its footer overflowed its band upward into the bottom of the body band, and the
+reading was sized against a band that reported more room than the panel had. A line box
+never reached its band's floor, so nothing met; ink does, and in the menu button's corner
+the distance ended 3 px inside the bearing row. The band is now the larger of the quarter and
+what the rows actually need. That is the rule this guide already states — reserve from what
+the panel draws — applied in the direction nobody had needed yet, and it changes nothing for
+the eleven components whose single row is shorter than a quarter at every span.
+
+**One thing to watch, which nobody has decided.** 22 px and 23 px are both Full-screen
+single-cell bands, one pixel apart because the grid's own rounding makes some rows a pixel
+taller than others, and `MIDSIZE`'s ink is exactly 23. So a single-cell panel in the top grid
+row reads at `SMLSIZE` and the same panel one row down reads at `MIDSIZE`. Under line height
+both rounded down to `SMLSIZE` and agreed. The panels genuinely are different sizes, so the
+rule's guarantee — two panels of *one* size agree — still holds; what is new is that it is
+now decidable at a one-pixel granularity, in the zone the shipped screens do not use.
 
 **Rejected: a literal 80% filter.** `height ≥ 0.8 × band` together with `height ≤ band` is a
 window a five-step ladder often has no member in. This one is unaffected by the correction

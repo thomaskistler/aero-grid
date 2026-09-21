@@ -91,6 +91,10 @@ end
 
 local out = {"CASES = {\n"}
 
+--- The band the real host gave each case it built, so the enumeration at the
+--- end of this file can be checked against it rather than merely believed.
+local hostBands = {}
+
 for _, zone in ipairs(ZONES) do
 for _, typeName in ipairs(ORDER) do
   for _, span in ipairs(SPANS) do
@@ -143,9 +147,28 @@ for _, typeName in ipairs(ORDER) do
     -- padding is asymmetric -- the left clears the accent stripe and the
     -- right has nothing to clear -- so a centred group centred on the panel
     -- would sit a couple of pixels off.
+    --
+    -- **And laid out around the menu button, where the panel meets it.** The
+    -- host wraps `frame` per component so a panel in the grid's top left
+    -- cell is built around the corner EdgeTX paints its button over; this
+    -- called the module's own function and got the unobstructed frame, so
+    -- every App mode figure on the page was the figure for a panel nothing
+    -- covers. It was found by the band enumeration at the end of this file
+    -- disagreeing with the host, which is what that check exists for.
     local rect = {x = 0, y = 0, w = bounds.w, h = bounds.h}
+    local reserved
+    if context.reserved then
+      local width = context.reserved.w - (bounds.x or 0)
+      local height = context.reserved.h - (bounds.y or 0)
+      if width > 0 and height > 0 then
+        reserved = {
+          w = width < rect.w and width or rect.w,
+          h = height < rect.h and height or rect.h,
+        }
+      end
+    end
     local frame = themeModule.frame(context.theme, rect,
-      themeModule.typography(colSpan, rowSpan))
+      themeModule.typography(colSpan, rowSpan), reserved)
 
     -- **The widget's own bands, not a second opinion about them.** The
     -- renderer used to recompute the proportional bands from the panel's
@@ -200,6 +223,9 @@ for _, typeName in ipairs(ORDER) do
       table.concat(widths, ", "), frame.compact, frame.top, frame.bottom,
       frame.labelHeight, bands.body.y, bands.body.h)
 
+    hostBands[#hostBands + 1] = {zone = zone.name, component = typeName,
+      colSpan = colSpan, rowSpan = rowSpan, band = bands.body.h}
+
     local function walk(object, depth)
       for _, child in ipairs(object.children) do
         local p = child.properties
@@ -251,6 +277,128 @@ end
 end
 
 out[#out + 1] = "}\n"
+
+--- Every body band this dashboard can build, and where each one occurs.
+---
+--- **The cases above cannot answer this and never could.** They are six
+--- components at four spans, every one of them placed in the grid's top left
+--- cell -- which is one placement of a hundred and thirty-six, and is also
+--- the one cell EdgeTX paints its menu button over in App mode. A band is a
+--- property of the panel's box rather than of what is drawn in it, so the
+--- honest way to enumerate them is to walk every placement of every span in
+--- both zones and ask `theme.ladder`, which is the widget's own function,
+--- with the supporting row both taken and declined.
+---
+--- Rectangles come from the widget's own `grid.rect`. The App mode
+--- reservation is `main.lua`'s own arithmetic: the button is drawn at the
+--- screen origin, so what it takes from a panel is whatever of it reaches
+--- into that panel's rectangle.
+---
+--- **That is a second opinion, so it is checked against the first.** Every
+--- case built above reports the band the real host gave it, and this walk
+--- has to agree with all of them or the generator refuses to emit anything.
+--- A generator quietly disagreeing with the widget it reports on is how a
+--- page comes to be both trusted and wrong.
+local gridModule = assert(loadfile(sourcePath .. "lib/grid.lua"))()
+local resolvedTheme = themeModule.build("modern")
+
+local ZONE_GEOMETRY = {
+  appmode = {
+    zone = {x = 0, y = 0, xabs = 0, yabs = 0, w = 480, h = 272},
+    reserved = {
+      w = edgetx.firmware.MENU_HEADER_BUTTONS_LEFT,
+      h = edgetx.firmware.MENU_HEADER_HEIGHT_PX,
+    },
+  },
+  widget = {
+    zone = {x = 0, y = 0, xabs = 0,
+      yabs = edgetx.firmware.MENU_HEADER_HEIGHT_PX,
+      w = 480, h = 272 - edgetx.firmware.MENU_HEADER_HEIGHT_PX},
+  },
+}
+
+--- The band a panel at one placement gets, with its row and without it.
+local function bandsAt(zoneName, col, row, colSpan, rowSpan)
+  local geometry = ZONE_GEOMETRY[zoneName]
+  local placement = {col = col, row = row,
+    colSpan = colSpan, rowSpan = rowSpan}
+  local rect = assert(gridModule.rect(geometry.zone, placement, 4, 4, 4))
+  local panel = {x = 0, y = 0, w = rect.w, h = rect.h}
+
+  local reserved
+  if geometry.reserved then
+    local width = geometry.reserved.w - rect.x
+    local height = geometry.reserved.h - rect.y
+    if width > 0 and height > 0 then
+      reserved = {
+        w = width < rect.w and width or rect.w,
+        h = height < rect.h and height or rect.h,
+      }
+    end
+  end
+
+  local fonts = themeModule.typography(colSpan, rowSpan)
+  local frame = themeModule.frame(resolvedTheme, panel, fonts, reserved)
+  -- Three answers, not two. A panel may draw no supporting row, one, or --
+  -- in `navigation` alone -- two centred as a group, which needs more than
+  -- the quarter the band reserves and therefore narrows the body further.
+  -- A walk that asked only the first two would miss every band that
+  -- component builds.
+  local twoRows = frame.labelHeight * 2 + 2
+  return themeModule.ladder(resolvedTheme, panel, frame, {rows = true}).room,
+    themeModule.ladder(resolvedTheme, panel, frame, {rows = false}).room,
+    themeModule.ladder(resolvedTheme, panel, frame,
+      {rows = true, rowHeight = twoRows}).room
+end
+
+for _, observed in ipairs(hostBands) do
+  local withRow, withoutRow, withTwo = bandsAt(observed.zone, 0, 0,
+    observed.colSpan, observed.rowSpan)
+  assert(observed.band == withRow or observed.band == withoutRow
+      or observed.band == withTwo,
+    string.format("the band walk disagrees with the host: %s %s %dx%d drew a"
+      .. " %d px body band, and the walk says %d or %d", observed.zone,
+      observed.component, observed.colSpan, observed.rowSpan, observed.band,
+      withRow, withoutRow))
+end
+
+local bandOrder, bandWhere = {}, {}
+for _, zoneName in ipairs({"appmode", "widget"}) do
+  for colSpan = 1, 4 do
+    for rowSpan = 1, 4 do
+      for col = 0, 4 - colSpan do
+        for row = 0, 4 - rowSpan do
+          local withRow, withoutRow, withTwo = bandsAt(zoneName, col, row,
+            colSpan, rowSpan)
+          for _, band in ipairs({withRow, withoutRow, withTwo}) do
+            if not bandWhere[band] then
+              bandWhere[band] = {}
+              bandOrder[#bandOrder + 1] = band
+            end
+            local key = zoneName .. " " .. colSpan .. "x" .. rowSpan
+            bandWhere[band][key] = (bandWhere[band][key] or 0) + 1
+          end
+        end
+      end
+    end
+  end
+end
+table.sort(bandOrder)
+
+out[#out + 1] = "BANDS = {\n"
+for _, band in ipairs(bandOrder) do
+  local keys = {}
+  for key in pairs(bandWhere[band]) do keys[#keys + 1] = key end
+  table.sort(keys)
+  local where = {}
+  for _, key in ipairs(keys) do
+    where[#where + 1] = string.format("%s x%d", key, bandWhere[band][key])
+  end
+  out[#out + 1] = string.format("  {band = %d, where = %q},\n", band,
+    table.concat(where, ", "))
+end
+out[#out + 1] = "}\n"
+
 -- The palette, so the page can draw a surface and a canvas behind the panels.
 local theme = assert(loadfile(sourcePath .. "lib/theme.lua"))()
 local resolved = theme.build("modern")

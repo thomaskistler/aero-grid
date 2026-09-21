@@ -1005,7 +1005,7 @@ function theme.fitReadingUnit(digits, unit, width, room, required)
     local ordered = theme.READING_FONTS
     local start = #ordered
     for index = 1, #ordered do
-      if theme.fontHeight(ordered[index]) <= room then start = index break end
+      if theme.fontAscent(ordered[index]) <= room then start = index break end
     end
     for step = start, #ordered do
       local font = ordered[step]
@@ -1080,7 +1080,9 @@ end
 ---@param resolved AeroGridTheme
 ---@param rect AeroGridRect
 ---@param frame table Result of theme.frame.
----@param draws? table `{rows = boolean}`: what the component will draw.
+---@param draws? table `{rows = boolean, rowHeight = integer}`: what the
+--- component will draw, and how tall its supporting rows are where that is
+--- more than the quarter the band reserves.
 ---@return table ladder `{rows, visual, room}`
 function theme.ladder(resolved, rect, frame, draws)
   local spacing = resolved.spacing
@@ -1129,7 +1131,7 @@ function theme.ladder(resolved, rect, frame, draws)
   if draws ~= nil and draws.rows == false then drawsRows = false end
 
   local bands = theme.bands(frame, rect, true, drawsRows,
-    visual and barHeight or 0)
+    visual and barHeight or 0, draws ~= nil and draws.rowHeight or nil)
 
   return {
     rows = rows,
@@ -1190,8 +1192,12 @@ function theme.fitReading(forms, width, room)
   local ordered = theme.READING_FONTS
   local start = #ordered
 
+  -- **The band holds the ink, not the line box.** Same rule as
+  -- `theme.bandFont`, and it has to be the same rule: a font chosen one way
+  -- and a band measured the other is the disagreement the shared ladder
+  -- exists to remove.
   for index = 1, #ordered do
-    if theme.fontHeight(ordered[index]) <= room then start = index break end
+    if theme.fontAscent(ordered[index]) <= room then start = index break end
   end
 
   -- The target the box allows, then down until something fits.
@@ -1607,8 +1613,10 @@ end
 ---@param rect AeroGridRect
 ---@param hasLabel boolean
 ---@param hasTertiary boolean
+---@param floorHeight? integer Height a bar takes off the panel's floor.
+---@param rowHeight? integer Height the supporting rows actually need.
 ---@return table bands `{label, body, tertiary}`, each `{y, h}`.
-function theme.bands(frame, rect, hasLabel, hasTertiary, floorHeight)
+function theme.bands(frame, rect, hasLabel, hasTertiary, floorHeight, rowHeight)
   local top = frame.compact
   local extent = math.max(1, (rect.h - frame.bottom) - top)
   local quarter = math.floor(extent / 4)
@@ -1620,7 +1628,26 @@ function theme.bands(frame, rect, hasLabel, hasTertiary, floorHeight)
   -- would have had. On a 238 x 65 panel that difference is four pixels and it
   -- costs the reading a whole font size, which is the thing shedding a row is
   -- supposed to buy.
-  local tertiaryHeight = hasTertiary and quarter or (floorHeight or 0)
+  -- **A quarter, or what the rows actually need, whichever is larger.** The
+  -- quarter is a proportion of the panel and the rows are text, so on a
+  -- short panel the proportion can be smaller than the thing it is
+  -- reserving for: `navigation` draws two rows and a two-row group is 36 px
+  -- against a quarter of 31 on a two-row panel. The rows then overflow their
+  -- band upward, into the bottom of the body band -- where the reading is.
+  --
+  -- That was invisible while a reading was measured as a line box, because a
+  -- line box never reached its band's floor. Measured as ink it does: in the
+  -- corner EdgeTX paints its menu button over, a `2 x 2` body band is 54 px
+  -- and XXLSIZE is 54 px of ink, so the number ended three pixels inside the
+  -- bearing row. The band was lying about what was left, which is the same
+  -- defect as reserving a row a panel never draws, in the opposite
+  -- direction.
+  --
+  -- A component that draws one row needs less than a quarter at every span
+  -- this dashboard builds, so this changes nothing for the other eleven.
+  local tertiaryHeight = hasTertiary
+    and math.max(quarter, rowHeight or 0)
+    or (floorHeight or 0)
 
   -- **Where the heading's font overflows its band, the body yields too.** The
   -- label band is a quarter, and on a short panel a quarter is smaller than
@@ -1641,7 +1668,7 @@ function theme.bands(frame, rect, hasLabel, hasTertiary, floorHeight)
   }
 end
 
---- The largest reading font whose line height fits a band.
+--- The largest reading font whose ink fits a band.
 ---
 --- This inverts the older rule. There the composition came from the box and
 --- the font from the composition; here the band comes from the panel and the
@@ -1649,18 +1676,32 @@ end
 --- all and therefore cannot resize with it. The stability guarantee the
 --- fitter had to be careful to preserve now holds by construction.
 ---
---- Chosen by **line height**, not by the ink the glyphs actually mark. Ink
---- was measured against it at every span: it reaches 86% of a 36 px band
---- against line height's 63%, but it cannot move a 51 px band at all, because
---- the ladder steps 40 to 69 with nothing between. That gap is the ladder's
---- granularity rather than the metric, so the alternative is blocked rather
---- than wrong, and the design guide records what reopens it.
+--- Chosen by **ink** -- the font's ascent -- rather than by its line height,
+--- which carries a descent and a leading that no digit, minus, point or
+--- colon in this catalogue draws into. On the twenty-one body bands this
+--- dashboard can build, the two rules disagree on four: 23 px takes MIDSIZE
+--- rather than SMLSIZE, 34 px DBLSIZE rather than MIDSIZE, and 54 and 62 px
+--- XXLSIZE rather than DBLSIZE. A 62 px band drew a reading filling half of
+--- it where the next font up fills 87%.
+---
+--- **This was decided the other way first**, on a 36 px band and a 51 px
+--- band, and the correction is worth knowing rather than quietly made: 36 px
+--- is not a band this dashboard builds at all, and the enumeration that said
+--- it was had been taken over the panels one generator happened to render.
+--- The design guide carries the record.
+---
+--- **What it costs is a strip nothing reserves**, between a reading's
+--- baseline and the bottom of its line box. Whatever is drawn beneath a
+--- reading may sit there, which is safe only while nothing descends into it
+--- -- so `testReadingsDoNotDescendOverAnything` constructs the strings that
+--- can: the units `telemetry_service` renders with a descender, and
+--- `model-identity`'s model name, which is free text.
 ---@param height integer Band height in pixels.
 ---@return any font
 function theme.bandFont(height)
   local ordered = theme.READING_FONTS
   for index = 1, #ordered do
-    if theme.fontHeight(ordered[index]) <= height then return ordered[index] end
+    if theme.fontAscent(ordered[index]) <= height then return ordered[index] end
   end
   return ordered[#ordered]
 end
@@ -1727,20 +1768,6 @@ function theme.clampToPanel(y, font, panelHeight)
   local ink = theme.fontAscent(font)
   local top = math.max(0, y)
   return math.min(top, math.max(0, panelHeight - ink))
-end
-
---- Top of a block of `height` centred on a reading's optical centre.
----
---- The reading's **line box**, not its ink. That was decided from rendered
---- mocks -- baseline, top and centre drawn side by side at every span -- and
---- confirmed when the band font was chosen: had the font come from ink, the
---- box and the glyphs would have disagreed by 4 px on a DBLSIZE reading.
----@param readingY integer
----@param readingFont any
----@param height integer
----@return integer
-function theme.opticalTop(readingY, readingFont, height)
-  return readingY + math.floor((theme.fontHeight(readingFont) - height) / 2)
 end
 
 --- Lay out a standard panel into a table the component owns.
@@ -1902,7 +1929,16 @@ function theme.panel(resolved, rect, fonts, spec, out)
   -- business until a component in this set has one.
   -- Reading and visual share the body band and are centred on each other, so
   -- the block the band centres is the deeper of the two.
-  local blockHeight = math.max(height, size)
+  --
+  -- **Measured as ink, not as line box.** A font's line height carries a
+  -- descent and a leading that nothing in this catalogue draws into, so
+  -- centring the box centres a rectangle that is taller than the glyphs and
+  -- leaves the number sitting high in its band. `theme.bodyTop` is given the
+  -- ink height for that reason, and the line box is then placed so the ink
+  -- lands where the band wants it -- which for a non-descending string means
+  -- the box top and the ink top are the same pixel.
+  local ink = theme.fontAscent(font)
+  local blockHeight = math.max(ink, size)
   local blockTop = theme.bodyTop(ladder, blockHeight)
 
   out.value = font
@@ -1942,7 +1978,10 @@ function theme.panel(resolved, rect, fonts, spec, out)
   else
     out.valueBudget = frame.content
   end
-  out.valueY = blockTop + math.floor((blockHeight - height) / 2)
+  -- The line box's top, which for a string that does not descend is also
+  -- the ink's top. `height` is the box and `ink` is what is drawn; the block
+  -- was measured in ink, so the offset inside it is too.
+  out.valueY = blockTop + math.floor((blockHeight - ink) / 2)
 
   -- A bar spans the panel by design and sits on its floor rather than in a
   -- band; a supporting row sits in the tertiary band above it.

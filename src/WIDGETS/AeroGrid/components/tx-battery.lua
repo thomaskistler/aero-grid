@@ -360,10 +360,13 @@ function txBattery.regionsFor(theme, themeBuilder, primitives, rect, layout,
     or nil
 
   -- Two boxes sharing an optical centre stack to the taller of them, so the
-  -- block the band centres is simply the deeper of reading and glyph.
-  local blockHeight = math.max(valueHeight, glyphHeight or 0)
+  -- block the band centres is simply the deeper of reading and glyph --
+  -- measured as ink rather than as line box, because a font's descent and
+  -- leading are not drawn and centring them leaves the number high.
+  local valueInk = themeBuilder.fontAscent(value)
+  local blockHeight = math.max(valueInk, glyphHeight or 0)
   local blockTop = themeBuilder.bodyTop(ladder, blockHeight)
-  local valueY = blockTop + math.floor((blockHeight - valueHeight) / 2)
+  local valueY = blockTop + math.floor((blockHeight - valueInk) / 2)
 
   local glyphX, glyphY, glyphBorder
   if glyphWidth then
