@@ -25,14 +25,33 @@ because a decision that drifted is exactly the kind a guide exists to pin down.
 | The battery glyph: vertical, one colour, outline scaled to the reading's font | Implemented and shipped |
 | The unit inline beside the reading, placed by measurement | Implemented and shipped |
 | Content flow: proportional bands, the band-derived font, the clamp | Implemented and shared by every component |
-| Content flow: the two slots and the build-time fallback | Implemented in `theme`; **`tx-battery` and `navigation` are on them, nine components are not** |
+| Content flow: the two slots and the build-time fallback | Implemented and shared by every component that draws a reading |
+| The standard panel assembled in one place (`theme.panel`) | Implemented; **six of the twelve components are on it** |
 
-The vertical half of [Content flow](#content-flow) — bands, the band-derived font and the
-clamp — is live for every component, because a font rule applied by some and not others
-would reintroduce exactly the cross-panel disagreement the shared ladder exists to remove.
-The horizontal half is live in `theme` but only `tx-battery` is on it; every other
-component still starts its reading at the content box's left edge and says so where it
-returns its geometry.
+Both halves of [Content flow](#content-flow) are now live everywhere. The vertical half —
+bands, the band-derived font and the clamp — always was, because a font rule applied by
+some and not others reintroduces the cross-panel disagreement the shared ladder exists to
+remove. The horizontal half was true of `tx-battery` alone when that was written; the slot
+rule was then chosen on the radio and every component that draws a reading was converted
+to it.
+
+What is only partly done is the **assembly**. `theme.panel` builds the standard
+arrangement — heading, reading, optional compact visual, optional supporting row — from a
+description of what the panel draws, so that the decisions live in one place instead of
+being retyped in each component. Where a component stands:
+
+| | Components |
+| --- | --- |
+| On `theme.panel` | `cell-battery`, `flight-mode`, `flight-timer`, `link-status`, `metric`, `variable-indicator` |
+| Own arrangement, by recorded decision | `navigation`, `tx-battery` |
+| Own arrangement, never converted | `model-identity` |
+| Exempt: no reading to place | `trim-panel`, `host-diagnostics`, `service-probe` |
+
+`navigation` keeps its own because it draws **two** supporting rows and centres them as a
+group, which the builder cannot express; the entry below records what was measured.
+`tx-battery` keeps its own for reasons that are now partly obsolete and partly open, also
+below. `model-identity` is the one with no argument behind it: it is standard in shape and
+was simply never assigned to a conversion stage.
 
 ## How to check the numbers in this document
 
@@ -285,12 +304,49 @@ fitting ladder, so the decision makes it the pattern rather than the exception. 
 two panels: `metric` and `variable-indicator` at `1 x 2` each trade their dial for two font
 sizes. The user was shown that trade and chose it.
 
+### Open: what a unit yields to
+
+**The order between a reading and a decoration is settled. The order between a *unit* and a
+decoration is not, and two components answer it differently.**
+
+`theme.panel` treats the unit as part of the reading: it measures the pair, asks whether
+that clears the visual, and sheds the **visual** if it does not. `tx-battery` measures the
+unit against the slot instead, so the **unit** goes and the battery stays. Both are
+defensible — the heading already names what is being measured, so the unit is redundancy;
+but so is the glyph, and nothing in either document ranks one kind of redundancy against
+the other.
+
+It is live in two panels. A `tx-battery` at `2 x 2` with its percentage row off currently
+drops the `V` and keeps the glyph, where the shared rule would keep **both** — the unit is
+being dropped for room that was available. At `1 x 2` with the row on it is a straight
+swap: unit or glyph, not both.
+
+Recorded rather than decided, because it changes what a shipped panel draws.
+
+### Open: a compact visual has two dimensions
+
+`theme.panel` describes a compact visual with a single size, because every one built so far
+is a circle — a radial or a compass ring, where the diameter is both the width it takes
+from the reading and the depth it takes from the band.
+
+**A battery glyph is not a circle.** It measures 17 x 34 px at one-row spans and 25 x 50 at
+two-row spans, a one-to-two ratio at every size. Given only one number the builder either
+mis-centres it vertically or reserves fifty pixels of width for something twenty-five wide
+and sheds glyphs that would have fitted.
+
+This is a generalisation rather than a special case — a compact visual *has* a width and a
+height, and a circle simply returns the same number twice — so it is not blocked on
+anything except having a component that needs it.
+
 ---
 
 ## Content flow
 
-**Agreed from rendered mocks. Not implemented by any component.** Run `make mocks` and
-open `build/flow-mocks.html` to see every figure below drawn at its true pixel size.
+**Implemented and shipped.** This section was written from rendered mocks and marked "not
+implemented by any component" while it was a proposal; both halves of it are now live
+everywhere, and the table at the top of this document records which components assemble it
+through `theme.panel` and which still write the assembly out themselves. Run `make mocks`
+and open `build/flow-mocks.html` to see every figure below drawn at its true pixel size.
 
 ### The problem it solves
 
@@ -476,6 +532,14 @@ from `XXLSIZE` to `DBLSIZE`, because a body band is half a panel's extent and ha
 134 px panel is 62 against `XXLSIZE`'s 69. That is the largest reading on the dashboard
 getting smaller, and it was accepted knowingly.
 
+**Corrected: it was accepted for more panels than it was true of.** A quarter of the panel
+is reserved for a supporting row, and `tx-battery`'s percentage row is off unless a layout
+asks for it — so a panel that was never going to draw a row was charged 31 px for one, and
+the 62 px band above was 93 px all along. With the row genuinely off, the two-row spans
+take `XXLSIZE` again. The loss is real only where the row is real, which is what the band
+rule was always meant to say. Three components had this, and eleven cases got their font
+back; the bands quoted throughout this section are the ones a panel actually gets.
+
 > **This table said the opposite until the rule was implemented, and the correction is
 > worth recording rather than quietly making.** It claimed 14 of 24 readings would grow
 > and none shrink, and the user chose the rule partly on that. The number was an artefact
@@ -507,23 +571,46 @@ or a colon, none of which descend. So a band sized against line height genuinely
 slack nothing draws into, and the observation that prompted this ("fonts should use at least
 80% of their vertical allotment") was correct on its own terms:
 
+It was rejected on these two bands:
+
 | Band | By line height | Ink fills | By ink | Ink fills |
 | --- | --- | --- | --- | --- |
 | 36 px | `MIDSIZE` | 63% | `DBLSIZE` | 86% |
 | 51 px | `DBLSIZE` | 60% | `DBLSIZE` | 60% |
 
-It was rejected because **80% is unreachable on the larger band for a reason that has
-nothing to do with the measurement.** A 51 px band takes `DBLSIZE` at 31 px of ink; the next
-step up is `XXLSIZE` at 54 px, which fits by neither measure. The ladder is 12, 17, 29, 40,
-69 — and between 40 and 69 there is nothing. **The gap there is the ladder's granularity.**
-Reaching 80% everywhere means a denser ladder, which is a larger change and a different one.
+— because 80% looked unreachable on the larger of them for a reason with nothing to do
+with the measurement: a 51 px band takes `DBLSIZE` at 31 px of ink, the next step up is
+`XXLSIZE` at 54 px, and between 40 and 69 the ladder has nothing. That was read as the
+ladder's granularity rather than the rule's fault.
+
+**Corrected: this dashboard produces neither of those bands.** Enumerating every body band
+over both zones, all sixteen spans and the supporting row both on and off, the bands that
+actually occur are **22, 34, 50, 62, 69, 79, 87, 97, 108, 112, 132, 139, 155 and 191 px**.
+36 and 51 are not among them, and the argument was made on the two sizes where ink happens
+to buy the least.
+
+On the bands that do occur, ink and line height disagree twice — and both are cases where
+the panel carries a supporting row, which is to say the cases where the reading has least
+room and a size is worth most:
+
+| Band | By line height | Ink fills | By ink | Ink fills |
+| --- | --- | --- | --- | --- |
+| 34 px | `MIDSIZE` | 67.6% | `DBLSIZE` | **91.2%** |
+| 62 px | `DBLSIZE` | 50.0% | `XXLSIZE` | **87.1%** |
+
+A 62 px band draws a reading filling half of it where the next font up would fill 87%, and
+`XXLSIZE` is excluded there only because its *line height* is 69 — seven pixels of leading
+and descent that no digit, minus, point or colon in this catalogue ever draws into.
+
+So the rejection stands as a record of what was tried, and its conclusion does not: the
+ladder's granularity is not what blocks ink on the bands this dashboard builds. **The
+question is open, not closed.** It is a behaviour change affecting readings on every panel
+that carries a supporting row, so it belongs to the user rather than to whoever reads this
+next; the rendering that answered it is still in `tools/flow-render.py`.
 
 **Rejected: a literal 80% filter.** `height ≥ 0.8 × band` together with `height ≤ band` is a
-window a five-step ladder often has no member in.
-
-The ink option is blocked rather than dead. If the ladder ever gains a step between 40 and
-69 px the question reopens, and the rendering that answered it is still in
-`tools/flow-render.py` rather than deleted.
+window a five-step ladder often has no member in. This one is unaffected by the correction
+above — it is a statement about the ladder, not about any particular band.
 
 ### The font wins, and is clamped to the panel
 
@@ -552,7 +639,7 @@ a full-width bar and are exempt, and **5** have no visual at all. Only **10** ca
 to reclaim. The sweep is narrower than the component count suggests, though a `metric` with
 `visual: radial` is a different case from the same component with `visual: bar`.
 
-### One consequence to resolve before building it
+### One consequence, since resolved
 
 `tx-battery` is the only component that gates its visual on **data** rather than on space: it
 hides its battery until there is a voltage range to measure against, and that range is a live
@@ -564,10 +651,17 @@ during start-up, every time** — and a pilot editing SYS → Hardware → Batte
 move it again, in flight. That is the objection that ruled out centring, reappearing in the
 arrangement chosen to avoid it.
 
-It is confined to one component and it is fixable: reserving the slot whenever the layout
+It is confined to one component and it was fixable: reserving the slot whenever the layout
 *could* ever show a visual, rather than when one is currently drawn, holds the reading still,
-at the cost of a permanently empty right slot on a panel that never gets a range. That trade
-has not been made.
+at the cost of a permanently empty right slot on a panel that never gets a range. **That
+trade was made, and it is what `tx-battery` does** — `reserveSlot` asks whether this layout
+wants a battery, not whether one is being drawn.
+
+It is worth keeping the reasoning rather than only the outcome, because it is the one place
+in the dashboard where a layout decision is deliberately made from what a panel *could*
+show. Everywhere else the rule is the opposite — bands and rows come from what a panel
+draws, never from what it is permitted — and the difference is that a permission which can
+change mid-flight is not a permission at all, it is data.
 
 ---
 
@@ -591,9 +685,11 @@ check.
 
 Four details it took two attempts to get right, each of which produced false failures:
 
-- **Measure a label the way the radio draws it.** `theme.textWidth` is deliberately generous
-  so text shrinks rather than clips; fed to a collision check it reports every reading as
-  lying across its own unit.
+- **Measure a label the way the radio draws it.** `theme.textWidth` allows one width per
+  character regardless of which character it is, so on digits it over-reports; fed to a
+  collision check it reported every reading as lying across its own unit. It was described
+  here as deliberately generous, which is true of digits and false of capitals — see the
+  estimate entry above, and note that fitting no longer uses it either.
 - **A label cannot draw past its own width.** A Lua label's long mode is LVGL's default
   wrap, so text too wide for its column comes back down the panel rather than out across it.
   Sideways is the one direction it cannot go.
