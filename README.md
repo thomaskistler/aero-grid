@@ -117,7 +117,7 @@ AeroGrid loads each component from `src/WIDGETS/AeroGrid/components/<type>.lua`,
 | `placeholder` | Verifies placement and resizing at any span. |
 | `heartbeat` | Verifies the lifecycle callbacks and span restrictions. |
 
-Each component declares the spans it supports and a typed settings schema with labels and defaults, so `layouts/default.yaml` is the only thing that needs editing to rearrange or reconfigure the dashboard. The shipped layout demonstrates all ten components on one screen.
+Each component declares the spans it supports and a typed settings schema with labels and defaults, so `layouts/default.yaml` is the only thing that needs editing to rearrange or reconfigure the dashboard. The shipped layout demonstrates ten of the twelve components on one screen; the two diagnostics views have a screen of their own.
 
 Every component degrades rather than raising: a source the radio does not recognize, a timer index that does not exist, a radio without global variables, a firmware without a flight-mode API, a model bitmap that is not on the card, a cells source that answers with the wrong shape, a GPS sensor with no fix, and a link that has dropped each produce a clear state with a text badge, because colour alone is not enough to communicate one.
 

@@ -1,7 +1,7 @@
 version: 1
 
-# The shipped dashboard. It demonstrates the complete phase 1 catalogue, all
-# ten components, at a mixture of spans, so a fresh install shows real
+# The shipped dashboard. It demonstrates ten of the twelve catalogue
+# components, at a mixture of spans, so a fresh install shows real
 # behaviour rather than placeholders. Change the source names to sensors your
 # own model has; a source the radio does not recognize degrades to an explicit
 # unavailable state rather than pretending to read zero.

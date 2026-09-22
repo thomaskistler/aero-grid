@@ -435,7 +435,7 @@ def clamp_to_panel(y, obj, panel_h):
     proportional at the bottom of the size range, and nothing is ever drawn
     off the panel.
 
-    The alternative -- falling back to today's stacking below a threshold --
+    The alternative -- falling back to the older stacking below a threshold --
     was rejected deliberately. **Two layout rules with a size threshold
     between them is a worse thing to own than one rule that bends at the
     bottom of its range**: every component, every span and every future
@@ -1839,11 +1839,15 @@ colour and string is what the dashboard produces right now. Text is set to
 its measured width so the proportions hold, though the browser's glyphs are
 not EdgeTX's.</div>
 
-<div class="warn"><strong>What is speculative:</strong> both
-<em>font</em> columns are transformations applied in
-<code>tools/flow-render.py</code> to that same geometry. <strong>Nothing in
-the widget implements any of this.</strong> The arrangement is agreed and
-unbuilt; the font rule is the question on this page.</div>
+<div class="warn"><strong>What the two <em>font</em> columns are:</strong>
+transformations applied in <code>tools/flow-render.py</code> to that same
+geometry, kept so the page still shows the comparison the rule was chosen
+from. <strong>Corrected: this said &ldquo;nothing in the widget implements
+any of this&rdquo;.</strong> The widget implements all of it &mdash; every
+component that draws a reading takes its font through the shared ladder, and
+the section below this one already said the questions had been answered. Two
+claims on one page, contradicting each other, and the stale one read as the
+authoritative one because it was the alarming one.</div>
 
 <h2>What this page is now</h2>
 <p class="intro"><strong>Every question this page asked has been
@@ -2192,21 +2196,26 @@ shrinking.</strong> A quarter of a 53&nbsp;px panel is 11&nbsp;px and the
 smallest font the dashboard has is <code>TINSIZE</code> at 12. There is no
 font that fits that band, so "let the band win" is not an option there
 &mdash; only "let the font win", which is what is rendered, or "fall back to
-today's stacking below some size".</p>
+the older stacking below some size", which was considered and rejected.</p>
 
-<p class="intro"><strong>The body band never fails</strong>, which was not
-obvious in advance. A 53&nbsp;px panel looks as if a half &mdash; 23&nbsp;px
-&mdash; could not hold a 29&nbsp;px <code>MIDSIZE</code> reading. But those
-panels shed their tertiary row, so the split is 1/4 : 3/4 and the body gets
-36, which holds the tallest block any of them draws. The proportional rule
-rescues itself exactly where it looked weakest.</p>
+<p class="intro"><strong>Corrected: this said the body band never
+fails.</strong> The argument was that a 53&nbsp;px panel sheds its tertiary
+row, so the split becomes 1/4&nbsp;:&nbsp;3/4 and the body gets 36&nbsp;px
+&mdash; which was true of the rule that redistributed an absent part's
+quarter, and was never a property of the proportional one. It was the
+redistribution rescuing it. The design guide corrected this and <em>this
+copy survived</em>. The reading no longer takes a band at all: it is sized
+against half the panel's height, which on that panel is 27&nbsp;px and holds
+<code>MIDSIZE</code>.</p>
 
-<p class="intro"><strong><code>navigation</code>'s tertiary is the one case
-that could be shrunk.</strong> It puts two rows there &mdash; a bearing
-beside an orientation, with coordinates beneath &mdash; needing 36&nbsp;px in
-a 25&nbsp;px band. Two <code>TINSIZE</code> rows would be 24 and would fit,
-at the cost of making the smallest text on the panel smaller still. Rendered
-as overflow rather than shrunk, so you can see what is being traded.</p>
+<p class="intro"><strong><code>navigation</code>'s tertiary was the one case
+that wanted more than its band.</strong> It puts two rows there &mdash; a
+bearing beside an orientation, with coordinates beneath &mdash; needing
+36&nbsp;px in a 25&nbsp;px band. Settled since: the quarter <em>grants</em>
+the second row rather than containing it, so a two-row panel draws the
+bearing alone and a three-row panel draws both, and the group hangs from the
+panel's floor so any overflow goes upward into air the reading is already
+held clear of.</p>
 
 <p class="intro"><strong>The dial fits its band.</strong> It was worth
 checking, since today it is sized against the whole content box: at
@@ -2221,12 +2230,12 @@ the dashboard has. A rule that applies at two rows and falls back to today's
 stacking at one is a legitimate answer; a rule that claims to be universal
 would not be.</div>
 
-<h3 class="plain">What the band-derived font does to the ladder</h3>
+<h3 class="plain">What the panel-derived font did to the ladder</h3>
 <p class="intro"><strong>This is the most important table on the page.</strong>
-The font now comes from the band, and the band from the panel &mdash; which
-inverts today's rule, where the composition comes from the box and the font
-from the composition. Every component at every span, today's reading font
-against the banded one:</p>
+The font comes from the panel's own height, which inverted the rule that came
+before it, where the composition came from the box and the font from the
+composition. Every component at every span, the older reading font against
+the derived one &mdash; this is the record of the change, not a proposal:</p>
 
 {ladder_table}
 
