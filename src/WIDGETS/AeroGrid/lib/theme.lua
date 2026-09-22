@@ -1138,19 +1138,24 @@ function theme.ladder(resolved, rect, frame)
   -- row, and measuring where the row used to be would charge it air that is
   -- no longer there.
   --
-  -- **The row is measured against the bare floor, and that is the safe
-  -- direction.** A row that hangs from a bar sits higher than one hanging
-  -- from the panel's edge, so a reading held clear of the lower position is
-  -- clear of the higher one too. The alternative was telling the ladder
-  -- whether this panel's visualization is a bar -- which it is not told, and
-  -- should not be: `ladder.visual` means a visualization was *granted*, and
-  -- for `tx-battery`'s cell and `navigation`'s dial that is something
-  -- standing beside the reading rather than beneath it. Capping against a
-  -- bar on those panels cost the cell its room and shed it outright on three
-  -- Full-screen spans, which is what measuring the change rather than
-  -- reasoning about it caught.
+  -- **Measured against the highest a row can land, which is the one hanging
+  -- from a bar.** A bar-reserving panel's row sits above the bar and so is
+  -- nearer the reading than a bare panel's row hanging from the edge -- 85
+  -- against 93 on a Full screen `2 x 2`.
+  --
+  -- **This comment said the opposite, and the check caught it.** It argued
+  -- that clearing the lower position clears the higher one, which is the
+  -- inequality the wrong way round; `cell-battery` at that span took XXLSIZE
+  -- and put its unit four pixels into its own supporting row.
+  --
+  -- **Conservative rather than asked of the component, and that is the
+  -- point of this function.** Two panels of one size must get one answer
+  -- whatever drew them, so the budget may not depend on whether this
+  -- particular component's visualization happens to be a bar. Telling the
+  -- ladder would be the redistribution objection again, in a third place.
+  local barTop = rect.h - frame.bottom - resolved.spacing.barHeight
   local floorY = rows > 0
-    and theme.rowTop(frame, frame.labelFont, rect.h)
+    and theme.rowTop(frame, frame.labelFont, barTop)
     or (rect.h - frame.bottom)
 
   return {
