@@ -250,7 +250,16 @@ function modelIdentity.regionsFor(theme, themeBuilder, rect, layout, fonts)
     formIndex = formIndex,
     imageY = imageTop,
     imageHeight = math.max(1, imageHeight),
-    labelsY = math.max(1, rect.h - frame.bottom - labelHeight),
+    -- Hung from the panel's floor through the shared rule. This panel draws
+    -- no bar, so its floor is the bottom edge.
+    --
+    -- **The fourth private copy of this arithmetic**, and the second that
+    -- had it nearly right: the line box against the panel's 4 px bottom
+    -- rather than the baseline against the heading's own inset, which put
+    -- it 2 px below where every other row now sits. `flight-mode` carried
+    -- the same two lines. Neither was wrong enough to be visible, which is
+    -- why both survived a presentation pass and a vertical-rhythm pass.
+    labelsY = themeBuilder.rowTop(frame, fonts.label, rect.h),
     -- What the body draws. A panel showing a picture puts its name in the
     -- heading instead, so the two are different questions and the old single
     -- `showName` answered both.
