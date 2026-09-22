@@ -53,13 +53,22 @@ local SPANS = {"1x1", "2x1", "2x2", "4x2"}
 
 --- Both zones a panel can be built in.
 ---
---- The shipped dashboards are Full screen custom screens, which is what the
---- user is looking at, and App mode reserves a strip for the menu button that
---- pushes every panel's content down. The difference is large enough to change
---- what a panel draws, so both are rendered rather than one being assumed.
+--- **The shipped dashboards are App mode**, which is what the user is
+--- looking at: every screen on both tracked models carries
+--- `LayoutId: Layout1x1AM`, and `layout1x1AppMode.cpp:53` registers that id
+--- as "App mode". App mode reserves a strip for the menu button that pushes
+--- the top-left panel's content down, and its zone is 19 px taller than a
+--- Full screen one because EdgeTX's own top bar is gone. Both differences
+--- change what a panel draws, so both zones are rendered rather than one
+--- being assumed.
+---
+--- **Corrected: this said Full screen was what the user pages through.** It
+--- was the premise #78 overturned, and this comment outlived the correction
+--- -- which matters more here than in prose, because a page ordered by the
+--- wrong zone puts the figures nobody is looking at first.
 local ZONES = {
-  {name = "widget", make = function() return lvglMock.fullScreenZone() end},
   {name = "appmode", make = function() return lvglMock.appZone() end},
+  {name = "widget", make = function() return lvglMock.fullScreenZone() end},
 }
 
 local function layoutFor(typeName, colSpan, rowSpan)
