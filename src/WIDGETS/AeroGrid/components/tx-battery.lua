@@ -290,9 +290,9 @@ function txBattery.regionsFor(theme, themeBuilder, primitives, rect, layout,
   -- it.
   local bands = ladder.bands
 
-  -- The font comes from the band, which comes from the panel, so it does not
-  -- consult the reading at all and cannot change as the voltage does.
-  local value = themeBuilder.bandFont(bands.body.h)
+  -- The font comes from the panel's own height, so it does not consult the
+  -- reading at all and cannot change as the voltage does.
+  local value = themeBuilder.bandFont(ladder.room)
   local unitFont = themeBuilder.unitFont(value)
   local valueHeight = themeBuilder.fontHeight(value)
 
@@ -302,9 +302,25 @@ function txBattery.regionsFor(theme, themeBuilder, primitives, rect, layout,
   -- both arrangements accept.
   local half = math.floor(frame.content / 2)
 
+  -- **The cell is bounded by the row beneath it, not only by the reading's
+  -- room.** The cell and the reading share a centre and that centre is the
+  -- panel's, so a cell sized against the reading's half grows symmetrically
+  -- about the middle of the panel and reaches a quarter of the panel's
+  -- height below it -- past the supporting row's own top on a short two-row
+  -- panel. Measured: a 117 by 84 panel stood its cell one pixel into the
+  -- percentage. A bar keeps the floor, so where one is drawn the row sits
+  -- above it and the row is still what the cell has to clear.
+  local floorY = showBar
+    and (showDetail and math.max(1, barY - labelHeight - 2) or barY)
+    or (showDetail
+      and themeBuilder.centreInBand(bands.tertiary, labelHeight)
+      or (rect.h - frame.bottom))
+  local glyphRoom = math.min(ladder.room,
+    themeBuilder.centredRoom(ladder, floorY - 2))
+
   local glyphWidth, glyphHeight
   if wantsGlyph and showVisual then
-    glyphWidth, glyphHeight = txBattery.glyphFor(primitives, half, bands.body.h)
+    glyphWidth, glyphHeight = txBattery.glyphFor(primitives, half, glyphRoom)
     -- A panel that cannot hold a glyph sheds it, the way it sheds any other
     -- visual. It does not fall back to a bar: the layout asked for a
     -- battery, and a bar in its place is a different answer to the question.

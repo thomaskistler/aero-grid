@@ -350,6 +350,10 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     and bands.tertiary.h >= rowsExtent(2)
 
   local rowsHeight = rowsExtent(showCoordinates and 2 or 1)
+  -- The dial's cap, which is not the reading's room. A reading is sized
+  -- against the panel now; a dial is an indicator beside it and is still
+  -- held to the middle band, so that letting the panel grow does not turn
+  -- the decoration into the largest thing on it.
   local available = bands.body.h
 
   -- Half the content is what either element may claim, whichever slot set
@@ -380,7 +384,15 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
   local rowsTop = showDetail
     and themeBuilder.centreInBand(bands.tertiary, rowsHeight)
     or (rect.h - frame.bottom)
-  local dialRoom = math.max(0, (rowsTop - 4) - bands.body.y)
+  -- **Measured from the centre the dial is actually placed on.** It used to
+  -- be measured from the body band's top, which was where the block was
+  -- centred; the block is centred on the panel now, so a room derived from
+  -- the band would let the dial grow downward past the rows by however far
+  -- the two centres differ. What a dial may occupy is symmetric about the
+  -- centre it is drawn on, so the room is twice the clearance above the
+  -- rows -- which is the same arithmetic `theme.panel` uses for a reading's
+  -- horizontal budget, and for the same reason.
+  local dialRoom = themeBuilder.centredRoom(ladder, rowsTop - 4)
 
   local radius = math.floor(
     math.min(half, available, dialRoom, navigation.DIAL_MAX_DIAMETER) / 2)
@@ -406,7 +418,7 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
   -- a size for a dial the panel then dropped anyway.
   local valueWidth = frame.content
   local value, unitFont, _, fits = themeBuilder.fitReadingUnit(
-    sample.digits, sample.unit, valueWidth, available, true)
+    sample.digits, sample.unit, valueWidth, ladder.room, true)
 
   -- The dial gives its room back rather than clipping the distance. A
   -- compass is a shape and survives being absent; a distance that runs off

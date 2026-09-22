@@ -33,6 +33,9 @@ local theme = {}
 --- Badge column width per font, since typography varies by span.
 local badgeWidths = {}
 
+--- Memo for theme.riderDepth, which reads the firmware's font metrics.
+local riderDepth
+
 --- Record something the host did on its own behalf, rather than a failure.
 ---
 --- A contrast correction is the legibility pass doing its job, not a problem,
@@ -1099,22 +1102,18 @@ function theme.ladder(resolved, rect, frame)
   local used = fixed + (visual and barHeight or 0)
   local rows = used + rowHeight + theme.fontHeight(MIDSIZE) <= rect.h and 1 or 0
 
-  -- **The reading's room is its band, not what is left over.** The panel
-  -- divides into fixed proportional bands -- a label quarter, a body half, a
-  -- tertiary quarter -- and the body is what the reading is sized against.
-  -- That inverts the older rule: the composition used to come from the box
-  -- and the font from the composition, and now the band comes from the panel
-  -- and the font from the band, so the font does not consult the content at
-  -- all and cannot resize with it. The stability the fitter had to be careful
-  -- to preserve now holds by construction.
+  -- The bands the panel's *furniture* lives in: the heading at the top, the
+  -- supporting row at the bottom. The reading no longer takes the band
+  -- between them -- see `theme.readingRoom` -- but the two outer bands are
+  -- unchanged, and a row that would not fit its quarter still does not.
   --
   -- It stays here rather than moving into each component, because two panels
   -- of one size agreeing is the whole reason this function exists. A band
   -- rule applied by some components and not others would reintroduce exactly
   -- the disagreement it replaced.
   --
-  -- **The bands no longer depend on what the panel draws at all**, which is
-  -- why nothing about `draws` reaches them. The tertiary quarter used to be
+  -- **The bands do not depend on what the panel draws**, which is why
+  -- nothing about `draws` reaches them. The tertiary quarter used to be
   -- reserved only when the floor was spoken for -- by a supporting row or by
   -- a bar -- and given to the body otherwise, so a panel drawing no row read
   -- at a size a panel drawing one could not. That is a layout that depends
@@ -1127,11 +1126,34 @@ function theme.ladder(resolved, rect, frame)
   -- short to hold, which is the whole point of deciding composition here.
   local bands = theme.bands(frame, rect, true)
 
+  -- The first row of the panel the widget owns, and the first row it has
+  -- promised to something else. The reading is centred between them.
+  local top = frame.reserved and frame.reserved.h or 0
+  local centre = rect.h / 2
+  -- Where a supporting row's glyphs begin, which is what the reading has to
+  -- clear -- not where its quarter begins. A row is centred in its quarter,
+  -- and measuring the quarter instead would charge the reading the whole of
+  -- the air above the row.
+  local floorY = rows > 0
+    and theme.centreInBand(bands.tertiary, frame.labelHeight)
+    or (rect.h - frame.bottom)
+
   return {
     rows = rows,
     visual = visual,
     bands = bands,
-    room = bands.body.h,
+    room = theme.readingRoom(frame, rect, rows, visual, centre, floorY),
+    -- The panel's own vertical centre, which is where the reading's ink
+    -- goes whatever else the panel carries. Held here so the one place that
+    -- decides the font and the one that decides the position read the same
+    -- number; they were separate once and a reading was sized against a band
+    -- it was not drawn in.
+    centre = centre,
+    -- The first row of the panel the widget actually owns: zero everywhere,
+    -- and the bottom of EdgeTX's menu button on the one panel it reaches
+    -- into. Nothing centred may start above it, because what is drawn there
+    -- is painted over.
+    top = top,
   }
 end
 
@@ -1603,6 +1625,147 @@ function theme.slotsFor(frame, readingWidth, visualWidth)
   return theme.SLOT_STRICT, false
 end
 
+--- How much vertical room the reading is sized against.
+---
+--- **Half the panel where the panel carries anything else, the whole panel
+--- where it does not.** There is no band for the reading any more: the
+--- panel's height is the budget, halved when something else has to share the
+--- panel with it.
+---
+--- **Four things count as sharing, and the rule was stated with two.** A
+--- heading and a supporting row are the two the user named. A visualization
+--- is the third and was found by measurement rather than by argument: an
+--- 80 x 65 panel is granted a bar and refused a heading and a row, so on the
+--- two-item statement its reading took the whole 65 px, and XXLSIZE ink
+--- centred on the panel ends at 59 against a bar whose track starts at 55.
+--- A bar is furniture in exactly the sense the rule means -- something else
+--- on the panel that the reading must not be sized as though it were alone.
+---
+--- The fourth is EdgeTX's menu button, which is the same thing seen from the
+--- panel's side. A panel the button reaches into is not a panel with nothing
+--- on it but a reading, and the user's rule for the corner -- that it keeps
+--- the half while the button is drawn and follows every other panel once the
+--- widget goes fullscreen and the button is hidden -- falls out of counting
+--- the button as furniture rather than being a case bolted on beside the
+--- rule.
+---
+--- **The button also caps the room, because it is the one piece of furniture
+--- the panel does not own.** A heading and a row are drawn by the widget and
+--- can be reasoned with; the button is painted over the widget by the
+--- firmware and cannot. So the reading may never be larger than what the
+--- button leaves below it, and on a 117 x 65 corner that is 20 px rather
+--- than the 32 px half. Without the cap the sweep finds fifteen readings
+--- drawn under the button, including `tx-battery` at a shipped `2 x 2`.
+---
+--- **The alternative was centring in the region below the button**, which is
+--- the other reading of the user's question, and it was measured rather than
+--- argued away: on a 238 x 134 corner the region below the button is 89 px,
+--- its centre is 89.5, and a DBLSIZE reading centred there runs from 74 to
+--- 105 against a supporting row's quarter that starts at 103. It collides at
+--- the shipped corner panel *and* costs that panel a font size, so the
+--- region is not what the reading is centred in -- the panel is, and the
+--- button clamps.
+---
+--- **Asked of what the panel reserves, never of what the component draws.**
+--- A heading is present when the panel is wide enough to keep one, a row or
+--- a visualization when it is tall enough to be granted one. That is the
+--- guarantee the fixed bands were chosen for and it is kept here: two panels
+--- of one size get one answer, whatever is configured into them. It is also
+--- why the bar had to count as furniture rather than be dodged by asking
+--- whether one is drawn -- the question the interface deliberately does not
+--- offer.
+---
+--- Which means the whole-panel budget is reachable only by a panel too
+--- narrow for a heading, too short for a row and for a bar, and clear of the
+--- button -- narrower than 97 px and shorter than 50. The four-column grids
+--- this dashboard ships never build one; a grid of five columns or more
+--- does, and `testAReadingAloneTakesTheWholePanel` builds it. A rule whose
+--- second half fires on nothing is a rule with one half, so the case is
+--- constructed rather than assumed.
+---@param frame table Result of theme.frame.
+---@param rect AeroGridRect
+---@param rows integer Supporting rows the panel grants.
+---@param visual boolean Whether the panel grants a visualization.
+---@return integer
+function theme.readingRoom(frame, rect, rows, visual, centre, floorY)
+  local reserved = frame.reserved
+  local shared = reserved ~= nil
+    or not frame.labelHidden
+    or (rows or 0) > 0
+    or visual == true
+  local room = shared and math.floor(rect.h / 2) or rect.h
+  if reserved then
+    room = math.min(room, math.max(1, rect.h - reserved.h))
+  end
+  -- **And never deep enough to reach the supporting row.** A reading centred
+  -- on the panel is symmetric about that centre, so what it may occupy
+  -- before its baseline meets the row is twice the clearance -- less twice
+  -- the strip a descending unit claims below that baseline, which is
+  -- symmetric too because the ink grows in both directions while the rider
+  -- hangs off the bottom.
+  --
+  -- This binds on exactly the panels where the half is generous enough to
+  -- reach: a Full screen two-row span is 108 px, its row's glyphs start at
+  -- 83, and XXLSIZE plus a MIDSIZE rider ends at 87.
+  if centre and floorY then
+    room = math.min(room, math.max(1,
+      2 * math.floor(floorY - centre) - 2 * theme.riderDepth()))
+  end
+  return room
+end
+
+--- How far below a reading's ink anything riding on its baseline can reach.
+---
+--- A unit sits on the reading's baseline, so its own ink ends where the
+--- reading's does -- but a *descending* unit carries glyphs into the strip
+--- between that baseline and the bottom of its line box, and nothing
+--- reserves that strip. `rpm`, `mph`, `deg`, `g`, `km/h`, `m/s` and `ml/m`
+--- are all in `telemetry_service`'s table and all descend.
+---
+--- **This is what made the safety argument behind `theme.bandFont` true by
+--- luck.** That argument is that the unreserved strip below a reading's
+--- baseline is safe while nothing descends into it, and
+--- `testReadingsDoNotDescendOverAnything` is what holds it -- and it held
+--- because the middle-band budget happened to leave nine pixels of slack on
+--- the panels where a descender could reach a supporting row. Sizing against
+--- half the panel spends that slack, and the check went red on a Full screen
+--- `2 x 2`: `rpm` two pixels into `CUR 10.0A`. So the depth is reserved
+--- rather than left to the budget.
+---
+--- Measured from the real fonts at call time rather than written down: the
+--- deepest a rider can reach is the largest `height - ascent` across the
+--- unit fonts the reading ladder can produce.
+---@return integer
+function theme.riderDepth()
+  if riderDepth then return riderDepth end
+  local deepest = 0
+  for _, font in ipairs(theme.READING_FONTS) do
+    local rider = theme.unitFont(font)
+    local below = theme.fontHeight(rider) - theme.fontAscent(rider)
+    if below > deepest then deepest = below end
+  end
+  riderDepth = deepest
+  return deepest
+end
+
+--- How deep a block centred on the panel may be before it reaches `floor`.
+---
+--- **A block centred on the panel is symmetric about that centre**, so what
+--- it may occupy before it meets something below it is twice the clearance,
+--- not the clearance. Three places need this -- the compass, the battery
+--- cell, and any compact visual a shared panel carries -- and they had three
+--- copies of the older arithmetic, which measured from the top of the band
+--- the block used to be centred in. Moving the centre to the panel's own
+--- left all three over-measuring by the distance between the two centres,
+--- which is how a 117 by 84 panel came to stand its battery one pixel into
+--- the row beneath it.
+---@param ladder table Result of theme.ladder.
+---@param floor integer The y a block must stay above.
+---@return integer
+function theme.centredRoom(ladder, floor)
+  return math.max(0, 2 * math.floor(floor - ladder.centre))
+end
+
 --- The proportional vertical bands a panel divides into.
 ---
 --- **A label band of one quarter, a body of one half, a tertiary of one
@@ -1724,26 +1887,36 @@ function theme.centreInBand(band, height)
   return band.y + math.floor((band.h - height) / 2)
 end
 
---- Where a block of `height` starts, to sit centred in the panel's body band.
+--- Where a block of `height` starts, to sit centred on the panel.
 ---
---- The counterpart to the band-derived font, and the two are not separable.
---- Sizing a reading against its band and then drawing it at the panel's old
---- content top puts a larger number where a smaller one used to be, which is
---- how a `metric` bar first found itself underneath its own reading. A font
---- chosen from a band belongs in that band.
+--- **The reading's centre is the panel's centre, always**, whatever else the
+--- panel carries and however large that is. The counterpart to the
+--- panel-derived budget, and the two are not separable: sizing a reading
+--- against the panel and then placing it in a band is how a `metric` bar
+--- first found itself underneath its own reading.
+---
+--- **Corrected: this used to centre the block in the body band.** The bands
+--- were symmetric and the reading was centred in the middle one, so the
+--- arithmetic said centred -- but the heading is pinned to the top of its
+--- band while a supporting row is centred in its own, so the slack collected
+--- above the reading and not below it. On a `3 x 2` `flight-timer` that is
+--- 22 px of clear space above the reading against 12 below, in a panel whose
+--- reading was, by measurement, within a pixel of the panel's centre the
+--- whole time. The user read the panel as uncentred from a radio, and what
+--- they were reading was the gap, not the number.
 ---@param ladder table Result of theme.ladder.
 ---@param height integer
 ---@return integer
 function theme.bodyTop(ladder, height)
-  local band = ladder.bands.body
-  -- Never above the band's own top. Where the block is taller than its band,
-  -- centring would push it up into the heading -- or, in App mode, up under
-  -- the menu button, which is what it did the first time: a `metric` reading
-  -- centred in a band shorter than itself landed one pixel above the
-  -- obstruction the frame had already moved the band below. So the overflow
-  -- goes downward only, which is the same decision `clampToPanel` makes at
-  -- the panel's own edge: the font wins, and then it is clamped.
-  return math.max(band.y, theme.centreInBand(band, height))
+  -- Never above the first row the panel owns -- the panel's own top edge,
+  -- or the bottom of EdgeTX's menu button on the one panel it covers. Where
+  -- the block is taller than what is left, centring would push its first
+  -- pixels under the button or off the edge, where they are simply painted
+  -- over; the overflow goes downward only, which is the decision
+  -- `clampToPanel` makes at the same edge for the same reason. The room the
+  -- font was chosen from carries the same cap, so the downward overflow
+  -- cannot reach the panel's floor.
+  return math.max(ladder.top, math.floor(ladder.centre - height / 2))
 end
 
 --- Keep a label's glyphs on the panel, whatever its band says.
