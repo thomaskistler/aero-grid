@@ -389,8 +389,13 @@ function txBattery.regionsFor(theme, themeBuilder, primitives, rect, layout,
   -- reading does. The percentage used to sit under the glyph where it fitted
   -- there, which made the supporting row's position depend on what was above
   -- it; a row derived from the panel does not.
-  local detailY = showBar and math.max(1, barY - labelHeight - 2)
-    or themeBuilder.centreInBand(bands.tertiary, labelHeight)
+  -- Hung from the panel's floor, or from the bar where this layout asks for
+  -- one. `showBar` is settled from the layout and the ladder before the
+  -- glyph shedding below can touch it, so it is what this panel *reserves*
+  -- rather than what is on screen -- which is the question the floor has to
+  -- be asked, or the row would move when a cell was shed.
+  local detailY = themeBuilder.rowTop(frame, fonts.label,
+    showBar and barY or rect.h)
 
   return {
     frame = frame,

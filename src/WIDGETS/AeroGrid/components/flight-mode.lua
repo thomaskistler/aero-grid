@@ -150,9 +150,16 @@ function flightMode.regionsFor(theme, themeBuilder, rect, layout, fonts,
   }, out or {})
 
   -- A flight mode is a name and there is nothing to gauge, so this panel has
-  -- no visualization at any span and its supporting row sits on the panel's
-  -- floor rather than in a band above a bar.
-  area.detailY = math.max(1, rect.h - area.frame.bottom - area.frame.labelHeight)
+  -- no visualization at any span and its supporting row hangs from the
+  -- panel's own bottom edge rather than from a bar.
+  --
+  -- **This component pinned its row before anything else did**, privately
+  -- and by a different arithmetic -- the line box against the panel's 4 px
+  -- bottom rather than the baseline against the heading's own inset -- so it
+  -- sat 2 px lower than the shared rule now puts it. It was right about the
+  -- principle and alone in applying it; the principle is shared now, so the
+  -- private copy goes.
+  area.detailY = themeBuilder.rowTop(area.frame, fonts.label, rect.h)
 
   -- The name under its own word, because `render` and `apply` read it. The
   -- band is `valueY` in every component now; this is the reading itself.

@@ -24,16 +24,18 @@ because a decision that drifted is exactly the kind a guide exists to pin down.
 | The shared responsive ladder, the abbreviation rule, shedding | Implemented and shipped |
 | The battery glyph: vertical, one colour, outline scaled to the reading's font | Implemented and shipped |
 | The unit inline beside the reading, placed by measurement | Implemented and shipped |
-| Content flow: the reading centred on the panel, the ink-derived font from the panel's height, the heading and row bands, the clamp | Implemented and shared by every component |
+| Content flow: the heading pinned to the top inset, the row hung from the bottom one, the reading's ink centred on the panel and its font taken from the panel's height | Implemented and shared by every component |
 | Content flow: the two slots and the build-time fallback | Implemented and shared by every component that draws a reading |
 | The heading pinned to the top of its band; the badge placed from its measured text | Implemented and shipped |
 | Supporting rows: one form per state wherever one fits | Implemented; **five of the eight row-drawing components route through `theme.fitLabel`** |
 | The standard panel assembled in one place (`theme.panel`) | Implemented; **six of the twelve components are on it** |
 
 Both halves of [Content flow](#content-flow) are now live everywhere. The vertical half —
-the two furniture bands, the panel-derived font and the clamp — always was, because a font
-rule applied by some and not others reintroduces the cross-panel disagreement the shared
-ladder exists to remove. The horizontal half was true of `tx-battery` alone when that was written; the slot
+the two pinned edges, the panel-derived font and the clamp — always was for the *font*,
+because a font rule applied by some and not others reintroduces the cross-panel
+disagreement the shared ladder exists to remove. The row's *position* was not: it had four
+private implementations, two of which had already reached the pinned answer by their own
+arithmetic and landed 2 px away from it. The horizontal half was true of `tx-battery` alone when that was written; the slot
 rule was then chosen on the radio and every component that draws a reading was converted
 to it.
 
@@ -603,24 +605,36 @@ becoming `LQ 100%` spends one. Comfortable, but headroom rather than proof. Maki
 proof means components declaring their widest supporting strings the way they already
 declare their widest reading.
 
-### The reading is centred on the panel
+### The vertical arrangement
 
-**One centre and two budgets.** The reading's ink is centred on the panel's own vertical
-centre, whatever else the panel carries and however large that is. Its font comes from
-**half the panel's height** wherever anything shares the panel with it, and from **the whole
-height** where nothing does.
+**Four statements, and not one of them consults what the panel contains.**
 
-Four things count as sharing: a heading, a supporting row, a visualization, and EdgeTX's
-menu button. Each is asked of what the panel *reserves* rather than of what the component
-draws, so two panels of one size still get one answer.
+1. **The heading is pinned to the panel's top inset.**
+2. **The supporting row hangs from the panel's bottom inset**, mirroring it.
+3. **The reading's ink is centred on the panel's own vertical centre.**
+4. **The reading's font comes from half the panel's height** where anything shares the
+   panel, and from the whole height where nothing does.
 
-The heading and the supporting row keep their bands — a quarter at the top and a quarter at
-the bottom — because they are furniture and land in the same place on every panel. The
-reading no longer has one.
+That independence is the property, not a side effect of it. Two panels of one size lay out
+identically whatever is configured into them, and a panel does not reflow when its content
+changes state. Everything the arrangement needs — the two insets, the centre, the half — is
+a function of the panel's own rectangle.
 
-**This is the third statement of the vertical rule and the first two are kept below**,
-because the sequence is the evidence. Each was arrived at by the user looking at a radio,
-not by anyone reasoning here, and each had been measured as correct before it was rejected.
+**Furniture belongs at the edges and content floats in the middle**, which is the sentence
+the four statements come from. A heading says what the panel is and a supporting row
+qualifies the reading; both are furniture, and furniture that moves as the panel grows draws
+the eye to itself. The reading is the content, and it is the one thing allowed to scale and
+to sit in the middle.
+
+The measurements below are reproducible from the code at this commit through
+`tools/flow-geometry.lua` and the wider probe; `frame.compact` is 6 px, or 2 px on a panel
+under 80 px tall, and `SMLSIZE` is 13 px of ink in a 17 px line box.
+
+#### Three attempts, and the radio decided each one
+
+The arrangement was arrived at by looking, not by argument. Each rule below was measured as
+correct here and then rejected on a radio, and the sequence is the strongest evidence the
+document holds — so the earlier attempts are kept as attempts rather than deleted.
 
 > **First: an absent part gave its quarter to the body.** The splits were 1/4 : 1/2 : 1/4,
 > 1/4 : 3/4, 3/4 : 1/4 or the whole extent, chosen by what the panel was going to draw. It
@@ -633,56 +647,123 @@ not by anyone reasoning here, and each had been measured as correct before it wa
 > **Second: a fixed 1/4 : 1/2 : 1/4, with no redistribution.** The reading took the middle
 > band and was centred in it. That did make two panels of one size agree, and it cost 122
 > panels a font size — more than the 50 it had been approved against, because Full screen
-> was affected too. Rejected because the reading still did not sit where the panel's centre
-> is: the bands were symmetric, but the heading is pinned to the top of its band while a
-> supporting row is centred in its own, so the slack collected above the number.
+> was affected too. Rejected because the reading still did not *look* centred, which is the
+> finding below.
+>
+> **Third: the reading moved to the panel's own centre and took its font from the panel's
+> height.** 155 readings gained a size and none lost one. It did not change how centred the
+> reading looked, for the reason below, and it is statement 3 and 4 above — it was not
+> rejected, it was incomplete.
 
-**What the user was looking at, and what this rule does about it.** The panel they pointed
-at is a `3 x 2` `flight-timer` in App mode: heading ink 6–19, reading 41–95, supporting row
-107–120 in a 134 px panel — 22 px of clear space above the number and 12 below. Measured at
-the commit, **that reading's ink was already centred at 68 on a panel whose centre is 67.**
-It moves to 40–94 under this rule, one pixel, and the gaps become 21 and 13.
+#### The thing worth knowing: the reading was already centred
 
-So the asymmetry they are seeing is between the *gaps*, and it is the heading's doing: a
-heading pinned to the panel's top inset ends 22 px above a centred reading, while a row
-centred in the bottom quarter starts 12 px below it. Centring the reading on the panel does
-not change that, and this document says so rather than letting the next reader assume the
-symptom was addressed. Equalising the gaps means centring the reading *between the heading
-and the row* — which is a position derived from the content, and therefore the rule the
-first statement above was rejected for.
+The panel that prompted all of this is a `3 x 2` `flight-timer` in App mode. Measured at the
+commit before the reading moved: heading ink 6–19, reading ink 41–95, supporting row 107–120
+in a 134 px panel. **That reading's ink centre was 68 on a panel whose centre is 67** — it
+was centred, to the pixel, and the user read it as off-centre from across a room.
 
-What the rule does do is give the number back the size the second statement took:
+What the eye judges is **the gap above against the gap below**, not the element's own
+centre. There the gaps were 22 and 12. A number can sit exactly on a panel's centre and look
+high, if the furniture above it is further away than the furniture below.
 
-**Measured through the real host over every component at every span it declares, in both
-zones and at an obstructed and a clear placement — 704 panels:**
+That is why centring the reading was not the fix and pinning the row is. It is also why both
+changes were needed: the reading had to stop depending on a band before the gaps could be
+made to mean anything, and then the row had to stop floating in a quarter.
+
+**A row centred in the bottom quarter was never going to match a heading pinned to the top
+inset.** Half a quarter less half a row is not the top inset, at any panel size, by
+coincidence or otherwise. The asymmetry was structural.
+
+#### What pinning the row moves
+
+Measured through the real host over every component at every span it declares, with
+supporting rows enabled, in both zones and at an obstructed and a clear placement.
+
+Of **258 panels that draw a heading, a reading and a supporting row**:
 
 | | Panels |
 | --- | --- |
-| Reading steps up one size | 155 |
-| Reading steps down one size | 0 |
-| Unchanged in size, moved up 1 px | 199 |
-| Unchanged in size, moved up 5 px | 7 |
-| Unchanged and unmoved | 343 |
+| Row moves down | 102 |
+| Row unchanged | 156 |
+| Gaps above and below brought closer | 76 |
+| Gaps exactly equal | 29, against 0 before |
+| Reading changes size | **0** |
 
-Every gain is at a one-row span, which is exactly where the second statement's cost fell:
+216 drawn labels move, every one of them downward, by 2 to 15 px. On a `2 x 3` `navigation`
+the pair of supporting rows moves from 159/178 to 165/184, which puts the group's last
+baseline exactly 6 px above the panel's floor.
 
-| Zone | Placement | Panel | Change | Panels |
-| --- | --- | --- | --- | --- |
-| App mode | clear of the button | 117–480 × 65 | `MIDSIZE` → `DBLSIZE` | 51 |
-| Full screen | clear of the button | 117–480 × 54 | `SMLSIZE` → `MIDSIZE` | 52 |
-| Full screen | the button's corner | 117–480 × 53 | `SMLSIZE` → `MIDSIZE` | 52 |
+**A bar changes the answer, and it is why 156 panels do not move.** A bar's length *is* the
+reading, so it spans the panel and sits on the floor; a row on such a panel hangs from the
+bar rather than from the edge. That was already what those panels did, so pinning finds them
+where it wants them. Five components reserve a bar at every span — `cell-battery`,
+`flight-timer`, `link-status`, `metric` and `variable-indicator` — and `tx-battery` does when
+its layout asks for one.
 
-**Half of a 65 px panel is 32 and the old middle band was 26**, against `DBLSIZE`'s 31 px of
-ink. The three pixels are the whole of the recovery, and they exist because a half of the
-*panel* is not a half of what the frame's insets leave.
+**Which means the panel that prompted this does not change.** `flight-timer` reserves a bar.
+Its row hangs from that bar at 107, its reading is at 40–94, and its gaps stay 21 and 13.
+The symmetry the rule produces is 21 and 21, and it is reached on the panels with no bar:
+the same panel without one puts its row at 115–128.
 
-**Two-row panels and taller keep their size and move a pixel.** A half of a 134 px panel is
-67 and `XXLSIZE` is 54 px of ink, so the largest reading on the dashboard already fitted a
-half; what changes is where it sits.
+This is worth stating plainly rather than leaving for the next person to discover. **The
+gaps can only be equalised on a panel whose floor is free.** Where a bar owns the floor, the
+row is one bar-height plus one inset higher than the mirror position, and the alternatives
+are moving the bar off the floor — which the specification refuses, because a track that
+stops short of the panel edge measures against a scale the eye cannot see — or overlapping
+it.
 
-**The seven that move five pixels are all App-mode corner panels at two-row spans**, where
-the reading used to start below a band the button had pushed down and now starts at the
-button's own bottom edge.
+**And they are only equal where the bottom furniture is a single row.** `navigation` draws
+two, so its bottom furniture is 36 px against a 13 px heading, and its gaps are 55 above and
+37 below on a `2 x 3`. The furniture is still pinned; there is simply more of it.
+
+#### Where the row hangs from, exactly
+
+The row's **baseline** sits one inset above its floor, mirroring the heading whose **ink
+top** sits one inset below the panel's top.
+
+- **The floor is the panel's bottom edge**, or the bar's top where the panel reserves a bar.
+- **Asked of what the panel reserves**, never of what it currently draws, so a bar arriving
+  or leaving at runtime does not move the row.
+- **The inset is never less than the font's descent.** A descender is drawn below the
+  baseline and the floor is hard. `LQ 88%` is the one wording in the catalogue that
+  descends, by 2 px; `SMLSIZE` carries 4 px below its baseline, and a panel under 80 px tall
+  insets by only 2. `1 x 2` at 79 px is both tight and granted a row, and without the floor
+  its `%` would touch the bar it hangs from.
+- **A group is pinned by its last row.** Pinning each row would put both on the floor;
+  pinning the first would put the second off the panel. `navigation` is the only component
+  that draws more than one.
+
+**It had four private implementations before it had one.** `theme.panel` centred the row in
+the bottom quarter; `tx-battery` did the same or hung it off the bar; `flight-mode` and
+`model-identity` each pinned it, correctly in principle and by a different arithmetic — the
+line box against the panel's 4 px bottom rather than the baseline against the heading's own
+inset, which put them 2 px below where the shared rule now puts every row. Neither was wrong
+enough to be visible, which is how both survived a presentation pass and a vertical-rhythm
+pass.
+
+#### What the reading gains, and a collision it caused
+
+Pinning the row is not only a move. The reading is centred on the panel and grows
+symmetrically about that centre, so what limits it is the nearest thing beneath — and the
+row moving down hands it room.
+
+**That cap has to be measured against the *highest* a row can land, which is the one hanging
+from a bar.** The first version of this measured it against the bare floor and argued that
+clearing the lower position clears the higher one, which is the inequality the wrong way
+round. `cell-battery` at a Full screen `2 x 2` then took `XXLSIZE` and put its unit four
+pixels into its own supporting row — reading reaching 89, row starting at 85.
+
+The cap is therefore **conservative and component-independent**: every panel is budgeted as
+though its floor carried a bar, whether or not this component's visualization is one. That is
+not thrift lost, it is the invariant kept — a reading's size may not depend on which
+component drew the panel, or two panels of one size disagree again.
+
+**The two-row group no longer overflows its quarter.** Two `SMLSIZE` rows need 36 px and a
+two-row panel's quarter is 31, so centring them overflowed at both ends and the end that
+mattered was the bottom one, where the panel's floor is. Hung from the floor the overflow
+goes upward only, into air the reading is already held out of. Swept across every panel
+height between 40 and 272 px at four widths: **476 panels are offered a second row, and none
+of them overflows the quarter in either direction.**
 
 #### The panel the widget does not own outright
 
@@ -758,11 +839,13 @@ question was previously answered by arithmetic that no longer exists — `theme.
 `floorHeight` that sized the band to the bar it would carry, and a `rowHeight` that grew it
 to fit two supporting rows. Both sized a band from its contents. They are gone, so:
 
-- **A supporting row sits in it**, centred.
+- **A supporting row sits in it**, hung from the band's own floor rather than centred —
+  see [Where the row hangs from, exactly](#where-the-row-hangs-from-exactly). The quarter is
+  what *grants* the row now, not what positions it.
 - **A bar sits in it too.** A bar is floor furniture — its length *is* the reading, so it
   spans the panel and sits on the floor — and the panel's floor is this band's own floor. So
   a bar is drawn *inside* the tertiary quarter rather than beneath it.
-- **A panel with both puts the row above the bar**, and both fit: a bar is 6 px against a
+- **A panel with both puts the row above the bar**, and both fit: a bar is 4 px against a
   quarter of 25 px at the narrowest span that grants a row.
 - **A panel with neither leaves it empty.** Nothing is drawn there and nothing else grows
   into it.
@@ -772,10 +855,10 @@ checks the reservation in both directions: empty means empty, and occupied means
 it is inside it.
 
 **Where the content does not fit its quarter, the content sheds — the band does not grow.**
-`navigation` is the only component that wants more: it draws two supporting rows and centres
-them as a group, 32 px of ink against a quarter of 25 px at a two-row span and 48 px at a
-three-row one. So **a two-row panel draws the bearing alone and a three-row panel draws the
-coordinates as well.**
+`navigation` is the only component that wants more: it draws two supporting rows and hangs
+them as a group, 36 px of extent against a quarter of 25 px at a two-row span in Full screen
+and 31 in App mode. So **a two-row panel draws the bearing alone and a three-row panel draws
+the coordinates as well.**
 
 That cost the shipped `sim` dashboard's own navigation panel its coordinate row, and it is
 the honest consequence of the rule rather than an oversight. The alternatives were the band
@@ -1056,8 +1139,7 @@ band, in either zone, in any component.** Unclamped, centring the heading in a b
 than itself put a pixel of it above the panel's top edge, where it was clipped.
 
 That is now a statement about the clamp rather than about the heading, which no longer
-centres in its band at all — see the correction under
-[The reading is centred on the panel](#the-reading-is-centred-on-the-panel).
+centres in its band at all — see [The vertical arrangement](#the-vertical-arrangement).
 The clamp still earns its place, because the band can be smaller than its content wherever
 a proportion meets a font.
 

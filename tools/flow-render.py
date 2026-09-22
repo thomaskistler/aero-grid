@@ -1881,13 +1881,16 @@ one-line change if one should be reopened.</div>
   <li><strong>A panel with only a reading does not split.</strong> The
       reading centres across the whole box; there is no second slot to
       protect.</li>
-  <li><strong>The reading is centred on the panel.</strong> Its ink sits on
-      the panel's own vertical centre, whatever else the panel carries. The
-      heading keeps the top quarter and a supporting row the bottom one;
-      the reading has no band of its own. <em>Stated twice before and
-      superseded twice: an absent part used to give its quarter to the body,
-      and then the split was a fixed quarter/half/quarter with the reading
-      centred in the middle band.</em></li>
+  <li><strong>Furniture at the edges, content in the middle.</strong> The
+      heading is pinned to the panel's top inset and a supporting row hangs
+      from its bottom inset &mdash; or from a bar, where one owns the floor.
+      The reading's ink sits on the panel's own vertical centre. Not one of
+      the three consults what the panel contains. <em>Stated three times
+      before: an absent part used to give its quarter to the body; then the
+      split was a fixed quarter/half/quarter with the reading centred in the
+      middle band; then the reading moved to the panel's centre while the
+      row still floated in a quarter, which left the gap above it larger
+      than the gap below.</em></li>
   <li><strong>The font comes from the panel's height</strong> &mdash; half of
       it wherever anything shares the panel, all of it where nothing does.
       It is the largest font whose <strong>ink</strong> fits, ink being the
