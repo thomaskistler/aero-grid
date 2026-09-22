@@ -169,7 +169,7 @@ than as a style.
 
 It is the same LVGL behaviour that made `trim-panel`'s cell centring a non-change, and it
 takes the fix the reading and the unit rider already use: **derive the position from the
-measured string, not from the box.** `primitives.setBadge` owns it, so the ten components
+measured string, not from the box.** `primitives.setBadge` owns it, so the twelve components
 that each carried the same unplaced `badge:set{text =, color =}` no longer place anything.
 
 Two things about it are worth keeping:
@@ -715,6 +715,55 @@ it.
 **And they are only equal where the bottom furniture is a single row.** `navigation` draws
 two, so its bottom furniture is 36 px against a 13 px heading, and its gaps are 55 above and
 37 below on a `2 x 3`. The furniture is still pinned; there is simply more of it.
+
+#### Decided: the reading centres on the panel, not between the furniture
+
+**Chosen: the reading's ink sits on the panel's own vertical centre, always.**
+
+**Rejected: equalising the clear space above and below the reading.**
+
+The two are the same position on a panel whose floor is free and different positions on a
+panel that reserves a bar, because a bar panel's furniture is not symmetric — a heading
+above, a supporting row *and* a bar below. Measured at this commit on a `3 x 2` in App mode:
+
+| | above | below | reading ink | reading's centre |
+| --- | --- | --- | --- | --- |
+| Bar reserved | 21 px | **13 px** | 40–94 | 67.0 — the panel's centre |
+| No bar | 21 px | 21 px | 40–94 | 67.0 — the panel's centre |
+
+Equalising the gaps on the bar panel means moving the reading up 4 px, to 36–90, whose
+centre is 63 on a panel whose centre is 67. Same 4 px at every two-row-and-taller span:
+`2 x 3` moves 74–128 to 70–124, `2 x 4` moves 109–163 to 105–159.
+
+**Why the gaps lose.** Whether a panel reserves a bar is a property of its *content* — which
+component drew it and how that component is configured. A reading placed to equalise the
+gaps therefore sits at a different height on two panels of the same size depending on what
+is in them, which is the exact property every version of this arrangement has been chosen to
+avoid, and the one the first rule in the sequence above was rejected for. Getting the gaps
+right would mean getting the thing the user has rejected twice wrong.
+
+The bar-free panels are symmetric anyway, because pinning the row already gave them that. So
+the cost is confined to panels that reserve a bar, and on those the space below the reading
+is 8 px tighter than the space above.
+
+**This is not a defect and should not be filed as one.** It is the accepted consequence of a
+rule chosen over it, with the arithmetic above as the reason.
+
+**It could only be decided once the two were known to be different.** The sequence above —
+redistribution, then the panel's centre, then the row's pinning — is three changes made
+before anyone established that a panel-centred reading and equal gaps are not the same
+request. Only the third established it, by measuring that the reading had been on the
+panel's centre the whole time. The choice between them came after that, not before.
+
+**Writing this down is what stops a fourth attempt.** Someone will look at a bar panel, see
+13 px under the number and 21 above, and reach for the same fix — and it has already been
+measured, argued and decided against.
+
+The lesson generalises past this panel, and it is the most useful thing the sequence
+produced: **a user reporting that something is not centred may be reporting the gaps around
+it, and the two are different measurements with different fixes.** Three changes were made
+before anyone established which of the two was being reported. Two of them were right and
+neither addressed the complaint.
 
 #### Where the row hangs from, exactly
 
