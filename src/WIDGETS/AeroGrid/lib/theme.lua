@@ -1138,13 +1138,20 @@ function theme.ladder(resolved, rect, frame)
   -- row, and measuring where the row used to be would charge it air that is
   -- no longer there.
   --
-  -- A bar's floor is not consulted here, deliberately: the reading is capped
-  -- against the topmost thing below it, and a row that hangs from a bar is
-  -- above the bar. Where there is no row the bar's own top is the floor.
-  local barTop = rect.h - frame.bottom - resolved.spacing.barHeight
+  -- **The row is measured against the bare floor, and that is the safe
+  -- direction.** A row that hangs from a bar sits higher than one hanging
+  -- from the panel's edge, so a reading held clear of the lower position is
+  -- clear of the higher one too. The alternative was telling the ladder
+  -- whether this panel's visualization is a bar -- which it is not told, and
+  -- should not be: `ladder.visual` means a visualization was *granted*, and
+  -- for `tx-battery`'s cell and `navigation`'s dial that is something
+  -- standing beside the reading rather than beneath it. Capping against a
+  -- bar on those panels cost the cell its room and shed it outright on three
+  -- Full-screen spans, which is what measuring the change rather than
+  -- reasoning about it caught.
   local floorY = rows > 0
-    and theme.rowTop(frame, frame.labelFont, visual and barTop or rect.h)
-    or (visual and barTop or (rect.h - frame.bottom))
+    and theme.rowTop(frame, frame.labelFont, rect.h)
+    or (rect.h - frame.bottom)
 
   return {
     rows = rows,

@@ -7099,13 +7099,14 @@ components:
   -- **Re-swept twice, and the pair moves every time the budget does.** It
   -- was 224 and 172 under the rule that redistributed an absent part's
   -- quarter, 240 and 232 under fixed quarter/half/quarter bands, 240 and 239
-  -- when the reading moved to the panel's centre, and 244 and 243 now that
-  -- pinning the supporting row hands the reading the air it gave up. Each
-  -- time
+  -- when the reading moved to the panel's centre, and 220 and 219 now that
+  -- pinning the supporting row hands the reading the air it gave up -- this
+  -- panel draws no row, so what moved it is the cap following the row's new
+  -- position rather than the row itself. Each time
   -- the previous pair stopped straddling a step and read at one size on
   -- both, which is a test that covers nothing and does not fail -- so the
   -- assertion above the reflow is the guard that makes it fail instead.
-  local zone = {x = 0, y = 0, w = 480, h = 244}
+  local zone = {x = 0, y = 0, w = 480, h = 220}
   local context = createLoaded(zone, DEFAULT_OPTIONS, widgetPath)
   assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
   settle(context, 60)
@@ -7135,7 +7136,7 @@ components:
   -- chosen: the budget and the cell both derive from the panel's height, so
   -- the pairs where one moves and the other does not are narrow -- one pixel
   -- of zone, here -- and are not where anybody would look first.
-  reflow(480, 243)
+  reflow(480, 219)
 
   assert(themeModule.fontHeight(pack.value.properties.font())
       < themeModule.fontHeight(builtFont),
