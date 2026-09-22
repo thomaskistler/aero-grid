@@ -3562,7 +3562,399 @@ end
 --- panel goes through the same collision and containment check every
 --- shipped layout goes through -- which charges a label its ink *plus* what
 --- its own glyphs reach below the baseline, read from the font's `ofs_y`.
+--- **The reading's ink is centred on the panel, and nothing else is in it.**
+---
+--- Two properties, and they have to be asserted together because either one
+--- alone is satisfiable by a layout nobody wants: a reading centred on the
+--- panel and drawn through the heading is centred, and a reading tucked
+--- safely between the heading and the row is clear.
+---
+--- **It is a check rather than an argument for a reason.** Under the bands
+--- the heading, the reading and the supporting row owned disjoint thirds of
+--- the panel and could not meet by construction, so clearance was a property
+--- of the partition. There is no partition now -- the reading is centred on
+--- the panel and the other two are placed from the frame and from the
+--- tertiary quarter -- so whether they meet is arithmetic that happens to
+--- work out, and arithmetic that happens to work out is what this suite
+--- exists to watch.
+---
+--- **Measured as ink throughout**, including the descent a unit's glyphs can
+--- reach into, which is the pair of measures `testReadingsDoNotDescendOverAnything`
+--- settled. A line box would report a reading sitting on a row that no glyph
+--- comes near.
+--- **A panel with nothing on it but a reading is sized against all of it.**
+---
+--- The rule has two budgets and this is the one nothing in the shipped
+--- dashboards reaches: a panel is sized against half its height wherever
+--- anything shares it -- a heading, a supporting row, a visualization, or
+--- EdgeTX's menu button -- and against the whole height where nothing does.
+--- The grid is fixed at four by four and a 480 px display never builds such
+--- a cell, so the second budget would be a sentence in a document and an
+--- untaken branch in the code, which is a shape this project has been caught
+--- by before.
+---
+--- So the case is constructed, by reflowing to a zone small enough. Measured
+--- thresholds: a heading appears at 95 px of panel width, a bar is granted
+--- at 48 px of height, a supporting row at 79. A 380 x 188 zone gives a
+--- 92 by 44 cell, which clears all three.
+---
+--- **The bar is in the list because it was found here rather than reasoned
+--- out.** With only the heading and the row counted, an 80 by 65 panel took
+--- its whole height, XXLSIZE ink centred on it ended at 59, and the bar's
+--- track starts at 55.
+local function testAReadingAloneTakesTheWholePanel()
+  local theme = themeModule
+
+  local widgetPath = makeWidget("alone", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: solo
+    type: metric
+    col: 1
+    row: 1
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: ALT
+      source: Alt
+      precision: 0
+      visual: none
+]])
+
+  resetRadio()
+  local zone = fullScreenZone()
+  zone.w, zone.h = 380, 188
+  local context = createLoaded(zone, DEFAULT_OPTIONS, widgetPath)
+  pump(context, 40)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+
+  local entry = assert(entryById(context, "solo"), "the panel was not built")
+  local instance = entry.instance
+  local area = instance.area
+  local bounds = boundsOf(entry)
+
+  -- **The premises, asserted rather than assumed.** If any stopped holding,
+  -- the panel below would be an ordinary shared one and the branch this test
+  -- exists for would go unvisited while every assertion passed.
+  assertEqual(bounds.w, 92, "the cell is not the size this test was measured"
+    .. " against")
+  assertEqual(bounds.h, 44, "the cell is not the size this test was measured"
+    .. " against")
+  assert(area.frame.labelHidden,
+    "this panel is wide enough for a heading, so it is not alone")
+  assertEqual(instance.label.hidden, true,
+    "a heading the frame dropped was drawn anyway")
+  assertEqual(area.ladder.rows, 0,
+    "this panel was granted a supporting row, so it is not alone")
+  assertEqual(area.ladder.visual, false,
+    "this panel was granted a visualization, so it is not alone")
+  assertEqual(context.reserved, nil,
+    "this panel sits under the menu button, so it is not alone")
+
+  -- The budget is more than a half, which is the whole of the difference.
+  assert(area.ladder.room > math.floor(bounds.h / 2), "a panel with nothing"
+    .. " on it but its reading was still sized against a half: room "
+    .. area.ladder.room .. " against " .. math.floor(bounds.h / 2))
+
+  -- And it buys a size, which is what makes the branch observable rather
+  -- than merely taken: 24 px holds MIDSIZE at 23 px of ink, a half of 44 is
+  -- 22 and holds SMLSIZE at 13.
+  assertEqual(edgetx.fontName(area.value), "MIDSIZE",
+    "the whole-panel budget bought no size, so it is indistinguishable from"
+      .. " the half")
+  assertEqual(edgetx.fontName(theme.bandFont(math.floor(bounds.h / 2))),
+    "SMLSIZE",
+    "a half of this panel now holds the same font as the whole of it, so"
+      .. " this panel no longer tells the two budgets apart")
+
+  -- Centred on the panel like every other reading, and inside it.
+  local ink = theme.fontAscent(area.value)
+  assert(math.abs((area.valueY + ink / 2) - bounds.h / 2) <= 1,
+    "a reading alone on its panel is not centred on it")
+  assert(area.valueY >= 0
+      and area.valueY + ink + theme.riderDepth() <= bounds.h,
+    "a reading sized against the whole panel ran off it")
+  lvglMock.setAppMode(false)
+end
+
+--- **The corner follows every other panel once the button is gone.**
+---
+--- EdgeTX paints its menu button over the top-left of an App-mode screen and
+--- the widget lays that panel out around it. Going fullscreen hides it:
+--- `ViewMain::onLongPress` calls `setFullscreen(true)`
+--- (view_main.cpp:313), `Widget::setFullscreen` runs
+--- `ViewMain::instance()->show(!enable)` (widget.cpp:224), and `ViewMain::show`
+--- hands that to `setEdgeTxButtonVisible` (view_main.cpp:327).
+---
+--- **Nothing about the zone changes when it happens**, which is the whole
+--- difficulty. On the `Layout1x1AM` screens this dashboard ships on the
+--- widget already has the entire display, so width, height and both absolute
+--- offsets are identical on either side of the transition -- and
+--- `lvgl.isAppMode` is a constant `true` for that layout
+--- (layout1x1AppMode.cpp:40), so it cannot see it either. A reflow keyed on
+--- geometry fires on nothing at all, and the corner panel keeps a
+--- reservation for a button that is not drawn, which costs it a font size
+--- for nothing.
+local function testTheCornerFollowsEveryPanelInFullscreen()
+  local widgetPath = makeWidget("fullscreen-corner", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: corner
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: ALT
+      source: Alt
+      precision: 0
+      visual: none
+  - id: clear
+    type: metric
+    col: 2
+    row: 2
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: ALT
+      source: Alt
+      precision: 0
+      visual: none
+]])
+
+  resetRadio()
+  local zone = appZone()
+  local context = createLoaded(zone, DEFAULT_OPTIONS, widgetPath)
+  pump(context, 40)
+  assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+
+  local corner = entryById(context, "corner").instance
+  local clear = entryById(context, "clear").instance
+
+  -- The premise: while the button is drawn the two panels are the same size
+  -- and lay out differently, which is the corner being a corner.
+  assertEqual(boundsOf(entryById(context, "corner")).h,
+    boundsOf(entryById(context, "clear")).h,
+    "the two panels are not the same height, so nothing below compares them")
+  assert(context.reserved, "App mode reserved nothing for the menu button")
+  assert(corner.area.ladder.room < clear.area.ladder.room,
+    "the corner panel was not paying for the button in the first place")
+  local buttoned = corner.area.valueY
+
+  -- Fullscreen. The zone is untouched -- deliberately, because that is what
+  -- the firmware does -- so the only thing that changes is the flag.
+  lvglMock.setFullScreen(true)
+
+  -- **One callback, and the reservation is gone.** `context.reserved` is
+  -- rewritten only by `beginReflow`, so this is the trigger firing rather
+  -- than a side effect of anything else -- and it fires on the very next
+  -- refresh, which is one MENU_TASK_PERIOD of 50 ms
+  -- (radio/src/tasks.cpp:50). It is a poll because there is no event to
+  -- have: entering fullscreen calls the widget's `update`
+  -- (widget.cpp:265) and leaving it does not, that call being guarded by
+  -- `if (fullscreen)`.
+  definition.refresh(context)
+  assertEqual(context.reserved, nil,
+    "one refresh after going fullscreen, a corner was still reserved for a"
+      .. " button that is not drawn")
+
+  local passes = 0
+  while context.reflowIndex do
+    definition.refresh(context)
+    passes = passes + 1
+    assert(passes < 100, "reflow never finished")
+  end
+  pump(context, 10)
+  assertEqual(corner.area.ladder.room, clear.area.ladder.room,
+    "the corner panel did not follow every other panel once the button went")
+  assertEqual(corner.area.valueY, clear.area.valueY,
+    "the corner panel's reading did not come back to the panel's centre")
+  assert(corner.area.valueY < buttoned,
+    "the reading did not move up when the button stopped taking room")
+
+  -- And back, because a pilot leaves fullscreen as often as they enter it
+  -- and the firmware raises nothing at all on the way out.
+  lvglMock.setFullScreen(false)
+  definition.refresh(context)
+  assert(context.reserved,
+    "one refresh after leaving fullscreen, the corner was not reserved again")
+  passes = 0
+  while context.reflowIndex do
+    definition.refresh(context)
+    passes = passes + 1
+    assert(passes < 100, "reflow never finished")
+  end
+  pump(context, 10)
+  assertEqual(corner.area.valueY, buttoned,
+    "the corner panel did not go back under the button")
+  lvglMock.setAppMode(false)
+end
+
+local function testReadingsAreCentredOnTheirPanel()
+testAReadingAloneTakesTheWholePanel()
+testTheCornerFollowsEveryPanelInFullscreen()
+  local theme = themeModule
+
+  --- Every component, configured so it actually builds a reading. Read from
+  --- the component directory rather than listed, so a component added to the
+  --- catalogue is covered from the moment it exists.
+  local CONFIG = {
+    ["metric"] = {"      label: ALT", "      source: Alt", "      unit: m"},
+    ["flight-timer"] = {"      label: TIMER", "      timer: 0"},
+    ["flight-mode"] = {"      label: MODE"},
+    ["tx-battery"] = {"      label: TX"},
+    ["variable-indicator"] = {"      label: GV", "      index: 0"},
+    ["trim-panel"] = {"      label: TRIM", "      trim1: trim-ail"},
+    ["model-identity"] = {"      label: MODEL"},
+    ["cell-battery"] = {"      label: PACK", "      source: Cels"},
+    ["link-status"] = {"      label: LINK", "      rssiSource: RSSI",
+      "      qualitySource: RQly"},
+    ["navigation"] = {"      label: HOME", "      source: GPS"},
+    ["host-diagnostics"] = {"      label: HOST"},
+    ["service-probe"] = {"      label: PROBE", "      service: telemetry"},
+    ["heartbeat"] = {"      label: BEAT"},
+    ["placeholder"] = {"      label: HOLD"},
+  }
+
+  local types = {}
+  for _, directory in ipairs({sourcePath .. "components",
+      root .. "/tests/fixtures/components"}) do
+    local listingPath = root .. "/build/centre-types.txt"
+    os.execute("ls '" .. directory .. "' > '" .. listingPath .. "'")
+    local listing = assert(hostIo.open(listingPath, "r"))
+    for name in listing:lines() do
+      local stem = string.match(name, "^(.+)%.lua$")
+      if stem then types[#types + 1] = stem end
+    end
+    listing:close()
+    os.remove(listingPath)
+  end
+  assert(#types >= 13, "only " .. #types .. " component types were found")
+
+  local widgetPath = makeWidget("centred")
+  -- Both placements. The top-left cell is the one EdgeTX paints its button
+  -- over and is a different panel; every other cell is clear of it, and a
+  -- sweep that only ever builds one of the two measures one case.
+  local PLACES = {{"clear", 4, 4}, {"corner", 0, 0}}
+  local ZONES = {{"app mode", function() return appZone() end},
+    {"full screen", function() return fullScreenZone() end}}
+
+  local centred, clamped, cleared = 0, 0, 0
+
+  for _, kind in ipairs(types) do
+    for _, span in ipairs({{1, 1}, {2, 1}, {2, 2}, {3, 2}, {4, 2}, {2, 3},
+        {4, 4}}) do
+      for _, place in ipairs(PLACES) do
+        for _, zone in ipairs(ZONES) do
+          local col = math.max(0, place[2] - span[1])
+          local row = math.max(0, place[3] - span[2])
+          writeFile(widgetPath .. "layouts/default.yaml", table.concat({
+            "version: 1", "grid:", "  columns: 4", "  rows: 4",
+            "components:", "  - id: subject", "    type: " .. kind,
+            "    col: " .. col, "    row: " .. row,
+            "    colSpan: " .. span[1], "    rowSpan: " .. span[2],
+            "    config:",
+            table.concat(CONFIG[kind] or {"      label: Probe"}, "\n"),
+            ""}, "\n"))
+
+          resetRadio()
+          local context = createLoaded(zone[2](), DEFAULT_OPTIONS, widgetPath)
+          pump(context, 40)
+          local entry = context.components[1]
+          local where = kind .. " " .. span[1] .. "x" .. span[2] .. " "
+            .. place[1] .. " " .. zone[1]
+          -- A span a component declines is a refusal, not a defect, and the
+          -- host says so through the error channel. Nothing was built, so
+          -- there is nothing to measure.
+          if entry then
+            assertEqual(#context.errors, 0,
+              where .. ": " .. table.concat(context.errors, "\n"))
+          end
+
+          local instance = entry and entry.instance
+          local area = instance and instance.area
+          if area and area.ladder and area.value and area.valueY then
+            local bounds = boundsOf(entry)
+            local ink = theme.fontAscent(area.value)
+            local top = area.valueY
+            local reserved = place[1] == "corner" and context.reserved or nil
+
+            if reserved and top == reserved.h then
+              -- The one panel the widget does not own outright. The button
+              -- is painted over anything drawn beneath it, so the reading
+              -- starts at the button's own bottom edge instead -- and its
+              -- room was capped to match, so it still ends inside the panel.
+              clamped = clamped + 1
+              assert(top + ink <= bounds.h, where
+                .. ": a reading pushed below the menu button ran off the"
+                .. " panel, " .. (top + ink) .. " in " .. bounds.h)
+            else
+              -- **Pinned against the panel, not against a band.** One pixel
+              -- of tolerance is the floor of an odd height, and nothing
+              -- else: a reading centred in the old body band sits 3 to 5 px
+              -- low on an unobstructed panel and 19 px low in the corner,
+              -- so this goes red on either.
+              local offset = (top + ink / 2) - bounds.h / 2
+              centred = centred + 1
+              assert(math.abs(offset) <= 1, where
+                .. ": the reading's ink is centred at "
+                .. (top + ink / 2) .. " on a panel whose centre is "
+                .. (bounds.h / 2) .. ", " .. offset .. " px out")
+            end
+
+            -- **And it is alone there.** The heading is pinned to the top
+            -- of the panel and a supporting row sits in the bottom quarter;
+            -- neither is derived from the reading's position any more, so
+            -- the clearance is asserted rather than assumed. A rider's
+            -- descent counts against the reading, because it is drawn on
+            -- the reading's own baseline.
+            local heading = instance.label
+            if heading and not heading.hidden
+                and tostring(heading.properties.text or "") ~= "" then
+              local font = heading.properties.font
+              if type(font) == "function" then font = font() end
+              local bottom = (heading.properties.y or 0)
+                + theme.fontAscent(font)
+              cleared = cleared + 1
+              assert(top >= bottom, where .. ": the reading starts at " .. top
+                .. ", inside a heading that ends at " .. bottom)
+            end
+
+            local rowY = area.detailY
+            if instance.showDetail and rowY then
+              local depth = area.showUnit and theme.riderDepth() or 0
+              cleared = cleared + 1
+              assert(top + ink + depth <= rowY, where
+                .. ": the reading reaches " .. (top + ink + depth)
+                .. ", into a supporting row that starts at " .. rowY)
+            end
+          end
+        end
+      end
+    end
+  end
+
+  -- Per property, so a sweep that stopped building panels cannot pass by
+  -- checking nothing -- which is how this suite's own apparatus has failed
+  -- seven times.
+  assert(centred >= 91, "only " .. centred
+    .. " panels had their reading's centre checked")
+  assert(clamped >= 29, "only " .. clamped
+    .. " panels exercised the menu button's clamp")
+  assert(cleared >= 162, "only " .. cleared
+    .. " clearances were checked")
+  lvglMock.setAppMode(false)
+end
+
 local function testReadingsDoNotDescendOverAnything()
+testReadingsAreCentredOnTheirPanel()
   -- **The instrument first.** A check that cannot report a descender would
   -- agree with everything below while proving nothing, which is the failure
   -- mode this suite keeps finding in its own apparatus. So it is made to

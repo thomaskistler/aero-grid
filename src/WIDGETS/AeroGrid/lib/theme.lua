@@ -1676,12 +1676,20 @@ end
 --- offer.
 ---
 --- Which means the whole-panel budget is reachable only by a panel too
---- narrow for a heading, too short for a row and for a bar, and clear of the
---- button -- narrower than 97 px and shorter than 50. The four-column grids
---- this dashboard ships never build one; a grid of five columns or more
---- does, and `testAReadingAloneTakesTheWholePanel` builds it. A rule whose
---- second half fires on nothing is a rule with one half, so the case is
---- constructed rather than assumed.
+--- narrow for a heading, too short for a bar, and clear of the button --
+--- measured, narrower than 95 px and shorter than 48. The grid is fixed at
+--- four by four, so the only way to build one is a small zone:
+--- `testAReadingAloneTakesTheWholePanel` reflows to 380 x 188, whose cell is
+--- 92 by 44 and takes MIDSIZE where a half of it would take SMLSIZE. A rule
+--- whose second half fires on nothing is a rule with one half, so the case
+--- is constructed rather than assumed.
+---
+--- **And "the whole panel" is not literally `rect.h`.** A reading centred on
+--- the panel and sized to its full height hangs a descending unit off the
+--- bottom edge, so the containment cap below binds on every lone panel --
+--- the budget is the height less twice the rider's depth. That is worth
+--- stating rather than leaving as a surprise, because the phrase promises
+--- more than the geometry can give.
 ---@param frame table Result of theme.frame.
 ---@param rect AeroGridRect
 ---@param rows integer Supporting rows the panel grants.
