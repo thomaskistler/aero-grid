@@ -3714,7 +3714,163 @@ local function testReadingsSitInTheirBand()
     "not every declared span was measured")
 end
 
+--- **The supporting row hangs one inset above its floor**, mirroring the
+--- heading pinned one inset below the panel's top.
+---
+--- The two together are what make the reading look centred. It already
+--- *was* centred, to the pixel, before either of them -- what the eye judges
+--- is the gap above against the gap below, and a pinned heading against a
+--- row centred in a quarter gives two different gaps around a correctly
+--- centred number.
+---
+--- **Asserted as a distance from the floor, not as a coordinate.** A check
+--- that recomputed `theme.rowTop` and compared would agree with any
+--- arithmetic at all, including the centring this replaces.
+--- **A reading clears whatever is nearest beneath it, at every height a
+--- reflow can produce rather than only the eight the grid can.**
+---
+--- The reading is centred on the panel and grows symmetrically about that
+--- centre, so what limits it is the topmost thing below: a supporting row
+--- where the panel draws one, and the bar's own track where it does not.
+--- `theme.readingRoom` caps it against exactly that, and this is the sweep
+--- that shows the cap is the right one.
+---
+--- **It is a sweep because the grid cannot reach the case.** A 4 x 4 grid
+--- over 480 x 272 builds eleven panel heights; a zone in App mode is
+--- whatever the screen leaves, and a widget that is reflowed sees any of
+--- them. Measured: with the bar left out of the cap the tightest clearance
+--- on a grid span is comfortable, and a 117 x 48 panel draws a reading whose
+--- unit reaches a pixel into its own bar.
+local function testAReadingClearsWhatIsBeneathIt()
+  local resolved = theme.build("modern")
+  local swept, tightest, where = 0, math.huge, ""
+
+  for height = 40, 272 do
+    for _, width in ipairs({117, 238, 480}) do
+      local rect = {x = 0, y = 0, w = width, h = height}
+      local fonts = theme.typography(2, 2)
+      local frame = theme.frame(resolved, rect, fonts)
+      local ladder = theme.ladder(resolved, rect, frame)
+
+      -- Only where something is actually beneath the reading. A panel with
+      -- neither a bar nor a row has the panel's own floor, which
+      -- containment covers.
+      if ladder.visual then
+        local barY = rect.h - frame.bottom - resolved.spacing.barHeight
+        local font = theme.bandFont(ladder.room)
+        local ink = theme.fontAscent(font)
+        local bottom = theme.bodyTop(ladder, ink) + ink + theme.riderDepth()
+        -- The nearest thing beneath: the row where one is granted, the bar
+        -- where one is not.
+        local floorY = ladder.rows > 0
+          and theme.rowTop(frame, fonts.label, barY) or barY
+        swept = swept + 1
+        if floorY - bottom < tightest then
+          tightest = floorY - bottom
+          where = string.format("%d x %d, reading ends at %d, floor at %d",
+            width, height, bottom, floorY)
+        end
+      end
+    end
+  end
+
+  assert(swept >= 600, "only " .. swept
+    .. " panels in the sweep had anything beneath their reading")
+  assert(tightest >= 0, "a reading reaches " .. -tightest
+    .. " px past what is beneath it at " .. where)
+end
+
+local function testTheRowHangsFromTheFloor()
+testAReadingClearsWhatIsBeneathIt()
+  local resolved = theme.build("modern")
+  local GUTTER, CELLS, WIDTH, HEIGHT = 4, 4, 480, 272
+  local cellHeight = math.floor((HEIGHT - GUTTER * (CELLS - 1)) / CELLS)
+
+  -- Where a centred row landed, measured on the commit before pinning.
+  -- Written out rather than derived, for the reason the heading's twin
+  -- states: an expectation computed from the code under test passes whatever
+  -- the code does.
+  local CENTRED_BEFORE = {45, 106, 166, 227}
+
+  local checked = 0
+  for rows = 2, 4 do
+    local rect = {x = 0, y = 0, w = 238,
+      h = cellHeight * rows + GUTTER * (rows - 1)}
+    local fonts = theme.typography(2, rows)
+    local frame = theme.frame(resolved, rect, fonts)
+    local font = fonts.label
+    local ink = theme.fontAscent(font)
+
+    -- A bare panel hangs its row from the bottom edge.
+    local bare = theme.rowTop(frame, font, rect.h)
+    assertEqual(rect.h - (bare + ink), frame.compact, string.format(
+      "a %d-row panel put its supporting row's baseline %d px above the"
+        .. " panel's floor where the heading sits %d px below its top, so"
+        .. " the slack above the reading and the slack below it differ",
+      rows, rect.h - (bare + ink), frame.compact))
+
+    assert(bare ~= CENTRED_BEFORE[rows], string.format(
+      "a %d-row panel still puts its row where centring in the bottom"
+        .. " quarter put it, so nothing was pinned", rows))
+
+    -- And the whole of it stays on the panel, descender included. `LQ 88%%`
+    -- is the one catalogue wording that reaches below its baseline.
+    local deepest = theme.fontHeight(font) - ink
+    assert(bare + ink + deepest <= rect.h, string.format(
+      "a %d-row panel hangs its row's descent %d px off the panel's floor",
+      rows, (bare + ink + deepest) - rect.h))
+
+    -- A panel reserving a bar hangs the row from the bar instead, by the
+    -- same inset, because the bar owns the floor.
+    local barY = rect.h - frame.bottom - resolved.spacing.barHeight
+    local barred = theme.rowTop(frame, font, barY)
+    assertEqual(barY - (barred + ink), frame.compact, string.format(
+      "a %d-row panel with a bar hung its row %d px above the bar where a"
+        .. " bare panel hangs its row %d px above the floor",
+      rows, barY - (barred + ink), frame.compact))
+    assert(barred + ink + deepest <= barY, string.format(
+      "a %d-row panel drew its row's descent %d px into the bar beneath it",
+      rows, (barred + ink + deepest) - barY))
+
+    -- **A group is pinned by its last row, not by its first.** Pinning each
+    -- row would put both on the floor; pinning the first would put the
+    -- second off the panel.
+    local group = theme.rowTop(frame, font, rect.h, 2)
+    local second = group + theme.fontHeight(font) + 2
+    assertEqual(rect.h - (second + ink), frame.compact, string.format(
+      "a %d-row panel hung a two-row group by the wrong row: its last row's"
+        .. " baseline is %d px above the floor", rows,
+      rect.h - (second + ink)))
+    assert(group < bare, "a two-row group did not start above a single row")
+    checked = checked + 1
+  end
+  assertEqual(checked, 3, "not every span was measured")
+
+  -- **The inset is never less than the font's descent**, and the one panel
+  -- that proves it is both tight and granted a row: 238 x 79 insets by 2 px
+  -- while `SMLSIZE` carries 4 px below its baseline. Without the floor the
+  -- `%` of `LQ 88%%` would touch the bar it hangs from.
+  local tight = {x = 0, y = 0, w = 238, h = 79}
+  local tightFonts = theme.typography(2, 1)
+  local tightFrame = theme.frame(resolved, tight, tightFonts)
+  local tightLadder = theme.ladder(resolved, tight, tightFrame)
+  assertEqual(tightFrame.compact, 2,
+    "the tight panel this case is built on is no longer tight")
+  assertEqual(tightLadder.rows, 1,
+    "the tight panel this case is built on is no longer granted a row")
+
+  local tightFont = tightFonts.label
+  local tightInk = theme.fontAscent(tightFont)
+  local tightDeep = theme.fontHeight(tightFont) - tightInk
+  local tightBar = tight.h - tightFrame.bottom - resolved.spacing.barHeight
+  local placed = theme.rowTop(tightFrame, tightFont, tightBar)
+  assert(placed + tightInk + tightDeep <= tightBar, string.format(
+    "the one tight panel that draws a row hangs its descent %d px into the"
+      .. " bar", (placed + tightInk + tightDeep) - tightBar))
+end
+
 local function testHeadingIsPinnedToTheTop()
+testTheRowHangsFromTheFloor()
   local resolved = theme.build("modern")
   local GUTTER, CELLS, WIDTH, HEIGHT = 4, 4, 480, 272
   local cellHeight = math.floor((HEIGHT - GUTTER * (CELLS - 1)) / CELLS)

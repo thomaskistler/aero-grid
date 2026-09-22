@@ -381,8 +381,16 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
   -- it touching the caption by a pixel, which the collision check found the
   -- moment a long enough caption was put on a screen. The row's own top is
   -- the bound, so the two cannot meet however the bands fall out.
+  --
+  -- **The group is pinned, not each row.** Pinning a row would put the
+  -- bearing on the floor and the coordinates off the panel; what hangs from
+  -- the floor is the last row of the group, and the rest stack above it.
+  -- `theme.rowTop` takes the count for exactly that reason -- this component
+  -- is the only caller that passes more than one, and it is the component
+  -- this arrangement has been tightest on every time.
   local rowsTop = showDetail
-    and themeBuilder.centreInBand(bands.tertiary, rowsHeight)
+    and themeBuilder.rowTop(frame, fonts.label, rect.h,
+      showCoordinates and 2 or 1)
     or (rect.h - frame.bottom)
   -- **The reading's own room, which is what keeps it off the rows.** This
   -- used to be measured privately, from the body band's top to the rows --
@@ -481,12 +489,15 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
   -- panel's floor. Two rows where there are two, one where the second was
   -- shed, and the pair is centred in the band so the group sits where the
   -- rule puts it rather than where the bottom margin leaves it.
-  -- **Two rows do not fit a quarter, and the band yields symmetrically.**
-  -- Two SMLSIZE rows need 36 px of a 31 px band on a 134 px panel, so the
-  -- pair overflows its band by three pixels at each end -- which is the
-  -- font-wins rule. Clamping downward instead pushes the second row through
-  -- the panel's floor, and clamping upward is what the dial is bounded
-  -- against above.
+  -- **Two rows do not fit a quarter, and pinning is what settles where the
+  -- overflow goes.** Two SMLSIZE rows need 36 px of a 31 px band on a 134 px
+  -- panel. Centred in the band the pair overflowed it by three pixels at
+  -- each end, and the end that mattered was the bottom one, because the
+  -- panel's floor is there and a band is not. Hung from the floor the pair
+  -- overflows upward only, into the air the reading was already being held
+  -- out of -- so the quarter is now a grant rather than a container, and
+  -- `bands.tertiary.h` above decides whether a second row is offered rather
+  -- than where either row lands.
   local detailY = rowsTop
   local coordinatesY = rowsTop + labelHeight + 2
 

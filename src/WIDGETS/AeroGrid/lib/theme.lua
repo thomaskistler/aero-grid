@@ -1131,12 +1131,20 @@ function theme.ladder(resolved, rect, frame)
   local top = frame.reserved and frame.reserved.h or 0
   local centre = rect.h / 2
   -- Where a supporting row's glyphs begin, which is what the reading has to
-  -- clear -- not where its quarter begins. A row is centred in its quarter,
-  -- and measuring the quarter instead would charge the reading the whole of
-  -- the air above the row.
+  -- clear. **The row is pinned to the panel's floor now**, so this follows
+  -- it down and the reading gains whatever the row gave up -- which is the
+  -- half of this change that is not about position at all. Measuring the
+  -- quarter instead would charge the reading the whole of the air above the
+  -- row, and measuring where the row used to be would charge it air that is
+  -- no longer there.
+  --
+  -- A bar's floor is not consulted here, deliberately: the reading is capped
+  -- against the topmost thing below it, and a row that hangs from a bar is
+  -- above the bar. Where there is no row the bar's own top is the floor.
+  local barTop = rect.h - frame.bottom - resolved.spacing.barHeight
   local floorY = rows > 0
-    and theme.centreInBand(bands.tertiary, frame.labelHeight)
-    or (rect.h - frame.bottom)
+    and theme.rowTop(frame, frame.labelFont, visual and barTop or rect.h)
+    or (visual and barTop or (rect.h - frame.bottom))
 
   return {
     rows = rows,
@@ -1520,6 +1528,11 @@ function theme.frame(resolved, rect, fonts, reserved)
     compact = compact,
     content = content,
     labelHeight = labelHeight,
+    -- The font itself, not only its height. `theme.rowTop` needs the ascent
+    -- as well, because a row is pinned by its baseline and the descent below
+    -- that baseline is what the floor inset has to absorb. `theme.ladder`
+    -- is not handed the typography, so the frame is where the two meet.
+    labelFont = fonts.label,
     labelY = labelY,
     badgeWidth = badgeWidth,
     badgeX = badgeX,
@@ -1754,6 +1767,50 @@ function theme.riderDepth()
   end
   riderDepth = deepest
   return deepest
+end
+
+--- Where a supporting row's box starts, to hang one inset above its floor.
+---
+--- **Furniture belongs at the edges and content floats in the middle.** The
+--- heading is pinned to the panel's top inset; this is the mirror, and the
+--- mirror is the whole of the rule. Between the two the reading sits on the
+--- panel's own centre, so all three positions are absolute and not one of
+--- them consults what the panel contains.
+---
+--- **Corrected: a row used to be centred in the bottom quarter.** That was
+--- symmetric arithmetic with an asymmetric result -- the heading was already
+--- pinned, so the slack between the heading and the reading was the top
+--- inset while the slack between the reading and the row was half a quarter
+--- less a row. On a `3 x 2` `flight-timer` that is 21 px above the number
+--- against 13 below, which the user read from a radio as the reading not
+--- being centred when it was, to the pixel. Pinning the row makes it 21 and
+--- 21 without deriving any position from what the panel holds.
+---
+--- **The floor is the bar's top where a panel reserves a bar**, and the
+--- panel's bottom edge where it does not. A bar's length *is* the reading,
+--- so it spans the panel and keeps the floor; a row above it hangs from the
+--- bar exactly as a row on a bare panel hangs from the edge. Asked of what
+--- the panel *reserves* rather than of what it currently draws, so a bar
+--- arriving or leaving at runtime does not move the row -- which is the
+--- text-jumping the specification forbids.
+---
+--- **The inset is never less than the font's descent.** A row's baseline
+--- sits one inset above the floor and a descender is drawn below that
+--- baseline: `LQ 88%` reaches 2 px past it, the only wording in the
+--- catalogue that does. Six pixels of inset absorbs it, but a panel under
+--- 80 px tall insets by two, and `1 x 2` at 79 px is the one panel that is
+--- both tight and granted a row. Without the floor the `%` would touch the
+--- bar it hangs from.
+---@param frame table Result of theme.frame.
+---@param font any The row's font.
+---@param floorY integer What the row hangs from.
+---@param count? integer Rows in the group, default 1.
+---@return integer
+function theme.rowTop(frame, font, floorY, count)
+  local height = theme.fontHeight(font)
+  local inset = math.max(frame.compact, height - theme.fontAscent(font))
+  local group = ((count or 1) - 1) * (height + 2)
+  return math.max(1, floorY - inset - theme.fontAscent(font) - group)
 end
 
 --- The proportional vertical bands a panel divides into.
@@ -2158,13 +2215,19 @@ function theme.panel(resolved, rect, fonts, spec, out)
   out.barY = barY
   out.showVisual = visual
   out.showDetail = rows
-  -- A bar owns the panel's floor, so a supporting row sits above it; where
-  -- there is no bar the row takes the tertiary band the panel reserved.
-  -- Asked of what the component draws rather than of `spec.bar`, because a
-  -- panel that can draw a bar and currently does not still keeps its floor
-  -- clear for one.
-  out.detailY = spec.bar and math.max(1, barY - frame.labelHeight - 2)
-    or theme.centreInBand(ladder.bands.tertiary, frame.labelHeight)
+  -- **Hung from the panel's floor, mirroring the heading pinned to its
+  -- top.** A bar owns the floor where one is reserved, so the row hangs from
+  -- the bar instead; on a bare panel it hangs from the bottom edge.
+  --
+  -- Asked of `spec.bar`, which is whether this panel ever draws one, rather
+  -- than of whether one is on screen now -- a panel that can draw a bar and
+  -- currently does not still keeps its floor clear for one, so the row does
+  -- not move when the bar arrives. The comment here used to say the
+  -- opposite of what the line beneath it did, which is worth correcting
+  -- rather than quietly fixing: it claimed the question was what the
+  -- component draws, and then gave the reason for asking what it reserves.
+  out.detailY = theme.rowTop(frame, fonts.label,
+    spec.bar and barY or rect.h)
   -- **A row of one centres across the content box; a row of two takes the
   -- panel's two slot centres.** Which it is is the component's to say,
   -- because a span knows only what is permitted -- `metric` may carry a
