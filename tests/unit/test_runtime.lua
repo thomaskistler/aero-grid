@@ -2122,9 +2122,23 @@ local function testContentFitsPanel()
         .. ": range overlaps the bar")
     end
 
-    -- The label row must clear the value.
-    assert(area.valueY >= heightOf(fonts.label), case.name
-      .. ": value overlaps the label")
+    -- The label row must clear the value -- **on a panel that draws a label.**
+    -- Corrected: this asked the question of every case, including the 60 x 40
+    -- stress panel, which is too narrow to keep a heading at all and drops it
+    -- (`frame.labelHidden`). So the check was holding the reading clear of an
+    -- object nothing draws, and it went red the moment a panel with no
+    -- heading was allowed to use its whole height for the reading. That is
+    -- the permitted-versus-drawn seam, this time in the check rather than in
+    -- the code it watches.
+    local drawsLabel = not area.frame.labelHidden
+    if drawsLabel then
+      assert(area.valueY >= heightOf(fonts.label), case.name
+        .. ": value overlaps the label")
+    else
+      -- The panel still has to hold the reading it chose, which is the only
+      -- thing on it.
+      assert(area.valueY >= 0, case.name .. ": value starts above the panel")
+    end
   end
 
   -- A short panel must reduce the primary font rather than overflow.
@@ -4110,23 +4124,26 @@ local function testTxBatteryComposition()
   -- exactly the same size and outline them differently, because the readings
   -- they stand beside are different sizes. A stroke derived from the span or
   -- from the cell would give those two rows the same number.
-  -- **The one-row spans read at MIDSIZE, and the band is why.** This panel's
-  -- percentage row is off unless a layout asks for it, and the band used to
-  -- be cut only where a row was going to be drawn -- so a bare panel got
-  -- three quarters of its extent and a DBLSIZE reading. The bands are fixed
-  -- proportions now: a one-row panel's body is a half, 29 px against
-  -- DBLSIZE's 31 px of ink, so the reading steps down. The glyph follows it,
-  -- from 17 x 34 to 13 x 26, because the cell is sized against the reading
-  -- it stands beside rather than against the span.
+  -- **The one-row spans read at DBLSIZE, and the panel's height is why.**
+  -- A reading is sized against half the panel now rather than against a
+  -- middle band cut out of it: half of 65 px is 32 and DBLSIZE is 31 px of
+  -- ink, so it fits. The glyph follows it, from 13 x 26 to 16 x 32, because
+  -- the cell is sized against the reading it stands beside rather than
+  -- against the span.
   --
-  -- That is the cost of the rule and it was accepted with these figures in
-  -- front of the user: a panel's layout no longer depends on what is in it,
-  -- and two panels of one size agree whether or not either draws a row.
+  -- **Corrected twice, and the pair is the record.** Under the rule that
+  -- gave an absent part's quarter to the body these spans read at DBLSIZE;
+  -- under fixed quarter/half/quarter bands a one-row body was 29 px and they
+  -- stepped down to MIDSIZE, which the user accepted with the figures in
+  -- front of them and then disliked on a radio. Half the panel is 32 rather
+  -- than 29 because a half of the panel is not a half of what the frame's
+  -- insets leave, and those 3 px are the whole of the recovery.
   --
-  -- **The two-row spans are unaffected**, which is not obvious and is worth
-  -- the line: a half of a 134 px panel's extent is 62 px and XXLSIZE is 54 px
-  -- of ink, so the largest reading on the dashboard still fits a half. It was
+  -- **The two-row spans are unaffected in size**, which is not obvious and is
+  -- worth the line: half of a 134 px panel is 67 px and XXLSIZE is 54 px of
+  -- ink, so the largest reading on the dashboard still fits a half. It was
   -- the *line box* of 69 that did not, which is what the ink rule settled.
+  -- Their reading still *moves*, to the panel's own centre.
   --
   -- `1 x 2` and `2 x 2` shed the `V`, which is the abbreviation rule in
   -- its documented order: an XXLSIZE `88.8` is 102 px of a 105 px box at
@@ -4134,10 +4151,10 @@ local function testTxBatteryComposition()
   -- because the panel's own heading names what is measured. Magnitude is
   -- kept and redundancy spent, which is the trade the rule names.
   local documented = {
-    {"1x1", "MIDSIZE", true, nil, nil, nil, false},
-    {"2x1", "MIDSIZE", true, 13, 26, 2, false},
-    {"3x1", "MIDSIZE", true, 13, 26, 2, false},
-    {"4x1", "MIDSIZE", true, 13, 26, 2, false},
+    {"1x1", "DBLSIZE", true, nil, nil, nil, false},
+    {"2x1", "DBLSIZE", true, 16, 32, 2, false},
+    {"3x1", "DBLSIZE", true, 16, 32, 2, false},
+    {"4x1", "DBLSIZE", true, 16, 32, 2, false},
     {"1x2", "XXLSIZE", false, nil, nil, nil, false},
     {"2x2", "XXLSIZE", false, 25, 50, 4, false},
     {"3x2", "XXLSIZE", true, 25, 50, 4, false},
@@ -4968,7 +4985,14 @@ local function testTelemetryContentFitsPanel()
       local bottom = area.valueY + theme.fontAscent(valueFont)
       assert(bottom <= case.h, what .. " " .. case.name
         .. ": the reading overflows the panel, ends at " .. bottom)
-      assert(area.valueY >= labelHeight, what .. " " .. case.name
+      -- **Against the header this panel draws.** The 60 x 40 stress case is
+      -- too narrow to keep a heading and drops it, so asking for clearance
+      -- from a label row there holds the reading off an object nothing
+      -- draws -- and a panel with no heading is exactly the panel allowed to
+      -- use its whole height. Same correction as `testContentFitsPanel`, in
+      -- the second place that had made it.
+      local header = area.frame and area.frame.labelHidden and 0 or labelHeight
+      assert(area.valueY >= header, what .. " " .. case.name
         .. ": the reading overlaps the header")
       assert(area.pad + valueWidth <= case.w, what .. " " .. case.name
         .. ": the reading runs past the right edge")
@@ -4979,18 +5003,27 @@ local function testTelemetryContentFitsPanel()
       -- of what an inline unit can get wrong.
       local carried = theme.readingWidth(valueFont, reading.digits,
         area.unitFont, area.showUnit and reading.unit or nil)
-      if case.synthetic then
-        -- Narrower than any real panel, so the widest reading genuinely does
-        -- not fit and the only honest question is whether the component spent
-        -- everything it had. Asserting the fit here would be asserting that a
-        -- 60 pixel panel is a 117 pixel one.
+      -- **The reading fits, or the component had nothing left to spend.**
+      -- The 60 x 40 stress case used to be excused from this outright, on
+      -- the grounds that a panel narrower than any the grid builds cannot
+      -- fit the widest reading -- and the excuse asserted that the font had
+      -- bottomed out. It had, but only because the vertical room had
+      -- bottomed out first: a 17 px middle band left SMLSIZE and nothing
+      -- else, whatever the width was. A panel with no heading and no row
+      -- sizes against its whole height now, so the fitter starts at DBLSIZE
+      -- and steps down on width alone -- and `cell-battery` fits at MIDSIZE
+      -- where the old check demanded SMLSIZE.
+      --
+      -- So the excuse is gone and the real property is asked of every case.
+      -- `navigation` is the one that still cannot fit: its unit carries the
+      -- scale and may never be dropped, so `1.23km` is 54 px of a 48 px box
+      -- however small the font gets. That is a refusal to clip rather than a
+      -- fit, and what it has to prove is that nothing smaller was left.
+      if carried > valueWidth then
         assertEqual(valueFont, theme.READING_FONTS[#theme.READING_FONTS],
-          what .. " " .. case.name
-            .. ": a panel too narrow for its reading kept a larger font")
-      else
-        assert(carried <= valueWidth, what .. " " .. case.name
-          .. ": the reading and its unit clip at "
-          .. carried .. " in " .. valueWidth)
+          what .. " " .. case.name .. ": the reading and its unit clip at "
+            .. carried .. " in " .. valueWidth
+            .. ", and a smaller font was still available")
       end
 
       -- A unit that is not smaller than its number is a second reading.

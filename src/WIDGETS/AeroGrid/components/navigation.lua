@@ -350,6 +350,10 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     and bands.tertiary.h >= rowsExtent(2)
 
   local rowsHeight = rowsExtent(showCoordinates and 2 or 1)
+  -- The dial's cap, which is not the reading's room. A reading is sized
+  -- against the panel now; a dial is an indicator beside it and is still
+  -- held to the middle band, so that letting the panel grow does not turn
+  -- the decoration into the largest thing on it.
   local available = bands.body.h
 
   -- Half the content is what either element may claim, whichever slot set
@@ -380,7 +384,15 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
   local rowsTop = showDetail
     and themeBuilder.centreInBand(bands.tertiary, rowsHeight)
     or (rect.h - frame.bottom)
-  local dialRoom = math.max(0, (rowsTop - 4) - bands.body.y)
+  -- **The reading's own room, which is what keeps it off the rows.** This
+  -- used to be measured privately, from the body band's top to the rows --
+  -- correct while the block was centred in that band and wrong the moment
+  -- the block moved to the panel's centre, because the two origins differ.
+  -- Rather than correct the private copy, the dial takes the budget
+  -- `theme.readingRoom` already caps against the supporting row: one number
+  -- for everything centred on the panel, which is the arrangement this
+  -- component has twice been the one to break.
+  local dialRoom = ladder.room
 
   local radius = math.floor(
     math.min(half, available, dialRoom, navigation.DIAL_MAX_DIAMETER) / 2)
@@ -406,7 +418,7 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
   -- a size for a dial the panel then dropped anyway.
   local valueWidth = frame.content
   local value, unitFont, _, fits = themeBuilder.fitReadingUnit(
-    sample.digits, sample.unit, valueWidth, available, true)
+    sample.digits, sample.unit, valueWidth, ladder.room, true)
 
   -- The dial gives its room back rather than clipping the distance. A
   -- compass is a shape and survives being absent; a distance that runs off

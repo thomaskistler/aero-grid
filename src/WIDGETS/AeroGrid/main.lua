@@ -155,6 +155,22 @@ local function buttonHeight()
   return raw
 end
 
+--- Whether EdgeTX has taken this widget fullscreen.
+---
+--- Read through `pcall` and a type test like every other firmware call here,
+--- because a radio too old to carry `isFullScreen` must read as "not
+--- fullscreen" rather than as an error -- the widget then behaves exactly as
+--- it did before, which is the safe direction: a corner reserved for a
+--- button that is drawn.
+---@return boolean
+local function isFullScreen()
+  if type(lvgl) ~= "table" or type(lvgl.isFullScreen) ~= "function" then
+    return false
+  end
+  local ok, value = pcall(lvgl.isFullScreen)
+  return ok and value == true
+end
+
 --- Report the part of our zone that EdgeTX's menu button covers.
 ---
 --- In App mode the button is the only route to the radio's menus, so it cannot
@@ -167,6 +183,27 @@ end
 --- puts the widget below it: `ViewMainDecoration::getWidgetsZone` starts the
 --- widget zone at MENU_HEADER_HEIGHT whenever the bar is shown. A layout with
 --- neither hides the button altogether.
+---
+--- **And the button goes away when the widget goes fullscreen**, which this
+--- used to reserve for anyway. `ViewMain::onLongPress` calls
+--- `setFullscreen(true)` on an App-mode screen
+--- (radio/src/gui/colorlcd/mainview/view_main.cpp:313), `Widget::setFullscreen`
+--- runs `ViewMain::instance()->show(!enable)`
+--- (radio/src/gui/colorlcd/mainview/widget.cpp:224), and `ViewMain::show`
+--- passes that straight to `setEdgeTxButtonVisible(visible and ...)`
+--- (view_main.cpp:327). So in fullscreen there is no button, and a corner
+--- reserved for one costs that panel a font size for nothing.
+---
+--- `lvgl.isAppMode` cannot see it: `LayoutAppMode::isAppMode` returns a
+--- constant `true` (layout1x1AppMode.cpp:40) and the screen is still that
+--- layout. `lvgl.isFullScreen` can, and is asked here.
+---
+--- **The name is `isFullScreen`, with a capital S.** The C function is
+--- `luaLvglIsFullscreen` (api_colorlcd_lvgl.cpp:402) but the name it is
+--- registered under is `isFullScreen` (api_colorlcd_lvgl.cpp:447) -- and a
+--- misspelling would not fail here, it would read as nil, take the
+--- `type(...) == "function"` branch away, and silently keep reserving the
+--- corner. Which is the defect, unchanged.
 ---@param zone AeroGridZone
 ---@return table? reserved Width and height of the covered corner.
 local function reservedCorner(zone)
@@ -176,6 +213,7 @@ local function reservedCorner(zone)
     appMode = ok and value == true
   end
   if not appMode then return nil end
+  if isFullScreen() then return nil end
 
   local height = buttonHeight()
   local width = math.floor(height * BUTTON_WIDTH_RATIO + 0.5)
@@ -724,6 +762,11 @@ local function create(zone, widgetOptions, path)
     -- Resolved before any module is loaded, because the overlay that reports a
     -- failed module load is itself placed against this.
     reserved = reservedCorner(zone),
+    -- Held so the reflow trigger has something to compare against. Read
+    -- here rather than left nil, because nil against false is a difference
+    -- and would reflow the whole grid once on the first callback of every
+    -- panel's life.
+    fullScreen = isFullScreen(),
   }
 
   context.grid = select(1, loadModule(path, "lib/grid.lua"))
@@ -824,6 +867,7 @@ local function beginReflow(context)
   context.height = context.zone.h
   context.left = context.zone.xabs or 0
   context.top = context.zone.yabs or 0
+  context.fullScreen = isFullScreen()
   context.reflowIndex = 1
 end
 
@@ -1034,9 +1078,24 @@ local function refresh(context)
   -- afford in one callback, so it is batched like loading. The absolute
   -- position matters as well as the size, because it decides whether the
   -- EdgeTX menu button reaches into us.
+  --
+  -- **And so does going fullscreen, which moves nothing.** On the App-mode
+  -- layout this dashboard ships on, the widget's zone is already the whole
+  -- screen, so `Widget::setFullscreen` changes none of the four numbers
+  -- above -- it hides `ViewMain` and the menu button with it. A reflow keyed
+  -- on geometry alone therefore never fires, and the panel in the corner
+  -- keeps a reservation for a button that is no longer drawn.
+  --
+  -- It is a poll rather than an event, because there is no event to have:
+  -- entering fullscreen calls the widget's `update` (widget.cpp:265) and
+  -- *leaving* it does not, that call being guarded by `if (fullscreen)`.
+  -- `refreshWidgets` keeps calling `foreground` on a fullscreen widget
+  -- (widgets_container.cpp:91), so the change is seen on the next callback,
+  -- which is one `MENU_TASK_PERIOD` -- 50 ms (radio/src/tasks.cpp:50).
   if context.width ~= context.zone.w or context.height ~= context.zone.h
       or context.left ~= (context.zone.xabs or 0)
-      or context.top ~= (context.zone.yabs or 0) then
+      or context.top ~= (context.zone.yabs or 0)
+      or context.fullScreen ~= isFullScreen() then
     beginReflow(context)
   end
   if context.reflowIndex then

@@ -232,8 +232,14 @@ for _, typeName in ipairs(ORDER) do
       table.concat(widths, ", "), frame.compact, frame.top, frame.bottom,
       frame.labelHeight, bands.body.y, bands.body.h)
 
+    -- **The reading's room, not the middle band.** They were the same number
+    -- while the reading took the band between the heading and the row; the
+    -- reading is sized against the panel's own height now, so recording the
+    -- band here would compare one quantity against another and disagree on
+    -- every panel. The cross-check is only worth having if both sides are
+    -- asking the same question.
     hostBands[#hostBands + 1] = {zone = zone.name, component = typeName,
-      colSpan = colSpan, rowSpan = rowSpan, band = bands.body.h}
+      colSpan = colSpan, rowSpan = rowSpan, band = ladder.room}
 
     local function walk(object, depth)
       for _, child in ipairs(object.children) do
@@ -362,8 +368,8 @@ for _, observed in ipairs(hostBands) do
   local band = bandsAt(observed.zone, 0, 0,
     observed.colSpan, observed.rowSpan)
   assert(observed.band == band,
-    string.format("the band walk disagrees with the host: %s %s %dx%d drew a"
-      .. " %d px body band, and the walk says %d", observed.zone,
+    string.format("the room walk disagrees with the host: %s %s %dx%d sized"
+      .. " its reading against %d px, and the walk says %d", observed.zone,
       observed.component, observed.colSpan, observed.rowSpan, observed.band,
       band))
 end

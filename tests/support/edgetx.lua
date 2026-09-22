@@ -736,6 +736,7 @@ function support.lvgl()
   local pendingClears = {}
   local deferCleanup = false
   local appMode = false
+  local fullScreen = false
   local validateProperties = true
 
   --- Emulate the firmware's post-callback ref cleanup.
@@ -1053,6 +1054,13 @@ function support.lvgl()
     hide = countedHide,
     show = countedShow,
     isAppMode = function() return appMode end,
+    -- **`isFullScreen`, with a capital S.** The C function is
+    -- `luaLvglIsFullscreen` but the name the firmware registers is
+    -- `isFullScreen` (radio/src/lua/api_colorlcd_lvgl.cpp:447). Spelled the
+    -- other way here, the widget's own guarded read would find nothing,
+    -- return false, and every fullscreen assertion would pass against a
+    -- radio that never goes fullscreen.
+    isFullScreen = function() return fullScreen end,
   }
 
   local width = support.scaffold.DISPLAY_WIDTH
@@ -1081,12 +1089,19 @@ function support.lvgl()
 
   function handle.setAppMode(enabled) appMode = enabled end
 
+  --- Take the widget fullscreen, as `ViewMain::onLongPress` does in App mode.
+  --- The zone does not change -- on a `Layout1x1AM` screen the widget already
+  --- has the whole display -- so this is deliberately *only* a flag, which is
+  --- the whole difficulty the widget has to deal with.
+  function handle.setFullScreen(enabled) fullScreen = enabled end
+
   --- The App mode zone: one widget over the whole display, at the origin.
   --- x and y are always zero for a widget; xabs and yabs carry where the zone
   --- really sits, and those six keys are the whole table
   --- (radio/src/lua/lua_widget_factory.cpp).
   function handle.appZone()
     appMode = true
+    fullScreen = false
     return {x = 0, y = 0, xabs = 0, yabs = 0, w = width, h = height}
   end
 
@@ -1096,6 +1111,7 @@ function support.lvgl()
   --- bar is shown, so the zone begins below the button rather than under it.
   function handle.fullScreenZone()
     appMode = false
+    fullScreen = false
     return {
       x = 0, y = 0,
       xabs = 0, yabs = firmware.MENU_HEADER_HEIGHT_PX,

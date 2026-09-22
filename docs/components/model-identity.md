@@ -83,12 +83,12 @@ and a wider panel has no more of it.
 
 ### Where the name sits
 
-With a picture, in the heading. With no picture, in the body band, centred
-the way every other reading on the dashboard is.
+With a picture, in the heading. With no picture, on the panel's own vertical
+centre, the way every other reading on the dashboard is.
 
 It was not always: the name used to be pinned directly under the heading,
 which is the panel's content top and not where anything else puts a reading
-— 14 px above the band at `2x2`, 49 at `2x3` and 83 at `4x4`, where it read
+— 14 px above where it belongs at `2x2`, 49 at `2x3` and 83 at `4x4`, where it read
 as stuck to the heading with the panel empty beneath it. This is the one
 component whose reading is a name rather than a number, so no cross-panel
 comparison ever lined it up against a neighbour and nothing caught it.

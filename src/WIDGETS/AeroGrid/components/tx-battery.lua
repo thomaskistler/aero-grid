@@ -290,9 +290,9 @@ function txBattery.regionsFor(theme, themeBuilder, primitives, rect, layout,
   -- it.
   local bands = ladder.bands
 
-  -- The font comes from the band, which comes from the panel, so it does not
-  -- consult the reading at all and cannot change as the voltage does.
-  local value = themeBuilder.bandFont(bands.body.h)
+  -- The font comes from the panel's own height, so it does not consult the
+  -- reading at all and cannot change as the voltage does.
+  local value = themeBuilder.bandFont(ladder.room)
   local unitFont = themeBuilder.unitFont(value)
   local valueHeight = themeBuilder.fontHeight(value)
 
@@ -302,9 +302,16 @@ function txBattery.regionsFor(theme, themeBuilder, primitives, rect, layout,
   -- both arrangements accept.
   local half = math.floor(frame.content / 2)
 
+  -- **The cell takes the reading's room, and that is now enough to keep it
+  -- off the row.** The two share a centre and that centre is the panel's, so
+  -- a cell sized against a budget the reading's own centring is safe with is
+  -- safe with it too -- `theme.readingRoom` is what caps both against the
+  -- supporting row. It was not always: the cell was sized against half the
+  -- panel while the row was still measured from the middle band, and a
+  -- 117 by 84 panel stood its cell one pixel into the percentage.
   local glyphWidth, glyphHeight
   if wantsGlyph and showVisual then
-    glyphWidth, glyphHeight = txBattery.glyphFor(primitives, half, bands.body.h)
+    glyphWidth, glyphHeight = txBattery.glyphFor(primitives, half, ladder.room)
     -- A panel that cannot hold a glyph sheds it, the way it sheds any other
     -- visual. It does not fall back to a bar: the layout asked for a
     -- battery, and a bar in its place is a different answer to the question.
