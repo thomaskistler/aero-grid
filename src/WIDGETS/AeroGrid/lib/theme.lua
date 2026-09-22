@@ -1756,24 +1756,6 @@ function theme.riderDepth()
   return deepest
 end
 
---- How deep a block centred on the panel may be before it reaches `floor`.
----
---- **A block centred on the panel is symmetric about that centre**, so what
---- it may occupy before it meets something below it is twice the clearance,
---- not the clearance. Three places need this -- the compass, the battery
---- cell, and any compact visual a shared panel carries -- and they had three
---- copies of the older arithmetic, which measured from the top of the band
---- the block used to be centred in. Moving the centre to the panel's own
---- left all three over-measuring by the distance between the two centres,
---- which is how a 117 by 84 panel came to stand its battery one pixel into
---- the row beneath it.
----@param ladder table Result of theme.ladder.
----@param floor integer The y a block must stay above.
----@return integer
-function theme.centredRoom(ladder, floor)
-  return math.max(0, 2 * math.floor(floor - ladder.centre))
-end
-
 --- The proportional vertical bands a panel divides into.
 ---
 --- **A label band of one quarter, a body of one half, a tertiary of one

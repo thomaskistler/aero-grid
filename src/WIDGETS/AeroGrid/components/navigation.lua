@@ -384,15 +384,15 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
   local rowsTop = showDetail
     and themeBuilder.centreInBand(bands.tertiary, rowsHeight)
     or (rect.h - frame.bottom)
-  -- **Measured from the centre the dial is actually placed on.** It used to
-  -- be measured from the body band's top, which was where the block was
-  -- centred; the block is centred on the panel now, so a room derived from
-  -- the band would let the dial grow downward past the rows by however far
-  -- the two centres differ. What a dial may occupy is symmetric about the
-  -- centre it is drawn on, so the room is twice the clearance above the
-  -- rows -- which is the same arithmetic `theme.panel` uses for a reading's
-  -- horizontal budget, and for the same reason.
-  local dialRoom = themeBuilder.centredRoom(ladder, rowsTop - 4)
+  -- **The reading's own room, which is what keeps it off the rows.** This
+  -- used to be measured privately, from the body band's top to the rows --
+  -- correct while the block was centred in that band and wrong the moment
+  -- the block moved to the panel's centre, because the two origins differ.
+  -- Rather than correct the private copy, the dial takes the budget
+  -- `theme.readingRoom` already caps against the supporting row: one number
+  -- for everything centred on the panel, which is the arrangement this
+  -- component has twice been the one to break.
+  local dialRoom = ladder.room
 
   local radius = math.floor(
     math.min(half, available, dialRoom, navigation.DIAL_MAX_DIAMETER) / 2)
