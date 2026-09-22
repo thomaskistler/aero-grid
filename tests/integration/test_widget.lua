@@ -3677,6 +3677,63 @@ components:
   assert(area.valueY >= 0
       and area.valueY + ink + theme.riderDepth() <= bounds.h,
     "a reading sized against the whole panel ran off it")
+
+  -- **And the same panel with a bar on it is not alone.** This is the half
+  -- of the rule that was added on a measured collision and then very nearly
+  -- removed as unprovable: with a row and a heading the only furniture, a
+  -- panel too small for either but tall enough for a bar took its whole
+  -- height. Measured here rather than argued: a 380 x 156 zone gives a
+  -- `1 x 2` a 92 by 76 panel, whose heading is dropped at 95 px of width
+  -- and whose supporting row is refused below 79 px of height -- but whose
+  -- bar is granted at 48. Counting the bar leaves the reading at DBLSIZE
+  -- ending at 53; not counting it gives XXLSIZE ending at 65, against a
+  -- track that starts at 68 and a rider that reaches 71.
+  local barPath = makeWidget("alone-bar", [[
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: barred
+    type: metric
+    col: 1
+    row: 1
+    colSpan: 1
+    rowSpan: 2
+    config:
+      label: ALT
+      source: Alt
+      rangeMin: 0
+      rangeMax: 400
+      precision: 0
+      visual: bar
+]])
+
+  resetRadio()
+  local barZone = fullScreenZone()
+  barZone.w, barZone.h = 380, 156
+  local barred = createLoaded(barZone, DEFAULT_OPTIONS, barPath)
+  pump(barred, 40)
+  assertEqual(#barred.errors, 0, table.concat(barred.errors, "\n"))
+
+  local barEntry = assert(entryById(barred, "barred"), "the panel was not built")
+  local barArea = barEntry.instance.area
+  local barBounds = boundsOf(barEntry)
+  assertEqual(barBounds.w, 92, "the bar panel is not the measured size")
+  assertEqual(barBounds.h, 76, "the bar panel is not the measured size")
+  assert(barArea.frame.labelHidden, "the bar panel kept a heading")
+  assertEqual(barArea.ladder.rows, 0, "the bar panel was granted a row")
+  assertEqual(barArea.ladder.visual, true, "the bar panel was granted no bar")
+  assertEqual(barEntry.instance.showVisual, true, "the bar was never drawn")
+
+  assert(barArea.ladder.room <= math.floor(barBounds.h / 2),
+    "a panel carrying a bar was sized as though nothing shared it: room "
+      .. barArea.ladder.room .. " on a " .. barBounds.h .. " px panel")
+  local barInk = theme.fontAscent(barArea.value)
+  assert(barArea.valueY + barInk + theme.riderDepth() <= barArea.barY,
+    "the reading reaches "
+      .. (barArea.valueY + barInk + theme.riderDepth())
+      .. ", into a bar whose track starts at " .. barArea.barY)
   lvglMock.setAppMode(false)
 end
 
