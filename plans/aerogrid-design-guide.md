@@ -24,16 +24,16 @@ because a decision that drifted is exactly the kind a guide exists to pin down.
 | The shared responsive ladder, the abbreviation rule, shedding | Implemented and shipped |
 | The battery glyph: vertical, one colour, outline scaled to the reading's font | Implemented and shipped |
 | The unit inline beside the reading, placed by measurement | Implemented and shipped |
-| Content flow: fixed bands, the ink-derived font, ink placement, the clamp | Implemented and shared by every component |
+| Content flow: the reading centred on the panel, the ink-derived font from the panel's height, the heading and row bands, the clamp | Implemented and shared by every component |
 | Content flow: the two slots and the build-time fallback | Implemented and shared by every component that draws a reading |
 | The heading pinned to the top of its band; the badge placed from its measured text | Implemented and shipped |
 | Supporting rows: one form per state wherever one fits | Implemented; **five of the eight row-drawing components route through `theme.fitLabel`** |
 | The standard panel assembled in one place (`theme.panel`) | Implemented; **six of the twelve components are on it** |
 
 Both halves of [Content flow](#content-flow) are now live everywhere. The vertical half —
-bands, the band-derived font and the clamp — always was, because a font rule applied by
-some and not others reintroduces the cross-panel disagreement the shared ladder exists to
-remove. The horizontal half was true of `tx-battery` alone when that was written; the slot
+the two furniture bands, the panel-derived font and the clamp — always was, because a font
+rule applied by some and not others reintroduces the cross-panel disagreement the shared
+ladder exists to remove. The horizontal half was true of `tx-battery` alone when that was written; the slot
 rule was then chosen on the radio and every component that draws a reading was converted
 to it.
 
@@ -603,62 +603,153 @@ becoming `LQ 100%` spends one. Comfortable, but headroom rather than proof. Maki
 proof means components declaring their widest supporting strings the way they already
 declare their widest reading.
 
-### Proportional vertical bands
+### The reading is centred on the panel
 
-The panel's vertical extent divides into **a label band of one quarter, a body band of one
-half, and a tertiary band of one quarter**. The split is always 1/4 : 1/2 : 1/4. Nothing
-redistributes: a panel that draws no supporting row reserves its bottom quarter anyway and
-leaves it empty.
+**One centre and two budgets.** The reading's ink is centred on the panel's own vertical
+centre, whatever else the panel carries and however large that is. Its font comes from
+**half the panel's height** wherever anything shares the panel with it, and from **the whole
+height** where nothing does.
 
-Like the slots, the bands come from the panel, so a band does not move because of what is
-in it — and unlike the slots, that took two attempts to actually be true.
+Four things count as sharing: a heading, a supporting row, a visualization, and EdgeTX's
+menu button. Each is asked of what the panel *reserves* rather than of what the component
+draws, so two panels of one size still get one answer.
 
-**Corrected: a part used to give its quarter to the body.** The splits were 1/4 : 1/2 : 1/4,
-1/4 : 3/4, 3/4 : 1/4 or the whole extent, chosen by what the panel was going to draw. It
-reads as thrift and it is the content deciding the layout: a panel with a supporting row
-sized its reading against a half and the panel beside it, same size and no row, sized
-against three quarters — so the two drew their numbers at different heights and often at
-different sizes. **The user saw that on a radio and rejected it.** It had been measured here
-and found correct, because every check asked whether a panel was internally consistent and
-none asked whether two panels agreed.
+The heading and the supporting row keep their bands — a quarter at the top and a quarter at
+the bottom — because they are furniture and land in the same place on every panel. The
+reading no longer has one.
 
-That is the same objection that chose the slots over centred content, one axis round: a
-position derived from the panel cannot move because of what is in it, and a position
-derived from the content can. The horizontal half of that was settled from the start; the
-vertical half said it and did not do it.
+**This is the third statement of the vertical rule and the first two are kept below**,
+because the sequence is the evidence. Each was arrived at by the user looking at a radio,
+not by anyone reasoning here, and each had been measured as correct before it was rejected.
 
-**What it cost, measured through the real host over every component at every span it
-declares, in both zones and at an obstructed and a clear placement — 1088 panels:**
+> **First: an absent part gave its quarter to the body.** The splits were 1/4 : 1/2 : 1/4,
+> 1/4 : 3/4, 3/4 : 1/4 or the whole extent, chosen by what the panel was going to draw. It
+> reads as thrift and it is the content deciding the layout: a panel with a supporting row
+> sized its reading against a half and the panel beside it, same size and no row, against
+> three quarters — so the two drew their numbers at different heights and often at different
+> sizes. Rejected because two panels of one size are supposed to agree, and every check here
+> asked whether a panel was internally consistent rather than whether two panels agreed.
+>
+> **Second: a fixed 1/4 : 1/2 : 1/4, with no redistribution.** The reading took the middle
+> band and was centred in it. That did make two panels of one size agree, and it cost 122
+> panels a font size — more than the 50 it had been approved against, because Full screen
+> was affected too. Rejected because the reading still did not sit where the panel's centre
+> is: the bands were symmetric, but the heading is pinned to the top of its band while a
+> supporting row is centred in its own, so the slack collected above the number.
+
+**What the user was looking at, and what this rule does about it.** The panel they pointed
+at is a `3 x 2` `flight-timer` in App mode: heading ink 6–19, reading 41–95, supporting row
+107–120 in a 134 px panel — 22 px of clear space above the number and 12 below. Measured at
+the commit, **that reading's ink was already centred at 68 on a panel whose centre is 67.**
+It moves to 40–94 under this rule, one pixel, and the gaps become 21 and 13.
+
+So the asymmetry they are seeing is between the *gaps*, and it is the heading's doing: a
+heading pinned to the panel's top inset ends 22 px above a centred reading, while a row
+centred in the bottom quarter starts 12 px below it. Centring the reading on the panel does
+not change that, and this document says so rather than letting the next reader assume the
+symptom was addressed. Equalising the gaps means centring the reading *between the heading
+and the row* — which is a position derived from the content, and therefore the rule the
+first statement above was rejected for.
+
+What the rule does do is give the number back the size the second statement took:
+
+**Measured through the real host over every component at every span it declares, in both
+zones and at an obstructed and a clear placement — 704 panels:**
 
 | | Panels |
 | --- | --- |
-| Reading steps down one size | 122 |
-| Reading steps up one size | 3 |
-| Unchanged in size | 963 |
+| Reading steps up one size | 155 |
+| Reading steps down one size | 0 |
+| Unchanged in size, moved up 1 px | 199 |
+| Unchanged in size, moved up 5 px | 7 |
+| Unchanged and unmoved | 343 |
 
-The three that grow are `navigation` in App mode at `2x2`, `3x2` and `4x2`, which get back
-the size they had been paying for a band that grew to fit two supporting rows.
+Every gain is at a one-row span, which is exactly where the second statement's cost fell:
 
-Where the drops fall:
+| Zone | Placement | Panel | Change | Panels |
+| --- | --- | --- | --- | --- |
+| App mode | clear of the button | 117–480 × 65 | `MIDSIZE` → `DBLSIZE` | 51 |
+| Full screen | clear of the button | 117–480 × 54 | `SMLSIZE` → `MIDSIZE` | 52 |
+| Full screen | the button's corner | 117–480 × 53 | `SMLSIZE` → `MIDSIZE` | 52 |
 
-| Zone | Span | Change | Panels |
-| --- | --- | --- | --- |
-| App mode | one row | `DBLSIZE` → `MIDSIZE` | 50 |
-| Full screen | one row | `MIDSIZE` → `SMLSIZE` | 52 |
-| Full screen | two rows | `XXLSIZE` → `DBLSIZE` | 20 |
+**Half of a 65 px panel is 32 and the old middle band was 26**, against `DBLSIZE`'s 31 px of
+ink. The three pixels are the whole of the recovery, and they exist because a half of the
+*panel* is not a half of what the frame's insets leave.
 
-**App mode two-row panels are unaffected**, which is the case the shipped dashboards are
-mostly made of: a half of a 134 px panel's extent is 62 px and `XXLSIZE` is 54 px of ink, so
-the largest reading on the dashboard still fits a half. Full screen's extent is 102 px, a
-half is 52, and 54 does not fit — which is why the same span loses a size in the zone the
-shipped screens do not use.
+**Two-row panels and taller keep their size and move a pixel.** A half of a 134 px panel is
+67 and `XXLSIZE` is 54 px of ink, so the largest reading on the dashboard already fitted a
+half; what changes is where it sits.
 
-**Three panels change what they draw rather than how large it is.** A smaller reading leaves
-room beside it, so `metric` and `tx-battery` at Full-screen `1x2` and `2x2` get their unit or
-their battery back, and `variable-indicator` at a single cell gets its dial back and loses
-its unit. Against that, `navigation` loses its compass at every Full-screen one-row span,
-because the dial is bounded by the body band and a half-band leaves it under the 10 px floor
-below which a dial is not worth the pixels.
+**The seven that move five pixels are all App-mode corner panels at two-row spans**, where
+the reading used to start below a band the button had pushed down and now starts at the
+button's own bottom edge.
+
+#### The panel the widget does not own outright
+
+EdgeTX paints its menu button over the top-left of an App-mode screen. The user's rule is
+that the panel underneath keeps the half while the button is drawn, and follows every other
+panel once the widget goes fullscreen and the button is hidden.
+
+**The button is counted as furniture, which is what makes that one rule rather than two.** A
+panel the button reaches into is not a panel with nothing on it but a reading. It also
+*caps* the room, because it is the one piece of furniture the panel does not own: the
+reading may not be larger than what the button leaves below it, and it starts at the
+button's bottom edge rather than above it. On a 117 × 65 corner that is 20 px rather than
+the 32 px half.
+
+**The alternative — centring in the region below the button — was measured rather than
+argued away.** On a 238 × 134 corner the region below the button is 89 px and its centre is
+89.5; a `DBLSIZE` reading centred there runs 74–105 against a supporting row's quarter that
+starts at 103. It collides on the shipped corner panel *and* costs that panel a font size.
+So the reading is centred on the panel and the button clamps it.
+
+Of 288 panels built through the shared builder, every reading is now within a pixel of its
+panel's centre except the App-mode corner: 36 at one-row spans sit 19 px low and 30 at
+two-row spans sit 5 px low, all of them the button. Before this change, 144 of the 288 were
+more than a pixel out.
+
+#### Going fullscreen, which the widget could not see
+
+`ViewMain::onLongPress` calls `setFullscreen(true)` on an App-mode screen
+(`view_main.cpp:313`), `Widget::setFullscreen` runs `ViewMain::instance()->show(!enable)`
+(`widget.cpp:224`), and `ViewMain::show` passes that to `setEdgeTxButtonVisible`
+(`view_main.cpp:327`). So the button is gone in fullscreen — and the widget reserved a
+corner for it anyway, because `lvgl.isAppMode` is a constant `true` for that layout
+(`layout1x1AppMode.cpp:40`).
+
+`lvgl.isFullScreen` answers it. **The name has a capital S**: the C function is
+`luaLvglIsFullscreen` (`api_colorlcd_lvgl.cpp:402`) but the name it is registered under is
+`isFullScreen` (`api_colorlcd_lvgl.cpp:447`), and a misspelling would not fail — it would
+read as nil, fall through the guarded read, and keep reserving the corner.
+
+**It is a poll rather than an event, and there is no event to have.** On a `Layout1x1AM`
+screen the widget already has the whole display, so nothing about the zone changes and the
+reflow trigger had nothing to compare. Entering fullscreen does call the widget's `update`
+(`widget.cpp:265`); leaving it does not, that call being guarded by `if (fullscreen)`. So
+the reflow trigger reads the flag each callback and fires on the next one — one
+`MENU_TASK_PERIOD`, 50 ms (`radio/src/tasks.cpp:50`). It costs 15 instructions a frame.
+
+#### What a descending unit costs, and who pays it
+
+A unit rides on the reading's baseline, so its own ink ends where the reading's does — but a
+*descending* unit carries glyphs into the strip between that baseline and the bottom of its
+line box, and nothing reserves that strip. `rpm`, `mph`, `deg`, `g`, `km/h`, `m/s` and
+`ml/m` are all in the telemetry table and all descend.
+
+**That made the safety argument behind the ink rule true by luck.** The argument is that the
+unreserved strip is safe while nothing descends into it over anything. It held because the
+middle-band budget happened to leave nine pixels of slack on the panels where a descender
+could reach a supporting row. Sizing against half the panel spends that slack, and the check
+went red on a Full screen `2 x 2`: `rpm` two pixels into `CUR 10.0A`.
+
+So the reading's budget is capped so that its ink *plus the deepest a rider can reach* stays
+clear of the supporting row — six pixels, taken from the real font metrics rather than
+written down. It binds on Full screen two-row panels, which is why they gain nothing here.
+
+**And "the whole panel" is not literally the panel's height.** The same cap applies with no
+row beneath, because a reading sized to the full height hangs its rider off the bottom edge.
+The whole-panel budget is the height less twice the rider's depth, and that is worth stating
+because the phrase promises more than the geometry can give.
 
 #### What is in the tertiary quarter
 
@@ -719,8 +810,10 @@ inside a change about a heading. Verified through `tools/flow-geometry.lua` acro
 component at every span in both zones: headings and badges move, and nothing else does.
 
 The bands each row count produces, measured at a placement the menu button does not reach.
-**App mode first, because that is what ships** — every screen on both tracked models is
-`LayoutId: Layout1x1AM`:
+**These are the heading's band and the supporting row's band**; the reading is no longer
+sized or placed against the middle one, and the middle column is kept only because the
+compass is still bounded by it. **App mode first, because that is what ships** — every
+screen on both tracked models is `LayoutId: Layout1x1AM`:
 
 | Zone | Rows | Panel | Extent | Label / body / tertiary |
 | --- | --- | --- | --- | --- |
@@ -739,18 +832,18 @@ the real extents are 48 and 102 — so it was the wrong zone *and* off by a pixe
 A table quoting the zone nobody pages to, to a precision it did not have, is the shape an
 audit exists to catch: it read as authoritative for as long as nobody rebuilt it.
 
-**And the body band does fail on the shortest panel.** This said the body never fails, on
-the argument that a 53 px panel sheds its tertiary row at every width so the split becomes
-1/4 : 3/4 and the body gets 36 px. That was true of the redistributing rule and was never a
-property of the proportional one; it was the redistribution rescuing it. Under fixed bands a
-Full screen single row gives a 17 px body, which holds `SMLSIZE` at 13 px of ink and nothing
-larger — the smallest reading the dashboard draws. In App mode the same span gets 26 px and
-holds `MIDSIZE`. That is the cost recorded above, and it falls hardest in the zone nothing
-ships on.
+**The middle band's failure on the shortest panel is what the reading stopped depending
+on.** It once said the body never fails, on the argument that a 53 px panel sheds its
+tertiary row at every width so the split becomes 1/4 : 3/4 and the body gets 36 px — true of
+the redistributing rule and never a property of the proportional one; it was the
+redistribution rescuing it. Under fixed bands a Full screen single row gave a 17 px body,
+`SMLSIZE` and nothing larger. Half of that panel is 27 and holds `MIDSIZE`, which is the
+52 + 52 Full-screen gain in the table above: the shortest panels were where the middle band
+was worst, and they are where taking the reading out of it pays most.
 
-### The font comes from the band
+### The font comes from the panel's height
 
-**The largest font whose ink fits the body band.** Ink is the font's ascent — the part
+**The largest font whose ink fits the reading's room.** Ink is the font's ascent — the part
 the glyphs actually mark — rather than its line height, which is ascent plus descent plus
 leading. This inverted the rule that came before it, where the composition came from the box
 and the font from the composition.
@@ -763,12 +856,14 @@ changed — but that depended on every component remembering to pass its widest 
 band-derived font does not consult the content at all, so it cannot resize with it. The
 guarantee holds by construction rather than by discipline.
 
-**What it changes, measured through the real host over all forty-eight
-component-span-zone cases: 46 unchanged, 2 smaller, none larger.** The band-derived font
-is very nearly the rule the dashboard already had. On `tx-battery` the two-row spans drop
-from `XXLSIZE` to `DBLSIZE`, because a body band is half a panel's extent and half of a
-134 px panel is 62 against `XXLSIZE`'s 69. That is the largest reading on the dashboard
-getting smaller, and it was accepted knowingly.
+**What it changed when it arrived, measured through the real host over all forty-eight
+component-span-zone cases: 46 unchanged, 2 smaller, none larger.** The panel-derived font
+is very nearly the rule the dashboard already had. On `tx-battery` the two-row spans dropped
+from `XXLSIZE` to `DBLSIZE`, because the budget was then a band of half the panel's *extent*
+and half of a 134 px panel's extent is 62 against `XXLSIZE`'s 69. That is the largest
+reading on the dashboard getting smaller, and it was accepted knowingly. Both halves of it
+have since been undone — by the ink rule, which made the comparison 54 rather than 69, and
+by the panel-height rule, which makes the budget 67 rather than 62.
 
 **Corrected once, and then corrected back.** The first correction said the loss had been
 accepted for more panels than it was true of: a quarter is reserved for a supporting row,
@@ -962,7 +1057,7 @@ than itself put a pixel of it above the panel's top edge, where it was clipped.
 
 That is now a statement about the clamp rather than about the heading, which no longer
 centres in its band at all — see the correction under
-[Proportional vertical bands](#proportional-vertical-bands).
+[The reading is centred on the panel](#the-reading-is-centred-on-the-panel).
 The clamp still earns its place, because the band can be smaller than its content wherever
 a proportion meets a font.
 

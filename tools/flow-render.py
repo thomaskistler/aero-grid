@@ -1881,16 +1881,22 @@ one-line change if one should be reopened.</div>
   <li><strong>A panel with only a reading does not split.</strong> The
       reading centres across the whole box; there is no second slot to
       protect.</li>
-  <li><strong>Proportional vertical bands.</strong> Label a quarter, body a
-      half, tertiary a quarter, and an absent part gives its quarter to the
-      body.</li>
-  <li><strong>The font comes from the band</strong>, and the band from the
-      panel &mdash; which inverts today's rule, where the composition comes
-      from the box and the font from the composition. It is the largest font
-      whose <strong>line height</strong> fits the band.</li>
-  <li><strong>Where no font fits a band, the font wins and is clamped to the
-      panel.</strong> The band yields; nothing is ever drawn off the
-      panel.</li>
+  <li><strong>The reading is centred on the panel.</strong> Its ink sits on
+      the panel's own vertical centre, whatever else the panel carries. The
+      heading keeps the top quarter and a supporting row the bottom one;
+      the reading has no band of its own. <em>Stated twice before and
+      superseded twice: an absent part used to give its quarter to the body,
+      and then the split was a fixed quarter/half/quarter with the reading
+      centred in the middle band.</em></li>
+  <li><strong>The font comes from the panel's height</strong> &mdash; half of
+      it wherever anything shares the panel, all of it where nothing does.
+      It is the largest font whose <strong>ink</strong> fits, ink being the
+      ascent rather than the line height, which carries a descent and a
+      leading no reading in this catalogue draws into. <em>This said line
+      height until the ink rule replaced it.</em></li>
+  <li><strong>Where no font fits, the font wins and is clamped to the
+      panel.</strong> The budget yields; nothing is ever drawn off the
+      panel, and nothing is drawn under EdgeTX's menu button.</li>
   <li><strong>A secondary element sits on the optical centre of the
       reading's line box.</strong> Not its baseline, not its top. Decided
       from rendered mocks.</li>

@@ -1836,11 +1836,12 @@ end
 ---
 --- Chosen by **ink** -- the font's ascent -- rather than by its line height,
 --- which carries a descent and a leading that no digit, minus, point or
---- colon in this catalogue draws into. On the twenty-one body bands this
---- dashboard can build, the two rules disagree on four: 23 px takes MIDSIZE
---- rather than SMLSIZE, 34 px DBLSIZE rather than MIDSIZE, and 54 and 62 px
---- XXLSIZE rather than DBLSIZE. A 62 px band drew a reading filling half of
---- it where the next font up fills 87%.
+--- colon in this catalogue draws into. Re-derived for the reading's room
+--- rather than for the middle band it used to be given: the dashboard builds
+--- twelve distinct rooms and the two rules disagree on four of them. 26 and
+--- 27 px take MIDSIZE rather than SMLSIZE, 32 px DBLSIZE rather than
+--- MIDSIZE, and 66 px XXLSIZE rather than DBLSIZE. A 66 px room drew a
+--- reading filling 47% of it where the next font up fills 82%.
 ---
 --- **This was decided the other way first**, on a 36 px band and a 51 px
 --- band, and the correction is worth knowing rather than quietly made: 36 px
