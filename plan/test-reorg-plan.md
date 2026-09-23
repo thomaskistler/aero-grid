@@ -255,3 +255,10 @@ variable-indicator, trim-panel, cell-battery, link-classification, and
 navigation-presentation blocks from the legacy runtime execution path. The
 remaining runtime cases cover geometry, services, telemetry, theme behavior,
 and other host-level responsibilities.
+
+## Validation Status
+
+- `python3 tests/run.py` passes with the reorganized suite.
+- `make lint` remains a separate follow-up: the repository currently reports
+  1,101 Lua language-server findings across 19 files. This migration does not
+  attempt to resolve that pre-existing lint backlog.
