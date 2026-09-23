@@ -10,8 +10,11 @@ WIDGET_SOURCE := src/WIDGETS/AeroGrid
 WIDGET_DESTINATION := $(SDCARD_DIR)/WIDGETS/AeroGrid
 LUA_FILES := $(shell find src/WIDGETS tests -type f -name '*.lua' | sort)
 LUA_COMPILER ?= $(shell command -v edgetx-luac 2>/dev/null || command -v luac5.3 2>/dev/null || command -v luac 2>/dev/null)
+LUACHECK ?= $(shell command -v luacheck 2>/dev/null)
+LUA_LS ?= $(shell command -v lua-language-server 2>/dev/null)
+STYLUA ?= $(shell command -v stylua 2>/dev/null)
 
-.PHONY: help setup test check build mocks clean
+.PHONY: help setup test check build mocks clean lint format
 
 help:
 	@printf '%s\n' \
@@ -19,6 +22,8 @@ help:
 	  'make setup   Install development dependencies into build/venv' \
 	  'make test    Run pure Lua and mocked EdgeTX behavior tests' \
 	  'make check   Run behavior tests and syntax validation' \
+	  'make lint    Lint Lua files with lua-language-server' \
+	  'make format  Format Lua files with stylua' \
 	  'make build   Recreate build/sdcard from fixture and widget sources' \
 	  'make mocks   Render build/flow-mocks.html from the real panel geometry' \
 	  'make clean   Remove generated build output'
@@ -42,6 +47,26 @@ check: test
 	@for file in $(LUA_FILES); do \
 	  "$(LUA_COMPILER)" -p "$$file"; \
 	done
+
+lint:
+	@test -n "$(LUA_LS)" || { \
+	  printf '%s\n' 'error: lua-language-server not found. Install with: luarocks install lua-language-server'; \
+	  exit 1; \
+	}
+	@echo "Linting Lua files with lua-language-server..."; \
+	if lua-language-server --check src/WIDGETS tests; then \
+	  echo "All Lua files passed linting"; \
+	else \
+	  echo "Lua language server linting failed"; \
+	  exit 1; \
+	fi
+
+format:
+	@test -n "$(STYLUA)" || { \
+	  printf '%s\n' 'error: stylua not found. Install with: luarocks install stylua'; \
+	  exit 1; \
+	}
+	@stylua $(LUA_FILES)
 
 build:
 	@mkdir -p "$(SDCARD_DIR)"
