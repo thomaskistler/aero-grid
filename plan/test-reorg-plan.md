@@ -226,3 +226,26 @@ This structure will make the suite:
 - less brittle when individual panels change
 
 The result is a test suite where generic widget behavior is tested once, while panel-specific logic remains easy to find and reason about.
+
+## Coverage Ownership During Migration
+
+The focused component files own pure component behavior:
+
+- input normalization and formatting
+- state resolution
+- threshold and range calculations
+- component-specific wording and presentation choices
+
+The legacy runtime and widget integration files continue to own behavior that
+requires the complete host:
+
+- LVGL geometry and measured bounds
+- staged loading and refresh ordering
+- reflow and lifecycle cleanup
+- component failure isolation
+- telemetry/service wiring across multiple panels
+
+These assertions are intentionally not removed as duplicates: they exercise a
+different layer than the focused unit tests. As migration continues, only
+assertions with identical setup, inputs, and responsibility should be moved;
+host-level coverage should remain in integration tests.
