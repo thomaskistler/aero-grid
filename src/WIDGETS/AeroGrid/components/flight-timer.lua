@@ -579,15 +579,16 @@ end
 --- The timer's own name is here for the same reason: it arrives with the
 --- first successful read, and used to be reconciled by a second, separate
 --- comparison bolted onto the end of refresh.
----@param context AeroGridTimerContext
 ---@param out table
 function flightTimer.render(context, out)
     local feed = context.feed
     local settings = context.settings
-    local available = type(feed) == "table" and feed.available == true
-
     out.state = flightTimer.resolveState(settings, feed)
-    out.text = available and context.formatTime(flightTimer.clamp(flightTimer.displayValue(settings, feed))) or "--:--"
+    if type(feed) == "table" and feed.available == true then
+        out.text = context.formatTime(flightTimer.clamp(flightTimer.displayValue(settings, feed)))
+    else
+        out.text = "--:--"
+    end
     -- Declared only where it is drawn. A panel too short for a supporting row
     -- was still formatting a second clock every frame and writing it into a
     -- hidden label, which is the invisible work the reveal work removed from

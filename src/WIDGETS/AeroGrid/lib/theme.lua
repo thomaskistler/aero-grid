@@ -487,10 +487,6 @@ function theme.alertSurface(tokens, accent)
     return nil
 end
 
---- Read one EdgeTX theme role and widen it to 24-bit.
----@param env table Resolved EdgeTX environment.
----@param role any Value of a COLOR_THEME_* constant.
----@return integer? color
 --- Extract the RGB565 payload from an EdgeTX colour flag word.
 ---
 --- `lcd.getColor` does not return a bare RGB565. `luaLcdGetColor` returns

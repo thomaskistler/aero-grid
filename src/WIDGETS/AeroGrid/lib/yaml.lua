@@ -177,7 +177,9 @@ function yaml.tokenize(text)
     end
 
     local tokens = {}
-    local position, lineNumber = 1, 1
+    ---@type integer?
+    local position = 1
+    local lineNumber = 1
 
     while position do
         local nextPosition, nextLine, err = yaml.tokenizeChunk(text, position, lineNumber, 4096, tokens)

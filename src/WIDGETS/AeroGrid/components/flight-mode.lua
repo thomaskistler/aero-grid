@@ -270,22 +270,21 @@ end
 --- The mode number is why this is a declaration rather than a list. `apply`
 --- drew it and the refresh compared only the name, so two flight modes sharing
 --- a configured name would have left the number showing the old mode.
----@param context AeroGridFlightModeContext
 ---@param out table
 function flightMode.render(context, out)
     local feed = context.feed
-    local available = type(feed) == "table" and feed.available == true
-
-    out.state = available and "normal" or "unavailable"
-    out.text = available and tostring(feed.name) or "--"
-
-    -- Declared only when the panel has a row to put it in. This used to be
-    -- written and painted whatever the span, which is the invisible work the
-    -- other five components stopped doing, and this one was not in that set.
-    if context.showDetail and context.settings.showIndex then
-        -- `#` rather than `MODE`, because the header already says MODE and the
-        -- default configuration read `MODE` over `MODE 0`.
-        out.detail = available and ("#" .. tostring(feed.index)) or "#--"
+    if type(feed) == "table" and feed.available == true then
+        out.state = "normal"
+        out.text = tostring(feed.name)
+        if context.showDetail and context.settings.showIndex then
+            out.detail = "#" .. tostring(feed.index)
+        end
+    else
+        out.state = "unavailable"
+        out.text = "--"
+        if context.showDetail and context.settings.showIndex then
+            out.detail = "#--"
+        end
     end
 end
 

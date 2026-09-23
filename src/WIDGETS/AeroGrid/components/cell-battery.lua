@@ -627,7 +627,6 @@ end
 --- Repaint the component from the gathered reading.
 ---@param context AeroGridCellContext
 --- Collect everything this panel draws.
----@param context AeroGridCellContext
 ---@param out table
 function cellBattery.render(context, out)
     cellBattery.gather(context)

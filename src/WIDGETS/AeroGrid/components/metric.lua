@@ -438,7 +438,6 @@ end
 --- which is safe but is a third mechanism: the catalogue now has one, and a
 --- component that opts out of it is a component the next reader has to check
 --- by hand.
----@param context AeroGridMetricContext
 ---@param out table
 function metric.render(context, out)
     local settings = context.settings

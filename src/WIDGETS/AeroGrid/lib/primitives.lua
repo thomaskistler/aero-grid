@@ -148,6 +148,7 @@ end
 ---@param presentation table Result of theme.state.
 ---@return any label
 ---@return any badge
+---@return boolean? dropped
 function primitives.header(parent, theme, frame, fonts, text, presentation, themeBuilder)
     -- Fitted, because nothing else was fitting it. Every other string in this
     -- dashboard is either sized by the ladder or shortened by `fitLabel`; the
