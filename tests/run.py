@@ -15,7 +15,8 @@ def run_test(path: Path, remove_string_metatable: bool = False) -> None:
     lua.execute(path.read_text(encoding="ascii"), str(ROOT))
 
 
-for test_name in ("unit/test_runtime.lua", "integration/test_widget.lua"):
-    test_path = ROOT / "tests" / test_name
+for test_path in sorted((ROOT / "tests").rglob("test_*.lua")):
+    if "support" in test_path.relative_to(ROOT).parts:
+        continue
     run_test(test_path)
     run_test(test_path, remove_string_metatable=True)
