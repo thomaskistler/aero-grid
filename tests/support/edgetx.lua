@@ -36,8 +36,8 @@ local firmware = {}
 local citations = {}
 
 local function refuse(message)
-  -- Level 0: the message is about this file, not about the caller's line.
-  error("tests/support/edgetx.lua: " .. message, 0)
+    -- Level 0: the message is about this file, not about the caller's line.
+    error("tests/support/edgetx.lua: " .. message, 0)
 end
 
 --- Record a value, arithmetic, or message that EdgeTX really produces.
@@ -53,38 +53,50 @@ end
 ---@param value any The value itself, which may be a table.
 ---@return any value
 local function claim(name, file, symbol, value)
-  if type(name) ~= "string" or name == "" then
-    refuse("a claim needs a name")
-  end
-  if citations[name] then
-    refuse("duplicate claim for " .. name)
-  end
-  if type(file) ~= "string" or not string.match(file, "^radio/src/") then
-    refuse(name .. " cites " .. tostring(file) .. ", which is not a path in "
-      .. "the EdgeTX tree. Cite the file you read it from, starting at "
-      .. "radio/src/, or move the value to scaffold if it is invented.")
-  end
-  if type(symbol) ~= "string" or symbol == "" then
-    refuse(name .. " cites " .. file .. " but names no symbol in it. Name the "
-      .. "function, macro, enum, or member, so the next reader can check it "
-      .. "without searching.")
-  end
-  if value == nil then
-    refuse(name .. " claims nothing")
-  end
+    if type(name) ~= "string" or name == "" then
+        refuse("a claim needs a name")
+    end
+    if citations[name] then
+        refuse("duplicate claim for " .. name)
+    end
+    if type(file) ~= "string" or not string.match(file, "^radio/src/") then
+        refuse(
+            name
+                .. " cites "
+                .. tostring(file)
+                .. ", which is not a path in "
+                .. "the EdgeTX tree. Cite the file you read it from, starting at "
+                .. "radio/src/, or move the value to scaffold if it is invented."
+        )
+    end
+    if type(symbol) ~= "string" or symbol == "" then
+        refuse(
+            name
+                .. " cites "
+                .. file
+                .. " but names no symbol in it. Name the "
+                .. "function, macro, enum, or member, so the next reader can check it "
+                .. "without searching."
+        )
+    end
+    if value == nil then
+        refuse(name .. " claims nothing")
+    end
 
-  citations[name] = {file = file, symbol = symbol}
-  rawset(firmware, name, value)
-  return value
+    citations[name] = { file = file, symbol = symbol }
+    rawset(firmware, name, value)
+    return value
 end
 
 --- Where a firmware value came from.
 ---@param name string
 ---@return table citation `{file, symbol}`
 function support.citation(name)
-  local citation = citations[name]
-  if not citation then refuse("no such firmware value: " .. tostring(name)) end
-  return {file = citation.file, symbol = citation.symbol}
+    local citation = citations[name]
+    if not citation then
+        refuse("no such firmware value: " .. tostring(name))
+    end
+    return { file = citation.file, symbol = citation.symbol }
 end
 
 --------------------------------------------------------------------------
@@ -118,14 +130,13 @@ claim("STRING", LUA_CONSTANTS, "LROT_NUMENTRY(STRING, WidgetOption::String)", 3)
 --- Reading these out of the wrong set is an easy and expensive mistake: the
 --- `sml` figures are 54, 33, 23, 14 and 10, and adopting them would rescale
 --- every text fitting decision the dashboard makes.
-claim("FONT_HEIGHT", "radio/src/fonts/lvgl/std/",
-  "lv_font_en_{bold_XXL,bold_XL,L,XS,XXS}.c lv_font_t.line_height", {
+claim("FONT_HEIGHT", "radio/src/fonts/lvgl/std/", "lv_font_en_{bold_XXL,bold_XL,L,XS,XXS}.c lv_font_t.line_height", {
     [firmware.XXLSIZE] = 69,
     [firmware.DBLSIZE] = 40,
     [firmware.MIDSIZE] = 29,
     [firmware.SMLSIZE] = 17,
     [firmware.TINSIZE] = 12,
-  })
+})
 
 --- Baseline offsets of the same font set: pixels from the bottom of a
 --- font's line box up to the baseline its glyphs sit on.
@@ -146,22 +157,21 @@ claim("FONT_HEIGHT", "radio/src/fonts/lvgl/std/",
 --- Without them, two labels of different sizes can only be aligned by their
 --- tops or their bottoms, and both are wrong: see the test that measures how
 --- wrong.
-claim("FONT_BASE_LINE", "radio/src/fonts/lvgl/std/",
-  "lv_font_en_{bold_XXL,bold_XL,L,XS,XXS}.c lv_font_t.base_line", {
+claim("FONT_BASE_LINE", "radio/src/fonts/lvgl/std/", "lv_font_en_{bold_XXL,bold_XL,L,XS,XXS}.c lv_font_t.base_line", {
     [firmware.XXLSIZE] = 15,
     [firmware.DBLSIZE] = 9,
     [firmware.MIDSIZE] = 6,
     [firmware.SMLSIZE] = 4,
     [firmware.TINSIZE] = 3,
-  })
+})
 
 local FONT_NAMES = {
-  [firmware.TINSIZE] = "TINSIZE",
-  [firmware.SMLSIZE] = "SMLSIZE",
-  [firmware.MIDSIZE] = "MIDSIZE",
-  [firmware.DBLSIZE] = "DBLSIZE",
-  [firmware.XXLSIZE] = "XXLSIZE",
-  [firmware.BOLD] = "BOLD",
+    [firmware.TINSIZE] = "TINSIZE",
+    [firmware.SMLSIZE] = "SMLSIZE",
+    [firmware.MIDSIZE] = "MIDSIZE",
+    [firmware.DBLSIZE] = "DBLSIZE",
+    [firmware.XXLSIZE] = "XXLSIZE",
+    [firmware.BOLD] = "BOLD",
 }
 
 --- How far below the baseline each glyph that descends actually reaches, as
@@ -188,14 +198,28 @@ local FONT_NAMES = {
 --- with is LZ4-compressed in `lz4_fonts.h`. It reproduces the shape --
 --- which characters descend, and roughly how far -- rather than the radio's
 --- exact pixels.
-claim("GLYPH_DESCENT", "radio/src/fonts/lvgl/std/",
-  "lv_font_en_STD.c glyph_dsc ofs_y", {
-    ["$"] = 2 / 21, ["("] = 4 / 21, [")"] = 4 / 21, [","] = 3 / 21,
-    ["/"] = 1 / 21, [";"] = 3 / 21, ["@"] = 3 / 21, ["Q"] = 2 / 21,
-    ["["] = 3 / 21, ["\\"] = 1 / 21, ["]"] = 3 / 21, ["_"] = 2 / 21,
-    ["g"] = 3 / 21, ["j"] = 3 / 21, ["p"] = 3 / 21, ["q"] = 3 / 21,
-    ["y"] = 3 / 21, ["{"] = 3 / 21, ["|"] = 2 / 21, ["}"] = 3 / 21,
-  })
+claim("GLYPH_DESCENT", "radio/src/fonts/lvgl/std/", "lv_font_en_STD.c glyph_dsc ofs_y", {
+    ["$"] = 2 / 21,
+    ["("] = 4 / 21,
+    [")"] = 4 / 21,
+    [","] = 3 / 21,
+    ["/"] = 1 / 21,
+    [";"] = 3 / 21,
+    ["@"] = 3 / 21,
+    ["Q"] = 2 / 21,
+    ["["] = 3 / 21,
+    ["\\"] = 1 / 21,
+    ["]"] = 3 / 21,
+    ["_"] = 2 / 21,
+    ["g"] = 3 / 21,
+    ["j"] = 3 / 21,
+    ["p"] = 3 / 21,
+    ["q"] = 3 / 21,
+    ["y"] = 3 / 21,
+    ["{"] = 3 / 21,
+    ["|"] = 2 / 21,
+    ["}"] = 3 / 21,
+})
 
 --- Pixels a string reaches below its baseline in a given font.
 ---
@@ -206,22 +230,27 @@ claim("GLYPH_DESCENT", "radio/src/fonts/lvgl/std/",
 ---@param text any
 ---@return integer
 function support.textDescent(font, text)
-  local height = firmware.FONT_HEIGHT[font]
-  if not height then return 0 end
+    local height = firmware.FONT_HEIGHT[font]
+    if not height then
+        return 0
+    end
 
-  local deepest = 0
-  text = tostring(text == nil and "" or text)
-  for index = 1, #text do
-    local ratio = firmware.GLYPH_DESCENT[string.sub(text, index, index)]
-    if ratio and ratio > deepest then deepest = ratio end
-  end
-  if deepest == 0 then return 0 end
+    local deepest = 0
+    text = tostring(text == nil and "" or text)
+    for index = 1, #text do
+        local ratio = firmware.GLYPH_DESCENT[string.sub(text, index, index)]
+        if ratio and ratio > deepest then
+            deepest = ratio
+        end
+    end
+    if deepest == 0 then
+        return 0
+    end
 
-  -- Never past the line box: `base_line` is measured from the bottom of the
-  -- line, so it is the whole of the space below the baseline and a glyph
-  -- cannot be drawn outside the box it is composited into.
-  return math.min(math.floor(deepest * height + 0.5),
-    firmware.FONT_BASE_LINE[font])
+    -- Never past the line box: `base_line` is measured from the bottom of the
+    -- line, so it is the whole of the space below the baseline and a glyph
+    -- cannot be drawn outside the box it is composited into.
+    return math.min(math.floor(deepest * height + 0.5), firmware.FONT_BASE_LINE[font])
 end
 
 --- Name a font constant, so a failure reads as a font rather than as a number.
@@ -231,7 +260,7 @@ end
 ---@param value any
 ---@return string
 function support.fontName(value)
-  return FONT_NAMES[value] or ("unknown font " .. tostring(value))
+    return FONT_NAMES[value] or ("unknown font " .. tostring(value))
 end
 
 --------------------------------------------------------------------------
@@ -248,8 +277,7 @@ claim("RGB_FLAG", COLORS_H, "RGB_FLAG", 0x8000)
 -- shifted into the upper half rather than the index itself.
 -- COLOR_THEME_PRIMARY1 is therefore zero, which is worth knowing before
 -- writing `if role then`.
-claim("COLOR_THEME", COLOR_API,
-  "LROT_NUMENTRY(COLOR_THEME_*, COLOR2FLAGS(*_INDEX))", {
+claim("COLOR_THEME", COLOR_API, "LROT_NUMENTRY(COLOR_THEME_*, COLOR2FLAGS(*_INDEX))", {
     primary1 = 0 * 65536,
     primary2 = 1 * 65536,
     primary3 = 2 * 65536,
@@ -261,7 +289,7 @@ claim("COLOR_THEME", COLOR_API,
     active = 8 * 65536,
     warning = 9 * 65536,
     disabled = 10 * 65536,
-  })
+})
 
 --- The EdgeTX Default theme, exactly as the firmware ships it.
 ---
@@ -275,17 +303,17 @@ claim("COLOR_THEME", COLOR_API,
 --- The firmware stores these as RGB565 through its RGB() macro; they are
 --- written here as the 24-bit values that macro is given.
 claim("DEFAULT_COLORS", "radio/src/gui/colorlcd/colors.cpp", "defaultColors", {
-  primary1 = 0x000000,
-  primary2 = 0xFFFFFF,
-  primary3 = 0x0C3F66,
-  secondary1 = 0x125E99,
-  secondary2 = 0xB6E0F2,
-  secondary3 = 0xE4EEF2,
-  focus = 0x14A1E5,
-  edit = 0x009909,
-  active = 0xFFDE00,
-  warning = 0xE00000,
-  disabled = 0x8C8C8C,
+    primary1 = 0x000000,
+    primary2 = 0xFFFFFF,
+    primary3 = 0x0C3F66,
+    secondary1 = 0x125E99,
+    secondary2 = 0xB6E0F2,
+    secondary3 = 0xE4EEF2,
+    focus = 0x14A1E5,
+    edit = 0x009909,
+    active = 0xFFDE00,
+    warning = 0xE00000,
+    disabled = 0x8C8C8C,
 })
 
 --------------------------------------------------------------------------
@@ -296,18 +324,23 @@ claim("DEFAULT_COLORS", "radio/src/gui/colorlcd/colors.cpp", "defaultColors", {
 -- it arrives shifted left sixteen bits: a TX16S reports 2949120, not 45. A
 -- host that never unshifts it falls back to a hard-coded default and is then
 -- wrong on every radio whose display class scales the constant.
-claim("MENU_HEADER_HEIGHT_PX", "radio/src/gui/colorlcd/libui/etx_lv_theme.h",
-  "EdgeTxStyles::MENU_HEADER_HEIGHT", 45)
-claim("MENU_HEADER_HEIGHT_FLAGS", LUA_CONSTANTS,
-  "LROT_NUMENTRY(MENU_HEADER_HEIGHT, COLOR2FLAGS(...))",
-  firmware.MENU_HEADER_HEIGHT_PX * 65536)
+claim("MENU_HEADER_HEIGHT_PX", "radio/src/gui/colorlcd/libui/etx_lv_theme.h", "EdgeTxStyles::MENU_HEADER_HEIGHT", 45)
+claim(
+    "MENU_HEADER_HEIGHT_FLAGS",
+    LUA_CONSTANTS,
+    "LROT_NUMENTRY(MENU_HEADER_HEIGHT, COLOR2FLAGS(...))",
+    firmware.MENU_HEADER_HEIGHT_PX * 65536
+)
 
 -- The width the firmware keeps clear beside the EdgeTX button. Not exported to
 -- Lua at all, which is why the host cannot read it and the dashboard has to
 -- carry the number itself.
-claim("MENU_HEADER_BUTTONS_LEFT",
-  "radio/src/gui/colorlcd/mainview/datastructs_screen.h",
-  "MENU_HEADER_BUTTONS_LEFT", 47)
+claim(
+    "MENU_HEADER_BUTTONS_LEFT",
+    "radio/src/gui/colorlcd/mainview/datastructs_screen.h",
+    "MENU_HEADER_BUTTONS_LEFT",
+    47
+)
 
 --------------------------------------------------------------------------
 -- The instruction budget
@@ -316,10 +349,13 @@ claim("MENU_HEADER_BUTTONS_LEFT",
 -- MAX_INSTRUCTIONS is (20000/100), used as the LUA_MASKCOUNT interval, and
 -- luaHook raises "CPU limit" once its counter passes 100. So the allowance is
 -- 20000 instructions, observed 200 at a time.
-claim("INSTRUCTION_BUDGET", "radio/src/lua/widgets.cpp",
-  "MAX_INSTRUCTIONS", 20000)
-claim("INSTRUCTION_HOOK_COUNT", "radio/src/lua/widgets.cpp",
-  "lua_sethook(L, luaHook, LUA_MASKCOUNT, MAX_INSTRUCTIONS)", 200)
+claim("INSTRUCTION_BUDGET", "radio/src/lua/widgets.cpp", "MAX_INSTRUCTIONS", 20000)
+claim(
+    "INSTRUCTION_HOOK_COUNT",
+    "radio/src/lua/widgets.cpp",
+    "lua_sethook(L, luaHook, LUA_MASKCOUNT, MAX_INSTRUCTIONS)",
+    200
+)
 
 --------------------------------------------------------------------------
 -- Telemetry units
@@ -329,22 +365,22 @@ claim("INSTRUCTION_HOOK_COUNT", "radio/src/lua/widgets.cpp",
 -- sources: luaGetFieldInfo pushes `unit` inside a MIXSRC_FIRST_TELEM bound, so
 -- a switch or a trim carries no unit at all.
 claim("UNIT", "radio/src/dataconstants.h", "enum TelemetryUnit", {
-  RAW = 0,
-  VOLTS = 1,
-  AMPS = 2,
-  METERS_PER_SECOND = 5,
-  FEET_PER_SECOND = 6,
-  KMH = 7,
-  METERS = 9,
-  PERCENT = 13,
-  DB = 17,
-  DBM = 29,
-  CELLS = 38,
-  DATETIME = 39,
-  GPS = 40,
-  -- A sensor whose value is a string rather than a number. Crossfire and
-  -- ELRS publish the aircraft's flight mode this way, as `FM`.
-  TEXT = 42,
+    RAW = 0,
+    VOLTS = 1,
+    AMPS = 2,
+    METERS_PER_SECOND = 5,
+    FEET_PER_SECOND = 6,
+    KMH = 7,
+    METERS = 9,
+    PERCENT = 13,
+    DB = 17,
+    DBM = 29,
+    CELLS = 38,
+    DATETIME = 39,
+    GPS = 40,
+    -- A sensor whose value is a string rather than a number. Crossfire and
+    -- ELRS publish the aircraft's flight mode this way, as `FM`.
+    TEXT = 42,
 })
 
 --------------------------------------------------------------------------
@@ -354,8 +390,12 @@ claim("UNIT", "radio/src/dataconstants.h", "enum TelemetryUnit", {
 local LVGL_CPP = "radio/src/lua/lua_lvgl_widget.cpp"
 local LVGL_H = "radio/src/lua/lua_lvgl_widget.h"
 
-claim("INVALID_OBJECT_MESSAGE", LVGL_CPP, "LvglWidgetObjectBase::checkLvgl",
-  "Invalid object (it has been probably been cleared).")
+claim(
+    "INVALID_OBJECT_MESSAGE",
+    LVGL_CPP,
+    "LvglWidgetObjectBase::checkLvgl",
+    "Invalid object (it has been probably been cleared)."
+)
 
 --- A border width only reaches LVGL when the object is built, or when its
 --- opacity moves.
@@ -368,9 +408,12 @@ claim("INVALID_OBJECT_MESSAGE", LVGL_CPP, "LvglWidgetObjectBase::checkLvgl",
 --- member and stops there. A mock that simply stored the thickness reported a
 --- weight the radio was never given, which is how a panel could claim a
 --- heavier outline for its critical state and draw the resting one.
-claim("BORDER_WIDTH_APPLIED_AT", LVGL_CPP,
-  "LvglWidgetBorderedObject::setOpacity lv_obj_set_style_border_width",
-  "build")
+claim(
+    "BORDER_WIDTH_APPLIED_AT",
+    LVGL_CPP,
+    "LvglWidgetBorderedObject::setOpacity lv_obj_set_style_border_width",
+    "build"
+)
 
 --- A corner radius is applied in `build` and never again.
 --- `LvglWidgetRectangle::build` is the only caller of
@@ -378,47 +421,60 @@ claim("BORDER_WIDTH_APPLIED_AT", LVGL_CPP,
 --- no refresh of its own, so `rounded` passed to `set` is parsed and then
 --- ignored. It is also raised to the border thickness when thinner:
 --- `(rounded >= thickness) ? rounded : thickness`.
-claim("ROUNDED_APPLIED_AT", LVGL_CPP,
-  "LvglWidgetRectangle::build lv_obj_set_style_radius", "build")
+claim("ROUNDED_APPLIED_AT", LVGL_CPP, "LvglWidgetRectangle::build lv_obj_set_style_radius", "build")
 
 --- Format of the error an unrecognized property raises.
 --- An unknown key is not ignored on a radio: parseParam falls through to
 --- luaL_error, so a misspelled property stops the script rather than quietly
 --- doing nothing.
-claim("INVALID_PROPERTY_FORMAT", LVGL_CPP, "LvglWidgetObjectBase::parseParam",
-  "Invalid property '%s'")
+claim("INVALID_PROPERTY_FORMAT", LVGL_CPP, "LvglWidgetObjectBase::parseParam", "Invalid property '%s'")
 
 local function keysOf(inherited, ...)
-  local set = {}
-  for key in pairs(inherited or {}) do set[key] = true end
-  for _, key in ipairs({...}) do set[key] = true end
-  return set
+    local set = {}
+    for key in pairs(inherited or {}) do
+        set[key] = true
+    end
+    for _, key in ipairs({ ... }) do
+        set[key] = true
+    end
+    return set
 end
 
 -- The chain of parseParam overrides for each class, read from the class
 -- declarations in lua_lvgl_widget.h. Note that left, right, top and bottom are
 -- nested inside borderPad rather than being keys in their own right, and that
 -- children, type and name are accepted and ignored rather than rejected.
-local OBJECT_BASE = keysOf(nil, "x", "y", "w", "h", "color", "opacity",
-  "visible", "size", "pos", "floating", "children", "type", "name")
+local OBJECT_BASE = keysOf(
+    nil,
+    "x",
+    "y",
+    "w",
+    "h",
+    "color",
+    "opacity",
+    "visible",
+    "size",
+    "pos",
+    "floating",
+    "children",
+    "type",
+    "name"
+)
 local OBJECT = keysOf(OBJECT_BASE, "flexFlow", "flexPad", "borderPad", "active")
-local BOX = keysOf(OBJECT, "align", "scrollBar", "scrollDir", "scrollTo",
-  "scrolled")
+local BOX = keysOf(OBJECT, "align", "scrollBar", "scrollDir", "scrollTo", "scrolled")
 local BORDERED = keysOf(BOX, "thickness", "filled")
 local ROUND = keysOf(BORDERED, "radius")
 
 claim("PROPERTY_KEYS", LVGL_H, "LvglWidget* parseParam overrides", {
-  box = BOX,
-  rectangle = keysOf(BORDERED, "rounded"),
-  arc = keysOf(ROUND, "rounded", "startAngle", "endAngle",
-    "bgColor", "bgOpacity", "bgStartAngle", "bgEndAngle"),
-  label = keysOf(OBJECT_BASE, "align", "text", "font"),
-  image = keysOf(OBJECT, "file", "fill"),
+    box = BOX,
+    rectangle = keysOf(BORDERED, "rounded"),
+    arc = keysOf(ROUND, "rounded", "startAngle", "endAngle", "bgColor", "bgOpacity", "bgStartAngle", "bgEndAngle"),
+    label = keysOf(OBJECT_BASE, "align", "text", "font"),
+    image = keysOf(OBJECT, "file", "fill"),
 })
 
 --- Keys EdgeTX reads as a colour.
-claim("COLOR_PROPERTY_KEYS", LVGL_CPP,
-  "LvglWidgetObjectBase::parseParam color", {color = true, bgColor = true})
+claim("COLOR_PROPERTY_KEYS", LVGL_CPP, "LvglWidgetObjectBase::parseParam color", { color = true, bgColor = true })
 
 --- The error a radio raises when a field is assigned onto an LVGL object.
 ---
@@ -434,9 +490,12 @@ claim("COLOR_PROPERTY_KEYS", LVGL_CPP,
 --- `luaG_typeerror(L, t, "index")`. The value is silently accepted by any
 --- stand-in that is a plain table, which is what let a field written onto a
 --- label pass every test here and break every panel on the radio.
-claim("OBJECT_FIELD_WRITE_MESSAGE", "radio/src/lua/api_colorlcd_lvgl.cpp",
-  "lvgl_base_mt / lvgl_mt have no __newindex",
-  "attempt to index a userdata value")
+claim(
+    "OBJECT_FIELD_WRITE_MESSAGE",
+    "radio/src/lua/api_colorlcd_lvgl.cpp",
+    "lvgl_base_mt / lvgl_mt have no __newindex",
+    "attempt to index a userdata value"
+)
 
 --------------------------------------------------------------------------
 -- Seal the namespace
@@ -445,22 +504,30 @@ claim("OBJECT_FIELD_WRITE_MESSAGE", "radio/src/lua/api_colorlcd_lvgl.cpp",
 -- Anything that reached `firmware` without going through claim() is caught
 -- here, before a single test runs.
 for name in pairs(firmware) do
-  if not citations[name] then
-    refuse("firmware." .. name .. " has no citation.\n"
-      .. "  Every value in the firmware namespace is a claim about the radio, "
-      .. "and an uncited claim is indistinguishable from a guess.\n"
-      .. "  Add it with claim(name, file, symbol, value), naming the file "
-      .. "under radio/src/ and the symbol you read it from,\n"
-      .. "  or put it in support.scaffold if it is invented test data.")
-  end
+    if not citations[name] then
+        refuse(
+            "firmware."
+                .. name
+                .. " has no citation.\n"
+                .. "  Every value in the firmware namespace is a claim about the radio, "
+                .. "and an uncited claim is indistinguishable from a guess.\n"
+                .. "  Add it with claim(name, file, symbol, value), naming the file "
+                .. "under radio/src/ and the symbol you read it from,\n"
+                .. "  or put it in support.scaffold if it is invented test data."
+        )
+    end
 end
 
 setmetatable(firmware, {
-  __newindex = function(_, name)
-    refuse("firmware." .. tostring(name) .. " was assigned directly. Add it "
-      .. "with claim(name, file, symbol, value) so it carries a citation.")
-  end,
-  __metatable = false,
+    __newindex = function(_, name)
+        refuse(
+            "firmware."
+                .. tostring(name)
+                .. " was assigned directly. Add it "
+                .. "with claim(name, file, symbol, value) so it carries a citation."
+        )
+    end,
+    __metatable = false,
 })
 
 support.firmware = firmware
@@ -476,17 +543,17 @@ support.firmware = firmware
 --- firmware: EdgeTX sets LCD_W and LCD_H per target, and 480 x 272 is simply
 --- the TX16S-class screen this project aims at.
 support.scaffold = {
-  DISPLAY_WIDTH = 480,
-  DISPLAY_HEIGHT = 272,
-  MODEL_FILENAME = "test-model.yml",
-  MODEL_NAME = "Test Model",
-  MODEL_BITMAP = "plane.png",
-  MODEL_LABELS = "fpv",
-  -- A pilot in Zurich, with the model a little to the north east.
-  PILOT_LATITUDE = 47.3700,
-  PILOT_LONGITUDE = 8.5400,
-  MODEL_LATITUDE = 47.3769,
-  MODEL_LONGITUDE = 8.5417,
+    DISPLAY_WIDTH = 480,
+    DISPLAY_HEIGHT = 272,
+    MODEL_FILENAME = "test-model.yml",
+    MODEL_NAME = "Test Model",
+    MODEL_BITMAP = "plane.png",
+    MODEL_LABELS = "fpv",
+    -- A pilot in Zurich, with the model a little to the north east.
+    PILOT_LATITUDE = 47.3700,
+    PILOT_LONGITUDE = 8.5400,
+    MODEL_LATITUDE = 47.3769,
+    MODEL_LONGITUDE = 8.5417,
 }
 
 --------------------------------------------------------------------------
@@ -501,13 +568,13 @@ support.scaffold = {
 --- module that had quietly started reading `lvgl` or `model` would keep
 --- passing here and fail on a radio.
 function support.constants()
-  TINSIZE = firmware.TINSIZE
-  SMLSIZE = firmware.SMLSIZE
-  MIDSIZE = firmware.MIDSIZE
-  DBLSIZE = firmware.DBLSIZE
-  XXLSIZE = firmware.XXLSIZE
-  BOLD = firmware.BOLD
-  STRING = firmware.STRING
+    TINSIZE = firmware.TINSIZE
+    SMLSIZE = firmware.SMLSIZE
+    MIDSIZE = firmware.MIDSIZE
+    DBLSIZE = firmware.DBLSIZE
+    XXLSIZE = firmware.XXLSIZE
+    BOLD = firmware.BOLD
+    STRING = firmware.STRING
 end
 
 --- Publish `lcd`, and the theme role constants it answers for.
@@ -543,33 +610,92 @@ end
 --- test can tell measured placement from estimated placement. A model that
 --- merely repeated the estimate could not.
 local ADVANCE = {
-  ["'"] = 0.134, [","] = 0.149, [";"] = 0.161, ["j"] = 0.182,
-  [":"] = 0.185, ["i"] = 0.185, ["l"] = 0.185, ["|"] = 0.185,
-  [" "] = 0.188, ["!"] = 0.196, ["."] = 0.199, ["["] = 0.202,
-  ["]"] = 0.202, ["I"] = 0.208, ["-"] = 0.211, ["`"] = 0.235,
-  ['"'] = 0.244, ["t"] = 0.250, ["r"] = 0.259, ["{"] = 0.259,
-  ["}"] = 0.259, ["("] = 0.262, [")"] = 0.265, ["f"] = 0.265,
-  ["\\"] = 0.313, ["/"] = 0.316, ["^"] = 0.319, ["*"] = 0.327,
-  ["_"] = 0.345, ["?"] = 0.360, ["y"] = 0.360, ["v"] = 0.369,
-  ["x"] = 0.378, ["z"] = 0.378, ["<"] = 0.387, ["k"] = 0.387,
-  ["s"] = 0.393, [">"] = 0.399, ["c"] = 0.399, ["e"] = 0.405,
-  ["L"] = 0.411, ["a"] = 0.414, ["="] = 0.420, ["J"] = 0.420,
-  ["h"] = 0.420, ["n"] = 0.420, ["u"] = 0.420, ["F"] = 0.423,
-  ["+"] = 0.432, ["E"] = 0.435, ["o"] = 0.435, ["q"] = 0.435,
-  ["S"] = 0.452, ["T"] = 0.455, ["Z"] = 0.455, ["Y"] = 0.458,
-  ["#"] = 0.470, ["R"] = 0.470, ["&"] = 0.473, ["B"] = 0.473,
-  ["K"] = 0.479, ["X"] = 0.479, ["P"] = 0.482, ["V"] = 0.485,
-  ["U"] = 0.494, ["A"] = 0.497, ["C"] = 0.497, ["D"] = 0.500,
-  ["G"] = 0.518, ["~"] = 0.518, ["O"] = 0.524, ["Q"] = 0.524,
-  ["H"] = 0.545, ["N"] = 0.545, ["%"] = 0.560, ["w"] = 0.571,
-  ["M"] = 0.667, ["m"] = 0.667, ["W"] = 0.676, ["@"] = 0.685,
+    ["'"] = 0.134,
+    [","] = 0.149,
+    [";"] = 0.161,
+    ["j"] = 0.182,
+    [":"] = 0.185,
+    ["i"] = 0.185,
+    ["l"] = 0.185,
+    ["|"] = 0.185,
+    [" "] = 0.188,
+    ["!"] = 0.196,
+    ["."] = 0.199,
+    ["["] = 0.202,
+    ["]"] = 0.202,
+    ["I"] = 0.208,
+    ["-"] = 0.211,
+    ["`"] = 0.235,
+    ['"'] = 0.244,
+    ["t"] = 0.250,
+    ["r"] = 0.259,
+    ["{"] = 0.259,
+    ["}"] = 0.259,
+    ["("] = 0.262,
+    [")"] = 0.265,
+    ["f"] = 0.265,
+    ["\\"] = 0.313,
+    ["/"] = 0.316,
+    ["^"] = 0.319,
+    ["*"] = 0.327,
+    ["_"] = 0.345,
+    ["?"] = 0.360,
+    ["y"] = 0.360,
+    ["v"] = 0.369,
+    ["x"] = 0.378,
+    ["z"] = 0.378,
+    ["<"] = 0.387,
+    ["k"] = 0.387,
+    ["s"] = 0.393,
+    [">"] = 0.399,
+    ["c"] = 0.399,
+    ["e"] = 0.405,
+    ["L"] = 0.411,
+    ["a"] = 0.414,
+    ["="] = 0.420,
+    ["J"] = 0.420,
+    ["h"] = 0.420,
+    ["n"] = 0.420,
+    ["u"] = 0.420,
+    ["F"] = 0.423,
+    ["+"] = 0.432,
+    ["E"] = 0.435,
+    ["o"] = 0.435,
+    ["q"] = 0.435,
+    ["S"] = 0.452,
+    ["T"] = 0.455,
+    ["Z"] = 0.455,
+    ["Y"] = 0.458,
+    ["#"] = 0.470,
+    ["R"] = 0.470,
+    ["&"] = 0.473,
+    ["B"] = 0.473,
+    ["K"] = 0.479,
+    ["X"] = 0.479,
+    ["P"] = 0.482,
+    ["V"] = 0.485,
+    ["U"] = 0.494,
+    ["A"] = 0.497,
+    ["C"] = 0.497,
+    ["D"] = 0.500,
+    ["G"] = 0.518,
+    ["~"] = 0.518,
+    ["O"] = 0.524,
+    ["Q"] = 0.524,
+    ["H"] = 0.545,
+    ["N"] = 0.545,
+    ["%"] = 0.560,
+    ["w"] = 0.571,
+    ["M"] = 0.667,
+    ["m"] = 0.667,
+    ["W"] = 0.676,
+    ["@"] = 0.685,
 }
 
 --- Digits and `$` share one advance, which is what makes a reading's width
 --- depend on how many decimal points it has rather than how large it is.
-for _, digit in ipairs({"$", "0", "1", "2", "3", "4", "5", "6", "7", "8",
-    "9", "b", "d", "g", "p"}) do
-  ADVANCE[digit] = 0.4286
+for _, digit in ipairs({ "$", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "b", "d", "g", "p" }) do
+    ADVANCE[digit] = 0.4286
 end
 
 --- Anything outside the table gets a digit's width, which is the middle of
@@ -588,538 +714,613 @@ local DEFAULT_ADVANCE = 0.4286
 --- cites. The generous one was the wrap model, which reported labels
 --- wrapping that a radio draws on a single line.
 local function advanceWidth(text, height)
-  local width = 0
-  for index = 1, #text do
-    local ratio = ADVANCE[string.sub(text, index, index)] or DEFAULT_ADVANCE
-    width = width + ratio * height
-  end
-  return math.floor(width + 0.5)
+    local width = 0
+    for index = 1, #text do
+        local ratio = ADVANCE[string.sub(text, index, index)] or DEFAULT_ADVANCE
+        width = width + ratio * height
+    end
+    return math.floor(width + 0.5)
 end
 
 function support.lcd(options)
-  options = options or {}
+    options = options or {}
 
-  --- Pack a 24-bit colour into RGB565, as EdgeTX's RGB() macro does.
-  local function toRgb565(rgb)
-    local red = math.floor(rgb / 65536) % 256
-    local green = math.floor(rgb / 256) % 256
-    local blue = rgb % 256
-    return math.floor(red * 31 / 255) * 2048
-      + math.floor(green * 63 / 255) * 32
-      + math.floor(blue * 31 / 255)
-  end
-
-  --- Build the LcdFlags word EdgeTX hands a script for a colour.
-  ---
-  --- One encoder, because the firmware has one shape. luaRGB returns
-  --- COLOR2FLAGS(RGB(r, g, b)) | RGB_FLAG and luaLcdGetColor returns
-  --- colorToRGB(flags) & (COLOR_MASK(~0u) | RGB_FLAG): RGB565 in the upper
-  --- half, RGB_FLAG in the lower. Encoding the two separately is exactly how
-  --- the read side came to be corrected while the write side spent a day
-  --- returning a bare 24-bit value, which made a palette token and a display
-  --- value the same number and left nothing able to tell them apart.
-  ---
-  --- Cached because both firmware entry points are C functions that cost a
-  --- script no VM instructions at all. The dashboard's budget should measure
-  --- the dashboard, not arithmetic the radio does for free.
-  local cache = {}
-  local function toLcdFlags(rgb)
-    local cached = cache[rgb]
-    if cached then return cached end
-
-    cached = toRgb565(rgb) * 65536 + firmware.RGB_FLAG
-    cache[rgb] = cached
-    return cached
-  end
-
-  local theme = firmware.COLOR_THEME
-  COLOR_THEME_PRIMARY1 = theme.primary1
-  COLOR_THEME_PRIMARY2 = theme.primary2
-  COLOR_THEME_PRIMARY3 = theme.primary3
-  COLOR_THEME_SECONDARY1 = theme.secondary1
-  COLOR_THEME_SECONDARY2 = theme.secondary2
-  COLOR_THEME_SECONDARY3 = theme.secondary3
-  COLOR_THEME_FOCUS = theme.focus
-  COLOR_THEME_EDIT = theme.edit
-  COLOR_THEME_ACTIVE = theme.active
-  COLOR_THEME_WARNING = theme.warning
-  COLOR_THEME_DISABLED = theme.disabled
-
-  -- Role constant to 24-bit colour, so getColor can answer by role.
-  local palette = options.roles or firmware.DEFAULT_COLORS
-  local roles = {}
-  for name, role in pairs(theme) do roles[role] = palette[name] end
-
-
-  --- `lcd.sizeText(text, flags)`: the width and the line height.
-  ---
-  --- Ungated, unlike every other drawing entry point in `api_colorlcd.cpp`.
-  --- `luaLcdSizeText` carries no `luaLcdAllowed` or `luaLcdBuffer` check
-  --- because it touches neither: it reads font metrics and returns. That is
-  --- why a widget may call it from `create` and `update` rather than only
-  --- while painting.
-  local function sizeText(text, flags)
-    local height = firmware.FONT_HEIGHT[flags]
-    if type(height) ~= "number" then height = firmware.FONT_HEIGHT[firmware.SMLSIZE] end
-    if type(text) ~= "string" or text == "" then return 0, height end
-
-    return advanceWidth(text, height), height
-  end
-
-  lcd = {
-    -- EdgeTX accepts lcd.RGB(r, g, b) or a single packed lcd.RGB(rgb), and
-    -- returns a flag word either way.
-    RGB = function(red, green, blue)
-      if green ~= nil then red = red * 65536 + green * 256 + blue end
-      return toLcdFlags(red)
-    end,
-    -- luaLcdGetColor answers nil for a role it does not recognize.
-    getColor = function(role)
-      local rgb = roles[role]
-      if rgb == nil then return nil end
-      return toLcdFlags(rgb)
-    end,
-    sizeText = sizeText,
-  }
-
-  --- Swap the glyph summing out while a callback is being measured.
-  ---
-  --- `sizeText` is C on a radio -- `lv_txt_get_width` over a decompressed
-  --- font -- and costs a script nothing beyond the call itself. Here it is a
-  --- Lua loop over the string: measured, 101 instructions against the 34 a
-  --- radio pays for the same call. Leaving it in the measured path would
-  --- bill the dashboard 67 instructions per call for the fixture's own
-  --- arithmetic, which is the mistake property validation and the write
-  --- counters are both swapped out to avoid.
-  ---
-  --- The stand-in answers exactly what the summing would, from a cache, so a
-  --- measured callback lays out identically to an unmeasured one. Charging
-  --- nothing is the point; answering differently would not be.
-  ---
-  --- Nested by font and then by string rather than keyed on a concatenation
-  --- of the two: building that key was itself most of what the stand-in
-  --- cost, and a fixture that charges for the thing it is trying not to
-  --- charge for has only moved the problem.
-  local measured = {}
-  local function cachedSizeText(text, flags)
-    local byFont = measured[flags]
-    if byFont == nil then byFont = {} measured[flags] = byFont end
-    local width = byFont[text]
-    if width == nil then
-      width = sizeText(text, flags)
-      byFont[text] = width
+    --- Pack a 24-bit colour into RGB565, as EdgeTX's RGB() macro does.
+    local function toRgb565(rgb)
+        local red = math.floor(rgb / 65536) % 256
+        local green = math.floor(rgb / 256) % 256
+        local blue = rgb % 256
+        return math.floor(red * 31 / 255) * 2048 + math.floor(green * 63 / 255) * 32 + math.floor(blue * 31 / 255)
     end
-    return width, firmware.FONT_HEIGHT[flags]
-      or firmware.FONT_HEIGHT[firmware.SMLSIZE]
-  end
 
-  local function setTextMeasurement(enabled)
-    lcd.sizeText = enabled and sizeText or cachedSizeText
-  end
+    --- Build the LcdFlags word EdgeTX hands a script for a colour.
+    ---
+    --- One encoder, because the firmware has one shape. luaRGB returns
+    --- COLOR2FLAGS(RGB(r, g, b)) | RGB_FLAG and luaLcdGetColor returns
+    --- colorToRGB(flags) & (COLOR_MASK(~0u) | RGB_FLAG): RGB565 in the upper
+    --- half, RGB_FLAG in the lower. Encoding the two separately is exactly how
+    --- the read side came to be corrected while the write side spent a day
+    --- returning a bare 24-bit value, which made a palette token and a display
+    --- value the same number and left nothing able to tell them apart.
+    ---
+    --- Cached because both firmware entry points are C functions that cost a
+    --- script no VM instructions at all. The dashboard's budget should measure
+    --- the dashboard, not arithmetic the radio does for free.
+    local cache = {}
+    local function toLcdFlags(rgb)
+        local cached = cache[rgb]
+        if cached then
+            return cached
+        end
 
-  return {
-    toRgb565 = toRgb565,
-    toLcdFlags = toLcdFlags,
-    roles = roles,
-    palette = palette,
-    sizeText = sizeText,
-    setTextMeasurement = setTextMeasurement,
-  }
+        cached = toRgb565(rgb) * 65536 + firmware.RGB_FLAG
+        cache[rgb] = cached
+        return cached
+    end
+
+    local theme = firmware.COLOR_THEME
+    COLOR_THEME_PRIMARY1 = theme.primary1
+    COLOR_THEME_PRIMARY2 = theme.primary2
+    COLOR_THEME_PRIMARY3 = theme.primary3
+    COLOR_THEME_SECONDARY1 = theme.secondary1
+    COLOR_THEME_SECONDARY2 = theme.secondary2
+    COLOR_THEME_SECONDARY3 = theme.secondary3
+    COLOR_THEME_FOCUS = theme.focus
+    COLOR_THEME_EDIT = theme.edit
+    COLOR_THEME_ACTIVE = theme.active
+    COLOR_THEME_WARNING = theme.warning
+    COLOR_THEME_DISABLED = theme.disabled
+
+    -- Role constant to 24-bit colour, so getColor can answer by role.
+    local palette = options.roles or firmware.DEFAULT_COLORS
+    local roles = {}
+    for name, role in pairs(theme) do
+        roles[role] = palette[name]
+    end
+
+    --- `lcd.sizeText(text, flags)`: the width and the line height.
+    ---
+    --- Ungated, unlike every other drawing entry point in `api_colorlcd.cpp`.
+    --- `luaLcdSizeText` carries no `luaLcdAllowed` or `luaLcdBuffer` check
+    --- because it touches neither: it reads font metrics and returns. That is
+    --- why a widget may call it from `create` and `update` rather than only
+    --- while painting.
+    local function sizeText(text, flags)
+        local height = firmware.FONT_HEIGHT[flags]
+        if type(height) ~= "number" then
+            height = firmware.FONT_HEIGHT[firmware.SMLSIZE]
+        end
+        if type(text) ~= "string" or text == "" then
+            return 0, height
+        end
+
+        return advanceWidth(text, height), height
+    end
+
+    lcd = {
+        -- EdgeTX accepts lcd.RGB(r, g, b) or a single packed lcd.RGB(rgb), and
+        -- returns a flag word either way.
+        RGB = function(red, green, blue)
+            if green ~= nil then
+                red = red * 65536 + green * 256 + blue
+            end
+            return toLcdFlags(red)
+        end,
+        -- luaLcdGetColor answers nil for a role it does not recognize.
+        getColor = function(role)
+            local rgb = roles[role]
+            if rgb == nil then
+                return nil
+            end
+            return toLcdFlags(rgb)
+        end,
+        sizeText = sizeText,
+    }
+
+    --- Swap the glyph summing out while a callback is being measured.
+    ---
+    --- `sizeText` is C on a radio -- `lv_txt_get_width` over a decompressed
+    --- font -- and costs a script nothing beyond the call itself. Here it is a
+    --- Lua loop over the string: measured, 101 instructions against the 34 a
+    --- radio pays for the same call. Leaving it in the measured path would
+    --- bill the dashboard 67 instructions per call for the fixture's own
+    --- arithmetic, which is the mistake property validation and the write
+    --- counters are both swapped out to avoid.
+    ---
+    --- The stand-in answers exactly what the summing would, from a cache, so a
+    --- measured callback lays out identically to an unmeasured one. Charging
+    --- nothing is the point; answering differently would not be.
+    ---
+    --- Nested by font and then by string rather than keyed on a concatenation
+    --- of the two: building that key was itself most of what the stand-in
+    --- cost, and a fixture that charges for the thing it is trying not to
+    --- charge for has only moved the problem.
+    local measured = {}
+    local function cachedSizeText(text, flags)
+        local byFont = measured[flags]
+        if byFont == nil then
+            byFont = {}
+            measured[flags] = byFont
+        end
+        local width = byFont[text]
+        if width == nil then
+            width = sizeText(text, flags)
+            byFont[text] = width
+        end
+        return width, firmware.FONT_HEIGHT[flags] or firmware.FONT_HEIGHT[firmware.SMLSIZE]
+    end
+
+    local function setTextMeasurement(enabled)
+        lcd.sizeText = enabled and sizeText or cachedSizeText
+    end
+
+    return {
+        toRgb565 = toRgb565,
+        toLcdFlags = toLcdFlags,
+        roles = roles,
+        palette = palette,
+        sizeText = sizeText,
+        setTextMeasurement = setTextMeasurement,
+    }
 end
 
 --- Publish `lvgl`, and the screen geometry a host reads from globals.
 ---@return table handle
 function support.lvgl()
-  MENU_HEADER_HEIGHT = firmware.MENU_HEADER_HEIGHT_FLAGS
+    MENU_HEADER_HEIGHT = firmware.MENU_HEADER_HEIGHT_FLAGS
 
-  local objects = {}
-  local pendingClears = {}
-  local deferCleanup = false
-  local appMode = false
-  local fullScreen = false
-  local validateProperties = true
+    local objects = {}
+    local pendingClears = {}
+    local deferCleanup = false
+    local appMode = false
+    local fullScreen = false
+    local validateProperties = true
 
-  --- Emulate the firmware's post-callback ref cleanup.
-  ---
-  --- LvglWidgetObjectBase::clear only sets clearRequest and destroys windows.
-  --- The reference cleanup happens later, in callRefs, and clearChildRefs then
-  --- invalidates every reference in that object's child list, including ones
-  --- created after the clear but within the same callback. Modelling clear()
-  --- as an immediate flag hid a real defect, so this mirrors the ordering.
-  local function settle()
-    if deferCleanup then return end
-    if #pendingClears == 0 then return end
+    --- Emulate the firmware's post-callback ref cleanup.
+    ---
+    --- LvglWidgetObjectBase::clear only sets clearRequest and destroys windows.
+    --- The reference cleanup happens later, in callRefs, and clearChildRefs then
+    --- invalidates every reference in that object's child list, including ones
+    --- created after the clear but within the same callback. Modelling clear()
+    --- as an immediate flag hid a real defect, so this mirrors the ordering.
+    local function settle()
+        if deferCleanup then
+            return
+        end
+        if #pendingClears == 0 then
+            return
+        end
 
-    local pending = pendingClears
-    pendingClears = {}
-    for _, object in ipairs(pending) do
-      rawset(object, "clearRequest", false)
-      for _, child in ipairs(object.children) do
-        rawset(child, "invalid", true)
-      end
-      rawset(object, "children", {})
-    end
-  end
-
-  --- Model how the firmware actually places a round object.
-  ---
-  --- EdgeTX positions an arc by its centre but stores a corner, and
-  --- LvglWidgetRoundObject::refresh subtracts the radius twice: once inside
-  --- setRadius, and again through the inherited setPos, which receives members
-  --- that already hold a corner. Every update therefore walks an arc up and to
-  --- the left by its own radius. A mock that records the coordinates it was
-  --- handed cannot see that, which is why dials drifted off the radio while
-  --- these tests stayed green.
-  local function newRoundGeometry(properties)
-    local fwX = properties.x or 0
-    local fwY = properties.y or 0
-    local fwRadius = properties.radius or 0
-    local drawn = {x = 0, y = 0}
-
-    -- LvglWidgetRoundObject::setPos, which subtracts the radius before
-    -- delegating to LvglWidgetObject::setPos.
-    local function setPos(nx, ny)
-      fwX = nx - fwRadius
-      fwY = ny - fwRadius
-      drawn.x, drawn.y = fwX, fwY
+        local pending = pendingClears
+        pendingClears = {}
+        for _, object in ipairs(pending) do
+            rawset(object, "clearRequest", false)
+            for _, child in ipairs(object.children) do
+                rawset(child, "invalid", true)
+            end
+            rawset(object, "children", {})
+        end
     end
 
-    local function setRadius(r)
-      fwX = fwX + fwRadius
-      fwY = fwY + fwRadius
-      fwRadius = r
-      setPos(fwX, fwY)
-    end
+    --- Model how the firmware actually places a round object.
+    ---
+    --- EdgeTX positions an arc by its centre but stores a corner, and
+    --- LvglWidgetRoundObject::refresh subtracts the radius twice: once inside
+    --- setRadius, and again through the inherited setPos, which receives members
+    --- that already hold a corner. Every update therefore walks an arc up and to
+    --- the left by its own radius. A mock that records the coordinates it was
+    --- handed cannot see that, which is why dials drifted off the radio while
+    --- these tests stayed green.
+    local function newRoundGeometry(properties)
+        local fwX = properties.x or 0
+        local fwY = properties.y or 0
+        local fwRadius = properties.radius or 0
+        local drawn = { x = 0, y = 0 }
 
-    -- build() runs setPos then setRadius and never calls refresh, which is why
-    -- a dial is only ever misplaced after its first update.
-    setPos(fwX, fwY)
-    setRadius(fwRadius)
+        -- LvglWidgetRoundObject::setPos, which subtracts the radius before
+        -- delegating to LvglWidgetObject::setPos.
+        local function setPos(nx, ny)
+            fwX = nx - fwRadius
+            fwY = ny - fwRadius
+            drawn.x, drawn.y = fwX, fwY
+        end
 
-    return {
-      drawn = drawn,
-      radius = function() return fwRadius end,
-      -- update(): getParams overwrites only the supplied members, then
-      -- refresh() runs setRadius followed by the inherited setPos.
-      refresh = function(changes)
-        if changes.x ~= nil then fwX = changes.x end
-        if changes.y ~= nil then fwY = changes.y end
-        if changes.radius ~= nil then fwRadius = changes.radius end
-        setRadius(fwRadius)
+        local function setRadius(r)
+            fwX = fwX + fwRadius
+            fwY = fwY + fwRadius
+            fwRadius = r
+            setPos(fwX, fwY)
+        end
+
+        -- build() runs setPos then setRadius and never calls refresh, which is why
+        -- a dial is only ever misplaced after its first update.
         setPos(fwX, fwY)
-      end,
+        setRadius(fwRadius)
+
+        return {
+            drawn = drawn,
+            radius = function()
+                return fwRadius
+            end,
+            -- update(): getParams overwrites only the supplied members, then
+            -- refresh() runs setRadius followed by the inherited setPos.
+            refresh = function(changes)
+                if changes.x ~= nil then
+                    fwX = changes.x
+                end
+                if changes.y ~= nil then
+                    fwY = changes.y
+                end
+                if changes.radius ~= nil then
+                    fwRadius = changes.radius
+                end
+                setRadius(fwRadius)
+                setPos(fwX, fwY)
+            end,
+        }
+    end
+
+    --- Reject exactly what the radio rejects.
+    ---
+    --- An unknown property raises on hardware, so a mock that accepts every key
+    --- turns a misspelling into a silent no-op there and a pass here. A colour
+    --- must additionally be a word lcd.RGB produced: the dashboard holds its
+    --- palette twice, as 24-bit tokens for arithmetic and as display values for
+    --- drawing, and handing an object the former paints a colour belonging to no
+    --- theme at all. The radio cannot report that; this can.
+    local propertyKeys = firmware.PROPERTY_KEYS
+    local colorKeys = firmware.COLOR_PROPERTY_KEYS
+    local rgbFlag = firmware.RGB_FLAG
+
+    local function checkProperties(kind, properties)
+        local accepted = propertyKeys[kind]
+        if not accepted then
+            return
+        end
+
+        for key, value in pairs(properties) do
+            if not accepted[key] then
+                error(string.format(firmware.INVALID_PROPERTY_FORMAT, tostring(key)) .. " on " .. kind, 0)
+            end
+            if colorKeys[key] and (type(value) ~= "number" or value % 65536 ~= rgbFlag) then
+                error(kind .. "." .. key .. " is not a colour lcd.RGB returned: " .. tostring(value), 0)
+            end
+        end
+    end
+
+    local function assertUsable(object)
+        if object.invalid then
+            error(firmware.INVALID_OBJECT_MESSAGE, 0)
+        end
+    end
+
+    --- Refuse a field written onto an LVGL object, the way a radio does.
+    ---
+    --- `__metatable` is set so nothing can lift the seal with `setmetatable`,
+    --- and the message carries the radio's own wording plus the key, because a
+    --- bare type error tells a reader what happened and not what they wrote.
+    --- The harness reaches its own bookkeeping with `rawset`, which is the
+    --- honest admission that those fields are the fixture's and not the
+    --- firmware's.
+    local objectSeal = {
+        __metatable = false,
+        __newindex = function(object, key)
+            error(
+                firmware.OBJECT_FIELD_WRITE_MESSAGE
+                    .. " (assigning '"
+                    .. tostring(key)
+                    .. "' to a "
+                    .. tostring(object.kind)
+                    .. "). LVGL objects are userdata on a radio and hold no fields;"
+                    .. " keep host bookkeeping beside the object, never on it.",
+                0
+            )
+        end,
     }
-  end
 
-  --- Reject exactly what the radio rejects.
-  ---
-  --- An unknown property raises on hardware, so a mock that accepts every key
-  --- turns a misspelling into a silent no-op there and a pass here. A colour
-  --- must additionally be a word lcd.RGB produced: the dashboard holds its
-  --- palette twice, as 24-bit tokens for arithmetic and as display values for
-  --- drawing, and handing an object the former paints a colour belonging to no
-  --- theme at all. The radio cannot report that; this can.
-  local propertyKeys = firmware.PROPERTY_KEYS
-  local colorKeys = firmware.COLOR_PROPERTY_KEYS
-  local rgbFlag = firmware.RGB_FLAG
+    -- The body is repeated rather than shared, and validation is exchanged
+    -- rather than tested for, because both a second call and an upvalue test
+    -- cost the measured callback instructions the radio never pays. parseParam
+    -- is C++; charging our stand-in for it to a Lua budget measures the fixture.
+    --- `writes` counts calls from Lua into LVGL on this object. It is this
+    --- harness's own bookkeeping, not a firmware value: nothing in EdgeTX
+    --- exposes it. It exists so a test can see work that leaves no trace on
+    --- screen, such as a panel repositioning a label it has hidden, which is
+    --- otherwise invisible to every assertion and therefore free to grow.
+    --- firmware: a Lua label is `lv_label_create` with a font style and nothing
+    --- else (`etx_label_create`, `gui/colorlcd/libui/etx_lv_theme.cpp`), so its
+    --- long mode is LVGL's default, which `lv_label_constructor` sets to
+    --- `LV_LABEL_LONG_WRAP` (`thirdparty/lvgl/src/widgets/lv_label.c`). And a
+    --- height of zero is not zero: `LvglSimpleWidgetObject::parseParam` turns it
+    --- into `LV_SIZE_CONTENT` (`lua/lua_lvgl_widget.cpp`).
+    ---
+    --- Together those mean a label with an explicit width and `h = 0` whose
+    --- text is wider than that width **wraps onto another line and grows
+    --- downward**, into whatever the panel draws beneath it. Nothing about the
+    --- text's content changes, so no assertion about what a label says can see
+    --- it; only its height can.
+    ---
+    --- The line count is measured with the same per-glyph advances `sizeText`
+    --- sums, because the firmware uses one function for both.
+    local function wrappedHeight(properties)
+        local text = properties.text
+        local width = properties.w
+        if type(text) ~= "string" or text == "" then
+            return nil
+        end
 
-  local function checkProperties(kind, properties)
-    local accepted = propertyKeys[kind]
-    if not accepted then return end
+        local heights = firmware.FONT_HEIGHT
+        local height = heights[properties.font and properties.font() or nil]
+        if type(height) ~= "number" then
+            height = heights[firmware.SMLSIZE]
+        end
 
-    for key, value in pairs(properties) do
-      if not accepted[key] then
-        error(string.format(firmware.INVALID_PROPERTY_FORMAT, tostring(key))
-          .. " on " .. kind, 0)
-      end
-      if colorKeys[key]
-          and (type(value) ~= "number" or value % 65536 ~= rgbFlag) then
-        error(kind .. "." .. key .. " is not a colour lcd.RGB returned: "
-          .. tostring(value), 0)
-      end
+        -- firmware: a width of zero, or none at all, is not zero. `parseParam`
+        -- turns `w == 0` into `LV_SIZE_CONTENT` (`lua/lua_lvgl_widget.cpp`) and a
+        -- label that was never given one keeps LVGL's default, which is the same
+        -- thing. A label sized to its own content has no edge to wrap at, so it
+        -- is one line however long its text is -- and it is the caller's job to
+        -- have put it somewhere that much text fits.
+        --
+        -- Answering nil here instead, as this did, is worse than wrong: a test
+        -- asking how many lines a content-sized label took got no answer rather
+        -- than the answer, and `assertEqual(lines, 1)` failed on a label that
+        -- cannot wrap.
+        if type(width) ~= "number" or width <= 0 then
+            return height, 1
+        end
+
+        -- Measured with the same per-glyph advances `sizeText` sums, because
+        -- the firmware uses one function for both: `lv_txt_get_size` breaks a
+        -- line with `_lv_txt_get_next_line` and then measures it with
+        -- `lv_txt_get_width`, the very call `luaLcdSizeText` exposes
+        -- (`thirdparty/lvgl/src/misc/lv_txt.c`).
+        --
+        -- This used to charge a flat ratio per character while `sizeText` beside
+        -- it charged the real ones, so one fixture held two disagreeing models
+        -- of the same firmware function -- and the wrap model was the generous
+        -- one, which reports a label wrapping that a radio draws on one line.
+        local lines = math.max(1, math.ceil(advanceWidth(text, height) / width))
+        return lines * height, lines
     end
-  end
 
-  local function assertUsable(object)
-    if object.invalid then error(firmware.INVALID_OBJECT_MESSAGE, 0) end
-  end
-
-  --- Refuse a field written onto an LVGL object, the way a radio does.
-  ---
-  --- `__metatable` is set so nothing can lift the seal with `setmetatable`,
-  --- and the message carries the radio's own wording plus the key, because a
-  --- bare type error tells a reader what happened and not what they wrote.
-  --- The harness reaches its own bookkeeping with `rawset`, which is the
-  --- honest admission that those fields are the fixture's and not the
-  --- firmware's.
-  local objectSeal = {
-    __metatable = false,
-    __newindex = function(object, key)
-      error(firmware.OBJECT_FIELD_WRITE_MESSAGE .. " (assigning '"
-        .. tostring(key) .. "' to a " .. tostring(object.kind)
-        .. "). LVGL objects are userdata on a radio and hold no fields;"
-        .. " keep host bookkeeping beside the object, never on it.", 0)
-    end,
-  }
-
-  -- The body is repeated rather than shared, and validation is exchanged
-  -- rather than tested for, because both a second call and an upvalue test
-  -- cost the measured callback instructions the radio never pays. parseParam
-  -- is C++; charging our stand-in for it to a Lua budget measures the fixture.
-  --- `writes` counts calls from Lua into LVGL on this object. It is this
-  --- harness's own bookkeeping, not a firmware value: nothing in EdgeTX
-  --- exposes it. It exists so a test can see work that leaves no trace on
-  --- screen, such as a panel repositioning a label it has hidden, which is
-  --- otherwise invisible to every assertion and therefore free to grow.
-  --- firmware: a Lua label is `lv_label_create` with a font style and nothing
-  --- else (`etx_label_create`, `gui/colorlcd/libui/etx_lv_theme.cpp`), so its
-  --- long mode is LVGL's default, which `lv_label_constructor` sets to
-  --- `LV_LABEL_LONG_WRAP` (`thirdparty/lvgl/src/widgets/lv_label.c`). And a
-  --- height of zero is not zero: `LvglSimpleWidgetObject::parseParam` turns it
-  --- into `LV_SIZE_CONTENT` (`lua/lua_lvgl_widget.cpp`).
-  ---
-  --- Together those mean a label with an explicit width and `h = 0` whose
-  --- text is wider than that width **wraps onto another line and grows
-  --- downward**, into whatever the panel draws beneath it. Nothing about the
-  --- text's content changes, so no assertion about what a label says can see
-  --- it; only its height can.
-  ---
-  --- The line count is measured with the same per-glyph advances `sizeText`
-  --- sums, because the firmware uses one function for both.
-  local function wrappedHeight(properties)
-    local text = properties.text
-    local width = properties.w
-    if type(text) ~= "string" or text == "" then return nil end
-
-    local heights = firmware.FONT_HEIGHT
-    local height = heights[properties.font and properties.font() or nil]
-    if type(height) ~= "number" then height = heights[firmware.SMLSIZE] end
-
-    -- firmware: a width of zero, or none at all, is not zero. `parseParam`
-    -- turns `w == 0` into `LV_SIZE_CONTENT` (`lua/lua_lvgl_widget.cpp`) and a
-    -- label that was never given one keeps LVGL's default, which is the same
-    -- thing. A label sized to its own content has no edge to wrap at, so it
-    -- is one line however long its text is -- and it is the caller's job to
-    -- have put it somewhere that much text fits.
-    --
-    -- Answering nil here instead, as this did, is worse than wrong: a test
-    -- asking how many lines a content-sized label took got no answer rather
-    -- than the answer, and `assertEqual(lines, 1)` failed on a label that
-    -- cannot wrap.
-    if type(width) ~= "number" or width <= 0 then return height, 1 end
-
-    -- Measured with the same per-glyph advances `sizeText` sums, because
-    -- the firmware uses one function for both: `lv_txt_get_size` breaks a
-    -- line with `_lv_txt_get_next_line` and then measures it with
-    -- `lv_txt_get_width`, the very call `luaLcdSizeText` exposes
-    -- (`thirdparty/lvgl/src/misc/lv_txt.c`).
-    --
-    -- This used to charge a flat ratio per character while `sizeText` beside
-    -- it charged the real ones, so one fixture held two disagreeing models
-    -- of the same firmware function -- and the wrap model was the generous
-    -- one, which reports a label wrapping that a radio draws on one line.
-    local lines = math.max(1, math.ceil(advanceWidth(text, height) / width))
-    return lines * height, lines
-  end
-
-  local function setChecked(object, changes)
-    assertUsable(object)
-    rawset(object, "writes", object.writes + 1)
-    checkProperties(object.kind, changes)
-    for key, value in pairs(changes) do object.properties[key] = value end
-    if object.kind == "label" then
-      local drawn, lines = wrappedHeight(object.properties)
-      rawset(object, "drawnHeight", drawn)
-      rawset(object, "lines", lines)
+    local function setChecked(object, changes)
+        assertUsable(object)
+        rawset(object, "writes", object.writes + 1)
+        checkProperties(object.kind, changes)
+        for key, value in pairs(changes) do
+            object.properties[key] = value
+        end
+        if object.kind == "label" then
+            local drawn, lines = wrappedHeight(object.properties)
+            rawset(object, "drawnHeight", drawn)
+            rawset(object, "lines", lines)
+        end
+        if object.round then
+            object.round.refresh(changes)
+        end
     end
-    if object.round then object.round.refresh(changes) end
-  end
 
-  --- No write counting here. Turning property validation off is what the
-  --- budget harness does before it measures, and the counters have to go
-  --- with it: a real object's setter is C++, so counting the call in Lua
-  --- would bill the script for work the radio does not do.
-  --- No wrap recomputation here, for the same reason there is no write
-  --- counting: this is the setter the budget harness swaps in before it
-  --- measures, and LVGL lays a label out in C. Charging a Lua stand-in for
-  --- it to a widget callback measures the fixture and slowly squeezes the
-  --- thing being measured.
-  local function setUnchecked(object, changes)
-    assertUsable(object)
-    for key, value in pairs(changes) do object.properties[key] = value end
-    if object.round then object.round.refresh(changes) end
-  end
-
-  local function clearObject(object)
-    assertUsable(object)
-    rawset(object, "cleared", true)
-    if not object.clearRequest then
-      rawset(object, "clearRequest", true)
-      pendingClears[#pendingClears + 1] = object
+    --- No write counting here. Turning property validation off is what the
+    --- budget harness does before it measures, and the counters have to go
+    --- with it: a real object's setter is C++, so counting the call in Lua
+    --- would bill the script for work the radio does not do.
+    --- No wrap recomputation here, for the same reason there is no write
+    --- counting: this is the setter the budget harness swaps in before it
+    --- measures, and LVGL lays a label out in C. Charging a Lua stand-in for
+    --- it to a widget callback measures the fixture and slowly squeezes the
+    --- thing being measured.
+    local function setUnchecked(object, changes)
+        assertUsable(object)
+        for key, value in pairs(changes) do
+            object.properties[key] = value
+        end
+        if object.round then
+            object.round.refresh(changes)
+        end
     end
-  end
 
-  local function newObject(kind, parent, properties)
-    if validateProperties then checkProperties(kind, properties) end
-    local object = {
-      kind = kind,
-      parent = parent,
-      properties = properties,
-      children = {},
-      cleared = false,
-      hidden = false,
-      invalid = false,
-      writes = 0,
-      visibilityCalls = 0,
-      set = validateProperties and setChecked or setUnchecked,
-      clear = clearObject,
+    local function clearObject(object)
+        assertUsable(object)
+        rawset(object, "cleared", true)
+        if not object.clearRequest then
+            rawset(object, "clearRequest", true)
+            pendingClears[#pendingClears + 1] = object
+        end
+    end
+
+    local function newObject(kind, parent, properties)
+        if validateProperties then
+            checkProperties(kind, properties)
+        end
+        local object = {
+            kind = kind,
+            parent = parent,
+            properties = properties,
+            children = {},
+            cleared = false,
+            hidden = false,
+            invalid = false,
+            writes = 0,
+            visibilityCalls = 0,
+            set = validateProperties and setChecked or setUnchecked,
+            clear = clearObject,
+        }
+        -- What an LVGL object *is*, not merely what it accepts.
+        --
+        -- Everything above this line is this harness's own inspection surface,
+        -- and it is set before the seal goes on because a radio has no equivalent
+        -- to set. What a radio hands back is userdata -- see
+        -- firmware.OBJECT_FIELD_WRITE_MESSAGE -- and userdata holds no fields, so
+        -- decorating one with a Lua value raises rather than being stored.
+        --
+        -- The refusing setter already models what an object accepts through
+        -- `set`. This models what the object is, which is a different thing and
+        -- the one that was missing: a field written straight onto a label passed
+        -- every test here and broke every panel on the radio, because a table
+        -- takes any name you give it and userdata takes none.
+        --
+        -- A label's drawn height follows its text, because `h = 0` is
+        -- `LV_SIZE_CONTENT` and the default long mode wraps.
+        if kind == "label" then
+            object.drawnHeight, object.lines = wrappedHeight(properties)
+        end
+
+        if kind == "arc" then
+            object.round = newRoundGeometry(properties)
+        end
+        -- A rectangle's border width and corner radius reach LVGL when the object
+        -- is built and never again, so what the radio actually paints is fixed
+        -- here. `properties` keeps whatever Lua last passed; `painted` is what is
+        -- on the screen, and the two diverge exactly where the firmware discards
+        -- an update.
+        if kind == "rectangle" then
+            object.painted = {
+                borderWidth = properties.filled and 0 or (properties.thickness or 0),
+                -- LvglWidgetRectangle::build raises a radius thinner than the border.
+                radius = math.max(
+                    properties.rounded or 0,
+                    (properties.rounded or 0) > 0 and (properties.thickness or 0) or 0
+                ),
+            }
+        end
+
+        -- Sealed last, so everything above is a plain store rather than a
+        -- `rawset` call. Behind the same switch as property validation, and for
+        -- the same reason: a radio's object is userdata already and pays nothing
+        -- to become so, while sealing every object this host builds, and reaching
+        -- past the seal afterwards, cost 276 instructions of the worst callback.
+        -- A number that moves when only the harness changed is the harness.
+        if validateProperties then
+            setmetatable(object, objectSeal)
+        end
+
+        if parent then
+            parent.children[#parent.children + 1] = object
+        end
+        objects[#objects + 1] = object
+        return object
+    end
+
+    local function constructor(kind)
+        return function(first, second)
+            if second then
+                return newObject(kind, first, second)
+            end
+            return newObject(kind, nil, first)
+        end
+    end
+
+    local function plainHide(object)
+        rawset(object, "hidden", true)
+    end
+    local function plainShow(object)
+        rawset(object, "hidden", false)
+    end
+
+    local function countedHide(object)
+        rawset(object, "visibilityCalls", object.visibilityCalls + 1)
+        rawset(object, "hidden", true)
+    end
+
+    local function countedShow(object)
+        rawset(object, "visibilityCalls", object.visibilityCalls + 1)
+        rawset(object, "hidden", false)
+    end
+
+    lvgl = {
+        box = constructor("box"),
+        rectangle = constructor("rectangle"),
+        label = constructor("label"),
+        arc = constructor("arc"),
+        image = constructor("image"),
+        -- `visibilityCalls` is counted for the same reason as `writes`: telling
+        -- an already-hidden object to hide again changes nothing on screen and
+        -- so cannot be seen by any assertion about what is drawn.
+        hide = countedHide,
+        show = countedShow,
+        isAppMode = function()
+            return appMode
+        end,
+        -- **`isFullScreen`, with a capital S.** The C function is
+        -- `luaLvglIsFullscreen` but the name the firmware registers is
+        -- `isFullScreen` (radio/src/lua/api_colorlcd_lvgl.cpp:447). Spelled the
+        -- other way here, the widget's own guarded read would find nothing,
+        -- return false, and every fullscreen assertion would pass against a
+        -- radio that never goes fullscreen.
+        isFullScreen = function()
+            return fullScreen
+        end,
     }
-    -- What an LVGL object *is*, not merely what it accepts.
-    --
-    -- Everything above this line is this harness's own inspection surface,
-    -- and it is set before the seal goes on because a radio has no equivalent
-    -- to set. What a radio hands back is userdata -- see
-    -- firmware.OBJECT_FIELD_WRITE_MESSAGE -- and userdata holds no fields, so
-    -- decorating one with a Lua value raises rather than being stored.
-    --
-    -- The refusing setter already models what an object accepts through
-    -- `set`. This models what the object is, which is a different thing and
-    -- the one that was missing: a field written straight onto a label passed
-    -- every test here and broke every panel on the radio, because a table
-    -- takes any name you give it and userdata takes none.
-    --
-    -- A label's drawn height follows its text, because `h = 0` is
-    -- `LV_SIZE_CONTENT` and the default long mode wraps.
-    if kind == "label" then
-      object.drawnHeight, object.lines = wrappedHeight(properties)
+
+    local width = support.scaffold.DISPLAY_WIDTH
+    local height = support.scaffold.DISPLAY_HEIGHT
+    local handle = { settle = settle, objects = objects }
+
+    --- Turn property validation on or off for every object, existing and future.
+    --- Called outside the instruction hook, so the exchange is never counted.
+    function handle.setPropertyValidation(enabled)
+        validateProperties = enabled
+        local method = enabled and setChecked or setUnchecked
+        for _, object in ipairs(objects) do
+            rawset(object, "set", method)
+        end
     end
 
-    if kind == "arc" then object.round = newRoundGeometry(properties) end
-    -- A rectangle's border width and corner radius reach LVGL when the object
-    -- is built and never again, so what the radio actually paints is fixed
-    -- here. `properties` keeps whatever Lua last passed; `painted` is what is
-    -- on the screen, and the two diverge exactly where the firmware discards
-    -- an update.
-    if kind == "rectangle" then
-      object.painted = {
-        borderWidth = properties.filled and 0 or (properties.thickness or 0),
-        -- LvglWidgetRectangle::build raises a radius thinner than the border.
-        radius = math.max(properties.rounded or 0,
-          (properties.rounded or 0) > 0 and (properties.thickness or 0) or 0),
-      }
+    --- Swap the visibility counters in or out. Swapped rather than branched,
+    --- so that a measured callback pays nothing at all for them, the same way
+    --- property validation is swapped out rather than tested for.
+    function handle.setCallCounting(enabled)
+        lvgl.hide = enabled and countedHide or plainHide
+        lvgl.show = enabled and countedShow or plainShow
     end
 
-    -- Sealed last, so everything above is a plain store rather than a
-    -- `rawset` call. Behind the same switch as property validation, and for
-    -- the same reason: a radio's object is userdata already and pays nothing
-    -- to become so, while sealing every object this host builds, and reaching
-    -- past the seal afterwards, cost 276 instructions of the worst callback.
-    -- A number that moves when only the harness changed is the harness.
-    if validateProperties then setmetatable(object, objectSeal) end
-
-    if parent then parent.children[#parent.children + 1] = object end
-    objects[#objects + 1] = object
-    return object
-  end
-
-  local function constructor(kind)
-    return function(first, second)
-      if second then return newObject(kind, first, second) end
-      return newObject(kind, nil, first)
+    --- Withhold deferred cleanup, as the firmware withholds it while the widget
+    --- is off screen or once an error has been reported.
+    function handle.setDeferCleanup(enabled)
+        deferCleanup = enabled
     end
-  end
 
-  local function plainHide(object) rawset(object, "hidden", true) end
-  local function plainShow(object) rawset(object, "hidden", false) end
+    function handle.setAppMode(enabled)
+        appMode = enabled
+    end
 
-  local function countedHide(object)
-    rawset(object, "visibilityCalls", object.visibilityCalls + 1)
-    rawset(object, "hidden", true)
-  end
+    --- Take the widget fullscreen, as `ViewMain::onLongPress` does in App mode.
+    --- The zone does not change -- on a `Layout1x1AM` screen the widget already
+    --- has the whole display -- so this is deliberately *only* a flag, which is
+    --- the whole difficulty the widget has to deal with.
+    function handle.setFullScreen(enabled)
+        fullScreen = enabled
+    end
 
-  local function countedShow(object)
-    rawset(object, "visibilityCalls", object.visibilityCalls + 1)
-    rawset(object, "hidden", false)
-  end
+    --- The App mode zone: one widget over the whole display, at the origin.
+    --- x and y are always zero for a widget; xabs and yabs carry where the zone
+    --- really sits, and those six keys are the whole table
+    --- (radio/src/lua/lua_widget_factory.cpp).
+    function handle.appZone()
+        appMode = true
+        fullScreen = false
+        return { x = 0, y = 0, xabs = 0, yabs = 0, w = width, h = height }
+    end
 
-  lvgl = {
-    box = constructor("box"),
-    rectangle = constructor("rectangle"),
-    label = constructor("label"),
-    arc = constructor("arc"),
-    image = constructor("image"),
-    -- `visibilityCalls` is counted for the same reason as `writes`: telling
-    -- an already-hidden object to hide again changes nothing on screen and
-    -- so cannot be seen by any assertion about what is drawn.
-    hide = countedHide,
-    show = countedShow,
-    isAppMode = function() return appMode end,
-    -- **`isFullScreen`, with a capital S.** The C function is
-    -- `luaLvglIsFullscreen` but the name the firmware registers is
-    -- `isFullScreen` (radio/src/lua/api_colorlcd_lvgl.cpp:447). Spelled the
-    -- other way here, the widget's own guarded read would find nothing,
-    -- return false, and every fullscreen assertion would pass against a
-    -- radio that never goes fullscreen.
-    isFullScreen = function() return fullScreen end,
-  }
+    --- The ordinary Full screen zone, with EdgeTX's own top bar above it.
+    --- ViewMainDecoration::getWidgetsZone starts the widget zone at
+    --- MENU_HEADER_HEIGHT and takes the same amount off its height whenever the
+    --- bar is shown, so the zone begins below the button rather than under it.
+    function handle.fullScreenZone()
+        appMode = false
+        fullScreen = false
+        return {
+            x = 0,
+            y = 0,
+            xabs = 0,
+            yabs = firmware.MENU_HEADER_HEIGHT_PX,
+            w = width,
+            h = height - firmware.MENU_HEADER_HEIGHT_PX,
+        }
+    end
 
-  local width = support.scaffold.DISPLAY_WIDTH
-  local height = support.scaffold.DISPLAY_HEIGHT
-  local handle = {settle = settle, objects = objects}
-
-  --- Turn property validation on or off for every object, existing and future.
-  --- Called outside the instruction hook, so the exchange is never counted.
-  function handle.setPropertyValidation(enabled)
-    validateProperties = enabled
-    local method = enabled and setChecked or setUnchecked
-    for _, object in ipairs(objects) do rawset(object, "set", method) end
-  end
-
-  --- Swap the visibility counters in or out. Swapped rather than branched,
-  --- so that a measured callback pays nothing at all for them, the same way
-  --- property validation is swapped out rather than tested for.
-  function handle.setCallCounting(enabled)
-    lvgl.hide = enabled and countedHide or plainHide
-    lvgl.show = enabled and countedShow or plainShow
-  end
-
-  --- Withhold deferred cleanup, as the firmware withholds it while the widget
-  --- is off screen or once an error has been reported.
-  function handle.setDeferCleanup(enabled) deferCleanup = enabled end
-
-  function handle.setAppMode(enabled) appMode = enabled end
-
-  --- Take the widget fullscreen, as `ViewMain::onLongPress` does in App mode.
-  --- The zone does not change -- on a `Layout1x1AM` screen the widget already
-  --- has the whole display -- so this is deliberately *only* a flag, which is
-  --- the whole difficulty the widget has to deal with.
-  function handle.setFullScreen(enabled) fullScreen = enabled end
-
-  --- The App mode zone: one widget over the whole display, at the origin.
-  --- x and y are always zero for a widget; xabs and yabs carry where the zone
-  --- really sits, and those six keys are the whole table
-  --- (radio/src/lua/lua_widget_factory.cpp).
-  function handle.appZone()
-    appMode = true
-    fullScreen = false
-    return {x = 0, y = 0, xabs = 0, yabs = 0, w = width, h = height}
-  end
-
-  --- The ordinary Full screen zone, with EdgeTX's own top bar above it.
-  --- ViewMainDecoration::getWidgetsZone starts the widget zone at
-  --- MENU_HEADER_HEIGHT and takes the same amount off its height whenever the
-  --- bar is shown, so the zone begins below the button rather than under it.
-  function handle.fullScreenZone()
-    appMode = false
-    fullScreen = false
-    return {
-      x = 0, y = 0,
-      xabs = 0, yabs = firmware.MENU_HEADER_HEIGHT_PX,
-      w = width, h = height - firmware.MENU_HEADER_HEIGHT_PX,
-    }
-  end
-
-  return handle
+    return handle
 end
 
 --- Publish the radio state services read through EdgeTX's global functions.
@@ -1131,431 +1332,463 @@ end
 ---@param hostIo table The real `io`, since the caller replaces the global.
 ---@return table handle
 function support.radio(hostIo)
-  local UNIT = firmware.UNIT
-  local scaffold = support.scaffold
+    local UNIT = firmware.UNIT
+    local scaffold = support.scaffold
 
-  --- Timer key set, as `luaModelGetTimer` pushes it.
-  ---
-  --- The firmware pushes mode, start, value, countdownBeep, minuteBeep,
-  --- persistent, name, showElapsed, switch, countdownStart and extraHaptic,
-  --- and answers nil beyond MAX_TIMERS. `showElapsed` matters rather than
-  --- merely being present: `model_service` reads it and flips a countdown to
-  --- count up, and while the fixture omitted it that branch was permanently
-  --- false and never reached a component.
-  local function timer(name, start, value, persistent)
-    return {
-      mode = 1, start = start, value = value, countdownBeep = 0,
-      minuteBeep = false, persistent = persistent or 0, name = name,
-      showElapsed = false, switch = 0, countdownStart = 0, extraHaptic = 0,
-    }
-  end
-
-  local radio = {
-    rssi = 80,
-    --- The model's name, which is whatever the pilot typed into Model Setup.
-    --- It lives here rather than being a constant because it is radio state
-    --- like every other value in this table, and because it is the one
-    --- string in the dashboard that a test needs to be able to make
-    --- hostile: it is the only reading that is free text, so it is the only
-    --- reading that can carry a descender.
-    modelName = scaffold.MODEL_NAME,
-    -- The model's RF alarm thresholds, which getRSSI reports alongside the
-    -- reading. Nothing on the dashboard consults them yet; they are here
-    -- because the radio returns them, not because a test needs them.
-    rfAlarms = {warning = 45, critical = 42},
-    modelFilename = scaffold.MODEL_FILENAME,
-    fields = {
-      RxBt = {id = 100, name = "RxBt", desc = "Rx battery", unit = UNIT.VOLTS},
-      Curr = {id = 103, name = "Curr", desc = "Current", unit = UNIT.AMPS},
-      Alt = {id = 106, name = "Alt", desc = "Altitude", unit = UNIT.METERS},
-      ["Alt+"] = {id = 108, name = "Alt+", desc = "Altitude max", unit = UNIT.METERS},
-      GPS = {id = 109, name = "GPS", desc = "GPS", unit = UNIT.GPS},
-      GSpd = {id = 112, name = "GSpd", desc = "GPS speed", unit = UNIT.KMH},
-      Dist = {id = 115, name = "Dist", desc = "Distance", unit = UNIT.METERS},
-      -- A switch and a trim are not telemetry sources, so luaGetFieldInfo
-      -- pushes no unit for them at all. That absence is load bearing: the
-      -- mock uses it to decide what a dead link zeroes.
-      sa = {id = 300, name = "sa", desc = "Switch A"},
-      ["trim-ail"] = {id = 310, name = "trim-ail", desc = "Aileron trim"},
-      ["tx-voltage"] = {id = 320, name = "tx-voltage", desc = "Tx voltage"},
-    },
-    values = {
-      [100] = 24.0,
-      [103] = 10,
-      [106] = 100,
-      [108] = 180,
-      [109] = {
-        lat = scaffold.MODEL_LATITUDE,
-        lon = scaffold.MODEL_LONGITUDE,
-        ["pilot-lat"] = scaffold.PILOT_LATITUDE,
-        ["pilot-lon"] = scaffold.PILOT_LONGITUDE,
-        delay = 1,
-      },
-      [112] = 42,
-      [115] = 812,
-      [300] = 1024,
-      [310] = 240,
-      [320] = 7.9,
-    },
-    sensors = {
-      [0] = {name = "RxBt", prec = 2},
-      [1] = {name = "Curr", prec = 1},
-      [2] = {name = "Alt", prec = 0},
-    },
-    timers = {[0] = timer("Flight", 300, 90, 1)},
-    globals = {[0] = 45},
-    -- A global variable holds a value per flight mode, and
-    -- luaModelGetGlobalVariable(index, flight_mode) reads the one stored for
-    -- the mode it is given. A mock that ignores its second argument answers
-    -- the same number whatever mode is asked for, so a component reading the
-    -- wrong mode, or no mode at all, is invisible. Index 1 therefore carries
-    -- its own value in flight mode 2, and inherits everywhere else.
-    globalsByMode = {[1] = {[2] = 60}},
-    globalDetails = {
-      [0] = {name = "Rates", min = -100, max = 100, prec = 1, unit = UNIT.RAW},
-    },
-    --- The radio's battery meter range, as a 2S LiPo, which is what the
-    --- fixture transmitter has. Every radio carries one of these.
-    battMin = 6.4,
-    battMax = 8.4,
-    battWarn = 6.6,
-    flightMode = 1,
-    --- firmware: `MAX_FLIGHT_MODES` is 9 and `LEN_FLIGHT_MODE_NAME` is 10 on
-    --- colour targets (`radio/src/dataconstants.h`). `luaGetFlightMode` reads
-    --- `g_model.flightModeData[mode].name`, so every mode has its own name and
-    --- an unnamed one is the empty string.
+    --- Timer key set, as `luaModelGetTimer` pushes it.
     ---
-    --- Named per index rather than one name for every mode, because a mock
-    --- that answered the same name whatever it was asked cannot tell a host
-    --- reading the active mode apart from one reading all nine, and the
-    --- dashboard now does both.
-    flightModeNames = {
-      [0] = "Normal",
-      [1] = "Sport",
-      [2] = "",
-      [3] = "Launch",
-      [4] = "LongRange7",
-    },
-  }
+    --- The firmware pushes mode, start, value, countdownBeep, minuteBeep,
+    --- persistent, name, showElapsed, switch, countdownStart and extraHaptic,
+    --- and answers nil beyond MAX_TIMERS. `showElapsed` matters rather than
+    --- merely being present: `model_service` reads it and flips a countdown to
+    --- count up, and while the fixture omitted it that branch was permanently
+    --- false and never reached a component.
+    local function timer(name, start, value, persistent)
+        return {
+            mode = 1,
+            start = start,
+            value = value,
+            countdownBeep = 0,
+            minuteBeep = false,
+            persistent = persistent or 0,
+            name = name,
+            showElapsed = false,
+            switch = 0,
+            countdownStart = 0,
+            extraHaptic = 0,
+        }
+    end
 
-  -- Sixteen generic sensors, so a layout that fills the grid can reference a
-  -- distinct live source per cell instead of sixteen names the radio rejects.
-  for index = 1, 16 do
-    local name = "S" .. index
-    radio.fields[name] = {id = 400 + index, name = name, unit = UNIT.METERS}
-    radio.values[400 + index] = index * 3
-    radio.sensors[index + 2] = {name = name, prec = 1}
-  end
-
-  -- The remaining sources the service diagnostics layouts reference.
-  radio.fields["trim-ele"] = {id = 311, name = "trim-ele", desc = "Elevator trim"}
-  radio.fields["trim-rud"] = {id = 312, name = "trim-rud", desc = "Rudder trim"}
-  radio.fields["trim-thr"] = {id = 313, name = "trim-thr", desc = "Throttle trim"}
-  radio.fields.GPS2 = {id = 118, name = "GPS2", desc = "GPS 2", unit = UNIT.GPS}
-  radio.values[311] = -120
-  radio.values[312] = 0
-  radio.values[313] = 64
-  radio.values[118] = radio.values[109]
-  radio.timers[1] = timer("Up", 0, 64)
-  radio.timers[2] = timer("Glide", 60, 12)
-  for index = 1, 3 do
-    radio.globals[index] = index * 10
-    radio.globalDetails[index] = {
-      name = "GV" .. (index + 1), min = -100, max = 100, prec = 0,
-      unit = UNIT.VOLTS,
+    local radio = {
+        rssi = 80,
+        --- The model's name, which is whatever the pilot typed into Model Setup.
+        --- It lives here rather than being a constant because it is radio state
+        --- like every other value in this table, and because it is the one
+        --- string in the dashboard that a test needs to be able to make
+        --- hostile: it is the only reading that is free text, so it is the only
+        --- reading that can carry a descender.
+        modelName = scaffold.MODEL_NAME,
+        -- The model's RF alarm thresholds, which getRSSI reports alongside the
+        -- reading. Nothing on the dashboard consults them yet; they are here
+        -- because the radio returns them, not because a test needs them.
+        rfAlarms = { warning = 45, critical = 42 },
+        modelFilename = scaffold.MODEL_FILENAME,
+        fields = {
+            RxBt = { id = 100, name = "RxBt", desc = "Rx battery", unit = UNIT.VOLTS },
+            Curr = { id = 103, name = "Curr", desc = "Current", unit = UNIT.AMPS },
+            Alt = { id = 106, name = "Alt", desc = "Altitude", unit = UNIT.METERS },
+            ["Alt+"] = { id = 108, name = "Alt+", desc = "Altitude max", unit = UNIT.METERS },
+            GPS = { id = 109, name = "GPS", desc = "GPS", unit = UNIT.GPS },
+            GSpd = { id = 112, name = "GSpd", desc = "GPS speed", unit = UNIT.KMH },
+            Dist = { id = 115, name = "Dist", desc = "Distance", unit = UNIT.METERS },
+            -- A switch and a trim are not telemetry sources, so luaGetFieldInfo
+            -- pushes no unit for them at all. That absence is load bearing: the
+            -- mock uses it to decide what a dead link zeroes.
+            sa = { id = 300, name = "sa", desc = "Switch A" },
+            ["trim-ail"] = { id = 310, name = "trim-ail", desc = "Aileron trim" },
+            ["tx-voltage"] = { id = 320, name = "tx-voltage", desc = "Tx voltage" },
+        },
+        values = {
+            [100] = 24.0,
+            [103] = 10,
+            [106] = 100,
+            [108] = 180,
+            [109] = {
+                lat = scaffold.MODEL_LATITUDE,
+                lon = scaffold.MODEL_LONGITUDE,
+                ["pilot-lat"] = scaffold.PILOT_LATITUDE,
+                ["pilot-lon"] = scaffold.PILOT_LONGITUDE,
+                delay = 1,
+            },
+            [112] = 42,
+            [115] = 812,
+            [300] = 1024,
+            [310] = 240,
+            [320] = 7.9,
+        },
+        sensors = {
+            [0] = { name = "RxBt", prec = 2 },
+            [1] = { name = "Curr", prec = 1 },
+            [2] = { name = "Alt", prec = 0 },
+        },
+        timers = { [0] = timer("Flight", 300, 90, 1) },
+        globals = { [0] = 45 },
+        -- A global variable holds a value per flight mode, and
+        -- luaModelGetGlobalVariable(index, flight_mode) reads the one stored for
+        -- the mode it is given. A mock that ignores its second argument answers
+        -- the same number whatever mode is asked for, so a component reading the
+        -- wrong mode, or no mode at all, is invisible. Index 1 therefore carries
+        -- its own value in flight mode 2, and inherits everywhere else.
+        globalsByMode = { [1] = { [2] = 60 } },
+        globalDetails = {
+            [0] = { name = "Rates", min = -100, max = 100, prec = 1, unit = UNIT.RAW },
+        },
+        --- The radio's battery meter range, as a 2S LiPo, which is what the
+        --- fixture transmitter has. Every radio carries one of these.
+        battMin = 6.4,
+        battMax = 8.4,
+        battWarn = 6.6,
+        flightMode = 1,
+        --- firmware: `MAX_FLIGHT_MODES` is 9 and `LEN_FLIGHT_MODE_NAME` is 10 on
+        --- colour targets (`radio/src/dataconstants.h`). `luaGetFlightMode` reads
+        --- `g_model.flightModeData[mode].name`, so every mode has its own name and
+        --- an unnamed one is the empty string.
+        ---
+        --- Named per index rather than one name for every mode, because a mock
+        --- that answered the same name whatever it was asked cannot tell a host
+        --- reading the active mode apart from one reading all nine, and the
+        --- dashboard now does both.
+        flightModeNames = {
+            [0] = "Normal",
+            [1] = "Sport",
+            [2] = "",
+            [3] = "Launch",
+            [4] = "LongRange7",
+        },
     }
-  end
 
-  -- Vertical speed, which the metric's altitude preset takes as its secondary
-  -- reading. It is never derived from altitude; an absent sensor simply leaves
-  -- the secondary row unavailable.
-  radio.fields.VSpd = {
-    id = 120, name = "VSpd", desc = "Vertical speed",
-    unit = UNIT.METERS_PER_SECOND,
-  }
-  radio.values[120] = 2.5
-  radio.sensors[19] = {name = "VSpd", prec = 1}
-
-  -- A flight pack. EdgeTX returns a table of individual cell voltages for the
-  -- base cells source and a plain number for its extremes, which is exactly
-  -- the shape mismatch cell-battery has to survive.
-  radio.fields.Cels = {id = 130, name = "Cels", desc = "Cells", unit = UNIT.CELLS}
-  radio.fields["Cels-"] = {id = 131, name = "Cels-", desc = "Cell min", unit = UNIT.CELLS}
-  radio.fields["Cels+"] = {id = 132, name = "Cels+", desc = "Cell max", unit = UNIT.CELLS}
-  radio.values[130] = {4.11, 4.13, 4.09, 4.12}
-  radio.values[131] = 4.09
-  radio.values[132] = 4.13
-  radio.sensors[20] = {name = "Cels", prec = 2}
-
-  -- Link sensors. FrSky populates RSSI in dB; ELRS populates 1RSS in dBm
-  -- alongside RQly as a percentage, and the two protocols never both apply.
-  --- firmware: Crossfire and ELRS publish the aircraft's flight mode as a
-  --- text sensor named `FM`: `CS(FLIGHT_MODE_ID, 0, STR_SENSOR_FLIGHT_MODE,
-  --- UNIT_TEXT, 0)` in `radio/src/telemetry/crossfire.cpp`, where
-  --- `STR_SENSOR_FLIGHT_MODE` is `"FM"` (`telemetry/sensor_names.h`).
-  --- `getValue` pushes the stored string rather than a number for it:
-  --- `case UNIT_TEXT: lua_pushstring(L, telemetryItems[...].text)`
-  --- (`radio/src/lua/api_general.cpp`). The text is capped at
-  --- `TELEMETRY_SENSOR_TEXT_LENGTH`, which is 16.
-  ---
-  --- It is here because nothing in this harness has ever carried a text
-  --- sensor, so the telemetry service's handling of one was entirely
-  --- unexercised whether or not a component ever reads it.
-  radio.fields.FM = {id = 145, name = "FM", desc = "Flight mode", unit = UNIT.TEXT}
-  radio.fields.RSSI = {id = 140, name = "RSSI", desc = "RSSI", unit = UNIT.DB}
-  radio.fields.RQly = {id = 141, name = "RQly", desc = "Link quality", unit = UNIT.PERCENT}
-  radio.fields["RQly-"] = {
-    id = 142, name = "RQly-", desc = "Link quality min", unit = UNIT.PERCENT,
-  }
-  radio.fields["1RSS"] = {id = 143, name = "1RSS", desc = "Antenna 1", unit = UNIT.DBM}
-  radio.values[140] = 78
-  radio.values[141] = 96
-  -- A string, because `getValue` pushes one for a `UNIT_TEXT` sensor. A
-  -- number here would let the service treat text as a reading and pass.
-  radio.values[145] = "ANGLE"
-  radio.values[142] = 62
-  radio.values[143] = -72
-  radio.sensors[21] = {name = "RSSI", prec = 0}
-  radio.sensors[22] = {name = "RQly", prec = 0}
-
-  -- Further GPS sources, so a layout that fills the grid with navigation
-  -- panels really does carry more than one subscription.
-  radio.fields.GPS3 = {id = 119, name = "GPS3", desc = "GPS 3", unit = UNIT.GPS}
-  radio.fields.GPS4 = {id = 121, name = "GPS4", desc = "GPS 4", unit = UNIT.GPS}
-  radio.values[119] = radio.values[109]
-  radio.values[121] = radio.values[109]
-
-  --- Does this radio's protocol populate an RSSI sensor at all?
-  --- Some do not, and EdgeTX's getRSSI() then reads zero on a perfectly live
-  --- link. That is a different situation from a dead link, and the two must
-  --- not be simulated by the same flag or a test cannot tell them apart
-  --- either.
-  radio.rssiAbsent = false
-
-  --- Files the radio reports through `fstat`, keyed by absolute path.
-  --- Model bitmaps live under /IMAGES/ on the SD card, which the host running
-  --- these tests does not have, so the mock answers for them directly.
-  radio.files = {["/IMAGES/" .. scaffold.MODEL_BITMAP] = 4096}
-
-  --- Reverse index from source id to field, rebuilt whenever a test adds one.
-  --- It exists so the mock costs a table lookup rather than a scan: getValue
-  --- is a C function in the firmware and costs no VM instructions at all, so a
-  --- mock that searched would show up in the budget measurement.
-  local fieldsById = {}
-
-  local function indexFields()
-    fieldsById = {}
-    for _, field in pairs(radio.fields) do fieldsById[field.id] = field end
-  end
-
-  indexFields()
-
-  function getValue(source)
-    local field
-    if type(source) == "string" then
-      field = radio.fields[source]
-      source = field and field.id or nil
-    else
-      field = fieldsById[source]
-    end
-    if source == nil then return nil end
-
-    -- EdgeTX returns integer zero for every telemetry source while telemetry
-    -- is not streaming. A mock that kept reporting real values instead would
-    -- let a freshness bug pass, because nothing would ever look like a dead
-    -- link.
-    --
-    -- The RSSI indicator is not the same thing as the telemetry stream: on a
-    -- protocol that populates no RSSI sensor, getRSSI() reads zero while
-    -- values keep arriving. `rssiAbsent` simulates that, and nothing else.
-    if field and field.unit and radio.rssi == 0 and not radio.rssiAbsent then
-      return 0
+    -- Sixteen generic sensors, so a layout that fills the grid can reference a
+    -- distinct live source per cell instead of sixteen names the radio rejects.
+    for index = 1, 16 do
+        local name = "S" .. index
+        radio.fields[name] = { id = 400 + index, name = name, unit = UNIT.METERS }
+        radio.values[400 + index] = index * 3
+        radio.sensors[index + 2] = { name = name, prec = 1 }
     end
 
-    return radio.values[source]
-  end
-
-  --- luaGetFieldInfo pushes id, name and desc, and pushes `unit` only for a
-  --- source between MIXSRC_FIRST_TELEM and MIXSRC_LAST_TELEM.
-  function getFieldInfo(name)
-    return radio.fields[name]
-  end
-
-  --- luaGetRSSI pushes min((uint8_t)99, TELEMETRY_RSSI()), then
-  --- g_model.rfAlarms.warning and .critical. A reading above 99 is a number
-  --- no radio can produce, so the mock cannot hand one out either.
-  function getRSSI()
-    local rssi = radio.rssi
-    if rssi > 99 then rssi = 99 end
-    return rssi, radio.rfAlarms.warning, radio.rfAlarms.critical
-  end
-
-  --- firmware: `luaGetFlightMode` takes an optional mode index and falls back
-  --- to `mixerCurrentFlightMode` when it is absent or out of range:
-  --- `if (mode < 0 || mode >= MAX_FLIGHT_MODES) mode = mixerCurrentFlightMode`
-  --- (`radio/src/lua/api_general.cpp`). It always returns two values, the
-  --- index and `g_model.flightModeData[mode].name`, and an unnamed mode
-  --- returns an empty string rather than nothing.
-  ---
-  --- The argument is honoured here because the dashboard reads every mode's
-  --- name to size its panel. A mock that ignored it would answer the active
-  --- mode's name nine times and the panel would be sized from one name while
-  --- claiming to be sized from all of them.
-  --- firmware: `luaGetGeneralSettings` (`radio/src/lua/api_general.cpp`)
-  --- returns one table, with the battery figures already in volts:
-  ---
-  ---     lua_pushtablenumber(L, "battWarn", (g_eeGeneral.vBatWarn) * 0.1f);
-  ---     lua_pushtablenumber(L, "battMin", (90+g_eeGeneral.vBatMin) * 0.1f);
-  ---     lua_pushtablenumber(L, "battMax", (120+g_eeGeneral.vBatMax) * 0.1f);
-  ---
-  --- The settings screen holds the range between 3.0 V and 16.0 V and will
-  --- not let the two cross, so a range from a real radio is always the right
-  --- way round (`radio/src/gui/colorlcd/radio/radio_hardware.cpp`).
-  ---
-  --- A fresh table each call, because the firmware builds one with
-  --- `lua_newtable` every time; a mock handing back the same table would let
-  --- a component keep a reference and never notice the pilot changing it.
-  function getGeneralSettings()
-    return {
-      battWarn = radio.battWarn,
-      battMin = radio.battMin,
-      battMax = radio.battMax,
-      imperial = 0,
-      language = "EN",
-      voice = "en",
-      gtimer = 0,
-    }
-  end
-
-  function getFlightMode(index)
-    local mode = index
-    if type(mode) ~= "number" or mode < 0 or mode >= 9 then
-      mode = radio.flightMode
-    end
-    return mode, radio.flightModeNames[mode] or ""
-  end
-
-  model = {
-    -- luaModelGetInfo pushes name, extendedLimits, jitterFilter, bitmap,
-    -- labels and filename. `bitmap` is a bare filename, not a path: the
-    -- dashboard is the one that knows it lives under /IMAGES/.
-    getInfo = function()
-      return {
-        filename = radio.modelFilename,
-        name = radio.modelName,
-        bitmap = scaffold.MODEL_BITMAP,
-        labels = scaffold.MODEL_LABELS,
-        extendedLimits = false,
-        jitterFilter = 0,
-      }
-    end,
-    getTimer = function(index) return radio.timers[index] end,
-    getSensor = function(index) return radio.sensors[index] end,
-    getGlobalVariable = function(index, flightMode)
-      local perMode = radio.globalsByMode[index]
-      local value = perMode and perMode[flightMode]
-      if value ~= nil then return value end
-      return radio.globals[index]
-    end,
-    getGlobalVariableDetails = function(index)
-      return radio.globalDetails[index]
-    end,
-  }
-
-  -- EdgeTX's monotonic clock, in 10ms ticks. Controllable so scheduling is
-  -- deterministic rather than dependent on wall time.
-  local clock = 0
-
-  function getTime()
-    return clock
-  end
-
-  function loadScript(filename)
-    return loadfile(filename)
-  end
-
-  --- firmware: `luaFstat` (`radio/src/lua/api_filesystem.cpp`) returns one
-  --- table of `size`, `attrib` and `time`, and returns no values at all for a
-  --- file it cannot stat. `time` is a date-time table unpacked from FatFs's
-  --- packed `fdate` and `ftime`: year is the field plus 1980, and seconds are
-  --- the field doubled, which is why FAT timestamps are even. The host
-  --- diagnostics view reads `time.year` and the fields beside it, so the
-  --- table is populated rather than carried empty: a mock that answered `{}`
-  --- would let that view report a blank timestamp and pass.
-  ---
-  --- The values are this harness's own, not a claim about any particular
-  --- file. Only the shape and the ranges are the firmware's.
-  function fstat(filename)
-    local function stat(size)
-      return {
-        size = size,
-        attrib = 32,
-        time = {year = 2026, mon = 9, day = 18, hour = 17, min = 4, sec = 0},
-      }
-    end
-
-    -- The radio's own SD card comes first, so a test can describe a model
-    -- bitmap that the host filesystem does not have.
-    local size = radio.files[filename]
-    if size then return stat(size) end
-
-    local handle = hostIo.open(filename, "rb")
-    if not handle then return end
-    size = handle:seek("end")
-    handle:close()
-    return stat(size)
-  end
-
-  local handle = {state = radio}
-
-  --- Reset the radio to the state every test starts from.
-  function handle.reset()
-    indexFields()
-    radio.modelName = scaffold.MODEL_NAME
-    radio.rssi = 80
-    radio.rssiAbsent = false
-    radio.values[100] = 24.0
-    radio.values[103] = 10
-    radio.values[106] = 100
-    -- Vertical speed was missing here, so a test that moved it left the next
-    -- one reading its value. Found when one did.
-    radio.values[120] = 2.5
-    radio.values[300] = 1024
-    -- And the transmitter's own voltage, for the same reason and found the
-    -- same way: a test that took it away to give `tx-battery` no reading
-    -- left every later test's transmitter flat.
-    radio.values[320] = 7.9
-    radio.values[130] = {4.11, 4.13, 4.09, 4.12}
-    radio.values[131] = 4.09
-    radio.values[140] = 78
-    radio.values[141] = 96
-    radio.values[145] = "ANGLE"
-    radio.battMin = 6.4
-    radio.battMax = 8.4
-    radio.battWarn = 6.6
-    radio.values[109].lat = scaffold.MODEL_LATITUDE
-    radio.values[109].lon = scaffold.MODEL_LONGITUDE
-    radio.values[109]["pilot-lat"] = scaffold.PILOT_LATITUDE
-    radio.values[109]["pilot-lon"] = scaffold.PILOT_LONGITUDE
-    -- **The timers, for the same reason the vertical speed above is here.**
-    -- A test that expires the countdown left the next one reading a timer
-    -- fifteen seconds past zero, so a panel that should have drawn
-    -- `OF 5:00` drew `ELAPSED PAST ZERO` and every width measured against it
-    -- was the wrong string's. Found by a probe that reported an overflow on
-    -- a running timer, which cannot happen.
-    radio.timers[0] = timer("Flight", 300, 90, 1)
+    -- The remaining sources the service diagnostics layouts reference.
+    radio.fields["trim-ele"] = { id = 311, name = "trim-ele", desc = "Elevator trim" }
+    radio.fields["trim-rud"] = { id = 312, name = "trim-rud", desc = "Rudder trim" }
+    radio.fields["trim-thr"] = { id = 313, name = "trim-thr", desc = "Throttle trim" }
+    radio.fields.GPS2 = { id = 118, name = "GPS2", desc = "GPS 2", unit = UNIT.GPS }
+    radio.values[311] = -120
+    radio.values[312] = 0
+    radio.values[313] = 64
+    radio.values[118] = radio.values[109]
     radio.timers[1] = timer("Up", 0, 64)
     radio.timers[2] = timer("Glide", 60, 12)
-  end
+    for index = 1, 3 do
+        radio.globals[index] = index * 10
+        radio.globalDetails[index] = {
+            name = "GV" .. (index + 1),
+            min = -100,
+            max = 100,
+            prec = 0,
+            unit = UNIT.VOLTS,
+        }
+    end
 
-  --- Advance the simulated clock.
-  function handle.tick(amount)
-    clock = clock + (amount or 1)
-  end
+    -- Vertical speed, which the metric's altitude preset takes as its secondary
+    -- reading. It is never derived from altitude; an absent sensor simply leaves
+    -- the secondary row unavailable.
+    radio.fields.VSpd = {
+        id = 120,
+        name = "VSpd",
+        desc = "Vertical speed",
+        unit = UNIT.METERS_PER_SECOND,
+    }
+    radio.values[120] = 2.5
+    radio.sensors[19] = { name = "VSpd", prec = 1 }
 
-  handle.indexFields = indexFields
+    -- A flight pack. EdgeTX returns a table of individual cell voltages for the
+    -- base cells source and a plain number for its extremes, which is exactly
+    -- the shape mismatch cell-battery has to survive.
+    radio.fields.Cels = { id = 130, name = "Cels", desc = "Cells", unit = UNIT.CELLS }
+    radio.fields["Cels-"] = { id = 131, name = "Cels-", desc = "Cell min", unit = UNIT.CELLS }
+    radio.fields["Cels+"] = { id = 132, name = "Cels+", desc = "Cell max", unit = UNIT.CELLS }
+    radio.values[130] = { 4.11, 4.13, 4.09, 4.12 }
+    radio.values[131] = 4.09
+    radio.values[132] = 4.13
+    radio.sensors[20] = { name = "Cels", prec = 2 }
 
-  return handle
+    -- Link sensors. FrSky populates RSSI in dB; ELRS populates 1RSS in dBm
+    -- alongside RQly as a percentage, and the two protocols never both apply.
+    --- firmware: Crossfire and ELRS publish the aircraft's flight mode as a
+    --- text sensor named `FM`: `CS(FLIGHT_MODE_ID, 0, STR_SENSOR_FLIGHT_MODE,
+    --- UNIT_TEXT, 0)` in `radio/src/telemetry/crossfire.cpp`, where
+    --- `STR_SENSOR_FLIGHT_MODE` is `"FM"` (`telemetry/sensor_names.h`).
+    --- `getValue` pushes the stored string rather than a number for it:
+    --- `case UNIT_TEXT: lua_pushstring(L, telemetryItems[...].text)`
+    --- (`radio/src/lua/api_general.cpp`). The text is capped at
+    --- `TELEMETRY_SENSOR_TEXT_LENGTH`, which is 16.
+    ---
+    --- It is here because nothing in this harness has ever carried a text
+    --- sensor, so the telemetry service's handling of one was entirely
+    --- unexercised whether or not a component ever reads it.
+    radio.fields.FM = { id = 145, name = "FM", desc = "Flight mode", unit = UNIT.TEXT }
+    radio.fields.RSSI = { id = 140, name = "RSSI", desc = "RSSI", unit = UNIT.DB }
+    radio.fields.RQly = { id = 141, name = "RQly", desc = "Link quality", unit = UNIT.PERCENT }
+    radio.fields["RQly-"] = {
+        id = 142,
+        name = "RQly-",
+        desc = "Link quality min",
+        unit = UNIT.PERCENT,
+    }
+    radio.fields["1RSS"] = { id = 143, name = "1RSS", desc = "Antenna 1", unit = UNIT.DBM }
+    radio.values[140] = 78
+    radio.values[141] = 96
+    -- A string, because `getValue` pushes one for a `UNIT_TEXT` sensor. A
+    -- number here would let the service treat text as a reading and pass.
+    radio.values[145] = "ANGLE"
+    radio.values[142] = 62
+    radio.values[143] = -72
+    radio.sensors[21] = { name = "RSSI", prec = 0 }
+    radio.sensors[22] = { name = "RQly", prec = 0 }
+
+    -- Further GPS sources, so a layout that fills the grid with navigation
+    -- panels really does carry more than one subscription.
+    radio.fields.GPS3 = { id = 119, name = "GPS3", desc = "GPS 3", unit = UNIT.GPS }
+    radio.fields.GPS4 = { id = 121, name = "GPS4", desc = "GPS 4", unit = UNIT.GPS }
+    radio.values[119] = radio.values[109]
+    radio.values[121] = radio.values[109]
+
+    --- Does this radio's protocol populate an RSSI sensor at all?
+    --- Some do not, and EdgeTX's getRSSI() then reads zero on a perfectly live
+    --- link. That is a different situation from a dead link, and the two must
+    --- not be simulated by the same flag or a test cannot tell them apart
+    --- either.
+    radio.rssiAbsent = false
+
+    --- Files the radio reports through `fstat`, keyed by absolute path.
+    --- Model bitmaps live under /IMAGES/ on the SD card, which the host running
+    --- these tests does not have, so the mock answers for them directly.
+    radio.files = { ["/IMAGES/" .. scaffold.MODEL_BITMAP] = 4096 }
+
+    --- Reverse index from source id to field, rebuilt whenever a test adds one.
+    --- It exists so the mock costs a table lookup rather than a scan: getValue
+    --- is a C function in the firmware and costs no VM instructions at all, so a
+    --- mock that searched would show up in the budget measurement.
+    local fieldsById = {}
+
+    local function indexFields()
+        fieldsById = {}
+        for _, field in pairs(radio.fields) do
+            fieldsById[field.id] = field
+        end
+    end
+
+    indexFields()
+
+    function getValue(source)
+        local field
+        if type(source) == "string" then
+            field = radio.fields[source]
+            source = field and field.id or nil
+        else
+            field = fieldsById[source]
+        end
+        if source == nil then
+            return nil
+        end
+
+        -- EdgeTX returns integer zero for every telemetry source while telemetry
+        -- is not streaming. A mock that kept reporting real values instead would
+        -- let a freshness bug pass, because nothing would ever look like a dead
+        -- link.
+        --
+        -- The RSSI indicator is not the same thing as the telemetry stream: on a
+        -- protocol that populates no RSSI sensor, getRSSI() reads zero while
+        -- values keep arriving. `rssiAbsent` simulates that, and nothing else.
+        if field and field.unit and radio.rssi == 0 and not radio.rssiAbsent then
+            return 0
+        end
+
+        return radio.values[source]
+    end
+
+    --- luaGetFieldInfo pushes id, name and desc, and pushes `unit` only for a
+    --- source between MIXSRC_FIRST_TELEM and MIXSRC_LAST_TELEM.
+    function getFieldInfo(name)
+        return radio.fields[name]
+    end
+
+    --- luaGetRSSI pushes min((uint8_t)99, TELEMETRY_RSSI()), then
+    --- g_model.rfAlarms.warning and .critical. A reading above 99 is a number
+    --- no radio can produce, so the mock cannot hand one out either.
+    function getRSSI()
+        local rssi = radio.rssi
+        if rssi > 99 then
+            rssi = 99
+        end
+        return rssi, radio.rfAlarms.warning, radio.rfAlarms.critical
+    end
+
+    --- firmware: `luaGetFlightMode` takes an optional mode index and falls back
+    --- to `mixerCurrentFlightMode` when it is absent or out of range:
+    --- `if (mode < 0 || mode >= MAX_FLIGHT_MODES) mode = mixerCurrentFlightMode`
+    --- (`radio/src/lua/api_general.cpp`). It always returns two values, the
+    --- index and `g_model.flightModeData[mode].name`, and an unnamed mode
+    --- returns an empty string rather than nothing.
+    ---
+    --- The argument is honoured here because the dashboard reads every mode's
+    --- name to size its panel. A mock that ignored it would answer the active
+    --- mode's name nine times and the panel would be sized from one name while
+    --- claiming to be sized from all of them.
+    --- firmware: `luaGetGeneralSettings` (`radio/src/lua/api_general.cpp`)
+    --- returns one table, with the battery figures already in volts:
+    ---
+    ---     lua_pushtablenumber(L, "battWarn", (g_eeGeneral.vBatWarn) * 0.1f);
+    ---     lua_pushtablenumber(L, "battMin", (90+g_eeGeneral.vBatMin) * 0.1f);
+    ---     lua_pushtablenumber(L, "battMax", (120+g_eeGeneral.vBatMax) * 0.1f);
+    ---
+    --- The settings screen holds the range between 3.0 V and 16.0 V and will
+    --- not let the two cross, so a range from a real radio is always the right
+    --- way round (`radio/src/gui/colorlcd/radio/radio_hardware.cpp`).
+    ---
+    --- A fresh table each call, because the firmware builds one with
+    --- `lua_newtable` every time; a mock handing back the same table would let
+    --- a component keep a reference and never notice the pilot changing it.
+    function getGeneralSettings()
+        return {
+            battWarn = radio.battWarn,
+            battMin = radio.battMin,
+            battMax = radio.battMax,
+            imperial = 0,
+            language = "EN",
+            voice = "en",
+            gtimer = 0,
+        }
+    end
+
+    function getFlightMode(index)
+        local mode = index
+        if type(mode) ~= "number" or mode < 0 or mode >= 9 then
+            mode = radio.flightMode
+        end
+        return mode, radio.flightModeNames[mode] or ""
+    end
+
+    model = {
+        -- luaModelGetInfo pushes name, extendedLimits, jitterFilter, bitmap,
+        -- labels and filename. `bitmap` is a bare filename, not a path: the
+        -- dashboard is the one that knows it lives under /IMAGES/.
+        getInfo = function()
+            return {
+                filename = radio.modelFilename,
+                name = radio.modelName,
+                bitmap = scaffold.MODEL_BITMAP,
+                labels = scaffold.MODEL_LABELS,
+                extendedLimits = false,
+                jitterFilter = 0,
+            }
+        end,
+        getTimer = function(index)
+            return radio.timers[index]
+        end,
+        getSensor = function(index)
+            return radio.sensors[index]
+        end,
+        getGlobalVariable = function(index, flightMode)
+            local perMode = radio.globalsByMode[index]
+            local value = perMode and perMode[flightMode]
+            if value ~= nil then
+                return value
+            end
+            return radio.globals[index]
+        end,
+        getGlobalVariableDetails = function(index)
+            return radio.globalDetails[index]
+        end,
+    }
+
+    -- EdgeTX's monotonic clock, in 10ms ticks. Controllable so scheduling is
+    -- deterministic rather than dependent on wall time.
+    local clock = 0
+
+    function getTime()
+        return clock
+    end
+
+    function loadScript(filename)
+        return loadfile(filename)
+    end
+
+    --- firmware: `luaFstat` (`radio/src/lua/api_filesystem.cpp`) returns one
+    --- table of `size`, `attrib` and `time`, and returns no values at all for a
+    --- file it cannot stat. `time` is a date-time table unpacked from FatFs's
+    --- packed `fdate` and `ftime`: year is the field plus 1980, and seconds are
+    --- the field doubled, which is why FAT timestamps are even. The host
+    --- diagnostics view reads `time.year` and the fields beside it, so the
+    --- table is populated rather than carried empty: a mock that answered `{}`
+    --- would let that view report a blank timestamp and pass.
+    ---
+    --- The values are this harness's own, not a claim about any particular
+    --- file. Only the shape and the ranges are the firmware's.
+    function fstat(filename)
+        local function stat(size)
+            return {
+                size = size,
+                attrib = 32,
+                time = { year = 2026, mon = 9, day = 18, hour = 17, min = 4, sec = 0 },
+            }
+        end
+
+        -- The radio's own SD card comes first, so a test can describe a model
+        -- bitmap that the host filesystem does not have.
+        local size = radio.files[filename]
+        if size then
+            return stat(size)
+        end
+
+        local handle = hostIo.open(filename, "rb")
+        if not handle then
+            return
+        end
+        size = handle:seek("end")
+        handle:close()
+        return stat(size)
+    end
+
+    local handle = { state = radio }
+
+    --- Reset the radio to the state every test starts from.
+    function handle.reset()
+        indexFields()
+        radio.modelName = scaffold.MODEL_NAME
+        radio.rssi = 80
+        radio.rssiAbsent = false
+        radio.values[100] = 24.0
+        radio.values[103] = 10
+        radio.values[106] = 100
+        -- Vertical speed was missing here, so a test that moved it left the next
+        -- one reading its value. Found when one did.
+        radio.values[120] = 2.5
+        radio.values[300] = 1024
+        -- And the transmitter's own voltage, for the same reason and found the
+        -- same way: a test that took it away to give `tx-battery` no reading
+        -- left every later test's transmitter flat.
+        radio.values[320] = 7.9
+        radio.values[130] = { 4.11, 4.13, 4.09, 4.12 }
+        radio.values[131] = 4.09
+        radio.values[140] = 78
+        radio.values[141] = 96
+        radio.values[145] = "ANGLE"
+        radio.battMin = 6.4
+        radio.battMax = 8.4
+        radio.battWarn = 6.6
+        radio.values[109].lat = scaffold.MODEL_LATITUDE
+        radio.values[109].lon = scaffold.MODEL_LONGITUDE
+        radio.values[109]["pilot-lat"] = scaffold.PILOT_LATITUDE
+        radio.values[109]["pilot-lon"] = scaffold.PILOT_LONGITUDE
+        -- **The timers, for the same reason the vertical speed above is here.**
+        -- A test that expires the countdown left the next one reading a timer
+        -- fifteen seconds past zero, so a panel that should have drawn
+        -- `OF 5:00` drew `ELAPSED PAST ZERO` and every width measured against it
+        -- was the wrong string's. Found by a probe that reported an overflow on
+        -- a running timer, which cannot happen.
+        radio.timers[0] = timer("Flight", 300, 90, 1)
+        radio.timers[1] = timer("Up", 0, 64)
+        radio.timers[2] = timer("Glide", 60, 12)
+    end
+
+    --- Advance the simulated clock.
+    function handle.tick(amount)
+        clock = clock + (amount or 1)
+    end
+
+    handle.indexFields = indexFields
+
+    return handle
 end
 
 return support

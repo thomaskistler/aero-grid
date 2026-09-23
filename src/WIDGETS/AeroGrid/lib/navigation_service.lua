@@ -50,25 +50,25 @@ navigationService.NULL_EPSILON = 0.0000005
 ---@param runtime table Registry, used to reach the telemetry service.
 ---@return table
 function navigationService.new(env, support, runtime)
-  return setmetatable({
-    id = "navigation",
-    interval = navigationService.INTERVAL,
-    revision = 0,
-    count = 0,
-    due = 0,
-    env = env,
-    support = support,
-    runtime = runtime,
-    entries = {},
-    cursor = 1,
-    sources = {},
-  }, navigationService)
+    return setmetatable({
+        id = "navigation",
+        interval = navigationService.INTERVAL,
+        revision = 0,
+        count = 0,
+        due = 0,
+        env = env,
+        support = support,
+        runtime = runtime,
+        entries = {},
+        cursor = 1,
+        sources = {},
+    }, navigationService)
 end
 
 --- Reach the telemetry service, which owns every source poll.
 ---@return table?
 function navigationService:telemetry()
-  return self.runtime and self.runtime.byId and self.runtime.byId.telemetry or nil
+    return self.runtime and self.runtime.byId and self.runtime.byId.telemetry or nil
 end
 
 --- Report whether a coordinate pair is a usable position.
@@ -76,15 +76,23 @@ end
 ---@param longitude any
 ---@return boolean
 function navigationService.hasPosition(latitude, longitude)
-  if type(latitude) ~= "number" or type(longitude) ~= "number" then return false end
-  if latitude ~= latitude or longitude ~= longitude then return false end
-  if latitude > 90 or latitude < -90 then return false end
-  if longitude > 180 or longitude < -180 then return false end
+    if type(latitude) ~= "number" or type(longitude) ~= "number" then
+        return false
+    end
+    if latitude ~= latitude or longitude ~= longitude then
+        return false
+    end
+    if latitude > 90 or latitude < -90 then
+        return false
+    end
+    if longitude > 180 or longitude < -180 then
+        return false
+    end
 
-  local epsilon = navigationService.NULL_EPSILON
-  local zeroLatitude = latitude < epsilon and latitude > -epsilon
-  local zeroLongitude = longitude < epsilon and longitude > -epsilon
-  return not (zeroLatitude and zeroLongitude)
+    local epsilon = navigationService.NULL_EPSILON
+    local zeroLatitude = latitude < epsilon and latitude > -epsilon
+    local zeroLongitude = longitude < epsilon and longitude > -epsilon
+    return not (zeroLatitude and zeroLongitude)
 end
 
 --- Great-circle distance between two positions, in metres.
@@ -95,21 +103,24 @@ end
 ---@param toLatitude number
 ---@param toLongitude number
 ---@return number metres
-function navigationService.distanceBetween(fromLatitude, fromLongitude,
-    toLatitude, toLongitude)
-  local rad = math.rad
-  local lat1 = rad(fromLatitude)
-  local lat2 = rad(toLatitude)
-  local deltaLat = lat2 - lat1
-  local deltaLon = rad(toLongitude - fromLongitude)
+function navigationService.distanceBetween(fromLatitude, fromLongitude, toLatitude, toLongitude)
+    local rad = math.rad
+    local lat1 = rad(fromLatitude)
+    local lat2 = rad(toLatitude)
+    local deltaLat = lat2 - lat1
+    local deltaLon = rad(toLongitude - fromLongitude)
 
-  local sinLat = math.sin(deltaLat / 2)
-  local sinLon = math.sin(deltaLon / 2)
-  local a = sinLat * sinLat + math.cos(lat1) * math.cos(lat2) * sinLon * sinLon
-  if a < 0 then a = 0 end
-  if a > 1 then a = 1 end
+    local sinLat = math.sin(deltaLat / 2)
+    local sinLon = math.sin(deltaLon / 2)
+    local a = sinLat * sinLat + math.cos(lat1) * math.cos(lat2) * sinLon * sinLon
+    if a < 0 then
+        a = 0
+    end
+    if a > 1 then
+        a = 1
+    end
 
-  return 2 * navigationService.EARTH_RADIUS * math.asin(math.sqrt(a))
+    return 2 * navigationService.EARTH_RADIUS * math.asin(math.sqrt(a))
 end
 
 --- Initial bearing from the home position toward the model, in degrees.
@@ -120,95 +131,94 @@ end
 ---@param toLatitude number
 ---@param toLongitude number
 ---@return number degrees
-function navigationService.bearingBetween(fromLatitude, fromLongitude,
-    toLatitude, toLongitude)
-  local rad = math.rad
-  local lat1 = rad(fromLatitude)
-  local lat2 = rad(toLatitude)
-  local deltaLon = rad(toLongitude - fromLongitude)
+function navigationService.bearingBetween(fromLatitude, fromLongitude, toLatitude, toLongitude)
+    local rad = math.rad
+    local lat1 = rad(fromLatitude)
+    local lat2 = rad(toLatitude)
+    local deltaLon = rad(toLongitude - fromLongitude)
 
-  local y = math.sin(deltaLon) * math.cos(lat2)
-  local x = math.cos(lat1) * math.sin(lat2)
-    - math.sin(lat1) * math.cos(lat2) * math.cos(deltaLon)
+    local y = math.sin(deltaLon) * math.cos(lat2)
+    local x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(deltaLon)
 
-  local bearing = math.deg(math.atan(y, x)) % 360
-  return bearing
+    local bearing = math.deg(math.atan(y, x)) % 360
+    return bearing
 end
 
 --- Read one GPS subscription.
 ---@param entry table
 ---@param now integer
 function navigationService:poll(entry, now)
-  local state = entry.state
-  local reading = entry.reading
+    local state = entry.state
+    local reading = entry.reading
 
-  if type(reading) ~= "table" then
-    state.state = "unavailable"
-    return
-  end
+    if type(reading) ~= "table" then
+        state.state = "unavailable"
+        return
+    end
 
-  state.known = reading.known
-  state.age = reading.age
+    state.known = reading.known
+    state.age = reading.age
 
-  local position = reading.raw
-  if type(position) ~= "table" or not reading.available then
-    state.fix = false
-    state.home = false
-    state.state = "unavailable"
-    state.distance = nil
-    state.bearing = nil
-    return
-  end
+    local position = reading.raw
+    if type(position) ~= "table" or not reading.available then
+        state.fix = false
+        state.home = false
+        state.state = "unavailable"
+        state.distance = nil
+        state.bearing = nil
+        return
+    end
 
-  local latitude = position.lat
-  local longitude = position.lon
-  local pilotLatitude = position["pilot-lat"]
-  local pilotLongitude = position["pilot-lon"]
+    local latitude = position.lat
+    local longitude = position.lon
+    local pilotLatitude = position["pilot-lat"]
+    local pilotLongitude = position["pilot-lon"]
 
-  state.fix = navigationService.hasPosition(latitude, longitude)
-  state.home = navigationService.hasPosition(pilotLatitude, pilotLongitude)
-  state.latitude = state.fix and latitude or nil
-  state.longitude = state.fix and longitude or nil
-  state.pilotLatitude = state.home and pilotLatitude or nil
-  state.pilotLongitude = state.home and pilotLongitude or nil
+    state.fix = navigationService.hasPosition(latitude, longitude)
+    state.home = navigationService.hasPosition(pilotLatitude, pilotLongitude)
+    state.latitude = state.fix and latitude or nil
+    state.longitude = state.fix and longitude or nil
+    state.pilotLatitude = state.home and pilotLatitude or nil
+    state.pilotLongitude = state.home and pilotLongitude or nil
 
-  -- EdgeTX reports the age of the position itself, which is more precise than
-  -- the poll time this service could otherwise infer.
-  if type(position.delay) == "number" then state.age = position.delay end
+    -- EdgeTX reports the age of the position itself, which is more precise than
+    -- the poll time this service could otherwise infer.
+    if type(position.delay) == "number" then
+        state.age = position.delay
+    end
 
-  if not state.fix then
-    state.state = reading.stale and "stale" or "unavailable"
-    state.distance = nil
-    state.bearing = nil
-    return
-  end
+    if not state.fix then
+        state.state = reading.stale and "stale" or "unavailable"
+        state.distance = nil
+        state.bearing = nil
+        return
+    end
 
-  state.state = reading.stale and "stale" or "normal"
+    state.state = reading.stale and "stale" or "normal"
 
-  -- A configured native distance sensor wins: the receiver may compute it from
-  -- data this service never sees.
-  local native = entry.distanceReading
-  if type(native) == "table" and native.available and type(native.value) == "number" then
-    state.distance = native.value
-    state.distanceUnit = native.unitText ~= "" and native.unitText or "m"
-    state.distanceSource = "source"
-  elseif state.home then
-    state.distance = navigationService.distanceBetween(
-      state.pilotLatitude, state.pilotLongitude, latitude, longitude)
-    state.distanceUnit = "m"
-    state.distanceSource = "computed"
-  else
-    state.distance = nil
-  end
+    -- A configured native distance sensor wins: the receiver may compute it from
+    -- data this service never sees.
+    local native = entry.distanceReading
+    if type(native) == "table" and native.available and type(native.value) == "number" then
+        state.distance = native.value
+        state.distanceUnit = native.unitText ~= "" and native.unitText or "m"
+        state.distanceSource = "source"
+    elseif state.home then
+        state.distance =
+            navigationService.distanceBetween(state.pilotLatitude, state.pilotLongitude, latitude, longitude)
+        state.distanceUnit = "m"
+        state.distanceSource = "computed"
+    else
+        state.distance = nil
+    end
 
-  -- A bearing without a home position would be meaningless, so it is withheld
-  -- rather than guessed.
-  if state.home then
-    state.bearing = navigationService.bearingBetween(
-      state.pilotLatitude, state.pilotLongitude, latitude, longitude)
-  else
-    state.bearing = nil
-  end
+    -- A bearing without a home position would be meaningless, so it is withheld
+    -- rather than guessed.
+    if state.home then
+        state.bearing = navigationService.bearingBetween(state.pilotLatitude, state.pilotLongitude, latitude, longitude)
+    else
+        state.bearing = nil
+    end
 end
 
 --- Subscribe to a GPS source, optionally preferring a native distance sensor.
@@ -216,76 +226,86 @@ end
 ---@param distanceSource? string Native distance sensor name.
 ---@return AeroGridNavigation
 function navigationService:subscribe(name, distanceSource)
-  if type(name) ~= "string" or name == "" then
-    if not self.noneView then
-      self.noneView = self.support.snapshot({
-        source = "",
-        known = false,
-        fix = false,
-        home = false,
-        state = "unavailable",
-        distanceUnit = "m",
-        distanceSource = "computed",
-      })
+    if type(name) ~= "string" or name == "" then
+        if not self.noneView then
+            self.noneView = self.support.snapshot({
+                source = "",
+                known = false,
+                fix = false,
+                home = false,
+                state = "unavailable",
+                distanceUnit = "m",
+                distanceSource = "computed",
+            })
+        end
+        return self.noneView
     end
-    return self.noneView
-  end
 
-  local existing = self.sources[name]
-  if existing then return existing end
+    local existing = self.sources[name]
+    if existing then
+        return existing
+    end
 
-  local telemetry = self:telemetry()
-  local entry = {
-    state = {
-      source = name,
-      known = false,
-      fix = false,
-      home = false,
-      state = "unavailable",
-      latitude = nil,
-      longitude = nil,
-      pilotLatitude = nil,
-      pilotLongitude = nil,
-      distance = nil,
-      distanceUnit = "m",
-      distanceSource = "computed",
-      bearing = nil,
-      age = nil,
-    },
-    reading = telemetry and telemetry:subscribe(name) or nil,
-  }
+    local telemetry = self:telemetry()
+    local entry = {
+        state = {
+            source = name,
+            known = false,
+            fix = false,
+            home = false,
+            state = "unavailable",
+            latitude = nil,
+            longitude = nil,
+            pilotLatitude = nil,
+            pilotLongitude = nil,
+            distance = nil,
+            distanceUnit = "m",
+            distanceSource = "computed",
+            bearing = nil,
+            age = nil,
+        },
+        reading = telemetry and telemetry:subscribe(name) or nil,
+    }
 
-  if type(distanceSource) == "string" and distanceSource ~= "" and telemetry then
-    entry.distanceReading = telemetry:subscribe(distanceSource)
-  end
+    if type(distanceSource) == "string" and distanceSource ~= "" and telemetry then
+        entry.distanceReading = telemetry:subscribe(distanceSource)
+    end
 
-  entry.view = self.support.snapshot(entry.state)
-  self.sources[name] = entry.view
-  self.entries[#self.entries + 1] = entry
-  self.count = self.count + 1
-  return entry.view
+    entry.view = self.support.snapshot(entry.state)
+    self.sources[name] = entry.view
+    self.entries[#self.entries + 1] = entry
+    self.count = self.count + 1
+    return entry.view
 end
 
 --- Refresh a bounded slice of the subscriptions.
 ---@param now integer
 function navigationService:update(now)
-  local entries = self.entries
-  local total = #entries
-  if total == 0 then return end
+    local entries = self.entries
+    local total = #entries
+    if total == 0 then
+        return
+    end
 
-  local cursor = self.cursor
-  if cursor > total then cursor = 1 end
+    local cursor = self.cursor
+    if cursor > total then
+        cursor = 1
+    end
 
-  local cap = navigationService.POLL_CAP
-  if cap > total then cap = total end
+    local cap = navigationService.POLL_CAP
+    if cap > total then
+        cap = total
+    end
 
-  for _ = 1, cap do
-    local entry = entries[cursor]
-    cursor = cursor % total + 1
-    if entry then self:poll(entry, now) end
-  end
+    for _ = 1, cap do
+        local entry = entries[cursor]
+        cursor = cursor % total + 1
+        if entry then
+            self:poll(entry, now)
+        end
+    end
 
-  self.cursor = cursor
+    self.cursor = cursor
 end
 
 --- Format a distance with a sensible unit, switching to kilometres when the
@@ -293,8 +313,8 @@ end
 ---@param metres any
 ---@return string
 function navigationService.formatDistance(metres)
-  local digits, unit = navigationService.distanceParts(metres)
-  return digits .. unit
+    local digits, unit = navigationService.distanceParts(metres)
+    return digits .. unit
 end
 
 --- Split a distance into its digits and its unit.
@@ -308,14 +328,16 @@ end
 ---@return string digits
 ---@return string unit
 function navigationService.distanceParts(metres)
-  if type(metres) ~= "number" or metres ~= metres then return "--", "" end
-  if metres >= 10000 then
-    return string.format("%.1f", metres / 1000), "km"
-  end
-  if metres >= 1000 then
-    return string.format("%.2f", metres / 1000), "km"
-  end
-  return string.format("%.0f", metres), "m"
+    if type(metres) ~= "number" or metres ~= metres then
+        return "--", ""
+    end
+    if metres >= 10000 then
+        return string.format("%.1f", metres / 1000), "km"
+    end
+    if metres >= 1000 then
+        return string.format("%.2f", metres / 1000), "km"
+    end
+    return string.format("%.0f", metres), "m"
 end
 
 --- Format a distance for display, honoring where it came from.
@@ -324,9 +346,11 @@ end
 ---@param view AeroGridNavigation
 ---@return string?
 function navigationService.describeDistance(view)
-  local digits, unit = navigationService.describeDistanceParts(view)
-  if digits == nil then return nil end
-  return digits .. unit
+    local digits, unit = navigationService.describeDistanceParts(view)
+    if digits == nil then
+        return nil
+    end
+    return digits .. unit
 end
 
 --- The same, split into the number and the unit riding beside it.
@@ -334,11 +358,13 @@ end
 ---@return string? digits
 ---@return string unit
 function navigationService.describeDistanceParts(view)
-  if type(view.distance) ~= "number" then return nil, "" end
-  if view.distanceSource == "source" then
-    return string.format("%.1f", view.distance), view.distanceUnit or ""
-  end
-  return navigationService.distanceParts(view.distance)
+    if type(view.distance) ~= "number" then
+        return nil, ""
+    end
+    if view.distanceSource == "source" then
+        return string.format("%.1f", view.distance), view.distanceUnit or ""
+    end
+    return navigationService.distanceParts(view.distance)
 end
 
 --- Describe the subscribed GPS sources as diagnostic rows.
@@ -346,22 +372,20 @@ end
 ---@param view AeroGridNavigation? Subscription to describe.
 ---@return integer count
 function navigationService:describe(rows, view)
-  if type(view) ~= "table" then return 0 end
+    if type(view) ~= "table" then
+        return 0
+    end
 
-  local row = self.support.row
-  local index = row(rows, 1, "GPS", view.source ~= "" and view.source or "-")
-  index = row(rows, index, "FIX", view.fix and "YES" or "NO")
-  index = row(rows, index, "HOME", view.home and "YES" or "NO")
-  index = row(rows, index, "LAT",
-    view.latitude and string.format("%.5f", view.latitude) or "-")
-  index = row(rows, index, "LON",
-    view.longitude and string.format("%.5f", view.longitude) or "-")
-  index = row(rows, index, "DIST", view.distance
-    and (navigationService.describeDistance(view) or "-") or "-")
-  index = row(rows, index, "BRG",
-    view.bearing and string.format("%.0f deg", view.bearing) or "-")
+    local row = self.support.row
+    local index = row(rows, 1, "GPS", view.source ~= "" and view.source or "-")
+    index = row(rows, index, "FIX", view.fix and "YES" or "NO")
+    index = row(rows, index, "HOME", view.home and "YES" or "NO")
+    index = row(rows, index, "LAT", view.latitude and string.format("%.5f", view.latitude) or "-")
+    index = row(rows, index, "LON", view.longitude and string.format("%.5f", view.longitude) or "-")
+    index = row(rows, index, "DIST", view.distance and (navigationService.describeDistance(view) or "-") or "-")
+    index = row(rows, index, "BRG", view.bearing and string.format("%.0f deg", view.bearing) or "-")
 
-  return index - 1
+    return index - 1
 end
 
 return navigationService

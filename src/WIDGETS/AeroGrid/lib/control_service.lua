@@ -73,19 +73,19 @@ controlService.RESX = 1024
 ---@param support table The loaded lib/services.lua module.
 ---@return table
 function controlService.new(env, support)
-  return setmetatable({
-    id = "control",
-    interval = controlService.INTERVAL,
-    revision = 0,
-    count = 0,
-    due = 0,
-    env = env,
-    support = support,
-    entries = {},
-    cursor = 1,
-    trims = {},
-    variables = {},
-  }, controlService)
+    return setmetatable({
+        id = "control",
+        interval = controlService.INTERVAL,
+        revision = 0,
+        count = 0,
+        due = 0,
+        env = env,
+        support = support,
+        entries = {},
+        cursor = 1,
+        trims = {},
+        variables = {},
+    }, controlService)
 end
 
 --- Register a subscription and publish its immutable view.
@@ -93,86 +93,91 @@ end
 ---@param read fun(self: table, entry: table, now: integer)
 ---@return table entry
 function controlService:add(state, read)
-  local entry = {
-    state = state,
-    read = read,
-    view = self.support.snapshot(state),
-    nextResolve = 0,
-  }
-  self.entries[#self.entries + 1] = entry
-  self.count = self.count + 1
-  return entry
+    local entry = {
+        state = state,
+        read = read,
+        view = self.support.snapshot(state),
+        nextResolve = 0,
+    }
+    self.entries[#self.entries + 1] = entry
+    self.count = self.count + 1
+    return entry
 end
 
 --- Read one trim position.
 ---@param entry table
 ---@param now integer
 function controlService:readTrim(entry, now)
-  local state = entry.state
+    local state = entry.state
 
-  if not state.known then
-    if now < entry.nextResolve then return end
-    entry.nextResolve = now + controlService.RESOLVE_RETRY
+    if not state.known then
+        if now < entry.nextResolve then
+            return
+        end
+        entry.nextResolve = now + controlService.RESOLVE_RETRY
 
-    local lookup = self.env.getFieldInfo
-    local info = lookup and lookup(state.name)
-    if type(info) ~= "table" or type(info.id) ~= "number" then
-      state.available = false
-      state.state = "unavailable"
-      return
+        local lookup = self.env.getFieldInfo
+        local info = lookup and lookup(state.name)
+        if type(info) ~= "table" or type(info.id) ~= "number" then
+            state.available = false
+            state.state = "unavailable"
+            return
+        end
+        state.known = true
+        entry.id = info.id
     end
-    state.known = true
-    entry.id = info.id
-  end
 
-  local read = self.env.getValue
-  local raw = read and read(entry.id)
-  if type(raw) ~= "number" then
-    state.available = false
-    state.state = "unavailable"
-    return
-  end
+    local read = self.env.getValue
+    local raw = read and read(entry.id)
+    if type(raw) ~= "number" then
+        state.available = false
+        state.state = "unavailable"
+        return
+    end
 
-  local magnitude = raw < 0 and -raw or raw
+    local magnitude = raw < 0 and -raw or raw
 
-  -- A three-position trim reports full deflection or nothing, and a standard
-  -- trim's end stop is exactly the same number, so a single sample can never
-  -- tell them apart. Claim a toggle only after seeing both a centre and a full
-  -- deflection with nothing in between: a real trim moved to its stop passes
-  -- through intermediate values, and one parked at the stop never reads zero.
-  if magnitude == controlService.RESX then
-    entry.sawExtreme = true
-  elseif raw == 0 then
-    entry.sawCentre = true
-  else
-    entry.sawOrdinary = true
-  end
-  state.threePosition = entry.sawExtreme == true and entry.sawCentre == true
-    and not entry.sawOrdinary
+    -- A three-position trim reports full deflection or nothing, and a standard
+    -- trim's end stop is exactly the same number, so a single sample can never
+    -- tell them apart. Claim a toggle only after seeing both a centre and a full
+    -- deflection with nothing in between: a real trim moved to its stop passes
+    -- through intermediate values, and one parked at the stop never reads zero.
+    if magnitude == controlService.RESX then
+        entry.sawExtreme = true
+    elseif raw == 0 then
+        entry.sawCentre = true
+    else
+        entry.sawOrdinary = true
+    end
+    state.threePosition = entry.sawExtreme == true and entry.sawCentre == true and not entry.sawOrdinary
 
-  -- Auto widens once, permanently: a trim that has reached the extended range
-  -- must not shrink its own scale again when it returns toward centre.
-  if entry.scaleMode == "auto" and not state.threePosition
-      and magnitude > controlService.STANDARD_RANGE then
-    state.scale = "extended"
-  end
+    -- Auto widens once, permanently: a trim that has reached the extended range
+    -- must not shrink its own scale again when it returns toward centre.
+    if entry.scaleMode == "auto" and not state.threePosition and magnitude > controlService.STANDARD_RANGE then
+        state.scale = "extended"
+    end
 
-  local range = state.scale == "extended"
-    and controlService.EXTENDED_RANGE or controlService.STANDARD_RANGE
-  if state.threePosition then range = controlService.RESX end
+    local range = state.scale == "extended" and controlService.EXTENDED_RANGE or controlService.STANDARD_RANGE
+    if state.threePosition then
+        range = controlService.RESX
+    end
 
-  local fraction = raw / range
-  if fraction > 1 then fraction = 1 end
-  if fraction < -1 then fraction = -1 end
+    local fraction = raw / range
+    if fraction > 1 then
+        fraction = 1
+    end
+    if fraction < -1 then
+        fraction = -1
+    end
 
-  state.available = true
-  state.state = "normal"
-  state.raw = raw
-  -- Integer trim units: EdgeTX stores whole trim steps and scales by eight.
-  state.value = raw >= 0 and math.floor(raw / controlService.TRIM_SCALE)
-    or -math.floor(-raw / controlService.TRIM_SCALE)
-  state.fraction = fraction
-  state.centered = raw == 0
+    state.available = true
+    state.state = "normal"
+    state.raw = raw
+    -- Integer trim units: EdgeTX stores whole trim steps and scales by eight.
+    state.value = raw >= 0 and math.floor(raw / controlService.TRIM_SCALE)
+        or -math.floor(-raw / controlService.TRIM_SCALE)
+    state.fraction = fraction
+    state.centered = raw == 0
 end
 
 --- Subscribe to one trim source.
@@ -182,98 +187,104 @@ end
 ---@param scale? "standard"|"extended"|"auto"
 ---@return AeroGridTrim
 function controlService:trim(name, scale)
-  if type(name) ~= "string" or name == "" then
-    if not self.noneTrim then
-      self.noneTrim = self.support.snapshot({
-        name = "",
+    if type(name) ~= "string" or name == "" then
+        if not self.noneTrim then
+            self.noneTrim = self.support.snapshot({
+                name = "",
+                known = false,
+                available = false,
+                raw = 0,
+                value = 0,
+                fraction = 0,
+                scale = "standard",
+                centered = true,
+                threePosition = false,
+                state = "unavailable",
+            })
+        end
+        return self.noneTrim
+    end
+
+    local existing = self.trims[name]
+    if existing then
+        return existing
+    end
+
+    if scale ~= "standard" and scale ~= "extended" then
+        scale = "auto"
+    end
+
+    local entry = self:add({
+        name = name,
         known = false,
         available = false,
         raw = 0,
         value = 0,
         fraction = 0,
-        scale = "standard",
+        scale = scale == "extended" and "extended" or "standard",
         centered = true,
         threePosition = false,
         state = "unavailable",
-      })
-    end
-    return self.noneTrim
-  end
+    }, controlService.readTrim)
 
-  local existing = self.trims[name]
-  if existing then return existing end
-
-  if scale ~= "standard" and scale ~= "extended" then scale = "auto" end
-
-  local entry = self:add({
-    name = name,
-    known = false,
-    available = false,
-    raw = 0,
-    value = 0,
-    fraction = 0,
-    scale = scale == "extended" and "extended" or "standard",
-    centered = true,
-    threePosition = false,
-    state = "unavailable",
-  }, controlService.readTrim)
-
-  entry.scaleMode = scale
-  self.trims[name] = entry.view
-  return entry.view
+    entry.scaleMode = scale
+    self.trims[name] = entry.view
+    return entry.view
 end
 
 --- Read one global variable for the active or a pinned flight mode.
 ---@param entry table
 function controlService:readVariable(entry)
-  local state = entry.state
-  local read = self.env.getGlobalVariable
-  if not read then
-    state.available = false
-    state.state = "unavailable"
-    return
-  end
-
-  -- A pinned flight mode reads that mode's own value. Otherwise EdgeTX is
-  -- asked for the active mode, so it resolves global variable inheritance.
-  local flightMode = entry.pinnedMode or 0
-  if not entry.pinnedMode then
-    local modeReader = self.env.getFlightMode
-    if modeReader then
-      local index = modeReader()
-      if type(index) == "number" then flightMode = index end
+    local state = entry.state
+    local read = self.env.getGlobalVariable
+    if not read then
+        state.available = false
+        state.state = "unavailable"
+        return
     end
-  end
 
-  local raw = read(state.index, flightMode)
-  if type(raw) ~= "number" then
-    state.available = false
-    state.state = "unavailable"
-    return
-  end
-
-  -- Details describe the variable rather than its value, so they are read once
-  -- and only retried while they are missing.
-  if not state.known then
-    local details = self.env.getGlobalVariableDetails
-    local info = details and details(state.index)
-    if type(info) == "table" then
-      state.known = true
-      local name = type(info.name) == "string" and info.name or ""
-      state.name = name ~= "" and name or ("GV" .. tostring(state.index + 1))
-      state.precision = type(info.prec) == "number" and info.prec or 0
-      state.unitText = info.unit == 1 and "%" or ""
-      local divisor = state.precision > 0 and 10 or 1
-      state.min = (type(info.min) == "number" and info.min or 0) / divisor
-      state.max = (type(info.max) == "number" and info.max or 0) / divisor
+    -- A pinned flight mode reads that mode's own value. Otherwise EdgeTX is
+    -- asked for the active mode, so it resolves global variable inheritance.
+    local flightMode = entry.pinnedMode or 0
+    if not entry.pinnedMode then
+        local modeReader = self.env.getFlightMode
+        if modeReader then
+            local index = modeReader()
+            if type(index) == "number" then
+                flightMode = index
+            end
+        end
     end
-  end
 
-  state.available = true
-  state.state = "normal"
-  state.raw = raw
-  state.flightMode = flightMode
-  state.value = state.precision > 0 and raw / 10 or raw
+    local raw = read(state.index, flightMode)
+    if type(raw) ~= "number" then
+        state.available = false
+        state.state = "unavailable"
+        return
+    end
+
+    -- Details describe the variable rather than its value, so they are read once
+    -- and only retried while they are missing.
+    if not state.known then
+        local details = self.env.getGlobalVariableDetails
+        local info = details and details(state.index)
+        if type(info) == "table" then
+            state.known = true
+            local name = type(info.name) == "string" and info.name or ""
+            state.name = name ~= "" and name or ("GV" .. tostring(state.index + 1))
+            state.precision = type(info.prec) == "number" and info.prec or 0
+            state.unitText = info.unit == 1 and "%" or ""
+            local divisor = state.precision > 0 and 10 or 1
+            state.min = (type(info.min) == "number" and info.min or 0) / divisor
+            state.max = (type(info.max) == "number" and info.max or 0) / divisor
+        end
+    end
+
+    state.available = true
+    state.state = "normal"
+    state.raw = raw
+    state.flightMode = flightMode
+    state.value = state.precision > 0 and raw / 10 or raw
 end
 
 --- Subscribe to one global variable.
@@ -283,58 +294,67 @@ end
 ---@param flightMode? integer Pin to this flight mode instead of the active one.
 ---@return AeroGridGlobalVariable
 function controlService:globalVariable(index, flightMode)
-  if type(index) ~= "number" or index < 0 or index ~= math.floor(index) then
-    index = 0
-  end
-  if type(flightMode) ~= "number" or flightMode < 0
-      or flightMode ~= math.floor(flightMode) then
-    flightMode = nil
-  end
+    if type(index) ~= "number" or index < 0 or index ~= math.floor(index) then
+        index = 0
+    end
+    if type(flightMode) ~= "number" or flightMode < 0 or flightMode ~= math.floor(flightMode) then
+        flightMode = nil
+    end
 
-  local key = flightMode and (index .. ":" .. flightMode) or index
-  local existing = self.variables[key]
-  if existing then return existing end
+    local key = flightMode and (index .. ":" .. flightMode) or index
+    local existing = self.variables[key]
+    if existing then
+        return existing
+    end
 
-  local entry = self:add({
-    index = index,
-    known = false,
-    available = false,
-    name = "GV" .. tostring(index + 1),
-    raw = 0,
-    value = 0,
-    min = 0,
-    max = 0,
-    precision = 0,
-    unitText = "",
-    flightMode = flightMode or 0,
-    state = "unavailable",
-  }, controlService.readVariable)
+    local entry = self:add({
+        index = index,
+        known = false,
+        available = false,
+        name = "GV" .. tostring(index + 1),
+        raw = 0,
+        value = 0,
+        min = 0,
+        max = 0,
+        precision = 0,
+        unitText = "",
+        flightMode = flightMode or 0,
+        state = "unavailable",
+    }, controlService.readVariable)
 
-  entry.pinnedMode = flightMode
-  self.variables[key] = entry.view
-  return entry.view
+    entry.pinnedMode = flightMode
+    self.variables[key] = entry.view
+    return entry.view
 end
 
 --- Refresh a bounded slice of the subscriptions.
 ---@param now integer
 function controlService:update(now)
-  local entries = self.entries
-  local total = #entries
-  if total == 0 then return end
+    local entries = self.entries
+    local total = #entries
+    if total == 0 then
+        return
+    end
 
-  local cursor = self.cursor
-  if cursor > total then cursor = 1 end
+    local cursor = self.cursor
+    if cursor > total then
+        cursor = 1
+    end
 
-  local cap = controlService.POLL_CAP
-  if cap > total then cap = total end
+    local cap = controlService.POLL_CAP
+    if cap > total then
+        cap = total
+    end
 
-  for _ = 1, cap do
-    local entry = entries[cursor]
-    cursor = cursor % total + 1
-    if entry then entry.read(self, entry, now) end
-  end
+    for _ = 1, cap do
+        local entry = entries[cursor]
+        cursor = cursor % total + 1
+        if entry then
+            entry.read(self, entry, now)
+        end
+    end
 
-  self.cursor = cursor
+    self.cursor = cursor
 end
 
 --- Round a signed percentage half away from zero.
@@ -343,33 +363,39 @@ end
 ---@param fraction number
 ---@return integer
 local function percentOf(fraction)
-  local percent = fraction * 100
-  if percent < 0 then return -math.floor(-percent + 0.5) end
-  return math.floor(percent + 0.5)
+    local percent = fraction * 100
+    if percent < 0 then
+        return -math.floor(-percent + 0.5)
+    end
+    return math.floor(percent + 0.5)
 end
 
 --- Describe the subscribed trims and variables as diagnostic rows.
 ---@param rows table Reusable row array.
 ---@return integer count
 function controlService:describe(rows)
-  local row = self.support.row
-  local index = 1
+    local row = self.support.row
+    local index = 1
 
-  for _, entry in ipairs(self.entries) do
-    local state = entry.state
-    if state.name and state.fraction ~= nil then
-      local text = state.available
-        and string.format("%d %d%%", state.value, percentOf(state.fraction))
-        or "N/A"
-      if state.threePosition then text = text .. " 3P" end
-      index = row(rows, index, string.upper(state.name), text)
-    elseif state.index ~= nil then
-      index = row(rows, index, string.upper(state.name), state.available
-        and (tostring(state.value) .. state.unitText) or "N/A")
+    for _, entry in ipairs(self.entries) do
+        local state = entry.state
+        if state.name and state.fraction ~= nil then
+            local text = state.available and string.format("%d %d%%", state.value, percentOf(state.fraction)) or "N/A"
+            if state.threePosition then
+                text = text .. " 3P"
+            end
+            index = row(rows, index, string.upper(state.name), text)
+        elseif state.index ~= nil then
+            index = row(
+                rows,
+                index,
+                string.upper(state.name),
+                state.available and (tostring(state.value) .. state.unitText) or "N/A"
+            )
+        end
     end
-  end
 
-  return index - 1
+    return index - 1
 end
 
 return controlService

@@ -66,7 +66,7 @@ format:
 	  printf '%s\n' 'error: stylua not found. Install with: luarocks install stylua'; \
 	  exit 1; \
 	}
-	@stylua $(LUA_FILES)
+	@stylua --indent-type Spaces $(LUA_FILES)
 
 build:
 	@mkdir -p "$(SDCARD_DIR)"

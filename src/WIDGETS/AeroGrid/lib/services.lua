@@ -35,16 +35,16 @@ local services = {}
 --- component, so a component reads `services.telemetry`, `services.model`,
 --- and so on.
 services.DEFINITIONS = {
-  {id = "telemetry", file = "lib/telemetry_service.lua"},
-  {id = "model", file = "lib/model_service.lua"},
-  {id = "control", file = "lib/control_service.lua"},
-  {id = "extrema", file = "lib/extrema_service.lua"},
-  {id = "navigation", file = "lib/navigation_service.lua"},
+    { id = "telemetry", file = "lib/telemetry_service.lua" },
+    { id = "model", file = "lib/model_service.lua" },
+    { id = "control", file = "lib/control_service.lua" },
+    { id = "extrema", file = "lib/extrema_service.lua" },
+    { id = "navigation", file = "lib/navigation_service.lua" },
 }
 
 --- Refuse writes to a published snapshot.
 local function readOnly()
-  error("service snapshots are read-only", 2)
+    error("service snapshots are read-only", 2)
 end
 
 --- Publish a mutable state table as an immutable view.
@@ -54,20 +54,22 @@ end
 ---@param state table
 ---@return table view
 function services.snapshot(state)
-  return setmetatable({}, {
-    __index = state,
-    __newindex = readOnly,
-    -- Hide the metatable so a component cannot reach the mutable state.
-    __metatable = false,
-  })
+    return setmetatable({}, {
+        __index = state,
+        __newindex = readOnly,
+        -- Hide the metatable so a component cannot reach the mutable state.
+        __metatable = false,
+    })
 end
 
 --- Read a global EdgeTX function, tolerating firmware that lacks it.
 ---@param value any
 ---@return function?
 local function callable(value)
-  if type(value) == "function" then return value end
-  return nil
+    if type(value) == "function" then
+        return value
+    end
+    return nil
 end
 
 --- Collect the EdgeTX entry points the services use.
@@ -77,36 +79,39 @@ end
 ---@param overrides? table
 ---@return table env
 function services.environment(overrides)
-  overrides = type(overrides) == "table" and overrides or {}
+    overrides = type(overrides) == "table" and overrides or {}
 
-  local modelApi = overrides.model
-  if type(modelApi) ~= "table" then modelApi = model end
-  if type(modelApi) ~= "table" then modelApi = {} end
+    local modelApi = overrides.model
+    if type(modelApi) ~= "table" then
+        modelApi = model
+    end
+    if type(modelApi) ~= "table" then
+        modelApi = {}
+    end
 
-  return {
-    getValue = callable(overrides.getValue) or callable(getValue),
-    getFieldInfo = callable(overrides.getFieldInfo) or callable(getFieldInfo),
-    getRSSI = callable(overrides.getRSSI) or callable(getRSSI),
-    getFlightMode = callable(overrides.getFlightMode) or callable(getFlightMode),
-    getTime = callable(overrides.getTime) or callable(getTime),
-    -- A global like `getValue`, not part of the model API: `etxlib` is in
-    -- `_global_symbols` and reached through _G's __index
-    -- (`radio/src/thirdparty/lua/src/linit.c`), so a widget sees it directly.
-    getGeneralSettings = callable(overrides.getGeneralSettings)
-      or callable(getGeneralSettings),
-    getInfo = callable(modelApi.getInfo),
-    getTimer = callable(modelApi.getTimer),
-    getSensor = callable(modelApi.getSensor),
-    getGlobalVariable = callable(modelApi.getGlobalVariable),
-    getGlobalVariableDetails = callable(modelApi.getGlobalVariableDetails),
-  }
+    return {
+        getValue = callable(overrides.getValue) or callable(getValue),
+        getFieldInfo = callable(overrides.getFieldInfo) or callable(getFieldInfo),
+        getRSSI = callable(overrides.getRSSI) or callable(getRSSI),
+        getFlightMode = callable(overrides.getFlightMode) or callable(getFlightMode),
+        getTime = callable(overrides.getTime) or callable(getTime),
+        -- A global like `getValue`, not part of the model API: `etxlib` is in
+        -- `_global_symbols` and reached through _G's __index
+        -- (`radio/src/thirdparty/lua/src/linit.c`), so a widget sees it directly.
+        getGeneralSettings = callable(overrides.getGeneralSettings) or callable(getGeneralSettings),
+        getInfo = callable(modelApi.getInfo),
+        getTimer = callable(modelApi.getTimer),
+        getSensor = callable(modelApi.getSensor),
+        getGlobalVariable = callable(modelApi.getGlobalVariable),
+        getGlobalVariableDetails = callable(modelApi.getGlobalVariableDetails),
+    }
 end
 
 --- Create the registry that owns every service instance.
 ---@param env table Result of services.environment.
 ---@return table runtime
 function services.runtime(env)
-  return {env = env, order = {}, byId = {}, cursor = 1, updates = 0}
+    return { env = env, order = {}, byId = {}, cursor = 1, updates = 0 }
 end
 
 --- Add one constructed service to the registry.
@@ -117,10 +122,10 @@ end
 ---@param instance AeroGridServiceInstance
 ---@param now integer
 function services.register(runtime, instance, now)
-  local order = runtime.order
-  order[#order + 1] = instance
-  runtime.byId[instance.id] = instance
-  instance.due = now + (#order - 1)
+    local order = runtime.order
+    order[#order + 1] = instance
+    runtime.byId[instance.id] = instance
+    instance.due = now + (#order - 1)
 end
 
 --- Update at most one due service.
@@ -131,49 +136,54 @@ end
 ---@return string? id
 ---@return string? error
 function services.update(runtime, now)
-  local order = runtime.order
-  local count = #order
-  if count == 0 then return nil end
-
-  local cursor = runtime.cursor
-  if cursor > count then cursor = 1 end
-
-  for _ = 1, count do
-    local instance = order[cursor]
-    cursor = cursor % count + 1
-
-    -- An idle service costs nothing: nothing loaded references it.
-    if instance and not instance.failed and instance.count > 0
-        and now >= instance.due then
-      instance.due = now + instance.interval
-      runtime.cursor = cursor
-      runtime.updates = runtime.updates + 1
-
-      -- A source that misbehaves must not raise inside a widget callback, and
-      -- a service that fails once is retired rather than left to fail forever.
-      local ok, updateError = pcall(instance.update, instance, now)
-      if not ok then
-        instance.failed = true
-        return instance.id, tostring(updateError)
-      end
-
-      instance.revision = instance.revision + 1
-      return instance.id
+    local order = runtime.order
+    local count = #order
+    if count == 0 then
+        return nil
     end
-  end
 
-  runtime.cursor = cursor
-  return nil
+    local cursor = runtime.cursor
+    if cursor > count then
+        cursor = 1
+    end
+
+    for _ = 1, count do
+        local instance = order[cursor]
+        cursor = cursor % count + 1
+
+        -- An idle service costs nothing: nothing loaded references it.
+        if instance and not instance.failed and instance.count > 0 and now >= instance.due then
+            instance.due = now + instance.interval
+            runtime.cursor = cursor
+            runtime.updates = runtime.updates + 1
+
+            -- A source that misbehaves must not raise inside a widget callback, and
+            -- a service that fails once is retired rather than left to fail forever.
+            local ok, updateError = pcall(instance.update, instance, now)
+            if not ok then
+                instance.failed = true
+                return instance.id, tostring(updateError)
+            end
+
+            instance.revision = instance.revision + 1
+            return instance.id
+        end
+    end
+
+    runtime.cursor = cursor
+    return nil
 end
 
 --- Report whether any registered service has subscriptions.
 ---@param runtime table
 ---@return boolean
 function services.active(runtime)
-  for _, instance in ipairs(runtime.order) do
-    if instance.count > 0 and not instance.failed then return true end
-  end
-  return false
+    for _, instance in ipairs(runtime.order) do
+        if instance.count > 0 and not instance.failed then
+            return true
+        end
+    end
+    return false
 end
 
 --- Convert a tick count into whole seconds of age.
@@ -181,8 +191,10 @@ end
 ---@param since? integer
 ---@return number?
 function services.age(now, since)
-  if type(since) ~= "number" then return nil end
-  return (now - since) / 100
+    if type(since) ~= "number" then
+        return nil
+    end
+    return (now - since) / 100
 end
 
 --- Fill one diagnostic row in a reusable array, returning the next position.
@@ -193,14 +205,14 @@ end
 ---@param text string
 ---@return integer
 function services.row(rows, index, label, text)
-  local row = rows[index]
-  if not row then
-    row = {}
-    rows[index] = row
-  end
-  row.label = label
-  row.text = text
-  return index + 1
+    local row = rows[index]
+    if not row then
+        row = {}
+        rows[index] = row
+    end
+    row.label = label
+    row.text = text
+    return index + 1
 end
 
 return services

@@ -14,15 +14,20 @@
 ---@field subtitle any
 
 local placeholder = {
-  id = "placeholder",
-  apiVersion = 1,
-  supportedSpans = {"any"},
-  settings = {
-    {key = "label", label = "Label", type = "string", default = "PLACEHOLDER"},
-    {key = "subtitle", label = "Subtitle", type = "string", default = ""},
-    {key = "accent", label = "Accent", type = "string", default = "cyan",
-      choices = {"cyan", "green", "amber", "orange"}},
-  },
+    id = "placeholder",
+    apiVersion = 1,
+    supportedSpans = { "any" },
+    settings = {
+        { key = "label", label = "Label", type = "string", default = "PLACEHOLDER" },
+        { key = "subtitle", label = "Subtitle", type = "string", default = "" },
+        {
+            key = "accent",
+            label = "Accent",
+            type = "string",
+            default = "cyan",
+            choices = { "cyan", "green", "amber", "orange" },
+        },
+    },
 }
 
 --- Create a placeholder panel inside an LVGL parent container.
@@ -32,63 +37,65 @@ local placeholder = {
 ---@param services table Host-provided shared objects.
 ---@return AeroGridPlaceholderContext
 function placeholder.create(parent, rect, settings, services)
-  local theme = services.theme
-  local primitives = services.primitives
-  local themeBuilder = services.themeBuilder
-  local fonts = services.fonts
-  local presentation = services.state("normal", settings.accent)
+    local theme = services.theme
+    local primitives = services.primitives
+    local themeBuilder = services.themeBuilder
+    local fonts = services.fonts
+    local presentation = services.state("normal", settings.accent)
 
-  -- Through the shared frame like every other component, so a placeholder in
-  -- the top-left cell of an App mode screen is laid out around the EdgeTX
-  -- menu button rather than underneath it.
-  local frame = themeBuilder.frame(theme, rect, fonts)
-  local panel = primitives.panel(parent, rect, theme, presentation)
+    -- Through the shared frame like every other component, so a placeholder in
+    -- the top-left cell of an App mode screen is laid out around the EdgeTX
+    -- menu button rather than underneath it.
+    local frame = themeBuilder.frame(theme, rect, fonts)
+    local panel = primitives.panel(parent, rect, theme, presentation)
 
-  local title = primitives.value(panel.root, theme, {
-    x = frame.labelX,
-    y = frame.compact,
-    w = frame.labelWidth,
-    text = tostring(settings.label),
-    color = presentation.value,
-    font = fonts.label,
-  })
+    local title = primitives.value(panel.root, theme, {
+        x = frame.labelX,
+        y = frame.compact,
+        w = frame.labelWidth,
+        text = tostring(settings.label),
+        color = presentation.value,
+        font = fonts.label,
+    })
 
-  local subtitle = primitives.label(panel.root, theme, {
-    x = frame.pad,
-    y = frame.top,
-    w = frame.content,
-    text = tostring(settings.subtitle),
-    color = presentation.label,
-    font = fonts.label,
-  })
+    local subtitle = primitives.label(panel.root, theme, {
+        x = frame.pad,
+        y = frame.top,
+        w = frame.content,
+        text = tostring(settings.subtitle),
+        color = presentation.label,
+        font = fonts.label,
+    })
 
-  if frame.labelHidden then lvgl.hide(title) end
+    if frame.labelHidden then
+        lvgl.hide(title)
+    end
 
-  return {
-    panel = panel,
-    theme = theme,
-    themeBuilder = themeBuilder,
-    fonts = fonts,
-    primitives = primitives,
-    title = title,
-    subtitle = subtitle,
-  }
+    return {
+        panel = panel,
+        theme = theme,
+        themeBuilder = themeBuilder,
+        fonts = fonts,
+        primitives = primitives,
+        title = title,
+        subtitle = subtitle,
+    }
 end
 
 --- Resize and reposition without recreating LVGL objects.
 ---@param context AeroGridPlaceholderContext
 ---@param rect AeroGridRect
 function placeholder.update(context, rect)
-  local frame = context.themeBuilder.frame(context.theme, rect, context.fonts)
+    local frame = context.themeBuilder.frame(context.theme, rect, context.fonts)
 
-  context.primitives.resizePanel(context.panel, rect)
-  context.title:set({x = frame.labelX, y = frame.compact, w = frame.labelWidth})
-  context.subtitle:set({x = frame.pad, y = frame.top, w = frame.content})
-  if frame.labelHidden then
-    lvgl.hide(context.title)
-  else
-    lvgl.show(context.title)
-  end
+    context.primitives.resizePanel(context.panel, rect)
+    context.title:set({ x = frame.labelX, y = frame.compact, w = frame.labelWidth })
+    context.subtitle:set({ x = frame.pad, y = frame.top, w = frame.content })
+    if frame.labelHidden then
+        lvgl.hide(context.title)
+    else
+        lvgl.show(context.title)
+    end
 end
 
 return placeholder

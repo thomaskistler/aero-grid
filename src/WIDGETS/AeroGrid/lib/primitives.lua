@@ -28,10 +28,12 @@ primitives.headingReports = {}
 --- Collect and clear the headings cut since the last call.
 ---@return table[] reports Each carries `requested` and `drawn`.
 function primitives.takeHeadingReports()
-  local reports = primitives.headingReports
-  if #reports == 0 then return reports end
-  primitives.headingReports = {}
-  return reports
+    local reports = primitives.headingReports
+    if #reports == 0 then
+        return reports
+    end
+    primitives.headingReports = {}
+    return reports
 end
 
 --- Apply changes to an arc, always restating its centre.
@@ -50,9 +52,9 @@ end
 ---@param centreY integer
 ---@param changes table
 local function setRound(object, centreX, centreY, changes)
-  changes.x = centreX
-  changes.y = centreY
-  object:set(changes)
+    changes.x = centreX
+    changes.y = centreY
+    object:set(changes)
 end
 
 --- Decide whether anything a component draws has changed since it last drew.
@@ -81,36 +83,50 @@ end
 ---@return boolean changed
 ---@return table drawn Values to paint from.
 function primitives.changed(context, render)
-  local out = context.scratch
-  if not out then out = {}; context.scratch = out end
-
-  -- Cleared rather than replaced, so a key the component stops writing cannot
-  -- linger and compare equal forever.
-  for key in pairs(out) do out[key] = nil end
-  render(context, out)
-
-  local previous = context.rendered
-  if previous then
-    local same = true
-    for key, value in pairs(out) do
-      if previous[key] ~= value then same = false break end
+    local out = context.scratch
+    if not out then
+        out = {}
+        context.scratch = out
     end
 
-    -- A key that stopped being written cannot be seen by comparing what is
-    -- here, and one can stop: `variable-indicator` drops its zero tick when
-    -- the range no longer spans zero. Counting is only reached once the
-    -- values have all matched, which is the cheap path taken on most frames.
-    if same then
-      local before, now = 0, 0
-      for _ in pairs(previous) do before = before + 1 end
-      for _ in pairs(out) do now = now + 1 end
-      if before == now then return false, previous end
+    -- Cleared rather than replaced, so a key the component stops writing cannot
+    -- linger and compare equal forever.
+    for key in pairs(out) do
+        out[key] = nil
     end
-  end
+    render(context, out)
 
-  context.rendered = out
-  context.scratch = previous
-  return true, out
+    local previous = context.rendered
+    if previous then
+        local same = true
+        for key, value in pairs(out) do
+            if previous[key] ~= value then
+                same = false
+                break
+            end
+        end
+
+        -- A key that stopped being written cannot be seen by comparing what is
+        -- here, and one can stop: `variable-indicator` drops its zero tick when
+        -- the range no longer spans zero. Counting is only reached once the
+        -- values have all matched, which is the cheap path taken on most frames.
+        if same then
+            local before, now = 0, 0
+            for _ in pairs(previous) do
+                before = before + 1
+            end
+            for _ in pairs(out) do
+                now = now + 1
+            end
+            if before == now then
+                return false, previous
+            end
+        end
+    end
+
+    context.rendered = out
+    context.scratch = previous
+    return true, out
 end
 
 --- Return the usable content width inside a padded panel.
@@ -118,7 +134,7 @@ end
 ---@param width integer
 ---@return integer
 function primitives.contentWidth(theme, width)
-  return math.max(1, width - theme.spacing.padding * 2)
+    return math.max(1, width - theme.spacing.padding * 2)
 end
 
 --- Create a panel's header row: a quiet label beside a state badge.
@@ -132,46 +148,47 @@ end
 ---@param presentation table Result of theme.state.
 ---@return any label
 ---@return any badge
-function primitives.header(parent, theme, frame, fonts, text, presentation,
-    themeBuilder)
-  -- Fitted, because nothing else was fitting it. Every other string in this
-  -- dashboard is either sized by the ladder or shortened by `fitLabel`; the
-  -- heading went through neither and was handed to LVGL, whose default long
-  -- mode wraps and whose content height then grows over the reading.
-  local fit = themeBuilder and themeBuilder.fitHeading
-  local heading, font, dropped = text, fonts.label, nil
-  if fit then
-    heading, font, dropped = fit(text, frame.labelWidth, fonts.label)
-  else
-    heading = string.upper(tostring(text == nil and "" or text))
-  end
+function primitives.header(parent, theme, frame, fonts, text, presentation, themeBuilder)
+    -- Fitted, because nothing else was fitting it. Every other string in this
+    -- dashboard is either sized by the ladder or shortened by `fitLabel`; the
+    -- heading went through neither and was handed to LVGL, whose default long
+    -- mode wraps and whose content height then grows over the reading.
+    local fit = themeBuilder and themeBuilder.fitHeading
+    local heading, font, dropped = text, fonts.label, nil
+    if fit then
+        heading, font, dropped = fit(text, frame.labelWidth, fonts.label)
+    else
+        heading = string.upper(tostring(text == nil and "" or text))
+    end
 
-  local label = primitives.label(parent, theme, {
-    x = frame.labelX,
-    y = frame.labelY,
-    w = frame.labelWidth,
-    text = heading,
-    color = presentation.label,
-    font = font,
-  })
-  -- Kept for the host to collect, beside the object rather than on it.
-  if dropped then
-    local reports = primitives.headingReports
-    reports[#reports + 1] = {requested = dropped, drawn = heading}
-  end
+    local label = primitives.label(parent, theme, {
+        x = frame.labelX,
+        y = frame.labelY,
+        w = frame.labelWidth,
+        text = heading,
+        color = presentation.label,
+        font = font,
+    })
+    -- Kept for the host to collect, beside the object rather than on it.
+    if dropped then
+        local reports = primitives.headingReports
+        reports[#reports + 1] = { requested = dropped, drawn = heading }
+    end
 
-  local badge = primitives.badge(parent, theme, {
-    x = frame.badgeX,
-    y = frame.labelY,
-    w = frame.badgeWidth,
-    text = "",
-    color = theme.color.amber,
-    font = fonts.badge,
-  })
+    local badge = primitives.badge(parent, theme, {
+        x = frame.badgeX,
+        y = frame.labelY,
+        w = frame.badgeWidth,
+        text = "",
+        color = theme.color.amber,
+        font = fonts.badge,
+    })
 
-  if frame.labelHidden then lvgl.hide(label) end
+    if frame.labelHidden then
+        lvgl.hide(label)
+    end
 
-  return label, badge, dropped
+    return label, badge, dropped
 end
 
 --- Set a heading's text, fitted to the column it has.
@@ -188,18 +205,24 @@ end
 ---@param color? any
 ---@return string? dropped
 function primitives.setHeading(label, themeBuilder, frame, fonts, text, color)
-  -- Refitted every time rather than guarded on the text being unchanged. The
-  -- guard was written, measured, and removed: `fitHeading` answers a heading
-  -- that already fits in one width comparison, which is cheaper than the two
-  -- the guard itself cost, so skipping the work was four instructions worse
-  -- than doing it on the layout it was meant to help.
-  local heading, font, dropped =
-    themeBuilder.fitHeading(text, frame.labelWidth, fonts.label)
+    -- Refitted every time rather than guarded on the text being unchanged. The
+    -- guard was written, measured, and removed: `fitHeading` answers a heading
+    -- that already fits in one width comparison, which is cheaper than the two
+    -- the guard itself cost, so skipping the work was four instructions worse
+    -- than doing it on the layout it was meant to help.
+    local heading, font, dropped = themeBuilder.fitHeading(text, frame.labelWidth, fonts.label)
 
-  local changes = {text = heading, font = function() return font end}
-  if color ~= nil then changes.color = color end
-  label:set(changes)
-  return dropped
+    local changes = {
+        text = heading,
+        font = function()
+            return font
+        end,
+    }
+    if color ~= nil then
+        changes.color = color
+    end
+    label:set(changes)
+    return dropped
 end
 
 --- Where a badge's text starts, so that it ends flush with its column.
@@ -223,16 +246,18 @@ end
 ---@return integer x
 ---@return integer width
 function primitives.badgeX(themeBuilder, frame, font, text)
-  local width = themeBuilder.measureText(font, text)
-  local right = frame.badgeX + frame.badgeWidth
-  -- Never left of the column, which is what protects the heading. A word
-  -- wider than its own column cannot happen while the column is sized from
-  -- the vocabulary, but a clamped column on a very narrow panel can be
-  -- narrower than the widest word, and the heading is dropped rather than
-  -- overdrawn in that case.
-  local x = right - width
-  if x < frame.badgeX then x = frame.badgeX end
-  return x, width
+    local width = themeBuilder.measureText(font, text)
+    local right = frame.badgeX + frame.badgeWidth
+    -- Never left of the column, which is what protects the heading. A word
+    -- wider than its own column cannot happen while the column is sized from
+    -- the vocabulary, but a clamped column on a very narrow panel can be
+    -- narrower than the widest word, and the heading is dropped rather than
+    -- overdrawn in that case.
+    local x = right - width
+    if x < frame.badgeX then
+        x = frame.badgeX
+    end
+    return x, width
 end
 
 --- Write a badge's text and colour, and place it flush with its column.
@@ -255,46 +280,47 @@ end
 ---@param font any
 ---@param text any
 ---@param color any
-function primitives.setBadge(context, themeBuilder, badge, frame, font, text,
-    color)
-  if badge == nil then return end
-  text = tostring(text == nil and "" or text)
+function primitives.setBadge(context, themeBuilder, badge, frame, font, text, color)
+    if badge == nil then
+        return
+    end
+    text = tostring(text == nil and "" or text)
 
-  -- **Measured three ways, and the plainest won.** The badge is placed from
-  -- its measured width on every `apply`, which is every frame a panel has
-  -- anything to redraw, so two obvious savings were tried against the count
-  -- hook at single-instruction resolution:
-  --
-  --   plain                  worst callback 8098  steady 3503  reflow 7547
-  --   guarded on the word    worst callback 8099  steady 3507  reflow 7547
-  --   width memoised         worst callback 8113  steady 3503  reflow 7520
-  --
-  -- The guard is `setHeading`'s guard again and fails for the same reason:
-  -- `apply` only runs when the panel already has something to redraw, so the
-  -- comparison almost never saves the work it costs. Memoising a five-word
-  -- vocabulary buys the reflow 27 and costs the worst callback 14, and the
-  -- worst callback is the binding constraint on a full grid. So neither is
-  -- here, and this comment is why nobody needs to try them again.
-  -- Held so a reflow can re-place the badge without asking the label, which
-  -- on a radio is userdata and answers nil to every field read.
-  context.badgeText = text
+    -- **Measured three ways, and the plainest won.** The badge is placed from
+    -- its measured width on every `apply`, which is every frame a panel has
+    -- anything to redraw, so two obvious savings were tried against the count
+    -- hook at single-instruction resolution:
+    --
+    --   plain                  worst callback 8098  steady 3503  reflow 7547
+    --   guarded on the word    worst callback 8099  steady 3507  reflow 7547
+    --   width memoised         worst callback 8113  steady 3503  reflow 7520
+    --
+    -- The guard is `setHeading`'s guard again and fails for the same reason:
+    -- `apply` only runs when the panel already has something to redraw, so the
+    -- comparison almost never saves the work it costs. Memoising a five-word
+    -- vocabulary buys the reflow 27 and costs the worst callback 14, and the
+    -- worst callback is the binding constraint on a full grid. So neither is
+    -- here, and this comment is why nobody needs to try them again.
+    -- Held so a reflow can re-place the badge without asking the label, which
+    -- on a radio is userdata and answers nil to every field read.
+    context.badgeText = text
 
-  local changes = {text = text, color = color}
-  if text == "" then
-    -- **An empty badge goes back to its column rather than keeping the
-    -- geometry of the word that just left.** Nothing is drawn either way, so
-    -- this is not about pixels: a box left where `N/A` put it is a position
-    -- derived from a string that is no longer there, and the next thing to
-    -- read it would read a stale one. It is also what makes a resting panel
-    -- byte-identical to one built before badges were placed at all, which is
-    -- how the geometry sweep can show that this change touches only badges
-    -- that are actually drawn.
-    changes.x = frame.badgeX
-    changes.w = frame.badgeWidth
-  else
-    changes.x, changes.w = primitives.badgeX(themeBuilder, frame, font, text)
-  end
-  badge:set(changes)
+    local changes = { text = text, color = color }
+    if text == "" then
+        -- **An empty badge goes back to its column rather than keeping the
+        -- geometry of the word that just left.** Nothing is drawn either way, so
+        -- this is not about pixels: a box left where `N/A` put it is a position
+        -- derived from a string that is no longer there, and the next thing to
+        -- read it would read a stale one. It is also what makes a resting panel
+        -- byte-identical to one built before badges were placed at all, which is
+        -- how the geometry sweep can show that this change touches only badges
+        -- that are actually drawn.
+        changes.x = frame.badgeX
+        changes.w = frame.badgeWidth
+    else
+        changes.x, changes.w = primitives.badgeX(themeBuilder, frame, font, text)
+    end
+    badge:set(changes)
 end
 
 --- Reposition an existing header row after a geometry change.
@@ -309,40 +335,42 @@ end
 ---@param frame table
 ---@param text? any Heading currently shown; omitted leaves the text alone.
 ---@param badgeText? any Badge currently shown, for the same reason.
-function primitives.placeHeader(label, badge, frame, themeBuilder, fonts, text,
-    badgeText)
-  local changes = {x = frame.labelX, y = frame.labelY, w = frame.labelWidth}
+function primitives.placeHeader(label, badge, frame, themeBuilder, fonts, text, badgeText)
+    local changes = { x = frame.labelX, y = frame.labelY, w = frame.labelWidth }
 
-  -- The column is what the badge leaves, so a reflow can change it and a
-  -- heading that fitted before may not now. Refitted here rather than left,
-  -- because a heading that only fits at the span it was built at is a
-  -- heading that wraps the first time the zone moves.
-  -- Refitted on every reflow, for the same reason: the column is what the
-  -- badge leaves and a reflow can move it, and checking whether it moved
-  -- costs more than refitting does.
-  if themeBuilder and fonts and text ~= nil then
-    local heading, font = themeBuilder.fitHeading(
-      text, frame.labelWidth, fonts.label)
-    changes.text = heading
-    changes.font = function() return font end
-  end
+    -- The column is what the badge leaves, so a reflow can change it and a
+    -- heading that fitted before may not now. Refitted here rather than left,
+    -- because a heading that only fits at the span it was built at is a
+    -- heading that wraps the first time the zone moves.
+    -- Refitted on every reflow, for the same reason: the column is what the
+    -- badge leaves and a reflow can move it, and checking whether it moved
+    -- costs more than refitting does.
+    if themeBuilder and fonts and text ~= nil then
+        local heading, font = themeBuilder.fitHeading(text, frame.labelWidth, fonts.label)
+        changes.text = heading
+        changes.font = function()
+            return font
+        end
+    end
 
-  label:set(changes)
+    label:set(changes)
 
-  -- **The badge's column moved, so its text has to be re-placed against it.**
-  -- Its right edge is the panel's own, which every reflow changes, and the
-  -- badge is right-aligned within the column rather than drawn from its left
-  -- corner -- so restating the box alone would leave the word at an offset
-  -- computed for the panel's previous width. That is the defect shape this
-  -- project has paid for eight times.
-  local badgeChanges = {x = frame.badgeX, y = frame.labelY,
-    w = frame.badgeWidth}
-  if badgeText ~= nil and badgeText ~= "" and themeBuilder and fonts then
-    badgeChanges.x, badgeChanges.w = primitives.badgeX(
-      themeBuilder, frame, fonts.badge, badgeText)
-  end
-  badge:set(badgeChanges)
-  if frame.labelHidden then lvgl.hide(label) else lvgl.show(label) end
+    -- **The badge's column moved, so its text has to be re-placed against it.**
+    -- Its right edge is the panel's own, which every reflow changes, and the
+    -- badge is right-aligned within the column rather than drawn from its left
+    -- corner -- so restating the box alone would leave the word at an offset
+    -- computed for the panel's previous width. That is the defect shape this
+    -- project has paid for eight times.
+    local badgeChanges = { x = frame.badgeX, y = frame.labelY, w = frame.badgeWidth }
+    if badgeText ~= nil and badgeText ~= "" and themeBuilder and fonts then
+        badgeChanges.x, badgeChanges.w = primitives.badgeX(themeBuilder, frame, fonts.badge, badgeText)
+    end
+    badge:set(badgeChanges)
+    if frame.labelHidden then
+        lvgl.hide(label)
+    else
+        lvgl.show(label)
+    end
 end
 
 --- Show or hide a supporting object, positioning it only when it is visible.
@@ -360,13 +388,19 @@ end
 ---@param changes? table Geometry to apply when the object is shown.
 ---@param settled? boolean Visibility is unchanged since the last call.
 function primitives.reconcile(object, visible, changes, settled)
-  if not object then return end
-  if visible then
-    if changes then object:set(changes) end
-    if not settled then lvgl.show(object) end
-  elseif not settled then
-    lvgl.hide(object)
-  end
+    if not object then
+        return
+    end
+    if visible then
+        if changes then
+            object:set(changes)
+        end
+        if not settled then
+            lvgl.show(object)
+        end
+    elseif not settled then
+        lvgl.hide(object)
+    end
 end
 
 --- Show or hide a bar, positioning and filling it only when it is visible.
@@ -386,25 +420,31 @@ end
 ---@param fraction number
 ---@param settled? boolean Visibility is unchanged since the last call.
 function primitives.reconcileBar(bar, visible, x, y, width, fraction, settled)
-  if not bar then return end
+    if not bar then
+        return
+    end
 
-  if visible then
-    primitives.placeBar(bar, x, y, width, fraction)
-  end
-  if settled then return end
+    if visible then
+        primitives.placeBar(bar, x, y, width, fraction)
+    end
+    if settled then
+        return
+    end
 
-  local show = visible and lvgl.show or lvgl.hide
-  show(bar.track)
-  show(bar.fill)
-  if bar.marker then show(bar.marker) end
+    local show = visible and lvgl.show or lvgl.hide
+    show(bar.track)
+    show(bar.fill)
+    if bar.marker then
+        show(bar.marker)
+    end
 end
 
 --- Angles of the two quarter bands that carry the accent round the corners.
 --- LVGL measures zero at three o'clock and increases clockwise, so the upper
 --- left quarter runs from nine o'clock to twelve, and the lower left from six
 --- o'clock to nine.
-primitives.ACCENT_TOP = {start = 180, finish = 270}
-primitives.ACCENT_BOTTOM = {start = 90, finish = 180}
+primitives.ACCENT_TOP = { start = 180, finish = 270 }
+primitives.ACCENT_BOTTOM = { start = 90, finish = 180 }
 
 --- Create a component panel: an elevated fill with a narrow semantic accent.
 --- The accent carries state, so it is never purely decorative.
@@ -446,100 +486,99 @@ primitives.ACCENT_BOTTOM = {start = 90, finish = 180}
 ---@param presentation table Result of theme.state.
 ---@return table panel
 function primitives.panel(parent, rect, theme, presentation)
-  local spacing = theme.spacing
-  local radius = spacing.radius
+    local spacing = theme.spacing
+    local radius = spacing.radius
 
-  local root = lvgl.box(parent, {
-    x = rect.x,
-    y = rect.y,
-    w = rect.w,
-    h = rect.h,
-  })
+    local root = lvgl.box(parent, {
+        x = rect.x,
+        y = rect.y,
+        w = rect.w,
+        h = rect.h,
+    })
 
-  local background = lvgl.rectangle(root, {
-    x = 0,
-    y = 0,
-    w = rect.w,
-    h = rect.h,
-    color = theme.color.surface,
-    filled = true,
-    rounded = radius,
-  })
+    local background = lvgl.rectangle(root, {
+        x = 0,
+        y = 0,
+        w = rect.w,
+        h = rect.h,
+        color = theme.color.surface,
+        filled = true,
+        rounded = radius,
+    })
 
-  local border = lvgl.rectangle(root, {
-    x = 0,
-    y = 0,
-    w = rect.w,
-    h = rect.h,
-    color = presentation.border,
-    filled = false,
-    rounded = radius,
-    thickness = spacing.borderFocus,
-  })
+    local border = lvgl.rectangle(root, {
+        x = 0,
+        y = 0,
+        w = rect.w,
+        h = rect.h,
+        color = presentation.border,
+        filled = false,
+        rounded = radius,
+        thickness = spacing.borderFocus,
+    })
 
-  -- Everything carrying the accent lives inside a column exactly one accent
-  -- width across, and the renderer keeps it there. LVGL intersects a child's
-  -- clip area with its parent's coordinates unless the parent carries
-  -- LV_OBJ_FLAG_OVERFLOW_VISIBLE (`lv_refr.c`, `refr_obj`), and EdgeTX never
-  -- sets that flag anywhere, so a container is a rectangular mask. That is the
-  -- only masking primitive available to us: `lv_obj_set_style_clip_corner`
-  -- would clip to a parent's rounded corners instead, but EdgeTX neither calls
-  -- it nor exposes it to Lua.
-  --
-  -- The box paints nothing. `LvglWidgetBox::build` creates a bare `lv_obj` and
-  -- its `setColor` is the base class's empty virtual, which is hard-won
-  -- constraint 2 read in our favour for once: here an unpainted container is
-  -- exactly what is wanted.
-  local column = lvgl.box(root, {
-    x = 0,
-    y = 0,
-    w = spacing.accentWidth,
-    h = rect.h,
-  })
+    -- Everything carrying the accent lives inside a column exactly one accent
+    -- width across, and the renderer keeps it there. LVGL intersects a child's
+    -- clip area with its parent's coordinates unless the parent carries
+    -- LV_OBJ_FLAG_OVERFLOW_VISIBLE (`lv_refr.c`, `refr_obj`), and EdgeTX never
+    -- sets that flag anywhere, so a container is a rectangular mask. That is the
+    -- only masking primitive available to us: `lv_obj_set_style_clip_corner`
+    -- would clip to a parent's rounded corners instead, but EdgeTX neither calls
+    -- it nor exposes it to Lua.
+    --
+    -- The box paints nothing. `LvglWidgetBox::build` creates a bare `lv_obj` and
+    -- its `setColor` is the base class's empty virtual, which is hard-won
+    -- constraint 2 read in our favour for once: here an unpainted container is
+    -- exactly what is wanted.
+    local column = lvgl.box(root, {
+        x = 0,
+        y = 0,
+        w = spacing.accentWidth,
+        h = rect.h,
+    })
 
-  -- The straight run, between the two corners. A plain rectangle with no
-  -- `rounded` key, so its ends are square and meet the arcs flush.
-  local accent = lvgl.rectangle(column, {
-    x = 0,
-    y = radius,
-    w = spacing.accentWidth,
-    h = primitives.accentHeight(spacing, rect.h),
-    color = presentation.accent,
-    filled = true,
-  })
+    -- The straight run, between the two corners. A plain rectangle with no
+    -- `rounded` key, so its ends are square and meet the arcs flush.
+    local accent = lvgl.rectangle(column, {
+        x = 0,
+        y = radius,
+        w = spacing.accentWidth,
+        h = primitives.accentHeight(spacing, rect.h),
+        color = presentation.accent,
+        filled = true,
+    })
 
-  local panel = {
-    root = root,
-    background = background,
-    border = border,
-    column = column,
-    accent = accent,
-    spacing = spacing,
-    -- The resting surface, so a state that does not tint can put it back.
-    surface = theme.color.surface,
-    surfaceColor = theme.color.surface,
-    width = rect.w,
-    height = rect.h,
-    -- Reused for every corner update. `setRound` fills in x and y, so the
-    -- table always carries the same three keys and never grows.
-    arcChanges = {},
-  }
+    local panel = {
+        root = root,
+        background = background,
+        border = border,
+        column = column,
+        accent = accent,
+        spacing = spacing,
+        -- The resting surface, so a state that does not tint can put it back.
+        surface = theme.color.surface,
+        surfaceColor = theme.color.surface,
+        width = rect.w,
+        height = rect.h,
+        -- Reused for every corner update. `setRound` fills in x and y, so the
+        -- table always carries the same three keys and never grows.
+        arcChanges = {},
+    }
 
-  -- One quarter-circle band per corner, continuing the stripe around the
-  -- panel's own corner arc. Centred on the corner centres and given the
-  -- panel's corner radius, so each band's outer edge is the panel's own curve;
-  -- the column then removes everything right of it. What survives is the part
-  -- of the panel's corner that lies inside the accent's own width, which
-  -- narrows from the full width at the tangent to nothing where the curve
-  -- leaves the column. The arcs are children of the column, not of the root,
-  -- or there would be nothing doing the clipping.
-  panel.topArc = primitives.accentArc(column, spacing, radius, radius,
-    primitives.ACCENT_TOP, presentation.accent)
-  panel.bottomArc = primitives.accentArc(column, spacing, radius,
-    rect.h - radius, primitives.ACCENT_BOTTOM, presentation.accent)
+    -- One quarter-circle band per corner, continuing the stripe around the
+    -- panel's own corner arc. Centred on the corner centres and given the
+    -- panel's corner radius, so each band's outer edge is the panel's own curve;
+    -- the column then removes everything right of it. What survives is the part
+    -- of the panel's corner that lies inside the accent's own width, which
+    -- narrows from the full width at the tangent to nothing where the curve
+    -- leaves the column. The arcs are children of the column, not of the root,
+    -- or there would be nothing doing the clipping.
+    panel.topArc = primitives.accentArc(column, spacing, radius, radius, primitives.ACCENT_TOP, presentation.accent)
+    panel.bottomArc =
+        primitives.accentArc(column, spacing, radius, rect.h - radius, primitives.ACCENT_BOTTOM, presentation.accent)
 
-  primitives.stylePanel(panel, presentation)
-  return panel
+    primitives.stylePanel(panel, presentation)
+    return panel
 end
 
 --- Create one corner band of the panel accent.
@@ -565,17 +604,17 @@ end
 ---@param color integer
 ---@return table band
 function primitives.accentArc(parent, spacing, centreX, centreY, angles, color)
-  local arc = lvgl.arc(parent, {
-    x = centreX,
-    y = centreY,
-    radius = spacing.radius,
-    thickness = spacing.accentWidth,
-    color = color,
-    startAngle = angles.start,
-    endAngle = angles.finish,
-  })
+    local arc = lvgl.arc(parent, {
+        x = centreX,
+        y = centreY,
+        radius = spacing.radius,
+        thickness = spacing.accentWidth,
+        color = color,
+        startAngle = angles.start,
+        endAngle = angles.finish,
+    })
 
-  return {arc = arc, centreX = centreX, centreY = centreY, angles = angles}
+    return { arc = arc, centreX = centreX, centreY = centreY, angles = angles }
 end
 
 --- Move a corner band, restating its centre.
@@ -589,9 +628,9 @@ end
 ---@param centreY integer
 ---@param changes table Reusable change table, so a reflow allocates nothing.
 function primitives.placeAccentArc(band, centreX, centreY, changes)
-  band.centreX = centreX
-  band.centreY = centreY
-  setRound(band.arc, centreX, centreY, changes)
+    band.centreX = centreX
+    band.centreY = centreY
+    setRound(band.arc, centreX, centreY, changes)
 end
 
 --- Height of the accent stripe inside a panel.
@@ -611,9 +650,11 @@ end
 ---@param height integer Panel height.
 ---@return integer
 function primitives.accentHeight(spacing, height)
-  local extent = height - spacing.radius * 2
-  if extent < 1 then return 1 end
-  return extent
+    local extent = height - spacing.radius * 2
+    if extent < 1 then
+        return 1
+    end
+    return extent
 end
 
 --- Resize a panel without recreating its LVGL objects.
@@ -628,25 +669,24 @@ end
 ---@param panel table
 ---@param rect AeroGridRect
 function primitives.resizePanel(panel, rect)
-  local spacing = panel.spacing
-  panel.width = rect.w
-  panel.height = rect.h
-  panel.root:set({x = rect.x, y = rect.y, w = rect.w, h = rect.h})
-  panel.background:set({w = rect.w, h = rect.h})
-  -- The mask follows the panel's height, or a shorter panel keeps clipping to
-  -- the old one and a taller one loses its bottom corner.
-  panel.column:set({h = rect.h})
-  panel.accent:set({h = primitives.accentHeight(spacing, rect.h)})
+    local spacing = panel.spacing
+    panel.width = rect.w
+    panel.height = rect.h
+    panel.root:set({ x = rect.x, y = rect.y, w = rect.w, h = rect.h })
+    panel.background:set({ w = rect.w, h = rect.h })
+    -- The mask follows the panel's height, or a shorter panel keeps clipping to
+    -- the old one and a taller one loses its bottom corner.
+    panel.column:set({ h = rect.h })
+    panel.accent:set({ h = primitives.accentHeight(spacing, rect.h) })
 
-  -- The top corner never moves, so it is deliberately not touched: an arc that
-  -- is not set cannot drift. Only the bottom one follows the height, and its
-  -- radius is unchanged, so the update restates position alone.
-  primitives.placeAccentArc(panel.bottomArc, spacing.radius,
-    rect.h - spacing.radius, panel.arcChanges)
+    -- The top corner never moves, so it is deliberately not touched: an arc that
+    -- is not set cannot drift. Only the bottom one follows the height, and its
+    -- radius is unchanged, so the update restates position alone.
+    primitives.placeAccentArc(panel.bottomArc, spacing.radius, rect.h - spacing.radius, panel.arcChanges)
 
-  if panel.borderVisible then
-    panel.border:set({w = rect.w, h = rect.h})
-  end
+    if panel.borderVisible then
+        panel.border:set({ w = rect.w, h = rect.h })
+    end
 end
 
 --- Apply a new state presentation to an existing panel.
@@ -655,55 +695,53 @@ end
 ---@param panel table
 ---@param presentation table
 function primitives.stylePanel(panel, presentation)
-  -- An alert tints the panel's field rather than outlining it, so the surface
-  -- is per state now and not merely per theme. A state with no tint of its own
-  -- restores the resting one, or a panel stays coloured after the reading that
-  -- alarmed it has recovered.
-  local surface = presentation.surface or panel.surface
-  if surface ~= panel.surfaceColor then
-    panel.surfaceColor = surface
-    panel.background:set({color = surface})
-  end
-
-  -- A component calls this on every repaint, and a panel's state changes far
-  -- less often than its reading does, so nothing is touched unless it actually
-  -- moved. Three objects carry the accent now rather than one, which made
-  -- repainting it unconditionally the largest single cost in a steady frame.
-  local accent = presentation.accent
-  if accent ~= panel.accentColor then
-    panel.accentColor = accent
-    panel.accent:set({color = accent})
-    -- The corner bands are the same stripe, so a state that dims the accent
-    -- dims all three. They are arcs, so the centre is restated with the
-    -- colour, or constraint 11 walks them out of the panel.
-    local changes = panel.arcChanges
-    changes.color = accent
-    setRound(panel.topArc.arc, panel.topArc.centreX, panel.topArc.centreY,
-      changes)
-    setRound(panel.bottomArc.arc, panel.bottomArc.centreX,
-      panel.bottomArc.centreY, changes)
-  end
-
-  if presentation.borderWidth <= 0 then
-    if panel.borderVisible ~= false then
-      panel.borderVisible = false
-      lvgl.hide(panel.border)
+    -- An alert tints the panel's field rather than outlining it, so the surface
+    -- is per state now and not merely per theme. A state with no tint of its own
+    -- restores the resting one, or a panel stays coloured after the reading that
+    -- alarmed it has recovered.
+    local surface = presentation.surface or panel.surface
+    if surface ~= panel.surfaceColor then
+        panel.surfaceColor = surface
+        panel.background:set({ color = surface })
     end
-    return
-  end
 
-  -- Size as well as colour, because this is where a border hidden through a
-  -- reflow learns the panel changed shape while it was invisible.
-  if not panel.borderVisible or panel.borderColor ~= presentation.border then
-    panel.borderVisible = true
-    panel.borderColor = presentation.border
-    panel.border:set({
-      w = panel.width,
-      h = panel.height,
-      color = presentation.border,
-    })
-    lvgl.show(panel.border)
-  end
+    -- A component calls this on every repaint, and a panel's state changes far
+    -- less often than its reading does, so nothing is touched unless it actually
+    -- moved. Three objects carry the accent now rather than one, which made
+    -- repainting it unconditionally the largest single cost in a steady frame.
+    local accent = presentation.accent
+    if accent ~= panel.accentColor then
+        panel.accentColor = accent
+        panel.accent:set({ color = accent })
+        -- The corner bands are the same stripe, so a state that dims the accent
+        -- dims all three. They are arcs, so the centre is restated with the
+        -- colour, or constraint 11 walks them out of the panel.
+        local changes = panel.arcChanges
+        changes.color = accent
+        setRound(panel.topArc.arc, panel.topArc.centreX, panel.topArc.centreY, changes)
+        setRound(panel.bottomArc.arc, panel.bottomArc.centreX, panel.bottomArc.centreY, changes)
+    end
+
+    if presentation.borderWidth <= 0 then
+        if panel.borderVisible ~= false then
+            panel.borderVisible = false
+            lvgl.hide(panel.border)
+        end
+        return
+    end
+
+    -- Size as well as colour, because this is where a border hidden through a
+    -- reflow learns the panel changed shape while it was invisible.
+    if not panel.borderVisible or panel.borderColor ~= presentation.border then
+        panel.borderVisible = true
+        panel.borderColor = presentation.border
+        panel.border:set({
+            w = panel.width,
+            h = panel.height,
+            color = presentation.border,
+        })
+        lvgl.show(panel.border)
+    end
 end
 
 --- Create a quiet uppercase label.
@@ -712,16 +750,18 @@ end
 ---@param options table
 ---@return any
 function primitives.label(parent, theme, options)
-  local font = options.font
-  return lvgl.label(parent, {
-    x = options.x,
-    y = options.y,
-    w = options.w,
-    h = 0,
-    text = tostring(options.text or ""),
-    color = options.color or theme.color.textMuted,
-    font = function() return font end,
-  })
+    local font = options.font
+    return lvgl.label(parent, {
+        x = options.x,
+        y = options.y,
+        w = options.w,
+        h = 0,
+        text = tostring(options.text or ""),
+        color = options.color or theme.color.textMuted,
+        font = function()
+            return font
+        end,
+    })
 end
 
 --- Create a dominant numeric reading.
@@ -731,16 +771,18 @@ end
 ---@param options table
 ---@return any
 function primitives.value(parent, theme, options)
-  local font = options.font
-  return lvgl.label(parent, {
-    x = options.x,
-    y = options.y,
-    w = options.w,
-    h = 0,
-    text = tostring(options.text or "--"),
-    color = options.color or theme.color.text,
-    font = function() return font end,
-  })
+    local font = options.font
+    return lvgl.label(parent, {
+        x = options.x,
+        y = options.y,
+        w = options.w,
+        h = 0,
+        text = tostring(options.text or "--"),
+        color = options.color or theme.color.text,
+        font = function()
+            return font
+        end,
+    })
 end
 
 --------------------------------------------------------------------------
@@ -759,17 +801,19 @@ end
 ---@param options table x, y, text, color, font
 ---@return any
 function primitives.unit(parent, theme, options)
-  local font = options.font
-  return lvgl.label(parent, {
-    x = options.x,
-    y = options.y,
-    -- No width. A unit is as wide as it is: given a column it would be
-    -- padded to it, and given a column narrower than itself it would wrap,
-    -- which for a two-character string beside a number is the worst of both.
-    text = tostring(options.text or ""),
-    color = options.color or theme.color.textMuted,
-    font = function() return font end,
-  })
+    local font = options.font
+    return lvgl.label(parent, {
+        x = options.x,
+        y = options.y,
+        -- No width. A unit is as wide as it is: given a column it would be
+        -- padded to it, and given a column narrower than itself it would wrap,
+        -- which for a two-character string beside a number is the worst of both.
+        text = tostring(options.text or ""),
+        color = options.color or theme.color.textMuted,
+        font = function()
+            return font
+        end,
+    })
 end
 
 --- Put the unit beside a reading whose text is known, on its baseline.
@@ -789,23 +833,25 @@ end
 ---@param readingFont any
 ---@param text any What the reading currently says.
 ---@param unitFont any
-function primitives.placeUnit(unit, themeBuilder, readingX, readingY,
-    readingFont, text, unitFont, withFont)
-  local changes = {
-    -- Measured, not estimated. The estimate is generous by design so that a
-    -- reading shrinks rather than clips, and generosity in a decision about
-    -- where something *starts* is just a gap: `7.9` at XXLSIZE was estimated
-    -- 48 pixels wider than the radio draws it, and the unit sat that far out.
-    x = readingX + themeBuilder.measureText(readingFont, text)
-      + themeBuilder.unitGap(unitFont),
-    y = themeBuilder.unitTop(readingFont, unitFont, readingY),
-  }
-  -- The font goes in the same call rather than a second one. A reflow that
-  -- moves the reading to another size moves the rider too, and telling the
-  -- label its position and then its font is two writes into one object for
-  -- one change.
-  if withFont then changes.font = function() return unitFont end end
-  unit:set(changes)
+function primitives.placeUnit(unit, themeBuilder, readingX, readingY, readingFont, text, unitFont, withFont)
+    local changes = {
+        -- Measured, not estimated. The estimate is generous by design so that a
+        -- reading shrinks rather than clips, and generosity in a decision about
+        -- where something *starts* is just a gap: `7.9` at XXLSIZE was estimated
+        -- 48 pixels wider than the radio draws it, and the unit sat that far out.
+        x = readingX + themeBuilder.measureText(readingFont, text) + themeBuilder.unitGap(unitFont),
+        y = themeBuilder.unitTop(readingFont, unitFont, readingY),
+    }
+    -- The font goes in the same call rather than a second one. A reflow that
+    -- moves the reading to another size moves the rider too, and telling the
+    -- label its position and then its font is two writes into one object for
+    -- one change.
+    if withFont then
+        changes.font = function()
+            return unitFont
+        end
+    end
+    unit:set(changes)
 end
 
 --- The strings a reading prints in place of a value.
@@ -821,7 +867,7 @@ end
 --- formatter to producing a member of it. A component that invents a
 --- seventh spelling of "no value" fails by name instead of quietly drawing
 --- its unit again.
-primitives.SENTINELS = {["--"] = true, ["N/A"] = true}
+primitives.SENTINELS = { ["--"] = true, ["N/A"] = true }
 
 --- Report whether a reading has a value for a unit to qualify.
 ---
@@ -847,7 +893,7 @@ primitives.SENTINELS = {["--"] = true, ["N/A"] = true}
 ---@param text any What the reading currently says.
 ---@return boolean
 function primitives.hasValue(text)
-  return primitives.SENTINELS[text] == nil
+    return primitives.SENTINELS[text] == nil
 end
 
 --- Decide whether a unit that only became known at runtime can be shown.
@@ -870,8 +916,10 @@ end
 ---@param width integer The reading's own column.
 ---@return boolean
 function primitives.unitFits(themeBuilder, font, digits, unitFont, unit, width)
-  if unit == nil or unit == "" then return false end
-  return themeBuilder.readingWidth(font, digits, unitFont, unit) <= width
+    if unit == nil or unit == "" then
+        return false
+    end
+    return themeBuilder.readingWidth(font, digits, unitFont, unit) <= width
 end
 
 --- Keep a unit beside a reading, moving it only when the reading's width
@@ -903,25 +951,28 @@ end
 --- literal, so there is nothing here to coerce and a `tostring` per panel per
 --- frame would be the fixture-cost mistake made in the widget.
 function primitives.followUnit(context, themeBuilder, area, font, text)
-  if not context.showUnit then return end
+    if not context.showUnit then
+        return
+    end
 
-  -- Anchored on the text itself, not on its length. Two strings of one
-  -- length are not one width: `--` and `12` are both two characters and
-  -- differ by 12 pixels at DBLSIZE, because a dash is a fifth of a line
-  -- height and a digit is three sevenths. A length anchor therefore held the
-  -- unit still across exactly the change every telemetry component makes
-  -- when its sensor goes quiet. Comparing the strings costs no more: Lua
-  -- interns short strings, so this is a pointer comparison.
-  if text == context.unitAnchor then return end
-  context.unitAnchor = text
+    -- Anchored on the text itself, not on its length. Two strings of one
+    -- length are not one width: `--` and `12` are both two characters and
+    -- differ by 12 pixels at DBLSIZE, because a dash is a fifth of a line
+    -- height and a digit is three sevenths. A length anchor therefore held the
+    -- unit still across exactly the change every telemetry component makes
+    -- when its sensor goes quiet. Comparing the strings costs no more: Lua
+    -- interns short strings, so this is a pointer comparison.
+    if text == context.unitAnchor then
+        return
+    end
+    context.unitAnchor = text
 
-  -- `area.valueX`, not `area.pad`. The reading is centred on a slot derived
-  -- from the panel rather than started at the panel's left inset, so the
-  -- inset stopped being where the number begins. Reading the wrong one put a
-  -- unit fifteen pixels inside its own number -- the same defect shape, for
-  -- the seventh time: a position derived from something that moved.
-  primitives.placeUnit(context.unit, themeBuilder, area.valueX, area.valueY,
-    font, text, area.unitFont)
+    -- `area.valueX`, not `area.pad`. The reading is centred on a slot derived
+    -- from the panel rather than started at the panel's left inset, so the
+    -- inset stopped being where the number begins. Reading the wrong one put a
+    -- unit fifteen pixels inside its own number -- the same defect shape, for
+    -- the seventh time: a position derived from something that moved.
+    primitives.placeUnit(context.unit, themeBuilder, area.valueX, area.valueY, font, text, area.unitFont)
 end
 
 --- Centre a reading on its slot, and bring its unit with it.
@@ -960,87 +1011,93 @@ end
 ---@param font any The font the reading is drawn in.
 ---@param text string What the reading now says.
 function primitives.centreReading(context, themeBuilder, area, font, text)
-  -- A component that does not slot its reading has nothing to centre it on,
-  -- and says so by leaving `valueCentre` unset rather than by being named
-  -- here.
-  if area.valueCentre == nil then return end
-
-  -- **Keyed on everything the placement depends on, not on the reading
-  -- alone.** The group's width is the number plus its unit, and a unit is
-  -- not always a constant: `navigation`'s changes with range, so `778 m`
-  -- becoming `1.23 km` widens the group while the digit count holds. An
-  -- anchor that watched only the number would have held the group still
-  -- across exactly that change -- the ninth instance of the shape whose
-  -- eighth was an anchor keyed on a proxy, in the component converted
-  -- immediately after it was written down.
-  -- **What the panel is drawing, not what it expected to draw.** `showUnit`
-  -- on the region is a build-time answer, and a unit that arrives later --
-  -- a global variable's, a telemetry sensor's -- makes it stale: the panel
-  -- shows a unit the group's width was computed without, so the box is too
-  -- narrow for the pair and LVGL wraps it. The context's own flag is the one
-  -- `apply` keeps current.
-  local unit = context.showUnit and (context.unitText or "") or ""
-  -- **And whether there is a value for it to qualify.** A unit with no
-  -- number beside it is not a quieter reading, it is a label for nothing:
-  -- the panel drew `-- V`, which says the transmitter is measured in volts
-  -- and declines to say how many. `showUnit` cannot answer this, because it
-  -- is settled when the panel is built and whether a sensor is reporting is
-  -- only known at runtime -- which is exactly the permitted-versus-drawn
-  -- seam, answered here, on the string the panel is actually drawing.
-  --
-  -- The reading does not move when this fires. Its x is
-  -- `valueCentre - measureText(font, text) / 2`, its **own** width rather
-  -- than the pair's; the unit only widens the box below. So a sensor
-  -- dropping and returning takes the unit away and brings it back without
-  -- shifting the number, and the flicker that would otherwise rule this out
-  -- does not arise.
-  if unit ~= "" and not primitives.hasValue(text) then unit = "" end
-  if text == context.readingAnchor and unit == context.readingUnitAnchor then
-    return
-  end
-  context.readingAnchor, context.readingUnitAnchor = text, unit
-
-  local width = themeBuilder.measureText(font, text)
-  local x = area.valueCentre - math.floor(width / 2)
-
-  -- The box has to hold the unit as well as the number, or LVGL wraps the
-  -- pair; the number is what is centred, and the unit rides past the slot.
-  -- Centring the pair instead would line up the *groups* across a row of
-  -- panels and therefore not the numbers, and the numbers are what the rule
-  -- exists to line up: a panel with a unit and one without would put their
-  -- digits in different places.
-  local span = width
-  if unit ~= "" then
-    span = span + themeBuilder.unitGap(area.unitFont)
-      + themeBuilder.measureText(area.unitFont, unit)
-  end
-
-  context.value:set({x = x, w = math.max(1, span)})
-  context.valueX = x
-  -- A component may not have built a unit at all: `metric` creates one only
-  -- where its layout asks for it, so a panel with no unit reaches here with
-  -- nothing to move.
-  --
-  -- **Placed only when it is drawn.** This used to place unconditionally,
-  -- so a panel whose span sheds its unit went on measuring the reading and
-  -- writing two numbers into a hidden label on every value change -- the
-  -- invisible work this project has twice paid to remove. A revealed unit
-  -- is placed by whoever reveals it.
-  if context.unit then
-    local drawn = unit ~= ""
-    if drawn then
-      primitives.placeUnit(context.unit, themeBuilder, x, area.valueY, font,
-        text, area.unitFont)
-      context.unitAnchor = text
+    -- A component that does not slot its reading has nothing to centre it on,
+    -- and says so by leaving `valueCentre` unset rather than by being named
+    -- here.
+    if area.valueCentre == nil then
+        return
     end
-    -- Visibility is written only when it moves. A reading changes several
-    -- times a second and its unit almost never does, so an unguarded
-    -- `show` here would be a call per panel per value for no pixel changed.
-    if context.unitDrawn ~= drawn then
-      context.unitDrawn = drawn
-      if drawn then lvgl.show(context.unit) else lvgl.hide(context.unit) end
+
+    -- **Keyed on everything the placement depends on, not on the reading
+    -- alone.** The group's width is the number plus its unit, and a unit is
+    -- not always a constant: `navigation`'s changes with range, so `778 m`
+    -- becoming `1.23 km` widens the group while the digit count holds. An
+    -- anchor that watched only the number would have held the group still
+    -- across exactly that change -- the ninth instance of the shape whose
+    -- eighth was an anchor keyed on a proxy, in the component converted
+    -- immediately after it was written down.
+    -- **What the panel is drawing, not what it expected to draw.** `showUnit`
+    -- on the region is a build-time answer, and a unit that arrives later --
+    -- a global variable's, a telemetry sensor's -- makes it stale: the panel
+    -- shows a unit the group's width was computed without, so the box is too
+    -- narrow for the pair and LVGL wraps it. The context's own flag is the one
+    -- `apply` keeps current.
+    local unit = context.showUnit and (context.unitText or "") or ""
+    -- **And whether there is a value for it to qualify.** A unit with no
+    -- number beside it is not a quieter reading, it is a label for nothing:
+    -- the panel drew `-- V`, which says the transmitter is measured in volts
+    -- and declines to say how many. `showUnit` cannot answer this, because it
+    -- is settled when the panel is built and whether a sensor is reporting is
+    -- only known at runtime -- which is exactly the permitted-versus-drawn
+    -- seam, answered here, on the string the panel is actually drawing.
+    --
+    -- The reading does not move when this fires. Its x is
+    -- `valueCentre - measureText(font, text) / 2`, its **own** width rather
+    -- than the pair's; the unit only widens the box below. So a sensor
+    -- dropping and returning takes the unit away and brings it back without
+    -- shifting the number, and the flicker that would otherwise rule this out
+    -- does not arise.
+    if unit ~= "" and not primitives.hasValue(text) then
+        unit = ""
     end
-  end
+    if text == context.readingAnchor and unit == context.readingUnitAnchor then
+        return
+    end
+    context.readingAnchor, context.readingUnitAnchor = text, unit
+
+    local width = themeBuilder.measureText(font, text)
+    local x = area.valueCentre - math.floor(width / 2)
+
+    -- The box has to hold the unit as well as the number, or LVGL wraps the
+    -- pair; the number is what is centred, and the unit rides past the slot.
+    -- Centring the pair instead would line up the *groups* across a row of
+    -- panels and therefore not the numbers, and the numbers are what the rule
+    -- exists to line up: a panel with a unit and one without would put their
+    -- digits in different places.
+    local span = width
+    if unit ~= "" then
+        span = span + themeBuilder.unitGap(area.unitFont) + themeBuilder.measureText(area.unitFont, unit)
+    end
+
+    context.value:set({ x = x, w = math.max(1, span) })
+    context.valueX = x
+    -- A component may not have built a unit at all: `metric` creates one only
+    -- where its layout asks for it, so a panel with no unit reaches here with
+    -- nothing to move.
+    --
+    -- **Placed only when it is drawn.** This used to place unconditionally,
+    -- so a panel whose span sheds its unit went on measuring the reading and
+    -- writing two numbers into a hidden label on every value change -- the
+    -- invisible work this project has twice paid to remove. A revealed unit
+    -- is placed by whoever reveals it.
+    if context.unit then
+        local drawn = unit ~= ""
+        if drawn then
+            primitives.placeUnit(context.unit, themeBuilder, x, area.valueY, font, text, area.unitFont)
+            context.unitAnchor = text
+        end
+        -- Visibility is written only when it moves. A reading changes several
+        -- times a second and its unit almost never does, so an unguarded
+        -- `show` here would be a call per panel per value for no pixel changed.
+        if context.unitDrawn ~= drawn then
+            context.unitDrawn = drawn
+            if drawn then
+                lvgl.show(context.unit)
+            else
+                lvgl.hide(context.unit)
+            end
+        end
+    end
 end
 
 --- Centre one supporting label on a slot, keyed on what it says.
@@ -1063,16 +1120,18 @@ end
 ---@param y integer
 ---@param font any
 ---@param text any What the label now says.
-function primitives.centreLabel(context, key, themeBuilder, label, centre, y,
-    font, text)
-  if label == nil then return end
-  text = tostring(text == nil and "" or text)
-  if text == context[key] then return end
-  context[key] = text
+function primitives.centreLabel(context, key, themeBuilder, label, centre, y, font, text)
+    if label == nil then
+        return
+    end
+    text = tostring(text == nil and "" or text)
+    if text == context[key] then
+        return
+    end
+    context[key] = text
 
-  local width = themeBuilder.measureText(font, text)
-  label:set({x = centre - math.floor(width / 2), y = y,
-    w = math.max(1, width)})
+    local width = themeBuilder.measureText(font, text)
+    label:set({ x = centre - math.floor(width / 2), y = y, w = math.max(1, width) })
 end
 
 --- Show or hide a unit, placing it only when it is visible.
@@ -1099,22 +1158,39 @@ end
 ---@param text any What the reading currently says.
 ---@param unitFont any
 ---@param settled? boolean Permission is known not to have moved.
-function primitives.reconcileUnit(context, unit, visible, themeBuilder,
-    readingX, readingY, readingFont, text, unitFont, settled)
-  if not unit then return end
+function primitives.reconcileUnit(
+    context,
+    unit,
+    visible,
+    themeBuilder,
+    readingX,
+    readingY,
+    readingFont,
+    text,
+    unitFont,
+    settled
+)
+    if not unit then
+        return
+    end
 
-  visible = visible and primitives.hasValue(text)
+    visible = visible and primitives.hasValue(text)
 
-  if visible then
-    primitives.placeUnit(unit, themeBuilder, readingX, readingY, readingFont,
-      text, unitFont, true)
-  end
-  -- Whatever `followUnit` was remembering is about a column and a font that
-  -- have just moved, so it is discarded rather than trusted.
-  if settled and visible == context.unitDrawn then return end
+    if visible then
+        primitives.placeUnit(unit, themeBuilder, readingX, readingY, readingFont, text, unitFont, true)
+    end
+    -- Whatever `followUnit` was remembering is about a column and a font that
+    -- have just moved, so it is discarded rather than trusted.
+    if settled and visible == context.unitDrawn then
+        return
+    end
 
-  context.unitDrawn = visible
-  if visible then lvgl.show(unit) else lvgl.hide(unit) end
+    context.unitDrawn = visible
+    if visible then
+        lvgl.show(unit)
+    else
+        lvgl.hide(unit)
+    end
 end
 
 --- Create a horizontal progress bar with a muted track.
@@ -1125,56 +1201,56 @@ end
 ---@param options table
 ---@return table bar
 function primitives.bar(parent, theme, options)
-  local spacing = theme.spacing
-  local height = options.h or spacing.barHeight
+    local spacing = theme.spacing
+    local height = options.h or spacing.barHeight
 
-  local track = lvgl.rectangle(parent, {
-    x = options.x,
-    y = options.y,
-    w = options.w,
-    h = height,
-    color = theme.color.track,
-    filled = true,
-    rounded = 2,
-  })
-
-  local fill = lvgl.rectangle(parent, {
-    x = options.x,
-    y = options.y,
-    w = primitives.barFill(options.w, options.fraction),
-    h = height,
-    color = options.color or theme.color.cyan,
-    filled = true,
-    rounded = 2,
-  })
-
-  local bar = {
-    track = track,
-    fill = fill,
-    width = options.w,
-    height = height,
-    markerX = options.x,
-  }
-
-  -- Created last so it stays above the fill: a marker the fill can hide is
-  -- not a reference point.
-  if options.marker ~= nil then
-    local fraction = type(options.marker) == "number" and options.marker or 0
-    bar.marker = primitives.marker(parent, theme, {
-      x = options.x + primitives.barFill(options.w, fraction),
-      y = options.y,
-      h = height,
+    local track = lvgl.rectangle(parent, {
+        x = options.x,
+        y = options.y,
+        w = options.w,
+        h = height,
+        color = theme.color.track,
+        filled = true,
+        rounded = 2,
     })
-    bar.markerFraction = fraction
-    -- A marker requested without a position yet is created hidden, so a bound
-    -- that only arrives later can reveal it without a rebuild.
-    if type(options.marker) ~= "number" then
-      bar.markerFraction = nil
-      lvgl.hide(bar.marker)
-    end
-  end
 
-  return bar
+    local fill = lvgl.rectangle(parent, {
+        x = options.x,
+        y = options.y,
+        w = primitives.barFill(options.w, options.fraction),
+        h = height,
+        color = options.color or theme.color.cyan,
+        filled = true,
+        rounded = 2,
+    })
+
+    local bar = {
+        track = track,
+        fill = fill,
+        width = options.w,
+        height = height,
+        markerX = options.x,
+    }
+
+    -- Created last so it stays above the fill: a marker the fill can hide is
+    -- not a reference point.
+    if options.marker ~= nil then
+        local fraction = type(options.marker) == "number" and options.marker or 0
+        bar.marker = primitives.marker(parent, theme, {
+            x = options.x + primitives.barFill(options.w, fraction),
+            y = options.y,
+            h = height,
+        })
+        bar.markerFraction = fraction
+        -- A marker requested without a position yet is created hidden, so a bound
+        -- that only arrives later can reveal it without a rebuild.
+        if type(options.marker) ~= "number" then
+            bar.markerFraction = nil
+            lvgl.hide(bar.marker)
+        end
+    end
+
+    return bar
 end
 
 --- Create the thin neutral tick used by bars and bipolar bars.
@@ -1183,14 +1259,14 @@ end
 ---@param options table
 ---@return any
 function primitives.marker(parent, theme, options)
-  return lvgl.rectangle(parent, {
-    x = options.x,
-    y = options.y,
-    w = options.w or 2,
-    h = options.h or 2,
-    color = options.color or theme.color.textMuted,
-    filled = true,
-  })
+    return lvgl.rectangle(parent, {
+        x = options.x,
+        y = options.y,
+        w = options.w or 2,
+        h = options.h or 2,
+        color = options.color or theme.color.textMuted,
+        filled = true,
+    })
 end
 
 --- Convert a 0..1 fraction into a pixel width inside a bar.
@@ -1198,11 +1274,17 @@ end
 ---@param fraction any
 ---@return integer
 function primitives.barFill(width, fraction)
-  if type(fraction) ~= "number" or fraction ~= fraction then return 0 end
-  if fraction < 0 then fraction = 0 end
-  if fraction > 1 then fraction = 1 end
+    if type(fraction) ~= "number" or fraction ~= fraction then
+        return 0
+    end
+    if fraction < 0 then
+        fraction = 0
+    end
+    if fraction > 1 then
+        fraction = 1
+    end
 
-  return math.max(0, math.floor(width * fraction + 0.5))
+    return math.max(0, math.floor(width * fraction + 0.5))
 end
 
 --- Update a bar's filled portion and color.
@@ -1210,9 +1292,11 @@ end
 ---@param fraction number
 ---@param color? integer
 function primitives.setBar(bar, fraction, color)
-  local changes = {w = primitives.barFill(bar.width, fraction)}
-  if color then changes.color = color end
-  bar.fill:set(changes)
+    local changes = { w = primitives.barFill(bar.width, fraction) }
+    if color then
+        changes.color = color
+    end
+    bar.fill:set(changes)
 end
 
 --- Reposition an existing bar without recreating it.
@@ -1222,19 +1306,19 @@ end
 ---@param width integer
 ---@param fraction number Refilled against the new width.
 function primitives.placeBar(bar, x, y, width, fraction)
-  bar.width = width
-  bar.track:set({x = x, y = y, w = width})
-  bar.fill:set({x = x, y = y, w = primitives.barFill(width, fraction)})
-  if bar.marker and bar.markerFraction then
-    bar.markerX = x
-    bar.marker:set({
-      x = x + primitives.barFill(width, bar.markerFraction),
-      y = y,
-    })
-  elseif bar.marker then
-    bar.markerX = x
-    bar.marker:set({y = y})
-  end
+    bar.width = width
+    bar.track:set({ x = x, y = y, w = width })
+    bar.fill:set({ x = x, y = y, w = primitives.barFill(width, fraction) })
+    if bar.marker and bar.markerFraction then
+        bar.markerX = x
+        bar.marker:set({
+            x = x + primitives.barFill(width, bar.markerFraction),
+            y = y,
+        })
+    elseif bar.marker then
+        bar.markerX = x
+        bar.marker:set({ y = y })
+    end
 end
 
 --- Move a bar's marker to a new fraction of its track.
@@ -1244,18 +1328,20 @@ end
 ---@param bar table
 ---@param fraction? number Nil hides the marker.
 function primitives.setBarMarker(bar, fraction)
-  local marker = bar.marker
-  if not marker then return end
+    local marker = bar.marker
+    if not marker then
+        return
+    end
 
-  if type(fraction) ~= "number" then
-    lvgl.hide(marker)
-    bar.markerFraction = nil
-    return
-  end
+    if type(fraction) ~= "number" then
+        lvgl.hide(marker)
+        bar.markerFraction = nil
+        return
+    end
 
-  bar.markerFraction = fraction
-  marker:set({x = (bar.markerX or bar.x or 0) + primitives.barFill(bar.width, fraction)})
-  lvgl.show(marker)
+    bar.markerFraction = fraction
+    marker:set({ x = (bar.markerX or bar.x or 0) + primitives.barFill(bar.width, fraction) })
+    lvgl.show(marker)
 end
 
 --------------------------------------------------------------------------
@@ -1289,7 +1375,7 @@ primitives.GLYPH_GAP = 1
 ---@param state? string State name, for the tint the panel is wearing.
 ---@return integer
 function primitives.batteryBackdropRgb(theme, state)
-  return (theme.alertRgb and theme.alertRgb[state]) or theme.rgb.surface
+    return (theme.alertRgb and theme.alertRgb[state]) or theme.rgb.surface
 end
 
 --- Line heights per pixel of outline.
@@ -1324,15 +1410,16 @@ primitives.GLYPH_STROKE_WIDTH_RATIO = 6
 ---@param width integer The cell's own width.
 ---@return integer
 function primitives.batteryStroke(themeBuilder, font, width)
-  local fromFont = math.floor(
-    themeBuilder.fontHeight(font) / primitives.GLYPH_STROKE_RATIO + 0.5)
-  local fromWidth = math.floor(width / primitives.GLYPH_STROKE_WIDTH_RATIO)
+    local fromFont = math.floor(themeBuilder.fontHeight(font) / primitives.GLYPH_STROKE_RATIO + 0.5)
+    local fromWidth = math.floor(width / primitives.GLYPH_STROKE_WIDTH_RATIO)
 
-  if fromWidth < fromFont then fromFont = fromWidth end
-  if fromFont < primitives.GLYPH_STROKE_MIN then
-    return primitives.GLYPH_STROKE_MIN
-  end
-  return fromFont
+    if fromWidth < fromFont then
+        fromFont = fromWidth
+    end
+    if fromFont < primitives.GLYPH_STROKE_MIN then
+        return primitives.GLYPH_STROKE_MIN
+    end
+    return fromFont
 end
 
 --- Work out the parts of an upright battery of a given size.
@@ -1350,32 +1437,32 @@ end
 --- with the outline LVGL is actually drawing.
 ---@return table
 function primitives.batteryGeometry(x, y, width, height, border)
-  -- The terminal sits on top, a little under half the width and a twelfth of
-  -- the height, which keeps it a contact rather than a second cell at every
-  -- size this draws at.
-  local nubWidth = math.max(4, math.floor(width * 0.45 + 0.5))
-  local nubHeight = math.max(2, math.floor(height / 12 + 0.5))
-  local bodyHeight = math.max(1, height - nubHeight)
-  local inset = border + primitives.GLYPH_GAP
+    -- The terminal sits on top, a little under half the width and a twelfth of
+    -- the height, which keeps it a contact rather than a second cell at every
+    -- size this draws at.
+    local nubWidth = math.max(4, math.floor(width * 0.45 + 0.5))
+    local nubHeight = math.max(2, math.floor(height / 12 + 0.5))
+    local bodyHeight = math.max(1, height - nubHeight)
+    local inset = border + primitives.GLYPH_GAP
 
-  return {
-    x = x,
-    y = y,
-    width = width,
-    height = height,
-    border = border,
-    bodyY = y + nubHeight,
-    bodyHeight = bodyHeight,
-    nubX = x + math.floor((width - nubWidth) / 2),
-    nubY = y,
-    nubWidth = nubWidth,
-    nubHeight = nubHeight,
-    inset = inset,
-    interiorX = x + inset,
-    interiorY = y + nubHeight + inset,
-    interiorWidth = math.max(1, width - inset * 2),
-    interiorHeight = math.max(1, bodyHeight - inset * 2),
-  }
+    return {
+        x = x,
+        y = y,
+        width = width,
+        height = height,
+        border = border,
+        bodyY = y + nubHeight,
+        bodyHeight = bodyHeight,
+        nubX = x + math.floor((width - nubWidth) / 2),
+        nubY = y,
+        nubWidth = nubWidth,
+        nubHeight = nubHeight,
+        inset = inset,
+        interiorX = x + inset,
+        interiorY = y + nubHeight + inset,
+        interiorWidth = math.max(1, width - inset * 2),
+        interiorHeight = math.max(1, bodyHeight - inset * 2),
+    }
 end
 
 --- Convert a 0..1 fraction into the height of a glyph's level.
@@ -1383,7 +1470,7 @@ end
 ---@param fraction any
 ---@return integer
 function primitives.batteryFill(glyph, fraction)
-  return primitives.barFill(glyph.interiorHeight, fraction)
+    return primitives.barFill(glyph.interiorHeight, fraction)
 end
 
 --- Create an upright battery with a proportional level inside it.
@@ -1410,50 +1497,48 @@ end
 ---@param options table x, y, w, h, fraction, color, border
 ---@return table glyph
 function primitives.batteryGlyph(parent, theme, options)
-  local border = options.border or primitives.GLYPH_STROKE_MIN
-  local geometry = primitives.batteryGeometry(
-    options.x, options.y, options.w, options.h, border)
-  local color = options.color or theme.color.cyan
+    local border = options.border or primitives.GLYPH_STROKE_MIN
+    local geometry = primitives.batteryGeometry(options.x, options.y, options.w, options.h, border)
+    local color = options.color or theme.color.cyan
 
-  local shell = lvgl.rectangle(parent, {
-    x = geometry.x,
-    y = geometry.bodyY,
-    w = geometry.width,
-    h = geometry.bodyHeight,
-    color = color,
-    filled = false,
-    thickness = geometry.border,
-    rounded = 3,
-  })
+    local shell = lvgl.rectangle(parent, {
+        x = geometry.x,
+        y = geometry.bodyY,
+        w = geometry.width,
+        h = geometry.bodyHeight,
+        color = color,
+        filled = false,
+        thickness = geometry.border,
+        rounded = 3,
+    })
 
-  local nub = lvgl.rectangle(parent, {
-    x = geometry.nubX,
-    y = geometry.nubY,
-    w = geometry.nubWidth,
-    h = geometry.nubHeight,
-    color = color,
-    filled = true,
-    rounded = 1,
-  })
+    local nub = lvgl.rectangle(parent, {
+        x = geometry.nubX,
+        y = geometry.nubY,
+        w = geometry.nubWidth,
+        h = geometry.nubHeight,
+        color = color,
+        filled = true,
+        rounded = 1,
+    })
 
-  -- Grown from the bottom, because a cell drains downward.
-  local height = primitives.batteryFill(geometry, options.fraction)
-  local fill = lvgl.rectangle(parent, {
-    x = geometry.interiorX,
-    y = geometry.interiorY + geometry.interiorHeight - height,
-    w = geometry.interiorWidth,
-    h = height,
-    color = color,
-    filled = true,
-    rounded = 1,
-  })
+    -- Grown from the bottom, because a cell drains downward.
+    local height = primitives.batteryFill(geometry, options.fraction)
+    local fill = lvgl.rectangle(parent, {
+        x = geometry.interiorX,
+        y = geometry.interiorY + geometry.interiorHeight - height,
+        w = geometry.interiorWidth,
+        h = height,
+        color = color,
+        filled = true,
+        rounded = 1,
+    })
 
-  local glyph = primitives.batteryGeometry(
-    options.x, options.y, options.w, options.h, border)
-  glyph.shell = shell
-  glyph.nub = nub
-  glyph.fill = fill
-  return glyph
+    local glyph = primitives.batteryGeometry(options.x, options.y, options.w, options.h, border)
+    glyph.shell = shell
+    glyph.nub = nub
+    glyph.fill = fill
+    return glyph
 end
 
 --- Update a glyph's level and colour.
@@ -1463,17 +1548,17 @@ end
 ---@param fraction number
 ---@param color? integer
 function primitives.setBatteryGlyph(glyph, fraction, color)
-  local height = primitives.batteryFill(glyph, fraction)
-  local changes = {
-    y = glyph.interiorY + glyph.interiorHeight - height,
-    h = height,
-  }
-  if color then
-    changes.color = color
-    glyph.shell:set({color = color})
-    glyph.nub:set({color = color})
-  end
-  glyph.fill:set(changes)
+    local height = primitives.batteryFill(glyph, fraction)
+    local changes = {
+        y = glyph.interiorY + glyph.interiorHeight - height,
+        h = height,
+    }
+    if color then
+        changes.color = color
+        glyph.shell:set({ color = color })
+        glyph.nub:set({ color = color })
+    end
+    glyph.fill:set(changes)
 end
 
 --- Move and resize a glyph without rebuilding it.
@@ -1495,20 +1580,20 @@ end
 ---@param height integer
 ---@param fraction number Refilled against the new interior.
 function primitives.placeBatteryGlyph(glyph, x, y, width, height, fraction)
-  local next = primitives.batteryGeometry(x, y, width, height, glyph.border)
-  for key, value in pairs(next) do glyph[key] = value end
+    local next = primitives.batteryGeometry(x, y, width, height, glyph.border)
+    for key, value in pairs(next) do
+        glyph[key] = value
+    end
 
-  local level = primitives.batteryFill(glyph, fraction)
-  glyph.shell:set({x = glyph.x, y = glyph.bodyY,
-    w = glyph.width, h = glyph.bodyHeight})
-  glyph.nub:set({x = glyph.nubX, y = glyph.nubY,
-    w = glyph.nubWidth, h = glyph.nubHeight})
-  glyph.fill:set({
-    x = glyph.interiorX,
-    y = glyph.interiorY + glyph.interiorHeight - level,
-    w = glyph.interiorWidth,
-    h = level,
-  })
+    local level = primitives.batteryFill(glyph, fraction)
+    glyph.shell:set({ x = glyph.x, y = glyph.bodyY, w = glyph.width, h = glyph.bodyHeight })
+    glyph.nub:set({ x = glyph.nubX, y = glyph.nubY, w = glyph.nubWidth, h = glyph.nubHeight })
+    glyph.fill:set({
+        x = glyph.interiorX,
+        y = glyph.interiorY + glyph.interiorHeight - level,
+        w = glyph.interiorWidth,
+        h = level,
+    })
 end
 
 --- Show or hide a glyph, positioning it only when it is visible.
@@ -1525,19 +1610,22 @@ end
 ---@param height integer
 ---@param fraction number
 ---@param settled? boolean Visibility is known not to have moved.
-function primitives.reconcileBatteryGlyph(glyph, visible, x, y, width, height,
-    fraction, settled)
-  if not glyph then return end
+function primitives.reconcileBatteryGlyph(glyph, visible, x, y, width, height, fraction, settled)
+    if not glyph then
+        return
+    end
 
-  if visible then
-    primitives.placeBatteryGlyph(glyph, x, y, width, height, fraction)
-  end
-  if settled then return end
+    if visible then
+        primitives.placeBatteryGlyph(glyph, x, y, width, height, fraction)
+    end
+    if settled then
+        return
+    end
 
-  local change = visible and lvgl.show or lvgl.hide
-  change(glyph.shell)
-  change(glyph.nub)
-  change(glyph.fill)
+    local change = visible and lvgl.show or lvgl.hide
+    change(glyph.shell)
+    change(glyph.nub)
+    change(glyph.fill)
 end
 
 --- Create a centered bipolar bar with a persistent neutral marker.
@@ -1551,51 +1639,51 @@ end
 ---@param options table
 ---@return table bar
 function primitives.bipolarBar(parent, theme, options)
-  local vertical = options.vertical == true
-  local thickness = options.thickness or theme.spacing.barHeight
-  local width = vertical and thickness or options.w
-  local height = vertical and options.h or thickness
+    local vertical = options.vertical == true
+    local thickness = options.thickness or theme.spacing.barHeight
+    local width = vertical and thickness or options.w
+    local height = vertical and options.h or thickness
 
-  local track = lvgl.rectangle(parent, {
-    x = options.x,
-    y = options.y,
-    w = width,
-    h = height,
-    color = theme.color.track,
-    filled = true,
-    rounded = 2,
-  })
+    local track = lvgl.rectangle(parent, {
+        x = options.x,
+        y = options.y,
+        w = width,
+        h = height,
+        color = theme.color.track,
+        filled = true,
+        rounded = 2,
+    })
 
-  local fill = lvgl.rectangle(parent, {
-    x = options.x,
-    y = options.y,
-    w = width,
-    h = height,
-    color = options.color or theme.color.cyan,
-    filled = true,
-    rounded = 2,
-  })
+    local fill = lvgl.rectangle(parent, {
+        x = options.x,
+        y = options.y,
+        w = width,
+        h = height,
+        color = options.color or theme.color.cyan,
+        filled = true,
+        rounded = 2,
+    })
 
-  local bar = {
-    track = track,
-    fill = fill,
-    x = options.x,
-    y = options.y,
-    w = width,
-    h = height,
-    vertical = vertical,
-  }
+    local bar = {
+        track = track,
+        fill = fill,
+        x = options.x,
+        y = options.y,
+        w = width,
+        h = height,
+        vertical = vertical,
+    }
 
-  -- The marker is created after the fill so the fill can never hide it.
-  bar.marker = primitives.marker(parent, theme, {
-    x = vertical and options.x or (options.x + math.floor(width / 2) - 1),
-    y = vertical and (options.y + math.floor(height / 2) - 1) or options.y,
-    w = vertical and width or 2,
-    h = vertical and 2 or height,
-  })
+    -- The marker is created after the fill so the fill can never hide it.
+    bar.marker = primitives.marker(parent, theme, {
+        x = vertical and options.x or (options.x + math.floor(width / 2) - 1),
+        y = vertical and (options.y + math.floor(height / 2) - 1) or options.y,
+        w = vertical and width or 2,
+        h = vertical and 2 or height,
+    })
 
-  primitives.setBipolarBar(bar, options.fraction, options.color)
-  return bar
+    primitives.setBipolarBar(bar, options.fraction, options.color)
+    return bar
 end
 
 --- Update a bipolar bar from a signed -1..1 fraction.
@@ -1603,38 +1691,46 @@ end
 ---@param fraction any
 ---@param color? integer
 function primitives.setBipolarBar(bar, fraction, color)
-  if type(fraction) ~= "number" or fraction ~= fraction then fraction = 0 end
-  if fraction > 1 then fraction = 1 end
-  if fraction < -1 then fraction = -1 end
+    if type(fraction) ~= "number" or fraction ~= fraction then
+        fraction = 0
+    end
+    if fraction > 1 then
+        fraction = 1
+    end
+    if fraction < -1 then
+        fraction = -1
+    end
 
-  local magnitude = fraction < 0 and -fraction or fraction
-  local changes
+    local magnitude = fraction < 0 and -fraction or fraction
+    local changes
 
-  if bar.vertical then
-    local centre = math.floor(bar.h / 2)
-    -- At least one pixel, so a centred trim still reads as a bar rather than
-    -- as nothing at all.
-    local length = math.max(1, math.floor(magnitude * centre + 0.5))
-    -- Positive deflection grows upward, matching a stick's own direction.
-    changes = {
-      x = bar.x,
-      w = bar.w,
-      h = length,
-      y = bar.y + (fraction >= 0 and (centre - length) or centre),
-    }
-  else
-    local centre = math.floor(bar.w / 2)
-    local length = math.max(1, math.floor(magnitude * centre + 0.5))
-    changes = {
-      y = bar.y,
-      h = bar.h,
-      w = length,
-      x = bar.x + (fraction >= 0 and centre or (centre - length)),
-    }
-  end
+    if bar.vertical then
+        local centre = math.floor(bar.h / 2)
+        -- At least one pixel, so a centred trim still reads as a bar rather than
+        -- as nothing at all.
+        local length = math.max(1, math.floor(magnitude * centre + 0.5))
+        -- Positive deflection grows upward, matching a stick's own direction.
+        changes = {
+            x = bar.x,
+            w = bar.w,
+            h = length,
+            y = bar.y + (fraction >= 0 and (centre - length) or centre),
+        }
+    else
+        local centre = math.floor(bar.w / 2)
+        local length = math.max(1, math.floor(magnitude * centre + 0.5))
+        changes = {
+            y = bar.y,
+            h = bar.h,
+            w = length,
+            x = bar.x + (fraction >= 0 and centre or (centre - length)),
+        }
+    end
 
-  if color then changes.color = color end
-  bar.fill:set(changes)
+    if color then
+        changes.color = color
+    end
+    bar.fill:set(changes)
 end
 
 --- Reposition an existing bipolar bar without recreating it.
@@ -1645,15 +1741,15 @@ end
 ---@param height integer
 ---@param fraction any Refilled against the new geometry.
 function primitives.placeBipolarBar(bar, x, y, width, height, fraction)
-  bar.x, bar.y, bar.w, bar.h = x, y, width, height
-  bar.track:set({x = x, y = y, w = width, h = height})
-  bar.marker:set({
-    x = bar.vertical and x or (x + math.floor(width / 2) - 1),
-    y = bar.vertical and (y + math.floor(height / 2) - 1) or y,
-    w = bar.vertical and width or 2,
-    h = bar.vertical and 2 or height,
-  })
-  primitives.setBipolarBar(bar, fraction)
+    bar.x, bar.y, bar.w, bar.h = x, y, width, height
+    bar.track:set({ x = x, y = y, w = width, h = height })
+    bar.marker:set({
+        x = bar.vertical and x or (x + math.floor(width / 2) - 1),
+        y = bar.vertical and (y + math.floor(height / 2) - 1) or y,
+        w = bar.vertical and width or 2,
+        h = bar.vertical and 2 or height,
+    })
+    primitives.setBipolarBar(bar, fraction)
 end
 
 --- Create a radial arc gauge with a background track.
@@ -1670,31 +1766,31 @@ end
 ---@param options table
 ---@return table radial
 function primitives.radial(parent, theme, options)
-  local startAngle = options.startAngle or 135
-  local sweep = options.sweep or 270
+    local startAngle = options.startAngle or 135
+    local sweep = options.sweep or 270
 
-  local arc = lvgl.arc(parent, {
-    x = options.x,
-    y = options.y,
-    radius = options.radius,
-    thickness = options.thickness or 6,
-    color = options.color or theme.color.cyan,
-    startAngle = startAngle,
-    endAngle = startAngle + primitives.arcSweep(sweep, options.fraction),
-    bgColor = theme.color.track,
-    bgOpacity = 255,
-    bgStartAngle = startAngle,
-    rounded = true,
-  })
+    local arc = lvgl.arc(parent, {
+        x = options.x,
+        y = options.y,
+        radius = options.radius,
+        thickness = options.thickness or 6,
+        color = options.color or theme.color.cyan,
+        startAngle = startAngle,
+        endAngle = startAngle + primitives.arcSweep(sweep, options.fraction),
+        bgColor = theme.color.track,
+        bgOpacity = 255,
+        bgStartAngle = startAngle,
+        rounded = true,
+    })
 
-  return {
-    arc = arc,
-    startAngle = startAngle,
-    sweep = sweep,
-    centreX = options.x,
-    centreY = options.y,
-    radius = options.radius,
-  }
+    return {
+        arc = arc,
+        startAngle = startAngle,
+        sweep = sweep,
+        centreX = options.x,
+        centreY = options.y,
+        radius = options.radius,
+    }
 end
 
 --- Reposition a radial gauge, keeping centre coordinates in one place.
@@ -1703,10 +1799,10 @@ end
 ---@param centreY integer
 ---@param radius integer
 function primitives.placeRadial(radial, centreX, centreY, radius)
-  radial.centreX = centreX
-  radial.centreY = centreY
-  radial.radius = radius
-  setRound(radial.arc, centreX, centreY, {radius = radius})
+    radial.centreX = centreX
+    radial.centreY = centreY
+    radial.radius = radius
+    setRound(radial.arc, centreX, centreY, { radius = radius })
 end
 
 --- Convert a 0..1 fraction into arc degrees.
@@ -1714,11 +1810,17 @@ end
 ---@param fraction any
 ---@return integer
 function primitives.arcSweep(sweep, fraction)
-  if type(fraction) ~= "number" or fraction ~= fraction then return 0 end
-  if fraction < 0 then fraction = 0 end
-  if fraction > 1 then fraction = 1 end
+    if type(fraction) ~= "number" or fraction ~= fraction then
+        return 0
+    end
+    if fraction < 0 then
+        fraction = 0
+    end
+    if fraction > 1 then
+        fraction = 1
+    end
 
-  return math.floor(sweep * fraction + 0.5)
+    return math.floor(sweep * fraction + 0.5)
 end
 
 --- Update a radial gauge's swept angle and color.
@@ -1726,11 +1828,13 @@ end
 ---@param fraction number
 ---@param color? integer
 function primitives.setRadial(radial, fraction, color)
-  local changes = {
-    endAngle = radial.startAngle + primitives.arcSweep(radial.sweep, fraction),
-  }
-  if color then changes.color = color end
-  setRound(radial.arc, radial.centreX, radial.centreY, changes)
+    local changes = {
+        endAngle = radial.startAngle + primitives.arcSweep(radial.sweep, fraction),
+    }
+    if color then
+        changes.color = color
+    end
+    setRound(radial.arc, radial.centreX, radial.centreY, changes)
 end
 
 --- Angular width of the compass pointer, in degrees.
@@ -1745,7 +1849,7 @@ primitives.POINTER_SWEEP = 30
 ---@param bearing number Degrees clockwise from north.
 ---@return integer
 function primitives.arcAngle(bearing)
-  return math.floor((bearing + 270) % 360 + 0.5) % 360
+    return math.floor((bearing + 270) % 360 + 0.5) % 360
 end
 
 --- Create a north-up bearing dial.
@@ -1759,48 +1863,48 @@ end
 ---@param options table
 ---@return table compass
 function primitives.compass(parent, theme, options)
-  local radius = options.radius
-  local thickness = options.thickness or 6
+    local radius = options.radius
+    local thickness = options.thickness or 6
 
-  local ring = lvgl.arc(parent, {
-    x = options.x,
-    y = options.y,
-    radius = radius,
-    thickness = thickness,
-    color = options.color or theme.color.cyan,
-    -- The pointer is the foreground arc and starts with no length, so a dial
-    -- without a bearing shows a ring and nothing resembling a direction.
-    -- Opacity is deliberately not used to hide it: the compass ring did not
-    -- render on a radio while the identically shaped radial did, and passing
-    -- `opacity` was the only difference between them.
-    startAngle = 0,
-    endAngle = 0,
-    bgColor = theme.color.textFaint,
-    bgOpacity = 255,
-    bgStartAngle = 0,
-    rounded = true,
-  })
+    local ring = lvgl.arc(parent, {
+        x = options.x,
+        y = options.y,
+        radius = radius,
+        thickness = thickness,
+        color = options.color or theme.color.cyan,
+        -- The pointer is the foreground arc and starts with no length, so a dial
+        -- without a bearing shows a ring and nothing resembling a direction.
+        -- Opacity is deliberately not used to hide it: the compass ring did not
+        -- render on a radio while the identically shaped radial did, and passing
+        -- `opacity` was the only difference between them.
+        startAngle = 0,
+        endAngle = 0,
+        bgColor = theme.color.textFaint,
+        bgOpacity = 255,
+        bgStartAngle = 0,
+        rounded = true,
+    })
 
-  local compass = {
-    ring = ring,
-    centreX = options.x,
-    centreY = options.y,
-    radius = radius,
-    thickness = thickness,
-  }
+    local compass = {
+        ring = ring,
+        centreX = options.x,
+        centreY = options.y,
+        radius = radius,
+        thickness = thickness,
+    }
 
-  -- Drawn inside the ring rather than outside it, so the dial's footprint is
-  -- exactly the arc's own bounds and the tick cannot be hidden by the pointer.
-  compass.north = primitives.marker(parent, theme, {
-    x = options.x - 1,
-    y = options.y - radius + thickness,
-    w = 2,
-    h = math.max(3, math.floor(radius / 4)),
-    color = theme.color.textMuted,
-  })
+    -- Drawn inside the ring rather than outside it, so the dial's footprint is
+    -- exactly the arc's own bounds and the tick cannot be hidden by the pointer.
+    compass.north = primitives.marker(parent, theme, {
+        x = options.x - 1,
+        y = options.y - radius + thickness,
+        w = 2,
+        h = math.max(3, math.floor(radius / 4)),
+        color = theme.color.textMuted,
+    })
 
-  primitives.setCompass(compass, options.bearing, options.color)
-  return compass
+    primitives.setCompass(compass, options.bearing, options.color)
+    return compass
 end
 
 --- Point a compass at a bearing, or at nothing when there is none.
@@ -1810,24 +1914,26 @@ end
 ---@param bearing any Degrees clockwise from north.
 ---@param color? integer
 function primitives.setCompass(compass, bearing, color)
-  local changes = {}
-  if color then changes.color = color end
+    local changes = {}
+    if color then
+        changes.color = color
+    end
 
-  if type(bearing) ~= "number" or bearing ~= bearing then
-    -- A zero length arc draws nothing, which hides the pointer without
-    -- touching opacity.
-    changes.startAngle = 0
-    changes.endAngle = 0
-    compass.bearing = nil
-  else
-    local half = math.floor(primitives.POINTER_SWEEP / 2)
-    local centre = primitives.arcAngle(bearing)
-    changes.startAngle = (centre - half) % 360
-    changes.endAngle = (centre + half) % 360
-    compass.bearing = bearing
-  end
+    if type(bearing) ~= "number" or bearing ~= bearing then
+        -- A zero length arc draws nothing, which hides the pointer without
+        -- touching opacity.
+        changes.startAngle = 0
+        changes.endAngle = 0
+        compass.bearing = nil
+    else
+        local half = math.floor(primitives.POINTER_SWEEP / 2)
+        local centre = primitives.arcAngle(bearing)
+        changes.startAngle = (centre - half) % 360
+        changes.endAngle = (centre + half) % 360
+        compass.bearing = bearing
+    end
 
-  setRound(compass.ring, compass.centreX, compass.centreY, changes)
+    setRound(compass.ring, compass.centreX, compass.centreY, changes)
 end
 
 --- Reposition a compass without recreating it.
@@ -1836,17 +1942,17 @@ end
 ---@param centreY integer
 ---@param radius integer
 function primitives.placeCompass(compass, centreX, centreY, radius)
-  compass.centreX = centreX
-  compass.centreY = centreY
-  compass.radius = radius
+    compass.centreX = centreX
+    compass.centreY = centreY
+    compass.radius = radius
 
-  setRound(compass.ring, centreX, centreY, {radius = radius})
+    setRound(compass.ring, centreX, centreY, { radius = radius })
 
-  compass.north:set({
-    x = centreX - 1,
-    y = centreY - radius + compass.thickness,
-    h = math.max(3, math.floor(radius / 4)),
-  })
+    compass.north:set({
+        x = centreX - 1,
+        y = centreY - radius + compass.thickness,
+        h = math.max(3, math.floor(radius / 4)),
+    })
 end
 
 --- Create the short state badge shown when color alone is insufficient.
@@ -1855,16 +1961,18 @@ end
 ---@param options table
 ---@return any
 function primitives.badge(parent, theme, options)
-  local font = options.font
-  return lvgl.label(parent, {
-    x = options.x,
-    y = options.y,
-    w = options.w,
-    h = 0,
-    text = tostring(options.text or ""),
-    color = options.color or theme.color.amber,
-    font = function() return font end,
-  })
+    local font = options.font
+    return lvgl.label(parent, {
+        x = options.x,
+        y = options.y,
+        w = options.w,
+        h = 0,
+        text = tostring(options.text or ""),
+        color = options.color or theme.color.amber,
+        font = function()
+            return font
+        end,
+    })
 end
 
 --- Create an image loaded from an SD-card path.
@@ -1876,14 +1984,14 @@ end
 ---@param options table
 ---@return any
 function primitives.image(parent, options)
-  return lvgl.image(parent, {
-    x = options.x,
-    y = options.y,
-    w = options.w,
-    h = options.h,
-    file = tostring(options.file or ""),
-    fill = options.fill == true,
-  })
+    return lvgl.image(parent, {
+        x = options.x,
+        y = options.y,
+        w = options.w,
+        h = options.h,
+        file = tostring(options.file or ""),
+        fill = options.fill == true,
+    })
 end
 
 --- Convert a value into a signed -1..1 fraction of a bipolar range.
@@ -1894,15 +2002,23 @@ end
 ---@param high any
 ---@return number
 function primitives.signedFraction(value, low, high)
-  if type(value) ~= "number" or value ~= value then return 0 end
+    if type(value) ~= "number" or value ~= value then
+        return 0
+    end
 
-  local bound = value >= 0 and high or low
-  if type(bound) ~= "number" or bound == 0 then return 0 end
+    local bound = value >= 0 and high or low
+    if type(bound) ~= "number" or bound == 0 then
+        return 0
+    end
 
-  local fraction = value / (bound < 0 and -bound or bound)
-  if fraction > 1 then return 1 end
-  if fraction < -1 then return -1 end
-  return fraction
+    local fraction = value / (bound < 0 and -bound or bound)
+    if fraction > 1 then
+        return 1
+    end
+    if fraction < -1 then
+        return -1
+    end
+    return fraction
 end
 
 return primitives

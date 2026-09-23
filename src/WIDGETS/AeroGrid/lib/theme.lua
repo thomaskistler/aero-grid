@@ -47,7 +47,7 @@ local riderDepth
 ---@param severity "info"|"warning"
 ---@param text string
 function theme.notice(notices, severity, text)
-  notices[#notices + 1] = {severity = severity, text = text}
+    notices[#notices + 1] = { severity = severity, text = text }
 end
 
 --- The designed instrument palette from the project specification.
@@ -65,29 +65,29 @@ end
 --- drawn on top of it, and it would otherwise have fallen through the 2.0
 --- floor the moment the panel was lifted.
 local MODERN = {
-  canvas = 0x0A0C0E,
-  surface = 0x212830,
-  surfaceRaised = 0x2E3841,
-  border = 0x3A434B,
-  track = 0x545F6A,
-  text = 0xF4F6F7,
-  textMuted = 0xA7B0B6,
-  textFaint = 0x69737A,
-  cyan = 0x70D6F3,
-  green = 0x55D990,
-  amber = 0xF2B84B,
-  orange = 0xFF762E,
-  critical = 0xF05252,
+    canvas = 0x0A0C0E,
+    surface = 0x212830,
+    surfaceRaised = 0x2E3841,
+    border = 0x3A434B,
+    track = 0x545F6A,
+    text = 0xF4F6F7,
+    textMuted = 0xA7B0B6,
+    textFaint = 0x69737A,
+    cyan = 0x70D6F3,
+    green = 0x55D990,
+    amber = 0xF2B84B,
+    orange = 0xFF762E,
+    critical = 0xF05252,
 }
 
-theme.MODES = {modern = true, edgetx = true, custom = true}
+theme.MODES = { modern = true, edgetx = true, custom = true }
 
 --- Accent tokens a component may legitimately select.
 --- Warning and freshness states override these, so `critical` is not selectable.
-theme.ACCENTS = {cyan = true, green = true, amber = true, orange = true}
+theme.ACCENTS = { cyan = true, green = true, amber = true, orange = true }
 
 --- Custom mode may only override this small set of global roles.
-theme.CUSTOM_KEYS = {canvas = true, surface = true, text = true, accent = true}
+theme.CUSTOM_KEYS = { canvas = true, surface = true, text = true, accent = true }
 
 --- Shared spacing baseline at 480 x 272, subject to hardware verification.
 ---
@@ -98,28 +98,28 @@ theme.CUSTOM_KEYS = {canvas = true, surface = true, text = true, accent = true}
 --- inset is the corner radius, which is where the panel's left edge becomes
 --- straight, so the pill only ever runs alongside a straight edge.
 local SPACING = {
-  outerMargin = 4,
-  gutter = 4,
-  padding = 8,
-  --- Horizontal padding on a panel too short for the standard vertical rhythm.
-  --- It is not smaller than the standard padding, despite the name of the case
-  --- it serves: the accent stripe occupies the left edge, and content starting
-  --- at the stripe's own right edge reads as crowded against it. The floor is
-  --- `accentWidth + accentGap`, which a test pins at every span.
-  paddingTight = 8,
-  --- Right-hand margin. Deliberately smaller than the left padding: the left
-  --- exists to clear the accent, and the right has nothing to clear. Making
-  --- them equal spent four pixels of every panel on symmetry, which on a
-  --- single cell is the difference between a four-character header label and
-  --- a three-character one.
-  paddingRight = 4,
-  paddingCompact = 6,
-  radius = 8,
-  accentWidth = 4,
-  --- Clear space between the accent stripe and the content beside it.
-  accentGap = 4,
-  barHeight = 4,
-  borderFocus = 2,
+    outerMargin = 4,
+    gutter = 4,
+    padding = 8,
+    --- Horizontal padding on a panel too short for the standard vertical rhythm.
+    --- It is not smaller than the standard padding, despite the name of the case
+    --- it serves: the accent stripe occupies the left edge, and content starting
+    --- at the stripe's own right edge reads as crowded against it. The floor is
+    --- `accentWidth + accentGap`, which a test pins at every span.
+    paddingTight = 8,
+    --- Right-hand margin. Deliberately smaller than the left padding: the left
+    --- exists to clear the accent, and the right has nothing to clear. Making
+    --- them equal spent four pixels of every panel on symmetry, which on a
+    --- single cell is the difference between a four-character header label and
+    --- a three-character one.
+    paddingRight = 4,
+    paddingCompact = 6,
+    radius = 8,
+    accentWidth = 4,
+    --- Clear space between the accent stripe and the content beside it.
+    accentGap = 4,
+    barHeight = 4,
+    borderFocus = 2,
 }
 
 --- Minimum acceptable contrast ratio between text and its surface.
@@ -158,9 +158,7 @@ local MIN_RAISE_CONTRAST = 1.20
 ---@return integer green
 ---@return integer blue
 local function channels(rgb)
-  return math.floor(rgb / 65536) % 256,
-    math.floor(rgb / 256) % 256,
-    rgb % 256
+    return math.floor(rgb / 65536) % 256, math.floor(rgb / 256) % 256, rgb % 256
 end
 
 --- Combine channels into a 24-bit color, clamping each to the display range.
@@ -169,13 +167,17 @@ end
 ---@param blue number
 ---@return integer
 local function pack(red, green, blue)
-  local function clamp(value)
-    value = math.floor(value + 0.5)
-    if value < 0 then return 0 end
-    if value > 255 then return 255 end
-    return value
-  end
-  return clamp(red) * 65536 + clamp(green) * 256 + clamp(blue)
+    local function clamp(value)
+        value = math.floor(value + 0.5)
+        if value < 0 then
+            return 0
+        end
+        if value > 255 then
+            return 255
+        end
+        return value
+    end
+    return clamp(red) * 65536 + clamp(green) * 256 + clamp(blue)
 end
 
 --- Expand an EdgeTX RGB565 value into a 24-bit color.
@@ -183,25 +185,27 @@ end
 ---@param value integer
 ---@return integer
 function theme.fromRgb565(value)
-  local red = math.floor(value / 2048) % 32
-  local green = math.floor(value / 32) % 64
-  local blue = value % 32
+    local red = math.floor(value / 2048) % 32
+    local green = math.floor(value / 32) % 64
+    local blue = value % 32
 
-  return pack(red * 255 / 31, green * 255 / 63, blue * 255 / 31)
+    return pack(red * 255 / 31, green * 255 / 63, blue * 255 / 31)
 end
 
 --- Relative luminance using the standard sRGB transfer function.
 ---@param rgb integer
 ---@return number
 local function luminance(rgb)
-  local function channel(value)
-    value = value / 255
-    if value <= 0.03928 then return value / 12.92 end
-    return ((value + 0.055) / 1.055) ^ 2.4
-  end
+    local function channel(value)
+        value = value / 255
+        if value <= 0.03928 then
+            return value / 12.92
+        end
+        return ((value + 0.055) / 1.055) ^ 2.4
+    end
 
-  local red, green, blue = channels(rgb)
-  return 0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue)
+    local red, green, blue = channels(rgb)
+    return 0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue)
 end
 
 --- Contrast ratio between two colors, from 1 (identical) to 21.
@@ -209,9 +213,11 @@ end
 ---@param second integer
 ---@return number
 function theme.contrast(first, second)
-  local a, b = luminance(first), luminance(second)
-  if a < b then a, b = b, a end
-  return (a + 0.05) / (b + 0.05)
+    local a, b = luminance(first), luminance(second)
+    if a < b then
+        a, b = b, a
+    end
+    return (a + 0.05) / (b + 0.05)
 end
 
 --- Move a color toward white or black by a fraction.
@@ -219,24 +225,18 @@ end
 ---@param amount number Positive lightens, negative darkens.
 ---@return integer
 function theme.shade(rgb, amount)
-  local red, green, blue = channels(rgb)
-  local target = amount >= 0 and 255 or 0
-  local ratio = amount >= 0 and amount or -amount
+    local red, green, blue = channels(rgb)
+    local target = amount >= 0 and 255 or 0
+    local ratio = amount >= 0 and amount or -amount
 
-  return pack(
-    red + (target - red) * ratio,
-    green + (target - green) * ratio,
-    blue + (target - blue) * ratio)
+    return pack(red + (target - red) * ratio, green + (target - green) * ratio, blue + (target - blue) * ratio)
 end
 
 --- Report whether a value is a usable 24-bit color.
 ---@param value any
 ---@return boolean
 local function isColor(value)
-  return type(value) == "number"
-    and value == math.floor(value)
-    and value >= 0
-    and value <= 0xFFFFFF
+    return type(value) == "number" and value == math.floor(value) and value >= 0 and value <= 0xFFFFFF
 end
 
 --- Choose whichever of two candidates contrasts better with a background.
@@ -245,10 +245,10 @@ end
 ---@param second integer
 ---@return integer
 local function betterContrast(background, first, second)
-  if theme.contrast(background, first) >= theme.contrast(background, second) then
-    return first
-  end
-  return second
+    if theme.contrast(background, first) >= theme.contrast(background, second) then
+        return first
+    end
+    return second
 end
 
 --- Force a foreground token to a readable contrast against its surface.
@@ -260,15 +260,17 @@ end
 ---@param minimum number
 ---@param notices table[]
 local function correctContrast(tokens, key, background, minimum, notices)
-  if theme.contrast(background, tokens[key]) >= minimum then return end
+    if theme.contrast(background, tokens[key]) >= minimum then
+        return
+    end
 
-  local candidate = betterContrast(background, MODERN[key], theme.shade(background, 0.85))
-  if theme.contrast(background, candidate) < minimum then
-    candidate = betterContrast(background, 0xFFFFFF, 0x000000)
-  end
+    local candidate = betterContrast(background, MODERN[key], theme.shade(background, 0.85))
+    if theme.contrast(background, candidate) < minimum then
+        candidate = betterContrast(background, 0xFFFFFF, 0x000000)
+    end
 
-  tokens[key] = candidate
-  theme.notice(notices, "info", key .. " was corrected for contrast")
+    tokens[key] = candidate
+    theme.notice(notices, "info", key .. " was corrected for contrast")
 end
 
 --- Find a color separated from a base by at least a minimum contrast ratio.
@@ -277,15 +279,19 @@ end
 ---@param minimum number
 ---@return integer
 local function separated(base, minimum)
-  for _, amount in ipairs({0.08, 0.16, 0.24, 0.36, 0.5, 0.7}) do
-    local lighter = theme.shade(base, amount)
-    if theme.contrast(base, lighter) >= minimum then return lighter end
+    for _, amount in ipairs({ 0.08, 0.16, 0.24, 0.36, 0.5, 0.7 }) do
+        local lighter = theme.shade(base, amount)
+        if theme.contrast(base, lighter) >= minimum then
+            return lighter
+        end
 
-    local darker = theme.shade(base, -amount)
-    if theme.contrast(base, darker) >= minimum then return darker end
-  end
+        local darker = theme.shade(base, -amount)
+        if theme.contrast(base, darker) >= minimum then
+            return darker
+        end
+    end
 
-  return betterContrast(base, 0xFFFFFF, 0x000000)
+    return betterContrast(base, 0xFFFFFF, 0x000000)
 end
 
 --- Push a semantic color until it is legible on a background, keeping its hue.
@@ -295,21 +301,23 @@ end
 ---@param minimum number
 ---@param notices table[]
 local function correctAccent(tokens, key, background, minimum, notices)
-  if theme.contrast(background, tokens[key]) >= minimum then return end
-
-  -- Lighten on dark surfaces and darken on light ones so the hue survives.
-  local direction = luminance(background) < 0.18 and 1 or -1
-  for _, amount in ipairs({0.2, 0.35, 0.5, 0.65, 0.8}) do
-    local candidate = theme.shade(tokens[key], direction * amount)
-    if theme.contrast(background, candidate) >= minimum then
-      tokens[key] = candidate
-      theme.notice(notices, "info", key .. " was corrected for contrast")
-      return
+    if theme.contrast(background, tokens[key]) >= minimum then
+        return
     end
-  end
 
-  tokens[key] = betterContrast(background, 0xFFFFFF, 0x000000)
-  theme.notice(notices, "info", key .. " was replaced for contrast")
+    -- Lighten on dark surfaces and darken on light ones so the hue survives.
+    local direction = luminance(background) < 0.18 and 1 or -1
+    for _, amount in ipairs({ 0.2, 0.35, 0.5, 0.65, 0.8 }) do
+        local candidate = theme.shade(tokens[key], direction * amount)
+        if theme.contrast(background, candidate) >= minimum then
+            tokens[key] = candidate
+            theme.notice(notices, "info", key .. " was corrected for contrast")
+            return
+        end
+    end
+
+    tokens[key] = betterContrast(background, 0xFFFFFF, 0x000000)
+    theme.notice(notices, "info", key .. " was replaced for contrast")
 end
 
 --- Guarantee that a derived palette is structurally visible and legible.
@@ -317,70 +325,70 @@ end
 ---@param tokens table
 ---@param notices table[]
 local function enforceLegibility(tokens, notices)
-  -- Structural separation: panels, elevation, and borders must be visible.
-  if theme.contrast(tokens.canvas, tokens.surface) < MIN_ELEVATION_CONTRAST then
-    tokens.surface = separated(tokens.canvas, MIN_ELEVATION_CONTRAST)
-    theme.notice(notices, "info", "surface was lifted to elevate panels")
-  end
-  tokens.surfaceRaised = separated(tokens.surface, MIN_RAISE_CONTRAST)
-  if theme.contrast(tokens.surface, tokens.border) < 1.25 then
-    tokens.border = separated(tokens.surface, 1.25)
-  end
-  if theme.contrast(tokens.surface, tokens.track) < MIN_TRACK_CONTRAST then
-    tokens.track = separated(tokens.surface, MIN_TRACK_CONTRAST)
-  end
-
-  correctContrast(tokens, "text", tokens.surface, MIN_TEXT_CONTRAST, notices)
-  correctContrast(tokens, "textMuted", tokens.surface, MIN_MUTED_CONTRAST, notices)
-  correctContrast(tokens, "textFaint", tokens.surface, MIN_FAINT_CONTRAST, notices)
-
-  -- Decorative accents may be nudged to stay visible on the panel surface.
-  for _, key in ipairs({"cyan", "green", "amber", "orange"}) do
-    correctAccent(tokens, key, tokens.surface, MIN_ACCENT_CONTRAST, notices)
-  end
-
-  -- Critical red is never adjusted: an alarm must look the same on every
-  -- radio. If the surface would swallow it, shift the surface's lightness
-  -- instead, keeping its hue, since surface is a token we may choose.
-  if theme.contrast(tokens.surface, tokens.critical) < MIN_ACCENT_CONTRAST then
-    local replacement = betterContrast(tokens.critical, 0x000000, 0xFFFFFF)
-
-    for _, amount in ipairs({0.1, 0.2, 0.3, 0.45, 0.6, 0.75, 0.9}) do
-      local darker = theme.shade(tokens.surface, -amount)
-      if theme.contrast(darker, tokens.critical) >= MIN_ACCENT_CONTRAST then
-        replacement = darker
-        break
-      end
-      local lighter = theme.shade(tokens.surface, amount)
-      if theme.contrast(lighter, tokens.critical) >= MIN_ACCENT_CONTRAST then
-        replacement = lighter
-        break
-      end
-    end
-
-    tokens.surface = replacement
-    theme.notice(notices, "info", "surface was shifted to keep critical visible")
-
-    -- The surface moved, so everything measured against it must be rechecked.
-    tokens.surfaceRaised = separated(tokens.surface, MIN_RAISE_CONTRAST)
-    tokens.border = separated(tokens.surface, 1.25)
-    tokens.track = separated(tokens.surface, MIN_TRACK_CONTRAST)
-    -- Elevation included. The shift above answers only to critical red, so it
-    -- can land next to the canvas and leave the panels invisible against the
-    -- screen; the canvas moves rather than the surface, because moving the
-    -- surface back is exactly what this branch just refused to do, and
-    -- nothing but elevation is measured against the canvas.
+    -- Structural separation: panels, elevation, and borders must be visible.
     if theme.contrast(tokens.canvas, tokens.surface) < MIN_ELEVATION_CONTRAST then
-      tokens.canvas = separated(tokens.surface, MIN_ELEVATION_CONTRAST)
-      theme.notice(notices, "info", "canvas was moved to keep panels elevated")
+        tokens.surface = separated(tokens.canvas, MIN_ELEVATION_CONTRAST)
+        theme.notice(notices, "info", "surface was lifted to elevate panels")
     end
+    tokens.surfaceRaised = separated(tokens.surface, MIN_RAISE_CONTRAST)
+    if theme.contrast(tokens.surface, tokens.border) < 1.25 then
+        tokens.border = separated(tokens.surface, 1.25)
+    end
+    if theme.contrast(tokens.surface, tokens.track) < MIN_TRACK_CONTRAST then
+        tokens.track = separated(tokens.surface, MIN_TRACK_CONTRAST)
+    end
+
     correctContrast(tokens, "text", tokens.surface, MIN_TEXT_CONTRAST, notices)
     correctContrast(tokens, "textMuted", tokens.surface, MIN_MUTED_CONTRAST, notices)
     correctContrast(tokens, "textFaint", tokens.surface, MIN_FAINT_CONTRAST, notices)
-    for _, key in ipairs({"cyan", "green", "amber", "orange"}) do
-      correctAccent(tokens, key, tokens.surface, MIN_ACCENT_CONTRAST, notices)
+
+    -- Decorative accents may be nudged to stay visible on the panel surface.
+    for _, key in ipairs({ "cyan", "green", "amber", "orange" }) do
+        correctAccent(tokens, key, tokens.surface, MIN_ACCENT_CONTRAST, notices)
     end
-  end
+
+    -- Critical red is never adjusted: an alarm must look the same on every
+    -- radio. If the surface would swallow it, shift the surface's lightness
+    -- instead, keeping its hue, since surface is a token we may choose.
+    if theme.contrast(tokens.surface, tokens.critical) < MIN_ACCENT_CONTRAST then
+        local replacement = betterContrast(tokens.critical, 0x000000, 0xFFFFFF)
+
+        for _, amount in ipairs({ 0.1, 0.2, 0.3, 0.45, 0.6, 0.75, 0.9 }) do
+            local darker = theme.shade(tokens.surface, -amount)
+            if theme.contrast(darker, tokens.critical) >= MIN_ACCENT_CONTRAST then
+                replacement = darker
+                break
+            end
+            local lighter = theme.shade(tokens.surface, amount)
+            if theme.contrast(lighter, tokens.critical) >= MIN_ACCENT_CONTRAST then
+                replacement = lighter
+                break
+            end
+        end
+
+        tokens.surface = replacement
+        theme.notice(notices, "info", "surface was shifted to keep critical visible")
+
+        -- The surface moved, so everything measured against it must be rechecked.
+        tokens.surfaceRaised = separated(tokens.surface, MIN_RAISE_CONTRAST)
+        tokens.border = separated(tokens.surface, 1.25)
+        tokens.track = separated(tokens.surface, MIN_TRACK_CONTRAST)
+        -- Elevation included. The shift above answers only to critical red, so it
+        -- can land next to the canvas and leave the panels invisible against the
+        -- screen; the canvas moves rather than the surface, because moving the
+        -- surface back is exactly what this branch just refused to do, and
+        -- nothing but elevation is measured against the canvas.
+        if theme.contrast(tokens.canvas, tokens.surface) < MIN_ELEVATION_CONTRAST then
+            tokens.canvas = separated(tokens.surface, MIN_ELEVATION_CONTRAST)
+            theme.notice(notices, "info", "canvas was moved to keep panels elevated")
+        end
+        correctContrast(tokens, "text", tokens.surface, MIN_TEXT_CONTRAST, notices)
+        correctContrast(tokens, "textMuted", tokens.surface, MIN_MUTED_CONTRAST, notices)
+        correctContrast(tokens, "textFaint", tokens.surface, MIN_FAINT_CONTRAST, notices)
+        for _, key in ipairs({ "cyan", "green", "amber", "orange" }) do
+            correctAccent(tokens, key, tokens.surface, MIN_ACCENT_CONTRAST, notices)
+        end
+    end
 end
 
 --- Blend two colours, channel by channel.
@@ -389,11 +397,10 @@ end
 ---@param fraction number Amount of `other` to take.
 ---@return integer
 local function blend(base, other, fraction)
-  local br, bg, bb = channels(base)
-  local orr, og, ob = channels(other)
-  local keep = 1 - fraction
-  return pack(br * keep + orr * fraction, bg * keep + og * fraction,
-    bb * keep + ob * fraction)
+    local br, bg, bb = channels(base)
+    local orr, og, ob = channels(other)
+    local keep = 1 - fraction
+    return pack(br * keep + orr * fraction, bg * keep + og * fraction, bb * keep + ob * fraction)
 end
 
 --- Derive the tinted panel surface an alert state draws on.
@@ -420,60 +427,64 @@ end
 ---@param accent integer Accent this state draws, which the tint is mixed from.
 ---@return integer? surface Nil when no tint satisfies the guarantees.
 function theme.alertSurface(tokens, accent)
-  local surface = tokens.surface
+    local surface = tokens.surface
 
-  -- Each guarantee is a contrast ratio against a colour that does not change
-  -- while the search runs, so their luminances are taken once rather than for
-  -- every candidate. `theme.contrast` recomputes both sides on each call and
-  -- luminance is three floating point powers, so measuring the naive way cost
-  -- over seven hundred of them and put the loader's theme step 1600
-  -- instructions up, on a budget of 20000. Measured, not guessed at.
-  local surfaceLum = luminance(surface)
-  local canvasLum = luminance(tokens.canvas)
-  local textLum = luminance(tokens.text)
-  local mutedLum = luminance(tokens.textMuted)
-  local faintLum = luminance(tokens.textFaint)
-  local accentLum = luminance(accent)
+    -- Each guarantee is a contrast ratio against a colour that does not change
+    -- while the search runs, so their luminances are taken once rather than for
+    -- every candidate. `theme.contrast` recomputes both sides on each call and
+    -- luminance is three floating point powers, so measuring the naive way cost
+    -- over seven hundred of them and put the loader's theme step 1600
+    -- instructions up, on a budget of 20000. Measured, not guessed at.
+    local surfaceLum = luminance(surface)
+    local canvasLum = luminance(tokens.canvas)
+    local textLum = luminance(tokens.text)
+    local mutedLum = luminance(tokens.textMuted)
+    local faintLum = luminance(tokens.textFaint)
+    local accentLum = luminance(accent)
 
-  --- Contrast between two already-measured luminances.
-  local function ratio(a, b)
-    if a < b then a, b = b, a end
-    return (a + 0.05) / (b + 0.05)
-  end
-
-  -- Hue first, then lightness, and both directions of lightness.
-  --
-  -- Mixing alone is only enough on a dark surface. Modern's panel is very
-  -- dark, so taking it toward a bright accent lightens it and every guarantee
-  -- survives. A palette derived from a radio whose own surface is mid grey
-  -- behaves oppositely: lightening closes the gap to the muted and faint text
-  -- drawn on it, and the EdgeTX default leaves faint at 1.99 against a floor
-  -- of 1.8 before anything is tinted at all, so there is no room to lighten.
-  -- Darkening the same mix keeps the hue and opens that gap instead.
-  for _, fraction in ipairs({0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40}) do
-    local mixed = blend(surface, accent, fraction)
-
-    for _, amount in ipairs({0, -0.2, -0.35, -0.5, 0.15}) do
-      local candidate = amount == 0 and mixed or theme.shade(mixed, amount)
-      local candidateLum = luminance(candidate)
-
-      -- Cheapest to fail first: a candidate too close to the resting surface
-      -- is the common rejection, and testing it first skips the rest.
-      if ratio(surfaceLum, candidateLum) >= MIN_TINT_SEPARATION
-          and ratio(canvasLum, candidateLum) >= MIN_ELEVATION_CONTRAST
-          and ratio(candidateLum, faintLum) >= MIN_FAINT_CONTRAST
-          and ratio(candidateLum, accentLum) >= MIN_ACCENT_CONTRAST
-          and ratio(candidateLum, mutedLum) >= MIN_MUTED_CONTRAST
-          and ratio(candidateLum, textLum) >= MIN_TEXT_CONTRAST then
-        return candidate
-      end
+    --- Contrast between two already-measured luminances.
+    local function ratio(a, b)
+        if a < b then
+            a, b = b, a
+        end
+        return (a + 0.05) / (b + 0.05)
     end
-  end
 
-  -- Nothing satisfied every guarantee. The panel keeps its resting surface and
-  -- says so through its accent and badge alone, which is worse than a tint and
-  -- better than an illegible one.
-  return nil
+    -- Hue first, then lightness, and both directions of lightness.
+    --
+    -- Mixing alone is only enough on a dark surface. Modern's panel is very
+    -- dark, so taking it toward a bright accent lightens it and every guarantee
+    -- survives. A palette derived from a radio whose own surface is mid grey
+    -- behaves oppositely: lightening closes the gap to the muted and faint text
+    -- drawn on it, and the EdgeTX default leaves faint at 1.99 against a floor
+    -- of 1.8 before anything is tinted at all, so there is no room to lighten.
+    -- Darkening the same mix keeps the hue and opens that gap instead.
+    for _, fraction in ipairs({ 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40 }) do
+        local mixed = blend(surface, accent, fraction)
+
+        for _, amount in ipairs({ 0, -0.2, -0.35, -0.5, 0.15 }) do
+            local candidate = amount == 0 and mixed or theme.shade(mixed, amount)
+            local candidateLum = luminance(candidate)
+
+            -- Cheapest to fail first: a candidate too close to the resting surface
+            -- is the common rejection, and testing it first skips the rest.
+            if
+                ratio(surfaceLum, candidateLum) >= MIN_TINT_SEPARATION
+                and ratio(canvasLum, candidateLum) >= MIN_ELEVATION_CONTRAST
+                and ratio(candidateLum, faintLum) >= MIN_FAINT_CONTRAST
+                and ratio(candidateLum, accentLum) >= MIN_ACCENT_CONTRAST
+                and ratio(candidateLum, mutedLum) >= MIN_MUTED_CONTRAST
+                and ratio(candidateLum, textLum) >= MIN_TEXT_CONTRAST
+            then
+                return candidate
+            end
+        end
+    end
+
+    -- Nothing satisfied every guarantee. The panel keeps its resting surface and
+    -- says so through its accent and badge alone, which is worse than a tint and
+    -- better than an illegible one.
+    return nil
 end
 
 --- Read one EdgeTX theme role and widen it to 24-bit.
@@ -491,42 +502,51 @@ end
 ---@param flags integer
 ---@return integer rgb565
 local function colorValue(flags)
-  return math.floor(flags / 65536) % 65536
+    return math.floor(flags / 65536) % 65536
 end
 
 local function readRole(env, role)
-  if type(role) ~= "number" then return nil end
+    if type(role) ~= "number" then
+        return nil
+    end
 
-  local ok, value = pcall(env.getColor, role)
-  if not ok or type(value) ~= "number" then return nil end
+    local ok, value = pcall(env.getColor, role)
+    if not ok or type(value) ~= "number" then
+        return nil
+    end
 
-  return theme.fromRgb565(colorValue(value))
+    return theme.fromRgb565(colorValue(value))
 end
 
 --- Collect the EdgeTX color environment, allowing tests to inject one.
 ---@param env? table
 ---@return table? resolved
 local function resolveEnv(env)
-  env = env or {}
-  local getColor = env.getColor
-  if getColor == nil and type(lcd) == "table" then getColor = lcd.getColor end
-  if type(getColor) ~= "function" then return nil end
+    env = env or {}
+    local getColor = env.getColor
+    if getColor == nil and type(lcd) == "table" then
+        getColor = lcd.getColor
+    end
+    if type(getColor) ~= "function" then
+        return nil
+    end
 
-  local roles = env.roles or {
-    primary1 = COLOR_THEME_PRIMARY1,
-    primary2 = COLOR_THEME_PRIMARY2,
-    primary3 = COLOR_THEME_PRIMARY3,
-    secondary1 = COLOR_THEME_SECONDARY1,
-    secondary2 = COLOR_THEME_SECONDARY2,
-    secondary3 = COLOR_THEME_SECONDARY3,
-    focus = COLOR_THEME_FOCUS,
-    edit = COLOR_THEME_EDIT,
-    active = COLOR_THEME_ACTIVE,
-    warning = COLOR_THEME_WARNING,
-    disabled = COLOR_THEME_DISABLED,
-  }
+    local roles = env.roles
+        or {
+            primary1 = COLOR_THEME_PRIMARY1,
+            primary2 = COLOR_THEME_PRIMARY2,
+            primary3 = COLOR_THEME_PRIMARY3,
+            secondary1 = COLOR_THEME_SECONDARY1,
+            secondary2 = COLOR_THEME_SECONDARY2,
+            secondary3 = COLOR_THEME_SECONDARY3,
+            focus = COLOR_THEME_FOCUS,
+            edit = COLOR_THEME_EDIT,
+            active = COLOR_THEME_ACTIVE,
+            warning = COLOR_THEME_WARNING,
+            disabled = COLOR_THEME_DISABLED,
+        }
 
-  return {getColor = getColor, roles = roles}
+    return { getColor = getColor, roles = roles }
 end
 
 --- Derive dashboard tokens from the active EdgeTX theme.
@@ -536,52 +556,52 @@ end
 ---@param env? table
 ---@return table tokens
 local function deriveFromEdgeTx(notices, env)
-  local resolved = resolveEnv(env)
-  local tokens = {}
-  for key, value in pairs(MODERN) do tokens[key] = value end
-
-  if not resolved then
-    theme.notice(notices, "warning",
-      "EdgeTX colors unavailable; using Modern palette")
-    return tokens
-  end
-
-  -- Structure follows the radio; meaning does not.
-  --
-  -- EdgeTX's roles are menu chrome, and their names do not describe their
-  -- colours. In the shipped EdgeTX Default theme `ACTIVE` is yellow, `EDIT` is
-  -- green and `WARNING` is red, so mapping our accents onto them by name
-  -- scrambled every semantic on the dashboard: healthy read as caution, and a
-  -- warning was rendered in a red indistinguishable from critical. A pilot
-  -- cannot be asked to relearn what a colour means per radio theme, so the
-  -- accents stay exactly as Modern defines them and only the surfaces and text
-  -- follow the radio.
-  local roles = resolved.roles
-  local mapping = {
-    canvas = roles.secondary1,
-    surface = roles.secondary1,
-    border = roles.primary3,
-    text = roles.primary2,
-    textMuted = roles.primary3,
-    textFaint = roles.disabled,
-  }
-
-  local found = false
-  for key, role in pairs(mapping) do
-    local color = readRole(resolved, role)
-    if color then
-      tokens[key] = color
-      found = true
+    local resolved = resolveEnv(env)
+    local tokens = {}
+    for key, value in pairs(MODERN) do
+        tokens[key] = value
     end
-  end
 
-  if not found then
-    theme.notice(notices, "warning",
-      "EdgeTX theme roles unreadable; using Modern palette")
+    if not resolved then
+        theme.notice(notices, "warning", "EdgeTX colors unavailable; using Modern palette")
+        return tokens
+    end
+
+    -- Structure follows the radio; meaning does not.
+    --
+    -- EdgeTX's roles are menu chrome, and their names do not describe their
+    -- colours. In the shipped EdgeTX Default theme `ACTIVE` is yellow, `EDIT` is
+    -- green and `WARNING` is red, so mapping our accents onto them by name
+    -- scrambled every semantic on the dashboard: healthy read as caution, and a
+    -- warning was rendered in a red indistinguishable from critical. A pilot
+    -- cannot be asked to relearn what a colour means per radio theme, so the
+    -- accents stay exactly as Modern defines them and only the surfaces and text
+    -- follow the radio.
+    local roles = resolved.roles
+    local mapping = {
+        canvas = roles.secondary1,
+        surface = roles.secondary1,
+        border = roles.primary3,
+        text = roles.primary2,
+        textMuted = roles.primary3,
+        textFaint = roles.disabled,
+    }
+
+    local found = false
+    for key, role in pairs(mapping) do
+        local color = readRole(resolved, role)
+        if color then
+            tokens[key] = color
+            found = true
+        end
+    end
+
+    if not found then
+        theme.notice(notices, "warning", "EdgeTX theme roles unreadable; using Modern palette")
+        return tokens
+    end
+
     return tokens
-  end
-
-  return tokens
 end
 
 --- Apply the limited custom override set over the Modern palette.
@@ -590,33 +610,35 @@ end
 ---@return table tokens
 ---@return string accent
 local function applyCustom(overrides, warnings)
-  local tokens = {}
-  for key, value in pairs(MODERN) do tokens[key] = value end
-  local accent = "cyan"
-
-  if overrides ~= nil and type(overrides) ~= "table" then
-    warnings[#warnings + 1] = "theme overrides must be a mapping"
-    return tokens, accent
-  end
-
-  for key, value in pairs(overrides or {}) do
-    if not theme.CUSTOM_KEYS[key] then
-      warnings[#warnings + 1] = "theme override " .. tostring(key) .. " is not customizable"
-    elseif key == "accent" then
-      if theme.ACCENTS[value] then
-        accent = value
-      else
-        warnings[#warnings + 1] = "theme accent " .. tostring(value) .. " is not a semantic accent"
-      end
-    elseif isColor(value) then
-      tokens[key] = value
-    else
-      warnings[#warnings + 1] = "theme override " .. key .. " must be a 24-bit color"
+    local tokens = {}
+    for key, value in pairs(MODERN) do
+        tokens[key] = value
     end
-  end
+    local accent = "cyan"
 
-  -- Overridden surfaces can easily break the default text and accent tokens.
-  return tokens, accent
+    if overrides ~= nil and type(overrides) ~= "table" then
+        warnings[#warnings + 1] = "theme overrides must be a mapping"
+        return tokens, accent
+    end
+
+    for key, value in pairs(overrides or {}) do
+        if not theme.CUSTOM_KEYS[key] then
+            warnings[#warnings + 1] = "theme override " .. tostring(key) .. " is not customizable"
+        elseif key == "accent" then
+            if theme.ACCENTS[value] then
+                accent = value
+            else
+                warnings[#warnings + 1] = "theme accent " .. tostring(value) .. " is not a semantic accent"
+            end
+        elseif isColor(value) then
+            tokens[key] = value
+        else
+            warnings[#warnings + 1] = "theme override " .. key .. " must be a 24-bit color"
+        end
+    end
+
+    -- Overridden surfaces can easily break the default text and accent tokens.
+    return tokens, accent
 end
 
 --- Convert a 24-bit token table into display values.
@@ -624,11 +646,11 @@ end
 ---@param tokens table
 ---@return table
 local function toDisplay(tokens)
-  local colors = {}
-  for key, value in pairs(tokens) do
-    colors[key] = lcd.RGB(value)
-  end
-  return colors
+    local colors = {}
+    for key, value in pairs(tokens) do
+        colors[key] = lcd.RGB(value)
+    end
+    return colors
 end
 
 --- Resolve the active theme.
@@ -644,93 +666,98 @@ end
 ---@param env? table Optional injected EdgeTX color environment.
 ---@return AeroGridTheme
 function theme.build(mode, overrides, env)
-  local warnings = {}
-  local notices = {}
-  local accent = "cyan"
-  local tokens
+    local warnings = {}
+    local notices = {}
+    local accent = "cyan"
+    local tokens
 
-  -- What was asked for, kept apart from what was settled on. A mode this
-  -- does not have falls back to Modern, and the result then reports `modern`
-  -- as though that is what the layout said, so the fallback is invisible in
-  -- the mode alone. The diagnostics view reads this.
-  local requested = mode
+    -- What was asked for, kept apart from what was settled on. A mode this
+    -- does not have falls back to Modern, and the result then reports `modern`
+    -- as though that is what the layout said, so the fallback is invisible in
+    -- the mode alone. The diagnostics view reads this.
+    local requested = mode
 
-  -- **An empty option is an unset option, not a wrong one.** A string widget
-  -- option reaches a Lua widget as `option->deflt.stringValue`, and
-  -- `LuaWidgetFactory::parseOptionDefaults` sets that default by calling
-  -- `.clear()` on it (`lua/lua_widget_factory.cpp`), so an option the user
-  -- has never touched arrives as the empty string. It is pushed to Lua
-  -- unconditionally with `lua_pushstring(..., stringValue.c_str())`, so
-  -- there is no `nil` to distinguish "unset" from "set to nothing" -- the
-  -- firmware has no representation for the difference and neither can we.
-  --
-  -- Warning about it put red diagnostic text across the dashboard of
-  -- everyone who added this widget and left its settings alone, which is
-  -- every first run.
-  --
-  -- Whitespace goes the same way, because a name typed and then cleared can
-  -- leave a space behind and the user has no way to see the difference.
-  -- **A mode that is genuinely a name and genuinely not ours still warns**,
-  -- which is the whole value of the warning: `nonsense` is someone's typo or
-  -- a mode we removed, and both are worth saying.
-  if type(mode) == "string" and string.match(mode, "^%s*$") then mode = nil end
-
-  if mode ~= nil and not theme.MODES[mode] then
-    warnings[#warnings + 1] = "unknown theme mode " .. tostring(mode)
-    mode = nil
-  end
-  mode = mode or "modern"
-
-  if mode == "edgetx" then
-    tokens = deriveFromEdgeTx(notices, env)
-  elseif mode == "custom" then
-    tokens, accent = applyCustom(overrides, warnings)
-  else
-    tokens = {}
-    for key, value in pairs(MODERN) do tokens[key] = value end
-  end
-
-  -- Critical red is never theme-derived so alarms stay recognizable.
-  tokens.critical = MODERN.critical
-
-  -- Derived palettes are guaranteed legible; Modern is specified directly.
-  if mode ~= "modern" then
-    enforceLegibility(tokens, notices)
-  end
-
-  -- Alert tints come last, after the legibility pass has finished moving the
-  -- surface about. That ordering is load bearing: the pass shifts the surface
-  -- to keep critical red visible and then re-derives everything measured
-  -- against it, so a tint mixed earlier would be mixed from a surface that no
-  -- longer exists.
-  local alertRgb = {
-    warning = theme.alertSurface(tokens, tokens.amber),
-    critical = theme.alertSurface(tokens, tokens.critical),
-  }
-  local alertColor = {}
-  for name, value in pairs(alertRgb) do alertColor[name] = lcd.RGB(value) end
-  for _, name in ipairs({"warning", "critical"}) do
-    if not alertRgb[name] then
-      theme.notice(notices, "warning",
-        "no legible " .. name .. " tint; the panel keeps its resting surface")
+    -- **An empty option is an unset option, not a wrong one.** A string widget
+    -- option reaches a Lua widget as `option->deflt.stringValue`, and
+    -- `LuaWidgetFactory::parseOptionDefaults` sets that default by calling
+    -- `.clear()` on it (`lua/lua_widget_factory.cpp`), so an option the user
+    -- has never touched arrives as the empty string. It is pushed to Lua
+    -- unconditionally with `lua_pushstring(..., stringValue.c_str())`, so
+    -- there is no `nil` to distinguish "unset" from "set to nothing" -- the
+    -- firmware has no representation for the difference and neither can we.
+    --
+    -- Warning about it put red diagnostic text across the dashboard of
+    -- everyone who added this widget and left its settings alone, which is
+    -- every first run.
+    --
+    -- Whitespace goes the same way, because a name typed and then cleared can
+    -- leave a space behind and the user has no way to see the difference.
+    -- **A mode that is genuinely a name and genuinely not ours still warns**,
+    -- which is the whole value of the warning: `nonsense` is someone's typo or
+    -- a mode we removed, and both are worth saying.
+    if type(mode) == "string" and string.match(mode, "^%s*$") then
+        mode = nil
     end
-  end
 
-  return {
-    mode = mode,
-    requested = requested,
-    rgb = tokens,
-    color = toDisplay(tokens),
-    -- Kept apart from `color` because these are per state rather than per
-    -- token, and mirrored in 24-bit so contrast arithmetic has values it can
-    -- actually work on.
-    alertRgb = alertRgb,
-    alertColor = alertColor,
-    spacing = SPACING,
-    accent = accent,
-    warnings = warnings,
-    notices = notices,
-  }
+    if mode ~= nil and not theme.MODES[mode] then
+        warnings[#warnings + 1] = "unknown theme mode " .. tostring(mode)
+        mode = nil
+    end
+    mode = mode or "modern"
+
+    if mode == "edgetx" then
+        tokens = deriveFromEdgeTx(notices, env)
+    elseif mode == "custom" then
+        tokens, accent = applyCustom(overrides, warnings)
+    else
+        tokens = {}
+        for key, value in pairs(MODERN) do
+            tokens[key] = value
+        end
+    end
+
+    -- Critical red is never theme-derived so alarms stay recognizable.
+    tokens.critical = MODERN.critical
+
+    -- Derived palettes are guaranteed legible; Modern is specified directly.
+    if mode ~= "modern" then
+        enforceLegibility(tokens, notices)
+    end
+
+    -- Alert tints come last, after the legibility pass has finished moving the
+    -- surface about. That ordering is load bearing: the pass shifts the surface
+    -- to keep critical red visible and then re-derives everything measured
+    -- against it, so a tint mixed earlier would be mixed from a surface that no
+    -- longer exists.
+    local alertRgb = {
+        warning = theme.alertSurface(tokens, tokens.amber),
+        critical = theme.alertSurface(tokens, tokens.critical),
+    }
+    local alertColor = {}
+    for name, value in pairs(alertRgb) do
+        alertColor[name] = lcd.RGB(value)
+    end
+    for _, name in ipairs({ "warning", "critical" }) do
+        if not alertRgb[name] then
+            theme.notice(notices, "warning", "no legible " .. name .. " tint; the panel keeps its resting surface")
+        end
+    end
+
+    return {
+        mode = mode,
+        requested = requested,
+        rgb = tokens,
+        color = toDisplay(tokens),
+        -- Kept apart from `color` because these are per state rather than per
+        -- token, and mirrored in 24-bit so contrast arithmetic has values it can
+        -- actually work on.
+        alertRgb = alertRgb,
+        alertColor = alertColor,
+        spacing = SPACING,
+        accent = accent,
+        warnings = warnings,
+        notices = notices,
+    }
 end
 
 --- Return the display color for a semantic accent name.
@@ -738,8 +765,10 @@ end
 ---@param name? string
 ---@return integer color
 function theme.accentColor(resolved, name)
-  if not theme.ACCENTS[name] then name = resolved.accent end
-  return resolved.color[name]
+    if not theme.ACCENTS[name] then
+        name = resolved.accent
+    end
+    return resolved.color[name]
 end
 
 --- Line heights of EdgeTX's 480 x 272 "std" font set, in pixels.
@@ -748,12 +777,22 @@ end
 ---@param font any One of the EdgeTX size constants.
 ---@return integer
 function theme.fontHeight(font)
-  if font == XXLSIZE then return 69 end
-  if font == DBLSIZE then return 40 end
-  if font == MIDSIZE then return 29 end
-  if font == SMLSIZE then return 17 end
-  if font == TINSIZE then return 12 end
-  return 21
+    if font == XXLSIZE then
+        return 69
+    end
+    if font == DBLSIZE then
+        return 40
+    end
+    if font == MIDSIZE then
+        return 29
+    end
+    if font == SMLSIZE then
+        return 17
+    end
+    if font == TINSIZE then
+        return 12
+    end
+    return 21
 end
 
 --- Choose the largest primary font whose line height fits the space available.
@@ -762,13 +801,15 @@ end
 ---@param available integer Vertical pixels the value may occupy.
 ---@return any font
 function theme.fitPrimary(available)
-  local ordered = {XXLSIZE, DBLSIZE, MIDSIZE, SMLSIZE}
+    local ordered = { XXLSIZE, DBLSIZE, MIDSIZE, SMLSIZE }
 
-  for _, font in ipairs(ordered) do
-    if theme.fontHeight(font) <= available then return font end
-  end
+    for _, font in ipairs(ordered) do
+        if theme.fontHeight(font) <= available then
+            return font
+        end
+    end
 
-  return SMLSIZE
+    return SMLSIZE
 end
 
 --- Mean character advance as a fraction of a font's line height.
@@ -791,8 +832,8 @@ local ADVANCE_RATIO = 0.58
 ---@param text any
 ---@return integer
 function theme.textWidth(font, text)
-  local length = #tostring(text == nil and "" or text)
-  return math.floor(length * theme.fontHeight(font) * ADVANCE_RATIO + 0.5)
+    local length = #tostring(text == nil and "" or text)
+    return math.floor(length * theme.fontHeight(font) * ADVANCE_RATIO + 0.5)
 end
 
 --- Measure the rendered width of a string, asking the radio where it can.
@@ -845,14 +886,16 @@ end
 ---@param text any
 ---@return integer
 function theme.measureText(font, text)
-  local sizeText = type(lcd) == "table" and lcd.sizeText
-  if type(sizeText) ~= "function" then
-    return theme.textWidth(font, text)
-  end
+    local sizeText = type(lcd) == "table" and lcd.sizeText
+    if type(sizeText) ~= "function" then
+        return theme.textWidth(font, text)
+    end
 
-  local width = sizeText(tostring(text == nil and "" or text), font)
-  if type(width) ~= "number" then return theme.textWidth(font, text) end
-  return width
+    local width = sizeText(tostring(text == nil and "" or text), font)
+    if type(width) ~= "number" then
+        return theme.textWidth(font, text)
+    end
+    return width
 end
 
 --- Distance from the bottom of a font's line box to its baseline.
@@ -874,19 +917,29 @@ end
 ---@param font any
 ---@return integer
 function theme.fontBaseLine(font)
-  if font == XXLSIZE then return 15 end
-  if font == DBLSIZE then return 9 end
-  if font == MIDSIZE then return 6 end
-  if font == SMLSIZE then return 4 end
-  if font == TINSIZE then return 3 end
-  return 5
+    if font == XXLSIZE then
+        return 15
+    end
+    if font == DBLSIZE then
+        return 9
+    end
+    if font == MIDSIZE then
+        return 6
+    end
+    if font == SMLSIZE then
+        return 4
+    end
+    if font == TINSIZE then
+        return 3
+    end
+    return 5
 end
 
 --- Pixels from the top of a font's line box down to its baseline.
 ---@param font any
 ---@return integer
 function theme.fontAscent(font)
-  return theme.fontHeight(font) - theme.fontBaseLine(font)
+    return theme.fontHeight(font) - theme.fontBaseLine(font)
 end
 
 --- The font a unit rides at beside a reading of a given size.
@@ -899,10 +952,16 @@ end
 ---@param font any
 ---@return any
 function theme.unitFont(font)
-  if font == XXLSIZE then return MIDSIZE end
-  if font == DBLSIZE then return SMLSIZE end
-  if font == MIDSIZE then return SMLSIZE end
-  return TINSIZE
+    if font == XXLSIZE then
+        return MIDSIZE
+    end
+    if font == DBLSIZE then
+        return SMLSIZE
+    end
+    if font == MIDSIZE then
+        return SMLSIZE
+    end
+    return TINSIZE
 end
 
 --- Where the top of a unit's label goes so its baseline meets the reading's.
@@ -918,7 +977,7 @@ end
 ---@param readingY integer Top of the reading's label.
 ---@return integer
 function theme.unitTop(readingFont, unitFont, readingY)
-  return readingY + theme.fontAscent(readingFont) - theme.fontAscent(unitFont)
+    return readingY + theme.fontAscent(readingFont) - theme.fontAscent(unitFont)
 end
 
 --- Air between a reading and the unit riding beside it.
@@ -937,7 +996,7 @@ end
 ---@param unitFont any
 ---@return integer
 function theme.unitGap(unitFont)
-  return math.max(1, math.floor(theme.fontHeight(unitFont) / 12 + 0.5))
+    return math.max(1, math.floor(theme.fontHeight(unitFont) / 12 + 0.5))
 end
 
 --- Width a reading and its inline unit occupy together.
@@ -965,9 +1024,11 @@ end
 --- caller of this one runs at build or reflow, never per frame, so the
 --- measurement costs nothing a panel pays repeatedly.
 function theme.readingWidth(font, digits, unitFont, unit)
-  local width = theme.measureText(font, digits)
-  if unit == nil or unit == "" then return width end
-  return width + theme.unitGap(unitFont) + theme.measureText(unitFont, unit)
+    local width = theme.measureText(font, digits)
+    if unit == nil or unit == "" then
+        return width
+    end
+    return width + theme.unitGap(unitFont) + theme.measureText(unitFont, unit)
 end
 
 --- Choose the font for a reading that carries its unit beside it.
@@ -1003,29 +1064,31 @@ end
 ---@return boolean showUnit
 ---@return boolean fits Whether what will be drawn actually fits.
 function theme.fitReadingUnit(digits, unit, width, room, required)
-  local bare = unit == nil or unit == ""
-  if required and not bare then
-    local ordered = theme.READING_FONTS
-    local start = #ordered
-    for index = 1, #ordered do
-      if theme.fontAscent(ordered[index]) <= room then start = index break end
+    local bare = unit == nil or unit == ""
+    if required and not bare then
+        local ordered = theme.READING_FONTS
+        local start = #ordered
+        for index = 1, #ordered do
+            if theme.fontAscent(ordered[index]) <= room then
+                start = index
+                break
+            end
+        end
+        for step = start, #ordered do
+            local font = ordered[step]
+            local rider = theme.unitFont(font)
+            if theme.readingWidth(font, digits, rider, unit) <= width then
+                return font, rider, true, true
+            end
+        end
+        local last = ordered[#ordered]
+        return last, theme.unitFont(last), true, false
     end
-    for step = start, #ordered do
-      local font = ordered[step]
-      local rider = theme.unitFont(font)
-      if theme.readingWidth(font, digits, rider, unit) <= width then
-        return font, rider, true, true
-      end
-    end
-    local last = ordered[#ordered]
-    return last, theme.unitFont(last), true, false
-  end
 
-  local font, _, fits = theme.fitReading({digits}, width, room)
-  local rider = theme.unitFont(font)
-  local showUnit = fits and not bare
-    and theme.readingWidth(font, digits, rider, unit) <= width
-  return font, rider, showUnit, fits
+    local font, _, fits = theme.fitReading({ digits }, width, room)
+    local rider = theme.unitFont(font)
+    local showUnit = fits and not bare and theme.readingWidth(font, digits, rider, unit) <= width
+    return font, rider, showUnit, fits
 end
 
 --- Choose the largest font in which a string fits both a width and a height.
@@ -1038,15 +1101,15 @@ end
 ---@param height integer Vertical pixels available.
 ---@return any font
 function theme.fitText(text, width, height)
-  local ordered = {XXLSIZE, DBLSIZE, MIDSIZE, SMLSIZE}
+    local ordered = { XXLSIZE, DBLSIZE, MIDSIZE, SMLSIZE }
 
-  for _, font in ipairs(ordered) do
-    if theme.fontHeight(font) <= height and theme.textWidth(font, text) <= width then
-      return font
+    for _, font in ipairs(ordered) do
+        if theme.fontHeight(font) <= height and theme.textWidth(font, text) <= width then
+            return font
+        end
     end
-  end
 
-  return SMLSIZE
+    return SMLSIZE
 end
 
 --- Decide what a panel of this size carries, and how large its reading is.
@@ -1090,91 +1153,89 @@ end
 ---@param frame table Result of theme.frame.
 ---@return table ladder `{rows, visual, bands, room}`
 function theme.ladder(resolved, rect, frame)
-  local spacing = resolved.spacing
-  local rowHeight = frame.labelHeight + 2
-  local barHeight = spacing.barHeight + 2
-  local fixed = frame.top + frame.bottom
+    local spacing = resolved.spacing
+    local rowHeight = frame.labelHeight + 2
+    local barHeight = spacing.barHeight + 2
+    local fixed = frame.top + frame.bottom
 
-  -- Granted in order of what a panel loses least by dropping. A visualization
-  -- is a shape and survives being small; a supporting row is text and does
-  -- not, so the row is the first thing a short panel gives up.
-  local visual = fixed + barHeight + theme.fontHeight(SMLSIZE) <= rect.h
-  local used = fixed + (visual and barHeight or 0)
-  local rows = used + rowHeight + theme.fontHeight(MIDSIZE) <= rect.h and 1 or 0
+    -- Granted in order of what a panel loses least by dropping. A visualization
+    -- is a shape and survives being small; a supporting row is text and does
+    -- not, so the row is the first thing a short panel gives up.
+    local visual = fixed + barHeight + theme.fontHeight(SMLSIZE) <= rect.h
+    local used = fixed + (visual and barHeight or 0)
+    local rows = used + rowHeight + theme.fontHeight(MIDSIZE) <= rect.h and 1 or 0
 
-  -- The bands the panel's *furniture* lives in: the heading at the top, the
-  -- supporting row at the bottom. The reading no longer takes the band
-  -- between them -- see `theme.readingRoom` -- but the two outer bands are
-  -- unchanged, and a row that would not fit its quarter still does not.
-  --
-  -- It stays here rather than moving into each component, because two panels
-  -- of one size agreeing is the whole reason this function exists. A band
-  -- rule applied by some components and not others would reintroduce exactly
-  -- the disagreement it replaced.
-  --
-  -- **The bands do not depend on what the panel draws**, which is why
-  -- nothing about `draws` reaches them. The tertiary quarter used to be
-  -- reserved only when the floor was spoken for -- by a supporting row or by
-  -- a bar -- and given to the body otherwise, so a panel drawing no row read
-  -- at a size a panel drawing one could not. That is a layout that depends
-  -- on content, and the user rejected it on a radio after it had been
-  -- measured as correct here. `theme.bands` records what went with it.
-  --
-  -- `draws` still narrows the *grants* below, because a component may
-  -- decline a row it was offered and the row's own placement follows that.
-  -- It cannot widen them: a component may not claim a row the panel is too
-  -- short to hold, which is the whole point of deciding composition here.
-  local bands = theme.bands(frame, rect, true)
+    -- The bands the panel's *furniture* lives in: the heading at the top, the
+    -- supporting row at the bottom. The reading no longer takes the band
+    -- between them -- see `theme.readingRoom` -- but the two outer bands are
+    -- unchanged, and a row that would not fit its quarter still does not.
+    --
+    -- It stays here rather than moving into each component, because two panels
+    -- of one size agreeing is the whole reason this function exists. A band
+    -- rule applied by some components and not others would reintroduce exactly
+    -- the disagreement it replaced.
+    --
+    -- **The bands do not depend on what the panel draws**, which is why
+    -- nothing about `draws` reaches them. The tertiary quarter used to be
+    -- reserved only when the floor was spoken for -- by a supporting row or by
+    -- a bar -- and given to the body otherwise, so a panel drawing no row read
+    -- at a size a panel drawing one could not. That is a layout that depends
+    -- on content, and the user rejected it on a radio after it had been
+    -- measured as correct here. `theme.bands` records what went with it.
+    --
+    -- `draws` still narrows the *grants* below, because a component may
+    -- decline a row it was offered and the row's own placement follows that.
+    -- It cannot widen them: a component may not claim a row the panel is too
+    -- short to hold, which is the whole point of deciding composition here.
+    local bands = theme.bands(frame, rect, true)
 
-  -- The first row of the panel the widget owns, and the first row it has
-  -- promised to something else. The reading is centred between them.
-  local top = frame.reserved and frame.reserved.h or 0
-  local centre = rect.h / 2
-  -- Where a supporting row's glyphs begin, which is what the reading has to
-  -- clear. **The row is pinned to the panel's floor now**, so this follows
-  -- it down and the reading gains whatever the row gave up -- which is the
-  -- half of this change that is not about position at all. Measuring the
-  -- quarter instead would charge the reading the whole of the air above the
-  -- row, and measuring where the row used to be would charge it air that is
-  -- no longer there.
-  --
-  -- **Measured against the highest a row can land, which is the one hanging
-  -- from a bar.** A bar-reserving panel's row sits above the bar and so is
-  -- nearer the reading than a bare panel's row hanging from the edge -- 85
-  -- against 93 on a Full screen `2 x 2`.
-  --
-  -- **This comment said the opposite, and the check caught it.** It argued
-  -- that clearing the lower position clears the higher one, which is the
-  -- inequality the wrong way round; `cell-battery` at that span took XXLSIZE
-  -- and put its unit four pixels into its own supporting row.
-  --
-  -- **Conservative rather than asked of the component, and that is the
-  -- point of this function.** Two panels of one size must get one answer
-  -- whatever drew them, so the budget may not depend on whether this
-  -- particular component's visualization happens to be a bar. Telling the
-  -- ladder would be the redistribution objection again, in a third place.
-  local barTop = rect.h - frame.bottom - resolved.spacing.barHeight
-  local floorY = rows > 0
-    and theme.rowTop(frame, frame.labelFont, barTop)
-    or (rect.h - frame.bottom)
+    -- The first row of the panel the widget owns, and the first row it has
+    -- promised to something else. The reading is centred between them.
+    local top = frame.reserved and frame.reserved.h or 0
+    local centre = rect.h / 2
+    -- Where a supporting row's glyphs begin, which is what the reading has to
+    -- clear. **The row is pinned to the panel's floor now**, so this follows
+    -- it down and the reading gains whatever the row gave up -- which is the
+    -- half of this change that is not about position at all. Measuring the
+    -- quarter instead would charge the reading the whole of the air above the
+    -- row, and measuring where the row used to be would charge it air that is
+    -- no longer there.
+    --
+    -- **Measured against the highest a row can land, which is the one hanging
+    -- from a bar.** A bar-reserving panel's row sits above the bar and so is
+    -- nearer the reading than a bare panel's row hanging from the edge -- 85
+    -- against 93 on a Full screen `2 x 2`.
+    --
+    -- **This comment said the opposite, and the check caught it.** It argued
+    -- that clearing the lower position clears the higher one, which is the
+    -- inequality the wrong way round; `cell-battery` at that span took XXLSIZE
+    -- and put its unit four pixels into its own supporting row.
+    --
+    -- **Conservative rather than asked of the component, and that is the
+    -- point of this function.** Two panels of one size must get one answer
+    -- whatever drew them, so the budget may not depend on whether this
+    -- particular component's visualization happens to be a bar. Telling the
+    -- ladder would be the redistribution objection again, in a third place.
+    local barTop = rect.h - frame.bottom - resolved.spacing.barHeight
+    local floorY = rows > 0 and theme.rowTop(frame, frame.labelFont, barTop) or (rect.h - frame.bottom)
 
-  return {
-    rows = rows,
-    visual = visual,
-    bands = bands,
-    room = theme.readingRoom(frame, rect, rows, visual, centre, floorY),
-    -- The panel's own vertical centre, which is where the reading's ink
-    -- goes whatever else the panel carries. Held here so the one place that
-    -- decides the font and the one that decides the position read the same
-    -- number; they were separate once and a reading was sized against a band
-    -- it was not drawn in.
-    centre = centre,
-    -- The first row of the panel the widget actually owns: zero everywhere,
-    -- and the bottom of EdgeTX's menu button on the one panel it reaches
-    -- into. Nothing centred may start above it, because what is drawn there
-    -- is painted over.
-    top = top,
-  }
+    return {
+        rows = rows,
+        visual = visual,
+        bands = bands,
+        room = theme.readingRoom(frame, rect, rows, visual, centre, floorY),
+        -- The panel's own vertical centre, which is where the reading's ink
+        -- goes whatever else the panel carries. Held here so the one place that
+        -- decides the font and the one that decides the position read the same
+        -- number; they were separate once and a reading was sized against a band
+        -- it was not drawn in.
+        centre = centre,
+        -- The first row of the panel the widget actually owns: zero everywhere,
+        -- and the bottom of EdgeTX's menu button on the one panel it reaches
+        -- into. Nothing centred may start above it, because what is drawn there
+        -- is painted over.
+        top = top,
+    }
 end
 
 --- Choose the font and the wording a reading is drawn in.
@@ -1198,7 +1259,7 @@ end
 --- panel allows and the decoration fits in what is left or is shed. The
 --- companion `readingStep`, which existed only so `navigation` could say
 --- "one size smaller than that", went with the rule it served.
-theme.READING_FONTS = {XXLSIZE, DBLSIZE, MIDSIZE, SMLSIZE}
+theme.READING_FONTS = { XXLSIZE, DBLSIZE, MIDSIZE, SMLSIZE }
 
 --- **It can fail, and it says so.** When even the shortest form will not fit
 --- at the smallest font, there is no font that fits and nothing honest to
@@ -1225,27 +1286,30 @@ theme.READING_FONTS = {XXLSIZE, DBLSIZE, MIDSIZE, SMLSIZE}
 ---@return integer index Form chosen, from 1.
 ---@return boolean fits Whether the chosen form actually fits the width.
 function theme.fitReading(forms, width, room)
-  local ordered = theme.READING_FONTS
-  local start = #ordered
+    local ordered = theme.READING_FONTS
+    local start = #ordered
 
-  -- **The band holds the ink, not the line box.** Same rule as
-  -- `theme.bandFont`, and it has to be the same rule: a font chosen one way
-  -- and a band measured the other is the disagreement the shared ladder
-  -- exists to remove.
-  for index = 1, #ordered do
-    if theme.fontAscent(ordered[index]) <= room then start = index break end
-  end
-
-  -- The target the box allows, then down until something fits.
-  for step = start, #ordered do
-    for index = 1, #forms do
-      if theme.measureText(ordered[step], forms[index]) <= width then
-        return ordered[step], index, true
-      end
+    -- **The band holds the ink, not the line box.** Same rule as
+    -- `theme.bandFont`, and it has to be the same rule: a font chosen one way
+    -- and a band measured the other is the disagreement the shared ladder
+    -- exists to remove.
+    for index = 1, #ordered do
+        if theme.fontAscent(ordered[index]) <= room then
+            start = index
+            break
+        end
     end
-  end
 
-  return ordered[#ordered], #forms, false
+    -- The target the box allows, then down until something fits.
+    for step = start, #ordered do
+        for index = 1, #forms do
+            if theme.measureText(ordered[step], forms[index]) <= width then
+                return ordered[step], index, true
+            end
+        end
+    end
+
+    return ordered[#ordered], #forms, false
 end
 
 --- Fit a heading to its column, stepping the font down rather than wrapping.
@@ -1277,37 +1341,45 @@ end
 ---@return any font Font it fits at.
 ---@return string? dropped Full text, when it had to be cut.
 function theme.fitHeading(text, width, font)
-  local wanted = string.upper(tostring(text == nil and "" or text))
-  if wanted == "" then return wanted, font end
-  if type(width) ~= "number" or width <= 0 then return wanted, font end
-
-  -- The overwhelmingly common case, and the one every panel pays for at
-  -- build: a short heading at the font the panel already chose. Answered
-  -- before any ladder is built, because building one to discard it is a cost
-  -- every component pays for the rare heading that needs it.
-  if theme.textWidth(font, wanted) <= width then return wanted, font end
-
-  local ladder = {}
-  local height = theme.fontHeight(font)
-  for _, candidate in ipairs({SMLSIZE, TINSIZE}) do
-    if theme.fontHeight(candidate) < height then
-      ladder[#ladder + 1] = candidate
+    local wanted = string.upper(tostring(text == nil and "" or text))
+    if wanted == "" then
+        return wanted, font
     end
-  end
-  if #ladder == 0 then ladder[1] = font end
-
-  for _, candidate in ipairs(ladder) do
-    if theme.textWidth(candidate, wanted) <= width then
-      return wanted, candidate
+    if type(width) ~= "number" or width <= 0 then
+        return wanted, font
     end
-  end
 
-  -- Nothing fits. Cut to the smallest font's capacity rather than wrapping
-  -- over the reading, and hand back what was lost so it can be reported.
-  local smallest = ladder[#ladder]
-  local advance = math.max(1, theme.textWidth(smallest, "M"))
-  local room = math.max(1, math.floor(width / advance))
-  return string.sub(wanted, 1, room), smallest, wanted
+    -- The overwhelmingly common case, and the one every panel pays for at
+    -- build: a short heading at the font the panel already chose. Answered
+    -- before any ladder is built, because building one to discard it is a cost
+    -- every component pays for the rare heading that needs it.
+    if theme.textWidth(font, wanted) <= width then
+        return wanted, font
+    end
+
+    local ladder = {}
+    local height = theme.fontHeight(font)
+    for _, candidate in ipairs({ SMLSIZE, TINSIZE }) do
+        if theme.fontHeight(candidate) < height then
+            ladder[#ladder + 1] = candidate
+        end
+    end
+    if #ladder == 0 then
+        ladder[1] = font
+    end
+
+    for _, candidate in ipairs(ladder) do
+        if theme.textWidth(candidate, wanted) <= width then
+            return wanted, candidate
+        end
+    end
+
+    -- Nothing fits. Cut to the smallest font's capacity rather than wrapping
+    -- over the reading, and hand back what was lost so it can be reported.
+    local smallest = ladder[#ladder]
+    local advance = math.max(1, theme.textWidth(smallest, "M"))
+    local room = math.max(1, math.floor(width / advance))
+    return string.sub(wanted, 1, room), smallest, wanted
 end
 
 --- Choose the longest of several wordings that fits a width.
@@ -1331,15 +1403,17 @@ end
 ---@param width? integer Pixels available; nil returns the longest wording.
 ---@return string
 function theme.fitLabel(variants, font, width)
-  if type(width) ~= "number" then return variants[1] end
-
-  for index = 1, #variants do
-    if theme.textWidth(font, variants[index]) <= width then
-      return variants[index]
+    if type(width) ~= "number" then
+        return variants[1]
     end
-  end
 
-  return variants[#variants]
+    for index = 1, #variants do
+        if theme.textWidth(font, variants[index]) <= width then
+            return variants[index]
+        end
+    end
+
+    return variants[#variants]
 end
 
 --- Every badge the dashboard may print, and the whole of that vocabulary.
@@ -1389,14 +1463,14 @@ end
 --- situations with the same fix. Every one of those distinctions was already
 --- being drawn, or has since been found not to be a distinction at all.
 theme.BADGES = {
-  stale = "STALE",
-  warning = "WARN",
-  critical = "CRIT",
-  editing = "EDIT",
-  -- Nothing usable from the source: unconfigured, unrecognized, or answering
-  -- with a shape this component cannot read. All three want the same fix and
-  -- the detail row says which it is.
-  unavailable = "N/A",
+    stale = "STALE",
+    warning = "WARN",
+    critical = "CRIT",
+    editing = "EDIT",
+    -- Nothing usable from the source: unconfigured, unrecognized, or answering
+    -- with a shape this component cannot read. All three want the same fix and
+    -- the detail row says which it is.
+    unavailable = "N/A",
 }
 
 --- Widest string the badge vocabulary can produce, in pixels.
@@ -1409,17 +1483,21 @@ theme.BADGES = {
 ---@param font any Badge font, from theme.typography.
 ---@return integer
 function theme.badgeWidth(font)
-  local cached = badgeWidths[font]
-  if cached then return cached end
+    local cached = badgeWidths[font]
+    if cached then
+        return cached
+    end
 
-  local widest = 0
-  for _, text in pairs(theme.BADGES) do
-    local width = theme.textWidth(font, text)
-    if width > widest then widest = width end
-  end
+    local widest = 0
+    for _, text in pairs(theme.BADGES) do
+        local width = theme.textWidth(font, text)
+        if width > widest then
+            widest = width
+        end
+    end
 
-  badgeWidths[font] = widest
-  return widest
+    badgeWidths[font] = widest
+    return widest
 end
 
 --- Narrowest header label worth drawing, about three characters at SMLSIZE.
@@ -1448,117 +1526,127 @@ local MIN_LABEL_WIDTH = 30
 ---@param reserved? table Width and height of an obstructed top-left corner.
 ---@return table frame
 function theme.frame(resolved, rect, fonts, reserved)
-  local spacing = resolved.spacing
-  -- Short panels cannot afford the standard vertical rhythm, but the left
-  -- padding has a floor their height has no say in: the accent occupies that
-  -- edge, and content starting at the accent's own right edge read as crowded
-  -- against it on every panel under 80 px tall.
-  local tight = rect.h < 80
-  local pad = tight and spacing.paddingTight or spacing.padding
-  local compact = tight and 2 or spacing.paddingCompact
-  local padRight = spacing.paddingRight
+    local spacing = resolved.spacing
+    -- Short panels cannot afford the standard vertical rhythm, but the left
+    -- padding has a floor their height has no say in: the accent occupies that
+    -- edge, and content starting at the accent's own right edge read as crowded
+    -- against it on every panel under 80 px tall.
+    local tight = rect.h < 80
+    local pad = tight and spacing.paddingTight or spacing.padding
+    local compact = tight and 2 or spacing.paddingCompact
+    local padRight = spacing.paddingRight
 
-  local content = math.max(1, rect.w - pad - padRight)
+    local content = math.max(1, rect.w - pad - padRight)
 
-  -- The badge takes exactly what its vocabulary needs, and is clamped to the
-  -- content rather than to half of it. The old half-content clamp protected
-  -- the label by clipping the badge, which is the wrong way round: a
-  -- half-drawn state word is worse than an absent one, because CRIT and CRI
-  -- are not equally alarming, while a shortened source name is merely less
-  -- informative. The label now yields to the badge and is dropped outright
-  -- when what is left would only clip.
-  local badgeWidth = theme.badgeWidth(fonts.badge)
-  if badgeWidth > content then badgeWidth = content end
-  local badgeX = math.max(pad, rect.w - padRight - badgeWidth)
-  local labelHeight = theme.fontHeight(fonts.label)
-  local labelX = pad
-  -- **The heading is pinned to the top of its band, not centred in it.** A
-  -- heading is furniture: it says what the panel is, and it should land in
-  -- the same place whatever size the panel happens to be. Centring it in a
-  -- band that is a quarter of the panel's extent made it drift down as
-  -- panels grew -- 0 px from the top on a one-row panel, 13 on two rows, 21
-  -- on three and 30 on four, so a column of panels of different heights had
-  -- its headings at four different offsets.
-  --
-  -- The proportional band was designed for the **reading**, where growing
-  -- with the panel is the point. Applying the same rule to the heading is
-  -- what produced the drift.
-  --
-  -- **The band still exists and the body still starts below it.** Only the
-  -- heading's own position moves; the quarter is still reserved and `top` is
-  -- still measured from where a centred heading would have ended. That is
-  -- deliberate rather than incidental: `top` feeds `theme.ladder`, which
-  -- decides whether a panel is granted a supporting row and a
-  -- visualization, and `theme.bands`, which decides where the reading sits.
-  -- Letting the body rise into the space the heading vacated would change
-  -- what every panel in the catalogue draws, which is a different decision
-  -- from where the heading sits.
-  local extent = math.max(1, (rect.h - 4) - compact)
-  local centred = theme.clampToPanel(
-    theme.centreInBand({y = compact, h = math.floor(extent / 4)}, labelHeight),
-    fonts.label, rect.h)
-  local top = math.max(compact + labelHeight + 2, centred + labelHeight + 2)
+    -- The badge takes exactly what its vocabulary needs, and is clamped to the
+    -- content rather than to half of it. The old half-content clamp protected
+    -- the label by clipping the badge, which is the wrong way round: a
+    -- half-drawn state word is worse than an absent one, because CRIT and CRI
+    -- are not equally alarming, while a shortened source name is merely less
+    -- informative. The label now yields to the badge and is dropped outright
+    -- when what is left would only clip.
+    local badgeWidth = theme.badgeWidth(fonts.badge)
+    if badgeWidth > content then
+        badgeWidth = content
+    end
+    local badgeX = math.max(pad, rect.w - padRight - badgeWidth)
+    local labelHeight = theme.fontHeight(fonts.label)
+    local labelX = pad
+    -- **The heading is pinned to the top of its band, not centred in it.** A
+    -- heading is furniture: it says what the panel is, and it should land in
+    -- the same place whatever size the panel happens to be. Centring it in a
+    -- band that is a quarter of the panel's extent made it drift down as
+    -- panels grew -- 0 px from the top on a one-row panel, 13 on two rows, 21
+    -- on three and 30 on four, so a column of panels of different heights had
+    -- its headings at four different offsets.
+    --
+    -- The proportional band was designed for the **reading**, where growing
+    -- with the panel is the point. Applying the same rule to the heading is
+    -- what produced the drift.
+    --
+    -- **The band still exists and the body still starts below it.** Only the
+    -- heading's own position moves; the quarter is still reserved and `top` is
+    -- still measured from where a centred heading would have ended. That is
+    -- deliberate rather than incidental: `top` feeds `theme.ladder`, which
+    -- decides whether a panel is granted a supporting row and a
+    -- visualization, and `theme.bands`, which decides where the reading sits.
+    -- Letting the body rise into the space the heading vacated would change
+    -- what every panel in the catalogue draws, which is a different decision
+    -- from where the heading sits.
+    local extent = math.max(1, (rect.h - 4) - compact)
+    local centred = theme.clampToPanel(
+        theme.centreInBand({ y = compact, h = math.floor(extent / 4) }, labelHeight),
+        fonts.label,
+        rect.h
+    )
+    local top = math.max(compact + labelHeight + 2, centred + labelHeight + 2)
 
-  -- Not clamped, and it cannot need to be. `clampToPanel` exists because a
-  -- heading centred in a band could be pushed off a short panel -- at one
-  -- row the centred value is -1 px and the clamp lifted it to 0. Pinned, the
-  -- heading starts at the panel's own top inset, which is 2 px on a short
-  -- panel and 6 on any other, against a clamp that binds only above
-  -- `rect.h - 13`. The nearest that comes to binding is 2 against 40.
-  local labelY = compact
+    -- Not clamped, and it cannot need to be. `clampToPanel` exists because a
+    -- heading centred in a band could be pushed off a short panel -- at one
+    -- row the centred value is -1 px and the clamp lifted it to 0. Pinned, the
+    -- heading starts at the panel's own top inset, which is 2 px on a short
+    -- panel and 6 on any other, against a clamp that binds only above
+    -- `rect.h - 13`. The nearest that comes to binding is 2 against 40.
+    local labelY = compact
 
-  if reserved then
-    -- The header shares the obstructed band, so it moves along to its right
-    -- rather than below it, which would cost the panel a whole row.
-    if compact < reserved.h then labelX = reserved.w + 4 end
-    -- Content starts below the obstruction. This is the only space the panel
-    -- actually loses, and it loses it once rather than per element.
-    if top < reserved.h then top = reserved.h end
-  end
+    if reserved then
+        -- The header shares the obstructed band, so it moves along to its right
+        -- rather than below it, which would cost the panel a whole row.
+        if compact < reserved.h then
+            labelX = reserved.w + 4
+        end
+        -- Content starts below the obstruction. This is the only space the panel
+        -- actually loses, and it loses it once rather than per element.
+        if top < reserved.h then
+            top = reserved.h
+        end
+    end
 
-  -- The badge column is reserved whether or not a badge is showing, and the
-  -- label's width does not depend on whether one is.
-  --
-  -- Handing the label the empty column and taking it back when a badge
-  -- appears would reflow the label at exactly the moment a panel changes
-  -- state, which is the text-jumping the specification forbids and is worse
-  -- than a permanently shorter label: a header that moves draws the eye to
-  -- itself rather than to the reading that just went critical. Every
-  -- component in the catalogue can reach a badged state, so a column that was
-  -- conditional would be conditional on nothing in practice anyway.
-  local labelWidth = badgeX - labelX - 4
-  local labelHidden = labelWidth < MIN_LABEL_WIDTH
-  -- A hidden label has no width rather than a token one, so a panel too narrow
-  -- to carry both still has coherent geometry.
-  if labelHidden then labelWidth = 0 end
+    -- The badge column is reserved whether or not a badge is showing, and the
+    -- label's width does not depend on whether one is.
+    --
+    -- Handing the label the empty column and taking it back when a badge
+    -- appears would reflow the label at exactly the moment a panel changes
+    -- state, which is the text-jumping the specification forbids and is worse
+    -- than a permanently shorter label: a header that moves draws the eye to
+    -- itself rather than to the reading that just went critical. Every
+    -- component in the catalogue can reach a badged state, so a column that was
+    -- conditional would be conditional on nothing in practice anyway.
+    local labelWidth = badgeX - labelX - 4
+    local labelHidden = labelWidth < MIN_LABEL_WIDTH
+    -- A hidden label has no width rather than a token one, so a panel too narrow
+    -- to carry both still has coherent geometry.
+    if labelHidden then
+        labelWidth = 0
+    end
 
-  return {
-    width = rect.w,
-    height = rect.h,
-    pad = pad,
-    padRight = padRight,
-    compact = compact,
-    content = content,
-    labelHeight = labelHeight,
-    -- The font itself, not only its height. `theme.rowTop` needs the ascent
-    -- as well, because a row is pinned by its baseline and the descent below
-    -- that baseline is what the floor inset has to absorb. `theme.ladder`
-    -- is not handed the typography, so the frame is where the two meet.
-    labelFont = fonts.label,
-    labelY = labelY,
-    badgeWidth = badgeWidth,
-    badgeX = badgeX,
-    labelX = labelX,
-    labelWidth = labelWidth,
-    -- Dropped rather than clipped, which is the judgement the obstructed
-    -- corner already made and which applies to a narrow panel for the same
-    -- reason: the reading and its state are what a pilot needs, and the source
-    -- name is the part that can be given up.
-    labelHidden = labelHidden,
-    top = top,
-    bottom = 4,
-    reserved = reserved,
-  }
+    return {
+        width = rect.w,
+        height = rect.h,
+        pad = pad,
+        padRight = padRight,
+        compact = compact,
+        content = content,
+        labelHeight = labelHeight,
+        -- The font itself, not only its height. `theme.rowTop` needs the ascent
+        -- as well, because a row is pinned by its baseline and the descent below
+        -- that baseline is what the floor inset has to absorb. `theme.ladder`
+        -- is not handed the typography, so the frame is where the two meet.
+        labelFont = fonts.label,
+        labelY = labelY,
+        badgeWidth = badgeWidth,
+        badgeX = badgeX,
+        labelX = labelX,
+        labelWidth = labelWidth,
+        -- Dropped rather than clipped, which is the judgement the obstructed
+        -- corner already made and which applies to a narrow panel for the same
+        -- reason: the reading and its state are what a pilot needs, and the source
+        -- name is the part that can be given up.
+        labelHidden = labelHidden,
+        top = top,
+        bottom = 4,
+        reserved = reserved,
+    }
 end
 
 --- Where the two content slots are centred, as fractions of the content width.
@@ -1574,8 +1662,8 @@ end
 --- collide *provided each element fits its half*, because the two own
 --- disjoint regions; tightening trades that guarantee for the elements
 --- sitting closer together.
-theme.SLOT_TIGHT = {0.30, 0.70}
-theme.SLOT_STRICT = {0.25, 0.75}
+theme.SLOT_TIGHT = { 0.30, 0.70 }
+theme.SLOT_STRICT = { 0.25, 0.75 }
 
 --- The x coordinates the two slots are centred on.
 ---@param frame table Result of theme.frame.
@@ -1583,9 +1671,9 @@ theme.SLOT_STRICT = {0.25, 0.75}
 ---@return integer left
 ---@return integer right
 function theme.slotCentres(frame, slots)
-  slots = slots or theme.SLOT_TIGHT
-  return frame.pad + math.floor(frame.content * slots[1] + 0.5),
-    frame.pad + math.floor(frame.content * slots[2] + 0.5)
+    slots = slots or theme.SLOT_TIGHT
+    return frame.pad + math.floor(frame.content * slots[1] + 0.5),
+        frame.pad + math.floor(frame.content * slots[2] + 0.5)
 end
 
 --- Left edge of a block of `width` centred on `centre`.
@@ -1593,7 +1681,7 @@ end
 ---@param width integer
 ---@return integer
 function theme.slotX(centre, width)
-  return centre - math.floor(width / 2)
+    return centre - math.floor(width / 2)
 end
 
 --- Whether the two slots can hold this pair without the elements meeting.
@@ -1637,17 +1725,17 @@ end
 ---@return table slots theme.SLOT_TIGHT, or theme.SLOT_STRICT where they meet.
 ---@return boolean fits Whether either arrangement actually separates them.
 function theme.slotsFor(frame, readingWidth, visualWidth)
-  local halfReading = math.ceil(readingWidth / 2)
-  for _, slots in ipairs({theme.SLOT_TIGHT, theme.SLOT_STRICT}) do
-    local left, right = theme.slotCentres(frame, slots)
-    local readingStart = left - halfReading
-    local readingEnd = left + halfReading
-    local visualStart = right - math.floor(visualWidth / 2)
-    if visualStart >= readingEnd and readingStart >= frame.pad then
-      return slots, true
+    local halfReading = math.ceil(readingWidth / 2)
+    for _, slots in ipairs({ theme.SLOT_TIGHT, theme.SLOT_STRICT }) do
+        local left, right = theme.slotCentres(frame, slots)
+        local readingStart = left - halfReading
+        local readingEnd = left + halfReading
+        local visualStart = right - math.floor(visualWidth / 2)
+        if visualStart >= readingEnd and readingStart >= frame.pad then
+            return slots, true
+        end
     end
-  end
-  return theme.SLOT_STRICT, false
+    return theme.SLOT_STRICT, false
 end
 
 --- How much vertical room the reading is sized against.
@@ -1721,30 +1809,26 @@ end
 ---@param visual boolean Whether the panel grants a visualization.
 ---@return integer
 function theme.readingRoom(frame, rect, rows, visual, centre, floorY)
-  local reserved = frame.reserved
-  local shared = reserved ~= nil
-    or not frame.labelHidden
-    or (rows or 0) > 0
-    or visual == true
-  local room = shared and math.floor(rect.h / 2) or rect.h
-  if reserved then
-    room = math.min(room, math.max(1, rect.h - reserved.h))
-  end
-  -- **And never deep enough to reach the supporting row.** A reading centred
-  -- on the panel is symmetric about that centre, so what it may occupy
-  -- before its baseline meets the row is twice the clearance -- less twice
-  -- the strip a descending unit claims below that baseline, which is
-  -- symmetric too because the ink grows in both directions while the rider
-  -- hangs off the bottom.
-  --
-  -- This binds on exactly the panels where the half is generous enough to
-  -- reach: a Full screen two-row span is 108 px, its row's glyphs start at
-  -- 83, and XXLSIZE plus a MIDSIZE rider ends at 87.
-  if centre and floorY then
-    room = math.min(room, math.max(1,
-      2 * math.floor(floorY - centre) - 2 * theme.riderDepth()))
-  end
-  return room
+    local reserved = frame.reserved
+    local shared = reserved ~= nil or not frame.labelHidden or (rows or 0) > 0 or visual == true
+    local room = shared and math.floor(rect.h / 2) or rect.h
+    if reserved then
+        room = math.min(room, math.max(1, rect.h - reserved.h))
+    end
+    -- **And never deep enough to reach the supporting row.** A reading centred
+    -- on the panel is symmetric about that centre, so what it may occupy
+    -- before its baseline meets the row is twice the clearance -- less twice
+    -- the strip a descending unit claims below that baseline, which is
+    -- symmetric too because the ink grows in both directions while the rider
+    -- hangs off the bottom.
+    --
+    -- This binds on exactly the panels where the half is generous enough to
+    -- reach: a Full screen two-row span is 108 px, its row's glyphs start at
+    -- 83, and XXLSIZE plus a MIDSIZE rider ends at 87.
+    if centre and floorY then
+        room = math.min(room, math.max(1, 2 * math.floor(floorY - centre) - 2 * theme.riderDepth()))
+    end
+    return room
 end
 
 --- How far below a reading's ink anything riding on its baseline can reach.
@@ -1770,15 +1854,19 @@ end
 --- unit fonts the reading ladder can produce.
 ---@return integer
 function theme.riderDepth()
-  if riderDepth then return riderDepth end
-  local deepest = 0
-  for _, font in ipairs(theme.READING_FONTS) do
-    local rider = theme.unitFont(font)
-    local below = theme.fontHeight(rider) - theme.fontAscent(rider)
-    if below > deepest then deepest = below end
-  end
-  riderDepth = deepest
-  return deepest
+    if riderDepth then
+        return riderDepth
+    end
+    local deepest = 0
+    for _, font in ipairs(theme.READING_FONTS) do
+        local rider = theme.unitFont(font)
+        local below = theme.fontHeight(rider) - theme.fontAscent(rider)
+        if below > deepest then
+            deepest = below
+        end
+    end
+    riderDepth = deepest
+    return deepest
 end
 
 --- Where a supporting row's box starts, to hang one inset above its floor.
@@ -1819,10 +1907,10 @@ end
 ---@param count? integer Rows in the group, default 1.
 ---@return integer
 function theme.rowTop(frame, font, floorY, count)
-  local height = theme.fontHeight(font)
-  local inset = math.max(frame.compact, height - theme.fontAscent(font))
-  local group = ((count or 1) - 1) * (height + 2)
-  return math.max(1, floorY - inset - theme.fontAscent(font) - group)
+    local height = theme.fontHeight(font)
+    local inset = math.max(frame.compact, height - theme.fontAscent(font))
+    local group = ((count or 1) - 1) * (height + 2)
+    return math.max(1, floorY - inset - theme.fontAscent(font) - group)
 end
 
 --- The proportional vertical bands a panel divides into.
@@ -1857,42 +1945,44 @@ end
 ---@param hasLabel boolean
 ---@return table bands `{label, body, tertiary}`, each `{y, h}`.
 function theme.bands(frame, rect, hasLabel)
-  local top = frame.compact
-  local extent = math.max(1, (rect.h - frame.bottom) - top)
-  local quarter = math.floor(extent / 4)
-  local labelHeight = hasLabel and quarter or 0
+    local top = frame.compact
+    local extent = math.max(1, (rect.h - frame.bottom) - top)
+    local quarter = math.floor(extent / 4)
+    local labelHeight = hasLabel and quarter or 0
 
-  -- **Always reserved, drawn into or not.** This used to be the question
-  -- `hasTertiary` answered, and with it went `floorHeight` -- how much a bar
-  -- takes off the panel's floor -- and `rowHeight`, how much two supporting
-  -- rows need when a quarter will not hold them. All three sized this band
-  -- from what the panel was going to put in it, which is exactly the
-  -- dependence on content this rule removes. A quarter is a quarter.
-  --
-  -- A bar still sits on the panel's floor, which is this band's own floor,
-  -- so a bar is drawn *inside* the tertiary quarter rather than beneath it.
-  -- It is shorter than the quarter at every span this dashboard builds, so
-  -- a panel drawing a bar and a supporting row has room for the row above
-  -- it; `testTertiaryQuarterHoldsItsFurniture` is what holds that.
-  local tertiaryHeight = quarter
+    -- **Always reserved, drawn into or not.** This used to be the question
+    -- `hasTertiary` answered, and with it went `floorHeight` -- how much a bar
+    -- takes off the panel's floor -- and `rowHeight`, how much two supporting
+    -- rows need when a quarter will not hold them. All three sized this band
+    -- from what the panel was going to put in it, which is exactly the
+    -- dependence on content this rule removes. A quarter is a quarter.
+    --
+    -- A bar still sits on the panel's floor, which is this band's own floor,
+    -- so a bar is drawn *inside* the tertiary quarter rather than beneath it.
+    -- It is shorter than the quarter at every span this dashboard builds, so
+    -- a panel drawing a bar and a supporting row has room for the row above
+    -- it; `testTertiaryQuarterHoldsItsFurniture` is what holds that.
+    local tertiaryHeight = quarter
 
-  -- **Where the heading's font overflows its band, the body yields too.** The
-  -- label band is a quarter, and on a short panel a quarter is smaller than
-  -- any font the dashboard has, so the heading keeps its size and spills
-  -- downward. `theme.clampToPanel` keeps it on the panel; this keeps it off
-  -- the reading. Without it a 40 px panel drew its heading through its own
-  -- number, which is the same "the font wins" decision followed one step
-  -- further than the mocks followed it.
-  local bodyTop = top + labelHeight
-  if hasLabel and frame.top > bodyTop then bodyTop = frame.top end
-  local bodyHeight = math.max(1, (top + extent) - tertiaryHeight - bodyTop)
+    -- **Where the heading's font overflows its band, the body yields too.** The
+    -- label band is a quarter, and on a short panel a quarter is smaller than
+    -- any font the dashboard has, so the heading keeps its size and spills
+    -- downward. `theme.clampToPanel` keeps it on the panel; this keeps it off
+    -- the reading. Without it a 40 px panel drew its heading through its own
+    -- number, which is the same "the font wins" decision followed one step
+    -- further than the mocks followed it.
+    local bodyTop = top + labelHeight
+    if hasLabel and frame.top > bodyTop then
+        bodyTop = frame.top
+    end
+    local bodyHeight = math.max(1, (top + extent) - tertiaryHeight - bodyTop)
 
-  return {
-    label = {y = top, h = labelHeight},
-    body = {y = bodyTop, h = bodyHeight},
-    tertiary = {y = bodyTop + bodyHeight, h = tertiaryHeight},
-    extent = extent,
-  }
+    return {
+        label = { y = top, h = labelHeight },
+        body = { y = bodyTop, h = bodyHeight },
+        tertiary = { y = bodyTop + bodyHeight, h = tertiaryHeight },
+        extent = extent,
+    }
 end
 
 --- The largest reading font whose ink fits a band.
@@ -1927,11 +2017,13 @@ end
 ---@param height integer Band height in pixels.
 ---@return any font
 function theme.bandFont(height)
-  local ordered = theme.READING_FONTS
-  for index = 1, #ordered do
-    if theme.fontAscent(ordered[index]) <= height then return ordered[index] end
-  end
-  return ordered[#ordered]
+    local ordered = theme.READING_FONTS
+    for index = 1, #ordered do
+        if theme.fontAscent(ordered[index]) <= height then
+            return ordered[index]
+        end
+    end
+    return ordered[#ordered]
 end
 
 --- Where a block of `height` starts, to sit centred in a band.
@@ -1944,7 +2036,7 @@ end
 ---@param height integer
 ---@return integer
 function theme.centreInBand(band, height)
-  return band.y + math.floor((band.h - height) / 2)
+    return band.y + math.floor((band.h - height) / 2)
 end
 
 --- Where a block of `height` starts, to sit centred on the panel.
@@ -1968,15 +2060,15 @@ end
 ---@param height integer
 ---@return integer
 function theme.bodyTop(ladder, height)
-  -- Never above the first row the panel owns -- the panel's own top edge,
-  -- or the bottom of EdgeTX's menu button on the one panel it covers. Where
-  -- the block is taller than what is left, centring would push its first
-  -- pixels under the button or off the edge, where they are simply painted
-  -- over; the overflow goes downward only, which is the decision
-  -- `clampToPanel` makes at the same edge for the same reason. The room the
-  -- font was chosen from carries the same cap, so the downward overflow
-  -- cannot reach the panel's floor.
-  return math.max(ladder.top, math.floor(ladder.centre - height / 2))
+    -- Never above the first row the panel owns -- the panel's own top edge,
+    -- or the bottom of EdgeTX's menu button on the one panel it covers. Where
+    -- the block is taller than what is left, centring would push its first
+    -- pixels under the button or off the edge, where they are simply painted
+    -- over; the overflow goes downward only, which is the decision
+    -- `clampToPanel` makes at the same edge for the same reason. The room the
+    -- font was chosen from carries the same cap, so the downward overflow
+    -- cannot reach the panel's floor.
+    return math.max(ladder.top, math.floor(ladder.centre - height / 2))
 end
 
 --- Keep a label's glyphs on the panel, whatever its band says.
@@ -2003,9 +2095,9 @@ end
 ---@param panelHeight integer
 ---@return integer
 function theme.clampToPanel(y, font, panelHeight)
-  local ink = theme.fontAscent(font)
-  local top = math.max(0, y)
-  return math.min(top, math.max(0, panelHeight - ink))
+    local ink = theme.fontAscent(font)
+    local top = math.max(0, y)
+    return math.min(top, math.max(0, panelHeight - ink))
 end
 
 --- Lay out a standard panel into a table the component owns.
@@ -2060,213 +2152,210 @@ end
 ---@param out table The component's own region table, overwritten in place.
 ---@return table out
 function theme.panel(resolved, rect, fonts, spec, out)
-  -- **`spec.frame`, not `theme.frame`.** The host wraps `frame` per component
-  -- to lay a panel out around the corner EdgeTX paints its menu button over,
-  -- and that wrapper is reachable only through the `themeBuilder` a component
-  -- was handed. Calling the module's own function here skips it, and the
-  -- panel in the grid's top left draws its heading under the button -- which
-  -- is precisely the defect the shared frame exists to prevent, reintroduced
-  -- by the helper meant to share it.
-  local frame = spec.frame
-  local draws = spec.draws
-  local ladder = theme.ladder(resolved, rect, frame)
+    -- **`spec.frame`, not `theme.frame`.** The host wraps `frame` per component
+    -- to lay a panel out around the corner EdgeTX paints its menu button over,
+    -- and that wrapper is reachable only through the `themeBuilder` a component
+    -- was handed. Calling the module's own function here skips it, and the
+    -- panel in the grid's top left draws its heading under the button -- which
+    -- is precisely the defect the shared frame exists to prevent, reintroduced
+    -- by the helper meant to share it.
+    local frame = spec.frame
+    local draws = spec.draws
+    local ladder = theme.ladder(resolved, rect, frame)
 
-  -- The component's intent, narrowed by what the panel can hold. A component
-  -- may decline what it was granted and may not claim what it was not.
-  local rows = draws.rows == true and ladder.rows > 0
-  local visual = draws.visual == true and ladder.visual
+    -- The component's intent, narrowed by what the panel can hold. A component
+    -- may decline what it was granted and may not claim what it was not.
+    local rows = draws.rows == true and ladder.rows > 0
+    local visual = draws.visual == true and ladder.visual
 
-  -- **A reading beside a compact visual gets a slot; one on its own gets the
-  -- box.** A bar spans the panel by design and is exempt, so only a compact
-  -- visual makes this a two-element panel. The visual is bounded by the slot
-  -- it lives in as well as by the panel, so a narrow panel shrinks it rather
-  -- than letting it reach across the middle into the reading.
-  local half = math.floor(frame.content / 2)
-  local compact = visual and spec.compact ~= nil
-  local size = compact and math.min(spec.compact(rect, half), half) or 0
+    -- **A reading beside a compact visual gets a slot; one on its own gets the
+    -- box.** A bar spans the panel by design and is exempt, so only a compact
+    -- visual makes this a two-element panel. The visual is bounded by the slot
+    -- it lives in as well as by the panel, so a narrow panel shrinks it rather
+    -- than letting it reach across the middle into the reading.
+    local half = math.floor(frame.content / 2)
+    local compact = visual and spec.compact ~= nil
+    local size = compact and math.min(spec.compact(rect, half), half) or 0
 
-  -- The reading's forms, or the reading and a unit it may not drop. A unit
-  -- that carries magnitude -- a distance's `km` -- is part of the reading
-  -- and the pair is what the ladder is walked against; one that is
-  -- redundancy is bought with width after the font is chosen.
-  --
-  -- **Fitted against the whole content box, never against the slot.** The
-  -- reading does not know there is a dial and must not: a reading that
-  -- shrinks to make room for a decoration has paid for the decoration with
-  -- magnitude, and magnitude is the first thing a pilot reads. Whether the
-  -- dial survives is settled below, by the one place that knows how wide the
-  -- reading turned out to be.
-  local font, formIndex, unitFont, showUnit
-  if spec.unit ~= nil then
-    font, unitFont, showUnit = theme.fitReadingUnit(
-      spec.forms[1], spec.unit, frame.content, ladder.room, spec.unitRequired)
-    formIndex = 1
-  else
-    font, formIndex = theme.fitReading(spec.forms, frame.content, ladder.room)
-  end
-
-  -- **One name for the reading's band.** Three components called this
-  -- `valueY`, `nameY` and `clockY`, and one carried two of them for one
-  -- thing. The name is `valueY` here and a component that wants another word
-  -- for it has to write the alias itself, which is the point: the divergence
-  -- has to be deliberate to happen at all.
-  local height = theme.fontHeight(font)
-  local width = spec.unit ~= nil
-    and theme.readingWidth(font, spec.forms[formIndex], unitFont,
-      showUnit and spec.unit or nil)
-    or theme.measureText(font, spec.forms[formIndex])
-
-  -- Asked of the widest string the component can ever print, so a panel's
-  -- arrangement is fixed for its life rather than flipping as its value
-  -- changes.
-  --
-  -- **This is the only place the dial's fate is decided, and it is the place
-  -- that knows the reading's width.** It used to be decided twice: once
-  -- above, by fitting the reading into half a panel so a dial would have
-  -- somewhere to go, and again here, by shedding the dial if that had not
-  -- been enough. A reading could therefore lose a size to buy room for a
-  -- visualization that was then dropped anyway -- paying for something it
-  -- did not get. Splitting one question across two places is the seam that
-  -- has produced eight defects in this dashboard, so it is answered once.
-  --
-  -- The reading has already taken the size the panel allows. If the dial
-  -- separates from it, the panel carries both; if it does not, the dial
-  -- goes. Nothing is refitted, because nothing was narrowed.
-  local slots
-  if compact then
-    local separated
-    slots, separated = theme.slotsFor(frame, width, size)
-    if not separated then
-      compact, size, slots, visual = false, 0, nil, false
+    -- The reading's forms, or the reading and a unit it may not drop. A unit
+    -- that carries magnitude -- a distance's `km` -- is part of the reading
+    -- and the pair is what the ladder is walked against; one that is
+    -- redundancy is bought with width after the font is chosen.
+    --
+    -- **Fitted against the whole content box, never against the slot.** The
+    -- reading does not know there is a dial and must not: a reading that
+    -- shrinks to make room for a decoration has paid for the decoration with
+    -- magnitude, and magnitude is the first thing a pilot reads. Whether the
+    -- dial survives is settled below, by the one place that knows how wide the
+    -- reading turned out to be.
+    local font, formIndex, unitFont, showUnit
+    if spec.unit ~= nil then
+        font, unitFont, showUnit =
+            theme.fitReadingUnit(spec.forms[1], spec.unit, frame.content, ladder.room, spec.unitRequired)
+        formIndex = 1
+    else
+        font, formIndex = theme.fitReading(spec.forms, frame.content, ladder.room)
     end
-  end
 
-  -- Computed once, and only where a compact visual makes them mean
-  -- anything. The reading and the visual both want them, and asking twice is
-  -- two multiplications and two roundings per panel per reflow -- the kind of
-  -- cost that turns a shared helper into a more expensive copy. A bar-backed
-  -- panel has no slots at all and must not pay for them; the two-item
-  -- supporting row asks separately because it splits whether or not the body
-  -- above it does.
-  local slotLeft, slotRight
-  local centre
-  if compact then
-    slotLeft, slotRight = theme.slotCentres(frame, slots)
-    centre = slotLeft
-  else
-    centre = frame.pad + math.floor(frame.content / 2)
-  end
+    -- **One name for the reading's band.** Three components called this
+    -- `valueY`, `nameY` and `clockY`, and one carried two of them for one
+    -- thing. The name is `valueY` here and a component that wants another word
+    -- for it has to write the alias itself, which is the point: the divergence
+    -- has to be deliberate to happen at all.
+    local height = theme.fontHeight(font)
+    local width = spec.unit ~= nil
+            and theme.readingWidth(font, spec.forms[formIndex], unitFont, showUnit and spec.unit or nil)
+        or theme.measureText(font, spec.forms[formIndex])
 
-  out.frame = frame
-  out.pad = frame.pad
-  out.content = frame.content
-  out.ladder = ladder
-
-  -- A lone reading centres across the whole content box. A reading with a
-  -- compact visual beside it takes the left slot, which is the caller's
-  -- business until a component in this set has one.
-  -- Reading and visual share the body band and are centred on each other, so
-  -- the block the band centres is the deeper of the two.
-  --
-  -- **Measured as ink, not as line box.** A font's line height carries a
-  -- descent and a leading that nothing in this catalogue draws into, so
-  -- centring the box centres a rectangle that is taller than the glyphs and
-  -- leaves the number sitting high in its band. `theme.bodyTop` is given the
-  -- ink height for that reason, and the line box is then placed so the ink
-  -- lands where the band wants it -- which for a non-descending string means
-  -- the box top and the ink top are the same pixel.
-  local ink = theme.fontAscent(font)
-  local blockHeight = math.max(ink, size)
-  local blockTop = theme.bodyTop(ladder, blockHeight)
-
-  out.value = font
-  out.formIndex = formIndex
-  out.unitFont = unitFont
-  out.showUnit = showUnit == true
-  out.valueCentre = centre
-  out.valueX = theme.slotX(centre, width)
-  out.valueWidth = width
-  -- Only where there is one. A panel with no compact visual writes three
-  -- nils per reflow otherwise, and `out` is reused rather than rebuilt so
-  -- they have to be cleared rather than simply absent -- which is the cost
-  -- of the table the component owns, paid where it is actually owed.
-  if compact then
-    out.visualSize = size
-    out.visualCentreX = slotRight
-    out.visualCentreY = blockTop + math.floor(blockHeight / 2)
-  elseif out.visualSize ~= nil then
-    out.visualSize, out.visualCentreX, out.visualCentreY = nil, nil, nil
-  end
-  -- The room the reading had, which is not the width it draws in: the drawn
-  -- box hugs the measured string so its slot can centre it, and a later
-  -- question about whether a unit still fits has to be asked against the
-  -- room. **A slotted reading's room is its slot, not the panel** -- asking
-  -- the whole box would tell a unit arriving at runtime that it fits beside
-  -- a reading sharing the panel with a dial.
-  --
-  -- It is not simply half the panel, because the reading is no longer fitted
-  -- to half the panel. It is centred on the left slot, so what it can occupy
-  -- is symmetric about that centre: bounded on one side by the content edge
-  -- and on the other by where the dial begins. The slots that decided the
-  -- dial's fate are the slots that answer this, so the two cannot drift.
-  if compact then
-    local visualStart = slotRight - math.floor(size / 2)
-    out.valueBudget = 2 * math.max(1,
-      math.min(slotLeft - frame.pad, visualStart - slotLeft))
-  else
-    out.valueBudget = frame.content
-  end
-  -- The line box's top, which for a string that does not descend is also
-  -- the ink's top. `height` is the box and `ink` is what is drawn; the block
-  -- was measured in ink, so the offset inside it is too.
-  out.valueY = blockTop + math.floor((blockHeight - ink) / 2)
-
-  -- A bar spans the panel by design and sits on its floor rather than in a
-  -- band; a supporting row sits in the tertiary band above it.
-  local barY = math.max(1, rect.h - frame.bottom - resolved.spacing.barHeight)
-  out.barY = barY
-  out.showVisual = visual
-  out.showDetail = rows
-  -- **Hung from the panel's floor, mirroring the heading pinned to its
-  -- top.** A bar owns the floor where one is reserved, so the row hangs from
-  -- the bar instead; on a bare panel it hangs from the bottom edge.
-  --
-  -- Asked of `spec.bar`, which is whether this panel ever draws one, rather
-  -- than of whether one is on screen now -- a panel that can draw a bar and
-  -- currently does not still keeps its floor clear for one, so the row does
-  -- not move when the bar arrives. The comment here used to say the
-  -- opposite of what the line beneath it did, which is worth correcting
-  -- rather than quietly fixing: it claimed the question was what the
-  -- component draws, and then gave the reason for asking what it reserves.
-  out.detailY = theme.rowTop(frame, fonts.label,
-    spec.bar and barY or rect.h)
-  -- **A row of one centres across the content box; a row of two takes the
-  -- panel's two slot centres.** Which it is is the component's to say,
-  -- because a span knows only what is permitted -- `metric` may carry a
-  -- secondary reading at `2 x 2` and whether it does depends on a source
-  -- being configured. Two boxes centred that far apart can each be half the
-  -- distance between them before they meet, and that is the budget each
-  -- wording is fitted to.
-  if spec.rowItems == 2 then
-    -- The row's own slots, which are the tightened pair whatever the body
-    -- fell back to: a row is two labels and cannot collide the way a reading
-    -- and a dial can.
-    local left, right = theme.slotCentres(frame)
-    local budget = math.max(1, right - left - 4)
-    out.detailCentre, out.detailWidth = left, budget
-    out.detailX = left - math.floor(budget / 2)
-    out.rowRightCentre, out.rowRightWidth = right, budget
-    out.rowRightX = right - math.floor(budget / 2)
-  else
-    out.detailCentre = frame.pad + math.floor(frame.content / 2)
-    out.detailWidth = frame.content
-    out.detailX = frame.pad
-    if out.rowRightCentre ~= nil then
-      out.rowRightCentre, out.rowRightWidth, out.rowRightX = nil, nil, nil
+    -- Asked of the widest string the component can ever print, so a panel's
+    -- arrangement is fixed for its life rather than flipping as its value
+    -- changes.
+    --
+    -- **This is the only place the dial's fate is decided, and it is the place
+    -- that knows the reading's width.** It used to be decided twice: once
+    -- above, by fitting the reading into half a panel so a dial would have
+    -- somewhere to go, and again here, by shedding the dial if that had not
+    -- been enough. A reading could therefore lose a size to buy room for a
+    -- visualization that was then dropped anyway -- paying for something it
+    -- did not get. Splitting one question across two places is the seam that
+    -- has produced eight defects in this dashboard, so it is answered once.
+    --
+    -- The reading has already taken the size the panel allows. If the dial
+    -- separates from it, the panel carries both; if it does not, the dial
+    -- goes. Nothing is refitted, because nothing was narrowed.
+    local slots
+    if compact then
+        local separated
+        slots, separated = theme.slotsFor(frame, width, size)
+        if not separated then
+            compact, size, slots, visual = false, 0, nil, false
+        end
     end
-  end
 
-  return out
+    -- Computed once, and only where a compact visual makes them mean
+    -- anything. The reading and the visual both want them, and asking twice is
+    -- two multiplications and two roundings per panel per reflow -- the kind of
+    -- cost that turns a shared helper into a more expensive copy. A bar-backed
+    -- panel has no slots at all and must not pay for them; the two-item
+    -- supporting row asks separately because it splits whether or not the body
+    -- above it does.
+    local slotLeft, slotRight
+    local centre
+    if compact then
+        slotLeft, slotRight = theme.slotCentres(frame, slots)
+        centre = slotLeft
+    else
+        centre = frame.pad + math.floor(frame.content / 2)
+    end
+
+    out.frame = frame
+    out.pad = frame.pad
+    out.content = frame.content
+    out.ladder = ladder
+
+    -- A lone reading centres across the whole content box. A reading with a
+    -- compact visual beside it takes the left slot, which is the caller's
+    -- business until a component in this set has one.
+    -- Reading and visual share the body band and are centred on each other, so
+    -- the block the band centres is the deeper of the two.
+    --
+    -- **Measured as ink, not as line box.** A font's line height carries a
+    -- descent and a leading that nothing in this catalogue draws into, so
+    -- centring the box centres a rectangle that is taller than the glyphs and
+    -- leaves the number sitting high in its band. `theme.bodyTop` is given the
+    -- ink height for that reason, and the line box is then placed so the ink
+    -- lands where the band wants it -- which for a non-descending string means
+    -- the box top and the ink top are the same pixel.
+    local ink = theme.fontAscent(font)
+    local blockHeight = math.max(ink, size)
+    local blockTop = theme.bodyTop(ladder, blockHeight)
+
+    out.value = font
+    out.formIndex = formIndex
+    out.unitFont = unitFont
+    out.showUnit = showUnit == true
+    out.valueCentre = centre
+    out.valueX = theme.slotX(centre, width)
+    out.valueWidth = width
+    -- Only where there is one. A panel with no compact visual writes three
+    -- nils per reflow otherwise, and `out` is reused rather than rebuilt so
+    -- they have to be cleared rather than simply absent -- which is the cost
+    -- of the table the component owns, paid where it is actually owed.
+    if compact then
+        out.visualSize = size
+        out.visualCentreX = slotRight
+        out.visualCentreY = blockTop + math.floor(blockHeight / 2)
+    elseif out.visualSize ~= nil then
+        out.visualSize, out.visualCentreX, out.visualCentreY = nil, nil, nil
+    end
+    -- The room the reading had, which is not the width it draws in: the drawn
+    -- box hugs the measured string so its slot can centre it, and a later
+    -- question about whether a unit still fits has to be asked against the
+    -- room. **A slotted reading's room is its slot, not the panel** -- asking
+    -- the whole box would tell a unit arriving at runtime that it fits beside
+    -- a reading sharing the panel with a dial.
+    --
+    -- It is not simply half the panel, because the reading is no longer fitted
+    -- to half the panel. It is centred on the left slot, so what it can occupy
+    -- is symmetric about that centre: bounded on one side by the content edge
+    -- and on the other by where the dial begins. The slots that decided the
+    -- dial's fate are the slots that answer this, so the two cannot drift.
+    if compact then
+        local visualStart = slotRight - math.floor(size / 2)
+        out.valueBudget = 2 * math.max(1, math.min(slotLeft - frame.pad, visualStart - slotLeft))
+    else
+        out.valueBudget = frame.content
+    end
+    -- The line box's top, which for a string that does not descend is also
+    -- the ink's top. `height` is the box and `ink` is what is drawn; the block
+    -- was measured in ink, so the offset inside it is too.
+    out.valueY = blockTop + math.floor((blockHeight - ink) / 2)
+
+    -- A bar spans the panel by design and sits on its floor rather than in a
+    -- band; a supporting row sits in the tertiary band above it.
+    local barY = math.max(1, rect.h - frame.bottom - resolved.spacing.barHeight)
+    out.barY = barY
+    out.showVisual = visual
+    out.showDetail = rows
+    -- **Hung from the panel's floor, mirroring the heading pinned to its
+    -- top.** A bar owns the floor where one is reserved, so the row hangs from
+    -- the bar instead; on a bare panel it hangs from the bottom edge.
+    --
+    -- Asked of `spec.bar`, which is whether this panel ever draws one, rather
+    -- than of whether one is on screen now -- a panel that can draw a bar and
+    -- currently does not still keeps its floor clear for one, so the row does
+    -- not move when the bar arrives. The comment here used to say the
+    -- opposite of what the line beneath it did, which is worth correcting
+    -- rather than quietly fixing: it claimed the question was what the
+    -- component draws, and then gave the reason for asking what it reserves.
+    out.detailY = theme.rowTop(frame, fonts.label, spec.bar and barY or rect.h)
+    -- **A row of one centres across the content box; a row of two takes the
+    -- panel's two slot centres.** Which it is is the component's to say,
+    -- because a span knows only what is permitted -- `metric` may carry a
+    -- secondary reading at `2 x 2` and whether it does depends on a source
+    -- being configured. Two boxes centred that far apart can each be half the
+    -- distance between them before they meet, and that is the budget each
+    -- wording is fitted to.
+    if spec.rowItems == 2 then
+        -- The row's own slots, which are the tightened pair whatever the body
+        -- fell back to: a row is two labels and cannot collide the way a reading
+        -- and a dial can.
+        local left, right = theme.slotCentres(frame)
+        local budget = math.max(1, right - left - 4)
+        out.detailCentre, out.detailWidth = left, budget
+        out.detailX = left - math.floor(budget / 2)
+        out.rowRightCentre, out.rowRightWidth = right, budget
+        out.rowRightX = right - math.floor(budget / 2)
+    else
+        out.detailCentre = frame.pad + math.floor(frame.content / 2)
+        out.detailWidth = frame.content
+        out.detailX = frame.pad
+        if out.rowRightCentre ~= nil then
+            out.rowRightCentre, out.rowRightWidth, out.rowRightX = nil, nil, nil
+        end
+    end
+
+    return out
 end
 
 --- Font roles for a component span.
@@ -2275,22 +2364,22 @@ end
 ---@param rowSpan integer
 ---@return table fonts
 function theme.typography(colSpan, rowSpan)
-  local cells = (colSpan or 1) * (rowSpan or 1)
-  local primary = MIDSIZE
+    local cells = (colSpan or 1) * (rowSpan or 1)
+    local primary = MIDSIZE
 
-  if cells >= 4 then
-    primary = XXLSIZE
-  elseif cells >= 2 then
-    primary = DBLSIZE
-  end
+    if cells >= 4 then
+        primary = XXLSIZE
+    elseif cells >= 2 then
+        primary = DBLSIZE
+    end
 
-  return {
-    primary = primary,
-    secondary = cells >= 4 and MIDSIZE or SMLSIZE,
-    unit = cells >= 4 and MIDSIZE or SMLSIZE,
-    label = SMLSIZE,
-    badge = SMLSIZE,
-  }
+    return {
+        primary = primary,
+        secondary = cells >= 4 and MIDSIZE or SMLSIZE,
+        unit = cells >= 4 and MIDSIZE or SMLSIZE,
+        label = SMLSIZE,
+        badge = SMLSIZE,
+    }
 end
 
 --- Resolve a component state into concrete presentation values.
@@ -2319,60 +2408,62 @@ end
 ---@param accentName? string
 ---@return table presentation
 function theme.state(resolved, state, accentName)
-  local color = resolved.color
-  local presentation = {
-    state = state or "normal",
-    accent = theme.accentColor(resolved, accentName),
-    value = color.text,
-    label = color.textMuted,
-    border = color.border,
-    borderWidth = 0,
-    badge = nil,
-    dim = false,
-  }
+    local color = resolved.color
+    local presentation = {
+        state = state or "normal",
+        accent = theme.accentColor(resolved, accentName),
+        value = color.text,
+        label = color.textMuted,
+        border = color.border,
+        borderWidth = 0,
+        badge = nil,
+        dim = false,
+    }
 
-  if state == "selected" then
-    presentation.border = color.cyan
-    presentation.borderWidth = resolved.spacing.borderFocus
-  elseif state == "stale" then
-    -- Freshness overrides the decorative accent: stale data must not look healthy.
-    presentation.accent = color.textFaint
-    presentation.value = color.textMuted
-    presentation.label = color.textFaint
-    presentation.badge = theme.BADGES.stale
-    presentation.dim = true
-  elseif state == "warning" then
-    -- The field carries the alarm, not the frame. `borderWidth` stays zero, so
-    -- the panel draws no outline and the border keeps one meaning.
-    presentation.accent = color.amber
-    presentation.surface = resolved.alertColor.warning
-    presentation.badge = theme.BADGES.warning
-  elseif state == "critical" then
-    presentation.accent = color.critical
-    presentation.surface = resolved.alertColor.critical
-    presentation.value = color.text
-    presentation.badge = theme.BADGES.critical
-  elseif state == "unavailable" then
-    presentation.accent = color.textFaint
-    presentation.value = color.textFaint
-    presentation.label = color.textFaint
-    presentation.badge = theme.BADGES.unavailable
-    presentation.dim = true
-  elseif state == "editing" then
-    presentation.border = color.cyan
-    presentation.borderWidth = resolved.spacing.borderFocus
-    presentation.badge = theme.BADGES.editing
-  end
+    if state == "selected" then
+        presentation.border = color.cyan
+        presentation.borderWidth = resolved.spacing.borderFocus
+    elseif state == "stale" then
+        -- Freshness overrides the decorative accent: stale data must not look healthy.
+        presentation.accent = color.textFaint
+        presentation.value = color.textMuted
+        presentation.label = color.textFaint
+        presentation.badge = theme.BADGES.stale
+        presentation.dim = true
+    elseif state == "warning" then
+        -- The field carries the alarm, not the frame. `borderWidth` stays zero, so
+        -- the panel draws no outline and the border keeps one meaning.
+        presentation.accent = color.amber
+        presentation.surface = resolved.alertColor.warning
+        presentation.badge = theme.BADGES.warning
+    elseif state == "critical" then
+        presentation.accent = color.critical
+        presentation.surface = resolved.alertColor.critical
+        presentation.value = color.text
+        presentation.badge = theme.BADGES.critical
+    elseif state == "unavailable" then
+        presentation.accent = color.textFaint
+        presentation.value = color.textFaint
+        presentation.label = color.textFaint
+        presentation.badge = theme.BADGES.unavailable
+        presentation.dim = true
+    elseif state == "editing" then
+        presentation.border = color.cyan
+        presentation.borderWidth = resolved.spacing.borderFocus
+        presentation.badge = theme.BADGES.editing
+    end
 
-  return presentation
+    return presentation
 end
 
 --- Expose the Modern palette for tests and documentation.
 ---@return table
 function theme.modern()
-  local copy = {}
-  for key, value in pairs(MODERN) do copy[key] = value end
-  return copy
+    local copy = {}
+    for key, value in pairs(MODERN) do
+        copy[key] = value
+    end
+    return copy
 end
 
 return theme

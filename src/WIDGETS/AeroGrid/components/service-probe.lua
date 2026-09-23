@@ -21,25 +21,35 @@
 ---@field accent? string
 
 local probe = {
-  id = "service-probe",
-  apiVersion = 1,
-  supportedSpans = {"any"},
-  -- Diagnostics are read, not watched. Two hertz is plenty and leaves the
-  -- instruction budget to the services themselves.
-  refreshInterval = 50,
-  settings = {
-    {key = "service", label = "Service", type = "string", default = "telemetry",
-      choices = {"telemetry", "model", "control", "extrema", "navigation"}},
-    {key = "source", label = "Source", type = "string", default = ""},
-    {key = "extra", label = "Second source", type = "string", default = ""},
-    {key = "index", label = "Index", type = "number", default = 0},
-    -- An empty label is not an absent one: it means derive the heading at
-    -- runtime, here from the name of the service being probed. A
-    -- component with a fixed heading states it as its default instead.
-    {key = "label", label = "Label", type = "string", default = ""},
-    {key = "accent", label = "Accent", type = "string", default = "cyan",
-      choices = {"cyan", "green", "amber", "orange"}},
-  },
+    id = "service-probe",
+    apiVersion = 1,
+    supportedSpans = { "any" },
+    -- Diagnostics are read, not watched. Two hertz is plenty and leaves the
+    -- instruction budget to the services themselves.
+    refreshInterval = 50,
+    settings = {
+        {
+            key = "service",
+            label = "Service",
+            type = "string",
+            default = "telemetry",
+            choices = { "telemetry", "model", "control", "extrema", "navigation" },
+        },
+        { key = "source", label = "Source", type = "string", default = "" },
+        { key = "extra", label = "Second source", type = "string", default = "" },
+        { key = "index", label = "Index", type = "number", default = 0 },
+        -- An empty label is not an absent one: it means derive the heading at
+        -- runtime, here from the name of the service being probed. A
+        -- component with a fixed heading states it as its default instead.
+        { key = "label", label = "Label", type = "string", default = "" },
+        {
+            key = "accent",
+            label = "Accent",
+            type = "string",
+            default = "cyan",
+            choices = { "cyan", "green", "amber", "orange" },
+        },
+    },
 }
 
 --- Most rows any probe will draw, whatever its span.
@@ -56,35 +66,39 @@ local VALUE_SHARE = 0.55
 ---@param settings AeroGridProbeSettings
 ---@return any subject Per-subscription view, where the service has one.
 local function subscribe(service, name, settings)
-  local source = settings.source
-  local extra = settings.extra
-  local index = settings.index
+    local source = settings.source
+    local extra = settings.extra
+    local index = settings.index
 
-  if name == "telemetry" then
-    return service:subscribe(source)
-  end
-  if name == "navigation" then
-    return service:subscribe(source, extra)
-  end
-  if name == "model" then
-    service:identity()
-    service:flightMode()
-    service:txVoltage()
-    service:timer(index)
-    return nil
-  end
-  if name == "control" then
-    if source ~= "" then service:trim(source) end
-    service:globalVariable(index)
-    return nil
-  end
-  if name == "extrema" then
-    service:flight(extra)
-    if source ~= "" then service:sessionExtrema(source) end
-    return nil
-  end
+    if name == "telemetry" then
+        return service:subscribe(source)
+    end
+    if name == "navigation" then
+        return service:subscribe(source, extra)
+    end
+    if name == "model" then
+        service:identity()
+        service:flightMode()
+        service:txVoltage()
+        service:timer(index)
+        return nil
+    end
+    if name == "control" then
+        if source ~= "" then
+            service:trim(source)
+        end
+        service:globalVariable(index)
+        return nil
+    end
+    if name == "extrema" then
+        service:flight(extra)
+        if source ~= "" then
+            service:sessionExtrema(source)
+        end
+        return nil
+    end
 
-  return nil
+    return nil
 end
 
 --- Compute the row geometry that fits the current rectangle.
@@ -96,42 +110,46 @@ end
 ---@param fonts table
 ---@return table
 function probe.regionsFor(theme, themeBuilder, rect, fonts)
-  -- The shared frame, not a second copy of its arithmetic. Repeating it here
-  -- meant this panel kept drawing its title into the corner EdgeTX paints its
-  -- menu button over, because only the shared helper knows about that.
-  local frame = themeBuilder.frame(theme, rect, fonts)
-  local pad = frame.pad
-  local compact = frame.compact
+    -- The shared frame, not a second copy of its arithmetic. Repeating it here
+    -- meant this panel kept drawing its title into the corner EdgeTX paints its
+    -- menu button over, because only the shared helper knows about that.
+    local frame = themeBuilder.frame(theme, rect, fonts)
+    local pad = frame.pad
+    local compact = frame.compact
 
-  local titleHeight = frame.labelHeight
-  local lineHeight = titleHeight + 2
-  local top = frame.top
+    local titleHeight = frame.labelHeight
+    local lineHeight = titleHeight + 2
+    local top = frame.top
 
-  local content = frame.content
-  local valueWidth = math.max(1, math.floor(content * VALUE_SHARE))
-  local keyWidth = math.max(1, content - valueWidth - 4)
+    local content = frame.content
+    local valueWidth = math.max(1, math.floor(content * VALUE_SHARE))
+    local keyWidth = math.max(1, content - valueWidth - 4)
 
-  -- The bottom margin is the frame's, not the horizontal padding. They were
-  -- the same number on a short panel until the padding had to clear the
-  -- accent stripe, at which point borrowing one for the other silently cost
-  -- this panel a row at every single-row span.
-  local room = rect.h - top - frame.bottom
-  local rows = math.floor(room / lineHeight)
-  if rows < 0 then rows = 0 end
-  if rows > MAX_ROWS then rows = MAX_ROWS end
+    -- The bottom margin is the frame's, not the horizontal padding. They were
+    -- the same number on a short panel until the padding had to clear the
+    -- accent stripe, at which point borrowing one for the other silently cost
+    -- this panel a row at every single-row span.
+    local room = rect.h - top - frame.bottom
+    local rows = math.floor(room / lineHeight)
+    if rows < 0 then
+        rows = 0
+    end
+    if rows > MAX_ROWS then
+        rows = MAX_ROWS
+    end
 
-  return {
-    frame = frame,
-    pad = pad,
-    compact = compact,
-    content = content,
-    top = top,
-    lineHeight = lineHeight,
-    keyWidth = keyWidth,
-    valueWidth = valueWidth,
-    valueX = pad + keyWidth + 4,
-    rows = rows,
-  }
+    return {
+        frame = frame,
+        pad = pad,
+        compact = compact,
+        content = content,
+        top = top,
+        lineHeight = lineHeight,
+        keyWidth = keyWidth,
+        valueWidth = valueWidth,
+        valueX = pad + keyWidth + 4,
+        rows = rows,
+    }
 end
 
 --- Build the probe's LVGL objects.
@@ -141,152 +159,164 @@ end
 ---@param services table
 ---@return table
 function probe.create(parent, rect, settings, services)
-  local theme = services.theme
-  local primitives = services.primitives
-  local fonts = services.fonts
-  local presentation = services.state("normal", settings.accent)
-  local area = probe.regionsFor(theme, services.themeBuilder, rect, fonts)
+    local theme = services.theme
+    local primitives = services.primitives
+    local fonts = services.fonts
+    local presentation = services.state("normal", settings.accent)
+    local area = probe.regionsFor(theme, services.themeBuilder, rect, fonts)
 
-  local name = tostring(settings.service or "")
-  local service = services[name]
+    local name = tostring(settings.service or "")
+    local service = services[name]
 
-  local context = {
-    panel = primitives.panel(parent, rect, theme, presentation),
-    theme = theme,
-    themeBuilder = services.themeBuilder,
-    primitives = primitives,
-    fonts = fonts,
-    settings = settings,
-    serviceName = name,
-    service = service,
-    rows = {},
-    keys = {},
-    values = {},
-    texts = {},
-  }
+    local context = {
+        panel = primitives.panel(parent, rect, theme, presentation),
+        theme = theme,
+        themeBuilder = services.themeBuilder,
+        primitives = primitives,
+        fonts = fonts,
+        settings = settings,
+        serviceName = name,
+        service = service,
+        rows = {},
+        keys = {},
+        values = {},
+        texts = {},
+    }
 
-  -- A service that failed to load leaves the probe visibly unavailable rather
-  -- than raising: the dashboard must survive a missing module.
-  if service then
-    local ok, subject = pcall(subscribe, service, name, settings)
-    if ok then context.subject = subject else context.subscribeError = true end
-  end
-
-  local title = settings.label
-  if type(title) ~= "string" or title == "" then title = name end
-
-  -- The shared header, not a private copy of it. Computing its own title width
-  -- meant this panel reserved no badge column at all, so the one shipped
-  -- diagnostic view was the only thing on the dashboard that could not show a
-  -- state, and it had already drifted once before: its title used to be drawn
-  -- into the corner EdgeTX paints its menu button over, because only the
-  -- shared helper knows that corner exists.
-  context.title, context.badge = primitives.header(
-    context.panel.root, theme, area.frame, fonts, title, presentation,
-    services.themeBuilder)
-
-  -- Every row object is created once, up to the cap, so a later enlargement
-  -- reveals rows instead of forcing a rebuild.
-  for index = 1, MAX_ROWS do
-    local y = area.top + (index - 1) * area.lineHeight
-
-    context.keys[index] = primitives.label(context.panel.root, theme, {
-      x = area.pad,
-      y = y,
-      w = area.keyWidth,
-      text = "",
-      color = theme.color.textFaint,
-      font = fonts.label,
-    })
-
-    context.values[index] = primitives.label(context.panel.root, theme, {
-      x = area.valueX,
-      y = y,
-      w = area.valueWidth,
-      text = "",
-      color = theme.color.text,
-      font = fonts.label,
-    })
-
-    context.texts[index] = ""
-    if index > area.rows then
-      lvgl.hide(context.keys[index])
-      lvgl.hide(context.values[index])
+    -- A service that failed to load leaves the probe visibly unavailable rather
+    -- than raising: the dashboard must survive a missing module.
+    if service then
+        local ok, subject = pcall(subscribe, service, name, settings)
+        if ok then
+            context.subject = subject
+        else
+            context.subscribeError = true
+        end
     end
-  end
 
-  context.visibleRows = area.rows
-  return context
+    local title = settings.label
+    if type(title) ~= "string" or title == "" then
+        title = name
+    end
+
+    -- The shared header, not a private copy of it. Computing its own title width
+    -- meant this panel reserved no badge column at all, so the one shipped
+    -- diagnostic view was the only thing on the dashboard that could not show a
+    -- state, and it had already drifted once before: its title used to be drawn
+    -- into the corner EdgeTX paints its menu button over, because only the
+    -- shared helper knows that corner exists.
+    context.title, context.badge =
+        primitives.header(context.panel.root, theme, area.frame, fonts, title, presentation, services.themeBuilder)
+
+    -- Every row object is created once, up to the cap, so a later enlargement
+    -- reveals rows instead of forcing a rebuild.
+    for index = 1, MAX_ROWS do
+        local y = area.top + (index - 1) * area.lineHeight
+
+        context.keys[index] = primitives.label(context.panel.root, theme, {
+            x = area.pad,
+            y = y,
+            w = area.keyWidth,
+            text = "",
+            color = theme.color.textFaint,
+            font = fonts.label,
+        })
+
+        context.values[index] = primitives.label(context.panel.root, theme, {
+            x = area.valueX,
+            y = y,
+            w = area.valueWidth,
+            text = "",
+            color = theme.color.text,
+            font = fonts.label,
+        })
+
+        context.texts[index] = ""
+        if index > area.rows then
+            lvgl.hide(context.keys[index])
+            lvgl.hide(context.values[index])
+        end
+    end
+
+    context.visibleRows = area.rows
+    return context
 end
 
 --- Ask the service to describe itself and repaint only what changed.
 ---@param context table
 function probe.refresh(context)
-  local service = context.service
-  local rows = context.rows
-  local count = 0
+    local service = context.service
+    local rows = context.rows
+    local count = 0
 
-  if service and not context.subscribeError then
-    count = service:describe(rows, context.subject) or 0
-  elseif not service then
-    count = 1
-    rows[1] = rows[1] or {}
-    rows[1].label = string.upper(context.serviceName)
-    rows[1].text = "UNAVAILABLE"
-  end
-
-  if count > context.visibleRows then count = context.visibleRows end
-
-  for index = 1, context.visibleRows do
-    local row = index <= count and rows[index] or nil
-    local key = row and row.label or ""
-    local text = row and row.text or ""
-    local combined = key .. "\1" .. text
-
-    -- Touching LVGL costs more than comparing a string, and a diagnostic view
-    -- that repainted every row every refresh would dominate the frame.
-    if combined ~= context.texts[index] then
-      context.texts[index] = combined
-      context.keys[index]:set({text = key})
-      context.values[index]:set({text = text})
+    if service and not context.subscribeError then
+        count = service:describe(rows, context.subject) or 0
+    elseif not service then
+        count = 1
+        rows[1] = rows[1] or {}
+        rows[1].label = string.upper(context.serviceName)
+        rows[1].text = "UNAVAILABLE"
     end
-  end
+
+    if count > context.visibleRows then
+        count = context.visibleRows
+    end
+
+    for index = 1, context.visibleRows do
+        local row = index <= count and rows[index] or nil
+        local key = row and row.label or ""
+        local text = row and row.text or ""
+        local combined = key .. "\1" .. text
+
+        -- Touching LVGL costs more than comparing a string, and a diagnostic view
+        -- that repainted every row every refresh would dominate the frame.
+        if combined ~= context.texts[index] then
+            context.texts[index] = combined
+            context.keys[index]:set({ text = key })
+            context.values[index]:set({ text = text })
+        end
+    end
 end
 
 --- Reposition after a zone change, revealing or shedding rows as room allows.
 ---@param context table
 ---@param rect AeroGridRect
 function probe.update(context, rect)
-  local area = probe.regionsFor(
-    context.theme, context.themeBuilder, rect, context.fonts)
+    local area = probe.regionsFor(context.theme, context.themeBuilder, rect, context.fonts)
 
-  context.primitives.resizePanel(context.panel, rect)
-  context.primitives.placeHeader(context.title, context.badge, area.frame,
-    context.themeBuilder, context.fonts, context.settings.label,
-      context.badgeText)
+    context.primitives.resizePanel(context.panel, rect)
+    context.primitives.placeHeader(
+        context.title,
+        context.badge,
+        area.frame,
+        context.themeBuilder,
+        context.fonts,
+        context.settings.label,
+        context.badgeText
+    )
 
-  local reconcile = context.primitives.reconcile
-  local before = context.visibleRows
+    local reconcile = context.primitives.reconcile
+    local before = context.visibleRows
 
-  for index = 1, MAX_ROWS do
-    local visible = index <= area.rows
-    local settled = visible == (index <= before)
-    local y = area.top + (index - 1) * area.lineHeight
+    for index = 1, MAX_ROWS do
+        local visible = index <= area.rows
+        local settled = visible == (index <= before)
+        local y = area.top + (index - 1) * area.lineHeight
 
-    reconcile(context.keys[index], visible,
-      {x = area.pad, y = y, w = area.keyWidth}, settled)
-    reconcile(context.values[index], visible,
-      {x = area.valueX, y = y, w = area.valueWidth}, settled)
+        reconcile(context.keys[index], visible, { x = area.pad, y = y, w = area.keyWidth }, settled)
+        reconcile(context.values[index], visible, { x = area.valueX, y = y, w = area.valueWidth }, settled)
 
-    -- A row that just became visible still holds the text it had when it was
-    -- hidden, so the record of what was drawn is dropped for those rows and
-    -- the next refresh repaints them. Only those rows: one that was showing
-    -- and stays showing is already correct, and clearing every row made the
-    -- next refresh repaint the whole panel for one row's sake.
-    if visible and not settled then context.texts[index] = "" end
-  end
+        -- A row that just became visible still holds the text it had when it was
+        -- hidden, so the record of what was drawn is dropped for those rows and
+        -- the next refresh repaints them. Only those rows: one that was showing
+        -- and stays showing is already correct, and clearing every row made the
+        -- next refresh repaint the whole panel for one row's sake.
+        if visible and not settled then
+            context.texts[index] = ""
+        end
+    end
 
-  context.visibleRows = area.rows
+    context.visibleRows = area.rows
 end
 
 return probe

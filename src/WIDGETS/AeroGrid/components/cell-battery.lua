@@ -47,41 +47,56 @@
 ---@field stateName string
 
 local cellBattery = {
-  id = "cell-battery",
-  apiVersion = 1,
-  supportedSpans = {
-    "1x1", "2x1", "3x1", "4x1",
-    "1x2", "2x2", "3x2", "4x2",
-  },
-  -- A pack voltage moves over a flight, not over a frame, and every refresh
-  -- walks the cells table. Five hertz is already far more than a pilot reads.
-  refreshInterval = 20,
-  settings = {
-    {key = "source", label = "Cells source", type = "string", default = "Cels"},
-    {key = "lowestSource", label = "Lowest cell source", type = "string", default = ""},
-    {key = "label", label = "Label", type = "string", default = "PACK"},
-    {key = "reading", label = "Primary reading", type = "string",
-      default = "lowest", choices = {"lowest", "average", "pack"}},
-    -- The usable range, per cell: a LiPo is flat at 3.3 V and full at 4.2 V.
-    -- Named for what they range over, because `min` and `max` meant four
-    -- different things across the catalogue and nothing in the key said which.
-    {key = "cellEmpty", label = "Empty volts per cell", type = "number", default = 3.3},
-    {key = "cellFull", label = "Full volts per cell", type = "number", default = 4.2},
-    {key = "warning", label = "Warning volts per cell", type = "number", default = 3.5},
-    {key = "critical", label = "Critical volts per cell", type = "number", default = 3.3},
-    -- Cell voltages only ever count downward, but it is stated rather than
-    -- assumed so every threshold in the catalogue reads the same way.
-    -- No `direction`. A cell only ever alarms downward, so the setting had
-    -- one valid value and told a reader nothing except to wonder what the
-    -- other one would do. The behaviour is documented instead.
-    {key = "cells", label = "Expected cells", type = "number", default = 0},
-    {key = "showPack", label = "Show pack voltage", type = "boolean", default = true},
-    {key = "showCount", label = "Show cell count", type = "boolean", default = true},
-    {key = "visual", label = "Visualization", type = "string", default = "bar",
-      choices = {"bar", "none"}},
-    {key = "accent", label = "Accent", type = "string", default = "cyan",
-      choices = {"cyan", "green", "amber", "orange"}},
-  },
+    id = "cell-battery",
+    apiVersion = 1,
+    supportedSpans = {
+        "1x1",
+        "2x1",
+        "3x1",
+        "4x1",
+        "1x2",
+        "2x2",
+        "3x2",
+        "4x2",
+    },
+    -- A pack voltage moves over a flight, not over a frame, and every refresh
+    -- walks the cells table. Five hertz is already far more than a pilot reads.
+    refreshInterval = 20,
+    settings = {
+        { key = "source", label = "Cells source", type = "string", default = "Cels" },
+        { key = "lowestSource", label = "Lowest cell source", type = "string", default = "" },
+        { key = "label", label = "Label", type = "string", default = "PACK" },
+        {
+            key = "reading",
+            label = "Primary reading",
+            type = "string",
+            default = "lowest",
+            choices = { "lowest", "average", "pack" },
+        },
+        -- The usable range, per cell: a LiPo is flat at 3.3 V and full at 4.2 V.
+        -- Named for what they range over, because `min` and `max` meant four
+        -- different things across the catalogue and nothing in the key said which.
+        { key = "cellEmpty", label = "Empty volts per cell", type = "number", default = 3.3 },
+        { key = "cellFull", label = "Full volts per cell", type = "number", default = 4.2 },
+        { key = "warning", label = "Warning volts per cell", type = "number", default = 3.5 },
+        { key = "critical", label = "Critical volts per cell", type = "number", default = 3.3 },
+        -- Cell voltages only ever count downward, but it is stated rather than
+        -- assumed so every threshold in the catalogue reads the same way.
+        -- No `direction`. A cell only ever alarms downward, so the setting had
+        -- one valid value and told a reader nothing except to wonder what the
+        -- other one would do. The behaviour is documented instead.
+        { key = "cells", label = "Expected cells", type = "number", default = 0 },
+        { key = "showPack", label = "Show pack voltage", type = "boolean", default = true },
+        { key = "showCount", label = "Show cell count", type = "boolean", default = true },
+        { key = "visual", label = "Visualization", type = "string", default = "bar", choices = { "bar", "none" } },
+        {
+            key = "accent",
+            label = "Accent",
+            type = "string",
+            default = "cyan",
+            choices = { "cyan", "green", "amber", "orange" },
+        },
+    },
 }
 
 --- Most cells any supported protocol reports, and the ceiling on the walk.
@@ -120,57 +135,65 @@ cellBattery.CELL_MAX = 30
 ---@param out table Table to write the summary into.
 ---@return table out
 function cellBattery.summarize(raw, out)
-  out.shape = "none"
-  out.count = 0
-  out.entries = 0
-  out.rejected = 0
-  out.lowest = nil
-  out.highest = nil
-  out.pack = nil
-  out.spread = nil
+    out.shape = "none"
+    out.count = 0
+    out.entries = 0
+    out.rejected = 0
+    out.lowest = nil
+    out.highest = nil
+    out.pack = nil
+    out.spread = nil
 
-  if raw == nil then return out end
-
-  if type(raw) ~= "table" then
-    out.shape = type(raw) == "number" and "number" or "invalid"
-    return out
-  end
-
-  local limit = cellBattery.CELL_LIMIT
-  local maximum = cellBattery.CELL_MAX
-  local sum = 0
-
-  for index = 1, limit do
-    local value = raw[index]
-    if value == nil then break end
-
-    out.entries = index
-    -- A NaN compares false against everything, so it is excluded by the
-    -- bounds test rather than needing its own branch.
-    if type(value) == "number" and value > 0 and value < maximum then
-      out.count = out.count + 1
-      sum = sum + value
-      if out.lowest == nil or value < out.lowest then out.lowest = value end
-      if out.highest == nil or value > out.highest then out.highest = value end
-    else
-      out.rejected = out.rejected + 1
+    if raw == nil then
+        return out
     end
-  end
 
-  if out.entries == 0 then
-    out.shape = "empty"
+    if type(raw) ~= "table" then
+        out.shape = type(raw) == "number" and "number" or "invalid"
+        return out
+    end
+
+    local limit = cellBattery.CELL_LIMIT
+    local maximum = cellBattery.CELL_MAX
+    local sum = 0
+
+    for index = 1, limit do
+        local value = raw[index]
+        if value == nil then
+            break
+        end
+
+        out.entries = index
+        -- A NaN compares false against everything, so it is excluded by the
+        -- bounds test rather than needing its own branch.
+        if type(value) == "number" and value > 0 and value < maximum then
+            out.count = out.count + 1
+            sum = sum + value
+            if out.lowest == nil or value < out.lowest then
+                out.lowest = value
+            end
+            if out.highest == nil or value > out.highest then
+                out.highest = value
+            end
+        else
+            out.rejected = out.rejected + 1
+        end
+    end
+
+    if out.entries == 0 then
+        out.shape = "empty"
+        return out
+    end
+
+    if out.count == 0 then
+        out.shape = "invalid"
+        return out
+    end
+
+    out.shape = "cells"
+    out.pack = sum
+    out.spread = out.highest - out.lowest
     return out
-  end
-
-  if out.count == 0 then
-    out.shape = "invalid"
-    return out
-  end
-
-  out.shape = "cells"
-  out.pack = sum
-  out.spread = out.highest - out.lowest
-  return out
 end
 
 --- Choose the dominant reading from a validated summary.
@@ -182,16 +205,22 @@ end
 ---@param lowest? number Value of an explicit lowest-cell source.
 ---@return number? value
 function cellBattery.primaryValue(settings, summary, lowest)
-  local mode = settings.reading
+    local mode = settings.reading
 
-  if mode == "pack" then return summary.pack end
-  if mode == "average" then
-    if summary.count == 0 or summary.pack == nil then return nil end
-    return summary.pack / summary.count
-  end
+    if mode == "pack" then
+        return summary.pack
+    end
+    if mode == "average" then
+        if summary.count == 0 or summary.pack == nil then
+            return nil
+        end
+        return summary.pack / summary.count
+    end
 
-  if type(lowest) == "number" then return lowest end
-  return summary.lowest
+    if type(lowest) == "number" then
+        return lowest
+    end
+    return summary.lowest
 end
 
 --- Report whether the primary reading is a per-cell voltage.
@@ -200,7 +229,7 @@ end
 ---@param settings AeroGridCellSettings
 ---@return boolean
 function cellBattery.isPerCell(settings)
-  return settings.reading ~= "pack"
+    return settings.reading ~= "pack"
 end
 
 --- Resolve the component state. Cell voltages always count downward.
@@ -210,19 +239,29 @@ end
 ---@param stale boolean
 ---@return string
 function cellBattery.resolveState(settings, value, perCell, stale)
-  if type(value) ~= "number" or value ~= value then return "unavailable" end
-  if stale then return "stale" end
+    if type(value) ~= "number" or value ~= value then
+        return "unavailable"
+    end
+    if stale then
+        return "stale"
+    end
 
-  -- The thresholds are per cell, so a pack reading is still judged by its
-  -- worst cell rather than by a sum that hides one.
-  local judged = type(perCell) == "number" and perCell or nil
-  if judged == nil then return "normal" end
+    -- The thresholds are per cell, so a pack reading is still judged by its
+    -- worst cell rather than by a sum that hides one.
+    local judged = type(perCell) == "number" and perCell or nil
+    if judged == nil then
+        return "normal"
+    end
 
-  local critical = settings.critical
-  local warning = settings.warning
-  if type(critical) == "number" and judged <= critical then return "critical" end
-  if type(warning) == "number" and judged <= warning then return "warning" end
-  return "normal"
+    local critical = settings.critical
+    local warning = settings.warning
+    if type(critical) == "number" and judged <= critical then
+        return "critical"
+    end
+    if type(warning) == "number" and judged <= warning then
+        return "warning"
+    end
+    return "normal"
 end
 
 --- Convert a per-cell voltage into a fraction of the usable range.
@@ -232,22 +271,32 @@ end
 ---@param cells integer Divisor for a pack reading.
 ---@return number
 function cellBattery.fraction(settings, value, cells)
-  if type(value) ~= "number" or value ~= value then return 0 end
+    if type(value) ~= "number" or value ~= value then
+        return 0
+    end
 
-  local low = type(settings.cellEmpty) == "number" and settings.cellEmpty or 3.3
-  local high = type(settings.cellFull) == "number" and settings.cellFull or 4.2
-  if high <= low then return 0 end
+    local low = type(settings.cellEmpty) == "number" and settings.cellEmpty or 3.3
+    local high = type(settings.cellFull) == "number" and settings.cellFull or 4.2
+    if high <= low then
+        return 0
+    end
 
-  local perCell = value
-  if not cellBattery.isPerCell(settings) then
-    if type(cells) ~= "number" or cells < 1 then return 0 end
-    perCell = value / cells
-  end
+    local perCell = value
+    if not cellBattery.isPerCell(settings) then
+        if type(cells) ~= "number" or cells < 1 then
+            return 0
+        end
+        perCell = value / cells
+    end
 
-  local fraction = (perCell - low) / (high - low)
-  if fraction < 0 then return 0 end
-  if fraction > 1 then return 1 end
-  return fraction
+    local fraction = (perCell - low) / (high - low)
+    if fraction < 0 then
+        return 0
+    end
+    if fraction > 1 then
+        return 1
+    end
+    return fraction
 end
 
 --- Wordings for the cell-count row, which is where a shape problem is named.
@@ -287,26 +336,34 @@ end
 ---@param settings AeroGridCellSettings
 ---@return string[]
 function cellBattery.countVariants(summary, settings)
-  local shape = summary.shape
+    local shape = summary.shape
 
-  -- One wording, not a ladder. A form that fits the narrowest row fits every
-  -- row, so a longer one would only ever be drawn where the short one was
-  -- also correct.
-  if shape == "number" or shape == "invalid" then return {"CELLS ERR"} end
-  if shape == "empty" then return {"NO CELLS"} end
-  if shape ~= "cells" or summary.count == 0 then return {""} end
-  if not settings.showCount then return {""} end
+    -- One wording, not a ladder. A form that fits the narrowest row fits every
+    -- row, so a longer one would only ever be drawn where the short one was
+    -- also correct.
+    if shape == "number" or shape == "invalid" then
+        return { "CELLS ERR" }
+    end
+    if shape == "empty" then
+        return { "NO CELLS" }
+    end
+    if shape ~= "cells" or summary.count == 0 then
+        return { "" }
+    end
+    if not settings.showCount then
+        return { "" }
+    end
 
-  local count = tostring(summary.count) .. "S"
-  local expected = settings.cells
-  -- A cell that stopped reporting is exactly the failure this component exists
-  -- to catch, so a count below the configured one is called out.
-  if type(expected) == "number" and expected > 0 and summary.count ~= expected then
-    local full = count .. " OF " .. tostring(math.floor(expected))
-    return {full, count .. "/" .. tostring(math.floor(expected)), count}
-  end
+    local count = tostring(summary.count) .. "S"
+    local expected = settings.cells
+    -- A cell that stopped reporting is exactly the failure this component exists
+    -- to catch, so a count below the configured one is called out.
+    if type(expected) == "number" and expected > 0 and summary.count ~= expected then
+        local full = count .. " OF " .. tostring(math.floor(expected))
+        return { full, count .. "/" .. tostring(math.floor(expected)), count }
+    end
 
-  return {count}
+    return { count }
 end
 
 --- Wordings for the pack-voltage row.
@@ -314,10 +371,12 @@ end
 ---@param settings AeroGridCellSettings
 ---@return string[]
 function cellBattery.packVariants(summary, settings)
-  if not settings.showPack or type(summary.pack) ~= "number" then return {""} end
+    if not settings.showPack or type(summary.pack) ~= "number" then
+        return { "" }
+    end
 
-  local volts = string.format("%.1fV", summary.pack)
-  return {volts .. " PACK", volts}
+    local volts = string.format("%.1fV", summary.pack)
+    return { volts .. " PACK", volts }
 end
 
 --- Refuse a supporting row on a panel that has nowhere to put one.
@@ -336,26 +395,30 @@ end
 ---@param config? table What the layout actually stated.
 ---@return string[] messages
 function cellBattery.validateSettings(settings, span, config)
-  local messages = {}
-  if type(config) ~= "table" then return messages end
-  if type(span) ~= "table" or type(span.rowSpan) ~= "number" then
+    local messages = {}
+    if type(config) ~= "table" then
+        return messages
+    end
+    if type(span) ~= "table" or type(span.rowSpan) ~= "number" then
+        return messages
+    end
+    if span.rowSpan >= 2 then
+        return messages
+    end
+
+    if config.showPack then
+        messages[#messages + 1] = "showPack needs a panel two rows tall;"
+            .. " a single row has no space beneath the reading at any width."
+            .. " Give the panel rowSpan 2, or drop showPack."
+    end
+
+    if config.showCount then
+        messages[#messages + 1] = "showCount needs a panel two rows tall;"
+            .. " a single row has no space beneath the reading at any width."
+            .. " Give the panel rowSpan 2, or drop showCount."
+    end
+
     return messages
-  end
-  if span.rowSpan >= 2 then return messages end
-
-  if config.showPack then
-    messages[#messages + 1] = "showPack needs a panel two rows tall;"
-      .. " a single row has no space beneath the reading at any width."
-      .. " Give the panel rowSpan 2, or drop showPack."
-  end
-
-  if config.showCount then
-    messages[#messages + 1] = "showCount needs a panel two rows tall;"
-      .. " a single row has no space beneath the reading at any width."
-      .. " Give the panel rowSpan 2, or drop showCount."
-  end
-
-  return messages
 end
 
 --- Describe how the component presents itself at a given span.
@@ -363,8 +426,8 @@ end
 ---@param rowSpan integer
 ---@return table
 function cellBattery.presentationFor(colSpan, rowSpan)
-  local cells = (colSpan or 1) * (rowSpan or 1)
-  return {showVisual = cells >= 2, showDetail = cells >= 2}
+    local cells = (colSpan or 1) * (rowSpan or 1)
+    return { showVisual = cells >= 2, showDetail = cells >= 2 }
 end
 
 --- Compute the content regions for the current rectangle.
@@ -375,25 +438,24 @@ end
 ---@param fonts table
 ---@param sample table Widest digits this component prints, and its unit.
 ---@return table
-function cellBattery.regionsFor(theme, themeBuilder, rect, layout, fonts,
-    sample, out)
-  -- The whole arrangement, from the shared builder. Like `link-status`, this
-  -- component's only visualization is a bar, so the reading never splits.
-  local area = themeBuilder.panel(theme, rect, fonts, {
-    -- Built through this component's own builder, which the host may have
-    -- wrapped to lay the panel out around the menu button's corner.
-    frame = themeBuilder.frame(theme, rect, fonts),
-    forms = {sample.digits},
-    unit = sample.unit,
-    draws = {
-      rows = layout.showDetail == true,
-      visual = layout.showVisual == true and layout.visual ~= "none",
-    },
-    bar = true,
-    -- The cell count on the left, the pack voltage on the right.
-    rowItems = 2,
-  }, out or {})
-  return area
+function cellBattery.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, out)
+    -- The whole arrangement, from the shared builder. Like `link-status`, this
+    -- component's only visualization is a bar, so the reading never splits.
+    local area = themeBuilder.panel(theme, rect, fonts, {
+        -- Built through this component's own builder, which the host may have
+        -- wrapped to lay the panel out around the menu button's corner.
+        frame = themeBuilder.frame(theme, rect, fonts),
+        forms = { sample.digits },
+        unit = sample.unit,
+        draws = {
+            rows = layout.showDetail == true,
+            visual = layout.showVisual == true and layout.visual ~= "none",
+        },
+        bar = true,
+        -- The cell count on the left, the pack voltage on the right.
+        rowItems = 2,
+    }, out or {})
+    return area
 end
 
 --- Build the component's LVGL objects.
@@ -403,133 +465,133 @@ end
 ---@param services table
 ---@return AeroGridCellContext
 function cellBattery.create(parent, rect, settings, services)
-  local theme = services.theme
-  local primitives = services.primitives
-  local fonts = services.fonts
-  local span = services.span
-  local layout = cellBattery.presentationFor(span.colSpan, span.rowSpan)
-  layout.visual = settings.visual
-  local presentation = services.state("normal", settings.accent)
+    local theme = services.theme
+    local primitives = services.primitives
+    local fonts = services.fonts
+    local span = services.span
+    local layout = cellBattery.presentationFor(span.colSpan, span.rowSpan)
+    layout.visual = settings.visual
+    local presentation = services.state("normal", settings.accent)
 
-  local context = {
-    theme = theme,
-    themeBuilder = services.themeBuilder,
-    primitives = primitives,
-    state = services.state,
-    fonts = fonts,
-    layout = layout,
-    settings = settings,
-    stateName = "normal",
-    text = "--",
-    countText = "",
-    packText = "",
-    -- Reused so a refresh allocates nothing; the host pays this per frame.
-    summary = {},
-  }
+    local context = {
+        theme = theme,
+        themeBuilder = services.themeBuilder,
+        primitives = primitives,
+        state = services.state,
+        fonts = fonts,
+        layout = layout,
+        settings = settings,
+        stateName = "normal",
+        text = "--",
+        countText = "",
+        packText = "",
+        -- Reused so a refresh allocates nothing; the host pays this per frame.
+        summary = {},
+    }
 
-  -- Subscribing in create is the mechanism: a source nothing references is
-  -- never read.
-  local telemetry = services.telemetry
-  if telemetry then
-    context.feed = telemetry:subscribe(settings.source)
-    if type(settings.lowestSource) == "string" and settings.lowestSource ~= "" then
-      context.lowestFeed = telemetry:subscribe(settings.lowestSource)
+    -- Subscribing in create is the mechanism: a source nothing references is
+    -- never read.
+    local telemetry = services.telemetry
+    if telemetry then
+        context.feed = telemetry:subscribe(settings.source)
+        if type(settings.lowestSource) == "string" and settings.lowestSource ~= "" then
+            context.lowestFeed = telemetry:subscribe(settings.lowestSource)
+        end
     end
-  end
 
-  -- The widest number this component can print, taken from what it reads
-  -- rather than from whatever is showing now, so the reading does not resize
-  -- as the pack drains. The two decimals are not negotiable: cells are
-  -- compared against each other, and 3.8 V hides a difference that matters
-  -- where 3.82 V does not. The unit rides beside the number rather than
-  -- being part of it.
-  local sample = {
-    digits = cellBattery.isPerCell(settings) and "4.44" or "88.8",
-    unit = "V",
-  }
-  context.sample = sample
+    -- The widest number this component can print, taken from what it reads
+    -- rather than from whatever is showing now, so the reading does not resize
+    -- as the pack drains. The two decimals are not negotiable: cells are
+    -- compared against each other, and 3.8 V hides a difference that matters
+    -- where 3.82 V does not. The unit rides beside the number rather than
+    -- being part of it.
+    local sample = {
+        digits = cellBattery.isPerCell(settings) and "4.44" or "88.8",
+        unit = "V",
+    }
+    context.sample = sample
 
-  local area = cellBattery.regionsFor(
-    theme, services.themeBuilder, rect, layout, fonts, sample)
-  context.detailWidth = area.detailWidth
-  context.showDetail = area.showDetail
+    local area = cellBattery.regionsFor(theme, services.themeBuilder, rect, layout, fonts, sample)
+    context.detailWidth = area.detailWidth
+    context.showDetail = area.showDetail
 
-  local panel = primitives.panel(parent, rect, theme, presentation)
-  context.panel = panel
+    local panel = primitives.panel(parent, rect, theme, presentation)
+    context.panel = panel
 
-  context.label, context.badge = primitives.header(
-    panel.root, theme, area.frame, fonts, settings.label, presentation,
-    services.themeBuilder)
+    context.label, context.badge =
+        primitives.header(panel.root, theme, area.frame, fonts, settings.label, presentation, services.themeBuilder)
 
-  context.value = primitives.value(panel.root, theme, {
-    x = area.valueX,
-    y = area.valueY,
-    w = area.valueWidth,
-    text = "--",
-    color = presentation.value,
-    font = area.value,
-  })
-
-  -- Recorded as well as drawn. The reading is centred on its slot and the
-  -- unit rides past it, so the helper that places the pair has to know how
-  -- wide the pair is -- and an LVGL object is userdata on a radio, with no
-  -- readable text to ask. This component's unit never changes, unlike
-  -- `link-status`, whose telemetry answers with one.
-  context.unitText = sample.unit
-  context.unit = primitives.unit(panel.root, theme, {
-    x = area.valueX,
-    y = area.valueY,
-    text = sample.unit,
-    color = theme.color.textMuted,
-    font = area.unitFont,
-  })
-
-  context.countLabel = primitives.label(panel.root, theme, {
-    x = area.detailX,
-    y = area.detailY,
-    w = area.detailWidth,
-    text = "",
-    color = theme.color.textFaint,
-    font = fonts.label,
-  })
-
-  context.packLabel = primitives.label(panel.root, theme, {
-    x = area.rowRightX,
-    y = area.detailY,
-    w = area.detailWidth,
-    text = "",
-    color = theme.color.textFaint,
-    font = fonts.label,
-  })
-
-  if layout.showVisual and settings.visual ~= "none" then
-    context.bar = primitives.bar(panel.root, theme, {
-      x = area.pad,
-      y = area.barY,
-      w = area.content,
-      fraction = 0,
-      color = presentation.accent,
+    context.value = primitives.value(panel.root, theme, {
+        x = area.valueX,
+        y = area.valueY,
+        w = area.valueWidth,
+        text = "--",
+        color = presentation.value,
+        font = area.value,
     })
-  end
 
-  if not area.showDetail then
-    lvgl.hide(context.countLabel)
-    lvgl.hide(context.packLabel)
-  end
-  if not area.showUnit then lvgl.hide(context.unit) end
-  context.showUnit = area.showUnit
-  context.area = area
-  -- What the panel currently shows, so a reflow that changes nothing about
-  -- visibility does not tell every object again what it already is.
-  context.showVisual = area.showVisual
-  if context.bar and not area.showVisual then
-    lvgl.hide(context.bar.track)
-    lvgl.hide(context.bar.fill)
-  end
+    -- Recorded as well as drawn. The reading is centred on its slot and the
+    -- unit rides past it, so the helper that places the pair has to know how
+    -- wide the pair is -- and an LVGL object is userdata on a radio, with no
+    -- readable text to ask. This component's unit never changes, unlike
+    -- `link-status`, whose telemetry answers with one.
+    context.unitText = sample.unit
+    context.unit = primitives.unit(panel.root, theme, {
+        x = area.valueX,
+        y = area.valueY,
+        text = sample.unit,
+        color = theme.color.textMuted,
+        font = area.unitFont,
+    })
 
-  local _, drawn = primitives.changed(context, cellBattery.render)
-  cellBattery.apply(context, drawn)
-  return context
+    context.countLabel = primitives.label(panel.root, theme, {
+        x = area.detailX,
+        y = area.detailY,
+        w = area.detailWidth,
+        text = "",
+        color = theme.color.textFaint,
+        font = fonts.label,
+    })
+
+    context.packLabel = primitives.label(panel.root, theme, {
+        x = area.rowRightX,
+        y = area.detailY,
+        w = area.detailWidth,
+        text = "",
+        color = theme.color.textFaint,
+        font = fonts.label,
+    })
+
+    if layout.showVisual and settings.visual ~= "none" then
+        context.bar = primitives.bar(panel.root, theme, {
+            x = area.pad,
+            y = area.barY,
+            w = area.content,
+            fraction = 0,
+            color = presentation.accent,
+        })
+    end
+
+    if not area.showDetail then
+        lvgl.hide(context.countLabel)
+        lvgl.hide(context.packLabel)
+    end
+    if not area.showUnit then
+        lvgl.hide(context.unit)
+    end
+    context.showUnit = area.showUnit
+    context.area = area
+    -- What the panel currently shows, so a reflow that changes nothing about
+    -- visibility does not tell every object again what it already is.
+    context.showVisual = area.showVisual
+    if context.bar and not area.showVisual then
+        lvgl.hide(context.bar.track)
+        lvgl.hide(context.bar.fill)
+    end
+
+    local _, drawn = primitives.changed(context, cellBattery.render)
+    cellBattery.apply(context, drawn)
+    return context
 end
 
 --- Read both subscriptions into the context, allocating nothing.
@@ -537,31 +599,29 @@ end
 --- worth repainting without summarizing the cells table twice.
 ---@param context AeroGridCellContext
 function cellBattery.gather(context)
-  local settings = context.settings
-  local feed = context.feed
-  local summary = cellBattery.summarize(
-    type(feed) == "table" and feed.available and feed.raw or nil, context.summary)
+    local settings = context.settings
+    local feed = context.feed
+    local summary = cellBattery.summarize(type(feed) == "table" and feed.available and feed.raw or nil, context.summary)
 
-  local lowestFeed = context.lowestFeed
-  local lowest = nil
-  local lowestStale = false
-  if type(lowestFeed) == "table" and lowestFeed.available
-      and type(lowestFeed.value) == "number" then
-    lowest = lowestFeed.value
-    lowestStale = lowestFeed.stale == true
-  end
+    local lowestFeed = context.lowestFeed
+    local lowest = nil
+    local lowestStale = false
+    if type(lowestFeed) == "table" and lowestFeed.available and type(lowestFeed.value) == "number" then
+        lowest = lowestFeed.value
+        lowestStale = lowestFeed.stale == true
+    end
 
-  -- An explicit lowest-cell source keeps this component useful when the cells
-  -- table itself is unreadable, which is the whole reason it is separate.
-  context.primary = cellBattery.primaryValue(settings, summary, lowest)
-  context.perCell = lowest or summary.lowest
+    -- An explicit lowest-cell source keeps this component useful when the cells
+    -- table itself is unreadable, which is the whole reason it is separate.
+    context.primary = cellBattery.primaryValue(settings, summary, lowest)
+    context.perCell = lowest or summary.lowest
 
-  -- Freshness follows whichever source actually produced the reading.
-  if summary.shape == "cells" then
-    context.stale = type(feed) == "table" and feed.stale == true
-  else
-    context.stale = lowest ~= nil and lowestStale
-  end
+    -- Freshness follows whichever source actually produced the reading.
+    if summary.shape == "cells" then
+        context.stale = type(feed) == "table" and feed.stale == true
+    else
+        context.stale = lowest ~= nil and lowestStale
+    end
 end
 
 --- Repaint the component from the gathered reading.
@@ -570,133 +630,173 @@ end
 ---@param context AeroGridCellContext
 ---@param out table
 function cellBattery.render(context, out)
-  cellBattery.gather(context)
+    cellBattery.gather(context)
 
-  local settings = context.settings
-  local summary = context.summary
-  local value = context.primary
-  local stale = context.stale == true
+    local settings = context.settings
+    local summary = context.summary
+    local value = context.primary
+    local stale = context.stale == true
 
-  out.state = cellBattery.resolveState(settings, value, context.perCell, stale)
-  -- Two decimals: cells are compared against each other, and 3.8 V hides a
-  -- difference that matters where 3.82 V does not.
-  -- Digits alone. The `V` is its own label beside them, so there is no
-  -- longer a shorter form of this string to measure and then not draw.
-  out.text = type(value) == "number" and string.format("%.2f", value) or "--"
-  out.fraction = cellBattery.fraction(settings, value, summary.count)
-  out.value = value
+    out.state = cellBattery.resolveState(settings, value, context.perCell, stale)
+    -- Two decimals: cells are compared against each other, and 3.8 V hides a
+    -- difference that matters where 3.82 V does not.
+    -- Digits alone. The `V` is its own label beside them, so there is no
+    -- longer a shorter form of this string to measure and then not draw.
+    out.text = type(value) == "number" and string.format("%.2f", value) or "--"
+    out.fraction = cellBattery.fraction(settings, value, summary.count)
+    out.value = value
 
-  if context.showDetail then
-    local fit = context.themeBuilder.fitLabel
-    local font = context.fonts.label
-    out.count = fit(cellBattery.countVariants(summary, settings), font,
-      context.detailWidth)
-    out.pack = fit(cellBattery.packVariants(summary, settings), font,
-      context.detailWidth)
-  end
+    if context.showDetail then
+        local fit = context.themeBuilder.fitLabel
+        local font = context.fonts.label
+        out.count = fit(cellBattery.countVariants(summary, settings), font, context.detailWidth)
+        out.pack = fit(cellBattery.packVariants(summary, settings), font, context.detailWidth)
+    end
 end
 
 --- Paint the panel from what `render` collected, and from nothing else.
 ---@param context AeroGridCellContext
 ---@param drawn table
 function cellBattery.apply(context, drawn)
-  local presentation = context.state(drawn.state, context.settings.accent)
+    local presentation = context.state(drawn.state, context.settings.accent)
 
-  context.stateName = drawn.state
-  context.reading = drawn.value
-  context.text = drawn.text
-  context.countText = drawn.count
-  context.packText = drawn.pack
+    context.stateName = drawn.state
+    context.reading = drawn.value
+    context.text = drawn.text
+    context.countText = drawn.count
+    context.packText = drawn.pack
 
-  context.value:set({text = drawn.text, color = presentation.value})
-  -- The unit follows what the number says, so it stays attached to a short
-  -- reading instead of holding station at the widest one's edge.
-  context.primitives.centreReading(context, context.themeBuilder,
-    context.area, context.area.value, drawn.text)
-  context.label:set({color = presentation.label})
-  context.primitives.setBadge(context, context.themeBuilder, context.badge,
-    context.area.frame, context.fonts.badge, presentation.badge or "",
-    presentation.accent)
-  context.primitives.stylePanel(context.panel, presentation)
+    context.value:set({ text = drawn.text, color = presentation.value })
+    -- The unit follows what the number says, so it stays attached to a short
+    -- reading instead of holding station at the widest one's edge.
+    context.primitives.centreReading(context, context.themeBuilder, context.area, context.area.value, drawn.text)
+    context.label:set({ color = presentation.label })
+    context.primitives.setBadge(
+        context,
+        context.themeBuilder,
+        context.badge,
+        context.area.frame,
+        context.fonts.badge,
+        presentation.badge or "",
+        presentation.accent
+    )
+    context.primitives.stylePanel(context.panel, presentation)
 
-  if context.showDetail then
-    context.countLabel:set({text = drawn.count})
-    context.packLabel:set({text = drawn.pack})
-    -- Both items take the panel's slot centres, keyed on what they say so a
-    -- steady pack pays nothing.
-    context.primitives.centreLabel(context, "countAnchor",
-      context.themeBuilder, context.countLabel, context.area.detailCentre,
-      context.area.detailY, context.fonts.label, drawn.count)
-    context.primitives.centreLabel(context, "packAnchor",
-      context.themeBuilder, context.packLabel, context.area.rowRightCentre,
-      context.area.detailY, context.fonts.label, drawn.pack)
-  end
+    if context.showDetail then
+        context.countLabel:set({ text = drawn.count })
+        context.packLabel:set({ text = drawn.pack })
+        -- Both items take the panel's slot centres, keyed on what they say so a
+        -- steady pack pays nothing.
+        context.primitives.centreLabel(
+            context,
+            "countAnchor",
+            context.themeBuilder,
+            context.countLabel,
+            context.area.detailCentre,
+            context.area.detailY,
+            context.fonts.label,
+            drawn.count
+        )
+        context.primitives.centreLabel(
+            context,
+            "packAnchor",
+            context.themeBuilder,
+            context.packLabel,
+            context.area.rowRightCentre,
+            context.area.detailY,
+            context.fonts.label,
+            drawn.pack
+        )
+    end
 
-  if context.bar then
-    context.primitives.setBar(context.bar, drawn.fraction, presentation.accent)
-  end
+    if context.bar then
+        context.primitives.setBar(context.bar, drawn.fraction, presentation.accent)
+    end
 end
 
 --- Advance the component, repainting only when something drawn changed.
 ---@param context AeroGridCellContext
 function cellBattery.refresh(context)
-  if not context.feed and not context.lowestFeed then return end
-  local changed, drawn = context.primitives.changed(context, cellBattery.render)
-  if changed then cellBattery.apply(context, drawn) end
+    if not context.feed and not context.lowestFeed then
+        return
+    end
+    local changed, drawn = context.primitives.changed(context, cellBattery.render)
+    if changed then
+        cellBattery.apply(context, drawn)
+    end
 end
 
 --- Reposition after a zone change.
 ---@param context AeroGridCellContext
 ---@param rect AeroGridRect
 function cellBattery.update(context, rect)
-  local area = cellBattery.regionsFor(context.theme, context.themeBuilder,
-    rect, context.layout, context.fonts, context.sample)
+    local area =
+        cellBattery.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts, context.sample)
 
-  context.primitives.resizePanel(context.panel, rect)
-  context.primitives.placeHeader(context.label, context.badge, area.frame,
-    context.themeBuilder, context.fonts, context.settings.label,
-      context.badgeText)
-  context.value:set({
-    x = area.valueX,
-    y = area.valueY,
-    w = area.valueWidth,
-    font = function() return area.value end,
-  })
+    context.primitives.resizePanel(context.panel, rect)
+    context.primitives.placeHeader(
+        context.label,
+        context.badge,
+        area.frame,
+        context.themeBuilder,
+        context.fonts,
+        context.settings.label,
+        context.badgeText
+    )
+    context.value:set({
+        x = area.valueX,
+        y = area.valueY,
+        w = area.valueWidth,
+        font = function()
+            return area.value
+        end,
+    })
 
-  context.primitives.reconcileUnit(context, context.unit, area.showUnit,
-    context.themeBuilder, area.valueX, area.valueY, area.value, context.text,
-    area.unitFont, area.showUnit == context.showUnit)
-  context.showUnit = area.showUnit
-  -- Every anchor is about a slot and a font that have just moved.
-  context.unitAnchor = nil
-  context.readingAnchor, context.readingUnitAnchor = nil, nil
-  context.countAnchor, context.packAnchor = nil, nil
-  context.area = area
+    context.primitives.reconcileUnit(
+        context,
+        context.unit,
+        area.showUnit,
+        context.themeBuilder,
+        area.valueX,
+        area.valueY,
+        area.value,
+        context.text,
+        area.unitFont,
+        area.showUnit == context.showUnit
+    )
+    context.showUnit = area.showUnit
+    -- Every anchor is about a slot and a font that have just moved.
+    context.unitAnchor = nil
+    context.readingAnchor, context.readingUnitAnchor = nil, nil
+    context.countAnchor, context.packAnchor = nil, nil
+    context.area = area
 
-  --- Show or hide a supporting row, positioning it only when visible.
-  local reconcile = context.primitives.reconcile
+    --- Show or hide a supporting row, positioning it only when visible.
+    local reconcile = context.primitives.reconcile
 
-  -- A resize changes how much room each row has and whether there is a row at
-  -- all. Both are recorded and nothing else is done, because `render` reads
-  -- both: it declares no count or pack key while the row is shed, so the key
-  -- reappearing is what tells `changed` to repaint, and it refits against the
-  -- new width, so a wording that has to change is a value that has changed.
-  -- There used to be a discard here. It was removed once no test could be
-  -- made to fail without it.
-  context.detailWidth = area.detailWidth
-  context.showDetail = area.showDetail
+    -- A resize changes how much room each row has and whether there is a row at
+    -- all. Both are recorded and nothing else is done, because `render` reads
+    -- both: it declares no count or pack key while the row is shed, so the key
+    -- reappearing is what tells `changed` to repaint, and it refits against the
+    -- new width, so a wording that has to change is a value that has changed.
+    -- There used to be a discard here. It was removed once no test could be
+    -- made to fail without it.
+    context.detailWidth = area.detailWidth
+    context.showDetail = area.showDetail
 
-  reconcile(context.countLabel, area.showDetail,
-    {x = area.detailX, y = area.detailY, w = area.detailWidth})
-  reconcile(context.packLabel, area.showDetail,
-    {x = area.rowRightX, y = area.detailY, w = area.detailWidth})
+    reconcile(context.countLabel, area.showDetail, { x = area.detailX, y = area.detailY, w = area.detailWidth })
+    reconcile(context.packLabel, area.showDetail, { x = area.rowRightX, y = area.detailY, w = area.detailWidth })
 
-  context.primitives.reconcileBar(context.bar, area.showVisual,
-    area.pad, area.barY, area.content,
-    cellBattery.fraction(context.settings, context.reading,
-      context.summary.count or 0),
-    area.showVisual == context.showVisual)
-  context.showVisual = area.showVisual
+    context.primitives.reconcileBar(
+        context.bar,
+        area.showVisual,
+        area.pad,
+        area.barY,
+        area.content,
+        cellBattery.fraction(context.settings, context.reading, context.summary.count or 0),
+        area.showVisual == context.showVisual
+    )
+    context.showVisual = area.showVisual
 end
 
 return cellBattery

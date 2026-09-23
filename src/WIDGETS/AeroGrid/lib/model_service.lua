@@ -61,18 +61,18 @@ modelService.TX_VOLTAGE_SOURCE = "tx-voltage"
 ---@param support table The loaded lib/services.lua module.
 ---@return table
 function modelService.new(env, support)
-  return setmetatable({
-    id = "model",
-    interval = modelService.INTERVAL,
-    revision = 0,
-    count = 0,
-    due = 0,
-    env = env,
-    support = support,
-    facets = {},
-    cursor = 1,
-    timers = {},
-  }, modelService)
+    return setmetatable({
+        id = "model",
+        interval = modelService.INTERVAL,
+        revision = 0,
+        count = 0,
+        due = 0,
+        env = env,
+        support = support,
+        facets = {},
+        cursor = 1,
+        timers = {},
+    }, modelService)
 end
 
 --- Register a facet and publish its immutable view.
@@ -80,10 +80,10 @@ end
 ---@param read fun(self: table, state: table, now: integer)
 ---@return table view
 function modelService:add(state, read)
-  local facet = {state = state, read = read, view = self.support.snapshot(state)}
-  self.facets[#self.facets + 1] = facet
-  self.count = self.count + 1
-  return facet.view
+    local facet = { state = state, read = read, view = self.support.snapshot(state) }
+    self.facets[#self.facets + 1] = facet
+    self.count = self.count + 1
+    return facet.view
 end
 
 --- Format a signed second count as a clock reading.
@@ -91,159 +91,167 @@ end
 ---@param seconds any
 ---@return string
 function modelService.formatTime(seconds)
-  if type(seconds) ~= "number" then return "--:--" end
+    if type(seconds) ~= "number" then
+        return "--:--"
+    end
 
-  local sign = seconds < 0 and "-" or ""
-  local total = math.floor(math.abs(seconds) + 0.5)
-  local hours = math.floor(total / 3600)
-  local minutes = math.floor(total / 60) % 60
-  local secs = total % 60
+    local sign = seconds < 0 and "-" or ""
+    local total = math.floor(math.abs(seconds) + 0.5)
+    local hours = math.floor(total / 3600)
+    local minutes = math.floor(total / 60) % 60
+    local secs = total % 60
 
-  if hours > 0 then
-    return string.format("%s%d:%02d:%02d", sign, hours, minutes, secs)
-  end
-  return string.format("%s%d:%02d", sign, minutes, secs)
+    if hours > 0 then
+        return string.format("%s%d:%02d:%02d", sign, hours, minutes, secs)
+    end
+    return string.format("%s%d:%02d", sign, minutes, secs)
 end
 
 --- Read model identity, rate limited independently of the service interval.
 ---@param state table
 ---@param now integer
 function modelService:readIdentity(state, now)
-  if state.available and now < (state.nextRead or 0) then return end
-  state.nextRead = now + modelService.IDENTITY_INTERVAL
+    if state.available and now < (state.nextRead or 0) then
+        return
+    end
+    state.nextRead = now + modelService.IDENTITY_INTERVAL
 
-  local getInfo = self.env.getInfo
-  local info = getInfo and getInfo()
-  if type(info) ~= "table" then
-    state.available = false
-    return
-  end
+    local getInfo = self.env.getInfo
+    local info = getInfo and getInfo()
+    if type(info) ~= "table" then
+        state.available = false
+        return
+    end
 
-  state.available = true
-  state.name = type(info.name) == "string" and info.name or ""
-  state.filename = type(info.filename) == "string" and info.filename or ""
-  state.labels = type(info.labels) == "string" and info.labels or ""
+    state.available = true
+    state.name = type(info.name) == "string" and info.name or ""
+    state.filename = type(info.filename) == "string" and info.filename or ""
+    state.labels = type(info.labels) == "string" and info.labels or ""
 
-  local bitmap = type(info.bitmap) == "string" and info.bitmap or ""
-  state.bitmap = bitmap
-  -- A component still has to open the file; the service only resolves where
-  -- it lives, because a missing image must fall back to the model name.
-  state.bitmapPath = bitmap ~= "" and (modelService.IMAGE_PATH .. bitmap) or nil
+    local bitmap = type(info.bitmap) == "string" and info.bitmap or ""
+    state.bitmap = bitmap
+    -- A component still has to open the file; the service only resolves where
+    -- it lives, because a missing image must fall back to the model name.
+    state.bitmapPath = bitmap ~= "" and (modelService.IMAGE_PATH .. bitmap) or nil
 end
 
 --- Subscribe to model identity and bitmap metadata.
 ---@return AeroGridModelIdentity
 function modelService:identity()
-  if self.identityView then return self.identityView end
+    if self.identityView then
+        return self.identityView
+    end
 
-  self.identityView = self:add({
-    available = false,
-    name = "",
-    bitmap = "",
-    bitmapPath = nil,
-    filename = "",
-    labels = "",
-    nextRead = 0,
-  }, modelService.readIdentity)
+    self.identityView = self:add({
+        available = false,
+        name = "",
+        bitmap = "",
+        bitmapPath = nil,
+        filename = "",
+        labels = "",
+        nextRead = 0,
+    }, modelService.readIdentity)
 
-  return self.identityView
+    return self.identityView
 end
 
 --- Read one model timer.
 ---@param state table
 function modelService:readTimer(state)
-  local getTimer = self.env.getTimer
-  local timer = getTimer and getTimer(state.index)
+    local getTimer = self.env.getTimer
+    local timer = getTimer and getTimer(state.index)
 
-  if type(timer) ~= "table" or type(timer.value) ~= "number" then
-    state.available = false
-    state.state = "unavailable"
-    state.text = "--:--"
-    return
-  end
+    if type(timer) ~= "table" or type(timer.value) ~= "number" then
+        state.available = false
+        state.state = "unavailable"
+        state.text = "--:--"
+        return
+    end
 
-  local value = timer.value
-  local start = type(timer.start) == "number" and timer.start or 0
+    local value = timer.value
+    local start = type(timer.start) == "number" and timer.start or 0
 
-  state.available = true
-  state.state = "normal"
-  state.name = type(timer.name) == "string" and timer.name or ""
-  state.value = value
-  state.start = start
-  state.persistent = type(timer.persistent) == "number" and timer.persistent or 0
-  state.showElapsed = timer.showElapsed == true
+    state.available = true
+    state.state = "normal"
+    state.name = type(timer.name) == "string" and timer.name or ""
+    state.value = value
+    state.start = start
+    state.persistent = type(timer.persistent) == "number" and timer.persistent or 0
+    state.showElapsed = timer.showElapsed == true
 
-  -- EdgeTX counts a configured timer down and lets it run past zero, so the
-  -- elapsed and remaining views are derived rather than tracked separately.
-  if start > 0 then
-    state.countdown = true
-    state.remaining = value
-    state.elapsed = start - value
-    state.expired = value < 0
-  else
-    state.countdown = false
-    state.remaining = 0
-    state.elapsed = value
-    state.expired = false
-  end
+    -- EdgeTX counts a configured timer down and lets it run past zero, so the
+    -- elapsed and remaining views are derived rather than tracked separately.
+    if start > 0 then
+        state.countdown = true
+        state.remaining = value
+        state.elapsed = start - value
+        state.expired = value < 0
+    else
+        state.countdown = false
+        state.remaining = 0
+        state.elapsed = value
+        state.expired = false
+    end
 
-  state.text = modelService.formatTime(state.showElapsed and state.elapsed or value)
+    state.text = modelService.formatTime(state.showElapsed and state.elapsed or value)
 end
 
 --- Subscribe to one model timer.
 ---@param index any Zero-based EdgeTX timer index.
 ---@return AeroGridModelTimer
 function modelService:timer(index)
-  if type(index) ~= "number" or index < 0 or index ~= math.floor(index) then
-    index = 0
-  end
+    if type(index) ~= "number" or index < 0 or index ~= math.floor(index) then
+        index = 0
+    end
 
-  local existing = self.timers[index]
-  if existing then return existing end
+    local existing = self.timers[index]
+    if existing then
+        return existing
+    end
 
-  local view = self:add({
-    index = index,
-    available = false,
-    name = "",
-    value = 0,
-    start = 0,
-    countdown = false,
-    elapsed = 0,
-    remaining = 0,
-    expired = false,
-    persistent = 0,
-    showElapsed = false,
-    text = "--:--",
-    state = "unavailable",
-  }, modelService.readTimer)
+    local view = self:add({
+        index = index,
+        available = false,
+        name = "",
+        value = 0,
+        start = 0,
+        countdown = false,
+        elapsed = 0,
+        remaining = 0,
+        expired = false,
+        persistent = 0,
+        showElapsed = false,
+        text = "--:--",
+        state = "unavailable",
+    }, modelService.readTimer)
 
-  self.timers[index] = view
-  return view
+    self.timers[index] = view
+    return view
 end
 
 --- Read the active flight mode.
 ---@param state table
 function modelService:readFlightMode(state)
-  local read = self.env.getFlightMode
-  if not read then
-    state.available = false
-    return
-  end
+    local read = self.env.getFlightMode
+    if not read then
+        state.available = false
+        return
+    end
 
-  local index, name = read()
-  if type(index) ~= "number" then
-    state.available = false
-    return
-  end
+    local index, name = read()
+    if type(index) ~= "number" then
+        state.available = false
+        return
+    end
 
-  state.available = true
-  state.index = index
-  -- An unnamed flight mode returns an empty string; show its number instead.
-  if type(name) == "string" and name ~= "" then
-    state.name = name
-  else
-    state.name = "FM" .. tostring(index)
-  end
+    state.available = true
+    state.index = index
+    -- An unnamed flight mode returns an empty string; show its number instead.
+    if type(name) == "string" and name ~= "" then
+        state.name = name
+    else
+        state.name = "FM" .. tostring(index)
+    end
 end
 
 --- Subscribe to the active flight mode.
@@ -252,15 +260,17 @@ end
 modelService.FLIGHT_MODES = 9
 
 function modelService:flightMode()
-  if self.flightModeView then return self.flightModeView end
+    if self.flightModeView then
+        return self.flightModeView
+    end
 
-  self.flightModeView = self:add({
-    available = false,
-    index = 0,
-    name = "",
-  }, modelService.readFlightMode)
+    self.flightModeView = self:add({
+        available = false,
+        index = 0,
+        name = "",
+    }, modelService.readFlightMode)
 
-  return self.flightModeView
+    return self.flightModeView
 end
 
 --- The widest flight mode name this model can produce.
@@ -284,52 +294,58 @@ end
 --- change underneath a component that is still alive.
 ---@return string widest
 function modelService:widestFlightModeName()
-  if self.widestMode then return self.widestMode end
-
-  local read = self.env.getFlightMode
-  -- Seeded empty rather than with a plausible default, so that a firmware
-  -- without the call and a firmware answering nothing are the same case and
-  -- neither is hidden behind a name this never actually read.
-  local widest = ""
-
-  if read then
-    for index = 0, modelService.FLIGHT_MODES - 1 do
-      local ok, _, name = pcall(read, index)
-      if not ok or type(name) ~= "string" or name == "" then
-        name = "FM" .. tostring(index)
-      end
-      if #name > #widest then widest = name end
+    if self.widestMode then
+        return self.widestMode
     end
-  end
 
-  if widest == "" then widest = "FM0" end
+    local read = self.env.getFlightMode
+    -- Seeded empty rather than with a plausible default, so that a firmware
+    -- without the call and a firmware answering nothing are the same case and
+    -- neither is hidden behind a name this never actually read.
+    local widest = ""
 
-  self.widestMode = widest
-  return widest
+    if read then
+        for index = 0, modelService.FLIGHT_MODES - 1 do
+            local ok, _, name = pcall(read, index)
+            if not ok or type(name) ~= "string" or name == "" then
+                name = "FM" .. tostring(index)
+            end
+            if #name > #widest then
+                widest = name
+            end
+        end
+    end
+
+    if widest == "" then
+        widest = "FM0"
+    end
+
+    self.widestMode = widest
+    return widest
 end
 
 --- Read the transmitter battery voltage.
 ---@param state table
 ---@param now integer
 function modelService:readTxVoltage(state, now)
-  local read = self.env.getValue
-  local value = read and read(modelService.TX_VOLTAGE_SOURCE)
+    local read = self.env.getValue
+    local value = read and read(modelService.TX_VOLTAGE_SOURCE)
 
-  if type(value) ~= "number" then
-    -- Keep any earlier reading rather than replacing it with nothing.
-    state.fresh = false
-    state.stale = state.available
-    state.state = state.available and "stale" or "unavailable"
-    return
-  end
+    if type(value) ~= "number" then
+        -- Keep any earlier reading rather than replacing it with nothing.
+        state.fresh = false
+        state.stale = state.available
+        state.state = state.available and "stale" or "unavailable"
+        return
+    end
 
-  state.available = true
-  state.fresh = true
-  state.stale = false
-  state.state = "normal"
-  state.value = value
-  state.updatedAt = now
-  state.age = 0
+    state.available = true
+    state.fresh = true
+    state.stale = false
+    state.state = "normal"
+    state.value = value
+    state.updatedAt = now
+    state.age = 0
 end
 
 --- Read the radio's own battery meter range.
@@ -355,30 +371,30 @@ end
 --- returns nothing at all.
 ---@param state table
 function modelService:readBatteryRange(state)
-  local read = self.env.getGeneralSettings
-  if not read then
-    state.available = false
-    return
-  end
+    local read = self.env.getGeneralSettings
+    if not read then
+        state.available = false
+        return
+    end
 
-  local ok, general = pcall(read)
-  if not ok or type(general) ~= "table" then
-    state.available = false
-    return
-  end
+    local ok, general = pcall(read)
+    if not ok or type(general) ~= "table" then
+        state.available = false
+        return
+    end
 
-  local low, high = general.battMin, general.battMax
-  if type(low) ~= "number" or type(high) ~= "number" or high <= low then
-    state.available = false
-    return
-  end
+    local low, high = general.battMin, general.battMax
+    if type(low) ~= "number" or type(high) ~= "number" or high <= low then
+        state.available = false
+        return
+    end
 
-  state.available = true
-  state.empty = low
-  state.full = high
-  -- The radio's own warning level, which is a different question from the
-  -- range and is offered beside it rather than folded into it.
-  state.warn = type(general.battWarn) == "number" and general.battWarn or nil
+    state.available = true
+    state.empty = low
+    state.full = high
+    -- The radio's own warning level, which is a different question from the
+    -- range and is offered beside it rather than folded into it.
+    state.warn = type(general.battWarn) == "number" and general.battWarn or nil
 end
 
 --- Subscribe to the radio's battery meter range.
@@ -390,16 +406,18 @@ end
 --- percentage that stayed wrong until the next model change.
 ---@return table view
 function modelService:batteryRange()
-  if self.batteryRangeView then return self.batteryRangeView end
+    if self.batteryRangeView then
+        return self.batteryRangeView
+    end
 
-  self.batteryRangeView = self:add({
-    available = false,
-    empty = nil,
-    full = nil,
-    warn = nil,
-  }, modelService.readBatteryRange)
+    self.batteryRangeView = self:add({
+        available = false,
+        empty = nil,
+        full = nil,
+        warn = nil,
+    }, modelService.readBatteryRange)
 
-  return self.batteryRangeView
+    return self.batteryRangeView
 end
 
 --- Subscribe to the transmitter battery voltage.
@@ -407,83 +425,91 @@ end
 --- special casing, even though this source never depends on the link.
 ---@return AeroGridReading
 function modelService:txVoltage()
-  if self.txVoltageView then return self.txVoltageView end
+    if self.txVoltageView then
+        return self.txVoltageView
+    end
 
-  self.txVoltageView = self:add({
-    name = modelService.TX_VOLTAGE_SOURCE,
-    known = true,
-    telemetry = false,
-    available = false,
-    fresh = false,
-    stale = false,
-    state = "unavailable",
-    value = nil,
-    kind = "number",
-    unit = 1,
-    unitText = "V",
-    precision = 1,
-    updatedAt = nil,
-    age = nil,
-    revision = 0,
-  }, modelService.readTxVoltage)
+    self.txVoltageView = self:add({
+        name = modelService.TX_VOLTAGE_SOURCE,
+        known = true,
+        telemetry = false,
+        available = false,
+        fresh = false,
+        stale = false,
+        state = "unavailable",
+        value = nil,
+        kind = "number",
+        unit = 1,
+        unitText = "V",
+        precision = 1,
+        updatedAt = nil,
+        age = nil,
+        revision = 0,
+    }, modelService.readTxVoltage)
 
-  return self.txVoltageView
+    return self.txVoltageView
 end
 
 --- Refresh a bounded slice of the subscribed facets.
 ---@param now integer
 function modelService:update(now)
-  local facets = self.facets
-  local total = #facets
-  if total == 0 then return end
+    local facets = self.facets
+    local total = #facets
+    if total == 0 then
+        return
+    end
 
-  local cursor = self.cursor
-  if cursor > total then cursor = 1 end
+    local cursor = self.cursor
+    if cursor > total then
+        cursor = 1
+    end
 
-  local cap = modelService.FACET_CAP
-  if cap > total then cap = total end
+    local cap = modelService.FACET_CAP
+    if cap > total then
+        cap = total
+    end
 
-  for _ = 1, cap do
-    local facet = facets[cursor]
-    cursor = cursor % total + 1
-    if facet then facet.read(self, facet.state, now) end
-  end
+    for _ = 1, cap do
+        local facet = facets[cursor]
+        cursor = cursor % total + 1
+        if facet then
+            facet.read(self, facet.state, now)
+        end
+    end
 
-  self.cursor = cursor
+    self.cursor = cursor
 end
 
 --- Describe the subscribed model facets as diagnostic rows.
 ---@param rows table Reusable row array.
 ---@return integer count
 function modelService:describe(rows)
-  local row = self.support.row
-  local index = 1
-  local identity = self.identityView
-  local mode = self.flightModeView
-  local voltage = self.txVoltageView
+    local row = self.support.row
+    local index = 1
+    local identity = self.identityView
+    local mode = self.flightModeView
+    local voltage = self.txVoltageView
 
-  if identity then
-    index = row(rows, index, "MODEL", identity.available
-      and (identity.name ~= "" and identity.name or "-") or "N/A")
-    index = row(rows, index, "IMAGE",
-      identity.bitmap ~= "" and identity.bitmap or "-")
-  end
-  if mode then
-    index = row(rows, index, "MODE", mode.available and mode.name or "N/A")
-  end
-  if voltage then
-    index = row(rows, index, "TXV", voltage.available
-      and string.format("%.1fV", voltage.value) or "N/A")
-  end
-
-  for timerIndex = 0, 2 do
-    local timer = self.timers[timerIndex]
-    if timer then
-      index = row(rows, index, "T" .. tostring(timerIndex), timer.text)
+    if identity then
+        index =
+            row(rows, index, "MODEL", identity.available and (identity.name ~= "" and identity.name or "-") or "N/A")
+        index = row(rows, index, "IMAGE", identity.bitmap ~= "" and identity.bitmap or "-")
     end
-  end
+    if mode then
+        index = row(rows, index, "MODE", mode.available and mode.name or "N/A")
+    end
+    if voltage then
+        index = row(rows, index, "TXV", voltage.available and string.format("%.1fV", voltage.value) or "N/A")
+    end
 
-  return index - 1
+    for timerIndex = 0, 2 do
+        local timer = self.timers[timerIndex]
+        if timer then
+            index = row(rows, index, "T" .. tostring(timerIndex), timer.text)
+        end
+    end
+
+    return index - 1
 end
 
 return modelService
