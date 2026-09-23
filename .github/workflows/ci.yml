@@ -15,6 +15,9 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  LUA_LS_VERSION: 3.19.1
+
 jobs:
   check:
     name: Test and validate
@@ -35,7 +38,17 @@ jobs:
       - name: Install Lua 5.3
         run: |
           sudo apt-get update
-          sudo apt-get install -y lua5.3 lua-language-server
+          sudo apt-get install -y lua5.3
+
+      - name: Install lua-language-server
+        run: |
+          archive="lua-language-server-${LUA_LS_VERSION}-linux-x64.tar.gz"
+          curl --fail --silent --show-error --location \
+            "https://github.com/LuaLS/lua-language-server/releases/download/${LUA_LS_VERSION}/${archive}" \
+            --output "$RUNNER_TEMP/$archive"
+          mkdir -p "$RUNNER_TEMP/lua-language-server"
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP/lua-language-server"
+          echo "$RUNNER_TEMP/lua-language-server/bin" >> "$GITHUB_PATH"
 
       - name: Install StyLua
         uses: dtolnay/rust-toolchain@stable
