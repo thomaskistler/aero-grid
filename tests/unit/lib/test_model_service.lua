@@ -13,7 +13,9 @@ end
 
 local function testIdentityViewExists()
     local env = services.environment({
-        getInfo = function() return { name = "My Model", filename = "my-model.yml", labels = "Demo", bitmap = "demo.png" } end,
+        getInfo = function()
+            return { name = "My Model", filename = "my-model.yml", labels = "Demo", bitmap = "demo.png" }
+        end,
     })
     local service = modelService.new(env, services)
     local identity = service:identity()

@@ -8,8 +8,12 @@ local controlService = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/contro
 
 local function testTrimNamespaceExists()
     local env = services.environment({
-        getFieldInfo = function(name) return { id = 42 } end,
-        getValue = function() return 128 end,
+        getFieldInfo = function(name)
+            return { id = 42 }
+        end,
+        getValue = function()
+            return 128
+        end,
     })
     local service = controlService.new(env, services)
     local trim = service:trim("trim-ail", "auto")

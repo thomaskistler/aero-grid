@@ -8,7 +8,9 @@ local telemetryService = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/tele
 
 local function testSubscribeReturnsLiveView()
     local env = services.environment({
-        getValue = function() return 12 end,
+        getValue = function()
+            return 12
+        end,
     })
     local service = telemetryService.new(env, services)
     local view = service:subscribe("RxBt")
@@ -18,7 +20,9 @@ end
 
 local function testLinkSubscriptionExists()
     local env = services.environment({
-        getRSSI = function() return 42 end,
+        getRSSI = function()
+            return 42
+        end,
     })
     local service = telemetryService.new(env, services)
     local link = service:link()

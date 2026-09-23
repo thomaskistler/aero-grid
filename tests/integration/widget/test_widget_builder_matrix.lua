@@ -10,8 +10,16 @@ local function testSharedBuilderContract()
     local fixture = WidgetFixture.new()
     assertions.assertTableHasKey(fixture, "firmware", "builder fixture should provide radio constants")
     assertions.assertTableHasKey(fixture, "radio", "builder fixture should provide radio state")
-    assertions.assertContains(fixtures.multiPanel, "type: metric", "shared multi-panel layout should exercise the metric builder")
-    assertions.assertContains(fixtures.multiPanel, "type: flight-mode", "shared multi-panel layout should exercise the flight-mode builder")
+    assertions.assertContains(
+        fixtures.multiPanel,
+        "type: metric",
+        "shared multi-panel layout should exercise the metric builder"
+    )
+    assertions.assertContains(
+        fixtures.multiPanel,
+        "type: flight-mode",
+        "shared multi-panel layout should exercise the flight-mode builder"
+    )
 end
 
 local function testRepresentativeLayoutLoads()
@@ -46,16 +54,22 @@ local function testThemeFallbackAndReflow()
     local zone = context.zone
     zone.w = 320
     zone.h = 240
-    assert(fixture.pumpUntil(context, function(value)
-        return not value.reflowIndex
-    end, 100), "builder reflow did not settle")
+    assert(
+        fixture.pumpUntil(context, function(value)
+            return not value.reflowIndex
+        end, 100),
+        "builder reflow did not settle"
+    )
 
     fixture.assertNoOverlap(context)
     zone.w = 480
     zone.h = 272
-    assert(fixture.pumpUntil(context, function(value)
-        return not value.reflowIndex
-    end, 100), "builder second reflow did not settle")
+    assert(
+        fixture.pumpUntil(context, function(value)
+            return not value.reflowIndex
+        end, 100),
+        "builder second reflow did not settle"
+    )
     fixture.assertNoOverlap(context)
 end
 

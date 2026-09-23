@@ -16,10 +16,7 @@ local function testIndicatorSelection()
     assertions.assertEqual(trims.isVertical({ orientation = "auto" }, 1, wide), false)
     assertions.assertEqual(trims.isVertical({ orientation = "auto" }, 1, tall), true)
     assertions.assertEqual(trims.isVertical({ orientation = "vertical" }, 1, wide), true)
-    assertions.assertEqual(
-        trims.isVertical({ orientation = "vertical", orientation2 = "horizontal" }, 2, wide),
-        false
-    )
+    assertions.assertEqual(trims.isVertical({ orientation = "vertical", orientation2 = "horizontal" }, 2, wide), false)
 end
 
 local function testCaptionsAndValues()
