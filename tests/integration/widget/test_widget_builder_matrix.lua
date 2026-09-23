@@ -21,9 +21,57 @@ local function testRepresentativeLayoutLoads()
     assertions.assertEqual(type(fixture.entryById), "function", "widget fixture should expose entry lookup")
 end
 
+local function testRepresentativeDashboardBuilds()
+    local fixture = WidgetFixture.new()
+    local context = fixture.createLoaded()
+
+    assertions.assertEqual(context.stage, nil, "staged loading should finish")
+    assert(#context.components > 0, "builder did not create any dashboard components")
+    assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+
+    for _, entry in ipairs(context.components) do
+        assert(entry.container, "component is missing its host container")
+        assert(entry.instance, "component is missing its instance")
+        local bounds = entry.container.properties
+        assert(bounds.w > 0 and bounds.h > 0, "builder created an empty panel")
+    end
+    fixture.assertNoOverlap(context)
+end
+
+local function testThemeFallbackAndReflow()
+    local fixture = WidgetFixture.new()
+    local context = fixture.createLoaded(nil, { DashID = "main", Theme = "not-a-theme" })
+    assertions.assertEqual(context.theme.mode, "modern")
+
+    local zone = context.zone
+    zone.w = 320
+    zone.h = 240
+    assert(fixture.pumpUntil(context, function(value)
+        return not value.reflowIndex
+    end, 100), "builder reflow did not settle")
+
+    fixture.assertNoOverlap(context)
+    zone.w = 480
+    zone.h = 272
+    assert(fixture.pumpUntil(context, function(value)
+        return not value.reflowIndex
+    end, 100), "builder second reflow did not settle")
+    fixture.assertNoOverlap(context)
+end
+
+local function testMissingWidgetPathFailsExplicitly()
+    local fixture = WidgetFixture.new()
+    local context = fixture.createLoaded(nil, { DashID = "main", Theme = "modern" }, "/path/does/not/exist/")
+    assert(#context.errors > 0, "missing widget modules should be reported as errors")
+    assertions.assertEqual(#context.components, 0)
+end
+
 local function run()
     testSharedBuilderContract()
     testRepresentativeLayoutLoads()
+    testRepresentativeDashboardBuilds()
+    testThemeFallbackAndReflow()
+    testMissingWidgetPathFailsExplicitly()
 end
 
 run()
