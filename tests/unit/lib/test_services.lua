@@ -18,8 +18,12 @@ end
 
 local function testEnvironmentAndRuntime()
     local env = services.environment({
-        getValue = function() return 7 end,
-        getFieldInfo = function() return { id = 9 } end,
+        getValue = function()
+            return 7
+        end,
+        getFieldInfo = function()
+            return { id = 9 }
+        end,
     })
     assertions.assertEqual(type(env.getValue), "function")
     assertions.assertEqual(type(env.getFieldInfo), "function")

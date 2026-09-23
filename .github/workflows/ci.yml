@@ -35,18 +35,41 @@ jobs:
       - name: Install Lua 5.3
         run: |
           sudo apt-get update
-          sudo apt-get install -y lua5.3
+          sudo apt-get install -y lua5.3 lua-language-server
+
+      - name: Install StyLua
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build StyLua
+        run: cargo install stylua --locked
 
       - name: Report toolchain
         run: |
           python3 --version
           lua5.3 -v
           luac5.3 -v
+          lua-language-server --version
+          stylua --version
 
       # `check` depends on `test`, so this runs the behaviour suites in both
       # string modes and then parses every Lua file with the 5.3 compiler.
       - name: Test and syntax check
         run: make check LUA_COMPILER=luac5.3
+
+      - name: Lint Lua sources
+        run: make lint
+
+      # Running the formatter in CI verifies that formatting was applied before
+      # the commit rather than merely checking a formatter-specific mode.
+      - name: Verify formatting
+        run: |
+          make format
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Lua sources are not formatted:"
+            git status --short
+            git diff --exit-code
+            exit 1
+          fi
 
       - name: Build the simulator SD image
         run: make build

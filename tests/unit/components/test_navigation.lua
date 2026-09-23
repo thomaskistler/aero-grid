@@ -67,8 +67,18 @@ local function testNavigationStates()
 end
 
 local function testDistanceText()
-    assertions.assertEqual(navigation.distanceText({ distance = 12 }, function() return "12 km" end), "12 km")
-    assertions.assertEqual(navigation.distanceText({}, function() return "12 km" end), "--")
+    assertions.assertEqual(
+        navigation.distanceText({ distance = 12 }, function()
+            return "12 km"
+        end),
+        "12 km"
+    )
+    assertions.assertEqual(
+        navigation.distanceText({}, function()
+            return "12 km"
+        end),
+        "--"
+    )
     assertions.assertEqual(navigation.coordinateText({ latitude = 1, longitude = 2 }), "1.00000 2.00000")
 end
 

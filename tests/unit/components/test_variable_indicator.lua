@@ -21,7 +21,10 @@ local function testNormalization()
         indicator.fraction("bar", { value = 25, min = 0, max = 100 }, primitives.signedFraction),
         0.25
     )
-    assertions.assertEqual(indicator.fraction("radial", { value = nil, min = 0, max = 100 }, primitives.signedFraction), 0)
+    assertions.assertEqual(
+        indicator.fraction("radial", { value = nil, min = 0, max = 100 }, primitives.signedFraction),
+        0
+    )
     assertions.assertEqual(indicator.fraction("bar", { value = 5, min = 5, max = 5 }, primitives.signedFraction), 0)
 end
 

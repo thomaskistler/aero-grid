@@ -10,7 +10,14 @@ end
 
 function assertions.assertContains(value, expected, message)
     if type(value) ~= "string" or not string.find(value, expected, 1, true) then
-        error((message or "value missing expected substring") .. ": expected to find " .. tostring(expected) .. " in " .. tostring(value), 2)
+        error(
+            (message or "value missing expected substring")
+                .. ": expected to find "
+                .. tostring(expected)
+                .. " in "
+                .. tostring(value),
+            2
+        )
     end
 end
 

@@ -92,7 +92,10 @@ function WidgetFixture.new()
         if not entry then
             return nil
         end
-        return entry.instance and entry.instance.panel and entry.instance.panel.root and entry.instance.panel.root.properties
+        return entry.instance
+            and entry.instance.panel
+            and entry.instance.panel.root
+            and entry.instance.panel.root.properties
     end
 
     function self.instanceOf(context, id)
