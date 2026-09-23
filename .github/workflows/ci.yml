@@ -50,19 +50,12 @@ jobs:
           tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP/lua-language-server"
           echo "$RUNNER_TEMP/lua-language-server/bin" >> "$GITHUB_PATH"
 
-      - name: Install StyLua
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build StyLua
-        run:         cargo install stylua --version 2.5.2 --locked
-
       - name: Report toolchain
         run: |
           python3 --version
           lua5.3 -v
           luac5.3 -v
           lua-language-server --version
-          stylua --version
 
       # `check` depends on `test`, so this runs the behaviour suites in both
       # string modes and then parses every Lua file with the 5.3 compiler.
@@ -72,17 +65,13 @@ jobs:
       - name: Lint Lua sources
         run: make lint
 
-      # Running the formatter in CI verifies that formatting was applied before
-      # the commit rather than merely checking a formatter-specific mode.
+      # The action downloads the pinned prebuilt StyLua release and checks the
+      # same files that `make format` formats locally.
       - name: Verify formatting
-        run: |
-          make format
-          if [ -n "$(git status --porcelain)" ]; then
-            echo "Lua sources are not formatted:"
-            git status --short
-            git diff --exit-code
-            exit 1
-          fi
+        uses: JohnnyMorganz/stylua-action@v5
+        with:
+          version: 2.5.2
+          args: --check src/WIDGETS tests
 
       - name: Build the simulator SD image
         run: make build
