@@ -54,7 +54,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build StyLua
-        run: cargo install stylua --locked
+        run:         cargo install stylua --version 2.5.2 --locked
 
       - name: Report toolchain
         run: |
