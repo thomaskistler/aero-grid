@@ -471,7 +471,6 @@ end
 --- One panel with several indicators, so the declaration is flat: each
 --- indicator contributes its own keys. A nested table would compare by
 --- identity and never differ.
----@param context table
 ---@param out table
 function trimPanel.render(context, out)
     local settings = context.settings

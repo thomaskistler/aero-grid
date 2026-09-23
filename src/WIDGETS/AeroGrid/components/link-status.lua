@@ -472,7 +472,7 @@ end
 ---@param rect AeroGridRect
 ---@param layout table
 ---@param fonts table
----@param sample string Widest value text this component can render.
+---@param sample table Widest value text and unit this component can render.
 ---@return table
 function linkStatus.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, out)
     -- The whole arrangement, from the shared builder. This component's only
@@ -654,7 +654,6 @@ end
 --- Repaint the component from its current subscriptions.
 ---@param context AeroGridLinkContext
 --- Collect everything this panel draws.
----@param context AeroGridLinkContext
 ---@param out table
 function linkStatus.render(context, out)
     local settings = context.settings

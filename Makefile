@@ -54,7 +54,7 @@ lint:
 	  exit 1; \
 	}
 	@echo "Linting Lua files with lua-language-server..."; \
-	if lua-language-server --check src/WIDGETS tests; then \
+	if lua-language-server --check src/WIDGETS tests --configpath="$(CURDIR)/lint-config.lua"; then \
 	  echo "All Lua files passed linting"; \
 	else \
 	  echo "Lua language server linting failed"; \

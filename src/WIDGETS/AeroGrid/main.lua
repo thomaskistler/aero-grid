@@ -1,5 +1,4 @@
 -- SPDX-License-Identifier: GPL-2.0-only
----@type WidgetScript
 ---@simulate Layout1x1AM zone=0
 
 --- AeroGrid's EdgeTX widget entry point and component host.
@@ -415,7 +414,6 @@ local function buildServices(context, placement)
 end
 
 --- Load, validate, and instantiate every component in the selected layout.
----@param context AeroGridContext
 --- Instantiate one validated placement.
 ---@param context AeroGridContext
 ---@param placement table
@@ -609,6 +607,9 @@ local function advanceLoad(context)
 
     if stage == "header" then
         local tokens = context.tokens
+        if not tokens then
+            return fail("layout tokens are missing")
+        end
         -- Split the component sequence out so the document itself stays small.
         local header, componentsIndex, componentsIndent = {}, nil, nil
         local index = 1
@@ -705,9 +706,13 @@ local function advanceLoad(context)
         context.serviceIndex = index + 1
 
         local module, moduleError = loadModule(context.path, definition.file)
-        if module and type(rawget(module, "new")) == "function" then
+        local constructor = module and rawget(module, "new") or nil
+        if type(constructor) == "function" then
             local runtime = context.serviceRuntime
-            local ok, instance = pcall(module.new, runtime.env, context.servicesModule, runtime)
+            if not runtime then
+                return fail("service runtime is missing")
+            end
+            local ok, instance = pcall(constructor, runtime.env, context.servicesModule, runtime)
             if ok and type(instance) == "table" then
                 context.servicesModule.register(runtime, instance, getTime())
             else
@@ -724,7 +729,11 @@ local function advanceLoad(context)
         local tokens = context.tokens
         local index = context.itemIndex
 
-        if not index or index > #tokens or tokens[index].indent < context.itemIndent then
+        if not tokens then
+            return fail("layout tokens are missing")
+        end
+        local token = index and tokens[index] or nil
+        if not index or not token or token.indent < context.itemIndent then
             context.tokens = nil
             context.stage = nil
             showErrors(context)

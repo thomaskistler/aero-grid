@@ -621,7 +621,6 @@ end
 --- Repaint the component from its current subscription.
 ---@param context AeroGridTxBatteryContext
 --- Collect everything this panel draws.
----@param context AeroGridTxBatteryContext
 ---@param out table
 function txBattery.render(context, out)
     local settings = context.settings

@@ -445,25 +445,31 @@ end
 --- masked by a compared one. It was unreachable by coincidence. Collecting
 --- what is drawn, and comparing exactly that, makes it unreachable by
 --- construction instead.
----@param context AeroGridIdentityContext
 ---@param out table
 function modelIdentity.render(context, out)
     local feed = context.feed
-    local available = type(feed) == "table" and feed.available == true
-
-    out.state = available and "normal" or "unavailable"
-    local name = available and feed.name or ""
-    out.text = name ~= "" and name or "--"
+    if type(feed) == "table" and feed.available == true then
+        out.state = "normal"
+        local name = feed.name
+        out.text = name ~= "" and name or "--"
+    else
+        out.state = "unavailable"
+        out.text = "--"
+    end
     -- Gated on `area`, which is what the box granted, rather than on `layout`,
     -- which is only what the span asked for. A panel whose ladder sheds the row
     -- was still writing the label list into a hidden label every time the model
     -- changed, which is the work this stopped doing everywhere else.
-    if context.showLabels and available then
+    if context.showLabels and type(feed) == "table" and feed.available == true then
         out.labels = feed.labels or ""
     end
     -- The path decides whether an image is created, so it is part of what the
     -- panel draws even though it is not text.
-    out.bitmapPath = available and feed.bitmapPath or nil
+    if type(feed) == "table" and feed.available == true then
+        out.bitmapPath = feed.bitmapPath
+    else
+        out.bitmapPath = nil
+    end
 end
 
 --- Paint the panel from what `render` collected, and from nothing else.

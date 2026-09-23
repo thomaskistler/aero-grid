@@ -272,7 +272,7 @@ end
 ---@param rect AeroGridRect
 ---@param layout table
 ---@param fonts table
----@param sample string Widest value text this indicator can render.
+---@param sample table Widest value text and unit this indicator can render.
 ---@return table
 function variableIndicator.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, out)
     -- The whole arrangement, from the shared builder. A radial is a compact
@@ -563,7 +563,6 @@ end
 --- flight mode, and `apply` also drew the configured name. When EdgeTX
 --- answered `getGlobalVariableDetails` after the first read and the value had
 --- not moved, the header updated and the row kept saying `GV1`.
----@param context AeroGridVariableContext
 ---@param out table
 function variableIndicator.render(context, out)
     local settings = context.settings

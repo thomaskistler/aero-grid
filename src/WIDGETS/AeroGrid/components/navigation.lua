@@ -360,7 +360,7 @@ end
 ---@param rect AeroGridRect
 ---@param layout table
 ---@param fonts table
----@param sample string Widest value text this component can render.
+---@param sample table Widest value text and unit this component can render.
 ---@return table
 function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     local frame = themeBuilder.frame(theme, rect, fonts)
@@ -787,7 +787,6 @@ end
 --- position and the refresh compared distance and bearing, which are derived
 --- from the position *and the home position*: a model moving along an arc at
 --- constant range changes its coordinates without moving either.
----@param context AeroGridNavigationContext
 ---@param out table
 function navigation.render(context, out)
     local view = context.feed
