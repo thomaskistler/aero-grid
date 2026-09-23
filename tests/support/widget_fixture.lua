@@ -65,6 +65,20 @@ function WidgetFixture.new()
         end
     end
 
+    function self.pumpUntil(context, predicate, limit, step)
+        for _ = 1, limit or 100 do
+            if predicate(context) then
+                return true
+            end
+            self.pump(context, 1, step)
+        end
+        return predicate(context)
+    end
+
+    function self.module(relative)
+        return loadModule(relative)
+    end
+
     function self.entryById(context, id)
         for _, entry in ipairs(context.components or {}) do
             if entry.placement and entry.placement.id == id then
@@ -84,6 +98,21 @@ function WidgetFixture.new()
     function self.instanceOf(context, id)
         local entry = self.entryById(context, id)
         return entry and entry.instance or nil
+    end
+
+    function self.assertNoOverlap(context)
+        local entries = context.components or {}
+        for firstIndex = 1, #entries do
+            local first = entries[firstIndex].container.properties
+            for secondIndex = firstIndex + 1, #entries do
+                local second = entries[secondIndex].container.properties
+                local overlaps = first.x < second.x + second.w
+                    and second.x < first.x + first.w
+                    and first.y < second.y + second.h
+                    and second.y < first.y + first.h
+                assert(not overlaps, "builder placed overlapping panels")
+            end
+        end
     end
 
     return self

@@ -6,20 +6,6 @@ local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local fixtures = assert(loadfile(root .. "/tests/support/layout_fixtures.lua"))()
 local WidgetFixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))()
 
-local function assertNoOverlap(entries)
-    for firstIndex = 1, #entries do
-        local first = entries[firstIndex].container.properties
-        for secondIndex = firstIndex + 1, #entries do
-            local second = entries[secondIndex].container.properties
-            local overlaps = first.x < second.x + second.w
-                and second.x < first.x + first.w
-                and first.y < second.y + second.h
-                and second.y < first.y + first.h
-            assert(not overlaps, "builder placed overlapping panels")
-        end
-    end
-end
-
 local function testSharedBuilderContract()
     local fixture = WidgetFixture.new()
     assertions.assertTableHasKey(fixture, "firmware", "builder fixture should provide radio constants")
@@ -49,7 +35,7 @@ local function testRepresentativeDashboardBuilds()
         local bounds = entry.container.properties
         assert(bounds.w > 0 and bounds.h > 0, "builder created an empty panel")
     end
-    assertNoOverlap(context.components)
+    fixture.assertNoOverlap(context)
 end
 
 local function testThemeFallbackAndReflow()
@@ -60,23 +46,24 @@ local function testThemeFallbackAndReflow()
     local zone = context.zone
     zone.w = 320
     zone.h = 240
-    local passes = 0
-    repeat
-        fixture.pump(context, 1)
-        passes = passes + 1
-        assert(passes < 100, "builder reflow did not settle")
-    until not context.reflowIndex
+    assert(fixture.pumpUntil(context, function(value)
+        return not value.reflowIndex
+    end, 100), "builder reflow did not settle")
 
-    assertNoOverlap(context.components)
+    fixture.assertNoOverlap(context)
     zone.w = 480
     zone.h = 272
-    passes = 0
-    repeat
-        fixture.pump(context, 1)
-        passes = passes + 1
-        assert(passes < 100, "builder second reflow did not settle")
-    until not context.reflowIndex
-    assertNoOverlap(context.components)
+    assert(fixture.pumpUntil(context, function(value)
+        return not value.reflowIndex
+    end, 100), "builder second reflow did not settle")
+    fixture.assertNoOverlap(context)
+end
+
+local function testMissingWidgetPathFailsExplicitly()
+    local fixture = WidgetFixture.new()
+    local context = fixture.createLoaded(nil, { DashID = "main", Theme = "modern" }, "/path/does/not/exist/")
+    assert(#context.errors > 0, "missing widget modules should be reported as errors")
+    assertions.assertEqual(#context.components, 0)
 end
 
 local function run()
@@ -84,6 +71,7 @@ local function run()
     testRepresentativeLayoutLoads()
     testRepresentativeDashboardBuilds()
     testThemeFallbackAndReflow()
+    testMissingWidgetPathFailsExplicitly()
 end
 
 run()
