@@ -3457,7 +3457,7 @@ local function testSlotsForAnswersForBothEdges()
                 .. " arrangement",
             overhang,
             room,
-            overhang // 2 - room
+            math.floor(overhang / 2) - room
         )
     )
 
