@@ -70,6 +70,7 @@ jobs:
       - name: Verify formatting
         uses: JohnnyMorganz/stylua-action@v5
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           version: 2.5.2
           args: --check src/WIDGETS tests
 
