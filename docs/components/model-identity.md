@@ -56,7 +56,7 @@ will store.
 
 | Key | Type | Default | Values | What it does |
 | --- | --- | --- | --- | --- |
-| `presentation` | string | `auto` | `auto`, `name`, `image`, `both` | Which arrangement to draw. `auto` shows the name alone on a panel smaller than four cells and the picture on anything larger. **`image` and `both` now describe the same panel** — a picture with the name in the heading — because the name no longer shares the body with the picture. Both keys keep working; prefer `image`, which says what you get. |
+| `presentation` | string | `auto` | `auto`, `name`, `image`, `both` | Which arrangement to draw. `auto` shows the name alone on a panel smaller than four cells and the picture on anything larger. `image` and `both` show a picture with the name in the heading. |
 | `label` | string | `MODEL` | any text | The panel's heading — **only where no picture is drawn**. With a picture the model name takes the heading, so a label set alongside `presentation: image` or `both` is refused at load with the panel named. |
 | `accent` | string | `cyan` | `cyan`, `green`, `amber`, `orange` | The stripe down the left edge. |
 | `showLabels` | boolean | `false` | `true`, `false` | Adds a supporting row listing the model's configured labels. **Needs a panel two rows tall**; on a single row it is refused at load with the panel named. |
@@ -73,8 +73,7 @@ alone.
 Asking for a picture does not guarantee one. The panel gives the picture
 whatever height is left after the heading and the labels row have taken
 theirs, and **drops it entirely below 24 px** rather than drawing a slot too
-thin to recognise. The name no longer takes a slice first, so this threshold
-is reached far less often than it was: every span this component supports
+thin to recognise. Every span this component supports
 keeps its picture, at every placement but one. The exception is a one-row
 panel in the grid's top-left cell in App mode, where EdgeTX's menu button
 pushes the content down and leaves less than 24 px — there the picture is
@@ -85,13 +84,6 @@ and a wider panel has no more of it.
 
 With a picture, in the heading. With no picture, on the panel's own vertical
 centre, the way every other reading on the dashboard is.
-
-It was not always: the name used to be pinned directly under the heading,
-which is the panel's content top and not where anything else puts a reading
-— 14 px above where it belongs at `2x2`, 49 at `2x3` and 83 at `4x4`, where it read
-as stuck to the heading with the panel empty beneath it. This is the one
-component whose reading is a name rather than a number, so no cross-panel
-comparison ever lined it up against a neighbour and nothing caught it.
 
 ### How the picture is scaled
 
@@ -107,9 +99,7 @@ frame is very wide and very short, so the height binds and the letterbox is
 at the sides; a `1x2` frame is narrow and tall, so the width binds and the
 letterbox is above and below.
 
-These are the frames in **App mode**, which is what the shipped dashboards
-use — every screen on both tracked models is `LayoutId: Layout1x1AM`, and
-`layouts/layout1x1AppMode.cpp` registers that id as "App mode". Measured at
+These are the frames in **App mode**, measured at
 a placement the menu button does not reach, which is every cell of the grid
 but the top-left one:
 
@@ -126,13 +116,6 @@ but the top-left one:
 
 In the grid's top-left cell the menu button takes 13 px of the frame's
 height at every two-row span, and all of it at every one-row span.
-
-> **This table said Full screen until now, and the figures were Full
-> screen's.** It was corrected into that state on the premise that the
-> shipped dashboards are ordinary custom screens, which they are not: both
-> tracked models carry `Layout1x1AM` on every screen. The premise is the part
-> worth remembering — the figures were computed correctly from the wrong
-> zone, so nothing about them looked wrong.
 
 A single row gives the picture 40 px of height whatever its width, so a wide
 single-row panel is mostly letterbox — it is the arrangement to avoid if the
@@ -237,12 +220,6 @@ the longest model name EdgeTX will store without overhanging the panel.
 
 ## See also
 
-- `review-model-identity` is a shipped layout that puts this panel at several
-  spans on one screen, so the overhang and the crop can be looked at rather
-  than read about. Set a fifteen-character model name before opening it, or
-  the screen shows nothing interesting. It cannot show the missing-file or
-  unreadable-file cases, because the bitmap belongs to the model rather than
-  to a panel and changing it changes every panel at once.
 - `flight-mode` has the same shape of problem solved the other way: it reads
   the longest name your model actually has and sizes itself to that, so it
   never overhangs.

@@ -39,9 +39,7 @@ at load.
 
 ## What it draws, and what it sheds
 
-These are the frames in **App mode**, which is what the shipped dashboards
-use — every screen on both tracked models is `LayoutId: Layout1x1AM`, and
-`layouts/layout1x1AppMode.cpp` registers that id as "App mode". Measured at a
+These are the frames in **App mode**, measured at a
 placement the menu button does not reach, which is every cell of the grid but
 the top-left one:
 
@@ -56,11 +54,6 @@ the top-left one:
 On an ordinary **Full screen** custom screen every panel is shorter, so the
 clock is a size smaller at every span but `1x2`: `SMLSIZE` on one row and
 `DBLSIZE` on two.
-
-> **This table gave the Full screen figures and called them the only
-> figures**, which is the same premise error that put Full-screen crop sizes
-> on the `model-identity` page: the shipped dashboards are App mode. The
-> figures were right for a zone nobody pages to.
 
 **A single row never carries the supporting row**, whatever its width. The
 layout asks for one from two cells upward, and a one-row panel has no space
@@ -85,15 +78,6 @@ grants it.
 The narrowest such panel is a `1x2`, whose content box is 105 px, and the
 widest wording is `COUNTING UP` at 84. There is nothing to shed, because
 nothing needs shedding.
-
-> **This used to overhang rather than fit.** The past-zero row said
-> `ELAPSED PAST ZERO`, 125 px into that 105 px box, so it was centred on a
-> box wider than the panel and ran ten pixels off each edge — a label wraps
-> rather than clipping, so it could not simply be cut off. The page told you
-> to keep the component two cells wide if a countdown of yours can run past
-> zero. That advice is gone, and so is the sentence: a word that fits the
-> narrowest panel fits every panel, so the long form was only ever drawn
-> where the short one would have been correct too.
 
 ### On a single row there are no words at all
 
@@ -153,29 +137,6 @@ single-row panel there is no row at any width, so there the clamp is silent.
 wrong instrument for it.** That is a real limitation and it is stated here
 rather than discovered.
 
-### Why the clock is no longer smaller than it looks like it could be
-
-The panel used to be sized for `-88:88:88` — a countdown more than ten hours
-past zero — and that cost a font size at two spans and produced a defect the
-test suite could not see.
-
-At `2x2` in App mode, `-88:88:88` measures 218 px against a 226 px content
-box. That is **8 px of margin, 3.5%**, and the test harness models glyph
-widths from the one uncompressed font in the EdgeTX tree while the dashboard
-draws in bold faces, which are wider on a radio. So the radio measured it as
-not fitting and stepped the clock down to `DBLSIZE`; the harness measured it
-as fitting and kept `XXLSIZE`. The `3x2` beside it had 129 px of margin and
-both agreed. **Two panels of identical height drew their clocks at different
-sizes on the radio and at the same size under test.**
-
-With the clamp, the widest string the panel can print is `-99:59` at 146 px,
-which is **80 px of margin, 35%**. For that to be wrong a bold face would
-have to be 55% wider than the model, where the disagreement happened at 4%.
-
-At `1x2` the old form cost a size outright: `MIDSIZE` where the band's height
-allows `DBLSIZE`, because `-88:88:88` needed 126 px of the 105 available.
-That span now reads at `DBLSIZE` in both zones.
-
 ## Examples
 
 A single cell. The clock and nothing else — no supporting row at this span,
@@ -231,7 +192,4 @@ configured.
 
 ## See also
 
-- `review-flight-timer` is slot 3 on the review model. The review model
-  configures timer 0 as a countdown already past zero, because a timer's
-  state belongs to the model and no layout can produce one.
 - `metric` takes thresholds the same way, in the direction its reading runs.

@@ -53,8 +53,8 @@ Supported spans are `1x1` through `4x1`, `1x2` through `4x2`,
 | `trim4` | `trim-rud` | Rudder in axes mode; fourth indicator in `all`. |
 | `scale` | `auto` | `standard`, `extended`, or `auto`; see below. |
 | `readout` | `percent` | `percent`, `raw` (stored trim units), or `none`. |
-| `orientation` | `auto` | Legacy layouts only: `auto`, `horizontal`, or `vertical`. |
-| `orientation1` ... `orientation4` | empty | Legacy per-indicator override: `horizontal` or `vertical`; empty follows the panel. |
+| `orientation` | `auto` | For `single`, `pair`, and `all`: `auto`, `horizontal`, or `vertical`. |
+| `orientation1` ... `orientation4` | empty | Per-indicator override for `single`, `pair`, and `all`: `horizontal` or `vertical`; empty follows the panel. |
 | `label` | `TRIM` | Panel heading. |
 | `accent` | `cyan` | Panel accent: `cyan`, `green`, `amber`, or `orange`. Axes-mode fills remain green. |
 
@@ -86,12 +86,12 @@ both neutral and full deflection without an intermediate sample. It shows
 behavioral inference, not firmware metadata: a standard trim observed only
 at neutral and its end stop can look the same.
 
-## Previous layouts
+## Single, pair, and four-indicator layouts
 
 `single` shows only `trim1`; `pair` shows `trim1` and `trim2`; `all` shows
 all four configured sources, including throttle.
 
-These modes preserve the previous repeated-indicator layout. Cells divide
+These modes use a repeated-indicator layout. Cells divide
 the content along its longer dimension. With `orientation: auto`, bars are
 vertical on taller panels and horizontal otherwise; per-indicator overrides
 win over the panel setting. Captions derive from the source name (`trim-ail`
@@ -136,7 +136,7 @@ A compact three-axis panel with stored-unit readouts:
     readout: raw
 ```
 
-The previous four-indicator arrangement:
+A four-indicator arrangement:
 
 ```yaml
 - id: all-trims
@@ -150,12 +150,3 @@ The previous four-indicator arrangement:
     orientation: horizontal
     readout: percent
 ```
-
-## Review screen
-
-`review-trim-panel` is the seventh screen on **AEROGRID REVIEW**, the
-simulator fixture's default model. It compares the square arrangement at
-2x2 and 1x1 with the retained pair/single layouts and raw/no-readout modes.
-Move the radio's trim controls to inspect fill direction, dot movement, and
-readout alignment. Simulator review does not replace real-radio readability
-and effective-trim confirmation.
