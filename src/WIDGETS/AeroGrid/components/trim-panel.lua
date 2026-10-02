@@ -30,7 +30,7 @@
 --- matching on trim names the specification explicitly forbids assuming.
 
 ---@class AeroGridTrimSettings
----@field indicators? "single"|"pair"|"all"
+---@field indicators? "axes"|"single"|"pair"|"all"
 ---@field trim1? string
 ---@field trim2? string
 ---@field trim3? string
@@ -76,14 +76,14 @@ local trimPanel = {
     -- as a telemetry readout rather than at a status-panel rate.
     refreshInterval = 20,
     settings = {
-        -- How many trims the panel shows. `mode` said nothing about which axis of
-        -- the component it selected; the label already said "Indicators".
+        -- Axes is the perimeter presentation; the other choices retain
+        -- individually arranged indicators, including throttle in `all`.
         {
             key = "indicators",
             label = "Indicators",
             type = "string",
-            default = "single",
-            choices = { "single", "pair", "all" },
+            default = "axes",
+            choices = { "axes", "single", "pair", "all" },
         },
         -- Trim source names are persisted rather than assumed. They follow the
         -- radio's hardware description, not the pilot's stick mode.
@@ -128,7 +128,7 @@ local trimPanel = {
 }
 
 --- How many indicators each mode asks for.
-local MODE_COUNT = { single = 1, pair = 2, all = 4 }
+local MODE_COUNT = { axes = 3, single = 1, pair = 2, all = 4 }
 
 --- Thickness of a trim bar, and the smallest cell worth drawing text in.
 local BAR_THICKNESS = 6
@@ -151,6 +151,9 @@ end
 ---@param rect AeroGridRect
 ---@return boolean vertical
 function trimPanel.isVertical(settings, index, rect)
+    if settings.indicators == "axes" then
+        return index == 2
+    end
     local override = settings["orientation" .. index]
     if override == "vertical" then
         return true
@@ -236,12 +239,91 @@ end
 ---@param count integer
 ---@param fonts table
 ---@return table
-function trimPanel.regionsFor(theme, themeBuilder, rect, count, fonts)
+function trimPanel.regionsFor(theme, themeBuilder, rect, count, fonts, settings)
     local frame = themeBuilder.frame(theme, rect, fonts)
     local labelHeight = frame.labelHeight
     local top = frame.top
 
     local available = math.max(1, rect.h - top - frame.bottom)
+    if settings and settings.indicators == "axes" then
+        local readoutFont = fonts.label
+        if available < themeBuilder.fontHeight(readoutFont) * 3 then
+            readoutFont = TINSIZE
+        end
+        local readoutHeight = themeBuilder.fontHeight(readoutFont)
+        local readoutWidth = math.max(
+            themeBuilder.measureText(readoutFont, "-100%"),
+            themeBuilder.measureText(readoutFont, "3P MID"),
+            themeBuilder.measureText(readoutFont, "-512")
+        ) + math.max(
+            themeBuilder.measureText(readoutFont, "A "),
+            themeBuilder.measureText(readoutFont, "E "),
+            themeBuilder.measureText(readoutFont, "R ")
+        ) + 2
+        local showValue = settings.readout ~= "none"
+            and available >= readoutHeight * 3
+            and frame.content >= readoutWidth + 8 + BAR_THICKNESS
+        local reserved = showValue and readoutWidth + 4 or 0
+        local verticalInset = showValue and math.max(0, math.ceil((readoutHeight - BAR_THICKNESS) / 2)) or 0
+        local side = math.max(BAR_THICKNESS, math.min(frame.content - reserved, available - 2 * verticalInset))
+        local left = frame.pad + math.floor((frame.content - reserved - side) / 2)
+        top = top + math.floor((available - side) / 2)
+        local width, height = side, side
+        local cornerGap = math.min(BAR_THICKNESS + 2, math.floor((side - 2) / 2))
+        local barLength = side - 2 * cornerGap
+        local bottom = top + side - BAR_THICKNESS
+        local textX = left + side - cornerGap + 4
+        local textFits = math.floor(width / 3) >= themeBuilder.measureText(fonts.label, "3P MID") + 2
+        return {
+            frame = frame,
+            squareLeft = left,
+            squareSide = side,
+            readoutGap = 4 - cornerGap,
+            showCaption = height >= labelHeight * 3 + 8 and textFits,
+            showValue = showValue,
+            readoutFont = readoutFont,
+            centreX = left + math.floor(side / 2),
+            centreY = top + math.floor(side / 2),
+            cells = {
+                {
+                    x = left,
+                    y = top,
+                    textWidth = showValue and readoutWidth or math.floor(width / 2),
+                    captionY = top + BAR_THICKNESS + 2,
+                    valueY = top,
+                    valueX = textX,
+                    barX = left + cornerGap,
+                    barY = top,
+                    barWidth = barLength,
+                    barHeight = BAR_THICKNESS,
+                },
+                {
+                    x = left + BAR_THICKNESS + 2,
+                    y = top,
+                    textWidth = showValue and readoutWidth or math.floor(width / 3),
+                    captionY = top + math.floor(height / 2) - labelHeight - 2,
+                    valueY = top + math.floor((height - readoutHeight) / 2),
+                    valueX = textX,
+                    barX = left,
+                    barY = top + cornerGap,
+                    barWidth = BAR_THICKNESS,
+                    barHeight = barLength,
+                },
+                {
+                    x = left,
+                    y = bottom,
+                    textWidth = showValue and readoutWidth or math.floor(width / 2),
+                    captionY = bottom - labelHeight - 2,
+                    valueY = top + side - readoutHeight,
+                    valueX = textX,
+                    barX = left + cornerGap,
+                    barY = bottom,
+                    barWidth = barLength,
+                    barHeight = BAR_THICKNESS,
+                },
+            },
+        }
+    end
     local columns = rect.w >= rect.h
 
     local cellWidth, cellHeight
@@ -301,6 +383,9 @@ end
 ---@param vertical boolean Bar axis for this indicator.
 ---@return table
 function trimPanel.cellFor(area, index, vertical)
+    if area.cells then
+        return area.cells[index]
+    end
     local offset = index - 1
     local x = area.pad + (area.columns and offset * area.cellWidth or 0)
     local y = area.top + (area.columns and 0 or offset * area.cellHeight)
@@ -355,7 +440,7 @@ function trimPanel.create(parent, rect, settings, services)
     local fonts = services.fonts
     local presentation = services.state("normal", settings.accent)
     local count = trimPanel.indicatorCount(settings.indicators)
-    local area = trimPanel.regionsFor(theme, services.themeBuilder, rect, count, fonts)
+    local area = trimPanel.regionsFor(theme, services.themeBuilder, rect, count, fonts, settings)
 
     local context = {
         theme = theme,
@@ -389,7 +474,7 @@ function trimPanel.create(parent, rect, settings, services)
     local scale = settings.scale
 
     for index = 1, count do
-        local name = settings["trim" .. index]
+        local name = settings["trim" .. (settings.indicators == "axes" and index == 3 and 4 or index)]
         local vertical = trimPanel.isVertical(settings, index, rect)
         local cell = trimPanel.cellFor(area, index, vertical)
 
@@ -422,16 +507,16 @@ function trimPanel.create(parent, rect, settings, services)
             thickness = BAR_THICKNESS,
             vertical = vertical,
             fraction = 0,
-            color = presentation.accent,
+            color = settings.indicators == "axes" and services.state("normal", "green").accent or presentation.accent,
         })
 
         indicator.value = primitives.label(panel.root, theme, {
-            x = cell.x,
+            x = cell.valueX or cell.x,
             y = cell.valueY,
             w = cell.textWidth,
             text = "",
             color = theme.color.textMuted,
-            font = fonts.label,
+            font = area.readoutFont or fonts.label,
         })
 
         if not area.showCaption then
@@ -442,6 +527,17 @@ function trimPanel.create(parent, rect, settings, services)
         end
 
         context.indicators[index] = indicator
+    end
+    if settings.indicators == "axes" then
+        context.dot = lvgl.rectangle(panel.root, {
+            x = area.centreX - 3,
+            y = area.centreY - 3,
+            w = 6,
+            h = 6,
+            rounded = 3,
+            filled = true,
+            color = lcd.RGB(0xFFFFFF),
+        })
     end
 
     local _, drawn = primitives.changed(context, trimPanel.render)
@@ -483,7 +579,11 @@ function trimPanel.render(context, out)
         -- A cell too narrow for text has no readout, so none is formatted. The
         -- key is absent rather than empty, which `changed` notices by counting.
         if showValue then
-            out["text" .. index] = trimPanel.valueText(settings, feed)
+            local text = trimPanel.valueText(settings, feed)
+            if settings.indicators == "axes" then
+                text = text .. (index == 1 and " A" or (index == 2 and " E" or " R"))
+            end
+            out["text" .. index] = text
         end
         out["fraction" .. index] = available and feed.fraction or 0
         out["available" .. index] = available
@@ -516,7 +616,9 @@ function trimPanel.apply(context, drawn)
         primitives.setBipolarBar(
             indicator.bar,
             drawn["fraction" .. index],
-            drawn["available" .. index] and presentation.accent or context.theme.color.textFaint
+            drawn["available" .. index]
+                    and (context.settings.indicators == "axes" and context.state("normal", "green").accent or presentation.accent)
+                or context.theme.color.textFaint
         )
 
         if context.showValue then
@@ -525,6 +627,66 @@ function trimPanel.apply(context, drawn)
             indicator.value:set({ text = text })
         end
     end
+    trimPanel.centreAxes(context)
+    trimPanel.placeDot(context, drawn["fraction1"], drawn["fraction2"], drawn["available1"] and drawn["available2"])
+end
+
+--- Center the square and fixed readout column without moving as values change.
+function trimPanel.centreAxes(context)
+    local area = context.area
+    if not area.cells then
+        return
+    end
+    local width = context.showValue and area.cells[1].textWidth or 0
+    local groupWidth = area.squareSide + (context.showValue and area.readoutGap + width or 0)
+    local left = math.floor((context.panel.width - groupWidth) / 2)
+    local offset = left - area.squareLeft
+    if context.showValue then
+        for index, indicator in ipairs(context.indicators) do
+            local bar = area.cells[index]
+            local centreY = bar.barY + bar.barHeight / 2
+            local textWidth = context.themeBuilder.measureText(area.readoutFont, indicator.valueText)
+            indicator.value:set({
+                x = bar.valueX + offset + width - textWidth,
+                y = math.floor(
+                    centreY - context.themeBuilder.numberInkCentre(area.readoutFont, indicator.valueText) + 0.5
+                ),
+                w = math.max(1, textWidth),
+            })
+        end
+    end
+    if area.groupOffset == offset then
+        return
+    end
+    area.groupOffset = offset
+    area.centreX = left + math.floor(area.squareSide / 2)
+    for index, indicator in ipairs(context.indicators) do
+        local cell = area.cells[index]
+        context.primitives.placeBipolarBar(
+            indicator.bar,
+            cell.barX + offset,
+            cell.barY,
+            cell.barWidth,
+            cell.barHeight,
+            indicator.feed and indicator.feed.fraction or 0
+        )
+        if context.showCaption then
+            indicator.caption:set({ x = cell.x + offset })
+        end
+    end
+end
+
+--- Plot aileron/elevator at the same normalized positions as their bar endpoints.
+function trimPanel.placeDot(context, aileron, elevator, available)
+    if not context.dot then
+        return
+    end
+    local horizontal = context.indicators[1].bar
+    local vertical = context.indicators[2].bar
+    context.primitives.reconcile(context.dot, available == true, {
+        x = context.area.centreX - 3 + math.floor(aileron * (horizontal.w - 6) / 2 + 0.5),
+        y = context.area.centreY - 3 - math.floor(elevator * (vertical.h - 6) / 2 + 0.5),
+    })
 end
 
 --- Advance the panel, repainting only when something drawn changed.
@@ -541,9 +703,13 @@ end
 ---@param rect AeroGridRect
 function trimPanel.update(context, rect)
     local primitives = context.primitives
-    local area = trimPanel.regionsFor(context.theme, context.themeBuilder, rect, context.count, context.fonts)
+    local area =
+        trimPanel.regionsFor(context.theme, context.themeBuilder, rect, context.count, context.fonts, context.settings)
 
     context.area = area
+    if context.dot then
+        context.dot:set({ x = area.centreX - 3, y = area.centreY - 3 })
+    end
     primitives.resizePanel(context.panel, rect)
     primitives.placeHeader(
         context.label,
@@ -596,12 +762,14 @@ function trimPanel.update(context, rect)
             { x = cell.x, y = cell.captionY, w = cell.textWidth },
             not captionsChanged
         )
-        reconcile(
-            indicator.value,
-            area.showValue,
-            { x = cell.x, y = cell.valueY, w = cell.textWidth },
-            not valuesChanged
-        )
+        reconcile(indicator.value, area.showValue, {
+            x = cell.valueX or cell.x,
+            y = cell.valueY,
+            w = cell.textWidth,
+            font = function()
+                return area.readoutFont or context.fonts.label
+            end,
+        }, not valuesChanged)
         primitives.placeBipolarBar(
             indicator.bar,
             cell.barX,
@@ -616,6 +784,16 @@ function trimPanel.update(context, rect)
         if captionsChanged and area.showCaption then
             indicator.caption:set({ text = trimPanel.captionFor(indicator.name) })
         end
+    end
+    trimPanel.centreAxes(context)
+    if context.dot then
+        local aileron, elevator = context.indicators[1].feed, context.indicators[2].feed
+        trimPanel.placeDot(
+            context,
+            aileron and aileron.fraction or 0,
+            elevator and elevator.fraction or 0,
+            aileron and elevator and aileron.available and elevator.available
+        )
     end
 end
 

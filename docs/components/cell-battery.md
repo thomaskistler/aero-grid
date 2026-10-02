@@ -171,8 +171,8 @@ Supporting text that cannot fit is shed.
 
 The review model's fifth screen selects `review-cell-battery`. Its pack panels
 read `RxBt` with `cells: 4`; change that count to match the battery being
-reviewed. A separate monitor panel reads `Cels`. The screen is review tooling,
-not confirmation that the panel's review is complete.
+reviewed. A separate monitor panel reads `Cels`. The simulator review changes
+landed in #93; real-hardware confirmation remains outstanding.
 The sixth screen selects `review-cell-sources`, a side-by-side source-name
 diagnostic. Neither simulator review replaces confirmation of sensor shapes
 and readability on real hardware.

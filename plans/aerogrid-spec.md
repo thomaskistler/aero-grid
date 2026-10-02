@@ -1063,9 +1063,37 @@ Two things about that are worth keeping rather than leaving in a PR. **The sympt
 
 **The ink.** A reading's font came from the largest whose *line height* fitted its band, and line height is ascent plus descent plus leading. No reading in the catalogue descends, so the band was reserving space nothing draws into. It comes from the ink now and the reading is placed by centring that ink, which had to move together: a font chosen one way and a block centred the other disagree by 4.5 px on a `navigation 4 x 2`. That reversed a recorded decision, and `theme.opticalTop` went with it -- it had no caller at all, which is the same shape as the retired `primitives.arcBounds`.
 
-**The reviews.** Four components have been reviewed so far -- `flight-mode`, `tx-battery`, `model-identity` and `flight-timer` -- each with a screen of its own on a second model, because `MAX_CUSTOM_SCREENS` is 10 and ten reviewable components plus the dashboards and palette screens is fourteen. Six are still to come, `navigation` among them, which is why its two deferred decisions are held rather than taken piecemeal. The four span galleries came off the radio and stayed as test fixtures. What the reviews found is most of the rest of this list: a picture cropped rather than fitted, a model name drawn 59 px above where every other reading sits, a heading that drifted down as panels grew, a supporting row 20 px wider than its panel, a timer index no radio has that loaded anyway, a badge that never reached the edge it was aligned to.
+**The reviews.** Six components have completed the simulator review and
+documentation pass: `flight-mode`, `tx-battery`, `model-identity`,
+`flight-timer`, `cell-battery`, and `trim-panel`. The remaining four are
+`link-status`, `metric`, `navigation`, and `variable-indicator`; `link-status`
+is the next planned review. Physical-radio validation remains outstanding.
+Review screens live on a second model because `MAX_CUSTOM_SCREENS` is 10.
+The four span galleries remain test fixtures rather than radio screens.
 
-**`cell-battery` is now under review, not yet reviewed.** A fifth screen on the review model selects `review-cell-battery`. It compares pack-first and average-first presentations from `RxBt`, with an explicitly configured four-cell count, plus narrow spans and a separate `Cels` monitor panel. The count must be changed to match the battery used for the review. This adds pack-voltage support without claiming to measure individual cells or to complete the visual review. A sixth, diagnostic screen (`review-cell-sources`) confirmed the case-sensitive binding: `RxBt` reports a live voltage, while `RXBt` is unavailable.
+**`cell-battery` review changes landed in #93.** The fifth screen selects
+`review-cell-battery`, comparing pack-first and average-first readings from
+`RxBt` with a configured four-cell count, narrow spans, and a `Cels` monitor.
+The count must match the actual pack. Pack sources cannot reveal individual
+cells. Its documentation covers the shared battery glyph, equal gaps, 30%
+unit-shedding threshold, and digit-ink alignment. The sixth diagnostic screen
+confirmed case-sensitive binding: `RxBt` works, `RXBt` does not.
+
+**`trim-panel` simulator review is complete, by user choice.** The seventh screen
+on AEROGRID REVIEW selects `review-trim-panel`, comparing three-axis squares,
+a pair, horizontal and vertical singles, raw and percentage readouts, and
+single-cell shedding. The default is now a three-axis perimeter arrangement:
+aileron at the top, elevator on the left, rudder at the bottom, green
+center-zero fills with fixed zero ticks, and a white dot following aileron
+and elevator. The square and right-hand numeric column are centered as a
+group using a fixed full-range budget, with right-aligned `A/E/R` suffix
+readouts vertically centered on their bars and equal corner clearances.
+Compact typography retains numbers in normal 1x1 cells. The previous
+arrangements remain available through explicit `indicators` settings.
+See [trim-panel documentation](../docs/components/trim-panel.md).
+The fixture now starts on AEROGRID REVIEW (`model2.yml`), with
+`manuallyEdited: 1` allowing EdgeTX to accept the changed radio settings
+and regenerate their checksum.
 
 **The wordings.** Rows offer single forms wherever one fits, because a form short enough for the narrowest panel is short enough for every panel -- so a ladder's longer rungs were only ever drawn where the shorter one was also correct. `cell-battery`'s three shape wordings became two, `NO CELLS` and `CELLS ERR`, and that one was decided on the reader rather than the width: both of the merged states mean the configuration is wrong and are fixed on the ground, and a row says what to do rather than which failure occurred.
 
@@ -1103,7 +1131,7 @@ The worst callback rose 85 when the heading notice started working. It had been 
 - CI (`.github/workflows/ci.yml`) runs `make check` under Lua 5.3 on every pull request, plus the SD image build and two integrity assertions.
 - The dashboard has been confirmed running in the EdgeTX simulator on a TX16S profile through milestone 7. Navigation, link status, the radial and bar metrics and the trim panel have all been read against live simulated telemetry, which is where the arc drift in constraint 11 was found. Two of milestone 7's behaviours still cannot be judged there: whether a cells source on a real receiver returns the table shape assumed here, since nothing on an ELRS link publishes one, and whether a protocol without an RSSI sensor is recognized as a link rather than a dead one.
 - Milestone 8's corner work and the whole presentation and consistency pass have been seen in the EdgeTX simulator and judged there. The accent geometry in particular took five rounds of looking, and the version that was accepted came from the person at the screen rather than from any measurement, which is the standing argument for building something to look at rather than reasoning about it in prose. None of it has been seen on a radio; see [Nothing has run on a radio](#nothing-has-run-on-a-radio).
-- The simulator fixture carries **five screens on `model1` and five on `model2`**, every one holding an AeroGrid instance and every one an App mode layout. `model1` has `sim`, which fills its grid with the telemetry components; `sim2`, which covers the radio-local ones that had nowhere to go beside them; the `states` layout twice, under the Modern and EdgeTX-derived palettes; and the `host` diagnostics view. `model2` carries one review screen per component under review, currently `flight-mode`, `tx-battery`, `model-identity`, `flight-timer` and `cell-battery`. They are ordered by what is being looked at rather than by when they were written, because a screen that takes six pages to reach does not get looked at, which is the only thing a screen is for.
+- The simulator fixture carries **five screens on `model1` and seven on `model2`**, every one holding an AeroGrid instance and every one an App mode layout. `model1` has `sim`, which fills its grid with the telemetry components; `sim2`, which covers the radio-local ones that had nowhere to go beside them; the `states` layout twice, under the Modern and EdgeTX-derived palettes; and the `host` diagnostics view. The default `model2` carries reviews for `flight-mode`, `tx-battery`, `model-identity`, `flight-timer`, `cell-battery`, and `trim-panel`, plus the cell-source diagnostic screen.
 
   Reaching a layout means setting the widget's Dashboard ID, which in App mode cannot be reached from the main view at all: `Widget::openMenu` returns immediately after `setFullscreen(true)` when the widget is not in the top bar and the view is App mode. So a layout without a screen of its own costs a trip through Model Setup and Screens, which is why the review screens exist rather than being Dashboard IDs somebody is expected to type. `MAX_CUSTOM_SCREENS` is 10, and that ceiling is why the reviews are on a second model at all. Paging between screens switches dashboards without opening widget settings, and exercises two widget instances resolving different layouts at once; `sim` carries the Modern palette and `sim2` the EdgeTX-derived one, so the two are one button press apart.
 
@@ -1112,9 +1140,13 @@ The worst callback rose 85 when the heading notice started working. It had been 
 - In App mode, every shipped layout is checked to draw nothing readable inside the corner EdgeTX's menu button covers. The directory is read rather than listed, so a new layout is covered as soon as it is added.
 - Every layout under `layouts/` is loaded by the integration suite, not merely the shipped default: each one is built through the real host and components, held to the same containment rules, and refreshed against radio state. A layout is covered as soon as it is added, because the suite reads the directory rather than a list.
 - **The four span galleries have been retired from the radio and kept as test fixtures.** They shipped under the Dashboard IDs `span1x1`, `span2x1`, `span2x2` and `span4x1`, each putting every component at one span so the catalogue could be caught disagreeing with itself. The user does not page to them, and ten screens is the ceiling, so they now live in `tests/fixtures/layouts/` rather than on the card. What they construct is still built: the single-cell gallery is still held to containing every component that declares a `1x1` span, read from the component directory rather than from a list, and all four are still swept by the collision check, where they are the densest arrangement in the suite -- eleven components in one grid. Retiring a layout from a screen is a decision about the radio; deleting the cases it builds would have been a quiet reduction in coverage.
-- **Review screens live on a second model.** `MAX_CUSTOM_SCREENS` is 10 (`radio/src/dataconstants.h`), and ten reviewable components plus two dashboards, two palette screens and the debug screen is fourteen. `model1.yml` keeps the dashboards, the palette comparison and the debug screen; `model2.yml` carries one screen per component under review. **Five exist today** -- `flight-mode`, `tx-battery`, `model-identity`, `flight-timer` and `cell-battery`. Four reviews are done; the `cell-battery` screen is the active review harness.
+- **Review screens live on a second model.** `MAX_CUSTOM_SCREENS` is 10 (`radio/src/dataconstants.h`), and ten reviewable components plus two dashboards, two palette screens and the debug screen is fourteen. `model1.yml` keeps those dashboards and diagnostics; `model2.yml` has six component review screens and one source-name diagnostic. Six simulator reviews are complete; four remain.
 
 ### Immediate next steps
+
+Continue the simulator panel pass with `link-status`, then `metric`,
+`navigation`, and `variable-indicator`, documenting each accepted panel.
+These reviews do not close the separate hardware work below.
 
 1. **Run the shipped dashboard on a radio.** This is first and has been first for three milestones. One screen exercises telemetry, cells, link, GPS, model timers, flight mode, transmitter voltage, a global variable, trims, and the model bitmap at once. Five things can only be judged there: whether the estimated text widths behind `theme.textWidth` hold against the real fonts, whether an `lvgl.image` of a model bitmap scales the way `StaticImage` is expected to, whether the corrected arc centring places the radial and compass dials where they are meant to go, whether the compass pointer reads as a direction at arm's length, and whether an alert tint is noticed without being looked at.
 2. **Run the two diagnostics layouts on a radio.** Set the widget's Dashboard ID to `services` or `services2`; they load on any model without a model-specific file. This is the check that milestone 5's normalization is right against real sensors rather than mocks.
