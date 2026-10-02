@@ -899,7 +899,7 @@ end
 --- cheapest protection against a future component being expensive to move. At
 --- 4, a component costing 3750 to reposition breaches the suite's ceiling; at
 --- 3 it takes 4935 to do the same.
-local REFLOW_BATCH = 3
+local REFLOW_BATCH = 2
 
 --- Begin repositioning after EdgeTX changes the host zone.
 --- Like loading, this is spread over callbacks: a full grid costs more than

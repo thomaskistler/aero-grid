@@ -281,18 +281,7 @@ txBattery.GLYPH_MAX_HEIGHT = 50
 ---@return integer? width
 ---@return integer? height
 function txBattery.glyphFor(primitives, slot, tall)
-    -- As tall as its band allows, capped so a cell beside an XXLSIZE reading
-    -- is an indicator rather than a second reading.
-    local ideal = math.min(txBattery.GLYPH_MAX_HEIGHT, tall)
-
-    for height = ideal, primitives.GLYPH_MIN_HEIGHT, -1 do
-        local width = math.max(primitives.GLYPH_MIN_WIDTH, math.floor(height / primitives.GLYPH_ASPECT + 0.5))
-        if width <= slot then
-            return width, height
-        end
-    end
-
-    return nil, nil
+    return primitives.batterySize(slot, math.min(txBattery.GLYPH_MAX_HEIGHT, tall))
 end
 
 --- Compute the content regions for the current rectangle.

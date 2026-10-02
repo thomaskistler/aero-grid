@@ -1,0 +1,99 @@
+# Cell-battery review, screen 5 on AEROGRID REVIEW.
+# RxBt must measure the flight pack, not a regulated receiver supply.
+# Set cells to the actual pack count (4 here); it is never guessed.
+# The upper pair compares pack and average-cell headlines with the opposite
+# voltage underneath. The lower panels show narrow and single-row shedding,
+# and a cells-monitor source for comparison. Cels is absent on the ELRS fixture.
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: pack
+    type: cell-battery
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      source: RxBt
+      sourceType: pack
+      label: PACK VOLTAGE
+      reading: pack
+      cells: 4
+
+  - id: average
+    type: cell-battery
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      source: RxBt
+      sourceType: pack
+      label: AVERAGE CELL
+      reading: average
+      cells: 4
+
+  - id: narrow-pack
+    type: cell-battery
+    col: 0
+    row: 2
+    colSpan: 1
+    rowSpan: 2
+    config:
+      source: RxBt
+      sourceType: pack
+      label: PACK 1x2
+      reading: pack
+      cells: 4
+
+  - id: narrow-average
+    type: cell-battery
+    col: 1
+    row: 2
+    colSpan: 1
+    rowSpan: 2
+    config:
+      source: RxBt
+      sourceType: pack
+      label: AVG 1x2
+      reading: average
+      cells: 4
+
+  - id: smallest
+    type: cell-battery
+    col: 2
+    row: 2
+    colSpan: 1
+    rowSpan: 1
+    config:
+      source: RxBt
+      sourceType: pack
+      label: 1x1
+      reading: average
+      cells: 4
+
+  - id: monitor
+    type: cell-battery
+    col: 3
+    row: 2
+    colSpan: 1
+    rowSpan: 2
+    config:
+      source: Cels
+      label: MONITOR
+      reading: lowest
+
+  - id: smallest-pack
+    type: cell-battery
+    col: 2
+    row: 3
+    colSpan: 1
+    rowSpan: 1
+    config:
+      source: RxBt
+      sourceType: pack
+      label: PACK 1x1
+      reading: pack
+      cells: 4

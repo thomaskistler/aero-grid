@@ -139,7 +139,7 @@ The initial release should provide these components:
 
 | Component | Purpose | Classification |
 | --- | --- | --- |
-| `cell-battery` | Minimum cell voltage, horizontal usable-capacity bar, optional pack voltage and cell count | Specialized |
+| `cell-battery` | Lowest/average cell or pack voltage, upright battery glyph, optional supporting voltage and measured/configured cell count; explicit bar mode retained | Specialized |
 | `metric` | Current value, optional minimum/maximum, and optional secondary value | Generic with domain presets |
 | `flight-timer` | EdgeTX model timer with count-up or count-down presentation | Specialized |
 | `link-status` | RSSI, link quality, optional minimum quality, and link freshness | Specialized |
@@ -169,13 +169,16 @@ A preset cannot be expressed as a settings default, because the host fills decla
 #### Cell battery
 
 - Accept an EdgeTX cells source. A cells source may return a table of individual voltages.
+- Also accept a numeric pack-voltage source such as `RxBt` with explicit `sourceType: pack` and a configured integer `cells` count from 1 to 16. Never guess the count. The source must measure the pack, not a regulated receiver supply.
+- For a pack source, offer pack voltage as the headline with average cell voltage and count underneath, or average as the headline with pack voltage and count underneath. The average is derived, not a measurement of individual cells; lowest-cell mode is refused without a cells monitor.
 - Use the lowest valid cell voltage as the primary safety reading by default.
-- Scale the horizontal bar over the configured usable range from critical to full, not from zero volts.
+- By default show an upright battery glyph beside the reading, using the shared transmitter-battery primitive, with no bottom progress bar. Retain `visual: bar` for explicitly configured layouts. Scale either visualization over the configured usable voltage range, not from zero volts.
 - Support warning, critical, stale, and unavailable states.
 - Optionally show cell count and summed pack voltage.
 - Do not estimate remaining battery percentage unless a future component explicitly defines and labels its estimation model.
 - Validate the table rather than trusting it. Entries that are not plausible cell voltages are rejected instead of folded into a lowest or an average, the walk is bounded because the table comes from the firmware, and a value that is not a table at all is reported as a configuration mistake rather than as a missing source.
 - Judge the thresholds on the worst cell even when the panel shows the pack sum, because a sum is exactly what hides one sagging cell.
+- With a pack-voltage source, judge those same per-cell thresholds on the derived average instead. This cannot detect a weak cell or imbalance. See [`cell-battery` settings](../docs/components/cell-battery.md).
 - Allow an explicitly configured lowest-cell source, such as `Cels-`, to win for that reading. The receiver maintaining it has seen samples between the dashboard's polls, and it keeps the component useful when the table itself is unreadable.
 
 #### Metric
@@ -1062,6 +1065,8 @@ Two things about that are worth keeping rather than leaving in a PR. **The sympt
 
 **The reviews.** Four components have been reviewed so far -- `flight-mode`, `tx-battery`, `model-identity` and `flight-timer` -- each with a screen of its own on a second model, because `MAX_CUSTOM_SCREENS` is 10 and ten reviewable components plus the dashboards and palette screens is fourteen. Six are still to come, `navigation` among them, which is why its two deferred decisions are held rather than taken piecemeal. The four span galleries came off the radio and stayed as test fixtures. What the reviews found is most of the rest of this list: a picture cropped rather than fitted, a model name drawn 59 px above where every other reading sits, a heading that drifted down as panels grew, a supporting row 20 px wider than its panel, a timer index no radio has that loaded anyway, a badge that never reached the edge it was aligned to.
 
+**`cell-battery` is now under review, not yet reviewed.** A fifth screen on the review model selects `review-cell-battery`. It compares pack-first and average-first presentations from `RxBt`, with an explicitly configured four-cell count, plus narrow spans and a separate `Cels` monitor panel. The count must be changed to match the battery used for the review. This adds pack-voltage support without claiming to measure individual cells or to complete the visual review. A sixth, diagnostic screen (`review-cell-sources`) confirmed the case-sensitive binding: `RxBt` reports a live voltage, while `RXBt` is unavailable.
+
 **The wordings.** Rows offer single forms wherever one fits, because a form short enough for the narrowest panel is short enough for every panel -- so a ladder's longer rungs were only ever drawn where the shorter one was also correct. `cell-battery`'s three shape wordings became two, `NO CELLS` and `CELLS ERR`, and that one was decided on the reader rather than the width: both of the merged states mean the configuration is wrong and are fixed on the ground, and a row says what to do rather than which failure occurred.
 
 **Cost.** Four figures moved and each is recorded where it moved. The instrument itself was wrong twice more -- a collision sweep that ran one zone while reporting two, and a fixture whose reset restored every telemetry value except the timers -- which brings the tally of apparatus-was-the-defect to seven, every one failing towards pass.
@@ -1098,7 +1103,7 @@ The worst callback rose 85 when the heading notice started working. It had been 
 - CI (`.github/workflows/ci.yml`) runs `make check` under Lua 5.3 on every pull request, plus the SD image build and two integrity assertions.
 - The dashboard has been confirmed running in the EdgeTX simulator on a TX16S profile through milestone 7. Navigation, link status, the radial and bar metrics and the trim panel have all been read against live simulated telemetry, which is where the arc drift in constraint 11 was found. Two of milestone 7's behaviours still cannot be judged there: whether a cells source on a real receiver returns the table shape assumed here, since nothing on an ELRS link publishes one, and whether a protocol without an RSSI sensor is recognized as a link rather than a dead one.
 - Milestone 8's corner work and the whole presentation and consistency pass have been seen in the EdgeTX simulator and judged there. The accent geometry in particular took five rounds of looking, and the version that was accepted came from the person at the screen rather than from any measurement, which is the standing argument for building something to look at rather than reasoning about it in prose. None of it has been seen on a radio; see [Nothing has run on a radio](#nothing-has-run-on-a-radio).
-- The simulator fixture carries **five screens on `model1` and four on `model2`**, every one holding an AeroGrid instance and every one an App mode layout. `model1` has `sim`, which fills its grid with the telemetry components; `sim2`, which covers the radio-local ones that had nowhere to go beside them; the `states` layout twice, under the Modern and EdgeTX-derived palettes; and the `host` diagnostics view. `model2` carries one review screen per component under review, currently `flight-mode`, `tx-battery`, `model-identity` and `flight-timer`. They are ordered by what is being looked at rather than by when they were written, because a screen that takes six pages to reach does not get looked at, which is the only thing a screen is for.
+- The simulator fixture carries **five screens on `model1` and five on `model2`**, every one holding an AeroGrid instance and every one an App mode layout. `model1` has `sim`, which fills its grid with the telemetry components; `sim2`, which covers the radio-local ones that had nowhere to go beside them; the `states` layout twice, under the Modern and EdgeTX-derived palettes; and the `host` diagnostics view. `model2` carries one review screen per component under review, currently `flight-mode`, `tx-battery`, `model-identity`, `flight-timer` and `cell-battery`. They are ordered by what is being looked at rather than by when they were written, because a screen that takes six pages to reach does not get looked at, which is the only thing a screen is for.
 
   Reaching a layout means setting the widget's Dashboard ID, which in App mode cannot be reached from the main view at all: `Widget::openMenu` returns immediately after `setFullscreen(true)` when the widget is not in the top bar and the view is App mode. So a layout without a screen of its own costs a trip through Model Setup and Screens, which is why the review screens exist rather than being Dashboard IDs somebody is expected to type. `MAX_CUSTOM_SCREENS` is 10, and that ceiling is why the reviews are on a second model at all. Paging between screens switches dashboards without opening widget settings, and exercises two widget instances resolving different layouts at once; `sim` carries the Modern palette and `sim2` the EdgeTX-derived one, so the two are one button press apart.
 
@@ -1107,7 +1112,7 @@ The worst callback rose 85 when the heading notice started working. It had been 
 - In App mode, every shipped layout is checked to draw nothing readable inside the corner EdgeTX's menu button covers. The directory is read rather than listed, so a new layout is covered as soon as it is added.
 - Every layout under `layouts/` is loaded by the integration suite, not merely the shipped default: each one is built through the real host and components, held to the same containment rules, and refreshed against radio state. A layout is covered as soon as it is added, because the suite reads the directory rather than a list.
 - **The four span galleries have been retired from the radio and kept as test fixtures.** They shipped under the Dashboard IDs `span1x1`, `span2x1`, `span2x2` and `span4x1`, each putting every component at one span so the catalogue could be caught disagreeing with itself. The user does not page to them, and ten screens is the ceiling, so they now live in `tests/fixtures/layouts/` rather than on the card. What they construct is still built: the single-cell gallery is still held to containing every component that declares a `1x1` span, read from the component directory rather than from a list, and all four are still swept by the collision check, where they are the densest arrangement in the suite -- eleven components in one grid. Retiring a layout from a screen is a decision about the radio; deleting the cases it builds would have been a quiet reduction in coverage.
-- **Review screens live on a second model.** `MAX_CUSTOM_SCREENS` is 10 (`radio/src/dataconstants.h`), and ten reviewable components plus two dashboards, two palette screens and the debug screen is fourteen. `model1.yml` keeps the dashboards, the palette comparison and the debug screen; `model2.yml` carries one screen per component under review. **Four exist today** -- `flight-mode`, `tx-battery`, `model-identity` and `flight-timer` -- and a screen is added when its component is reviewed rather than in advance, so the count here is the count of reviews done.
+- **Review screens live on a second model.** `MAX_CUSTOM_SCREENS` is 10 (`radio/src/dataconstants.h`), and ten reviewable components plus two dashboards, two palette screens and the debug screen is fourteen. `model1.yml` keeps the dashboards, the palette comparison and the debug screen; `model2.yml` carries one screen per component under review. **Five exist today** -- `flight-mode`, `tx-battery`, `model-identity`, `flight-timer` and `cell-battery`. Four reviews are done; the `cell-battery` screen is the active review harness.
 
 ### Immediate next steps
 
@@ -1485,6 +1490,13 @@ asking returned nil on a radio and a reflow therefore never refitted. See the
 fixture discipline rule about modelling what an object *is*.
 
 ### Why `REFLOW_BATCH` is three
+
+**Updated during the cell-battery glyph review:** the batch is now two. Adding
+the upright glyph made the three-panel reflow reach the worst loader callback
+(both reported 8200 instructions by the suite), violating the requirement that
+reflow not be the binding callback. Two panels measured 5600 before the shared
+glyph-size extraction, leaving headroom; the enforced comparison remains the
+authority. The original measurements and reasoning below are historical.
 
 It was 4, nothing had ever measured it, and it made a reflow the most expensive callback in the dashboard. It is the only per-callback cost the dashboard chooses rather than earns, so it was worth measuring properly rather than assuming a smaller number is better.
 

@@ -1069,6 +1069,9 @@ function primitives.centreReading(context, themeBuilder, area, font, text)
     if unit ~= "" then
         span = span + themeBuilder.unitGap(area.unitFont) + themeBuilder.measureText(area.unitFont, unit)
     end
+    if area.centreReadingGroup then
+        x = area.valueCentre - math.floor(span / 2)
+    end
 
     context.value:set({ x = x, w = math.max(1, span) })
     context.valueX = x
@@ -1359,6 +1362,16 @@ primitives.GLYPH_MIN_WIDTH = 13
 
 --- How much taller than wide a cell stands.
 primitives.GLYPH_ASPECT = 2
+
+function primitives.batterySize(slot, room)
+    for height = math.min(50, room), primitives.GLYPH_MIN_HEIGHT, -1 do
+        local width = math.max(primitives.GLYPH_MIN_WIDTH, math.floor(height / primitives.GLYPH_ASPECT + 0.5))
+        if width <= slot then
+            return width, height
+        end
+    end
+    return nil, nil
+end
 
 --- Pixels between the outline and the level inside it.
 primitives.GLYPH_GAP = 1

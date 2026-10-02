@@ -1,0 +1,27 @@
+# Source diagnostics for the cell-battery review. Compare the exact source
+# spellings through the same telemetry service the battery panels use.
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: upper-case
+    type: service-probe
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 4
+    config:
+      service: telemetry
+      source: RXBt
+      label: RXBt SOURCE
+  - id: mixed-case
+    type: service-probe
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 4
+    config:
+      service: telemetry
+      source: RxBt
+      label: RxBt SOURCE

@@ -13,8 +13,10 @@
 --- three quarters full on a pack that is nearly empty.
 ---
 --- Two EdgeTX behaviours shape everything below. A cells source returns a
---- *table* of individual voltages, and that table is the only place a cell
---- count or a pack sum can come from. Its extremes, "Cels-" and "Cels+", carry
+--- *table* of individual voltages, from which a count and pack sum can be
+--- measured. A pack-voltage source such as "RxBt" instead needs a configured
+--- cell count to derive an average; it cannot reveal the lowest cell.
+--- The cells sensor's extremes, "Cels-" and "Cels+", carry
 --- the same unit but return a plain number, which `telemetryService`
 --- normalizes; an explicitly configured lowest-cell source is therefore an
 --- ordinary numeric reading and is preferred when the layout names one,
@@ -25,7 +27,8 @@
 --- and voltage under load is a poor proxy for charge.
 
 ---@class AeroGridCellSettings
----@field source? string EdgeTX cells source, usually "Cels".
+---@field source? string EdgeTX cells or pack-voltage source.
+---@field sourceType? "cells"|"pack" Shape of the configured source.
 ---@field lowestSource? string Explicit lowest-cell source such as "Cels-".
 ---@field label? string
 ---@field reading? "lowest"|"average"|"pack" Which value is dominant.
@@ -33,10 +36,10 @@
 ---@field cellFull? number Volts per cell treated as full by the bar.
 ---@field warning? number Volts per cell.
 ---@field critical? number Volts per cell.
----@field cells? number Expected cell count; zero follows the pack.
----@field showPack? boolean Show the summed pack voltage.
----@field showCount? boolean Show the detected cell count.
----@field visual? "bar"|"none"
+---@field cells? number Expected cell count; required for a pack source.
+---@field showPack? boolean Show pack voltage, or average voltage when pack leads.
+---@field showCount? boolean Show the measured or configured cell count.
+---@field visual? "battery"|"bar"|"none"
 ---@field accent? string
 
 ---@class AeroGridCellContext
@@ -63,7 +66,14 @@ local cellBattery = {
     -- walks the cells table. Five hertz is already far more than a pilot reads.
     refreshInterval = 20,
     settings = {
-        { key = "source", label = "Cells source", type = "string", default = "Cels" },
+        { key = "source", label = "Voltage source", type = "string", default = "Cels" },
+        {
+            key = "sourceType",
+            label = "Source type",
+            type = "string",
+            default = "cells",
+            choices = { "cells", "pack" },
+        },
         { key = "lowestSource", label = "Lowest cell source", type = "string", default = "" },
         { key = "label", label = "Label", type = "string", default = "PACK" },
         {
@@ -85,10 +95,16 @@ local cellBattery = {
         -- No `direction`. A cell only ever alarms downward, so the setting had
         -- one valid value and told a reader nothing except to wonder what the
         -- other one would do. The behaviour is documented instead.
-        { key = "cells", label = "Expected cells", type = "number", default = 0 },
-        { key = "showPack", label = "Show pack voltage", type = "boolean", default = true },
+        { key = "cells", label = "Cell count (0 = sensor)", type = "number", default = 0 },
+        { key = "showPack", label = "Show supporting voltage", type = "boolean", default = true },
         { key = "showCount", label = "Show cell count", type = "boolean", default = true },
-        { key = "visual", label = "Visualization", type = "string", default = "bar", choices = { "bar", "none" } },
+        {
+            key = "visual",
+            label = "Visualization",
+            type = "string",
+            default = "battery",
+            choices = { "battery", "bar", "none" },
+        },
         {
             key = "accent",
             label = "Accent",
@@ -196,6 +212,26 @@ function cellBattery.summarize(raw, out)
     return out
 end
 
+--- Pack voltage supplies no information about imbalance or the lowest cell.
+---@param raw any
+---@param cells number Configured count, validated by the host.
+---@param out table
+---@return table
+function cellBattery.summarizePack(raw, cells, out)
+    cellBattery.summarize(nil, out)
+    if raw == nil then
+        return out
+    end
+    if type(raw) ~= "number" or raw <= 0 or raw >= cellBattery.CELL_MAX * cells or raw ~= raw then
+        out.shape = "invalid"
+        return out
+    end
+    out.shape = "pack"
+    out.count = cells
+    out.pack = raw
+    return out
+end
+
 --- Choose the dominant reading from a validated summary.
 --- An explicitly configured lowest-cell source wins for the lowest reading,
 --- because the receiver maintaining it has seen every sample between our
@@ -235,7 +271,7 @@ end
 --- Resolve the component state. Cell voltages always count downward.
 ---@param settings AeroGridCellSettings
 ---@param value any Primary reading.
----@param perCell any Lowest cell, which is what the thresholds judge.
+---@param perCell any Lowest measured cell, or average for a pack source.
 ---@param stale boolean
 ---@return string
 function cellBattery.resolveState(settings, value, perCell, stale)
@@ -246,8 +282,8 @@ function cellBattery.resolveState(settings, value, perCell, stale)
         return "stale"
     end
 
-    -- The thresholds are per cell, so a pack reading is still judged by its
-    -- worst cell rather than by a sum that hides one.
+    -- A cells monitor judges the worst cell; a pack source can only supply
+    -- an average and cannot detect a single sagging cell.
     local judged = type(perCell) == "number" and perCell or nil
     if judged == nil then
         return "normal"
@@ -342,12 +378,15 @@ function cellBattery.countVariants(summary, settings)
     -- row, so a longer one would only ever be drawn where the short one was
     -- also correct.
     if shape == "number" or shape == "invalid" then
+        if settings.sourceType == "pack" then
+            return { "VOLT ERR" }
+        end
         return { "CELLS ERR" }
     end
     if shape == "empty" then
         return { "NO CELLS" }
     end
-    if shape ~= "cells" or summary.count == 0 then
+    if (shape ~= "cells" and shape ~= "pack") or summary.count == 0 then
         return { "" }
     end
     if not settings.showCount then
@@ -375,6 +414,13 @@ function cellBattery.packVariants(summary, settings)
         return { "" }
     end
 
+    if settings.reading == "pack" then
+        if summary.count == nil or summary.count < 1 then
+            return { "" }
+        end
+        return { string.format("%.2fV AVG", summary.pack / summary.count) }
+    end
+
     local volts = string.format("%.1fV", summary.pack)
     return { volts .. " PACK", volts }
 end
@@ -396,6 +442,19 @@ end
 ---@return string[] messages
 function cellBattery.validateSettings(settings, span, config)
     local messages = {}
+    if settings.sourceType == "pack" then
+        local cells = settings.cells
+        if type(cells) ~= "number" or cells < 1 or cells > cellBattery.CELL_LIMIT or cells ~= math.floor(cells) then
+            messages[#messages + 1] = "A pack-voltage source needs cells set to an integer from 1 to 16."
+        end
+        if settings.reading == "lowest" then
+            messages[#messages + 1] =
+                "A pack-voltage source cannot report the lowest cell; choose reading pack or average."
+        end
+        if type(settings.lowestSource) == "string" and settings.lowestSource ~= "" then
+            messages[#messages + 1] = "lowestSource is only supported with sourceType cells."
+        end
+    end
     if type(config) ~= "table" then
         return messages
     end
@@ -438,23 +497,41 @@ end
 ---@param fonts table
 ---@param sample table Widest digits this component prints, and its unit.
 ---@return table
-function cellBattery.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, out)
-    -- The whole arrangement, from the shared builder. Like `link-status`, this
-    -- component's only visualization is a bar, so the reading never splits.
+function cellBattery.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, out, primitives)
+    local frame = themeBuilder.frame(theme, rect, fonts)
+    local glyphHeight
+    local compact
+    if layout.visual == "battery" then
+        compact = function(_, half, ladder)
+            local width
+            width, glyphHeight = primitives.batterySize(half, ladder.room)
+            return width or 0
+        end
+    end
     local area = themeBuilder.panel(theme, rect, fonts, {
         -- Built through this component's own builder, which the host may have
         -- wrapped to lay the panel out around the menu button's corner.
-        frame = themeBuilder.frame(theme, rect, fonts),
+        frame = frame,
         forms = { sample.digits },
         unit = sample.unit,
         draws = {
             rows = layout.showDetail == true,
             visual = layout.showVisual == true and layout.visual ~= "none",
         },
-        bar = true,
+        bar = layout.visual == "bar",
+        compact = compact,
+        equalGaps = layout.visual == "battery",
+        minimumGapFraction = 0.3,
         -- The cell count on the left, the pack voltage on the right.
         rowItems = 2,
     }, out or {})
+    if area.visualSize then
+        area.glyphWidth = area.visualSize
+        area.glyphHeight = glyphHeight
+        area.glyphX = themeBuilder.slotX(area.visualCentreX, area.glyphWidth)
+        area.glyphY = area.valueY
+            + math.floor(themeBuilder.numberInkCentre(area.value, sample.digits) - glyphHeight / 2 + 0.5)
+    end
     return area
 end
 
@@ -506,12 +583,12 @@ function cellBattery.create(parent, rect, settings, services)
     -- where 3.82 V does not. The unit rides beside the number rather than
     -- being part of it.
     local sample = {
-        digits = cellBattery.isPerCell(settings) and "4.44" or "88.8",
+        digits = cellBattery.isPerCell(settings) and "4.44" or "88.88",
         unit = "V",
     }
     context.sample = sample
 
-    local area = cellBattery.regionsFor(theme, services.themeBuilder, rect, layout, fonts, sample)
+    local area = cellBattery.regionsFor(theme, services.themeBuilder, rect, layout, fonts, sample, nil, primitives)
     context.detailWidth = area.detailWidth
     context.showDetail = area.showDetail
 
@@ -562,13 +639,24 @@ function cellBattery.create(parent, rect, settings, services)
         font = fonts.label,
     })
 
-    if layout.showVisual and settings.visual ~= "none" then
+    if layout.showVisual and settings.visual == "bar" then
         context.bar = primitives.bar(panel.root, theme, {
             x = area.pad,
             y = area.barY,
             w = area.content,
             fraction = 0,
             color = presentation.accent,
+        })
+    end
+    if settings.visual == "battery" and area.visualSize then
+        context.glyph = primitives.batteryGlyph(panel.root, theme, {
+            x = area.glyphX,
+            y = area.glyphY,
+            w = area.glyphWidth,
+            h = area.glyphHeight,
+            fraction = 0,
+            color = presentation.accent,
+            border = primitives.batteryStroke(services.themeBuilder, area.value, area.glyphWidth),
         })
     end
 
@@ -601,7 +689,13 @@ end
 function cellBattery.gather(context)
     local settings = context.settings
     local feed = context.feed
-    local summary = cellBattery.summarize(type(feed) == "table" and feed.available and feed.raw or nil, context.summary)
+    local raw = type(feed) == "table" and feed.available and feed.raw or nil
+    local summary
+    if settings.sourceType == "pack" then
+        summary = cellBattery.summarizePack(raw, settings.cells, context.summary)
+    else
+        summary = cellBattery.summarize(raw, context.summary)
+    end
 
     local lowestFeed = context.lowestFeed
     local lowest = nil
@@ -615,9 +709,12 @@ function cellBattery.gather(context)
     -- table itself is unreadable, which is the whole reason it is separate.
     context.primary = cellBattery.primaryValue(settings, summary, lowest)
     context.perCell = lowest or summary.lowest
+    if summary.shape == "pack" then
+        context.perCell = summary.pack / summary.count
+    end
 
     -- Freshness follows whichever source actually produced the reading.
-    if summary.shape == "cells" then
+    if summary.shape == "cells" or summary.shape == "pack" then
         context.stale = type(feed) == "table" and feed.stale == true
     else
         context.stale = lowest ~= nil and lowestStale
@@ -661,6 +758,7 @@ function cellBattery.apply(context, drawn)
 
     context.stateName = drawn.state
     context.reading = drawn.value
+    context.fraction = drawn.fraction
     context.text = drawn.text
     context.countText = drawn.count
     context.packText = drawn.pack
@@ -711,6 +809,28 @@ function cellBattery.apply(context, drawn)
     if context.bar then
         context.primitives.setBar(context.bar, drawn.fraction, presentation.accent)
     end
+    if context.glyph then
+        local shown = context.showVisual and type(drawn.value) == "number"
+        local area = context.area
+        local previousY = area.glyphY
+        if shown then
+            area.glyphY = area.valueY
+                + math.floor(context.themeBuilder.numberInkCentre(area.value, drawn.text) - area.glyphHeight / 2 + 0.5)
+            context.primitives.setBatteryGlyph(context.glyph, drawn.fraction, presentation.accent)
+        end
+        if shown ~= context.glyphShown or previousY ~= area.glyphY then
+            context.primitives.reconcileBatteryGlyph(
+                context.glyph,
+                shown,
+                area.glyphX,
+                area.glyphY,
+                area.glyphWidth,
+                area.glyphHeight,
+                drawn.fraction
+            )
+            context.glyphShown = shown
+        end
+    end
 end
 
 --- Advance the component, repainting only when something drawn changed.
@@ -729,8 +849,16 @@ end
 ---@param context AeroGridCellContext
 ---@param rect AeroGridRect
 function cellBattery.update(context, rect)
-    local area =
-        cellBattery.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts, context.sample)
+    local area = cellBattery.regionsFor(
+        context.theme,
+        context.themeBuilder,
+        rect,
+        context.layout,
+        context.fonts,
+        context.sample,
+        nil,
+        context.primitives
+    )
 
     context.primitives.resizePanel(context.panel, rect)
     context.primitives.placeHeader(
@@ -786,16 +914,51 @@ function cellBattery.update(context, rect)
     reconcile(context.countLabel, area.showDetail, { x = area.detailX, y = area.detailY, w = area.detailWidth })
     reconcile(context.packLabel, area.showDetail, { x = area.rowRightX, y = area.detailY, w = area.detailWidth })
 
-    context.primitives.reconcileBar(
-        context.bar,
-        area.showVisual,
-        area.pad,
-        area.barY,
-        area.content,
-        cellBattery.fraction(context.settings, context.reading, context.summary.count or 0),
-        area.showVisual == context.showVisual
-    )
+    if context.bar then
+        context.primitives.reconcileBar(
+            context.bar,
+            area.showVisual,
+            area.pad,
+            area.barY,
+            area.content,
+            context.fraction,
+            area.showVisual == context.showVisual
+        )
+    end
     context.showVisual = area.showVisual
+    if context.settings.visual == "battery" then
+        local fraction = context.fraction
+        if area.visualSize and type(context.reading) == "number" then
+            area.glyphY = area.valueY
+                + math.floor(
+                    context.themeBuilder.numberInkCentre(area.value, context.text) - area.glyphHeight / 2 + 0.5
+                )
+        end
+        if not context.glyph and area.visualSize then
+            context.glyph = context.primitives.batteryGlyph(context.panel.root, context.theme, {
+                x = area.glyphX,
+                y = area.glyphY,
+                w = area.glyphWidth,
+                h = area.glyphHeight,
+                fraction = fraction,
+                color = context.state(context.stateName, context.settings.accent).accent,
+                border = context.primitives.batteryStroke(context.themeBuilder, area.value, area.glyphWidth),
+            })
+            context.glyphShown = nil
+        end
+        local shown = area.visualSize ~= nil and type(context.reading) == "number"
+        context.primitives.reconcileBatteryGlyph(
+            context.glyph,
+            shown,
+            area.glyphX,
+            area.glyphY,
+            area.glyphWidth,
+            area.glyphHeight,
+            fraction,
+            shown == context.glyphShown
+        )
+        context.glyphShown = shown
+    end
 end
 
 return cellBattery

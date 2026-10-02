@@ -15,6 +15,17 @@ because a decision that drifted is exactly the kind a guide exists to pin down.
 
 ## What is implemented and what is only agreed
 
+**Cell-battery review update:** its upright glyph uses an equal-gap body layout
+rather than the two percentage slots below. Reserve the widest number plus
+`V` and the glyph width, and divide the remaining padded content width into
+left, middle and right whitespace. The outer margins match; rounding goes
+into the middle gap. Drop `V` if the total whitespace with the preferred glyph
+would be less than 30% of the full panel width, without reducing the font.
+Keep at least four pixels per gap, shrinking or shedding the glyph if needed. The live
+number and unit center as a pair inside the fixed reading block, while the
+glyph stays fixed. Supporting rows retain the two-slot rule. This is specific
+to `cell-battery`; it does not change `tx-battery` or the other components.
+
 **Read this before treating anything below as a description of the dashboard.**
 
 | Area | State |

@@ -110,7 +110,7 @@ AeroGrid loads each component from `src/WIDGETS/AeroGrid/components/<type>.lua`,
 | `variable-indicator` | A global variable or bounded source as a value, bar, bipolar bar, or radial. |
 | `trim-panel` | One, two, or four effective trim positions as centred bipolar bars. |
 | `model-identity` | Model name, model bitmap, or both. |
-| `cell-battery` | Flight-pack cells: the lowest cell, a usable-range bar, and an optional cell count and pack sum. |
+| [`cell-battery`](docs/components/cell-battery.md) | Aircraft cells or pack voltage, with a battery glyph, configurable cell count, and supporting voltage. |
 | `link-status` | RSSI and link quality from independently named sources, with an explicit minimum and link freshness. |
 | `navigation` | Distance to home, a north-up bearing from home to the model, a compass dial, and coordinates. |
 | `service-probe` | Prints one shared service's normalized output as diagnostic rows. |
@@ -123,7 +123,7 @@ Every component degrades rather than raising: a source the radio does not recogn
 
 The three telemetry components exist because these distinctions are easy to get wrong and dangerous to get wrong:
 
-- **A pack is only as good as its worst cell.** `cell-battery` leads with the lowest cell, validates every entry of the cells table before using it, judges its thresholds on that cell even when the panel shows the pack sum, and scales its bar from the critical voltage to full rather than from zero. It estimates no remaining capacity, because voltage under load does not support one.
+- **A pack is only as good as its worst cell.** With a cells monitor, `cell-battery` leads with the lowest cell and judges per-cell thresholds on it even when the panel shows the pack sum. A numeric pack-voltage source requires a configured cell count and can only provide an average, not detect a weak cell. The battery glyph fills over the configured empty-to-full voltage range; it estimates no remaining capacity.
 - **A zero can mean three different things.** `link-status` separates a dead link, a protocol with no RSSI sensor, and a reading that genuinely is zero, reading the distinction from the telemetry service rather than guessing it again. RSSI and link quality are named independently and one is never inferred from the other.
 - **A direction needs somewhere to measure from.** `navigation` reports no source, no fix, and no home position as three different states, withholds a bearing rather than resting the dial at north, and says in words that the dial is north-up and measured from home. EdgeTX reports neither aircraft heading nor transmitter orientation, so nothing here may be read as either.
 
