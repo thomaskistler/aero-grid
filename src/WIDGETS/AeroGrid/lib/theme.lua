@@ -938,6 +938,36 @@ function theme.fontAscent(font)
     return theme.fontHeight(font) - theme.fontBaseLine(font)
 end
 
+-- Digit descriptors decoded from EdgeTX v2.12.0 fonts/lvgl/std/
+-- lv_font_en_{bold_XXL,bold_XL,L,XS,XXS}.c; glyphs start at y +
+-- line_height - base_line - box_h - ofs_y (lv_draw_sw_letter).
+function theme.numberInkCentre(font, text)
+    local ascent = theme.fontAscent(font)
+    if font == XXLSIZE then
+        local top, bottom = ascent, 0
+        for index = 1, #text do
+            local digit = string.sub(text, index, index)
+            if string.match(digit, "%d") then
+                local height = (digit == "1" or digit == "4" or digit == "7") and 46
+                    or ((digit == "2" or digit == "5" or digit == "9") and 47 or 48)
+                local offset = (digit == "0" or digit == "3" or digit == "5" or digit == "6" or digit == "8") and -1
+                    or 0
+                top = math.min(top, ascent - height - offset)
+                bottom = math.max(bottom, ascent - offset)
+            elseif digit == "." then
+                top = math.min(top, ascent - 10)
+                bottom = math.max(bottom, ascent + 1)
+            end
+        end
+        if bottom > 0 then
+            return (top + bottom) / 2
+        end
+    end
+    local height = font == DBLSIZE and 22
+        or (font == MIDSIZE and 17 or (font == SMLSIZE and 9 or (font == TINSIZE and 7 or ascent)))
+    return ascent - height / 2
+end
+
 --- The font a unit rides at beside a reading of a given size.
 ---
 --- Two steps down the reading ladder wherever there are two, which lands the
@@ -2171,7 +2201,10 @@ function theme.panel(resolved, rect, fonts, spec, out)
     -- than letting it reach across the middle into the reading.
     local half = math.floor(frame.content / 2)
     local compact = visual and spec.compact ~= nil
-    local size = compact and math.min(spec.compact(rect, half), half) or 0
+    local size = compact and math.min(spec.compact(rect, half, ladder), half) or 0
+    if compact and size <= 0 then
+        compact, visual = false, false
+    end
 
     -- The reading's forms, or the reading and a unit it may not drop. A unit
     -- that carries magnitude -- a distance's `km` -- is part of the reading
@@ -2220,7 +2253,23 @@ function theme.panel(resolved, rect, fonts, spec, out)
     -- separates from it, the panel carries both; if it does not, the dial
     -- goes. Nothing is refitted, because nothing was narrowed.
     local slots
-    if compact then
+    local equalGap
+    if compact and spec.equalGaps then
+        if showUnit and not spec.unitRequired and spec.minimumGapFraction then
+            if frame.content - width - size < rect.w * spec.minimumGapFraction then
+                showUnit = false
+                width = theme.measureText(font, spec.forms[formIndex])
+            end
+        end
+        -- Reserve at least four pixels in each gap without shrinking the reading.
+        local available = frame.content - width - 12
+        size = available > 0 and spec.compact(rect, available, ladder) or 0
+        if size > 0 then
+            equalGap = math.floor((frame.content - width - size) / 3)
+        else
+            compact, size, visual = false, 0, false
+        end
+    elseif compact then
         local separated
         slots, separated = theme.slotsFor(frame, width, size)
         if not separated then
@@ -2237,7 +2286,11 @@ function theme.panel(resolved, rect, fonts, spec, out)
     -- above it does.
     local slotLeft, slotRight
     local centre
-    if compact then
+    if equalGap then
+        slotLeft = frame.pad + equalGap + math.floor(width / 2)
+        slotRight = frame.pad + frame.content - equalGap - size + math.floor(size / 2)
+        centre = slotLeft
+    elseif compact then
         slotLeft, slotRight = theme.slotCentres(frame, slots)
         centre = slotLeft
     else
@@ -2270,6 +2323,7 @@ function theme.panel(resolved, rect, fonts, spec, out)
     out.formIndex = formIndex
     out.unitFont = unitFont
     out.showUnit = showUnit == true
+    out.centreReadingGroup = equalGap ~= nil
     out.valueCentre = centre
     out.valueX = theme.slotX(centre, width)
     out.valueWidth = width
@@ -2296,7 +2350,9 @@ function theme.panel(resolved, rect, fonts, spec, out)
     -- is symmetric about that centre: bounded on one side by the content edge
     -- and on the other by where the dial begins. The slots that decided the
     -- dial's fate are the slots that answer this, so the two cannot drift.
-    if compact then
+    if equalGap then
+        out.valueBudget = width
+    elseif compact then
         local visualStart = slotRight - math.floor(size / 2)
         out.valueBudget = 2 * math.max(1, math.min(slotLeft - frame.pad, visualStart - slotLeft))
     else

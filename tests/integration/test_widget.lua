@@ -9852,18 +9852,9 @@ components:
     assertEqual(instance.text, "--", "this test needs a panel with no reading")
     assertEqual(instance.unit.hidden, true, "a unit was drawn beside `--`")
 
-    -- **A reflow that does not move the permission.** Measured: a 2 x 2
-    -- cell-battery affords a unit at 480 x 272 and still affords it at
-    -- 200 x 200, so this is the reflow that re-places the rider without
-    -- re-deciding anything -- which is exactly where the reflow path
-    -- short-circuits, and where a rider placed unconditionally comes back.
-    --
-    -- Re-swept for the centred-reading rule. It was 120 x 120, where the
-    -- panel is 58 px tall and now sizes its reading against a half rather
-    -- than a middle band -- MIDSIZE where it was SMLSIZE, and a `4.09V` pair
-    -- that no longer fits. The step below it is still the one that withdraws
-    -- the permission, so only this zone moved.
-    zone.w = 200
+    -- Keep unit permission through a resize, including the cell-battery's
+    -- 30% whitespace requirement, to exercise the reflow short-circuit.
+    zone.w = 400
     zone.h = 200
     definition.update(context, DEFAULT_OPTIONS)
     reflow()

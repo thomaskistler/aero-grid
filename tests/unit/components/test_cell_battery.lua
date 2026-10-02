@@ -47,9 +47,83 @@ local function testCellReadings()
     assertions.assertEqual(cellBattery.packVariants({ pack = 16.4 }, { showPack = true })[1], "16.4V PACK")
 end
 
+local function testPackSource()
+    local settings = {
+        sourceType = "pack",
+        reading = "pack",
+        cells = 4,
+        showPack = true,
+        showCount = true,
+        cellEmpty = 3.3,
+        cellFull = 4.2,
+        warning = 3.5,
+        critical = 3.3,
+    }
+    assertions.assertEqual(#cellBattery.validateSettings(settings), 0)
+    local summary = cellBattery.summarizePack(16.4, 4, {})
+    assertions.assertEqual(summary.shape, "pack")
+    assertions.assertEqual(summary.count, 4)
+    assertions.assertEqual(summary.lowest, nil, "pack voltage must not invent a lowest cell")
+    assertions.assertEqual(cellBattery.primaryValue(settings, summary), 16.4)
+    assertions.assertEqual(cellBattery.countVariants(summary, settings)[1], "4S")
+    assertions.assertEqual(cellBattery.packVariants(summary, settings)[1], "4.10V AVG")
+    assert(math.abs(cellBattery.fraction(settings, 15, 4) - 0.5) < 0.001)
+    settings.reading = "average"
+    assert(math.abs(cellBattery.primaryValue(settings, summary) - 4.1) < 0.001)
+    assertions.assertEqual(cellBattery.packVariants(summary, settings)[1], "16.4V PACK")
+
+    local context = {
+        settings = settings,
+        summary = {},
+        feed = { available = true, raw = 13.6, stale = false },
+    }
+    cellBattery.gather(context)
+    assertions.assertEqual(context.summary.lowest, nil)
+    assertions.assertEqual(
+        cellBattery.resolveState(settings, context.primary, context.perCell, context.stale),
+        "warning"
+    )
+    context.feed.raw = 13.2
+    cellBattery.gather(context)
+    assertions.assertEqual(
+        cellBattery.resolveState(settings, context.primary, context.perCell, context.stale),
+        "critical"
+    )
+    context.feed.stale = true
+    cellBattery.gather(context)
+    assertions.assertEqual(cellBattery.resolveState(settings, context.primary, context.perCell, context.stale), "stale")
+    context.feed.available = false
+    cellBattery.gather(context)
+    assertions.assertEqual(context.primary, nil)
+    assertions.assertEqual(context.summary.pack, nil)
+
+    for _, raw in ipairs({ 0, -1, math.huge, 0 / 0, "16.4", { 4.1, 4.1 } }) do
+        assertions.assertEqual(cellBattery.summarizePack(raw, 4, summary).shape, "invalid")
+        assertions.assertEqual(summary.pack, nil)
+        assertions.assertEqual(cellBattery.countVariants(summary, settings)[1], "VOLT ERR")
+    end
+    assertions.assertEqual(cellBattery.summarizePack(nil, 4, summary).shape, "none")
+
+    for _, count in ipairs({ 0, -1, 1.5, 17, math.huge, 0 / 0 }) do
+        settings.cells = count
+        assert(#cellBattery.validateSettings(settings) > 0, "invalid pack count was accepted")
+    end
+    settings.cells = nil
+    assert(#cellBattery.validateSettings(settings) > 0, "missing pack count was accepted")
+    settings.cells = 4
+    settings.reading = "lowest"
+    assert(#cellBattery.validateSettings(settings) > 0, "a guessed lowest cell was accepted")
+    settings.reading = "average"
+    settings.lowestSource = "Cels-"
+    assert(#cellBattery.validateSettings(settings) > 0, "pack mode accepted a cells-monitor-only setting")
+    settings.lowestSource = ""
+    assertions.assertEqual(#cellBattery.validateSettings(settings, { rowSpan = 1 }, { showPack = true }), 1)
+end
+
 local function run()
     testCellShapes()
     testCellReadings()
+    testPackSource()
 end
 
 run()
