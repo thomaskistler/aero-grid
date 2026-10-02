@@ -95,11 +95,7 @@ box.
 
 **Its outline is drawn to suit the number beside it**, not the panel it is on.
 A cell standing next to a large reading is outlined heavily and one next to a
-small reading lightly, so the two look like they belong together. That matters
-because the same span can resolve to different reading sizes — a `1x2` and a
-`2x2` produce cells of identical size but very different numbers — and a
-single weight looked heavy beside the smaller one while eating the interior
-that shows the charge.
+small reading lightly.
 
 The empty part of the cell is simply the panel showing through. That is the
 case worth checking, because in the warning and critical states the panel is
@@ -120,8 +116,7 @@ for both, and the battery is shed rather than the reading being made
 unreadable.
 
 In practice this costs one size at exactly one span, `1x2`, and nothing
-anywhere else. An upright cell is half as wide as it is tall, so it takes
-less width than a horizontal one did.
+anywhere else. An upright cell is half as wide as it is tall.
 
 ## What it draws, and what it sheds
 
@@ -153,13 +148,6 @@ states everywhere.
 **`DBLSIZE` readings are outlined at 3 px**, and no span the grid produces
 draws one; they appear on panels between the sizes above, which a reflow
 passes through.
-
-> **This table is regenerated from the component, and has been wrong twice.**
-> It carried 20 x 40 cells at the one-row spans and a `MIDSIZE` reading at
-> `1x2` for two revisions of the band rule, because it was corrected by hand
-> against a description rather than rebuilt from the code. `testTxBatteryComposition`
-> is the assertion that this page is true; it and these figures come from the
-> same measurement.
 
 **No single-row panel shows the percentage**, however wide it is:
 `showPercent: true` on a `4x1` is as inert as on a `1x1`, because the
@@ -230,9 +218,5 @@ battery meter is set to — which is the normal case. Add `packEmpty` and
 
 ## See also
 
-- `review-tx-battery` is a shipped layout that puts this panel at five spans
-  and in three states on one screen, including a healthy and a critical panel
-  side by side and a bar next to a battery at the same span, which is the
-  quickest way to see the table above.
 - `cell-battery` is the equivalent for the aircraft's pack, read per cell over
   telemetry.

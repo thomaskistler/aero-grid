@@ -37,8 +37,7 @@ measured individual cell voltage and cannot detect imbalance or a weak cell.**
 Warning and critical thresholds remain **volts per cell**, judged against
 the derived average in pack mode.
 
-Source names are **case-sensitive**. In the review model, `RxBt` resolves
-while `RXBt` does not. Use the source's exact EdgeTX lookup name rather than
+Source names are **case-sensitive**. Use the source's exact EdgeTX lookup name rather than
 assuming its on-screen capitalization is the lookup name.
 
 For example, a four-cell pack at 16.80 V shows `16.80` as the headline,
@@ -48,7 +47,7 @@ becomes `16.8V PACK`, or `16.8V` when the longer form does not fit.
 
 ## Cells-monitor source
 
-The default `sourceType: cells` preserves the existing behavior. Configure
+The default is `sourceType: cells`. Configure
 `source: Cels` to receive a table of individual voltages. The default headline
 is the lowest valid cell; `reading: average` or `reading: pack` are also
 available. Thresholds judge the lowest cell regardless of headline.
@@ -87,8 +86,8 @@ when the table is unavailable; it cannot supply a measured count or pack sum.
 | `lowestSource` | empty | Optional independent numeric lowest-cell source, only in cells mode. |
 | `cells` | `0` | In cells mode, `0` uses the measured count; a positive value specifies an expected count. In pack mode, a configured integer from 1 to 16 is mandatory. |
 | `showCount` | `true` | Show measured count for a cells monitor, configured count for a pack source. |
-| `showPack` | `true` | Show supporting pack voltage; when pack voltage leads, show average cell voltage instead. The existing key is retained for layout compatibility. |
-| `visual` | `battery` | `battery`, `bar`, or `none`. The upright battery sits beside the reading and replaces the bottom bar by default. Its fill measures voltage against the usable per-cell range, not remaining charge. `bar` remains available for existing layouts. |
+| `showPack` | `true` | Show supporting pack voltage; when pack voltage leads, show average cell voltage instead. |
+| `visual` | `battery` | `battery`, `bar`, or `none`. The upright battery sits beside the reading. Its fill measures voltage against the usable per-cell range, not remaining charge. |
 | `cellEmpty` / `cellFull` | `3.3` / `4.2` | Usable range in volts per cell. |
 | `warning` / `critical` | `3.5` / `3.3` | Low-voltage thresholds in volts per cell. |
 | `label` / `accent` | `PACK` / `cyan` | Heading and semantic accent. |
@@ -115,7 +114,7 @@ for a pack headline. Warning thresholds still use the worst cell in cells
 mode, even when the fill follows an average.
 
 `visual: battery` draws no bottom progress bar. `visual: bar` explicitly
-selects the legacy bottom track instead, and `visual: none` draws neither.
+selects a bottom track instead, and `visual: none` draws neither.
 The equal-gap and 30% whitespace rules below apply to the battery glyph,
 not the bar or visualization-free arrangement.
 
@@ -131,7 +130,7 @@ The glyph shrinks or is shed if the remaining gaps would be below that minimum.
 The unit decision uses the widest supported reading, not the live voltage.
 The live number and unit center together within the fixed reading block, so
 voltage changes do not move the glyph. Supporting rows keep their 30%/70% slots.
-This rule applies to `cell-battery`; the TX battery layout is unchanged.
+This rule applies to `cell-battery`, not `tx-battery`.
 The whole glyph, including its terminal, is vertically centered on the
 number's digit bounds decoded from the EdgeTX font descriptors, rather than
 assuming the entire ascent is ink, within half a pixel for
@@ -167,19 +166,7 @@ can show `3S OF 4`, then `3S/4`, then just `3S` as width decreases.
 This reports the measured count rather than inventing a missing cell.
 Supporting text that cannot fit is shed.
 
-## Review layouts
-
-The review model's fifth screen selects `review-cell-battery`. Its pack panels
-read `RxBt` with `cells: 4`; change that count to match the battery being
-reviewed. A separate monitor panel reads `Cels`. The simulator review changes
-landed in #93; real-hardware confirmation remains outstanding.
-The sixth screen selects `review-cell-sources`, a side-by-side source-name
-diagnostic. Neither simulator review replaces confirmation of sensor shapes
-and readability on real hardware.
-
 ## See also
 
 - [`tx-battery`](tx-battery.md) measures the transmitter's own battery,
   independently of aircraft telemetry.
-- [AeroGrid design guide](../../plans/aerogrid-design-guide.md) records the
-  shared presentation rules and this panel's equal-gap exception.

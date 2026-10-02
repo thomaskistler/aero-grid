@@ -26,8 +26,7 @@ mode if that is what you called the switch position.
 
 The same term means the same EdgeTX modes in `variable-indicator`, where a
 global variable holds a separate value per flight mode. If you are looking for
-the aircraft's mode, this is not the panel, and at the time of writing the
-catalogue has none.
+the aircraft's mode, this is not the panel; the catalogue has no panel for it.
 
 ## Settings
 
@@ -113,8 +112,5 @@ in the model brings it down to `MIDSIZE`.
 
 ## See also
 
-- `review-flight-mode` is a shipped layout that puts this panel at six spans
-  on one screen, which is the quickest way to see the table above rather than
-  read it.
 - `variable-indicator` uses "flight mode" in the same sense: EdgeTX's modes,
   because a global variable holds one value per mode.
