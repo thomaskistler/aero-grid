@@ -1,5 +1,5 @@
 checksum: 60949
-manuallyEdited: 0
+manuallyEdited: 1
 timezoneMinutes: 0
 ppmunit: 0
 semver: 3.0.0
@@ -188,7 +188,7 @@ switchConfig:
    FL2:
       name: ""
       type: NONE
-currModelFilename: "model1.yml"
+currModelFilename: "model2.yml"
 blOffBright: 20
 bluetoothName: ""
 ownerRegistrationID: "-eC!U*U*"

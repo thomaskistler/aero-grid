@@ -57,6 +57,11 @@ Open the repository folder in VS Code. The repository includes a TX16S/EdgeTX 2.
 
 The build starts from the tracked baseline in `tests/fixtures/sdcard/`, then overlays the current `src/WIDGETS/AeroGrid/` sources. The baseline contains the fixed radio and model configuration needed to boot directly into AeroGrid. The generated `build/sdcard/` image is ignored and may be changed by the simulator. Run `make build` again after source changes or whenever you want to reset the image to the checked-in baseline.
 
+The baseline selects **AEROGRID REVIEW** (`model2.yml`) at startup. Its radio
+settings carry `manuallyEdited: 1` so EdgeTX accepts the edited selection
+despite the original checksum, then writes a fresh checksum on save. Keep
+that flag set when manually changing the tracked radio settings.
+
 ### Stale bytecode
 
 EdgeTX compiles each script to a `.luac` beside it on the SD card and then prefers the bytecode. `rsync` preserves source timestamps, so a freshly copied `.lua` can look older than bytecode the radio compiled from the previous build, and the radio keeps running code that is no longer on disk. The symptom is a fix that visibly does nothing, including error messages citing line numbers that no longer exist in the source.
@@ -108,7 +113,7 @@ AeroGrid loads each component from `src/WIDGETS/AeroGrid/components/<type>.lua`,
 | `flight-mode` | The active EdgeTX flight mode. |
 | `tx-battery` | Transmitter voltage, with an optional configurable charge estimate. |
 | `variable-indicator` | A global variable or bounded source as a value, bar, bipolar bar, or radial. |
-| `trim-panel` | One, two, or four effective trim positions as centred bipolar bars. |
+| [`trim-panel`](docs/components/trim-panel.md) | Three-axis square with center-zero bars, a live aileron/elevator dot, and labelled readouts; legacy single/pair/four layouts retained. |
 | `model-identity` | Model name, model bitmap, or both. |
 | [`cell-battery`](docs/components/cell-battery.md) | Aircraft cells or pack voltage, with a battery glyph, configurable cell count, and supporting voltage. |
 | `link-status` | RSSI and link quality from independently named sources, with an explicit minimum and link freshness. |

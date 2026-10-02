@@ -15,6 +15,33 @@ because a decision that drifted is exactly the kind a guide exists to pin down.
 
 ## What is implemented and what is only agreed
 
+**Trim-panel review update:** `indicators: axes` is now the default. Aileron
+(`trim1`) spans the top, elevator (`trim2`) stands on the left, and rudder
+(`trim4`) spans the bottom. A white dot follows the aileron/elevator position,
+with all three bars sharing one side length to form a square. The square and
+right-hand readout column are centered together in the available content box.
+Horizontal centering uses a fixed readout column wide enough for `-100%`,
+`-512`, and `3P MID`. Numbers are right-aligned in a column starting four
+pixels beyond the horizontal bar endpoints, with their visible ink centered vertically on each
+bar. Neither the square nor the column moves as the displayed value changes. The reserved
+group has equal outer panel margins.
+Each bar is inset equally at both endpoints (eight pixels where space allows),
+leaving clear corner gaps without changing its zero midpoint or the equal lengths.
+The dot rests at the intersection of their midpoints at neutral. Only the fixed
+zero tick is drawn; there is no moving endpoint tick.
+Green fill extends strictly from each zero
+midpoint toward the current value, right/up for positive and left/down for
+negative. At zero the one-pixel fill is covered by the midpoint tick, so only the neutral track and midpoint
+tick remain. Full captions shed on compact panels; the three bars remain.
+Numeric readouts reserve a column to the right of the square,
+with persistent `A`, `E`, and `R` suffixes after the percentage identifying aileron, elevator, and
+rudder even when full captions are shed. The column reserves the suffix plus
+the widest readout, preserving aligned numeric right edges. Readouts are
+aligned top/middle/bottom with their axes; caption shedding does not remove
+the numbers. A smaller readout font keeps all three numbers visible in a
+normal 1x1 cell. `single`, `pair`, and `all` retain the previous layout and
+orientation settings. The axes layout fixes orientations and omits throttle.
+
 **Cell-battery review update:** its upright glyph uses an equal-gap body layout
 rather than the two percentage slots below. Reserve the widest number plus
 `V` and the glyph width, and divide the remaining padded content width into

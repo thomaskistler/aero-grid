@@ -9,6 +9,7 @@ local function testIndicatorSelection()
     assertions.assertEqual(trims.indicatorCount("single"), 1)
     assertions.assertEqual(trims.indicatorCount("pair"), 2)
     assertions.assertEqual(trims.indicatorCount("all"), 4)
+    assertions.assertEqual(trims.indicatorCount("axes"), 3)
     assertions.assertEqual(trims.indicatorCount("unknown"), 1)
 
     local wide = { x = 0, y = 0, w = 200, h = 60 }

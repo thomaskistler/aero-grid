@@ -1,0 +1,79 @@
+# Trim-panel review, screen 7 on AEROGRID REVIEW.
+# Move the radio's trim controls to compare direction, readout, and shedding.
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: axes
+    type: trim-panel
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: TRIMS
+
+  - id: pair
+    type: trim-panel
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: PAIR
+      indicators: pair
+
+  - id: vertical
+    type: trim-panel
+    col: 0
+    row: 2
+    colSpan: 1
+    rowSpan: 2
+    config:
+      label: VERT
+      indicators: single
+      orientation: vertical
+
+  - id: raw
+    type: trim-panel
+    col: 1
+    row: 2
+    colSpan: 1
+    rowSpan: 2
+    config:
+      label: RAW
+      indicators: single
+      readout: raw
+
+  - id: single
+    type: trim-panel
+    col: 2
+    row: 2
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: 1x1
+      indicators: axes
+
+  - id: no-readout
+    type: trim-panel
+    col: 3
+    row: 2
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: BAR
+      indicators: single
+      readout: none
+
+  - id: horizontal
+    type: trim-panel
+    col: 2
+    row: 3
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: HORIZONTAL
+      indicators: single
+      orientation: horizontal
