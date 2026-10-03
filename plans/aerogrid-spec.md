@@ -1067,10 +1067,10 @@ Two things about that are worth keeping rather than leaving in a PR. **The sympt
 
 **The ink.** A reading's font came from the largest whose *line height* fitted its band, and line height is ascent plus descent plus leading. No reading in the catalogue descends, so the band was reserving space nothing draws into. It comes from the ink now and the reading is placed by centring that ink, which had to move together: a font chosen one way and a block centred the other disagree by 4.5 px on a `navigation 4 x 2`. That reversed a recorded decision, and `theme.opticalTop` went with it -- it had no caller at all, which is the same shape as the retired `primitives.arcBounds`.
 
-**The reviews.** Seven components have completed the simulator review and
+**The reviews.** Eight components have completed the simulator review and
 documentation pass: `flight-mode`, `tx-battery`, `model-identity`,
-`flight-timer`, `cell-battery`, `trim-panel`, and `navigation`. The remaining three are
-`link-status`, `metric`, and `variable-indicator`; `link-status` is next.
+`flight-timer`, `cell-battery`, `trim-panel`, `navigation`, and `link-status`. The remaining two are
+`metric` and `variable-indicator`; `metric` is next.
 Physical-radio validation remains outstanding.
 Review screens live on a second model because `MAX_CUSTOM_SCREENS` is 10.
 The four span galleries remain test fixtures rather than radio screens.
@@ -1116,11 +1116,12 @@ and regenerate their checksum.
 
 ### Current cost
 
-The navigation review's current suite reports **13600/20000** for the worst
-callback (shipped component refresh), **3600/20000** for the worst steady
-frame (link-status x16), and **9800/20000** for shipped reflow. These are
+The current suite, including the ELRS 4.x link review and sixteen-panel
+ELRS exercise, reports **13600/20000** for the worst
+callback (shipped component refresh), **6000/20000** for the worst steady
+frame (link review), and **9800/20000** for shipped reflow. These are
 the runner's sampled instruction counts; the figures and reasoning below
-record earlier measurements rather than the current compass implementation.
+record earlier measurements rather than the current panel implementations.
 
 | | Value | Where |
 | --- | --- | --- |
@@ -1152,7 +1153,7 @@ The worst callback rose 85 when the heading notice started working. It had been 
 - CI (`.github/workflows/ci.yml`) runs `make check` under Lua 5.3 on every pull request, plus the SD image build and two integrity assertions.
 - The dashboard has been confirmed running in the EdgeTX simulator on a TX16S profile through milestone 7. Navigation, link status, the radial and bar metrics and the trim panel have all been read against live simulated telemetry, which is where the arc drift in constraint 11 was found. Two of milestone 7's behaviours still cannot be judged there: whether a cells source on a real receiver returns the table shape assumed here, since nothing on an ELRS link publishes one, and whether a protocol without an RSSI sensor is recognized as a link rather than a dead one.
 - Milestone 8's corner work and the whole presentation and consistency pass have been seen in the EdgeTX simulator and judged there. The accent geometry in particular took five rounds of looking, and the version that was accepted came from the person at the screen rather than from any measurement, which is the standing argument for building something to look at rather than reasoning about it in prose. None of it has been seen on a radio; see [Nothing has run on a radio](#nothing-has-run-on-a-radio).
-- The simulator fixture carries **five screens on `model1` and eight on `model2`**, every one holding an AeroGrid instance and every one an App mode layout. `model1` has `sim`, which fills its grid with the telemetry components; `sim2`, which covers the radio-local ones that had nowhere to go beside them; the `states` layout twice, under the Modern and EdgeTX-derived palettes; and the `host` diagnostics view. The default `model2` carries reviews for `flight-mode`, `tx-battery`, `model-identity`, `flight-timer`, `cell-battery`, `trim-panel`, and `navigation`, plus the cell-source diagnostic screen.
+- The simulator fixture carries **five screens on `model1` and nine on `model2`**, every one holding an AeroGrid instance and every one an App mode layout. `model1` has `sim`, which fills its grid with the telemetry components; `sim2`, which covers the radio-local ones that had nowhere to go beside them; the `states` layout twice, under the Modern and EdgeTX-derived palettes; and the `host` diagnostics view. The default `model2` carries reviews for `flight-mode`, `tx-battery`, `model-identity`, `flight-timer`, `cell-battery`, `trim-panel`, `navigation`, and `link-status`, plus the cell-source diagnostic screen.
 
   Reaching a layout means setting the widget's Dashboard ID, which in App mode cannot be reached from the main view at all: `Widget::openMenu` returns immediately after `setFullscreen(true)` when the widget is not in the top bar and the view is App mode. So a layout without a screen of its own costs a trip through Model Setup and Screens, which is why the review screens exist rather than being Dashboard IDs somebody is expected to type. `MAX_CUSTOM_SCREENS` is 10, and that ceiling is why the reviews are on a second model at all. Paging between screens switches dashboards without opening widget settings, and exercises two widget instances resolving different layouts at once; `sim` carries the Modern palette and `sim2` the EdgeTX-derived one, so the two are one button press apart.
 
@@ -1161,13 +1162,72 @@ The worst callback rose 85 when the heading notice started working. It had been 
 - In App mode, every shipped layout is checked to draw nothing readable inside the corner EdgeTX's menu button covers. The directory is read rather than listed, so a new layout is covered as soon as it is added.
 - Every layout under `layouts/` is loaded by the integration suite, not merely the shipped default: each one is built through the real host and components, held to the same containment rules, and refreshed against radio state. A layout is covered as soon as it is added, because the suite reads the directory rather than a list.
 - **The four span galleries have been retired from the radio and kept as test fixtures.** They shipped under the Dashboard IDs `span1x1`, `span2x1`, `span2x2` and `span4x1`, each putting every component at one span so the catalogue could be caught disagreeing with itself. The user does not page to them, and ten screens is the ceiling, so they now live in `tests/fixtures/layouts/` rather than on the card. What they construct is still built: the single-cell gallery is still held to containing every component that declares a `1x1` span, read from the component directory rather than from a list, and all four are still swept by the collision check, where they are the densest arrangement in the suite -- eleven components in one grid. Retiring a layout from a screen is a decision about the radio; deleting the cases it builds would have been a quiet reduction in coverage.
-- **Review screens live on a second model.** `MAX_CUSTOM_SCREENS` is 10 (`radio/src/dataconstants.h`), and ten reviewable components plus two dashboards, two palette screens and the debug screen is fourteen. `model1.yml` keeps those dashboards and diagnostics; `model2.yml` has seven component review screens and one source-name diagnostic. Seven simulator reviews are complete; three remain.
+- **Review screens live on a second model.** `MAX_CUSTOM_SCREENS` is 10 (`radio/src/dataconstants.h`), and ten reviewable components plus two dashboards, two palette screens and the debug screen is fourteen. `model1.yml` keeps those dashboards and diagnostics; `model2.yml` has eight component review screens and one source-name diagnostic. Eight simulator reviews are complete; two remain.
 
 ### Immediate next steps
 
-Continue the simulator panel pass with `link-status`, then `metric` and
+Continue the simulator panel pass with `metric`, then
 `variable-indicator`, documenting each accepted panel.
 These reviews do not close the separate hardware work below.
+
+**Link-status simulator review and documentation complete:** measured link quality
+remains the primary reading under `reading: auto`; RSSI is independent supporting
+data, never a substitute for LQ. `qualityWarning` / `qualityCritical` use percent,
+and `marginWarning` / `marginCritical` use dB above nominal receiver sensitivity.
+There are no default alarm thresholds, composite health percentage, universal SNR
+penalties, or widget voice/haptic alerts. The most severe configured live condition
+sets the panel state; the supporting caption identifies low LQ, low RSSI, or low
+margin. Link-down takes precedence. Existing primary-unit `warning` / `critical`
+remain supported only with a named `reading`.
+ELRS quality panels without extrema pair receiver power and margin in one
+full-width caption: `-100dBm (+23dB)`. The difference uses dB, not dBm, and
+positive margins explicitly carry `+`. Alarm causes take priority over the
+RSSI portion if both cannot fit; `LOW MARGIN (+5dB)` retains the headroom
+without using an ambiguous `M` abbreviation. Wider rows keep the full pair
+alongside the alarm cause. Unavailable margins retain explicit status wording.
+For ELRS `2x1` panels with `reading: quality` and both RSSI and mode sources,
+the measured LQ sits on the left with RSSI and parenthesized margin stacked
+on the right. No supporting font reduction is used: insufficient space sheds
+the column. `1x1` remains primary-reading-only, and larger panels retain
+their paired footer. The `2x1` review example now includes both LQ and
+margin thresholds; its badge and state color show alarms.
+
+`protocol: elrs4` maps `modeSource` RFMD to rate and nominal sensitivity using the
+ELRS 4.0.0 and 4.1.0 global `enum_rate` values, not hardware-specific table indices.
+The single-band entries cover SX127x, SX128x and LR1121 modes. Dual-band rates are
+displayed, but no margin is calculated because the configured antenna RSSI does not
+identify its band. Unknown/reserved modes, stale/missing RFMD, stale/missing RSSI,
+and incompatible RSSI units do not produce a margin. ELRS 3.x is not supported by
+this mapping; select `generic` for raw RFMD without automatic sensitivity.
+Freshness follows the shared telemetry service's link-level evidence: EdgeTX
+does not expose per-sensor reception age for numeric sensors, so a discovered
+RFMD source reporting zero cannot be distinguished from a genuine 25Hz mode
+that reports zero. Real receiver testing remains necessary.
+The ELRS profile explicitly excludes transmitter-local RFMD and TPWR from
+receiver-link evidence; those values can continue when no receiver is connected.
+EdgeTX labels CRSF RSSI as dB; the ELRS profile renders that receiver signal power
+as dBm. Configure receiver-side RSSI and LQ (usually `1RSS` and `RQly`), not
+transmitter-return telemetry (`TRSS` / `TQly`). An antenna source is explicitly
+selected; there is no automatic antenna selection.
+
+`snrSource` and `powerSource` add optional measured details alongside rate when
+the tertiary band has room for a second row. Optional details shed by width
+(power first, then SNR); a one-row panel retains the primary reading and
+state badge, with the configured ELRS `2x1` side-column exception above.
+A stale auxiliary reading carries `*`; no stale RFMD is decoded.
+Screen 9 on AEROGRID REVIEW provides 2x3, 2x2, 1x1 and 2x1 examples. Its thresholds
+are review examples, not protocol recommendations. Real ELRS 4.x telemetry
+and hardware verification remain outstanding. The simulator's
+RFMD input is limited to 0-8 and TPWR remained fixed at 100 mW, so 2.4 GHz
+mode decoding and power transitions were verified by automated tests rather
+than simulator input. Empty-card isolation followed by a clean `make build`
+resolved the simulator extension-host startup failure; the precise generated
+SD-state/bytecode cause was not isolated.
+
+Mapping references:
+[ELRS 4.1.0 RFMD enumeration](https://github.com/ExpressLRS/ExpressLRS/blob/4.1.0/src/include/common.h),
+[rate/sensitivity tables](https://github.com/ExpressLRS/ExpressLRS/blob/4.1.0/src/src/common.cpp),
+and [signal-health guidance](https://www.expresslrs.org/info/signal-health/).
 
 1. **Run the shipped dashboard on a radio.** This is first and has been first for three milestones. One screen exercises telemetry, cells, link, GPS, model timers, flight mode, transmitter voltage, a global variable, trims, and the model bitmap at once. Five things can only be judged there: whether the estimated text widths behind `theme.textWidth` hold against the real fonts, whether an `lvgl.image` of a model bitmap scales the way `StaticImage` is expected to, whether the corrected arc centring places the radial and compass dials where they are meant to go, whether the compass pointer reads as a direction at arm's length, and whether an alert tint is noticed without being looked at.
 2. **Run the two diagnostics layouts on a radio.** Set the widget's Dashboard ID to `services` or `services2`; they load on any model without a model-specific file. This is the check that milestone 5's normalization is right against real sensors rather than mocks.
@@ -1753,7 +1813,7 @@ Subscribing in `create` is not a convention, it is the mechanism: a source nothi
 
 | Service | Subscription | Snapshot highlights |
 | --- | --- | --- |
-| `telemetry` | `subscribe(name)`, `link()` | `value`, `raw`, `kind`, `unit`, `unitText`, `precision`, `state`, `available`, `fresh`, `stale`, `age`; `live`, `rssi`, `indicator` |
+| `telemetry` | `subscribe(name, linkEvidence?)`, `link()` | `value`, `raw`, `kind`, `unit`, `unitText`, `precision`, `state`, `available`, `fresh`, `stale`, `age`; `live`, `rssi`, `indicator` |
 | `model` | `identity()`, `timer(index)`, `flightMode()`, `txVoltage()` | `name`/`bitmapPath`; `value`, `countdown`, `elapsed`, `remaining`, `expired`, `text`; `index`/`name`; a telemetry-shaped reading |
 | `control` | `trim(name, scale)`, `globalVariable(index, flightMode)` | `raw`, `value`, `fraction`, `scale`, `centered`, `threePosition`; `name`, `value`, `min`, `max`, `precision`, `unitText`, `flightMode` |
 | `extrema` | `sourceExtreme(name, mode)`, `sessionExtrema(name)`, `flight(armSource)` | an ordinary reading of `<name>-`/`<name>+`; `min`, `max`, `samples`, `session`; `armed`, `active`, `count`, `duration` |

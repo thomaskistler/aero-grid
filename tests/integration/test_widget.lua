@@ -5644,6 +5644,32 @@ local function testInstructionBudget()
 
     exercise("shipped", sourcePath, 10, { "telemetry", "model", "control", "extrema", "navigation" })
     exercise("full grid", makeWidget("budget-16", fullGridLayout(16)), 16, { "telemetry" })
+    local linkReview = assert(hostIo.open(sourcePath .. "layouts/review-link-status.yaml", "r"))
+    local linkReviewYaml = linkReview:read("a")
+    linkReview:close()
+    exercise("link review", makeWidget("budget-link-review", linkReviewYaml), 6, { "telemetry" })
+    exercise(
+        "ELRS4 link x16",
+        makeWidget(
+            "budget-elrs4",
+            typedGridLayout("link-status", function()
+                return {
+                    "protocol: elrs4",
+                    "qualitySource: RQly",
+                    "rssiSource: 1RSS",
+                    "modeSource: RFMD",
+                    "snrSource: RSNR",
+                    "powerSource: TPWR",
+                    "qualityWarning: 90",
+                    "qualityCritical: 70",
+                    "marginWarning: 10",
+                    "marginCritical: 5",
+                }
+            end)
+        ),
+        16,
+        { "telemetry" }
+    )
 
     -- Every core component, one type at a time, at sixteen single cells. A
     -- component measured only at the span the shipped dashboard uses would hide

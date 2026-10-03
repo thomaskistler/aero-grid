@@ -116,7 +116,7 @@ AeroGrid loads each component from `src/WIDGETS/AeroGrid/components/<type>.lua`,
 | [`trim-panel`](docs/components/trim-panel.md) | Three-axis square with center-zero bars, a live aileron/elevator dot, and labelled readouts; legacy single/pair/four layouts retained. |
 | `model-identity` | Model name, model bitmap, or both. |
 | [`cell-battery`](docs/components/cell-battery.md) | Aircraft cells or pack voltage, with a battery glyph, configurable cell count, and supporting voltage. |
-| `link-status` | RSSI and link quality from independently named sources, with an explicit minimum and link freshness. |
+| [`link-status`](docs/components/link-status.md) | Measured LQ/RSSI, ELRS 4.x mode-aware sensitivity margin, optional SNR/power, independent alarms, and link freshness. |
 | [`navigation`](docs/components/navigation.md) | GPS location, distance from home, a north-up home-to-model compass, and independently configurable bearing/coordinate rows. |
 | `service-probe` | Prints one shared service's normalized output as diagnostic rows. |
 | `placeholder` | Verifies placement and resizing at any span. |

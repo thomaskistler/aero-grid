@@ -1529,6 +1529,12 @@ function support.radio(hostIo)
         unit = UNIT.PERCENT,
     }
     radio.fields["1RSS"] = { id = 143, name = "1RSS", desc = "Antenna 1", unit = UNIT.DBM }
+    radio.fields.RFMD = { id = 146, name = "RFMD", desc = "RF mode", unit = UNIT.RAW }
+    radio.fields.RSNR = { id = 147, name = "RSNR", desc = "Receiver SNR", unit = UNIT.DB }
+    radio.fields.TPWR = { id = 148, name = "TPWR", desc = "Transmit power", unit = 16 }
+    radio.values[146] = 27
+    radio.values[147] = 8
+    radio.values[148] = 250
     radio.values[140] = 78
     radio.values[141] = 96
     -- A string, because `getValue` pushes one for a `UNIT_TEXT` sensor. A
@@ -1538,6 +1544,9 @@ function support.radio(hostIo)
     radio.values[143] = -72
     radio.sensors[21] = { name = "RSSI", prec = 0 }
     radio.sensors[22] = { name = "RQly", prec = 0 }
+    radio.sensors[23] = { name = "RFMD", prec = 0 }
+    radio.sensors[24] = { name = "RSNR", prec = 0 }
+    radio.sensors[25] = { name = "TPWR", prec = 0 }
 
     -- Further GPS sources, so a layout that fills the grid with navigation
     -- panels really does carry more than one subscription.
@@ -1766,7 +1775,11 @@ function support.radio(hostIo)
         radio.values[131] = 4.09
         radio.values[140] = 78
         radio.values[141] = 96
+        radio.values[143] = -72
         radio.values[145] = "ANGLE"
+        radio.values[146] = 27
+        radio.values[147] = 8
+        radio.values[148] = 250
         radio.battMin = 6.4
         radio.battMax = 8.4
         radio.battWarn = 6.6

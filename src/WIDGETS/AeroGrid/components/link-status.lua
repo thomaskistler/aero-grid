@@ -6,8 +6,9 @@
 --- different sensors in different units, and one is never inferred from the
 --- other. FrSky reports `RSSI` in dB; ELRS reports `1RSS` and `2RSS` in dBm
 --- alongside `RQly` as a percentage; a multi-antenna receiver exposes each
---- antenna as an ordinary source. Nothing here hard-codes a protocol: both
---- sources are named by the layout, and either may be absent.
+--- antenna as an ordinary source. Sources are named by the layout and either
+--- may be absent. The optional ELRS 4.x profile decodes RFMD and nominal
+--- sensitivity; generic protocols retain their own units and raw mode values.
 ---
 --- Freshness is the hard part, and it is the reason this component exists
 --- rather than two metrics side by side. EdgeTX returns integer zero for a
@@ -39,6 +40,14 @@
 ---@field extremaSource? string Explicit EdgeTX minimum source.
 ---@field visual? "bar"|"none"
 ---@field accent? string
+---@field protocol? "generic"|"elrs4"
+---@field modeSource? string
+---@field snrSource? string
+---@field powerSource? string
+---@field qualityWarning? number
+---@field qualityCritical? number
+---@field marginWarning? number
+---@field marginCritical? number
 
 ---@class AeroGridLinkContext
 ---@field panel table
@@ -59,6 +68,9 @@ local linkStatus = {
         "2x2",
         "3x2",
         "4x2",
+        "2x3",
+        "3x3",
+        "4x3",
     },
     -- Link quality is the one reading a pilot glances at during a fade, but it
     -- is still a number on a screen: five hertz is indistinguishable from fifty
@@ -69,6 +81,20 @@ local linkStatus = {
         -- Never defaulted: link quality is not universal, and inferring it from
         -- RSSI would invent a number the radio never reported.
         { key = "qualitySource", label = "Link quality source", type = "string", default = "" },
+        {
+            key = "protocol",
+            label = "Protocol mapping",
+            type = "string",
+            default = "generic",
+            choices = { "generic", "elrs4" },
+        },
+        { key = "modeSource", label = "RF mode source", type = "string", default = "" },
+        { key = "snrSource", label = "SNR source", type = "string", default = "" },
+        { key = "powerSource", label = "Transmit power source", type = "string", default = "" },
+        { key = "qualityWarning", label = "Warning link quality percent", type = "number" },
+        { key = "qualityCritical", label = "Critical link quality percent", type = "number" },
+        { key = "marginWarning", label = "Warning RSSI margin dB", type = "number" },
+        { key = "marginCritical", label = "Critical RSSI margin dB", type = "number" },
         -- Which of the two sources leads the panel. Named `reading` like every
         -- other component that chooses between its own values.
         {
@@ -112,6 +138,63 @@ local linkStatus = {
         },
     },
 }
+
+-- RFMD is enum_rate, NOT the hardware-specific air-rate table index.
+-- Verified against ExpressLRS 4.0.0 and 4.1.0 src/include/common.h,
+-- src/src/common.cpp and rx_main.cpp / tx_main.cpp.
+-- Sensitivity is firmware's nominal RXsensitivity, not a measured failsafe limit.
+local elrs4Modes = {
+    [0] = { "25Hz", -123 },
+    [1] = { "50Hz", -120 },
+    [2] = { "100Hz", -117 },
+    [3] = { "100Hz 8ch", -112 },
+    [5] = { "200Hz", -112 },
+    [6] = { "200Hz 8ch", -111 },
+    [7] = { "250Hz", -111 },
+    [10] = { "D50Hz", -112 },
+    [11] = { "FSK1000Hz 8ch", -101 },
+    [21] = { "50Hz", -115 },
+    [23] = { "100Hz 8ch", -112 },
+    [24] = { "150Hz", -112 },
+    [27] = { "250Hz", -108 },
+    [28] = { "333Hz 8ch", -105 },
+    [29] = { "500Hz", -105 },
+    [30] = { "D250Hz", -104 },
+    [31] = { "D500Hz", -104 },
+    [32] = { "F500Hz", -104 },
+    [33] = { "F1000Hz", -104 },
+    [34] = { "FSK D250Hz", -103 },
+    [35] = { "FSK D500Hz", -103 },
+    [36] = { "FSK1000Hz", -103 },
+    -- Mixed-band RSSI cannot be paired with a band-specific sensitivity from
+    -- RFMD alone. Display the rate but do not invent a dual-band margin.
+    [100] = { "DUAL100Hz 8ch" },
+    [101] = { "DUAL150Hz" },
+}
+
+function linkStatus.modeFor(value)
+    if type(value) ~= "number" or value % 1 ~= 0 then
+        return nil
+    end
+    return elrs4Modes[value]
+end
+
+local function finite(value)
+    return type(value) == "number" and value == value and value > -math.huge and value < math.huge
+end
+
+local function thresholdRank(value, warning, critical)
+    if not finite(value) then
+        return 0
+    end
+    if type(critical) == "number" and value <= critical then
+        return 2
+    end
+    if type(warning) == "number" and value <= warning then
+        return 1
+    end
+    return 0
+end
 
 --- Describe how the component presents itself at a given span.
 ---@param colSpan integer
@@ -199,11 +282,7 @@ end
 ---@param reading table Result of linkStatus.read.
 ---@return string stateName
 function linkStatus.resolveState(settings, reading)
-    -- Nothing configured that the radio recognizes at all.
-    if reading.sourceState == "none" or reading.sourceState == "absent" then
-        return "unavailable"
-    end
-
+    reading.cause = nil
     if reading.linkDown then
         -- Never seen a reading and no link either: the model has not been powered
         -- up yet, which is not a fault and must not shout about one.
@@ -213,23 +292,32 @@ function linkStatus.resolveState(settings, reading)
         return "critical"
     end
 
-    if reading.sourceState == "waiting" then
+    local rank = reading.sourceState == "live" and thresholdRank(reading.value, settings.warning, settings.critical)
+        or 0
+    if rank > 0 then
+        reading.cause = reading.primary == "quality" and "LOW LQ" or "LOW RSSI"
+    end
+    local qualityRank = reading.qualityState == "live"
+            and thresholdRank(reading.qualityValue, settings.qualityWarning, settings.qualityCritical)
+        or 0
+    if qualityRank > rank then
+        rank, reading.cause = qualityRank, "LOW LQ"
+    end
+    local marginRank = thresholdRank(reading.margin, settings.marginWarning, settings.marginCritical)
+    if marginRank > rank then
+        rank, reading.cause = marginRank, "LOW MARGIN"
+    end
+    if rank > 0 then
+        return rank == 2 and "critical" or "warning"
+    end
+    if reading.sourceState == "none" or reading.sourceState == "absent" or reading.sourceState == "waiting" then
         return "unavailable"
     end
     if reading.sourceState == "stale" then
         return "stale"
     end
-    if type(reading.value) ~= "number" then
+    if not finite(reading.value) then
         return "unavailable"
-    end
-
-    local critical = settings.critical
-    local warning = settings.warning
-    if type(critical) == "number" and reading.value <= critical then
-        return "critical"
-    end
-    if type(warning) == "number" and reading.value <= warning then
-        return "warning"
     end
 
     return "normal"
@@ -254,16 +342,43 @@ end
 ---@return string[] messages
 function linkStatus.validateSettings(settings)
     local messages = {}
-    if settings.reading ~= "auto" then
-        return messages
-    end
-
     for _, key in ipairs({ "warning", "critical" }) do
-        if type(settings[key]) == "number" then
+        if settings.reading == "auto" and type(settings[key]) == "number" then
             messages[#messages + 1] = key
                 .. " cannot be used with reading: auto, because its unit would be"
                 .. " dBm or percent depending on which source resolved first."
                 .. " Set reading to rssi or quality."
+        end
+    end
+    for _, pair in ipairs({
+        { "warning", "critical" },
+        { "qualityWarning", "qualityCritical" },
+        { "marginWarning", "marginCritical" },
+    }) do
+        local warning, critical = settings[pair[1]], settings[pair[2]]
+        if type(warning) == "number" and type(critical) == "number" and critical > warning then
+            messages[#messages + 1] = pair[2] .. " must be less than or equal to " .. pair[1]
+        end
+    end
+    if settings.qualityWarning ~= nil or settings.qualityCritical ~= nil then
+        if not settings.qualitySource or settings.qualitySource == "" then
+            messages[#messages + 1] = "quality thresholds require qualitySource"
+        end
+        for _, key in ipairs({ "qualityWarning", "qualityCritical" }) do
+            if type(settings[key]) == "number" and (settings[key] < 0 or settings[key] > 100) then
+                messages[#messages + 1] = key .. " must be between 0 and 100 percent"
+            end
+        end
+    end
+    if settings.marginWarning ~= nil or settings.marginCritical ~= nil then
+        if
+            settings.protocol ~= "elrs4"
+            or not settings.modeSource
+            or settings.modeSource == ""
+            or not settings.rssiSource
+            or settings.rssiSource == ""
+        then
+            messages[#messages + 1] = "margin thresholds require protocol: elrs4, modeSource and receiver rssiSource"
         end
     end
 
@@ -293,7 +408,7 @@ function linkStatus.read(context)
 
     if type(feed) == "table" then
         out.available = feed.available == true
-        if out.available and type(feed.value) == "number" then
+        if out.available and finite(feed.value) then
             out.value = feed.value
         end
         out.unitText = type(feed.unitText) == "string" and feed.unitText or ""
@@ -321,6 +436,29 @@ function linkStatus.read(context)
     -- Without a link view at all, fall back to the source's own freshness
     -- rather than claiming the link is down on no evidence.
     out.linkDown = type(link) == "table" and not out.linkLive
+    out.qualityValue = type(quality) == "table" and quality.unitText == "%" and quality.value or nil
+    out.margin, out.mode = nil, nil
+    if context.settings.protocol == "elrs4" then
+        local modeFeed = context.modeFeed
+        out.modeState = linkStatus.classify(modeFeed)
+        if out.modeState == "live" and modeFeed.unitText == "" and not out.linkDown then
+            out.mode = linkStatus.modeFor(modeFeed.value)
+            if
+                out.mode
+                and out.mode[2]
+                and out.rssiState == "live"
+                and rssi ~= nil
+                and finite(rssi.value)
+                and rssi.value <= 0
+                and (rssi.unitText == "dB" or rssi.unitText == "dBm")
+            then
+                out.margin = rssi.value - out.mode[2]
+            end
+        end
+        if out.primary == "rssi" and (out.unitText == "dB" or out.unitText == "dBm") then
+            out.unitText = "dBm"
+        end
+    end
 
     return out
 end
@@ -343,7 +481,7 @@ function linkStatus.sourceText(feed, state)
     end
 
     local value = type(feed) == "table" and feed.value or nil
-    if type(value) ~= "number" or value ~= value then
+    if not finite(value) then
         return "--"
     end
 
@@ -409,6 +547,19 @@ function linkStatus.detailText(context, reading)
         -- With no minimum configured, the row names the secondary source, which is
         -- whichever of the two is not leading the panel.
         local text = linkStatus.sourceText(context.rssiFeed, reading.rssiState)
+        if context.settings.protocol == "elrs4" and context.rssiFeed and context.rssiFeed.unitText == "dB" then
+            text = text
+                .. (
+                    finite(context.rssiFeed.value)
+                        and reading.rssiState ~= "waiting"
+                        and reading.rssiState ~= "absent"
+                        and "m"
+                    or ""
+                )
+        end
+        if context.settings.protocol == "elrs4" and reading.rssiState == "stale" then
+            text = text .. "*"
+        end
         variants = { "RSSI " .. text, text }
     else
         local text = linkStatus.sourceText(context.qualityFeed, reading.qualityState)
@@ -428,6 +579,31 @@ function linkStatus.linkText(context, reading)
     local variants
     if reading.linkDown then
         variants = { "LINK DOWN", "NO LINK", "DOWN" }
+    elseif reading.cause then
+        if reading.cause == "LOW MARGIN" then
+            variants = { "LOW MARGIN", "MARGIN" }
+        elseif reading.cause == "LOW LQ" then
+            variants = { "LOW LQ", "LQ" }
+        else
+            variants = { "LOW RSSI", "RSSI", "RSS" }
+        end
+    elseif context.settings.protocol == "elrs4" and context.modeFeed then
+        if reading.margin ~= nil then
+            local text = string.format("%.0fdB", reading.margin)
+            variants = { "MARGIN " .. text, text }
+        elseif reading.modeState == "stale" then
+            variants = { "MODE STALE", "RF STALE" }
+        elseif reading.modeState == "live" and not reading.mode then
+            variants = { "UNKNOWN MODE", "RFMD ?" }
+        elseif reading.modeState == "absent" then
+            variants = { "NO RFMD SENSOR", "NO RFMD" }
+        elseif reading.modeState == "waiting" then
+            variants = { "WAIT RFMD", "RF WAIT" }
+        elseif reading.mode and reading.mode[2] and reading.rssiState == "live" then
+            variants = { "BAD RSSI", "RSSI ERR" }
+        else
+            variants = { "MARGIN N/A", "N/A" }
+        end
     elseif not reading.indicator or reading.rssiState == "absent" then
         variants = { "NO RSSI SENSOR", "NO RSSI SENSE", "NO RSSI", "NO RSS" }
     elseif reading.primary == "quality" then
@@ -438,7 +614,58 @@ function linkStatus.linkText(context, reading)
         variants = { "LQ " .. text, text }
     end
 
+    if context.pairedRow and reading.margin ~= nil then
+        local signal = string.format("%.0fdBm", context.rssiFeed.value)
+        local margin = string.format("(%+.0fdB)", reading.margin)
+        local pair = signal .. " " .. margin
+        if reading.cause then
+            variants = { reading.cause .. ": " .. pair, reading.cause .. " " .. margin, reading.cause }
+        else
+            variants = { pair, signal }
+        end
+    end
+
     return context.themeBuilder.fitLabel(variants, context.fonts.label, context.rowRightWidth)
+end
+
+function linkStatus.extraText(context, reading)
+    local parts = {}
+    if context.modeFeed then
+        local text = linkStatus.sourceText(context.modeFeed, linkStatus.classify(context.modeFeed))
+        if context.settings.protocol == "elrs4" then
+            text = reading.mode and reading.mode[1] or "RFMD " .. text .. (reading.modeState == "live" and " ?" or "")
+        else
+            text = "RFMD " .. text
+        end
+        if linkStatus.classify(context.modeFeed) == "stale" then
+            text = text .. "*"
+        end
+        parts[#parts + 1] = text
+    end
+    for _, item in ipairs({ { "snrFeed", "SNR " }, { "powerFeed", "PWR " } }) do
+        local feed = context[item[1]]
+        if feed then
+            local state = linkStatus.classify(feed)
+            local prefix = item[1] == "powerFeed"
+                    and feed.unitText ~= ""
+                    and (state == "live" or state == "stale")
+                    and ""
+                or item[2]
+            parts[#parts + 1] = prefix .. linkStatus.sourceText(feed, state) .. (state == "stale" and "*" or "")
+        end
+    end
+    -- Shed optional details, never clip them into another metric.
+    while
+        #parts > 1
+        and context.themeBuilder.textWidth(context.fonts.label, table.concat(parts, "  ")) > context.area.content
+    do
+        parts[#parts] = nil
+    end
+    return context.themeBuilder.fitLabel(
+        { table.concat(parts, "  "), "RF DETAIL" },
+        context.fonts.label,
+        context.area.content
+    )
 end
 
 --- Convert the primary reading into a 0..1 fraction of the configured range.
@@ -492,8 +719,43 @@ function linkStatus.regionsFor(theme, themeBuilder, rect, layout, fonts, sample,
         bar = true,
         -- A bearing-style pair: the secondary source on the left, the link state
         -- on the right.
-        rowItems = 2,
+        rowItems = layout.pairedRow and 1 or 2,
     }, out or {})
+    if layout.pairedRow then
+        area.rowRightCentre = area.detailCentre
+        area.rowRightWidth = area.detailWidth
+        area.rowRightX = area.detailX
+    end
+    area.showExtra = false
+    if layout.extra and area.showDetail then
+        local height = themeBuilder.fontHeight(fonts.label)
+        local bands = themeBuilder.bands(area.frame, rect, true)
+        local extraY = area.detailY - height
+        if extraY >= bands.tertiary.y then
+            area.extraY = area.detailY
+            area.detailY = extraY
+            area.showExtra = true
+        end
+    end
+    area.showSide = false
+    if layout.side then
+        local rowHeight = themeBuilder.fontHeight(fonts.label)
+        local readingWidth = themeBuilder.readingWidth(area.value, "100", area.unitFont, "%")
+        local sideWidth = themeBuilder.textWidth(fonts.label, "-123dBm")
+        local slots, fits = themeBuilder.slotsFor(area.frame, readingWidth, sideWidth)
+        local top = math.max(area.frame.top, math.floor(area.ladder.centre - rowHeight))
+        local floorY = area.showVisual and area.barY or rect.h - area.frame.bottom
+        if fits and top + rowHeight * 2 <= floorY then
+            local left, right = themeBuilder.slotCentres(area.frame, slots)
+            area.valueCentre = left
+            area.valueBudget = math.min(left - area.pad, right - math.ceil(sideWidth / 2) - left) * 2
+            area.sideCentre = right
+            area.sideWidth = sideWidth
+            area.sideY = top
+            area.marginY = top + rowHeight
+            area.showSide = true
+        end
+    end
     return area
 end
 
@@ -510,6 +772,16 @@ function linkStatus.create(parent, rect, settings, services)
     local span = services.span
     local layout = linkStatus.presentationFor(span.colSpan, span.rowSpan)
     layout.visual = settings.visual
+    layout.extra = (settings.modeSource or "") ~= ""
+        or (settings.snrSource or "") ~= ""
+        or (settings.powerSource or "") ~= ""
+    layout.pairedRow = settings.protocol == "elrs4" and settings.reading ~= "rssi" and settings.extrema == "none"
+    layout.side = span.colSpan == 2
+        and span.rowSpan == 1
+        and settings.protocol == "elrs4"
+        and settings.reading == "quality"
+        and (settings.rssiSource or "") ~= ""
+        and (settings.modeSource or "") ~= ""
     local presentation = services.state("normal", settings.accent)
 
     local context = {
@@ -526,6 +798,7 @@ function linkStatus.create(parent, rect, settings, services)
         linkDetail = "",
         -- Reused so a refresh allocates nothing; the host pays this per frame.
         readingCache = {},
+        pairedRow = layout.pairedRow,
     }
 
     local telemetry = services.telemetry
@@ -538,6 +811,13 @@ function linkStatus.create(parent, rect, settings, services)
         end
         if type(settings.qualitySource) == "string" and settings.qualitySource ~= "" then
             context.qualityFeed = telemetry:subscribe(settings.qualitySource)
+        end
+        for _, name in ipairs({ "mode", "snr", "power" }) do
+            local source = settings[name .. "Source"]
+            if type(source) == "string" and source ~= "" then
+                local receiverEvidence = settings.protocol ~= "elrs4" or name == "snr"
+                context[name .. "Feed"] = telemetry:subscribe(source, receiverEvidence)
+            end
         end
         context.link = telemetry:link()
     end
@@ -572,6 +852,8 @@ function linkStatus.create(parent, rect, settings, services)
     context.detailWidth = area.detailWidth
     context.rowRightWidth = area.rowRightWidth
     context.showDetail = area.showDetail
+    context.showExtra = area.showExtra
+    context.showSide = area.showSide
     -- Built hidden: the unit is not known yet, so nothing here could decide
     -- whether it fits. `showUnitRoom` records that the panel fitted a `dBm` and
     -- has somewhere to put one; `apply` decides the rest.
@@ -610,7 +892,7 @@ function linkStatus.create(parent, rect, settings, services)
         y = area.detailY,
         w = area.detailWidth,
         text = "",
-        color = theme.color.textFaint,
+        color = theme.color.text,
         font = fonts.label,
     })
 
@@ -619,10 +901,23 @@ function linkStatus.create(parent, rect, settings, services)
         y = area.detailY,
         w = area.rowRightWidth,
         text = "",
-        color = theme.color.textFaint,
+        color = theme.color.text,
         font = fonts.label,
     })
 
+    if layout.extra then
+        context.extraLabel = primitives.label(panel.root, theme, {
+            x = area.pad,
+            y = area.extraY or area.detailY,
+            w = area.content,
+            text = "",
+            color = theme.color.text,
+            font = fonts.label,
+        })
+        if not area.showExtra then
+            lvgl.hide(context.extraLabel)
+        end
+    end
     if layout.showVisual and settings.visual ~= "none" then
         context.bar = primitives.bar(panel.root, theme, {
             x = area.pad,
@@ -636,6 +931,13 @@ function linkStatus.create(parent, rect, settings, services)
     if not area.showDetail then
         lvgl.hide(context.detailLabel)
         lvgl.hide(context.linkLabel)
+    end
+    if context.pairedRow and area.showDetail then
+        lvgl.hide(context.detailLabel)
+    end
+    if area.showSide then
+        lvgl.show(context.detailLabel)
+        lvgl.show(context.linkLabel)
     end
     lvgl.hide(context.unit)
     -- What the panel currently shows, so a reflow that changes nothing about
@@ -688,8 +990,19 @@ function linkStatus.render(context, out)
     out.fraction = out.state == "unavailable" and 0 or linkStatus.fraction(settings, reading.value)
 
     if context.showDetail then
-        out.detail = linkStatus.detailText(context, reading)
+        out.detail = context.pairedRow and "" or linkStatus.detailText(context, reading)
         out.link = linkStatus.linkText(context, reading)
+    end
+    if context.showExtra then
+        out.extra = linkStatus.extraText(context, reading)
+    end
+    if context.showSide then
+        local signal = linkStatus.sourceText(context.rssiFeed, reading.rssiState)
+        if finite(context.rssiFeed.value) and (reading.rssiState == "live" or reading.rssiState == "stale") then
+            signal = string.format("%.0fdBm", context.rssiFeed.value) .. (reading.rssiState == "stale" and "*" or "")
+        end
+        out.side = context.themeBuilder.fitLabel({ signal, "RSSI --" }, context.fonts.label, context.area.sideWidth)
+        out.margin = reading.margin ~= nil and string.format("(%+.0fdB)", reading.margin) or "(N/A)"
     end
 end
 
@@ -705,6 +1018,9 @@ function linkStatus.apply(context, drawn)
     context.text = drawn.text
     context.detail = drawn.detail
     context.linkDetail = drawn.link
+    context.extra = drawn.extra
+    context.side = drawn.side
+    context.margin = drawn.margin
 
     context.value:set({ text = drawn.text, color = presentation.value })
     -- The unit is the source's own -- `dBm`, `dB` or a percentage -- and it
@@ -773,6 +1089,43 @@ function linkStatus.apply(context, drawn)
         )
     end
 
+    if context.showExtra then
+        context.extraLabel:set({ text = drawn.extra })
+        context.primitives.centreLabel(
+            context,
+            "extraAnchor",
+            context.themeBuilder,
+            context.extraLabel,
+            context.area.pad + math.floor(context.area.content / 2),
+            context.area.extraY,
+            context.fonts.label,
+            drawn.extra
+        )
+    end
+    if context.showSide then
+        context.detailLabel:set({ text = drawn.side })
+        context.linkLabel:set({ text = drawn.margin })
+        context.primitives.centreLabel(
+            context,
+            "sideAnchor",
+            context.themeBuilder,
+            context.detailLabel,
+            context.area.sideCentre,
+            context.area.sideY,
+            context.fonts.label,
+            drawn.side
+        )
+        context.primitives.centreLabel(
+            context,
+            "marginAnchor",
+            context.themeBuilder,
+            context.linkLabel,
+            context.area.sideCentre,
+            context.area.marginY,
+            context.fonts.label,
+            drawn.margin
+        )
+    end
     if context.bar then
         context.primitives.setBar(context.bar, drawn.fraction, presentation.accent)
     end
@@ -851,9 +1204,36 @@ function linkStatus.update(context, rect)
     context.detailWidth = area.detailWidth
     context.rowRightWidth = area.rowRightWidth
     context.showDetail = area.showDetail
+    context.showExtra = area.showExtra
+    context.showSide = area.showSide
 
-    reconcile(context.detailLabel, area.showDetail, { x = area.detailX, y = area.detailY, w = area.detailWidth })
+    reconcile(
+        context.detailLabel,
+        area.showDetail and not context.pairedRow,
+        { x = area.detailX, y = area.detailY, w = area.detailWidth }
+    )
     reconcile(context.linkLabel, area.showDetail, { x = area.rowRightX, y = area.detailY, w = area.rowRightWidth })
+    if context.extraLabel then
+        reconcile(
+            context.extraLabel,
+            area.showExtra,
+            { x = area.pad, y = area.extraY or area.detailY, w = area.content }
+        )
+    end
+    if context.layout.side then
+        context.sideAnchor = nil
+        context.marginAnchor = nil
+        reconcile(
+            context.detailLabel,
+            area.showSide,
+            { x = area.pad, y = area.sideY or area.detailY, w = area.sideWidth or area.detailWidth }
+        )
+        reconcile(
+            context.linkLabel,
+            area.showSide,
+            { x = area.pad, y = area.marginY or area.detailY, w = area.sideWidth or area.rowRightWidth }
+        )
+    end
 
     context.primitives.reconcileBar(
         context.bar,
