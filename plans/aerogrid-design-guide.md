@@ -15,6 +15,24 @@ because a decision that drifted is exactly the kind a guide exists to pin down.
 
 ## What is implemented and what is only agreed
 
+**Link-status review complete:** the headline is a measured source
+reading, normally receiver LQ, not an aggregate health percentage. ELRS quality
+panels without extrema pair RSSI and nominal sensitivity margin across the
+supporting row, for example `-100dBm (+23dB)`. Alarm causes take priority when
+the full pair cannot fit, retaining margin where possible, for example
+`LOW MARGIN (+5dB)`. Other configurations retain the two supporting slots.
+ELRS 4.x mode mapping is opt-in. A sufficiently
+wide `2x1` panel with `reading: quality` places LQ on the left and stacks
+RSSI above parenthesized margin on the right, in regular supporting typography.
+The column sheds if the zone cannot hold it without collision; `1x1` remains
+LQ-only. Larger panels retain the full-width paired footer. A sufficiently
+tall panel adds a full-width row for decoded rate, measured SNR and transmitter
+power, shedding power and then SNR when width is insufficient. These details
+remain in regular supporting typography and primary text color. They never
+shrink the headline or invade the body band. Unknown or stale modes expose their
+condition instead of retaining a confident margin; dual-band modes expose rate
+only. Compact one-row panels retain the number and the shared state badge.
+
 **Navigation review:** the north-up dial uses a continuous faint
 outer ring, inward tick marks, inset N/E/S/W labels, and a filled, concave arrow.
 The arrow is green in the normal state and follows the state accent for

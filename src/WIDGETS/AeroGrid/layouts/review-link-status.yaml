@@ -1,0 +1,92 @@
+# Link-status review, screen 9 on AEROGRID REVIEW.
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: detailed
+    type: link-status
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 3
+    config:
+      label: ELRS 4.x 2x3
+      protocol: elrs4
+      qualitySource: RQly
+      rssiSource: 1RSS
+      modeSource: RFMD
+      snrSource: RSNR
+      powerSource: TPWR
+      qualityWarning: 90
+      qualityCritical: 70
+      marginWarning: 10
+      marginCritical: 5
+  - id: standard
+    type: link-status
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: ELRS 4.x 2x2
+      protocol: elrs4
+      qualitySource: RQly
+      rssiSource: 1RSS
+      modeSource: RFMD
+      qualityWarning: 90
+      qualityCritical: 70
+      marginWarning: 10
+      marginCritical: 5
+  - id: compact
+    type: link-status
+    col: 2
+    row: 2
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: LQ 1x1
+      qualitySource: RQly
+      reading: quality
+      qualityWarning: 90
+      qualityCritical: 70
+  - id: unavailable
+    type: link-status
+    col: 3
+    row: 2
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: NO SOURCE
+      reading: quality
+      qualitySource: MissingLQ
+  - id: wide-quality
+    type: link-status
+    col: 0
+    row: 3
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: LQ 2x1
+      reading: quality
+      qualitySource: RQly
+      protocol: elrs4
+      rssiSource: 1RSS
+      modeSource: RFMD
+      qualityWarning: 90
+      qualityCritical: 70
+      marginWarning: 10
+      marginCritical: 5
+  - id: wide-rssi
+    type: link-status
+    col: 2
+    row: 3
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: RSSI 2x1
+      reading: rssi
+      protocol: elrs4
+      rssiSource: 1RSS
+      barMin: -120
+      barMax: -30

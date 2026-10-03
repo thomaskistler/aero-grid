@@ -177,7 +177,8 @@ end
 --- branching and without ever indexing nil.
 ---@param name any
 ---@return AeroGridReading
-function telemetryService:subscribe(name)
+---@param linkEvidence? boolean False identifies a transmitter-local source shared by all subscribers.
+function telemetryService:subscribe(name, linkEvidence)
     if type(name) ~= "string" or name == "" then
         if not self.noneView then
             self.noneView = self.support.snapshot(newEntry("").state)
@@ -194,6 +195,9 @@ function telemetryService:subscribe(name)
         self.count = self.count + 1
     end
 
+    if linkEvidence == false then
+        entry.linkEvidence = false
+    end
     return entry.view
 end
 
@@ -349,7 +353,9 @@ function telemetryService:poll(entry, now)
     -- A telemetry source returns exactly integer zero when EdgeTX has nothing
     -- for it, so a non-zero value proves the link is alive no matter what the
     -- indicator says. Learn that once and stop trusting a broken indicator.
-    if state.telemetry and value ~= nil and value ~= 0 and not self.linkLive then
+    -- Transmitter-local values (ELRS RFMD/TPWR) continue without a receiver.
+    -- They are readings, but never evidence that receiver telemetry is live.
+    if state.telemetry and entry.linkEvidence ~= false and value ~= nil and value ~= 0 and not self.linkLive then
         self.linkTrusted = false
         self.linkLive = true
     end
