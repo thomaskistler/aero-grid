@@ -471,6 +471,8 @@ claim("PROPERTY_KEYS", LVGL_H, "LvglWidget* parseParam overrides", {
     arc = keysOf(ROUND, "rounded", "startAngle", "endAngle", "bgColor", "bgOpacity", "bgStartAngle", "bgEndAngle"),
     label = keysOf(OBJECT_BASE, "align", "text", "font"),
     image = keysOf(OBJECT, "file", "fill"),
+    triangle = keysOf(OBJECT_BASE, "pts"),
+    line = keysOf(OBJECT_BASE, "pts", "thickness", "rounded"),
 })
 
 --- Keys EdgeTX reads as a colour.
@@ -1233,6 +1235,8 @@ function support.lvgl()
         rectangle = constructor("rectangle"),
         label = constructor("label"),
         arc = constructor("arc"),
+        triangle = constructor("triangle"),
+        line = constructor("line"),
         image = constructor("image"),
         -- `visibilityCalls` is counted for the same reason as `writes`: telling
         -- an already-hidden object to hide again changes nothing on screen and

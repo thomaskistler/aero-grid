@@ -117,7 +117,7 @@ AeroGrid loads each component from `src/WIDGETS/AeroGrid/components/<type>.lua`,
 | `model-identity` | Model name, model bitmap, or both. |
 | [`cell-battery`](docs/components/cell-battery.md) | Aircraft cells or pack voltage, with a battery glyph, configurable cell count, and supporting voltage. |
 | `link-status` | RSSI and link quality from independently named sources, with an explicit minimum and link freshness. |
-| `navigation` | Distance to home, a north-up bearing from home to the model, a compass dial, and coordinates. |
+| [`navigation`](docs/components/navigation.md) | GPS location, distance from home, a north-up home-to-model compass, and independently configurable bearing/coordinate rows. |
 | `service-probe` | Prints one shared service's normalized output as diagnostic rows. |
 | `placeholder` | Verifies placement and resizing at any span. |
 | `heartbeat` | Verifies the lifecycle callbacks and span restrictions. |

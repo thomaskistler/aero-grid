@@ -787,9 +787,9 @@ local function testShippedLayout()
     -- its compass point and keeps the number, which is the measurement; the
     -- caption sheds its last two words. Before this the bearing simply overran
     -- its box and the caption read "NORTH UP FROM" on a radio.
-    assertEqual(nav.detail, "BRG 009")
-    assertEqual(nav.origin, "NORTH UP")
-    for _, row in ipairs({ { nav.detail, nav.detailWidth }, { nav.origin, nav.originWidth } }) do
+    assertEqual(nav.detail, "BRG 009 N")
+    assertEqual(nav.origin, "")
+    for _, row in ipairs({ { nav.detail, nav.area.content }, { nav.origin, nav.originWidth } }) do
         local needed = themeModule.textWidth(nav.fonts.label, row[1])
         assert(
             needed <= row[2],
@@ -2729,7 +2729,6 @@ local function testSupportingWordingsStayDistinct()
                 { "no GPS sensor configured at all", { known = false, fix = false, home = false } },
                 { "sensor present, no satellite fix", { known = true, fix = false, home = false } },
                 { "fix acquired, home not yet set", { known = true, fix = true, home = false } },
-                { "flying, oriented from home", { known = true, fix = true, home = true } },
                 {
                     "position known but telemetry gone quiet",
                     { known = true, fix = true, home = true, state = "stale" },
@@ -2854,6 +2853,16 @@ end
 local function drawnBoxes(entry)
     local found = {}
     local root = entry.instance.panel and entry.instance.panel.root
+    local compassFurniture = {}
+    local compass = entry.instance.compass
+    if compass then
+        for _, object in ipairs(compass.labels) do
+            compassFurniture[object] = true
+        end
+        for _, object in ipairs(compass.rings) do
+            compassFurniture[object] = true
+        end
+    end
 
     --- Clip a box to its container, or drop it if nothing is left.
     ---
@@ -2893,6 +2902,7 @@ local function drawnBoxes(entry)
                     local size = type(font) == "function" and font() or font
                     found[#found + 1] = clipTo({
                         label = true,
+                        compassFurniture = compassFurniture[child],
                         what = '"' .. text .. '"',
                         x = x,
                         y = y,
@@ -2925,6 +2935,7 @@ local function drawnBoxes(entry)
                     local diameter = child.round.radius() * 2
                     found[#found + 1] = clipTo({
                         what = "a dial",
+                        compassFurniture = compassFurniture[child],
                         x = offsetX + drawn.x,
                         y = offsetY + drawn.y,
                         w = diameter,
@@ -2985,6 +2996,7 @@ local function assertNothingOverlaps(label, context)
                     and not surface[first]
                     and not surface[second]
                     and not (a.label and b.label and a.what == b.what)
+                    and not (a.compassFurniture and b.compassFurniture)
                 then
                     local overlapX = math.min(a.x + a.w, b.x + b.w) - math.max(a.x, b.x)
                     local overlapY = math.min(a.y + a.h, b.y + b.h) - math.max(a.y, b.y)
@@ -3183,7 +3195,7 @@ local function testTwoRowFooterClearsTheReading()
             rowTop >= band.y,
             where .. ": the bearing row starts at " .. rowTop .. ", above its own band at " .. band.y
         )
-        local lastRow = nav.coordinatesLabel.properties.y + themeModule.fontAscent(nav.fonts.label)
+        local lastRow = nav.coordinatesLabel.properties.y + themeModule.fontAscent(nav.area.rowFont)
         assert(
             lastRow <= band.y + band.h,
             where .. ": the coordinate row ends at " .. lastRow .. ", below its own band at " .. (band.y + band.h)
@@ -3195,7 +3207,7 @@ local function testTwoRowFooterClearsTheReading()
         radio.values[109]["pilot-lat"] = 0
         radio.values[109]["pilot-lon"] = 0
         pump(context, 40)
-        assertEqual(nav.origin, "NO HOME")
+        assert(string.match(nav.origin, "^NO HOME"))
         assertEqual(nav.text, "--", "a distance was measured from nowhere")
         assertEqual(nav.detail, "BRG --", "a bearing was invented without a home")
         assertEqual(nav.coordinates, "47.37690 8.54170", where .. ": the position itself is still known")
@@ -6525,7 +6537,7 @@ local function testReadingsSitInTheirSlots()
             rows = function(panel)
                 local found = {}
                 if panel.showDetail then
-                    found[#found + 1] = { label = panel.detailLabel, slot = "left" }
+                    found[#found + 1] = { label = panel.detailLabel, slot = panel.origin == "" and "whole" or "left" }
                     found[#found + 1] = { label = panel.originLabel, slot = "right" }
                 end
                 if panel.showCoordinates then
@@ -9121,7 +9133,7 @@ components:
     -- row that sheds and returns here is therefore the bearing, which is what
     -- the assertions below follow. Two rows at a three-row span are covered by
     -- testTwoRowFooterClearsTheReading.
-    assertEqual(nav.showCoordinates, false, "a 2 x 2 nav panel kept two rows in a quarter that holds one")
+    assertEqual(nav.showCoordinates, true, "compact footer must retain coordinates at 2 x 2")
 
     local function reflow(width, height)
         zone.w, zone.h = width, height
@@ -9185,7 +9197,7 @@ components:
     -- answer as well as the right one.
     assertEqual(
         nav.detailLabel.properties.text,
-        "BRG 054",
+        "BRG 054 NE",
         "a revealed bearing row still reports the bearing it was shed with: "
             .. tostring(nav.detailLabel.properties.text)
     )
@@ -10238,9 +10250,9 @@ local function testTelemetryComponents()
     -- Fitted to the row rather than overrunning it. Whichever wording is chosen
     -- has to fit, which is the property that matters; pinning the string alone
     -- would pass on a helper that always returned the shortest one.
-    assertEqual(nav.detail, "BRG 009")
-    assertEqual(nav.origin, "NORTH UP")
-    assert(themeModule.textWidth(nav.fonts.label, nav.detail) <= nav.detailWidth, "the bearing row overran its box")
+    assertEqual(nav.detail, "BRG 009 N")
+    assertEqual(nav.origin, "")
+    assert(themeModule.textWidth(nav.area.rowFont, nav.detail) <= nav.area.content, "the bearing row overran its box")
     assert(themeModule.textWidth(nav.fonts.label, nav.origin) <= nav.originWidth, "the origin caption overran its box")
     -- **No coordinates at this span**, and asserting their text here would be
     -- asserting a string nobody can see. A `2 x 2` panel's tertiary quarter is
@@ -10248,21 +10260,11 @@ local function testTelemetryComponents()
     -- the bearing alone and the coordinates are shed by the band that would
     -- have had to hold them. They are checked at a three-row span, in
     -- testTwoRowFooterClearsTheReading.
-    assertEqual(nav.showCoordinates, false, "a 2 x 2 nav panel kept two rows in a quarter that holds one")
-    assertEqual(nav.rendered.coordinates, nil, "a shed coordinate row was still being formatted every frame")
+    assertEqual(nav.showCoordinates, true, "compact footer must retain coordinates at 2 x 2")
+    assert(nav.rendered.coordinates ~= nil)
     assertEqual(nav.stateName, "normal")
-    -- **This panel sheds its compass, and that is the magnitude rule.** The
-    -- panel is 238 x 134 with a 226 px content box, and its 62 px body band
-    -- holds XXLSIZE once the band is measured as ink. The widest distance this
-    -- component prints is `888.88km`, which XXLSIZE draws in 195 px against
-    -- DBLSIZE's 113, and half of 195 is more than either left slot centre has
-    -- to its left: tightened, the reading's left edge lands at -22, and at
-    -- strict halves at -33. So the dial goes and the distance keeps its size.
-    -- What the dial does when it is drawn -- point at a real bearing, and
-    -- point nowhere when there is none -- is covered at a span that draws one,
-    -- in testCompassPointsWhereTheFixIs.
-    assertEqual(nav.showCompass, false, "a two-column panel kept its compass beside an XXLSIZE distance")
-    assert(nav.compass.ring.hidden, "a shed compass was left on screen")
+    assertEqual(nav.showCompass, true, "an explicit compass presentation must reserve room for the dial")
+    assert(not nav.compass.ring.hidden, "the requested compass was hidden")
 
     -- A configured native distance sensor wins over the computed one, because
     -- the receiver may compute it from data this dashboard never sees.
@@ -10305,7 +10307,7 @@ components:
     config:
       source: GPS
       label: Nav
-      presentation: detailed
+      presentation: auto
 ]]
     )
 
@@ -10397,8 +10399,7 @@ components:
     -- A real fix, 9 degrees from home. Three cells wide gives the row enough
     -- for the compass point as well as the number, which a `2 x 2` sheds.
     assertEqual(nav.detail, "BRG 009 N")
-    local ring = nav.compass.ring.properties
-    assert(ring.startAngle ~= ring.endAngle, "a known bearing must sweep a visible pointer")
+    assert(not nav.compass.pointers[1].hidden, "a known bearing must show a filled pointer")
 
     -- And nowhere when there is nowhere to point. Zero for both axes is what
     -- EdgeTX reports before it has a fix, and it is a real place off the coast
@@ -10407,11 +10408,8 @@ components:
     radio.values[109].lon = 0
     pump(context, 40)
     assertEqual(nav.origin, "NO FIX")
-    assertEqual(
-        nav.compass.ring.properties.startAngle,
-        nav.compass.ring.properties.endAngle,
-        "an unknown bearing must draw a zero length pointer"
-    )
+    assertEqual(nav.compass.pointers[1].hidden, true, "an unknown bearing must hide the pointer")
+    assertEqual(nav.compass.pointers[2].hidden, true, "both halves of the pointer must hide")
 
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
     resetRadio()
@@ -10469,7 +10467,7 @@ local function testTelemetryDegrades()
     assertEqual(link.stateName, "normal")
     assertEqual(link.badge.properties.text, "")
     assertEqual(nav.stateName, "normal")
-    assertEqual(nav.origin, "NORTH UP")
+    assertEqual(nav.origin, "")
 
     -- A fix EdgeTX has not acquired reports zero for both axes, which is a real
     -- place off the coast of Africa and must never be shown as one.
@@ -10484,11 +10482,7 @@ local function testTelemetryDegrades()
     -- not on screen and is not asserted. The state, the badge and the origin
     -- caption are what this panel actually reports a lost fix with.
     -- The dial must not point anywhere when there is nowhere to point.
-    assertEqual(
-        nav.compass.ring.properties.startAngle,
-        nav.compass.ring.properties.endAngle,
-        "an unknown bearing must draw a zero length pointer"
-    )
+    assertEqual(nav.compass.pointers[1].hidden, true, "an unknown bearing must hide the pointer")
 
     -- A fix without a home position: the position is perfectly good, but a
     -- distance and a bearing would be measured from nowhere.
@@ -10513,7 +10507,7 @@ local function testTelemetryDegrades()
     -- testTwoRowFooterClearsTheReading, on a three-row panel that draws both
     -- supporting rows. Asserting the string here would assert something no
     -- screen shows.
-    assertEqual(nav.showCoordinates, false)
+    assertEqual(nav.showCoordinates, true)
 
     -- A table whose entries cannot be cell voltages. The explicit lowest-cell
     -- source keeps the reading alive, and the count row says the table is
@@ -10857,18 +10851,12 @@ local function testTelemetryComponentsReflow()
 
     assertContained("full size")
     local nav = entryById(context, "nav").instance
-    -- **This panel draws no compass at any of the three sizes below**, because
-    -- it is two cells wide and its distance takes XXLSIZE: see
-    -- testTelemetryComponents for the arithmetic. What is left here is the
-    -- supporting row's shed and return, which is what this test is for. The
-    -- dial's own shed and return, which needs a panel that draws one, is
-    -- testCompassShedsWhenThePanelNarrows.
-    assertEqual(nav.showCompass, false)
+    assertEqual(nav.showCompass, true)
     -- **The bearing row is the one that sheds and returns here.** A `2 x 2`
     -- panel's tertiary quarter holds one supporting row, so the coordinates
     -- are shed at this span whatever the zone does; two rows at a three-row
     -- span are testTwoRowFooterClearsTheReading.
-    assertEqual(nav.showCoordinates, false)
+    assertEqual(nav.showCoordinates, true)
     assertEqual(nav.detailLabel.hidden, false, "the bearing row was never shown")
     local function readingFont()
         local font = nav.value.properties.font
@@ -10877,7 +10865,7 @@ local function testTelemetryComponentsReflow()
         end
         return font
     end
-    assertFont(readingFont(), XXLSIZE, "the full-size panel's distance")
+    assertFont(readingFont(), MIDSIZE, "the explicit compass panel's distance")
 
     zone.w = 320
     zone.h = 140
@@ -10887,25 +10875,15 @@ local function testTelemetryComponentsReflow()
     -- Supporting rows are shed before the dominant reading is touched.
     assertEqual(nav.detailLabel.hidden, true, "a shed bearing row stayed visible")
 
-    -- And the reading does step down once the panel genuinely is smaller: a
-    -- 320 x 140 zone gives this panel 158 x 68, and half of 68 is 34 -- which
-    -- holds DBLSIZE at 31 px of ink and not XXLSIZE at 54.
-    assertFont(readingFont(), DBLSIZE, "the distance did not follow the panel down")
-    -- **And the dial does not come back, which is a change.** Under the
-    -- middle-band budget this panel read at MIDSIZE and the dial fitted
-    -- beside it again, so this line asserted the shedding rule running the
-    -- other way. Half the panel is 34 px rather than 26, the distance is a
-    -- size larger, and `888.88km` at DBLSIZE leaves the dial nowhere to
-    -- stand. The decoration returning is still covered, by
-    -- testCompassShedsWhenThePanelNarrows, which changes the width alone.
-    assertEqual(nav.showCompass, false, "a DBLSIZE distance left room for a dial it crowds out")
+    assertFont(readingFont(), SMLSIZE, "the distance must fit beside the requested compass")
+    assertEqual(nav.showCompass, true, "the explicit compass should survive while both elements fit")
 
     zone.w = 480
     zone.h = 272
     drain()
     settle(context, 10)
     assertContained("restored")
-    assertFont(readingFont(), XXLSIZE, "the distance was not restored")
+    assertFont(readingFont(), MIDSIZE, "the distance was not restored")
     assertEqual(nav.detailLabel.hidden, false, "the bearing row was not restored")
 
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))

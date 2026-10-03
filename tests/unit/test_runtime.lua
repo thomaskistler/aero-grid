@@ -828,7 +828,6 @@ local UNDOCUMENTED = {
     ["host-diagnostics"] = true,
     ["link-status"] = true,
     ["metric"] = true,
-    ["navigation"] = true,
     ["service-probe"] = true,
     ["variable-indicator"] = true,
 }
@@ -921,7 +920,7 @@ local function testComponentDocumentationLoads()
     assertEqual(documented + owed, #kinds, "every component is either documented or listed as owing a page")
     assertEqual(
         documented,
-        6,
+        7,
         "the number of documented components changed; update this count as the" .. " review works through the catalogue"
     )
 end
@@ -2482,15 +2481,15 @@ local function testOriginCaptionFits()
     local noSource = { known = false }
 
     -- With no layout context the caller gets the full wording.
-    assertEqual(navigation.originText(fix), "NORTH UP FROM HOME")
+    assertEqual(navigation.originText(fix), "")
 
     -- The caption row on a 2 x 2 panel is about 131px.
-    assertEqual(navigation.originText(fix, theme, SMLSIZE, 131), "NORTH UP")
+    assertEqual(navigation.originText(fix, theme, SMLSIZE, 131), "")
     assertEqual(navigation.originText(noHome, theme, SMLSIZE, 131), "NO HOME POS")
     assertEqual(navigation.originText(noSource, theme, SMLSIZE, 131), "NO GPS SOURCE")
 
     -- Generous width keeps the full wording.
-    assertEqual(navigation.originText(fix, theme, SMLSIZE, 400), "NORTH UP FROM HOME")
+    assertEqual(navigation.originText(fix, theme, SMLSIZE, 400), "")
 
     -- Whatever the width, the chosen wording must fit it, or be the shortest
     -- available when nothing does. Nothing may simply be clipped.
@@ -4997,33 +4996,50 @@ local function testCompassGeometry()
     assertEqual(primitives.arcAngle(359.6), 270)
 
     local compass = {
-        ring = {
-            set = function(self, changes)
-                self.last = changes
-            end,
+        centreX = 50,
+        centreY = 50,
+        radius = 30,
+        pointers = {
+            {
+                set = function(self, changes)
+                    self.last = changes
+                end,
+            },
         },
     }
-
+    local previousLvgl = lvgl
+    lvgl = {
+        hide = function(object)
+            object.hidden = true
+        end,
+        show = function(object)
+            object.hidden = false
+        end,
+    }
     primitives.setCompass(compass, 90)
     assertEqual(compass.bearing, 90)
-    assertEqual(compass.ring.last.startAngle, 345)
-    assertEqual(compass.ring.last.endAngle, 15)
+    compass.pointerRadius = 12
+    primitives.setCompass(compass, 90)
+    assertEqual(compass.pointers[1].last.pts[1][1], 62)
+    assertEqual(compass.pointers[1].last.pts[1][2], 50)
+    assertEqual(compass.pointers[1].hidden, false)
+    for bearing = 0, 359 do
+        local triangles = primitives.compassPoints(compass, bearing)
+        for _, points in ipairs(triangles) do
+            for _, point in ipairs(points) do
+                assert((point[1] - 50) ^ 2 + (point[2] - 50) ^ 2 <= 13 ^ 2)
+            end
+        end
+    end
 
     -- A withheld bearing hides the pointer rather than resting it at north,
     -- which would read as a valid due-north fix.
     primitives.setCompass(compass, nil)
     assertEqual(compass.bearing, nil)
-    assertEqual(
-        compass.ring.last.startAngle,
-        compass.ring.last.endAngle,
-        "an unknown bearing must draw a zero length pointer"
-    )
+    assertEqual(compass.pointers[1].hidden, true)
     primitives.setCompass(compass, 0 / 0)
-    assertEqual(
-        compass.ring.last.startAngle,
-        compass.ring.last.endAngle,
-        "an unknown bearing must draw a zero length pointer"
-    )
+    assertEqual(compass.pointers[1].hidden, true)
+    lvgl = previousLvgl
 end
 
 --- The square an arc of a given centre and radius covers.
@@ -5074,7 +5090,7 @@ local function testNavigationRegions()
     -- removed, so the second row is now granted by the band that has to hold
     -- it rather than by the body band above it. A three-row span keeps both --
     -- asserted below, so this is a threshold rather than a disappearance.
-    assertEqual(large.showCoordinates, false, "a 2 x 2 panel kept two supporting rows in a quarter that holds one")
+    assertEqual(large.showCoordinates, true, "compact footer must retain coordinates at 2 x 2")
     assertEqual(large.showDetail, true, "the bearing row went with the coordinates, which is not the rule")
 
     local tall = navigation.regionsFor(
@@ -5324,11 +5340,11 @@ local function testTelemetryContentFitsPanel()
             if nav.showCoordinates then
                 -- The coordinates sit below the bearing row, not on top of it.
                 assert(
-                    nav.detailY + labelHeight <= nav.coordinatesY,
+                    nav.detailY + theme.fontHeight(nav.rowFont) <= nav.coordinatesY,
                     what .. " " .. case.name .. ": the coordinates row overlaps the bearing row"
                 )
                 assert(
-                    nav.coordinatesY + labelInk <= case.h,
+                    nav.coordinatesY + theme.fontAscent(nav.rowFont) <= case.h,
                     what .. " " .. case.name .. ": the coordinates row overflows the panel"
                 )
             end

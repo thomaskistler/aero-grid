@@ -1,0 +1,66 @@
+# Navigation review, screen 8 on AEROGRID REVIEW.
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: detailed
+    type: navigation
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 3
+    config:
+      label: DETAILED 2x3
+      presentation: detailed
+      bearingFormat: quadrant
+
+  - id: compass
+    type: navigation
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: COMPASS 2x2
+      presentation: compass
+
+  - id: compact
+    type: navigation
+    col: 2
+    row: 2
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: 1x1
+
+  - id: wide-distance
+    type: navigation
+    col: 0
+    row: 3
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: DISTANCE 2x1
+      presentation: distance
+
+  - id: bearing
+    type: navigation
+    col: 2
+    row: 3
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: BEARING 2x1
+      presentation: bearing
+
+  - id: unavailable
+    type: navigation
+    col: 3
+    row: 2
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: NO SOURCE
+      source: MissingGPS
+      presentation: bearing

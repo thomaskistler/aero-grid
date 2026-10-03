@@ -215,6 +215,10 @@ A preset cannot be expressed as a settings default, because the host fills decla
 - Prefer an explicitly selected native distance source when configured.
 - Render direction as an absolute north-up bearing or compass arrow from home to model. Aircraft heading and transmitter orientation are not required and must not rotate this arrow.
 - Provide responsive modes: compact distance, distance and bearing, north-up compass/bearing arrow, and detailed navigation with coordinates.
+- `showBearing` and `showCoordinates` independently override the selected
+  presentation's footer defaults. Omitted settings preserve the presentation;
+  explicit booleans allow either row, both, or neither without changing the
+  compass. Rows are still shed when the available height cannot hold them.
 - Surface missing fix, stale GPS, and unavailable home-position states explicitly. A missing home position is not a broken fix: the coordinates stay visible and only the two values measured from home are withheld.
 - Hide the dial's pointer when there is no bearing. A pointer resting at north reads as a real due-north fix.
 - State in words that the direction is north-up and measured from home, because an arrow on a dial is exactly the thing a pilot would otherwise read as aircraft heading.
@@ -1063,13 +1067,24 @@ Two things about that are worth keeping rather than leaving in a PR. **The sympt
 
 **The ink.** A reading's font came from the largest whose *line height* fitted its band, and line height is ascent plus descent plus leading. No reading in the catalogue descends, so the band was reserving space nothing draws into. It comes from the ink now and the reading is placed by centring that ink, which had to move together: a font chosen one way and a block centred the other disagree by 4.5 px on a `navigation 4 x 2`. That reversed a recorded decision, and `theme.opticalTop` went with it -- it had no caller at all, which is the same shape as the retired `primitives.arcBounds`.
 
-**The reviews.** Six components have completed the simulator review and
+**The reviews.** Seven components have completed the simulator review and
 documentation pass: `flight-mode`, `tx-battery`, `model-identity`,
-`flight-timer`, `cell-battery`, and `trim-panel`. The remaining four are
-`link-status`, `metric`, `navigation`, and `variable-indicator`; `link-status`
-is the next planned review. Physical-radio validation remains outstanding.
+`flight-timer`, `cell-battery`, `trim-panel`, and `navigation`. The remaining three are
+`link-status`, `metric`, and `variable-indicator`; `link-status` is next.
+Physical-radio validation remains outstanding.
 Review screens live on a second model because `MAX_CUSTOM_SCREENS` is 10.
 The four span galleries remain test fixtures rather than radio screens.
+
+**Navigation review completed for this pass.** The dial has a full outer
+circle, ticks, inset cardinal labels, and a green concave arrow with
+all-angle text clearance. Bearing supports numeric and quadrant formats.
+Bearing and coordinate rows are independently configurable and use readable
+primary-color supporting text. The 2x2 review example omits coordinates;
+the 2x3 example includes them. Full coordinates can also fit a normal 2x2
+detailed panel. One-row panels still show distance only: a bearing
+presentation requests a footer, not a bearing headline. This limitation is
+documented rather than presented as missing GPS data.
+See [navigation documentation](../docs/components/navigation.md).
 
 **`cell-battery` review changes landed in #93.** The fifth screen selects
 `review-cell-battery`, comparing pack-first and average-first readings from
@@ -1101,6 +1116,12 @@ and regenerate their checksum.
 
 ### Current cost
 
+The navigation review's current suite reports **13600/20000** for the worst
+callback (shipped component refresh), **3600/20000** for the worst steady
+frame (link-status x16), and **9800/20000** for shipped reflow. These are
+the runner's sampled instruction counts; the figures and reasoning below
+record earlier measurements rather than the current compass implementation.
+
 | | Value | Where |
 | --- | --- | --- |
 | Worst callback | 8097 of 20000 | the staged loader building one `trim-panel` at sixteen cells |
@@ -1131,7 +1152,7 @@ The worst callback rose 85 when the heading notice started working. It had been 
 - CI (`.github/workflows/ci.yml`) runs `make check` under Lua 5.3 on every pull request, plus the SD image build and two integrity assertions.
 - The dashboard has been confirmed running in the EdgeTX simulator on a TX16S profile through milestone 7. Navigation, link status, the radial and bar metrics and the trim panel have all been read against live simulated telemetry, which is where the arc drift in constraint 11 was found. Two of milestone 7's behaviours still cannot be judged there: whether a cells source on a real receiver returns the table shape assumed here, since nothing on an ELRS link publishes one, and whether a protocol without an RSSI sensor is recognized as a link rather than a dead one.
 - Milestone 8's corner work and the whole presentation and consistency pass have been seen in the EdgeTX simulator and judged there. The accent geometry in particular took five rounds of looking, and the version that was accepted came from the person at the screen rather than from any measurement, which is the standing argument for building something to look at rather than reasoning about it in prose. None of it has been seen on a radio; see [Nothing has run on a radio](#nothing-has-run-on-a-radio).
-- The simulator fixture carries **five screens on `model1` and seven on `model2`**, every one holding an AeroGrid instance and every one an App mode layout. `model1` has `sim`, which fills its grid with the telemetry components; `sim2`, which covers the radio-local ones that had nowhere to go beside them; the `states` layout twice, under the Modern and EdgeTX-derived palettes; and the `host` diagnostics view. The default `model2` carries reviews for `flight-mode`, `tx-battery`, `model-identity`, `flight-timer`, `cell-battery`, and `trim-panel`, plus the cell-source diagnostic screen.
+- The simulator fixture carries **five screens on `model1` and eight on `model2`**, every one holding an AeroGrid instance and every one an App mode layout. `model1` has `sim`, which fills its grid with the telemetry components; `sim2`, which covers the radio-local ones that had nowhere to go beside them; the `states` layout twice, under the Modern and EdgeTX-derived palettes; and the `host` diagnostics view. The default `model2` carries reviews for `flight-mode`, `tx-battery`, `model-identity`, `flight-timer`, `cell-battery`, `trim-panel`, and `navigation`, plus the cell-source diagnostic screen.
 
   Reaching a layout means setting the widget's Dashboard ID, which in App mode cannot be reached from the main view at all: `Widget::openMenu` returns immediately after `setFullscreen(true)` when the widget is not in the top bar and the view is App mode. So a layout without a screen of its own costs a trip through Model Setup and Screens, which is why the review screens exist rather than being Dashboard IDs somebody is expected to type. `MAX_CUSTOM_SCREENS` is 10, and that ceiling is why the reviews are on a second model at all. Paging between screens switches dashboards without opening widget settings, and exercises two widget instances resolving different layouts at once; `sim` carries the Modern palette and `sim2` the EdgeTX-derived one, so the two are one button press apart.
 
@@ -1140,12 +1161,12 @@ The worst callback rose 85 when the heading notice started working. It had been 
 - In App mode, every shipped layout is checked to draw nothing readable inside the corner EdgeTX's menu button covers. The directory is read rather than listed, so a new layout is covered as soon as it is added.
 - Every layout under `layouts/` is loaded by the integration suite, not merely the shipped default: each one is built through the real host and components, held to the same containment rules, and refreshed against radio state. A layout is covered as soon as it is added, because the suite reads the directory rather than a list.
 - **The four span galleries have been retired from the radio and kept as test fixtures.** They shipped under the Dashboard IDs `span1x1`, `span2x1`, `span2x2` and `span4x1`, each putting every component at one span so the catalogue could be caught disagreeing with itself. The user does not page to them, and ten screens is the ceiling, so they now live in `tests/fixtures/layouts/` rather than on the card. What they construct is still built: the single-cell gallery is still held to containing every component that declares a `1x1` span, read from the component directory rather than from a list, and all four are still swept by the collision check, where they are the densest arrangement in the suite -- eleven components in one grid. Retiring a layout from a screen is a decision about the radio; deleting the cases it builds would have been a quiet reduction in coverage.
-- **Review screens live on a second model.** `MAX_CUSTOM_SCREENS` is 10 (`radio/src/dataconstants.h`), and ten reviewable components plus two dashboards, two palette screens and the debug screen is fourteen. `model1.yml` keeps those dashboards and diagnostics; `model2.yml` has six component review screens and one source-name diagnostic. Six simulator reviews are complete; four remain.
+- **Review screens live on a second model.** `MAX_CUSTOM_SCREENS` is 10 (`radio/src/dataconstants.h`), and ten reviewable components plus two dashboards, two palette screens and the debug screen is fourteen. `model1.yml` keeps those dashboards and diagnostics; `model2.yml` has seven component review screens and one source-name diagnostic. Seven simulator reviews are complete; three remain.
 
 ### Immediate next steps
 
-Continue the simulator panel pass with `link-status`, then `metric`,
-`navigation`, and `variable-indicator`, documenting each accepted panel.
+Continue the simulator panel pass with `link-status`, then `metric` and
+`variable-indicator`, documenting each accepted panel.
 These reviews do not close the separate hardware work below.
 
 1. **Run the shipped dashboard on a radio.** This is first and has been first for three milestones. One screen exercises telemetry, cells, link, GPS, model timers, flight mode, transmitter voltage, a global variable, trims, and the model bitmap at once. Five things can only be judged there: whether the estimated text widths behind `theme.textWidth` hold against the real fonts, whether an `lvgl.image` of a model bitmap scales the way `StaticImage` is expected to, whether the corrected arc centring places the radial and compass dials where they are meant to go, whether the compass pointer reads as a direction at arm's length, and whether an alert tint is noticed without being looked at.
@@ -1172,8 +1193,8 @@ These came out of the presentation and consistency pass and were not done, each 
 | Item | Where | Note |
 | --- | --- | --- |
 | `metric` never shows a sensor's own unit | Unit pass | Measured across every span `metric` declares, with a live `VSpd` and the link up: the unit label stays empty unless the layout states `unit:`. The component *computes* the derived unit correctly and the path is dead, because `context.showUnit` is settled at build by fitting against `settings.unit`, which is the empty string, and `render` then gates the derived unit on that same flag. So the specification's "preserve EdgeTX source units by default" is not what the dashboard does, and the component's own comment describing the unit as following the source is describing code that cannot run. Left alone deliberately: closing it puts a unit on every `metric` in the catalogue that names a source, which is a change to what shipped panels draw and wants the user's eye rather than an inference |
-| `navigation`'s bearing format is not configurable | Deferred to its review | Today the row prints `BRG 009` with a cardinal letter appended where the width allows, as `BRG 009 N`. The user wants quadrant notation offered beside it -- `N29°E` -- with the cardinal letter as the narrow fallback. The degree sign is available: `lv_font_en_STD.c` declares `range_start = 176, range_length = 1`, which is exactly U+00B0. Held until `navigation`'s own review so its changes land together rather than piecemeal |
-| `navigation` sheds its coordinate row at `2 x 2` | Fixed-bands rule | Two supporting rows are 32 px of ink and a two-row panel's tertiary quarter is 31, so the second row is granted by the band that has to hold it and a three-row span is the narrowest that draws both. That costs the shipped `sim` dashboard's own navigation panel its coordinates. It is the honest consequence of the rule the user chose -- the alternatives were the band growing, which is the redistribution that rule removed, or the reading shrinking, which is paying magnitude for layout -- and it is recorded here because it is a visible loss on a shipped screen rather than an internal detail. Held with the bearing format, for the same reason |
+| `navigation` bearing format | Implemented in active review | `bearingFormat: degrees` retains numeric azimuth; `quadrant` offers `N29°E`, `S29°E`, `S29°W`, or `N29°W`, shortening to a cardinal direction when space requires it. Exact cardinal axes display N/E/S/W. The live bearing replaces the fixed NORTH UP caption; degraded-source captions remain distinct. |
+| `navigation` coordinates at `2 x 2` | Implemented in active review | Detailed presentations use regular supporting typography with tighter row spacing and primary text color to retain both live bearing and five-decimal GPS coordinates within the existing footer. Short zones still shed rows when they cannot fit. |
 | A bar panel's reading has 8 px less space below it than above | Settled, not open | Recorded so it is not reopened. A bar panel's furniture is asymmetric -- a heading above, a supporting row *and* a bar below -- so a reading on the panel's own centre does not have equal gaps around it, and a reading with equal gaps is not on the panel's centre. Measured on a `3 x 2` in App mode: 21 px above and 13 below, and equalising them moves the reading 4 px off the panel's centre. The user chose the centring, because whether a panel reserves a bar is a property of its content and a position derived from content is what every version of this arrangement has been chosen to avoid. The design guide carries the arithmetic and how the question came to be asked three times |
 | `theme.badgeWidth` reserves 11 px more than the badge draws | Presentation pass | The column is sized with `theme.textWidth`, the estimate, while the badge is placed at its measured width. Every heading on the dashboard pays it. Recorded in the design guide's header section |
 | Physical readability review at 480 x 272 | Milestone 4 | Needs hardware; the only thing keeping milestone 4 from being fully closed |
@@ -1400,7 +1421,7 @@ Status last verified on 2026-09-21:
 | Milestone 9: Hardening | In progress | Unit/integration tests, firmware-like string behavior tests, CI running Lua 5.3 parsing, simulator fixture, corrupt-layout, contract-rejection, hostile-module, and legibility coverage, component failure isolation, an enforced instruction budget measured at the largest legal layout for both components and services, diagnostic views over every service, and a host diagnostics view on its own screen | Target-radio matrix and physical-radio testing |
 | Milestone 10: On-radio editor | Not started | None | Entire phase 2 editor and write/recovery workflow |
 | Presentation and consistency pass | Complete | An audit of every component at every declared span measured through the real host, then: the panel as a card with a clipped accent stripe, alert states tinting the surface instead of the frame, the badge vocabulary cut from thirteen strings to five, header geometry that never reflows on a state change, one shared responsive ladder replacing eight private copies, a render declaration the redraw comparison is derived from, one settings vocabulary with enforced `choices`, and `trim-panel` no longer drawing what it hides | Six items deliberately set aside, listed under [Deliberately set aside](#deliberately-set-aside); none of it seen on a radio |
-| Vertical-rhythm pass and component reviews | Complete | The heading pinned to the top inset and the supporting row hung from the bottom one, the reading's ink centred on the panel and sized from the panel's height, superseding fixed band proportions, which superseded redistribution; font choice and placement moved onto a font's ink; headings pinned to the top of their band; badges placed from their measured text; `model-identity`'s picture fitted whole and its name moved into the body band or the heading; single-form supporting rows wherever one fits; a display clamp on the timer's clock; a unit withheld beside a reading with no value; per-component review screens on a second model and the span galleries retired to fixtures | `navigation`'s own review, which carries its bearing format and its shed coordinate row; the three components that do not yet route their row through `fitLabel` |
+| Vertical-rhythm pass and component reviews | Complete | The heading pinned to the top inset and the supporting row hung from the bottom one, the reading's ink centred on the panel and sized from the panel's height, superseding fixed band proportions, which superseded redistribution; font choice and placement moved onto a font's ink; headings pinned to the top of their band; badges placed from their measured text; `model-identity`'s picture fitted whole and its name moved into the body band or the heading; single-form supporting rows wherever one fits; a display clamp on the timer's clock; a unit withheld beside a reading with no value; per-component review screens on a second model and the span galleries retired to fixtures | Navigation visual acceptance remains in progress; bearing formats and compact coordinate rows are implemented. Three components do not yet route their row through `fitLabel`. |
 
 The design system is in place: the host owns every color, resolves one theme per dashboard, and hands each component a `services` table carrying the theme, shared primitives, span-appropriate typography, a state resolver, and the five shared data services. The `metric` component is the reference implementation and now reads real telemetry; the temporary `demo` setting is gone. Milestone 4's remaining item is a physical readability review, which requires hardware.
 
@@ -1865,7 +1886,7 @@ Three shared additions came out of the work rather than being planned:
 
 Milestone 7 added two more, both about arcs:
 
-- `primitives.compass` draws a north-up bearing dial. The ring is the arc's background and the pointer is its indicator, so one LVGL object carries both, and a bearing that does not exist hides the pointer by setting its opacity to zero rather than resting it at north, which would read as a real due-north fix.
+- `primitives.compass` draws a north-up home-to-model bearing dial with a continuous outer ring, inward ticks, inset N/E/S/W, and a green filled concave pointer. Two triangles form the pointer and are hidden when bearing is unavailable. The pointer's maximum radius reserves clearance from all cardinal labels at every bearing. Explicit compass/detailed presentations reserve space for the dial; auto retains distance-first shedding.
 - `primitives.arcBounds` was added here to convert an arc's centre into the rectangle it occupies. It has since been deleted: no component ever called it, its only callers were tests, and it was wrong — it put the outer edge half a stroke too far out, which nothing noticed because the only thing checking it repeated its arithmetic. The tests now measure the arc the mock actually drew.
 
 Two specification details were corrected by the implementation, and both are recorded where they belong: model bitmaps cannot use `Bitmap.open()` under LVGL, and a `metric` preset cannot be expressed as a settings default.
