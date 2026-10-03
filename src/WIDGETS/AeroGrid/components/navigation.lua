@@ -8,7 +8,7 @@
 --- position afterwards. It reports neither the aircraft's heading nor the
 --- transmitter's orientation, so the dial is always north-up and the arrow
 --- must never be read as "the way the model is pointing" or "the way to turn".
---- The supporting row says so in words for exactly that reason.
+--- The live bearing row reports that home-to-model direction numerically.
 ---
 --- A GPS source returns a table, and every field in it can be missing. Three
 --- degraded states matter and are reported separately, because each has a
@@ -25,6 +25,9 @@
 ---@field distanceSource? string Native distance sensor, preferred when set.
 ---@field label? string
 ---@field presentation? "auto"|"distance"|"bearing"|"compass"|"detailed"
+---@field bearingFormat? "degrees"|"quadrant"
+---@field showBearing? boolean
+---@field showCoordinates? boolean
 ---@field warning? number Distance in metres that raises a warning.
 ---@field critical? number Distance in metres that raises a critical state.
 ---@field accent? string
@@ -68,6 +71,15 @@ local navigation = {
             default = "auto",
             choices = { "auto", "distance", "bearing", "compass", "detailed" },
         },
+        {
+            key = "bearingFormat",
+            label = "Bearing format",
+            type = "string",
+            default = "degrees",
+            choices = { "degrees", "quadrant" },
+        },
+        { key = "showBearing", label = "Show bearing", type = "boolean" },
+        { key = "showCoordinates", label = "Show coordinates", type = "boolean" },
         -- No default thresholds: a safe distance is a property of the field and
         -- the model, not of the dashboard.
         { key = "warning", label = "Warning distance, metres", type = "number" },
@@ -256,13 +268,28 @@ end
 --- north and "nowhere to measure from" must not look the same.
 ---@param view any
 ---@return string[]
-function navigation.bearingVariants(view)
+function navigation.bearingVariants(view, format)
     if type(view) ~= "table" or type(view.bearing) ~= "number" then
         return { "BRG --", "--" }
     end
 
     local bearing = math.floor(view.bearing % 360 + 0.5) % 360
     local cardinal = navigation.cardinal(bearing)
+    if format == "quadrant" then
+        local text
+        if bearing % 90 == 0 then
+            text = navigation.cardinal(bearing)
+        elseif bearing < 90 then
+            text = "N" .. bearing .. "\194\176E"
+        elseif bearing < 180 then
+            text = "S" .. (180 - bearing) .. "\194\176E"
+        elseif bearing < 270 then
+            text = "S" .. (bearing - 180) .. "\194\176W"
+        else
+            text = "N" .. (360 - bearing) .. "\194\176W"
+        end
+        return { "BRG " .. text, text, cardinal }
+    end
     -- `BRG 009 N` needed 89 px and was drawn into 38 on a 1 x 2 panel, so the
     -- compass point goes first and then the caption, leaving the number, which
     -- is the part that is actually a measurement.
@@ -280,8 +307,8 @@ end
 ---@param font? any
 ---@param width? integer
 ---@return string
-function navigation.bearingText(view, themeBuilder, font, width)
-    local variants = navigation.bearingVariants(view)
+function navigation.bearingText(view, themeBuilder, font, width, format)
+    local variants = navigation.bearingVariants(view, format)
     if not themeBuilder then
         return variants[1]
     end
@@ -313,7 +340,7 @@ function navigation.originVariants(view)
     end
     -- Stated in words, because an arrow on a dial is exactly the thing a pilot
     -- would otherwise read as aircraft heading.
-    return { "NORTH UP FROM HOME", "NORTH UP", "N UP" }
+    return { "" }
 end
 
 --- Choose the longest wording that fits the width it will be given.
@@ -338,10 +365,8 @@ end
 ---
 --- A compass given every pixel of a two-row panel is taller than the number
 --- beside it, and a dial is an indicator rather than the reading. The same
---- fifty pixels `tx-battery` caps its cell at, for the same reason and so
---- that two panels of different components put comparable weight on their
---- secondary element.
-navigation.DIAL_MAX_DIAMETER = 50
+--- cap leaves room for the cardinal labels and a separate pointer.
+navigation.DIAL_MAX_DIAMETER = 64
 
 --- Format the coordinates row.
 ---@param view any
@@ -365,6 +390,7 @@ end
 function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     local frame = themeBuilder.frame(theme, rect, fonts)
     local labelHeight = frame.labelHeight
+    local rowFont = fonts.label
     local top = frame.top
     -- Composition comes from the shared ladder, so a panel of this size carries
     -- the same rows as any other panel of this size, whichever component drew
@@ -382,7 +408,7 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     --- of the first row's glyphs to the bottom of the last row's. Two rows are
     --- 32 px where their line boxes are 36.
     local function rowsExtent(count)
-        return (count - 1) * (labelHeight + 2) + themeBuilder.fontAscent(fonts.label)
+        return (count - 1) * labelHeight + themeBuilder.fontAscent(rowFont)
     end
 
     -- **The second row is granted by the band that has to hold it.**
@@ -405,9 +431,11 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     -- user chose applied to the one component that wanted more than its
     -- quarter, and the alternative was the reading yielding instead -- which
     -- is paying magnitude for layout.
-    local showCoordinates = layout.showCoordinates and showDetail and bands.tertiary.h >= rowsExtent(2)
-
-    local rowsHeight = rowsExtent(showCoordinates and 2 or 1)
+    local showCoordinates = layout.showCoordinates
+        and ladder.rows > 0
+        and bands.tertiary.h >= rowsExtent(showDetail and 2 or 1)
+    local rowCount = (showDetail and 1 or 0) + (showCoordinates and 1 or 0)
+    local rowsHeight = rowCount > 0 and rowsExtent(rowCount) or 0
     -- The dial's cap, which is not the reading's room. A reading is sized
     -- against the panel now; a dial is an indicator beside it and is still
     -- held to the middle band, so that letting the panel grow does not turn
@@ -446,8 +474,7 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     -- `theme.rowTop` takes the count for exactly that reason -- this component
     -- is the only caller that passes more than one, and it is the component
     -- this arrangement has been tightest on every time.
-    local rowsTop = showDetail and themeBuilder.rowTop(frame, fonts.label, rect.h, showCoordinates and 2 or 1)
-        or (rect.h - frame.bottom)
+    local rowsTop = rect.h - frame.bottom - rowsHeight
     -- **The reading's own room, which is what keeps it off the rows.** This
     -- used to be measured privately, from the body band's top to the rows --
     -- correct while the block was centred in that band and wrong the moment
@@ -502,6 +529,15 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     local slots, separated
     if showCompass then
         slots, separated = themeBuilder.slotsFor(frame, widest, radius * 2)
+        if not separated and layout.keepCompass then
+            -- Explicit compass presentations reserve a slot; auto keeps the
+            -- distance-first policy.
+            value, unitFont, _, fits =
+                themeBuilder.fitReadingUnit(sample.digits, sample.unit, half - 4, ladder.room, true)
+            widest = themeBuilder.readingWidth(value, sample.digits, unitFont, sample.unit)
+            slots, separated = themeBuilder.slotsFor(frame, widest, radius * 2)
+            valueWidth = half - 4
+        end
         -- Neither arrangement separates them, so the dial goes -- the same
         -- answer this component already reaches when the distance will not fit
         -- beside it, and the same one `tx-battery` reaches at `1 x 2`.
@@ -555,10 +591,11 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     -- `bands.tertiary.h` above decides whether a second row is offered rather
     -- than where either row lands.
     local detailY = rowsTop
-    local coordinatesY = rowsTop + labelHeight + 2
+    local coordinatesY = rowsTop + (showDetail and labelHeight or 0)
 
     return {
         frame = frame,
+        rowFont = rowFont,
         pad = frame.pad,
         content = frame.content,
         -- The bands this panel was laid out against. Exposed because the
@@ -632,6 +669,13 @@ function navigation.create(parent, rect, settings, services)
     local span = services.span
     local presentationName = navigation.presentation(settings.presentation, span.colSpan, span.rowSpan)
     local layout = navigation.presentationFor(presentationName)
+    if settings.showBearing ~= nil then
+        layout.showDetail = settings.showBearing
+    end
+    if settings.showCoordinates ~= nil then
+        layout.showCoordinates = settings.showCoordinates
+    end
+    layout.keepCompass = settings.presentation == "compass" or settings.presentation == "detailed"
     local presentation = services.state("normal", settings.accent)
 
     local context = {
@@ -696,7 +740,7 @@ function navigation.create(parent, rect, settings, services)
         y = area.detailY,
         w = area.detailWidth,
         text = "",
-        color = theme.color.textFaint,
+        color = theme.color.text,
         font = fonts.label,
     })
 
@@ -714,7 +758,7 @@ function navigation.create(parent, rect, settings, services)
         y = area.detailY,
         w = area.originWidth,
         text = "",
-        color = theme.color.textFaint,
+        color = theme.color.text,
         font = fonts.label,
     })
 
@@ -724,7 +768,7 @@ function navigation.create(parent, rect, settings, services)
             y = area.coordinatesY,
             w = area.content,
             text = "",
-            color = theme.color.textFaint,
+            color = theme.color.text,
             font = fonts.label,
         })
     end
@@ -765,8 +809,7 @@ function navigation.hideCompass(context)
     if not context.compass then
         return
     end
-    lvgl.hide(context.compass.ring)
-    lvgl.hide(context.compass.north)
+    context.primitives.showCompass(context.compass, false)
 end
 
 --- Show the dial and its north tick together.
@@ -775,8 +818,7 @@ function navigation.showCompass(context)
     if not context.compass then
         return
     end
-    lvgl.show(context.compass.ring)
-    lvgl.show(context.compass.north)
+    context.primitives.showCompass(context.compass, true)
 end
 
 --- Repaint the component from its current subscription.
@@ -807,8 +849,14 @@ function navigation.render(context, out)
     -- discarded the last record to compensate, which worked only as long as
     -- nobody forgot.
     if context.showDetail then
-        out.detail = navigation.bearingText(view, context.themeBuilder, context.fonts.label, context.detailWidth)
-        out.origin = navigation.originText(view, context.themeBuilder, context.fonts.label, context.originWidth)
+        out.origin = navigation.originText(view, context.themeBuilder, context.area.rowFont, context.originWidth)
+        out.detail = navigation.bearingText(
+            view,
+            context.themeBuilder,
+            context.area.rowFont,
+            out.origin == "" and context.area.content or context.detailWidth,
+            context.settings.bearingFormat
+        )
     end
     if context.showCoordinates then
         out.coordinates = navigation.coordinateText(view)
@@ -861,16 +909,26 @@ function navigation.apply(context, drawn)
     -- done.
     local area, fonts = context.area, context.fonts
     if context.showDetail then
-        context.detailLabel:set({ text = drawn.detail })
-        context.originLabel:set({ text = drawn.origin })
+        context.detailLabel:set({
+            text = drawn.detail,
+            font = function()
+                return area.rowFont
+            end,
+        })
+        context.originLabel:set({
+            text = drawn.origin,
+            font = function()
+                return area.rowFont
+            end,
+        })
         context.primitives.centreLabel(
             context,
             "detailAnchor",
             context.themeBuilder,
             context.detailLabel,
-            area.detailCentre,
+            drawn.origin == "" and area.coordinatesCentre or area.detailCentre,
             area.detailY,
-            fonts.label,
+            area.rowFont,
             drawn.detail
         )
         context.primitives.centreLabel(
@@ -880,12 +938,17 @@ function navigation.apply(context, drawn)
             context.originLabel,
             area.originCentre,
             area.detailY,
-            fonts.label,
+            area.rowFont,
             drawn.origin
         )
     end
     if context.showCoordinates then
-        context.coordinatesLabel:set({ text = drawn.coordinates })
+        context.coordinatesLabel:set({
+            text = drawn.coordinates,
+            font = function()
+                return area.rowFont
+            end,
+        })
         context.primitives.centreLabel(
             context,
             "coordinatesAnchor",
@@ -893,7 +956,7 @@ function navigation.apply(context, drawn)
             context.coordinatesLabel,
             area.coordinatesCentre,
             area.coordinatesY,
-            fonts.label,
+            area.rowFont,
             drawn.coordinates
         )
     end
@@ -901,7 +964,8 @@ function navigation.apply(context, drawn)
     if context.showCompass then
         -- A bearing that does not exist hides the pointer rather than resting it
         -- at north, which would read as a real due-north fix.
-        context.primitives.setCompass(context.compass, drawn.bearing, presentation.accent)
+        local pointerColor = drawn.state == "normal" and context.state("normal", "green").accent or presentation.accent
+        context.primitives.setCompass(context.compass, drawn.bearing, pointerColor)
     end
 end
 

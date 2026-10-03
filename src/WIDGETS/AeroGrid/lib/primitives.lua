@@ -1851,11 +1851,6 @@ function primitives.setRadial(radial, fraction, color)
     setRound(radial.arc, radial.centreX, radial.centreY, changes)
 end
 
---- Angular width of the compass pointer, in degrees.
---- Wide enough to read at arm's length on a 480 x 272 display without
---- implying more precision than a telemetry bearing carries.
-primitives.POINTER_SWEEP = 30
-
 --- Convert a compass bearing into the angle LVGL's arc uses.
 --- LVGL measures zero at three o'clock and increases clockwise; a compass
 --- measures zero at twelve o'clock and also increases clockwise, so the two
@@ -1868,57 +1863,118 @@ end
 
 --- Create a north-up bearing dial.
 ---
---- The ring is the arc's background and the pointer is its indicator, so one
---- LVGL object carries both. Nothing here rotates with the aircraft: EdgeTX
---- reports neither model heading nor transmitter orientation, so the dial is
---- always north-up and the tick at twelve o'clock is north.
+--- A continuous outer ring encloses ticks and cardinal labels. Two filled triangles
+--- form a concave pointer; only the pointer rotates.
 ---@param parent any
 ---@param theme AeroGridTheme
 ---@param options table
 ---@return table compass
 function primitives.compass(parent, theme, options)
     local radius = options.radius
-    local thickness = options.thickness or 6
-
-    local ring = lvgl.arc(parent, {
+    local compass = {
+        rings = {},
+        labels = {},
+        pointers = {},
+        ticks = {},
+        centreX = options.x,
+        centreY = options.y,
+        radius = radius,
+        color = options.color or theme.color.green,
+        font = TINSIZE,
+        pointerRadius = math.max(1, radius - 18),
+    }
+    compass.rings[1] = lvgl.arc(parent, {
         x = options.x,
         y = options.y,
         radius = radius,
-        thickness = thickness,
-        color = options.color or theme.color.cyan,
-        -- The pointer is the foreground arc and starts with no length, so a dial
-        -- without a bearing shows a ring and nothing resembling a direction.
-        -- Opacity is deliberately not used to hide it: the compass ring did not
-        -- render on a radio while the identically shaped radial did, and passing
-        -- `opacity` was the only difference between them.
+        thickness = 2,
+        color = theme.color.textFaint,
         startAngle = 0,
         endAngle = 0,
         bgColor = theme.color.textFaint,
         bgOpacity = 255,
         bgStartAngle = 0,
+        bgEndAngle = 360,
         rounded = true,
     })
-
-    local compass = {
-        ring = ring,
-        centreX = options.x,
-        centreY = options.y,
-        radius = radius,
-        thickness = thickness,
-    }
-
-    -- Drawn inside the ring rather than outside it, so the dial's footprint is
-    -- exactly the arc's own bounds and the tick cannot be hidden by the pointer.
-    compass.north = primitives.marker(parent, theme, {
-        x = options.x - 1,
-        y = options.y - radius + thickness,
-        w = 2,
-        h = math.max(3, math.floor(radius / 4)),
-        color = theme.color.textMuted,
-    })
-
+    for index, caption in ipairs({ "N", "E", "S", "W" }) do
+        compass.labels[index] = primitives.label(parent, theme, {
+            x = options.x,
+            y = options.y,
+            text = caption,
+            font = compass.font,
+            color = theme.color.textMuted,
+        })
+    end
+    for index = 1, 2 do
+        compass.pointers[index] = lvgl.triangle(parent, {
+            pts = primitives.compassPoints(compass, 0)[index],
+            color = compass.color,
+        })
+    end
+    compass.ring = compass.rings[1]
+    primitives.placeCompass(compass, options.x, options.y, radius)
+    for index = 1, 24 do
+        compass.ticks[index] = lvgl.line(parent, {
+            pts = primitives.compassTickPoints(compass, index),
+            thickness = 1,
+            color = theme.color.textFaint,
+        })
+    end
     primitives.setCompass(compass, options.bearing, options.color)
     return compass
+end
+
+--- Triangle vertices in parent coordinates, rotated clockwise from north.
+function primitives.compassPoints(compass, bearing)
+    local angle = math.rad(bearing)
+    local sine, cosine = math.sin(angle), math.cos(angle)
+    local function point(x, y)
+        return {
+            math.floor(compass.centreX + (compass.pointerRadius or compass.radius) * (x * cosine - y * sine) + 0.5),
+            math.floor(compass.centreY + (compass.pointerRadius or compass.radius) * (x * sine + y * cosine) + 0.5),
+        }
+    end
+    local tip = point(0, -1)
+    local notch = point(0, 0.18)
+    return { { tip, point(-0.64, 0.71), notch }, { tip, notch, point(0.64, 0.71) } }
+end
+
+function primitives.compassTickPoints(compass, index)
+    local angle = math.rad((index - 1) * 15)
+    local outer = compass.radius - 2
+    local inner = outer - (index % 2 == 1 and 3 or 2)
+    local function point(radius)
+        return {
+            math.floor(compass.centreX + radius * math.sin(angle) + 0.5),
+            math.floor(compass.centreY - radius * math.cos(angle) + 0.5),
+        }
+    end
+    return { point(inner), point(outer) }
+end
+
+function primitives.showCompass(compass, visible)
+    if compass.hidden == not visible then
+        return
+    end
+    compass.hidden = not visible
+    local show = visible and lvgl.show or lvgl.hide
+    for _, object in ipairs(compass.rings) do
+        show(object)
+    end
+    for _, object in ipairs(compass.labels) do
+        show(object)
+    end
+    for _, object in ipairs(compass.ticks) do
+        show(object)
+    end
+    for _, object in ipairs(compass.pointers) do
+        if visible and compass.bearing ~= nil then
+            lvgl.show(object)
+        else
+            lvgl.hide(object)
+        end
+    end
 end
 
 --- Point a compass at a bearing, or at nothing when there is none.
@@ -1928,26 +1984,25 @@ end
 ---@param bearing any Degrees clockwise from north.
 ---@param color? integer
 function primitives.setCompass(compass, bearing, color)
-    local changes = {}
     if color then
-        changes.color = color
+        compass.color = color
     end
-
     if type(bearing) ~= "number" or bearing ~= bearing then
-        -- A zero length arc draws nothing, which hides the pointer without
-        -- touching opacity.
-        changes.startAngle = 0
-        changes.endAngle = 0
         compass.bearing = nil
     else
-        local half = math.floor(primitives.POINTER_SWEEP / 2)
-        local centre = primitives.arcAngle(bearing)
-        changes.startAngle = (centre - half) % 360
-        changes.endAngle = (centre + half) % 360
-        compass.bearing = bearing
+        compass.bearing = bearing % 360
+        local points = primitives.compassPoints(compass, compass.bearing)
+        for index, pointer in ipairs(compass.pointers) do
+            pointer:set({ pts = points[index], color = compass.color })
+        end
     end
-
-    setRound(compass.ring, compass.centreX, compass.centreY, changes)
+    for _, pointer in ipairs(compass.pointers) do
+        if compass.bearing ~= nil and not compass.hidden then
+            lvgl.show(pointer)
+        else
+            lvgl.hide(pointer)
+        end
+    end
 end
 
 --- Reposition a compass without recreating it.
@@ -1959,14 +2014,26 @@ function primitives.placeCompass(compass, centreX, centreY, radius)
     compass.centreX = centreX
     compass.centreY = centreY
     compass.radius = radius
+    local _, labelHeight = lcd.sizeText("N", compass.font)
+    local labelWidth = lcd.sizeText("W", compass.font)
+    compass.pointerRadius = math.max(1, radius - 5 - math.max(labelWidth, labelHeight) - 3)
 
-    setRound(compass.ring, centreX, centreY, { radius = radius })
-
-    compass.north:set({
-        x = centreX - 1,
-        y = centreY - radius + compass.thickness,
-        h = math.max(3, math.floor(radius / 4)),
-    })
+    for _, ring in ipairs(compass.rings) do
+        setRound(ring, centreX, centreY, { radius = radius })
+    end
+    for index, label in ipairs(compass.labels) do
+        local angle = math.rad((index - 1) * 90)
+        local width, height = lcd.sizeText(({ "N", "E", "S", "W" })[index], compass.font)
+        local inset = 5 + math.max(width, height) / 2
+        label:set({
+            x = math.floor(centreX + (radius - inset) * math.sin(angle) - width / 2 + 0.5),
+            y = math.floor(centreY - (radius - inset) * math.cos(angle) - height / 2 + 0.5),
+        })
+    end
+    for index, tick in ipairs(compass.ticks) do
+        tick:set({ pts = primitives.compassTickPoints(compass, index) })
+    end
+    primitives.setCompass(compass, compass.bearing)
 end
 
 --- Create the short state badge shown when color alone is insufficient.

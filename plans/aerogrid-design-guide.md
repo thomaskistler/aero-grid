@@ -15,6 +15,27 @@ because a decision that drifted is exactly the kind a guide exists to pin down.
 
 ## What is implemented and what is only agreed
 
+**Navigation review:** the north-up dial uses a continuous faint
+outer ring, inward tick marks, inset N/E/S/W labels, and a filled, concave arrow.
+The arrow is green in the normal state and follows the state accent for
+alarms or stale data. It continues to indicate bearing from home to model,
+not aircraft heading or a return-home instruction. An unavailable bearing
+hides both halves of the arrow; resizing and compass shedding include all
+ring, ticks, cardinal labels, and pointer shapes.
+Explicit `compass` and `detailed` presentations reserve horizontal room for
+the dial, reducing the distance font if necessary. `auto` keeps the
+distance-first shedding policy. Zones too short for a readable dial still
+shed it.
+Detailed panels use regular supporting typography with tighter row spacing for the live bearing and
+coordinates, retaining both at normal 2x2 sizes. The normal bearing is
+centered across the footer instead of sharing it with a fixed NORTH UP
+caption; degraded-source and stale captions remain alongside the bearing.
+`bearingFormat` selects numeric degrees or quadrant notation, with cardinal
+fallbacks for the latter. Footer text uses the primary text color for readability.
+`showBearing` and `showCoordinates` independently override presentation
+defaults. Either, both, or neither footer row can be requested without
+changing the compass selection. A coordinates-only footer uses one row.
+
 **Trim-panel review update:** `indicators: axes` is now the default. Aileron
 (`trim1`) spans the top, elevator (`trim2`) stands on the left, and rudder
 (`trim4`) spans the bottom. A white dot follows the aileron/elevator position,

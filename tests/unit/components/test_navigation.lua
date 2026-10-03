@@ -35,7 +35,20 @@ local function testNavigationStates()
     }
 
     assertions.assertEqual(navigation.bearingText(fix), "BRG 009 N")
-    assertions.assertEqual(navigation.originText(fix), "NORTH UP FROM HOME")
+    assertions.assertEqual(navigation.originText(fix), "")
+    for _, sample in ipairs({
+        { 29, "BRG N29\194\176E" },
+        { 151, "BRG S29\194\176E" },
+        { 209, "BRG S29\194\176W" },
+        { 331, "BRG N29\194\176W" },
+        { 0, "BRG N" },
+        { 90, "BRG E" },
+        { 180, "BRG S" },
+        { 270, "BRG W" },
+        { 359.9, "BRG N" },
+    }) do
+        assertions.assertEqual(navigation.bearingText({ bearing = sample[1] }, nil, nil, nil, "quadrant"), sample[2])
+    end
     assertions.assertEqual(navigation.coordinateText(fix), "47.37690 8.54170")
     assertions.assertEqual(navigation.resolveState({}, fix), "normal")
     assertions.assertEqual(navigation.resolveState({ warning = 500 }, fix), "warning")
