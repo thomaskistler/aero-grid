@@ -13,7 +13,7 @@
 ---@field components table[] Only valid, non-overlapping components.
 --- Unrecognized top-level keys from the source document are preserved verbatim.
 
-local layout = {}
+local layout = { RUNTIME_API = 1 }
 
 --- Restrict IDs and component types to path-safe characters.
 ---@param value any

@@ -48,6 +48,7 @@
 ---@field reloadState? "clear"|"rebuild"
 ---@field stage? "read"|"tokenize"|"header"|"services"|"components" Staged loader position.
 ---@field servicesModule? table Loaded lib/services.lua registry module.
+---@field packageInfo? table Package identity and compatibility versions.
 ---@field serviceRuntime? table Registry holding every constructed service.
 ---@field serviceIndex? integer Next service definition to construct.
 ---@field source? string Layout text held between the read and tokenize steps.
@@ -74,9 +75,10 @@ end
 --- Load and execute a Lua module while containing compile/runtime failures.
 ---@param base string
 ---@param relative string
+---@param runtimeApi? integer Required internal module API.
 ---@return table? module
 ---@return string? error
-local function loadModule(base, relative)
+local function loadModule(base, relative, runtimeApi)
     local chunk, loadError = loadScript(joinPath(base, relative))
     if not chunk then
         return nil, loadError
@@ -88,6 +90,9 @@ local function loadModule(base, relative)
     end
     if type(module) ~= "table" then
         return nil, relative .. " did not return a module table"
+    end
+    if runtimeApi and rawget(module, "RUNTIME_API") ~= runtimeApi then
+        return nil, relative .. ": incompatible runtime API; copy the complete AeroGrid package"
     end
 
     return module
@@ -680,7 +685,7 @@ local function advanceLoad(context)
         local index = context.serviceIndex
 
         if index == 0 then
-            local support, supportError = loadModule(context.path, "lib/services.lua")
+            local support, supportError = loadModule(context.path, "lib/services.lua", context.packageInfo.runtimeApi)
             if not support then
                 -- A dashboard without services still renders: every component sees
                 -- nil and must degrade to an unavailable presentation.
@@ -705,7 +710,7 @@ local function advanceLoad(context)
 
         context.serviceIndex = index + 1
 
-        local module, moduleError = loadModule(context.path, definition.file)
+        local module, moduleError = loadModule(context.path, definition.file, context.packageInfo.runtimeApi)
         local constructor = module and rawget(module, "new") or nil
         if type(constructor) == "function" then
             local runtime = context.serviceRuntime
@@ -820,13 +825,43 @@ local function create(zone, widgetOptions, path)
         fullScreen = isFullScreen(),
     }
 
-    context.grid = select(1, loadModule(path, "lib/grid.lua"))
-    context.yaml = select(1, loadModule(path, "lib/yaml.lua"))
-    context.layoutValidator = select(1, loadModule(path, "lib/layout.lua"))
-    context.layoutStore = select(1, loadModule(path, "lib/layout_store.lua"))
-    context.componentHost = select(1, loadModule(path, "lib/component_host.lua"))
-    context.themeBuilder = select(1, loadModule(path, "lib/theme.lua"))
-    context.primitives = select(1, loadModule(path, "lib/primitives.lua"))
+    local package, packageError = loadModule(path, "lib/package.lua")
+    if
+        package
+        and (
+            type(package.version) ~= "string"
+            or package.version == ""
+            or package.runtimeApi ~= 1
+            or package.componentApi ~= 1
+            or package.layoutVersion ~= 1
+        )
+    then
+        package = nil
+        packageError = "incompatible package contract; copy the complete AeroGrid package"
+    end
+    context.packageInfo = package
+    if not package then
+        addError(context, "package: " .. tostring(packageError))
+    else
+        local function runtimeModule(relative)
+            local module, err = loadModule(path, relative, package.runtimeApi)
+            if not module then
+                addError(context, relative .. ": " .. tostring(err))
+            end
+            return module
+        end
+        context.grid = runtimeModule("lib/grid.lua")
+        context.yaml = runtimeModule("lib/yaml.lua")
+        context.layoutValidator = runtimeModule("lib/layout.lua")
+        context.layoutStore = runtimeModule("lib/layout_store.lua")
+        context.componentHost = runtimeModule("lib/component_host.lua")
+        context.themeBuilder = runtimeModule("lib/theme.lua")
+        context.primitives = runtimeModule("lib/primitives.lua")
+        if context.componentHost and context.componentHost.API_VERSION ~= package.componentApi then
+            addError(context, "component host: incompatible component API")
+            context.componentHost = nil
+        end
+    end
 
     context.root = lvgl.box({
         x = 0,
@@ -852,7 +887,8 @@ local function create(zone, widgetOptions, path)
     })
 
     if
-        not context.grid
+        not context.packageInfo
+        or not context.grid
         or not context.yaml
         or not context.layoutValidator
         or not context.layoutStore

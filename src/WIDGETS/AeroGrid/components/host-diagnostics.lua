@@ -77,12 +77,6 @@ local diagnostics = {
 --- Most lines any section will draw, whatever its span.
 local MAX_LINES = 12
 
---- Widget version, bumped by hand when the package changes meaningfully.
---- Half of the answer to "is the radio running what I just copied"; the other
---- half is the source stamp below, because a version constant cannot tell a
---- fix apart from the build before it.
-diagnostics.VERSION = "0.9.0"
-
 --- Describe the script the radio was asked to run.
 ---
 --- EdgeTX prefers `.luac` bytecode and compiles it beside each script, so a
@@ -145,14 +139,15 @@ end
 function diagnostics.identity(host)
     local stamp = diagnostics.sourceStamp(host.path)
     local lines = {}
+    local version = host.packageInfo and host.packageInfo.version or "unknown"
 
     -- Ordered by what a person is here to find out, because a two-cell panel
     -- shows about five lines and the rest are shed. "What is executing" comes
     -- first: it is the question this section exists for.
     if not stamp.available then
-        lines[#lines + 1] = "v" .. diagnostics.VERSION .. " main.lua unreadable"
+        lines[#lines + 1] = "v" .. version .. " main.lua unreadable"
     else
-        lines[#lines + 1] = "v" .. diagnostics.VERSION .. " main.lua " .. tostring(stamp.size) .. "b"
+        lines[#lines + 1] = "v" .. version .. " main.lua " .. tostring(stamp.size) .. "b"
         if stamp.modified then
             lines[#lines + 1] = stamp.modified
         end

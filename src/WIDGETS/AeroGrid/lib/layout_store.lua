@@ -2,7 +2,7 @@
 
 --- Read-only layout path resolution and loading for AeroGrid phase one.
 
-local layoutStore = {}
+local layoutStore = { RUNTIME_API = 1 }
 
 --- Produce a stable four-hex-digit suffix for normalized identifiers.
 ---@param value string

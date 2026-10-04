@@ -46,6 +46,8 @@ Perform link-loss tests on the bench with propulsion disabled.
 
 ## Diagnostics and release budgets
 
+- [ ] Confirm the `host` identity section reports package version `0.10.0`.
+  Install the complete package and remove stale bytecode before recording results.
 - [ ] Run Dashboard IDs `host`, `services`, and `services2`; inspect layout path,
   component loading, unresolved sources, normalized readings, and failures.
 - [ ] Check missing/corrupt layouts and missing sources produce useful errors
@@ -56,6 +58,26 @@ Perform link-loss tests on the bench with propulsion disabled.
   memory or object counts.
 - [ ] Establish release budgets from the recorded simulator and radio results,
   retaining headroom below the firmware callback instruction limit.
+
+## Automated mock baseline
+
+`tests/integration/widget/test_resource_stability.lua` exercises six dashboards
+(`main`, `review-metric`, `review-navigation`, `host`, `services`, `services2`)
+over 21 rounds, with three sizes per dashboard. After one warm-up round, it
+checks 120 reloads and 360 size changes for a stable live object count, no object
+allocation during reflow, and collectible retired pages and service registries.
+Post-GC Lua memory growth must remain below 16 KiB per dashboard relative to its
+warm-up baseline.
+
+The initial run peaked at 167 mock objects and less than 1 KiB retained growth.
+The test also prints the slowest dashboard's average refresh CPU time over
+1000 callbacks. Timing depends on the development machine and is informational,
+not a radio release budget.
+
+The mock explicitly releases cleared objects from its inspection history before
+collecting garbage. Its table-based objects and bitmap stand-ins are not native
+LVGL objects or decoded images: these measurements do not establish firmware
+Lua memory, bitmap memory, LVGL heap use, or physical-radio refresh time.
 
 Phase 1 is not hardware-validated until applicable checks pass on the target
 matrix and failures are resolved or explicitly documented as release limitations.

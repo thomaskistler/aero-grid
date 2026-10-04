@@ -5167,6 +5167,24 @@ components:
     row: 1
     colSpan: 1
     rowSpan: 1
+  - id: syntax
+    type: syntax
+    col: 2
+    row: 2
+    colSpan: 1
+    rowSpan: 1
+  - id: execution
+    type: execution
+    col: 3
+    row: 2
+    colSpan: 1
+    rowSpan: 1
+  - id: scalar
+    type: scalar
+    col: 2
+    row: 3
+    colSpan: 1
+    rowSpan: 1
 ]],
         {
             ["legacy.lua"] = [==[
@@ -5175,6 +5193,9 @@ return {id = "legacy", apiVersion = 99, create = function() return {} end}
             ["mismatch.lua"] = [==[
 return {id = "somethingelse", apiVersion = 1, create = function() return {} end}
 ]==],
+            ["syntax.lua"] = "return {",
+            ["execution.lua"] = 'error("module execution failed")',
+            ["scalar.lua"] = "return 42",
         }
     )
 
@@ -5182,23 +5203,125 @@ return {id = "somethingelse", apiVersion = 1, create = function() return {} end}
 
     assertEqual(#context.components, 1, "only the valid component should load")
     assertEqual(context.components[1].placement.id, "good")
-    assertEqual(#context.errors, 4)
+    assertEqual(#context.errors, 7)
 
     local joined = table.concat(context.errors, "\n")
     assert(string.match(joined, "toobig: component does not support span 2x4"), joined)
     assert(string.match(joined, "oldapi: incompatible component API"), joined)
     assert(string.match(joined, "renamed: component module id somethingelse"), joined)
     assert(string.match(joined, "absent:"), joined)
+    assert(string.match(joined, "syntax:"), joined)
+    assert(string.match(joined, "execution:.*module execution failed"), joined)
+    assert(string.match(joined, "scalar:.*did not return a module table"), joined)
+    assert(context.errorLabel, "module failures were not shown")
+    pump(context, 5)
+    assertEqual(#context.components, 1, "module failures disabled the valid panel")
+    assertEqual(#context.errors, 7, "module failures repeated on refresh")
 end
 
---- A corrupt layout must report an error instead of raising.
-local function testCorruptLayout()
-    local widgetPath = makeWidget("corrupt", "version: 1\n\tcomponents: []\n")
-    local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
+local function testPackageCompatibility()
+    local cases = {
+        { name = "missing-package", file = "lib/package.lua", error = "package:" },
+        { name = "bad-package", file = "lib/package.lua", text = "return {}", error = "incompatible package contract" },
+        {
+            name = "future-package",
+            file = "lib/package.lua",
+            text = 'return {version="next",runtimeApi=2,componentApi=1,layoutVersion=1}',
+            error = "incompatible package contract",
+        },
+        {
+            name = "mixed-core",
+            file = "lib/grid.lua",
+            text = "return {RUNTIME_API=2}",
+            error = "lib/grid.lua:.*incompatible runtime API",
+        },
+        {
+            name = "unversioned-core",
+            file = "lib/grid.lua",
+            text = "return {}",
+            error = "lib/grid.lua:.*incompatible runtime API",
+        },
+        {
+            name = "mixed-component-host",
+            file = "lib/component_host.lua",
+            text = "return {RUNTIME_API=1,API_VERSION=99}",
+            error = "component host: incompatible component API",
+        },
+        {
+            name = "future-component-contract",
+            file = "lib/package.lua",
+            text = 'return {version="next",runtimeApi=1,componentApi=2,layoutVersion=1}',
+            error = "incompatible package contract",
+        },
+        {
+            name = "future-layout-contract",
+            file = "lib/package.lua",
+            text = 'return {version="next",runtimeApi=1,componentApi=1,layoutVersion=2}',
+            error = "incompatible package contract",
+        },
+        { name = "missing-core", file = "lib/yaml.lua", error = "lib/yaml.lua:" },
+    }
+    for _, case in ipairs(cases) do
+        local path = makeWidget(case.name)
+        if case.text then
+            writeFile(path .. case.file, case.text)
+        else
+            assert(os.remove(path .. case.file))
+        end
+        local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, path)
+        assertEqual(context.runtimeFailed, true, case.name)
+        assertEqual(#context.components, 0, case.name)
+        local joined = table.concat(context.errors, "\n")
+        assert(string.match(joined, case.error), joined)
+        assert(context.errorLabel, case.name .. " failure was not shown")
+        definition.update(context, { DashID = "host", Theme = "modern" })
+        pump(context, 5)
+        assertEqual(context.stage, nil, case.name .. " attempted to reload a broken runtime")
+    end
 
-    assertEqual(#context.components, 0)
-    assert(#context.errors > 0, "corrupt layout reported no error")
-    assert(context.errorLabel, "corrupt layout was not shown")
+    local path = makeWidget("mixed-service")
+    writeFile(path .. "lib/telemetry_service.lua", "return {RUNTIME_API=99}")
+    local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, path)
+    assert(string.match(table.concat(context.errors, "\n"), "telemetry:.*incompatible runtime API"))
+    assert(#context.components > 0, "incompatible service disabled unrelated panels")
+
+    local diagnostics = assert(loadfile(sourcePath .. "components/host-diagnostics.lua"))()
+    assert(
+        string.find(diagnostics.identity(context)[1], "v" .. context.packageInfo.version, 1, true),
+        "diagnostics did not report the loaded package version"
+    )
+end
+
+local function testRejectedLayouts()
+    local cases = {
+        { name = "corrupt", yaml = "version: 1\n\tcomponents: []\n", error = "tab" },
+        {
+            name = "future",
+            yaml = "version: 99\ngrid:\n  columns: 4\n  rows: 4\ncomponents: []\n",
+            error = "unsupported layout version",
+        },
+        { name = "empty", yaml = "", error = "empty" },
+        { name = "missing", error = "file not found" },
+    }
+    for _, case in ipairs(cases) do
+        local widgetPath = makeWidget("rejected-" .. case.name, case.yaml)
+        if case.name == "missing" then
+            assert(os.remove(widgetPath .. "layouts/default.yaml"))
+        end
+        local context = createLoaded(
+            { x = 0, y = 0, w = 480, h = 272 },
+            { DashID = "no-such-dashboard", Theme = "modern" },
+            widgetPath
+        )
+
+        assertEqual(#context.components, 0, case.name)
+        local joined = table.concat(context.errors, "\n")
+        assert(string.match(joined, case.error), case.name .. ": " .. joined)
+        assert(context.errorLabel, case.name .. " layout failure was not shown")
+        assertEqual(context.layoutPath, widgetPath .. "layouts/default.yaml")
+        pump(context, 5)
+        assertEqual(table.concat(context.errors, "\n"), joined, case.name .. " failed repeatedly")
+    end
 end
 
 --- EdgeTX aborts any widget callback exceeding 20000 VM instructions with
@@ -10818,7 +10941,8 @@ testNoticesAreNotErrors()
 testMultipleScreens()
 testEventConsumption()
 testContractRejections()
-testCorruptLayout()
+testPackageCompatibility()
+testRejectedLayouts()
 testModelFilenames()
 testMetricReconcilesOnResize()
 testRuntimeFailureIsContained()

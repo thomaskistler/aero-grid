@@ -1261,6 +1261,35 @@ function support.lvgl()
     local height = support.scaffold.DISPLAY_HEIGHT
     local handle = { settle = settle, objects = objects }
 
+    -- Resource tests must not charge the inspection registry's retained history
+    -- to the widget. Call only after deferred cleanup has settled.
+    function handle.releaseClearedObjects()
+        assert(#pendingClears == 0, "cannot release objects before cleanup settles")
+        local retired = {}
+        for _, object in ipairs(objects) do
+            local ancestor = object
+            while ancestor do
+                if ancestor.invalid or ancestor.cleared then
+                    retired[object] = true
+                    break
+                end
+                ancestor = ancestor.parent
+            end
+        end
+        for index = #objects, 1, -1 do
+            local object = objects[index]
+            if retired[object] then
+                table.remove(objects, index)
+            else
+                for childIndex = #object.children, 1, -1 do
+                    if retired[object.children[childIndex]] then
+                        table.remove(object.children, childIndex)
+                    end
+                end
+            end
+        end
+    end
+
     --- Turn property validation on or off for every object, existing and future.
     --- Called outside the instruction hook, so the exchange is never counted.
     function handle.setPropertyValidation(enabled)
