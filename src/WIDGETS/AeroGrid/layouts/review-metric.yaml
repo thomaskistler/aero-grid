@@ -63,13 +63,11 @@ components:
     rowSpan: 1
     config:
       metrics:
-        - source: GAlt
-          label: ALT 1x1
-          unit: m
-          precision: 0
-      accent: green
-      rangeMin: 0
-      rangeMax: 400
+        - source: gvar1
+          label: GV1 1x1
+          unit: ""
+          precision: 1
+      visual: none
   - id: unavailable
     type: metric
     col: 1

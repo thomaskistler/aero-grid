@@ -143,14 +143,16 @@ components:
   # Global variable 1, read only. A flight counter kept in a global variable is
   # displayed exactly the same way; AeroGrid never increments one.
   - id: rates
-    type: variable-indicator
+    type: metric
     col: 2
     row: 3
     colSpan: 1
     rowSpan: 1
     config:
-      binding: global
-      index: 0
+      source: gvar1
+      precision: 1
+      rangeMin: -100
+      rangeMax: 100
       label: Rates
       visual: bar
       accent: cyan

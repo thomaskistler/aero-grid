@@ -40,7 +40,6 @@ tests/
       test_metric.lua
       test_model_identity.lua
       test_tx_battery.lua
-      test_variable_indicator.lua
       test_navigation.lua
   integration/
     widget/
@@ -251,7 +250,7 @@ assertions with identical setup, inputs, and responsibility should be moved;
 host-level coverage should remain in integration tests.
 
 The first cleanup pass has removed the migrated timer, transmitter-battery,
-variable-indicator, trim-panel, cell-battery, link-classification, and
+metric GV sources, trim-panel, cell-battery, link-classification, and
 navigation-presentation blocks from the legacy runtime execution path. The
 remaining runtime cases cover geometry, services, telemetry, theme behavior,
 and other host-level responsibilities.

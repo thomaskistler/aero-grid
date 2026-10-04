@@ -165,3 +165,27 @@ Compact voltage with independently configured current and altitude readings:
 
 Use thresholds appropriate to the actual source. `RxBt` may measure a
 regulated receiver supply rather than the flight pack.
+
+A global variable through the ordinary EdgeTX source interface:
+
+```yaml
+- id: gain
+  type: metric
+  col: 1
+  row: 1
+  colSpan: 1
+  rowSpan: 1
+  config:
+    metrics:
+      - source: gvar1
+        label: GV1
+        unit: ""
+        precision: 1
+    visual: none
+```
+
+EdgeTX resolves the active flight mode and GV inheritance, and scales the
+value according to the GV's decimal setting. The ordinary source interface
+does not supply GV display metadata: configure the label, unit, precision,
+and any visualization range explicitly. `precision: 1` retains decimal
+GV values; it also displays an integer GV with a trailing decimal place.

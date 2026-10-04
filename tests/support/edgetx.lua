@@ -1388,6 +1388,8 @@ function support.radio(hostIo)
             -- A switch and a trim are not telemetry sources, so luaGetFieldInfo
             -- pushes no unit for them at all. That absence is load bearing: the
             -- mock uses it to decide what a dead link zeroes.
+            gvar1 = { id = 330, name = "gvar1", desc = "Global variable 1" },
+            gvar2 = { id = 331, name = "gvar2", desc = "Global variable 2" },
             sa = { id = 300, name = "sa", desc = "Switch A" },
             ["trim-ail"] = { id = 310, name = "trim-ail", desc = "Aileron trim" },
             ["tx-voltage"] = { id = 320, name = "tx-voltage", desc = "Tx voltage" },
@@ -1606,6 +1608,18 @@ function support.radio(hostIo)
             return 0
         end
 
+        -- EdgeTX mixer.cpp resolves GVs in the active flight mode; Lua's
+        -- api_general.cpp then scales decimal GVs by 0.1.
+        if source == 330 or source == 331 then
+            local index = source - 330
+            local perMode = radio.globalsByMode[index]
+            local value = perMode and perMode[radio.flightMode]
+            if value == nil then
+                value = radio.globals[index]
+            end
+            local details = radio.globalDetails[index]
+            return details and details.prec == 1 and value * 0.1 or value
+        end
         return radio.values[source]
     end
 

@@ -114,14 +114,15 @@ components:
       packFull: 8.4
 
   - id: g-gvar
-    type: variable-indicator
+    type: metric
     col: 3
     row: 1
     colSpan: 1
     rowSpan: 1
     config:
-      binding: global
-      index: 0
+      source: gvar1
+      precision: 1
+      visual: none
 
   - id: g-trim
     type: trim-panel

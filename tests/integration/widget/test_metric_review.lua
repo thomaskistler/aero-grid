@@ -31,6 +31,18 @@ assertions.assertEqual(sensorUnit.unitText, "m/s")
 assert(sensorUnit.showUnit and not sensorUnit.unit.hidden)
 assertions.assertEqual(fixture.instanceOf(context, "unavailable").stateName, "unavailable")
 assert(not fixture.instanceOf(context, "compact").showRange)
+local gv = fixture.instanceOf(context, "compact")
+assertions.assertEqual(gv.settings.source, "gvar1")
+assertions.assertEqual(gv.text, "4.5")
+assertions.assertEqual(gv.feed.telemetry, false)
+fixture.radio.globalsByMode[0] = { [1] = 75 }
+fixture.radio.flightMode = 1
+fixture.pump(context, 40)
+assertions.assertEqual(gv.text, "7.5")
+fixture.radio.flightMode = 0
+fixture.radio.globalsByMode[0] = nil
+fixture.pump(context, 40)
+assertions.assertEqual(gv.text, "4.5")
 assert(not voltage.range)
 local wide = fixture.instanceOf(context, "wide-altitude")
 assertions.assertEqual(altitude.area.supportingPlacement, "footer")
