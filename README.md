@@ -108,7 +108,7 @@ AeroGrid loads each component from `src/WIDGETS/AeroGrid/components/<type>.lua`,
 
 | Component | Purpose |
 | --- | --- |
-| `metric` | Any numeric source, with `custom`, `altitude`, and `speed` presets, thresholds, extrema, and an optional secondary reading. |
+| [`metric`](docs/components/metric.md) | One to three independent numeric readings, per-reading units/precision, primary thresholds and bar/radial, with footer or side-stack layout. |
 | `flight-timer` | One EdgeTX model timer, counting the way the model configured it. |
 | `flight-mode` | The active EdgeTX flight mode. |
 | `tx-battery` | Transmitter voltage, with an optional configurable charge estimate. |

@@ -720,6 +720,9 @@ function linkStatus.regionsFor(theme, themeBuilder, rect, layout, fonts, sample,
         -- A bearing-style pair: the secondary source on the left, the link state
         -- on the right.
         rowItems = layout.pairedRow and 1 or 2,
+        supporting = layout.side
+                and { "", "", width = themeBuilder.textWidth(fonts.label, "-123dBm"), sideOnly = true }
+            or nil,
     }, out or {})
     if layout.pairedRow then
         area.rowRightCentre = area.detailCentre
@@ -735,25 +738,6 @@ function linkStatus.regionsFor(theme, themeBuilder, rect, layout, fonts, sample,
             area.extraY = area.detailY
             area.detailY = extraY
             area.showExtra = true
-        end
-    end
-    area.showSide = false
-    if layout.side then
-        local rowHeight = themeBuilder.fontHeight(fonts.label)
-        local readingWidth = themeBuilder.readingWidth(area.value, "100", area.unitFont, "%")
-        local sideWidth = themeBuilder.textWidth(fonts.label, "-123dBm")
-        local slots, fits = themeBuilder.slotsFor(area.frame, readingWidth, sideWidth)
-        local top = math.max(area.frame.top, math.floor(area.ladder.centre - rowHeight))
-        local floorY = area.showVisual and area.barY or rect.h - area.frame.bottom
-        if fits and top + rowHeight * 2 <= floorY then
-            local left, right = themeBuilder.slotCentres(area.frame, slots)
-            area.valueCentre = left
-            area.valueBudget = math.min(left - area.pad, right - math.ceil(sideWidth / 2) - left) * 2
-            area.sideCentre = right
-            area.sideWidth = sideWidth
-            area.sideY = top
-            area.marginY = top + rowHeight
-            area.showSide = true
         end
     end
     return area

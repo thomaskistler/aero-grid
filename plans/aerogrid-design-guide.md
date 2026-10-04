@@ -15,6 +15,19 @@ because a decision that drifted is exactly the kind a guide exists to pin down.
 
 ## What is implemented and what is only agreed
 
+**Metric review complete:** an ordered
+`metrics` list supplies the primary reading and up to two supporting readings,
+each with its own source, label, unit, and precision. The shared panel builder
+tries the footer first, then a right-hand stack, and hides the supporting group
+if neither fits. It measures supporting text and never reduces the primary
+font to accommodate the group. With one footer reading it centres that reading;
+with two it uses the standard left/right slots. The side arrangement places the
+primary on the left and stacks supporting text on the right. A compact visual
+that survives its own fit retains priority over that right slot. The capability
+is opt-in, not a change to every compact panel. Link status delegates its
+existing side-stack geometry to the same builder without changing its explicit
+`2x1` presentation.
+
 **Link-status review complete:** the headline is a measured source
 reading, normally receiver LQ, not an aggregate health percentage. ELRS quality
 panels without extrema pair RSSI and nominal sensitivity margin across the

@@ -4,7 +4,7 @@
 
 - Draft specification
 - Date: 2026-09-07
-- Status last updated: 2026-09-21
+- Status last updated: 2026-10-04
 - EdgeTX source: `../edgetx`
 - Project root: `aero-grid/`
 - Implementation: Phase 1, milestones 1 to 8 complete, plus a presentation and consistency pass over the whole catalogue, a shared standard panel that six of the twelve components are built from, and a vertical-rhythm pass that moved font choice and placement onto a font's ink, settled the reading's vertical rule on the panel's own centre and height, and took every panel's per-component review
@@ -140,7 +140,7 @@ The initial release should provide these components:
 | Component | Purpose | Classification |
 | --- | --- | --- |
 | `cell-battery` | Lowest/average cell or pack voltage, upright battery glyph, optional supporting voltage and measured/configured cell count; explicit bar mode retained | Specialized |
-| `metric` | Current value, optional minimum/maximum, and optional secondary value | Generic with domain presets |
+| `metric` | Up to three independently configured numeric readings | Generic; legacy presets supported |
 | `flight-timer` | EdgeTX model timer with count-up or count-down presentation | Specialized |
 | `link-status` | RSSI, link quality, optional minimum quality, and link freshness | Specialized |
 | `navigation` | GPS position, bearing from home to model, distance to home, and GPS state | Specialized and responsive |
@@ -154,7 +154,59 @@ The initial release should provide these components:
 
 Twelve components ship, two of them diagnostic. Two more, `heartbeat` and `placeholder`, live under `tests/fixtures/components`: they were written to prove the host contract — that a component loads, refreshes, reflows and is torn down correctly — and never to be flown. They are copied into every scratch widget package the suite builds, so that coverage keeps running, but a release does not carry a panel whose purpose is to animate a dot. `service-probe` is the exception among the three and ships, because it is the only thing that can inspect a service on a radio. It reports what a service says; `host-diagnostics` reports what the host loaded, which is the other half and is described under [The host diagnostics view](#the-host-diagnostics-view).
 
-The `metric` component provides built-in presets without creating separate implementations:
+The `metric` component accepts an ordered `metrics` list of one to three
+EdgeTX numeric sources. The first entry supplies the large reading and header;
+the second uses the lower-left supporting slot, and the third the lower-right.
+With only two entries the supporting reading is centred across the footer.
+The shared panel builder tries a footer first, then a right-hand stack when
+the footer cannot fit, then hides the supporting readings if neither fits.
+Both supporting readings must fit as a group; neither arrangement shrinks the
+primary reading. A surviving radial reserves the right slot and prevents the
+side-stack fallback. This is an opt-in builder capability, used by the metrics
+list; unrelated panels retain their presentations. Link status uses the same
+stack geometry with its existing explicit `2x1` side presentation.
+
+Each entry accepts `source`, optional `label` (defaults to the source name),
+optional `unit`, and optional `precision` (integer 0–3). Units and precision
+default independently to each sensor; an explicit empty unit suppresses it.
+Units label values without conversion. An unavailable reading shows `--`
+without a unit. Panel-level range, visualization, accent, and thresholds apply
+only to the primary reading. Sensor extrema are ordinary sources such as
+`GAlt-` and `GAlt+`; the list has no flight-session extrema option.
+
+```yaml
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: altitude
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      metrics:
+        - source: GAlt
+          label: ALT
+          unit: m
+          precision: 0
+        - source: GAlt+
+          label: MAX
+          unit: m
+          precision: 0
+        - source: VSpd
+          label: VS
+          unit: m/s
+          precision: 1
+      rangeMin: 0
+      rangeMax: 400
+```
+
+When `metrics` is specified it replaces legacy source, label, unit, precision,
+extrema, and secondary settings. Existing layouts remain supported.
+The legacy configuration provides built-in presets without separate implementations:
 
 - `altitude`: current altitude, maximum altitude, and optional vertical speed.
 - `speed`: current speed and maximum speed.
@@ -1067,10 +1119,10 @@ Two things about that are worth keeping rather than leaving in a PR. **The sympt
 
 **The ink.** A reading's font came from the largest whose *line height* fitted its band, and line height is ascent plus descent plus leading. No reading in the catalogue descends, so the band was reserving space nothing draws into. It comes from the ink now and the reading is placed by centring that ink, which had to move together: a font chosen one way and a block centred the other disagree by 4.5 px on a `navigation 4 x 2`. That reversed a recorded decision, and `theme.opticalTop` went with it -- it had no caller at all, which is the same shape as the retired `primitives.arcBounds`.
 
-**The reviews.** Eight components have completed the simulator review and
+**The reviews.** Nine components have completed the simulator review and
 documentation pass: `flight-mode`, `tx-battery`, `model-identity`,
-`flight-timer`, `cell-battery`, `trim-panel`, `navigation`, and `link-status`. The remaining two are
-`metric` and `variable-indicator`; `metric` is next.
+`flight-timer`, `cell-battery`, `trim-panel`, `navigation`, `link-status`, and
+`metric`. The remaining component is `variable-indicator`.
 Physical-radio validation remains outstanding.
 Review screens live on a second model because `MAX_CUSTOM_SCREENS` is 10.
 The four span galleries remain test fixtures rather than radio screens.
@@ -1153,7 +1205,7 @@ The worst callback rose 85 when the heading notice started working. It had been 
 - CI (`.github/workflows/ci.yml`) runs `make check` under Lua 5.3 on every pull request, plus the SD image build and two integrity assertions.
 - The dashboard has been confirmed running in the EdgeTX simulator on a TX16S profile through milestone 7. Navigation, link status, the radial and bar metrics and the trim panel have all been read against live simulated telemetry, which is where the arc drift in constraint 11 was found. Two of milestone 7's behaviours still cannot be judged there: whether a cells source on a real receiver returns the table shape assumed here, since nothing on an ELRS link publishes one, and whether a protocol without an RSSI sensor is recognized as a link rather than a dead one.
 - Milestone 8's corner work and the whole presentation and consistency pass have been seen in the EdgeTX simulator and judged there. The accent geometry in particular took five rounds of looking, and the version that was accepted came from the person at the screen rather than from any measurement, which is the standing argument for building something to look at rather than reasoning about it in prose. None of it has been seen on a radio; see [Nothing has run on a radio](#nothing-has-run-on-a-radio).
-- The simulator fixture carries **five screens on `model1` and nine on `model2`**, every one holding an AeroGrid instance and every one an App mode layout. `model1` has `sim`, which fills its grid with the telemetry components; `sim2`, which covers the radio-local ones that had nowhere to go beside them; the `states` layout twice, under the Modern and EdgeTX-derived palettes; and the `host` diagnostics view. The default `model2` carries reviews for `flight-mode`, `tx-battery`, `model-identity`, `flight-timer`, `cell-battery`, `trim-panel`, `navigation`, and `link-status`, plus the cell-source diagnostic screen.
+- The simulator fixture carries **five screens on `model1` and ten on `model2`**, every one holding an AeroGrid instance and every one an App mode layout. `model1` has `sim`, which fills its grid with the telemetry components; `sim2`, which covers the radio-local ones that had nowhere to go beside them; the `states` layout twice, under the Modern and EdgeTX-derived palettes; and the `host` diagnostics view. The default `model2` carries reviews for `flight-mode`, `tx-battery`, `model-identity`, `flight-timer`, `cell-battery`, `trim-panel`, `navigation`, `link-status`, and `metric`, plus the cell-source diagnostic screen.
 
   Reaching a layout means setting the widget's Dashboard ID, which in App mode cannot be reached from the main view at all: `Widget::openMenu` returns immediately after `setFullscreen(true)` when the widget is not in the top bar and the view is App mode. So a layout without a screen of its own costs a trip through Model Setup and Screens, which is why the review screens exist rather than being Dashboard IDs somebody is expected to type. `MAX_CUSTOM_SCREENS` is 10, and that ceiling is why the reviews are on a second model at all. Paging between screens switches dashboards without opening widget settings, and exercises two widget instances resolving different layouts at once; `sim` carries the Modern palette and `sim2` the EdgeTX-derived one, so the two are one button press apart.
 
@@ -1162,13 +1214,23 @@ The worst callback rose 85 when the heading notice started working. It had been 
 - In App mode, every shipped layout is checked to draw nothing readable inside the corner EdgeTX's menu button covers. The directory is read rather than listed, so a new layout is covered as soon as it is added.
 - Every layout under `layouts/` is loaded by the integration suite, not merely the shipped default: each one is built through the real host and components, held to the same containment rules, and refreshed against radio state. A layout is covered as soon as it is added, because the suite reads the directory rather than a list.
 - **The four span galleries have been retired from the radio and kept as test fixtures.** They shipped under the Dashboard IDs `span1x1`, `span2x1`, `span2x2` and `span4x1`, each putting every component at one span so the catalogue could be caught disagreeing with itself. The user does not page to them, and ten screens is the ceiling, so they now live in `tests/fixtures/layouts/` rather than on the card. What they construct is still built: the single-cell gallery is still held to containing every component that declares a `1x1` span, read from the component directory rather than from a list, and all four are still swept by the collision check, where they are the densest arrangement in the suite -- eleven components in one grid. Retiring a layout from a screen is a decision about the radio; deleting the cases it builds would have been a quiet reduction in coverage.
-- **Review screens live on a second model.** `MAX_CUSTOM_SCREENS` is 10 (`radio/src/dataconstants.h`), and ten reviewable components plus two dashboards, two palette screens and the debug screen is fourteen. `model1.yml` keeps those dashboards and diagnostics; `model2.yml` has eight component review screens and one source-name diagnostic. Eight simulator reviews are complete; two remain.
+- **Review screens live on a second model.** `MAX_CUSTOM_SCREENS` is 10 (`radio/src/dataconstants.h`). `model1.yml` keeps the dashboards and diagnostics; `model2.yml` has nine component review screens and one source-name diagnostic, filling its ten-screen allowance. Nine simulator reviews are complete; one remains. The variable-indicator review will require retiring a diagnostic screen or adding another model.
 
 ### Immediate next steps
 
-Continue the simulator panel pass with `metric`, then
-`variable-indicator`, documenting each accepted panel.
+Continue the simulator panel pass with `variable-indicator`, documenting the accepted panel.
 These reviews do not close the separate hardware work below.
+
+**Metric simulator review and documentation complete:** the ordered `metrics`
+list supports one to three numeric EdgeTX sources, each with its own label,
+unit override, and precision override. Sensor MIN/MAX uses ordinary `-`/`+`
+sources rather than special list options. The primary alone drives thresholds
+and the visualization. The shared builder tries the footer, then a right-side
+stack, then hides the supporting group, without shrinking the primary.
+The accepted link side-stack geometry now uses that same builder. Sensor-derived
+primary units display correctly; unavailable readings omit units. Legacy
+presets and settings remain supported. The tenth screen selects `review-metric`.
+See [metric documentation](../docs/components/metric.md).
 
 **Link-status simulator review and documentation complete:** measured link quality
 remains the primary reading under `reading: auto`; RSSI is independent supporting
@@ -1252,7 +1314,7 @@ These came out of the presentation and consistency pass and were not done, each 
 
 | Item | Where | Note |
 | --- | --- | --- |
-| `metric` never shows a sensor's own unit | Unit pass | Measured across every span `metric` declares, with a live `VSpd` and the link up: the unit label stays empty unless the layout states `unit:`. The component *computes* the derived unit correctly and the path is dead, because `context.showUnit` is settled at build by fitting against `settings.unit`, which is the empty string, and `render` then gates the derived unit on that same flag. So the specification's "preserve EdgeTX source units by default" is not what the dashboard does, and the component's own comment describing the unit as following the source is describing code that cannot run. Left alone deliberately: closing it puts a unit on every `metric` in the catalogue that names a source, which is a change to what shipped panels draw and wants the user's eye rather than an inference |
+| ~~`metric` never shows a sensor's own unit~~ | Metric review | Fixed and accepted: sensor-unit updates are collected whenever a unit object exists, independently of its initial visibility. The resolved unit is fitted beside the primary reading. The metric review screen includes a primary reading with no unit override. |
 | `navigation` bearing format | Implemented in active review | `bearingFormat: degrees` retains numeric azimuth; `quadrant` offers `N29°E`, `S29°E`, `S29°W`, or `N29°W`, shortening to a cardinal direction when space requires it. Exact cardinal axes display N/E/S/W. The live bearing replaces the fixed NORTH UP caption; degraded-source captions remain distinct. |
 | `navigation` coordinates at `2 x 2` | Implemented in active review | Detailed presentations use regular supporting typography with tighter row spacing and primary text color to retain both live bearing and five-decimal GPS coordinates within the existing footer. Short zones still shed rows when they cannot fit. |
 | A bar panel's reading has 8 px less space below it than above | Settled, not open | Recorded so it is not reopened. A bar panel's furniture is asymmetric -- a heading above, a supporting row *and* a bar below -- so a reading on the panel's own centre does not have equal gaps around it, and a reading with equal gaps is not on the panel's centre. Measured on a `3 x 2` in App mode: 21 px above and 13 below, and equalising them moves the reading 4 px off the panel's centre. The user chose the centring, because whether a panel reserves a bar is a property of its content and a position derived from content is what every version of this arrangement has been chosen to avoid. The design guide carries the arithmetic and how the question came to be asked three times |

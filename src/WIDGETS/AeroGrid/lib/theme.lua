@@ -2407,6 +2407,46 @@ function theme.panel(resolved, rect, fonts, spec, out)
         end
     end
 
+    out.showSide = false
+    out.supportingPlacement = rows and "footer" or "hidden"
+    local supporting = spec.supporting
+    if supporting then
+        local rowHeight = theme.fontHeight(fonts.label)
+        local firstWidth = supporting.width or theme.measureText(fonts.label, supporting[1] or "")
+        local secondWidth = supporting.width or theme.measureText(fonts.label, supporting[2] or "")
+        local count = supporting[2] ~= nil and 2 or 1
+        local footerFits = rows
+            and not supporting.sideOnly
+            and firstWidth <= out.detailWidth
+            and (count == 1 or secondWidth <= out.rowRightWidth)
+        out.showDetail = footerFits
+        out.supportingPlacement = footerFits and "footer" or "hidden"
+        if not footerFits and not compact then
+            local sideWidth = math.max(firstWidth, secondWidth)
+            local sideSlots, fits = theme.slotsFor(frame, width, sideWidth)
+            local top = math.max(frame.top, math.floor(ladder.centre - rowHeight * count / 2))
+            local floorY = visual and spec.bar and barY or rect.h - frame.bottom
+            if fits and top + rowHeight * count <= floorY then
+                local left, right = theme.slotCentres(frame, sideSlots)
+                out.valueCentre = left
+                out.valueBudget = math.min(left - frame.pad, right - math.ceil(sideWidth / 2) - left) * 2
+                out.valueX = theme.slotX(left, width)
+                out.sideCentre, out.sideWidth = right, sideWidth
+                out.sideY, out.marginY = top, top + rowHeight
+                out.showSide = true
+                out.supportingPlacement = "side"
+                out.detailCentre, out.detailWidth, out.detailY = right, sideWidth, top
+                out.detailX = theme.slotX(right, sideWidth)
+                if count == 2 then
+                    out.rowRightCentre, out.rowRightWidth = right, sideWidth
+                    out.rowRightX, out.rowRightY = out.detailX, top + rowHeight
+                end
+            end
+        end
+    end
+    if not out.showSide then
+        out.rowRightY = out.detailY
+    end
     return out
 end
 

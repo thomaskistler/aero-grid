@@ -10,6 +10,7 @@
 --- dashboard never depends on a protocol-specific sensor name.
 
 ---@class AeroGridMetricSettings
+---@field metrics? table[] Ordered primary, lower-left, and lower-right readings.
 ---@field preset? "custom"|"altitude"|"speed"
 ---@field label? string
 ---@field source? string EdgeTX source name read through telemetryService.
@@ -57,6 +58,7 @@ local metric = {
     -- the host pays every component's refresh inside one instruction budget.
     refreshInterval = 20,
     settings = {
+        { key = "metrics", label = "Readings", type = "table" },
         {
             key = "preset",
             label = "Preset",
@@ -124,6 +126,62 @@ local metric = {
         { key = "secondaryLabel", label = "Secondary label", type = "string", default = "" },
     },
 }
+
+function metric.validateSettings(settings)
+    local warnings = {}
+    local entries = settings.metrics
+    if entries == nil then
+        return warnings
+    end
+    local count = 0
+    for key, entry in pairs(entries) do
+        count = count + 1
+        local prefix = "metrics[" .. tostring(key) .. "]"
+        if type(key) ~= "number" or key % 1 ~= 0 or key < 1 or key > 3 then
+            warnings[#warnings + 1] = prefix .. " must be an index from 1 to 3"
+        elseif type(entry) ~= "table" then
+            warnings[#warnings + 1] = prefix .. " must be a mapping"
+        else
+            if type(entry.source) ~= "string" or entry.source == "" then
+                warnings[#warnings + 1] = prefix .. ".source must be a nonempty string"
+            end
+            for field, value in pairs(entry) do
+                if field == "label" or field == "unit" then
+                    if type(value) ~= "string" then
+                        warnings[#warnings + 1] = prefix .. "." .. field .. " must be a string"
+                    end
+                elseif field == "precision" then
+                    if type(value) ~= "number" or value ~= value or value < 0 or value > 3 or value % 1 ~= 0 then
+                        warnings[#warnings + 1] = prefix .. ".precision must be an integer from 0 to 3"
+                    end
+                elseif field ~= "source" then
+                    warnings[#warnings + 1] = prefix .. "." .. tostring(field) .. " is not a reading setting"
+                end
+            end
+        end
+    end
+    if count < 1 or count > 3 or #entries ~= count then
+        warnings[#warnings + 1] = "metrics must contain a contiguous list of 1 to 3 readings"
+    end
+    return warnings
+end
+
+local function readingText(entry, feed)
+    local caption = entry.label or entry.source
+    if not feed or not feed.available or type(feed.value) ~= "number" then
+        return caption .. " --"
+    end
+    local digits = entry.precision or feed.precision or 0
+    local text = caption .. " " .. metric.format(feed.value, digits)
+    local unit = entry.unit
+    if unit == nil then
+        unit = feed.unitText or ""
+    end
+    if unit ~= "" then
+        text = text .. " " .. unit
+    end
+    return text
+end
 
 --- Domain presets from the specification.
 --- Each supplies only what a pilot would otherwise have to type; a layout that
@@ -389,6 +447,10 @@ end
 ---@return string
 function metric.detailText(context)
     local settings = context.settings
+    if context.metrics then
+        local entry = context.metrics[2]
+        return entry and readingText(entry, context.detailFeed) or ""
+    end
 
     if settings.extrema == "none" then
         return metric.format(settings.rangeMin, 0) .. " - " .. metric.format(settings.rangeMax, 0)
@@ -399,13 +461,25 @@ function metric.detailText(context)
     if not available then
         return caption .. "--"
     end
-    return caption .. metric.format(value, metric.digitsFor(context))
+    local unit = settings.unit
+    if not unit or unit == "" then
+        unit = context.feed and context.feed.unitText or ""
+    end
+    local text = caption .. metric.format(value, metric.digitsFor(context))
+    if unit ~= "" then
+        text = text .. " " .. unit
+    end
+    return text
 end
 
 --- Format the supporting detail row's right-hand text.
 ---@param context AeroGridMetricContext
 ---@return string
 function metric.secondaryText(context)
+    if context.metrics then
+        local entry = context.metrics[3]
+        return entry and readingText(entry, context.secondaryFeed) or ""
+    end
     local feed = context.secondaryFeed
     if type(feed) ~= "table" then
         return ""
@@ -458,7 +532,7 @@ function metric.render(context, out)
 
     -- The sensor's unit is likewise only known once the source resolves, so the
     -- label follows it rather than being fixed when the panel was built.
-    if context.showUnit and settings.unit == "" then
+    if context.unit and settings.unit == "" and not context.suppressSensorUnit then
         out.unit = feed and feed.unitText or ""
     end
     -- The detail row moves independently of the primary reading: an extreme
@@ -472,9 +546,21 @@ function metric.render(context, out)
     -- reappears when it is not, which is what `changed` compares.
     if context.showRange then
         out.range = metric.detailText(context)
+        if
+            context.metrics
+            and context.themeBuilder.measureText(context.fonts.label, out.range) > context.area.detailWidth
+        then
+            out.range = ""
+        end
     end
     if context.showSecondary then
         out.secondary = metric.secondaryText(context)
+        if
+            context.metrics
+            and context.themeBuilder.measureText(context.fonts.label, out.secondary) > context.area.rowRightWidth
+        then
+            out.secondary = ""
+        end
     end
 end
 
@@ -507,7 +593,7 @@ function metric.apply(context, drawn)
     if context.unit and drawn.unit and drawn.unit ~= context.unitText then
         context.unitText = drawn.unit
         context.unit:set({ text = drawn.unit })
-        local shows = context.area.showUnit
+        local shows = context.layout.showUnit
             and context.primitives.unitFits(
                 context.themeBuilder,
                 context.area.value,
@@ -555,7 +641,7 @@ function metric.apply(context, drawn)
             context.themeBuilder,
             context.secondary,
             context.area.rowRightCentre,
-            context.area.detailY,
+            context.area.rowRightY or context.area.detailY,
             context.fonts.label,
             drawn.secondary
         )
@@ -574,6 +660,24 @@ end
 function metric.refresh(context)
     if not context.feed then
         return
+    end
+    if context.metrics and context.metrics[2] then
+        local first = metric.detailText(context)
+        local second = context.metrics[3] and metric.secondaryText(context) or nil
+        local supporting = context.layout.supporting
+        local unit = context.suppressSensorUnit and "" or context.settings.unit
+        if unit == "" and not context.suppressSensorUnit then
+            unit = context.feed.unitText or ""
+        end
+        if supporting[1] ~= first or supporting[2] ~= second or context.unitText ~= unit then
+            supporting[1], supporting[2] = first, second
+            context.unitText = unit
+            if context.unit then
+                context.unit:set({ text = unit })
+            end
+            metric.update(context, context.rect)
+            context.rendered = nil
+        end
     end
     local changed, drawn = context.primitives.changed(context, metric.render)
     if changed then
@@ -679,6 +783,7 @@ function metric.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, uni
         -- carries a secondary reading depends on a source being configured,
         -- which is why `create` resolves it onto the layout before asking.
         rowItems = layout.showSecondary == true and 2 or 1,
+        supporting = layout.supporting,
     }, out or {})
 
     -- The unit rides beside the reading rather than beneath it, so it costs
@@ -688,7 +793,7 @@ function metric.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, uni
     area.unitY = themeBuilder.unitTop(area.value, area.unitFont, area.valueY)
     -- The row was granted or it was not, and a secondary cannot be drawn into
     -- a row that does not exist.
-    area.showSecondary = layout.showSecondary == true and area.showDetail
+    area.showSecondary = layout.showSecondary == true and (area.showDetail or area.showSide)
 
     -- The dial under this component's own names. EdgeTX positions an arc by
     -- its centre; the corner only reserves space.
@@ -718,8 +823,29 @@ function metric.create(parent, rect, settings, services)
     local fonts = services.fonts
     local span = services.span
     metric.applyPreset(settings)
+    local entries = settings.metrics
+    if entries then
+        local warnings = metric.validateSettings(settings)
+        if #warnings > 0 then
+            error(table.concat(warnings, "; "))
+        end
+        local primary = entries[1]
+        settings.source = primary.source
+        settings.label = primary.label or primary.source
+        settings.unit = primary.unit or ""
+        settings.precision = primary.precision or -1
+        settings.secondarySource = entries[3] and entries[3].source or ""
+        settings.extrema = "none"
+    end
 
     local layout = metric.presentationFor(span.colSpan, span.rowSpan)
+    if entries then
+        layout.showRange = entries[2] ~= nil
+        layout.showSecondary = entries[3] ~= nil
+        layout.supporting = entries[2]
+                and { entries[2].label or entries[2].source, entries[3] and (entries[3].label or entries[3].source) }
+            or nil
+    end
     layout.visual = settings.visual
     -- **A row of two only where there will be two.** The span decides whether
     -- this panel *may* carry a secondary reading; whether it *does* depends on
@@ -744,6 +870,9 @@ function metric.create(parent, rect, settings, services)
         settings = settings,
         stateName = "normal",
         text = "--",
+        metrics = entries,
+        suppressSensorUnit = entries and entries[1].unit == "",
+        rect = rect,
     }
 
     -- The host owns polling. Subscribing here, in create, is what tells the
@@ -752,13 +881,16 @@ function metric.create(parent, rect, settings, services)
     local telemetry = services.telemetry
     if telemetry then
         context.feed = telemetry:subscribe(settings.source)
+        if entries and entries[2] then
+            context.detailFeed = telemetry:subscribe(entries[2].source)
+        end
         if settings.secondarySource ~= "" then
             context.secondaryFeed = telemetry:subscribe(settings.secondarySource)
         end
     end
 
     local extrema = services.extrema
-    if extrema and settings.extrema == "source" then
+    if not entries and extrema and settings.extrema == "source" then
         -- An explicitly named extreme source wins, because not every protocol
         -- names its extremes after the base sensor.
         local named = settings.extremaSource
@@ -767,7 +899,7 @@ function metric.create(parent, rect, settings, services)
         else
             context.extremeFeed = extrema:sourceExtreme(settings.source, settings.extremaMode)
         end
-    elseif extrema and settings.extrema == "flight" then
+    elseif not entries and extrema and settings.extrema == "flight" then
         -- The flight session decides where one flight's extrema end, so the arm
         -- switch is configured before the tracker is subscribed.
         local arm = services.session and services.session.armSource
@@ -865,7 +997,7 @@ function metric.create(parent, rect, settings, services)
         context.secondaryText = metric.secondaryText(context)
         context.secondary = primitives.label(panel.root, theme, {
             x = area.rowRightX,
-            y = area.detailY,
+            y = area.rowRightY or area.detailY,
             w = area.detailWidth,
             text = context.secondaryText,
             color = theme.color.textFaint,
@@ -877,7 +1009,7 @@ function metric.create(parent, rect, settings, services)
             services.themeBuilder,
             context.secondary,
             area.rowRightCentre,
-            area.detailY,
+            area.rowRightY or area.detailY,
             fonts.label,
             context.secondaryText
         )
@@ -892,7 +1024,7 @@ function metric.create(parent, rect, settings, services)
     if context.unit and not area.showUnit then
         lvgl.hide(context.unit)
     end
-    if context.range and not area.showDetail then
+    if context.range and not (area.showDetail or area.showSide) then
         lvgl.hide(context.range)
     end
     if context.secondary and not area.showSecondary then
@@ -903,7 +1035,7 @@ function metric.create(parent, rect, settings, services)
     -- what `render` is allowed to read. The unit is not among them any more:
     -- it depends on a unit that has not arrived, so `apply` settles it.
     context.area = area
-    context.showRange = context.range ~= nil and area.showDetail == true
+    context.showRange = context.range ~= nil and (area.showDetail == true or area.showSide == true)
     context.showSecondary = context.secondary ~= nil and area.showSecondary == true
     -- What the panel currently shows, so a reflow that changes nothing about
     -- visibility does not tell every object again what it already is.
@@ -942,6 +1074,7 @@ end
 ---@param context AeroGridMetricContext
 ---@param rect AeroGridRect
 function metric.update(context, rect)
+    context.rect = rect
     local theme = context.theme
     local area = metric.regionsFor(
         theme,
@@ -976,7 +1109,7 @@ function metric.update(context, rect)
     --- Show or hide an optional element, positioning it only when visible.
     local reconcile = context.primitives.reconcile
 
-    context.showRange = context.range ~= nil and area.showDetail == true
+    context.showRange = context.range ~= nil and (area.showDetail == true or area.showSide == true)
     context.showSecondary = context.secondary ~= nil and area.showSecondary == true
     context.area = area
 
@@ -1004,7 +1137,8 @@ function metric.update(context, rect)
     )
     context.showUnit = shows
     context.unitAnchor = nil
-    reconcile(context.range, area.showDetail, { x = area.detailX, y = area.detailY, w = area.detailWidth })
+    context.rangeAnchor, context.secondaryAnchor = nil, nil
+    reconcile(context.range, context.showRange, { x = area.detailX, y = area.detailY, w = area.detailWidth })
     context.primitives.centreLabel(
         context,
         "rangeAnchor",
@@ -1015,14 +1149,18 @@ function metric.update(context, rect)
         context.fonts.label,
         context.rangeText
     )
-    reconcile(context.secondary, area.showSecondary, { x = area.rowRightX, y = area.detailY, w = area.detailWidth })
+    reconcile(
+        context.secondary,
+        area.showSecondary,
+        { x = area.rowRightX, y = area.rowRightY or area.detailY, w = area.rowRightWidth }
+    )
     context.primitives.centreLabel(
         context,
         "secondaryAnchor",
         context.themeBuilder,
         context.showSecondary and context.secondary or nil,
         area.rowRightCentre,
-        area.detailY,
+        area.rowRightY or area.detailY,
         context.fonts.label,
         context.secondaryText
     )
