@@ -1,0 +1,137 @@
+# Metric review, screen 10 on AEROGRID REVIEW.
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: altitude
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      metrics:
+        - source: GAlt
+          label: ALT BAR 2x2
+          unit: m
+          precision: 0
+        - source: GAlt+
+          label: MAX
+          unit: m
+          precision: 0
+        - source: VSpd
+          label: VS
+          unit: m/s
+          precision: 1
+      accent: green
+      rangeMin: 0
+      rangeMax: 400
+      direction: rising
+      warning: 300
+      critical: 400
+  - id: speed
+    type: metric
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      metrics:
+        - source: VSpd
+          label: SPEED RADIAL
+          precision: 1
+        - source: RxBt
+          label: RX
+          unit: V
+          precision: 1
+        - source: GAlt
+          label: ALT
+          unit: m
+          precision: 0
+      visual: radial
+      rangeMin: 0
+      rangeMax: 10
+      direction: rising
+      warning: 6
+      critical: 8
+  - id: compact
+    type: metric
+    col: 0
+    row: 2
+    colSpan: 1
+    rowSpan: 1
+    config:
+      metrics:
+        - source: GAlt
+          label: ALT 1x1
+          unit: m
+          precision: 0
+      accent: green
+      rangeMin: 0
+      rangeMax: 400
+  - id: unavailable
+    type: metric
+    col: 1
+    row: 2
+    colSpan: 1
+    rowSpan: 1
+    config:
+      metrics:
+        - source: MissingMetric
+          label: NO SOURCE
+      visual: none
+  - id: sensor-unit
+    type: metric
+    col: 2
+    row: 2
+    colSpan: 2
+    rowSpan: 1
+    config:
+      metrics:
+        - source: VSpd
+          label: SENSOR UNIT 2x1
+      visual: none
+      rangeMin: -10
+      rangeMax: 10
+  - id: wide-altitude
+    type: metric
+    col: 0
+    row: 3
+    colSpan: 2
+    rowSpan: 1
+    config:
+      metrics:
+        - source: GAlt
+          label: ALT BAR 2x1
+          unit: m
+          precision: 0
+        - source: GAlt+
+          label: MAX
+          unit: m
+          precision: 0
+        - source: VSpd
+          label: VS
+          unit: m/s
+          precision: 1
+      accent: green
+      rangeMin: 0
+      rangeMax: 400
+  - id: voltage
+    type: metric
+    col: 2
+    row: 3
+    colSpan: 2
+    rowSpan: 1
+    config:
+      metrics:
+        - source: RxBt
+          label: VOLTAGE 2x1
+          unit: V
+          precision: 2
+      visual: bar
+      rangeMin: 0
+      rangeMax: 30
+      direction: falling
+      warning: 22
+      critical: 20

@@ -2239,12 +2239,9 @@ local function testTelemetryDrivesComponents()
     assertEqual(pack.value.properties.text, "24.0")
     assertEqual(pack.badge.properties.text, "")
 
-    -- This panel is one row tall and sheds its unit row, so the unit is not on
-    -- screen here and asserting its text would assert nothing anyone can see.
-    -- What is true here is that the row is shed; the sensor's unit is checked
-    -- at a span that keeps it, in testMetricTakesTheSensorUnit.
-    assertEqual(current.showUnit, false, "a one-row metric found space for a unit row")
-    assert(current.unit.hidden, "a shed unit row was left on screen")
+    assertEqual(current.showUnit, true, "the sensor unit fits beside the reading")
+    assertEqual(current.unit.properties.text, "A")
+    assert(not current.unit.hidden, "the sensor unit was left hidden")
     -- Without a configured precision, the sensor's precision. This is the
     -- dominant reading, which every span draws.
     assertEqual(current.text, "10.0", "the sensor precision was ignored")
@@ -10945,7 +10942,7 @@ components:
 
     local altitude = entryById(context, "altitude").instance
     assertEqual(altitude.extremeFeed.name, "Alt+", "the preset lost its extrema")
-    assertEqual(altitude.range.properties.text, "MAX 180")
+    assertEqual(altitude.range.properties.text, "MAX 180 m")
     assertEqual(altitude.secondary.properties.text, "VS 2.5m/s")
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 end

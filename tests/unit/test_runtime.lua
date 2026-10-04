@@ -826,7 +826,6 @@ end
 --- undocumented. Removing the last name here should delete this table too.
 local UNDOCUMENTED = {
     ["host-diagnostics"] = true,
-    ["metric"] = true,
     ["service-probe"] = true,
     ["variable-indicator"] = true,
 }
@@ -919,7 +918,7 @@ local function testComponentDocumentationLoads()
     assertEqual(documented + owed, #kinds, "every component is either documented or listed as owing a page")
     assertEqual(
         documented,
-        8,
+        9,
         "the number of documented components changed; update this count as the" .. " review works through the catalogue"
     )
 end
