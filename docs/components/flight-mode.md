@@ -24,9 +24,8 @@ This panel needs no telemetry, works with the transmitter on a bench and
 nothing bound, and will happily show `ACRO` while the aircraft is in Angle
 mode if that is what you called the switch position.
 
-The same term means the same EdgeTX modes in `variable-indicator`, where a
-global variable holds a separate value per flight mode. If you are looking for
-the aircraft's mode, this is not the panel; the catalogue has no panel for it.
+If you are looking for the aircraft's mode, this is not the panel; the
+catalogue has no panel for it.
 
 ## Settings
 
@@ -112,5 +111,5 @@ in the model brings it down to `MIDSIZE`.
 
 ## See also
 
-- `variable-indicator` uses "flight mode" in the same sense: EdgeTX's modes,
-  because a global variable holds one value per mode.
+- [`metric`](metric.md) can display global-variable sources such as `gvar1`;
+  EdgeTX resolves their values for the active transmitter flight mode.

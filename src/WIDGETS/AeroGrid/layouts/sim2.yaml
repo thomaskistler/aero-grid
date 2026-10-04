@@ -102,16 +102,16 @@ components:
       # saying so.
 
   - id: rates
-    type: variable-indicator
+    type: metric
     col: 2
     row: 2
     colSpan: 2
     rowSpan: 1
     config:
-      binding: global
-      index: 0
+      source: gvar1
+      precision: 1
+      visual: none
       label: GVAR
-      # `showName` likewise: one row, nowhere to put the name.
       accent: amber
 
   # No visualization and a second reading beside the first: ground speed

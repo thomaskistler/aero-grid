@@ -473,7 +473,7 @@ local function testSettingsVocabulary()
     -- the host contract and are fixtures under `tests/fixtures/components`, so
     -- they are not read here: the vocabulary rules below are about what a
     -- person configures on a radio.
-    assertEqual(#kinds, 12, "the catalogue changed size; the spec names twelve")
+    assertEqual(#kinds, 11, "the catalogue changed size; the spec names eleven")
 
     for kind, settings in pairs(catalog) do
         local declared = {}
@@ -559,13 +559,6 @@ local function testSettingsVocabulary()
                 end
             end
         end
-    end
-
-    -- `visual` selects a drawing and `presentation` selects content. A
-    -- component that confuses them reads as offering a choice it does not.
-    local indicator = loadModule("components/variable-indicator.lua")
-    for _, name in ipairs({ "none", "bar", "bipolar-bar", "radial" }) do
-        assertEqual(indicator.visual(name), name, "variable-indicator offers a visual it does not implement")
     end
 
     -- A choice list naming a value the component's own normalizer drops is
@@ -827,7 +820,6 @@ end
 local UNDOCUMENTED = {
     ["host-diagnostics"] = true,
     ["service-probe"] = true,
-    ["variable-indicator"] = true,
 }
 
 local function testComponentDocumentationLoads()
@@ -1103,7 +1095,6 @@ local function testInertSettingsAreRefused()
 
     local cases = {
         { "tx-battery", "showPercent" },
-        { "variable-indicator", "showName" },
         { "cell-battery", "showPack" },
         { "cell-battery", "showCount" },
         { "model-identity", "showLabels" },
@@ -1319,11 +1310,9 @@ end
 --- through `fitLabel`; the heading went through neither, straight into a
 --- label whose long mode LVGL defaults to wrapping.
 ---
---- The host writes the heading, in `primitives.header`, so eleven of the
---- twelve components never touch it and cannot get it wrong. Two rewrite
---- theirs at runtime -- a timer taking its name from the model, a variable
---- indicator from the radio -- and they go through `primitives.setHeading`.
---- This is what stops a thirteenth writing it directly.
+--- The host writes headings through `primitives.header`. Components that
+--- rename their heading, such as a timer taking its name from the model,
+--- must use `primitives.setHeading`.
 ---
 --- It is honestly weaker than the render declaration in #24, which made its
 --- mistake unrepresentable rather than merely detectable. The difference is
@@ -1413,7 +1402,7 @@ local function testBadgeIsNeverWrittenDirectly()
     assertEqual(checked, #kinds)
     -- Non-vacuous: the components that draw badges really do go through the
     -- helper, so this is forbidding a thing that has an alternative.
-    assert(withBadges >= 10, "only " .. withBadges .. " components route their badge through primitives.setBadge")
+    assert(withBadges >= 9, "only " .. withBadges .. " components route their badge through primitives.setBadge")
 end
 
 --- No component reaches for `lvgl.show` or `lvgl.hide` inside `update`.
@@ -1524,7 +1513,7 @@ local function testRenderConsultsWhatIsShown()
     end
 
     assertEqual(checked + exempt, #kinds)
-    assert(checked >= 10, "only " .. checked .. " components were checked")
+    assert(checked >= 9, "only " .. checked .. " components were checked")
 end
 
 --- A raising callback disables only its own component, and only reports once.
@@ -3987,7 +3976,7 @@ end
 --- The redraw decision covers the whole declaration, including its shape.
 ---
 --- Comparing values alone is not enough, because a component may stop drawing
---- something: `variable-indicator` writes a zero tick only while its range
+--- something: a bar writes a zero tick only while its range
 --- spans zero, and drops the key when it no longer does. A comparison that
 --- walked only the new table would find every key it held unchanged and
 --- report no change, leaving a tick on screen over a range that has none.

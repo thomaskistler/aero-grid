@@ -107,7 +107,7 @@ function primitives.changed(context, render)
         end
 
         -- A key that stopped being written cannot be seen by comparing what is
-        -- here, and one can stop: `variable-indicator` drops its zero tick when
+        -- here, and one can stop: a bar drops its zero tick when
         -- the range no longer spans zero. Counting is only reached once the
         -- values have all matched, which is the cheap path taken on most frames.
         if same then
@@ -194,8 +194,8 @@ end
 
 --- Set a heading's text, fitted to the column it has.
 ---
---- The two components that rewrite their own heading at runtime -- a timer
---- taking its name from the model, a variable indicator from the radio --
+--- Components that rewrite their own heading at runtime -- for example, a timer
+--- taking its name from the model --
 --- have to go through this rather than writing the label directly, or they
 --- reintroduce exactly the overflow `header` now prevents.
 ---@param label any

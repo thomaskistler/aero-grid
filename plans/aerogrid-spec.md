@@ -7,7 +7,7 @@
 - Status last updated: 2026-10-04
 - EdgeTX source: `../edgetx`
 - Project root: `aero-grid/`
-- Implementation: Phase 1, milestones 1 to 8 complete, plus a presentation and consistency pass over the whole catalogue, a shared standard panel that six of the twelve components are built from, and a vertical-rhythm pass that moved font choice and placement onto a font's ink, settled the reading's vertical rule on the panel's own centre and height, and took every panel's per-component review
+- Implementation: Phase 1, milestones 1 to 8 complete; eleven shipped components, five using the shared standard panel; all nine display panels reviewed and documented. Global-variable display uses ordinary metric sources.
 - Next work: Milestone 9, hardening, and hardware verification. Nothing in this project has run on a radio.
 - Everything is merged into `main`; there is no branch in flight. See [Resuming work](#resuming-work) for the state and the exact next steps.
 
@@ -125,7 +125,7 @@ Most components are variations of one arrangement: a heading, a dominant reading
 - **It is told what the panel draws, never what its span permits.** `spec.draws` carries the component's own answer, and `theme.ladder` may only narrow it. The interface has no way to express "permitted", because the gap between the two is a recurring defect in this project rather than a subtlety.
 - **It builds nothing itself that the component was handed.** It takes `spec.frame` rather than calling `theme.frame`, because the host wraps that function per component to lay a panel out around the menu button's corner, and a shared helper reaching for the module's own copy draws the heading under the button.
 
-Six components are on it: `cell-battery`, `flight-mode`, `flight-timer`, `link-status`, `metric` and `variable-indicator`. Three keep their own arrangement -- `navigation` because it draws two supporting rows and centres them as a group, `tx-battery` for reasons recorded in the design guide, and `model-identity` because its body is a full-width picture rather than a reading, and because the model name moves into the *heading* when one is drawn. That last used to read "for no reason at all beyond never having been assigned a conversion", which its own review overturned: it is the one component whose arrangement differs rather than its content. Three have no reading to place and are exempt: `trim-panel`, `host-diagnostics` and `service-probe`.
+Five components use it: `cell-battery`, `flight-mode`, `flight-timer`, `link-status`, and `metric`. Three keep their own arrangement: `navigation` draws two supporting rows; `tx-battery` retains the arrangement recorded in the design guide; `model-identity` fits a picture and moves the model name into the heading. Three draw no panel reading and are exempt: `trim-panel`, `host-diagnostics`, and `service-probe`.
 
 **A component is expected to carry special code only where it has a special visualization** -- the compass, the battery glyph, the trim cells. A flag on the builder for one component's preference is the thing this is meant to replace, not a way of extending it: a builder that can express everything expresses nothing.
 
@@ -148,11 +148,10 @@ The initial release should provide these components:
 | `model-identity` | Model bitmap, model name, or both | Specialized |
 | `tx-battery` | Transmitter voltage and optional battery indication | Simple; primarily intended for the status rail |
 | `trim-panel` | One or more effective trim positions in a centered dashboard panel | Specialized |
-| `variable-indicator` | Global variable or bounded numeric source as a value, bar, or radial indicator | Generic |
 | `service-probe` | The live state of one shared service, for diagnosis on the radio | Diagnostic |
 | `host-diagnostics` | What the host loaded and what it resolved to, in one section per panel | Diagnostic |
 
-Twelve components ship, two of them diagnostic. Two more, `heartbeat` and `placeholder`, live under `tests/fixtures/components`: they were written to prove the host contract — that a component loads, refreshes, reflows and is torn down correctly — and never to be flown. They are copied into every scratch widget package the suite builds, so that coverage keeps running, but a release does not carry a panel whose purpose is to animate a dot. `service-probe` is the exception among the three and ships, because it is the only thing that can inspect a service on a radio. It reports what a service says; `host-diagnostics` reports what the host loaded, which is the other half and is described under [The host diagnostics view](#the-host-diagnostics-view).
+Eleven components ship, two of them diagnostic. Two more, `heartbeat` and `placeholder`, live under `tests/fixtures/components`: they prove the host contract and never ship. `service-probe` inspects a service on the radio; `host-diagnostics` reports what the host loaded.
 
 The `metric` component accepts an ordered `metrics` list of one to three
 EdgeTX numeric sources. The first entry supplies the large reading and header;
@@ -306,19 +305,15 @@ A preset cannot be expressed as a settings default, because the host fills decla
 - Support `standard`, `extended`, and `auto` display scales. Auto may expand after observing a value outside the standard range, but cannot reliably detect the model's extended-trim setting because EdgeTX does not expose that flag to Lua. A trim source returns eight times the stored trim, and EdgeTX clamps that to `TRIM_MAX` or `TRIM_EXTENDED_MAX`, so the raw spans are 1024 and 4096, not 1000 and 4000. Rounding those down makes a standard trim held at its own end stop widen the scale permanently.
 - Clearly represent centered, positive, negative, unavailable, and unsupported three-position trim states. A three-position trim returns full deflection or nothing, which is exactly what a standard trim at its end stop returns, so one sample can never distinguish them. `controlService` claims a toggle only after seeing both a centre and a full deflection with no intermediate position between them.
 
-#### Variable indicator
+#### Global-variable readings
 
-- Bind to either an EdgeTX global-variable index or a numeric EdgeTX source.
-- For a global variable, read the value for the current or explicitly selected flight mode with `model.getGlobalVariable(index, flightMode)`. `controlService:globalVariable(index, flightMode)` pins a mode when one is given and follows the active mode otherwise; a pinned mode is its own subscription, because two components may legitimately show the same variable for different modes.
-- Use `model.getGlobalVariableDetails(index)` where available to obtain the configured name, minimum, maximum, precision, and unit.
-- Rely on EdgeTX to resolve global-variable flight-mode inheritance.
-- Offer `none`, `bar`, `bipolar-bar`, and `radial` under `visual`. These are drawings of one value, not arrangements of different content, which is why they are not `presentation`.
-- Normalize bar and radial geometry using GV bounds or explicit source bounds; clamp only the drawing, not the displayed value.
-- Show a center marker when the configured range crosses zero.
-- Remain read-only. AeroGrid does not modify global variables.
-- Allow semantic labels such as Flight count, Expo, Rates, Gain, or Volume while retaining the configured GV name as optional supporting text.
-
-A flight counter that already exists in a global variable is displayed by `variable-indicator`. AeroGrid does not detect or increment flights and does not own flight-counter persistence.
+Use `metric` with ordinary sources such as `gvar1` and `gvar2`. EdgeTX resolves
+the active flight mode, inheritance, and decimal scaling. Configure display
+labels, units, precision, and visualization ranges explicitly; the ordinary
+source API does not provide GV display metadata. The panel remains read-only.
+A flight counter already stored in a GV can be displayed this way; AeroGrid
+does not increment it or own its persistence. There is no separate GV panel,
+no pinned-flight-mode display option, and no bipolar metric visualization.
 
 ### Status rail
 
@@ -363,7 +358,6 @@ Components consume immutable snapshots. A service mutates its own state table in
 │   ├── model-identity.lua
 │   ├── tx-battery.lua
 │   ├── trim-panel.lua
-│   └── variable-indicator.lua
 ├── lib/
 │   ├── services.lua
 │   ├── telemetry_service.lua
@@ -425,7 +419,7 @@ The host creates one LVGL box or equivalent parent object for each rectangle. Co
 
 ## Visual Design Direction
 
-**The decisions this section records, together with their rejected alternatives and the reasoning behind both, live in [`aerogrid-design-guide.md`](aerogrid-design-guide.md).** That document is written for someone building a component or a layout and states plainly which parts are implemented and which are agreed but unbuilt; this section remains authoritative on behaviour and the guide on appearance. **Corrected: this said the content-flow rules were "agreed and implemented by no component".** They are implemented, and have been for most of the project's life. Counted at this commit: all **nine** components that draw a reading take their font through `theme.bandFont` or one of the two fitting entry points; **six of the twelve** assemble the whole arrangement through `theme.panel`, and the other three that draw a reading beside something -- `model-identity`, `navigation`, `tx-battery` -- call `theme.slotCentres` and `theme.slotsFor` directly; all **twelve** take their frame from `theme.frame`. The three that do neither -- `host-diagnostics`, `service-probe`, `trim-panel` -- draw no panel reading at all, which each of them records as a deliberate exemption rather than an omission.
+**The design decisions and their reasoning live in [`aerogrid-design-guide.md`](aerogrid-design-guide.md).** Eight components draw a panel reading: five assemble it through `theme.panel`, while `model-identity`, `navigation`, and `tx-battery` use shared slots directly. All eleven shipped components use `theme.frame`. The three without a panel reading are `host-diagnostics`, `service-probe`, and `trim-panel`.
 
 The claim was true when this section was first written and survived the milestone that built it, the presentation pass, the vertical-rhythm pass and the #85 audit -- which corrected the same sentence in the design guide and did not find this copy. **That is the shape worth naming: a claim copied into two documents is corrected in one of them.** It is the fifth time in this project, and it is the most dangerous kind of stale, because a reader is told that a section describing working behaviour is aspirational and may build it a second time.
 
@@ -475,7 +469,7 @@ The primary reference viewport is 480 x 272, matching the TX16S and several othe
 - Letter spacing is zero. Text must wrap, abbreviate, or reduce to a defined smaller font before it clips.
 - A supporting row cannot shrink its font, because it is already at the smallest size the dashboard uses. A row therefore offers its wordings longest first, and `theme.fitLabel` takes the longest that fits the width it will actually be given. **Every supporting row in the catalogue is meant to go through it**, and most offer one wording, because one well-chosen form fits every panel that draws a row.
 
-  **Five of the eight components that draw a row call it today**: `cell-battery`, `flight-timer`, `link-status`, `navigation` and `tx-battery`. `flight-mode`, `metric` and `variable-indicator` write their single form straight into the label. That is a gap between the rule and the code and it is stated as one rather than rounded off in either direction -- the audit that found it also measured what closing it would do, which is **nothing**: a one-entry list comes back out of `fitLabel` unchanged, and all three fit at the widest string they can print (`#9` at 15 px, `VS 888.8m/s` at 75, `RATES FM8` at 68, against the 105 px box of the narrowest panel that draws a row). The conversion is consistency rather than a fix, which is why it has not been done in a hurry.
+  **Five of the seven components that draw a row call it today**: `cell-battery`, `flight-timer`, `link-status`, `navigation`, and `tx-battery`. `flight-mode` writes its single form directly; `metric` uses measured widths and the shared builder to choose a footer, side stack, or hidden supporting group.
 
   The two budgets a row is written against: **105 px** for a row spanning the panel at `1 x 2`, the narrowest panel the ladder grants a row at all, and **86 px** for one sharing a line with another at `2 x 2`. A form that clears the tighter of those cannot be broken by any arrangement this dashboard can reach.
 
@@ -556,7 +550,7 @@ A bar sits under the reading and costs it nothing but height, which the ladder a
 
 This corrects an earlier rule, which allowed **one** step down to keep a visualization and shed it only at two. That was wrong in a way worth recording, because it could charge a reading for something it did not receive: the reading was narrowed to half the panel so a dial would have somewhere to go, the dial was then found not to fit anyway, and the panel drew a smaller number and no dial. The two halves of that decision were made in different places, which is the recurring seam this document describes, and they are now one question answered once -- by `theme.slotsFor`, the only thing that knows how wide the reading turned out to be.
 
-`tx-battery` already behaved this way, taking its font from the band rather than from the fitting ladder, so it is the pattern rather than the exception. What it costs is two panels: `metric` and `variable-indicator` at `1 x 2` each trade their dial for two font sizes.
+`tx-battery` already behaved this way, taking its font from the band rather than from the fitting ladder, so it is the pattern rather than the exception. The `metric` at `1 x 2` trades its dial for two font sizes.
 
 The glyph is sized by search rather than by formula. The answer is not smooth: a glyph one pixel narrower can be the difference between a reading keeping XXLSIZE and dropping to DBLSIZE, and there is no expression for where that edge falls that is not the loop written out longhand.
 
@@ -708,7 +702,7 @@ A component that offers one of these but not the others declares only the one it
 
 **A setting must have more than one answer a layout could sensibly give.** Where the answer is fixed by what the value physically is, the behaviour is documented rather than configured. `direction` was added to every component with thresholds, and on five of them there was only ever one answer: a voltage and a link quality alarm downward, a distance from home upward, and a timer's direction is EdgeTX's own `countdown` flag, which `flight-timer` had always read instead of the setting. A setting with one valid value is not configuration; it is a fact spelled as a question, and it makes a reader wonder what the other value would do. Only `metric` keeps `direction`, because it reads an arbitrary source and a current, a temperature and an altitude genuinely alarm upward where a voltage and an RSSI alarm downward. The suite holds every declared `choices` list to more than one entry.
 
-**A setting must not ask for something the radio already knows.** Where EdgeTX holds the answer, read it and let the layout override it, rather than requiring the layout to restate it. `tx-battery` asked for the pack's voltage range, which every radio already carries at SYS then Hardware then Battery meter range and which `getGeneralSettings` reports as `battMin` and `battMax`, already converted to volts. Requiring it made a dark bar the normal case rather than the exceptional one. `variable-indicator` was already right and is the pattern: a global variable's bounds, precision and unit come from `getGlobalVariableDetails`, and its settings override them.
+**Use source metadata where the source interface supplies it, and allow explicit overrides.** `tx-battery` reads the radio's battery-meter range through `getGeneralSettings`. Metric telemetry sources supply units and sensor precision; ordinary GV sources require explicit display settings because that interface does not publish their metadata.
 
 This is the same shape as `armSource` moving to the layout's session block: both were a component asking for something that was already known somewhere else. When adding a setting, the question to ask first is whether EdgeTX can be asked instead.
 
@@ -1122,7 +1116,7 @@ Two things about that are worth keeping rather than leaving in a PR. **The sympt
 **The reviews.** Nine components have completed the simulator review and
 documentation pass: `flight-mode`, `tx-battery`, `model-identity`,
 `flight-timer`, `cell-battery`, `trim-panel`, `navigation`, `link-status`, and
-`metric`. The remaining component is `variable-indicator`.
+`metric`. All nine display-component reviews are complete.
 Physical-radio validation remains outstanding.
 Review screens live on a second model because `MAX_CUSTOM_SCREENS` is 10.
 The four span galleries remain test fixtures rather than radio screens.
@@ -1214,12 +1208,15 @@ The worst callback rose 85 when the heading notice started working. It had been 
 - In App mode, every shipped layout is checked to draw nothing readable inside the corner EdgeTX's menu button covers. The directory is read rather than listed, so a new layout is covered as soon as it is added.
 - Every layout under `layouts/` is loaded by the integration suite, not merely the shipped default: each one is built through the real host and components, held to the same containment rules, and refreshed against radio state. A layout is covered as soon as it is added, because the suite reads the directory rather than a list.
 - **The four span galleries have been retired from the radio and kept as test fixtures.** They shipped under the Dashboard IDs `span1x1`, `span2x1`, `span2x2` and `span4x1`, each putting every component at one span so the catalogue could be caught disagreeing with itself. The user does not page to them, and ten screens is the ceiling, so they now live in `tests/fixtures/layouts/` rather than on the card. What they construct is still built: the single-cell gallery is still held to containing every component that declares a `1x1` span, read from the component directory rather than from a list, and all four are still swept by the collision check, where they are the densest arrangement in the suite -- eleven components in one grid. Retiring a layout from a screen is a decision about the radio; deleting the cases it builds would have been a quiet reduction in coverage.
-- **Review screens live on a second model.** `MAX_CUSTOM_SCREENS` is 10 (`radio/src/dataconstants.h`). `model1.yml` keeps the dashboards and diagnostics; `model2.yml` has nine component review screens and one source-name diagnostic, filling its ten-screen allowance. Nine simulator reviews are complete; one remains. The variable-indicator review will require retiring a diagnostic screen or adding another model.
+- **Review screens live on a second model.** `MAX_CUSTOM_SCREENS` is 10 (`radio/src/dataconstants.h`). `model1.yml` keeps the dashboards and diagnostics; `model2.yml` has nine component review screens and one source-name diagnostic, filling its ten-screen allowance. All nine display-component reviews are complete. The metric review includes an ordinary GV source.
 
 ### Immediate next steps
 
-Continue the simulator panel pass with `variable-indicator`, documenting the accepted panel.
-These reviews do not close the separate hardware work below.
+The simulator panel review and documentation pass is complete. Continue with
+milestone 9 hardening and the hardware verification below. Simulator acceptance
+does not close that separate hardware work.
+Use the [hardware-validation checklist](../docs/hardware-validation.md) to
+record the target-radio and protocol matrix without treating untested cases as passed.
 
 **Metric simulator review and documentation complete:** the ordered `metrics`
 list supports one to three numeric EdgeTX sources, each with its own label,
@@ -1386,7 +1383,7 @@ Two more lessons came from the tests rather than the firmware:
 - A fallback can hide the bug a test was written for. The reserved-corner test passed with the `MENU_HEADER_HEIGHT` unshifting removed, because the code's own 45 px default was right for the display the test used. Only measuring a display whose button is a different size made the shift load bearing. A default that rescues the mistake is worth keeping; a test that cannot see past it is not.
 - A component that reimplements a shared helper stops receiving that helper's fixes. `service-probe` had its own copy of the panel frame arithmetic, so it kept drawing its title into the menu button's corner after every catalogue component had stopped. `metric` shadowed a subset of the frame's fields and handed that to the header primitive, so it silently missed the new one.
 - A fixture's own limitation can be written up as firmware behaviour. A global variable test asserted that switching flight mode left the value unmoved and explained it as EdgeTX resolving inheritance; the mock ignored the flight mode argument, so the assertion could not have failed and the explanation was invented. See the fixture discipline section below.
-- A refresh short-circuit is a cache, and a cache that misses a change shows an old number with a straight face. Three of milestone 7's components compared only their dominant reading and so froze a supporting row: the pack sum when three of four cells sagged, the RSSI readout while link quality sat pinned at 100, and the whole navigation panel when its GPS sensor appeared but had no fix yet. Each was fixed by adding the missed field to that component's comparison list, **and that is why there was a fourth**: `variable-indicator` drew a global variable's configured name and did not compare it, so when EdgeTX answered `getGlobalVariableDetails` after the first read the header took the new name and the supporting row kept saying `GV1`.
+- A refresh short-circuit is a cache, and a cache that misses a change shows an old number with a straight face. Three of milestone 7's components compared only their dominant reading and froze supporting content: pack sum, RSSI while LQ was unchanged, and GPS fix state. Every drawn field must participate in the comparison; model-identity coverage also checks labels changing without the model name changing.
 
   The list is the defect. A component now declares what it draws, into one table, and is handed that table to paint from; the comparison is over exactly those values. A field the paint step reads but the declaration never wrote is `nil` on screen, which is loud, and a field declared but not painted costs a comparison and nothing worse. The list cannot drift from the drawing because there is no list.
 
@@ -1440,7 +1437,7 @@ That is the better shape wherever it is available. A seam exists because two pla
 
 So the interface carried the answer rather than the question for a while, and then stopped needing to. `theme.ladder` took what the component would draw and could only narrow its own grant with it. That argument is gone, because nothing downstream of it varied with the answer any more, and an argument a caller passes and believes is honoured is worse than an absent one. The tests are `testReadingsIgnoreTheRowBeneathThem`, which holds that the same panel with its optional row off puts its reading on the *same line* as with it on -- the reverse of what its predecessor asserted -- and `testTertiaryQuarterHoldsItsFurniture`, which holds that a panel drawing no row builds no object for one and that nothing else grows into the quarter it leaves empty.
 
-**The third instance is in that interface, and it is the reason to keep looking.** `theme.panel` takes `spec.bar`, which decides whether a supporting row sits above the panel's floor or in the tertiary band. Both are now *inside* the tertiary quarter -- the panel's floor is that band's floor -- so this decides where in the band the row goes rather than which band it is in, but the seam is the same one. Whether a bar is *drawn* depends on whether the ladder granted a visual -- and the ladder is walked **inside** the builder, after the component has already had to answer. To tell it the truth a component must walk the ladder itself first, which is the work the builder exists to absorb. `variable-indicator` escapes by answering `true` unconditionally, which is correct for that component because its row sits above the floor whichever visual is drawn; that is agreement by circumstance, not by construction. So an interface designed specifically to make this seam unreachable still contains one instance of it, in the one field that was not derived from `draws`. **The lesson is that closing a seam in the data does not close it in the ordering**: `draws` says what the panel draws, and `bar` asks a question whose answer is not known until the builder has decided.
+**Closing a seam in the data does not close it in the ordering.** `theme.panel` takes `spec.bar` to reserve the floor, while the ladder inside the builder decides whether a visual survives. Floor reservation is therefore a separate decision from current visibility; components must not independently predict the builder's answer.
 
 **The fourth instance is the unit beside a reading, and it is the one where neither place could have carried the other's answer.** `showUnit` says a panel has room for a unit; whether there is a value for that unit to qualify is a property of a sensor that may not have reported yet. Four panels therefore drew `-- V`: the permission was true, so the unit was drawn, and nothing downstream asked whether the number beside it existed. It is unlike the three above in that no amount of telling the builder what the panel draws would have fixed it -- the answer changes after the builder has finished, every time a link drops -- so the seam is closed the other way, by moving the *decision* to the point of drawing rather than the *information* to the point of deciding. `primitives.centreReading` is handed the reading's current text on every repaint and already computed the pair's width from it; asking there whether that text is a value costs a table lookup and cannot go stale.
 
@@ -1537,8 +1534,8 @@ Status last verified on 2026-09-21:
 | Milestone 3: Component runtime | Complete | Referenced-module loading, metatable-safe contract validation, declared settings with typed defaults, `supportedSpans` enforcement, host-owned containers, declared refresh intervals with phase staggering, and isolated create/update/refresh/background/event/destroy dispatch | Production components arrive in milestones 6 and 7 |
 | Milestone 4: Design system | Complete | Semantic tokens, panel/typography/bar/radial/badge primitives, Modern, Follow EdgeTX, and Custom modes, guaranteed-legible derived palettes, all seven states, and one shared responsive ladder deciding composition from the box and the font from the composition | Physical readability review at 480 x 272 on a TX16S-class display |
 | Milestone 5: Shared data services | Complete | Registry with per-service intervals, staggering, and subscription caps; telemetry, model, control, extrema, and navigation services; immutable snapshots; graceful degradation for missing sources, unseen sensors, absent firmware APIs, and stale telemetry; `service-probe` diagnostic views and two shipped diagnostics layouts | Hardware verification, and timer-based extrema reset |
-| Milestone 6: Core components | Complete | `metric` with `custom`/`altitude`/`speed` presets, source and flight extrema, and a secondary reading; `flight-timer`, `flight-mode`, `tx-battery`, `variable-indicator`, `trim-panel`, and `model-identity`; width-aware font fitting, shared panel frame and header geometry, bipolar bars with neutral markers, and images; a shipped dashboard demonstrating all seven | Physical-radio verification of estimated text widths and of model bitmap scaling |
-| Milestone 7: Telemetry-specialized components | Complete | `cell-battery` with cells-table validation and a usable-range bar; `link-status` with independent RSSI and quality sources, a published link view, and explicit no-sensor/no-link states; `navigation` with four responsive presentations and a north-up dial; centre-positioned arcs, the `compass` primitive, and a shipped dashboard demonstrating ten of the twelve components, the other two being the diagnostics views, which have a screen of their own | Hardware confirmation of the cells shape and of no-RSSI-sensor detection |
+| Milestone 6: Core components | Complete | `metric` with independent numeric readings and GV sources; `flight-timer`, `flight-mode`, `tx-battery`, `trim-panel`, and `model-identity`; shared panel geometry, bars/radials, and images; a shipped dashboard demonstrating all six | Physical-radio verification of text widths and model bitmap scaling |
+| Milestone 7: Telemetry-specialized components | Complete | `cell-battery` with cells-table validation; `link-status` with independent RSSI and quality; `navigation` with responsive presentations and a north-up dial; a shipped dashboard demonstrating the nine display components, with separate diagnostics screens | Hardware confirmation of the cells shape and of no-RSSI-sensor detection |
 | Milestone 8: The App mode menu button and multiple screens | Complete | Dashboard ID option, per-model/per-dashboard filename resolution, dashboard-scoped layouts shared by every model, panels laid out around the App mode menu button through the shared frame, an error overlay that clears it, notices separated from errors, and two-instance and model-change coverage | Status rail deferred by decision, not outstanding; simulator confirmation of the corner on a radio |
 | Milestone 9: Hardening | In progress | Unit/integration tests, firmware-like string behavior tests, CI running Lua 5.3 parsing, simulator fixture, corrupt-layout, contract-rejection, hostile-module, and legibility coverage, component failure isolation, an enforced instruction budget measured at the largest legal layout for both components and services, diagnostic views over every service, and a host diagnostics view on its own screen | Target-radio matrix and physical-radio testing |
 | Milestone 10: On-radio editor | Not started | None | Entire phase 2 editor and write/recovery workflow |
@@ -1553,7 +1550,7 @@ Measured cost is in [Current cost](#current-cost), which is the one place that c
 
 ### Aircraft-reported state: deferred, with the research kept
 
-**The dashboard shows nothing the aircraft reports about its own state.** `flight-mode` shows EdgeTX's own flight modes — the transmitter's up-to-nine mixer modes, each with its own trims, selected by a switch and named in Model Setup. `luaGetFlightMode` returns `mixerCurrentFlightMode` and `g_model.flightModeData[mode].name` (`radio/src/lua/api_general.cpp`), so it is transmitter-side and needs no telemetry at all. `variable-indicator` uses the term in the same sense, because a global variable holds one value per mode.
+**The dashboard shows nothing the aircraft reports about its own state.** `flight-mode` shows EdgeTX's transmitter mixer modes, not an aircraft-reported mode. Ordinary GV sources displayed by `metric` also resolve against the active transmitter flight mode.
 
 It is **not** arming state, not the flight controller's mode — Angle, Acro, Horizon, Rescue — and not gyro or stabilisation state. Those live on the aircraft and can only arrive as telemetry, and no component reads them. That is a gap in the catalogue rather than a decision, and it is recorded here so it can be seen without being noticed as an absence.
 
@@ -1990,15 +1987,14 @@ Implement these components in order:
 2. `flight-timer`
 3. `flight-mode`
 4. `tx-battery`
-5. `variable-indicator`
-6. `trim-panel`
-7. `model-identity`
+5. `trim-panel`
+6. `model-identity`
 
-This order establishes value formatting, source access, model APIs, bars, radial indicators, trim semantics, GV formatting, and bitmap handling before the more protocol-sensitive components.
+This order establishes value formatting, source access (including ordinary GV sources), model APIs, bars, radial indicators, trim semantics, and bitmap handling before the more protocol-sensitive components.
 
-Deliverable: seven responsive components operating from YAML configuration.
+Deliverable: six responsive core components operating from YAML configuration.
 
-Delivered. All seven ship, every one of them driven entirely by YAML and by the shared services, and the shipped `layouts/default.yaml` demonstrates all of them on one screen.
+Delivered. All six ship, driven by YAML and shared services, and the shipped `layouts/default.yaml` demonstrates all of them. Global-variable readings use `metric` through ordinary EdgeTX sources.
 
 Three shared additions came out of the work rather than being planned:
 
@@ -2095,7 +2091,7 @@ Three approaches were measured before choosing:
 | Inset the top-left container | 47 px of 238, a fifth of its width | 117 px falls to 70 | Leaves a notch where the cell no longer lines up with the column beneath it |
 | Reserve inside `theme.frame` | 20 px of 134, on that panel only | reading survives, label is dropped | No notch; every other cell is unchanged |
 
-`theme.frame` already owns the padded content geometry, the header row and the badge column, and all twelve catalogue components take `frame.top` and `frame.pad` from it. Giving it the obstructed corner therefore fixes every component at once, in the place that exists to prevent them disagreeing, and is not the "every component compensating individually" this specification rejects. The header label moves to the right of the button rather than below it, which would cost a whole row, and the content start moves below it. The panel keeps its whole rectangle and the grid keeps its geometry.
+`theme.frame` owns the padded content geometry, header row, and badge column for all eleven catalogue components. Giving it the obstructed corner fixes every component in one place. The header moves to the right of the button and the content start below it, without changing the grid geometry.
 
 The corner reaches the frame through the theme builder each component is handed, rather than through a new argument on every component, so a component written by someone else is laid out correctly without knowing any of this exists. It is read on each call rather than captured, so a zone that moves is picked up by the update that follows it.
 
@@ -2164,7 +2160,7 @@ Deliverable: layouts created and safely maintained entirely on the radio.
 - Flight extrema follow the configured manual, timer, or switch reset policy.
 - The dashboard offers Modern, Follow EdgeTX, and Custom theme modes without changing global EdgeTX colors.
 - Trim panels display effective trim positions inside the grid without replacing or modifying EdgeTX trim controls.
-- A variable indicator displays current-flight-mode global variables using their configured bounds, precision, and unit.
+- The metric panel displays ordinary global-variable sources for the active flight mode, with explicitly configured label, precision, unit, and visualization range.
 - Bar and radial indicators remain geometrically stable at minimum, maximum, zero, and out-of-range values.
 - Invalid component configuration cannot be applied or persisted.
 - In phase 2, Apply writes a valid per-model and per-Dashboard-ID YAML layout to the SD card.

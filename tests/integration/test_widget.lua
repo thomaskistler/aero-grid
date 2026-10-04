@@ -328,7 +328,6 @@ local SHIPPED_TYPES = {
     "flight-timer",
     "flight-mode",
     "tx-battery",
-    "variable-indicator",
     "trim-panel",
     "model-identity",
     "cell-battery",
@@ -1676,15 +1675,8 @@ end
 
 --- A panel redraws when anything it draws changes, not when a chosen subset does.
 ---
---- Four instances of one defect have been found in this catalogue, each fixed
---- by adding the missed field to a hand-written list, which is why there was a
---- fourth. The two driven here are the live one and the latent one.
----
---- Both need the same care to reproduce: a change that also moves a compared
---- value proves nothing, because the short-circuit would have broken anyway
---- and the assertion passes for the wrong reason. The global variable's
---- precision is therefore pinned so that only its name arrives, and the
---- model's labels are changed while its name and bitmap are held still.
+--- Model labels change while its name and bitmap stay fixed, so a comparison
+--- of only the dominant content cannot detect the change.
 local function testRedrawsOnEverythingItDraws()
     local widgetPath = makeWidget(
         "render-declaration",
@@ -1694,16 +1686,6 @@ grid:
   columns: 4
   rows: 4
 components:
-  - id: gv
-    type: variable-indicator
-    col: 0
-    row: 0
-    colSpan: 2
-    rowSpan: 2
-    config:
-      binding: global
-      index: 0
-      showName: true
   - id: identity
     type: model-identity
     col: 2
@@ -1717,53 +1699,8 @@ components:
     )
 
     resetRadio()
-    -- The radio has not yet answered for this variable's details, which is the
-    -- cold start every dashboard goes through.
-    local details = radio.globalDetails[0]
-    radio.globalDetails[0] = nil
-
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
     pump(context, 40)
-
-    local gv = entryById(context, "gv").instance
-    assertEqual(gv.detail, "GV1 FM1", "the supporting row does not name the variable before its details arrive")
-    local before = gv.text
-
-    -- EdgeTX answers, with a name and with the same precision it was already
-    -- being read at, so the value on screen does not move. Anything that moved
-    -- the value would break the short-circuit by itself and prove nothing.
-    radio.globalDetails[0] = {
-        name = "Rates",
-        min = -100,
-        max = 100,
-        prec = 0,
-        unit = 0,
-    }
-    pump(context, 60)
-
-    assertEqual(gv.text, before, "the value moved, so this no longer tests what it was written for")
-    assertEqual(gv.labelValue, "RATES", "the header did not take the new name")
-    assertEqual(
-        gv.detail,
-        "Rates FM1",
-        "the header took the variable's name and the supporting row kept the old"
-            .. " one, which is the defect this exists to catch"
-    )
-
-    -- The row names the flight mode the value was read for, so it has to
-    -- follow a change of mode. Checked here, on a panel two rows tall that
-    -- actually draws the row: it used to be checked on a `2 x 1` that sheds it,
-    -- where the string was computed and written into a hidden label.
-    radio.flightMode, radio.flightModeName = 2, "Land"
-    pump(context, 60)
-    assertEqual(
-        gv.detailLabel.properties.text,
-        "Rates FM2",
-        "the supporting row kept the flight mode it was drawn with"
-    )
-    radio.flightMode, radio.flightModeName = 1, "Sport"
-    pump(context, 60)
-    assertEqual(gv.detailLabel.properties.text, "Rates FM1")
 
     -- The same shape in model-identity, which could not be made to fail before
     -- because a model's labels only change when its name does. Driven directly
@@ -1787,7 +1724,6 @@ components:
     assertEqual(identity.text, name, "the model name moved during the test")
     assertEqual(identity.labelsText, "fpv,racing", "the labels row kept its old value while the model's labels changed")
 
-    radio.globalDetails[0] = details
     resetRadio()
 end
 
@@ -2126,13 +2062,12 @@ grid:
   rows: 4
 components:
   - id: dial
-    type: variable-indicator
+    type: metric
     col: 0
     row: 0
     colSpan: 2
     rowSpan: 1
     config:
-      binding: source
       source: Curr
       label: Current
       visual: radial
@@ -3658,11 +3593,6 @@ local function testSupportingRowsFitTheirBox()
             type = "tx-battery",
             config = { "label: TX", "packEmpty: 6.6", "packFull: 8.4", "showPercent: true" },
         },
-        {
-            name = "variable-indicator, configured name",
-            type = "variable-indicator",
-            config = { "binding: global", "index: 0", "label: GV", "showName: true" },
-        },
     }
 
     local checked, widest, widestWhere = 0, 0, ""
@@ -4307,7 +4237,6 @@ local function testReadingsAreCentredOnTheirPanel()
         ["flight-timer"] = { "      label: TIMER", "      timer: 0" },
         ["flight-mode"] = { "      label: MODE" },
         ["tx-battery"] = { "      label: TX" },
-        ["variable-indicator"] = { "      label: GV", "      index: 0" },
         ["trim-panel"] = { "      label: TRIM", "      trim1: trim-ail" },
         ["model-identity"] = { "      label: MODEL" },
         ["cell-battery"] = { "      label: PACK", "      source: Cels" },
@@ -4485,9 +4414,9 @@ local function testReadingsAreCentredOnTheirPanel()
     -- Per property, so a sweep that stopped building panels cannot pass by
     -- checking nothing -- which is how this suite's own apparatus has failed
     -- seven times.
-    assert(centred >= 91, "only " .. centred .. " panels had their reading's centre checked")
-    assert(clamped >= 29, "only " .. clamped .. " panels exercised the menu button's clamp")
-    assert(cleared >= 162, "only " .. cleared .. " clearances were checked")
+    assert(centred >= 80, "only " .. centred .. " panels had their reading's centre checked")
+    assert(clamped >= 24, "only " .. clamped .. " panels exercised the menu button's clamp")
+    assert(cleared >= 139, "only " .. cleared .. " clearances were checked")
     lvglMock.setAppMode(false)
 end
 
@@ -4757,7 +4686,6 @@ components:
         ["flight-timer"] = { "      label: Probe", "      timer: 0" },
         ["flight-mode"] = { "      label: Probe" },
         ["tx-battery"] = { "      label: Probe" },
-        ["variable-indicator"] = { "      label: Probe", "      index: 0" },
         ["trim-panel"] = { "      label: Probe", "      trim1: trim-ail" },
         ["model-identity"] = { "      label: Probe" },
         ["cell-battery"] = { "      label: Probe", "      source: Cels" },
@@ -5446,18 +5374,6 @@ local function testInstructionBudget()
                 -- No `showPercent`: sixteen single cells, and a single row has no
                 -- space for one at any width, so asking is refused at load.
                 return { "packEmpty: 6.6", "packFull: 8.4", "warning: 7.0" }
-            end,
-        },
-        {
-            type = "variable-indicator",
-            services = { "control" },
-            config = function(index)
-                local visuals = { "none", "bar", "bipolar-bar", "radial" }
-                return {
-                    "binding: global",
-                    "index: " .. ((index - 1) % 4),
-                    "visual: " .. visuals[(index - 1) % 4 + 1],
-                }
             end,
         },
         {
@@ -6193,14 +6109,17 @@ components:
       warning: 7.0
       critical: 6.8
   - id: gv
-    type: variable-indicator
+    type: metric
     col: 2
     row: 1
     colSpan: 2
     rowSpan: 1
     config:
-      binding: global
-      index: 1
+      source: gvar2
+      label: GV2
+      precision: 0
+      rangeMin: -100
+      rangeMax: 100
       visual: bar
   - id: identity
     type: model-identity
@@ -6222,28 +6141,29 @@ components:
       orientation: horizontal
       readout: raw
   - id: dial
-    type: variable-indicator
+    type: metric
     col: 2
     row: 3
     colSpan: 1
     rowSpan: 1
     config:
-      binding: source
       source: Curr
       label: Current
       visual: radial
       rangeMin: 0
       rangeMax: 120
   - id: swing
-    type: variable-indicator
+    type: metric
     col: 3
     row: 3
     colSpan: 1
     rowSpan: 1
     config:
-      binding: global
-      index: 0
-      visual: bipolar-bar
+      source: gvar1
+      precision: 1
+      visual: bar
+      rangeMin: -100
+      rangeMax: 100
 ]]
 
 --- Advance a context far enough for every service and component to settle.
@@ -6622,28 +6542,6 @@ local function testReadingsSitInTheirSlots()
                     }
                 end
                 return { { label = panel.range, slot = "whole" } }
-            end,
-        },
-        {
-            type = "variable-indicator",
-            -- Radial against bar.
-            sameReadingAcross = { 1, 2 },
-            config = { "binding: global", "index: 0", "label: GV" },
-            variants = { { "visual: radial" }, { "visual: bar" } },
-            visual = function(panel)
-                if not (panel.showVisual and panel.radial) then
-                    return nil
-                end
-                -- A radial is one arc, where a compass is a ring and a pointer.
-                local drawn = panel.radial.arc.round.drawn
-                local diameter = panel.radial.arc.round.radius() * 2
-                return { x = drawn.x, w = diameter }
-            end,
-            rows = function(panel)
-                if not panel.showDetail then
-                    return {}
-                end
-                return { { label = panel.detailLabel, slot = "whole" } }
             end,
         },
         {
@@ -8131,8 +8029,8 @@ local function testUnitsRideBesideEveryReading()
             { id = "tx", type = "tx-battery", config = "      packEmpty: 6.6\n      packFull: 8.4\n" },
             {
                 id = "gv",
-                type = "variable-indicator",
-                config = "      binding: source\n      source: Curr\n" .. "      rangeMin: 0\n      rangeMax: 120\n",
+                type = "metric",
+                config = "      source: Curr\n" .. "      rangeMin: 0\n      rangeMax: 120\n",
             },
         }
         local chosen = {}
@@ -9564,19 +9462,11 @@ local function testCoreComponents()
     assertEqual(battery.badge.properties.text, "CRIT")
     radio.values[320] = 7.9
 
-    -- A global variable takes its name, bounds, precision, and unit from
-    -- EdgeTX, and AeroGrid never writes one.
+    -- A GV is read through the ordinary source path; display settings are explicit.
     local gv = entryById(context, "gv").instance
     assertEqual(gv.text, "10")
-    assertEqual(gv.labelValue, "GV2")
-    -- This panel is one row tall and sheds its supporting row, so the name
-    -- and flight mode are not on screen here. They are checked at a span that
-    -- shows them, in testGlobalVariableDetails.
-    assertEqual(gv.showDetail, false, "a one-row indicator kept its name row")
-    assertEqual(gv.rendered.detail, nil, "a shed name row was still being formatted every frame")
-    -- -100 to 100 crosses zero, so the bar carries a tick at its centre.
-    assert(gv.bar.markerFraction, "a bar over a signed range lost its zero tick")
-    assertEqual(gv.bar.marker.hidden, false)
+    assertEqual(gv.settings.label, "GV2")
+    assertEqual(gv.showRange, false)
 
     -- A global variable holds a separate value per flight mode, so switching
     -- mode has to re-read it. This previously asserted that the value did NOT
@@ -9597,46 +9487,16 @@ local function testCoreComponents()
     radio.flightMode, radio.flightModeName = 1, "Sport"
     settle(context, 12)
     assertEqual(gv.text, "10")
-    -- The unit rides beside the digits rather than being glued to them, and it
-    -- is drawn smaller than the number it belongs to.
-    assertEqual(gv.unit.properties.text, "%")
-    assertEqual(gv.showUnit, true)
-    assert(
-        themeModule.fontHeight(gv.unit.properties.font()) < themeModule.fontHeight(gv.value.properties.font()),
-        "the unit is drawn at or above the size of the reading it rides beside"
-    )
+    assertEqual(gv.unitText, "", "GV metadata is not supplied by the ordinary source interface")
 
     -- The same component bound to a telemetry source instead.
     local dial = entryById(context, "dial").instance
     assertEqual(dial.text, "10.0")
-    -- The sensor's own unit, which arrives with the source rather than being
-    -- known when the panel was built.
-    assertEqual(dial.unit.properties.text, "A")
-    -- **The dial goes and the unit stays, and both follow from one step of
-    -- font.** This panel is a single cell, 117 x 65. The reading is sized
-    -- against half the panel now rather than against a middle band cut out of
-    -- it -- 32 px against the band's 26 -- and DBLSIZE is 31 px of ink, so it
-    -- fits where MIDSIZE was the largest the band allowed.
-    --
-    -- The reading takes that size, because a reading is never shrunk to make
-    -- room for something beside it. Its widest form is `-1200`, which DBLSIZE
-    -- draws in 77 px, and neither pair of slots separates 77 px of number from
-    -- a dial inside a 105 px content box -- so the dial goes, which is the
-    -- rule the user set: magnitude wins and the decoration is what is given
-    -- up. With the whole box to itself the reading is measured against 105 px,
-    -- and `-1200` with an SMLSIZE `A` beside it is 86, so the unit rides.
-    --
-    -- **This panel has now been each way round three times**, which is worth
-    -- the line: a dial and no unit under the band rule that grew with content,
-    -- no dial and a unit when the band started being measured as ink and grew
-    -- to 34 px, a dial and no unit again under fixed quarter/half/quarter
-    -- bands at 26 px, and no dial and a unit now that the reading is sized
-    -- against half the panel at 32. Nothing about the panel changed; the
-    -- budget under it did, four times.
-    assertEqual(dial.showVisual, false, "a single cell kept a dial its DBLSIZE reading leaves no room for")
-    assertEqual(dial.showUnit, true, "the unit was dropped beside a reading with the whole box to itself")
-    assert(dial.radial, "the radial presentation was not built")
-    assertEqual(dial.radial.arc.hidden, true, "the shed dial was still on screen")
+    -- A single-cell metric intentionally omits its unit.
+    assertEqual(dial.unit, nil)
+    assertEqual(dial.showVisual, false, "a single-cell metric must keep its minimal presentation")
+    assert(not dial.showUnit, "a single-cell metric does not create a unit label")
+    assertEqual(dial.radial, nil)
 
     -- Trims are read through EdgeTX's own sources, in stored trim units.
     local trims = entryById(context, "trims").instance
@@ -9688,10 +9548,10 @@ local function testCoreComponents()
         "a panel drawing the model picture did not put the model name in its" .. " heading"
     )
 
-    -- A bipolar bar measures each side against its own bound.
+    -- A metric bar measures the source against its explicit range.
     local swing = entryById(context, "swing").instance
     assertEqual(swing.text, "4.5")
-    assert(swing.bipolar, "the bipolar presentation was not built")
+    assertEqual(swing.bar, nil, "single-cell metrics omit visualization")
 
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
     resetRadio()
@@ -9963,13 +9823,12 @@ components:
     config:
       timer: 2
   - id: gv
-    type: variable-indicator
+    type: metric
     col: 2
     row: 0
     colSpan: 2
     rowSpan: 1
     config:
-      binding: source
       source: NoSuchSensor
   - id: trims
     type: trim-panel

@@ -117,8 +117,8 @@ to `cell-battery`; it does not change `tx-battery` or the other components.
 | Content flow: the heading pinned to the top inset, the row hung from the bottom one, the reading's ink centred on the panel and its font taken from the panel's height | Implemented and shared by every component |
 | Content flow: the two slots and the build-time fallback | Implemented and shared by every component that draws a reading |
 | The heading pinned to the top of its band; the badge placed from its measured text | Implemented and shipped |
-| Supporting rows: one form per state wherever one fits | Implemented; **five of the eight row-drawing components route through `theme.fitLabel`** |
-| The standard panel assembled in one place (`theme.panel`) | Implemented; **six of the twelve components are on it** |
+| Supporting rows: one form per state wherever one fits | Implemented; five of seven row-drawing components use `theme.fitLabel`; metric supporting groups use the builder's measured fit |
+| The standard panel assembled in one place (`theme.panel`) | Implemented; **five of the eleven components are on it** |
 
 Both halves of [Content flow](#content-flow) are now live everywhere. The vertical half —
 the two pinned edges, the panel-derived font and the clamp — always was for the *font*,
@@ -136,7 +136,7 @@ being retyped in each component. Where a component stands:
 
 | | Components |
 | --- | --- |
-| On `theme.panel` | `cell-battery`, `flight-mode`, `flight-timer`, `link-status`, `metric`, `variable-indicator` |
+| On `theme.panel` | `cell-battery`, `flight-mode`, `flight-timer`, `link-status`, `metric` |
 | Own arrangement, by recorded decision | `navigation`, `tx-battery`, `model-identity` |
 | Exempt: no reading to place | `trim-panel`, `host-diagnostics`, `service-probe` |
 
@@ -259,7 +259,7 @@ than as a style.
 
 It is the same LVGL behaviour that made `trim-panel`'s cell centring a non-change, and it
 takes the fix the reading and the unit rider already use: **derive the position from the
-measured string, not from the box.** `primitives.setBadge` owns it, so the twelve components
+measured string, not from the box.** `primitives.setBadge` owns it, so the eleven components
 that each carried the same unplaced `badge:set{text =, color =}` no longer place anything.
 
 Two things about it are worth keeping:
@@ -383,10 +383,8 @@ has a source the protocol does not publish — and a unit beside one is a label 
 nothing. The panel said `-- V`: the pack is measured in volts, and how many is not
 stated. **Four components drew it**: `tx-battery` and `cell-battery`, whose unit is a
 constant they know before any reading exists, and `link-status` and `metric`, which keep
-a resolved sensor's unit while its value is withheld. `navigation` and
-`variable-indicator` look like they belong on that list and do not: both already tie the
-unit to whether there is a distance or a value, and both were measured rather than
-assumed.
+a resolved sensor's unit while its value is withheld. `navigation` already ties
+the unit to whether there is a distance.
 
 **Hidden, not reclaimed, and the number does not move.** The reading is centred on its
 slot by its **own** measured width rather than the pair's, so the unit only widens the
@@ -497,7 +495,7 @@ would have room, then the dial shed anyway, leaving a smaller number and no dial
 
 `tx-battery` already worked this way, taking its font from the band rather than from the
 fitting ladder, so the decision makes it the pattern rather than the exception. The cost is
-two panels: `metric` and `variable-indicator` at `1 x 2` each trade their dial for two font
+the `metric` at `1 x 2`, which trades its dial for two font
 sizes. The user was shown that trade and chose it.
 
 ### Open: what a unit yields to
@@ -787,7 +785,7 @@ baseline exactly 6 px above the panel's floor.
 reading, so it spans the panel and sits on the floor; a row on such a panel hangs from the
 bar rather than from the edge. That was already what those panels did, so pinning finds them
 where it wants them. Five components reserve a bar at every span — `cell-battery`,
-`flight-timer`, `link-status`, `metric` and `variable-indicator` — and `tx-battery` does when
+`flight-timer`, `link-status` and `metric` — and `tx-battery` does when
 its layout asks for one.
 
 **Which means the panel that prompted this does not change.** `flight-timer` reserves a bar.
@@ -1208,9 +1206,8 @@ and the figure this document stands on is the one above it: five bands of twenty
 
 **Sixteen panels also change what they draw rather than only how large it is**, and every
 one of them is a panel shedding something. Seven drop an inline unit, seven drop a compact
-visual, two drop a compass, and one — `variable-indicator` at a single cell — drops its dial
-and gains the unit back, because a panel holding one element does not split and the whole
-content box is then available to measure the unit against.
+visual, and two drop a compass. A panel holding one element does not split,
+so the whole content box is available to measure its unit against.
 
 **The user saw it by eye on two separate components and asked for it.** That is what
 decided it; the arithmetic above is what makes it checkable.
@@ -1237,9 +1234,8 @@ which is a margin rather than a guarantee, and is exactly why it is checked.
 
 **Three panels lose a circular gauge, and that is the magnitude rule doing its job.** A
 reading is never shrunk to make room for something beside it, so a reading one size larger
-can leave no pair of slots that separates it from a dial. `metric` with `visual: radial`,
-`variable-indicator` with `visual: radial` and `navigation`'s compass all shed theirs at two
-columns; `variable-indicator` also sheds at a single cell. The user was shown the threshold
+can leave no pair of slots that separates it from a dial. `metric` with `visual: radial`
+and `navigation`'s compass shed theirs at two columns. The user was shown the threshold
 table and chose it.
 
 **And one band was found to be lying, which is the other thing ink exposed.** The tertiary
