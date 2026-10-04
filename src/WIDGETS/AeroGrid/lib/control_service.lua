@@ -39,7 +39,7 @@
 ---@field flightMode integer Flight mode the value was read for.
 ---@field state "normal"|"unavailable"
 
-local controlService = {}
+local controlService = { RUNTIME_API = 1 }
 controlService.__index = controlService
 
 --- Ticks of 10ms between updates. Trims move under the pilot's thumb, so this

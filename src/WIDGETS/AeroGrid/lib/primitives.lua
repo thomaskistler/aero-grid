@@ -4,7 +4,7 @@
 --- Components compose these instead of styling panels themselves, so the
 --- dashboard keeps one coherent visual language.
 
-local primitives = {}
+local primitives = { RUNTIME_API = 1 }
 
 --- Width reserved for a panel's state badge on its header row.
 primitives.BADGE_WIDTH = 56

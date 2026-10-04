@@ -1032,6 +1032,16 @@ The UI should expose enough error information to identify the layout file and in
 - Distribute AeroGrid as one versioned `/WIDGETS/AeroGrid/` package so host, services, editor, and bundled components are upgraded together.
 - Keep `main.lua` small and load implementation modules on demand.
 - Define a dashboard package version, layout schema version, and component API version independently.
+- `lib/package.lua` is the package identity source (`0.10.0`); runtime API,
+  component API, and layout schema are independently versioned at `1`.
+  Internal modules declare `RUNTIME_API`; increment it when changing their
+  contract incompatibly. The host rejects missing or incompatible core modules
+  with a visible error and prevents reloading a failed runtime. Incompatible
+  services are reported while unrelated panels continue to operate.
+  Components remain governed by their public `apiVersion`, including third-party
+  modules. This is API compatibility checking, not a checksum of the installation:
+  API-compatible release mixtures and stale bytecode are not proven absent.
+  Upgrade the complete package and remove old `.luac` files.
 - Every component declares the component API version it requires. Incompatible components render an error placeholder instead of executing.
 - Phase 2 layout migrations operate on an in-memory copy, preserve the original file as a backup, and write only after successful validation.
 - A newer unsupported layout version must not be rewritten by an older dashboard release.
@@ -2117,13 +2127,34 @@ The visibility policy is settled even though the feature is not built: **the rai
 
 #### Milestone 9: Phase 1 hardening
 
-- Test corrupt, missing, and future-version YAML files.
-- Test missing, incompatible, and failing component modules.
-- Test package and component API compatibility.
+- Test corrupt, missing, and future-version YAML files. Covered through the
+  staged host loader in `tests/integration/test_widget.lua`, including empty
+  files, visible errors, and stable refresh after rejection.
+- Test missing, incompatible, and failing component modules. Host integration
+  coverage includes syntax errors, module-execution errors, non-table returns,
+  API and ID mismatches, unsupported spans, and missing files. A valid panel
+  continues running alongside rejected modules; callback failure isolation is
+  also covered.
+- Test package and component API compatibility. Host integration covers missing
+  and malformed package identity, future runtime/component/layout contracts,
+  missing or unversioned core modules, incompatible core/service modules, and
+  component-host API mismatch. Diagnostics reads the package version from the
+  live host rather than maintaining a separate version constant.
 - Add a diagnostics view for versions, layout path, components, unresolved sources, and failures. Delivered as `host-diagnostics`; see [The host diagnostics view](#the-host-diagnostics-view).
 - Validate on TX16S v2, TX16S v3, TX15, and GX15 with EdgeTX 2.12+.
 - Measure instruction use, Lua and bitmap memory, LVGL object count, and refresh cost.
+- Automated resource stability now covers repeated switching across six
+  dashboards, three zone sizes, retired-page/service collection, live mock object
+  counts, post-GC Lua memory growth, and informational desktop refresh timing.
+  See the [mock baseline and its limitations](../docs/hardware-validation.md#automated-mock-baseline).
+  Native LVGL and decoded bitmap memory still require simulator/radio evidence.
 - Establish release budgets from simulator and physical-radio baselines.
+
+The mocked instruction baseline remains 13600 of 20000 instructions for the
+worst loading callback, 6000 for steady refresh, and 9800 for reflow. The suite
+enforces a 15000-instruction ceiling, leaving at least 25% headroom below the
+firmware limit. This is not a physical-radio memory or timing baseline and does
+not complete the hardware or release-budget requirements.
 
 Deliverable: a read-only YAML-configured phase 1 release suitable for normal radio use.
 

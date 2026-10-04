@@ -28,7 +28,7 @@
 ---@field samples integer
 ---@field session integer Session number the values belong to.
 
-local extremaService = {}
+local extremaService = { RUNTIME_API = 1 }
 extremaService.__index = extremaService
 
 --- Ticks of 10ms between updates. Extrema only move when a reading moves, and

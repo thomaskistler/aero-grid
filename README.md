@@ -12,7 +12,7 @@ The phase-one runtime currently provides:
 - Per-model and per-screen layout selection through `Dashboard ID`.
 - Dynamically loaded component modules with API-version checks.
 - Five shared data services covering telemetry, model, control, extrema, and navigation.
-- The complete ten-component catalogue, configured entirely from YAML.
+- Nine display components and two diagnostic components, configured entirely from YAML.
 - Diagnostic views that print each service's normalized output.
 - Several independent dashboards on one radio, selected per screen by Dashboard ID.
 - Panels that lay out around EdgeTX's App mode menu button instead of underneath it.
@@ -22,6 +22,14 @@ The status rail and the on-radio editor are intentionally not part of this check
 ## Install on an SD card
 
 Copy `src/WIDGETS/AeroGrid/` into the radio's `/WIDGETS/` directory, then select **AeroGrid** in an App mode screen. The ordinary `1 x 1` layout is also supported.
+
+Upgrade the entire package, not individual Lua files, and remove old `.luac`
+files as described below. `lib/package.lua` defines the package version and the
+runtime, component, and layout API versions. The host rejects incompatible or
+unversioned runtime modules; a failed service leaves unrelated panels running.
+The `host` diagnostics dashboard reports the version loaded by the host.
+These checks detect API-incompatible mixtures, not every mixture of compatible
+releases or stale bytecode.
 
 Each widget instance has two native settings: **Dashboard ID** (`DashID` in Lua) and **Theme**. AeroGrid combines the Dashboard ID with `model.getInfo().filename` and loads:
 

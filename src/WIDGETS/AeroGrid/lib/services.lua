@@ -28,7 +28,7 @@
 ---@field failed? boolean Set after an update raises, which retires the service.
 ---@field update fun(self: AeroGridServiceInstance, now: integer)
 
-local services = {}
+local services = { RUNTIME_API = 1 }
 
 --- Service modules loaded by the host, in the order they are staged.
 --- Each entry's `id` becomes the key in the services table handed to a

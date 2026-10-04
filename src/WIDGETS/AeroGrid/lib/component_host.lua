@@ -35,7 +35,7 @@
 ---@field failed? boolean Set after a lifecycle failure disables the component.
 ---@field error? string First lifecycle failure message.
 
-local componentHost = {}
+local componentHost = { RUNTIME_API = 1 }
 
 --- Host-side component API version. Modules declaring anything else are rejected.
 componentHost.API_VERSION = 1

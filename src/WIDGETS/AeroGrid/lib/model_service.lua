@@ -36,7 +36,7 @@
 ---@field index integer
 ---@field name string Configured name, or "FM<index>" when unnamed.
 
-local modelService = {}
+local modelService = { RUNTIME_API = 1 }
 modelService.__index = modelService
 
 --- Ticks of 10ms between updates. Timers advance once a second, so this is

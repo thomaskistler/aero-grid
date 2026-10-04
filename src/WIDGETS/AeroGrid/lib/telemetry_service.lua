@@ -49,7 +49,7 @@
 ---@field age? number Seconds since the last live reading.
 ---@field revision integer Incremented whenever the reading changes.
 
-local telemetryService = {}
+local telemetryService = { RUNTIME_API = 1 }
 telemetryService.__index = telemetryService
 
 --- Ticks of 10ms between polls. Faster than any component's refresh so a

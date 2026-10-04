@@ -28,7 +28,7 @@
 ---@field warnings string[] Things the layout asked for that cannot be honoured.
 ---@field notices table[] `{severity, text}` records of the host adapting.
 
-local theme = {}
+local theme = { RUNTIME_API = 1 }
 
 --- Badge column width per font, since typography varies by span.
 local badgeWidths = {}
