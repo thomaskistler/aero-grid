@@ -1,0 +1,31 @@
+site_name: AeroGrid
+site_description: Configurable glass-cockpit dashboards for EdgeTX color radios.
+site_url: https://thomaskistler.github.io/aero-grid/
+repo_url: https://github.com/thomaskistler/aero-grid
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; AeroGrid contributors. GPL-2.0-only.
+
+theme:
+  name: mkdocs
+
+nav:
+  - Home: index.md
+  - Components:
+      - Metric: components/metric.md
+      - Flight timer: components/flight-timer.md
+      - Flight mode: components/flight-mode.md
+      - TX battery: components/tx-battery.md
+      - Cell battery: components/cell-battery.md
+      - Link status: components/link-status.md
+      - Trim panel: components/trim-panel.md
+      - Model identity: components/model-identity.md
+      - Navigation: components/navigation.md
+  - Hardware validation: hardware-validation.md
+
+plugins:
+  - search
+
+validation:
+  links:
+    not_found: warn
+    anchors: warn

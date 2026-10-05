@@ -2,6 +2,8 @@
 
 A configurable 4 x 4 glass-cockpit dashboard for EdgeTX color radios.
 
+[Documentation website](https://thomaskistler.github.io/aero-grid/)
+
 ## Current checkpoint
 
 The phase-one runtime currently provides:
@@ -117,6 +119,19 @@ The Lua 5.3 parse is the part that cannot be reproduced locally on every machine
 
 Runtime modules target EdgeTX's Lua 5.3 environment.
 
+### Documentation website
+
+The site uses MkDocs with the Markdown sources in `docs/`. Run `make docs` to
+install the separate documentation dependencies and build a strictly validated
+site in `build/docs/`. Run `make docs-serve` for a local preview at
+`http://127.0.0.1:8000`; stop it with Ctrl-C.
+
+`.github/workflows/docs.yml` validates documentation changes in pull requests
+and publishes to GitHub Pages after they land on `main`. Repository
+**Settings > Pages > Source** must be set to **GitHub Actions**. The workflow
+can also be run manually from `main`. Component references remain ordinary
+Markdown files, readable directly on GitHub.
+
 ### Make targets
 
 | Target | Purpose |
@@ -126,6 +141,8 @@ Runtime modules target EdgeTX's Lua 5.3 environment.
 | `make test` | Run unit and mocked EdgeTX integration suites in normal and firmware-like string modes. |
 | `make check` | Run `make test`, then parse every source and test Lua file with an EdgeTX/Lua compiler. |
 | `make build` | Recreate `build/sdcard` from `tests/fixtures/sdcard`, then overlay `src/WIDGETS/AeroGrid`. |
+| `make docs` | Build and strictly validate the MkDocs documentation site. |
+| `make docs-serve` | Preview the documentation locally with live reload. |
 | `make clean` | Remove all generated `build/` output, including the virtual environment and simulator SD image. |
 
 Typical workflow:
