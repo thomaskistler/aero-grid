@@ -762,13 +762,11 @@ function trimPanel.update(context, rect)
             { x = cell.x, y = cell.captionY, w = cell.textWidth },
             not captionsChanged
         )
+        primitives.setFont(indicator.value, area.readoutFont or context.fonts.label)
         reconcile(indicator.value, area.showValue, {
             x = cell.valueX or cell.x,
             y = cell.valueY,
             w = cell.textWidth,
-            font = function()
-                return area.readoutFont or context.fonts.label
-            end,
         }, not valuesChanged)
         primitives.placeBipolarBar(
             indicator.bar,

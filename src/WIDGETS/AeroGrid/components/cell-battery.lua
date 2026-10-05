@@ -901,13 +901,11 @@ function cellBattery.update(context, rect)
         context.settings.label,
         context.badgeText
     )
+    context.primitives.setFont(context.value, area.value)
     context.value:set({
         x = area.valueX,
         y = area.valueY,
         w = area.valueWidth,
-        font = function()
-            return area.value
-        end,
     })
 
     context.primitives.reconcileUnit(

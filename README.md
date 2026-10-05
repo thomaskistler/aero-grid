@@ -55,6 +55,12 @@ the battery itself, not a regulated receiver supply.
 No link alarm thresholds are assumed. The TX battery panel keeps transmitter
 voltage visible even in App mode, which hides EdgeTX's top bar.
 
+Dashboard ID **`aircraft-lite`** isolates the flight timer, TX battery, and model
+image in the same positions as `aircraft`. It omits the receiver telemetry and
+GV panels for hardware memory-growth comparison; it does not require a receiver.
+Restart the radio between comparisons to avoid counting previously initialized
+dashboard instances in the Widget memory total.
+
 Use a different Dashboard ID on each custom screen to run several independent dashboards for one model. Each instance renders exactly one layout; paging between them is EdgeTX sliding between its own screens, not anything AeroGrid does. Changing model reloads whatever the new model's files select, because EdgeTX destroys and rebuilds every widget around a model change.
 
 ### App mode and the EdgeTX menu button

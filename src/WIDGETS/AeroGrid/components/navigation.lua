@@ -909,17 +909,13 @@ function navigation.apply(context, drawn)
     -- done.
     local area, fonts = context.area, context.fonts
     if context.showDetail then
+        context.primitives.setFont(context.detailLabel, area.rowFont)
+        context.primitives.setFont(context.originLabel, area.rowFont)
         context.detailLabel:set({
             text = drawn.detail,
-            font = function()
-                return area.rowFont
-            end,
         })
         context.originLabel:set({
             text = drawn.origin,
-            font = function()
-                return area.rowFont
-            end,
         })
         context.primitives.centreLabel(
             context,
@@ -943,11 +939,9 @@ function navigation.apply(context, drawn)
         )
     end
     if context.showCoordinates then
+        context.primitives.setFont(context.coordinatesLabel, area.rowFont)
         context.coordinatesLabel:set({
             text = drawn.coordinates,
-            font = function()
-                return area.rowFont
-            end,
         })
         context.primitives.centreLabel(
             context,
@@ -1007,11 +1001,7 @@ function navigation.update(context, rect)
         context.text,
         area.unitFont
     )
-    context.unit:set({
-        font = function()
-            return area.unitFont
-        end,
-    })
+    context.primitives.setFont(context.unit, area.unitFont)
     -- Every anchor is about a slot and a font that have just moved, so all of
     -- them are discarded rather than trusted. A panel that reflowed while its
     -- distance and bearing held steady would otherwise keep the positions it
@@ -1021,13 +1011,11 @@ function navigation.update(context, rect)
     context.detailAnchor, context.originAnchor = nil, nil
     context.coordinatesAnchor = nil
     context.area = area
+    context.primitives.setFont(context.value, area.value)
     context.value:set({
         x = area.valueX,
         y = area.valueY,
         w = area.valueWidth,
-        font = function()
-            return area.value
-        end,
     })
 
     --- Show or hide a supporting row, positioning it only when visible.

@@ -635,6 +635,7 @@ function modelIdentity.update(context, rect)
     -- asked for, because a panel showing neither is a panel showing nothing.
     local nameVisible = area.showName or not context.image
 
+    primitives.setFont(context.value, area.nameFont)
     primitives.reconcile(context.value, nameVisible, {
         x = area.valueX,
         -- The body band, whether or not a picture was asked for. Where one is
@@ -648,9 +649,6 @@ function modelIdentity.update(context, rect)
         -- whole content box and an x centred for a shorter string reaches past
         -- the panel's right edge by the difference.
         w = area.valueWidth,
-        font = function()
-            return area.nameFont
-        end,
     }, nameVisible == context.showName)
     -- Every anchor is about a slot and a font that have just moved, and the
     -- box above was sized from the widest name rather than the current one.

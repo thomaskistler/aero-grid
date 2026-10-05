@@ -701,13 +701,11 @@ function flightTimer.update(context, rect)
         context.badgeText
     )
     context.frame = area.frame
+    context.primitives.setFont(context.value, area.clock)
     context.value:set({
         x = area.valueX,
         y = area.valueY,
         w = area.valueWidth,
-        font = function()
-            return area.clock
-        end,
     })
     context.area = area
     -- Every anchor is about a slot and a font that have just moved.

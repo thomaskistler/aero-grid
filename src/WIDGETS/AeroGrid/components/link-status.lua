@@ -1156,13 +1156,11 @@ function linkStatus.update(context, rect)
         context.settings.label,
         context.badgeText
     )
+    context.primitives.setFont(context.value, area.value)
     context.value:set({
         x = area.pad,
         y = area.valueY,
         w = area.content,
-        font = function()
-            return area.value
-        end,
     })
 
     context.showUnitRoom = area.showUnit

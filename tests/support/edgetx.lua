@@ -1090,6 +1090,16 @@ function support.lvgl()
         assertUsable(object)
         rawset(object, "writes", object.writes + 1)
         checkProperties(object.kind, changes)
+        -- EdgeTX v2.12.4 LvglParamFuncOrValue::parse overwrites the registry
+        -- reference without unref'ing the old callback (lua/lua_lvgl_widget.cpp).
+        if type(changes.font) == "function" and type(object.properties.font) == "function" then
+            local retained = rawget(object, "replacedFontRefs")
+            if not retained then
+                retained = {}
+                rawset(object, "replacedFontRefs", retained)
+            end
+            retained[#retained + 1] = object.properties.font
+        end
         for key, value in pairs(changes) do
             object.properties[key] = value
         end
@@ -1260,6 +1270,15 @@ function support.lvgl()
     local width = support.scaffold.DISPLAY_WIDTH
     local height = support.scaffold.DISPLAY_HEIGHT
     local handle = { settle = settle, objects = objects }
+
+    function handle.replacedFontRefCount()
+        local count = 0
+        for _, object in ipairs(objects) do
+            local refs = rawget(object, "replacedFontRefs")
+            count = count + (refs and #refs or 0)
+        end
+        return count
+    end
 
     -- Resource tests must not charge the inspection registry's retained history
     -- to the widget. Call only after deferred cleanup has settled.
