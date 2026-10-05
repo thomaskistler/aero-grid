@@ -10,17 +10,26 @@ theme:
 
 nav:
   - Home: index.md
-  - Components:
-      - Metric: components/metric.md
-      - Flight timer: components/flight-timer.md
-      - Flight mode: components/flight-mode.md
-      - TX battery: components/tx-battery.md
-      - Cell battery: components/cell-battery.md
-      - Link status: components/link-status.md
-      - Trim panel: components/trim-panel.md
-      - Model identity: components/model-identity.md
-      - Navigation: components/navigation.md
-  - Hardware validation: hardware-validation.md
+  - User Guide:
+      - Installation and upgrades: user-guide/installation.md
+      - Configure a dashboard: user-guide/dashboards.md
+  - Reference Guide:
+      - Overview: reference-guide/index.md
+      - Components:
+          - Metric: components/metric.md
+          - Flight timer: components/flight-timer.md
+          - Flight mode: components/flight-mode.md
+          - TX battery: components/tx-battery.md
+          - Cell battery: components/cell-battery.md
+          - Link status: components/link-status.md
+          - Trim panel: components/trim-panel.md
+          - Model identity: components/model-identity.md
+          - Navigation: components/navigation.md
+  - Developer Guide:
+      - Build and simulator: developer-guide/build.md
+      - Contributing: developer-guide/contributing.md
+      - Architecture: developer-guide/architecture.md
+      - Hardware validation: hardware-validation.md
 
 plugins:
   - search
