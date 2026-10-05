@@ -1217,7 +1217,7 @@ function theme.ladder(resolved, rect, frame)
 
     -- The first row of the panel the widget owns, and the first row it has
     -- promised to something else. The reading is centred between them.
-    local top = frame.reserved and frame.reserved.h or 0
+    local top = frame.reserved and not frame.reserved.side and frame.reserved.h or 0
     local centre = rect.h / 2
     -- Where a supporting row's glyphs begin, which is what the reading has to
     -- clear. **The row is pinned to the panel's floor now**, so this follows
@@ -1561,6 +1561,9 @@ function theme.frame(resolved, rect, fonts, reserved)
     local pad = tight and spacing.paddingTight or spacing.padding
     local compact = tight and 2 or spacing.paddingCompact
     local padRight = spacing.paddingRight
+    if reserved and reserved.side then
+        pad = math.max(pad, reserved.w + 4)
+    end
 
     local content = math.max(1, rect.w - pad - padRight)
 
@@ -1621,9 +1624,8 @@ function theme.frame(resolved, rect, fonts, reserved)
         if compact < reserved.h then
             labelX = reserved.w + 4
         end
-        -- Content starts below the obstruction. This is the only space the panel
-        -- actually loses, and it loses it once rather than per element.
-        if top < reserved.h then
+        -- Taller panels lose height; one-row panels already reserved width.
+        if not reserved.side and top < reserved.h then
             top = reserved.h
         end
     end
@@ -1838,7 +1840,7 @@ function theme.readingRoom(frame, rect, rows, visual, centre, floorY)
     local reserved = frame.reserved
     local shared = reserved ~= nil or not frame.labelHidden or (rows or 0) > 0 or visual == true
     local room = shared and math.floor(rect.h / 2) or rect.h
-    if reserved then
+    if reserved and not reserved.side then
         room = math.min(room, math.max(1, rect.h - reserved.h))
     end
     -- **And never deep enough to reach the supporting row.** A reading centred
@@ -2446,6 +2448,38 @@ function theme.panel(resolved, rect, fonts, spec, out)
     end
     if not out.showSide then
         out.rowRightY = out.detailY
+    end
+    out.primaryMinX = nil
+    if frame.reserved and frame.reserved.side and not spec.cornerCandidate then
+        local candidateSpec = {}
+        for key, value in pairs(spec) do
+            candidateSpec[key] = value
+        end
+        candidateSpec.frame = theme.frame(resolved, rect, fonts)
+        candidateSpec.cornerCandidate = true
+        local candidate = theme.panel(resolved, rect, fonts, candidateSpec, {})
+        local reserved = frame.reserved
+        local function overlaps(x, y, w, h)
+            return x < reserved.w + 4 and y < reserved.h and x + w > 0 and y + h > 0
+        end
+        -- Only restore the primary independently when it has no slotted visual
+        -- or side stack. Those share its geometry and must move as a group.
+        if not candidate.visualSize and not candidate.showSide and not out.visualSize and not out.showSide then
+            local numberWidth = theme.measureText(candidate.value, spec.forms[candidate.formIndex])
+            local x = candidate.valueCentre - math.floor(numberWidth / 2)
+            if not overlaps(x, candidate.valueY, candidate.valueWidth, theme.fontHeight(candidate.value)) then
+                out.value = candidate.value
+                out.formIndex = candidate.formIndex
+                out.unitFont = candidate.unitFont
+                out.showUnit = candidate.showUnit
+                out.valueCentre = candidate.valueCentre
+                out.valueX = x
+                out.valueWidth = candidate.valueWidth
+                out.valueY = candidate.valueY
+                out.valueBudget = math.min(candidate.valueBudget, 2 * (candidate.valueCentre - frame.pad))
+                out.primaryMinX = frame.pad
+            end
+        end
     end
     return out
 end

@@ -99,4 +99,28 @@ for _, zone in ipairs({ { w = 320, h = 240 }, { w = 480, h = 272 } }) do
         assert(detailed.extraLabel.hidden)
     end
 end
+local liveFont = wide.area.value
+fixture.radio.rssi = 0
+fixture.pump(context, 40)
+for _, id in ipairs({ "detailed", "wide-quality", "compact" }) do
+    local panel = fixture.instanceOf(context, id)
+    assertions.assertEqual(panel.text, "NO LINK", id .. " must replace retained readings")
+    assertions.assertEqual(panel.stateName, "critical")
+    assertions.assertEqual(panel.unitDrawn, false, "NO LINK must not carry a numeric unit")
+    local width = panel.themeBuilder.measureText(panel.area.value, panel.text)
+    assert(width <= panel.area.valueBudget, id .. ": NO LINK must fit its primary slot")
+    if panel.bar then
+        assertions.assertEqual(panel.bar.fill.properties.w, 0, "lost link must not leave a healthy bar")
+    end
+end
+context.zone.w, context.zone.h = 320, 240
+fixture.pump(context, 40)
+assertions.assertEqual(wide.text, "NO LINK", "resize must preserve the disconnected headline")
+assert(wide.themeBuilder.measureText(wide.area.value, wide.text) <= wide.area.valueBudget)
+fixture.radio.rssi = 75
+context.zone.w, context.zone.h = 480, 272
+fixture.pump(context, 40)
+assertions.assertEqual(wide.text, "70", "reconnection must restore measured LQ")
+assertions.assertEqual(wide.area.value, liveFont, "reconnection must restore the numeric font")
+assertions.assertEqual(wide.unitDrawn, true)
 fixture.reset()

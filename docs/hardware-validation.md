@@ -1,7 +1,9 @@
 # Phase 1 hardware validation
 
-Simulator acceptance is complete for the nine display panels. Physical-radio
-validation remains outstanding. Record results separately for TX16S v2,
+Simulator acceptance is complete for the nine display panels. Initial hardware
+dashboard validation is reported on TX16S v2 with EdgeTX 2.12.4.
+The remaining target matrix and resource measurements are still open.
+Record results separately for TX16S v2,
 TX16S v3, TX15, and GX15 running EdgeTX 2.12 or later; do not treat one radio
 or protocol as evidence for another.
 
@@ -11,6 +13,55 @@ Record radio model, EdgeTX version, AeroGrid commit, receiver/protocol and
 firmware version, dashboard ID, source names, and any failures. Mark a check
 not applicable when the required hardware or sensor is unavailable; do not
 mark it passed.
+
+### 2026-10-04: TX16S v2, EdgeTX 2.12.4
+
+- Package: AeroGrid `0.10.0`, confirmed on the radio's diagnostics dashboard.
+  Installed image built from the software hardening changes merged as
+  `a8442ec675c60aa93baaee7ff18928e838e27089`.
+- Result: the user reported all recommended dashboards verified on hardware,
+  with no issues observed.
+- Recommended dashboard set: `main`, all nine `review-*` display-panel layouts,
+  `host`, `services`, and `services2`.
+- Receiver/protocol, receiver firmware, source names, and individual test conditions
+  were not recorded. This is a user-reported dashboard
+  acceptance result, not evidence that every checklist item or protocol passed.
+- TX16S v3, TX15, and GX15 remain unverified.
+
+The checkboxes below describe the full validation procedure; the aggregate
+dashboard result does not mark unrecorded individual checks as passed.
+
+### Debug-screen experiment
+
+Three photographs supplied in sequence on 2026-10-04 show the following
+radio-wide statistics. Free memory is rounded to decimal MB; the other values
+are transcribed as displayed.
+
+| Field | Initial | After first round | After second round |
+| --- | --- | --- | --- |
+| Free memory | ~2.965 MB | ~2.158 MB | ~2.167 MB |
+| Lua duration maximum | 10 ms | 10 ms | 10 ms |
+| Lua interval maximum | 340 ms | 430 ms | 430 ms |
+| Script | 3721 B | 3721 B | 3721 B |
+| Widget | 10315 B | 15975 B | 15893 B |
+| Extra | 0 B | 0 B | 0 B |
+| Mixer duration maximum | 0.52 ms | 0.54 ms | 0.54 ms |
+| Mixer period | 3 ms | 3 ms | 3 ms |
+| Minimum free stack: Menu / Mix / Audio | 10668 / 640 / 1236 | 10668 / 640 / 1236 | 10668 / 640 / 1236 |
+
+The first round reduced free memory by approximately 0.81 MB and increased
+the Widget field by 5660 B. The second round recovered approximately 9 KB
+of free memory, while Widget decreased by 82 B. The later samples do not show
+continued memory growth; maximum Lua duration, mixer duration, and stack
+statistics also remained stable between those samples.
+
+Initial allocation as additional dashboards are visited is a possible
+explanation for the first-round change, not a proven attribution. These are
+aggregate radio statistics with other widgets installed, and the Widget field
+does not account for the whole free-memory change. Exact workload, elapsed
+durations, and counter-reset history were not recorded. Two later samples
+support short-run stability, not a long-run leak guarantee or a release budget.
+Native LVGL object counts and AeroGrid-specific memory/timing remain unmeasured.
 
 ## Display and controls
 

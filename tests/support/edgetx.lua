@@ -1419,6 +1419,7 @@ function support.radio(hostIo)
             -- mock uses it to decide what a dead link zeroes.
             gvar1 = { id = 330, name = "gvar1", desc = "Global variable 1" },
             gvar2 = { id = 331, name = "gvar2", desc = "Global variable 2" },
+            gvar9 = { id = 338, name = "gvar9", desc = "Global variable 9" },
             sa = { id = 300, name = "sa", desc = "Switch A" },
             ["trim-ail"] = { id = 310, name = "trim-ail", desc = "Aileron trim" },
             ["tx-voltage"] = { id = 320, name = "tx-voltage", desc = "Tx voltage" },
@@ -1639,7 +1640,7 @@ function support.radio(hostIo)
 
         -- EdgeTX mixer.cpp resolves GVs in the active flight mode; Lua's
         -- api_general.cpp then scales decimal GVs by 0.1.
-        if source == 330 or source == 331 then
+        if source == 330 or source == 331 or source == 338 then
             local index = source - 330
             local perMode = radio.globalsByMode[index]
             local value = perMode and perMode[radio.flightMode]

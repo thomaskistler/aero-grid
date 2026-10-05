@@ -661,6 +661,13 @@ function metric.refresh(context)
     if not context.feed then
         return
     end
+    local digits = metric.digitsFor(context)
+    if digits ~= context.sampleDigits then
+        context.sampleDigits = digits
+        context.sample = metric.widestSample(context.settings, digits)
+        metric.update(context, context.rect)
+        context.rendered = nil
+    end
     if context.metrics and context.metrics[2] then
         local first = metric.detailText(context)
         local second = context.metrics[3] and metric.secondaryText(context) or nil
@@ -911,6 +918,7 @@ function metric.create(parent, rect, settings, services)
     context.unitText = tostring(settings.unit or "")
     local area = metric.regionsFor(theme, services.themeBuilder, rect, layout, fonts, sample, context.unitText)
     context.sample = sample
+    context.sampleDigits = metric.digitsFor(context)
 
     local panel = primitives.panel(parent, rect, theme, presentation)
     context.panel = panel

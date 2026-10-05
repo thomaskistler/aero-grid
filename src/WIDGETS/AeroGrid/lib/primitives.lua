@@ -1072,6 +1072,10 @@ function primitives.centreReading(context, themeBuilder, area, font, text)
     if area.centreReadingGroup then
         x = area.valueCentre - math.floor(span / 2)
     end
+    if area.primaryMinX then
+        -- A live metric may exceed its declared sizing envelope.
+        x = math.max(x, area.primaryMinX)
+    end
 
     context.value:set({ x = x, w = math.max(1, span) })
     context.valueX = x

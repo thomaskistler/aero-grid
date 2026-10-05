@@ -37,6 +37,8 @@ state color. The bar is not a health score.
 
 Supported spans are `1x1` through `4x1`, `1x2` through `4x2`, and `2x3`
 through `4x3`. Supporting information sheds when it cannot fit.
+Supporting readings use the shared secondary text color, matching metric
+and battery panels; the headline retains its state-dependent primary color.
 
 - `1x1` shows the primary reading and state badge.
 - ELRS `2x1` with explicit `reading: quality`, RSSI and mode sources places
@@ -109,7 +111,7 @@ Link-down takes precedence over threshold alarms.
 | --- | --- |
 | Live readings, no crossed thresholds | Measured value, normal accent. |
 | Low LQ, RSSI or margin | `WARN`/`CRIT`, state color, explicit cause where supporting text fits. |
-| Link down after receiving data | Last reading retained, critical state, `LINK DOWN` or shorter caption where available. |
+| Link down after receiving data | `NO LINK` headline without a unit, critical state, empty bar. Supporting stale readings carry `*`. |
 | Stale primary source | Last reading retained, `STALE`; an independent live critical/warning condition can take precedence. |
 | Source not recognized | `N/A` reading and badge. |
 | Source waiting for data | `--` reading and `N/A` badge. |

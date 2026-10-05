@@ -101,7 +101,12 @@ are rejected at load. Pack mode also rejects a missing or invalid count,
 Supported spans are `1x1`, `2x1`, `3x1`, `4x1`, `1x2`, `2x2`, `3x2`,
 and `4x2`. A single grid cell shows the headline without a visualization
 or supporting row. Larger spans may show the visualization if it fits.
-Supporting rows require a two-row panel; one-row panels shed them.
+Supporting rows normally require a two-row panel. With `visual: none`,
+one-row panels at least two columns wide can instead place the count above
+the supporting voltage in a stack to the right of the large headline.
+The shared builder uses a footer when it fits, then a side stack, then hides
+supporting text rather than shrinking the headline. Disabled supporting
+items do not reserve an empty stack row.
 The glyph uses the same shape, state color, and font-dependent outline as
 `tx-battery`. It is shed when it cannot fit without shrinking the reading,
 and hidden when no valid voltage is available.
@@ -137,7 +142,10 @@ assuming the entire ascent is ink, within half a pixel for
 integer-coordinate rounding. Alignment follows the displayed digits and is
 recomputed on reflow.
 Explicitly requesting `showCount: true` or `showPack: true` on a one-row panel
-is rejected. Narrow rows shed text that cannot fit. Missing data shows `--`
+requires `visual: none` and `colSpan` of at least 2; otherwise it is rejected.
+For example, use `colSpan: 2`, `rowSpan: 1`, `visual: none`,
+`showCount: true`, and `showPack: true` for a compact text-only battery panel.
+Narrow rows shed text that cannot fit. Missing data shows `--`
 without a unit, and stale telemetry retains the last reading with a stale badge.
 
 ## Thresholds and unavailable data

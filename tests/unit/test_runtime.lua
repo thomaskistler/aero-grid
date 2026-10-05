@@ -1112,7 +1112,8 @@ local function testInertSettingsAreRefused()
         local stated = { [key] = true }
 
         -- Stated on a single row: refused, by name, with what to do about it.
-        local refused = module.validateSettings(stated, single, stated)
+        local rejectedSpan = kind == "cell-battery" and { colSpan = 1, rowSpan = 1 } or single
+        local refused = module.validateSettings(stated, rejectedSpan, stated)
         assertEqual(
             #refused,
             1,
@@ -1123,7 +1124,8 @@ local function testInertSettingsAreRefused()
                 .. " has space beneath the reading at any width"
         )
         assert(string.find(refused[1], key, 1, true), refused[1])
-        assert(string.find(refused[1], "two rows tall", 1, true), refused[1])
+        local requiredSize = kind == "cell-battery" and "two-row panel" or "two rows tall"
+        assert(string.find(refused[1], requiredSize, 1, true), refused[1])
         assert(
             string.find(refused[1], "drop " .. key, 1, true),
             "the message must say what to do about it: " .. refused[1]
