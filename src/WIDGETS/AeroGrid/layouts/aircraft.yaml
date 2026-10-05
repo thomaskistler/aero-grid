@@ -1,0 +1,103 @@
+version: 1
+grid:
+  columns: 4
+  rows: 4
+components:
+  - id: receiver-battery
+    type: cell-battery
+    col: 0
+    row: 1
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: RX battery
+      source: RxBt
+      sourceType: pack
+      cells: 2
+      reading: average
+      visual: none
+      showCount: true
+      showPack: true
+  - id: link
+    type: link-status
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: Link
+      reading: quality
+      qualitySource: RQly
+      rssiSource: 1RSS
+      protocol: elrs4
+      modeSource: RFMD
+      visual: none
+  - id: transmitter-battery
+    type: tx-battery
+    col: 3
+    row: 0
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: TX battery
+  - id: altitude
+    type: metric
+    col: 0
+    row: 3
+    colSpan: 2
+    rowSpan: 1
+    config:
+      metrics:
+        - source: Alt
+          label: Altitude
+          precision: 1
+        - source: Alt+
+          label: MAX ALT
+          precision: 1
+        - source: VSpd+
+          label: MAX VS
+          precision: 1
+      visual: none
+  - id: flight-clock
+    type: flight-timer
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      timer: 0
+      label: Flight timer
+  - id: flight-count
+    type: metric
+    col: 2
+    row: 1
+    colSpan: 1
+    rowSpan: 1
+    config:
+      metrics:
+        - source: gvar9
+          label: Flights
+          unit: ""
+          precision: 0
+      visual: none
+  - id: expo
+    type: metric
+    col: 3
+    row: 1
+    colSpan: 1
+    rowSpan: 1
+    config:
+      metrics:
+        - source: gvar1
+          label: Expo
+          unit: "%"
+          precision: 0
+      visual: none
+  - id: identity
+    type: model-identity
+    col: 2
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      presentation: image

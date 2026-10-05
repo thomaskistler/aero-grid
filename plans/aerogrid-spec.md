@@ -8,8 +8,8 @@
 - EdgeTX source: `../edgetx`
 - Project root: `aero-grid/`
 - Implementation: Phase 1, milestones 1 to 8 complete; eleven shipped components, five using the shared standard panel; all nine display panels reviewed and documented. Global-variable display uses ordinary metric sources.
-- Next work: Milestone 9, hardening, and hardware verification. Nothing in this project has run on a radio.
-- Everything is merged into `main`; there is no branch in flight. See [Resuming work](#resuming-work) for the state and the exact next steps.
+- Next work: Milestone 9 target-matrix validation and resource baselining. Initial dashboard validation passed on TX16S v2 with EdgeTX 2.12.4, as reported by the user on 2026-10-04.
+- The retirement and software-hardening work is merged into `main`. The aircraft dashboard, compact-layout refinements, and initial hardware records are the current follow-up change set. See [Resuming work](#resuming-work) for the state and the exact next steps.
 
 ## Summary
 
@@ -226,6 +226,7 @@ A preset cannot be expressed as a settings default, because the host fills decla
 - By default show an upright battery glyph beside the reading, using the shared transmitter-battery primitive, with no bottom progress bar. Retain `visual: bar` for explicitly configured layouts. Scale either visualization over the configured usable voltage range, not from zero volts.
 - Support warning, critical, stale, and unavailable states.
 - Optionally show cell count and summed pack voltage.
+- In text-only (`visual: none`) one-row panels at least two columns wide, allow count and supporting voltage in a right-side stack. Use the shared footer -> side -> hidden fallback without shrinking the primary. Disabled items reserve no empty stack row. One-row glyph/bar presentations do not support this stack; use two rows to combine the glyph with supporting values.
 - Do not estimate remaining battery percentage unless a future component explicitly defines and labels its estimation model.
 - Validate the table rather than trusting it. Entries that are not plausible cell voltages are rejected instead of folded into a lowest or an average, the walk is bounded because the table comes from the firmware, and a value that is not a table at all is reported as a configuration mistake rather than as a missing source.
 - Judge the thresholds on the worst cell even when the panel shows the pack sum, because a sum is exactly what hides one sagging cell.
@@ -258,6 +259,8 @@ A preset cannot be expressed as a settings default, because the host fills decla
 - Distinguish three situations that all look like a zero: a link that is down, a protocol that populates no RSSI sensor, and a reading that genuinely is zero. The first is reported as critical with its own badge, because on this panel a dead link is the measurement rather than merely stale data. The second keeps whichever source the protocol does have and says the sensor is absent. The third is shown as the reading it is.
 - Read that distinction from `telemetryService:link()` rather than inferring it again. Only the telemetry service knows whether a source has ever contradicted `getRSSI()`.
 - Default no thresholds. What counts as a bad link depends entirely on the unit, and a default would warn constantly on dBm or never on a percentage.
+- After a previously available reading loses the receiver link, replace the headline with `NO LINK`, omit its unit, empty any bar, and retain the critical state. Fit the wording to the available primary slot; restore numeric geometry on reconnection. This is a link-panel-only exception to retaining stale primary values. Before any reading arrives, retain the unavailable presentation rather than raising a critical alarm.
+- Mark retained stale auxiliary readings with `*`; withhold RSSI margin when its inputs are stale. Supporting captions, RSSI, margin, and RF details use `textFaint`, matching metric and battery supporting readings.
 
 #### Navigation
 
@@ -292,6 +295,8 @@ A preset cannot be expressed as a settings default, because the host fills decla
 - Read the EdgeTX transmitter-voltage source.
 - Show voltage as the authoritative value.
 - Treat any percentage or battery-fill estimate as optional and configurable because battery chemistry and voltage range vary by radio.
+- Current `1x1` presentation is voltage-only; larger panels may add the glyph if it fits without shrinking the voltage.
+- **Proposed, not implemented:** a glyph-only presentation for a compact `1x1` slot, centered without numeric voltage. Its fill would remain a voltage-range estimate, not measured remaining charge. The setting name and unavailable-state presentation still need design before implementation.
 
 #### Trim panel
 
@@ -1072,9 +1077,14 @@ State as of 2026-09-20. This section is the entry point after a break: it record
 
 This section used to carry a table naming the branch currently in flight, which was accurate only while one existed and became a trap the moment it was merged: the first act on resuming was to check out a branch that had been deleted. The shape is gone rather than filled in with `main`. If a branch stack ever returns, record it here again — but only while it is real.
 
-### Nothing has run on a radio
+### Hardware validation status
 
-Every decision this project has made rests on two things: the EdgeTX simulator, and arithmetic. That includes all of today's work.
+On 2026-10-04 the user confirmed AeroGrid `0.10.0` on a TX16S v2 running
+EdgeTX 2.12.4 and reported all recommended dashboards verified with no issues
+observed. This is the first recorded dashboard acceptance on physical hardware.
+See the [hardware run record](../docs/hardware-validation.md#2026-10-04-tx16s-v2-edgetx-2124)
+for scope and missing details. Other target radios, protocol-specific evidence,
+and physical resource measurements remain open.
 
 The simulator is a real host running real LVGL, so it catches a great deal, and the test suite measures against a mock whose arithmetic is taken from the firmware source. But a simulator on a desktop monitor is not a 480 x 272 transflective panel at arm's length in daylight, and no amount of contrast arithmetic substitutes for looking at one.
 
@@ -1127,7 +1137,8 @@ Two things about that are worth keeping rather than leaving in a PR. **The sympt
 documentation pass: `flight-mode`, `tx-battery`, `model-identity`,
 `flight-timer`, `cell-battery`, `trim-panel`, `navigation`, `link-status`, and
 `metric`. All nine display-component reviews are complete.
-Physical-radio validation remains outstanding.
+Initial physical dashboard validation passed on TX16S v2 / EdgeTX 2.12.4;
+the remaining hardware matrix and resource measurements are outstanding.
 Review screens live on a second model because `MAX_CUSTOM_SCREENS` is 10.
 The four span galleries remain test fixtures rather than radio screens.
 
@@ -1174,7 +1185,7 @@ and regenerate their checksum.
 
 The current suite, including the ELRS 4.x link review and sixteen-panel
 ELRS exercise, reports **13600/20000** for the worst
-callback (shipped component refresh), **6000/20000** for the worst steady
+callback (shipped component refresh), **6600/20000** for the worst steady
 frame (link review), and **9800/20000** for shipped reflow. These are
 the runner's sampled instruction counts; the figures and reasoning below
 record earlier measurements rather than the current panel implementations.
@@ -1208,8 +1219,8 @@ The worst callback rose 85 when the heading notice started working. It had been 
 - `make test`, `make check`, and `make build` pass from a clean tree. `make check` was also run against a real Lua 5.3 `luac`, and both suites were executed under a real Lua 5.3 interpreter, not only under whichever Lua `lupa` provides.
 - CI (`.github/workflows/ci.yml`) runs `make check` under Lua 5.3 on every pull request, plus the SD image build and two integrity assertions.
 - The dashboard has been confirmed running in the EdgeTX simulator on a TX16S profile through milestone 7. Navigation, link status, the radial and bar metrics and the trim panel have all been read against live simulated telemetry, which is where the arc drift in constraint 11 was found. Two of milestone 7's behaviours still cannot be judged there: whether a cells source on a real receiver returns the table shape assumed here, since nothing on an ELRS link publishes one, and whether a protocol without an RSSI sensor is recognized as a link rather than a dead one.
-- Milestone 8's corner work and the whole presentation and consistency pass have been seen in the EdgeTX simulator and judged there. The accent geometry in particular took five rounds of looking, and the version that was accepted came from the person at the screen rather than from any measurement, which is the standing argument for building something to look at rather than reasoning about it in prose. None of it has been seen on a radio; see [Nothing has run on a radio](#nothing-has-run-on-a-radio).
-- The simulator fixture carries **five screens on `model1` and ten on `model2`**, every one holding an AeroGrid instance and every one an App mode layout. `model1` has `sim`, which fills its grid with the telemetry components; `sim2`, which covers the radio-local ones that had nowhere to go beside them; the `states` layout twice, under the Modern and EdgeTX-derived palettes; and the `host` diagnostics view. The default `model2` carries reviews for `flight-mode`, `tx-battery`, `model-identity`, `flight-timer`, `cell-battery`, `trim-panel`, `navigation`, `link-status`, and `metric`, plus the cell-source diagnostic screen.
+- Milestone 8's corner work and the whole presentation and consistency pass have been seen in the EdgeTX simulator and judged there. The accent geometry in particular took five rounds of looking, and the version that was accepted came from the person at the screen rather than from any measurement, which is the standing argument for building something to look at rather than reasoning about it in prose. Initial dashboard acceptance has now been reported on TX16S v2 / EdgeTX 2.12.4; see [Hardware validation status](#hardware-validation-status).
+- The simulator fixture carries **six screens on `model1` and ten on `model2`**, every one holding an AeroGrid instance and every one an App mode layout. `model1` has `sim`, which fills its grid with the telemetry components; `sim2`, which covers the radio-local ones that had nowhere to go beside them; the `states` layout twice, under the Modern and EdgeTX-derived palettes; the `host` diagnostics view; and the `aircraft` dashboard. The default `model2` carries reviews for `flight-mode`, `tx-battery`, `model-identity`, `flight-timer`, `cell-battery`, `trim-panel`, `navigation`, `link-status`, and `metric`, plus the cell-source diagnostic screen.
 
   Reaching a layout means setting the widget's Dashboard ID, which in App mode cannot be reached from the main view at all: `Widget::openMenu` returns immediately after `setFullscreen(true)` when the widget is not in the top bar and the view is App mode. So a layout without a screen of its own costs a trip through Model Setup and Screens, which is why the review screens exist rather than being Dashboard IDs somebody is expected to type. `MAX_CUSTOM_SCREENS` is 10, and that ceiling is why the reviews are on a second model at all. Paging between screens switches dashboards without opening widget settings, and exercises two widget instances resolving different layouts at once; `sim` carries the Modern palette and `sim2` the EdgeTX-derived one, so the two are one button press apart.
 
@@ -1221,6 +1232,51 @@ The worst callback rose 85 when the heading notice started working. It had been 
 - **Review screens live on a second model.** `MAX_CUSTOM_SCREENS` is 10 (`radio/src/dataconstants.h`). `model1.yml` keeps the dashboards and diagnostics; `model2.yml` has nine component review screens and one source-name diagnostic, filling its ten-screen allowance. All nine display-component reviews are complete. The metric review includes an ordinary GV source.
 
 ### Immediate next steps
+
+**Aircraft dashboard follow-up (2026-10-04).** Dashboard ID `aircraft` is a
+real model9-oriented operating layout, not a review gallery. Its zero-based
+grid placement is:
+
+| Panel | Column, row | Span | Binding |
+| --- | --- | --- | --- |
+| Flight timer | 0, 0 | 2x1 | Model timer 1 |
+| RX battery | 0, 1 | 2x1 | `RxBt`, pack mode, user-confirmed 2S, average headline |
+| Link | 0, 2 | 2x1 | `RQly`, `1RSS`, ELRS 4.x `RFMD`, no bar |
+| Altitude | 0, 3 | 2x1 | `Alt`, with `Alt+` above `VSpd+` on the right |
+| TX battery | 3, 0 | 1x1 | Radio-local transmitter voltage, no glyph at this span |
+| Flights | 2, 1 | 1x1 | `gvar9`, integer count |
+| Expo | 3, 1 | 1x1 | `gvar1`, integer percent |
+| Model image | 2, 2 | 2x2 | Model bitmap |
+
+Column 2 of the top row stays empty. No GPS or airspeed source is configured.
+The RX headline is `RxBt / 2`, not an individually measured cell voltage;
+total voltage and `2S` appear on the right. Verify that `RxBt` measures the
+battery rather than regulated supply. The model also publishes numeric
+`CelV`, but it is not bound; there is no `Cels` table in this model.
+Separate numeric cell and pack sources are not currently supported together.
+GV9 flights and GV1 expo are read-only existing model values.
+
+One-row panels reserve the App-mode button's width on the left rather than
+losing a full-width top band. For standalone primaries, retain normal centered
+geometry when the declared widest number/unit envelope clears the button;
+keep the inset when it intersects. Headers and supporting content retain
+their own clearance. Slotted visuals and side stacks remain conservatively
+inset as groups. Taller panels keep the vertical reservation. Metric reflows
+its primary sample when deferred sensor precision resolves.
+
+Hardware acceptance and the three Debug-screen snapshots are recorded in
+[`hardware-validation.md`](../docs/hardware-validation.md). Review layouts
+are smoke tests, not a representative live-source performance baseline;
+future resource baselines should exercise the operating aircraft dashboard.
+Repeated VS Code simulator extension-host crashes remain unexplained.
+Clearing regenerated `.luac` files is a refresh procedure, not a proven crash
+fix. The staged local model9 and its sample simulator bitmap are not shipped
+fixtures; keep the original hardware bitmap when copying model settings.
+Screenshot automation remains deferred.
+
+Next, verify `NO LINK` and recovery in the simulator and on the bench,
+check the live `RxBt` reading, and continue target-matrix/resource baselining.
+The glyph-only TX presentation remains proposed follow-up work.
 
 The simulator panel review and documentation pass is complete. Continue with
 milestone 9 hardening and the hardware verification below. Simulator acceptance
@@ -1315,7 +1371,7 @@ These came out of the presentation and consistency pass and were not done, each 
 | Item | Why it was left | What taking it would involve |
 | --- | --- | --- |
 | **`link-status` thresholds change unit at runtime** | With `reading: auto`, the leading source can resolve to RSSI in dBm or to link quality in percent, and `warning` and `critical` are bare numbers either way. The settings vocabulary made the label honest — "in the leading source's unit" — rather than fixing it. | Either pin the threshold to a named source, or carry two thresholds and select with the reading. Both change behaviour for an existing layout, which is why it was documented instead. |
-| **The physical readability review** | Needs hardware. It is milestone 4's last open item and has been open since milestone 4. | See [Nothing has run on a radio](#nothing-has-run-on-a-radio). It is larger than one milestone's loose end. |
+| **The physical readability review** | Needs hardware. It is milestone 4's last open item and has been open since milestone 4. | See [Hardware validation status](#hardware-validation-status). It is larger than one milestone's loose end. |
 
 ### Open items carried forward
 
@@ -1558,13 +1614,70 @@ Measured cost is in [Current cost](#current-cost), which is the one place that c
 
 **The worst callback is the staged loader, not any component's own work.** It is the callback that builds one `trim-panel` with four indicators, at 7509. Every layout's second-worst is the loader's header stage, between 6209 and 7361. The three telemetry components at sixteen cells reach 6721, 6593 and 6337, all of them in that header stage, and their worst steady frames are 2290, 2380 and 2562. Removing the services' subscription caps raises the worst steady frame to 6200, which is what the caps are for. On a full grid, component work is no longer the binding constraint, which is worth knowing before optimising a panel.
 
-### Aircraft-reported state: deferred, with the research kept
+### Proposed flight-status panel: aircraft-reported state
 
 **The dashboard shows nothing the aircraft reports about its own state.** `flight-mode` shows EdgeTX's transmitter mixer modes, not an aircraft-reported mode. Ordinary GV sources displayed by `metric` also resolve against the active transmitter flight mode.
 
 It is **not** arming state, not the flight controller's mode — Angle, Acro, Horizon, Rescue — and not gyro or stabilisation state. Those live on the aircraft and can only arrive as telemetry, and no component reads them. That is a gap in the catalogue rather than a decision, and it is recorded here so it can be seen without being noticed as an absence.
 
-A component for it is **deferred, not rejected**. The condition for revisiting is the component-by-component review pass over the existing eleven being complete. The research is below because it is the expensive part and would otherwise be redone.
+A `flight-status` panel is **proposed, not implemented**. The existing display-panel
+review pass is now complete, so its earlier prerequisite is satisfied; this
+does not make the new panel part of the implemented catalogue. It should show
+aircraft-reported armed/disarmed state, flight-controller mode, and optional
+gyro/stabilization mode when configured sources actually provide them.
+The research is below because it is the expensive part and would otherwise be redone.
+
+Proposed requirements:
+
+- Select sources independently for arming, flight-controller mode, and gyro
+  mode; allow only the available fields to be configured.
+- Display text sensors verbatim, or use explicit layout-owned mappings for
+  numeric values and known text strings. Do not invent a universal FC or
+  gyro vocabulary, or infer arming from arbitrary mode names.
+- Distinguish receiver-reported state from a transmitter switch command.
+  If switch-driven status is supported, label it as commanded state rather
+  than claiming the aircraft acknowledged it.
+- Keep valid disarmed state distinct from unavailable or stale telemetry.
+  Missing or disconnected data must never imply disarmed or gyro-off.
+- Use shared responsive text sizing, semantic states, and supporting colors;
+  compact spans may show one leading status, larger spans additional fields.
+- Remain read-only. Source mappings, setting names, leading-field selection,
+  and loss-of-link presentation require design and real receiver examples
+  before implementation.
+
+### Text-only and image-only catalogue scope
+
+There is currently **no generic text panel** for arbitrary static text or a
+selected text telemetry source. `flight-mode` shows the transmitter's mode
+name, and `model-identity` with `presentation: name` shows the current model
+name; neither is a general text widget. `metric` remains numeric-only.
+The text-sensor capability discussed below is a proposed foundation for
+flight status, not shipped functionality.
+
+`model-identity` with `presentation: image` supplies an **image-body panel**
+using the current model's assigned bitmap, with the model name still shown
+in the header and a name fallback when the bitmap is unavailable. It is not
+a generic arbitrary-image panel, nor a completely caption-free image mode.
+Generic text and arbitrary/caption-free image panels have no implemented
+settings contract yet.
+
+### Proposed panel to-dos
+
+These are backlog items, not implemented features or Phase 1 acceptance claims.
+
+- [ ] Design and implement `flight-status` for configured armed/disarmed,
+  flight-controller mode, and gyro/stabilization sources, with explicit
+  mappings and honest stale/unavailable states.
+- [ ] Design and implement a generic text-only panel for static text or a
+  selected text telemetry source, with responsive fitting and optional
+  layout-owned state mappings.
+- [ ] Design and implement a generic image-only panel for a configured SD-card
+  image, including a caption-free presentation, aspect-preserving scaling,
+  and an explicit missing-image fallback.
+- [ ] Design and implement a glyph-only TX battery presentation for compact
+  panels, without numeric voltage and with explicit unavailable-range behavior.
+
+### Aircraft-state telemetry research
 
 **What the radio actually publishes.** This table is the design constraint: the same sensor name carries a different shape on different links.
 
@@ -1579,7 +1692,14 @@ A component for it is **deferred, not rejected**. The condition for revisiting i
 
 **Arming is not separately published on ELRS.** The only `Arm` sensor EdgeTX defines is FlySky's. Flight controllers are understood to encode arming inside the `FM` string, but **that vocabulary is the flight controller's and is not in the EdgeTX tree**, so a component that recognised specific mode strings would be designed against a guess. That is the fixture-discipline mistake in a new place, and it is the single most important thing recorded here.
 
-**The proposal, if it is built.** A component that displays any `UNIT_TEXT` sensor and lets the *layout* map strings to states — `critical: "!ERR"` — rather than an "aircraft mode" component with a built-in vocabulary. The vocabulary then lives where someone who knows their flight controller can state it, and the component is honest about what it knows: it shows the string the aircraft sent.
+**The proposed text-source foundation.** Display a `UNIT_TEXT` sensor and let
+the *layout* map strings to states rather than embedding a universal aircraft
+mode vocabulary. For example, an explicit mapping could classify `!ERR` as
+critical; this is illustrative, not an implemented YAML setting. The
+vocabulary lives where someone who knows their flight controller can state
+it, and the component is honest about what it knows: it shows what the
+aircraft sent. A flight-status panel may compose such readings with explicit
+numeric arming or gyro mappings.
 
 `metric` cannot absorb this. It formats a number to a precision and normalises it to a range; thresholds, extrema and `fraction` are all meaningless for text, and its ladder sizes the reading from the widest **numeric** form with a unit riding beside it, which a string has no equivalent of. Fitting text into it would make one name cover two components, which is what the settings vocabulary work undid.
 
@@ -1587,7 +1707,7 @@ A component for it is **deferred, not rejected**. The condition for revisiting i
 
 ### The host diagnostics view
 
-Nothing in this project has ever run on a radio. When it does and something looks wrong, the only evidence available is pixels, and inferring from pixels is what cost an evening on an arc drifting by its own radius and another on a radio running bytecode that was no longer on the card. The `host-diagnostics` component exists so a hardware session can answer "what is loaded and what did it resolve to" by reading it instead of deducing it.
+Initial dashboard acceptance has been reported on TX16S v2 / EdgeTX 2.12.4. When something looks wrong on hardware, inferring from pixels alone can conceal geometry defects or stale bytecode. The `host-diagnostics` component exists so a hardware session can answer "what is loaded and what did it resolve to" by reading it instead of deducing it.
 
 It ships as four sections, one per panel, on the `host` dashboard:
 
@@ -2101,13 +2221,25 @@ Three approaches were measured before choosing:
 | Inset the top-left container | 47 px of 238, a fifth of its width | 117 px falls to 70 | Leaves a notch where the cell no longer lines up with the column beneath it |
 | Reserve inside `theme.frame` | 20 px of 134, on that panel only | reading survives, label is dropped | No notch; every other cell is unchanged |
 
-`theme.frame` owns the padded content geometry, header row, and badge column for all eleven catalogue components. Giving it the obstructed corner fixes every component in one place. The header moves to the right of the button and the content start below it, without changing the grid geometry.
+`theme.frame` owns the padded content geometry, header row, and badge column for all eleven catalogue components. Giving it the obstructed corner fixes every component in one place. The header moves to the right of the button without changing the grid geometry.
+For one-row spans (`1x1`, `2x1`, `3x1`, `4x1`), the shared frame reserves width
+on the left instead of raising the content start. Taller panels continue to
+start content below the obstruction. This keeps a short panel's reading
+vertically centred while all readable content stays clear of the menu button.
+An ungrouped primary first tries its ordinary centered sizing envelope, including
+the unit, against the icon. A clear envelope keeps its ordinary font and centre;
+the header and supporting content retain left clearance independently. Slotted
+visuals and side stacks remain conservatively inset as a group. Metric samples
+are not hard value bounds: out-of-envelope live text is prevented from extending
+left into the icon, without changing the sample-based font on each value update.
 
 The corner reaches the frame through the theme builder each component is handed, rather than through a new argument on every component, so a component written by someone else is laid out correctly without knowing any of this exists. It is read on each call rather than captured, so a zone that moves is picked up by the update that follows it.
 
 The reading gets larger rather than smaller. With the dial shrunk to suit the reduced height, the shipped dashboard's distance is chosen at `MIDSIZE` where it was previously `SMLSIZE`.
 
-A `1 x 1` cell in that corner cannot be saved, and no approach saves it. Its reading survives, pushed below the button, and its header label is dropped rather than clipped to the four pixels left beside the badge. Avoid placing a single-cell component in the top-left of an App mode layout.
+A `1 x 1` cell in that corner has limited width after the left reservation.
+Its heading and optional content may be dropped; the reading is fitted within
+the remaining width rather than pushed below the button.
 
 The error overlay was subject to the same problem and was fixed first. It was drawn at (8, 8), so in App mode a component could fail, the host could report it, and the radio would show nothing.
 

@@ -831,6 +831,7 @@ function linkStatus.create(parent, rect, settings, services)
     -- reads in percent and an FrSky RSSI in plain dB -- so fitting against it
     -- means a narrower unit never has to be reconsidered.
     context.sample = { digits = "-100", unit = "dBm" }
+    context.rect = rect
 
     local area = linkStatus.regionsFor(theme, services.themeBuilder, rect, layout, fonts, context.sample)
     context.detailWidth = area.detailWidth
@@ -876,7 +877,7 @@ function linkStatus.create(parent, rect, settings, services)
         y = area.detailY,
         w = area.detailWidth,
         text = "",
-        color = theme.color.text,
+        color = theme.color.textFaint,
         font = fonts.label,
     })
 
@@ -885,7 +886,7 @@ function linkStatus.create(parent, rect, settings, services)
         y = area.detailY,
         w = area.rowRightWidth,
         text = "",
-        color = theme.color.text,
+        color = theme.color.textFaint,
         font = fonts.label,
     })
 
@@ -895,7 +896,7 @@ function linkStatus.create(parent, rect, settings, services)
             y = area.extraY or area.detailY,
             w = area.content,
             text = "",
-            color = theme.color.text,
+            color = theme.color.textFaint,
             font = fonts.label,
         })
         if not area.showExtra then
@@ -946,6 +947,7 @@ function linkStatus.render(context, out)
     local reading = linkStatus.read(context)
 
     out.state = linkStatus.resolveState(settings, reading)
+    local noLink = reading.linkDown and reading.available
 
     local text = "--"
     if type(reading.value) == "number" then
@@ -961,17 +963,17 @@ function linkStatus.render(context, out)
         -- A source the protocol does not have reads N/A, never zero.
         text = "N/A"
     end
-    out.text = text
+    out.text = noLink and "NO LINK" or text
     -- Declared only where it is drawn, like every other optional element. The
     -- unit is the source's own -- `dBm`, `dB` or `%` -- and it arrives with the
     -- reading rather than being known when the panel is built.
-    out.unit = reading.unitText or ""
+    out.unit = not noLink and reading.unitText or ""
     out.value = reading.value
     out.primary = reading.primary
 
     -- A reading the panel is not showing must not leave a bar behind that still
     -- looks like a healthy link.
-    out.fraction = out.state == "unavailable" and 0 or linkStatus.fraction(settings, reading.value)
+    out.fraction = (noLink or out.state == "unavailable") and 0 or linkStatus.fraction(settings, reading.value)
 
     if context.showDetail then
         out.detail = context.pairedRow and "" or linkStatus.detailText(context, reading)
@@ -1121,6 +1123,15 @@ function linkStatus.refresh(context)
     if not context.rssiFeed and not context.qualityFeed then
         return
     end
+    local reading = linkStatus.read(context)
+    local noLink = reading.linkDown and reading.available
+    local digits = noLink and "NO LINK" or "-100"
+    if context.sample.digits ~= digits then
+        context.sample.digits = digits
+        context.sample.unit = noLink and "" or "dBm"
+        linkStatus.update(context, context.rect)
+        context.rendered = nil
+    end
     local changed, drawn = context.primitives.changed(context, linkStatus.render)
     if changed then
         linkStatus.apply(context, drawn)
@@ -1131,6 +1142,7 @@ end
 ---@param context AeroGridLinkContext
 ---@param rect AeroGridRect
 function linkStatus.update(context, rect)
+    context.rect = rect
     local area =
         linkStatus.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts, context.sample)
 

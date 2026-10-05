@@ -427,11 +427,8 @@ end
 
 --- Refuse a supporting row on a panel that has nowhere to put one.
 ---
---- No single-row span grants a supporting row: a 65 pixel panel has no space
---- beneath the reading whatever its width, so asking for one on a `4 x 1` is
---- as inert as asking on a `1 x 1`. Accepting it and ignoring it is the worst
---- of the three options, because a layout author reads the setting back and
---- believes it.
+--- A one-row panel can carry a supporting stack beside a text-only reading,
+--- but needs at least two columns. Glyph and bar layouts retain their footer.
 ---
 --- Only a layout that **stated** it is told. These settings arrive filled
 --- from their defaults, and a default that cannot apply here is the panel
@@ -461,20 +458,18 @@ function cellBattery.validateSettings(settings, span, config)
     if type(span) ~= "table" or type(span.rowSpan) ~= "number" then
         return messages
     end
-    if span.rowSpan >= 2 then
+    if span.rowSpan >= 2 or ((span.colSpan or 1) >= 2 and settings.visual == "none") then
         return messages
     end
 
     if config.showPack then
-        messages[#messages + 1] = "showPack needs a panel two rows tall;"
-            .. " a single row has no space beneath the reading at any width."
-            .. " Give the panel rowSpan 2, or drop showPack."
+        messages[#messages + 1] = "showPack needs a two-row panel or a text-only panel at least two columns wide."
+            .. " Give the panel rowSpan 2, use visual none at width 2 or more, or drop showPack."
     end
 
     if config.showCount then
-        messages[#messages + 1] = "showCount needs a panel two rows tall;"
-            .. " a single row has no space beneath the reading at any width."
-            .. " Give the panel rowSpan 2, or drop showCount."
+        messages[#messages + 1] = "showCount needs a two-row panel or a text-only panel at least two columns wide."
+            .. " Give the panel rowSpan 2, use visual none at width 2 or more, or drop showCount."
     end
 
     return messages
@@ -524,7 +519,12 @@ function cellBattery.regionsFor(theme, themeBuilder, rect, layout, fonts, sample
         minimumGapFraction = 0.3,
         -- The cell count on the left, the pack voltage on the right.
         rowItems = 2,
+        supporting = layout.supporting,
     }, out or {})
+    if area.showSide and layout.packOnly then
+        area.rowRightCentre, area.rowRightWidth = area.detailCentre, area.detailWidth
+        area.rowRightX, area.rowRightY = area.detailX, area.detailY
+    end
     if area.visualSize then
         area.glyphWidth = area.visualSize
         area.glyphHeight = glyphHeight
@@ -548,6 +548,14 @@ function cellBattery.create(parent, rect, settings, services)
     local span = services.span
     local layout = cellBattery.presentationFor(span.colSpan, span.rowSpan)
     layout.visual = settings.visual
+    if
+        span.rowSpan == 1
+        and span.colSpan >= 2
+        and settings.visual == "none"
+        and (settings.showCount or settings.showPack)
+    then
+        layout.supporting = { "", "" }
+    end
     local presentation = services.state("normal", settings.accent)
 
     local context = {
@@ -564,6 +572,7 @@ function cellBattery.create(parent, rect, settings, services)
         packText = "",
         -- Reused so a refresh allocates nothing; the host pays this per frame.
         summary = {},
+        rect = rect,
     }
 
     -- Subscribing in create is the mechanism: a source nothing references is
@@ -590,7 +599,7 @@ function cellBattery.create(parent, rect, settings, services)
 
     local area = cellBattery.regionsFor(theme, services.themeBuilder, rect, layout, fonts, sample, nil, primitives)
     context.detailWidth = area.detailWidth
-    context.showDetail = area.showDetail
+    context.showDetail = area.showDetail or area.showSide
 
     local panel = primitives.panel(parent, rect, theme, presentation)
     context.panel = panel
@@ -660,7 +669,7 @@ function cellBattery.create(parent, rect, settings, services)
         })
     end
 
-    if not area.showDetail then
+    if not context.showDetail then
         lvgl.hide(context.countLabel)
         lvgl.hide(context.packLabel)
     end
@@ -743,10 +752,16 @@ function cellBattery.render(context, out)
     out.value = value
 
     if context.showDetail then
-        local fit = context.themeBuilder.fitLabel
-        local font = context.fonts.label
-        out.count = fit(cellBattery.countVariants(summary, settings), font, context.detailWidth)
-        out.pack = fit(cellBattery.packVariants(summary, settings), font, context.detailWidth)
+        if context.area.showSide and context.layout.supporting then
+            -- The builder already measured these exact strings for this stack.
+            out.count = context.layout.countText or ""
+            out.pack = context.layout.packText or ""
+        else
+            local fit = context.themeBuilder.fitLabel
+            local font = context.fonts.label
+            out.count = fit(cellBattery.countVariants(summary, settings), font, context.detailWidth)
+            out.pack = fit(cellBattery.packVariants(summary, settings), font, context.detailWidth)
+        end
     end
 end
 
@@ -800,7 +815,7 @@ function cellBattery.apply(context, drawn)
             context.themeBuilder,
             context.packLabel,
             context.area.rowRightCentre,
-            context.area.detailY,
+            context.area.rowRightY,
             context.fonts.label,
             drawn.pack
         )
@@ -839,6 +854,21 @@ function cellBattery.refresh(context)
     if not context.feed and not context.lowestFeed then
         return
     end
+    local supporting = context.layout.supporting
+    if supporting then
+        cellBattery.gather(context)
+        local count = cellBattery.countVariants(context.summary, context.settings)[1]
+        local pack = cellBattery.packVariants(context.summary, context.settings)
+        local voltage = pack[#pack]
+        local layout = context.layout
+        if layout.countText ~= count or layout.packText ~= voltage then
+            layout.countText, layout.packText = count, voltage
+            layout.packOnly = count == "" and voltage ~= ""
+            supporting[1] = count ~= "" and count or voltage
+            supporting[2] = count ~= "" and voltage ~= "" and voltage or nil
+            cellBattery.update(context, context.rect)
+        end
+    end
     local changed, drawn = context.primitives.changed(context, cellBattery.render)
     if changed then
         cellBattery.apply(context, drawn)
@@ -849,6 +879,7 @@ end
 ---@param context AeroGridCellContext
 ---@param rect AeroGridRect
 function cellBattery.update(context, rect)
+    context.rect = rect
     local area = cellBattery.regionsFor(
         context.theme,
         context.themeBuilder,
@@ -897,6 +928,9 @@ function cellBattery.update(context, rect)
     context.readingAnchor, context.readingUnitAnchor = nil, nil
     context.countAnchor, context.packAnchor = nil, nil
     context.area = area
+    if context.layout.supporting then
+        context.rendered = nil
+    end
 
     --- Show or hide a supporting row, positioning it only when visible.
     local reconcile = context.primitives.reconcile
@@ -909,10 +943,10 @@ function cellBattery.update(context, rect)
     -- There used to be a discard here. It was removed once no test could be
     -- made to fail without it.
     context.detailWidth = area.detailWidth
-    context.showDetail = area.showDetail
+    context.showDetail = area.showDetail or area.showSide
 
-    reconcile(context.countLabel, area.showDetail, { x = area.detailX, y = area.detailY, w = area.detailWidth })
-    reconcile(context.packLabel, area.showDetail, { x = area.rowRightX, y = area.detailY, w = area.detailWidth })
+    reconcile(context.countLabel, context.showDetail, { x = area.detailX, y = area.detailY, w = area.detailWidth })
+    reconcile(context.packLabel, context.showDetail, { x = area.rowRightX, y = area.rowRightY, w = area.rowRightWidth })
 
     if context.bar then
         context.primitives.reconcileBar(

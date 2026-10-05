@@ -356,6 +356,7 @@ local function reservedFor(context, placement)
     return {
         w = width < rect.w and width or rect.w,
         h = height < rect.h and height or rect.h,
+        side = placement.rowSpan == 1,
     }
 end
 

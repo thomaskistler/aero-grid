@@ -4164,11 +4164,8 @@ components:
         "the two panels are not the same height, so nothing below compares them"
     )
     assert(context.reserved, "App mode reserved nothing for the menu button")
-    assert(
-        corner.area.ladder.room < clear.area.ladder.room,
-        "the corner panel was not paying for the button in the first place"
-    )
-    local buttoned = corner.area.valueY
+    assert(corner.area.content < clear.area.content, "the one-row corner panel was not reserving width for the button")
+    local buttoned = corner.area.valueCentre
 
     -- Fullscreen. The zone is untouched -- deliberately, because that is what
     -- the firmware does -- so the only thing that changes is the flag.
@@ -4206,7 +4203,7 @@ components:
         clear.area.valueY,
         "the corner panel's reading did not come back to the panel's centre"
     )
-    assert(corner.area.valueY < buttoned, "the reading did not move up when the button stopped taking room")
+    assert(corner.area.valueCentre < buttoned, "the reading did not move left when the button stopped taking room")
 
     -- And back, because a pilot leaves fullscreen as often as they enter it
     -- and the firmware raises nothing at all on the way out.
@@ -4220,7 +4217,7 @@ components:
         assert(passes < 100, "reflow never finished")
     end
     pump(context, 10)
-    assertEqual(corner.area.valueY, buttoned, "the corner panel did not go back under the button")
+    assertEqual(corner.area.valueCentre, buttoned, "the corner panel did not restore the left reservation")
     lvglMock.setAppMode(false)
 end
 
@@ -4284,7 +4281,7 @@ local function testReadingsAreCentredOnTheirPanel()
         },
     }
 
-    local centred, clamped, cleared = 0, 0, 0
+    local centred, clamped, cleared, sideReserved = 0, 0, 0, 0
 
     for _, kind in ipairs(types) do
         for _, span in ipairs({ { 1, 1 }, { 2, 1 }, { 2, 2 }, { 3, 2 }, { 4, 2 }, { 2, 3 }, { 4, 4 } }) do
@@ -4332,7 +4329,11 @@ local function testReadingsAreCentredOnTheirPanel()
                         local top = area.valueY
                         local reserved = place[1] == "corner" and context.reserved or nil
 
-                        if reserved and top == reserved.h then
+                        if area.frame.reserved and area.frame.reserved.side then
+                            sideReserved = sideReserved + 1
+                            assert(area.pad >= area.frame.reserved.w, where .. ": left reservation was lost")
+                        end
+                        if reserved and not area.frame.reserved.side and top == reserved.h then
                             -- The one panel the widget does not own outright. The button
                             -- is painted over anything drawn beneath it, so the reading
                             -- starts at the button's own bottom edge instead -- and its
@@ -4415,7 +4416,8 @@ local function testReadingsAreCentredOnTheirPanel()
     -- checking nothing -- which is how this suite's own apparatus has failed
     -- seven times.
     assert(centred >= 80, "only " .. centred .. " panels had their reading's centre checked")
-    assert(clamped >= 24, "only " .. clamped .. " panels exercised the menu button's clamp")
+    assert(clamped >= 14, "only " .. clamped .. " taller panels exercised the menu button's vertical clamp")
+    assert(sideReserved >= 10, "only " .. sideReserved .. " one-row panels reserved width for the button")
     assert(cleared >= 139, "only " .. cleared .. " clearances were checked")
     lvglMock.setAppMode(false)
 end
@@ -6801,6 +6803,9 @@ local function testReadingsSitInTheirSlots()
                             .. ")"
                     )
                 end
+            elseif panel.area and panel.area.showSide then
+                expected = panel.area.valueCentre
+                arrangement = "supporting side stack"
             else
                 -- One element does not split: it centres across the whole box.
                 expected = PAD + content / 2
@@ -6837,7 +6842,9 @@ local function testReadingsSitInTheirSlots()
                         end
                         local rowCentre = label.properties.x + lcd.sizeText(rowText, rowFont) / 2
                         local want
-                        if row.slot == "left" then
+                        if panel.area and panel.area.showSide then
+                            want = panel.area.sideCentre
+                        elseif row.slot == "left" then
                             want = PAD + math.floor(content * TIGHT_LEFT + 0.5)
                         elseif row.slot == "right" then
                             want = PAD + math.floor(content * TIGHT_RIGHT + 0.5)

@@ -714,6 +714,22 @@ screenData:
                         value: 
                            stringValue: 
 
+   5:
+      LayoutId: Layout1x1AM
+      layoutData:
+         zones:
+            0:
+               widgetName: AeroGrid
+               widgetData:
+                  options:
+                     0:
+                        type: String
+                        value:
+                           stringValue: aircraft
+                     1:
+                        type: String
+                        value:
+                           stringValue: modern
 topbarData: 
    zones: 
       3:

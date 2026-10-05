@@ -41,15 +41,40 @@ If that file does not exist, AeroGrid tries `/WIDGETS/AeroGrid/layouts/<dashboar
 
 Changing either setting rebuilds the dashboard safely. Phase one never writes layout files.
 
+Dashboard ID **`aircraft`** provides a model9-oriented layout: timer 1 at the top
+left, a cell-battery panel in the second row, link quality without a bar in the
+third row, and altitude with maximum altitude above maximum vertical speed
+on the right side of the bottom-left panel. On the right are a 1 x 1 TX battery
+panel in the top-right corner (the slot immediately to its left stays empty),
+GV9 flights, GV1 expo, and a 2 x 2 model image. It uses `RxBt`, `RQly`, `1RSS`,
+`Alt`, `Alt+`, and `VSpd+`; adjust these names for another model. The battery
+uses the default per-cell alarm thresholds and `RxBt` as a 2S pack source:
+the headline is average cell voltage,
+with total voltage and configured count alongside it. `RxBt` must measure
+the battery itself, not a regulated receiver supply.
+No link alarm thresholds are assumed. The TX battery panel keeps transmitter
+voltage visible even in App mode, which hides EdgeTX's top bar.
+
 Use a different Dashboard ID on each custom screen to run several independent dashboards for one model. Each instance renders exactly one layout; paging between them is EdgeTX sliding between its own screens, not anything AeroGrid does. Changing model reloads whatever the new model's files select, because EdgeTX destroys and rebuilds every widget around a model change.
 
 ### App mode and the EdgeTX menu button
 
 In App mode EdgeTX draws its menu button over the top-left corner of the screen, above everything the widget draws. It cannot be hidden, because in App mode it is the only route to the radio's menus. It is 47 x 45 pixels on a 480 x 272 display.
 
-AeroGrid lays the affected panel out around it: the header label moves to the right of the button and the panel's content starts below it. Everything else keeps the geometry it would have had, and no grid area is surrendered.
+AeroGrid lays the affected panel out around it. One-row panels (`1x1` through
+`4x1`) reserve a strip on the left for the button and keep their vertical
+reading space. Taller panels move the header to the right of the button and
+start their content below it. Grid placement and neighbouring panels do not change.
+For a primary without a slotted visual or side stack, the builder first measures
+its sizing sample, including its unit, at the ordinary centered position.
+If it clears the icon, the primary keeps that position and font; headers and
+supporting content retain their independent left inset. Overlapping samples and
+slotted groups retain the inset layout. Live values exceeding the sample are
+prevented from extending left into the icon.
 
-One case cannot be rescued. In a top-left `1 x 1` cell the button covers 40% of the width and 69% of the height, so the panel keeps its reading, pushed below the button, but drops its header label. Give the top-left cell of an App mode layout a span of at least `2 x 2`, or place something there whose label does not matter.
+A top-left `1 x 1` cell remains narrow: the left reservation reduces the reading
+width and can drop its heading or optional content. Wider one-row spans retain
+more useful width without forcing their reading below the button.
 
 The ordinary `1 x 1` layout is unaffected either way: with a top bar the widget sits below the button, and without one the button is not drawn.
 
