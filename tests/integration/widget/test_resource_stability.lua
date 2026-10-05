@@ -55,6 +55,7 @@ for cycle = 1, 21 do
             assert(#fixture.lvglMock.objects == fullObjects, dashboard .. " allocated objects during reflow")
         end
         local memory = collectgarbage("count")
+        assert(fixture.lvglMock.replacedFontRefCount() == 0, dashboard .. " replaced font callbacks during reflow")
         peakObjects = math.max(peakObjects, fullObjects)
         if cycle == 1 then
             baseline[dashboard] = { memory = memory, objects = fullObjects }

@@ -1104,14 +1104,11 @@ function metric.update(context, rect)
         context.settings.label,
         context.badgeText
     )
+    context.primitives.setFont(context.value, area.value)
     context.value:set({
         x = area.pad,
         y = area.valueY,
         w = area.valueWidth,
-        -- LVGL takes the font as a callback, matching how it was created.
-        font = function()
-            return area.value
-        end,
     })
 
     --- Show or hide an optional element, positioning it only when visible.

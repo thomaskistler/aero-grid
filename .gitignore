@@ -2,4 +2,5 @@
 *.luac
 __pycache__/
 build/
+site/
 .vscode/settings.json

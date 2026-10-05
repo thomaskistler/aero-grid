@@ -6,6 +6,24 @@
 
 local primitives = { RUNTIME_API = 1 }
 
+local labelFonts = setmetatable({}, { __mode = "k" })
+
+local function fontLabel(parent, options, font)
+    local state = { value = font }
+    options.font = function()
+        return state.value
+    end
+    local label = lvgl.label(parent, options)
+    labelFonts[label] = state
+    return label
+end
+
+--- Keep one callback per label: EdgeTX 2.12.4 leaks replaced registry refs.
+function primitives.setFont(label, font)
+    local state = assert(labelFonts[label], "font updates require a primitives label")
+    state.value = font
+end
+
 --- Width reserved for a panel's state badge on its header row.
 primitives.BADGE_WIDTH = 56
 
@@ -215,10 +233,8 @@ function primitives.setHeading(label, themeBuilder, frame, fonts, text, color)
 
     local changes = {
         text = heading,
-        font = function()
-            return font
-        end,
     }
+    primitives.setFont(label, font)
     if color ~= nil then
         changes.color = color
     end
@@ -349,9 +365,7 @@ function primitives.placeHeader(label, badge, frame, themeBuilder, fonts, text, 
     if themeBuilder and fonts and text ~= nil then
         local heading, font = themeBuilder.fitHeading(text, frame.labelWidth, fonts.label)
         changes.text = heading
-        changes.font = function()
-            return font
-        end
+        primitives.setFont(label, font)
     end
 
     label:set(changes)
@@ -752,17 +766,14 @@ end
 ---@return any
 function primitives.label(parent, theme, options)
     local font = options.font
-    return lvgl.label(parent, {
+    return fontLabel(parent, {
         x = options.x,
         y = options.y,
         w = options.w,
         h = 0,
         text = tostring(options.text or ""),
         color = options.color or theme.color.textMuted,
-        font = function()
-            return font
-        end,
-    })
+    }, font)
 end
 
 --- Create a dominant numeric reading.
@@ -773,17 +784,14 @@ end
 ---@return any
 function primitives.value(parent, theme, options)
     local font = options.font
-    return lvgl.label(parent, {
+    return fontLabel(parent, {
         x = options.x,
         y = options.y,
         w = options.w,
         h = 0,
         text = tostring(options.text or "--"),
         color = options.color or theme.color.text,
-        font = function()
-            return font
-        end,
-    })
+    }, font)
 end
 
 --------------------------------------------------------------------------
@@ -803,7 +811,7 @@ end
 ---@return any
 function primitives.unit(parent, theme, options)
     local font = options.font
-    return lvgl.label(parent, {
+    return fontLabel(parent, {
         x = options.x,
         y = options.y,
         -- No width. A unit is as wide as it is: given a column it would be
@@ -811,10 +819,7 @@ function primitives.unit(parent, theme, options)
         -- which for a two-character string beside a number is the worst of both.
         text = tostring(options.text or ""),
         color = options.color or theme.color.textMuted,
-        font = function()
-            return font
-        end,
-    })
+    }, font)
 end
 
 --- Put the unit beside a reading whose text is known, on its baseline.
@@ -848,9 +853,7 @@ function primitives.placeUnit(unit, themeBuilder, readingX, readingY, readingFon
     -- label its position and then its font is two writes into one object for
     -- one change.
     if withFont then
-        changes.font = function()
-            return unitFont
-        end
+        primitives.setFont(unit, unitFont)
     end
     unit:set(changes)
 end
@@ -2047,17 +2050,14 @@ end
 ---@return any
 function primitives.badge(parent, theme, options)
     local font = options.font
-    return lvgl.label(parent, {
+    return fontLabel(parent, {
         x = options.x,
         y = options.y,
         w = options.w,
         h = 0,
         text = tostring(options.text or ""),
         color = options.color or theme.color.amber,
-        font = function()
-            return font
-        end,
-    })
+    }, font)
 end
 
 --- Create an image loaded from an SD-card path.

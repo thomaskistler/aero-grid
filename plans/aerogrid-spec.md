@@ -129,6 +129,17 @@ Five components use it: `cell-battery`, `flight-mode`, `flight-timer`, `link-sta
 
 **A component is expected to carry special code only where it has a special visualization** -- the compass, the battery glyph, the trim cells. A flag on the builder for one component's preference is the thing this is meant to replace, not a way of extending it: a builder that can express everything expresses nothing.
 
+**Font callbacks are installed once per label.** EdgeTX 2.12.4 overwrites
+callback registry references without releasing the previous one when a
+function-valued font is passed to `set`. Shared primitives therefore use
+a persistent callback with mutable font state; all refresh/reflow paths
+change that state with `primitives.setFont`, never replace the callback.
+Weak object keys keep retired labels collectible. The firmware-like mock
+retains overwritten references and regression tests assert none accumulate
+during timer advancement, reconnects, or resizing. The timer-correlated
+hardware memory observations and pending fix verification are recorded in
+the [hardware checklist](../docs/hardware-validation.md).
+
 ### Bundled EdgeTX widget baseline
 
 The bundled color-screen widgets are intentionally generic: Value, Gauge, Timer, Model Bitmap, Outputs, Text, Radio Info, Date/Time, and Internal GPS. AeroGrid should reuse their source selection and model APIs, but replace their presentation with a smaller set of responsive, domain-aware components.
@@ -1184,7 +1195,7 @@ and regenerate their checksum.
 ### Current cost
 
 The current suite, including the ELRS 4.x link review and sixteen-panel
-ELRS exercise, reports **13600/20000** for the worst
+ELRS exercise, reports **13800/20000** for the worst
 callback (shipped component refresh), **6600/20000** for the worst steady
 frame (link review), and **9800/20000** for shipped reflow. These are
 the runner's sampled instruction counts; the figures and reasoning below

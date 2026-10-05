@@ -5,6 +5,8 @@ BUILD_DIR ?= build
 SDCARD_DIR := $(BUILD_DIR)/sdcard
 VENV_DIR := $(BUILD_DIR)/venv
 VENV_STAMP := $(VENV_DIR)/.requirements-installed
+DOCS_VENV_DIR := $(BUILD_DIR)/docs-venv
+DOCS_VENV_STAMP := $(DOCS_VENV_DIR)/.requirements-installed
 SIMULATOR_FIXTURE := tests/fixtures/sdcard
 WIDGET_SOURCE := src/WIDGETS/AeroGrid
 WIDGET_DESTINATION := $(SDCARD_DIR)/WIDGETS/AeroGrid
@@ -14,7 +16,7 @@ LUACHECK ?= $(shell command -v luacheck 2>/dev/null)
 LUA_LS ?= $(shell command -v lua-language-server 2>/dev/null)
 STYLUA ?= $(shell command -v stylua 2>/dev/null)
 
-.PHONY: help setup test check build mocks clean lint format
+.PHONY: help setup test check build mocks clean lint format docs docs-serve
 
 help:
 	@printf '%s\n' \
@@ -26,9 +28,23 @@ help:
 	  'make format  Format Lua files with stylua' \
 	  'make build   Recreate build/sdcard from fixture and widget sources' \
 	  'make mocks   Render build/flow-mocks.html from the real panel geometry' \
+	  'make docs    Build and validate the documentation website' \
+	  'make docs-serve Preview documentation at http://127.0.0.1:8000' \
 	  'make clean   Remove generated build output'
 
 setup: $(VENV_STAMP)
+
+$(DOCS_VENV_STAMP): requirements-docs.txt
+	@mkdir -p "$(BUILD_DIR)"
+	@test -x "$(DOCS_VENV_DIR)/bin/python" || "$(PYTHON)" -m venv "$(DOCS_VENV_DIR)"
+	@"$(DOCS_VENV_DIR)/bin/python" -m pip install -r requirements-docs.txt
+	@touch "$@"
+
+docs: $(DOCS_VENV_STAMP)
+	@"$(DOCS_VENV_DIR)/bin/python" -m mkdocs build --strict --site-dir "$(BUILD_DIR)/docs"
+
+docs-serve: $(DOCS_VENV_STAMP)
+	@"$(DOCS_VENV_DIR)/bin/python" -m mkdocs serve --strict
 
 $(VENV_STAMP): requirements-dev.txt
 	@mkdir -p "$(BUILD_DIR)"

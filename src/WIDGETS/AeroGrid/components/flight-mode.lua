@@ -366,6 +366,7 @@ function flightMode.update(context, rect)
         context.badgeText
     )
     context.area = area
+    context.primitives.setFont(context.value, area.name)
     context.value:set({
         x = area.valueX,
         y = area.valueY,
@@ -373,9 +374,6 @@ function flightMode.update(context, rect)
         -- whole content box and an x centred for a shorter string reaches past
         -- the panel's right edge by the difference.
         w = area.valueWidth,
-        font = function()
-            return area.name
-        end,
     })
     -- Re-placed from the string the panel is actually showing, because the one
     -- above was sized from the widest name this model can produce.
