@@ -137,7 +137,7 @@ change that state with `primitives.setFont`, never replace the callback.
 Weak object keys keep retired labels collectible. The firmware-like mock
 retains overwritten references and regression tests assert none accumulate
 during timer advancement, reconnects, or resizing. The timer-correlated
-hardware memory observations and pending fix verification are recorded in
+hardware memory observations and user-confirmed fix verification are recorded in
 the [hardware checklist](../docs/hardware-validation.md).
 
 ### Bundled EdgeTX widget baseline
@@ -1089,6 +1089,15 @@ State as of 2026-09-20. This section is the entry point after a break: it record
 This section used to carry a table naming the branch currently in flight, which was accurate only while one existed and became a trap the moment it was merged: the first act on resuming was to check out a branch that had been deleted. The shape is gone rather than filled in with `main`. If a branch stack ever returns, record it here again — but only while it is real.
 
 ### Hardware validation status
+
+**Acceptance closed by user decision on 2026-10-05 for TX16S v2 / EdgeTX 2.12.4.**
+Other radios are unavailable to the user and remain untested, not acceptance
+blockers. The user confirmed the font-callback memory fix on 2026-10-05;
+that issue is closed. Protocol-specific coverage and physical resource budgets
+remain unverified follow-up work rather than
+acceptance gates. This decision does not mark unrecorded checks as passed.
+See the [current acceptance record](../docs/hardware-validation.md).
+Earlier open-status statements below describe the historical validation scope.
 
 On 2026-10-04 the user confirmed AeroGrid `0.10.0` on a TX16S v2 running
 EdgeTX 2.12.4 and reported all recommended dashboards verified with no issues
