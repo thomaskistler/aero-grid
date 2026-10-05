@@ -4,6 +4,20 @@ Shows measured link quality or RSSI, link freshness, and optional RF details.
 Link quality is never inferred from RSSI. The panel does not calculate an
 aggregate health percentage or issue voice/haptic alerts.
 
+## Size examples
+
+| 1x2 | 2x1 | 2x2 |
+| --- | --- | --- |
+| ![Link status at 1x2](../assets/components/link-status/1x2.png) | ![Link status at 2x1](../assets/components/link-status/2x1.png) | ![Link status at 2x2](../assets/components/link-status/2x2.png) |
+
+Synthetic live ELRS sample: 98% quality, -87 dBm RSSI, and RFMD 6, yielding
+a +24 dB margin. Supporting information adapts to the available width.
+These are real EdgeTX simulator renders with synthetic telemetry inputs,
+not evidence of a receiver link. TX16S 480 x 272, Modern theme, menu-free
+placement, and 10 px black padding; spans mean columns x rows.
+Supporting text is brighter for documentation, and `visual: none` omits the
+bottom bar. See [capture settings and regeneration](../developer-guide/build.md#component-screenshot-prototype).
+
 ## Settings
 
 | Key | Default | Meaning |

@@ -1,0 +1,32 @@
+version: 1
+component: metric
+theme: modern
+brighten_supporting_text: true
+border:
+  pixels: 10
+  rgb: [0, 0, 0]
+panels:
+  1x2: {col: 1, row: 0, colSpan: 1, rowSpan: 2}
+  2x1: {col: 2, row: 0, colSpan: 2, rowSpan: 1}
+  2x2: {col: 2, row: 2, colSpan: 2, rowSpan: 2}
+config:
+  metrics:
+    - source: GAlt
+      label: ALTITUDE
+      precision: 0
+    - source: Peak
+      label: MAX
+      precision: 0
+    - source: PeakVS
+      label: VS
+      precision: 1
+  accent: green
+  visual: none
+  rangeMin: 0
+  rangeMax: 400
+sample:
+  rssi: 85
+  sources:
+    GAlt: {value: 128, unit: 9, precision: 0}
+    Peak: {value: 176, unit: 9, precision: 0}
+    PeakVS: {value: 2.4, unit: 5, precision: 1}

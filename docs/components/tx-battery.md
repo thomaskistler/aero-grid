@@ -1,5 +1,19 @@
 # `tx-battery`
 
+## Size examples
+
+| 1x2 | 2x1 | 2x2 |
+| --- | --- | --- |
+| ![TX battery at 1x2](../assets/components/tx-battery/1x2.png) | ![TX battery at 2x1](../assets/components/tx-battery/2x1.png) | ![TX battery at 2x2](../assets/components/tx-battery/2x2.png) |
+
+Synthetic transmitter voltage 7.9 V, with explicit 6.4-8.4 V meter calibration
+and `showPercent: false` for compatibility across all three spans.
+The narrow panel sheds the battery glyph and unit.
+Real EdgeTX simulator renders with synthetic voltage input, TX16S 480 x 272,
+Modern theme, menu-free placement, and 10 px black padding.
+Spans mean columns x rows. Supporting text is brighter for documentation.
+See [capture settings and regeneration](../developer-guide/build.md#component-screenshot-prototype).
+
 Shows the **transmitter's own** battery voltage — the pack inside the radio in
 your hands, not anything on the aircraft.
 

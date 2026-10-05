@@ -2,6 +2,18 @@
 
 Shows the flight mode **the transmitter** is currently in, by name.
 
+## Size examples
+
+| 1x2 | 2x1 | 2x2 |
+| --- | --- | --- |
+| ![Flight mode at 1x2](../assets/components/flight-mode/1x2.png) | ![Flight mode at 2x1](../assets/components/flight-mode/2x1.png) | ![Flight mode at 2x2](../assets/components/flight-mode/2x2.png) |
+
+Active transmitter mode 0 named ACRO, using isolated firmware model settings.
+Real EdgeTX simulator renders on TX16S 480 x 272, Modern theme, outside the
+menu overlay, with 10 px black padding. Spans mean columns x rows.
+The capture theme brightens supporting text for documentation; radio colors
+are unchanged. See [capture settings and regeneration](../developer-guide/build.md#component-screenshot-prototype).
+
 ## Read this first: which flight mode
 
 This is **EdgeTX's own flight mode** — one of the up-to-nine mixer modes
