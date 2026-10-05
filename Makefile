@@ -7,6 +7,8 @@ VENV_DIR := $(BUILD_DIR)/venv
 VENV_STAMP := $(VENV_DIR)/.requirements-installed
 DOCS_VENV_DIR := $(BUILD_DIR)/docs-venv
 DOCS_VENV_STAMP := $(DOCS_VENV_DIR)/.requirements-installed
+CAPTURE_VENV_DIR := $(BUILD_DIR)/capture-venv
+CAPTURE_VENV_STAMP := $(CAPTURE_VENV_DIR)/.requirements-installed
 SIMULATOR_FIXTURE := tests/fixtures/sdcard
 WIDGET_SOURCE := src/WIDGETS/AeroGrid
 WIDGET_DESTINATION := $(SDCARD_DIR)/WIDGETS/AeroGrid
@@ -16,7 +18,7 @@ LUACHECK ?= $(shell command -v luacheck 2>/dev/null)
 LUA_LS ?= $(shell command -v lua-language-server 2>/dev/null)
 STYLUA ?= $(shell command -v stylua 2>/dev/null)
 
-.PHONY: help setup test check build mocks clean lint format docs docs-serve
+.PHONY: help setup test check build mocks clean lint format docs docs-serve capture-setup
 
 help:
 	@printf '%s\n' \
@@ -30,9 +32,18 @@ help:
 	  'make mocks   Render build/flow-mocks.html from the real panel geometry' \
 	  'make docs    Build and validate the documentation website' \
 	  'make docs-serve Preview documentation at http://127.0.0.1:8000' \
+	  'make capture-setup Install optional screenshot dependencies' \
 	  'make clean   Remove generated build output'
 
 setup: $(VENV_STAMP)
+
+capture-setup: $(CAPTURE_VENV_STAMP)
+
+$(CAPTURE_VENV_STAMP): requirements-capture.txt
+	@mkdir -p "$(BUILD_DIR)"
+	@test -x "$(CAPTURE_VENV_DIR)/bin/python" || "$(PYTHON)" -m venv "$(CAPTURE_VENV_DIR)"
+	@"$(CAPTURE_VENV_DIR)/bin/python" -m pip install -r requirements-capture.txt
+	@touch "$@"
 
 $(DOCS_VENV_STAMP): requirements-docs.txt
 	@mkdir -p "$(BUILD_DIR)"

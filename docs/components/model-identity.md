@@ -2,6 +2,21 @@
 
 Shows which model is loaded: its name, the picture you assigned it, or both.
 
+## Size examples
+
+| 1x2 | 2x1 | 2x2 |
+| --- | --- | --- |
+| ![Model identity at 1x2](../assets/components/model-identity/1x2.png) | ![Model identity at 2x1](../assets/components/model-identity/2x1.png) | ![Model identity at 2x2](../assets/components/model-identity/2x2.png) |
+
+Crack Yak with the user-supplied model image, included with confirmed
+redistribution permission. `presentation: auto` shows the name in the smaller
+panels and the aircraft picture with the model name as its heading at 2x2.
+Real EdgeTX simulator renders using isolated firmware model settings, TX16S
+480 x 272, Modern theme, menu-free placement, and 10 px black padding.
+Spans mean columns x rows. The capture theme brightens supporting text for
+documentation; radio colors are unchanged.
+See [capture settings and regeneration](../developer-guide/build.md#component-screenshot-prototype).
+
 ## Read this first: the picture changes where the name goes
 
 **With a picture, the picture is the panel and the name is its heading.** The

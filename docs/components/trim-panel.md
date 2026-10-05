@@ -4,6 +4,19 @@ Displays the radio's **effective trim positions**, including EdgeTX's
 flight-mode trim inheritance. It is read-only: use the radio's trim controls
 to change a trim. It needs no aircraft telemetry.
 
+## Size examples
+
+| 1x2 | 2x1 | 2x2 |
+| --- | --- | --- |
+| ![Trim panel at 1x2](../assets/components/trim-panel/1x2.png) | ![Trim panel at 2x1](../assets/components/trim-panel/2x1.png) | ![Trim panel at 2x2](../assets/components/trim-panel/2x2.png) |
+
+Three-axis presentation with stored aileron/elevator/rudder trims +26/-26/0,
+displayed as +20%/-20%/0% at standard range. Real EdgeTX simulator renders using
+isolated firmware model settings, TX16S 480 x 272, Modern theme, outside the
+menu overlay, with 10 px black padding. Spans mean columns x rows.
+Supporting text is brighter for documentation; trim indicators are unchanged.
+See [capture settings and regeneration](../developer-guide/build.md#component-screenshot-prototype).
+
 ## Three-axis presentation
 
 The default `indicators: axes` arranges three equal-length bars around a square:

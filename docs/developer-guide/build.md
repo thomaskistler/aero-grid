@@ -100,6 +100,163 @@ a failed service leaves unrelated panels running. Dashboard ID `host` reports th
 loaded version. These checks detect API-incompatible mixtures, not every mixture
 of compatible releases or stale bytecode.
 
+## Component screenshot prototype
+
+On macOS with EdgeTX Companion 2.12 installed and the Xcode command-line tools,
+run from the repository root:
+
+```sh
+make capture-setup
+build/capture-venv/bin/python tools/capture-panels.py --component trim-panel
+build/capture-venv/bin/python tools/capture-panels.py --component flight-timer
+build/capture-venv/bin/python tools/capture-panels.py --all
+```
+
+Use `--companion /path/to/Companion.app` for a different installation location.
+The prototype currently supports the single-architecture native TX16S library;
+an Intel library requires Rosetta on Apple Silicon. It does not need VS Code.
+`make capture-setup` installs the optional PyYAML dependency into a separate
+`build/capture-venv/` environment, without changing runtime or documentation dependencies.
+
+Captures are saved directly under `build/doc-capture/<component>/`, containing a
+dedicated SD image, simulator log, full-frame PNG, `1x2.png`, `2x1.png`, `2x2.png`,
+recipe, and provenance. Regenerating a panel replaces its entire previous output;
+no run history is kept. A failed attempt leaves diagnostic output in that panel's
+directory, not a retained set of old images. `--all` regenerates every bundled
+panel recipe sequentially; on failure, already completed panels remain updated.
+Documentation assets are not overwritten.
+All nine display panels are supported. Captures use the Modern theme, a 480 x 272 App-mode dashboard,
+and placements outside the menu overlay. Stored aileron/elevator/rudder trims
+are +26/-26/0 (displayed as +20%/-20%/0% at standard range). The flight-timer
+recipe uses a stopped, persistent countdown named Flight with 3:04 remaining
+of a 5:00 start.
+
+The isolated widget copy verifies recipe values through real services and waits
+for populated component presentation before capture. Trim, timer, flight mode,
+and model identity use actual isolated firmware model settings. Other panels use
+**real EdgeTX rendering with synthetic sample data**: capture-only firmware API
+overrides are passed into the real service environment in the isolated widget.
+Telemetry resolution, precision scanning, battery calculations, link
+classification, and GPS distance/bearing calculations still run in the real
+services and components. These images demonstrate presentation, not receiver
+telemetry validity. Production widget files and APIs on your radio or active
+simulator are not changed.
+
+| Recipe | Baseline sample |
+| --- | --- |
+| `metric` | ALTITUDE 128 m, MAX 176 m, VS 2.4 m/s (synthetic maximum vertical speed). |
+| `flight-timer` | Flight countdown, 3:04 remaining of 5:00. |
+| `flight-mode` | Active mode 0 named ACRO. |
+| `tx-battery` | 7.9 V, explicitly calibrated to 6.4-8.4 V; percentage disabled because 2x1 does not support it. |
+| `trim-panel` | Stored aileron/elevator/rudder +26/-26/0. |
+| `model-identity` | Crack Yak, with the user-supplied `crackyak.png` model image; redistribution permission confirmed by the contributor. |
+| `cell-battery` | RX BATTERY: four cells at 3.91/3.89/3.92/3.90 V; lowest-cell headline. |
+| `link-status` | Synthetic live ELRS link: 98% quality, -87 dBm RSSI, RFMD 6, 8 dB SNR, 100 mW power. |
+| `navigation` | Fixed model/home coordinates producing approximately 318 m distance and 046-degree bearing. |
+
+Native crop dimensions are
+117 x 134, 238 x 65, and 238 x 134 pixels respectively. Each panel PNG adds a
+10-pixel black border on every side without scaling or covering panel pixels,
+giving output sizes of 137 x 154, 258 x 85, and 258 x 154.
+Provenance includes the
+simulator library digest, widget and capture-tool hashes, synthetic-input
+disclosure, settings, and crop geometry.
+
+The native runner stops firmware tasks after capture or its readiness timeout.
+Failures are explicit and point to the simulator log; failed captures do not
+publish documentation assets. Existing simulator SD images are not modified.
+This is a local macOS catalogue generator, not yet a portable or pinned CI tool.
+
+### Configure a capture
+
+Named recipes live in `tools/capture-recipes/*.yaml`. Copy one to create another
+example, edit it, and select it explicitly:
+
+```sh
+build/capture-venv/bin/python tools/capture-panels.py --recipe /path/to/example.yaml
+```
+
+`--component` selects that component's bundled default recipe; `--all` selects
+all YAML recipes in the bundled directory. These options are mutually exclusive.
+Each run saves the selected recipe alongside its images and provenance.
+
+Recipes configure `component`, `theme` (`modern` or `edgetx`), `border.pixels`,
+`border.rgb`, named `panels` placements, component `config` settings, and `sample`
+values. `config` also accepts nested metric lists. Positions are zero-based in the
+4 x 4 grid. Panel names are used in image
+filenames; a span-shaped name such as `2x2` must match the placement's span.
+Placements must not overlap. This prototype supports row spans of 1 or 2.
+
+Baseline captures omit bottom progress bars: metric and link-status use
+`config.visual: none`. The timer recipe uses `hide_bottom_bar: true`, a
+capture-only presentation override that hides the existing bar without reflowing
+the panel. This is not a production timer setting. Battery glyphs and trim
+indicators remain visible.
+
+Bundled recipes also set `brighten_supporting_text: true`: the isolated theme's
+`textFaint` changes from `#69737A` to `#A7B0B6` for readability on computer
+displays. This is a capture-only color override, recorded in the saved recipe
+and provenance; fonts, geometry, and production radio colors are unchanged.
+Documentation using these images should disclose the brighter supporting text.
+Set it to `false` or omit it to capture the exact production palette.
+
+For example, a timer recipe can change its sample without code edits:
+
+```yaml
+sample:
+  name: Flight
+  start_seconds: 600
+  remaining_seconds: 123
+```
+
+The fixture then supplies 2:03 remaining of 10:00 and readiness checks those
+same values. `config.timer` selects index 0, 1, or 2; the fixture keeps it stopped.
+Trim recipes configure signed stored `aileron`, `elevator`, and `rudder` values,
+and currently require the axes presentation with the default axis sources.
+Other trim presentations need an adapter extension, not just a YAML change.
+
+Flight-mode and model-identity recipes set `sample.name` (at most 10 printable
+ASCII characters). Model identity accepts `sample.bitmap`, a PNG path relative
+to the recipe with a firmware-safe basename. The bundled example uses the
+user-supplied `tools/capture-assets/crackyak.png`; its digest is recorded in
+provenance. The contributor confirmed permission to redistribute this image in
+the documentation. Establish redistribution permission for any replacement image.
+Omitting `sample.bitmap` uses the original generated aircraft silhouette.
+TX battery sets `sample.voltage`
+and explicitly configures `packEmpty` and `packFull`.
+
+Metric, cell-battery, link-status, and navigation recipes define
+`sample.sources`: a mapping from exact source names to `value`, EdgeTX `unit`
+code, and `precision`. Numeric sources have numeric values; cells use a voltage
+list with unit 38; GPS uses a coordinate mapping with unit 40 (`lat`, `lon`,
+`pilot-lat`, `pilot-lon`, and `delay`). `sample.rssi` provides a fixed positive
+link indicator. Every configured source needs a sample; the readiness check
+verifies values and precision before emitting images. See the bundled recipes
+for complete examples.
+
+Recipe structure, sample ranges, and placements are checked before startup.
+The actual widget validates component settings during loading; invalid settings
+fail capture and leave diagnostic logs rather than publishing an image.
+
+`tools/capture_recipes.py` holds each component's model setup and Lua readiness
+adapters, deriving both from the recipe sample. `capture-panels.py` handles shared fixture
+preparation, simulator invocation, cropping, borders, and provenance. The native
+runner reads capture regions generated by Python rather than hardcoding panel
+positions. The original `capture-trim.py` command remains a compatibility wrapper.
+Run recipe tests with `build/capture-venv/bin/python -m unittest discover -s tools -p 'test_capture_*.py'`.
+
+### Publish generated examples
+
+Panel reference pages use checked-in PNGs under
+`docs/assets/components/<component>/<span>.png`. After regeneration and visual
+review, copy only `1x2.png`, `2x1.png`, and `2x2.png` from each panel's build
+directory into that component's asset directory, then run `make docs`.
+Keep SD images, framebuffer dumps, logs, and full frames in ignored build output.
+Normal documentation builds use the checked-in images without the simulator.
+
+The example captions disclose synthetic inputs and capture-only presentation
+overrides. Update those captions when changing a recipe's sample or settings.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every pull request and on pushes to `main`. It installs Lua 5.3, runs `make check` (the behaviour suites in both string modes, then parses every Lua file with `luac5.3`), builds the SD image, and verifies the packaged image matches its sources and that the build leaves no untracked output.

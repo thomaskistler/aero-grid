@@ -1,0 +1,30 @@
+version: 1
+component: link-status
+theme: modern
+brighten_supporting_text: true
+border:
+  pixels: 10
+  rgb: [0, 0, 0]
+panels:
+  1x2: {col: 1, row: 0, colSpan: 1, rowSpan: 2}
+  2x1: {col: 2, row: 0, colSpan: 2, rowSpan: 1}
+  2x2: {col: 2, row: 2, colSpan: 2, rowSpan: 2}
+config:
+  protocol: elrs4
+  reading: quality
+  qualitySource: RQly
+  rssiSource: 1RSS
+  modeSource: RFMD
+  snrSource: RSNR
+  powerSource: TPWR
+  label: LINK
+  accent: green
+  visual: none
+sample:
+  rssi: 85
+  sources:
+    RQly: {value: 98, unit: 13, precision: 0}
+    1RSS: {value: -87, unit: 29, precision: 0}
+    RFMD: {value: 6, unit: 0, precision: 0}
+    RSNR: {value: 8, unit: 17, precision: 0}
+    TPWR: {value: 100, unit: 16, precision: 0}

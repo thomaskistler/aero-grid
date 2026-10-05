@@ -1,0 +1,21 @@
+version: 1
+component: flight-timer
+theme: modern
+brighten_supporting_text: true
+hide_bottom_bar: true
+border:
+  pixels: 10
+  rgb: [0, 0, 0]
+panels:
+  1x2: {col: 1, row: 0, colSpan: 1, rowSpan: 2}
+  2x1: {col: 2, row: 0, colSpan: 2, rowSpan: 1}
+  2x2: {col: 2, row: 2, colSpan: 2, rowSpan: 2}
+config:
+  timer: 0
+  reading: model
+  accent: green
+  label: Flight Timer
+sample:
+  name: Flight
+  start_seconds: 300
+  remaining_seconds: 184

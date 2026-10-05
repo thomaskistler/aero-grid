@@ -1,5 +1,19 @@
 # `navigation`
 
+## Size examples
+
+| 1x2 | 2x1 | 2x2 |
+| --- | --- | --- |
+| ![Navigation at 1x2](../assets/components/navigation/1x2.png) | ![Navigation at 2x1](../assets/components/navigation/2x1.png) | ![Navigation at 2x2](../assets/components/navigation/2x2.png) |
+
+Fixed synthetic model/home coordinates produce 318 m distance and 046-degree
+north-up bearing. `presentation: auto` adapts from distance-only at 2x1 to
+bearing detail at 1x2 and a compass at 2x2.
+Real EdgeTX simulator renders with synthetic GPS inputs, TX16S 480 x 272,
+Modern theme, menu-free placement, and 10 px black padding.
+Spans mean columns x rows. Supporting text is brighter for documentation.
+See [capture settings and regeneration](../developer-guide/build.md#component-screenshot-prototype).
+
 Shows the aircraft's GPS location, distance from home, and **north-up bearing
 from home toward the model**. The arrow is not aircraft heading, transmitter
 orientation, or a return-home instruction.

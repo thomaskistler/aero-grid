@@ -2,6 +2,20 @@
 
 Shows one of the radio's own model timers.
 
+## Size examples
+
+| 1x2 | 2x1 | 2x2 |
+| --- | --- | --- |
+| ![Flight timer at 1x2](../assets/components/flight-timer/1x2.png) | ![Flight timer at 2x1](../assets/components/flight-timer/2x1.png) | ![Flight timer at 2x2](../assets/components/flight-timer/2x2.png) |
+
+Stopped model timer named Flight, with 3:04 remaining of 5:00 and the heading
+FLIGHT TIMER. The narrow heading is abbreviated; 2x1 sheds the supporting row.
+Real EdgeTX simulator renders using isolated firmware model settings on
+TX16S 480 x 272, Modern theme, outside the menu overlay, with 10 px black padding.
+Spans mean columns x rows. Supporting text is brighter for documentation,
+and the countdown progress bar is hidden **only in the captures**, not by a
+production timer setting. See [capture settings and regeneration](../developer-guide/build.md#component-screenshot-prototype).
+
 ## Read this first: the timer is EdgeTX's, not this panel's
 
 AeroGrid does not run a timer. EdgeTX owns the count direction, the start

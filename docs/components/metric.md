@@ -5,6 +5,20 @@ The first reading is the headline; the other two are supporting readings.
 Sensor minimum and maximum readings are ordinary sources, such as `GAlt-`
 and `GAlt+`. The panel does not derive measurements or convert units.
 
+## Size examples
+
+| 1x2 | 2x1 | 2x2 |
+| --- | --- | --- |
+| ![Metric at 1x2](../assets/components/metric/1x2.png) | ![Metric at 2x1](../assets/components/metric/2x1.png) | ![Metric at 2x2](../assets/components/metric/2x2.png) |
+
+ALTITUDE 128 m, MAX 176 m, and VS 2.4 m/s (synthetic maximum vertical speed).
+Supporting readings are shed at 1x2. The narrow heading is abbreviated.
+These are real EdgeTX simulator renders with synthetic telemetry inputs.
+All examples use TX16S 480 x 272, Modern theme, menu-free placement, and
+10 px black padding; spans mean columns x rows. Supporting text is brighter
+for documentation, and bottom progress bars are omitted.
+See [capture settings and regeneration](../developer-guide/build.md#component-screenshot-prototype).
+
 ## Readings
 
 Configure an ordered `metrics` list with one to three entries:
