@@ -110,4 +110,4 @@ connection, sensor discovery, GPS fix, and model timer configuration as applicab
 Use `services` and `services2` to inspect normalized service values and freshness.
 Interpret missing or stale states using the component's reference page rather than
 treating them as zero. If a copied fix is not taking effect, follow the
-[upgrade instructions](installation.md#stale-bytecode).
+[upgrade instructions](installation.md#upgrade).

@@ -6,20 +6,17 @@ Back up your SD card and model configuration before making changes. AeroGrid tar
 
 Copy `src/WIDGETS/AeroGrid/` into the radio's `/WIDGETS/` directory, then select **AeroGrid** in an App mode screen. The ordinary `1 x 1` layout is also supported.
 
-Upgrade the entire package, not individual Lua files, and remove old `.luac`
-files as described below. `lib/package.lua` defines the package version and the
-runtime, component, and layout API versions. The host rejects incompatible or
-unversioned runtime modules; a failed service leaves unrelated panels running.
-The `host` diagnostics dashboard reports the version loaded by the host.
-These checks detect API-incompatible mixtures, not every mixture of compatible
-releases or stale bytecode.
+Copy only the widget package, not the simulator's fixture `/RADIO/` or `/MODELS/`
+configuration. Next, [configure a dashboard](dashboards.md) and check its source
+bindings. An unavailable reading is not a valid zero.
 
-## Stale bytecode
+## Upgrade
 
-EdgeTX compiles each script to a `.luac` beside it on the SD card and then prefers the bytecode. `rsync` preserves source timestamps, so a freshly copied `.lua` can look older than bytecode the radio compiled from the previous build, and the radio keeps running code that is no longer on disk. The symptom is a fix that visibly does nothing, including error messages citing line numbers that no longer exist in the source.
+1. Back up any custom layout files from `/WIDGETS/AeroGrid/layouts/` to your computer.
+2. Remove the old `/WIDGETS/AeroGrid/` folder from the SD card.
+3. Copy the complete new `AeroGrid` folder into `/WIDGETS/`.
+4. Restore your custom layout files without overwriting the new bundled layouts.
+5. Restart the radio and check your dashboards.
 
-`make build` therefore deletes every `.luac` from the image and stamps the sources as new. If you copy an image somewhere by hand, do the same.
-
-Remove old `.luac` files inside `/WIDGETS/AeroGrid/` after replacing the package, then restart the radio. Preserve custom layouts separately and restore them after upgrading. Copy only the widget package, not the simulator's fixture `/RADIO/` or `/MODELS/` configuration.
-
-Next, [configure a dashboard](dashboards.md) and check its source bindings. An unavailable reading is not a valid zero.
+Replace the folder rather than merging new files into the old installation.
+Dashboard ID `host` reports the loaded package version.

@@ -80,7 +80,25 @@ output directory:
 make build BUILD_DIR=build/package-check
 ```
 
-For stale-bytecode handling, see [Installation and upgrades](../user-guide/installation.md#stale-bytecode).
+### Stale bytecode
+
+EdgeTX compiles each script to a `.luac` beside it on the SD card and then prefers
+the bytecode. `rsync` preserves source timestamps, so a freshly copied `.lua` can
+look older than bytecode the radio compiled from the previous build, and the radio
+keeps running code that is no longer on disk. Symptoms include a fix that visibly
+does nothing and errors citing line numbers that no longer exist in the source.
+
+`make build` therefore deletes every `.luac` from the image and stamps the sources
+as new. When incrementally copying development sources to a simulator or radio,
+remove stale `.luac` files within the AeroGrid package and stamp the Lua sources
+for recompilation. For normal user upgrades, replace the complete folder as
+described in [Installation and upgrades](../user-guide/installation.md#upgrade).
+
+`lib/package.lua` defines the package version and the runtime, component, and
+layout API versions. The host rejects incompatible or unversioned runtime modules;
+a failed service leaves unrelated panels running. Dashboard ID `host` reports the
+loaded version. These checks detect API-incompatible mixtures, not every mixture
+of compatible releases or stale bytecode.
 
 ## Continuous integration
 
