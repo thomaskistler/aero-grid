@@ -1,11 +1,20 @@
 # Phase 1 hardware validation
 
-Simulator acceptance is complete for the nine display panels. Initial hardware
-dashboard validation is reported on TX16S v2 with EdgeTX 2.12.4.
-The remaining target matrix and resource measurements are still open.
-Record results separately for TX16S v2,
-TX16S v3, TX15, and GX15 running EdgeTX 2.12 or later; do not treat one radio
-or protocol as evidence for another.
+Simulator acceptance is complete for the nine display panels. **Phase 1 hardware
+acceptance is closed by user decision on 2026-10-05**, based on the reported
+TX16S v2 dashboard acceptance with EdgeTX 2.12.4 and subsequent testing recorded
+below.
+
+The user has no access to other radios. TX16S v3, TX15, and GX15 are **not tested**,
+not acceptance blockers and not hardware-validated targets. Additional radio and
+protocol coverage and resource characterization are follow-up work, not gates
+for this acceptance decision.
+
+Closure does not assert that every procedural check passed. Unrecorded sensor and
+protocol cases remain unverified, native LVGL/bitmap resource budgets remain
+unestablished. The user confirmed the font-callback memory fix on 2026-10-05;
+verification of that fix is closed. Preserve the remaining coverage limits when
+describing tested support.
 
 ## Record for each run
 
@@ -28,8 +37,9 @@ mark it passed.
   acceptance result, not evidence that every checklist item or protocol passed.
 - TX16S v3, TX15, and GX15 remain unverified.
 
-The checkboxes below describe the full validation procedure; the aggregate
-dashboard result does not mark unrecorded individual checks as passed.
+The checkboxes below describe the full validation procedure for future runs,
+not an outstanding acceptance to-do list. The aggregate dashboard result and
+closure decision do not mark unrecorded individual checks as passed.
 
 ### Debug-screen experiment
 
@@ -230,7 +240,7 @@ are live. A regression advances the timer through 3600 seconds, checks
 callback identity and zero replaced references, and verifies resize changes
 and restores the font through the same callback. A deliberately replaced
 callback proves the mock can detect the defect. Resource/reconnect tests
-also assert zero replaced font references. Hardware confirmation is pending;
+also assert zero replaced font references. For subsequent reproduction runs,
 install the complete updated widget folder and restart the radio before
 repeating the timer run, since already leaked registry entries are not
 recovered by this code change.
@@ -241,6 +251,11 @@ time on 2026-10-04 with Widget(B) approximately 51 KB. At approximately
 byte count was supplied. This is short-run user-reported confirmation of
 the fix, not a completed long-duration memory plateau or target-matrix
 validation.
+
+On 2026-10-05, the user explicitly confirmed that the memory fix has been
+verified. The timer-correlated font-callback retention issue is closed.
+No additional run duration or counter readings were supplied, so this records
+user-confirmed hardware verification without inventing quantitative measurements.
 
 ## Display and controls
 
