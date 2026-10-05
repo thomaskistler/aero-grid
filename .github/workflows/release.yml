@@ -1,0 +1,101 @@
+# SPDX-License-Identifier: GPL-2.0-only
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aerogrid-release
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require main
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          test "$REF" = "refs/heads/main" || {
+            echo "::error::Run releases from main only"
+            exit 1
+          }
+  validate:
+    needs: guard
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate documentation and release tooling
+        run: |
+          make docs
+          python3 -m unittest discover -s tools -p 'test_release_*.py'
+      - name: Build installation archive
+        id: package
+        run: |
+          version="$(python3 tools/package-release.py --version-only)"
+          python3 tools/package-release.py
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Create or resume draft and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.package.outputs.version }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          if git show-ref --verify --quiet "refs/tags/$tag"; then
+            test "$(git rev-list -n 1 "$tag")" = "$COMMIT" || {
+              echo "::error::Version tag already points to another commit"
+              exit 1
+            }
+          else
+            git tag "$tag" "$COMMIT"
+            git push origin "refs/tags/$tag"
+          fi
+          releases="$(gh api --paginate "repos/$GH_REPO/releases" --jq '.[] | [.tag_name, .draft] | @tsv')"
+          existing="$(printf '%s\n' "$releases" | awk -F '\t' -v tag="$tag" '$1 == tag {print $2}')"
+          if [ "$existing" = "false" ]; then
+            echo "::error::This version is already published; bump the package version"
+            exit 1
+          fi
+          prerelease=false
+          case "$VERSION" in *-beta.*|*-rc.*) prerelease=true ;; esac
+          if [ -z "$existing" ]; then
+            gh release create "$tag" --verify-tag --draft --title "AeroGrid $VERSION" \
+              --generate-notes --prerelease="$prerelease"
+          fi
+          cat > build/release/installation.txt <<'EOF'
+
+          ## Install and upgrade
+          Extract the ZIP and copy `WIDGETS/AeroGrid` to your SD card's `/WIDGETS/` directory.
+          Back up custom layouts before replacing the complete previous AeroGrid folder.
+          Tested hardware: TX16S v2 with EdgeTX 2.12.4. Other radios remain unverified.
+          The default dashboard's source bindings must be adapted to your model.
+
+          [Installation and upgrades](https://thomaskistler.github.io/aero-grid/user-guide/installation/)
+          · [Dashboard configuration](https://thomaskistler.github.io/aero-grid/user-guide/dashboards/)
+          · [Hardware coverage and limitations](https://thomaskistler.github.io/aero-grid/hardware-validation/)
+          EOF
+          gh release view "$tag" --json body --jq '.body' | \
+            sed '/^## Install and upgrade$/,$d' > build/release/notes.md
+          cat build/release/installation.txt >> build/release/notes.md
+          gh release upload "$tag" "build/release/AeroGrid-$VERSION.zip" \
+            "build/release/AeroGrid-$VERSION.zip.sha256" --clobber
+          gh release edit "$tag" --notes-file build/release/notes.md \
+            --prerelease="$prerelease" --draft=false

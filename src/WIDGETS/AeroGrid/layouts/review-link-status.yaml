@@ -3,7 +3,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: detailed
     type: link-status
     col: 0

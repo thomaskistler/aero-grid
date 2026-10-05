@@ -108,7 +108,7 @@ end
 -- fixtures used to publish 2 through 6, which made STRING, a widget option
 -- type that really is 3, collide with SMLSIZE. On a radio they are 3 and 768
 -- and cannot be confused; here they could be, and nothing would have noticed a
--- component asking for a font where an option type belongs.
+-- panel asking for a font where an option type belongs.
 local FONTS_H = "radio/src/gui/colorlcd/fonts.h"
 local LUA_CONSTANTS = "radio/src/lua/api_general.cpp"
 
@@ -1394,7 +1394,7 @@ function support.radio(hostIo)
     --- and answers nil beyond MAX_TIMERS. `showElapsed` matters rather than
     --- merely being present: `model_service` reads it and flips a countdown to
     --- count up, and while the fixture omitted it that branch was permanently
-    --- false and never reached a component.
+    --- false and never reached a panel.
     local function timer(name, start, value, persistent)
         return {
             mode = 1,
@@ -1471,7 +1471,7 @@ function support.radio(hostIo)
         -- A global variable holds a value per flight mode, and
         -- luaModelGetGlobalVariable(index, flight_mode) reads the one stored for
         -- the mode it is given. A mock that ignores its second argument answers
-        -- the same number whatever mode is asked for, so a component reading the
+        -- the same number whatever mode is asked for, so a panel reading the
         -- wrong mode, or no mode at all, is invisible. Index 1 therefore carries
         -- its own value in flight mode 2, and inherits everywhere else.
         globalsByMode = { [1] = { [2] = 60 } },
@@ -1533,7 +1533,7 @@ function support.radio(hostIo)
         }
     end
 
-    -- Vertical speed, which the metric's altitude preset takes as its secondary
+    -- Vertical speed, which the altitude metric takes as its secondary
     -- reading. It is never derived from altitude; an absent sensor simply leaves
     -- the secondary row unavailable.
     radio.fields.VSpd = {
@@ -1569,7 +1569,7 @@ function support.radio(hostIo)
     ---
     --- It is here because nothing in this harness has ever carried a text
     --- sensor, so the telemetry service's handling of one was entirely
-    --- unexercised whether or not a component ever reads it.
+    --- unexercised whether or not a panel ever reads it.
     radio.fields.FM = { id = 145, name = "FM", desc = "Flight mode", unit = UNIT.TEXT }
     radio.fields.RSSI = { id = 140, name = "RSSI", desc = "RSSI", unit = UNIT.DB }
     radio.fields.RQly = { id = 141, name = "RQly", desc = "Link quality", unit = UNIT.PERCENT }
@@ -1713,7 +1713,7 @@ function support.radio(hostIo)
     ---
     --- A fresh table each call, because the firmware builds one with
     --- `lua_newtable` every time; a mock handing back the same table would let
-    --- a component keep a reference and never notice the pilot changing it.
+    --- a panel keep a reference and never notice the pilot changing it.
     function getGeneralSettings()
         return {
             battWarn = radio.battWarn,

@@ -23,7 +23,6 @@
 ---@field pilotLongitude? number
 ---@field distance? number Distance from home to the model.
 ---@field distanceUnit string Unit label for the distance.
----@field distanceSource "computed"|"source" Where the distance came from.
 ---@field bearing? number Initial bearing from home to model, 0 to 359 degrees.
 ---@field age? number Seconds since the fix was last updated.
 
@@ -196,18 +195,10 @@ function navigationService:poll(entry, now)
 
     state.state = reading.stale and "stale" or "normal"
 
-    -- A configured native distance sensor wins: the receiver may compute it from
-    -- data this service never sees.
-    local native = entry.distanceReading
-    if type(native) == "table" and native.available and type(native.value) == "number" then
-        state.distance = native.value
-        state.distanceUnit = native.unitText ~= "" and native.unitText or "m"
-        state.distanceSource = "source"
-    elseif state.home then
+    if state.home then
         state.distance =
             navigationService.distanceBetween(state.pilotLatitude, state.pilotLongitude, latitude, longitude)
         state.distanceUnit = "m"
-        state.distanceSource = "computed"
     else
         state.distance = nil
     end
@@ -221,11 +212,10 @@ function navigationService:poll(entry, now)
     end
 end
 
---- Subscribe to a GPS source, optionally preferring a native distance sensor.
+--- Subscribe to a GPS source.
 ---@param name any GPS source name.
----@param distanceSource? string Native distance sensor name.
 ---@return AeroGridNavigation
-function navigationService:subscribe(name, distanceSource)
+function navigationService:subscribe(name)
     if type(name) ~= "string" or name == "" then
         if not self.noneView then
             self.noneView = self.support.snapshot({
@@ -235,7 +225,6 @@ function navigationService:subscribe(name, distanceSource)
                 home = false,
                 state = "unavailable",
                 distanceUnit = "m",
-                distanceSource = "computed",
             })
         end
         return self.noneView
@@ -260,16 +249,11 @@ function navigationService:subscribe(name, distanceSource)
             pilotLongitude = nil,
             distance = nil,
             distanceUnit = "m",
-            distanceSource = "computed",
             bearing = nil,
             age = nil,
         },
         reading = telemetry and telemetry:subscribe(name) or nil,
     }
-
-    if type(distanceSource) == "string" and distanceSource ~= "" and telemetry then
-        entry.distanceReading = telemetry:subscribe(distanceSource)
-    end
 
     entry.view = self.support.snapshot(entry.state)
     self.sources[name] = entry.view
@@ -360,9 +344,6 @@ end
 function navigationService.describeDistanceParts(view)
     if type(view.distance) ~= "number" then
         return nil, ""
-    end
-    if view.distanceSource == "source" then
-        return string.format("%.1f", view.distance), view.distanceUnit or ""
     end
     return navigationService.distanceParts(view.distance)
 end

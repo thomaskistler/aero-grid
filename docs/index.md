@@ -12,7 +12,7 @@ and troubleshoot unavailable readings.
 
 ## Reference Guide
 
-The [component reference](reference-guide/index.md) describes each panel's
+The [panel reference](reference-guide/index.md) describes each panel's
 settings, presentations, and behavior when data is unavailable.
 
 ## Developer Guide
@@ -22,20 +22,3 @@ Learn how to [build and run the simulator](developer-guide/build.md),
 [runtime architecture](developer-guide/architecture.md).
 The [hardware validation record](hardware-validation.md) tracks radio observations
 and remaining acceptance work.
-
-## Current checkpoint
-
-The phase-one runtime currently provides:
-
-- One EdgeTX LVGL host widget.
-- A responsive 4 x 4 grid with multi-cell spans and gutters.
-- A constrained, read-only YAML parser and layout validator.
-- Per-model and per-screen layout selection through `Dashboard ID`.
-- Dynamically loaded component modules with API-version checks.
-- Five shared data services covering telemetry, model, control, extrema, and navigation.
-- Nine display components and two diagnostic components, configured entirely from YAML.
-- Diagnostic views that print each service's normalized output.
-- Several independent dashboards on one radio, selected per screen by Dashboard ID.
-- Panels that lay out around EdgeTX's App mode menu button instead of underneath it.
-
-The status rail and the on-radio editor are intentionally not part of this checkpoint. The rail is deferred rather than planned: EdgeTX's own top bar is already a configurable widget rail that reserves the same corner and costs nothing against the Lua instruction budget.

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
-"""Validated YAML recipes and component-specific native model/readiness adapters."""
+"""Validated YAML recipes and panel-specific native model/readiness adapters."""
 import json
 import math
 from pathlib import Path
@@ -9,9 +9,9 @@ import yaml
 
 
 RECIPE_DIR = Path(__file__).with_name("capture-recipes")
-COMPONENTS = ("trim-panel", "flight-timer", "metric", "flight-mode", "tx-battery",
+PANELS = ("trim-panel", "flight-timer", "metric", "flight-mode", "tx-battery",
               "model-identity", "cell-battery", "link-status", "navigation")
-SYNTHETIC_COMPONENTS = ("metric", "tx-battery", "cell-battery", "link-status", "navigation")
+SYNTHETIC_PANELS = ("metric", "tx-battery", "cell-battery", "link-status", "navigation")
 
 
 class RecipeLoader(yaml.SafeLoader):
@@ -72,8 +72,8 @@ def config_value(value):
 
 
 def source_names(recipe):
-    config, component = recipe["config"], recipe["component"]
-    if component == "metric":
+    config, panel = recipe["config"], recipe["panel"]
+    if panel == "metric":
         if "metrics" in config:
             entries = config["metrics"]
             if not isinstance(entries, list) or not 1 <= len(entries) <= 3:
@@ -85,13 +85,12 @@ def source_names(recipe):
                 names.append(entry["source"])
             return names
         return [config.get("source", "")]
-    if component == "cell-battery":
+    if panel == "cell-battery":
         return [config.get("source", "Cels")] + (
             [config["lowestSource"]] if config.get("lowestSource") else [])
-    if component == "navigation":
-        return [config.get("source", "GPS")] + (
-            [config["distanceSource"]] if config.get("distanceSource") else [])
-    if component == "link-status":
+    if panel == "navigation":
+        return [config.get("source", "GPS")]
+    if panel == "link-status":
         return [config.get("rssiSource", "RSSI")] + [
             config[key] for key in ("qualitySource", "modeSource", "snrSource", "powerSource")
             if config.get(key)]
@@ -134,15 +133,15 @@ def validate_sources(recipe):
     for name in source_names(recipe):
         if not isinstance(name, str) or name not in sources:
             raise ValueError(f"Missing sample for configured source: {name}")
-    component, config = recipe["component"], recipe["config"]
-    if component in ("metric", "link-status"):
+    panel, config = recipe["panel"], recipe["config"]
+    if panel in ("metric", "link-status"):
         if any(not isinstance(sources[name]["value"], (int, float)) for name in source_names(recipe)):
-            raise ValueError(f"{component} requires numeric source samples")
-    elif component == "cell-battery":
+            raise ValueError(f"{panel} requires numeric source samples")
+    elif panel == "cell-battery":
         unit = sources[config.get("source", "Cels")]["unit"]
         if unit != (38 if config.get("sourceType", "cells") == "cells" else 1):
             raise ValueError("Cell battery sample unit must match sourceType (cells or volts)")
-    elif component == "navigation" and sources[config.get("source", "GPS")]["unit"] != 40:
+    elif panel == "navigation" and sources[config.get("source", "GPS")]["unit"] != 40:
         raise ValueError("Navigation requires a GPS sample")
 
 
@@ -151,15 +150,15 @@ def load_recipe(path):
         recipe = yaml.load(Path(path).read_text(), Loader=RecipeLoader)
     except yaml.YAMLError as error:
         raise ValueError(f"Invalid YAML recipe {path}: {error}") from error
-    fields(recipe, ("version", "component", "theme", "border", "panels", "config", "sample"),
+    fields(recipe, ("version", "panel", "theme", "border", "panels", "config", "sample"),
            ("hide_bottom_bar", "brighten_supporting_text"))
     if "hide_bottom_bar" in recipe and type(recipe["hide_bottom_bar"]) is not bool:
         raise ValueError("hide_bottom_bar must be a boolean")
     if "brighten_supporting_text" in recipe and type(recipe["brighten_supporting_text"]) is not bool:
         raise ValueError("brighten_supporting_text must be a boolean")
     integer(recipe["version"], 1, 1, "version")
-    if recipe["component"] not in COMPONENTS:
-        raise ValueError(f"Unsupported capture adapter: {recipe['component']}")
+    if recipe["panel"] not in PANELS:
+        raise ValueError(f"Unsupported capture adapter: {recipe['panel']}")
     if recipe["theme"] not in ("modern", "edgetx"):
         raise ValueError("Capture theme must be modern or edgetx")
     border = recipe["border"]
@@ -196,16 +195,14 @@ def load_recipe(path):
     if not isinstance(config, dict):
         raise ValueError("config must be a mapping")
     config_value(config)
-    if recipe["component"] == "trim-panel":
+    if recipe["panel"] == "trim-panel":
         fields(sample, ("aileron", "elevator", "rudder"))
         for key, value in sample.items():
             integer(value, -512, 512, f"sample.{key}")
-        if config.get("indicators", "axes") != "axes":
-            raise ValueError("The trim capture adapter currently requires indicators: axes")
         for key, expected in {"trim1": "trim-ail", "trim2": "trim-ele", "trim4": "trim-rud"}.items():
             if config.get(key, expected) != expected:
                 raise ValueError(f"The trim adapter requires {key}: {expected}")
-    elif recipe["component"] == "flight-timer":
+    elif recipe["panel"] == "flight-timer":
         fields(sample, ("name", "start_seconds", "remaining_seconds"))
         integer(config.get("timer", 0), 0, 2, "config.timer")
         integer(sample["start_seconds"], 1, 8388607, "sample.start_seconds")
@@ -213,10 +210,10 @@ def load_recipe(path):
         if (not isinstance(sample["name"], str) or len(sample["name"]) > 10
                 or any(ord(c) < 32 or ord(c) > 126 for c in sample["name"])):
             raise ValueError("sample.name must be at most 10 printable ASCII characters")
-    elif recipe["component"] == "flight-mode":
+    elif recipe["panel"] == "flight-mode":
         fields(sample, ("name",))
         short_name(sample["name"], "sample.name")
-    elif recipe["component"] == "model-identity":
+    elif recipe["panel"] == "model-identity":
         fields(sample, ("name",), ("bitmap",))
         short_name(sample["name"], "sample.name")
         if "bitmap" in sample:
@@ -226,7 +223,7 @@ def load_recipe(path):
             if (not bitmap.is_file() or bitmap.suffix.lower() != ".png"
                     or not re.fullmatch(r"[a-zA-Z0-9_-]{1,10}\.png", bitmap.name)):
                 raise ValueError("sample.bitmap must be an existing PNG with a firmware-safe filename")
-    elif recipe["component"] == "tx-battery":
+    elif recipe["panel"] == "tx-battery":
         fields(sample, ("voltage",))
         number(sample["voltage"], 3, 16, "sample.voltage")
         if "packEmpty" not in config or "packFull" not in config:
@@ -240,20 +237,20 @@ def load_recipe(path):
 
 def configure_model(prefix, recipe):
     sample = recipe["sample"]
-    if recipe["component"] == "model-identity":
+    if recipe["panel"] == "model-identity":
         bitmap = Path(sample["bitmap"]).name if "bitmap" in sample else "agplane.png"
         header = (f"header:\n   name: {json.dumps(sample['name'])}\n"
                   f"   bitmap: {json.dumps(bitmap)}\n" + '   labels: ""\n')
         if not re.search(r"(?m)^header:", prefix):
             raise RuntimeError("Fixture has no model header")
         return re.sub(r"(?m)^header:[^\n]*\n(?:[ \t]+[^\n]*\n)*", lambda _: header, prefix)
-    if recipe["component"] == "flight-mode":
+    if recipe["panel"] == "flight-mode":
         if "flightModeData:" in prefix:
             raise RuntimeError("Fixture now contains flight modes; update mode setup explicitly.")
         return prefix + f"flightModeData:\n   0:\n      name: {json.dumps(sample['name'])}\n"
-    if recipe["component"] not in ("trim-panel", "flight-timer"):
+    if recipe["panel"] not in ("trim-panel", "flight-timer"):
         return prefix
-    if recipe["component"] == "trim-panel":
+    if recipe["panel"] == "trim-panel":
         if "flightModeData:" in prefix:
             raise RuntimeError("Fixture now contains flight modes; update trim setup explicitly.")
         values = [sample["rudder"], sample["elevator"], 0, sample["aileron"]]
@@ -273,7 +270,7 @@ def configure_model(prefix, recipe):
 
 def readiness(recipe):
     sample = recipe["sample"]
-    if recipe["component"] == "trim-panel":
+    if recipe["panel"] == "trim-panel":
         expected = ", ".join(str(sample[key]) for key in ("aileron", "elevator", "rudder"))
         return """            local indicators = entry.instance.indicators
             if not indicators or #indicators ~= 3 then return end
@@ -283,20 +280,20 @@ def readiness(recipe):
                     or indicator.feed.value ~= expected[i] then return end
             end
 """
-    if recipe["component"] == "flight-timer":
+    if recipe["panel"] == "flight-timer":
         return f"""            local feed = entry.instance.feed
             if not feed or not feed.available or feed.value ~= {sample['remaining_seconds']}
                 or feed.start ~= {sample['start_seconds']}
                 or feed.name ~= {json.dumps(sample['name'])} then return end
 """
-    if recipe["component"] in ("flight-mode", "model-identity"):
+    if recipe["panel"] in ("flight-mode", "model-identity"):
         extra = ('            if feed.index ~= 0 then return end\n'
-                 if recipe["component"] == "flight-mode" else
+                 if recipe["panel"] == "flight-mode" else
                  '            if entry.instance.area.showImage and not entry.instance.image then return end\n')
         return f"""            local feed = entry.instance.feed
             if not feed or not feed.available or feed.name ~= {json.dumps(sample['name'])} then return end
 """ + extra
-    if recipe["component"] == "tx-battery":
+    if recipe["panel"] == "tx-battery":
         return f"""            local feed = entry.instance.feed
             if not feed or not feed.available or feed.value ~= {sample['voltage']} then return end
 """
@@ -311,12 +308,12 @@ def readiness(recipe):
                 if not captureEqual(feed.raw, {lua_value(source['value'])}) then return end
             end
 """
-    if recipe["component"] == "navigation":
+    if recipe["panel"] == "navigation":
         result += """            local feed = entry.instance.feed
             if not feed or not feed.fix or not feed.home or feed.state ~= "normal"
                 or not feed.distance or not feed.bearing then return end
 """
-    if recipe["component"] == "link-status":
+    if recipe["panel"] == "link-status":
         result += """            if not entry.instance.link or not entry.instance.link.live then return end
 """
     return result
@@ -353,9 +350,9 @@ def lua_value(value):
 
 def fixture_inputs(recipe):
     """Synthetic firmware API inputs, installed only in the isolated service environment."""
-    if recipe["component"] not in SYNTHETIC_COMPONENTS:
+    if recipe["panel"] not in SYNTHETIC_PANELS:
         return None
-    if recipe["component"] == "tx-battery":
+    if recipe["panel"] == "tx-battery":
         return f"""return {{
     getValue = function(source)
         if source == "tx-voltage" then return {recipe['sample']['voltage']} end

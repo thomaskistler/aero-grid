@@ -9,7 +9,7 @@ radio.fields.VSpd = { id = 150, name = "VSpd", unit = fixture.firmware.UNIT.METE
 radio.fields["VSpd+"] = { id = 151, name = "VSpd+", unit = fixture.firmware.UNIT.METERS_PER_SECOND }
 fixture.radioMock.indexFields()
 radio.globalDetails[0].prec = 0
-local context = fixture.createLoaded(nil, { DashID = "aircraft", Theme = "modern" })
+local context = fixture.createLoaded(nil, { DashID = "default", Theme = "modern" })
 
 local callbacks = 0
 local function pump(count)
@@ -127,8 +127,8 @@ local function disconnectedMinute(minute)
         pump(5)
     end
     assert(link.text == "NO LINK" and battery.stateName == "stale")
-    local timer = fixture.module("components/flight-timer.lua")
-    local expected = timer.formatClock(timer.clamp(timer.displayValue(clock.settings, clock.feed)))
+    local timer = fixture.module("panels/flight-timer.lua")
+    local expected = timer.formatClock(timer.clamp(timer.displayValue(clock.feed)))
     assert(clock.text == expected, "continuously advancing disconnected timer was not rendered")
     fixture.lvglMock.releaseClearedObjects()
     assert(fixture.lvglMock.replacedFontRefCount() == 0, "timer updates replaced firmware font callbacks")

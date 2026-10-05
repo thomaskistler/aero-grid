@@ -288,7 +288,7 @@ function controlService:readVariable(entry)
 end
 
 --- Subscribe to one global variable.
---- A pinned flight mode yields its own subscription, because two components
+--- A pinned flight mode yields its own subscription, because two panels
 --- may legitimately show the same variable for different modes.
 ---@param index any Zero-based global variable index.
 ---@param flightMode? integer Pin to this flight mode instead of the active one.

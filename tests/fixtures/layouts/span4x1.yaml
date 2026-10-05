@@ -1,6 +1,6 @@
 version: 1
 
-# Span gallery, 4 x 1: four full-width rows, stacked, so components that differ
+# Span gallery, 4 x 1: four full-width rows, stacked, so panels that differ
 # only in their chosen font sit directly above one another.
 #
 # Set the widget's Dashboard ID to `span4x1` to load this screen on any model.
@@ -24,7 +24,7 @@ grid:
   columns: 4
   rows: 4
 
-components:
+panels:
   - id: g-metric
     type: metric
     col: 0
@@ -32,12 +32,13 @@ components:
     colSpan: 4
     rowSpan: 1
     config:
-      label: Metric
-      source: RxBt
-      unit: V
-      rangeMin: 6.0
-      rangeMax: 8.4
-      precision: 1
+      metrics:
+        - source: RxBt
+          label: Metric
+          unit: V
+          precision: 1
+          rangeMin: 6.0
+          rangeMax: 8.4
 
   - id: g-cells
     type: cell-battery

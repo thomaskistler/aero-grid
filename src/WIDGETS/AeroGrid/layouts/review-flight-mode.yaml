@@ -1,14 +1,14 @@
 # Review harness for `flight-mode`. Not a dashboard.
 #
-# The span galleries compare components against each other, which is the wrong
-# tool for judging one on its own. This puts one component in front of you at
+# The span galleries compare panels against each other, which is the wrong
+# tool for judging one on its own. This puts one panel in front of you at
 # the spans where it presents differently, so the ladder steps, the shed rows
 # and the clipping are all on one page.
 #
 # Naming and placement, chosen to survive eleven of these: one review screen,
-# whose Dashboard ID names the component under review, replacing itself each
+# whose Dashboard ID names the panel under review, replacing itself each
 # time rather than accumulating. `MAX_CUSTOM_SCREENS` is 10 and the fixture
-# already carries nine, so a screen per component was never available;
+# already carries nine, so a screen per panel was never available;
 # `customScreens[MAX_CUSTOM_SCREENS]` indexed by `i < MAX_CUSTOM_SCREENS`
 # (`radio/src/gui/colorlcd/mainview/layout.cpp`) makes ten the ceiling. Each
 # review layout stays in the repository and keeps being loaded by the suite,
@@ -27,7 +27,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   # The narrowest span it declares. The reading is sized from a six-character
   # form, so a longer mode name is drawn past the panel and clipped.
   - id: one-by-one

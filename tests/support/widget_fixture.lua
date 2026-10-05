@@ -80,7 +80,7 @@ function WidgetFixture.new()
     end
 
     function self.entryById(context, id)
-        for _, entry in ipairs(context.components or {}) do
+        for _, entry in ipairs(context.panels or {}) do
             if entry.placement and entry.placement.id == id then
                 return entry
             end
@@ -104,7 +104,7 @@ function WidgetFixture.new()
     end
 
     function self.assertNoOverlap(context)
-        local entries = context.components or {}
+        local entries = context.panels or {}
         for firstIndex = 1, #entries do
             local first = entries[firstIndex].container.properties
             for secondIndex = firstIndex + 1, #entries do

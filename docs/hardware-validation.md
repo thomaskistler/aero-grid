@@ -30,8 +30,8 @@ mark it passed.
   `a8442ec675c60aa93baaee7ff18928e838e27089`.
 - Result: the user reported all recommended dashboards verified on hardware,
   with no issues observed.
-- Recommended dashboard set: `main`, all nine `review-*` display-panel layouts,
-  `host`, `services`, and `services2`.
+- The historical validation covered the main dashboard, nine individual
+  display-panel configurations, and host/service diagnostics.
 - Receiver/protocol, receiver firmware, source names, and individual test conditions
   were not recorded. This is a user-reported dashboard
   acceptance result, not evidence that every checklist item or protocol passed.
@@ -160,9 +160,9 @@ and Free mem was not being monitored. Exact samples and duration were not
 provided. This observation warrants investigation independently of the
 earlier mixed screen-cycling workloads.
 
-### 55-minute aircraft-lite run
+### 55-minute reduced-dashboard run
 
-The user confirmed `aircraft-lite` was the only configured dashboard, the
+The user confirmed the reduced three-panel configuration was the only dashboard, the
 receiver was disconnected, and Widget(B) was the observed counter. After
 starting the timer and leaving the radio running for 55 minutes, the reported
 counter increased from approximately 50 KB to 65 KB. Exact byte values,
@@ -185,9 +185,9 @@ The user started a further run with a model that does not use AeroGrid and
 reported no apparent leak so far. Duration, Widget(B) endpoints, restart
 history, timer activity, and other configured widgets were not supplied.
 This is preliminary comparison evidence, not a completed equal-duration
-control. Together with the aircraft-lite result it raises suspicion of
+control. Together with the reduced-dashboard result it raises suspicion of
 AeroGrid or firmware paths exercised by AeroGrid, without identifying an
-owning component or proving retained-memory leakage.
+owning panel or proving retained-memory leakage.
 
 ### Timer start/stop comparison without the model image
 
@@ -223,7 +223,7 @@ or total native LVGL memory.
 
 AeroGrid's timer repainted its heading each second using `setHeading`, which
 supplied a newly allocated font callback even when the heading/font was
-unchanged. Navigation supporting text updates and multiple component reflow
+unchanged. Navigation supporting text updates and multiple panel reflow
 paths also replaced font callbacks. This retains old closures through the
 firmware registry and matches the advancing/stopped timer observation.
 It is a verified source-level leak mechanism; its share of the measured
@@ -232,7 +232,7 @@ hardware growth still needs a rerun after the fix.
 All shared label primitives now install one persistent font callback at
 creation. `primitives.setFont` changes a small backing state, without passing
 a replacement function to LVGL. Weak object keys avoid keeping retired labels
-alive. All component font updates use this path, including header fitting,
+alive. All panel font updates use this path, including header fitting,
 unit resizing, navigation rows, and panel reflow.
 
 The mock now retains replaced font callbacks as EdgeTX does while objects
@@ -293,8 +293,8 @@ Perform link-loss tests on the bench with propulsion disabled.
 
 - [ ] Confirm the `host` identity section reports package version `0.10.0`.
   Install the complete package and remove stale bytecode before recording results.
-- [ ] Run Dashboard IDs `host`, `services`, and `services2`; inspect layout path,
-  component loading, unresolved sources, normalized readings, and failures.
+- [ ] Run Dashboard ID `host`; inspect layout path, panel loading,
+  unresolved sources, and failures. Check readings against the model's sensors.
 - [ ] Check missing/corrupt layouts and missing sources produce useful errors
   without disabling unrelated panels.
 - [ ] Record instruction use, Lua/bitmap memory, LVGL object count, and refresh
@@ -307,7 +307,7 @@ Perform link-loss tests on the bench with propulsion disabled.
 ## Automated mock baseline
 
 `tests/integration/widget/test_aircraft_memory.lua` exercises the real
-`aircraft` layout for 24240 refresh callbacks, including ten warm-up cycles
+default aircraft layout for 24240 refresh callbacks, including ten warm-up cycles
 and 100 measured receiver loss/recovery cycles. Each cycle changes pack
 voltage, altitude/extrema, vertical speed, LQ, RSSI, RFMD, transmitter voltage,
 GVs, and timer values before disconnecting. Assertions verify changed
@@ -339,7 +339,7 @@ Widget(B) increase as retained Lua memory. Forced collection and mock objects
 do not reproduce the firmware's normal GC cadence or its Widget accounting.
 
 `tests/integration/widget/test_resource_stability.lua` exercises six dashboards
-(`main`, `review-metric`, `review-navigation`, `host`, `services`, `services2`)
+covering default, metric, navigation, and host/service diagnostic configurations
 over 21 rounds, with three sizes per dashboard. After one warm-up round, it
 checks 120 reloads and 360 size changes for a stable live object count, no object
 allocation during reflow, and collectible retired pages and service registries.

@@ -4,7 +4,7 @@
 
 1. Keep tests as simple and readable as possible.
 2. Eliminate duplicate setup and assertion code.
-3. Replace large monolithic test files with per-component tests.
+3. Replace large monolithic test files with per-panel tests.
 4. Cover widget-builder behavior once, without repeating layout assertions for every panel.
 5. Keep each panel test focused on functionality unique to that panel.
 
@@ -23,7 +23,7 @@ tests/
       test_grid.lua
       test_yaml.lua
       test_layout.lua
-      test_component_host.lua
+      test_panel_host.lua
       test_theme.lua
       test_primitives.lua
       test_services.lua
@@ -32,7 +32,7 @@ tests/
       test_control_service.lua
       test_extrema_service.lua
       test_navigation_service.lua
-    components/
+    panels/
       test_cell_battery.lua
       test_flight_mode.lua
       test_flight_timer.lua
@@ -69,12 +69,12 @@ Responsibilities:
   - `assertPanelBounds()`
 - centralize common cleanup and settling logic
 
-This removes repeated boilerplate from every component test.
+This removes repeated boilerplate from every panel test.
 
 ### 2. Shared layout fixtures
 
 Create reusable layout YAML fixtures for the common layout cases:
-- single component
+- single panel
 - 2x2 layout
 - multi-panel layout
 - overlap case
@@ -105,7 +105,7 @@ This test layer should validate the builder contract as a whole, not every indiv
 
 ### 4. Panel-specific tests
 
-Each component test file should only verify behavior unique to that component.
+Each panel test file should only verify behavior unique to that panel.
 
 Examples:
 - `test_metric.lua`
@@ -146,7 +146,7 @@ Examples:
 - service registry behavior
 - telemetry/model/control/extrema/navigation utilities
 
-### `tests/unit/components/*`
+### `tests/unit/panels/*`
 
 These should test “panel behavior” only.
 
@@ -200,7 +200,7 @@ return fixtures
 A builder matrix test should be parameterized over representative panel examples and only verify the common contract.
 
 Example assertions:
-- a component can be created
+- a panel can be created
 - a valid placement is accepted
 - overlapping placements are rejected
 - theme/contrast tokens are applied
@@ -210,7 +210,7 @@ Example assertions:
 
 1. Create `tests/support` helpers first.
 2. Move shared runtime helpers out of `test_runtime.lua`.
-3. Split the monolithic widget suite into component-level files.
+3. Split the monolithic widget suite into panel-level files.
 4. Extract builder/common assertions into one shared reusable matrix.
 5. Keep panel files narrow and unique.
 6. Remove duplicate setup from old large files once the new structure is stable.
@@ -228,12 +228,12 @@ The result is a test suite where generic widget behavior is tested once, while p
 
 ## Coverage Ownership During Migration
 
-The focused component files own pure component behavior:
+The focused panel files own pure panel behavior:
 
 - input normalization and formatting
 - state resolution
 - threshold and range calculations
-- component-specific wording and presentation choices
+- panel-specific wording and presentation choices
 
 The legacy runtime and widget integration files continue to own behavior that
 requires the complete host:
@@ -241,7 +241,7 @@ requires the complete host:
 - LVGL geometry and measured bounds
 - staged loading and refresh ordering
 - reflow and lifecycle cleanup
-- component failure isolation
+- panel failure isolation
 - telemetry/service wiring across multiple panels
 
 These assertions are intentionally not removed as duplicates: they exercise a

@@ -10,7 +10,7 @@ fixture.radio.values[100] = 16.4
 local context = fixture.createLoaded(nil, { DashID = "review-cell-battery", Theme = "modern" })
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-assertions.assertEqual(#context.components, 7)
+assertions.assertEqual(#context.panels, 7)
 fixture.assertNoOverlap(context)
 
 local pack = fixture.instanceOf(context, "pack")
@@ -32,11 +32,11 @@ assertions.assertEqual(pack.glyph.shell.properties.color, pack.glyph.fill.proper
 assertions.assertEqual(fixture.instanceOf(context, "smallest").showDetail, false)
 
 local function assertUnitThreshold()
-    local component = fixture.module("components/cell-battery.lua")
+    local panel = fixture.module("panels/cell-battery.lua")
     local kept, dropped = 0, 0
     for width = 100, 320 do
         local rect = { x = 0, y = 0, w = width, h = 136 }
-        local area = component.regionsFor(
+        local area = panel.regionsFor(
             pack.theme,
             pack.themeBuilder,
             rect,
@@ -88,7 +88,7 @@ local function assertUnitThreshold()
     assert(not area.showUnit, "one pixel below the whitespace threshold must drop V")
     spec.unitRequired = true
     area = pack.themeBuilder.panel(pack.theme, rect, pack.fonts, spec, area)
-    assert(area.showUnit, "required units in other components must not be dropped")
+    assert(area.showUnit, "required units in other panels must not be dropped")
 end
 
 local function assertEqualGaps(instance)
@@ -110,7 +110,7 @@ local function assertEqualGaps(instance)
 end
 
 local function assertVerticalAlignment()
-    for _, entry in ipairs(context.components) do
+    for _, entry in ipairs(context.panels) do
         local instance = entry.instance
         if instance.glyphShown then
             local glyph = instance.glyph

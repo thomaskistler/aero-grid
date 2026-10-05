@@ -1,4 +1,4 @@
-# Pre-generated component screenshots
+# Pre-generated panel screenshots
 
 Implementation plan for [issue #107](https://github.com/thomaskistler/aero-grid/issues/107).
 This is a scoped documentation delivery plan, not a change to the frozen runtime
@@ -22,29 +22,29 @@ adapters and readiness checks remain in code and derive their expected values
 from the selected recipe.
 No VS Code extension code is reused and no production widget source
 is changed. Capture-only readiness instrumentation is added to the isolated SD
-copy. See the [developer instructions](../docs/developer-guide/build.md#component-screenshot-prototype).
+copy. See the [developer instructions](../docs/developer-guide/build.md#panel-screenshot-prototype).
 
 ## Catalogue generation result
 
 All nine YAML recipes generate 1x2, 2x1, and 2x2 examples with 10 px black padding.
 `--all` generates the 27 images directly under ignored
-`build/doc-capture/<component>/`. Each panel directory is replaced on regeneration;
+`build/doc-capture/<panel>/`. Each panel directory is replaced on regeneration;
 no previous runs are retained. Each includes its recipe, provenance, simulator
 log, and diagnostic full frame. A failed batch stops without publishing assets.
 
 Trim, timer, flight mode, and identity use isolated firmware model settings.
 Telemetry panels and TX voltage use **real EdgeTX rendering with synthetic sample
 data** through capture-only API overrides passed into the real service
-environment. Services and component rendering are unchanged; these captures do
+environment. Services and panel rendering are unchanged; these captures do
 not prove end-to-end receiver telemetry. The model bitmap is the user-supplied
 Crack Yak image, with redistribution permission confirmed by the contributor.
 
 The same settings are used across all three spans. TX battery percentage is
 disabled because the 2x1 panel rejects it. Readiness checks require the populated
-component presentation as well as expected service values, preventing stable
+panel presentation as well as expected service values, preventing stable
 loading/unavailable frames from being accepted as screenshots.
 
-All 27 PNGs are now copied into `docs/assets/components/` and embedded in the
+All 27 PNGs are now copied into `docs/assets/panels/` and embedded in the
 nine reference pages with sample and presentation disclosures. Changes remain
 local until committed and published.
 
@@ -55,20 +55,20 @@ and behavior remain unchanged; there is no post-processing of framebuffer pixels
 
 ## Outcome and scope
 
-Provide real EdgeTX-rendered examples for all nine display component references,
+Provide real EdgeTX-rendered examples for all nine display panel references,
 at 1x2, 2x1, and 2x2 spans: 27 baseline PNG images. Span names mean columns x rows.
-All nine components currently declare these spans as supported.
+All nine panels currently declare these spans as supported.
 
 Generate images ahead of publication and commit them under
-`docs/assets/components/<component>/<span>.png`. MkDocs and Pages consume those
+`docs/assets/panels/<panel>/<span>.png`. MkDocs and Pages consume those
 files without running the simulator. Screenshot regeneration is a maintainer
 operation, not a requirement for normal documentation builds.
 
 Baseline captures use a pinned TX16S simulator at 480 x 272, Modern theme,
 populated normal-state sample data, and one documented settings recipe per
-component. Use the same recipe across spans when valid. If a setting combination
+panel. Use the same recipe across spans when valid. If a setting combination
 cannot be used at a smaller span, record the override explicitly rather than
-silently dropping it or modifying component behavior.
+silently dropping it or modifying panel behavior.
 
 ## 1. Prove real-renderer capture before building the catalogue
 
@@ -103,16 +103,16 @@ the existing mocked HTML illustrations without an explicit scope change.
 
 ## 2. Define deterministic capture recipes and fixtures
 
-Create a machine-readable manifest for component type, span, settings, sample
+Create a machine-readable manifest for panel type, span, settings, sample
 values, placement, expected visible content, and output path. Validate recipes
-through existing layout/component validation before booting the simulator.
+through existing layout/panel validation before booting the simulator.
 
 Build only under a dedicated directory such as `build/doc-capture/`. Never run
 the ordinary `make build` against a customized active simulator image.
 
 Sample-data coverage:
 
-| Component | Required fixture data |
+| Panel | Required fixture data |
 | --- | --- |
 | Metric | Numeric reading, unit/precision, optional supporting readings and visual bounds. |
 | Flight timer | Named model timer frozen at a representative nonzero value. |
@@ -157,7 +157,7 @@ frames is not sufficient proof of readiness.
 
 ## 4. Generate and validate the full set
 
-Expand the proven workflow to all nine components and 27 baseline cases.
+Expand the proven workflow to all nine panels and 27 baseline cases.
 Add focused extra images only where needed to explain materially different
 presentations, such as metric radial versus bar or model image versus name.
 Warning/stale/unavailable galleries are follow-up scope, not required for the
@@ -166,7 +166,7 @@ initial 27 images.
 Proposed commands:
 
 - `make docs-images`: explicit screenshot regeneration using the capture runner.
-- A case selector for regenerating one component/span during development.
+- A case selector for regenerating one panel/span during development.
 - A fixture-only preparation command if manual capture is the chosen route.
 
 Keep additional dependencies separate from the runtime and ordinary Lua tests.
@@ -185,7 +185,7 @@ Validation includes:
 
 ## 5. Embed images and document regeneration
 
-Add a "Size examples" section to each `docs/components/*.md` page, with labeled
+Place visual examples directly after each `docs/panels/*.md` page title, with labeled
 1x2, 2x1, and 2x2 images and the exact example configuration, or a linked recipe.
 Explain intentional supporting-content shedding and important span-dependent
 presentation changes.

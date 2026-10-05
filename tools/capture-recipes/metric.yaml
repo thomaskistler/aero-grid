@@ -1,5 +1,5 @@
 version: 1
-component: metric
+panel: metric
 theme: modern
 brighten_supporting_text: true
 border:
@@ -14,6 +14,8 @@ config:
     - source: GAlt
       label: ALTITUDE
       precision: 0
+      rangeMin: 0
+      rangeMax: 400
     - source: Peak
       label: MAX
       precision: 0
@@ -22,8 +24,6 @@ config:
       precision: 1
   accent: green
   visual: none
-  rangeMin: 0
-  rangeMax: 400
 sample:
   rssi: 85
   sources:

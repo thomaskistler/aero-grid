@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 --- Semantic theme tokens, theme modes, and state resolution.
---- The host owns every color. Components receive resolved tokens and must not
+--- The host owns every color. Panels receive resolved tokens and must not
 --- define their own background palettes.
 
 ---@class AeroGridThemeTokens
@@ -82,7 +82,7 @@ local MODERN = {
 
 theme.MODES = { modern = true, edgetx = true, custom = true }
 
---- Accent tokens a component may legitimately select.
+--- Accent tokens a panel may legitimately select.
 --- Warning and freshness states override these, so `critical` is not selectable.
 theme.ACCENTS = { cyan = true, green = true, amber = true, orange = true }
 
@@ -864,14 +864,14 @@ end
 ---    `88.8` at XXLSIZE estimates 160 px and advances 102. That costs
 ---    nothing but sizes -- a unit shed that would have fitted, a reading
 ---    stepped down that had room. `tx-battery` took its font from the band
----    rather than from this ladder to escape it, which is a component
+---    rather than from this ladder to escape it, which is a panel
 ---    working around a shared helper rather than one with a special
 ---    visualization.
 ---  * On capitals it under-reports, and that clips. `model-identity` sizes
 ---    its panel against a row of `M` because that is the widest name EdgeTX
 ---    will store, and at `1 x 2` the estimate called `MMMMMM` 101 px where
 ---    MIDSIZE draws it in 116 -- eleven pixels past 105 px of content, in
----    the component whose entire reading is the name.
+---    the panel whose entire reading is the name.
 ---
 --- Measuring removes both, and removes the disagreement as well: the
 --- function that decides the font and the function that places the string
@@ -1120,7 +1120,7 @@ end
 --- Choose the largest font in which a string fits both a width and a height.
 --- `fitPrimary` only answers the vertical question, which leaves a long value
 --- in a narrow cell overflowing sideways. Callers pass the widest string the
---- component can ever display, not the current one, so the chosen size stays
+--- panel can ever display, not the current one, so the chosen size stays
 --- stable as values change.
 ---@param text any Widest string the caller will render.
 ---@param width integer Horizontal pixels available.
@@ -1140,7 +1140,7 @@ end
 
 --- Decide what a panel of this size carries, and how large its reading is.
 ---
---- Every component used to answer this for itself, with a private copy of the
+--- Every panel used to answer this for itself, with a private copy of the
 --- same ladder: reserve the supporting rows I want, shed them if the reading
 --- gets uncomfortable, then fit the reading to what is left. Eight copies,
 --- and two panels of identical size disagreed because each had shed a
@@ -1149,18 +1149,18 @@ end
 --- fonts, a range of four to one, on panels the same size to the pixel.
 ---
 --- So composition is decided here, from the panel's box alone, and is the same
---- answer for every component of that size. A component asks whether it has a
+--- answer for every panel of that size. A panel asks whether it has a
 --- supporting row and a visualization; it does not decide.
 ---
 --- The reading then takes what the composition leaves. Deciding the font from
 --- the box rather than from the string is what makes two panels of one size
 --- agree, because they are answering the same question.
---- **It is not told what the component draws, and no longer needs to be.**
+--- **It is not told what the panel draws, and no longer needs to be.**
 --- It used to be, and the reason is worth keeping because the interface was
 --- designed around it: the tertiary quarter was reserved only when the panel
---- actually drew a supporting row, so a component had to declare its
+--- actually drew a supporting row, so a panel had to declare its
 --- intention or be charged a quarter of the panel for a row it would never
---- fill. Three components default their row off and all three lost a font
+--- fill. Three panels default their row off and all three lost a font
 --- size to that.
 ---
 --- The bands are fixed proportions now, so there is nothing for a
@@ -1170,9 +1170,9 @@ end
 --- anything is worse than an absent one -- a caller passes it, believes it
 --- was honoured, and nothing says otherwise.
 ---
---- What a component draws still decides where its *own* row is placed and
+--- What a panel draws still decides where its *own* row is placed and
 --- whether it is drawn at all. That lives in `theme.panel` and in the
---- components, which is where it always was; only the band arithmetic has
+--- panels, which is where it always was; only the band arithmetic has
 --- stopped asking.
 ---@param resolved AeroGridTheme
 ---@param rect AeroGridRect
@@ -1196,9 +1196,9 @@ function theme.ladder(resolved, rect, frame)
     -- between them -- see `theme.readingRoom` -- but the two outer bands are
     -- unchanged, and a row that would not fit its quarter still does not.
     --
-    -- It stays here rather than moving into each component, because two panels
+    -- It stays here rather than moving into each panel, because two panels
     -- of one size agreeing is the whole reason this function exists. A band
-    -- rule applied by some components and not others would reintroduce exactly
+    -- rule applied by some panels and not others would reintroduce exactly
     -- the disagreement it replaced.
     --
     -- **The bands do not depend on what the panel draws**, which is why
@@ -1209,9 +1209,9 @@ function theme.ladder(resolved, rect, frame)
     -- on content, and the user rejected it on a radio after it had been
     -- measured as correct here. `theme.bands` records what went with it.
     --
-    -- `draws` still narrows the *grants* below, because a component may
+    -- `draws` still narrows the *grants* below, because a panel may
     -- decline a row it was offered and the row's own placement follows that.
-    -- It cannot widen them: a component may not claim a row the panel is too
+    -- It cannot widen them: a panel may not claim a row the panel is too
     -- short to hold, which is the whole point of deciding composition here.
     local bands = theme.bands(frame, rect, true)
 
@@ -1237,10 +1237,10 @@ function theme.ladder(resolved, rect, frame)
     -- inequality the wrong way round; `cell-battery` at that span took XXLSIZE
     -- and put its unit four pixels into its own supporting row.
     --
-    -- **Conservative rather than asked of the component, and that is the
+    -- **Conservative rather than asked of the panel, and that is the
     -- point of this function.** Two panels of one size must get one answer
     -- whatever drew them, so the budget may not depend on whether this
-    -- particular component's visualization happens to be a bar. Telling the
+    -- particular panel's visualization happens to be a bar. Telling the
     -- ladder would be the redistribution objection again, in a third place.
     local barTop = rect.h - frame.bottom - resolved.spacing.barHeight
     local floorY = rows > 0 and theme.rowTop(frame, frame.labelFont, barTop) or (rect.h - frame.bottom)
@@ -1267,7 +1267,7 @@ end
 --- Choose the font and the wording a reading is drawn in.
 ---
 --- The forms are offered longest first and are all derived from the widest
---- value the component can ever print, never from the current one, so a
+--- value the panel can ever print, never from the current one, so a
 --- reading does not resize or reword as it changes.
 ---
 --- **A form may drop redundancy, never magnitude.** A unit the panel's own
@@ -1378,7 +1378,7 @@ function theme.fitHeading(text, width, font)
     -- The overwhelmingly common case, and the one every panel pays for at
     -- build: a short heading at the font the panel already chose. Answered
     -- before any ladder is built, because building one to discard it is a cost
-    -- every component pays for the rare heading that needs it.
+    -- every panel pays for the rare heading that needs it.
     if theme.textWidth(font, wanted) <= width then
         return wanted, font
     end
@@ -1411,14 +1411,14 @@ end
 --- Choose the longest of several wordings that fits a width.
 ---
 --- Supporting rows were the one place nothing was fitted. The dominant reading
---- goes through `fitText` in every component; a supporting row went through
+--- goes through `fitText` in every panel; a supporting row went through
 --- nothing at all, so `16.4V PACK` was drawn into 48 pixels of a panel that
 --- needed 99, and `BRG 009 N` into 38 of 89. A row cannot shrink its font the
 --- way a reading can, because it is already the smallest the dashboard uses,
 --- so the only thing left to vary is the words.
 ---
 --- `navigation` already did this for one of its two captions, with a private
---- ladder of phrasings. This is that, shared, so a component says what it
+--- ladder of phrasings. This is that, shared, so a panel says what it
 --- means at a length it has room for rather than clipping mid-word.
 ---
 --- The last variant is returned when none fits: it is the shortest the caller
@@ -1459,7 +1459,7 @@ end
 --- So the vocabulary was cut rather than the column widened, to one rule:
 --- **a badge names the state, and the panel's supporting row says why.** A
 --- badge is read at a glance from arm's length and is one word from a closed
---- set the theme owns. A detail row is a vocabulary the component owns, is
+--- set the theme owns. A detail row is a vocabulary the panel owns, is
 --- fitted to whatever width its panel gives it, and is where the difference
 --- between a pack that has not been detected and a source answering wrongly
 --- actually belongs.
@@ -1468,7 +1468,7 @@ end
 --- because the width changed: a two-item row now takes the panel's two slot
 --- centres and gets 40% of the content where the column split it replaced
 --- reached all of it. `NO CELLS` against `CELLS ERR`, and `DOWN` against
---- `NO RSS`, still say different things at that width. A component whose
+--- `NO RSS`, still say different things at that width. A panel whose
 --- shortest wordings collapse onto one another has lost the distinction
 --- however wide its panel happens to be.
 ---
@@ -1481,9 +1481,9 @@ end
 --- them are still separated where the difference can be used, which is the
 --- diagnostics view.
 ---
---- Components therefore no longer override the badge. `NOT CELLS` against
+--- Panels therefore no longer override the badge. `NOT CELLS` against
 --- `BAD CELLS` spent nine characters separating two failure modes of one
---- component -- and those two have since turned out to be one failure mode
+--- panel -- and those two have since turned out to be one failure mode
 --- with two causes, which is the stronger version of the same argument.
 --- `NO SENSOR` against `NO SOURCE` were near-identical strings for two
 --- situations with the same fix. Every one of those distinctions was already
@@ -1494,7 +1494,7 @@ theme.BADGES = {
     critical = "CRIT",
     editing = "EDIT",
     -- Nothing usable from the source: unconfigured, unrecognized, or answering
-    -- with a shape this component cannot read. All three want the same fix and
+    -- with a shape this panel cannot read. All three want the same fix and
     -- the detail row says which it is.
     unavailable = "N/A",
 }
@@ -1504,7 +1504,7 @@ theme.BADGES = {
 --- Resolved once and cached. Not computed at load, because the font constants
 --- are EdgeTX globals and a module that read them while being loaded would
 --- depend on the order the host happens to load its modules in; and not per
---- call, because `theme.frame` runs for every component of every reflow and
+--- call, because `theme.frame` runs for every panel of every reflow and
 --- this never changes.
 ---@param font any Badge font, from theme.typography.
 ---@return integer
@@ -1532,9 +1532,9 @@ end
 --- and four characters: ALT, NAV, TRIM, LINK, MODE, PACK.
 local MIN_LABEL_WIDTH = 30
 
---- Resolve the padded content geometry every component panel shares.
+--- Resolve the padded content geometry every panel panel shares.
 ---
---- Components derive their regions from this rather than repeating the same
+--- Panels derive their regions from this rather than repeating the same
 --- arithmetic, so a header row sits in the same place on every panel and a
 --- state badge never lands on top of the label it accompanies. Every
 --- measurement comes from a real font line height, because EdgeTX's fonts are
@@ -1545,10 +1545,10 @@ local MIN_LABEL_WIDTH = 30
 --- everything the widget draws, and it cannot be hidden because it is the only
 --- route to the radio's menus. Laying the header and the content start out
 --- around that corner here means the one shared helper handles it once,
---- instead of ten components each compensating and disagreeing about how.
+--- instead of ten panels each compensating and disagreeing about how.
 ---@param resolved AeroGridTheme
 ---@param rect AeroGridRect
----@param fonts table Typography roles for this component's span.
+---@param fonts table Typography roles for this panel's span.
 ---@param reserved? table Width and height of an obstructed top-left corner.
 ---@return table frame
 function theme.frame(resolved, rect, fonts, reserved)
@@ -1638,7 +1638,7 @@ function theme.frame(resolved, rect, fonts, reserved)
     -- state, which is the text-jumping the specification forbids and is worse
     -- than a permanently shorter label: a header that moves draws the eye to
     -- itself rather than to the reading that just went critical. Every
-    -- component in the catalogue can reach a badged state, so a column that was
+    -- panel in the catalogue can reach a badged state, so a column that was
     -- conditional would be conditional on nothing in practice anyway.
     local labelWidth = badgeX - labelX - 4
     local labelHidden = labelWidth < MIN_LABEL_WIDTH
@@ -1714,7 +1714,7 @@ end
 
 --- Whether the two slots can hold this pair without the elements meeting.
 ---
---- **Asked of the widest string the component can ever print, never of the
+--- **Asked of the widest string the panel can ever print, never of the
 --- value on screen, and decided once at build.** Deciding it from the current
 --- reading would make the arrangement a function of the data: a voltage
 --- crossing `9.9` to `10.0` would flip the whole panel between two layouts and
@@ -1807,7 +1807,7 @@ end
 --- region is not what the reading is centred in -- the panel is, and the
 --- button clamps.
 ---
---- **Asked of what the panel reserves, never of what the component draws.**
+--- **Asked of what the panel reserves, never of what the panel draws.**
 --- A heading is present when the panel is wide enough to keep one, a row or
 --- a visualization when it is tall enough to be granted one. That is the
 --- guarantee the fixed bands were chosen for and it is kept here: two panels
@@ -2104,14 +2104,14 @@ end
 --- **The font wins, and then it is clamped.** On a 53 px panel the label band
 --- is 11 px and the heading is SMLSIZE at 17, while the smallest font the
 --- dashboard has is TINSIZE at 12 -- so "let the band win" is not an available
---- answer there, in any component. Centring the heading in a band smaller than
+--- answer there, in any panel. Centring the heading in a band smaller than
 --- itself puts a pixel of it above the panel's top edge, where it is simply
 --- clipped. The band yields; the panel does not.
 ---
 --- The alternative, falling back to the older stacking below a size threshold,
 --- was rejected deliberately: two layout rules with a threshold between them
 --- is a worse thing to own than one rule that bends at the bottom of its
---- range, because every component and every future addition would then have to
+--- range, because every panel and every future addition would then have to
 --- be reasoned about twice, on either side of a line whose position is itself
 --- arbitrary.
 ---
@@ -2128,42 +2128,42 @@ function theme.clampToPanel(y, font, panelHeight)
     return math.min(top, math.max(0, panelHeight - ink))
 end
 
---- Lay out a standard panel into a table the component owns.
+--- Lay out a standard panel into a table the panel owns.
 ---
 --- **Most panels are one arrangement with different words in it**: a
 --- heading, a reading, an optional visualization beside it, an optional
 --- supporting row beneath. Every decision that arrangement needs already
 --- lives here -- the frame, the ladder, the bands, the band font, the slots,
 --- the fitter -- and the *assembly* of those decisions was copied into each
---- component, which is why the same band was called `valueY`, `nameY` and
+--- panel, which is why the same band was called `valueY`, `nameY` and
 --- `clockY` in three files and why one mistake had to be fixed in nine.
 ---
 --- **It fills `out` rather than returning a fresh table.** A reflow runs
---- `REFLOW_BATCH` components per callback, and the reflow callback has about
+--- `REFLOW_BATCH` panels per callback, and the reflow callback has about
 --- four hundred instructions of headroom against the slowest loader stage;
---- allocating a region table and its sub-tables per component per reflow is
+--- allocating a region table and its sub-tables per panel per reflow is
 --- the one cost that could make sharing this more expensive than copying it.
---- The component keeps one table for the life of the panel and this
+--- The panel keeps one table for the life of the panel and this
 --- overwrites it.
 ---
 --- **`spec.draws` is what the panel will put on the screen, never what its
 --- height would permit.** That distinction is a defect shape this project
 --- has now paid for twice -- once placing a row, once reserving a band -- so
---- the interface does not offer the other question. A component that wants a
+--- the interface does not offer the other question. A panel that wants a
 --- supporting row says it draws one; the ladder may still refuse it on a
 --- panel too short to hold it, because composition is decided here so that
 --- two panels of one size agree.
 ---
 --- What it deliberately does not do: compasses, battery glyphs, trim cells,
 --- and anything a diagnostics view draws. A builder that can express every
---- panel expresses nothing, and those are the components whose arrangement
+--- panel expresses nothing, and those are the panels whose arrangement
 --- is genuinely their own.
 ---@param resolved AeroGridTheme
 ---@param rect AeroGridRect
 ---@param fonts table Typography roles for this span.
 ---@param spec table
---- `frame`: this component's frame, from its own `themeBuilder.frame`.
---- `forms`: reading wordings, longest first, widest the component can print.
+--- `frame`: this panel's frame, from its own `themeBuilder.frame`.
+--- `forms`: reading wordings, longest first, widest the panel can print.
 --- `draws`: `{rows = boolean, visual = boolean}` -- what will be drawn.
 --- `bar`: true where the visualization is a full-width bar, which spans the
 ---   panel by design and is exempt from the slot rule.
@@ -2174,15 +2174,15 @@ end
 --- `unitRequired`: the unit carries magnitude and may not be dropped -- a
 ---   distance's `km` against a voltage's `V`.
 --- `rowItems`: 1 or 2, what the supporting row will actually hold. Not what
----   the component could put there: a row of two on a panel drawing one
+---   the panel could put there: a row of two on a panel drawing one
 ---   puts a lone caption on the left slot, which is a defect this project
 ---   has already shipped once.
----@param out table The component's own region table, overwritten in place.
+---@param out table The panel's own region table, overwritten in place.
 ---@return table out
 function theme.panel(resolved, rect, fonts, spec, out)
-    -- **`spec.frame`, not `theme.frame`.** The host wraps `frame` per component
+    -- **`spec.frame`, not `theme.frame`.** The host wraps `frame` per panel
     -- to lay a panel out around the corner EdgeTX paints its menu button over,
-    -- and that wrapper is reachable only through the `themeBuilder` a component
+    -- and that wrapper is reachable only through the `themeBuilder` a panel
     -- was handed. Calling the module's own function here skips it, and the
     -- panel in the grid's top left draws its heading under the button -- which
     -- is precisely the defect the shared frame exists to prevent, reintroduced
@@ -2191,7 +2191,7 @@ function theme.panel(resolved, rect, fonts, spec, out)
     local draws = spec.draws
     local ladder = theme.ladder(resolved, rect, frame)
 
-    -- The component's intent, narrowed by what the panel can hold. A component
+    -- The panel's intent, narrowed by what the panel can hold. A panel
     -- may decline what it was granted and may not claim what it was not.
     local rows = draws.rows == true and ladder.rows > 0
     local visual = draws.visual == true and ladder.visual
@@ -2228,9 +2228,9 @@ function theme.panel(resolved, rect, fonts, spec, out)
         font, formIndex = theme.fitReading(spec.forms, frame.content, ladder.room)
     end
 
-    -- **One name for the reading's band.** Three components called this
+    -- **One name for the reading's band.** Three panels called this
     -- `valueY`, `nameY` and `clockY`, and one carried two of them for one
-    -- thing. The name is `valueY` here and a component that wants another word
+    -- thing. The name is `valueY` here and a panel that wants another word
     -- for it has to write the alias itself, which is the point: the divergence
     -- has to be deliberate to happen at all.
     local height = theme.fontHeight(font)
@@ -2238,7 +2238,7 @@ function theme.panel(resolved, rect, fonts, spec, out)
             and theme.readingWidth(font, spec.forms[formIndex], unitFont, showUnit and spec.unit or nil)
         or theme.measureText(font, spec.forms[formIndex])
 
-    -- Asked of the widest string the component can ever print, so a panel's
+    -- Asked of the widest string the panel can ever print, so a panel's
     -- arrangement is fixed for its life rather than flipping as its value
     -- changes.
     --
@@ -2306,7 +2306,7 @@ function theme.panel(resolved, rect, fonts, spec, out)
 
     -- A lone reading centres across the whole content box. A reading with a
     -- compact visual beside it takes the left slot, which is the caller's
-    -- business until a component in this set has one.
+    -- business until a panel in this set has one.
     -- Reading and visual share the body band and are centred on each other, so
     -- the block the band centres is the deeper of the two.
     --
@@ -2332,7 +2332,7 @@ function theme.panel(resolved, rect, fonts, spec, out)
     -- Only where there is one. A panel with no compact visual writes three
     -- nils per reflow otherwise, and `out` is reused rather than rebuilt so
     -- they have to be cleared rather than simply absent -- which is the cost
-    -- of the table the component owns, paid where it is actually owed.
+    -- of the table the panel owns, paid where it is actually owed.
     if compact then
         out.visualSize = size
         out.visualCentreX = slotRight
@@ -2381,10 +2381,10 @@ function theme.panel(resolved, rect, fonts, spec, out)
     -- not move when the bar arrives. The comment here used to say the
     -- opposite of what the line beneath it did, which is worth correcting
     -- rather than quietly fixing: it claimed the question was what the
-    -- component draws, and then gave the reason for asking what it reserves.
+    -- panel draws, and then gave the reason for asking what it reserves.
     out.detailY = theme.rowTop(frame, fonts.label, spec.bar and barY or rect.h)
     -- **A row of one centres across the content box; a row of two takes the
-    -- panel's two slot centres.** Which it is is the component's to say,
+    -- panel's two slot centres.** Which it is is the panel's to say,
     -- because a span knows only what is permitted -- `metric` may carry a
     -- secondary reading at `2 x 2` and whether it does depends on a source
     -- being configured. Two boxes centred that far apart can each be half the
@@ -2484,7 +2484,7 @@ function theme.panel(resolved, rect, fonts, spec, out)
     return out
 end
 
---- Font roles for a component span.
+--- Font roles for a panel span.
 --- Sizes are EdgeTX globals, read at call time so tests can install mocks.
 ---@param colSpan integer
 ---@param rowSpan integer
@@ -2508,9 +2508,9 @@ function theme.typography(colSpan, rowSpan)
     }
 end
 
---- Resolve a component state into concrete presentation values.
+--- Resolve a panel state into concrete presentation values.
 --- Warning, critical, stale, and unavailable states deliberately override a
---- component's decorative accent, and each carries a text badge because color
+--- panel's decorative accent, and each carries a text badge because color
 --- alone is not sufficient to communicate state.
 ---
 --- A resting panel carries no outline. Its fill against the darker screen is

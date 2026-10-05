@@ -77,7 +77,7 @@ local function layoutFor(typeName, colSpan, rowSpan)
     "version: 1\n",
     "theme:\n  mode: modern\n",
     "grid:\n  columns: 4\n  rows: 4\n",
-    "components:\n",
+    "panels:\n",
     "  - id: subject\n",
     "    type: ", realType, "\n",
     "    col: 0\n    row: 0\n",
@@ -138,7 +138,7 @@ for _, typeName in ipairs(ORDER) do
       definition.refresh(context)
     end
 
-    local entry = context.components[1]
+    local entry = context.panels[1]
     assert(entry, typeName .. " " .. span .. ": " ..
       table.concat(context.errors, "; "))
 
@@ -158,7 +158,7 @@ for _, typeName in ipairs(ORDER) do
     -- would sit a couple of pixels off.
     --
     -- **And laid out around the menu button, where the panel meets it.** The
-    -- host wraps `frame` per component so a panel in the grid's top left
+    -- host wraps `frame` per panel so a panel in the grid's top left
     -- cell is built around the corner EdgeTX paints its button over; this
     -- called the module's own function and got the unobstructed frame, so
     -- every App mode figure on the page was the figure for a panel nothing
@@ -189,7 +189,7 @@ for _, typeName in ipairs(ORDER) do
     local ladder = themeModule.ladder(context.theme, rect, frame)
     local bands = ladder.bands
 
-    -- The widest reading the component can ever print, which is what its
+    -- The widest reading the panel can ever print, which is what its
     -- own fitter sizes from. The current value is usually much shorter --
     -- `7.9` against `88.8` -- so asking whether *this* reading fits a slot
     -- would answer a question nobody has.
@@ -222,7 +222,7 @@ for _, typeName in ipairs(ORDER) do
     end
 
     out[#out + 1] = string.format(
-      "  {component = %q, span = %q, zone = %q, w = %d, h = %d,"
+      "  {panel = %q, span = %q, zone = %q, w = %d, h = %d,"
         .. " pad = %d, content = %d, widest = %q, widestUnit = %q,"
         .. " widestAt = {%s}, compact = %d, top = %d, bottom = %d,"
         .. " labelHeight = %d, bodyY = %d, bodyH = %d,"
@@ -238,7 +238,7 @@ for _, typeName in ipairs(ORDER) do
     -- band here would compare one quantity against another and disagree on
     -- every panel. The cross-check is only worth having if both sides are
     -- asking the same question.
-    hostBands[#hostBands + 1] = {zone = zone.name, component = typeName,
+    hostBands[#hostBands + 1] = {zone = zone.name, panel = typeName,
       colSpan = colSpan, rowSpan = rowSpan, band = ladder.room}
 
     local function walk(object, depth)
@@ -296,7 +296,7 @@ out[#out + 1] = "}\n"
 --- Every body band this dashboard can build, and where each one occurs.
 ---
 --- **The cases above cannot answer this and never could.** They are six
---- components at four spans, every one of them placed in the grid's top left
+--- panels at four spans, every one of them placed in the grid's top left
 --- cell -- which is one placement of a hundred and thirty-six, and is also
 --- the one cell EdgeTX paints its menu button over in App mode. A band is a
 --- property of the panel's box rather than of what is drawn in it, so the
@@ -370,7 +370,7 @@ for _, observed in ipairs(hostBands) do
   assert(observed.band == band,
     string.format("the room walk disagrees with the host: %s %s %dx%d sized"
       .. " its reading against %d px, and the walk says %d", observed.zone,
-      observed.component, observed.colSpan, observed.rowSpan, observed.band,
+      observed.panel, observed.colSpan, observed.rowSpan, observed.band,
       band))
 end
 

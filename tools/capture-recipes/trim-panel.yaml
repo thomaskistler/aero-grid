@@ -1,5 +1,5 @@
 version: 1
-component: trim-panel
+panel: trim-panel
 theme: modern
 brighten_supporting_text: true
 border:
@@ -10,7 +10,6 @@ panels:
   2x1: {col: 2, row: 0, colSpan: 2, rowSpan: 1}
   2x2: {col: 2, row: 2, colSpan: 2, rowSpan: 2}
 config:
-  indicators: axes
   scale: standard
   readout: percent
 sample:

@@ -10,7 +10,7 @@ fixture.radio.fields["GAlt+"] = { id = 108, name = "GAlt+", unit = fixture.radio
 local context = fixture.createLoaded(nil, { DashID = "review-metric", Theme = "modern" })
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-assertions.assertEqual(#context.components, 7)
+assertions.assertEqual(#context.panels, 7)
 fixture.assertNoOverlap(context)
 local altitude = fixture.instanceOf(context, "altitude")
 local speed = fixture.instanceOf(context, "speed")

@@ -4,11 +4,11 @@ version: 1
 #
 # Set the widget's Dashboard ID to `states` to load this screen on any model.
 #
-# The other galleries compare components at one span. This one compares one
-# component across states, which is the only way to judge an alarm: a tinted
+# The other galleries compare panels at one span. This one compares one
+# panel across states, which is the only way to judge an alarm: a tinted
 # panel means nothing on its own, it means something beside an untinted one.
 #
-# Each row is the same component, the same span, the same source, differing
+# Each row is the same panel, the same span, the same source, differing
 # only in the thresholds that decide its state. The top row is what a healthy
 # dashboard looks like; the rows below it are what it looks like when something
 # is wrong.
@@ -49,7 +49,7 @@ grid:
   columns: 4
   rows: 4
 
-components:
+panels:
   # Healthy, for comparison. Everything below differs from this only in state.
   - id: s-normal-a
     type: metric
@@ -58,12 +58,13 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      label: Normal
-      source: RxBt
-      unit: V
-      rangeMin: 0
-      rangeMax: 10
-      precision: 2
+      metrics:
+        - source: RxBt
+          label: Normal
+          unit: V
+          precision: 2
+          rangeMin: 0
+          rangeMax: 10
 
   - id: s-normal-b
     type: metric
@@ -72,12 +73,13 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      label: Normal
-      source: RQly
-      unit: "%"
-      rangeMin: 0
-      rangeMax: 100
-      precision: 0
+      metrics:
+        - source: RQly
+          label: Normal
+          unit: "%"
+          precision: 0
+          rangeMin: 0
+          rangeMax: 100
 
   # A rising threshold of zero is met by every reading, so this panel is always
   # in warning and can be studied rather than caught.
@@ -88,14 +90,15 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      label: Warning
-      source: RxBt
-      unit: V
-      rangeMin: 0
-      rangeMax: 10
-      precision: 2
-      direction: rising
-      warning: 0
+      metrics:
+        - source: RxBt
+          label: Warning
+          unit: V
+          precision: 2
+          rangeMin: 0
+          rangeMax: 10
+          warning: 0
+          direction: rising
 
   - id: s-critical
     type: metric
@@ -104,14 +107,15 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      label: Critical
-      source: RxBt
-      unit: V
-      rangeMin: 0
-      rangeMax: 10
-      precision: 2
-      direction: rising
-      critical: 0
+      metrics:
+        - source: RxBt
+          label: Critical
+          unit: V
+          precision: 2
+          rangeMin: 0
+          rangeMax: 10
+          critical: 0
+          direction: rising
 
   # Absent data, which is deliberately not an alarm and must not look like one.
   # A source name the radio does not have reads unavailable.
@@ -122,13 +126,14 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      label: No source
-      source: NotASensor
-      rangeMin: 0
-      rangeMax: 10
+      metrics:
+        - source: NotASensor
+          label: No source
+          rangeMin: 0
+          rangeMax: 10
 
   # The cells panel has nothing to read on an ELRS link, which is a second
-  # route to the same state through a different component.
+  # route to the same state through a different panel.
   - id: s-nocells
     type: cell-battery
     col: 2
@@ -148,11 +153,12 @@ components:
     colSpan: 1
     rowSpan: 1
     config:
-      label: OK
-      source: RQly
-      rangeMin: 0
-      rangeMax: 100
-      precision: 0
+      metrics:
+        - source: RQly
+          label: OK
+          precision: 0
+          rangeMin: 0
+          rangeMax: 100
 
   - id: s-small-warning
     type: metric
@@ -161,13 +167,14 @@ components:
     colSpan: 1
     rowSpan: 1
     config:
-      label: Warn
-      source: RQly
-      rangeMin: 0
-      rangeMax: 100
-      precision: 0
-      direction: rising
-      warning: 0
+      metrics:
+        - source: RQly
+          label: Warn
+          precision: 0
+          rangeMin: 0
+          rangeMax: 100
+          warning: 0
+          direction: rising
 
   - id: s-small-critical
     type: metric
@@ -176,13 +183,14 @@ components:
     colSpan: 1
     rowSpan: 1
     config:
-      label: Crit
-      source: RQly
-      rangeMin: 0
-      rangeMax: 100
-      precision: 0
-      direction: rising
-      critical: 0
+      metrics:
+        - source: RQly
+          label: Crit
+          precision: 0
+          rangeMin: 0
+          rangeMax: 100
+          critical: 0
+          direction: rising
 
   - id: s-small-none
     type: metric
@@ -191,7 +199,8 @@ components:
     colSpan: 1
     rowSpan: 1
     config:
-      label: None
-      source: NotASensor
-      rangeMin: 0
-      rangeMax: 100
+      metrics:
+        - source: NotASensor
+          label: None
+          rangeMin: 0
+          rangeMax: 100

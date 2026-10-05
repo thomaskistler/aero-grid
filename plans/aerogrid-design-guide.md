@@ -1,6 +1,6 @@
 # AeroGrid Design Guide
 
-This document is for someone building a component or a layout, and it answers two
+This document is for someone building a panel or a layout, and it answers two
 questions: what does the dashboard look like, and why does it look like that. It is
 deliberately separate from `aerogrid-spec.md`, which is an architecture document
 carrying firmware constraints, fixture discipline and milestone state. Where the two
@@ -67,9 +67,10 @@ fallbacks for the latter. Footer text uses the primary text color for readabilit
 defaults. Either, both, or neither footer row can be requested without
 changing the compass selection. A coordinates-only footer uses one row.
 
-**Trim-panel review update:** `indicators: axes` is now the default. Aileron
-(`trim1`) spans the top, elevator (`trim2`) stands on the left, and rudder
-(`trim4`) spans the bottom. A white dot follows the aileron/elevator position,
+**Trim-panel review update:** the panel has one presentation: a three-axis
+square. The configured aileron (`trim1`) spans the top, elevator (`trim2`)
+stands on the left, and rudder (`trim4`) spans the bottom. A white dot follows
+the aileron/elevator position,
 with all three bars sharing one side length to form a square. The square and
 right-hand readout column are centered together in the available content box.
 Horizontal centering uses a fixed readout column wide enough for `-100%`,
@@ -91,8 +92,8 @@ rudder even when full captions are shed. The column reserves the suffix plus
 the widest readout, preserving aligned numeric right edges. Readouts are
 aligned top/middle/bottom with their axes; caption shedding does not remove
 the numbers. A smaller readout font keeps all three numbers visible in a
-normal 1x1 cell. `single`, `pair`, and `all` retain the previous layout and
-orientation settings. The axes layout fixes orientations and omits throttle.
+normal 1x1 cell. The source names are configurable, but each remains assigned
+to its displayed axis; bar directions and positions are fixed.
 
 **Cell-battery review update:** its upright glyph uses an equal-gap body layout
 rather than the two percentage slots below. Reserve the widest number plus
@@ -103,7 +104,7 @@ would be less than 30% of the full panel width, without reducing the font.
 Keep at least four pixels per gap, shrinking or shedding the glyph if needed. The live
 number and unit center as a pair inside the fixed reading block, while the
 glyph stays fixed. Supporting rows retain the two-slot rule. This is specific
-to `cell-battery`; it does not change `tx-battery` or the other components.
+to `cell-battery`; it does not change `tx-battery` or the other panels.
 
 **Read this before treating anything below as a description of the dashboard.**
 
@@ -114,11 +115,11 @@ to `cell-battery`; it does not change `tx-battery` or the other components.
 | The shared responsive ladder, the abbreviation rule, shedding | Implemented and shipped |
 | The battery glyph: vertical, one colour, outline scaled to the reading's font | Implemented and shipped |
 | The unit inline beside the reading, placed by measurement | Implemented and shipped |
-| Content flow: the heading pinned to the top inset, the row hung from the bottom one, the reading's ink centred on the panel and its font taken from the panel's height | Implemented and shared by every component |
-| Content flow: the two slots and the build-time fallback | Implemented and shared by every component that draws a reading |
+| Content flow: the heading pinned to the top inset, the row hung from the bottom one, the reading's ink centred on the panel and its font taken from the panel's height | Implemented and shared by every panel |
+| Content flow: the two slots and the build-time fallback | Implemented and shared by every panel that draws a reading |
 | The heading pinned to the top of its band; the badge placed from its measured text | Implemented and shipped |
-| Supporting rows: one form per state wherever one fits | Implemented; five of seven row-drawing components use `theme.fitLabel`; metric supporting groups use the builder's measured fit |
-| The standard panel assembled in one place (`theme.panel`) | Implemented; **five of the eleven components are on it** |
+| Supporting rows: one form per state wherever one fits | Implemented; five of seven row-drawing panels use `theme.fitLabel`; metric supporting groups use the builder's measured fit |
+| The standard panel assembled in one place (`theme.panel`) | Implemented; **five of the eleven panels are on it** |
 
 Both halves of [Content flow](#content-flow) are now live everywhere. The vertical half —
 the two pinned edges, the panel-derived font and the clamp — always was for the *font*,
@@ -126,15 +127,15 @@ because a font rule applied by some and not others reintroduces the cross-panel
 disagreement the shared ladder exists to remove. The row's *position* was not: it had four
 private implementations, two of which had already reached the pinned answer by their own
 arithmetic and landed 2 px away from it. The horizontal half was true of `tx-battery` alone when that was written; the slot
-rule was then chosen on the radio and every component that draws a reading was converted
+rule was then chosen on the radio and every panel that draws a reading was converted
 to it.
 
 What is only partly done is the **assembly**. `theme.panel` builds the standard
 arrangement — heading, reading, optional compact visual, optional supporting row — from a
 description of what the panel draws, so that the decisions live in one place instead of
-being retyped in each component. Where a component stands:
+being retyped in each panel. Where a panel stands:
 
-| | Components |
+| | Panels |
 | --- | --- |
 | On `theme.panel` | `cell-battery`, `flight-mode`, `flight-timer`, `link-status`, `metric` |
 | Own arrangement, by recorded decision | `navigation`, `tx-battery`, `model-identity` |
@@ -149,11 +150,11 @@ below.
 it was standard in shape and had simply never been assigned to a conversion stage. Its
 review changed that. Its body is a *picture* that takes the whole content box rather than a
 reading beside an optional compact visual, and where the picture is drawn the model name
-leaves the body entirely and becomes the panel's heading — so on the same component, at
+leaves the body entirely and becomes the panel's heading — so on the same panel, at
 different spans, the body holds a full-width image or a centred reading and the heading
 holds a layout-stated label or the model's own name. `theme.panel` describes a heading, a
 reading, an optional visual beside it and an optional row beneath; none of those four is
-what this panel draws when it draws a picture. It is the one component whose *arrangement*
+what this panel draws when it draws a picture. It is the one panel whose *arrangement*
 differs rather than its content, which is a better reason to keep its own than the absence
 of one.
 
@@ -180,7 +181,7 @@ number to this document that the generator cannot produce.**
 **A figure the generator can produce may still be produced over the wrong cases.** The
 band list above is the fourth drift and it is a different shape from the other three: it
 was computed rather than typed, and it was computed over the panels this page happens to
-render — six components at four spans in one zone, every one of them in the grid's
+render — six panels at four spans in one zone, every one of them in the grid's
 top-left cell, which is 24 of the 272 panels the schema permits and the one cell EdgeTX
 covers with its menu button. The generator now walks the geometry itself rather than
 reading it off the cases, and it checks the walk against every panel the real host built.
@@ -198,7 +199,7 @@ tables, and are cited where they appear.
 Deepened canvas, lifted surface, an 8 px corner radius, and **no outline at rest**. The
 4–6 px radius originally specified reads as a square panel with the corners shaved at
 480 x 272; the softer corner is what the reference design has. Nested cards are
-prohibited — a component spanning several cells stays one coherent panel and must not
+prohibited — a panel spanning several cells stays one coherent panel and must not
 imitate several unrelated ones unless its data model genuinely contains repeated items.
 
 The accent is a full-height stripe down the panel's leading edge with rounded outer
@@ -259,7 +260,7 @@ than as a style.
 
 It is the same LVGL behaviour that made `trim-panel`'s cell centring a non-change, and it
 takes the fix the reading and the unit rider already use: **derive the position from the
-measured string, not from the box.** `primitives.setBadge` owns it, so the eleven components
+measured string, not from the box.** `primitives.setBadge` owns it, so the eleven panels
 that each carried the same unplaced `badge:set{text =, color =}` no longer place anything.
 
 Two things about it are worth keeping:
@@ -288,10 +289,10 @@ the wrong way round: `CRIT` and `CRI` are not equally alarming, while a shortene
 name is merely less informative. **A heading with too little room left is dropped rather
 than clipped**, on any panel, not only one obstructed by the App mode menu button.
 
-**The badge vocabulary is a closed set of five strings on the theme, and components do
+**The badge vocabulary is a closed set of five strings on the theme, and panels do
 not override it.** It was cut from thirteen rather than widening the column to fit the
 longest: `NOT CELLS` and `BAD CELLS` were nine characters separating two failure modes
-of one component, and the column is paid for by every header on the dashboard rather
+of one panel, and the column is paid for by every header on the dashboard rather
 than by the state that uses it. **A badge names the state; the supporting row says why.**
 Distinctions such as a dead link against a protocol with no RSSI sensor
 belong in the row, which is fitted to whatever width its panel gives it and words them at
@@ -322,7 +323,7 @@ separated for the diagnostics view, where the difference *can* be acted on.
 Composition comes from the box, and the font from the composition, so two panels of the
 same size agree. One shared responsive ladder replaced eight private copies — which was
 why two panels of identical size disagreed, each having shed a different amount before
-measuring anything. **A component may decline what it was granted; it cannot claim what
+measuring anything. **A panel may decline what it was granted; it cannot claim what
 it was not.**
 
 The reading ladder is `SMLSIZE`, `MIDSIZE`, `DBLSIZE`, `XXLSIZE`. A reading never drops
@@ -381,7 +382,7 @@ longer existed.
 A reading with nothing to report prints a sentinel — `--`, or `N/A` where `link-status`
 has a source the protocol does not publish — and a unit beside one is a label for
 nothing. The panel said `-- V`: the pack is measured in volts, and how many is not
-stated. **Four components drew it**: `tx-battery` and `cell-battery`, whose unit is a
+stated. **Four panels drew it**: `tx-battery` and `cell-battery`, whose unit is a
 constant they know before any reading exists, and `link-status` and `metric`, which keep
 a resolved sensor's unit while its value is withheld. `navigation` already ties
 the unit to whether there is a distance.
@@ -403,7 +404,7 @@ specification is explicit that a valid zero is shown as the reading it is, and
 `link-status` exists partly to tell a genuine zero from a dead link. So the rule is not
 "the source is unavailable"; it is "the panel is printing a sentinel", which is the only
 form of the question that is true at the moment of drawing, and it lives in
-`primitives` rather than in six components for the reason recorded under the
+`primitives` rather than in six panels for the reason recorded under the
 permitted-versus-drawn seam.
 
 ---
@@ -420,7 +421,7 @@ Reserve saturated colour for meaning:
 | Red | Critical |
 | Orange | Only where it identifies a distinct measurement family |
 
-**A component's default accent obeys the colour rule rather than its author's taste.**
+**A panel's default accent obeys the colour rule rather than its author's taste.**
 `tx-battery` was green and `cell-battery` cyan for the same concept; both are electrical,
 so both are cyan.
 
@@ -433,8 +434,8 @@ so both are cyan.
 **It is vertically centred on the reading's ink.** Not its baseline, not its top, and no
 longer its line box. The three were drawn side by side from real geometry at every span
 and the centre is the one that reads as belonging to the number rather than hanging off
-it. It applies to every compact visual in every component — a battery, a dial, a compass —
-so two panels of different components at the same span place theirs identically.
+it. It applies to every compact visual in every panel — a battery, a dial, a compass —
+so two panels of different panels at the same span place theirs identically.
 
 **Rejected: baseline alignment and top alignment.** Both were rendered at every span
 before being dropped. Baseline alignment is defensible in principle but EdgeTX exposes no
@@ -501,7 +502,7 @@ sizes. The user was shown that trade and chose it.
 ### Open: what a unit yields to
 
 **The order between a reading and a decoration is settled. The order between a *unit* and a
-decoration is not, and two components answer it differently.**
+decoration is not, and two panels answer it differently.**
 
 `theme.panel` treats the unit as part of the reading: it measures the pair, asks whether
 that clears the visual, and sheds the **visual** if it does not. `tx-battery` measures the
@@ -530,15 +531,15 @@ and sheds glyphs that would have fitted.
 
 This is a generalisation rather than a special case — a compact visual *has* a width and a
 height, and a circle simply returns the same number twice — so it is not blocked on
-anything except having a component that needs it.
+anything except having a panel that needs it.
 
 ---
 
 ## Content flow
 
 **Implemented and shipped.** This section was written from rendered mocks and marked "not
-implemented by any component" while it was a proposal; both halves of it are now live
-everywhere, and the table at the top of this document records which components assemble it
+implemented by any panel" while it was a proposal; both halves of it are now live
+everywhere, and the table at the top of this document records which panels assemble it
 through `theme.panel` and which still write the assembly out themselves. Run `make mocks`
 and open `build/flow-mocks.html` to see every figure below drawn at its true pixel size.
 
@@ -548,7 +549,7 @@ and open `build/flow-mocks.html` to see every figure below drawn at its true pix
 present.** Panels *were* edge-anchored, so slack collected *between* elements instead of
 after them: a `tx-battery` at `4x2` had its voltage hard left, its battery hard right, and
 a hole in the middle that grew with every extra cell of width. The slots were chosen to
-close it and every component that draws a reading is on them.
+close it and every panel that draws a reading is on them.
 
 The figure this paragraph carried — 392 px, 82% of the panel — is **not reproducible by
 `make mocks`**, because the generator renders the arrangement as it is rather than the one
@@ -600,7 +601,7 @@ territories overlap and only the actual widths keep the elements apart.
 **Where the tightened slots would let two elements meet, the panel falls back to strict
 halves.**
 
-**The fallback is decided at build, from the widest string the component can ever print,
+**The fallback is decided at build, from the widest string the panel can ever print,
 never from the value on screen.** Deciding it from the current reading would make the
 arrangement a function of the data — `9.9` to `10.0` and the whole panel flips between two
 layouts. That is the moves-when-content-changes objection that ruled out centring, in a
@@ -618,11 +619,11 @@ consistent of the two.
 **Rejected: per-row fallback.** Rendered beside the chosen one on `navigation 2x2` so the
 columns can be seen failing to line up.
 
-Measured at the widest string each component prints, two of ten panels overlap when
+Measured at the widest string each panel prints, two of ten panels overlap when
 tightened against one under strict halves. `navigation 1x1` overlaps under both, and that
 is not tightening's fault: `888.88km` needs 60 px, half that panel is 48, and the reading
 is already at the bottom of the ladder. It resolves itself on a radio, because the
-component drops its dial rather than clip a distance, and a one-element panel does not
+panel drops its dial rather than clip a distance, and a one-element panel does not
 split.
 
 ### Every row uses the same slots
@@ -679,18 +680,18 @@ differs from the shortest wording of every other, because the shortest form is w
 cramped panel prints. `NO GPS` and `NO FIX` are six characters each and say different
 things. `link-status` keeps `DOWN` against `NO RSS` the same way. That property is
 checkable where "has room for words" was not, so the specification now states it and
-`testSupportingWordingsStayDistinct` holds every component to it — including the nine whose
+`testSupportingWordingsStayDistinct` holds every panel to it — including the nine whose
 rows have yet to move.
 
 **Shortening may cost detail. It may never cost meaning.**
 
 Clearances under the rule: the tightest anywhere is **34 px**, on `navigation 2x2`, across
 six rows, with no row forcing a fallback. **That figure is measured at the strings those
-components are drawn with, not at their widest** — the geometry carries a widest form for
-the *reading*, because the component's own fitter needs one, and nothing equivalent for a
+panels are drawn with, not at their widest** — the geometry carries a widest form for
+the *reading*, because the panel's own fitter needs one, and nothing equivalent for a
 supporting label. 34 px is about three more `SMLSIZE` characters of headroom; `LQ 88%`
 becoming `LQ 100%` spends one. Comfortable, but headroom rather than proof. Making it a
-proof means components declaring their widest supporting strings the way they already
+proof means panels declaring their widest supporting strings the way they already
 declare their widest reading.
 
 ### The vertical arrangement
@@ -764,7 +765,7 @@ coincidence or otherwise. The asymmetry was structural.
 
 #### What pinning the row moves
 
-Measured through the real host over every component at every span it declares, with
+Measured through the real host over every panel at every span it declares, with
 supporting rows enabled, in both zones and at an obstructed and a clear placement.
 
 Of **258 panels that draw a heading, a reading and a supporting row**:
@@ -784,7 +785,7 @@ baseline exactly 6 px above the panel's floor.
 **A bar changes the answer, and it is why 156 panels do not move.** A bar's length *is* the
 reading, so it spans the panel and sits on the floor; a row on such a panel hangs from the
 bar rather than from the edge. That was already what those panels did, so pinning finds them
-where it wants them. Five components reserve a bar at every span — `cell-battery`,
+where it wants them. Five panels reserve a bar at every span — `cell-battery`,
 `flight-timer`, `link-status` and `metric` — and `tx-battery` does when
 its layout asks for one.
 
@@ -824,7 +825,7 @@ centre is 63 on a panel whose centre is 67. Same 4 px at every two-row-and-talle
 `2 x 3` moves 74–128 to 70–124, `2 x 4` moves 109–163 to 105–159.
 
 **Why the gaps lose.** Whether a panel reserves a bar is a property of its *content* — which
-component drew it and how that component is configured. A reading placed to equalise the
+panel drew it and how that panel is configured. A reading placed to equalise the
 gaps therefore sits at a different height on two panels of the same size depending on what
 is in them, which is the exact property every version of this arrangement has been chosen to
 avoid, and the one the first rule in the sequence above was rejected for. Getting the gaps
@@ -867,7 +868,7 @@ top** sits one inset below the panel's top.
   insets by only 2. `1 x 2` at 79 px is both tight and granted a row, and without the floor
   its `%` would touch the bar it hangs from.
 - **A group is pinned by its last row.** Pinning each row would put both on the floor;
-  pinning the first would put the second off the panel. `navigation` is the only component
+  pinning the first would put the second off the panel. `navigation` is the only panel
   that draws more than one.
 
 **It had four private implementations before it had one.** `theme.panel` centred the row in
@@ -890,10 +891,10 @@ clearing the lower position clears the higher one, which is the inequality the w
 round. `cell-battery` at a Full screen `2 x 2` then took `XXLSIZE` and put its unit four
 pixels into its own supporting row — reading reaching 89, row starting at 85.
 
-The cap is therefore **conservative and component-independent**: every panel is budgeted as
-though its floor carried a bar, whether or not this component's visualization is one. That is
+The cap is therefore **conservative and panel-independent**: every panel is budgeted as
+though its floor carried a bar, whether or not this panel's visualization is one. That is
 not thrift lost, it is the invariant kept — a reading's size may not depend on which
-component drew the panel, or two panels of one size disagree again.
+panel drew the panel, or two panels of one size disagree again.
 
 **The two-row group no longer overflows its quarter.** Two `SMLSIZE` rows need 36 px and a
 two-row panel's quarter is 31, so centring them overflowed at both ends and the end that
@@ -992,7 +993,7 @@ checks the reservation in both directions: empty means empty, and occupied means
 it is inside it.
 
 **Where the content does not fit its quarter, the content sheds — the band does not grow.**
-`navigation` is the only component that wants more: it draws two supporting rows and hangs
+`navigation` is the only panel that wants more: it draws two supporting rows and hangs
 them as a group, 36 px of extent against a quarter of 25 px at a two-row span in Full screen
 and 31 in App mode. So **a two-row panel draws the bearing alone and a three-row panel draws
 the coordinates as well.**
@@ -1027,7 +1028,7 @@ where content begins feeds the ladder's row and visual grants and the body band'
 position, so letting the body rise into the space the heading vacated would change what
 every panel in the catalogue draws — a catalogue-wide font change arriving by accident
 inside a change about a heading. Verified through `tools/flow-geometry.lua` across every
-component at every span in both zones: headings and badges move, and nothing else does.
+panel at every span in both zones: headings and badges move, and nothing else does.
 
 The bands each row count produces, measured at a placement the menu button does not reach.
 **These are the heading's band and the supporting row's band**; the reading is no longer
@@ -1071,13 +1072,13 @@ and the font from the composition.
 **It was line height first, and the correction is [below](#decided-the-font-is-chosen-by-ink-and-the-ink-is-what-is-centred).**
 
 **The stability guarantee survives, and becomes structural.** The older fitter sized a reading
-against the widest string a component can ever print, so a value never resized as it
-changed — but that depended on every component remembering to pass its widest form. A
+against the widest string a panel can ever print, so a value never resized as it
+changed — but that depended on every panel remembering to pass its widest form. A
 band-derived font does not consult the content at all, so it cannot resize with it. The
 guarantee holds by construction rather than by discipline.
 
 **What it changed when it arrived, measured through the real host over all forty-eight
-component-span-zone cases: 46 unchanged, 2 smaller, none larger.** The panel-derived font
+panel-span-zone cases: 46 unchanged, 2 smaller, none larger.** The panel-derived font
 is very nearly the rule the dashboard already had. On `tx-battery` the two-row spans dropped
 from `XXLSIZE` to `DBLSIZE`, because the budget was then a band of half the panel's *extent*
 and half of a 134 px panel's extent is 62 against `XXLSIZE`'s 69. That is the largest
@@ -1089,7 +1090,7 @@ by the panel-height rule, which makes the budget 67 rather than 62.
 accepted for more panels than it was true of: a quarter is reserved for a supporting row,
 `tx-battery`'s percentage row is off unless a layout asks for it, so a panel that was never
 going to draw a row was charged 31 px for one and the 62 px band was 93 px all along. That
-gave three components their font back at eleven spans, and it is exactly the redistribution
+gave three panels their font back at eleven spans, and it is exactly the redistribution
 the user has now rejected — the eleven cases won back a font size by making their layout
 depend on their content.
 
@@ -1155,7 +1156,7 @@ step up is `XXLSIZE` at 54, and between 40 and 69 the ladder has nothing — and
 as the ladder's granularity rather than the rule's fault.
 
 **What was wrong was the case set, not the arithmetic.** Those bands came from the panels
-`make mocks` happens to render: six components at four spans in one zone, every one of them
+`make mocks` happens to render: six panels at four spans in one zone, every one of them
 placed in the grid's top-left cell. That is 24 of the 272 panels the schema permits, and the
 one cell EdgeTX paints its menu button over.
 
@@ -1196,11 +1197,11 @@ said two moved and that all of them were App mode, which was the narrow case set
 - **57 px** and **62 px** are App-mode two-row panels carrying a footer — the case where the
   reading has least room and a size is worth most.
 
-Measured through the real host over every component at every span it declares, in both
+Measured through the real host over every panel at every span it declares, in both
 zones and at an obstructed and an unobstructed placement, the reading's font changes on
 **165 of 1088 panels: 113 in App mode and 52 in Full screen, every one of them larger and
 none smaller.**
-That sweep is not something `make mocks` builds — the generator renders six components at
+That sweep is not something `make mocks` builds — the generator renders six panels at
 four spans — so it is a figure from a one-off probe rather than one the page can reproduce,
 and the figure this document stands on is the one above it: five bands of twenty-five.
 
@@ -1209,7 +1210,7 @@ one of them is a panel shedding something. Seven drop an inline unit, seven drop
 visual, and two drop a compass. A panel holding one element does not split,
 so the whole content box is available to measure its unit against.
 
-**The user saw it by eye on two separate components and asked for it.** That is what
+**The user saw it by eye on two separate panels and asked for it.** That is what
 decided it; the arithmetic above is what makes it checkable.
 
 **Placement moved with it, and both halves had to move together.** A font chosen from ink
@@ -1239,7 +1240,7 @@ and `navigation`'s compass shed theirs at two columns. The user was shown the th
 table and chose it.
 
 **And one band was found to be lying, which is the other thing ink exposed.** The tertiary
-band reserved a quarter of the panel for supporting rows. `navigation` is the only component
+band reserved a quarter of the panel for supporting rows. `navigation` is the only panel
 that draws two and centres them as a group — 36 px against a quarter of 31 on a two-row
 panel — so its footer overflowed its band upward into the bottom of the body band, and the
 reading was sized against a band that reported more room than the panel had. A line box
@@ -1247,7 +1248,7 @@ never reached its band's floor, so nothing met; ink does, and in the menu button
 the distance ended 3 px inside the bearing row. The band is now the larger of the quarter and
 what the rows actually need. That is the rule this guide already states — reserve from what
 the panel draws — applied in the direction nobody had needed yet, and it changes nothing for
-the eleven components whose single row is shorter than a quarter at every span.
+the eleven panels whose single row is shorter than a quarter at every span.
 
 **One thing to watch, which nobody has decided.** 22 px and 23 px are both Full-screen
 single-cell bands, one pixel apart because the grid's own rounding makes some rows a pixel
@@ -1270,7 +1271,7 @@ proportional at the bottom of the size range, and nothing is ever drawn off a pa
 This is not a corner case. A quarter of a single-row panel's extent is 12 px in Full screen
 and 14 in App mode, the heading is `SMLSIZE` at 17, and the smallest font the dashboard has
 is `TINSIZE` at 12 — **so on a one-row panel there is no reading font that fits the label
-band, in either zone, in any component.** Unclamped, centring the heading in a band smaller
+band, in either zone, in any panel.** Unclamped, centring the heading in a band smaller
 than itself put a pixel of it above the panel's top edge, where it was clipped.
 
 That is now a statement about the clamp rather than about the heading, which no longer
@@ -1284,19 +1285,19 @@ paying magnitude for layout.
 
 **Rejected: falling back to the older stacking below a size threshold.** Two layout rules with
 a size threshold between them is a worse thing to own than one rule that bends at the bottom
-of its range. Every component, every span and every future addition would have to be reasoned
+of its range. Every panel, every span and every future addition would have to be reasoned
 about twice, once on each side of a line whose position is itself arbitrary.
 
 ### What the rule does not reach
 
 Of the twenty-four Full screen cases: **10** have a compact visual and would move, **9** draw
 a full-width bar and are exempt, and **5** have no visual at all. Only **10** carry any slack
-to reclaim. The sweep is narrower than the component count suggests, though a `metric` with
-`visual: radial` is a different case from the same component with `visual: bar`.
+to reclaim. The sweep is narrower than the panel count suggests, though a `metric` with
+`visual: radial` is a different case from the same panel with `visual: bar`.
 
 ### One consequence, since resolved
 
-`tx-battery` is the only component that gates its visual on **data** rather than on space: it
+`tx-battery` is the only panel that gates its visual on **data** rather than on space: it
 hides its battery until there is a voltage range to measure against, and that range is a live
 subscription to `getGeneralSettings` rather than something read once.
 
@@ -1306,7 +1307,7 @@ during start-up, every time** — and a pilot editing SYS → Hardware → Batte
 move it again, in flight. That is the objection that ruled out centring, reappearing in the
 arrangement chosen to avoid it.
 
-It is confined to one component and it was fixable: reserving the slot whenever the layout
+It is confined to one panel and it was fixable: reserving the slot whenever the layout
 *could* ever show a visual, rather than when one is currently drawn, holds the reading still,
 at the cost of a permanently empty right slot on a panel that never gets a range. **That
 trade was made, and it is what `tx-battery` does** — `reserveSlot` asks whether this layout
@@ -1322,11 +1323,11 @@ change mid-flight is not a permission at all, it is data.
 
 ## Retired: the span galleries, and what went with them
 
-**Four layouts showed every component at one span — `1x1`, `2x1`, `2x2`, `4x1` — and
+**Four layouts showed every panel at one span — `1x1`, `2x1`, `2x2`, `4x1` — and
 they have been taken off the radio.** The user does not page to them, and ten screens is
-EdgeTX's ceiling, which the per-component review screens now need.
+EdgeTX's ceiling, which the per-panel review screens now need.
 
-**What is lost is the only view of cross-component agreement.** A gallery put eleven
+**What is lost is the only view of cross-panel agreement.** A gallery put eleven
 panels of the same size side by side, which is where you can see headings landing on the
 same line, readings sitting on the same slot, and badges lining up in the same column.
 That agreement is exactly what the shared ladder and the slot rule exist to produce, and
@@ -1334,19 +1335,19 @@ it is the thing that is invisible one panel at a time: a heading 13 px too low l
 alone and looks wrong beside four that are not.
 
 **A review screen cannot replace it, because it is the transpose.** A review screen holds
-one component fixed and varies the span; a gallery holds the span fixed and varies the
-component. The first answers "does this component behave across sizes", the second
-answers "do these components agree at one size". Both were worth having and only the
+one panel fixed and varies the span; a gallery holds the span fixed and varies the
+panel. The first answers "does this panel behave across sizes", the second
+answers "do these panels agree at one size". Both were worth having and only the
 first is now on the radio.
 
 Two things soften it and neither replaces it. The galleries are still built by the test
 suite from `tests/fixtures/layouts/`, so the collision check still sweeps the densest
 arrangement in the catalogue and the single-cell gallery is still held to containing
-every component that declares that span. And `tools/flow-geometry.lua` renders several
-components at one span into `build/flow-mocks.html`, which is a page rather than a radio
+every panel that declares that span. And `tools/flow-geometry.lua` renders several
+panels at one span into `build/flow-mocks.html`, which is a page rather than a radio
 but does show alignment.
 
-**If cross-component drift reappears, this is the view that would have caught it**, and
+**If cross-panel drift reappears, this is the view that would have caught it**, and
 the honest position is that nobody will be looking.
 
 ## Checking a layout mechanically

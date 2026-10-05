@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 ---@simulate Layout1x1AM zone=0
 
---- AeroGrid's EdgeTX widget entry point and component host.
+--- AeroGrid's EdgeTX widget entry point and panel host.
 
 ---@class AeroGridZone
 ---@field x integer Always zero; a widget draws in its own coordinates.
@@ -19,7 +19,7 @@
 ---@field zone AeroGridZone Live zone table maintained by EdgeTX.
 ---@field path string Absolute widget directory path.
 ---@field dashboardId string Layout identity selected in native widget settings.
----@field components AeroGridComponentEntry[]
+---@field panels AeroGridPanelEntry[]
 ---@field errors string[] Failures, shown on the overlay.
 ---@field notices table[] `{severity, text}` records of the host adapting.
 ---@field width integer Last rendered zone width.
@@ -32,12 +32,12 @@
 ---@field yaml table
 ---@field layoutValidator table
 ---@field layoutStore table
----@field componentHost table
+---@field panelHost table
 ---@field themeBuilder table
 ---@field primitives table
----@field theme AeroGridTheme Active resolved theme passed to every component.
+---@field theme AeroGridTheme Active resolved theme passed to every panel.
 ---@field themeMode string Mode selected in native widget settings.
----@field services table Shared objects handed to components.
+---@field services table Shared objects handed to panels.
 ---@field rejected table[] Placements that would not build, with the reason.
 ---@field layoutPath? string
 ---@field layoutOrigin? string Which filename answered: model, dashboard, default, none.
@@ -46,7 +46,7 @@
 ---@field errorLabel? any
 ---@field page any Container holding one generation of the dashboard.
 ---@field reloadState? "clear"|"rebuild"
----@field stage? "read"|"tokenize"|"header"|"services"|"components" Staged loader position.
+---@field stage? "read"|"tokenize"|"header"|"services"|"panels" Staged loader position.
 ---@field servicesModule? table Loaded lib/services.lua registry module.
 ---@field packageInfo? table Package identity and compatibility versions.
 ---@field serviceRuntime? table Registry holding every constructed service.
@@ -111,7 +111,7 @@ local NOTICE_LIMIT = 16
 --- Record the host adapting as designed, which is not a failure.
 ---
 --- An error is something that did not work: a module that would not load, a
---- layout key that is invalid, a component that raised. Those belong on the
+--- layout key that is invalid, a panel that raised. Those belong on the
 --- overlay, because the dashboard is not doing what it was told. A notice is
 --- the host doing its job: correcting a token for contrast, or falling back to
 --- the Modern palette when the radio will not hand over its own. Putting those
@@ -263,7 +263,7 @@ end
 ---
 --- The overlay starts below the region EdgeTX's menu button covers. Drawn at
 --- the zone's own origin it lands underneath that button in App mode, which is
---- the deployment this dashboard is primarily built for, so a component could
+--- the deployment this dashboard is primarily built for, so a panel could
 --- fail and the radio would show nothing at all.
 ---@param context AeroGridContext
 local function showErrors(context)
@@ -293,17 +293,17 @@ local function showErrors(context)
     })
 end
 
---- Dispatch one lifecycle callback to every live component in isolation.
---- A component that raises is disabled and reported without affecting the others.
+--- Dispatch one lifecycle callback to every live panel in isolation.
+--- A panel that raises is disabled and reported without affecting the others.
 ---@param context AeroGridContext
 ---@param event string
 ---@param ... any
 local function dispatchAll(context, event, ...)
     local failures = false
 
-    for _, entry in ipairs(context.components) do
+    for _, entry in ipairs(context.panels) do
         if not entry.failed then
-            local ok, dispatchError = context.componentHost.dispatch(entry, event, ...)
+            local ok, dispatchError = context.panelHost.dispatch(entry, event, ...)
             if not ok and dispatchError then
                 addError(context, entry.placement.id .. ": " .. event .. ": " .. dispatchError)
                 failures = true
@@ -322,13 +322,13 @@ end
 ---@param placement table
 ---@return AeroGridRect? rect
 ---@return string? error
-local function componentRect(context, placement)
+local function panelRect(context, placement)
     return context.grid.rect(context.zone, placement, 4, 4, 4)
 end
 
 --- The part of one placement's own rectangle the menu button covers.
 ---
---- Expressed in the component's coordinates, because a component is handed a
+--- Expressed in the panel's coordinates, because a panel is handed a
 --- container-local rectangle and can neither see nor reach the zone. On a
 --- 480 x 272 display only a placement at column zero, row zero can overlap,
 --- but that is a property of the arithmetic rather than a rule, so the
@@ -342,7 +342,7 @@ local function reservedFor(context, placement)
         return nil
     end
 
-    local rect = componentRect(context, placement)
+    local rect = panelRect(context, placement)
     if not rect then
         return nil
     end
@@ -360,11 +360,11 @@ local function reservedFor(context, placement)
     }
 end
 
---- Assemble the shared objects handed to one component.
---- Typography depends on the component's span, so services are built per
+--- Assemble the shared objects handed to one panel.
+--- Typography depends on the panel's span, so services are built per
 --- placement rather than shared across the dashboard. The data services
 --- themselves are dashboard-wide singletons and are passed through by
---- reference, so two components naming the same source share one poll.
+--- reference, so two panels naming the same source share one poll.
 ---@param context AeroGridContext
 ---@param placement table
 ---@return table services
@@ -374,9 +374,9 @@ local function buildServices(context, placement)
     local registry = context.serviceRuntime
     local byId = registry and registry.byId or {}
 
-    -- Where the radio paints over us, the theme builder this component sees
+    -- Where the radio paints over us, the theme builder this panel sees
     -- resolves its panel frame around that corner. Binding it here rather than
-    -- adding an argument to every component means a component written by
+    -- adding an argument to every panel means a panel written by
     -- someone else is laid out correctly too, without knowing any of this
     -- exists. The reservation is read on each call, not captured, so a zone
     -- that moves is picked up by the update that follows it.
@@ -390,7 +390,7 @@ local function buildServices(context, placement)
 
     return {
         theme = theme,
-        -- The flight session belongs to the dashboard, not to a component, so it
+        -- The flight session belongs to the dashboard, not to a panel, so it
         -- is handed down rather than configured per panel.
         session = context.session or {},
         primitives = context.primitives,
@@ -406,11 +406,11 @@ local function buildServices(context, placement)
         -- snapshot assembled for it would be reporting on a world built
         -- separately from the one the dashboard is using, and would be
         -- confidently wrong at exactly the moment it is being trusted. Handing it
-        -- over costs one table field per component and nothing else; a component
+        -- over costs one table field per panel and nothing else; a panel
         -- that abuses it is isolated like any other.
         host = context,
         -- Shared data services. Any of these may be absent when its module failed
-        -- to load, so a component must tolerate nil rather than assume.
+        -- to load, so a panel must tolerate nil rather than assume.
         telemetry = byId.telemetry,
         model = byId.model,
         control = byId.control,
@@ -419,17 +419,17 @@ local function buildServices(context, placement)
     }
 end
 
---- Load, validate, and instantiate every component in the selected layout.
+--- Load, validate, and instantiate every panel in the selected layout.
 --- Instantiate one validated placement.
 ---@param context AeroGridContext
 ---@param placement table
-local function buildComponent(context, placement)
-    local host = context.componentHost
+local function buildPanel(context, placement)
+    local host = context.panelHost
 
     --- Record a placement that will not be built, and why.
     ---
-    --- A component that never constructs leaves nothing behind but an error in
-    --- a banner that may have scrolled, and it is absent from `components`
+    --- A panel that never constructs leaves nothing behind but an error in
+    --- a banner that may have scrolled, and it is absent from `panels`
     --- because there is no instance to put there. So the reason is kept where
     --- it is known. Without this the diagnostics view could report every panel
     --- that works and no panel that does not, which is the wrong half.
@@ -441,41 +441,41 @@ local function buildComponent(context, placement)
         }
     end
 
-    local component, componentError = loadModule(context.path, "components/" .. placement.type .. ".lua")
+    local panel, panelError = loadModule(context.path, "panels/" .. placement.type .. ".lua")
     local contractValid, contractError
 
-    if component then
-        contractValid, contractError = host.validateModule(component, placement.type)
+    if panel then
+        contractValid, contractError = host.validateModule(panel, placement.type)
     end
 
-    if not component then
-        reject(componentError)
+    if not panel then
+        reject(panelError)
         return
     end
     if not contractValid then
         reject(contractError)
         return
     end
-    if not host.supportsSpan(component, placement.colSpan, placement.rowSpan) then
-        reject("component does not support span " .. host.spanName(placement.colSpan, placement.rowSpan))
+    if not host.supportsSpan(panel, placement.colSpan, placement.rowSpan) then
+        reject("panel does not support span " .. host.spanName(placement.colSpan, placement.rowSpan))
         return
     end
 
-    local rect, rectError = componentRect(context, placement)
+    local rect, rectError = panelRect(context, placement)
     if not rect then
         reject(rectError)
         return
     end
 
     local settings, warnings =
-        host.resolveSettings(component, placement.config, { colSpan = placement.colSpan, rowSpan = placement.rowSpan })
+        host.resolveSettings(panel, placement.config, { colSpan = placement.colSpan, rowSpan = placement.rowSpan })
     for _, warning in ipairs(warnings) do
         addError(context, placement.id .. ": " .. warning)
     end
 
-    -- Each component draws inside its own container, so it cannot reach the
+    -- Each panel draws inside its own container, so it cannot reach the
     -- dashboard root or paint over a neighbour. The container is deliberately
-    -- unpainted; the component's own panel fills it.
+    -- unpainted; the panel's own panel fills it.
     local container = lvgl.box(context.page, {
         x = rect.x,
         y = rect.y,
@@ -484,8 +484,7 @@ local function buildComponent(context, placement)
     })
 
     local services = buildServices(context, placement)
-    local ok, instance =
-        pcall(component.create, container, { x = 0, y = 0, w = rect.w, h = rect.h }, settings, services)
+    local ok, instance = pcall(panel.create, container, { x = 0, y = 0, w = rect.w, h = rect.h }, settings, services)
 
     -- A heading too long for its column is cut to fit, because the alternative
     -- is LVGL wrapping it down over the reading. Cutting a name the author
@@ -497,7 +496,7 @@ local function buildComponent(context, placement)
     -- off the label. A label is userdata on a radio and answers no questions
     -- about itself, so asking it produced nil there and the truth here.
     --
-    -- Drained whether or not the panel survived. A component that raises after
+    -- Drained whether or not the panel survived. A panel that raises after
     -- drawing its header leaves a report behind, and a report left behind is
     -- one the next panel would be blamed for.
     local reports = context.primitives.headingReports
@@ -517,20 +516,20 @@ local function buildComponent(context, placement)
     end
 
     if ok then
-        local interval = host.refreshInterval(component)
-        context.components[#context.components + 1] = {
+        local interval = host.refreshInterval(panel)
+        context.panels[#context.panels + 1] = {
             placement = placement,
-            module = component,
+            module = panel,
             instance = instance,
             settings = settings,
             container = container,
             interval = interval,
-            -- Stagger components that share an interval so they do not all fall
+            -- Stagger panels that share an interval so they do not all fall
             -- due on the same frame.
-            nextRefresh = getTime() + host.phaseOffset(interval, #context.components + 1),
+            nextRefresh = getTime() + host.phaseOffset(interval, #context.panels + 1),
         }
     else
-        -- Discard whatever the failed component managed to build.
+        -- Discard whatever the failed panel managed to build.
         container:clear()
         reject(instance)
     end
@@ -544,7 +543,7 @@ local TOKENIZE_LINES = 24
 --- whole dashboard costs far more than that, so loading is spread over
 --- consecutive calls. Every stage is bounded by a fixed amount of work rather
 --- than by the size of the layout: the file is tokenized a fixed number of
---- lines at a time, and each component is parsed, validated, and built in its
+--- lines at a time, and each panel is parsed, validated, and built in its
 --- own callback. A layout that fills the grid therefore costs more callbacks,
 --- never a larger callback.
 ---@param context AeroGridContext
@@ -616,24 +615,28 @@ local function advanceLoad(context)
         if not tokens then
             return fail("layout tokens are missing")
         end
-        -- Split the component sequence out so the document itself stays small.
-        local header, componentsIndex, componentsIndent = {}, nil, nil
+        -- Split the panel sequence out so the document itself stays small.
+        local header, panelsIndex, panelsIndent = {}, nil, nil
         local index = 1
 
         while index <= #tokens do
             local token = tokens[index]
-            if token.indent == 0 and string.match(token.content, "^components:") then
-                componentsIndex = index + 1
+            if token.indent == 0 and string.match(token.content, "^panels:") then
+                panelsIndex = index + 1
                 index = index + 1
                 -- Skip the sequence body; it is parsed one entry at a time later.
                 while index <= #tokens and tokens[index].indent > 0 do
-                    componentsIndent = componentsIndent or tokens[index].indent
+                    panelsIndent = panelsIndent or tokens[index].indent
                     index = index + 1
                 end
             else
                 header[#header + 1] = token
                 index = index + 1
             end
+        end
+
+        if not panelsIndex then
+            return fail("panels must be a sequence")
         end
 
         local document, buildError = context.yaml.build(header)
@@ -669,8 +672,8 @@ local function advanceLoad(context)
 
         context.session = validated.session or {}
         context.document = validated
-        context.itemIndex = componentsIndex
-        context.itemIndent = componentsIndent or 2
+        context.itemIndex = panelsIndex
+        context.itemIndent = panelsIndent or 2
         context.itemNumber = 0
         context.identifiers = {}
         context.serviceIndex = 0
@@ -679,20 +682,20 @@ local function advanceLoad(context)
     end
 
     if stage == "services" then
-        -- Services are staged for the same reason components are: each module has
+        -- Services are staged for the same reason panels are: each module has
         -- to be compiled and run, and the whole set does not fit in one callback.
-        -- They are built before any component, so a component can subscribe from
+        -- They are built before any panel, so a panel can subscribe from
         -- inside its own create call.
         local index = context.serviceIndex
 
         if index == 0 then
             local support, supportError = loadModule(context.path, "lib/services.lua", context.packageInfo.runtimeApi)
             if not support then
-                -- A dashboard without services still renders: every component sees
+                -- A dashboard without services still renders: every panel sees
                 -- nil and must degrade to an unavailable presentation.
                 addError(context, "services: " .. tostring(supportError))
                 context.serviceIndex = nil
-                context.stage = "components"
+                context.stage = "panels"
                 return true
             end
 
@@ -705,7 +708,7 @@ local function advanceLoad(context)
         local definition = context.servicesModule.DEFINITIONS[index]
         if not definition then
             context.serviceIndex = nil
-            context.stage = "components"
+            context.stage = "panels"
             return true
         end
 
@@ -731,7 +734,7 @@ local function advanceLoad(context)
         return true
     end
 
-    if stage == "components" then
+    if stage == "panels" then
         local tokens = context.tokens
         local index = context.itemIndex
 
@@ -754,20 +757,20 @@ local function advanceLoad(context)
         context.itemIndex = nextIndex
         context.itemNumber = context.itemNumber + 1
 
-        local valid, componentError = context.layoutValidator.validateComponent(
+        local valid, panelError = context.layoutValidator.validatePanel(
             placement,
             context.itemNumber,
             context.grid,
-            context.document.components,
+            context.document.panels,
             context.identifiers
         )
 
         if valid then
             context.identifiers[placement.id] = true
-            context.document.components[#context.document.components + 1] = placement
-            buildComponent(context, placement)
+            context.document.panels[#context.document.panels + 1] = placement
+            buildPanel(context, placement)
         else
-            addError(context, componentError)
+            addError(context, panelError)
         end
 
         return true
@@ -779,7 +782,7 @@ end
 --- Begin a staged load, discarding anything already on screen.
 ---@param context AeroGridContext
 local function beginLoad(context)
-    context.components = {}
+    context.panels = {}
     context.rejected = {}
     context.errors = {}
     context.notices = {}
@@ -790,7 +793,7 @@ local function beginLoad(context)
     context.identifiers = nil
     context.itemIndex = nil
     context.itemNumber = 0
-    -- Subscriptions belong to the components that made them, so the registry is
+    -- Subscriptions belong to the panels that made them, so the registry is
     -- rebuilt with the dashboard rather than reused across a reload.
     context.serviceRuntime = nil
     context.serviceIndex = nil
@@ -808,7 +811,7 @@ local function create(zone, widgetOptions, path)
         path = path,
         dashboardId = widgetOptions.DashID,
         themeMode = widgetOptions.Theme,
-        components = {},
+        panels = {},
         rejected = {},
         errors = {},
         notices = {},
@@ -833,7 +836,7 @@ local function create(zone, widgetOptions, path)
             type(package.version) ~= "string"
             or package.version == ""
             or package.runtimeApi ~= 1
-            or package.componentApi ~= 1
+            or package.panelApi ~= 1
             or package.layoutVersion ~= 1
         )
     then
@@ -855,12 +858,12 @@ local function create(zone, widgetOptions, path)
         context.yaml = runtimeModule("lib/yaml.lua")
         context.layoutValidator = runtimeModule("lib/layout.lua")
         context.layoutStore = runtimeModule("lib/layout_store.lua")
-        context.componentHost = runtimeModule("lib/component_host.lua")
+        context.panelHost = runtimeModule("lib/panel_host.lua")
         context.themeBuilder = runtimeModule("lib/theme.lua")
         context.primitives = runtimeModule("lib/primitives.lua")
-        if context.componentHost and context.componentHost.API_VERSION ~= package.componentApi then
-            addError(context, "component host: incompatible component API")
-            context.componentHost = nil
+        if context.panelHost and context.panelHost.API_VERSION ~= package.panelApi then
+            addError(context, "panel host: incompatible panel API")
+            context.panelHost = nil
         end
     end
 
@@ -893,7 +896,7 @@ local function create(zone, widgetOptions, path)
         or not context.yaml
         or not context.layoutValidator
         or not context.layoutStore
-        or not context.componentHost
+        or not context.panelHost
         or not context.themeBuilder
         or not context.primitives
     then
@@ -911,20 +914,15 @@ local function create(zone, widgetOptions, path)
     return context
 end
 
---- Components repositioned per widget callback during a reflow.
+--- Panels repositioned per widget callback during a reflow.
 ---
---- Three, and the value is measured rather than chosen. Reflow cost is linear
---- in the batch: 2084 instructions per component for the most expensive one
---- in the catalogue, plus 196 of per-callback overhead, so the worst callback
---- is 2280 at a batch of 1 and 12700 at 6. It was 4, which made a reflow the
---- most expensive callback in the dashboard at 8532.
+--- Three is the current measurement-based setting. Reflow cost grows with the
+--- number of panels per batch, so larger values can make one callback the
+--- dashboard bottleneck while smaller values take more callbacks to settle.
+--- The suite compares the measured worst reflow callback with the dashboard's
+--- other live callbacks, so this choice is re-evaluated when panel work changes.
 ---
---- Three is where the saving stops. Below it the headline does not move at
---- all, because the binding constraint becomes the staged loader building one
---- `trim-panel` at 7508, and no batch size affects that. A batch of 2 or 1
---- therefore settles a reflow more slowly for nothing.
----
---- What it costs is passes. Sixteen components settle in six callbacks rather
+--- What it costs is passes. Sixteen panels settle in six callbacks rather
 --- than four, and `MainWindow::run` calls `ViewMain::refreshWidgets` once per
 --- `MENU_TASK_PERIOD`, which is 50 ms (`radio/src/tasks.cpp:50`), so a full
 --- reflow takes about 300 ms rather than 200. A reflow only happens when the
@@ -932,9 +930,9 @@ end
 --- value at that moment.
 ---
 --- The headroom is the real argument. Reflow is the only per-callback cost
---- that multiplies one component's work by a constant, so the constant is the
---- cheapest protection against a future component being expensive to move. At
---- 4, a component costing 3750 to reposition breaches the suite's ceiling; at
+--- that multiplies one panel's work by a constant, so the constant is the
+--- cheapest protection against a future panel being expensive to move. At
+--- 4, a panel costing 3750 to reposition breaches the suite's ceiling; at
 --- 3 it takes 4935 to do the same.
 local REFLOW_BATCH = 2
 
@@ -965,20 +963,20 @@ local function beginReflow(context)
     context.reflowIndex = 1
 end
 
---- Reposition the next batch of components.
+--- Reposition the next batch of panels.
 ---@param context AeroGridContext
----@return boolean busy True while more components remain.
+---@return boolean busy True while more panels remain.
 local function advanceReflow(context)
     local index = context.reflowIndex
-    local last = math.min(index + REFLOW_BATCH - 1, #context.components)
+    local last = math.min(index + REFLOW_BATCH - 1, #context.panels)
 
     for position = index, last do
-        local entry = context.components[position]
+        local entry = context.panels[position]
         if entry and not entry.failed then
-            local rect = componentRect(context, entry.placement)
+            local rect = panelRect(context, entry.placement)
             if rect then
                 entry.container:set({ x = rect.x, y = rect.y, w = rect.w, h = rect.h })
-                local ok, dispatchError = context.componentHost.dispatch(
+                local ok, dispatchError = context.panelHost.dispatch(
                     entry,
                     "update",
                     { x = 0, y = 0, w = rect.w, h = rect.h },
@@ -991,7 +989,7 @@ local function advanceReflow(context)
         end
     end
 
-    if last >= #context.components then
+    if last >= #context.panels then
         context.reflowIndex = nil
         showErrors(context)
         return false
@@ -1032,14 +1030,14 @@ local function translate(name)
     return name
 end
 
---- Offer an input event to components until one consumes it.
+--- Offer an input event to panels until one consumes it.
 ---@param context AeroGridContext
 ---@param widgetEvent any
 ---@return boolean consumed
 local function event(context, widgetEvent)
-    for _, entry in ipairs(context.components) do
+    for _, entry in ipairs(context.panels) do
         if not entry.failed then
-            local ok, dispatchError, consumed = context.componentHost.dispatch(entry, "event", widgetEvent)
+            local ok, dispatchError, consumed = context.panelHost.dispatch(entry, "event", widgetEvent)
             if not ok and dispatchError then
                 addError(context, entry.placement.id .. ": event: " .. dispatchError)
                 showErrors(context)
@@ -1052,19 +1050,19 @@ local function event(context, widgetEvent)
     return false
 end
 
---- Components refreshed per frame at most, regardless of how many fall due.
+--- Panels refreshed per frame at most, regardless of how many fall due.
 --- Phase staggering normally keeps the number well below this; the cap is a
---- guarantee for layouts that defeat staggering, such as many components all
+--- guarantee for layouts that defeat staggering, such as many panels all
 --- asking to refresh every frame.
 local REFRESH_CAP = 6
 
---- Dispatch `refresh` to the components that are due, newest cursor first.
+--- Dispatch `refresh` to the panels that are due, newest cursor first.
 --- Returns the number dispatched so tests can observe the scheduling.
 ---@param context AeroGridContext
 ---@return integer dispatched
 local function dispatchDue(context)
-    local components = context.components
-    local count = #components
+    local panels = context.panels
+    local count = #panels
     if count == 0 then
         return 0
     end
@@ -1078,16 +1076,16 @@ local function dispatchDue(context)
     local dispatched, failures, examined = 0, false, 0
 
     while examined < count and dispatched < REFRESH_CAP do
-        local entry = components[cursor]
+        local entry = panels[cursor]
         examined = examined + 1
 
         if entry and not entry.failed and now >= (entry.nextRefresh or 0) then
-            -- Advance from now, so a component starved by the cap does not
+            -- Advance from now, so a panel starved by the cap does not
             -- accumulate a backlog of missed deadlines.
             entry.nextRefresh = now + entry.interval
             dispatched = dispatched + 1
 
-            local ok, dispatchError = context.componentHost.dispatch(entry, "refresh")
+            local ok, dispatchError = context.panelHost.dispatch(entry, "refresh")
             if not ok and dispatchError then
                 addError(context, entry.placement.id .. ": refresh: " .. dispatchError)
                 failures = true
@@ -1097,7 +1095,7 @@ local function dispatchDue(context)
         cursor = cursor % count + 1
     end
 
-    -- Resume from where we stopped so every component is served in turn.
+    -- Resume from where we stopped so every panel is served in turn.
     context.refreshCursor = cursor
     if failures then
         showErrors(context)
@@ -1128,7 +1126,7 @@ local function updateServices(context)
     return id
 end
 
---- Advance the staged loader, then keep geometry and components synchronized.
+--- Advance the staged loader, then keep geometry and panels synchronized.
 --- At most one loading step runs per call, so the instruction budget is never
 --- exceeded no matter how large the layout is.
 ---@param context AeroGridContext
@@ -1151,7 +1149,7 @@ local function refresh(context)
 
         context.page = nil
         context.canvas = nil
-        context.components = {}
+        context.panels = {}
         context.rejected = {}
         context.errors = {}
         context.notices = {}
@@ -1185,7 +1183,7 @@ local function refresh(context)
         return
     end
 
-    -- A zone change repositions every component, which a full grid cannot
+    -- A zone change repositions every panel, which a full grid cannot
     -- afford in one callback, so it is batched like loading. The absolute
     -- position matters as well as the size, because it decides whether the
     -- EdgeTX menu button reaches into us.
@@ -1217,13 +1215,13 @@ local function refresh(context)
         return
     end
 
-    -- Services are refreshed before components so every component rendering this
+    -- Services are refreshed before panels so every panel rendering this
     -- cycle sees the same set of readings.
     updateServices(context)
     dispatchDue(context)
 end
 
---- Keep components updated while the dashboard screen is not visible.
+--- Keep panels updated while the dashboard screen is not visible.
 --- Services keep running here too, so flight extrema and timers do not develop
 --- a hole whenever the pilot looks at another screen.
 ---@param context AeroGridContext

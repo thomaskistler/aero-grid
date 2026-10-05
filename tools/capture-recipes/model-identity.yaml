@@ -1,5 +1,5 @@
 version: 1
-component: model-identity
+panel: model-identity
 theme: modern
 brighten_supporting_text: true
 border:

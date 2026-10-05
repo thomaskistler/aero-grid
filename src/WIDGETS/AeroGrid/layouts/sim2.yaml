@@ -1,7 +1,7 @@
 version: 1
 
 # The second half of the simulator coverage. sim.yaml fills its grid with the
-# telemetry components, so the radio-local ones had nowhere to go: model
+# telemetry panels, so the radio-local ones had nowhere to go: model
 # identity, flight mode, the model timer, the transmitter pack and a global
 # variable all read radio state rather than a receiver, and none of them had
 # ever been seen against live values.
@@ -26,7 +26,7 @@ grid:
   columns: 4
   rows: 4
 
-components:
+panels:
   # Identity needs the room: at 2x2 it earns the model bitmap rather than
   # falling back to the name on its own.
   - id: identity
@@ -85,7 +85,7 @@ components:
       label: TX
       # Cyan rather than green. The palette reserves cyan for electrical data
       # and green for healthy state, and this layout was still overriding the
-      # component's own corrected default with the colour the vocabulary work
+      # panel's own corrected default with the colour the vocabulary work
       # took away from it. It matters more now: the accent is what the
       # battery fills with, so a green fill reads as a verdict on the pack
       # rather than as a measurement of it.
@@ -108,10 +108,11 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      source: gvar1
-      precision: 1
+      metrics:
+        - source: gvar1
+          label: GVAR
+          precision: 1
       visual: none
-      label: GVAR
       accent: amber
 
   # No visualization and a second reading beside the first: ground speed
@@ -123,17 +124,18 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      label: Speed
-      source: GSpd
-      unit: km/h
+      metrics:
+        - source: GSpd
+          label: Speed
+          unit: km/h
+          precision: 0
+        - source: Hdg
+          label: HDG
       accent: cyan
-      precision: 0
       visual: none
-      secondarySource: Hdg
-      secondaryLabel: HDG
 
   # Nothing on an ELRS link publishes a cells sensor, so this one stays empty
-  # on purpose: it is the only way to see how a component reports a source the
+  # on purpose: it is the only way to see how a panel reports a source the
   # radio does not have.
   - id: cells
     type: cell-battery

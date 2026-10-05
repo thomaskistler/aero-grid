@@ -47,7 +47,7 @@ local grid = loadModule("lib/grid.lua")
 local yaml = loadModule("lib/yaml.lua")
 local layout = loadModule("lib/layout.lua")
 local layoutStore = loadModule("lib/layout_store.lua")
-local componentHost = loadModule("lib/component_host.lua")
+local panelHost = loadModule("lib/panel_host.lua")
 local theme = loadModule("lib/theme.lua")
 local primitives = loadModule("lib/primitives.lua")
 local services = loadModule("lib/services.lua")
@@ -102,7 +102,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: altitude
     type: placeholder
     col: 0
@@ -123,10 +123,10 @@ components:
 
     local normalized, errors = layout.validate(document, grid)
     assertEqual(#errors, 0)
-    assertEqual(#normalized.components, 2)
-    assertEqual(normalized.components[1].config.title, "Altitude #1")
-    assertEqual(normalized.components[1].config.warning, 120.5)
-    assertEqual(normalized.components[1].config.enabled, true)
+    assertEqual(#normalized.panels, 2)
+    assertEqual(normalized.panels[1].config.title, "Altitude #1")
+    assertEqual(normalized.panels[1].config.warning, 120.5)
+    assertEqual(normalized.panels[1].config.enabled, true)
 end
 
 local function testOverlapIsRejected()
@@ -135,7 +135,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: first
     type: placeholder
     col: 0
@@ -151,7 +151,7 @@ components:
 ]]))
 
     local normalized, errors = layout.validate(document, grid)
-    assertEqual(#normalized.components, 1)
+    assertEqual(#normalized.panels, 1)
     assertEqual(#errors, 1)
     assert(string.match(errors[1], "overlaps first"), errors[1])
 end
@@ -203,7 +203,7 @@ vendorExtra: keep-me
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: only
     type: placeholder
     col: 0
@@ -216,49 +216,49 @@ components:
     local normalized, errors = layout.validate(document, grid)
     assertEqual(#errors, 0)
     assertEqual(normalized.vendorExtra, "keep-me")
-    assertEqual(normalized.components[1].futureKey, "keep-me-too")
+    assertEqual(normalized.panels[1].futureKey, "keep-me-too")
 end
 
 --- Malformed documents must degrade into errors rather than raising.
 --- Documents this loader cannot interpret fail closed; documents with merely
---- bad entries keep loading their valid components.
+--- bad entries keep loading their valid panels.
 local function testMalformedInput()
     local cases = {
         {
-            name = "scalar component entry",
-            text = "version: 1\ngrid:\n  columns: 4\n  rows: 4\ncomponents:\n  - bare-scalar\n",
+            name = "scalar panel entry",
+            text = "version: 1\ngrid:\n  columns: 4\n  rows: 4\npanels:\n  - bare-scalar\n",
         },
         {
-            name = "numeric component entry",
-            text = "version: 1\ngrid:\n  columns: 4\n  rows: 4\ncomponents:\n  - 42\n",
+            name = "numeric panel entry",
+            text = "version: 1\ngrid:\n  columns: 4\n  rows: 4\npanels:\n  - 42\n",
         },
-        { name = "components mapping", text = "version: 1\ngrid:\n  columns: 4\n  rows: 4\ncomponents:\n  nope: 1\n" },
-        { name = "missing grid", fatal = true, text = "version: 1\ncomponents: []\n" },
+        { name = "panels mapping", text = "version: 1\ngrid:\n  columns: 4\n  rows: 4\npanels:\n  nope: 1\n" },
+        { name = "missing grid", fatal = true, text = "version: 1\npanels: []\n" },
         {
             name = "future version",
             fatal = true,
-            text = "version: 99\ngrid:\n  columns: 4\n  rows: 4\ncomponents: []\n",
+            text = "version: 99\ngrid:\n  columns: 4\n  rows: 4\npanels: []\n",
         },
         {
             name = "wrong grid size",
             fatal = true,
-            text = "version: 1\ngrid:\n  columns: 3\n  rows: 3\ncomponents: []\n",
+            text = "version: 1\ngrid:\n  columns: 3\n  rows: 3\npanels: []\n",
         },
         {
             name = "unsafe type",
-            text = "version: 1\ngrid:\n  columns: 4\n  rows: 4\ncomponents:\n  - id: a\n    type: ../evil\n    col: 0\n    row: 0\n    colSpan: 1\n    rowSpan: 1\n",
+            text = "version: 1\ngrid:\n  columns: 4\n  rows: 4\npanels:\n  - id: a\n    type: ../evil\n    col: 0\n    row: 0\n    colSpan: 1\n    rowSpan: 1\n",
         },
         {
             name = "fractional span",
-            text = "version: 1\ngrid:\n  columns: 4\n  rows: 4\ncomponents:\n  - id: a\n    type: placeholder\n    col: 0\n    row: 0\n    colSpan: 1.5\n    rowSpan: 1\n",
+            text = "version: 1\ngrid:\n  columns: 4\n  rows: 4\npanels:\n  - id: a\n    type: placeholder\n    col: 0\n    row: 0\n    colSpan: 1.5\n    rowSpan: 1\n",
         },
         {
             name = "out of bounds",
-            text = "version: 1\ngrid:\n  columns: 4\n  rows: 4\ncomponents:\n  - id: a\n    type: placeholder\n    col: 3\n    row: 0\n    colSpan: 2\n    rowSpan: 1\n",
+            text = "version: 1\ngrid:\n  columns: 4\n  rows: 4\npanels:\n  - id: a\n    type: placeholder\n    col: 3\n    row: 0\n    colSpan: 2\n    rowSpan: 1\n",
         },
         {
             name = "duplicate id",
-            text = "version: 1\ngrid:\n  columns: 4\n  rows: 4\ncomponents:\n  - id: a\n    type: placeholder\n    col: 0\n    row: 0\n    colSpan: 1\n    rowSpan: 1\n  - id: a\n    type: placeholder\n    col: 1\n    row: 0\n    colSpan: 1\n    rowSpan: 1\n",
+            text = "version: 1\ngrid:\n  columns: 4\n  rows: 4\npanels:\n  - id: a\n    type: placeholder\n    col: 0\n    row: 0\n    colSpan: 1\n    rowSpan: 1\n  - id: a\n    type: placeholder\n    col: 1\n    row: 0\n    colSpan: 1\n    rowSpan: 1\n",
         },
     }
 
@@ -289,7 +289,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: good
     type: placeholder
     col: 0
@@ -306,18 +306,18 @@ components:
 ]]))
 
     local normalized, errors = layout.validate(document, grid)
-    assertEqual(#normalized.components, 2)
-    assertEqual(normalized.components[1].id, "good")
-    assertEqual(normalized.components[2].id, "alsogood")
+    assertEqual(#normalized.panels, 2)
+    assertEqual(normalized.panels[1].id, "good")
+    assertEqual(normalized.panels[2].id, "alsogood")
     assertEqual(#errors, 1)
 end
 
-local function testComponentContract()
+local function testPanelContract()
     local valid = { id = "demo", apiVersion = 1, create = function() end }
-    assert(componentHost.validateModule(valid, "demo"))
+    assert(panelHost.validateModule(valid, "demo"))
 
     local function rejects(module, typeName, pattern)
-        local ok, err = componentHost.validateModule(module, typeName)
+        local ok, err = panelHost.validateModule(module, typeName)
         assertEqual(ok, false)
         assert(string.match(err, pattern), err)
     end
@@ -333,12 +333,12 @@ end
 
 local function testSupportedSpans()
     local restricted = { supportedSpans = { "1x1", "2x2" } }
-    assertEqual(componentHost.supportsSpan(restricted, 1, 1), true)
-    assertEqual(componentHost.supportsSpan(restricted, 2, 2), true)
-    assertEqual(componentHost.supportsSpan(restricted, 4, 1), false)
-    assertEqual(componentHost.supportsSpan({ supportedSpans = { "any" } }, 4, 4), true)
-    assertEqual(componentHost.supportsSpan({}, 3, 2), true)
-    assertEqual(componentHost.spanName(2, 3), "2x3")
+    assertEqual(panelHost.supportsSpan(restricted, 1, 1), true)
+    assertEqual(panelHost.supportsSpan(restricted, 2, 2), true)
+    assertEqual(panelHost.supportsSpan(restricted, 4, 1), false)
+    assertEqual(panelHost.supportsSpan({ supportedSpans = { "any" } }, 4, 4), true)
+    assertEqual(panelHost.supportsSpan({}, 3, 2), true)
+    assertEqual(panelHost.spanName(2, 3), "2x3")
 end
 
 local function testSettingsResolution()
@@ -352,28 +352,27 @@ local function testSettingsResolution()
     }
 
     local settings, warnings =
-        componentHost.resolveSettings(module, { title = "Given", limit = "not a number", extra = "kept" })
+        panelHost.resolveSettings(module, { title = "Given", limit = "not a number", extra = "kept" })
 
     assertEqual(settings.title, "Given")
     assertEqual(settings.limit, 10)
     assertEqual(settings.shown, true)
-    -- Kept, because a layout written for a newer component must survive an
+    -- Kept, because a layout written for a newer panel must survive an
     -- older host, and reported, because an undeclared key is far more often a
     -- misspelling or a stale name than a message from the future.
     assertEqual(settings.extra, "kept")
     assert(
-        string.find(table.concat(warnings, "\n"), "extra is not a setting of this component", 1, true),
+        string.find(table.concat(warnings, "\n"), "extra is not a setting of this panel", 1, true),
         "an undeclared key was accepted in silence"
     )
     assertEqual(#warnings, 3, "the warning count changed; read them before editing")
 
-    -- A `<key>Name` companion is the documented way a layout records a readable
-    -- source name beside its identifier, so it is not undeclared.
-    local _, named = componentHost.resolveSettings(
+    -- Obsolete source-name companions are unknown settings.
+    local _, named = panelHost.resolveSettings(
         { settings = { { key = "source", type = "string", default = "" } } },
         { source = "RxBt", sourceName = "Rx battery" }
     )
-    assertEqual(#named, 0, "a source-name companion was reported as unknown")
+    assertEqual(#named, 1, "an obsolete source-name companion was accepted")
 
     -- A value outside a declared choice list is a typo, not a preference.
     local choiceModule = {
@@ -381,29 +380,29 @@ local function testSettingsResolution()
             { key = "shape", type = "string", default = "bar", choices = { "bar", "radial", "none" } },
         },
     }
-    local chosen, choiceWarnings = componentHost.resolveSettings(choiceModule, { shape = "nonsense" })
+    local chosen, choiceWarnings = panelHost.resolveSettings(choiceModule, { shape = "nonsense" })
     assertEqual(chosen.shape, "bar", "an unknown choice was not replaced")
     assertEqual(#choiceWarnings, 1)
     assert(string.find(choiceWarnings[1], "must be one of bar, radial, none", 1, true), choiceWarnings[1])
 
-    local valid = componentHost.resolveSettings(choiceModule, { shape = "radial" })
+    local valid = panelHost.resolveSettings(choiceModule, { shape = "radial" })
     assertEqual(valid.shape, "radial", "a declared choice was rejected")
 
-    local defaults = componentHost.resolveSettings(module, nil)
+    local defaults = panelHost.resolveSettings(module, nil)
     assertEqual(defaults.title, "DEFAULT")
 end
 
---- Every component's settings schema, read as one catalogue.
---- The vocabulary rules are properties of the set, not of any one component,
+--- Every panel's settings schema, read as one catalogue.
+--- The vocabulary rules are properties of the set, not of any one panel,
 --- so they are checked over the set. Thirteen modules written to the same
 --- contract by different sessions is exactly the situation in which each is
 --- individually defensible and the collection is not.
 --- Read from disk rather than listed here. A hand-kept list would leave a
---- newly added component uncovered by exactly the check that exists to keep
+--- newly added panel uncovered by exactly the check that exists to keep
 --- the catalogue consistent, and nothing would say so.
-local function componentTypes()
-    local listingPath = root .. "/build/component-types.txt"
-    os.execute("ls '" .. root .. "/src/WIDGETS/AeroGrid/components' > '" .. listingPath .. "'")
+local function panelTypes()
+    local listingPath = root .. "/build/panel-types.txt"
+    os.execute("ls '" .. root .. "/src/WIDGETS/AeroGrid/panels' > '" .. listingPath .. "'")
     local listing = assert(io.open(listingPath, "r"))
     local types = {}
     for name in listing:lines() do
@@ -414,12 +413,12 @@ local function componentTypes()
     end
     listing:close()
     os.remove(listingPath)
-    assert(#types > 0, "no components were found to check")
+    assert(#types > 0, "no panels were found to check")
     return types
 end
 
 --- Lua sources in one directory under the widget, by file name.
---- Read from the directory for the same reason `componentTypes` is: a list
+--- Read from the directory for the same reason `panelTypes` is: a list
 --- written by hand stops covering the host the moment somebody adds a file.
 local function sourceFiles(directory)
     local listingPath = root .. "/build/source-listing.txt"
@@ -448,7 +447,7 @@ local RETIRED_KEYS = {
     title = "label",
 }
 
---- What each component's thresholds are measured in, where the answer is
+--- What each panel's thresholds are measured in, where the answer is
 --- fixed by the quantity rather than by configuration.
 local FIXED_THRESHOLD_UNITS = {
     ["cell-battery"] = "volts per cell",
@@ -459,18 +458,18 @@ local FIXED_THRESHOLD_UNITS = {
 
 local function settingsCatalog()
     local catalog = {}
-    for _, kind in ipairs(componentTypes()) do
-        catalog[kind] = loadModule("components/" .. kind .. ".lua").settings or {}
+    for _, kind in ipairs(panelTypes()) do
+        catalog[kind] = loadModule("panels/" .. kind .. ".lua").settings or {}
     end
     return catalog
 end
 
 local function testSettingsVocabulary()
     local catalog = settingsCatalog()
-    local kinds = componentTypes()
-    -- Twelve components ship, two of them diagnostic. `heartbeat` and
+    local kinds = panelTypes()
+    -- Twelve panels ship, two of them diagnostic. `heartbeat` and
     -- `placeholder` were built to prove
-    -- the host contract and are fixtures under `tests/fixtures/components`, so
+    -- the host contract and are fixtures under `tests/fixtures/panels`, so
     -- they are not read here: the vocabulary rules below are about what a
     -- person configures on a radio.
     assertEqual(#kinds, 11, "the catalogue changed size; the spec names eleven")
@@ -507,7 +506,7 @@ local function testSettingsVocabulary()
         end
 
         -- A setting must have more than one answer a layout could sensibly give.
-        -- `direction` was added to every component with thresholds, and on five
+        -- `direction` was added to every panel with thresholds, and on five
         -- of them the physics fixes the answer: a voltage and a link only alarm
         -- downward, a distance only upward, and a timer's direction is EdgeTX's
         -- own `countdown` flag rather than anything a layout decides. A setting
@@ -527,7 +526,7 @@ local function testSettingsVocabulary()
         end
 
         -- A threshold's unit is not recoverable from a bare number, so the label
-        -- carries it. Where the unit is fixed by what the component measures the
+        -- carries it. Where the unit is fixed by what the panel measures the
         -- label names it; where it follows configuration, as a metric's does and
         -- as link-status's does when `reading` resolves to RSSI rather than
         -- quality, the label says that instead of naming a unit that may be wrong.
@@ -561,23 +560,15 @@ local function testSettingsVocabulary()
         end
     end
 
-    -- A choice list naming a value the component's own normalizer drops is
-    -- worse than no list: the loader accepts it and the panel ignores it.
-    local trims = loadModule("components/trim-panel.lua")
-    local counts = {}
+    -- Keep the panel's persisted settings aligned with the supported surface.
+    local trimSettings = {}
     for _, setting in ipairs(catalog["trim-panel"]) do
-        if setting.key == "indicators" then
-            for _, choice in ipairs(setting.choices) do
-                local count = trims.indicatorCount(choice)
-                assert(
-                    not counts[count],
-                    "trim-panel offers " .. choice .. " and " .. tostring(counts[count]) .. " as the same count"
-                )
-                counts[count] = choice
-            end
-        end
+        trimSettings[setting.key] = setting
     end
-    assertEqual(counts[4], "all", "trim-panel lost its four-indicator choice")
+    assertEqual(#catalog["trim-panel"], 7)
+    assertEqual(trimSettings.trim1.default, "trim-ail")
+    assertEqual(trimSettings.trim2.default, "trim-ele")
+    assertEqual(trimSettings.trim4.default, "trim-rud")
 
     -- The palette reserves cyan for electrical data. Both batteries measure
     -- volts; one of them used to be green.
@@ -593,7 +584,7 @@ end
 --- Every YAML example in the specification is loaded, not trusted.
 ---
 --- The specification's layout example did not load for at least two
---- milestones. It named `showLabel`, which no component declares, and a
+--- milestones. It named `showLabel`, which no panel declares, and a
 --- numeric source identifier, which `telemetryService` rejects, and it was
 --- the single most copyable thing in the document. Nothing read it, so
 --- nothing could say so.
@@ -633,28 +624,28 @@ local function checkLayoutExample(body, label)
 
     -- An example that declares nothing would satisfy every assertion below by
     -- having nothing to satisfy them with.
-    assert(#normalized.components > 0, label .. " declares no components")
+    assert(#normalized.panels > 0, label .. " declares no panels")
 
-    for _, placement in ipairs(normalized.components) do
+    for _, placement in ipairs(normalized.panels) do
         local where = label .. ": " .. placement.id
-        local chunk = loadfile(root .. "/src/WIDGETS/AeroGrid/components/" .. placement.type .. ".lua")
-        assert(chunk, where .. ": no component file for type " .. placement.type)
+        local chunk = loadfile(root .. "/src/WIDGETS/AeroGrid/panels/" .. placement.type .. ".lua")
+        assert(chunk, where .. ": no panel file for type " .. placement.type)
         local module = chunk()
 
-        local valid, moduleError = componentHost.validateModule(module, placement.type)
+        local valid, moduleError = panelHost.validateModule(module, placement.type)
         assert(valid, where .. ": " .. tostring(moduleError))
         assert(
-            componentHost.supportsSpan(module, placement.colSpan, placement.rowSpan),
+            panelHost.supportsSpan(module, placement.colSpan, placement.rowSpan),
             where
                 .. ": "
                 .. placement.type
                 .. " does not support "
-                .. componentHost.spanName(placement.colSpan, placement.rowSpan)
+                .. panelHost.spanName(placement.colSpan, placement.rowSpan)
         )
 
         -- Undeclared keys and values outside a declared choice list are both
         -- reported here, which is what the example used to trip over.
-        local _, warnings = componentHost.resolveSettings(module, placement.config)
+        local _, warnings = panelHost.resolveSettings(module, placement.config)
         assertEqual(#warnings, 0, where .. ": " .. table.concat(warnings, "; "))
     end
 
@@ -675,7 +666,7 @@ local function checkThemeExample(body, label)
     local document = {
         version = 1,
         grid = { columns = 4, rows = 4 },
-        components = {},
+        panels = {},
         theme = fragment.theme,
     }
     local normalized, errors = layout.validate(document, grid)
@@ -689,16 +680,16 @@ local function checkThemeExample(body, label)
     return resolved
 end
 
---- Check a single component entry, which is a layout's component sequence cut
+--- Check a single panel entry, which is a layout's panel sequence cut
 --- down to one. Spliced into the smallest document that can carry it, so the
---- same validation runs: a component example naming a setting that does not
+--- same validation runs: a panel example naming a setting that does not
 --- exist is exactly as wrong as a whole layout doing it, and there is no
 --- reason for the document to be able to carry one unchecked.
 ---@param body string
 ---@param label string
-local function checkComponentExample(body, label)
+local function checkPanelExample(body, label)
     local indented = string.gsub("\n" .. body, "\n", "\n  ")
-    local document = "version: 1\ngrid:\n  columns: 4\n  rows: 4\ncomponents:" .. indented .. "\n"
+    local document = "version: 1\ngrid:\n  columns: 4\n  rows: 4\npanels:" .. indented .. "\n"
     return checkLayoutExample(document, label)
 end
 
@@ -727,11 +718,11 @@ local function testSpecificationExamplesLoad()
             checkThemeExample(body, label)
         elseif string.match(body, "^%- id:") then
             entries = entries + 1
-            checkComponentExample(body, label)
+            checkPanelExample(body, label)
         else
             -- An unclassified example is one nothing checks, which is the state
             -- this test exists to end. Failing is the point: add a branch here.
-            -- It has already caught one: a bare component entry added to the
+            -- It has already caught one: a bare panel entry added to the
             -- source-settings section, which no branch covered until one did.
             error(
                 label
@@ -749,101 +740,70 @@ local function testSpecificationExamplesLoad()
     assert(themes > 0, "the specification carries no theme example")
 end
 
---- A threshold whose unit is decided at runtime is refused at load.
----
---- `link-status` leads with RSSI, in dBm and usually negative, or with link
---- quality, in percent and always positive. Under `reading: auto` the choice
---- is made by whichever source the protocol publishes, so `warning: 50` is a
---- perfectly plausible number in both units and means a different thing in
---- each. Nothing downstream can catch it: the panel alarms at the wrong
---- moment rather than failing.
----
---- The shipped dashboard had exactly this. Its thresholds were percentages
---- under `reading: auto`, and `auto` falls back to RSSI when no quality
---- sensor exists, where every reading is below 30, so that panel would have
---- sat permanently critical on any protocol without one.
+--- Link thresholds name their source rather than the selected headline.
 local function testLinkThresholdsNeedAStatedReading()
-    local module = loadModule("components/link-status.lua")
-
-    local function warningsFor(config)
-        local _, warnings = componentHost.resolveSettings(module, config)
-        return warnings
+    local module = loadModule("panels/link-status.lua")
+    for _, reading in ipairs({ "auto", "quality", "rssi" }) do
+        local _, warnings = panelHost.resolveSettings(module, {
+            reading = reading,
+            warning = 50,
+            critical = 30,
+        })
+        assertEqual(#warnings, 2, "obsolete generic link thresholds must be reported")
+        local _, current = panelHost.resolveSettings(module, {
+            reading = reading,
+            qualitySource = "RQly",
+            qualityWarning = 50,
+            qualityCritical = 30,
+            rssiWarning = -90,
+            rssiCritical = -100,
+        })
+        assertEqual(#current, 0, table.concat(current, "; "))
     end
-
-    -- The rejection, which is the behaviour being added.
-    local refused = warningsFor({ reading = "auto", warning = 50, critical = 30 })
-    assertEqual(#refused, 2, "both thresholds must be refused, not just the first")
-    assert(string.find(refused[1], "reading: auto", 1, true), refused[1])
-    assert(string.find(refused[1], "dBm or percent", 1, true), refused[1])
-    assert(
-        string.find(refused[1], "Set reading to rssi or quality", 1, true),
-        "the message must say what to do about it: " .. refused[1]
-    )
-
-    -- `auto` is only refused when a threshold depends on it. A panel that
-    -- states no threshold has nothing whose unit could be ambiguous, and
-    -- refusing that would make `auto` unusable rather than unambiguous.
-    assertEqual(#warningsFor({ reading = "auto" }), 0, "auto was refused on a panel that states no threshold")
-
-    -- And a stated reading carries its thresholds, in either unit.
-    assertEqual(
-        #warningsFor({ reading = "quality", warning = 50, critical = 30 }),
-        0,
-        "a percentage threshold under quality was refused"
-    )
-    assertEqual(
-        #warningsFor({ reading = "rssi", warning = -90, critical = -100 }),
-        0,
-        "a dBm threshold under rssi was refused"
-    )
-
-    -- The default is `auto`, so a layout that states thresholds and no reading
-    -- is the same mistake written more quietly.
-    assertEqual(#warningsFor({ warning = 50 }), 1, "a threshold with no reading stated was accepted")
 end
 
---- Every shipped component has documentation, and its examples load.
+--- Every shipped panel has documentation, and its examples load.
 ---
 --- Two failures to prevent, and the second is the one that rots quietly. An
 --- example that stops loading is caught the same way the specification's are,
---- by running it rather than reading it. A component with no documentation
---- file at all is caught by reading the component directory rather than a
---- list, because a list is what lets the eleventh component be quietly
+--- by running it rather than reading it. A panel with no documentation
+--- file at all is caught by reading the panel directory rather than a
+--- list, because a list is what lets the eleventh panel be quietly
 --- undocumented: nothing would be wrong, there would simply be less.
---- Components reviewed and documented so far, and the ones still owed.
+--- Panels reviewed and documented so far, and the ones still owed.
 ---
---- The review is one component per pull request, so this starts as debt and
+--- The review is one panel per pull request, so this starts as debt and
 --- is meant to empty. It is an explicit list rather than a silent gap for one
---- reason: a component that is not on it and has no page fails immediately,
---- so a component added to the catalogue tomorrow cannot be quietly
+--- reason: a panel that is not on it and has no page fails immediately,
+--- so a panel added to the catalogue tomorrow cannot be quietly
 --- undocumented. Removing the last name here should delete this table too.
 local UNDOCUMENTED = {
     ["host-diagnostics"] = true,
     ["service-probe"] = true,
 }
 
-local function testComponentDocumentationLoads()
-    local kinds = componentTypes()
-    assert(#kinds > 0, "no components were found to document")
+local function testPanelDocumentationLoads()
+    local kinds = panelTypes()
+    assert(#kinds > 0, "no panels were found to document")
 
     local known = {}
     for _, kind in ipairs(kinds) do
         known[kind] = true
     end
-    -- A name here that is not a component is a rename nobody finished, and it
-    -- would excuse a real component from ever being documented.
+    -- A name here that is not a panel is a rename nobody finished, and it
+    -- would excuse a real panel from ever being documented.
     for kind in pairs(UNDOCUMENTED) do
         assert(
             known[kind],
             kind
                 .. " is listed as undocumented but is not a"
-                .. " component; the list is excusing something that does not exist"
+                .. " panel; the list is excusing something that does not exist"
         )
     end
 
     local documented = 0
     for _, kind in ipairs(kinds) do
-        local path = root .. "/docs/components/" .. kind .. ".md"
+        local path = root .. "/docs/panels/" .. kind .. ".md"
         local handle = io.open(path, "r")
         if not handle then
             assert(
@@ -851,16 +811,30 @@ local function testComponentDocumentationLoads()
                 kind
                     .. " ships with no documentation at "
                     .. path
-                    .. ", and is not on the list of components still owed one"
+                    .. ", and is not on the list of panels still owed one"
             )
         end
         if handle then
+            local page = handle:read("*a")
             handle:close()
             assert(
                 not UNDOCUMENTED[kind],
                 kind .. " is documented but is still" .. " listed as owing documentation; remove it from UNDOCUMENTED"
             )
             documented = documented + 1
+            assert(
+                string.match(page, "^# `[^\n]+`\n\n| 1x2 | 2x1 | 2x2 |"),
+                kind .. " must put its visual examples immediately after the title"
+            )
+            local sections = {}
+            for heading in string.gmatch(page, "\n## ([^\n]+)") do
+                sections[#sections + 1] = heading
+            end
+            assertEqual(
+                table.concat(sections, ","),
+                "Settings,Behavior,States,Examples",
+                kind .. " has inconsistent reference sections"
+            )
 
             local blocks = yamlBlocksIn(path)
             assert(
@@ -878,8 +852,8 @@ local function testComponentDocumentationLoads()
                     checkLayoutExample(body, label)
                 elseif string.match(body, "^%- id:") then
                     -- Checked before the example is validated, so the failure names the
-                    -- real problem rather than whichever setting the other component
-                    -- happens not to declare. A page about one component whose example
+                    -- real problem rather than whichever setting the other panel
+                    -- happens not to declare. A page about one panel whose example
                     -- places a different one is worse than no example: it is confidently
                     -- wrong, and it is exactly what copying the previous page produces.
                     local declared = string.match(body, "\n%s*type:%s*([%w%-]+)")
@@ -888,11 +862,11 @@ local function testComponentDocumentationLoads()
                         kind,
                         label .. " places a " .. tostring(declared) .. " on the page documenting " .. kind
                     )
-                    checkComponentExample(body, label)
+                    checkPanelExample(body, label)
                 else
                     error(
                         label
-                            .. " is neither a layout nor a component entry, so"
+                            .. " is neither a layout nor a panel entry, so"
                             .. " nothing checks it. Its first line is: "
                             .. tostring(string.match(body, "^([^\n]*)"))
                     )
@@ -907,11 +881,11 @@ local function testComponentDocumentationLoads()
     for _ in pairs(UNDOCUMENTED) do
         owed = owed + 1
     end
-    assertEqual(documented + owed, #kinds, "every component is either documented or listed as owing a page")
+    assertEqual(documented + owed, #kinds, "every panel is either documented or listed as owing a page")
     assertEqual(
         documented,
         9,
-        "the number of documented components changed; update this count as the" .. " review works through the catalogue"
+        "the number of documented panels changed; update this count as the" .. " review works through the catalogue"
     )
 end
 
@@ -919,7 +893,7 @@ end
 ---
 --- `flight-mode` used to offer three forms of ten, six and four characters.
 --- They were never renderings: `fitReading` chose a font from whichever form
---- fitted, and the component then drew the **whole** name at that font, so a
+--- fitted, and the panel then drew the **whole** name at that font, so a
 --- ten-character name at `2 x 2` needed about 400 pixels of a 226 pixel panel
 --- and lost nearly half of itself over the edge. Nothing noticed, because
 --- every test used `Sport`, which fits at every span under either behaviour.
@@ -929,7 +903,7 @@ end
 --- Shortening the name is not available. A truncated mode name is a different
 --- name, not an abbreviation of one, so the font steps down instead.
 local function testFlightModeSizing()
-    local flightMode = loadModule("components/flight-mode.lua")
+    local flightMode = loadModule("panels/flight-mode.lua")
     local resolved = theme.build("modern")
 
     local function modelWith(names)
@@ -1016,7 +990,7 @@ end
 
 --- A mode number needs a row, and no single-row span has one.
 local function testFlightModeIndexNeedsARow()
-    local flightMode = loadModule("components/flight-mode.lua")
+    local flightMode = loadModule("panels/flight-mode.lua")
 
     -- The refusal, which is the behaviour being added. Accepting it and then
     -- ignoring it is the worst of the three options, because a layout author
@@ -1063,7 +1037,7 @@ local function testFlightModeIndexNeedsARow()
 
     -- And the span has to reach it through the host, or the rule above is
     -- correct and never consulted.
-    local _, warnings = componentHost.resolveSettings(flightMode, { showIndex = true }, { colSpan = 4, rowSpan = 1 })
+    local _, warnings = panelHost.resolveSettings(flightMode, { showIndex = true }, { colSpan = 4, rowSpan = 1 })
     assertEqual(
         #warnings,
         1,
@@ -1071,7 +1045,7 @@ local function testFlightModeIndexNeedsARow()
     )
     assert(string.find(warnings[1], "two rows tall", 1, true), warnings[1])
 
-    local _, allowed = componentHost.resolveSettings(flightMode, { showIndex = true }, { colSpan = 1, rowSpan = 2 })
+    local _, allowed = panelHost.resolveSettings(flightMode, { showIndex = true }, { colSpan = 1, rowSpan = 2 })
     assertEqual(#allowed, 0)
 end
 
@@ -1079,7 +1053,7 @@ end
 ---
 --- No single-row span grants a supporting row: a 65 pixel panel has no space
 --- beneath the reading whatever its width. Five settings across four
---- components drive such a row, and all five were accepted and silently
+--- panels drive such a row, and all five were accepted and silently
 --- ignored there, which is worse than either refusing or working -- a layout
 --- author reads the setting back and believes it.
 ---
@@ -1103,7 +1077,7 @@ local function testInertSettingsAreRefused()
 
     for _, case in ipairs(cases) do
         local kind, key = case[1], case[2]
-        local module = loadModule("components/" .. kind .. ".lua")
+        local module = loadModule("panels/" .. kind .. ".lua")
         assert(
             type(module.validateSettings) == "function",
             kind .. " states no rule for " .. key .. " at a span that cannot" .. " show it"
@@ -1156,8 +1130,8 @@ local function testInertSettingsAreRefused()
 
     -- The host is what carries the config through, so the rule above is
     -- correct and never consulted if it does not.
-    local module = loadModule("components/tx-battery.lua")
-    local _, warnings = componentHost.resolveSettings(module, { showPercent = true }, single)
+    local module = loadModule("panels/tx-battery.lua")
+    local _, warnings = panelHost.resolveSettings(module, { showPercent = true }, single)
     assertEqual(
         #warnings,
         1,
@@ -1167,8 +1141,7 @@ local function testInertSettingsAreRefused()
 
     -- And a layout that states nothing gets the defaults without being told
     -- off for them, through the host as well as directly.
-    local _, quiet =
-        componentHost.resolveSettings(loadModule("components/cell-battery.lua"), { source = "Cels" }, single)
+    local _, quiet = panelHost.resolveSettings(loadModule("panels/cell-battery.lua"), { source = "Cels" }, single)
     assertEqual(
         #quiet,
         0,
@@ -1225,8 +1198,8 @@ local function testLvglObjectsAreNeverReachedByName()
     for _, name in ipairs(sourceFiles("lib")) do
         sources[#sources + 1] = "lib/" .. name
     end
-    for _, kind in ipairs(componentTypes()) do
-        sources[#sources + 1] = "components/" .. kind .. ".lua"
+    for _, kind in ipairs(panelTypes()) do
+        sources[#sources + 1] = "panels/" .. kind .. ".lua"
     end
 
     local checked, names = 0, 0
@@ -1304,7 +1277,7 @@ local function testLvglObjectsAreNeverReachedByName()
     )
 end
 
---- No component writes its own heading text into the label.
+--- No panel writes its own heading text into the label.
 ---
 --- This is the fourth defect of the shape "a string is drawn without being
 --- measured", after a flight mode's name, the supporting rows, and a
@@ -1312,37 +1285,37 @@ end
 --- through `fitLabel`; the heading went through neither, straight into a
 --- label whose long mode LVGL defaults to wrapping.
 ---
---- The host writes headings through `primitives.header`. Components that
+--- The host writes headings through `primitives.header`. Panels that
 --- rename their heading, such as a timer taking its name from the model,
 --- must use `primitives.setHeading`.
 ---
 --- It is honestly weaker than the render declaration in #24, which made its
 --- mistake unrepresentable rather than merely detectable. The difference is
 --- that the host owns the redraw comparison and can derive it, but it does
---- not own paint: a component holds its own LVGL objects and calls `set` on
+--- not own paint: a panel holds its own LVGL objects and calls `set` on
 --- them. Making this unrepresentable would mean the host owning drawing as
 --- well as deciding, which is a larger change than this defect justifies.
 --- Detectable is what is available, so detectable is what this does.
 local function testHeadingIsNeverWrittenDirectly()
-    local kinds = componentTypes()
+    local kinds = panelTypes()
     local checked = 0
 
     for _, kind in ipairs(kinds) do
-        local path = root .. "/src/WIDGETS/AeroGrid/components/" .. kind .. ".lua"
+        local path = root .. "/src/WIDGETS/AeroGrid/panels/" .. kind .. ".lua"
         local handle = assert(io.open(path, "r"))
         local source = handle:read("a")
         handle:close()
         checked = checked + 1
 
         -- `context.label` and `context.title` are the header label, whichever a
-        -- component calls it. Anything else is a row the component owns.
+        -- panel calls it. Anything else is a row the panel owns.
         for _, name in ipairs({ "label", "title" }) do
-            -- Every write to the header label, not just the first: a component may
+            -- Every write to the header label, not just the first: a panel may
             -- set its colour in one place and its text in another.
             for changes in string.gmatch(source, "context%." .. name .. ":set%((%b{})%)") do
                 -- `text` as a key, rather than anywhere in the line. The first
                 -- version of this searched the whole call and matched `context`,
-                -- which contains the word, and so failed on a component setting
+                -- which contains the word, and so failed on a panel setting
                 -- nothing but a colour.
                 assert(
                     not string.match(changes, "[{,%s]text%s*="),
@@ -1357,14 +1330,14 @@ local function testHeadingIsNeverWrittenDirectly()
     end
 
     assertEqual(checked, #kinds)
-    assert(checked >= 11, "only " .. checked .. " components were read")
+    assert(checked >= 11, "only " .. checked .. " panels were read")
 end
 
---- No component writes its badge straight into the label.
+--- No panel writes its badge straight into the label.
 ---
 --- The same shape as the heading above, and for the same reason: a badge's
 --- **position depends on its text**, because it is right-aligned within the
---- column `theme.frame` reserves. Ten components carried the identical line
+--- column `theme.frame` reserves. Ten panels carried the identical line
 --- -- `context.badge:set{text =, color =}` -- and not one of them placed it,
 --- so every word narrower than `STALE` floated at the column's left edge.
 ---
@@ -1373,11 +1346,11 @@ end
 --- placement should be is `testBadgesEndFlushWithTheirPanel`, measured on
 --- real panels.
 local function testBadgeIsNeverWrittenDirectly()
-    local kinds = componentTypes()
+    local kinds = panelTypes()
     local checked, withBadges = 0, 0
 
     for _, kind in ipairs(kinds) do
-        local path = root .. "/src/WIDGETS/AeroGrid/components/" .. kind .. ".lua"
+        local path = root .. "/src/WIDGETS/AeroGrid/panels/" .. kind .. ".lua"
         local handle = assert(io.open(path, "r"))
         local source = handle:read("a")
         handle:close()
@@ -1388,7 +1361,7 @@ local function testBadgeIsNeverWrittenDirectly()
 
         -- Every write to the badge, not just the first, and `text` as a key
         -- rather than anywhere in the call: the heading version of this matched
-        -- the word `context` and failed on a component setting only a colour.
+        -- the word `context` and failed on a panel setting only a colour.
         for changes in string.gmatch(source, "context%.badge:set%((%b{})%)") do
             assert(
                 not string.match(changes, "[{,%s]text%s*="),
@@ -1402,21 +1375,21 @@ local function testBadgeIsNeverWrittenDirectly()
     end
 
     assertEqual(checked, #kinds)
-    -- Non-vacuous: the components that draw badges really do go through the
+    -- Non-vacuous: the panels that draw badges really do go through the
     -- helper, so this is forbidding a thing that has an alternative.
-    assert(withBadges >= 9, "only " .. withBadges .. " components route their badge through primitives.setBadge")
+    assert(withBadges >= 9, "only " .. withBadges .. " panels route their badge through primitives.setBadge")
 end
 
---- No component reaches for `lvgl.show` or `lvgl.hide` inside `update`.
+--- No panel reaches for `lvgl.show` or `lvgl.hide` inside `update`.
 ---
---- A reflow is where visibility is decided, and every component used to
+--- A reflow is where visibility is decided, and every panel used to
 --- decide it by hand: eleven copies of the same show-or-hide pair across
---- seven components, and one component reconciling a bar's two objects
+--- seven panels, and one panel reconciling a bar's two objects
 --- separately and forgetting its marker. `primitives.reconcile` and
 --- `primitives.reconcileBar` are the shared versions, and this is what stops
 --- a twelfth copy appearing.
 ---
---- Read from the component directory rather than a list, so a component
+--- Read from the panel directory rather than a list, so a panel
 --- written tomorrow is held to it from the moment it exists.
 ---
 --- `create` is deliberately not checked. Hiding an object at build time is a
@@ -1424,17 +1397,17 @@ end
 --- previous visibility to compare against, and `reconcile` there would only
 --- be the same call spelled longer.
 local function testReflowGoesThroughReconcile()
-    local kinds = componentTypes()
-    assert(#kinds > 0, "no components were found to check")
+    local kinds = panelTypes()
+    assert(#kinds > 0, "no panels were found to check")
 
     local checked = 0
     for _, kind in ipairs(kinds) do
-        local path = root .. "/src/WIDGETS/AeroGrid/components/" .. kind .. ".lua"
+        local path = root .. "/src/WIDGETS/AeroGrid/panels/" .. kind .. ".lua"
         local handle = assert(io.open(path, "r"))
         local source = handle:read("a")
         handle:close()
 
-        -- The component's own `update`, which is everything from its definition
+        -- The panel's own `update`, which is everything from its definition
         -- to the next one at column zero.
         local body = string.match(source, "\nfunction [%w]+%.update%b()(.-)\n[%w]")
         if body then
@@ -1451,36 +1424,31 @@ local function testReflowGoesThroughReconcile()
         end
     end
 
-    -- Every component has an `update`, so a pattern that silently matched none
+    -- Every panel has an `update`, so a pattern that silently matched none
     -- of them would otherwise pass this having checked nothing.
     assertEqual(
         checked,
         #kinds,
-        "only "
-            .. checked
-            .. " of "
-            .. #kinds
-            .. " components' update bodies"
-            .. " were found, so the rest went unchecked"
+        "only " .. checked .. " of " .. #kinds .. " panels' update bodies" .. " were found, so the rest went unchecked"
     )
 end
 
---- A component declares what it draws, and nothing it has shed.
+--- A panel declares what it draws, and nothing it has shed.
 ---
---- The reveal work gave five components the property that a shed row is not
+--- The reveal work gave five panels the property that a shed row is not
 --- declared, so `primitives.changed` sees it reappear and nothing formats
---- text for a hidden label. The six components that work was not applied to
+--- text for a hidden label. The six panels that work was not applied to
 --- kept doing it, which is how `flight-mode` came to format a mode number
 --- every frame for a panel with no room to show one.
 ---
 --- This checks the mechanism is reached rather than the wording: a `render`
 --- that writes a supporting row must consult what the panel is showing. It is
---- a weaker statement than the per-component tests elsewhere, and that is the
---- point -- it holds for a component nobody has written a test for yet.
+--- a weaker statement than the per-panel tests elsewhere, and that is the
+--- point -- it holds for a panel nobody has written a test for yet.
 local function testRenderConsultsWhatIsShown()
-    local kinds = componentTypes()
+    local kinds = panelTypes()
 
-    -- Components whose `render` declares only the dominant reading have no
+    -- Panels whose `render` declares only the dominant reading have no
     -- supporting row to gate, and are named rather than detected so that one
     -- losing its rows is a failure rather than a silent exemption.
     local NO_SUPPORTING_ROW = {
@@ -1490,7 +1458,7 @@ local function testRenderConsultsWhatIsShown()
 
     local checked, exempt = 0, 0
     for _, kind in ipairs(kinds) do
-        local path = root .. "/src/WIDGETS/AeroGrid/components/" .. kind .. ".lua"
+        local path = root .. "/src/WIDGETS/AeroGrid/panels/" .. kind .. ".lua"
         local handle = assert(io.open(path, "r"))
         local source = handle:read("a")
         handle:close()
@@ -1515,10 +1483,10 @@ local function testRenderConsultsWhatIsShown()
     end
 
     assertEqual(checked + exempt, #kinds)
-    assert(checked >= 9, "only " .. checked .. " components were checked")
+    assert(checked >= 9, "only " .. checked .. " panels were checked")
 end
 
---- A raising callback disables only its own component, and only reports once.
+--- A raising callback disables only its own panel, and only reports once.
 local function testLifecycleIsolation()
     local entry = {
         placement = { id = "bad" },
@@ -1530,18 +1498,18 @@ local function testLifecycleIsolation()
         },
     }
 
-    local ok, err = componentHost.dispatch(entry, "refresh")
+    local ok, err = panelHost.dispatch(entry, "refresh")
     assertEqual(ok, false)
     assertEqual(err, "boom")
     assertEqual(entry.failed, true)
 
-    local secondOk, secondError = componentHost.dispatch(entry, "refresh")
+    local secondOk, secondError = panelHost.dispatch(entry, "refresh")
     assertEqual(secondOk, false)
     assertEqual(secondError, nil)
 
     -- Absent optional callbacks are a no-op success.
     local healthy = { placement = { id = "ok" }, instance = {}, module = {} }
-    assertEqual(componentHost.dispatch(healthy, "background"), true)
+    assertEqual(panelHost.dispatch(healthy, "background"), true)
     assertEqual(healthy.failed, nil)
 end
 
@@ -1835,7 +1803,7 @@ local function testCustomTheme()
     assert(string.match(table.concat(wrong.warnings, "\n"), "must be a mapping"))
 end
 
---- Typography must grow with the component's span.
+--- Typography must grow with the panel's span.
 local function testTypography()
     assertFont(theme.typography(1, 1).primary, MIDSIZE)
     assertFont(theme.typography(2, 1).primary, DBLSIZE)
@@ -1848,7 +1816,7 @@ end
 
 --- Every state must be distinguishable by more than color alone.
 ---
---- A presentation carries display values, because a component hands them
+--- A presentation carries display values, because a panel hands them
 --- straight to an LVGL object. They are compared against `lcd.RGB(token)`
 --- rather than against the token, which is the difference between asserting
 --- what the radio is given and asserting a mock's identity function.
@@ -2034,17 +2002,17 @@ end
 
 --- Empty flow collections are the natural way to express "no entries".
 local function testEmptyCollections()
-    local document = assert(yaml.parse("version: 1\ngrid:\n  columns: 4\n  rows: 4\ncomponents: []\n"))
-    assertEqual(type(document.components), "table")
-    assertEqual(#document.components, 0)
+    local document = assert(yaml.parse("version: 1\ngrid:\n  columns: 4\n  rows: 4\npanels: []\n"))
+    assertEqual(type(document.panels), "table")
+    assertEqual(#document.panels, 0)
 
     local normalized, errors = layout.validate(document, grid)
     assertEqual(#errors, 0, table.concat(errors, "\n"))
-    assertEqual(#normalized.components, 0)
+    assertEqual(#normalized.panels, 0)
 
     -- A bare key with no value is equally valid and equally empty.
-    local bare = assert(yaml.parse("version: 1\ngrid:\n  columns: 4\n  rows: 4\ncomponents:\n"))
-    assertEqual(#select(1, layout.validate(bare, grid)).components, 0)
+    local bare = assert(yaml.parse("version: 1\ngrid:\n  columns: 4\n  rows: 4\npanels:\n"))
+    assertEqual(#select(1, layout.validate(bare, grid)).panels, 0)
 
     assertEqual(type(assert(yaml.parse("a: {}\n")).a), "table")
 end
@@ -2060,7 +2028,7 @@ theme:
 grid:
   columns: 4
   rows: 4
-components: []
+panels: []
 ]]))
 
     local normalized, errors = layout.validate(document, grid)
@@ -2069,7 +2037,7 @@ components: []
     assertEqual(normalized.theme.overrides.canvas, 0x000000)
 
     -- A malformed theme block is reported without blocking the layout.
-    local broken = assert(yaml.parse("version: 1\ntheme: nope\ngrid:\n  columns: 4\n  rows: 4\ncomponents: []\n"))
+    local broken = assert(yaml.parse("version: 1\ntheme: nope\ngrid:\n  columns: 4\n  rows: 4\npanels: []\n"))
     local _, brokenErrors = layout.validate(broken, grid)
     assert(string.match(table.concat(brokenErrors, "\n"), "theme must be a mapping"))
 end
@@ -2248,7 +2216,7 @@ local function testDerivedThemesStayLegible()
     end
 end
 
---- Freshness must override a component's decorative accent.
+--- Freshness must override a panel's decorative accent.
 local function testStaleOverridesAccent()
     local resolved = theme.build("modern")
     local modern = theme.modern()
@@ -2269,19 +2237,19 @@ local function testHostileModule()
         end,
     })
 
-    local ok, valid = pcall(componentHost.validateModule, hostile, "hostile")
+    local ok, valid = pcall(panelHost.validateModule, hostile, "hostile")
     assert(ok, "hostile module escaped validation")
     assertEqual(valid, false)
 
     -- Dispatch must also refuse to consult a raising metatable.
     local entry = { placement = { id = "h" }, instance = {}, module = hostile }
-    local dispatched, result = pcall(componentHost.dispatch, entry, "refresh")
+    local dispatched, result = pcall(panelHost.dispatch, entry, "refresh")
     assert(dispatched, "hostile module escaped dispatch: " .. tostring(result))
 end
 
 --- Threshold direction may be stated explicitly when one bound is configured.
 local function testMetricDirection()
-    local metric = loadModule("components/metric.lua")
+    local metric = loadModule("panels/metric.lua")
 
     -- A single threshold defaults to rising.
     local rising = { critical = 110 }
@@ -2319,7 +2287,7 @@ end
 --- Content must stack inside the panel using real font heights, never
 --- overlapping and never running past the bottom edge.
 local function testContentFitsPanel()
-    local metric = loadModule("components/metric.lua")
+    local metric = loadModule("panels/metric.lua")
     local heightOf = theme.fontHeight
 
     -- Panel heights for spans at 480 x 272 with 4 px gutters, plus tight cases.
@@ -2350,7 +2318,7 @@ local function testContentFitsPanel()
         -- favour of ink.
         --
         -- The one reading that *can* descend is `model-identity`'s model name,
-        -- which is free text. It is asserted below that no component drawing a
+        -- which is free text. It is asserted below that no panel drawing a
         -- bar draws descending text, so this measure cannot hide a real overlap.
         local valueBottom = area.valueY + theme.fontAscent(area.value)
         assert(
@@ -2421,33 +2389,33 @@ local function testContentFitsPanel()
     assert(heightOf(short.value) < heightOf(tall.value), "a short panel did not reduce its primary font")
 end
 
---- Components sharing an interval must not all fall due on the same frame.
+--- Panels sharing an interval must not all fall due on the same frame.
 local function testRefreshScheduling()
-    assertEqual(componentHost.refreshInterval({ refreshInterval = 20 }), 20)
-    assertEqual(componentHost.refreshInterval({}), 0)
-    assertEqual(componentHost.refreshInterval({ refreshInterval = -5 }), 0)
+    assertEqual(panelHost.refreshInterval({ refreshInterval = 20 }), 20)
+    assertEqual(panelHost.refreshInterval({}), 0)
+    assertEqual(panelHost.refreshInterval({ refreshInterval = -5 }), 0)
 
     -- An interval of zero or one cannot be staggered.
-    assertEqual(componentHost.phaseOffset(0, 7), 0)
-    assertEqual(componentHost.phaseOffset(1, 7), 0)
+    assertEqual(panelHost.phaseOffset(0, 7), 0)
+    assertEqual(panelHost.phaseOffset(1, 7), 0)
 
-    -- Sixteen components sharing a 20 tick interval must land on distinct
+    -- Sixteen panels sharing a 20 tick interval must land on distinct
     -- frames, so the host never pays for all of them at once.
     local used = {}
     for ordinal = 1, 16 do
-        local offset = componentHost.phaseOffset(20, ordinal)
+        local offset = panelHost.phaseOffset(20, ordinal)
         assert(offset >= 0 and offset < 20, "offset outside the interval: " .. offset)
-        assert(not used[offset], "two components share phase " .. offset)
+        assert(not used[offset], "two panels share phase " .. offset)
         used[offset] = true
     end
 
-    -- More components than frames must wrap rather than fail.
-    assertEqual(componentHost.phaseOffset(4, 5), 0)
-    assertEqual(componentHost.phaseOffset(4, 6), 1)
+    -- More panels than frames must wrap rather than fail.
+    assertEqual(panelHost.phaseOffset(4, 5), 0)
+    assertEqual(panelHost.phaseOffset(4, 6), 1)
 
     -- The contract rejects a nonsensical interval rather than misscheduling.
     local function rejects(interval)
-        local ok = componentHost.validateModule(
+        local ok = panelHost.validateModule(
             { id = "d", apiVersion = 1, create = function() end, refreshInterval = interval },
             "d"
         )
@@ -2456,15 +2424,13 @@ local function testRefreshScheduling()
     rejects(-1)
     rejects(1.5)
     rejects("fast")
-    assert(
-        componentHost.validateModule({ id = "d", apiVersion = 1, create = function() end, refreshInterval = 0 }, "d")
-    )
+    assert(panelHost.validateModule({ id = "d", apiVersion = 1, create = function() end, refreshInterval = 0 }, "d"))
 end
 
 --- Every origin wording must fit the width it is given, and must step down
 --- through phrasings that still read as sentences rather than being clipped.
 local function testOriginCaptionFits()
-    local navigation = loadModule("components/navigation.lua")
+    local navigation = loadModule("panels/navigation.lua")
     local fix = { known = true, fix = true, home = true, state = "normal" }
     local noHome = { known = true, fix = true, home = false, state = "normal" }
     local noSource = { known = false }
@@ -2513,7 +2479,7 @@ testModelFilenameResolution()
 testUnknownKeysArePreserved()
 testMalformedInput()
 testInvalidEntryIsIsolated()
-testComponentContract()
+testPanelContract()
 testSupportedSpans()
 testSettingsResolution()
 testSettingsVocabulary()
@@ -2525,7 +2491,7 @@ testReflowGoesThroughReconcile()
 testRenderConsultsWhatIsShown()
 testLinkThresholdsNeedAStatedReading()
 testSpecificationExamplesLoad()
-testComponentDocumentationLoads()
+testPanelDocumentationLoads()
 testLifecycleIsolation()
 testColorConversion()
 testModernTheme()
@@ -2545,7 +2511,7 @@ testMetricDirection()
 testContentFitsPanel()
 
 --- A published snapshot must be readable and impossible to corrupt, because
---- several components share the same one.
+--- several panels share the same one.
 local function testSnapshotsAreImmutable()
     local state = { value = 1, name = "RxBt" }
     local view = services.snapshot(state)
@@ -2670,7 +2636,7 @@ end
 --- (`radio/src/lua/api_general.cpp`). The service has mapped unit 42 to a
 --- `text` kind since it was written and **nothing had ever exercised it**,
 --- because no fixture carried a text sensor. That is covered here whether or
---- not a component ever reads one.
+--- not a panel ever reads one.
 ---
 --- The absent case is checked alongside, because it is the common one: FrSky
 --- S.Port publishes no flight mode sensor at all, so a layout naming `FM` on
@@ -2696,7 +2662,7 @@ local function testTelemetryTextSensor()
     assertEqual(
         mode.value,
         nil,
-        "a text sensor must offer no numeric value; a component reading one"
+        "a text sensor must offer no numeric value; a panel reading one"
             .. " would get a number for a string and format it"
     )
     assertEqual(mode.available, true)
@@ -2743,7 +2709,7 @@ local function testTelemetryFreshness()
     local altitude = service:subscribe("Alt")
     local missing = service:subscribe("Nope")
 
-    -- Two components naming one source must share a single poll.
+    -- Two panels naming one source must share a single poll.
     assert(service:subscribe("RxBt") == pack, "a duplicate subscription was made")
     assertEqual(service.count, 3)
 
@@ -3213,7 +3179,7 @@ local function testNavigationService()
     assertEqual(view.age, 1, "the reported fix age was ignored")
     assert(math.abs(view.distance - 777) < 20, "distance was " .. tostring(view.distance))
     assert(math.abs(view.bearing - 9.6) < 2, "bearing was " .. tostring(view.bearing))
-    assertEqual(view.distanceSource, "computed")
+    assertEqual(view.distanceUnit, "m")
 
     -- The reciprocal must differ, which proves the bearing runs home to model
     -- rather than the other way round.
@@ -3245,26 +3211,22 @@ local function testNavigationService()
     assertEqual(view.fix, false)
     assertEqual(view.state, "unavailable")
 
-    -- A configured native distance sensor wins over the computed one.
-    local native = service:subscribe("GPS2")
+    local second = service:subscribe("GPS2")
     harness.fields.GPS2 = harness.fields.GPS
-    assertEqual(native.state, "unavailable")
-
-    local preferring = navigationService.new(harness.env, services, runtime)
-    local withNative = preferring:subscribe("GPS", "Dist")
+    assertEqual(second.state, "unavailable")
     harness.values[400].lat = 47.3769
     harness.values[400].lon = 8.5417
     harness.values[400]["pilot-lat"] = 47.3700
     harness.values[400]["pilot-lon"] = 8.5400
     telemetry:update(3)
-    preferring:update(3)
-    assertEqual(withNative.distance, 812)
-    assertEqual(withNative.distanceUnit, "m")
-    assertEqual(withNative.distanceSource, "source")
+    service:update(3)
+    assert(math.abs(view.distance - 777) < 20)
+    assertEqual(service:subscribe("GPS"), view)
+    assertEqual(second.distance, view.distance)
 
     -- A GPS source that has never produced a table must not raise.
-    local absent = preferring:subscribe("NoGps")
-    preferring:update(4)
+    local absent = service:subscribe("NoGps")
+    service:update(4)
     assertEqual(absent.state, "unavailable")
     assertEqual(navigationService.formatDistance(nil), "--")
     assertEqual(navigationService.formatDistance(450), "450m")
@@ -3323,7 +3285,7 @@ local function testWidthIsMeasuredNotEstimated()
     -- allowance per character, sized between a digit and a capital, so the
     -- direction of its error depends on what the string holds. This used to be
     -- asserted as a general property of "the readings this dashboard prints",
-    -- which was a claim about every component made by looking at one kind of
+    -- which was a claim about every panel made by looking at one kind of
     -- string.
     local checked = 0
     for _, sample in ipairs({ "7.9", "10.0", "88.8", "-100", "888.88", "1:04:12" }) do
@@ -3345,7 +3307,7 @@ local function testWidthIsMeasuredNotEstimated()
     -- sizes its panel against a row of `M`, because `LEN_MODEL_NAME` is 15 and
     -- that is the widest name EdgeTX will store. A capital advances wider than
     -- the allowance, so the estimate reports less than the truth for exactly
-    -- the string that component fits against -- and a fit that believes it
+    -- the string that panel fits against -- and a fit that believes it
     -- draws past the panel edge rather than shrinking. Pinned here so the
     -- boundary above cannot be read as a general guarantee again.
     for _, font in ipairs(theme.READING_FONTS) do
@@ -3405,7 +3367,7 @@ end
 ---
 --- The function decides whether a panel keeps its visualization at all, and
 --- until now it had no test of its own: it was covered only through whatever
---- the components happened to draw. That was survivable while a reading was
+--- the panels happened to draw. That was survivable while a reading was
 --- fitted into half a panel before it ever reached here, because then it
 --- could not reach the far edge. Readings take the size the whole panel
 --- allows now, so both boundaries are live and both have to be answered.
@@ -3674,7 +3636,7 @@ end
 --- A cell's outline is lighter beside a smaller number, all the way down.
 ---
 --- The integration test drives the two fonts the grid actually produces. This
---- walks the whole ladder, including the two the component cannot currently
+--- walks the whole ladder, including the two the panel cannot currently
 --- reach, because `theme.fitReading` will hand back any of the five and a
 --- stroke that only behaved at the two in use would be a trap for whoever
 --- reaches the others.
@@ -3835,7 +3797,7 @@ end
 --- A clock never outgrows the form its font was chosen from.
 ---
 --- **A sizing form is a claim about the future**, and nothing in this suite
---- could check one: it names the widest string a component will ever print,
+--- could check one: it names the widest string a panel will ever print,
 --- and "ever" is not a thing a fixture can build. This project has now been
 --- wrong about it twice, in opposite directions and with opposite costs.
 ---
@@ -3855,16 +3817,16 @@ end
 ---
 --- Neither was catchable by measuring the form, because in both cases the
 --- form was measured correctly and was the wrong string. What is checkable
---- is the **loop**: where a component bounds what it can print, the bound's
+--- is the **loop**: where a panel bounds what it can print, the bound's
 --- own output must equal the form. That is what this asserts, and it is why
 --- `flight-timer.FORMS` is `-99:59` -- a value the clamp can actually
 --- produce -- rather than a row of eights that is not even a valid clock.
 ---
---- It only reaches a component that *has* a bound. `model-identity`'s name
+--- It only reaches a panel that *has* a bound. `model-identity`'s name
 --- comes from the pilot and has none, which is the residue: see the
 --- specification's note on forms.
 local function testClockNeverOutgrowsItsForm()
-    local timer = loadModule("components/flight-timer.lua")
+    local timer = loadModule("panels/flight-timer.lua")
 
     -- The bound, stated in seconds and as the string it prints.
     assertEqual(timer.CLAMP, 99 * 60 + 59)
@@ -3892,7 +3854,7 @@ local function testClockNeverOutgrowsItsForm()
     )
 
     -- And the form is the wider of the two signs, because a sign costs width
-    -- and the negative one is the reachable state this component exists for.
+    -- and the negative one is the reachable state this panel exists for.
     assert(
         theme.measureText(theme.READING_FONTS[1], timer.FORMS[1])
             >= theme.measureText(theme.READING_FONTS[1], timer.formatClock(timer.CLAMP)),
@@ -3900,7 +3862,7 @@ local function testClockNeverOutgrowsItsForm()
     )
 
     -- The clamp bounds magnitude and leaves direction alone. An expired
-    -- countdown is negative and is the one state this component must never
+    -- countdown is negative and is the one state this panel must never
     -- let be misread as healthy, so the sign survives whatever the magnitude.
     assertEqual(timer.clamp(5999), 5999, "a value inside the bound moved")
     assertEqual(timer.clamp(-5999), -5999)
@@ -3941,7 +3903,7 @@ end
 --- A reading that holds no redundancy offers exactly one form.
 ---
 --- This is the magnitude rule, checked at the only place it can be: the forms
---- a component declares. Every entry below is a reading with nothing to give
+--- a panel declares. Every entry below is a reading with nothing to give
 --- up, and offering it a shorter form would mean dropping a digit, a clock
 --- field, or a unit that is not redundant. `flight-timer` had such a form and
 --- it turned `1:04:12` into `04:12`, an hour reported as four minutes.
@@ -3951,7 +3913,7 @@ local function testLosslessReadingsOfferOneForm()
     }
 
     for _, case in ipairs(cases) do
-        local module = loadModule("components/" .. case[1] .. ".lua")
+        local module = loadModule("panels/" .. case[1] .. ".lua")
         local forms = module[case[2]]
         assert(type(forms) == "table", case[1] .. " declares no forms")
         if case[3] then
@@ -3962,12 +3924,12 @@ local function testLosslessReadingsOfferOneForm()
     -- A distance cannot shorten, and unlike a voltage it cannot drop its unit
     -- either: the unit changes with range, so `1.23km` and `1.23m` are
     -- different readings rather than one abbreviated.
-    local navigation = loadModule("components/navigation.lua")
+    local navigation = loadModule("panels/navigation.lua")
     assertEqual(navigation.DIGITS, "888.88")
     assertEqual(navigation.UNIT, "km")
 
     -- And a metric, whose unit is a separate label entirely.
-    local metric = loadModule("components/metric.lua")
+    local metric = loadModule("panels/metric.lua")
     assertEqual(
         #metric.widestSample({ rangeMin = 0, rangeMax = 400 }, 1),
         1,
@@ -3977,7 +3939,7 @@ end
 
 --- The redraw decision covers the whole declaration, including its shape.
 ---
---- Comparing values alone is not enough, because a component may stop drawing
+--- Comparing values alone is not enough, because a panel may stop drawing
 --- something: a bar writes a zero tick only while its range
 --- spans zero, and drops the key when it no longer does. A comparison that
 --- walked only the new table would find every key it held unchanged and
@@ -4032,9 +3994,9 @@ end
 
 --- One ladder, so two panels of the same size answer the same question.
 ---
---- Every component used to decide its own composition and then fit its own
+--- Every panel used to decide its own composition and then fit its own
 --- string against the result, so identical panels disagreed twice over. The
---- assertions here are about *agreement between components*, which is the
+--- assertions here are about *agreement between panels*, which is the
 --- thing that was broken; a bound like "no larger than the box allows" was
 --- true of the old code too and would prove nothing.
 --- A heading lands in the same place whatever the panel's height.
@@ -4076,7 +4038,7 @@ local function testReadingsSitInTheirBand()
     local cellWidth = math.floor((WIDTH - GUTTER * (CELLS - 1)) / CELLS)
     local cellHeight = math.floor((HEIGHT - GUTTER * (CELLS - 1)) / CELLS)
 
-    local identity = loadModule("components/model-identity.lua")
+    local identity = loadModule("panels/model-identity.lua")
     local checked = 0
 
     for _, span in ipairs(identity.supportedSpans) do
@@ -4096,12 +4058,12 @@ local function testReadingsSitInTheirBand()
         local layout = identity.presentationFor(settings, cols, rows)
         local area = identity.regionsFor(resolved, theme, rect, layout, fonts, settings)
 
-        -- Asked of the ladder the way every other component asks, and told what
+        -- Asked of the ladder the way every other panel asks, and told what
         -- this panel draws rather than what its span permits: a name-only panel
         -- draws no supporting row.
         local frame = theme.frame(resolved, rect, fonts)
         local ladder = theme.ladder(resolved, rect, frame, { rows = layout.showLabels == true })
-        -- Ink, as the component asks and as every other reading is placed.
+        -- Ink, as the panel asks and as every other reading is placed.
         local expected = theme.bodyTop(ladder, theme.fontAscent(area.nameFont))
 
         checked = checked + 1
@@ -4493,7 +4455,7 @@ local function testReadingForms()
     )
 
     -- With nothing to give up, the font steps instead. Offering one form is how
-    -- a component says its reading holds no redundancy.
+    -- a panel says its reading holds no redundancy.
     local only = theme.fitReading({ "-88:88:88" }, 150, 80)
     assert(
         theme.fontHeight(only) < theme.fontHeight(kept),
@@ -4511,7 +4473,7 @@ local function testReadingForms()
     -- because that is the widest name EdgeTX will store. At `1 x 2` that chose
     -- MIDSIZE for a form the estimate called 101 px and the font draws in 116,
     -- against 105 px of content -- eleven pixels past the panel, in a
-    -- component whose whole reading is the name. Every form here used to be
+    -- panel whose whole reading is the name. Every form here used to be
     -- digits, so nothing in the suite stood where that happened.
     for _, width in ipairs({ 400, 226, 160, 105, 60, 30 }) do
         for _, forms in ipairs({
@@ -4595,33 +4557,39 @@ local function testBipolarGeometry()
     assertEqual(upright.fill.last.y, 50, "negative deflection must grow downward")
 end
 
---- Presets supply defaults without overriding anything the layout states.
-local function testMetricPresets()
-    local metric = loadModule("components/metric.lua")
+--- Explicit settings retain their values; missing presentation gets defaults.
+local function testMetricDefaults()
+    local metric = loadModule("panels/metric.lua")
 
-    local preset = { preset = "altitude" }
-    metric.applyPreset(preset)
-    assertEqual(preset.label, "ALT")
-    assertEqual(preset.source, "Alt")
-    assertEqual(preset.accent, "green")
-    assertEqual(preset.rangeMax, 400)
-    assertEqual(preset.extrema, "source")
-    assertEqual(preset.secondarySource, "VSpd")
-
-    -- Anything stated in the layout wins over the preset.
-    local overridden = { preset = "altitude", label = "HEIGHT", rangeMax = 1200, source = "GAlt", extrema = "flight" }
-    metric.applyPreset(overridden)
-    assertEqual(overridden.label, "HEIGHT")
-    assertEqual(overridden.rangeMax, 1200)
-    assertEqual(overridden.source, "GAlt")
-    assertEqual(overridden.extrema, "flight")
-
-    -- An unknown preset and an unknown extrema mode both fall back safely.
-    local unknown = { preset = "nonsense", extrema = "sometimes" }
-    metric.applyPreset(unknown)
-    assertEqual(unknown.label, "METRIC")
-    assertEqual(unknown.extrema, "none")
-    assertEqual(unknown.extremaMode, "max")
+    local settings, warnings = panelHost.resolveSettings(metric, {
+        metrics = { { source = "Alt", label = "HEIGHT", rangeMax = 1200 } },
+    })
+    assertEqual(#warnings, 0)
+    assertEqual(settings.accent, "cyan")
+    assertEqual(settings.visual, "bar")
+    assertEqual(settings.metrics[1].label, "HEIGHT")
+    assertEqual(settings.metrics[1].rangeMax, 1200)
+    assert(#metric.validateSettings({}) > 0, "missing metrics must be rejected")
+    for _, key in ipairs({
+        "preset",
+        "source",
+        "label",
+        "unit",
+        "precision",
+        "rangeMin",
+        "rangeMax",
+        "warning",
+        "critical",
+        "direction",
+        "extrema",
+        "extremaMode",
+        "extremaSource",
+        "secondarySource",
+        "secondaryLabel",
+    }) do
+        local _, rejected = panelHost.resolveSettings(metric, { metrics = { { source = "Alt" } }, [key] = "old" })
+        assert(#rejected > 0, key .. " was silently accepted")
+    end
 
     -- The forms decide the font, so they must come from the bounds rather than
     -- from whichever value happens to be showing.
@@ -4638,7 +4606,7 @@ local function testMetricPresets()
     )
 end
 
---- The composition table in `docs/components/tx-battery.md` is true.
+--- The composition table in `docs/panels/tx-battery.md` is true.
 ---
 --- That page tells someone configuring a dashboard which spans show the bar
 --- and which show the percentage, and which span drops the unit. Those are
@@ -4651,7 +4619,7 @@ end
 --- happened to contain those words and would say nothing about what a person
 --- sees.
 local function testTxBatteryComposition()
-    local battery = loadModule("components/tx-battery.lua")
+    local battery = loadModule("panels/tx-battery.lua")
     local resolved = theme.build("modern")
 
     -- span, reading font, unit shown, cell w x h, outline, percentage under
@@ -4849,7 +4817,7 @@ end
 --- Identity presentation, and the file check that stands in for a decode the
 --- LVGL image object never reports back to Lua.
 local function testIdentityPresentation()
-    local identity = loadModule("components/model-identity.lua")
+    local identity = loadModule("panels/model-identity.lua")
 
     assertEqual(identity.presentationFor({ presentation = "name" }, 4, 4).showImage, false)
     assertEqual(identity.presentationFor({ presentation = "image" }, 1, 1).showName, false)
@@ -4867,7 +4835,7 @@ local function testIdentityPresentation()
     local _, unchecked = identity.fileExists("/IMAGES/plane.png")
     assertEqual(unchecked, false, "without fstat nothing can be proven, so the fallback must stay")
 
-    -- A firmware whose fstat raises must not take the component with it.
+    -- A firmware whose fstat raises must not take the panel with it.
     fstat = function()
         error("no filesystem")
     end
@@ -5051,7 +5019,7 @@ end
 --- A dial that cannot be read is not worth the pixels, so it is dropped
 --- before the dominant reading is shrunk.
 local function testNavigationRegions()
-    local navigation = loadModule("components/navigation.lua")
+    local navigation = loadModule("panels/navigation.lua")
     local resolved = theme.build("modern")
     local fonts = theme.typography(2, 2)
     local layout = navigation.presentationFor("detailed")
@@ -5140,14 +5108,14 @@ local function testNavigationRegions()
     assertEqual(tiny.valueBudget, tiny.content, "the reading did not reclaim the room")
 end
 
---- Every region of the three telemetry components, at every span they claim,
+--- Every region of the three telemetry panels, at every span they claim,
 --- must clear every other region. Two rows resolved onto the same line draw
 --- over each other on the radio and look like one unreadable smear, and
 --- nothing about the resolved numbers says so unless it is asserted.
 local function testTelemetryContentFitsPanel()
-    local cellBattery = loadModule("components/cell-battery.lua")
-    local linkStatus = loadModule("components/link-status.lua")
-    local navigationComponent = loadModule("components/navigation.lua")
+    local cellBattery = loadModule("panels/cell-battery.lua")
+    local linkStatus = loadModule("panels/link-status.lua")
+    local navigationPanel = loadModule("panels/navigation.lua")
     local resolved = theme.build("modern")
     local heightOf = theme.fontHeight
 
@@ -5209,7 +5177,7 @@ local function testTelemetryContentFitsPanel()
             -- of what an inline unit can get wrong.
             local carried =
                 theme.readingWidth(valueFont, reading.digits, area.unitFont, area.showUnit and reading.unit or nil)
-            -- **The reading fits, or the component had nothing left to spend.**
+            -- **The reading fits, or the panel had nothing left to spend.**
             -- The 60 x 40 stress case used to be excused from this outright, on
             -- the grounds that a panel narrower than any the grid builds cannot
             -- fit the widest reading -- and the excuse asserted that the font had
@@ -5296,15 +5264,9 @@ local function testTelemetryContentFitsPanel()
         end
 
         for _, presentation in ipairs({ "distance", "bearing", "compass", "detailed" }) do
-            local navLayout = navigationComponent.presentationFor(presentation)
-            local nav = navigationComponent.regionsFor(
-                resolved,
-                theme,
-                rect,
-                navLayout,
-                fonts,
-                { digits = "888.88", unit = "km" }
-            )
+            local navLayout = navigationPanel.presentationFor(presentation)
+            local nav =
+                navigationPanel.regionsFor(resolved, theme, rect, navLayout, fonts, { digits = "888.88", unit = "km" })
             local what = "navigation/" .. presentation
             -- The room, as `cell-battery` and `link-status` pass their `content`
             -- above. This asked for `valueWidth` while that field meant both the
@@ -5316,7 +5278,7 @@ local function testTelemetryContentFitsPanel()
                 nav,
                 nav.value,
                 nav.valueBudget,
-                { digits = navigationComponent.DIGITS, unit = navigationComponent.UNIT }
+                { digits = navigationPanel.DIGITS, unit = navigationPanel.UNIT }
             )
 
             if nav.showDetail then
@@ -5349,7 +5311,7 @@ local function testTelemetryContentFitsPanel()
                 -- **And the dial clears the rows beneath it.** This is the one the
                 -- catalogue had no check for: a dial is not a label, so the
                 -- integration suite's collision check sees it, but no shipped layout
-                -- draws this component with two supporting rows *and* a compass, so
+                -- draws this panel with two supporting rows *and* a compass, so
                 -- nothing exercised the pair. The dial used to be sized against
                 -- whatever vertical room was left and stand from the content top
                 -- downward, which put it 44 by 2 pixels through the row below at
@@ -5393,13 +5355,13 @@ local function testTelemetryContentFitsPanel()
     assertEqual(shedLink.showDetail, false, "link-status kept a supporting row a short panel could not afford")
     assert(heightOf(shedLink.value) >= heightOf(MIDSIZE), "link-status shed a row without buying its reading any size")
 
-    local shedNav = navigationComponent.regionsFor(
+    local shedNav = navigationPanel.regionsFor(
         resolved,
         theme,
         squeezed,
-        navigationComponent.presentationFor("detailed"),
+        navigationPanel.presentationFor("detailed"),
         wideFonts,
-        { digits = navigationComponent.DIGITS, unit = navigationComponent.UNIT }
+        { digits = navigationPanel.DIGITS, unit = navigationPanel.UNIT }
     )
     assertEqual(shedNav.showCoordinates, false, "navigation kept a coordinates row a short panel could not afford")
     assert(heightOf(shedNav.value) >= heightOf(MIDSIZE), "navigation shed a row without buying its reading any size")
@@ -5434,7 +5396,7 @@ testSharedLadder()
 testReadingForms()
 testLabelFitting()
 testBipolarGeometry()
-testMetricPresets()
+testMetricDefaults()
 testTxBatteryComposition()
 testIdentityPresentation()
 testTelemetryLinkView()

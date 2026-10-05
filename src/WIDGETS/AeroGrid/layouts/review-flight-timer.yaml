@@ -9,7 +9,7 @@
 # radio, and without it every panel here would read `0:00` and say
 # `COUNTING UP`.
 #
-# **The row is the reason this component exists.** Its own header says a
+# **The row is the reason this panel exists.** Its own header says a
 # countdown run past zero is easy to misread as a healthy timer, so the panel
 # states it in words as well as showing the minus sign. `EXPIRED` is that
 # word.
@@ -28,7 +28,7 @@
 # `theme.fitLabel` like every other supporting row in the catalogue; a
 # single-entry list comes back out of it unchanged. A ladder earns its place
 # only where the longer form carries something the shorter cannot, and this
-# component had no such pair to offer.
+# panel had no such pair to offer.
 #
 # **The clock is sized for the widest reading it can print, and no wider.**
 # Its single form is `-99:59`, which is what the display clamp produces at
@@ -49,7 +49,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   # The overflow, and a panel wide enough to hold the same sentence. Both
   # show the expired countdown; only the narrow one cannot fit the words.
   - id: expired-narrow
@@ -74,7 +74,7 @@ components:
       accent: amber
 
   # The same expired countdown with no supporting row at all. This is the
-  # panel to look at hardest: the sentence the component exists to say is not
+  # panel to look at hardest: the sentence the panel exists to say is not
   # here, and what is left is a minus sign and a badge.
   - id: expired-bare
     type: flight-timer

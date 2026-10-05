@@ -1,13 +1,13 @@
 version: 1
 
-# Span gallery, 2 x 1: the eight components carrying a dominant telemetry or
+# Span gallery, 2 x 1: the eight panels carrying a dominant telemetry or
 # radio reading, all at two cells wide and one tall.
 #
 # Set the widget's Dashboard ID to `span2x1` to load this screen on any model.
 #
 # This is the span where the responsive ladder stops making sense, and it is
 # the reason this gallery exists. Compare it against `span1x1`, which shows the
-# same components on panels a quarter the area:
+# same panels on panels a quarter the area:
 #
 #   * The metric's reading is *smaller* here than it is at one cell. A 2 x 1 is
 #     the same height as a 1 x 1 and twice the width, but the presentation adds
@@ -28,7 +28,7 @@ grid:
   columns: 4
   rows: 4
 
-components:
+panels:
   - id: g-metric
     type: metric
     col: 0
@@ -36,12 +36,13 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      label: Metric
-      source: RxBt
-      unit: V
-      rangeMin: 6.0
-      rangeMax: 8.4
-      precision: 1
+      metrics:
+        - source: RxBt
+          label: Metric
+          unit: V
+          precision: 1
+          rangeMin: 6.0
+          rangeMax: 8.4
 
   - id: g-cells
     type: cell-battery
@@ -109,6 +110,7 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      source: gvar1
-      precision: 1
+      metrics:
+        - source: gvar1
+          precision: 1
       visual: none

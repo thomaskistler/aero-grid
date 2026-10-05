@@ -6,7 +6,7 @@
 --- so nothing depends on a link. What can still go wrong is a missing API: not
 --- every firmware build exposes every model function, and a timer index may be
 --- out of range. Each facet therefore degrades to "unavailable" instead of
---- raising, and only facets a loaded component subscribed to are ever read.
+--- raising, and only facets a loaded panel subscribed to are ever read.
 
 ---@class AeroGridModelIdentity
 ---@field available boolean
@@ -130,7 +130,7 @@ function modelService:readIdentity(state, now)
 
     local bitmap = type(info.bitmap) == "string" and info.bitmap or ""
     state.bitmap = bitmap
-    -- A component still has to open the file; the service only resolves where
+    -- A panel still has to open the file; the service only resolves where
     -- it lives, because a missing image must fall back to the model name.
     state.bitmapPath = bitmap ~= "" and (modelService.IMAGE_PATH .. bitmap) or nil
 end
@@ -291,7 +291,7 @@ end
 --- Read once rather than watched: a model change destroys and rebuilds every
 --- widget, because `LayoutFactory::deleteCustomScreens` runs before
 --- `loadModel` and `loadCustomScreens` after it, so the set of names cannot
---- change underneath a component that is still alive.
+--- change underneath a panel that is still alive.
 ---@return string widest
 function modelService:widestFlightModeName()
     if self.widestMode then
@@ -421,7 +421,7 @@ function modelService:batteryRange()
 end
 
 --- Subscribe to the transmitter battery voltage.
---- Shaped like a telemetry reading so a component can render either without
+--- Shaped like a telemetry reading so a panel can render either without
 --- special casing, even though this source never depends on the link.
 ---@return AeroGridReading
 function modelService:txVoltage()

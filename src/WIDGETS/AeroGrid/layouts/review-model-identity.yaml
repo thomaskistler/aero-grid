@@ -1,6 +1,6 @@
 # Review harness for `model-identity`. Not a dashboard.
 #
-# One review screen exists at a time and its Dashboard ID names the component
+# One review screen exists at a time and its Dashboard ID names the panel
 # under review; this replaces whatever preceded it as the screen's target
 # rather than adding an eleventh screen, because `MAX_CUSTOM_SCREENS` is 10
 # and the fixture already carries ten. Earlier review layouts stay in the
@@ -8,7 +8,7 @@
 #
 # **Read this screen against the model name you have set.** Every panel draws
 # the same model and the same picture, because there is only one model
-# loaded. The review is of what this component does with *your* name and
+# loaded. The review is of what this panel does with *your* name and
 # *your* picture, so set the name to something fifteen characters long --
 # `QUADCOPTER RACE` is a real one -- and then to `Hawk`, and compare.
 #
@@ -67,8 +67,8 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
-  # The corner. A single cell is the narrowest heading this component can be
+panels:
+  # The corner. A single cell is the narrowest heading this panel can be
   # asked to draw a model name into, so it is where the heading's own
   # abbreviation shows: a fifteen-character name is cut and what was dropped
   # is reported to the host. Alone in the corner, so the menu button's
