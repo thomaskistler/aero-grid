@@ -7,24 +7,24 @@
 - Status last updated: 2026-10-04
 - EdgeTX source: `../edgetx`
 - Project root: `aero-grid/`
-- Implementation: Phase 1, milestones 1 to 8 complete; eleven shipped components, five using the shared standard panel; all nine display panels reviewed and documented. Global-variable display uses ordinary metric sources.
+- Implementation: Phase 1, milestones 1 to 8 complete; eleven shipped panels, five using the shared standard panel; all nine display panels reviewed and documented. Global-variable display uses ordinary metric sources.
 - Next work: Milestone 9 target-matrix validation and resource baselining. Initial dashboard validation passed on TX16S v2 with EdgeTX 2.12.4, as reported by the user on 2026-10-04.
 - The retirement and software-hardening work is merged into `main`. The aircraft dashboard, compact-layout refinements, and initial hardware records are the current follow-up change set. See [Resuming work](#resuming-work) for the state and the exact next steps.
 
 ## Summary
 
-Build a modern EdgeTX dashboard as one Lua widget running in the built-in `1 x 1` or App mode layout. The dashboard divides its available area into a logical 4 x 4 grid and hosts rewritten widget-like Lua components. Each component occupies a configurable rectangular set of contiguous grid cells.
+Build a modern EdgeTX dashboard as one Lua widget running in the built-in `1 x 1` or App mode layout. The dashboard divides its available area into a logical 4 x 4 grid and hosts rewritten widget-like Lua panels. Each panel occupies a configurable rectangular set of contiguous grid cells.
 
-EdgeTX does not support nesting independently registered widgets inside one layout zone. Components therefore run under one dashboard host widget rather than as native child widgets. The host loads each component from its own Lua file, creates its LVGL parent container, dispatches lifecycle calls, and persists the component arrangement in a YAML file on the SD card.
+EdgeTX does not support nesting independently registered widgets inside one layout zone. Panels therefore run under one dashboard host widget rather than as native child widgets. The host loads each panel from its own Lua file, creates its LVGL parent container, dispatches lifecycle calls, and persists the panel arrangement in a YAML file on the SD card.
 
 ## Goals
 
 - Provide a logical 4 x 4 dashboard grid.
-- Place a component at any grid column and row.
-- Allow rectangular component sizes from 1 x 1 through 4 x 4.
-- Load each component implementation from a separate Lua script.
-- Use LVGL parent containers for component containment and clipping.
-- Provide an on-radio UI for adding, moving, resizing, configuring, and removing components.
+- Place a panel at any grid column and row.
+- Allow rectangular panel sizes from 1 x 1 through 4 x 4.
+- Load each panel implementation from a separate Lua script.
+- Use LVGL parent containers for panel containment and clipping.
+- Provide an on-radio UI for adding, moving, resizing, configuring, and removing panels.
 - Persist layouts per model in human-readable YAML.
 - Run without modifying EdgeTX firmware for the first implementation.
 - Support App mode for an application-like, decoration-free experience.
@@ -33,9 +33,9 @@ EdgeTX does not support nesting independently registered widgets inside one layo
 ## Non-Goals
 
 - Nest existing independently registered EdgeTX widget factories.
-- Make unmodified third-party widgets run as dashboard components.
+- Make unmodified third-party widgets run as dashboard panels.
 - Add a native dynamic layout to EdgeTX firmware in the first implementation.
-- Support non-rectangular or overlapping component regions.
+- Support non-rectangular or overlapping panel regions.
 - Use the EdgeTX model YAML parser directly from Lua; it is not exposed by the Lua API.
 - Provide internal multi-page dashboards; each AeroGrid instance renders one page.
 - Automatically detect or increment a flight counter; the initial implementation only displays an existing global variable.
@@ -103,31 +103,31 @@ EdgeTX 1 x 1 or App mode zone
 └── AeroGrid host widget
     ├── Layout manager
     ├── YAML configuration codec
-    ├── Component registry/loader
+    ├── Panel registry/loader
     ├── Lifecycle and event dispatcher
     ├── Dashboard editor
-    └── LVGL component containers
-      ├── Cell battery component
-      ├── Metric component
-      ├── Flight timer component
-      └── Other catalog components
+    └── LVGL panel containers
+      ├── Cell battery panel
+      ├── Metric panel
+      ├── Flight timer panel
+      └── Other catalog panels
 ```
 
-Only the dashboard host is registered as an EdgeTX widget. Dashboard components are ordinary Lua modules loaded and managed by the host.
+Only the dashboard host is registered as an EdgeTX widget. Dashboard panels are ordinary Lua modules loaded and managed by the host.
 
 ### The standard panel
 
-Most components are variations of one arrangement: a heading, a dominant reading, an optional compact visual beside it, and an optional supporting row beneath. The decisions that arrangement rests on have always lived in `theme` -- the frame, the ladder, the bands, the band-derived font, the two slots, the fitting. The **assembly** did not: every component repeated the same sequence of calls, and the same band was called `valueY` in one file, `nameY` in another and `clockY` in a third.
+Most panels are variations of one arrangement: a heading, a dominant reading, an optional compact visual beside it, and an optional supporting row beneath. The decisions that arrangement rests on have always lived in `theme` -- the frame, the ladder, the bands, the band-derived font, the two slots, the fitting. The **assembly** did not: every panel repeated the same sequence of calls, and the same band was called `valueY` in one file, `nameY` in another and `clockY` in a third.
 
 `theme.panel(resolved, rect, fonts, spec, out)` performs that assembly once. Three properties of its interface are deliberate and are the reason it exists rather than conveniences:
 
 - **It fills a table the caller owns.** A reflow runs every panel on the screen inside one callback, and a helper that returned a fresh table would allocate once per panel per reflow.
-- **It is told what the panel draws, never what its span permits.** `spec.draws` carries the component's own answer, and `theme.ladder` may only narrow it. The interface has no way to express "permitted", because the gap between the two is a recurring defect in this project rather than a subtlety.
-- **It builds nothing itself that the component was handed.** It takes `spec.frame` rather than calling `theme.frame`, because the host wraps that function per component to lay a panel out around the menu button's corner, and a shared helper reaching for the module's own copy draws the heading under the button.
+- **It is told what the panel draws, never what its span permits.** `spec.draws` carries the panel's own answer, and `theme.ladder` may only narrow it. The interface has no way to express "permitted", because the gap between the two is a recurring defect in this project rather than a subtlety.
+- **It builds nothing itself that the panel was handed.** It takes `spec.frame` rather than calling `theme.frame`, because the host wraps that function per panel to lay a panel out around the menu button's corner, and a shared helper reaching for the module's own copy draws the heading under the button.
 
-Five components use it: `cell-battery`, `flight-mode`, `flight-timer`, `link-status`, and `metric`. Three keep their own arrangement: `navigation` draws two supporting rows; `tx-battery` retains the arrangement recorded in the design guide; `model-identity` fits a picture and moves the model name into the heading. Three draw no panel reading and are exempt: `trim-panel`, `host-diagnostics`, and `service-probe`.
+Five panels use it: `cell-battery`, `flight-mode`, `flight-timer`, `link-status`, and `metric`. Three keep their own arrangement: `navigation` draws two supporting rows; `tx-battery` retains the arrangement recorded in the design guide; `model-identity` fits a picture and moves the model name into the heading. Three draw no panel reading and are exempt: `trim-panel`, `host-diagnostics`, and `service-probe`.
 
-**A component is expected to carry special code only where it has a special visualization** -- the compass, the battery glyph, the trim cells. A flag on the builder for one component's preference is the thing this is meant to replace, not a way of extending it: a builder that can express everything expresses nothing.
+**A panel is expected to carry special code only where it has a special visualization** -- the compass, the battery glyph, the trim cells. A flag on the builder for one panel's preference is the thing this is meant to replace, not a way of extending it: a builder that can express everything expresses nothing.
 
 **Font callbacks are installed once per label.** EdgeTX 2.12.4 overwrites
 callback registry references without releasing the previous one when a
@@ -142,29 +142,29 @@ the [hardware checklist](../docs/hardware-validation.md).
 
 ### Bundled EdgeTX widget baseline
 
-The bundled color-screen widgets are intentionally generic: Value, Gauge, Timer, Model Bitmap, Outputs, Text, Radio Info, Date/Time, and Internal GPS. AeroGrid should reuse their source selection and model APIs, but replace their presentation with a smaller set of responsive, domain-aware components.
+The bundled color-screen widgets are intentionally generic: Value, Gauge, Timer, Model Bitmap, Outputs, Text, Radio Info, Date/Time, and Internal GPS. AeroGrid should reuse their source selection and model APIs, but replace their presentation with a smaller set of responsive, domain-aware panels.
 
-### Component catalog
+### Panel catalog
 
-The initial release should provide these components:
+The initial release should provide these panels:
 
-| Component | Purpose | Classification |
+| Panel | Purpose | Classification |
 | --- | --- | --- |
 | `cell-battery` | Lowest/average cell or pack voltage, upright battery glyph, optional supporting voltage and measured/configured cell count; explicit bar mode retained | Specialized |
-| `metric` | Up to three independently configured numeric readings | Generic; legacy presets supported |
+| `metric` | Up to three independently configured numeric readings | Generic |
 | `flight-timer` | EdgeTX model timer with count-up or count-down presentation | Specialized |
 | `link-status` | RSSI, link quality, optional minimum quality, and link freshness | Specialized |
 | `navigation` | GPS position, bearing from home to model, distance to home, and GPS state | Specialized and responsive |
 | `flight-mode` | Current EdgeTX flight-mode name | Simple |
 | `model-identity` | Model bitmap, model name, or both | Specialized |
 | `tx-battery` | Transmitter voltage and optional battery indication | Simple; primarily intended for the status rail |
-| `trim-panel` | One or more effective trim positions in a centered dashboard panel | Specialized |
+| `trim-panel` | Three configured effective trim positions in a centered three-axis square | Specialized |
 | `service-probe` | The live state of one shared service, for diagnosis on the radio | Diagnostic |
 | `host-diagnostics` | What the host loaded and what it resolved to, in one section per panel | Diagnostic |
 
-Eleven components ship, two of them diagnostic. Two more, `heartbeat` and `placeholder`, live under `tests/fixtures/components`: they prove the host contract and never ship. `service-probe` inspects a service on the radio; `host-diagnostics` reports what the host loaded.
+Eleven panels ship, two of them diagnostic. Two more, `heartbeat` and `placeholder`, live under `tests/fixtures/panels`: they prove the host contract and never ship. `service-probe` inspects a service on the radio; `host-diagnostics` reports what the host loaded.
 
-The `metric` component accepts an ordered `metrics` list of one to three
+The `metric` panel accepts an ordered `metrics` list of one to three
 EdgeTX numeric sources. The first entry supplies the large reading and header;
 the second uses the lower-left supporting slot, and the third the lower-right.
 With only two entries the supporting reading is centred across the footer.
@@ -180,8 +180,12 @@ Each entry accepts `source`, optional `label` (defaults to the source name),
 optional `unit`, and optional `precision` (integer 0–3). Units and precision
 default independently to each sensor; an explicit empty unit suppresses it.
 Units label values without conversion. An unavailable reading shows `--`
-without a unit. Panel-level range, visualization, accent, and thresholds apply
-only to the primary reading. Sensor extrema are ordinary sources such as
+without a unit. Each entry also accepts `rangeMin`, `rangeMax`, `warning`,
+`critical`, and `direction`; these describe that source, not the panel.
+Only the primary entry's range and thresholds drive font sizing, visualization,
+and panel alarms. Supporting entries do not drive visuals or panel alarms.
+Visualization and accent remain panel-level settings.
+Sensor extrema are ordinary sources such as
 `GAlt-` and `GAlt+`; the list has no flight-session extrema option.
 
 ```yaml
@@ -189,7 +193,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: altitude
     type: metric
     col: 0
@@ -202,6 +206,8 @@ components:
           label: ALT
           unit: m
           precision: 0
+          rangeMin: 0
+          rangeMax: 400
         - source: GAlt+
           label: MAX
           unit: m
@@ -210,23 +216,13 @@ components:
           label: VS
           unit: m/s
           precision: 1
-      rangeMin: 0
-      rangeMax: 400
 ```
 
-When `metrics` is specified it replaces legacy source, label, unit, precision,
-extrema, and secondary settings. Existing layouts remain supported.
-The legacy configuration provides built-in presets without separate implementations:
+Each metric panel requires a `metrics` list. Sources, labels, units, precision,
+ranges, and thresholds belong to individual entries; accent and visualization
+belong to the panel.
 
-- `altitude`: current altitude, maximum altitude, and optional vertical speed.
-- `speed`: current speed and maximum speed.
-- `custom`: user-selected primary, extrema, and secondary sources.
-
-Presets establish labels, semantic accents, likely source defaults, and supported presentations. Every source remains user-selectable so the dashboard does not depend on protocol-specific sensor names.
-
-A preset cannot be expressed as a settings default, because the host fills declared defaults in before the component runs and a filled default is indistinguishable from a value the layout stated. Preset-overridable keys therefore declare an empty or absent default, and the component applies the preset to any key the layout left empty. Anything the layout states always wins.
-
-### Component requirements
+### Panel requirements
 
 #### Cell battery
 
@@ -238,11 +234,11 @@ A preset cannot be expressed as a settings default, because the host fills decla
 - Support warning, critical, stale, and unavailable states.
 - Optionally show cell count and summed pack voltage.
 - In text-only (`visual: none`) one-row panels at least two columns wide, allow count and supporting voltage in a right-side stack. Use the shared footer -> side -> hidden fallback without shrinking the primary. Disabled items reserve no empty stack row. One-row glyph/bar presentations do not support this stack; use two rows to combine the glyph with supporting values.
-- Do not estimate remaining battery percentage unless a future component explicitly defines and labels its estimation model.
+- Do not estimate remaining battery percentage unless a future panel explicitly defines and labels its estimation model.
 - Validate the table rather than trusting it. Entries that are not plausible cell voltages are rejected instead of folded into a lowest or an average, the walk is bounded because the table comes from the firmware, and a value that is not a table at all is reported as a configuration mistake rather than as a missing source.
 - Judge the thresholds on the worst cell even when the panel shows the pack sum, because a sum is exactly what hides one sagging cell.
-- With a pack-voltage source, judge those same per-cell thresholds on the derived average instead. This cannot detect a weak cell or imbalance. See [`cell-battery` settings](../docs/components/cell-battery.md).
-- Allow an explicitly configured lowest-cell source, such as `Cels-`, to win for that reading. The receiver maintaining it has seen samples between the dashboard's polls, and it keeps the component useful when the table itself is unreadable.
+- With a pack-voltage source, judge those same per-cell thresholds on the derived average instead. This cannot detect a weak cell or imbalance. See [`cell-battery` settings](../docs/panels/cell-battery.md).
+- Allow an explicitly configured lowest-cell source, such as `Cels-`, to win for that reading. The receiver maintaining it has seen samples between the dashboard's polls, and it keeps the panel useful when the table itself is unreadable.
 
 #### Metric
 
@@ -275,9 +271,9 @@ A preset cannot be expressed as a settings default, because the host fills decla
 
 #### Navigation
 
-- Accept a GPS source and an optional native distance source.
+- Accept a GPS source.
 - Use current and pilot coordinates returned by an EdgeTX GPS source to calculate distance and the initial bearing from the home/pilot position toward the model.
-- Prefer an explicitly selected native distance source when configured.
+- Calculate distance and bearing from the GPS and home positions.
 - Render direction as an absolute north-up bearing or compass arrow from home to model. Aircraft heading and transmitter orientation are not required and must not rotate this arrow.
 - Provide responsive modes: compact distance, distance and bearing, north-up compass/bearing arrow, and detailed navigation with coordinates.
 - `showBearing` and `showCoordinates` independently override the selected
@@ -299,7 +295,7 @@ A preset cannot be expressed as a settings default, because the host fills decla
 - Create the assigned image once, with `lvgl.image`, and retain the object. `Bitmap.open()` belongs to the legacy `lcd.drawBitmap` drawing model and cannot be rendered by an LVGL widget, so it is not used.
 - Fall back to the model name when the image is missing or cannot be loaded. EdgeTX's `StaticImage` clears its source and reports nothing to Lua when a file will not decode, so the file must be checked with `fstat` before the image object is created. Where `fstat` is unavailable the name stays visible alongside the image rather than being hidden behind a picture that may never appear.
 - Resolve the path as `/IMAGES/<bitmap>`, matching the firmware's own model bitmap widget.
-- Support name-only, image-only, and combined presentations subject to component span. An automatic choice must not spend space on a picture that a single cell cannot show.
+- Support name-only, image-only, and combined presentations subject to panel span. An automatic choice must not spend space on a picture that a single cell cannot show.
 
 #### Transmitter battery
 
@@ -311,12 +307,12 @@ A preset cannot be expressed as a settings default, because the host fills decla
 
 #### Trim panel
 
-- Present trims inside a normal grid component rather than along the display edges.
-- Offer `single`, `pair`, and `all` under `indicators` so a compact panel may show one trim while a larger panel may show the primary four.
-- Use a centered bipolar bar with a persistent neutral marker, signed displacement, and optional percentage or raw value.
-- Support horizontal and vertical orientations, with a per-indicator override when automatic axis metadata is unavailable.
+- Present trims inside a normal grid panel rather than along the display edges.
+- Always display the configured aileron, elevator, and rudder sources in a square three-axis arrangement, with aileron above, elevator left, and rudder below.
+- Use center-zero bars with persistent neutral markers, signed displacement, and optional percentage or raw readouts.
+- Plot aileron and elevator together with a dot; keep the axis positions and directions fixed.
 - Read effective current-flight-mode values through selectable EdgeTX trim sources so EdgeTX resolves trim inheritance.
-- Persist the selected trim source for each indicator rather than assuming fixed trim names or stick-mode mappings.
+- Persist the selected source for each axis, with defaults for aileron, elevator, and rudder.
 - Remain read-only in the initial release; changing trims remains the responsibility of EdgeTX trim controls.
 - Support `standard`, `extended`, and `auto` display scales. Auto may expand after observing a value outside the standard range, but cannot reliably detect the model's extended-trim setting because EdgeTX does not expose that flag to Lua. A trim source returns eight times the stored trim, and EdgeTX clamps that to `TRIM_MAX` or `TRIM_EXTENDED_MAX`, so the raw spans are 1024 and 4096, not 1000 and 4000. Rounding those down makes a standard trim held at its own end stop widen the scale permanently.
 - Clearly represent centered, positive, negative, unavailable, and unsupported three-position trim states. A three-position trim returns full deflection or nothing, which is exactly what a standard trim at its end stop returns, so one sample can never distinguish them. `controlService` claims a toggle only after seeing both a centre and a full deflection with no intermediate position between them.
@@ -335,11 +331,11 @@ no pinned-flight-mode display option, and no bipolar metric visualization.
 
 Deferred. EdgeTX's own top bar already provides a configurable widget rail that reserves the same corner and costs no Lua instruction budget, and a dashboard-owned rail in App mode leaves no more grid area than inserting AeroGrid as an ordinary Full screen widget. The full reasoning, and the settled default should it be revisited, is under [Why there is no status rail](#why-there-is-no-status-rail).
 
-Were it built, the optional dashboard-owned rail would carry model name, flight mode, transmitter voltage, link state, clock, and active timer items, reusing the same shared services as grid components rather than polling again. Enabling it would reduce the rectangle available to the 4 x 4 grid and must trigger a complete grid geometry update.
+Were it built, the optional dashboard-owned rail would carry model name, flight mode, transmitter voltage, link state, clock, and active timer items, reusing the same shared services as grid panels rather than polling again. Enabling it would reduce the rectangle available to the 4 x 4 grid and must trigger a complete grid geometry update.
 
 ### Shared services
 
-The host provides shared services so components do not duplicate polling, conversion, or tracking logic:
+The host provides shared services so panels do not duplicate polling, conversion, or tracking logic:
 
 - `telemetryService`: source lookup, cached values, units, freshness, and stale/unavailable classification.
 - `extremaService`: source, session, and flight minimum/maximum tracking.
@@ -348,12 +344,12 @@ The host provides shared services so components do not duplicate polling, conver
 - `controlService`: current flight mode, resolved trim-source values, global-variable values, bounds, precision, and units.
 - `themeService`: resolved semantic colors, contrast correction, and state precedence.
 
-Two rules keep that affordable, because every service update is charged to the same per-callback instruction budget as component refreshes:
+Two rules keep that affordable, because every service update is charged to the same per-callback instruction budget as panel refreshes:
 
-- A service only reads what a loaded component subscribed to. A service nothing references is skipped entirely, so a dashboard of metrics never pays for GPS, trims, or global variables.
+- A service only reads what a loaded panel subscribed to. A service nothing references is skipped entirely, so a dashboard of metrics never pays for GPS, trims, or global variables.
 - At most one service is updated per host cycle, chosen round robin among those due, and each service caps how many subscriptions it refreshes in one update. Per-callback cost follows the caps, not the layout.
 
-Components consume immutable snapshots. A service mutates its own state table in place, which allocates nothing per cycle, and publishes a proxy whose writes raise. Services update before component refreshes, so every component rendering a cycle sees one consistent set of readings.
+Panels consume immutable snapshots. A service mutates its own state table in place, which allocates nothing per cycle, and publishes a proxy whose writes raise. Services update before panel refreshes, so every panel rendering a cycle sees one consistent set of readings.
 
 ## Proposed SD-Card Structure
 
@@ -364,7 +360,7 @@ Components consume immutable snapshots. A service mutates its own state table in
 ├── grid.lua
 ├── layout_store.lua
 ├── yaml.lua
-├── components/
+├── panels/
 │   ├── cell-battery.lua
 │   ├── metric.lua
 │   ├── flight-timer.lua
@@ -390,18 +386,18 @@ Components consume immutable snapshots. A service mutates its own state table in
     └── <model-identifier>--<dashboard-id>.yaml
 ```
 
-EdgeTX automatically registers `/WIDGETS/AeroGrid/main.lua`. Files under `components/` are loaded by the dashboard and are not independently registered widgets.
+EdgeTX automatically registers `/WIDGETS/AeroGrid/main.lua`. Files under `panels/` are loaded by the dashboard and are not independently registered widgets.
 
-The package ships with bundled components. Advanced users may add compatible component files directly under `/WIDGETS/AeroGrid/components/`. The host loads only component types referenced by the active YAML, requires a compatible component API version, and rejects unsafe names and paths.
+The package ships with bundled panels. Advanced users may add compatible panel files directly under `/WIDGETS/AeroGrid/panels/`. The host loads only panel types referenced by the active YAML, requires a compatible panel API version, and rejects unsafe names and paths.
 
-The widget `create(zone, options, path)` callback receives the widget folder path. Component scripts can therefore be loaded with:
+The widget `create(zone, options, path)` callback receives the widget folder path. Panel scripts can therefore be loaded with:
 
 ```lua
-local chunk, err = loadScript(path .. "components/cell-battery.lua")
+local chunk, err = loadScript(path .. "panels/cell-battery.lua")
 if not chunk then
   error(err)
 end
-local component = chunk()
+local panel = chunk()
 ```
 
 ## Grid Model
@@ -413,7 +409,7 @@ The dashboard uses zero-based logical coordinates:
 - `colSpan`: 1 through `4 - col`
 - `rowSpan`: 1 through `4 - row`
 
-Components must occupy contiguous rectangular cells and must not overlap.
+Panels must occupy contiguous rectangular cells and must not overlap.
 
 Pixel boundaries are calculated independently to avoid cumulative rounding gaps:
 
@@ -431,11 +427,11 @@ local rect = {
 }
 ```
 
-The host creates one LVGL box or equivalent parent object for each rectangle. Components use coordinates relative to their own parent. Recursive LVGL children and explicit parent objects are supported by EdgeTX in `api_colorlcd_lvgl.cpp`.
+The host creates one LVGL box or equivalent parent object for each rectangle. Panels use coordinates relative to their own parent. Recursive LVGL children and explicit parent objects are supported by EdgeTX in `api_colorlcd_lvgl.cpp`.
 
 ## Visual Design Direction
 
-**The design decisions and their reasoning live in [`aerogrid-design-guide.md`](aerogrid-design-guide.md).** Eight components draw a panel reading: five assemble it through `theme.panel`, while `model-identity`, `navigation`, and `tx-battery` use shared slots directly. All eleven shipped components use `theme.frame`. The three without a panel reading are `host-diagnostics`, `service-probe`, and `trim-panel`.
+**The design decisions and their reasoning live in [`aerogrid-design-guide.md`](aerogrid-design-guide.md).** Eight panels draw a panel reading: five assemble it through `theme.panel`, while `model-identity`, `navigation`, and `tx-battery` use shared slots directly. All eleven shipped panels use `theme.frame`. The three without a panel reading are `host-diagnostics`, `service-probe`, and `trim-panel`.
 
 The claim was true when this section was first written and survived the milestone that built it, the presentation pass, the vertical-rhythm pass and the #85 audit -- which corrected the same sentence in the design guide and did not find this copy. **That is the shape worth naming: a claim copied into two documents is corrected in one of them.** It is the fifth time in this project, and it is the most dangerous kind of stale, because a reader is told that a section describing working behaviour is aspirational and may build it a second time.
 
@@ -448,8 +444,8 @@ The primary reference viewport is 480 x 272, matching the TX16S and several othe
 - Optimize for recognition during flight: the current value, unit, label, trend, and warning state must be distinguishable at a glance.
 - Use dark neutral surfaces with luminance separation rather than a one-hue dark blue or slate palette.
 - Reserve saturated color for meaning: cyan for electrical or selected data, green for healthy/current state, amber for caution, red for critical state, and orange only where it identifies a distinct measurement family.
-- Use one dominant reading per component. Supporting values must be visibly secondary.
-- Keep component framing quiet. A panel is defined by its elevated fill against the darker screen, not by an outline. Prefer surface separation and a narrow semantic accent over any stroke.
+- Use one dominant reading per panel. Supporting values must be visibly secondary.
+- Keep panel framing quiet. A panel is defined by its elevated fill against the darker screen, not by an outline. Prefer surface separation and a narrow semantic accent over any stroke.
 - **The fill is a condition of the data; the outline is where the interaction is.** Warning and critical tint the panel's field and draw no border. Selection and editing draw the border and are the only things that do. Area is seen in peripheral vision where a line is not, which is what matters on a moving aircraft: an outline has to be looked at, a tinted field is noticed while looking elsewhere. Keeping the two apart also means a panel can be alarming and focused at once, which it could not while the border carried both.
 - Stale and unavailable are in neither group. They dim, because absent data is not an alarm and a panel that shouted whenever a sensor went quiet would teach a pilot to ignore it.
 - An alert tint is derived from the state's own accent rather than stated, so a palette taken from the radio tints from the surface the radio gave it. It is mixed by the smallest amount that is noticeable beside an untinted panel, because every step beyond that spends contrast the text drawn on it has to give back, and it may be darkened as well as lightened: a dark surface tints by moving toward a bright accent, and a mid-grey one has no room to lighten without losing the faint text on it.
@@ -466,50 +462,50 @@ The primary reference viewport is 480 x 272, matching the TX16S and several othe
 - **Nothing about the zone changes when that happens**, so the reflow trigger reads the flag rather than waiting for a geometry change. On a `Layout1x1AM` screen the widget already has the whole display; entering fullscreen does call the widget's `update` (`widget.cpp:265`) and leaving it does not, that call being guarded by `if (fullscreen)`. The reflow therefore arrives on the next callback -- one `MENU_TASK_PERIOD`, 50 ms (`radio/src/tasks.cpp:50`) -- at a cost of 15 instructions a frame.
 - Use a compact footer only for genuinely global data such as coordinates or an active flight timer. Do not reserve footer space by default.
 - Use 4 px outer margins and 4 px grid gutters at 480 x 272 as the initial baseline, subject to hardware verification.
-- Component panels use an 8 px corner radius. The originally specified 4 to 6 px reads as a square panel with the corners shaved at 480 x 272, and the reference design's corners are visibly softer. Nested cards are prohibited.
+- Panel panels use an 8 px corner radius. The originally specified 4 to 6 px reads as a square panel with the corners shaved at 480 x 272, and the reference design's corners are visibly softer. Nested cards are prohibited.
 - The semantic accent occupies a column exactly one accent width across, down the panel's left edge, and fills whatever of the panel lies inside that column. Between the corners that is the full width; through each corner it narrows as the panel's own curve crosses the column, reaching nothing where the curve leaves it. It never extends past the accent width and never leaves the panel's rounded shape.
 - It is built as a straight rectangle and two quarter-circle arcs, inside a clipping container. The straight run spans `y = radius` to `y = height - radius`. Each corner is an `lvgl.arc` centred on the panel's corner centre with the panel's corner radius and a thickness of the accent width, so its outer edge is exactly the curve the panel's fill is rounded by. Unclipped, those arcs reach `2 * radius` across; the container removes everything beyond the accent width.
 - That the outer edges coincide follows from the firmware. LVGL draws an arc band between `radius` and `radius - width` measured from the centre (`lv_draw_arc.c`, `rout` and `rin`), and the object's box is `2 * radius` square about the position EdgeTX was given (`LvglWidgetArc::build` calls `setRadius`; `get_center` in `lv_arc.c` takes `min(w, h) / 2`). Rasterising with the clip simulated confirms the result: within the accent's column the accent covers exactly the panel's own pixels, on every row of every panel size tried, with nothing outside the column and nothing outside the panel.
 - Corner bands are arcs, so hard-won constraint 11 applies. Every colour change is a `set`, and a `set` on a round object walks it up and left by its own radius unless the centre is restated, so both bands go through the shared `setRound` helper.
-- A component spanning several cells remains one coherent panel; it must not visually imitate multiple unrelated cards unless its data model genuinely contains repeated items.
+- A panel spanning several cells remains one coherent panel; it must not visually imitate multiple unrelated cards unless its data model genuinely contains repeated items.
 
 ### Typography and values
 
 - Use EdgeTX-provided fonts and font sizes to avoid extra memory cost unless a later target-specific benchmark permits a bundled font.
 - Use tabular or fixed-width numerals where available so changing values do not shift adjacent content.
 - Labels are short, uppercase where appropriate, and visually quiet.
-- Primary values use the largest size that fits their component at every supported span.
+- Primary values use the largest size that fits their panel at every supported span.
 - **The unit rides beside the value, on its baseline, at a smaller size and lower contrast.** It is its own label rather than characters of the reading, so the reading is digits alone and the two are measured together but drawn apart. Two steps down the reading ladder puts it between two fifths and three fifths of the number's height at every pairing the dashboard produces.
 - **Baseline alignment is exact, and EdgeTX does not help.** The only font metric a script can ask for is `lcd.sizeText`, whose second return is `getFontHeight`, which is `lv_font_get_line_height`; nothing in `radio/src/lua/` exposes ascent or baseline. The numbers are nonetheless knowable, because `base_line` is a compile-time constant of each shipped font, sitting beside the line height in `radio/src/fonts/lvgl/std/lv_font_en_*.c`, and `lv_draw_sw_letter` places a glyph at `pos.y + (line_height - base_line) - box_h - ofs_y`. Aligning the two labels' **tops** instead puts the unit 31 pixels high at the largest pairing; aligning their **bottoms** puts it 9 pixels low, which is most of a `MIDSIZE` descender. Neither approximation is needed, and the suite fails if one is reintroduced.
 - Supporting values and captions must remain legible on the physical radio, not merely in the simulator.
 - Letter spacing is zero. Text must wrap, abbreviate, or reduce to a defined smaller font before it clips.
 - A supporting row cannot shrink its font, because it is already at the smallest size the dashboard uses. A row therefore offers its wordings longest first, and `theme.fitLabel` takes the longest that fits the width it will actually be given. **Every supporting row in the catalogue is meant to go through it**, and most offer one wording, because one well-chosen form fits every panel that draws a row.
 
-  **Five of the seven components that draw a row call it today**: `cell-battery`, `flight-timer`, `link-status`, `navigation`, and `tx-battery`. `flight-mode` writes its single form directly; `metric` uses measured widths and the shared builder to choose a footer, side stack, or hidden supporting group.
+  **Five of the seven panels that draw a row call it today**: `cell-battery`, `flight-timer`, `link-status`, `navigation`, and `tx-battery`. `flight-mode` writes its single form directly; `metric` uses measured widths and the shared builder to choose a footer, side stack, or hidden supporting group.
 
   The two budgets a row is written against: **105 px** for a row spanning the panel at `1 x 2`, the narrowest panel the ladder grants a row at all, and **86 px** for one sharing a line with another at `2 x 2`. A form that clears the tighter of those cannot be broken by any arrangement this dashboard can reach.
 
-  **The property is that the row fits**, and `testSupportingRowsFitTheirBox` holds it directly, at every span that grants a row, in both zones, with each component driven into the state that words the most. That is the check that was missing: `flight-timer` drew `ELAPSED PAST ZERO`, 125 px into that 105 px box, and it was centred on a box wider than its panel and ran ten pixels off each edge. Nothing caught it, because the suite could only check which components *called the helper* -- and that component did not, so there was no rule for it to be seen breaking.
+  **The property is that the row fits**, and `testSupportingRowsFitTheirBox` holds it directly, at every span that grants a row, in both zones, with each panel driven into the state that words the most. That is the check that was missing: `flight-timer` drew `ELAPSED PAST ZERO`, 125 px into that 105 px box, and it was centred on a box wider than its panel and ran ten pixels off each edge. Nothing caught it, because the suite could only check which panels *called the helper* -- and that panel did not, so there was no rule for it to be seen breaking.
 
-  **Corrected twice, and the second correction reverses the first.** On finding that five of eight row-drawing components called `fitLabel`, this sentence was rewritten to say that the mechanism was the wrong thing to require and the property was all that mattered. The user decided the other way: the sentence was right, the code was wrong, and every row should go through the helper. The measurements support them -- routing a single-wording row through `fitLabel` costs nothing, since a one-entry list comes back unchanged, and having one path for every row is worth more than the exception. **What was salvaged from the first correction is the property check**, which the mechanism alone would not have given: calling the helper does not make a form fit, and only a measurement can say that it does.
+  **Corrected twice, and the second correction reverses the first.** On finding that five of eight row-drawing panels called `fitLabel`, this sentence was rewritten to say that the mechanism was the wrong thing to require and the property was all that mattered. The user decided the other way: the sentence was right, the code was wrong, and every row should go through the helper. The measurements support them -- routing a single-wording row through `fitLabel` costs nothing, since a one-entry list comes back unchanged, and having one path for every row is worth more than the exception. **What was salvaged from the first correction is the property check**, which the mechanism alone would not have given: calling the helper does not make a form fit, and only a measurement can say that it does.
 
   **A ladder earns its place only where the longer form carries something the shorter cannot**, and there is a panel wide enough to show it. That is a judgement about wording rather than about width. Most states in the catalogue have no such pair, which is why most rows are one form.
 
-- **A panel's composition is decided from its box, not by the component drawing it.** One shared ladder says whether a panel of this size carries a supporting row and a visualization, and every component gets the same answer. A component may decline what it was granted; it cannot claim what it was not. Eight private copies of that decision were why two panels of identical size disagreed: each had shed a different amount before measuring anything.
+- **A panel's composition is decided from its box, not by the panel drawing it.** One shared ladder says whether a panel of this size carries a supporting row and a visualization, and every panel gets the same answer. A panel may decline what it was granted; it cannot claim what it was not. Eight private copies of that decision were why two panels of identical size disagreed: each had shed a different amount before measuring anything.
 - **A reading's font follows from that composition, not from its own string.** Two panels of one size agree because they are answering the same question. Before this the four panels of the `2 x 2` span gallery drew their readings at XXLSIZE, DBLSIZE, MIDSIZE and SMLSIZE, a range of four to one, on panels identical to the pixel.
 - **A form may drop redundancy, never magnitude.** A reading offers lossless wordings longest-first and `theme.fitReading` takes the largest that fits; where none does, the font steps down instead. A unit the panel's own label already states, a name, a suffix: those are redundancy and may go. A digit of precision, or a field of a clock, may not. `4.44V` to `4.44` removes something the panel says elsewhere. `1:04:12` to `04:12` removes an hour and reports a different reading, which a pilot would believe and no font size is worth. `888.88km` to `888km` removes 880 metres of a number someone is flying by.
-- A component whose reading holds no redundancy offers exactly one form, and that is how it says so. Every reading is now of that kind, because the unit left the string: `flight-timer` draws a clock, `navigation` draws a distance, and the other four print digits with the unit beside them. What used to be a second form -- `4.44V` shortened to `4.44` -- is no longer a wording at all, it is whether the rider is drawn.
+- A panel whose reading holds no redundancy offers exactly one form, and that is how it says so. Every reading is now of that kind, because the unit left the string: `flight-timer` draws a clock, `navigation` draws a distance, and the other four print digits with the unit beside them. What used to be a second form -- `4.44V` shortened to `4.44` -- is no longer a wording at all, it is whether the rider is drawn.
 - **A unit is dropped rather than paid for with a size.** The reading is fitted first and the unit rides at whatever font that produced, or it is not drawn. Buying the unit by shrinking the number would be paying for redundancy with magnitude, and the first thing a pilot reads is how big the number is. The change from a glued-on unit is that dropping it is now rare rather than routine: a `V` beside an `XXLSIZE` number cost 40 pixels as a character of the reading and costs 23 including its gap as a rider.
-- **A unit qualifies a value, so a panel with no value draws no unit.** A reading that has nothing to report prints a sentinel -- `--` everywhere, and `N/A` where `link-status` has a source the protocol does not publish -- and a unit beside one says the pack is measured in volts and declines to say how many. Four components drew that: `tx-battery` and `cell-battery`, whose unit is a constant they know before any reading arrives, and `link-status` and `metric`, which keep a resolved sensor's unit while its value is withheld.
+- **A unit qualifies a value, so a panel with no value draws no unit.** A reading that has nothing to report prints a sentinel -- `--` everywhere, and `N/A` where `link-status` has a source the protocol does not publish -- and a unit beside one says the pack is measured in volts and declines to say how many. Four panels drew that: `tx-battery` and `cell-battery`, whose unit is a constant they know before any reading arrives, and `link-status` and `metric`, which keep a resolved sensor's unit while its value is withheld.
 
-  **The test is on the string the panel is drawing, and it is in `primitives` rather than in any component.** That is the [permitted-versus-drawn seam](#fixture-discipline) again: whether a panel is *allowed* a unit is settled when it is built, from its box, and whether there is a value is not knowable until there is one. Nothing in the build-time answer can carry the runtime one, so the two meet at the point of drawing, which is the only place both are known.
+  **The test is on the string the panel is drawing, and it is in `primitives` rather than in any panel.** That is the [permitted-versus-drawn seam](#fixture-discipline) again: whether a panel is *allowed* a unit is settled when it is built, from its box, and whether there is a value is not knowable until there is one. Nothing in the build-time answer can carry the runtime one, so the two meet at the point of drawing, which is the only place both are known.
 
-  **Freshness is the wrong key and availability is nearly the wrong key.** A `stale` reading still shows its last number and keeps its unit, because staleness is about how old a measurement is rather than whether there is one. A sensor reading exactly zero prints `0` and keeps its unit, because this specification is explicit that a valid zero is the reading it is -- and `link-status` exists in part to separate a genuine zero from a dead link, so a rule that caught zeroes would be wrong in precisely the component that cares most. Only the sentinel means there is nothing to qualify.
+  **Freshness is the wrong key and availability is nearly the wrong key.** A `stale` reading still shows its last number and keeps its unit, because staleness is about how old a measurement is rather than whether there is one. A sensor reading exactly zero prints `0` and keeps its unit, because this specification is explicit that a valid zero is the reading it is -- and `link-status` exists in part to separate a genuine zero from a dead link, so a rule that caught zeroes would be wrong in precisely the panel that cares most. Only the sentinel means there is nothing to qualify.
 
   **The reading does not move when the unit goes.** Its x is `valueCentre - measureText(font, text) / 2`, its own width and not the pair's, so the unit only widens the drawn box; taking it away shrinks that box and leaves the digits where they were. Nothing is laid out from that box -- supporting rows and compact visuals take their positions from the panel's own slot centres -- so hiding is the whole of the change and there is no space to reclaim. Had it been false, a sensor dropping and returning would twitch the reading each time and hiding would have been the wrong answer, which is why it is measured by `testUnitNeedsAValueToQualify` rather than assumed.
 - **A unit that carries magnitude is not redundancy and is never dropped.** A distance's unit changes with its range, so `1.23km` and `1.23m` are different readings rather than one abbreviated. `navigation` says so, and for it the pair is what the ladder is walked against: the number steps down until both fit, because a distance with no scale on it is worse than a small one.
 - Stepping down one size is the intent and is what happens almost everywhere, but it is not a cap: the alternative to stepping again is clipping, which is never acceptable. A panel needing two steps is saying its column is genuinely too narrow, which happens where a dial takes half the width.
-- **A badge names the state; the supporting row says why.** The badge vocabulary is a closed set on the theme, and short, because the column is reserved on every panel whether or not a badge is showing: a long word is paid for by every header on the dashboard rather than by the state that uses it. Components do not override it. A distinction such as a dead link against a protocol with no RSSI sensor belongs in the row, which is fitted to its width and words it at whatever length fits.
+- **A badge names the state; the supporting row says why.** The badge vocabulary is a closed set on the theme, and short, because the column is reserved on every panel whether or not a badge is showing: a long word is paid for by every header on the dashboard rather than by the state that uses it. Panels do not override it. A distinction such as a dead link against a protocol with no RSSI sensor belongs in the row, which is fitted to its width and words it at whatever length fits.
 
   **Corrected: the example this sentence was built on is no longer a distinction the row makes.** It read "a cells sensor returning a number against one returning nonsense", and that pair has been merged: `cell-battery` prints `CELLS ERR` for both. Neither width nor vocabulary forced it -- `NOT CELLS` and `BAD CELLS` are 67 and 66 px against budgets of 105 and 86, so both fitted comfortably. **The test is whether the reader can act on the difference, and a pilot cannot.** Both mean something is arriving and is wrong, and both are fixed on the ground; only `NO CELLS`, which means nothing has arrived and may yet, asks for something else, which is to wait.
 
@@ -518,14 +514,14 @@ The primary reference viewport is 480 x 272, matching the TX16S and several othe
   This is the fourth time a claim here has outlived the thing it described, and the shape is the same each time: the sentence was written while the example was true, the example changed, and the sentence went on being quoted. The defence is not care but the example itself -- **an argument carried by a concrete case has to be re-read whenever that case moves**, which is why this one names its cases rather than gesturing at them.
   **What carries that distinction is the vocabulary, not the width**, and the difference matters because the width changed. This sentence used to say the row "has room for words", which was true of a row spanning the panel and stopped being true when a two-item row moved onto the panel's slot centres: each item now gets 40% of the content where the split it replaced reached all of it. A defence resting on room would have been quietly false from that moment, in the same way the claim about compressed font advances sat here being wrong for a milestone.
 
-  So the property is stated as something a test can hold: **the shortest wording of each state a row reports must differ from the shortest wording of every other state it reports.** The shortest form is what a cramped panel prints, so a row can be as narrow as the layout makes it and still say which failure occurred. `navigation` keeps `NO GPS` against `NO FIX` -- no sensor against a sensor with no fix -- and `link-status` keeps `DOWN` against `NO RSS`. `cell-battery` keeps `NO CELLS` against `CELLS ERR`: wait, against go and fix it. Shortening costs detail and must never cost meaning; `testSupportingWordingsStayDistinct` is what holds a component to it.
+  So the property is stated as something a test can hold: **the shortest wording of each state a row reports must differ from the shortest wording of every other state it reports.** The shortest form is what a cramped panel prints, so a row can be as narrow as the layout makes it and still say which failure occurred. `navigation` keeps `NO GPS` against `NO FIX` -- no sensor against a sensor with no fix -- and `link-status` keeps `DOWN` against `NO RSS`. `cell-battery` keeps `NO CELLS` against `CELLS ERR`: wait, against go and fix it. Shortening costs detail and must never cost meaning; `testSupportingWordingsStayDistinct` is what holds a panel to it.
 - The badge column is exactly as wide as its widest word, and is never squeezed. Clamping it to a fraction of a narrow panel protects the label by clipping the badge, which is the wrong way round: `CRIT` and `CRI` are not equally alarming, while a shortened source name is merely less informative. A header label with too little room left is dropped rather than clipped, on any panel, not only one obstructed by the menu button.
 - Horizontal padding is asymmetric. The left clears the accent; the right has nothing to clear, so it is smaller. On a single cell those four pixels are a character of header label.
-- **The badge column is reserved whether or not a badge is showing, and the header label's width never depends on whether one is.** Handing the label the empty column and taking it back when a badge appears would reflow the label at exactly the moment the panel changes state. That is worse than a permanently shorter label, and not by a little: a header that moves draws the eye to itself, at the instant the reading beside it has just gone critical and is the thing that needs looking at. It is also the stable-geometry rule above, which requires that a warning state does not shift neighbouring content. Every component in the catalogue can reach a badged state, so a column that was conditional would be conditional on nothing in practice.
+- **The badge column is reserved whether or not a badge is showing, and the header label's width never depends on whether one is.** Handing the label the empty column and taking it back when a badge appears would reflow the label at exactly the moment the panel changes state. That is worse than a permanently shorter label, and not by a little: a header that moves draws the eye to itself, at the instant the reading beside it has just gone critical and is the thing that needs looking at. It is also the stable-geometry rule above, which requires that a warning state does not shift neighbouring content. Every panel in the catalogue can reach a badged state, so a column that was conditional would be conditional on nothing in practice.
 
 ### Initial color tokens
 
-Exact colors require physical-display testing, but components must consume semantic theme tokens rather than hard-coded colors:
+Exact colors require physical-display testing, but panels must consume semantic theme tokens rather than hard-coded colors:
 
 ```lua
 local theme = {
@@ -544,11 +540,11 @@ local theme = {
 }
 ```
 
-Components may select a semantic accent, but the dashboard should not become a rainbow of unrelated component colors. Warning and freshness states override decorative accents.
+Panels may select a semantic accent, but the dashboard should not become a rainbow of unrelated panel colors. Warning and freshness states override decorative accents.
 
-### Component anatomy
+### Panel anatomy
 
-A typical telemetry component should contain only the elements it needs from this hierarchy:
+A typical telemetry panel should contain only the elements it needs from this hierarchy:
 
 1. Short label or source name.
 2. Primary value and unit.
@@ -556,7 +552,7 @@ A typical telemetry component should contain only the elements it needs from thi
 4. Optional compact visualization such as a bar, arc, direction indicator, or sparkline.
 5. A narrow state accent or warning treatment.
 
-Components must define responsive presentations for the spans they support. A 1 x 1 component may show only a value and label; a 2 x 1 variant may add units and a trend; a larger variant may add history or related measurements. Unsupported spans must be rejected by component metadata rather than producing a cramped layout.
+Panels must define responsive presentations for the spans they support. A 1 x 1 panel may show only a value and label; a 2 x 1 variant may add units and a trend; a larger variant may add history or related measurements. Unsupported spans must be rejected by panel metadata rather than producing a cramped layout.
 
 #### A visualization beside the reading, not beneath it
 
@@ -572,17 +568,17 @@ The glyph is sized by search rather than by formula. The answer is not smooth: a
 
 `primitives.batteryGlyph` is three rectangles, because `lvgl.box` accepts a `color` and silently ignores it. Its outline is built at its final weight and never restated, since a border width only reaches LVGL through `LvglWidgetBorderedObject::setOpacity` and is discarded by a later `set`; the **fill** carries the state, the way a bar's fill does and its track does not. An outline with no fill is a picture of a flat pack, so a panel with no range to measure against hides the whole glyph rather than drawing it empty.
 
-**A compact visual sits on the optical centre of the reading's ink.** Not its baseline, not its top, and not its line box. This was decided from rendered mocks rather than argued: the three were drawn side by side from the real geometry at every span, and the centre is the one that reads as belonging to the number rather than hanging off it. It applies to every compact visual in every component -- a battery, a dial, a compass -- so two panels of different components at the same span place theirs identically. A visual that spans the panel's width, which is to say a bar, has nothing to centre against and is unaffected.
+**A compact visual sits on the optical centre of the reading's ink.** Not its baseline, not its top, and not its line box. This was decided from rendered mocks rather than argued: the three were drawn side by side from the real geometry at every span, and the centre is the one that reads as belonging to the number rather than hanging off it. It applies to every compact visual in every panel -- a battery, a dial, a compass -- so two panels of different panels at the same span place theirs identically. A visual that spans the panel's width, which is to say a bar, has nothing to centre against and is unaffected.
 
 It said **line box** until the band started being measured as ink, and the two are not separable: a line box carries a descent and a leading that no reading in this catalogue draws into, so centring the box centres a rectangle taller than the glyphs and leaves the number sitting high. Choosing the font by ink and centring the box would have split the two by 4.5 px on a `navigation 4 x 2`. The design guide records the decision and what it cost.
 
-**Content is placed on two slots derived from the panel, at 30% and 70% of the content width.** Agreed from rendered mocks and **implemented by every component that puts two things side by side** -- six through `theme.panel` and three directly. `make mocks` still draws the arrangement, but it draws what the dashboard does rather than what it might do.
+**Content is placed on two slots derived from the panel, at 30% and 70% of the content width.** Agreed from rendered mocks and **implemented by every panel that puts two things side by side** -- six through `theme.panel` and three directly. `make mocks` still draws the arrangement, but it draws what the dashboard does rather than what it might do.
 
-*Corrected: this said "not yet implemented by any component", the second copy of the same stale claim in this file.* The reading takes the left slot and a compact visual the right, and every row below them uses the same two centres -- a row of one item centres across the whole content box, a row of two takes the slots -- so the arrangement is one rule at every level rather than a body rule with a footer exception. A panel holding only a reading does not split; it centres across the whole box.
+*Corrected: this said "not yet implemented by any panel", the second copy of the same stale claim in this file.* The reading takes the left slot and a compact visual the right, and every row below them uses the same two centres -- a row of one item centres across the whole content box, a row of two takes the slots -- so the arrangement is one rule at every level rather than a body rule with a footer exception. A panel holding only a reading does not split; it centres across the whole box.
 
 The point of deriving the slots from the panel rather than from the content is that a slot cannot move when what is in it changes width, and across a row of equal-width panels every reading lands at the same x. Two earlier proposals were rejected for failing exactly that: left-aligned flow collects all its slack after the content, and fully centred content re-centres whenever a reading gains a digit, which put its reading 186px from its own heading against the slotted 91.
 
-**Where the tightened slots would let two elements meet, the panel falls back to strict halves at 25% and 75%, and the fallback is decided at build from the widest string the component can print.** Deciding it from the current value would make the arrangement a function of the data: a voltage crossing from `9.9` to `10.0` would flip the whole panel between two layouts, which is the moves-when-content-changes objection that ruled out centring, in a worse form. Asking the widest form fixes the arrangement once, so a panel with room to spare today keeps the layout it will need at its widest. The fallback is per panel and never per row -- a tightened body over a strict footer would leave the columns disagreeing down the panel, which is the one thing slot-derived positions exist to prevent.
+**Where the tightened slots would let two elements meet, the panel falls back to strict halves at 25% and 75%, and the fallback is decided at build from the widest string the panel can print.** Deciding it from the current value would make the arrangement a function of the data: a voltage crossing from `9.9` to `10.0` would flip the whole panel between two layouts, which is the moves-when-content-changes objection that ruled out centring, in a worse form. Asking the widest form fixes the arrangement once, so a panel with room to spare today keeps the layout it will need at its widest. The fallback is per panel and never per row -- a tightened body over a strict footer would leave the columns disagreeing down the panel, which is the one thing slot-derived positions exist to prevent.
 
 ### States
 
@@ -591,12 +587,12 @@ The point of deriving the slots from the panel rather than from the content is t
 - `stale`: Muted value plus an explicit stale indicator; color alone is insufficient.
 - `warning`: Amber accent, a tinted panel field, and concise threshold indication. No outline.
 - `critical`: Red accent and a tinted panel field, with high contrast; avoid continuous distracting animation. No outline.
-- `unavailable`: Placeholder label identifying the missing source or component.
+- `unavailable`: Placeholder label identifying the missing source or panel.
 - `editing`: Visible grid, selection bounds, and resize or move affordances without obscuring readings unnecessarily.
 
 ### Theme ownership
 
-The host owns theme tokens and passes the active theme to every component. Components must not define independent background palettes. Component-specific configuration may choose a semantic accent only from host-provided tokens. A global theme may be exposed as a native host widget option and persisted by EdgeTX.
+The host owns theme tokens and passes the active theme to every panel. Panels must not define independent background palettes. Panel-specific configuration may choose a semantic accent only from host-provided tokens. A global theme may be exposed as a native host widget option and persisted by EdgeTX.
 
 The host provides three theme modes:
 
@@ -604,11 +600,11 @@ The host provides three theme modes:
 - `edgetx`: Derive local dashboard tokens by reading the active EdgeTX theme with `lcd.getColor()`.
 - `custom`: Start from the Modern palette and allow a small set of global overrides such as canvas, surface, text, and accent.
 
-The dashboard must never call `lcd.setColor()` because doing so changes the entire radio interface and other widgets. Follow EdgeTX mode maps Primary, Secondary, Focus, Edit, Active, Warning, and Disabled roles into dashboard tokens, then applies contrast correction and dashboard fallbacks where EdgeTX has no suitable role. Critical red remains dashboard-controlled. Warning and critical colors are not independently configurable per component.
+The dashboard must never call `lcd.setColor()` because doing so changes the entire radio interface and other widgets. Follow EdgeTX mode maps Primary, Secondary, Focus, Edit, Active, Warning, and Disabled roles into dashboard tokens, then applies contrast correction and dashboard fallbacks where EdgeTX has no suitable role. Critical red remains dashboard-controlled. Warning and critical colors are not independently configurable per panel.
 
-## Component Contract
+## Panel Contract
 
-Each component script returns a table implementing this interface:
+Each panel script returns a table implementing this interface:
 
 ```lua
 return {
@@ -664,7 +660,7 @@ return {
 
 ### Required callbacks
 
-- `create`: Builds the component's LVGL objects and returns private context.
+- `create`: Builds the panel's LVGL objects and returns private context.
 - `refresh`: Updates visible state.
 
 ### Optional callbacks
@@ -672,21 +668,21 @@ return {
 - `update`: Applies changed geometry or configuration.
 - `background`: Performs low-frequency work while the dashboard is not visible.
 - `event`: Handles an event and returns true when consumed.
-- `destroy`: Releases component-owned references before rebuilding or removal.
+- `destroy`: Releases panel-owned references before rebuilding or removal.
 
-Components must not assume full-screen dimensions. They must use the supplied rectangle and adapt to all supported spans.
+Panels must not assume full-screen dimensions. They must use the supplied rectangle and adapt to all supported spans.
 
-Each component must also publish supported spans or minimum dimensions so the editor can prevent visually invalid placements. The host passes shared theme and service objects through the component context or an additional services argument; components must not duplicate global styling or telemetry caches.
+Each panel must also publish supported spans or minimum dimensions so the editor can prevent visually invalid placements. The host passes shared theme and service objects through the panel context or an additional services argument; panels must not duplicate global styling or telemetry caches.
 
-## Component Settings
+## Panel Settings
 
 Legacy EdgeTX Lua widgets declare a static `options` array. EdgeTX converts each option type into a settings control, stores the selected values in the model's `WidgetPersistentData`, and passes an options table to the widget's `create` and `update` callbacks. A `SOURCE` option stores the selected source identifier; the widget later reads its live value with `getSourceValue(sourceId)` or `getValue(sourceId)`.
 
-AeroGrid has only one native EdgeTX widget and therefore only one native option set. The host cannot ask EdgeTX to create independent native settings pages for dynamic child components. Instead, every component publishes a typed `settings` schema and the dashboard builds an equivalent LVGL form in its own editor.
+AeroGrid has only one native EdgeTX widget and therefore only one native option set. The host cannot ask EdgeTX to create independent native settings pages for dynamic child panels. Instead, every panel publishes a typed `settings` schema and the dashboard builds an equivalent LVGL form in its own editor.
 
 ### Supported setting types
 
-The initial component schema should support:
+The initial panel schema should support:
 
 - `source`: EdgeTX source and telemetry picker
 - `switch`: EdgeTX switch picker
@@ -702,47 +698,47 @@ Additional types may be added without changing the layout schema. Each setting d
 
 ### Settings vocabulary
 
-Eleven shipped components and two fixtures, written to the same contract by different sessions, produced five names for "how should this look", four meanings for `min`, and a per-component setting for a dashboard-wide singleton. Names are part of the contract, not decoration: a layout author reads one component and expects the next to answer the same question the same way. The rules below are what the vocabulary converged on.
+Eleven shipped panels and two fixtures, written to the same contract by different sessions, produced five names for "how should this look", four meanings for `min`, and a per-panel setting for a dashboard-wide singleton. Names are part of the contract, not decoration: a layout author reads one panel and expects the next to answer the same question the same way. The rules below are what the vocabulary converged on.
 
 **One name per concept.** Three questions exist and each has exactly one key:
 
 - `visual` — the shape the reading is drawn as: `bar`, `radial`, `none`. It selects a drawing, never content.
 - `presentation` — which arrangement of content the panel shows when several are possible and the box decides between them. Only `navigation` and `model-identity` have more than one arrangement.
-- `reading` — which of the component's own values leads the panel when it holds several, as `cell-battery` holds lowest, pack and average.
+- `reading` — which of the panel's own values leads the panel when it holds several, as `cell-battery` holds lowest, pack and average.
 
-A component that offers one of these but not the others declares only the one it offers. `display` and `primary` are not used; both were re-spellings of `reading`, and `display` also stood in for `readout` on `trim-panel`, which is neither.
+A panel that offers one of these but not the others declares only the one it offers. `display` and `primary` are not used; both were re-spellings of `reading`, and `display` also stood in for `readout` on `trim-panel`, which is neither.
 
-**Every enum declares its `choices`.** A `string` setting whose values are drawn from a fixed list must declare them, so the loader rejects `presentation: nonsense` at load with the component and key named, rather than falling back silently and leaving the author to wonder why the panel looks wrong. Undeclared keys are reported the same way: a renamed setting left behind in a layout is a defect, not a comment.
+**Every enum declares its `choices`.** A `string` setting whose values are drawn from a fixed list must declare them, so the loader rejects `presentation: nonsense` at load with the panel and key named, rather than falling back silently and leaving the author to wonder why the panel looks wrong. Undeclared keys are reported the same way: a renamed setting left behind in a layout is a defect, not a comment.
 
-**A setting whose meaning is decided at runtime is refused, not documented.** `link-status` can lead with RSSI in dBm or with link quality in percent, and under `reading: auto` the choice is made by whichever source the protocol publishes. A threshold is a bare number, so `warning: 50` is plausible in both units and means a different thing in each, and nothing downstream can tell: the panel alarms at the wrong moment rather than failing. The first pass at this vocabulary named the unit "the leading source's", which described the trap precisely and left it in place. That was the wrong call. A component may state a rule spanning two of its settings through `validateSettings`, and this one refuses a threshold unless `reading` names a source. The shipped dashboard was relying on the old behaviour, with percentage thresholds under `auto`, and `auto` falls back to RSSI when no quality sensor exists — where every reading is below 30, so that panel would have sat permanently critical on any protocol without one.
+**A setting whose meaning is decided at runtime is refused, not documented.** `link-status` can lead with RSSI in dBm or with link quality in percent, and under `reading: auto` the choice is made by whichever source the protocol publishes. A threshold is a bare number, so `warning: 50` is plausible in both units and means a different thing in each, and nothing downstream can tell: the panel alarms at the wrong moment rather than failing. The first pass at this vocabulary named the unit "the leading source's", which described the trap precisely and left it in place. That was the wrong call. A panel may state a rule spanning two of its settings through `validateSettings`, and this one refuses a threshold unless `reading` names a source. The shipped dashboard was relying on the old behaviour, with percentage thresholds under `auto`, and `auto` falls back to RSSI when no quality sensor exists — where every reading is below 30, so that panel would have sat permanently critical on any protocol without one.
 
-**A setting must have more than one answer a layout could sensibly give.** Where the answer is fixed by what the value physically is, the behaviour is documented rather than configured. `direction` was added to every component with thresholds, and on five of them there was only ever one answer: a voltage and a link quality alarm downward, a distance from home upward, and a timer's direction is EdgeTX's own `countdown` flag, which `flight-timer` had always read instead of the setting. A setting with one valid value is not configuration; it is a fact spelled as a question, and it makes a reader wonder what the other value would do. Only `metric` keeps `direction`, because it reads an arbitrary source and a current, a temperature and an altitude genuinely alarm upward where a voltage and an RSSI alarm downward. The suite holds every declared `choices` list to more than one entry.
+**A setting must have more than one answer a layout could sensibly give.** Where the answer is fixed by what the value physically is, the behaviour is documented rather than configured. `direction` was added to every panel with thresholds, and on five of them there was only ever one answer: a voltage and a link quality alarm downward, a distance from home upward, and a timer's direction is EdgeTX's own `countdown` flag, which `flight-timer` had always read instead of the setting. A setting with one valid value is not configuration; it is a fact spelled as a question, and it makes a reader wonder what the other value would do. Only `metric` keeps `direction`, because it reads an arbitrary source and a current, a temperature and an altitude genuinely alarm upward where a voltage and an RSSI alarm downward. The suite holds every declared `choices` list to more than one entry.
 
 **Use source metadata where the source interface supplies it, and allow explicit overrides.** `tx-battery` reads the radio's battery-meter range through `getGeneralSettings`. Metric telemetry sources supply units and sensor precision; ordinary GV sources require explicit display settings because that interface does not publish their metadata.
 
-This is the same shape as `armSource` moving to the layout's session block: both were a component asking for something that was already known somewhere else. When adding a setting, the question to ask first is whether EdgeTX can be asked instead.
+This is the same shape as `armSource` moving to the layout's session block: both were a panel asking for something that was already known somewhere else. When adding a setting, the question to ask first is whether EdgeTX can be asked instead.
 
-**Thresholds state their direction and their unit.** `warning` and `critical` are bare numbers, so nothing about them says whether crossing downward or upward is the alarm, or what they are measured in. Both are stated: `direction` is declared by every component that has thresholds, and the unit belongs in the setting's label — `Warning volts per cell` and `Warning seconds`, not `Warning`. Where the unit genuinely depends on configuration, as `link-status` measures in whatever its leading source reports, the label says so rather than naming a unit that may be wrong.
+**Thresholds state their direction and their unit.** `warning` and `critical` are bare numbers, so nothing about them says whether crossing downward or upward is the alarm, or what they are measured in. Both are stated: `direction` is declared by every panel that has thresholds, and the unit belongs in the setting's label — `Warning volts per cell` and `Warning seconds`, not `Warning`. Where the unit genuinely depends on configuration, as `link-status` measures in whatever its leading source reports, the label says so rather than naming a unit that may be wrong.
 
-**A range is named for what it bounds.** `min` and `max` meant a normalisation range, a per-cell voltage range, a whole-pack voltage range and a bar-only range, in four components, all under one word. The range now carries its subject: `rangeMin`/`rangeMax` normalise a visualization, `cellEmpty`/`cellFull` bound one cell, `packEmpty`/`packFull` bound a pack, `barMin`/`barMax` bound a bar. A normalisation range is not a limit, and stating that in its comment is worth the two lines: a value outside it is still drawn as itself.
+**A range is named for what it bounds.** `min` and `max` meant a normalisation range, a per-cell voltage range, a whole-pack voltage range and a bar-only range, in four panels, all under one word. The range now carries its subject: `rangeMin`/`rangeMax` normalise a visualization, `cellEmpty`/`cellFull` bound one cell, `packEmpty`/`packFull` bound a pack, `barMin`/`barMax` bound a bar. A normalisation range is not a limit, and stating that in its comment is worth the two lines: a value outside it is still drawn as itself.
 
-**Dashboard-wide state belongs to the dashboard.** A setting that describes the session rather than the panel belongs in the layout's top-level `session` block, not in each component's `config`. `armSource` was per-component, which let two components name two different switches while the extrema service documented that the first caller wins — so the second was configured, accepted, and ignored. Anything that a second component could contradict is a candidate for the same move.
+**Dashboard-wide state belongs to the dashboard.** A setting that describes the session rather than the panel belongs in the layout's top-level `session` block, not in each panel's `config`. `armSource` was per-panel, which let two panels name two different switches while the extrema service documented that the first caller wins — so the second was configured, accepted, and ignored. Anything that a second panel could contradict is a candidate for the same move.
 
-**Accent defaults follow the colour rule.** The palette reserves cyan for electrical data and green for healthy state; a component's default accent obeys that rather than its author's taste. `tx-battery` was green and `cell-battery` cyan for the same concept.
+**Accent defaults follow the colour rule.** The palette reserves cyan for electrical data and green for healthy state; a panel's default accent obeys that rather than its author's taste. `tx-battery` was green and `cell-battery` cyan for the same concept.
 
-**An empty `label` means derive, not omit.** Four components leave `label` empty by default because their heading is only knowable at runtime — the timer's name, the preset's label, the probed service, the global variable's configured name. A component with a fixed heading states it as its default. The empty string is a deliberate instruction and each such declaration says what it derives from.
+**An empty `label` means derive, not omit.** Panels whose heading is only knowable at runtime leave `label` empty by default — for example, the timer's name or the probed service. A panel with a fixed heading states it as its default. The empty string is a deliberate instruction and each such declaration says what it derives from.
 
 ### Value flow
 
-1. The component module publishes its `settings` schema.
-2. The layout loader reads the component's persisted `config` map.
+1. The panel module publishes its `settings` schema.
+2. The layout loader reads the panel's persisted `config` map.
 3. The host fills missing values from schema defaults and validates stored values.
-4. The host passes the resolved config to component `create` or `update`.
-5. The component settings editor binds LVGL controls to an in-memory working copy.
-6. Apply validates the working copy, updates the live component, and persists the layout YAML.
+4. The host passes the resolved config to panel `create` or `update`.
+5. The panel settings editor binds LVGL controls to an in-memory working copy.
+6. Apply validates the working copy, updates the live panel, and persists the layout YAML.
 7. Cancel discards the working copy and leaves live and persisted values unchanged.
 
-Runtime or derived values belong in the component context and are not persisted. Only user configuration belongs under the component's YAML `config` map.
+Runtime or derived values belong in the panel context and are not persisted. Only user configuration belongs under the panel's YAML `config` map.
 
 ### Source settings
 
@@ -767,11 +763,11 @@ This section previously specified the opposite — a numeric identifier, authori
 
 The trade this gives up is real and is accepted: a *renamed* sensor breaks a layout that names it, where an identifier would have survived. That is the rarer event, it is the one a person causes deliberately, and it fails loudly — the panel reports an unavailable source rather than quietly reading the wrong one. Being wrong noisily beats being wrong silently on a source a pilot is flying by.
 
-`<key>Name` is retained only as a key the settings loader will not report as unknown, so an older layout carrying one still loads. Nothing reads it.
+Source names are stored directly in the declared source settings.
 
 ### Native host options
 
-Settings that apply to the dashboard as a whole, such as a global theme or diagnostic mode, may remain native options declared by `main.lua`. EdgeTX will generate their settings UI and persist them in the model. Placement and dynamic per-component settings must remain in the dashboard YAML.
+Settings that apply to the dashboard as a whole, such as a global theme or diagnostic mode, may remain native options declared by `main.lua`. EdgeTX will generate their settings UI and persist them in the model. Placement and dynamic per-panel settings must remain in the dashboard YAML.
 
 Each widget instance also declares a native string option keyed `DashID` and displayed as `Dashboard ID`, defaulting to `main`. The host combines the sanitized current model filename and Dashboard ID to select:
 
@@ -789,28 +785,28 @@ Different EdgeTX custom screens use different Dashboard IDs, allowing multiple i
 2. Select the layout filename for the active model.
 3. Read and parse the YAML layout, falling back to `default.yaml`.
 4. Validate and normalize all placements.
-5. Load each referenced component script.
+5. Load each referenced panel script.
 6. Create an LVGL parent container for each placement.
-7. Call each component's `create` callback.
+7. Call each panel's `create` callback.
 
 ### Update
 
 1. Apply changed dashboard options.
 2. Recalculate grid rectangles if the host zone changed.
-3. Call component `update` callbacks where possible.
-4. Rebuild only components that cannot update in place.
+3. Call panel `update` callbacks where possible.
+4. Rebuild only panels that cannot update in place.
 
 ### Refresh
 
-Call each visible component's `refresh` callback. Expensive telemetry calculations should be cached or scheduled rather than repeated by every component.
+Call each visible panel's `refresh` callback. Expensive telemetry calculations should be cached or scheduled rather than repeated by every panel.
 
 ### Background
 
-Call component `background` callbacks at a controlled rate. Components must not update LVGL objects while hidden unless EdgeTX permits that operation.
+Call panel `background` callbacks at a controlled rate. Panels must not update LVGL objects while hidden unless EdgeTX permits that operation.
 
 ### Events
 
-The host routes touch, key, rotary, and editor events. Events should first go to dashboard/editor controls and then to the component under focus or pointer position.
+The host routes touch, key, rotary, and editor events. Events should first go to dashboard/editor controls and then to the panel under focus or pointer position.
 
 Interactive LVGL controls are only available while the Lua widget is in temporary fullscreen mode. App mode provides the cleanest route into this interactive state.
 
@@ -826,7 +822,7 @@ Interactive LVGL controls are only available while the Lua widget is in temporar
 
 ### Freshness
 
-Every telemetry-backed component distinguishes:
+Every telemetry-backed panel distinguishes:
 
 - `current`: Valid and recently updated.
 - `stale`: Previously valid but no longer current.
@@ -837,7 +833,7 @@ Last-known values may remain visible in the stale state, but must be visually ma
 ### Units and formatting
 
 - Use EdgeTX source units and configured radio unit preferences where available.
-- Keep conversion and formatting in the telemetry service so related components agree.
+- Keep conversion and formatting in the telemetry service so related panels agree.
 - Store thresholds in a documented canonical unit or alongside an explicit unit field; never reinterpret an existing threshold when display units change.
 - Use stable precision and avoid rapidly changing decimal places.
 - GPS coordinates support decimal degrees initially; additional formats may follow.
@@ -850,7 +846,7 @@ Dashboard-tracked "during flight" extrema require an explicit session boundary. 
 - `timer`: Reset when a configured model timer starts a new run.
 - `switch`: Reset on the configured arm or motor-switch transition.
 
-The initial policy is `switch`, using a configured arm switch. A disarmed-to-armed transition resets and starts dashboard flight extrema; an armed-to-disarmed transition stops and freezes them. The `manual` and `timer` policies remain available as fallbacks. EdgeTX-provided minimum/maximum telemetry sources are preferred by components and remain independent of dashboard flight sessions.
+The initial policy is `switch`, using a configured arm switch. A disarmed-to-armed transition resets and starts dashboard flight extrema; an armed-to-disarmed transition stops and freezes them. The `manual` and `timer` policies remain available as fallbacks. EdgeTX-provided minimum/maximum telemetry sources are preferred by panels and remain independent of dashboard flight sessions.
 
 Flight-session state is runtime state and is not written on every telemetry update. A future requirement may add explicit snapshot or log persistence.
 
@@ -863,7 +859,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: main-battery
     type: cell-battery
     col: 0
@@ -900,7 +896,7 @@ session:
   armSource: sf
 ```
 
-Every key above is one the named component declares, every span is one the named component supports, and this example is loaded by the test suite rather than being read and believed. That is not a stylistic point: since the settings vocabulary work, a key a component does not declare is reported at load with the layout, component and key named. The version of this example printed here until 2026-09-18 did not load cleanly — it produced `main-battery: source must be a string; showLabel is not a setting of this component` — and it was the most likely thing for someone to copy. Correcting it by inspection was not enough: it also gave `link-status` a `4 x 3` span that the component does not declare, so the host would have dropped the panel from the dashboard. That was found by the test, not by reading, which is the argument for the test.
+Every key above is one the named panel declares, every span is one the named panel supports, and this example is loaded by the test suite rather than being read and believed. That is not a stylistic point: since the settings vocabulary work, a key a panel does not declare is reported at load with the layout, panel and key named. The version of this example printed here until 2026-09-18 did not load cleanly — it produced `main-battery: source must be a string; showLabel is not a setting of this panel` — and it was the most likely thing for someone to copy. Correcting it by inspection was not enough: it also gave `link-status` a `4 x 3` span that the panel does not declare, so the host would have dropped the panel from the dashboard. That was found by the test, not by reading, which is the argument for the test.
 
 The second half of that message is the more interesting one. The example showed sources as numeric identifiers with a `sourceName` companion, because [Source settings](#source-settings) used to specify that. It was the specification that was wrong, and it has since been corrected to describe what exists and why: a source identifier records the order sensors happened to arrive in and moves when they are rediscovered, and nobody can hand-author one.
 
@@ -909,18 +905,18 @@ The second half of that message is the more interesting one. The example showed 
 - `version` is required and currently must equal 1.
 - The first implementation always uses a 4 x 4 grid, even though dimensions are recorded for future compatibility.
 - `id` must be unique within a layout.
-- `type` maps to `components/<type>.lua` and must be restricted to safe filename characters.
+- `type` maps to `panels/<type>.lua` and must be restricted to safe filename characters.
 - Placement values must be integers within grid bounds.
-- `session` is optional and carries settings that describe the flight rather than a panel. `armSource` names the switch or source that marks the model armed, and lives here because one dashboard has one flight; stated per component, two components could name two switches and only the first would be honoured.
+- `session` is optional and carries settings that describe the flight rather than a panel. `armSource` names the switch or source that marks the model armed, and lives here because one dashboard has one flight; stated per panel, two panels could name two switches and only the first would be honoured.
 - Unknown top-level keys should be ignored for forward compatibility.
-- Unknown component types should produce a visible placeholder rather than prevent the dashboard from loading.
-- Component-specific data belongs under `config`.
-- Config keys correspond to stable keys in the component's `settings` schema.
-- Missing config keys receive component defaults. An unknown config key is preserved when saving, for forward compatibility, but is reported at load with the layout, component and key named: in practice it is a typo or a rename left behind, and silence is how a renamed setting reaches a radio still doing nothing.
+- Unknown panel types should produce a visible placeholder rather than prevent the dashboard from loading.
+- Panel-specific data belongs under `config`.
+- Config keys correspond to stable keys in the panel's `settings` schema.
+- Missing config keys receive panel defaults. An unknown config key is preserved when saving, for forward compatibility, but is reported at load with the layout, panel and key named: in practice it is a typo or a rename left behind, and silence is how a renamed setting reaches a radio still doing nothing.
 - A config value outside a setting's declared `choices` is reported the same way and falls back to the setting's default.
-- A component may declare `validateSettings(settings, span, config)`, returning messages, for a rule that spans more than one setting, or one that depends on where the panel is placed. `choices` catches a value that is wrong on its own; this catches a pair that is wrong together, or a value that is fine in itself and meaningless at this size.
+- A panel may declare `validateSettings(settings, span, config)`, returning messages, for a rule that spans more than one setting, or one that depends on where the panel is placed. `choices` catches a value that is wrong on its own; this catches a pair that is wrong together, or a value that is fine in itself and meaningless at this size.
 - **Validation that fires on resolved settings must distinguish what the layout stated from what the defaults filled in.** `settings` arrives complete, with every default applied, so a rule reading it cannot tell a request from a resting value. `config` is what the layout actually said, and a rule that complains should read that. `cell-battery`'s `showPack` and `showCount` default to `true` and need a supporting row no single-row span has, so a rule reading `settings` would have reported the panel's own shedding as an ignored request and failed every layout with a one-row `cell-battery`. The distinction is the difference between a rule and a nuisance, and it applies to any future validation, not only to this one.
-- Sources are stored as sensor names. A `<key>Name` companion from an older layout is accepted and ignored.
+- Sources are stored as sensor names in the declared source settings.
 
 ## YAML Handling
 
@@ -968,33 +964,33 @@ The editor runs inside the dashboard's temporary fullscreen state.
 
 ### Required actions
 
-- Add component
-- Select component type
-- Move component by one grid cell
-- Resize component by one grid cell in each direction
-- Edit component-specific configuration
-- Remove component
+- Add panel
+- Select panel type
+- Move panel by one grid cell
+- Resize panel by one grid cell in each direction
+- Edit panel-specific configuration
+- Remove panel
 - Cancel uncommitted changes
 - Apply and persist changes
 - Restore the default layout
 
-### Component settings behavior
+### Panel settings behavior
 
-- Generate the settings form from the selected component's `settings` schema.
+- Generate the settings form from the selected panel's `settings` schema.
 - Use native-style LVGL source, switch, timer, file, color, choice, numeric, text, and toggle controls.
 - Edit an isolated in-memory working copy rather than the live YAML data.
 - Show defaults for missing values and validation feedback for invalid values.
-- Apply settings to the live component only after validation succeeds.
+- Apply settings to the live panel only after validation succeeds.
 - Persist settings together with placement when the dashboard Apply or Save action is confirmed.
-- Preserve unknown config keys so a newer component configuration is not destroyed by an older dashboard host.
+- Preserve unknown config keys so a newer panel configuration is not destroyed by an older dashboard host.
 
 ### Placement behavior
 
 - Show the 4 x 4 grid while editing.
-- Highlight the selected component.
+- Highlight the selected panel.
 - Show occupied and available cells.
 - Reject out-of-bounds placement.
-- Reject overlap, or optionally offer to swap/move the conflicting component.
+- Reject overlap, or optionally offer to swap/move the conflicting panel.
 - Keep an in-memory working copy until Apply.
 - Rebuild affected LVGL containers after an accepted geometry change.
 
@@ -1002,30 +998,30 @@ Touch radios may support drag and resize handles. Rotary/key-only radios should 
 
 ## Validation and Recovery
 
-The loader must validate every layout before creating components:
+The loader must validate every layout before creating panels:
 
 - Schema version is supported.
 - Grid dimensions are supported.
 - IDs are unique.
-- Component types are safe and available.
+- Panel types are safe and available.
 - Coordinates and spans are integers in range.
 - Rectangles do not overlap.
-- Configuration values meet component-defined constraints where available.
+- Configuration values meet panel-defined constraints where available.
 - Source values are names that resolve against the model's sensors, or are reported as unavailable.
-- Configured sources return the value shape required by the component.
+- Configured sources return the value shape required by the panel.
 - Threshold units and ranges are valid.
 - A navigation bearing is shown only when valid model and pilot/home GPS coordinates are available.
 
-Invalid entries should be skipped or replaced with an error placeholder. One broken component must not disable the entire dashboard.
+Invalid entries should be skipped or replaced with an error placeholder. One broken panel must not disable the entire dashboard.
 
-The UI should expose enough error information to identify the layout file and invalid component without displaying a Lua stack trace during normal use.
+The UI should expose enough error information to identify the layout file and invalid panel without displaying a Lua stack trace during normal use.
 
 ## Performance and Resource Constraints
 
-- All components share the EdgeTX widget Lua state and instruction budget.
-- Keep component modules namespace-local and return tables rather than creating globals.
-- Avoid loading unused components.
-- Cache telemetry sources and derived values where components can share them.
+- All panels share the EdgeTX widget Lua state and instruction budget.
+- Keep panel modules namespace-local and return tables rather than creating globals.
+- Avoid loading unused panels.
+- Cache telemetry sources and derived values where panels can share them.
 - Rate-limit expensive work independently from visual refresh.
 - Minimize LVGL object count, bitmap memory, and transient table allocation.
 - Prefer incremental updates over rebuilding the complete dashboard.
@@ -1037,33 +1033,33 @@ The UI should expose enough error information to identify the layout file and in
 - App mode is the primary deployment because it provides the complete decoration-free screen and the cleanest future path to interaction.
 - The ordinary Full screen layout remains a supported fallback when users want EdgeTX decorations.
 - Existing native layouts and widgets are unaffected.
-- Components written for this dashboard are not automatically compatible with native EdgeTX widget slots.
-- Existing widgets must be adapted to the component contract and relative geometry.
+- Panels written for this dashboard are not automatically compatible with native EdgeTX widget slots.
+- Existing widgets must be adapted to the panel contract and relative geometry.
 - Telemetry availability and naming vary by RF protocol, receiver, sensor configuration, and model.
-- Missing optional sources must degrade the component presentation rather than prevent dashboard startup.
+- Missing optional sources must degrade the panel presentation rather than prevent dashboard startup.
 - Internal transmitter GPS is not assumed; aircraft telemetry GPS is the primary navigation input.
 
 ## Distribution, Versioning, and Diagnostics
 
-- Distribute AeroGrid as one versioned `/WIDGETS/AeroGrid/` package so host, services, editor, and bundled components are upgraded together.
+- Distribute AeroGrid as one versioned `/WIDGETS/AeroGrid/` package so host, services, editor, and bundled panels are upgraded together.
 - Keep `main.lua` small and load implementation modules on demand.
-- Define a dashboard package version, layout schema version, and component API version independently.
+- Define a dashboard package version, layout schema version, and panel API version independently.
 - `lib/package.lua` is the package identity source (`0.10.0`); runtime API,
-  component API, and layout schema are independently versioned at `1`.
+  panel API, and layout schema are independently versioned at `1`.
   Internal modules declare `RUNTIME_API`; increment it when changing their
   contract incompatibly. The host rejects missing or incompatible core modules
   with a visible error and prevents reloading a failed runtime. Incompatible
   services are reported while unrelated panels continue to operate.
-  Components remain governed by their public `apiVersion`, including third-party
+  Panels remain governed by their public `apiVersion`, including third-party
   modules. This is API compatibility checking, not a checksum of the installation:
   API-compatible release mixtures and stale bytecode are not proven absent.
   Upgrade the complete package and remove old `.luac` files.
-- Every component declares the component API version it requires. Incompatible components render an error placeholder instead of executing.
+- Every panel declares the panel API version it requires. Incompatible panels render an error placeholder instead of executing.
 - Phase 2 layout migrations operate on an in-memory copy, preserve the original file as a backup, and write only after successful validation.
 - A newer unsupported layout version must not be rewritten by an older dashboard release.
-- The dashboard provides a diagnostics view showing package version, active layout path, loaded components, unresolved sources, and component failures. See [The host diagnostics view](#the-host-diagnostics-view).
+- The dashboard provides a diagnostics view showing package version, active layout path, loaded panels, unresolved sources, and panel failures. See [The host diagnostics view](#the-host-diagnostics-view).
 - Diagnostics must avoid continuous SD-card logging by default. Optional logs are written only on explicit export or when a bounded diagnostic mode is enabled.
-- Component loading and layout filenames must reject path traversal and unsafe filename characters.
+- Panel loading and layout filenames must reject path traversal and unsafe filename characters.
 
 ## Possible Native Firmware Follow-Up
 
@@ -1119,13 +1115,13 @@ This is carried in the open-items table as milestone 4's physical readability re
 
 ### What the presentation and consistency pass did
 
-Eleven pull requests over one day, after an audit that measured every component at every span it declares through the real host. The audit's premise was that thirteen components written across three milestones by different sessions to the same contract, but not to each other, would agree individually and disagree as a set. They did. The PRs hold the detail; this is the shape.
+Eleven pull requests over one day, after an audit that measured every panel at every span it declares through the real host. The audit's premise was that thirteen panels written across three milestones by different sessions to the same contract, but not to each other, would agree individually and disagree as a set. They did. The PRs hold the detail; this is the shape.
 
 **Presentation.** A panel is now a card: deepened canvas, lifted surface, 8 px corners, and no outline at rest. Its accent is a full-height stripe with rounded outer corners, drawn as arcs clipped by a box one accent-width wide — five rounds of trying, and the version that worked came from the user rather than from the measurements. Alert states tint the surface instead of colouring the frame, which leaves **fill meaning a condition of the data and outline meaning where the interaction focus is**, where the border previously carried both.
 
-**Consistency.** The badge vocabulary was cut from thirteen strings to five rather than widening the column to fit the longest, because `NOT CELLS` and `BAD CELLS` were nine characters separating two failure modes of one component. The header gives the label the room an empty badge is not using, permanently rather than conditionally, so a state change never makes the label reflow. Eight private copies of "choose a font for this reading" became one shared responsive ladder: composition comes from the box, and the font from the composition, so two panels of the same size agree. Ten non-monotonic font ladders became none.
+**Consistency.** The badge vocabulary was cut from thirteen strings to five rather than widening the column to fit the longest, because `NOT CELLS` and `BAD CELLS` were nine characters separating two failure modes of one panel. The header gives the label the room an empty badge is not using, permanently rather than conditionally, so a state change never makes the label reflow. Eight private copies of "choose a font for this reading" became one shared responsive ladder: composition comes from the box, and the font from the composition, so two panels of the same size agree. Ten non-monotonic font ladders became none.
 
-**Correctness.** A component now declares what it renders, and its redraw comparison is derived from that declaration rather than from a hand-listed subset that drifts from `apply` — which was the fourth instance of one defect, after three were fixed individually in milestone 7. The settings vocabulary was unified: one name per concept, declared `choices` the loader enforces, thresholds that state their direction and unit, ranges named for what they bound, and the flight arm switch moved to the layout where two components cannot contradict each other.
+**Correctness.** A panel now declares what it renders, and its redraw comparison is derived from that declaration rather than from a hand-listed subset that drifts from `apply` — which was the fourth instance of one defect, after three were fixed individually in milestone 7. The settings vocabulary was unified: one name per concept, declared `choices` the loader enforces, thresholds that state their direction and unit, ranges named for what they bound, and the flight arm switch moved to the layout where two panels cannot contradict each other.
 
 **Cost.** `trim-panel`'s reflow, the worst callback, was found to be half inherent and half invisible work: it hid the text rows a narrow cell cannot fit and then went on positioning, formatting and writing them anyway.
 
@@ -1133,7 +1129,7 @@ Two lessons generalised past their PRs and are recorded where they will be read 
 
 ### What the vertical-rhythm pass did
 
-Eighteen pull requests after the presentation pass, and where that one made the catalogue agree with itself horizontally, this one did the vertical axis and then the per-component reviews it exposed. The shape, since the PRs hold the detail:
+Eighteen pull requests after the presentation pass, and where that one made the catalogue agree with itself horizontally, this one did the vertical axis and then the per-panel reviews it exposed. The shape, since the PRs hold the detail:
 
 **The bands, stated three times.** They were proportional but not fixed: an absent part gave its quarter to the body, so a panel drawing a supporting row sized its reading against a half and the identical panel beside it, without one, against three quarters. Two panels of one size laid out differently according to what was *in* them. The user saw that on a radio and rejected it, and the split became a fixed 1/4 : 1/2 : 1/4 with the bottom quarter reserved whether or not anything is drawn in it. Three parameters went with the redistribution -- `hasTertiary`, `floorHeight` and `rowHeight` -- because each of them sized a band from its contents, and `theme.ladder`'s `draws` argument went too once nothing downstream varied with the answer.
 
@@ -1144,7 +1140,7 @@ reading's ink on the panel's own centre, and the reading's font from half the pa
 height -- or all of it where nothing shares the panel. 102 of 258 panels that draw all
 three move their row down, none changes size, and the gaps above and below the reading
 become equal on 29 where none had been equal before. Where a bar owns the floor the row
-hangs from the bar instead and does not move, so the five bar-reserving components are
+hangs from the bar instead and does not move, so the five bar-reserving panels are
 unaffected -- including `flight-timer`, which is the panel the whole sequence started from.
 
 **Then the reading came out of the bands altogether.** The user looked at the fixed split on a radio and read the panel as uncentred, which it was: the bands were symmetric, but a heading is pinned to the top of its band while a supporting row is centred in its own, so the slack collected above the number. The rule now is one centre and two budgets -- the reading's ink sits on the panel's own vertical centre, and its font comes from half the panel's height where anything shares the panel and from the whole height where nothing does. The heading's quarter and the supporting row's quarter are unchanged; the middle band survives only as the compass's bound. 155 of 704 panels gain a font size and none lose one, which is more than the fixed split had cost at one-row spans.
@@ -1153,10 +1149,10 @@ Two things about that are worth keeping rather than leaving in a PR. **The sympt
 
 **The ink.** A reading's font came from the largest whose *line height* fitted its band, and line height is ascent plus descent plus leading. No reading in the catalogue descends, so the band was reserving space nothing draws into. It comes from the ink now and the reading is placed by centring that ink, which had to move together: a font chosen one way and a block centred the other disagree by 4.5 px on a `navigation 4 x 2`. That reversed a recorded decision, and `theme.opticalTop` went with it -- it had no caller at all, which is the same shape as the retired `primitives.arcBounds`.
 
-**The reviews.** Nine components have completed the simulator review and
+**The reviews.** Nine panels have completed the simulator review and
 documentation pass: `flight-mode`, `tx-battery`, `model-identity`,
 `flight-timer`, `cell-battery`, `trim-panel`, `navigation`, `link-status`, and
-`metric`. All nine display-component reviews are complete.
+`metric`. All nine display-panel reviews are complete.
 Initial physical dashboard validation passed on TX16S v2 / EdgeTX 2.12.4;
 the remaining hardware matrix and resource measurements are outstanding.
 Review screens live on a second model because `MAX_CUSTOM_SCREENS` is 10.
@@ -1171,7 +1167,7 @@ the 2x3 example includes them. Full coordinates can also fit a normal 2x2
 detailed panel. One-row panels still show distance only: a bearing
 presentation requests a footer, not a bearing headline. This limitation is
 documented rather than presented as missing GPS data.
-See [navigation documentation](../docs/components/navigation.md).
+See [navigation documentation](../docs/panels/navigation.md).
 
 **`cell-battery` review changes landed in #93.** The fifth screen selects
 `review-cell-battery`, comparing pack-first and average-first readings from
@@ -1182,17 +1178,17 @@ unit-shedding threshold, and digit-ink alignment. The sixth diagnostic screen
 confirmed case-sensitive binding: `RxBt` works, `RXBt` does not.
 
 **`trim-panel` simulator review is complete, by user choice.** The seventh screen
-on AEROGRID REVIEW selects `review-trim-panel`, comparing three-axis squares,
-a pair, horizontal and vertical singles, raw and percentage readouts, and
-single-cell shedding. The default is now a three-axis perimeter arrangement:
+on AEROGRID REVIEW selects `review-trim-panel`, comparing the three-axis square
+at several spans, raw and percentage readouts, and single-cell shedding. The
+panel uses a three-axis perimeter arrangement:
 aileron at the top, elevator on the left, rudder at the bottom, green
 center-zero fills with fixed zero ticks, and a white dot following aileron
 and elevator. The square and right-hand numeric column are centered as a
 group using a fixed full-range budget, with right-aligned `A/E/R` suffix
 readouts vertically centered on their bars and equal corner clearances.
-Compact typography retains numbers in normal 1x1 cells. The previous
-arrangements remain available through explicit `indicators` settings.
-See [trim-panel documentation](../docs/components/trim-panel.md).
+Compact typography retains numbers in normal 1x1 cells. This square is the
+panel's only presentation.
+See [trim-panel documentation](../docs/panels/trim-panel.md).
 The fixture now starts on AEROGRID REVIEW (`model2.yml`), with
 `manuallyEdited: 1` allowing EdgeTX to accept the changed radio settings
 and regenerate their checksum.
@@ -1205,28 +1201,28 @@ and regenerate their checksum.
 
 The current suite, including the ELRS 4.x link review and sixteen-panel
 ELRS exercise, reports **13800/20000** for the worst
-callback (shipped component refresh), **6600/20000** for the worst steady
+callback (shipped panel refresh), **6600/20000** for the worst steady
 frame (link review), and **9800/20000** for shipped reflow. These are
 the runner's sampled instruction counts; the figures and reasoning below
 record earlier measurements rather than the current panel implementations.
 
 | | Value | Where |
 | --- | --- | --- |
-| Worst callback | 8097 of 20000 | the staged loader building one `trim-panel` at sixteen cells |
+| Worst callback | 8097 of 20000 | the staged loader building a trim panel at sixteen cells; the trim-specific baseline predates the fixed three-axis presentation |
 | Worst steady frame | 3535 of 20000 | sixteen `link-status` panels |
 | Worst reflow | 7573 of 20000 | the shipped dashboard, against the worst other callback at 8097 |
 
-Every figure is what the suite itself reports, re-measured with the count hook set to every instruction. All three are asserted by the suite and are measured at the largest layout the schema permits. Note the second-worst callback is the loader's own header stage rather than any component -- which means component work is no longer the binding constraint on a full grid, and the next person looking for headroom should know that before optimising a panel.
+Every figure is what the suite itself reports, re-measured with the count hook set to every instruction. All three are asserted by the suite and are measured at the largest layout the schema permits. Note the second-worst callback is the loader's own header stage rather than any panel -- which means panel work is no longer the binding constraint on a full grid, and the next person looking for headroom should know that before optimising a panel.
 
 **Two of the three are not stable to the instruction, and the ranges are worth stating rather than a single number.** Measured five times against one unchanged checkout, the worst callback comes back 8096, 8097 or 8098 and the worst steady frame 3535 or 3541; on `main` the same two span 8096–8098 and 3503–3512. Only the reflow repeats exactly, on both sides. So a movement of under about ten instructions in either of the first two is the instrument rather than the dashboard, and the figures above are quoted at the value each returns most often.
 
 This paragraph said the worst callback alone was unstable and that "the other two are stable and repeat exactly", which was written after two runs and was false of the steady frame on the third. It is the same shape as every other figure that has drifted here -- a claim about a measurement made from too few measurements -- and it is recorded rather than quietly corrected because the instrument's own reliability is exactly the thing a budget assertion rests on.
 
-**Two of these were wrong, and the correction is the fifth figure in this project to drift.** The worst callback read 7882, which is 136 low and was low on `main` as well as on the branch that found it -- it was not re-measured after whatever moved it. The worst steady frame read 2520 against "the shipped ten-component dashboard", which is a different subject from the one the suite reports: the suite measures three sixteen-component exercises and names the worst of them, and that is `link-status`, not the shipped layout. A figure and its subject drifted apart, which is harder to notice than a figure drifting alone, because the number stays plausible.
+**Two of these were wrong, and the correction is the fifth figure in this project to drift.** The worst callback read 7882, which is 136 low and was low on `main` as well as on the branch that found it -- it was not re-measured after whatever moved it. The worst steady frame read 2520 against "the shipped ten-panel dashboard", which is a different subject from the one the suite reports: the suite measures three sixteen-panel exercises and names the worst of them, and that is `link-status`, not the shipped layout. A figure and its subject drifted apart, which is harder to notice than a figure drifting alone, because the number stays plausible.
 
 All three rose when the badge began being placed from its own measured text rather than drawn from its column's left corner: 79 on the worst callback, 60 on the steady frame and 68 on the reflow. That is the cost of a measurement per badge per repaint, and two ways of avoiding it were measured and rejected -- guarding on the word being unchanged, which is `setHeading`'s guard and fails for the same reason, and memoising the five-word vocabulary, which buys the reflow 27 and costs the worst callback 14. The arithmetic is in `primitives.setBadge` so nobody repeats it.
 
-The worst reflow is the figure that moves. It rose 421 when `navigation` began asking the ladder a second time with the height its two supporting rows need, and a further 135 when the fixed-bands rule took that second call away again and gave the component a row-count decision of its own instead. The worst callback has not moved through either change; the worst steady frame is within 8 instructions of where it was. The assertion that matters is not the number but the comparison -- a reflow may not be the most expensive callback the dashboard makes -- and the margin is 523 to 525 instructions, the spread being the worst callback's own jitter rather than the reflow's.
+The worst reflow is the figure that moves. It rose 421 when `navigation` began asking the ladder a second time with the height its two supporting rows need, and a further 135 when the fixed-bands rule took that second call away again and gave the panel a row-count decision of its own instead. The worst callback has not moved through either change; the worst steady frame is within 8 instructions of where it was. The assertion that matters is not the number but the comparison -- a reflow may not be the most expensive callback the dashboard makes -- and the margin is 523 to 525 instructions, the spread being the worst callback's own jitter rather than the reflow's.
 
 The steady frame and the reflow each rose when a unit stopped being drawn beside a reading with no value: the steady frame from 3503–3512 to 3535–3541, and the reflow from 7547 to 7573, which is +26 exactly and is the one of the three that repeats. That is the sentinel test and a visibility comparison, paid once per unit-bearing panel per repaint and once per unit-bearing panel per reflow; the worst callback did not move, because the panel that sets it draws no unit. Both figures were measured against `main` at the same hook setting rather than read off the table above, because a comparison between a measurement and a remembered number is the drift this project has now had five of. The comparison was also seen to report a difference before it was trusted to report agreement -- the worst callback agreeing to the instruction is only evidence because the other two did not.
 
@@ -1240,16 +1236,16 @@ The worst callback rose 85 when the heading notice started working. It had been 
 - CI (`.github/workflows/ci.yml`) runs `make check` under Lua 5.3 on every pull request, plus the SD image build and two integrity assertions.
 - The dashboard has been confirmed running in the EdgeTX simulator on a TX16S profile through milestone 7. Navigation, link status, the radial and bar metrics and the trim panel have all been read against live simulated telemetry, which is where the arc drift in constraint 11 was found. Two of milestone 7's behaviours still cannot be judged there: whether a cells source on a real receiver returns the table shape assumed here, since nothing on an ELRS link publishes one, and whether a protocol without an RSSI sensor is recognized as a link rather than a dead one.
 - Milestone 8's corner work and the whole presentation and consistency pass have been seen in the EdgeTX simulator and judged there. The accent geometry in particular took five rounds of looking, and the version that was accepted came from the person at the screen rather than from any measurement, which is the standing argument for building something to look at rather than reasoning about it in prose. Initial dashboard acceptance has now been reported on TX16S v2 / EdgeTX 2.12.4; see [Hardware validation status](#hardware-validation-status).
-- The simulator fixture carries **six screens on `model1` and ten on `model2`**, every one holding an AeroGrid instance and every one an App mode layout. `model1` has `sim`, which fills its grid with the telemetry components; `sim2`, which covers the radio-local ones that had nowhere to go beside them; the `states` layout twice, under the Modern and EdgeTX-derived palettes; the `host` diagnostics view; and the `aircraft` dashboard. The default `model2` carries reviews for `flight-mode`, `tx-battery`, `model-identity`, `flight-timer`, `cell-battery`, `trim-panel`, `navigation`, `link-status`, and `metric`, plus the cell-source diagnostic screen.
+- The simulator fixture carries **six screens on `model1` and ten on `model2`**, every one holding an AeroGrid instance and every one an App mode layout. `model1` has `sim`, which fills its grid with the telemetry panels; `sim2`, which covers the radio-local ones that had nowhere to go beside them; the `states` layout twice, under the Modern and EdgeTX-derived palettes; the `host` diagnostics view; and the `aircraft` dashboard. The default `model2` carries reviews for `flight-mode`, `tx-battery`, `model-identity`, `flight-timer`, `cell-battery`, `trim-panel`, `navigation`, `link-status`, and `metric`, plus the cell-source diagnostic screen.
 
   Reaching a layout means setting the widget's Dashboard ID, which in App mode cannot be reached from the main view at all: `Widget::openMenu` returns immediately after `setFullscreen(true)` when the widget is not in the top bar and the view is App mode. So a layout without a screen of its own costs a trip through Model Setup and Screens, which is why the review screens exist rather than being Dashboard IDs somebody is expected to type. `MAX_CUSTOM_SCREENS` is 10, and that ceiling is why the reviews are on a second model at all. Paging between screens switches dashboards without opening widget settings, and exercises two widget instances resolving different layouts at once; `sim` carries the Modern palette and `sim2` the EdgeTX-derived one, so the two are one button press apart.
 
   **Corrected: this said nine screens on one model, four of them span galleries.** The galleries were retired to test fixtures in the same pass that added the review screens, and this sentence went on describing the arrangement they were part of -- the next bullet records the retirement, so the two contradicted each other in adjacent lines.
 - Two instances running together are held to owning their own root, page, service registry and telemetry service, because EdgeTX runs every Lua widget in one interpreter state and anything a module kept at its own scope would be shared between dashboards that know nothing about each other.
 - In App mode, every shipped layout is checked to draw nothing readable inside the corner EdgeTX's menu button covers. The directory is read rather than listed, so a new layout is covered as soon as it is added.
-- Every layout under `layouts/` is loaded by the integration suite, not merely the shipped default: each one is built through the real host and components, held to the same containment rules, and refreshed against radio state. A layout is covered as soon as it is added, because the suite reads the directory rather than a list.
-- **The four span galleries have been retired from the radio and kept as test fixtures.** They shipped under the Dashboard IDs `span1x1`, `span2x1`, `span2x2` and `span4x1`, each putting every component at one span so the catalogue could be caught disagreeing with itself. The user does not page to them, and ten screens is the ceiling, so they now live in `tests/fixtures/layouts/` rather than on the card. What they construct is still built: the single-cell gallery is still held to containing every component that declares a `1x1` span, read from the component directory rather than from a list, and all four are still swept by the collision check, where they are the densest arrangement in the suite -- eleven components in one grid. Retiring a layout from a screen is a decision about the radio; deleting the cases it builds would have been a quiet reduction in coverage.
-- **Review screens live on a second model.** `MAX_CUSTOM_SCREENS` is 10 (`radio/src/dataconstants.h`). `model1.yml` keeps the dashboards and diagnostics; `model2.yml` has nine component review screens and one source-name diagnostic, filling its ten-screen allowance. All nine display-component reviews are complete. The metric review includes an ordinary GV source.
+- Every layout under `layouts/` is loaded by the integration suite, not merely the shipped default: each one is built through the real host and panels, held to the same containment rules, and refreshed against radio state. A layout is covered as soon as it is added, because the suite reads the directory rather than a list.
+- **The four span galleries have been retired from the radio and kept as test fixtures.** They shipped under the Dashboard IDs `span1x1`, `span2x1`, `span2x2` and `span4x1`, each putting every panel at one span so the catalogue could be caught disagreeing with itself. The user does not page to them, and ten screens is the ceiling, so they now live in `tests/fixtures/layouts/` rather than on the card. What they construct is still built: the single-cell gallery is still held to containing every panel that declares a `1x1` span, read from the panel directory rather than from a list, and all four are still swept by the collision check, where they are the densest arrangement in the suite -- eleven panels in one grid. Retiring a layout from a screen is a decision about the radio; deleting the cases it builds would have been a quiet reduction in coverage.
+- **Review screens live on a second model.** `MAX_CUSTOM_SCREENS` is 10 (`radio/src/dataconstants.h`). `model1.yml` keeps the dashboards and diagnostics; `model2.yml` has nine panel review screens and one source-name diagnostic, filling its ten-screen allowance. All nine display-panel reviews are complete. The metric review includes an ordinary GV source.
 
 ### Immediate next steps
 
@@ -1311,9 +1307,9 @@ sources rather than special list options. The primary alone drives thresholds
 and the visualization. The shared builder tries the footer, then a right-side
 stack, then hides the supporting group, without shrinking the primary.
 The accepted link side-stack geometry now uses that same builder. Sensor-derived
-primary units display correctly; unavailable readings omit units. Legacy
-presets and settings remain supported. The tenth screen selects `review-metric`.
-See [metric documentation](../docs/components/metric.md).
+primary units display correctly; unavailable readings omit units.
+The tenth screen selects `review-metric`.
+See [metric documentation](../docs/panels/metric.md).
 
 **Link-status simulator review and documentation complete:** measured link quality
 remains the primary reading under `reading: auto`; RSSI is independent supporting
@@ -1322,8 +1318,8 @@ and `marginWarning` / `marginCritical` use dB above nominal receiver sensitivity
 There are no default alarm thresholds, composite health percentage, universal SNR
 penalties, or widget voice/haptic alerts. The most severe configured live condition
 sets the panel state; the supporting caption identifies low LQ, low RSSI, or low
-margin. Link-down takes precedence. Existing primary-unit `warning` / `critical`
-remain supported only with a named `reading`.
+margin. Link-down takes precedence. `rssiWarning` / `rssiCritical` use the
+RSSI source's numerical units independently of the selected headline.
 ELRS quality panels without extrema pair receiver power and margin in one
 full-width caption: `-100dBm (+23dB)`. The difference uses dB, not dBm, and
 positive margins explicitly carry `+`. Alarm causes take priority over the
@@ -1404,29 +1400,29 @@ These came out of the presentation and consistency pass and were not done, each 
 | `theme.badgeWidth` reserves 11 px more than the badge draws | Presentation pass | The column is sized with `theme.textWidth`, the estimate, while the badge is placed at its measured width. Every heading on the dashboard pays it. Recorded in the design guide's header section |
 | Physical readability review at 480 x 272 | Milestone 4 | Needs hardware; the only thing keeping milestone 4 from being fully closed |
 | The panel presentation has not been seen on a radio | Milestone 4 | Elevation, 8 px corners, the clipped accent stripe, the removal of the resting outline and the alert tints have all been judged in the simulator. None has been seen on a radio, which is where the peripheral-vision argument behind the tints can actually be tested |
-| Milestones 5 and 6 have not been run on hardware | Milestones 5 and 6 | The diagnostics layouts exist precisely to make that check quick, and the shipped dashboard now exercises all seven core components at once |
+| Milestones 5 and 6 have not been run on hardware | Milestones 5 and 6 | The diagnostics layouts exist precisely to make that check quick, and the shipped dashboard now exercises all seven core panels at once |
 | Staleness is link-wide, not per sensor | Milestone 5 | EdgeTX exposes no per-sensor age except for GPS, so a sensor that stops arriving, or was never received, while the link holds still reads as live. See below |
 | Extrema reset policy covers switch and manual only | Milestone 5 | Timer-based reset is specified but not implemented |
-| A `1 x 1` component in the App mode top-left corner cannot be fully shown | Milestone 8 | The button covers 40% of its width and 69% of its height. Its reading survives, pushed below the button, and its header label is dropped rather than clipped. No approach saves it; avoid the placement. It is fully shown in widget fullscreen, where the button is hidden and the corner released |
+| A `1 x 1` panel in the App mode top-left corner cannot be fully shown | Milestone 8 | The button covers 40% of its width and 69% of its height. Its reading survives, pushed below the button, and its header label is dropped rather than clipped. No approach saves it; avoid the placement. It is fully shown in widget fullscreen, where the button is hidden and the corner released |
 | The menu button corner has not been seen on a radio | Milestone 8 | Seen and confirmed in the simulator. Measured against the real host and asserted for every shipped layout. Still unseen on hardware |
 | ~~Host notices are collected but not shown anywhere~~ | Milestone 8 | Closed. Contrast corrections and palette fallbacks are listed by the `theme` section of the host diagnostics view, which is where they were always headed |
 | The status rail is deferred, not cancelled | Milestone 8 | EdgeTX's own top bar fills the role at no Lua cost, and the geometry does not favour a dashboard rail. Default settled as off should it return |
-| Steady-state refresh cost scales with component count | Milestone 6 | The worst the suite measures is in [Current cost](#current-cost). Watch it as the catalogue grows |
+| Steady-state refresh cost scales with panel count | Milestone 6 | The worst the suite measures is in [Current cost](#current-cost). Watch it as the catalogue grows |
 | A cells source's real shape is unverified | Milestone 7 | `cell-battery` assumes a contiguous array of per-cell voltages and validates every entry, but no receiver has produced one yet |
 | A protocol without an RSSI sensor is detected indirectly | Milestone 7 | `link-status` relies on `telemetryService` observing a source contradict `getRSSI()`. Until something contradicts it, a genuinely dead link and a missing RSSI sensor are indistinguishable, and both read as no link |
 | Text width is estimated everywhere except where the unit is placed | Milestone 6, narrowed in the unit pass | The premise was wrong: `lcd.sizeText` measures text and is **not** gated on a draw callback. `luaLcdSizeText` carries no `luaLcdAllowed` or `luaLcdBuffer` check, because it reads font metrics and returns. Unit placement now uses it; every other fitting decision still uses the 0.58 estimate, and converting them is a decision for the user with the numbers below in front of them |
-| A trim's axis is unknown to the dashboard | Milestone 6 | EdgeTX exposes no axis metadata for a trim source, so `trim-panel` takes an orientation with a per-indicator override instead of matching on trim names |
+| Trim sources carry no axis metadata | Milestone 6 | The panel assigns its persisted aileron, elevator, and rudder sources to fixed positions and directions |
 | `lvgl.image` cannot report a failed decode | Milestone 6 | `StaticImage` clears its source silently, so `model-identity` checks the file with `fstat` beforehand and keeps the model name visible when `fstat` is unavailable |
 | `actions/checkout@v4` and `setup-python@v5` target Node 20 | CI | Non-blocking deprecation warning |
 | ~~`primitives.arcBounds` has no production caller~~ | Presentation pass | Closed by deletion. It was also wrong — it placed the outer edge at `radius + thickness / 2` where `lv_draw_arc.c` puts it at `radius` — and nothing caught that, because its only callers were tests using the same arithmetic. The tests now measure the arc the mock drew |
 | ~~`REFLOW_BATCH` has never been measured~~ | Presentation pass | Closed. Measured across batch sizes 1 to 16 and set to 3, which is where the saving stops. See [Why `REFLOW_BATCH` is three](#why-reflow_batch-is-three) |
 | ~~`link-status` thresholds change unit at runtime~~ | Presentation pass | Closed. A threshold is refused at load unless `reading` names a source, through the new `validateSettings` contract hook. The shipped dashboard was relying on the old behaviour and would have sat permanently critical on a protocol with no quality sensor |
-| ~~Three development components ship~~ | Presentation pass | Decided per component. `service-probe` ships: milestone 9 wants a host diagnostics view and it is the only thing that inspects a service on a radio. `heartbeat` and `placeholder` are now fixtures under `tests/fixtures/components`, copied into every scratch package so the host-contract coverage they exist for keeps running |
+| ~~Three development panels ship~~ | Presentation pass | Decided per panel. `service-probe` ships: milestone 9 wants a host diagnostics view and it is the only thing that inspects a service on a radio. `heartbeat` and `placeholder` are now fixtures under `tests/fixtures/panels`, copied into every scratch package so the host-contract coverage they exist for keeps running |
 | ~~Panels are outlined on every state, including healthy~~ | Milestone 4 | Closed. A resting panel is an elevated fill with no stroke; the border is reserved for focus, editing, warning and critical, and is built at the focus weight because a radio will not change a border's weight after the object exists |
-| ~~A `1 x 1` metric fits its value vertically but width is unchecked~~ | Milestone 6 | Closed. `theme.fitText` fits a value by measured width as well as height, choosing the font from the widest string the component can ever produce so geometry stays stable |
+| ~~A `1 x 1` metric fits its value vertically but width is unchecked~~ | Milestone 6 | Closed. `theme.fitText` fits a value by measured width as well as height, choosing the font from the widest string the panel can ever produce so geometry stays stable |
 | ~~`lvgl.arc` is positioned by its top-left corner~~ | Milestone 7 | Closed, and it never was. EdgeTX positions an arc by its **centre**, so every radial drawn before this milestone was one radius up and to the left of its intended place. See below |
 | ~~The navigation distance value does not render in the simulator~~ | Milestone 8 | Closed. It rendered perfectly and EdgeTX's menu button was painted over it: `778m` at (8, 25), inside a corner of 47 x 45. Not a Lua fault, and no error was ever raised |
-| ~~Component errors are invisible in App mode~~ | Milestone 8 | Closed. The overlay was drawn at (8, 8), underneath the menu button |
+| ~~Panel errors are invisible in App mode~~ | Milestone 8 | Closed. The overlay was drawn at (8, 8), underneath the menu button |
 
 ### Hard-won constraints
 
@@ -1437,10 +1433,10 @@ Thirteen firmware behaviours cost real debugging time and were invisible to the 
 3. **EdgeTX fonts are much taller than they look.** `XXL` is a 69 px line height at 480 x 272. Lay out from measured heights, never fixed offsets.
 4. **`getValue` returns integer zero for a telemetry source whose link is down.** That is indistinguishable from a genuine zero reading, so only a zero may be judged: a non-zero value is proof of life whatever `getRSSI()` says, and `getRSSI()` itself reads zero on a live link whose protocol has no RSSI sensor.
 
-Milestone 6 added three more, all of them about what the Lua API refuses to tell a component:
+Milestone 6 added three more, all of them about what the Lua API refuses to tell a panel:
 
-5. **Lua cannot measure text.** `lcd.sizeText` is only meaningful inside a draw callback, which an LVGL widget does not have, so width has to be estimated. `theme.textWidth` assumes a mean advance of 0.58 of the line height and `theme.fitText` chooses a font from the widest string a component can ever produce, never from the current one, so a reading does not resize as it changes.
-6. **A trim source carries no axis.** Nothing in `getFieldInfo` says whether a trim is a roll trim or a pitch trim, and the specification forbids assuming fixed trim names. `trim-panel` therefore takes an orientation, with a per-indicator override.
+5. **Lua cannot measure text.** `lcd.sizeText` is only meaningful inside a draw callback, which an LVGL widget does not have, so width has to be estimated. `theme.textWidth` assumes a mean advance of 0.58 of the line height and `theme.fitText` chooses a font from the widest string a panel can ever produce, never from the current one, so a reading does not resize as it changes.
+6. **A trim source carries no axis.** Nothing in `getFieldInfo` says whether a trim is a roll trim or a pitch trim. `trim-panel` therefore gives each configured source an explicit aileron, elevator, or rudder role and fixed position.
 7. **`lvgl.image` cannot report a failed decode.** `StaticImage::setSource` clears its own source and traces the error when a file will not load, and tells Lua nothing. The decision has to be made before the object exists, so `model-identity` asks `fstat` first and keeps the model name visible when `fstat` is absent.
 
 Milestone 7 added one more, and it invalidated work already shipped:
@@ -1459,23 +1455,23 @@ Milestone 8 added one firmware behaviour, and one about what a constant means:
 
 The presentation pass added one more, and it had been silently wrong for as long as the panels had states:
 
-13. **A rectangle's border width and corner radius are build-time properties.** `LvglWidgetRectangle::build` is the only caller of `lv_obj_set_style_radius` for a rectangle, and `LvglWidgetRectangle` adds no refresh of its own, so a `rounded` passed to `set` is parsed and then ignored. Border width is worse, because it looks like it works: `lv_obj_set_style_border_width` is called only from `LvglWidgetBorderedObject::setOpacity`, which runs behind `LvglParamFuncOrValue::changedValue`, and `refresh()` hands it the opacity the object already has. So `set{thickness = n}` updates the C++ member, never reaches LVGL, and reports nothing. Every panel therefore drew whatever weight it was born with: a component created healthy and later going critical asked for the focus weight and kept the resting one, on every radio, for three milestones. The panel now builds its border at the focus weight and shows or hides it, because visibility is the only property of a border that can actually change after the object exists. The mock keeps what was applied at build apart from what was last passed, so a test asserting the latter fails.
+13. **A rectangle's border width and corner radius are build-time properties.** `LvglWidgetRectangle::build` is the only caller of `lv_obj_set_style_radius` for a rectangle, and `LvglWidgetRectangle` adds no refresh of its own, so a `rounded` passed to `set` is parsed and then ignored. Border width is worse, because it looks like it works: `lv_obj_set_style_border_width` is called only from `LvglWidgetBorderedObject::setOpacity`, which runs behind `LvglParamFuncOrValue::changedValue`, and `refresh()` hands it the opacity the object already has. So `set{thickness = n}` updates the C++ member, never reaches LVGL, and reports nothing. Every panel therefore drew whatever weight it was born with: a panel created healthy and later going critical asked for the focus weight and kept the resting one, on every radio, for three milestones. The panel now builds its border at the focus weight and shows or hides it, because visibility is the only property of a border that can actually change after the object exists. The mock keeps what was applied at build apart from what was last passed, so a test asserting the latter fails.
 
 Two more lessons came from the tests rather than the firmware:
 
-- A budget test that measured only the shipped layout could not fail, and hid a loader that broke on any layout larger than twelve components. Measure the worst case the schema permits, and assert that the measured work actually happened.
+- A budget test that measured only the shipped layout could not fail, and hid a loader that broke on any layout larger than twelve panels. Measure the worst case the schema permits, and assert that the measured work actually happened.
 - An assertion can be vacuous without being wrong. A test that a missing model bitmap falls back to the model name passed while the panel was too short to have shown an image at all. It now asserts first that the panel could have shown one.
 - A geometry test that only checks the right and bottom edges cannot see two rows resolved onto the same line. Milestone 7's region tests assert that every supporting row clears the one above it and every column clears the one beside it, and that shedding a row actually buys the dominant reading a larger font, which is the reason for shedding it.
 - A fallback can hide the bug a test was written for. The reserved-corner test passed with the `MENU_HEADER_HEIGHT` unshifting removed, because the code's own 45 px default was right for the display the test used. Only measuring a display whose button is a different size made the shift load bearing. A default that rescues the mistake is worth keeping; a test that cannot see past it is not.
-- A component that reimplements a shared helper stops receiving that helper's fixes. `service-probe` had its own copy of the panel frame arithmetic, so it kept drawing its title into the menu button's corner after every catalogue component had stopped. `metric` shadowed a subset of the frame's fields and handed that to the header primitive, so it silently missed the new one.
+- A panel that reimplements a shared helper stops receiving that helper's fixes. `service-probe` had its own copy of the panel frame arithmetic, so it kept drawing its title into the menu button's corner after every catalogue panel had stopped. `metric` shadowed a subset of the frame's fields and handed that to the header primitive, so it silently missed the new one.
 - A fixture's own limitation can be written up as firmware behaviour. A global variable test asserted that switching flight mode left the value unmoved and explained it as EdgeTX resolving inheritance; the mock ignored the flight mode argument, so the assertion could not have failed and the explanation was invented. See the fixture discipline section below.
-- A refresh short-circuit is a cache, and a cache that misses a change shows an old number with a straight face. Three of milestone 7's components compared only their dominant reading and froze supporting content: pack sum, RSSI while LQ was unchanged, and GPS fix state. Every drawn field must participate in the comparison; model-identity coverage also checks labels changing without the model name changing.
+- A refresh short-circuit is a cache, and a cache that misses a change shows an old number with a straight face. Three of milestone 7's panels compared only their dominant reading and froze supporting content: pack sum, RSSI while LQ was unchanged, and GPS fix state. Every drawn field must participate in the comparison; model-identity coverage also checks labels changing without the model name changing.
 
-  The list is the defect. A component now declares what it draws, into one table, and is handed that table to paint from; the comparison is over exactly those values. A field the paint step reads but the declaration never wrote is `nil` on screen, which is loud, and a field declared but not painted costs a comparison and nothing worse. The list cannot drift from the drawing because there is no list.
+  The list is the defect. A panel now declares what it draws, into one table, and is handed that table to paint from; the comparison is over exactly those values. A field the paint step reads but the declaration never wrote is `nil` on screen, which is loud, and a field declared but not painted costs a comparison and nothing worse. The list cannot drift from the drawing because there is no list.
 
-  Auditing the catalogue for the same shape once the mechanism existed found three more, all latent: `flight-mode` drew the mode number and compared only the name, so two modes sharing a configured name would have frozen it; `flight-timer` drew the configured total and compared only the elapsed value, so a timer reconfigured mid-flight kept the old one; and `navigation` drew the coordinates and compared distance and bearing, which are measured *from home* and do not move when a model tracks an arc at constant range. `model-identity` had it too and could not be made to fail, because a model's labels change only when its name does — unreachable by coincidence rather than by construction. All nine components with a short-circuit now share the one mechanism.
+  Auditing the catalogue for the same shape once the mechanism existed found three more, all latent: `flight-mode` drew the mode number and compared only the name, so two modes sharing a configured name would have frozen it; `flight-timer` drew the configured total and compared only the elapsed value, so a timer reconfigured mid-flight kept the old one; and `navigation` drew the coordinates and compared distance and bearing, which are measured *from home* and do not move when a model tracks an arc at constant range. `model-identity` had it too and could not be made to fail, because a model's labels change only when its name does — unreachable by coincidence rather than by construction. All nine panels with a short-circuit now share the one mechanism.
 
-  **What a component declares follows what it currently draws, not what it was built with.** Every panel that can shed a supporting row went on declaring that row while it was shed, which is the same invisible work `trim-panel`'s reflow was made of, and it also meant a row coming back was only correct because `update` discarded the last drawn record to force a repaint. The discard is remembering; the declaration is construction. All of them now gate on whether the row is showing, so a shed row declares nothing, a returning row declares a key that was absent, and `changed` sees the reveal by counting keys. The discards are gone.
+  **What a panel declares follows what it currently draws, not what it was built with.** Every panel that can shed a supporting row went on declaring that row while it was shed, which is the same invisible work `trim-panel`'s reflow was made of, and it also meant a row coming back was only correct because `update` discarded the last drawn record to force a repaint. The discard is remembering; the declaration is construction. All of them now gate on whether the row is showing, so a shed row declares nothing, a returning row declares a key that was absent, and `changed` sees the reveal by counting keys. The discards are gone.
 
   The finding worth recording is that **none of those discards was load-bearing**, and it took some effort to establish rather than assume. With a gate removed, no test could be made to fail on a stale row, because a reveal is always caused by a resize and a resize always moves some other declared value — a fitted caption's width, if nothing else — so the panel repainted anyway. The discards were protecting a path that is not reachable. That is the same shape as `model-identity` above: correct by coincidence. The tests therefore assert the property directly, that every declared key belongs to a row that is drawn and every drawn row has one, rather than trying to observe staleness that cannot currently occur.
 
@@ -1491,13 +1487,13 @@ The rule has grown a part for each shape the failures came in, and each part is 
 
 Both were written by someone who knew about the first one. The shape survives being known about because the failing answer is indistinguishable from a good one: a font comes back, it is a real font, and the caller has no way to tell that it was a surrender rather than a fit. The rule is therefore structural rather than a matter of care. **Where a search can fail, the failure is a return value, not a convention about the answer.** A caller that ignores it gets what it always got; a caller that is deciding whether to spend space on something else has to check it, and now can.
 
-**A position derived from a size must be recomputed when the size changes, never carried as an offset.** This is the most persistent defect in the project, now at eight appearances and it has now happened in the tests, in three components, in `theme` itself and in the design-mock generator: something decides a size and something else draws at a position computed for the old one. The most recent was a unit printed twelve pixels inside its own reading, because the reading was resized from `SMLSIZE` to `MIDSIZE` and the unit was shifted by the reading's displacement rather than re-placed against its new end. It appeared only where the font actually changed, so two panels of the same width behaved differently and width looked like the cause. The overlap was exactly the growth minus the gap, which is what an offset held across a resize always produces.
+**A position derived from a size must be recomputed when the size changes, never carried as an offset.** This is the most persistent defect in the project, now at eight appearances and it has now happened in the tests, in three panels, in `theme` itself and in the design-mock generator: something decides a size and something else draws at a position computed for the old one. The most recent was a unit printed twelve pixels inside its own reading, because the reading was resized from `SMLSIZE` to `MIDSIZE` and the unit was shifted by the reading's displacement rather than re-placed against its new end. It appeared only where the font actually changed, so two panels of the same width behaved differently and width looked like the cause. The overlap was exactly the growth minus the gap, which is what an offset held across a resize always produces.
 
 It survives because the stale offset is usually right -- it is wrong only in the cases where something resized, which are the cases nobody renders while working. The two most recent are worth their own note, because each hid somewhere the first six did not.
 
-The seventh was a **width estimate standing in for a measurement in a placement decision**. `theme.textWidth` over-reports on purpose, so that text shrinks rather than clips, and a generous number is the right answer to "does this fit" and the wrong one to "where does this start": half of the generosity lands in the left edge of anything centred with it. A transmitter reading sat thirteen pixels left of its slot for that reason, and ten and a half more because the width being centred was the widest string the component can ever print rather than the one on the screen. That was first resolved as **the estimate decides whether something fits; the measurement decides where it goes**, and `lcd.sizeText` is available in both `create` and `update` because `luaLcdSizeText` touches neither the draw context nor the LCD buffer. The boundary did not survive: the estimate is one allowance per character, sized between a digit and a capital, so it over-reports digits and under-reports capitals, and `model-identity` -- which fits against a row of `M`, because that is the widest name EdgeTX stores -- was drawing its name eleven pixels past the panel at `1 x 2`. **Both questions are answered by the measurement now**, and the estimate remains only as `measureText`'s fallback for a host with no `lcd.sizeText`.
+The seventh was a **width estimate standing in for a measurement in a placement decision**. `theme.textWidth` over-reports on purpose, so that text shrinks rather than clips, and a generous number is the right answer to "does this fit" and the wrong one to "where does this start": half of the generosity lands in the left edge of anything centred with it. A transmitter reading sat thirteen pixels left of its slot for that reason, and ten and a half more because the width being centred was the widest string the panel can ever print rather than the one on the screen. That was first resolved as **the estimate decides whether something fits; the measurement decides where it goes**, and `lcd.sizeText` is available in both `create` and `update` because `luaLcdSizeText` touches neither the draw context nor the LCD buffer. The boundary did not survive: the estimate is one allowance per character, sized between a digit and a capital, so it over-reports digits and under-reports capitals, and `model-identity` -- which fits against a row of `M`, because that is the widest name EdgeTX stores -- was drawing its name eleven pixels past the panel at `1 x 2`. **Both questions are answered by the measurement now**, and the estimate remains only as `measureText`'s fallback for a host with no `lcd.sizeText`.
 
-The eighth was found **latent, in an anchor guarding an expensive recomputation**. `followUnit` re-placed a unit only when the reading's text changed, and tested that by comparing the text's *length*. Two strings of one length are not one width -- `--` and `12` are both two characters and differ by twelve pixels at DBLSIZE, because a dash is a fifth of a line height and a digit is three sevenths -- so the unit held station across exactly the change every telemetry component makes when its sensor goes quiet. **An anchor that guards a recomputation is a place this shape hides**, because the guard is a proxy for the thing rather than the thing, and a proxy that is usually faithful is the same trap as an offset that is usually right. Anchor on the value itself: Lua interns short strings, so comparing them costs no more than comparing their lengths. The defence is not care but arithmetic: **derive the dependent position from the current value at the point of drawing**, and check the result mechanically. A collision check over every drawn label, comparing ink rectangles pairwise and against the panel edge, is cheap, catches every member of this family at once, and found this one after four other measures on the same page reported everything healthy.
+The eighth was found **latent, in an anchor guarding an expensive recomputation**. `followUnit` re-placed a unit only when the reading's text changed, and tested that by comparing the text's *length*. Two strings of one length are not one width -- `--` and `12` are both two characters and differ by twelve pixels at DBLSIZE, because a dash is a fifth of a line height and a digit is three sevenths -- so the unit held station across exactly the change every telemetry panel makes when its sensor goes quiet. **An anchor that guards a recomputation is a place this shape hides**, because the guard is a proxy for the thing rather than the thing, and a proxy that is usually faithful is the same trap as an offset that is usually right. Anchor on the value itself: Lua interns short strings, so comparing them costs no more than comparing their lengths. The defence is not care but arithmetic: **derive the dependent position from the current value at the point of drawing**, and check the result mechanically. A collision check over every drawn label, comparing ink rectangles pairwise and against the panel edge, is cheap, catches every member of this family at once, and found this one after four other measures on the same page reported everything healthy.
 
 **A check that would pass if everything moved together is not a check on position.** Overlap, containment and wrap are each satisfied by a uniformly displaced element, and all three passed a reading sitting 23.5 pixels outside the slot the layout rule put it in -- on a shipped dashboard, until a user looked at it. Nothing overlapped, because the displacement moved the number *away* from the battery beside it; nothing left its panel, because a panel is wider than a number; nothing wrapped, because the label was as wide as before. The rule had been implemented, and the words `slotCentres`, `slotX` and `slotsFor` appeared nowhere in the suite.
 
@@ -1505,15 +1501,15 @@ So a rule about where something goes needs an assertion about where it went, and
 
 **An assertion must pin the value the contract names, not assert that something differs from something else.** "Differs from" is satisfied by every wrong answer as well as the right one, and is therefore satisfied when every value is wrong in the same way, which is precisely what happened. The same applies to "is not nil", "is greater than zero", and any assertion whose truth does not depend on the implementation at all: `contrast(a, b) >= 1.0` was in this suite for two milestones and is a tautology.
 
-**An assertion must be about what the panel draws, not about what it computed.** This is the newest of the shapes and was found by accident. Seven assertions in this suite described the text of supporting rows on panels that shed those rows: the shipped dashboard's cell count, both link panels of the telemetry layout, a trim panel's caption, and others. Every one passed, because the component computed the row's text and then hid the label, so the string existed and was correct and was on no screen anywhere. They only failed once the component stopped doing work for labels nobody sees, which also recovered 298 instructions a frame in the header case, and 736 from the worst callback in the trim panel. The two facts are the same fact. Invisible work is work nothing is checking, and an assertion that reads state the panel does not draw is testing the component's bookkeeping rather than its output. Where a component can shed an element, assert that it sheds it, and assert the content at a span that shows it.
+**An assertion must be about what the panel draws, not about what it computed.** This is the newest of the shapes and was found by accident. Seven assertions in this suite described the text of supporting rows on panels that shed those rows: the shipped dashboard's cell count, both link panels of the telemetry layout, a trim panel's caption, and others. Every one passed, because the panel computed the row's text and then hid the label, so the string existed and was correct and was on no screen anywhere. They only failed once the panel stopped doing work for labels nobody sees, which also recovered 298 instructions a frame in the header case, and 736 from the worst callback in the trim panel. The two facts are the same fact. Invisible work is work nothing is checking, and an assertion that reads state the panel does not draw is testing the panel's bookkeeping rather than its output. Where a panel can shed an element, assert that it sheds it, and assert the content at a span that shows it.
 
 The hard part is that invisible work is invisible to assertions as well as to eyes: nothing about what is *drawn* can see a panel repositioning a label it has hidden, so the cost grows unnoticed and the only symptom is a number on a budget report. The harness therefore counts writes and visibility calls per object, which is its own bookkeeping and not a claim about firmware, so a test can assert that a shed row costs nothing to keep shed. Those counters are swapped out rather than branched around while a callback is measured, for the same reason property validation is: see the mock rule below. Branching cost 261 instructions of a measured callback before they were swapped, which is the same mistake as charging a Lua stand-in for a C++ call, made by the tool built to detect it.
 
-**What a panel is permitted and what it draws are different questions, and whatever decides the layout must be told the second.** This is a seam rather than a mistake: composition is decided centrally, from the panel's box alone, so that two panels of one size agree -- and a component may then decline what it was granted, because only it knows whether its optional content is configured. The grant and the decline are computed in different files, and the shared half has twice acted on the grant.
+**What a panel is permitted and what it draws are different questions, and whatever decides the layout must be told the second.** This is a seam rather than a mistake: composition is decided centrally, from the panel's box alone, so that two panels of one size agree -- and a panel may then decline what it was granted, because only it knows whether its optional content is configured. The grant and the decline are computed in different files, and the shared half has twice acted on the grant.
 
 The first instance placed a row: `metric` may carry a secondary reading at `2 x 2`, but whether it does depends on a source being set, and the geometry was handed only the span. A panel drawing one supporting item arranged it as a row of two, so a lone caption sat on the left slot instead of centred.
 
-The second reserved a band. `theme.ladder` granted a supporting row from the panel's height and passed that grant to `theme.bands`, which took the tertiary quarter out of the body. Three components default their row off -- `flight-mode`'s mode number, `model-identity`'s label list, `tx-battery`'s estimate -- so all three were charged a quarter of the panel for a row they would never fill, and their readings came from a band 31 pixels shorter than the panel had. Each lost a font size at every two-row span, and `flight-mode` additionally built a label and wrote an empty string into it, which is the invisible work this document forbids, in a component that had already been swept for exactly that.
+The second reserved a band. `theme.ladder` granted a supporting row from the panel's height and passed that grant to `theme.bands`, which took the tertiary quarter out of the body. Three panels default their row off -- `flight-mode`'s mode number, `model-identity`'s label list, `tx-battery`'s estimate -- so all three were charged a quarter of the panel for a row they would never fill, and their readings came from a band 31 pixels shorter than the panel had. Each lost a font size at every two-row span, and `flight-mode` additionally built a label and wrote an empty string into it, which is the invisible work this document forbids, in a panel that had already been swept for exactly that.
 
 **The second instance was closed and then the closure was withdrawn, which is worth following.** Telling the band what the panel draws fixed the font, and it did so by making the band a function of the content: a panel with a row got a half and the identical panel without one got three quarters. The user put that on a radio and rejected it -- two panels of one size are supposed to agree, and these did not. The bands are fixed proportions now and take no argument at all, so the seam is closed by removing the question rather than by answering it correctly. The invisible-work half of the finding stands: a shed row still builds no object.
 
@@ -1521,9 +1517,9 @@ That is the better shape wherever it is available. A seam exists because two pla
 
 **Neither instance was visible to any check**, and that is the property worth remembering: a reading centred in a band smaller than it should be is correctly centred, correctly sized for that band, and inside its panel. Containment, collision and position all pass. The only symptom is a font one step down, and nothing was comparing what was reserved against what was drawn.
 
-So the interface carried the answer rather than the question for a while, and then stopped needing to. `theme.ladder` took what the component would draw and could only narrow its own grant with it. That argument is gone, because nothing downstream of it varied with the answer any more, and an argument a caller passes and believes is honoured is worse than an absent one. The tests are `testReadingsIgnoreTheRowBeneathThem`, which holds that the same panel with its optional row off puts its reading on the *same line* as with it on -- the reverse of what its predecessor asserted -- and `testTertiaryQuarterHoldsItsFurniture`, which holds that a panel drawing no row builds no object for one and that nothing else grows into the quarter it leaves empty.
+So the interface carried the answer rather than the question for a while, and then stopped needing to. `theme.ladder` took what the panel would draw and could only narrow its own grant with it. That argument is gone, because nothing downstream of it varied with the answer any more, and an argument a caller passes and believes is honoured is worse than an absent one. The tests are `testReadingsIgnoreTheRowBeneathThem`, which holds that the same panel with its optional row off puts its reading on the *same line* as with it on -- the reverse of what its predecessor asserted -- and `testTertiaryQuarterHoldsItsFurniture`, which holds that a panel drawing no row builds no object for one and that nothing else grows into the quarter it leaves empty.
 
-**Closing a seam in the data does not close it in the ordering.** `theme.panel` takes `spec.bar` to reserve the floor, while the ladder inside the builder decides whether a visual survives. Floor reservation is therefore a separate decision from current visibility; components must not independently predict the builder's answer.
+**Closing a seam in the data does not close it in the ordering.** `theme.panel` takes `spec.bar` to reserve the floor, while the ladder inside the builder decides whether a visual survives. Floor reservation is therefore a separate decision from current visibility; panels must not independently predict the builder's answer.
 
 **The fourth instance is the unit beside a reading, and it is the one where neither place could have carried the other's answer.** `showUnit` says a panel has room for a unit; whether there is a value for that unit to qualify is a property of a sensor that may not have reported yet. Four panels therefore drew `-- V`: the permission was true, so the unit was drawn, and nothing downstream asked whether the number beside it existed. It is unlike the three above in that no amount of telling the builder what the panel draws would have fixed it -- the answer changes after the builder has finished, every time a link drops -- so the seam is closed the other way, by moving the *decision* to the point of drawing rather than the *information* to the point of deciding. `primitives.centreReading` is handed the reading's current text on every repaint and already computed the pair's width from it; asking there whether that text is a value costs a table lookup and cannot go stale.
 
@@ -1531,36 +1527,36 @@ So the interface carried the answer rather than the question for a while, and th
 
 **It also had to be closed twice, which is the part that nearly went wrong.** A unit reaches the screen from two functions -- the per-frame placement and the reflow's reconciliation -- and the first version put the test in only the per-frame one. Every panel was then correct until the zone changed, at which point the reflow asked "does a unit fit here" and, satisfied, showed one beside `--`. A rule that holds in one of two paths holds in neither, and the way that was found was by writing the reflow assertion and watching it fail rather than by reading the call sites.
 
-**A sizing form is a claim about the future, and nothing in a fixture can check one.** A component sizes its reading against the widest string it will *ever* print, which is what keeps a value from resizing as it changes. That string is an assertion about every future value, and a test can only ever build present ones -- so the form can be measured perfectly, placed perfectly and be the wrong string, and every check will pass.
+**A sizing form is a claim about the future, and nothing in a fixture can check one.** A panel sizes its reading against the widest string it will *ever* print, which is what keeps a value from resizing as it changes. That string is an assertion about every future value, and a test can only ever build present ones -- so the form can be measured perfectly, placed perfectly and be the wrong string, and every check will pass.
 
 It has now been wrong twice, in opposite directions, with opposite costs, and neither was caught by a test:
 
 - **Sized for less than it draws, so it clipped.** `model-identity` sized against a row of `M` through an estimate that under-reports capitals, and drew the model name eleven pixels past the panel at `1 x 2`. A user saw it.
 - **Sized for more than it draws, so it cost a size.** `flight-timer` sized against `-88:88:88`, reserving for a countdown ten hours past zero. It fitted a `2 x 2` content box by 8 px here and did not on a radio, so that panel stepped its clock down while the `3 x 2` beside it did not. A user saw that too.
 
-The second is the more interesting failure, because over-reserving looks like caution. It is not: a form wider than anything the component will print buys nothing and spends a font size, and it spends it *silently*, because a panel reading one step small is a panel that looks fine.
+The second is the more interesting failure, because over-reserving looks like caution. It is not: a form wider than anything the panel will print buys nothing and spends a font size, and it spends it *silently*, because a panel reading one step small is a panel that looks fine.
 
-What is checkable is the **loop**, and only where a component bounds what it can print. If the component clamps its own reading, then the clamp's output must equal the form, and both are present-tense facts a fixture can build. `flight-timer` now clamps at `99:59`, declares `-99:59` -- a string the clamp genuinely produces rather than a row of eights that is not a valid clock -- and `testClockNeverOutgrowsItsForm` asserts the two agree. Break either end and it fails by name.
+What is checkable is the **loop**, and only where a panel bounds what it can print. If the panel clamps its own reading, then the clamp's output must equal the form, and both are present-tense facts a fixture can build. `flight-timer` now clamps at `99:59`, declares `-99:59` -- a string the clamp genuinely produces rather than a row of eights that is not a valid clock -- and `testClockNeverOutgrowsItsForm` asserts the two agree. Break either end and it fails by name.
 
-**Where there is no bound there is still no check**, and that is the residue rather than an oversight. `model-identity` prints a name the pilot typed; nothing bounds it but EdgeTX's own field length, and a form is a genuine guess there. The rule that follows is about the *shape of the form* rather than about testing it: **prefer a form the component can actually produce over a placeholder, and prefer bounding the reading over widening the form.** A bound converts a claim about the future into an assertion about the present, which is the only kind a suite can hold.
+**Where there is no bound there is still no check**, and that is the residue rather than an oversight. `model-identity` prints a name the pilot typed; nothing bounds it but EdgeTX's own field length, and a form is a genuine guess there. The rule that follows is about the *shape of the form* rather than about testing it: **prefer a form the panel can actually produce over a placeholder, and prefer bounding the reading over widening the form.** A bound converts a claim about the future into an assertion about the present, which is the only kind a suite can hold.
 
-**A declaration that does not construct the case is not coverage.** Two of this suite's checks are declarations rather than tests: a component states what it slots and what it words, and the check covers it. That is right, and it introduced a failure mode the tests it replaced did not have -- a declaration can name a case the declared configuration never builds, and then the check watches nothing while reporting a component covered.
+**A declaration that does not construct the case is not coverage.** Two of this suite's checks are declarations rather than tests: a panel states what it slots and what it words, and the check covers it. That is right, and it introduced a failure mode the tests it replaced did not have -- a declaration can name a case the declared configuration never builds, and then the check watches nothing while reporting a panel covered.
 
-It was found by breaking something and watching nothing happen. `metric`'s supporting row was moved off its slot deliberately, and the whole suite stayed green: the component was declared with a source but no *secondary* source, so it only ever drew a one-item row, and the two-item arrangement the break corrupted was never constructed. The declaration named `metric`; the coverage was of half of it. Adding a variant that configures a secondary source makes the same break fail by name.
+It was found by breaking something and watching nothing happen. `metric`'s supporting row was moved off its slot deliberately, and the whole suite stayed green: the panel was declared with a source but no *secondary* source, so it only ever drew a one-item row, and the two-item arrangement the break corrupted was never constructed. The declaration named `metric`; the coverage was of half of it. Adding a variant that configures a secondary source makes the same break fail by name.
 
-So a declaration carries the configuration that builds each arrangement, not merely the component that can draw them, and **the way to know a declaration covers what it claims is to break the thing and watch it fail** -- which is the general rule above, applied to the declaration rather than to the assertion.
+So a declaration carries the configuration that builds each arrangement, not merely the panel that can draw them, and **the way to know a declaration covers what it claims is to break the thing and watch it fail** -- which is the general rule above, applied to the declaration rather than to the assertion.
 
-The corollary is about the components rather than the tests, and it generalises past this suite. **A component whose content depends on configuration rather than on span must be told which, because a span says only what is permitted.** `metric` may carry a secondary reading at `2 x 2`; whether it does depends on a source being set. Handing the geometry the span alone made it arrange a two-item row on a panel that draws one, so a lone supporting row sat on the left slot instead of centred -- correct for the arrangement it was told about and wrong for the one on screen.
+The corollary is about the panels rather than the tests, and it generalises past this suite. **A panel whose content depends on configuration rather than on span must be told which, because a span says only what is permitted.** `metric` may carry a secondary reading at `2 x 2`; whether it does depends on a source being set. Handing the geometry the span alone made it arrange a two-item row on a panel that draws one, so a lone supporting row sat on the left slot instead of centred -- correct for the arrangement it was told about and wrong for the one on screen.
 
-**A document that states a contract must be executed, not read.** The layout example in this specification did not load for at least two milestones, and nobody noticed because nothing ran it: it named a setting no component declares, gave a source as a numeric identifier the telemetry service rejects, and asked `link-status` for a `4 x 3` span it does not support, so the host would have dropped that panel. Two of those three survived being corrected by hand, which is the point — reading an example carefully is not the same as running it. The suite now extracts every fenced YAML block from this file at test time and puts it through `yaml.parse`, `layout.validate`, `componentHost.resolveSettings` and, for a theme block, `theme.build`. It is extracted rather than copied into the test, because a copy is a second source of truth and would drift from the document exactly as the document drifted from the code. A block that matches no known kind fails rather than being skipped, and an extraction that finds nothing fails rather than passing over an empty string, because a test that reads a document it cannot find is a vacuous assertion wearing a new hat.
+**A document that states a contract must be executed, not read.** The layout example in this specification did not load for at least two milestones, and nobody noticed because nothing ran it: it named a setting no panel declares, gave a source as a numeric identifier the telemetry service rejects, and asked `link-status` for a `4 x 3` span it does not support, so the host would have dropped that panel. Two of those three survived being corrected by hand, which is the point — reading an example carefully is not the same as running it. The suite now extracts every fenced YAML block from this file at test time and puts it through `yaml.parse`, `layout.validate`, `panelHost.resolveSettings` and, for a theme block, `theme.build`. It is extracted rather than copied into the test, because a copy is a second source of truth and would drift from the document exactly as the document drifted from the code. A block that matches no known kind fails rather than being skipped, and an extraction that finds nothing fails rather than passing over an empty string, because a test that reads a document it cannot find is a vacuous assertion wearing a new hat.
 
 **A fixture must model what an object *is*, not only what it accepts.** This one cost a user a dashboard of error banners, and it is the narrowest shape yet. The LVGL stand-in already refused a property key `parseParam` does not accept, which models what an object accepts through `set`. Nothing modelled what the object is. An object handed back by `lvgl.*` is userdata: `LvglWidgetObjectBase::getRef` allocates one pointer with `lua_newuserdata` and attaches `lvgl_base_mt` or `lvgl_mt`, and neither metatable declares `__newindex`, so a field assigned onto a label raises and a field read off one is always nil. The stand-in was a plain Lua table, which accepts any name you invent and returns it again. So `label.headingText = text` in `primitives.header` stored the heading happily here and broke **every panel on the radio at once**, with the suite green; and `label.headingText` in `placeHeader` read back the truth here and nil there, so a reflow silently never refitted. The write was loud and the read was silent, and both came from the same wrong idea about what the fixture was standing in for. The mock now seals its objects with a `__newindex` that raises in the radio's own words, and reaches its own bookkeeping through `rawset`, which is the honest admission that `properties`, `writes` and the rest are the fixture's fields and not the firmware's. Ask of any stand-in not only *what does the real thing accept* but *what kind of thing is it*, because the second question is the one nobody asked for eight milestones.
 
-**Where something sits is a property, and it needs an assertion of its own.** A reading's *font* is covered many times over, because a font is what changes when a rule about size is got wrong. Its *position* was not, and four separate defects in one component hid there: a heading centred in a band drifted 30 px down as panels grew; a picture was cropped rather than fitted, which no test could see because `fill` changes no coordinate; a model name was promoted to the heading with nothing observing the heading's text; and the name was drawn at the panel's content top rather than in its body band, 59 px above where every other reading in the catalogue sits.
+**Where something sits is a property, and it needs an assertion of its own.** A reading's *font* is covered many times over, because a font is what changes when a rule about size is got wrong. Its *position* was not, and four separate defects in one panel hid there: a heading centred in a band drifted 30 px down as panels grew; a picture was cropped rather than fitted, which no test could see because `fill` changes no coordinate; a model name was promoted to the heading with nothing observing the heading's text; and the name was drawn at the panel's content top rather than in its body band, 59 px above where every other reading in the catalogue sits.
 
-All four passed every check the suite had. The reason is worth stating because it generalises past this component: **the band rule chooses the same font wherever the reading is drawn in the band**, so a font assertion is satisfied by a correct size in the wrong place. Containment is satisfied too, and so is collision, because a reading placed too high overlaps nothing -- it is simply not where the rule says.
+All four passed every check the suite had. The reason is worth stating because it generalises past this panel: **the band rule chooses the same font wherever the reading is drawn in the band**, so a font assertion is satisfied by a correct size in the wrong place. Containment is satisfied too, and so is collision, because a reading placed too high overlaps nothing -- it is simply not where the rule says.
 
-The component that hid all four is the one whose reading is text rather than a number, which is the second half of the explanation: no cross-panel comparison ever lined it up against a neighbour, and every check written for readings was written while looking at digits. A property that only one component can violate is a property nobody writes a check for.
+The panel that hid all four is the one whose reading is text rather than a number, which is the second half of the explanation: no cross-panel comparison ever lined it up against a neighbour, and every check written for readings was written while looking at digits. A property that only one panel can violate is a property nobody writes a check for.
 
 **Two layers of the suite can measure the same thing differently, and agree until something exercises the difference.** The integration collision check measures a label by its ink -- `themeModule.fontAscent`, because a font's descent and leading are not drawn and a reading that "overlaps" a bar by its leading overlaps nothing. Two unit tests measured the same readings by their line box, `valueY + fontHeight`. Both were defensible in isolation and the two never disagreed, because every reading was centred by its line box, so the slack sat above the glyphs where neither measure looked.
 
@@ -1568,11 +1564,11 @@ Changing the placement rule to centre the ink moved that slack below the glyphs,
 
 The shape is worth naming because it is not the same as a check being wrong. Both checks were right about what they measured. **What was missing was that they measured different things and nothing said so**, and the disagreement was invisible for as long as the system happened not to produce a case that separated them. A suite with two definitions of one quantity is carrying a latent contradiction, and the way it surfaces is as a false failure during an unrelated change -- which is the moment when it is most likely to be "fixed" by adjusting whichever measure is in the way.
 
-**A shared helper's name can promise more reach than it has.** `theme.bandFont` is named as though it decides the reading font for panels generally, and it decides it for `tx-battery` and nothing else: every other component goes through `theme.fitReading` or `theme.fitReadingUnit`, which walk the same ladder against `ladder.room` and never call it. Changing `bandFont` to choose by ink rather than by line height therefore moved eight cases out of the catalogue's 272, where the intent was to move all of them, and the fitting ladder had to be changed as well.
+**A shared helper's name can promise more reach than it has.** `theme.bandFont` is named as though it decides the reading font for panels generally, and it decides it for `tx-battery` and nothing else: every other panel goes through `theme.fitReading` or `theme.fitReadingUnit`, which walk the same ladder against `ladder.room` and never call it. Changing `bandFont` to choose by ink rather than by line height therefore moved eight cases out of the catalogue's 272, where the intent was to move all of them, and the fitting ladder had to be changed as well.
 
 That is not a defect in either function -- they do different jobs for different callers. It is a trap in the naming, and the cost is that a change made in the obvious place lands in a twelfth of the dashboard and looks finished. Anything altering how a font is chosen has to alter `bandFont` **and** both fitting entry points, or state deliberately why one of them is being left alone.
 
-**The thing that checks is also a thing that can be wrong, and it fails silently by agreeing.** Three times now the apparatus has been the defect. A collision check could not see non-text objects, so a reading lay across its own bar through a whole revision of the design mocks. A declaration named a component but not the configuration that builds its two-item row, so the check watched a case that was never constructed. And a verification harness written to compare two checkouts used a shell `cd` that persisted between invocations, so it compared one tree against itself and reported agreement -- which was then used to correct a true finding into a false one.
+**The thing that checks is also a thing that can be wrong, and it fails silently by agreeing.** Three times now the apparatus has been the defect. A collision check could not see non-text objects, so a reading lay across its own bar through a whole revision of the design mocks. A declaration named a panel but not the configuration that builds its two-item row, so the check watched a case that was never constructed. And a verification harness written to compare two checkouts used a shell `cd` that persisted between invocations, so it compared one tree against itself and reported agreement -- which was then used to correct a true finding into a false one.
 
 The shape is that all three failed towards *pass*. A check that is broken towards failure announces itself on the next run; a check that is broken towards success is indistinguishable from the thing it is supposed to be proving, and the stronger the rest of the discipline is, the more weight its agreement carries. The defence is not more checks but the same rule applied one level up: **break the thing the check covers and watch it fail by name** -- and for a comparison, make it disagree on purpose before trusting it when it agrees. A harness that has never been seen to report a difference has not been shown to be capable of reporting one.
 
@@ -1583,7 +1579,7 @@ The shape is that all three failed towards *pass*. A check that is broken toward
 | # | Defect | What the fixture encoded |
 | --- | --- | --- |
 | 1 | Arc drift. Every dial walked off the screen a radius per update | The LVGL mock stored the coordinates it was handed instead of modelling `LvglWidgetRoundObject`'s doubled subtraction, so it could not see an object move |
-| 2 | An unbounded loader that broke on any layout over twelve components | The budget test measured the shipped five-component layout against a ceiling it used a third of |
+| 2 | An unbounded loader that broke on any layout over twelve panels | The budget test measured the shipped five-panel layout against a ceiling it used a third of |
 | 3 | `Invalid object (it has been probably been cleared)` after a theme change | The mock's `clear()` was an immediate flag with no parent/child tracking, so EdgeTX's deferred cleanup ordering could not occur |
 | 4 | Healthy panels drew yellow and warnings drew critical red | The theme fixture invented EdgeTX role colours to match the role *names*. The firmware ships `ACTIVE` yellow, `EDIT` green and `WARNING` red |
 | 5 | Every panel of every theme drew dark red | `lcd.getColor` returned a bare RGB565 where the firmware returns an `LcdFlags` word, so the suite exercised a decode path that does not exist on a radio |
@@ -1615,30 +1611,30 @@ Status last verified on 2026-09-21:
 | Work item | Status | Implemented | Remaining |
 | --- | --- | --- | --- |
 | Build and test foundation | Complete | Make targets, isolated Python environment, unit/integration suites, EdgeTX Lua parsing, tracked simulator fixture, reproducible `build/sdcard` assembly, and GitHub Actions CI running `make check` against Lua 5.3 | None |
-| Milestone 1: Runtime skeleton | Complete | LVGL host, integer 4 x 4 geometry, gutters, per-component containers, batched reflow, App mode fixture, and `1 x 1`-sized mocked tests | Additional physical-radio verification belongs to hardening |
+| Milestone 1: Runtime skeleton | Complete | LVGL host, integer 4 x 4 geometry, gutters, per-panel containers, batched reflow, App mode fixture, and `1 x 1`-sized mocked tests | Additional physical-radio verification belongs to hardening |
 | Milestone 2: Read-only YAML loader | Complete | Constrained parser, empty flow collections, schema version check, model/Dashboard ID resolution, default fallback, fail-closed document validation, per-entry validation, preserved unknown keys, optional theme block, and a malformed-input matrix | Physical-radio verification belongs to hardening |
-| Milestone 3: Component runtime | Complete | Referenced-module loading, metatable-safe contract validation, declared settings with typed defaults, `supportedSpans` enforcement, host-owned containers, declared refresh intervals with phase staggering, and isolated create/update/refresh/background/event/destroy dispatch | Production components arrive in milestones 6 and 7 |
+| Milestone 3: Panel runtime | Complete | Referenced-module loading, metatable-safe contract validation, declared settings with typed defaults, `supportedSpans` enforcement, host-owned containers, declared refresh intervals with phase staggering, and isolated create/update/refresh/background/event/destroy dispatch | Production panels arrive in milestones 6 and 7 |
 | Milestone 4: Design system | Complete | Semantic tokens, panel/typography/bar/radial/badge primitives, Modern, Follow EdgeTX, and Custom modes, guaranteed-legible derived palettes, all seven states, and one shared responsive ladder deciding composition from the box and the font from the composition | Physical readability review at 480 x 272 on a TX16S-class display |
 | Milestone 5: Shared data services | Complete | Registry with per-service intervals, staggering, and subscription caps; telemetry, model, control, extrema, and navigation services; immutable snapshots; graceful degradation for missing sources, unseen sensors, absent firmware APIs, and stale telemetry; `service-probe` diagnostic views and two shipped diagnostics layouts | Hardware verification, and timer-based extrema reset |
-| Milestone 6: Core components | Complete | `metric` with independent numeric readings and GV sources; `flight-timer`, `flight-mode`, `tx-battery`, `trim-panel`, and `model-identity`; shared panel geometry, bars/radials, and images; a shipped dashboard demonstrating all six | Physical-radio verification of text widths and model bitmap scaling |
-| Milestone 7: Telemetry-specialized components | Complete | `cell-battery` with cells-table validation; `link-status` with independent RSSI and quality; `navigation` with responsive presentations and a north-up dial; a shipped dashboard demonstrating the nine display components, with separate diagnostics screens | Hardware confirmation of the cells shape and of no-RSSI-sensor detection |
+| Milestone 6: Core panels | Complete | `metric` with independent numeric readings and GV sources; `flight-timer`, `flight-mode`, `tx-battery`, `trim-panel`, and `model-identity`; shared panel geometry, bars/radials, and images; a shipped dashboard demonstrating all six | Physical-radio verification of text widths and model bitmap scaling |
+| Milestone 7: Telemetry-specialized panels | Complete | `cell-battery` with cells-table validation; `link-status` with independent RSSI and quality; `navigation` with responsive presentations and a north-up dial; a shipped dashboard demonstrating the nine display panels, with separate diagnostics screens | Hardware confirmation of the cells shape and of no-RSSI-sensor detection |
 | Milestone 8: The App mode menu button and multiple screens | Complete | Dashboard ID option, per-model/per-dashboard filename resolution, dashboard-scoped layouts shared by every model, panels laid out around the App mode menu button through the shared frame, an error overlay that clears it, notices separated from errors, and two-instance and model-change coverage | Status rail deferred by decision, not outstanding; simulator confirmation of the corner on a radio |
-| Milestone 9: Hardening | In progress | Unit/integration tests, firmware-like string behavior tests, CI running Lua 5.3 parsing, simulator fixture, corrupt-layout, contract-rejection, hostile-module, and legibility coverage, component failure isolation, an enforced instruction budget measured at the largest legal layout for both components and services, diagnostic views over every service, and a host diagnostics view on its own screen | Target-radio matrix and physical-radio testing |
+| Milestone 9: Hardening | In progress | Unit/integration tests, firmware-like string behavior tests, CI running Lua 5.3 parsing, simulator fixture, corrupt-layout, contract-rejection, hostile-module, and legibility coverage, panel failure isolation, an enforced instruction budget measured at the largest legal layout for both panels and services, diagnostic views over every service, and a host diagnostics view on its own screen | Target-radio matrix and physical-radio testing |
 | Milestone 10: On-radio editor | Not started | None | Entire phase 2 editor and write/recovery workflow |
-| Presentation and consistency pass | Complete | An audit of every component at every declared span measured through the real host, then: the panel as a card with a clipped accent stripe, alert states tinting the surface instead of the frame, the badge vocabulary cut from thirteen strings to five, header geometry that never reflows on a state change, one shared responsive ladder replacing eight private copies, a render declaration the redraw comparison is derived from, one settings vocabulary with enforced `choices`, and `trim-panel` no longer drawing what it hides | Six items deliberately set aside, listed under [Deliberately set aside](#deliberately-set-aside); none of it seen on a radio |
-| Vertical-rhythm pass and component reviews | Complete | The heading pinned to the top inset and the supporting row hung from the bottom one, the reading's ink centred on the panel and sized from the panel's height, superseding fixed band proportions, which superseded redistribution; font choice and placement moved onto a font's ink; headings pinned to the top of their band; badges placed from their measured text; `model-identity`'s picture fitted whole and its name moved into the body band or the heading; single-form supporting rows wherever one fits; a display clamp on the timer's clock; a unit withheld beside a reading with no value; per-component review screens on a second model and the span galleries retired to fixtures | Navigation visual acceptance remains in progress; bearing formats and compact coordinate rows are implemented. Three components do not yet route their row through `fitLabel`. |
+| Presentation and consistency pass | Complete | An audit of every panel at every declared span measured through the real host, then: the panel as a card with a clipped accent stripe, alert states tinting the surface instead of the frame, the badge vocabulary cut from thirteen strings to five, header geometry that never reflows on a state change, one shared responsive ladder replacing eight private copies, a render declaration the redraw comparison is derived from, one settings vocabulary with enforced `choices`, and `trim-panel` no longer drawing what it hides | Six items deliberately set aside, listed under [Deliberately set aside](#deliberately-set-aside); none of it seen on a radio |
+| Vertical-rhythm pass and panel reviews | Complete | The heading pinned to the top inset and the supporting row hung from the bottom one, the reading's ink centred on the panel and sized from the panel's height, superseding fixed band proportions, which superseded redistribution; font choice and placement moved onto a font's ink; headings pinned to the top of their band; badges placed from their measured text; `model-identity`'s picture fitted whole and its name moved into the body band or the heading; single-form supporting rows wherever one fits; a display clamp on the timer's clock; a unit withheld beside a reading with no value; per-panel review screens on a second model and the span galleries retired to fixtures | Navigation visual acceptance remains in progress; bearing formats and compact coordinate rows are implemented. Three panels do not yet route their row through `fitLabel`. |
 
-The design system is in place: the host owns every color, resolves one theme per dashboard, and hands each component a `services` table carrying the theme, shared primitives, span-appropriate typography, a state resolver, and the five shared data services. The `metric` component is the reference implementation and now reads real telemetry; the temporary `demo` setting is gone. Milestone 4's remaining item is a physical readability review, which requires hardware.
+The design system is in place: the host owns every color, resolves one theme per dashboard, and hands each panel a `services` table carrying the theme, shared primitives, span-appropriate typography, a state resolver, and the five shared data services. The `metric` panel is the reference implementation and now reads real telemetry; the temporary `demo` setting is gone. Milestone 4's remaining item is a physical readability review, which requires hardware.
 
-Measured cost is in [Current cost](#current-cost), which is the one place that carries it. It used to be restated here as 7518 and 2520, and both had drifted from what the suite reports; a figure kept in two places is a figure that will disagree with itself. Fourteen layouts are exercised, thirteen of them at sixteen components: metrics with sixteen distinct live sources, sixteen diagnostic panels spanning all five services, sixteen components that demand a refresh every frame, one layout per catalogue component type, and the shipped ten-component dashboard.
+Measured cost is in [Current cost](#current-cost), which is the one place that carries it. It used to be restated here as 7518 and 2520, and both had drifted from what the suite reports; a figure kept in two places is a figure that will disagree with itself. Fourteen layouts are exercised, thirteen of them at sixteen panels: metrics with sixteen distinct live sources, sixteen diagnostic panels spanning all five services, sixteen panels that demand a refresh every frame, one layout per catalogue panel type, and the shipped ten-panel dashboard.
 
-**The worst callback is the staged loader, not any component's own work.** It is the callback that builds one `trim-panel` with four indicators, at 7509. Every layout's second-worst is the loader's header stage, between 6209 and 7361. The three telemetry components at sixteen cells reach 6721, 6593 and 6337, all of them in that header stage, and their worst steady frames are 2290, 2380 and 2562. Removing the services' subscription caps raises the worst steady frame to 6200, which is what the caps are for. On a full grid, component work is no longer the binding constraint, which is worth knowing before optimising a panel.
+**The worst callback is the staged loader, not any panel's own work.** The cited panel-specific instruction baseline predates the fixed three-axis presentation and needs to be regenerated before it can be treated as current. Every layout's second-worst is the loader's header stage, between 6209 and 7361. The three telemetry panels at sixteen cells reach 6721, 6593 and 6337, all of them in that header stage, and their worst steady frames are 2290, 2380 and 2562. Removing the services' subscription caps raises the worst steady frame to 6200, which is what the caps are for. On a full grid, panel work is no longer the binding constraint, which is worth knowing before optimising a panel.
 
 ### Proposed flight-status panel: aircraft-reported state
 
 **The dashboard shows nothing the aircraft reports about its own state.** `flight-mode` shows EdgeTX's transmitter mixer modes, not an aircraft-reported mode. Ordinary GV sources displayed by `metric` also resolve against the active transmitter flight mode.
 
-It is **not** arming state, not the flight controller's mode — Angle, Acro, Horizon, Rescue — and not gyro or stabilisation state. Those live on the aircraft and can only arrive as telemetry, and no component reads them. That is a gap in the catalogue rather than a decision, and it is recorded here so it can be seen without being noticed as an absence.
+It is **not** arming state, not the flight controller's mode — Angle, Acro, Horizon, Rescue — and not gyro or stabilisation state. Those live on the aircraft and can only arrive as telemetry, and no panel reads them. That is a gap in the catalogue rather than a decision, and it is recorded here so it can be seen without being noticed as an absence.
 
 A `flight-status` panel is **proposed, not implemented**. The existing display-panel
 review pass is now complete, so its earlier prerequisite is satisfied; this
@@ -1708,26 +1704,26 @@ These are backlog items, not implemented features or Phase 1 acceptance claims.
 | FlySky AFHDS2A | `FM`, `UNIT_RAW` — a mode **index** | `Arm`, `UNIT_RAW` | `telemetry/flysky_ibus.cpp` |
 | FrSky S.Port | absent | absent | no entry in `telemetry/frsky_sport.cpp` |
 
-`STR_SENSOR_FLIGHT_MODE` is `"FM"` and `STR_SENSOR_ARM` is `"Arm"` (`telemetry/sensor_names.h`). A text sensor's value is capped at `TELEMETRY_SENSOR_TEXT_LENGTH`, which is 16, and EdgeTX stores a hash of the string in the numeric slot "so changes can be detected quickly" (`telemetry/telemetry_sensors.cpp`). Lua receives the string itself, not the hash: `case UNIT_TEXT: lua_pushstring(L, telemetryItems[...].text)` (`radio/src/lua/api_general.cpp`). `getFieldInfo` reports the unit for a telemetry source, so a component can tell a text sensor from a numeric one before reading it.
+`STR_SENSOR_FLIGHT_MODE` is `"FM"` and `STR_SENSOR_ARM` is `"Arm"` (`telemetry/sensor_names.h`). A text sensor's value is capped at `TELEMETRY_SENSOR_TEXT_LENGTH`, which is 16, and EdgeTX stores a hash of the string in the numeric slot "so changes can be detected quickly" (`telemetry/telemetry_sensors.cpp`). Lua receives the string itself, not the hash: `case UNIT_TEXT: lua_pushstring(L, telemetryItems[...].text)` (`radio/src/lua/api_general.cpp`). `getFieldInfo` reports the unit for a telemetry source, so a panel can tell a text sensor from a numeric one before reading it.
 
-**Arming is not separately published on ELRS.** The only `Arm` sensor EdgeTX defines is FlySky's. Flight controllers are understood to encode arming inside the `FM` string, but **that vocabulary is the flight controller's and is not in the EdgeTX tree**, so a component that recognised specific mode strings would be designed against a guess. That is the fixture-discipline mistake in a new place, and it is the single most important thing recorded here.
+**Arming is not separately published on ELRS.** The only `Arm` sensor EdgeTX defines is FlySky's. Flight controllers are understood to encode arming inside the `FM` string, but **that vocabulary is the flight controller's and is not in the EdgeTX tree**, so a panel that recognised specific mode strings would be designed against a guess. That is the fixture-discipline mistake in a new place, and it is the single most important thing recorded here.
 
 **The proposed text-source foundation.** Display a `UNIT_TEXT` sensor and let
 the *layout* map strings to states rather than embedding a universal aircraft
 mode vocabulary. For example, an explicit mapping could classify `!ERR` as
 critical; this is illustrative, not an implemented YAML setting. The
 vocabulary lives where someone who knows their flight controller can state
-it, and the component is honest about what it knows: it shows what the
+it, and the panel is honest about what it knows: it shows what the
 aircraft sent. A flight-status panel may compose such readings with explicit
 numeric arming or gyro mappings.
 
-`metric` cannot absorb this. It formats a number to a precision and normalises it to a range; thresholds, extrema and `fraction` are all meaningless for text, and its ladder sizes the reading from the widest **numeric** form with a unit riding beside it, which a string has no equivalent of. Fitting text into it would make one name cover two components, which is what the settings vocabulary work undid.
+`metric` cannot absorb this. It formats a number to a precision and normalises it to a range; thresholds, extrema and `fraction` are all meaningless for text, and its ladder sizes the reading from the widest **numeric** form with a unit riding beside it, which a string has no equivalent of. Fitting text into it would make one name cover two panels, which is what the settings vocabulary work undid.
 
-**Groundwork already in place.** The telemetry service maps `UNIT_TEXT` to a `text` kind and holds the string in `raw` with no numeric value. That path existed and had never been exercised by anything, so the test fixture now carries an `FM` text sensor and the service's handling of one is covered, including the common case of the sensor being absent. That is worth having whether or not the component is ever built.
+**Groundwork already in place.** The telemetry service maps `UNIT_TEXT` to a `text` kind and holds the string in `raw` with no numeric value. That path existed and had never been exercised by anything, so the test fixture now carries an `FM` text sensor and the service's handling of one is covered, including the common case of the sensor being absent. That is worth having whether or not the panel is ever built.
 
 ### The host diagnostics view
 
-Initial dashboard acceptance has been reported on TX16S v2 / EdgeTX 2.12.4. When something looks wrong on hardware, inferring from pixels alone can conceal geometry defects or stale bytecode. The `host-diagnostics` component exists so a hardware session can answer "what is loaded and what did it resolve to" by reading it instead of deducing it.
+Initial dashboard acceptance has been reported on TX16S v2 / EdgeTX 2.12.4. When something looks wrong on hardware, inferring from pixels alone can conceal geometry defects or stale bytecode. The `host-diagnostics` panel exists so a hardware session can answer "what is loaded and what did it resolve to" by reading it instead of deducing it.
 
 It ships as four sections, one per panel, on the `host` dashboard:
 
@@ -1735,7 +1731,7 @@ It ships as four sections, one per panel, on the `host` dashboard:
 | --- | --- |
 | `identity` | Widget version, `main.lua`'s size and modification time, **whether a `main.luac` is sitting beside it**, which of the three candidate filenames answered, the full path, and the model name the path was derived from |
 | `theme` | The resolved mode, whether the layout or the widget option asked for it, whether a mode that does not exist fell back to Modern, and every notice the theme recorded |
-| `components` | One line per placement: id, type, span, and whether it built, failed later, or was rejected before it built |
+| `panels` | One line per placement: id, type, span, and whether it built, failed later, or was rejected before it built |
 | `sources` | One line per telemetry source any panel asked for, spelled as the layout spelled it, and whether it bound |
 
 **It reads the live host context and re-derives nothing.** A diagnostics view that resolved the layout filename a second time, or rebuilt the theme to see what it would say, would be reporting on a world assembled for it rather than the one the dashboard is running, and would be confidently wrong at exactly the moment it is being trusted. That is the same mistake as a fixture that encodes what we assume. Where a fact was not recoverable afterwards, the host now records it where it is decided rather than letting the view guess later, and each of those was a guess the view would otherwise have had to make:
@@ -1743,15 +1739,15 @@ It ships as four sections, one per panel, on the `host` dashboard:
 - `layoutStore.read` reports **which** of the three candidate names answered, not only the path it settled on. A dashboard called `main` on a model called `main` produces two candidates that read alike, and a layout quietly falling back to `default.yaml` looks exactly like one that was found.
 - `context.themeSource` records whether the layout's own block or the widget option chose the mode. The option was inert for a while while looking identical to a working one.
 - `theme.build` reports the mode it was **asked** for beside the one it settled on, because a fallback to Modern reports `modern` and is otherwise invisible.
-- `context.rejected` holds placements that never built, with the reason. A component that raises during `create` is discarded and is not in `components` at all, so before this the view could have reported every panel that works and no panel that does not, which is the wrong half.
+- `context.rejected` holds placements that never built, with the reason. A panel that raises during `create` is discarded and is not in `panels` at all, so before this the view could have reported every panel that works and no panel that does not, which is the wrong half.
 
 **The bytecode line is the one that earns the view.** EdgeTX compiles a `.luac` beside every script it loads and prefers it afterwards, so a radio can run code that is no longer on the card; that is constraint 10 and it cost hours. `make build` deletes the bytecode, but a card assembled any other way will not have. `fstat` reports `{size, attrib, time}` and nothing at all for a file it cannot stat (`luaFstat`, `radio/src/lua/api_filesystem.cpp`), so the view stamps the source and says plainly when a `.luac` is beside it — in which case the timestamp shown is not the code that is executing.
 
-**Reachability.** It is a component on its own dashboard, reached by paging like everything else. It cannot be a widget setting: in App mode `Widget::openMenu` returns before opening anything, so the settings menu is unreachable from the main view, which is precisely where somebody diagnosing a dashboard is standing.
+**Reachability.** It is a panel on its own dashboard, reached by paging like everything else. It cannot be a widget setting: in App mode `Widget::openMenu` returns before opening anything, so the settings menu is unreachable from the main view, which is precisely where somebody diagnosing a dashboard is standing.
 
-**Cost.** Nothing when it is not showing, because a component no layout places is never loaded. When it is showing it builds a fixed number of line objects, so its build cost does not depend on how much there turns out to be to say, and repaints only the lines whose text changed. Sixteen panels of it — the worst the schema permits — peak at 6215 instructions, in the loader's header stage rather than in the component; the component's own worst stage is 4509 against `trim-panel`'s 7518. It does not become the worst callback.
+**Cost.** Nothing when it is not showing, because a panel no layout places is never loaded. When it is showing it builds a fixed number of line objects, so its build cost does not depend on how much there turns out to be to say, and repaints only the lines whose text changed. Sixteen panels of it — the worst the schema permits — peak at 6215 instructions, in the loader's header stage rather than in the panel; the trim-panel build figure cited here predates the fixed three-axis presentation and needs to be regenerated before comparison. It does not become the worst callback.
 
-**Panels shed lines.** A two-cell panel shows about five, so each section is ordered by what someone is there to find: the bytecode alarm above the layout path, failures above the roll call, unbound sources above bound ones, and a count on the first line that says whether anything was shed. A list that pushes the one broken component off the bottom is worse than no list.
+**Panels shed lines.** A two-cell panel shows about five, so each section is ordered by what someone is there to find: the bytecode alarm above the layout path, failures above the roll call, unbound sources above bound ones, and a count on the first line that says whether anything was shed. A list that pushes the one broken panel off the bottom is worse than no list.
 
 ### Text reaches a label only through something that measured it
 
@@ -1786,20 +1782,20 @@ than fixed at build.
 **Where the string goes decides who can get it wrong.** Every other string in
 the dashboard is already measured: the reading by the shared ladder,
 supporting rows by `fitLabel`. The heading was the one string the *host*
-writes, in `primitives.header`, which is why eleven of twelve components never
+writes, in `primitives.header`, which is why eleven of twelve panels never
 touched it and could not have got it right or wrong. Fixing the host fixed
-eleven components. The two that rewrite their heading at runtime go through
+eleven panels. The two that rewrite their heading at runtime go through
 `primitives.setHeading`, and a test forbids writing it directly.
 
 **This is detectable rather than unrepresentable, and that is worth saying.**
-The render declaration made its mistake impossible: a component cannot compare
+The render declaration made its mistake impossible: a panel cannot compare
 a field it never declared, because the host derives the comparison. The same
-move is not available here, because the host does not own paint -- a component
+move is not available here, because the host does not own paint -- a panel
 holds its own LVGL objects and calls `set` on them. Making this
 unrepresentable would mean the host owning drawing as well as deciding, which
 is a much larger change than this defect justifies. Detectable is what is
 available: the host writes the heading, and a directory-reading test fails on
-a component that writes its own.
+a panel that writes its own.
 
 **The heading text is held beside the label rather than on it.** The first
 version of this stored it and its dropped flag as fields on the label object,
@@ -1822,7 +1818,7 @@ authority. The original measurements and reasoning below are historical.
 
 It was 4, nothing had ever measured it, and it made a reflow the most expensive callback in the dashboard. It is the only per-callback cost the dashboard chooses rather than earns, so it was worth measuring properly rather than assuming a smaller number is better.
 
-Measured at single-instruction resolution on sixteen `trim-panel` components, the largest layout the schema permits using the most expensive component to reposition:
+Measured at single-instruction resolution on sixteen `trim-panel` panels, the largest layout the schema permits using the most expensive panel to reposition:
 
 | Batch | Worst reflow callback | Callbacks to settle | Total reflow work | Headline worst callback |
 | --- | --- | --- | --- | --- |
@@ -1834,72 +1830,51 @@ Measured at single-instruction resolution on sixteen `trim-panel` components, th
 | 6 | 12700 | 3 | 33692 | 12700 |
 | 8 | 16868 | 2 | — | exceeds the suite's ceiling |
 
-**The relationship is linear and the per-callback overhead is negligible.** Each step adds exactly 2084 instructions, which is what one `trim-panel` costs to reposition, and the intercept is 196. So a batch of *n* costs `2084n + 196`, and the overhead the schema pays for splitting the work is under a tenth of one component. Total reflow work is 2.6% higher at a batch of 1 than at 4, which is that overhead paid sixteen times instead of four.
+**The relationship is linear and the per-callback overhead is negligible.** Each step adds exactly 2084 instructions, which is what one `trim-panel` costs to reposition, and the intercept is 196. So a batch of *n* costs `2084n + 196`, and the overhead the schema pays for splitting the work is under a tenth of one panel. Total reflow work is 2.6% higher at a batch of 1 than at 4, which is that overhead paid sixteen times instead of four.
 
-**Three is where the saving stops.** Below it the headline does not move at all, because the binding constraint becomes the loader building one component at 7509, and no batch size affects that — the component stage already builds one component per callback. A batch of 2 or 1 therefore settles a reflow more slowly and buys nothing.
+**Three is where the saving stops.** Below it the headline does not move at all, because the binding constraint becomes the loader building one panel at 7509, and no batch size affects that — the panel stage already builds one panel per callback. A batch of 2 or 1 therefore settles a reflow more slowly and buys nothing.
 
-**What it costs is passes.** Sixteen components settle in six callbacks rather than four. `MainWindow::run` calls `ViewMain::refreshWidgets` once per `MENU_TASK_PERIOD`, which is 50 ms (`radio/src/tasks.cpp:50`), so a full reflow takes about 300 ms rather than 200. A reflow runs only when the host zone moves or resizes — a screen change or a dashboard change — so the extra 100 ms is spent at a moment nobody is reading a value.
+**What it costs is passes.** Sixteen panels settle in six callbacks rather than four. `MainWindow::run` calls `ViewMain::refreshWidgets` once per `MENU_TASK_PERIOD`, which is 50 ms (`radio/src/tasks.cpp:50`), so a full reflow takes about 300 ms rather than 200. A reflow runs only when the host zone moves or resizes — a screen change or a dashboard change — so the extra 100 ms is spent at a moment nobody is reading a value.
 
-**The headroom is the real argument, not the 12%.** Both 8532 and 7509 are comfortable against 20000. But reflow is the only per-callback cost that multiplies one component's work by a constant, which makes the constant the cheapest protection against a future component being expensive to move. At 4, a component costing 3750 instructions to reposition breaches the suite's ceiling; at 3 it takes 4935 to do the same.
+**The headroom is the real argument, not the 12%.** Both 8532 and 7509 are comfortable against 20000. But reflow is the only per-callback cost that multiplies one panel's work by a constant, which makes the constant the cheapest protection against a future panel being expensive to move. At 4, a panel costing 3750 instructions to reposition breaches the suite's ceiling; at 3 it takes 4935 to do the same.
 
 The suite asserts the conclusion rather than the number: **a reflow may not be the most expensive callback the dashboard makes.** That comparison fails at a batch of 4 and at 5, which a fixed ceiling chosen today would not have done, and it is paired with an assertion that a reflow was measured at all — without which a zero compares less than everything and the whole check passes having proved nothing. That hole was real and was found by breaking the recording and watching the comparison stay green.
 
 This question is closed. Re-open it only with a measurement.
 
-**Why a `trim-panel` reflow is the most expensive of them, and why that
-stays.** It is not a defect and not worth optimising further. Reflow is
-batched three components to a callback, so the figure is three `update` calls
-plus the host's own work. At sixteen cells a `trim-panel` showing one
-indicator costs 872 instructions to reposition, which sits in the middle of the catalogue
-between `cell-battery` at 769 and `model-identity` at 902. Showing four costs
-1798. The excess is entirely the three extra indicators, at 309 each, and each
-indicator is a caption, a bipolar bar of three objects and a readout. A panel
-that draws four readings repositions four readings' worth of geometry. There
-is no shared mechanism left for it to adopt: it goes through the panel frame,
-the header, the render declaration and the shared `reconcile` like everything
-else.
-
-That was established by measurement after removing the part that *was*
-accidental. The panel used to hide the caption and readout rows a narrow cell
-cannot fit, and then keep positioning them on every reflow, formatting them
-four times a frame, and writing them into labels nobody could see: about 740
-instructions of work with no reader, which took the worst callback from 9268
-to 8532 when removed, before the batch measurement took it to 6448. Invisible
-work is the hazard here, because it leaves no
-trace on screen and so no assertion about what is drawn can see it. The test
-harness counts writes and visibility calls per object for exactly that reason,
-and those counters are swapped out while a callback is measured, on the same
-grounds as property validation.
+**Trim-panel measurement status.** The historical trim-specific reflow
+measurements above predate the fixed three-axis design. Re-run resource
+profiling before using them as current build or reflow costs.
 
 The worst steady frame rose from 2000 to 2400 with milestone 7, on sixteen
-`link-status` panels, which is the component that reads the most per refresh:
-two sources, a minimum, and the link view. A component's declared refresh
+`link-status` panels, which is the panel that reads the most per refresh:
+two sources, a minimum, and the link view. A panel's declared refresh
 interval, not its size, is what decides steady-state cost: `cell-battery`
 walks its cells table on every refresh and declares 20 ticks for it, and
 `navigation` declares 25 because telemetry GPS never arrives faster. It is
-now 2562 on sixteen `navigation` panels; `trim-panel` held it until it
-stopped formatting four readouts a frame that its cells had no room to show.
+now 2562 on sixteen `navigation` panels; the trim panel's previous
+steady-state measurement is no longer a current comparison.
 
-### Component module contract
+### Panel module contract
 
-A component file under `components/<type>.lua` returns a table describing itself:
+A panel file under `panels/<type>.lua` returns a table describing itself:
 
 | Field | Required | Purpose |
 | --- | --- | --- |
 | `id` | Yes | Must equal the `type` name used in YAML, so a renamed file cannot load silently. |
-| `apiVersion` | Yes | Must equal the host component API version. Anything else is rejected visibly. |
-| `create(parent, rect, settings, services)` | Yes | Builds LVGL objects and returns the component's own context. |
+| `apiVersion` | Yes | Must equal the host panel API version. Anything else is rejected visibly. |
+| `create(parent, rect, settings, services)` | Yes | Builds LVGL objects and returns the panel's own context. |
 | `supportedSpans` | No | Span strings such as `"2x1"`, or `"any"`. Absent means every span is accepted. |
 | `settings` | No | Declared `{key, label, type, default}` entries. Absent and mistyped YAML values fall back to the default. |
 | `update(instance, rect, settings)` | No | Applies changed geometry or configuration. |
 | `refresh(instance)` | No | Runs once per visible host cycle. |
 | `background(instance)` | No | Runs while the dashboard screen is not visible. |
 | `event(instance, event)` | No | Returns true when the event is consumed, which stops propagation. |
-| `destroy(instance)` | No | Runs before the host tears the component down. |
+| `destroy(instance)` | No | Runs before the host tears the panel down. |
 
-The host creates one LVGL container per placement and passes it as `parent`, with a container-local rectangle starting at the origin. A component therefore cannot draw over a neighbour or reach the dashboard root. Contract fields are read with `rawget`, so a module with a raising `__index` cannot break the host.
+The host creates one LVGL container per placement and passes it as `parent`, with a container-local rectangle starting at the origin. A panel therefore cannot draw over a neighbour or reach the dashboard root. Contract fields are read with `rawget`, so a module with a raising `__index` cannot break the host.
 
-Every callback is dispatched under `pcall`. The first failure permanently disables that one component and reports it, so a broken module cannot repeatedly raise or disable the surrounding dashboard. A component that fails during `create` has its container cleared, leaving no partial drawing behind.
+Every callback is dispatched under `pcall`. The first failure permanently disables that one panel and reports it, so a broken module cannot repeatedly raise or disable the surrounding dashboard. A panel that fails during `create` has its container cleared, leaving no partial drawing behind.
 
 ### Measuring text, against estimating it
 
@@ -1920,7 +1895,7 @@ A digit is 0.429 of a line height and a decimal point 0.199, so the error grows 
 **Unit placement is measured. Nothing else is, yet.** Converting the rest is a larger change than it looks, and these are the numbers it turns on.
 
 - **Cost.** Measured through the harness, `theme.textWidth` is 27 instructions and `theme.measureText` is 34 when `lcd.sizeText` costs what it costs on a radio -- **+7 per call**. There are twelve call sites; the hot ones are inside `fitReading`, which walks a ladder of up to five fonts against up to three forms, so a single fitting decision could pay it fifteen times.
-- **What it would change.** Across seven components at every span they declare, **17 of 112 pairs would resolve to a larger font**, every one of them larger and none smaller, which is what removing generosity predicts. `flight-timer` gains a size at nine spans and `navigation` at seven. Those are improvements, but they are visible ones, and they would arrive across the whole catalogue at once.
+- **What it would change.** Across seven panels at every span they declare, **17 of 112 pairs would resolve to a larger font**, every one of them larger and none smaller, which is what removing generosity predicts. `flight-timer` gains a size at nine spans and `navigation` at seven. Those are improvements, but they are visible ones, and they would arrive across the whole catalogue at once.
 - **What it would not fix.** The mock cannot reproduce the radio's advances exactly. It models them from `lv_font_en_STD.c`, the one font whose `glyph_dsc` is uncompressed in the tree, and applies that one font's proportions to every size; the bold faces in particular are wider on a radio than in the harness. What that buys is the thing that matters, which is that the harness **disagrees with the estimate** -- `7.9` is 22 pixels there against the estimate's 37 -- so a test can tell a measured placement from an estimated one. A model that merely repeated the estimate could not, and the placement defect that reached a user's screen would have been invisible to the suite either way.
 
 **Correction to a claim that stood here and was wrong.** This section previously said the compressed advances "are not readable from source at all". They are. EdgeTX's `lz4_fonts.h` states that `glyph_dsc` sits at offset zero of the compressed payload, with `uncomp_size` and `glyph_bitmap` declared beside the blob; extracting `lv_font_en_XS`'s array and decompressing it as an LZ4 block against the declared size yields the advance table directly, first attempt, and `adv_w` in sixteenths is the same number `lv_txt_get_width` sums. Building a fixture from that is a morning's work and the result would be exact rather than modelled.
@@ -1942,29 +1917,29 @@ EdgeTX aborts any widget callback that exceeds **20000 Lua VM instructions**, ra
 1. `read` — resolve and read the layout file.
 2. `tokenize` — convert the text into indentation tokens.
 3. `parse` — build the document, validate it, and resolve the theme.
-4. `components` — instantiate exactly one component, repeated until done.
+4. `panels` — instantiate exactly one panel, repeated until done.
 
-Every stage is bounded by a fixed amount of work rather than by the size of the layout: the file is tokenized a fixed number of lines per call, and each component is parsed, validated, and built in its own call. A zone change is batched the same way. A layout that fills the grid therefore costs more callbacks, never a larger callback.
+Every stage is bounded by a fixed amount of work rather than by the size of the layout: the file is tokenized a fixed number of lines per call, and each panel is parsed, validated, and built in its own call. A zone change is batched the same way. A layout that fills the grid therefore costs more callbacks, never a larger callback.
 
-The regression test measures every callback with a 200-instruction count hook, mirroring the firmware, and fails if any exceeds 75% of the budget. It exercises **the largest layout the schema permits**, sixteen single-cell components, not just the shipped one. Measuring only the shipped layout previously hid a loader that passed on five components and failed on twelve.
+The regression test measures every callback with a 200-instruction count hook, mirroring the firmware, and fails if any exceeds 75% of the budget. It exercises **the largest layout the schema permits**, sixteen single-cell panels, not just the shipped one. Measuring only the shipped layout previously hid a loader that passed on five panels and failed on twelve.
 
-Component authors must respect the same ceiling: `create`, `update`, `refresh`, `background`, and `event` each run inside the host's callback and share its allowance. Avoid per-character string loops, which are the most common way to exhaust it.
+Panel authors must respect the same ceiling: `create`, `update`, `refresh`, `background`, and `event` each run inside the host's callback and share its allowance. Avoid per-character string loops, which are the most common way to exhaust it.
 
 **Anything the harness does to observe must be excluded from what it measures, and a number that moves when only the harness changed is the harness.** This has now caught the instrument charging us for its own work three times: property validation standing in for `parseParam`, which is C++ and free on a radio; the per-object write and visibility counters, which cost 261 instructions of a measured callback while they were branched around rather than swapped out; and sealing every object against field assignment, which a radio's userdata is already and pays nothing to become, and which cost 276 of the worst callback and 126 of the steady frame before it was moved behind the same switch. The last of those was very nearly reported as a regression in the widget. Before attributing a movement to the code, change nothing in the code and see whether it still moves.
 
 Current figures are in **Current cost**, and they are measured with the count hook set to every instruction rather than every 200, because the 200-instruction hook the firmware uses rounds a reading to the nearest 200 and hides exactly the size of change most of this work produces.
 
-Shared data services share the same allowance, and are bounded the same way. The test measures three sixteen-component layouts: metrics with sixteen distinct live telemetry sources, sixteen diagnostic panels spanning all five services, and sixteen components demanding a refresh every frame. Each exercise declares which services it must actually run, and the test fails if one of them never updated during the sampled frames, so a layout that quietly subscribed to nothing cannot make the service layer measure zero.
+Shared data services share the same allowance, and are bounded the same way. The test measures three sixteen-panel layouts: metrics with sixteen distinct live telemetry sources, sixteen diagnostic panels spanning all five services, and sixteen panels demanding a refresh every frame. Each exercise declares which services it must actually run, and the test fails if one of them never updated during the sampled frames, so a layout that quietly subscribed to nothing cannot make the service layer measure zero.
 
 ##### Refresh scheduling
 
-EdgeTX refreshes widgets on every main loop pass, so steady-state cost is paid tens of times per second and is shared by every component on the dashboard. Two mechanisms keep it bounded.
+EdgeTX refreshes widgets on every main loop pass, so steady-state cost is paid tens of times per second and is shared by every panel on the dashboard. Two mechanisms keep it bounded.
 
-A component declares `refreshInterval`, in 10ms ticks, stating how often it actually needs servicing. A numeric telemetry readout is indistinguishable at 5 Hz and 50 Hz in flight, so `metric` declares 20 ticks, where the `heartbeat` fixture, which animates, declares 10. Absent or zero means every frame.
+A panel declares `refreshInterval`, in 10ms ticks, stating how often it actually needs servicing. A numeric telemetry readout is indistinguishable at 5 Hz and 50 Hz in flight, so `metric` declares 20 ticks, where the `heartbeat` fixture, which animates, declares 10. Absent or zero means every frame.
 
-Components that share an interval are then **phase staggered**: each is assigned an offset derived from its position in the layout, so they fall due on different frames instead of all at once. Staggering preserves each component's exact declared rate, which simple batching would not.
+Panels that share an interval are then **phase staggered**: each is assigned an offset derived from its position in the layout, so they fall due on different frames instead of all at once. Staggering preserves each panel's exact declared rate, which simple batching would not.
 
-A per-frame dispatch cap is retained as a guarantee for layouts that defeat staggering, such as many components all asking to refresh every frame. The cap serves components in rotation so none is starved, and a component delayed by the cap does not accumulate a backlog of missed deadlines.
+A per-frame dispatch cap is retained as a guarantee for layouts that defeat staggering, such as many panels all asking to refresh every frame. The cap serves panels in rotation so none is starved, and a panel delayed by the cap does not accumulate a backlog of missed deadlines.
 
 ### Masking with a container
 
@@ -1982,16 +1957,16 @@ The container itself paints nothing, which is hard-won constraint 2 read in the 
 
 EdgeTX's `lvgl.box` accepts a `color` parameter and silently ignores it: `LvglWidgetBox::build` creates a bare `lv_obj` and, unlike `LvglWidgetBorderedObject`, never applies the color as a background. A box therefore keeps the radio theme's own styling, so a dashboard drawn on boxes renders in EdgeTX's palette rather than its own, and the radio's screen background, including its logo, remains visible behind it.
 
-Every visible surface must be a **filled `lvgl.rectangle`**. Boxes are used only as unpainted containers for grouping and clipping. A regression test asserts that the dashboard canvas and every component panel background is a filled rectangle, and that no box relies on a `color` parameter.
+Every visible surface must be a **filled `lvgl.rectangle`**. Boxes are used only as unpainted containers for grouping and clipping. A regression test asserts that the dashboard canvas and every panel panel background is a filled rectangle, and that no box relies on a `color` parameter.
 
-### Services passed to components
+### Services passed to panels
 
 | Key | Purpose |
 | --- | --- |
 | `theme` | Resolved theme with `rgb` (24-bit), `color` (display values), and `spacing`. |
 | `primitives` | Shared panel, label, value, bar, radial, and badge builders. |
-| `fonts` | Typography roles chosen for this component's span. |
-| `span` | The component's `colSpan` and `rowSpan`. |
+| `fonts` | Typography roles chosen for this panel's span. |
+| `span` | The panel's `colSpan` and `rowSpan`. |
 | `state(name, accent)` | Resolves a state name into concrete colors, border weight, and badge text. |
 | `telemetry` | Cached source readings with units, precision, and freshness. |
 | `model` | Model identity, bitmap path, timers, flight mode, and transmitter voltage. |
@@ -1999,11 +1974,11 @@ Every visible surface must be a **filled `lvgl.rectangle`**. Boxes are used only
 | `extrema` | EdgeTX sensor extrema and dashboard flight sessions. |
 | `navigation` | GPS fix, pilot position, distance, and north-up home-to-model bearing. |
 
-Any data service may be absent when its module failed to load, so a component must tolerate `nil` rather than assume.
+Any data service may be absent when its module failed to load, so a panel must tolerate `nil` rather than assume.
 
 ### Subscribing to a service
 
-A component subscribes once, in `create`, and keeps the returned snapshot for its lifetime:
+A panel subscribes once, in `create`, and keeps the returned snapshot for its lifetime:
 
 ```lua
 function example.create(parent, rect, settings, services)
@@ -2018,7 +1993,7 @@ function example.refresh(context)
 end
 ```
 
-Subscribing in `create` is not a convention, it is the mechanism: a source nothing subscribed to is never read. Two components naming the same source share one subscription and therefore one poll.
+Subscribing in `create` is not a convention, it is the mechanism: a source nothing subscribed to is never read. Two panels naming the same source share one subscription and therefore one poll.
 
 | Service | Subscription | Snapshot highlights |
 | --- | --- | --- |
@@ -2026,7 +2001,7 @@ Subscribing in `create` is not a convention, it is the mechanism: a source nothi
 | `model` | `identity()`, `timer(index)`, `flightMode()`, `txVoltage()` | `name`/`bitmapPath`; `value`, `countdown`, `elapsed`, `remaining`, `expired`, `text`; `index`/`name`; a telemetry-shaped reading |
 | `control` | `trim(name, scale)`, `globalVariable(index, flightMode)` | `raw`, `value`, `fraction`, `scale`, `centered`, `threePosition`; `name`, `value`, `min`, `max`, `precision`, `unitText`, `flightMode` |
 | `extrema` | `sourceExtreme(name, mode)`, `sessionExtrema(name)`, `flight(armSource)` | an ordinary reading of `<name>-`/`<name>+`; `min`, `max`, `samples`, `session`; `armed`, `active`, `count`, `duration` |
-| `navigation` | `subscribe(name, distanceSource)` | `fix`, `home`, `latitude`, `longitude`, `pilotLatitude`, `pilotLongitude`, `distance`, `distanceUnit`, `distanceSource`, `bearing`, `age` |
+| `navigation` | `subscribe(name)` | `fix`, `home`, `latitude`, `longitude`, `pilotLatitude`, `pilotLongitude`, `distance`, `distanceUnit`, `bearing`, `age` |
 
 Every snapshot is a read-only view over state the service mutates in place. Writing to one raises, and the metatable is hidden so the mutable state stays unreachable.
 
@@ -2074,8 +2049,8 @@ Phase 1 reads externally authored YAML and never creates, edits, migrates, or re
 #### Milestone 1: Runtime skeleton
 
 - Register one LVGL dashboard host widget with a native Dashboard ID option.
-- Implement grid rectangle calculation and nested LVGL component containers.
-- Render a hard-coded 4 x 4 arrangement of labeled placeholder components.
+- Implement grid rectangle calculation and nested LVGL panel containers.
+- Render a hard-coded 4 x 4 arrangement of labeled placeholder panels.
 - Respond correctly when the host zone changes.
 - Verify App mode as the primary deployment and ordinary `1 x 1` as the fallback.
 
@@ -2085,24 +2060,24 @@ Deliverable: a runnable dashboard whose placeholder panels occupy stable configu
 
 - Implement the constrained schema-versioned YAML parser.
 - Resolve `<model-identifier>--<dashboard-id>.yaml` and fall back to `default.yaml`.
-- Validate component IDs, safe type names, coordinates, spans, overlap, and supported schema version.
+- Validate panel IDs, safe type names, coordinates, spans, overlap, and supported schema version.
 - Preserve unknown keys in memory for forward compatibility.
 - Render visible placeholders for invalid entries without preventing valid entries from loading.
 - Keep all layout file access read-only.
 
 Deliverable: changing YAML rearranges the complete dashboard without changing Lua code.
 
-This is the first architecture checkpoint. Further component work should not begin until two separately loaded placeholder components render from YAML in both App mode and `1 x 1`.
+This is the first architecture checkpoint. Further panel work should not begin until two separately loaded placeholder panels render from YAML in both App mode and `1 x 1`.
 
-#### Milestone 3: Component runtime
+#### Milestone 3: Panel runtime
 
-- Load only referenced component modules with `loadScript()`.
-- Finalize component metadata, API version, lifecycle callbacks, settings schema, and supported-span declarations.
-- Support bundled modules and compatible user-copied modules under `components/`.
+- Load only referenced panel modules with `loadScript()`.
+- Finalize panel metadata, API version, lifecycle callbacks, settings schema, and supported-span declarations.
+- Support bundled modules and compatible user-copied modules under `panels/`.
 - Reject incompatible API versions and unsafe module names visibly.
-- Isolate component creation and refresh failures so one component cannot disable the dashboard.
+- Isolate panel creation and refresh failures so one panel cannot disable the dashboard.
 
-Deliverable: independently authored component files run together under a stable host contract.
+Deliverable: independently authored panel files run together under a stable host contract.
 
 #### Milestone 4: Design system
 
@@ -2112,7 +2087,7 @@ Deliverable: independently authored component files run together under a stable 
 - Establish responsive presentations for `1 x 1`, `2 x 1`, and `2 x 2` spans before expanding to unusual spans.
 - Verify physical readability at 480 x 272 on a TX16S-class display.
 
-Deliverable: one polished metric component demonstrating every state, theme mode, and baseline span.
+Deliverable: one polished metric panel demonstrating every state, theme mode, and baseline span.
 
 #### Milestone 5: Shared data services
 
@@ -2121,17 +2096,17 @@ Deliverable: one polished metric component demonstrating every state, theme mode
 - Implement `controlService` for effective trims and read-only global variables.
 - Implement `extremaService` for EdgeTX extrema and arm-switch flight sessions.
 - Implement `navigationService` for GPS fix, pilot position, distance, and north-up home-to-model bearing.
-- Update each service once per host cycle and expose immutable snapshots to components.
+- Update each service once per host cycle and expose immutable snapshots to panels.
 
-Deliverable: diagnostic views prove normalized service output independently of final component rendering.
+Deliverable: diagnostic views prove normalized service output independently of final panel rendering.
 
-Delivered. The `service-probe` component renders any service's normalized output as label and value rows, and two layouts ship: `services.yaml` for telemetry and navigation, `services2.yaml` for model, control, and extrema. Both load from their Dashboard ID alone, on any model.
+Delivered. The `service-probe` panel renders any service's normalized output as label and value rows, and two layouts ship: `services.yaml` for telemetry and navigation, `services2.yaml` for model, control, and extrema. Both load from their Dashboard ID alone, on any model.
 
-The cadence is deliberate rather than "once per host cycle" literally. Polling five services on every cycle was measured and rejected: at most one service is updated per cycle, services are phase staggered on registration, a service nothing subscribed to is never scheduled, and each service caps how many subscriptions it refreshes in one update. A component still sees one consistent set of readings per cycle, because services update before component refreshes.
+The cadence is deliberate rather than "once per host cycle" literally. Polling five services on every cycle was measured and rejected: at most one service is updated per cycle, services are phase staggered on registration, a service nothing subscribed to is never scheduled, and each service caps how many subscriptions it refreshes in one update. A panel still sees one consistent set of readings per cycle, because services update before panel refreshes.
 
-#### Milestone 6: Core components
+#### Milestone 6: Core panels
 
-Implement these components in order:
+Implement these panels in order:
 
 1. `metric`
 2. `flight-timer`
@@ -2140,28 +2115,28 @@ Implement these components in order:
 5. `trim-panel`
 6. `model-identity`
 
-This order establishes value formatting, source access (including ordinary GV sources), model APIs, bars, radial indicators, trim semantics, and bitmap handling before the more protocol-sensitive components.
+This order establishes value formatting, source access (including ordinary GV sources), model APIs, bars, radial indicators, trim semantics, and bitmap handling before the more protocol-sensitive panels.
 
-Deliverable: six responsive core components operating from YAML configuration.
+Deliverable: six responsive core panels operating from YAML configuration.
 
 Delivered. All six ship, driven by YAML and shared services, and the shipped `layouts/default.yaml` demonstrates all of them. Global-variable readings use `metric` through ordinary EdgeTX sources.
 
 Three shared additions came out of the work rather than being planned:
 
-- `theme.frame` resolves the padded content geometry, header row, and badge column that every panel shares, so a badge cannot land on the label it accompanies and two components cannot disagree about where a header sits. Widening a narrow panel's badge past half its content width was a real defect this found.
+- `theme.frame` resolves the padded content geometry, header row, and badge column that every panel shares, so a badge cannot land on the label it accompanies and two panels cannot disagree about where a header sits. Widening a narrow panel's badge past half its content width was a real defect this found.
 - `theme.textWidth` and `theme.fitText` fit a reading by measured width as well as height. This closes milestone 6's carried-forward item about a `1 x 1` metric whose value was only checked vertically.
-- `primitives.bipolarBar`, an optional centre marker on `primitives.bar`, and `primitives.image` cover the three shapes the new components needed and the earlier catalog did not.
+- `primitives.bipolarBar`, an optional centre marker on `primitives.bar`, and `primitives.image` cover the three shapes the new panels needed and the earlier catalog did not.
 
 Milestone 7 added two more, both about arcs:
 
 - `primitives.compass` draws a north-up home-to-model bearing dial with a continuous outer ring, inward ticks, inset N/E/S/W, and a green filled concave pointer. Two triangles form the pointer and are hidden when bearing is unavailable. The pointer's maximum radius reserves clearance from all cardinal labels at every bearing. Explicit compass/detailed presentations reserve space for the dial; auto retains distance-first shedding.
-- `primitives.arcBounds` was added here to convert an arc's centre into the rectangle it occupies. It has since been deleted: no component ever called it, its only callers were tests, and it was wrong — it put the outer edge half a stroke too far out, which nothing noticed because the only thing checking it repeated its arithmetic. The tests now measure the arc the mock actually drew.
+- `primitives.arcBounds` was added here to convert an arc's centre into the rectangle it occupies. It has since been deleted: no panel ever called it, its only callers were tests, and it was wrong — it put the outer edge half a stroke too far out, which nothing noticed because the only thing checking it repeated its arithmetic. The tests now measure the arc the mock actually drew.
 
-Two specification details were corrected by the implementation, and both are recorded where they belong: model bitmaps cannot use `Bitmap.open()` under LVGL, and a `metric` preset cannot be expressed as a settings default.
+Model bitmaps cannot use `Bitmap.open()` under LVGL; this implementation detail is recorded in the model identity requirements.
 
-#### Milestone 7: Telemetry-specialized components
+#### Milestone 7: Telemetry-specialized panels
 
-Implement these components in order:
+Implement these panels in order:
 
 1. `cell-battery`
 2. `link-status`
@@ -2171,10 +2146,10 @@ Implement these components in order:
 - Handle protocol-dependent RSSI and link-quality source selection.
 - Test telemetry disconnect, reconnect, stale data, missing GPS fix, and unavailable home position.
 
-Deliverable: the full ten-component catalog with graceful telemetry degradation.
+Deliverable: the full ten-panel catalog with graceful telemetry degradation.
 
 Delivered. All three ship, and `layouts/default.yaml` now demonstrates the
-complete ten-component catalogue on one screen.
+complete ten-panel catalogue on one screen.
 
 Value shapes are validated rather than assumed. `cellBattery.summarize`
 classifies what EdgeTX actually returned as `none`, `number`, `empty`,
@@ -2188,7 +2163,7 @@ is a configuration mistake rather than a failed link, so it reads
 `navigation` reports no source, no fix, and no home position as three
 different states because each has a different cause and a different fix.
 
-Protocol-dependent source selection is a component setting, not a heuristic.
+Protocol-dependent source selection is a panel setting, not a heuristic.
 `link-status` takes independent RSSI and link-quality source names, never
 infers one from the other, and its `auto` primary reading prefers quality
 because a percentage means the same thing on every protocol where RSSI does
@@ -2241,7 +2216,7 @@ Three approaches were measured before choosing:
 | Inset the top-left container | 47 px of 238, a fifth of its width | 117 px falls to 70 | Leaves a notch where the cell no longer lines up with the column beneath it |
 | Reserve inside `theme.frame` | 20 px of 134, on that panel only | reading survives, label is dropped | No notch; every other cell is unchanged |
 
-`theme.frame` owns the padded content geometry, header row, and badge column for all eleven catalogue components. Giving it the obstructed corner fixes every component in one place. The header moves to the right of the button without changing the grid geometry.
+`theme.frame` owns the padded content geometry, header row, and badge column for all eleven catalogue panels. Giving it the obstructed corner fixes every panel in one place. The header moves to the right of the button without changing the grid geometry.
 For one-row spans (`1x1`, `2x1`, `3x1`, `4x1`), the shared frame reserves width
 on the left instead of raising the content start. Taller panels continue to
 start content below the obstruction. This keeps a short panel's reading
@@ -2253,7 +2228,7 @@ visuals and side stacks remain conservatively inset as a group. Metric samples
 are not hard value bounds: out-of-envelope live text is prevented from extending
 left into the icon, without changing the sample-based font on each value update.
 
-The corner reaches the frame through the theme builder each component is handed, rather than through a new argument on every component, so a component written by someone else is laid out correctly without knowing any of this exists. It is read on each call rather than captured, so a zone that moves is picked up by the update that follows it.
+The corner reaches the frame through the theme builder each panel is handed, rather than through a new argument on every panel, so a panel written by someone else is laid out correctly without knowing any of this exists. It is read on each call rather than captured, so a zone that moves is picked up by the update that follows it.
 
 The reading gets larger rather than smaller. With the dial shrunk to suit the reduced height, the shipped dashboard's distance is chosen at `MIDSIZE` where it was previously `SMLSIZE`.
 
@@ -2261,7 +2236,7 @@ A `1 x 1` cell in that corner has limited width after the left reservation.
 Its heading and optional content may be dropped; the reading is fitted within
 the remaining width rather than pushed below the button.
 
-The error overlay was subject to the same problem and was fixed first. It was drawn at (8, 8), so in App mode a component could fail, the host could report it, and the radio would show nothing.
+The error overlay was subject to the same problem and was fixed first. It was drawn at (8, 8), so in App mode a panel could fail, the host could report it, and the radio would show nothing.
 
 ##### Why there is no status rail
 
@@ -2282,17 +2257,17 @@ The visibility policy is settled even though the feature is not built: **the rai
 - Test corrupt, missing, and future-version YAML files. Covered through the
   staged host loader in `tests/integration/test_widget.lua`, including empty
   files, visible errors, and stable refresh after rejection.
-- Test missing, incompatible, and failing component modules. Host integration
+- Test missing, incompatible, and failing panel modules. Host integration
   coverage includes syntax errors, module-execution errors, non-table returns,
   API and ID mismatches, unsupported spans, and missing files. A valid panel
   continues running alongside rejected modules; callback failure isolation is
   also covered.
-- Test package and component API compatibility. Host integration covers missing
-  and malformed package identity, future runtime/component/layout contracts,
+- Test package and panel API compatibility. Host integration covers missing
+  and malformed package identity, future runtime/panel/layout contracts,
   missing or unversioned core modules, incompatible core/service modules, and
-  component-host API mismatch. Diagnostics reads the package version from the
+  panel-host API mismatch. Diagnostics reads the package version from the
   live host rather than maintaining a separate version constant.
-- Add a diagnostics view for versions, layout path, components, unresolved sources, and failures. Delivered as `host-diagnostics`; see [The host diagnostics view](#the-host-diagnostics-view).
+- Add a diagnostics view for versions, layout path, panels, unresolved sources, and failures. Delivered as `host-diagnostics`; see [The host diagnostics view](#the-host-diagnostics-view).
 - Validate on TX16S v2, TX16S v3, TX15, and GX15 with EdgeTX 2.12+.
 - Measure instruction use, Lua and bitmap memory, LVGL object count, and refresh cost.
 - Automated resource stability now covers repeated switching across six
@@ -2315,8 +2290,8 @@ Deliverable: a read-only YAML-configured phase 1 release suitable for normal rad
 #### Milestone 10: On-radio editor
 
 - Display the editing grid and selection state in temporary fullscreen mode.
-- Add, move, resize, configure, and remove components.
-- Generate per-component settings forms from typed schemas.
+- Add, move, resize, configure, and remove panels.
+- Generate per-panel settings forms from typed schemas.
 - Implement source, switch, number, boolean, choice, color, string, timer, and file controls.
 - Add Apply, Cancel, defaults, validation feedback, and recovery workflows.
 - Implement validated temporary-file saves, backups, schema migration, and interrupted-save recovery.
@@ -2328,39 +2303,39 @@ Deliverable: layouts created and safely maintained entirely on the radio.
 ## Acceptance Criteria
 
 - A user can run AeroGrid in a single `1 x 1` or App mode zone.
-- The dashboard displays at least two independently implemented Lua component files.
-- A component can be placed at any valid 4 x 4 grid coordinate.
-- A component can span multiple rows and columns.
+- The dashboard displays at least two independently implemented Lua panel files.
+- A panel can be placed at any valid 4 x 4 grid coordinate.
+- A panel can span multiple rows and columns.
 - Overlapping and out-of-bounds placements cannot be saved.
 - Phase 1 loads complete dashboards from read-only YAML without requiring an on-radio editor.
 - Separate Dashboard IDs load separate screens for the same model without internal paging.
-- Phase 2 supports adding, moving, resizing, configuring, and removing components.
-- Component settings forms are generated from component metadata rather than hard-coded in the host.
+- Phase 2 supports adding, moving, resizing, configuring, and removing panels.
+- Panel settings forms are generated from panel metadata rather than hard-coded in the host.
 - A source setting can select an EdgeTX telemetry/input source, persist its name, and read its live value after reload, including after the sensors have been rediscovered in a different order.
-- Telemetry components distinguish current, stale, unavailable, and valid zero values.
-- Altitude and speed presets use the shared metric component while preserving domain-appropriate labels and supporting values.
+- Telemetry panels distinguish current, stale, unavailable, and valid zero values.
+- Altitude and speed displays use the shared metric panel with explicitly configured labels and supporting values.
 - Navigation shows a north-up direction from home to model and never presents it as aircraft-relative orientation.
 - Flight extrema follow the configured manual, timer, or switch reset policy.
 - The dashboard offers Modern, Follow EdgeTX, and Custom theme modes without changing global EdgeTX colors.
 - Trim panels display effective trim positions inside the grid without replacing or modifying EdgeTX trim controls.
 - The metric panel displays ordinary global-variable sources for the active flight mode, with explicitly configured label, precision, unit, and visualization range.
 - Bar and radial indicators remain geometrically stable at minimum, maximum, zero, and out-of-range values.
-- Invalid component configuration cannot be applied or persisted.
+- Invalid panel configuration cannot be applied or persisted.
 - In phase 2, Apply writes a valid per-model and per-Dashboard-ID YAML layout to the SD card.
 - In phase 2, Cancel leaves both the active and persisted layout unchanged.
 - The dashboard recovers from an invalid primary layout using backup or default data.
-- One missing or failing component does not prevent other components from running.
+- One missing or failing panel does not prevent other panels from running.
 - Layouts render without gaps caused by grid rounding.
-- Components work in both App mode and the ordinary Full screen layout, subject to available decorations and interaction state.
+- Panels work in both App mode and the ordinary Full screen layout, subject to available decorations and interaction state.
 - The 480 x 272 dashboard follows the defined visual hierarchy and remains legible on physical hardware.
 - Dynamic values and state changes do not resize panels or shift neighboring content.
-- Components use host theme tokens and provide valid presentations for every span they advertise.
-- Incompatible components and future layout versions fail visibly without corrupting the saved layout.
-- Diagnostics identify missing sources and component failures without requiring continuous SD-card writes.
+- Panels use host theme tokens and provide valid presentations for every span they advertise.
+- Incompatible panels and future layout versions fail visibly without corrupting the saved layout.
+- Diagnostics identify missing sources and panel failures without requiring continuous SD-card writes.
 
 ## Open Decisions
 
-- Whether collision handling rejects, swaps, or automatically relocates components.
+- Whether collision handling rejects, swaps, or automatically relocates panels.
 - Whether phase 2 editing supports rotary/keys from its first release or initially targets touch input.
 - Exact automatic source defaults and name-recovery behavior for each RF protocol.
 - Whether flight-session statistics need optional persistence or export.
@@ -2368,4 +2343,4 @@ Deliverable: layouts created and safely maintained entirely on the radio.
 - Which default YAML dashboard examples ship for aircraft, helicopter, and long-range use.
 - Phase 2 collision and resize-anchor behavior.
 - Numeric performance budgets after simulator and physical-radio baselining.
-- Whether the three development components ship in a release.
+- Whether the three development panels ship in a release.

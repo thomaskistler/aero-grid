@@ -3,6 +3,6 @@
 return {
     version = "0.10.0",
     runtimeApi = 1,
-    componentApi = 1,
+    panelApi = 1,
     layoutVersion = 1,
 }

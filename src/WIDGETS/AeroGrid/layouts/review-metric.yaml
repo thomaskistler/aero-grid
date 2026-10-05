@@ -3,7 +3,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: altitude
     type: metric
     col: 0
@@ -16,6 +16,11 @@ components:
           label: ALT BAR 2x2
           unit: m
           precision: 0
+          rangeMin: 0
+          rangeMax: 400
+          direction: rising
+          warning: 300
+          critical: 400
         - source: GAlt+
           label: MAX
           unit: m
@@ -25,11 +30,6 @@ components:
           unit: m/s
           precision: 1
       accent: green
-      rangeMin: 0
-      rangeMax: 400
-      direction: rising
-      warning: 300
-      critical: 400
   - id: speed
     type: metric
     col: 2
@@ -41,6 +41,11 @@ components:
         - source: VSpd
           label: SPEED RADIAL
           precision: 1
+          rangeMin: 0
+          rangeMax: 10
+          direction: rising
+          warning: 6
+          critical: 8
         - source: RxBt
           label: RX
           unit: V
@@ -50,11 +55,6 @@ components:
           unit: m
           precision: 0
       visual: radial
-      rangeMin: 0
-      rangeMax: 10
-      direction: rising
-      warning: 6
-      critical: 8
   - id: compact
     type: metric
     col: 0
@@ -89,9 +89,9 @@ components:
       metrics:
         - source: VSpd
           label: SENSOR UNIT 2x1
+          rangeMin: -10
+          rangeMax: 10
       visual: none
-      rangeMin: -10
-      rangeMax: 10
   - id: wide-altitude
     type: metric
     col: 0
@@ -104,6 +104,8 @@ components:
           label: ALT BAR 2x1
           unit: m
           precision: 0
+          rangeMin: 0
+          rangeMax: 400
         - source: GAlt+
           label: MAX
           unit: m
@@ -113,8 +115,6 @@ components:
           unit: m/s
           precision: 1
       accent: green
-      rangeMin: 0
-      rangeMax: 400
   - id: voltage
     type: metric
     col: 2
@@ -127,9 +127,9 @@ components:
           label: VOLTAGE 2x1
           unit: V
           precision: 2
+          rangeMin: 0
+          rangeMax: 30
+          direction: falling
+          warning: 22
+          critical: 20
       visual: bar
-      rangeMin: 0
-      rangeMax: 30
-      direction: falling
-      warning: 22
-      critical: 20

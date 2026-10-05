@@ -6,6 +6,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
 
 # A superseded run tells us nothing, so cancel it.
 concurrency:
@@ -61,6 +62,9 @@ jobs:
       # string modes and then parses every Lua file with the 5.3 compiler.
       - name: Test and syntax check
         run: make check LUA_COMPILER=luac5.3
+
+      - name: Test release packaging
+        run: python3 -m unittest discover -s tools -p 'test_release_*.py'
 
       - name: Lint Lua sources
         run: make lint

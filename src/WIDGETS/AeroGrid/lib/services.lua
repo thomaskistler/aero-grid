@@ -2,11 +2,11 @@
 
 --- Shared data service registry, scheduler, and snapshot plumbing.
 ---
---- The host owns polling so components never read EdgeTX sources themselves.
+--- The host owns polling so panels never read EdgeTX sources themselves.
 --- Two rules keep that affordable inside EdgeTX's 20000-instruction callback
---- budget, which every service update shares with every component refresh:
+--- budget, which every service update shares with every panel refresh:
 ---
---- 1. A service only reads what a loaded component actually subscribed to. A
+--- 1. A service only reads what a loaded panel actually subscribed to. A
 ---    service with no subscriptions is skipped entirely, so a dashboard of
 ---    metrics never pays for GPS, trims, or global variables.
 --- 2. At most one service is updated per host cycle, chosen round robin among
@@ -14,9 +14,9 @@
 ---    refreshes in one update. Per-callback cost is therefore bounded by the
 ---    caps rather than by how much the layout asks for.
 ---
---- Components receive immutable views. The service mutates its own state table
+--- Panels receive immutable views. The service mutates its own state table
 --- in place, which costs no allocation per cycle, and hands out a proxy whose
---- writes raise. Services update before components refresh, so a component
+--- writes raise. Services update before panels refresh, so a panel
 --- sees one consistent set of readings for the cycle.
 
 ---@class AeroGridServiceInstance
@@ -32,7 +32,7 @@ local services = { RUNTIME_API = 1 }
 
 --- Service modules loaded by the host, in the order they are staged.
 --- Each entry's `id` becomes the key in the services table handed to a
---- component, so a component reads `services.telemetry`, `services.model`,
+--- panel, so a panel reads `services.telemetry`, `services.model`,
 --- and so on.
 services.DEFINITIONS = {
     { id = "telemetry", file = "lib/telemetry_service.lua" },
@@ -49,15 +49,15 @@ end
 
 --- Publish a mutable state table as an immutable view.
 --- Reads fall through to the live state, so the service can keep updating in
---- place without allocating a fresh table every cycle, while a component
---- cannot corrupt data another component is also reading.
+--- place without allocating a fresh table every cycle, while a panel
+--- cannot corrupt data another panel is also reading.
 ---@param state table
 ---@return table view
 function services.snapshot(state)
     return setmetatable({}, {
         __index = state,
         __newindex = readOnly,
-        -- Hide the metatable so a component cannot reach the mutable state.
+        -- Hide the metatable so a panel cannot reach the mutable state.
         __metatable = false,
     })
 end
@@ -115,7 +115,7 @@ function services.runtime(env)
 end
 
 --- Add one constructed service to the registry.
---- Services are phase staggered on registration for the same reason components
+--- Services are phase staggered on registration for the same reason panels
 --- are: without it every service falls due on the same frame and the host pays
 --- their combined cost in one callback.
 ---@param runtime table

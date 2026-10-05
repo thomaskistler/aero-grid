@@ -92,12 +92,12 @@ local function writeFile(path, text)
 end
 
 --- Build an isolated copy of the widget package so a test can supply its own
---- layout and component files without touching the shipped sources.
+--- layout and panel files without touching the shipped sources.
 ---@param name string Unique scratch directory name under build/.
 ---@param layoutYaml? string Replacement layouts/default.yaml content.
----@param extraComponents? table<string, string> Component filename to Lua source.
+---@param extraPanels? table<string, string> Panel filename to Lua source.
 ---@return string widgetPath
-local function makeWidget(name, layoutYaml, extraComponents)
+local function makeWidget(name, layoutYaml, extraPanels)
     local directory = root .. "/build/test-widgets/" .. name
     os.execute("rm -rf '" .. directory .. "'")
     os.execute("mkdir -p '" .. directory .. "'")
@@ -107,20 +107,23 @@ local function makeWidget(name, layoutYaml, extraComponents)
         writeFile(directory .. "/layouts/default.yaml", layoutYaml)
     end
     -- `heartbeat` and `placeholder` exist to exercise the host contract, not to
-    -- fly, so they are fixtures rather than shipped components. They are copied
+    -- fly, so they are fixtures rather than shipped panels. They are copied
     -- into every scratch package because that is what they are for: a layout
     -- placing one still has to load, refresh, reflow and be torn down like any
-    -- other component, and that coverage is the whole reason they exist.
-    os.execute("cp -R '" .. root .. "/tests/fixtures/components/.' '" .. directory .. "/components/'")
+    -- other panel, and that coverage is the whole reason they exist.
+    os.execute("cp -R '" .. root .. "/tests/fixtures/panels/.' '" .. directory .. "/panels/'")
 
-    for filename, source in pairs(extraComponents or {}) do
-        writeFile(directory .. "/components/" .. filename, source)
+    for filename, source in pairs(extraPanels or {}) do
+        writeFile(directory .. "/panels/" .. filename, source)
     end
 
     return directory .. "/"
 end
 
 local widgetChunk = assert(loadfile(sourcePath .. "main.lua"))
+local galleryFile = assert(hostIo.open(root .. "/tests/fixtures/layouts/default-gallery.yaml", "r"))
+local galleryPath = makeWidget("default-gallery", galleryFile:read("*a"))
+galleryFile:close()
 local definition = widgetChunk()
 
 -- Wrap every host callback so the deferred cleanup runs exactly where the
@@ -145,7 +148,7 @@ assertEqual(definition.translate("Theme"), "Theme")
 
 local DEFAULT_OPTIONS = { DashID = "main", Theme = "modern" }
 
---- Advance the clock and refresh, so rate-limited components fall due.
+--- Advance the clock and refresh, so rate-limited panels fall due.
 local function pump(context, count, step)
     for _ = 1, count do
         tick(step or 20)
@@ -167,9 +170,9 @@ local function createLoaded(zone, options, path)
     return context
 end
 
---- Find a loaded component entry by its layout id.
+--- Find a loaded panel entry by its layout id.
 local function entryById(context, id)
-    for _, entry in ipairs(context.components) do
+    for _, entry in ipairs(context.panels) do
         if entry.placement.id == id then
             return entry
         end
@@ -177,12 +180,12 @@ local function entryById(context, id)
     return nil
 end
 
---- Every shipped component exposes its panel through the shared primitive.
+--- Every shipped panel exposes its panel through the shared primitive.
 local function panelOf(entry)
     return entry.instance.panel.root.properties
 end
 
---- The host owns placement, so bounds come from the component's container.
+--- The host owns placement, so bounds come from the panel's container.
 local function boundsOf(entry)
     return entry.container.properties
 end
@@ -206,7 +209,7 @@ theme:
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: pack
     type: metric
     col: 0
@@ -214,15 +217,16 @@ components:
     colSpan: 2
     rowSpan: 2
     config:
-      label: Pack
-      source: RxBt
-      unit: V
+      metrics:
+        - source: RxBt
+          label: Pack
+          unit: V
+          precision: 1
+          rangeMin: 18
+          rangeMax: 25.2
+          warning: 21.0
+          critical: 19.8
       accent: cyan
-      rangeMin: 18
-      rangeMax: 25.2
-      warning: 21.0
-      critical: 19.8
-      precision: 1
       visual: bar
   - id: current
     type: metric
@@ -231,13 +235,14 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      label: Current
-      source: Curr
+      metrics:
+        - source: Curr
+          label: Current
+          rangeMin: 0
+          rangeMax: 120
+          warning: 90
+          critical: 110
       accent: orange
-      rangeMin: 0
-      rangeMax: 120
-      warning: 90
-      critical: 110
       visual: bar
   - id: altitude
     type: metric
@@ -246,13 +251,14 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      label: Altitude
-      source: Alt
+      metrics:
+        - source: Alt
+          label: Altitude
+          rangeMin: 0
+          rangeMax: 400
+          warning: 250
+          critical: 350
       accent: green
-      rangeMin: 0
-      rangeMax: 400
-      warning: 250
-      critical: 350
       visual: radial
   - id: pulse
     type: heartbeat
@@ -277,22 +283,22 @@ components:
 
 local referencePath = makeWidget("reference", REFERENCE_LAYOUT)
 
---- Architecture checkpoint: a layout must load separately authored component
+--- Architecture checkpoint: a layout must load separately authored panel
 --- modules and render them correctly in App mode and ordinary 1 x 1.
 local function testRendersInBothModes(label, zone, path, expected)
     local context = createLoaded(zone, DEFAULT_OPTIONS, path or referencePath)
 
     assertEqual(#context.errors, 0, label .. ": " .. table.concat(context.errors, "\n"))
-    assertEqual(#context.components, expected or 5, label .. ": component count")
+    assertEqual(#context.panels, expected or 5, label .. ": panel count")
 
-    for _, entry in ipairs(context.components) do
+    for _, entry in ipairs(context.panels) do
         local bounds = boundsOf(entry)
         assert(bounds.x >= 0 and bounds.y >= 0, label .. ": container outside zone origin")
         assert(bounds.x + bounds.w <= zone.w, label .. ": container exceeds zone width")
         assert(bounds.y + bounds.h <= zone.h, label .. ": container exceeds zone height")
         assert(bounds.w > 0 and bounds.h > 0, label .. ": container collapsed")
 
-        -- Components are handed container-local coordinates, so their panel must
+        -- Panels are handed container-local coordinates, so their panel must
         -- start at the origin and never exceed the container it was given.
         local panel = panelOf(entry)
         assertEqual(panel.x, 0, label .. ": " .. entry.placement.id .. " left its container")
@@ -303,10 +309,10 @@ local function testRendersInBothModes(label, zone, path, expected)
         )
     end
 
-    for first = 1, #context.components do
-        for second = first + 1, #context.components do
+    for first = 1, #context.panels do
+        for second = first + 1, #context.panels do
             assert(
-                not panelsOverlap(boundsOf(context.components[first]), boundsOf(context.components[second])),
+                not panelsOverlap(boundsOf(context.panels[first]), boundsOf(context.panels[second])),
                 label .. ": rendered panels overlap"
             )
         end
@@ -321,7 +327,7 @@ local appContext = testRendersInBothModes("app mode", appZone())
 testRendersInBothModes("1 x 1", fullScreenZone())
 lvglMock.setAppMode(false)
 --- Milestone 7's deliverable: the shipped dashboard must demonstrate the
---- complete ten-component catalogue, loading each from its own module without
+--- complete ten-panel catalogue, loading each from its own module without
 --- error and keeping each one inside the container the host gave it.
 local SHIPPED_TYPES = {
     "metric",
@@ -338,8 +344,8 @@ local SHIPPED_TYPES = {
 --- Every layout that ships must load, whatever it is for.
 ---
 --- The shipped default is covered above, but the simulator layouts are only
---- ever exercised by running the simulator, so a component type that does not
---- exist, a span a component refuses, or a grid that overflows would not
+--- ever exercised by running the simulator, so a panel type that does not
+--- exist, a span a panel refuses, or a grid that overflows would not
 --- surface until a radio drew it. They are read from disk rather than listed
 --- here, so a new layout is covered the moment it is added.
 local function testShippedLayoutsLoad()
@@ -371,19 +377,19 @@ local function testShippedLayoutsLoad()
         for _ in string.gmatch(yaml, "\n  %- id:") do
             declared = declared + 1
         end
-        assert(declared > 0, stem .. ": no components were declared")
+        assert(declared > 0, stem .. ": no panels were declared")
 
         local zone = { x = 0, y = 0, w = 480, h = 272 }
         local context = testRendersInBothModes("layout " .. stem, zone, widget, declared)
 
-        -- Construction is not the bar: a component that fails on its first real
+        -- Construction is not the bar: a panel that fails on its first real
         -- reading is still a broken layout.
         for _ = 1, 60 do
             tick(20)
             definition.refresh(context)
         end
         assertEqual(#context.errors, 0, stem .. ": " .. table.concat(context.errors, "\n"))
-        for _, entry in ipairs(context.components) do
+        for _, entry in ipairs(context.panels) do
             assert(not entry.failed, stem .. ": " .. entry.placement.id .. " failed")
         end
     end
@@ -394,7 +400,7 @@ end
 --- `armSource` used to be a setting on `metric` and on `link-status`, so a
 --- dashboard with both could name two switches. `extremaService:flight`
 --- documents that the first caller establishes the source, which meant the
---- second component's switch was read from the layout, accepted by the host,
+--- second panel's switch was read from the layout, accepted by the host,
 --- and then silently discarded. Moving it to the layout's `session` block
 --- makes that contradiction unstatable. This checks the block is what does
 --- the arming, by building the same dashboard with and without it.
@@ -405,18 +411,18 @@ local function testSessionArmsTheFlight()
             "grid:",
             "  columns: 4",
             "  rows: 4",
-            "components:",
+            "panels:",
             "  - id: peak",
-            "    type: metric",
+            "    type: link-status",
             "    col: 0",
             "    row: 0",
             "    colSpan: 2",
             "    rowSpan: 1",
             "    config:",
-            "      label: Alt",
-            "      source: Alt",
+            "      label: Link",
+            "      reading: rssi",
+            "      rssiSource: RSSI",
             "      extrema: flight",
-            "      precision: 0",
             sessionBlock,
         }, "\n") .. "\n"
     end
@@ -444,24 +450,24 @@ end
 --- The single-cell gallery has to contain the catalogue, or it is not a
 --- comparison.
 ---
---- `span1x1.yaml` exists so every component can be built at the same span at
---- once and compared. A component missing from it is a component nothing is
+--- `span1x1.yaml` exists so every panel can be built at the same span at
+--- once and compared. A panel missing from it is a panel nothing is
 --- comparing, and the most likely way for one to go missing is for it to be
---- written after the gallery. The component directory is therefore read from
+--- written after the gallery. The panel directory is therefore read from
 --- disk rather than listed here, exactly as the layout sweep above reads the
 --- layout directory.
 ---
 --- **It is a test fixture rather than a shipped layout.** The galleries were
 --- retired from the radio because the user does not page to them; the cases
---- they construct -- eleven components in one grid, which is the densest
+--- they construct -- eleven panels in one grid, which is the densest
 --- arrangement this dashboard can be asked for -- are why they are still
 --- built here. A layout does not have to be on a screen to be worth
 --- building.
 local function testSpanGalleryIsComplete()
-    local componentHost = assert(loadfile(sourcePath .. "lib/component_host.lua"))()
+    local panelHost = assert(loadfile(sourcePath .. "lib/panel_host.lua"))()
 
-    local listingPath = root .. "/build/gallery-components.txt"
-    os.execute("ls '" .. sourcePath .. "components' > '" .. listingPath .. "'")
+    local listingPath = root .. "/build/gallery-panels.txt"
+    os.execute("ls '" .. sourcePath .. "panels' > '" .. listingPath .. "'")
     local listing = assert(hostIo.open(listingPath, "r"))
     local stems = {}
     for name in listing:lines() do
@@ -472,7 +478,7 @@ local function testSpanGalleryIsComplete()
     end
     listing:close()
     os.remove(listingPath)
-    assert(#stems > 0, "no components were found to compare")
+    assert(#stems > 0, "no panels were found to compare")
 
     local source = assert(hostIo.open(root .. "/tests/fixtures/layouts/span1x1.yaml", "r"))
     local gallery = source:read("a")
@@ -480,8 +486,8 @@ local function testSpanGalleryIsComplete()
 
     local compared = 0
     for _, stem in ipairs(stems) do
-        local module = assert(loadfile(sourcePath .. "components/" .. stem .. ".lua"))()
-        if componentHost.supportsSpan(module, 1, 1) then
+        local module = assert(loadfile(sourcePath .. "panels/" .. stem .. ".lua"))()
+        if panelHost.supportsSpan(module, 1, 1) then
             compared = compared + 1
             assert(
                 string.find(gallery, "type: " .. stem, 1, true),
@@ -492,11 +498,11 @@ local function testSpanGalleryIsComplete()
         end
     end
 
-    -- A gallery that compared one component would satisfy every assertion above.
+    -- A gallery that compared one panel would satisfy every assertion above.
     -- Eleven, not thirteen: `heartbeat` and `placeholder` are fixtures now and
     -- are not in the shipped directory this reads, so they cannot be missing
     -- from a gallery they no longer belong in.
-    assert(compared >= 11, "only " .. compared .. " components were compared at 1 x 1")
+    assert(compared >= 11, "only " .. compared .. " panels were compared at 1 x 1")
 end
 
 --- The span galleries have to be reachable by paging, not by editing settings.
@@ -603,7 +609,7 @@ end
 ---
 --- **Two models, because ten screens is the ceiling.** `MAX_CUSTOM_SCREENS`
 --- is 10 (`radio/src/dataconstants.h`), and there are ten reviewable
---- components plus the dashboards, the two palette screens and the debug
+--- panels plus the dashboards, the two palette screens and the debug
 --- screen. That is eleven and does not fit, so the review screens have a
 --- model of their own and the working model keeps the dashboards, the
 --- palette comparison and the debug screen.
@@ -702,7 +708,7 @@ local function testScreensReachEveryShippedLayout()
     -- EdgeTX stops at MAX_CUSTOM_SCREENS, which is 10 on colour targets
     -- (radio/src/dataconstants.h). A model carrying more is one the radio will
     -- not load as written. Asserted on both, because the review model is the
-    -- one that will grow: seven components are still to be reviewed and each
+    -- one that will grow: seven panels are still to be reviewed and each
     -- takes a screen.
     for name, text in pairs({ ["model1.yml"] = working, ["model2.yml"] = review }) do
         local screens = 0
@@ -722,34 +728,34 @@ local function testShippedLayout()
     testScreensReachEveryShippedLayout()
     resetRadio()
     local zone = { x = 0, y = 0, w = 480, h = 272 }
-    local context = testRendersInBothModes("shipped", zone, sourcePath, 10)
-    assertEqual(context.layoutPath, sourcePath .. "layouts/default.yaml")
+    local context = testRendersInBothModes("gallery", zone, galleryPath, 10)
+    assertEqual(context.layoutPath, galleryPath .. "layouts/default.yaml")
 
     local types = {}
-    for _, entry in ipairs(context.components) do
+    for _, entry in ipairs(context.panels) do
         types[entry.module.id] = true
     end
     for _, wanted in ipairs(SHIPPED_TYPES) do
         assert(types[wanted], "the shipped dashboard does not demonstrate " .. wanted)
     end
 
-    -- Every component must survive real radio state, not merely construction.
+    -- Every panel must survive real radio state, not merely construction.
     for _ = 1, 80 do
         tick(20)
         definition.refresh(context)
     end
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 
-    -- The preset metric takes its label, bounds, and sources from the preset.
+    -- The altitude metric uses the explicit fixture settings.
     local altitude = entryById(context, "altitude").instance
     assertEqual(altitude.settings.label, "ALT")
     assertEqual(altitude.settings.source, "Alt")
     assertEqual(altitude.feed.name, "Alt")
-    assertEqual(altitude.extremeFeed.name, "Alt+", "the preset lost its extrema")
+    assertEqual(altitude.detailFeed.name, "Alt+", "the metric lost its maximum source")
     assertEqual(altitude.secondaryFeed.name, "VSpd")
     assertEqual(altitude.value.properties.text, "100")
 
-    -- And the components that read the radio rather than the link.
+    -- And the panels that read the radio rather than the link.
     assertEqual(entryById(context, "flight-clock").instance.text, "1:30")
     assertEqual(entryById(context, "mode").instance.text, "Sport")
     -- Digits alone: the `V` is its own label riding beside them.
@@ -758,9 +764,9 @@ local function testShippedLayout()
     assertEqual(radioBattery.unit.properties.text, "V")
     assertEqual(entryById(context, "rates").instance.text, "4.5")
     assertEqual(entryById(context, "identity").instance.text, "Test Model")
-    assertEqual(entryById(context, "trims").instance.indicators[1].valueText, "+23%")
+    assertEqual(entryById(context, "trims").instance.indicators[1].valueText, "+23% A")
 
-    -- The three telemetry components, reading what the radio really reports.
+    -- The three telemetry panels, reading what the radio really reports.
     local pack = entryById(context, "pack").instance
     -- Digits alone, with the `V` riding beside them in its own label.
     assertEqual(pack.text, "4.09", "the lowest cell is the safety reading")
@@ -805,7 +811,7 @@ end
 --- for arithmetic, `theme.color` display values for drawing. While the
 --- mock returned its input unchanged the two were the same number, so this
 --- test passed whichever one the host reached for.
-local function testThemeReachesComponents()
+local function testThemeReachesPanels()
     local modern = themeModule.modern()
     assertEqual(appContext.theme.mode, "modern")
     assertEqual(
@@ -814,7 +820,7 @@ local function testThemeReachesComponents()
         "the canvas was not painted in the resolved canvas colour"
     )
 
-    for _, entry in ipairs(appContext.components) do
+    for _, entry in ipairs(appContext.panels) do
         assertEqual(
             entry.instance.panel.background.properties.color,
             lcd.RGB(modern.surface),
@@ -822,7 +828,7 @@ local function testThemeReachesComponents()
         )
     end
 
-    -- Components receive span-appropriate typography from the host.
+    -- Panels receive span-appropriate typography from the host.
     local pack = entryById(appContext, "pack")
     local current = entryById(appContext, "current")
     assertFont(pack.instance.fonts.primary, XXLSIZE)
@@ -848,7 +854,7 @@ local function testBackgroundsArePainted()
 
     assertPainted(appContext.canvas, "dashboard canvas")
 
-    for _, entry in ipairs(appContext.components) do
+    for _, entry in ipairs(appContext.panels) do
         local panel = entry.instance.panel
         assertPainted(panel.background, entry.placement.id .. " panel background")
         -- Containers and panel roots are boxes, so they must never carry a color.
@@ -887,7 +893,7 @@ local function testPanelPresentation()
         "panels are not elevated above the screen they sit on"
     )
 
-    for _, entry in ipairs(appContext.components) do
+    for _, entry in ipairs(appContext.panels) do
         local id = entry.placement.id
         local panel = entry.instance.panel
         local bounds = boundsOf(entry)
@@ -1040,7 +1046,7 @@ local function testPanelPresentation()
 
         -- Content has to clear the band. Every panel under 80 px tall used to
         -- start its text at the accent's own right edge. Checked over whatever
-        -- labels the component actually built, because the catalogue does not
+        -- labels the panel actually built, because the catalogue does not
         -- agree on what to call them and the rule is about pixels, not names.
         local labels = 0
         for _, object in ipairs(lvglMock.objects) do
@@ -1075,7 +1081,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: pack
     type: metric
     col: 0
@@ -1083,13 +1089,14 @@ components:
     colSpan: 2
     rowSpan: 2
     config:
-      label: Pack
-      source: RxBt
-      rangeMin: 18
-      rangeMax: 25.2
-      warning: 21.0
-      critical: 19.8
-      precision: 1
+      metrics:
+        - source: RxBt
+          label: Pack
+          precision: 1
+          rangeMin: 18
+          rangeMax: 25.2
+          warning: 21.0
+          critical: 19.8
 ]]
     )
 
@@ -1097,7 +1104,7 @@ components:
     local resolved = context.theme
     local entry = entryById(context, "pack")
     local panel = entry.instance.panel
-    local metricModule = assert(loadfile(sourcePath .. "components/metric.lua"))()
+    local metricModule = assert(loadfile(sourcePath .. "panels/metric.lua"))()
 
     local resting = panel.background.properties.color
     assertEqual(resting, resolved.color.surface, "a healthy panel is not drawn on the resting surface")
@@ -1185,7 +1192,7 @@ end
 
 --- A revealed outline still carries the weight and size it should.
 ---
---- Nothing a component produces draws an outline any more, so this drives the
+--- Nothing a panel produces draws an outline any more, so this drives the
 --- presentation directly. It is kept because constraint 13 has not gone away:
 --- a border's thickness reaches LVGL when the object is built and never again,
 --- which is why the panel builds one at the focus weight and shows or hides
@@ -1198,7 +1205,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: pack
     type: metric
     col: 0
@@ -1206,8 +1213,9 @@ components:
     colSpan: 2
     rowSpan: 2
     config:
-      label: Pack
-      source: RxBt
+      metrics:
+        - source: RxBt
+          label: Pack
 ]]
     )
 
@@ -1275,7 +1283,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: pack
     type: metric
     col: 0
@@ -1283,13 +1291,14 @@ components:
     colSpan: 2
     rowSpan: 2
     config:
-      label: Pack
-      source: RxBt
-      rangeMin: 18
-      rangeMax: 25.2
-      warning: 21.0
-      critical: 19.8
-      precision: 1
+      metrics:
+        - source: RxBt
+          label: Pack
+          precision: 1
+          rangeMin: 18
+          rangeMax: 25.2
+          warning: 21.0
+          critical: 19.8
       accent: cyan
 ]]
     )
@@ -1298,7 +1307,7 @@ components:
     local spacing = context.theme.spacing
     local entry = entryById(context, "pack")
     local panel = entry.instance.panel
-    local metricModule = assert(loadfile(sourcePath .. "components/metric.lua"))()
+    local metricModule = assert(loadfile(sourcePath .. "panels/metric.lua"))()
     local modern = themeModule.modern()
 
     --- Every object carrying the accent, and where the radio would draw the arcs.
@@ -1402,7 +1411,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: probe
     type: service-probe
     col: 2
@@ -1448,7 +1457,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: link
     type: link-status
     col: 0
@@ -1528,7 +1537,7 @@ components:
     -- nonsense print the same row, deliberately.** Both mean something is
     -- arriving and is wrong, and both are fixed on the ground -- so the row
     -- says `CELLS ERR` for each, and spends no word on a difference the pilot
-    -- cannot act on. The shapes are still separated inside the component for
+    -- cannot act on. The shapes are still separated inside the panel for
     -- the diagnostics view, which is asserted below.
     --
     -- The number case is configured rather than mutated into: the telemetry
@@ -1553,7 +1562,7 @@ components:
     assertEqual(pack.countText, wrong.countText, "two failures with one fix print different rows")
     assert(
         pack.summary.shape ~= wrong.summary.shape,
-        "the component stopped telling a wrong sensor from a nonsense table, so"
+        "the panel stopped telling a wrong sensor from a nonsense table, so"
             .. " the diagnostics view has nothing left to report"
     )
 
@@ -1575,19 +1584,19 @@ end
 ---
 --- This is the thing the shared ladder exists for, and it is measured through
 --- the real host rather than through the geometry helpers, because the defect
---- was never in the arithmetic: each component's own ladder was correct and
+--- was never in the arithmetic: each panel's own ladder was correct and
 --- they disagreed with each other. At `2 x 2` the four panels of the span
 --- gallery landed on XXLSIZE, DBLSIZE, MIDSIZE and SMLSIZE, a range of four to
 --- one on panels identical to the pixel.
 ---
 --- The bound the old code also satisfied is "no reading is larger than its box
---- allows". That is true of every version of this component and proves
---- nothing, so what is asserted here is the spread between components and the
+--- allows". That is true of every version of this panel and proves
+--- nothing, so what is asserted here is the spread between panels and the
 --- direction of the ladder.
-local function testReadingsAgreeAcrossComponents()
+local function testReadingsAgreeAcrossPanels()
     --- Build one layout full of a single span and report the fonts drawn.
     local function fontsAt(colSpan, rowSpan, entries)
-        local lines = { "version: 1", "grid:", "  columns: 4", "  rows: 4", "components:" }
+        local lines = { "version: 1", "grid:", "  columns: 4", "  rows: 4", "panels:" }
         local col, row = 0, 0
         for index, entry in ipairs(entries) do
             lines[#lines + 1] = "  - id: c" .. index
@@ -1614,7 +1623,7 @@ local function testReadingsAgreeAcrossComponents()
         assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 
         local seen = {}
-        for _, entry in ipairs(context.components) do
+        for _, entry in ipairs(context.panels) do
             local instance = entry.instance
             local object = instance.value
             assert(object, entry.placement.id .. " drew no reading")
@@ -1627,10 +1636,20 @@ local function testReadingsAgreeAcrossComponents()
         return seen
     end
 
-    -- Four components whose readings are as different as the catalogue offers:
+    -- Four panels whose readings are as different as the catalogue offers:
     -- three digits, a voltage with a unit, a dBm reading, and a distance.
     local ENTRIES = {
-        { "metric", { "label: Alt", "source: Alt", "rangeMin: 0", "rangeMax: 400", "precision: 0" } },
+        {
+            "metric",
+            {
+                "metrics:",
+                "  - source: Alt",
+                "    label: Alt",
+                "    rangeMin: 0",
+                "    rangeMax: 400",
+                "    precision: 0",
+            },
+        },
         { "cell-battery", { "source: Cels", "label: Pack" } },
         { "link-status", { "rssiSource: RSSI", "qualitySource: RQly", "label: Link" } },
         { "tx-battery", { "label: TX", "packEmpty: 6.6", "packFull: 8.4" } },
@@ -1685,7 +1704,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: identity
     type: model-identity
     col: 2
@@ -1729,7 +1748,7 @@ end
 
 --- Responsive presentation must differ across the baseline spans.
 local function testResponsiveSpans()
-    local metricModule = assert(loadfile(sourcePath .. "components/metric.lua"))()
+    local metricModule = assert(loadfile(sourcePath .. "panels/metric.lua"))()
 
     local small = metricModule.presentationFor(1, 1)
     local wide = metricModule.presentationFor(2, 1)
@@ -1741,8 +1760,8 @@ local function testResponsiveSpans()
     assertEqual(wide.showRange, false)
     assertEqual(large.showRange, true, "2 x 2 adds the range")
 
-    -- A 2 x 2 metric renders its range and bar; a 2 x 1 renders neither range.
-    assert(entryById(appContext, "pack").instance.range, "2 x 2 metric lost its range")
+    -- A metric with no supporting entries creates no supporting labels.
+    assertEqual(entryById(appContext, "pack").instance.range, nil)
     assertEqual(entryById(appContext, "current").instance.range, nil)
     -- The altitude metric disables its visualization through configuration.
     assertEqual(entryById(appContext, "altitude").instance.bar, nil)
@@ -1751,7 +1770,7 @@ end
 --- Every state must restyle the panel and publish a text badge where required.
 local function testMetricStates()
     local pack = entryById(appContext, "pack").instance
-    local metricModule = assert(loadfile(sourcePath .. "components/metric.lua"))()
+    local metricModule = assert(loadfile(sourcePath .. "panels/metric.lua"))()
     local modern = themeModule.modern()
 
     metricModule.setValue(pack, 24.0)
@@ -1829,7 +1848,7 @@ local function testMetricStates()
     )
 end
 
---- Zone changes reflow every component through the renamed update callback.
+--- Zone changes reflow every panel through the renamed update callback.
 local function testReflowAndLifecycle()
     local zone = appContext.zone
     zone.w = 320
@@ -1856,7 +1875,7 @@ local function testReflowAndLifecycle()
     definition.background(appContext)
     assertEqual(pulse.instance.backgroundTicks, 1, "background was not dispatched")
 
-    -- Events reach components; an unconsumed event is reported as unconsumed.
+    -- Events reach panels; an unconsumed event is reported as unconsumed.
     assertEqual(definition.event(appContext, 32), false)
     assertEqual(pulse.instance.events, 1, "event was not dispatched")
 end
@@ -1889,7 +1908,7 @@ local function testOptionReload()
         guard = guard + 1
         assert(guard < 200, "reload never finished")
     end
-    assertEqual(#appContext.components, 5)
+    assertEqual(#appContext.panels, 5)
 
     -- The rebuilt dashboard must still be usable, which is what the deferred
     -- cleanup broke: the canvas survived creation and then died silently.
@@ -1906,7 +1925,7 @@ local function testOptionReload()
         rounds = rounds + 1
         assert(rounds < 200, "second reload never finished")
     until not appContext.stage and not appContext.reloadState
-    assertEqual(#appContext.components, 5)
+    assertEqual(#appContext.panels, 5)
     assertEqual(#appContext.errors, 0, table.concat(appContext.errors, "\n"))
 
     -- Switching only the theme must also trigger a rebuild.
@@ -1937,7 +1956,7 @@ local function testReloadSurvivesLateCleanup()
     until not context.stage and not context.reloadState
 
     assert(context.page ~= firstPage, "reload reused the discarded page")
-    assertEqual(#context.components, 5)
+    assertEqual(#context.panels, 5)
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 
     -- Now let the withheld cleanup land, all at once and late.
@@ -1947,7 +1966,7 @@ local function testReloadSurvivesLateCleanup()
     -- The rebuilt dashboard must still be alive and usable.
     assertEqual(context.canvas.invalid, false, "canvas was swept by late cleanup")
     assertEqual(context.page.invalid, false, "page was swept by late cleanup")
-    for _, entry in ipairs(context.components) do
+    for _, entry in ipairs(context.panels) do
         assertEqual(entry.container.invalid, false, entry.placement.id .. " was swept by late cleanup")
     end
 
@@ -1982,7 +2001,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: dial
     type: metric
     col: 0
@@ -1990,10 +2009,12 @@ components:
     colSpan: 2
     rowSpan: 2
     config:
-      label: Dial
+      metrics:
+        - source: Alt
+          label: Dial
+          rangeMin: 0
+          rangeMax: 100
       visual: radial
-      rangeMin: 0
-      rangeMax: 100
 ]]
     )
 
@@ -2008,7 +2029,7 @@ components:
     --
     -- Measured from the object the mock actually drew rather than recomputed
     -- from what Lua passed. Recomputing is how the widget came to carry an
-    -- `arcBounds` helper that no component called and that put the outer edge
+    -- `arcBounds` helper that no panel called and that put the outer edge
     -- half a stroke too far out: the only thing checking it was a test that
     -- used the same arithmetic.
     local arc = dial.instance.radial.arc
@@ -2050,7 +2071,7 @@ end
 --- holds DBLSIZE. A shed dial is never written to, so the same assertions
 --- would have passed against an object nothing touches -- which is a check
 --- that cannot fail, not a check that holds. The panel here is two cells
---- wide, which is where the same component and the same range keep both.
+--- wide, which is where the same panel and the same range keep both.
 local function testRadialDoesNotDrift()
     resetRadio()
     local widgetPath = makeWidget(
@@ -2060,7 +2081,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: dial
     type: metric
     col: 0
@@ -2068,11 +2089,12 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      source: Curr
-      label: Current
+      metrics:
+        - source: Curr
+          label: Current
+          rangeMin: 0
+          rangeMax: 120
       visual: radial
-      rangeMin: 0
-      rangeMax: 120
 ]]
     )
 
@@ -2106,7 +2128,7 @@ components:
     resetRadio()
 end
 
---- A component that fails during create must leave no partial drawing behind.
+--- A panel that fails during create must leave no partial drawing behind.
 local function testCreateFailureIsCleaned()
     local widgetPath = makeWidget(
         "halfbuilt",
@@ -2115,7 +2137,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: broken
     type: halfbuilt
     col: 0
@@ -2144,15 +2166,15 @@ return halfbuilt
 
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
 
-    assertEqual(#context.components, 1, "failed component must not be kept")
-    assertEqual(context.components[1].placement.id, "safe")
+    assertEqual(#context.panels, 1, "failed panel must not be kept")
+    assertEqual(context.panels[1].placement.id, "safe")
     assert(string.match(table.concat(context.errors, "\n"), "failed after drawing"))
 end
 
 --- Real telemetry must drive the shipped dashboard end to end: the host polls
 --- through its services, the metric renders what the service normalized, and
 --- every state the design system defines is reachable from radio state alone.
-local function testTelemetryDrivesComponents()
+local function testTelemetryDrivesPanels()
     resetRadio()
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, referencePath)
     local pack = entryById(context, "pack").instance
@@ -2161,7 +2183,7 @@ local function testTelemetryDrivesComponents()
     assert(pack.feed, "the metric never subscribed to a source")
     assertEqual(pack.feed.name, "RxBt")
 
-    --- Advance far enough for the services and the component to both fall due.
+    --- Advance far enough for the services and the panel to both fall due.
     local function settle()
         for _ = 1, 8 do
             tick(20)
@@ -2213,7 +2235,7 @@ local function testTelemetryDrivesComponents()
     resetRadio()
 end
 
---- A source no component references must never be read, because every poll is
+--- A source no panel references must never be read, because every poll is
 --- charged to the same instruction budget as the rest of the dashboard.
 local function testOnlyReferencedSourcesArePolled()
     resetRadio()
@@ -2245,7 +2267,7 @@ local function testOnlyReferencedSourcesArePolled()
 end
 
 testShippedLayout()
-testThemeReachesComponents()
+testThemeReachesPanels()
 testBackgroundsArePainted()
 testPanelPresentation()
 testAlarmTint()
@@ -2253,12 +2275,12 @@ testFocusBorder()
 testAccentFollowsState()
 testProbeUsesTheSharedHeader()
 testSupportingRowsExplainTheBadge()
-testReadingsAgreeAcrossComponents()
+testReadingsAgreeAcrossPanels()
 testRedrawsOnEverythingItDraws()
 testResponsiveSpans()
 testBadgeGeometry()
 testMetricStates()
-testTelemetryDrivesComponents()
+testTelemetryDrivesPanels()
 testOnlyReferencedSourcesArePolled()
 testReflowAndLifecycle()
 testOptionReload()
@@ -2275,7 +2297,7 @@ theme:
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: only
     type: metric
     col: 0
@@ -2283,14 +2305,16 @@ components:
     colSpan: 2
     rowSpan: 2
     config:
-      label: Derived
+      metrics:
+        - source: Alt
+          label: Derived
 ]]
     )
 
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
 
     assertEqual(context.theme.mode, "edgetx")
-    assertEqual(#context.components, 1)
+    assertEqual(#context.panels, 1)
 
     local modern = themeModule.modern()
     local tokens = context.theme.rgb
@@ -2349,7 +2373,7 @@ theme:
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: only
     type: metric
     col: 0
@@ -2357,7 +2381,9 @@ components:
     colSpan: 2
     rowSpan: 2
     config:
-      label: Custom
+      metrics:
+        - source: Alt
+          label: Custom
 ]]
     )
 
@@ -2384,7 +2410,7 @@ components:
     assert(string.match(joined, "border is not customizable"), joined)
 end
 
---- A component that raises must be disabled without affecting its neighbours.
+--- A panel that raises must be disabled without affecting its neighbours.
 local function testFailureIsolation()
     local widgetPath = makeWidget(
         "exploder",
@@ -2393,7 +2419,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: boom
     type: exploder
     col: 0
@@ -2424,29 +2450,29 @@ return exploder
 
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-    assertEqual(#context.components, 2)
+    assertEqual(#context.panels, 2)
 
     pump(context, 1)
 
     local boom = entryById(context, "boom")
     local safe = entryById(context, "safe")
-    assertEqual(boom.failed, true, "failing component was not disabled")
+    assertEqual(boom.failed, true, "failing panel was not disabled")
     assert(string.match(boom.error, "exploder failed"), boom.error)
-    assertEqual(safe.failed, nil, "healthy component was disabled")
+    assertEqual(safe.failed, nil, "healthy panel was disabled")
     assertEqual(#context.errors, 1, "failure was not reported exactly once")
     assert(context.errorLabel, "failure was not shown")
 
-    -- Further refreshes must stay quiet and keep the healthy component running.
+    -- Further refreshes must stay quiet and keep the healthy panel running.
     pump(context, 2)
     assertEqual(#context.errors, 1, "failure was reported repeatedly")
-    assertEqual(#context.components, 2)
+    assertEqual(#context.panels, 2)
 end
 
 --- A reported failure must be readable on the radio it happened on.
 ---
 --- In App mode EdgeTX draws its menu button over the top-left corner of the
 --- screen, above everything the widget draws, so an overlay placed at the
---- zone's own origin is invisible exactly when it matters most: a component
+--- zone's own origin is invisible exactly when it matters most: a panel
 --- could fail and the radio would show nothing at all. The overlay therefore
 --- has to clear the button, and a reserved corner has to be recognized in the
 --- first place, which means reading a firmware constant the firmware shifts.
@@ -2458,7 +2484,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: boom
     type: exploder
     col: 0
@@ -2597,28 +2623,26 @@ end
 --- be as narrow as the layout likes and still say which of two failures
 --- occurred, provided its vocabulary was built that way.
 ---
---- So the rule is: **a component that words a state must keep its shortest
+--- So the rule is: **a panel that words a state must keep its shortest
 --- wordings mutually distinct**, and this is what holds it to that. It is
---- also what any of the remaining components will be held to when their rows
+--- also what any of the remaining panels will be held to when their rows
 --- move onto the slots.
 local function testSupportingWordingsStayDistinct()
-    --- Every component that words a state, and the states it words.
+    --- Every panel that words a state, and the states it words.
     ---
-    --- **A declaration, like the positional check.** A component whose
+    --- **A declaration, like the positional check.** A panel whose
     --- supporting row names more than one failure adds itself here; nine are
     --- still to convert and each should be covered the moment it arrives.
     local WORDED = {
         {
             -- **One form per state here, and the check is the same check.** Every
-            -- wording this component offers fits every panel that draws a row, so
+            -- wording this panel offers fits every panel that draws a row, so
             -- its "shortest" form is its only form -- which is exactly when two
             -- states are likeliest to be collapsed into one word by someone
-            -- shortening for width. `EXPIRED` and `NO TOTAL` are the pair to
-            -- watch: both are a countdown that cannot report time remaining, for
-            -- opposite reasons.
+            -- shortening for width.
             type = "flight-timer",
             variantsFor = function(module, state)
-                return module.detailVariants(state[1], tostring, state[2])
+                return module.detailVariants(state[1], tostring)
             end,
             states = {
                 { "no timer configured", { nil, nil } },
@@ -2640,19 +2664,12 @@ local function testSupportingWordingsStayDistinct()
                     "a timer counting up",
                     { { available = true, countdown = false, elapsed = 64, value = 64, start = 0 }, nil },
                 },
-                {
-                    "a count-up timer asked for the time remaining",
-                    {
-                        { available = true, countdown = false, elapsed = 64, value = 64, start = 0 },
-                        { reading = "remaining" },
-                    },
-                },
             },
         },
         {
             type = "navigation",
-            -- How to ask this component for one state's wordings. Declared,
-            -- because a component's own signature is its own business: this one
+            -- How to ask this panel for one state's wordings. Declared,
+            -- because a panel's own signature is its own business: this one
             -- takes a view table and `cell-battery` takes a summary and settings.
             variantsFor = function(module, state)
                 return module.originVariants(state)
@@ -2694,7 +2711,7 @@ local function testSupportingWordingsStayDistinct()
         {
             type = "link-status",
             -- Its wordings are built inside `linkText`, which needs a whole
-            -- context, so the vocabulary is declared here as the component
+            -- context, so the vocabulary is declared here as the panel
             -- declares it and checked for the property that matters.
             variantsFor = function(_, state)
                 return state
@@ -2707,7 +2724,7 @@ local function testSupportingWordingsStayDistinct()
     }
 
     for _, subject in ipairs(WORDED) do
-        local module = assert(loadfile(sourcePath .. "components/" .. subject.type .. ".lua"))()
+        local module = assert(loadfile(sourcePath .. "panels/" .. subject.type .. ".lua"))()
         local seen = {}
         for _, entry in ipairs(subject.states) do
             local variants = subject.variantsFor(module, entry[2])
@@ -2738,7 +2755,7 @@ local function testSupportingWordingsStayDistinct()
 
     -- And the narrowest row in the catalogue really does reach the shortest
     -- forms, or the assertions above are about strings nothing prints.
-    local navigationModule = assert(loadfile(sourcePath .. "components/navigation.lua"))()
+    local navigationModule = assert(loadfile(sourcePath .. "panels/navigation.lua"))()
     local GUTTER, CELLS, WIDTH, HEIGHT = 4, 4, 480, 272
     local cellWidth = math.floor((WIDTH - GUTTER * (CELLS - 1)) / CELLS)
     local cellHeight = math.floor((HEIGHT - GUTTER * (CELLS - 1)) / CELLS)
@@ -2894,7 +2911,7 @@ local function drawnBoxes(entry)
 end
 
 local function assertNothingOverlaps(label, context)
-    for _, entry in ipairs(context.components) do
+    for _, entry in ipairs(context.panels) do
         local rect = boundsOf(entry)
         local boxes = drawnBoxes(entry)
         local where = label .. ": " .. entry.placement.id
@@ -2984,7 +3001,7 @@ local function testNothingIsDrawnOverAnythingElse()
     -- **Both the shipped layouts and the retired galleries.** The four span
     -- galleries were taken off the radio because nobody paged to them, and
     -- they are still built here because of what they construct: eleven
-    -- components in one grid at one span, which is the densest arrangement
+    -- panels in one grid at one span, which is the densest arrangement
     -- this dashboard can be asked for and therefore where two things are
     -- likeliest to meet. Retiring a layout from a screen is a decision about
     -- the radio; deleting the cases it builds would have been a quiet
@@ -3058,7 +3075,7 @@ end
 
 --- A two-row footer fits the quarter it is granted, and clears the reading.
 ---
---- `navigation` is the only component that draws two supporting rows, and it
+--- `navigation` is the only panel that draws two supporting rows, and it
 --- centres them as a group: 32 px of ink against a tertiary quarter that is
 --- 31 px at a two-row span and 48 at a three-row one. Under fixed bands the
 --- quarter does not grow to fit what is put in it, so the second row is
@@ -3081,7 +3098,7 @@ local function testTwoRowFooterClearsTheReading()
         local widget = makeWidget(
             "two-row-footer-" .. place[2] .. place[3],
             table.concat({
-                "version: 1\ngrid:\n  columns: 4\n  rows: 4\ncomponents:\n",
+                "version: 1\ngrid:\n  columns: 4\n  rows: 4\npanels:\n",
                 "  - id: nav\n    type: navigation\n",
                 "    col: ",
                 tostring(place[2]),
@@ -3260,12 +3277,13 @@ local function testTertiaryQuarterHoldsItsFurniture()
             name = "metric bar",
             type = "metric",
             config = {
-                "label: ALT",
-                "source: Alt",
-                "unit: m",
-                "rangeMin: 0",
-                "rangeMax: 400",
-                "precision: 0",
+                "metrics:",
+                "  - source: Alt",
+                "    label: ALT",
+                "    unit: m",
+                "    rangeMin: 0",
+                "    rangeMax: 400",
+                "    precision: 0",
                 "visual: bar",
             },
             row = true,
@@ -3291,8 +3309,8 @@ local function testTertiaryQuarterHoldsItsFurniture()
 
     for _, case in ipairs(CASES) do
         -- Two-row spans, because a one-row panel is granted no supporting row at
-        -- all and would report an empty quarter whatever the component asked
-        -- for. Only three components declare a three-row span, so a `2 x 3`
+        -- all and would report an empty quarter whatever the panel asked
+        -- for. Only three panels declare a three-row span, so a `2 x 3`
         -- sweep would be a sweep over a different set for every case.
         for _, span in ipairs({ { 2, 2 }, { 4, 2 } }) do
             for _, mode in ipairs({ { "full screen", fullScreenZone }, { "app mode", appZone } }) do
@@ -3302,7 +3320,7 @@ local function testTertiaryQuarterHoldsItsFurniture()
                     "grid:",
                     "  columns: 4",
                     "  rows: 4",
-                    "components:",
+                    "panels:",
                     "  - id: subject",
                     "    type: " .. case.type,
                     -- Clear of the menu button, so the quarter is measured on a panel
@@ -3438,7 +3456,7 @@ local function testTimerIndexIsRefusedAtLoad()
         local widget = makeWidget(
             "timer-index-" .. string.gsub(tostring(value), "[^%w]", ""),
             table.concat({
-                "version: 1\ngrid:\n  columns: 4\n  rows: 4\ncomponents:\n",
+                "version: 1\ngrid:\n  columns: 4\n  rows: 4\npanels:\n",
                 "  - id: clock\n    type: flight-timer\n",
                 "    col: 0\n    row: 0\n    colSpan: 2\n    rowSpan: 2\n",
                 "    config:\n      timer: ",
@@ -3488,7 +3506,7 @@ end
 ---
 --- **The property, rather than the mechanism.** The specification says every
 --- supporting row goes through `theme.fitLabel`, which is not true and was
---- never quite the point: four of the eight components that draw a row call
+--- never quite the point: four of the eight panels that draw a row call
 --- it, and routing the other four through it would change nothing, because a
 --- single-wording list comes back out of `fitLabel` unchanged. What matters
 --- is that the row fits, and the mechanism for a row that cannot is to offer
@@ -3499,21 +3517,21 @@ end
 --- is LVGL's default wrap, so it did not clip sideways: it was centred on a
 --- box wider than the panel, started 10 px outside the left edge and ran
 --- 10 px past the right, over whatever was beside it. That state is the one
---- this component exists to report, at the narrowest span that draws a row
+--- this panel exists to report, at the narrowest span that draws a row
 --- at all. It says `EXPIRED` now, at 51 px.
 ---
 --- Driven through the real host at every span that grants a row, in both
---- zones, with each component put into the state whose wording is longest.
---- The states are declared, because a component's longest wording is usually
+--- zones, with each panel put into the state whose wording is longest.
+--- The states are declared, because a panel's longest wording is usually
 --- a failure state and a fixture has to be driven into one.
 local function testSupportingRowsFitTheirBox()
-    --- Each component that draws a supporting row, configured so it draws one,
+    --- Each panel that draws a supporting row, configured so it draws one,
     --- and how to drive it into the state that words the most.
     ---
-    --- **A declaration, and it names the state as well as the component.** A
+    --- **A declaration, and it names the state as well as the panel.** A
     --- declaration that does not construct the case is not coverage: listing
     --- `flight-timer` without expiring its countdown would check `OF 5:00`,
-    --- which fits everywhere, and report the component covered.
+    --- which fits everywhere, and report the panel covered.
     local ROWED = {
         {
             name = "flight-timer, countdown running",
@@ -3532,7 +3550,7 @@ local function testSupportingRowsFitTheirBox()
         {
             name = "flight-timer, no countdown to remain",
             type = "flight-timer",
-            config = { "timer: 1", "label: TIMER", "reading: remaining" },
+            config = { "timer: 1", "label: TIMER" },
         },
         {
             name = "flight-timer, no timer",
@@ -3568,15 +3586,16 @@ local function testSupportingRowsFitTheirBox()
             name = "metric, range and secondary",
             type = "metric",
             config = {
-                "label: ALT",
-                "source: Alt",
-                "unit: m",
-                "rangeMin: 0",
-                "rangeMax: 400",
-                "precision: 0",
+                "metrics:",
+                "  - source: Alt",
+                "    label: ALT",
+                "    unit: m",
+                "    rangeMin: 0",
+                "    rangeMax: 400",
+                "    precision: 0",
+                "  - source: Curr",
+                "    label: CUR",
                 "visual: bar",
-                "secondarySource: Curr",
-                "secondaryLabel: CUR",
             },
         },
         {
@@ -3613,7 +3632,7 @@ local function testSupportingRowsFitTheirBox()
                     "grid:",
                     "  columns: 4",
                     "  rows: 4",
-                    "components:",
+                    "panels:",
                     "  - id: subject",
                     "    type: " .. subject.type,
                     -- Clear of the menu button, so the row is measured against a
@@ -3653,7 +3672,7 @@ local function testSupportingRowsFitTheirBox()
                 local where = mode[1] .. " " .. subject.name .. " " .. span[1] .. "x" .. span[2]
 
                 -- Every visible label in the panel's lower half is a supporting row.
-                -- Read off the drawing rather than from a field each component names
+                -- Read off the drawing rather than from a field each panel names
                 -- differently -- `detail`, `range`, `secondary`, `countText`.
                 local function walk(object, offsetX, offsetY)
                     for _, child in ipairs(object.children) do
@@ -3756,7 +3775,7 @@ local function testBadgesEndFlushWithTheirPanel()
     local seen, checked = {}, 0
 
     local function inspect(where, context)
-        for _, entry in ipairs(context.components) do
+        for _, entry in ipairs(context.panels) do
             local instance = entry.instance
             local badge = instance and instance.badge
             if badge and not badge.hidden then
@@ -3836,7 +3855,7 @@ local function testBadgesEndFlushWithTheirPanel()
         inspect(mode[1] .. " link down", context)
 
         local widthBefore = {}
-        for _, entry in ipairs(context.components) do
+        for _, entry in ipairs(context.panels) do
             widthBefore[entry.placement.id] = boundsOf(entry).w
         end
 
@@ -3855,7 +3874,7 @@ local function testBadgesEndFlushWithTheirPanel()
         until not context.reflowIndex
         pump(context, 40)
         local moved = false
-        for _, entry in ipairs(context.components) do
+        for _, entry in ipairs(context.panels) do
             if boundsOf(entry).w ~= widthBefore[entry.placement.id] then
                 moved = true
             end
@@ -3954,7 +3973,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: solo
     type: metric
     col: 1
@@ -3962,9 +3981,10 @@ components:
     colSpan: 1
     rowSpan: 1
     config:
-      label: ALT
-      source: Alt
-      precision: 0
+      metrics:
+        - source: Alt
+          label: ALT
+          precision: 0
       visual: none
 ]]
     )
@@ -4042,7 +4062,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: barred
     type: metric
     col: 1
@@ -4050,11 +4070,12 @@ components:
     colSpan: 1
     rowSpan: 2
     config:
-      label: ALT
-      source: Alt
-      rangeMin: 0
-      rangeMax: 400
-      precision: 0
+      metrics:
+        - source: Alt
+          label: ALT
+          precision: 0
+          rangeMin: 0
+          rangeMax: 400
       visual: bar
 ]]
     )
@@ -4121,7 +4142,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: corner
     type: metric
     col: 0
@@ -4129,9 +4150,10 @@ components:
     colSpan: 1
     rowSpan: 1
     config:
-      label: ALT
-      source: Alt
-      precision: 0
+      metrics:
+        - source: Alt
+          label: ALT
+          precision: 0
       visual: none
   - id: clear
     type: metric
@@ -4140,9 +4162,10 @@ components:
     colSpan: 1
     rowSpan: 1
     config:
-      label: ALT
-      source: Alt
-      precision: 0
+      metrics:
+        - source: Alt
+          label: ALT
+          precision: 0
       visual: none
 ]]
     )
@@ -4226,11 +4249,11 @@ local function testReadingsAreCentredOnTheirPanel()
     testTheCornerFollowsEveryPanelInFullscreen()
     local theme = themeModule
 
-    --- Every component, configured so it actually builds a reading. Read from
-    --- the component directory rather than listed, so a component added to the
+    --- Every panel, configured so it actually builds a reading. Read from
+    --- the panel directory rather than listed, so a panel added to the
     --- catalogue is covered from the moment it exists.
     local CONFIG = {
-        ["metric"] = { "      label: ALT", "      source: Alt", "      unit: m" },
+        ["metric"] = { "      metrics:", "        - source: Alt", "          label: ALT", "          unit: m" },
         ["flight-timer"] = { "      label: TIMER", "      timer: 0" },
         ["flight-mode"] = { "      label: MODE" },
         ["tx-battery"] = { "      label: TX" },
@@ -4246,7 +4269,7 @@ local function testReadingsAreCentredOnTheirPanel()
     }
 
     local types = {}
-    for _, directory in ipairs({ sourcePath .. "components", root .. "/tests/fixtures/components" }) do
+    for _, directory in ipairs({ sourcePath .. "panels", root .. "/tests/fixtures/panels" }) do
         local listingPath = root .. "/build/centre-types.txt"
         os.execute("ls '" .. directory .. "' > '" .. listingPath .. "'")
         local listing = assert(hostIo.open(listingPath, "r"))
@@ -4259,7 +4282,7 @@ local function testReadingsAreCentredOnTheirPanel()
         listing:close()
         os.remove(listingPath)
     end
-    assert(#types >= 13, "only " .. #types .. " component types were found")
+    assert(#types >= 13, "only " .. #types .. " panel types were found")
 
     local widgetPath = makeWidget("centred")
     -- Both placements. The top-left cell is the one EdgeTX paints its button
@@ -4296,7 +4319,7 @@ local function testReadingsAreCentredOnTheirPanel()
                             "grid:",
                             "  columns: 4",
                             "  rows: 4",
-                            "components:",
+                            "panels:",
                             "  - id: subject",
                             "    type: " .. kind,
                             "    col: " .. col,
@@ -4312,9 +4335,9 @@ local function testReadingsAreCentredOnTheirPanel()
                     resetRadio()
                     local context = createLoaded(zone[2](), DEFAULT_OPTIONS, widgetPath)
                     pump(context, 40)
-                    local entry = context.components[1]
+                    local entry = context.panels[1]
                     local where = kind .. " " .. span[1] .. "x" .. span[2] .. " " .. place[1] .. " " .. zone[1]
-                    -- A span a component declines is a refusal, not a defect, and the
+                    -- A span a panel declines is a refusal, not a defect, and the
                     -- host says so through the error channel. Nothing was built, so
                     -- there is nothing to measure.
                     if entry then
@@ -4472,7 +4495,7 @@ local function testReadingsDoNotDescendOverAnything()
                     table.concat({
                         "version: 1\n",
                         "grid:\n  columns: 4\n  rows: 4\n",
-                        "components:\n",
+                        "panels:\n",
                         "  - id: subject\n    type: metric\n",
                         "    col: 0\n    row: 0\n",
                         "    colSpan: ",
@@ -4482,14 +4505,13 @@ local function testReadingsDoNotDescendOverAnything()
                         tostring(span[2]),
                         "\n",
                         "    config:\n",
-                        "      label: RATE\n",
-                        "      source: Alt\n",
-                        '      unit: "',
+                        "      metrics:\n        - source: Alt\n          label: RATE\n",
+                        '          unit: "',
                         unit,
                         '"\n',
-                        "      rangeMin: 0\n      rangeMax: 400\n",
-                        "      precision: 0\n      visual: bar\n",
-                        "      secondarySource: Curr\n      secondaryLabel: CUR\n",
+                        "          rangeMin: 0\n          rangeMax: 400\n",
+                        "          precision: 0\n",
+                        "        - source: Curr\n          label: CUR\n      visual: bar\n",
                     })
                 )
                 local context = createLoaded(mode[2](), DEFAULT_OPTIONS, widget)
@@ -4530,7 +4552,7 @@ local function testReadingsDoNotDescendOverAnything()
                     table.concat({
                         "version: 1\n",
                         "grid:\n  columns: 4\n  rows: 4\n",
-                        "components:\n",
+                        "panels:\n",
                         "  - id: subject\n    type: model-identity\n",
                         "    col: 0\n    row: 0\n",
                         "    colSpan: ",
@@ -4565,7 +4587,7 @@ local function testReadingsDoNotDescendOverAnything()
 end
 
 local function testNothingReadableUnderTheMenuButton()
-    --- Every label a component actually draws, with its rendered box.
+    --- Every label a panel actually draws, with its rendered box.
     local function readableLabels(entry)
         local found = {}
 
@@ -4596,7 +4618,7 @@ local function testNothingReadableUnderTheMenuButton()
 
     local function check(label, context)
         local reserved = assert(context.reserved, label .. ": nothing was reserved")
-        for _, entry in ipairs(context.components) do
+        for _, entry in ipairs(context.panels) do
             for _, drawn in ipairs(readableLabels(entry)) do
                 assert(
                     drawn.x >= reserved.w or drawn.y >= reserved.h or drawn.x + drawn.w <= 0 or drawn.y + drawn.h <= 0,
@@ -4654,7 +4676,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: tight
     type: metric
     col: 0
@@ -4662,9 +4684,10 @@ components:
     colSpan: 1
     rowSpan: 1
     config:
-      label: Pack
-      source: RxBt
-      precision: 1
+      metrics:
+        - source: RxBt
+          label: Pack
+          precision: 1
 ]]
     )
     resetRadio()
@@ -4676,15 +4699,15 @@ components:
     assertEqual(tight.value.properties.text, "24.0", "the reading was lost rather than moved")
     assert(tight.label.hidden, "a label with no room left beside the button was drawn anyway")
 
-    -- Every catalogue component, at every span the grid allows, in the corner.
+    -- Every catalogue panel, at every span the grid allows, in the corner.
     -- Eight of the ten pull their reading back up when a panel is too short to
     -- hold it below the header, which could slide it under the button again.
     -- The cell heights that would do that are one pixel away from the ones the
     -- grid actually produces, so this is measured rather than reasoned about.
     local sweepPath = makeWidget("appmode-sweep")
-    --- What each component needs to draw something real during the sweep.
+    --- What each panel needs to draw something real during the sweep.
     local SWEEP_CONFIG = {
-        ["metric"] = { "      label: Probe", "      source: RxBt" },
+        ["metric"] = { "      metrics:", "        - source: RxBt", "          label: Probe" },
         ["flight-timer"] = { "      label: Probe", "      timer: 0" },
         ["flight-mode"] = { "      label: Probe" },
         ["tx-battery"] = { "      label: Probe" },
@@ -4697,18 +4720,18 @@ components:
         ["placeholder"] = { "      label: Probe" },
     }
 
-    -- Read from both component directories rather than listed here. A hand-kept
+    -- Read from both panel directories rather than listed here. A hand-kept
     -- list cannot drift out of step with itself, which is why the guard below
     -- could never be shown to do anything: it was checking the list against the
-    -- list. Reading the directories means a component added to either one is
+    -- list. Reading the directories means a panel added to either one is
     -- swept from the moment it exists, and one that disappears is noticed.
     --
     -- Both directories, because `heartbeat` and `placeholder` are fixtures now
     -- and the host must still treat a layout that places one exactly like any
-    -- other component. Both drew at a raw (8, 6) until they were routed through
+    -- other panel. Both drew at a raw (8, 6) until they were routed through
     -- the shared frame, which is the kind of thing this sweep is for.
     local sweepTypes = {}
-    for _, directory in ipairs({ sourcePath .. "components", root .. "/tests/fixtures/components" }) do
+    for _, directory in ipairs({ sourcePath .. "panels", root .. "/tests/fixtures/panels" }) do
         local listingPath = root .. "/build/sweep-types.txt"
         os.execute("ls '" .. directory .. "' > '" .. listingPath .. "'")
         local listing = assert(hostIo.open(listingPath, "r"))
@@ -4721,7 +4744,7 @@ components:
         listing:close()
         os.remove(listingPath)
     end
-    assert(#sweepTypes >= 13, "only " .. #sweepTypes .. " component types were found to sweep")
+    assert(#sweepTypes >= 13, "only " .. #sweepTypes .. " panel types were found to sweep")
 
     local checked = {}
 
@@ -4737,7 +4760,7 @@ components:
                         "grid:",
                         "  columns: 4",
                         "  rows: 4",
-                        "components:",
+                        "panels:",
                         "  - id: probe",
                         "    type: " .. kind,
                         "    col: 0",
@@ -4746,7 +4769,7 @@ components:
                         "    rowSpan: " .. rowSpan,
                         "    config:",
                         -- Each kind gets only the keys it declares. Handing every key to
-                        -- every component was a shortcut, and it stopped being a harmless
+                        -- every panel was a shortcut, and it stopped being a harmless
                         -- one when an undeclared key became something the host reports.
                         table.concat(SWEEP_CONFIG[kind] or { "      label: Probe" }, "\n"),
                         "",
@@ -4756,8 +4779,8 @@ components:
                 local swept = createLoaded(appZone(), DEFAULT_OPTIONS, sweepPath)
                 pump(swept, 20)
 
-                -- A span the component refuses is a refusal, not a defect.
-                local refused = #swept.components == 0
+                -- A span the panel refuses is a refusal, not a defect.
+                local refused = #swept.panels == 0
                 if not refused then
                     assertEqual(
                         #swept.errors,
@@ -4811,7 +4834,7 @@ theme:
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: pack
     type: metric
     col: 0
@@ -4819,8 +4842,9 @@ components:
     colSpan: 2
     rowSpan: 2
     config:
-      label: Pack
-      source: RxBt
+      metrics:
+        - source: RxBt
+          label: Pack
   - id: boom
     type: exploder
     col: 2
@@ -4868,7 +4892,7 @@ return exploder
     )
     assertEqual(context.errorLabel, nil, "a notice put a banner on the screen")
 
-    -- A component that genuinely fails must still reach the overlay, so the
+    -- A panel that genuinely fails must still reach the overlay, so the
     -- fix cannot have been "stop reporting things".
     pump(context, 1)
     assertEqual(#context.errors, 1, "a real failure stopped being reported")
@@ -4900,7 +4924,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: fallback
     type: placeholder
     col: 0
@@ -4917,7 +4941,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: alt
     type: metric
     col: 0
@@ -4925,9 +4949,10 @@ components:
     colSpan: 2
     rowSpan: 2
     config:
-      label: Alt
-      source: Alt
-      precision: 0
+      metrics:
+        - source: Alt
+          label: Alt
+          precision: 0
 ]]
     )
 
@@ -4938,7 +4963,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: pack
     type: metric
     col: 0
@@ -4946,9 +4971,10 @@ components:
     colSpan: 2
     rowSpan: 2
     config:
-      label: Pack
-      source: RxBt
-      precision: 1
+      metrics:
+        - source: RxBt
+          label: Pack
+          precision: 1
   - id: mode
     type: flight-mode
     col: 2
@@ -4965,7 +4991,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: speed
     type: metric
     col: 0
@@ -4973,16 +4999,17 @@ components:
     colSpan: 4
     rowSpan: 2
     config:
-      label: Speed
-      source: GSpd
-      precision: 0
+      metrics:
+        - source: GSpd
+          label: Speed
+          precision: 0
 ]]
     )
 
-    --- Ids of the components an instance actually built.
+    --- Ids of the panels an instance actually built.
     local function idsOf(context)
         local ids = {}
-        for index, entry in ipairs(context.components) do
+        for index, entry in ipairs(context.panels) do
             ids[index] = entry.placement.id
         end
         table.sort(ids)
@@ -5081,7 +5108,7 @@ components:
     radio.modelFilename = previous
 end
 
---- An event consumed by one component must stop propagating.
+--- An event consumed by one panel must stop propagating.
 local function testEventConsumption()
     local widgetPath = makeWidget(
         "consumer",
@@ -5090,7 +5117,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: eater
     type: eater
     col: 0
@@ -5121,11 +5148,11 @@ return eater
     )
 
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
-    assertEqual(#context.components, 2)
+    assertEqual(#context.panels, 2)
 
     assertEqual(definition.event(context, 32), true, "event was not consumed")
     assertEqual(entryById(context, "eater").instance.seen, 1)
-    -- The later component must never see a consumed event.
+    -- The later panel must never see a consumed event.
     assertEqual(entryById(context, "pulse").instance.events, 0)
 end
 
@@ -5138,7 +5165,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: toobig
     type: heartbeat
     col: 0
@@ -5158,7 +5185,7 @@ components:
     colSpan: 1
     rowSpan: 1
   - id: absent
-    type: nosuchcomponent
+    type: nosuchpanel
     col: 2
     row: 1
     colSpan: 1
@@ -5203,21 +5230,21 @@ return {id = "somethingelse", apiVersion = 1, create = function() return {} end}
 
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
 
-    assertEqual(#context.components, 1, "only the valid component should load")
-    assertEqual(context.components[1].placement.id, "good")
+    assertEqual(#context.panels, 1, "only the valid panel should load")
+    assertEqual(context.panels[1].placement.id, "good")
     assertEqual(#context.errors, 7)
 
     local joined = table.concat(context.errors, "\n")
-    assert(string.match(joined, "toobig: component does not support span 2x4"), joined)
-    assert(string.match(joined, "oldapi: incompatible component API"), joined)
-    assert(string.match(joined, "renamed: component module id somethingelse"), joined)
+    assert(string.match(joined, "toobig: panel does not support span 2x4"), joined)
+    assert(string.match(joined, "oldapi: incompatible panel API"), joined)
+    assert(string.match(joined, "renamed: panel module id somethingelse"), joined)
     assert(string.match(joined, "absent:"), joined)
     assert(string.match(joined, "syntax:"), joined)
     assert(string.match(joined, "execution:.*module execution failed"), joined)
     assert(string.match(joined, "scalar:.*did not return a module table"), joined)
     assert(context.errorLabel, "module failures were not shown")
     pump(context, 5)
-    assertEqual(#context.components, 1, "module failures disabled the valid panel")
+    assertEqual(#context.panels, 1, "module failures disabled the valid panel")
     assertEqual(#context.errors, 7, "module failures repeated on refresh")
 end
 
@@ -5228,7 +5255,7 @@ local function testPackageCompatibility()
         {
             name = "future-package",
             file = "lib/package.lua",
-            text = 'return {version="next",runtimeApi=2,componentApi=1,layoutVersion=1}',
+            text = 'return {version="next",runtimeApi=2,panelApi=1,layoutVersion=1}',
             error = "incompatible package contract",
         },
         {
@@ -5244,21 +5271,21 @@ local function testPackageCompatibility()
             error = "lib/grid.lua:.*incompatible runtime API",
         },
         {
-            name = "mixed-component-host",
-            file = "lib/component_host.lua",
+            name = "mixed-panel-host",
+            file = "lib/panel_host.lua",
             text = "return {RUNTIME_API=1,API_VERSION=99}",
-            error = "component host: incompatible component API",
+            error = "panel host: incompatible panel API",
         },
         {
-            name = "future-component-contract",
+            name = "future-panel-contract",
             file = "lib/package.lua",
-            text = 'return {version="next",runtimeApi=1,componentApi=2,layoutVersion=1}',
+            text = 'return {version="next",runtimeApi=1,panelApi=2,layoutVersion=1}',
             error = "incompatible package contract",
         },
         {
             name = "future-layout-contract",
             file = "lib/package.lua",
-            text = 'return {version="next",runtimeApi=1,componentApi=1,layoutVersion=2}',
+            text = 'return {version="next",runtimeApi=1,panelApi=1,layoutVersion=2}',
             error = "incompatible package contract",
         },
         { name = "missing-core", file = "lib/yaml.lua", error = "lib/yaml.lua:" },
@@ -5272,7 +5299,7 @@ local function testPackageCompatibility()
         end
         local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, path)
         assertEqual(context.runtimeFailed, true, case.name)
-        assertEqual(#context.components, 0, case.name)
+        assertEqual(#context.panels, 0, case.name)
         local joined = table.concat(context.errors, "\n")
         assert(string.match(joined, case.error), joined)
         assert(context.errorLabel, case.name .. " failure was not shown")
@@ -5285,9 +5312,9 @@ local function testPackageCompatibility()
     writeFile(path .. "lib/telemetry_service.lua", "return {RUNTIME_API=99}")
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, path)
     assert(string.match(table.concat(context.errors, "\n"), "telemetry:.*incompatible runtime API"))
-    assert(#context.components > 0, "incompatible service disabled unrelated panels")
+    assert(#context.panels > 0, "incompatible service disabled unrelated panels")
 
-    local diagnostics = assert(loadfile(sourcePath .. "components/host-diagnostics.lua"))()
+    local diagnostics = assert(loadfile(sourcePath .. "panels/host-diagnostics.lua"))()
     assert(
         string.find(diagnostics.identity(context)[1], "v" .. context.packageInfo.version, 1, true),
         "diagnostics did not report the loaded package version"
@@ -5296,10 +5323,10 @@ end
 
 local function testRejectedLayouts()
     local cases = {
-        { name = "corrupt", yaml = "version: 1\n\tcomponents: []\n", error = "tab" },
+        { name = "corrupt", yaml = "version: 1\n\tpanels: []\n", error = "tab" },
         {
             name = "future",
-            yaml = "version: 99\ngrid:\n  columns: 4\n  rows: 4\ncomponents: []\n",
+            yaml = "version: 99\ngrid:\n  columns: 4\n  rows: 4\npanels: []\n",
             error = "unsupported layout version",
         },
         { name = "empty", yaml = "", error = "empty" },
@@ -5316,7 +5343,7 @@ local function testRejectedLayouts()
             widgetPath
         )
 
-        assertEqual(#context.components, 0, case.name)
+        assertEqual(#context.panels, 0, case.name)
         local joined = table.concat(context.errors, "\n")
         assert(string.match(joined, case.error), case.name .. ": " .. joined)
         assert(context.errorLabel, case.name .. " layout failure was not shown")
@@ -5331,7 +5358,7 @@ end
 --- every callback the firmware can invoke and keep real headroom.
 ---
 --- This must be measured against the largest layout the schema permits, not
---- the shipped one: a 4 x 4 grid admits sixteen single-cell components, and an
+--- the shipped one: a 4 x 4 grid admits sixteen single-cell panels, and an
 --- earlier staged loader passed comfortably on five while failing on sixteen.
 local function testInstructionBudget()
     local BUDGET = 20000
@@ -5362,30 +5389,44 @@ local function testInstructionBudget()
     end
 
     --- Build a layout that fills the grid with single-cell metrics.
-    local function fullGridLayout(count, componentType)
-        componentType = componentType or "metric"
-        local lines = { "version: 1", "grid:", "  columns: 4", "  rows: 4", "components:" }
+    local function fullGridLayout(count, panelType)
+        panelType = panelType or "metric"
+        local lines = { "version: 1", "grid:", "  columns: 4", "  rows: 4", "panels:" }
         for i = 1, count do
             local col, row = (i - 1) % 4, math.floor((i - 1) / 4)
             lines[#lines + 1] = "  - id: m" .. i
-            lines[#lines + 1] = "    type: " .. componentType
+            lines[#lines + 1] = "    type: " .. panelType
             lines[#lines + 1] = "    col: " .. col
             lines[#lines + 1] = "    row: " .. row
             lines[#lines + 1] = "    colSpan: 1"
             lines[#lines + 1] = "    rowSpan: 1"
             lines[#lines + 1] = "    config:"
-            lines[#lines + 1] = "      label: Metric " .. i
-            lines[#lines + 1] = "      unit: V"
-            lines[#lines + 1] = "      accent: cyan"
-            lines[#lines + 1] = "      rangeMin: 0"
-            lines[#lines + 1] = "      rangeMax: 100"
-            lines[#lines + 1] = "      warning: 80"
-            lines[#lines + 1] = "      critical: 90"
-            lines[#lines + 1] = "      precision: 1"
-            lines[#lines + 1] = "      visual: bar"
-            -- A distinct live source per cell, so the telemetry service really does
-            -- carry sixteen subscriptions rather than sixteen names it rejects.
-            lines[#lines + 1] = "      source: S" .. i
+            if panelType == "metric" then
+                lines[#lines + 1] = "      metrics:"
+                lines[#lines + 1] = "        - source: S" .. i
+                lines[#lines + 1] = "          label: Metric " .. i
+                lines[#lines + 1] = "          unit: V"
+                lines[#lines + 1] = "          rangeMin: 0"
+                lines[#lines + 1] = "          rangeMax: 100"
+                lines[#lines + 1] = "          warning: 80"
+                lines[#lines + 1] = "          critical: 90"
+                lines[#lines + 1] = "          precision: 1"
+                lines[#lines + 1] = "      visual: bar"
+                lines[#lines + 1] = "      accent: cyan"
+            else
+                lines[#lines + 1] = "      label: Metric " .. i
+                lines[#lines + 1] = "      unit: V"
+                lines[#lines + 1] = "      accent: cyan"
+                lines[#lines + 1] = "      rangeMin: 0"
+                lines[#lines + 1] = "      rangeMax: 100"
+                lines[#lines + 1] = "      warning: 80"
+                lines[#lines + 1] = "      critical: 90"
+                lines[#lines + 1] = "      precision: 1"
+                lines[#lines + 1] = "      visual: bar"
+                -- A distinct live source per cell, so the telemetry service really does
+                -- carry sixteen subscriptions rather than sixteen names it rejects.
+                lines[#lines + 1] = "      source: S" .. i
+            end
         end
         return table.concat(lines, "\n") .. "\n"
     end
@@ -5415,7 +5456,7 @@ local function testInstructionBudget()
 
     --- Build a layout that fills the grid with service diagnostic panels.
     local function probeGridLayout()
-        local lines = { "version: 1", "grid:", "  columns: 4", "  rows: 4", "components:" }
+        local lines = { "version: 1", "grid:", "  columns: 4", "  rows: 4", "panels:" }
         for i, spec in ipairs(PROBE_SPECS) do
             local col, row = (i - 1) % 4, math.floor((i - 1) / 4)
             lines[#lines + 1] = "  - id: p" .. i
@@ -5438,17 +5479,17 @@ local function testInstructionBudget()
         return table.concat(lines, "\n") .. "\n"
     end
 
-    --- Build a layout that fills the grid with one component type.
-    --- Every core component has to be measured at the largest layout the schema
+    --- Build a layout that fills the grid with one panel type.
+    --- Every core panel has to be measured at the largest layout the schema
     --- permits, not at the span the shipped dashboard happens to use.
-    ---@param componentType string
+    ---@param panelType string
     ---@param configFor fun(index: integer): string[] Config lines for one cell.
-    local function typedGridLayout(componentType, configFor)
-        local lines = { "version: 1", "grid:", "  columns: 4", "  rows: 4", "components:" }
+    local function typedGridLayout(panelType, configFor)
+        local lines = { "version: 1", "grid:", "  columns: 4", "  rows: 4", "panels:" }
         for i = 1, 16 do
             local col, row = (i - 1) % 4, math.floor((i - 1) / 4)
             lines[#lines + 1] = "  - id: c" .. i
-            lines[#lines + 1] = "    type: " .. componentType
+            lines[#lines + 1] = "    type: " .. panelType
             lines[#lines + 1] = "    col: " .. col
             lines[#lines + 1] = "    row: " .. row
             lines[#lines + 1] = "    colSpan: 1"
@@ -5461,17 +5502,20 @@ local function testInstructionBudget()
         return table.concat(lines, "\n") .. "\n"
     end
 
-    --- Every core component, at sixteen single cells, with the services each one
+    --- Every core panel, at sixteen single cells, with the services each one
     --- must genuinely drive while it is measured.
     local CORE_EXERCISES = {
         {
             type = "metric",
-            services = { "telemetry", "extrema" },
+            services = { "telemetry" },
             config = function(index)
                 return {
-                    "preset: " .. (index % 2 == 0 and "altitude" or "speed"),
-                    "source: S" .. index,
-                    "extrema: flight",
+                    "metrics:",
+                    "  - source: S" .. index,
+                    "    label: " .. (index % 2 == 0 and "ALT" or "SPD"),
+                    "    rangeMin: 0",
+                    "    rangeMax: " .. (index % 2 == 0 and "400" or "200"),
+                    "accent: " .. (index % 2 == 0 and "green" or "cyan"),
                 }
             end,
         },
@@ -5505,16 +5549,16 @@ local function testInstructionBudget()
             type = "trim-panel",
             services = { "control" },
             config = function()
-                -- Four indicators each, so the panel builds and drives the most
-                -- objects it ever can.
-                return { "indicators: all", "readout: percent", "scale: auto" }
+                -- Three axes are always present, making this the panel's fixed
+                -- maximum object set.
+                return { "readout: percent", "scale: auto" }
             end,
         },
         {
             type = "model-identity",
             services = { "model" },
             -- No `showLabels`: sixteen single cells, which have no row for them,
-            -- so it is refused at load. The worst case for this component at this
+            -- so it is refused at load. The worst case for this panel at this
             -- span genuinely does not include the label list.
             config = function()
                 return { "presentation: both" }
@@ -5522,7 +5566,7 @@ local function testInstructionBudget()
         },
         {
             -- Every panel walks a cells table on every refresh, so sixteen of them
-            -- is the worst case for the one component that does per-entry work.
+            -- is the worst case for the one panel that does per-entry work.
             type = "cell-battery",
             services = { "telemetry" },
             config = function(index)
@@ -5603,7 +5647,7 @@ local function testInstructionBudget()
 
     --- Load one widget package end to end, measuring every callback.
     ---@param expectedServices? string[] Services this layout must actually run.
-    local function exercise(label, path, expectedComponents, expectedServices)
+    local function exercise(label, path, expectedPanels, expectedServices)
         local zone = { x = 0, y = 0, w = 480, h = 272 }
         local context
         record(
@@ -5621,14 +5665,14 @@ local function testInstructionBudget()
             assert(steps < 400, label .. ": staged load never finished")
         end
 
-        assertEqual(#context.components, expectedComponents, label .. ": component count")
+        assertEqual(#context.panels, expectedPanels, label .. ": panel count")
         assertEqual(#context.errors, 0, label .. ": " .. table.concat(context.errors, "\n"))
 
         -- Steady state must be measured across real frames, advancing the clock,
         -- or rate limiting makes every sampled frame trivially cheap and the
         -- measurement meaningless. Sample enough frames to include the worst.
         local before = {}
-        for index, entry in ipairs(context.components) do
+        for index, entry in ipairs(context.panels) do
             before[index] = entry.nextRefresh
         end
 
@@ -5645,7 +5689,7 @@ local function testInstructionBudget()
         -- Prove the sampled frames actually did work. A scheduling bug that
         -- silently stopped dispatching would otherwise make this test pass by
         -- measuring nothing at all.
-        for index, entry in ipairs(context.components) do
+        for index, entry in ipairs(context.panels) do
             assert(
                 entry.nextRefresh ~= before[index],
                 label .. ": " .. entry.placement.id .. " was never refreshed during the sample"
@@ -5680,7 +5724,7 @@ local function testInstructionBudget()
         return context
     end
 
-    exercise("shipped", sourcePath, 10, { "telemetry", "model", "control", "extrema", "navigation" })
+    exercise("gallery", galleryPath, 10, { "telemetry", "model", "control", "extrema", "navigation" })
     exercise("full grid", makeWidget("budget-16", fullGridLayout(16)), 16, { "telemetry" })
     local linkReview = assert(hostIo.open(sourcePath .. "layouts/review-link-status.yaml", "r"))
     local linkReviewYaml = linkReview:read("a")
@@ -5709,8 +5753,8 @@ local function testInstructionBudget()
         { "telemetry" }
     )
 
-    -- Every core component, one type at a time, at sixteen single cells. A
-    -- component measured only at the span the shipped dashboard uses would hide
+    -- Every core panel, one type at a time, at sixteen single cells. A
+    -- panel measured only at the span the shipped dashboard uses would hide
     -- exactly the cost that matters: sixteen of it on one screen.
     for _, spec in ipairs(CORE_EXERCISES) do
         exercise(
@@ -5732,11 +5776,11 @@ local function testInstructionBudget()
 
     -- Sixteen diagnostics panels, which is the worst case for the view that
     -- reports on the host. It must not cost the dashboard anything when it is
-    -- not showing, which it cannot, because a component no layout places is
+    -- not showing, which it cannot, because a panel no layout places is
     -- never loaded; the question this answers is the other half, that it does
     -- not become the most expensive thing on the dashboard when it is.
-    local diagnosticsGrid = { "version: 1", "grid:", "  columns: 4", "  rows: 4", "components:" }
-    local sections = { "identity", "theme", "components", "sources" }
+    local diagnosticsGrid = { "version: 1", "grid:", "  columns: 4", "  rows: 4", "panels:" }
+    local sections = { "identity", "theme", "panels", "sources" }
     for index = 1, 16 do
         local col, row = (index - 1) % 4, math.floor((index - 1) / 4)
         for _, line in ipairs({
@@ -5754,7 +5798,7 @@ local function testInstructionBudget()
     end
     exercise("host diagnostics x16", makeWidget("budget-diagnostics", table.concat(diagnosticsGrid, "\n") .. "\n"), 16)
 
-    -- A layout whose components all demand every frame defeats staggering, so
+    -- A layout whose panels all demand every frame defeats staggering, so
     -- the per-frame cap is the only thing bounding cost. Prove it holds.
     local greedyPath = makeWidget("budget-greedy", fullGridLayout(16, "greedy"), {
         ["greedy.lua"] = [==[
@@ -5768,7 +5812,7 @@ local greedy = {
   settings = {
     -- Every key `fullGridLayout` writes, because an undeclared key is now
     -- reported rather than ignored and this fixture stands in for a real
-    -- component.
+    -- panel.
     {key = "label", type = "string", default = ""},
     {key = "source", type = "string", default = ""},
     {key = "unit", type = "string", default = ""},
@@ -5803,10 +5847,9 @@ return greedy
     -- somebody liked. Reflow cost is linear in the batch, so it is the one
     -- callback whose cost is chosen rather than earned, and choosing it larger
     -- than the work it competes with buys nothing: the dashboard still cannot
-    -- start faster than its slowest loader stage. At a batch of 4 the worst
-    -- reflow was 8532 against a slowest stage of 7508 and this failed; at 3 it
-    -- is 6448 and passes; below 3 it falls further for no gain, because the
-    -- loader does not move.
+    -- start faster than its slowest loader stage. The measurements below are
+    -- live, so a change to panel geometry or build cost re-evaluates whether
+    -- this batch size still buys anything.
     --
     -- It is deliberately a comparison and not a ceiling. A ceiling that the old
     -- value also satisfied would prove nothing, and a ceiling chosen today
@@ -5844,7 +5887,7 @@ return greedy
     )
 end
 
---- A component created large and then shrunk must hide what no longer fits,
+--- A panel created large and then shrunk must hide what no longer fits,
 --- and regain it when the panel grows again.
 local function testMetricReconcilesOnResize()
     -- **A live source, because this test is about width and not about having a
@@ -5862,7 +5905,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: big
     type: metric
     col: 0
@@ -5870,12 +5913,17 @@ components:
     colSpan: 2
     rowSpan: 2
     config:
-      label: Pack
-      source: S1
-      unit: V
-      rangeMin: 18
-      rangeMax: 25
-      precision: 1
+      metrics:
+        - source: S1
+          label: Pack
+          unit: V
+          precision: 1
+          rangeMin: 18
+          rangeMax: 25
+        - source: S2
+          label: AUXILIARY VOLTAGE
+          unit: V
+          precision: 1
       visual: bar
 ]]
     )
@@ -5972,7 +6020,7 @@ local function testRuntimeFailureIsContained()
     end
     local ok, err = pcall(definition.background, context)
     assert(ok, "background raised after a runtime failure: " .. tostring(err))
-    assertEqual(#context.components, 0)
+    assertEqual(#context.panels, 0)
 end
 
 local function testModelFilenames()
@@ -5982,7 +6030,7 @@ local function testModelFilenames()
         local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, referencePath)
         assertEqual(context.layoutPath, referencePath .. "layouts/default.yaml", "unexpected layout for " .. name)
         assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-        assertEqual(#context.components, 5)
+        assertEqual(#context.panels, 5)
     end
     radio.modelFilename = previous
 end
@@ -6003,7 +6051,7 @@ local function probeRows(instance)
 end
 
 --- Milestone 5's deliverable: diagnostic views that prove normalized service
---- output independently of any production component's rendering. The shipped
+--- output independently of any production panel's rendering. The shipped
 --- diagnostics layouts load from their Dashboard ID alone, on any model, and
 --- every service reports through the same panel contract.
 local function testServiceDiagnostics()
@@ -6024,7 +6072,7 @@ local function testServiceDiagnostics()
     end
 
     local first = page("services")
-    assertEqual(#first.components, 2)
+    assertEqual(#first.panels, 2)
 
     local telemetry = probeRows(entryById(first, "telemetry").instance)
     assertEqual(telemetry.SRC, "RxBt")
@@ -6040,12 +6088,11 @@ local function testServiceDiagnostics()
     assertEqual(navigation.FIX, "YES")
     assertEqual(navigation.HOME, "YES")
     assertEqual(navigation.LAT, "47.37690")
-    -- The configured native distance sensor wins over the computed one.
-    assertEqual(navigation.DIST, "812.0m")
+    assertEqual(navigation.DIST, "778m")
     assertEqual(navigation.BRG, "9 deg")
 
     local second = page("services2")
-    assertEqual(#second.components, 3)
+    assertEqual(#second.panels, 3)
 
     local modelRows = probeRows(entryById(second, "model").instance)
     assertEqual(modelRows.MODEL, "Test Model")
@@ -6083,7 +6130,7 @@ local function testDiagnosticsFitTheirPanels()
     end
 
     local function assertContained(what)
-        for _, entry in ipairs(context.components) do
+        for _, entry in ipairs(context.panels) do
             local bounds = boundsOf(entry)
             local instance = entry.instance
             local lineHeight = themeModule.fontHeight(instance.fonts.label)
@@ -6147,7 +6194,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: probe
     type: service-probe
     col: 0
@@ -6164,15 +6211,16 @@ components:
     colSpan: 2
     rowSpan: 2
     config:
-      label: Pack
-      source: RxBt
+      metrics:
+        - source: RxBt
+          label: Pack
 ]]
     )
     os.execute("rm -f '" .. widgetPath .. "lib/navigation_service.lua'")
 
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
 
-    assertEqual(#context.components, 2, "a missing service disabled a component")
+    assertEqual(#context.panels, 2, "a missing service disabled a panel")
     assert(string.match(table.concat(context.errors, "\n"), "navigation:"), table.concat(context.errors, "\n"))
 
     for _ = 1, 20 do
@@ -6189,15 +6237,15 @@ components:
     assert(ok, "background raised without a service")
 end
 
---- A layout carrying one of each core component, at a span each one supports.
---- Every component reads real radio state, so the assertions below are about
---- what the radio actually says rather than about mocked component internals.
+--- A layout carrying one of each core panel, at a span each one supports.
+--- Every panel reads real radio state, so the assertions below are about
+--- what the radio actually says rather than about mocked panel internals.
 local CORE_LAYOUT = [[
 version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: countdown
     type: flight-timer
     col: 0
@@ -6240,11 +6288,12 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      source: gvar2
-      label: GV2
-      precision: 0
-      rangeMin: -100
-      rangeMax: 100
+      metrics:
+        - source: gvar2
+          label: GV2
+          precision: 0
+          rangeMin: -100
+          rangeMax: 100
       visual: bar
   - id: identity
     type: model-identity
@@ -6262,8 +6311,6 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      indicators: all
-      orientation: horizontal
       readout: raw
   - id: dial
     type: metric
@@ -6272,11 +6319,12 @@ components:
     colSpan: 1
     rowSpan: 1
     config:
-      source: Curr
-      label: Current
+      metrics:
+        - source: Curr
+          label: Current
+          rangeMin: 0
+          rangeMax: 120
       visual: radial
-      rangeMin: 0
-      rangeMax: 120
   - id: swing
     type: metric
     col: 3
@@ -6284,14 +6332,15 @@ components:
     colSpan: 1
     rowSpan: 1
     config:
-      source: gvar1
-      precision: 1
+      metrics:
+        - source: gvar1
+          precision: 1
+          rangeMin: -100
+          rangeMax: 100
       visual: bar
-      rangeMin: -100
-      rangeMax: 100
 ]]
 
---- Advance a context far enough for every service and component to settle.
+--- Advance a context far enough for every service and panel to settle.
 local function settle(context, count)
     for _ = 1, (count or 60) do
         tick(20)
@@ -6302,14 +6351,14 @@ end
 --- Every declared key belongs to a row that is drawn, and every drawn row has
 --- one.
 ---
---- This is the property, stated once. A component declares what it paints and
+--- This is the property, stated once. A panel declares what it paints and
 --- `primitives.changed` compares exactly that, so a key present for a row
 --- that is shed is work with no reader, and a row that is drawn with no key
 --- is a row nothing can repaint. Checked at both sizes, because the shed
 --- direction and the revealed direction fail differently.
 local function assertDeclaresWhatItDraws(cells, link, alt, nav, when)
-    local function check(component, what, shown, key)
-        local declared = component.rendered[key] ~= nil
+    local function check(panel, what, shown, key)
+        local declared = panel.rendered[key] ~= nil
         assertEqual(
             declared,
             shown,
@@ -6366,7 +6415,7 @@ end
 --- rule it checks.** It was `testUnusedRowsCostNothing`, and it held that a
 --- panel drawing no supporting row must read *larger* than one that does,
 --- because the tertiary quarter was given to the body when nothing was going
---- to be drawn in it. That was a real defect at the time -- three components
+--- to be drawn in it. That was a real defect at the time -- three panels
 --- default their row off and all three were charged a quarter of the panel
 --- for a row they would never fill -- and fixing it was correct given the
 --- rule then in force.
@@ -6386,9 +6435,9 @@ end
 local function testReadingsIgnoreTheRowBeneathThem()
     testTertiaryQuarterHoldsItsFurniture()
 
-    -- Each component, the setting that turns its supporting row on, and how to
+    -- Each panel, the setting that turns its supporting row on, and how to
     -- read back whether the panel drew one. Declared rather than special-cased
-    -- so a component that gains an optional row is covered by adding a line.
+    -- so a panel that gains an optional row is covered by adding a line.
     local OPTIONAL = {
         {
             type = "flight-mode",
@@ -6436,7 +6485,7 @@ local function testReadingsIgnoreTheRowBeneathThem()
                 "grid:",
                 "  columns: 4",
                 "  rows: 4",
-                "components:",
+                "panels:",
                 "  - id: panel",
                 "    type: " .. subject.type,
                 "    col: 0",
@@ -6510,9 +6559,9 @@ local function testReadingsIgnoreTheRowBeneathThem()
 end
 
 local function testReadingsSitInTheirSlots()
-    --- What each component slots, and how to build a layout that shows it.
+    --- What each panel slots, and how to build a layout that shows it.
     ---
-    --- **Adding a component here is a declaration, not new test code.** Nine
+    --- **Adding a panel here is a declaration, not new test code.** Nine
     --- more are due on the slots and the check below should cover each one the
     --- moment it arrives, rather than growing a ninth near-copy of itself.
     local SLOTTED = {
@@ -6537,7 +6586,7 @@ local function testReadingsSitInTheirSlots()
             config = { "label: MODE" },
             -- Draws no visualization at all: a flight mode is a name and there is
             -- nothing to gauge, so the reading never splits. The mode number is a
-            -- supporting row the component grants only on a two-row panel, so it
+            -- supporting row the panel grants only on a two-row panel, so it
             -- cannot be asked for here without failing validation at every single
             -- row -- the spans this check walks include those.
             variants = { {}, { "showIndex: true", minRows = 2 } },
@@ -6570,7 +6619,7 @@ local function testReadingsSitInTheirSlots()
         },
         {
             type = "tx-battery",
-            -- Battery glyph against bar: the two arrangements this component
+            -- Battery glyph against bar: the two arrangements this panel
             -- offers, alike but for the visualization.
             sameReadingAcross = { 1, 2 },
             config = { "label: TX", "packEmpty: 6.6", "packFull: 8.4" },
@@ -6600,7 +6649,7 @@ local function testReadingsSitInTheirSlots()
             -- **Supporting rows are slotted too, so they are checked too.** A row
             -- of two takes the same two centres the reading and the visual use,
             -- and a row of one centres across the whole content box. Declared
-            -- here, so a component that slots a row says so rather than having a
+            -- here, so a panel that slots a row says so rather than having a
             -- second test written for it.
             rows = function(panel)
                 local found = {}
@@ -6639,14 +6688,25 @@ local function testReadingsSitInTheirSlots()
             -- so is not alike in every other respect, which is why the pair is
             -- named rather than assumed to be the first two of however many.
             sameReadingAcross = { 1, 2 },
-            config = { "label: ALT", "source: Alt", "rangeMin: 0", "rangeMax: 400", "precision: 0" },
+            config = {
+                "metrics:",
+                "  - source: Alt",
+                "    label: ALT",
+                "    rangeMin: 0",
+                "    rangeMax: 400",
+                "    precision: 0",
+            },
             -- A radial is a compact visual and takes the right slot; a bar spans
-            -- the panel and is exempt, so the same component splits under one
+            -- the panel and is exempt, so the same panel splits under one
             -- setting and not the other. The third variant configures a secondary
             -- source, which is what turns the supporting row from one item into
             -- two -- without it the two-slot case is never exercised, and a defect
             -- in it passes unseen.
-            variants = { { "visual: radial" }, { "visual: bar" }, { "visual: bar", "secondarySource: VSpd" } },
+            variants = {
+                { "visual: radial" },
+                { "visual: bar" },
+                { "  - source: VSpd", "    label: VS", "visual: bar" },
+            },
             visual = function(panel)
                 if not (panel.showVisual and panel.radial) then
                     return nil
@@ -6699,7 +6759,7 @@ local function testReadingsSitInTheirSlots()
     local cellHeight = math.floor((HEIGHT - GUTTER * (CELLS - 1)) / CELLS)
 
     for _, subject in ipairs(SLOTTED) do
-        local module = assert(loadfile(sourcePath .. "components/" .. subject.type .. ".lua"))()
+        local module = assert(loadfile(sourcePath .. "panels/" .. subject.type .. ".lua"))()
         local cases = {}
         local byVisual = {}
         for index, extra in ipairs(subject.variants) do
@@ -6728,7 +6788,7 @@ local function testReadingsSitInTheirSlots()
                 "grid:",
                 "  columns: 4",
                 "  rows: 4",
-                "components:",
+                "panels:",
                 "  - id: pack",
                 "    type: " .. subject.type,
                 "    col: 0",
@@ -6764,7 +6824,7 @@ local function testReadingsSitInTheirSlots()
                 font = font()
             end
 
-            -- Rebuilt from the panel, not read back from the component.
+            -- Rebuilt from the panel, not read back from the panel.
             local panelWidth = cellWidth * cols + GUTTER * (cols - 1)
             local panelHeight = cellHeight * rows + GUTTER * (rows - 1)
             local content = panelWidth - PAD - PAD_RIGHT
@@ -6985,15 +7045,12 @@ local function testHostDiagnosticsReportsTheHost()
     )
 
     -- Every placement the host built, including these panels themselves.
-    local components = linesOf("components")
-    assert(
-        string.find(components, #context.components .. " panels", 1, true),
-        "the panel miscounts the dashboard: " .. components
-    )
-    for _, entry in ipairs(context.components) do
+    local panels = linesOf("panels")
+    assert(string.find(panels, #context.panels .. " panels", 1, true), "the panel miscounts the dashboard: " .. panels)
+    for _, entry in ipairs(context.panels) do
         assert(
-            string.find(components, entry.placement.id, 1, true),
-            "the panel omits " .. entry.placement.id .. ": " .. components
+            string.find(panels, entry.placement.id, 1, true),
+            "the panel omits " .. entry.placement.id .. ": " .. panels
         )
     end
 
@@ -7012,7 +7069,7 @@ local function testHostDiagnosticsReportsTheHost()
     local height = panelOf(entryById(context, "identity")).h
     local lineHeight = themeModule.fontHeight(panel.fonts.label)
     assert(panel.visibleLines > 0, "the panel shed every line")
-    assert(panel.visibleLines < 12, "a two-cell panel claimed every line the component can build")
+    assert(panel.visibleLines < 12, "a two-cell panel claimed every line the panel can build")
     local last = panel.rows[panel.visibleLines].properties
     assert(
         last.y + lineHeight <= height,
@@ -7043,7 +7100,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: identity
     type: host-diagnostics
     col: 0
@@ -7112,7 +7169,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: identity
     type: host-diagnostics
     col: 0
@@ -7150,7 +7207,7 @@ components:
     )
 end
 
---- The view reports a failed component, a fallback palette and an unbound
+--- The view reports a failed panel, a fallback palette and an unbound
 --- source, which are the three things it exists to make visible.
 local function testHostDiagnosticsReportsFailures()
     resetRadio()
@@ -7163,7 +7220,7 @@ grid:
   rows: 4
 theme:
   mode: neon
-components:
+panels:
   - id: probe
     type: metric
     col: 0
@@ -7171,8 +7228,9 @@ components:
     colSpan: 2
     rowSpan: 2
     config:
-      label: Alt
-      source: NoSuchSensor
+      metrics:
+        - source: NoSuchSensor
+          label: Alt
   - id: broken
     type: raiser
     col: 2
@@ -7188,7 +7246,7 @@ components:
     colSpan: 2
     rowSpan: 2
     config:
-      section: components
+      section: panels
   - id: wires
     type: host-diagnostics
     col: 2
@@ -7214,7 +7272,7 @@ function raiser.create() error("deliberate failure") end
 return raiser
 ]==],
             -- Builds, then raises on its first refresh, which is the other way a
-            -- component dies and the only one the host keeps an entry for.
+            -- panel dies and the only one the host keeps an entry for.
             ["latebreak.lua"] = [==[
 local latebreak = {id = "latebreak", apiVersion = 1, supportedSpans = {"any"},
   settings = {{key = "label", type = "string", default = ""}}}
@@ -7237,15 +7295,15 @@ return latebreak
         return table.concat(out, "\n")
     end
 
-    -- A component that failed during create is otherwise only an error banner,
+    -- A panel that failed during create is otherwise only an error banner,
     -- which may have scrolled past before anyone looked at the screen.
-    assertEqual(entryById(context, "broken"), nil, "a component that raises in create is dropped, not kept disabled")
+    assertEqual(entryById(context, "broken"), nil, "a panel that raises in create is dropped, not kept disabled")
     assertEqual(#context.rejected, 1, "the host did not record the placement it could not build")
     local panels = linesOf("panels")
     assert(string.find(panels, "2 failed", 1, true), "the panel does not count the failure: " .. panels)
     assert(
         string.find(panels, "broken raiser 2x2 REJECTED", 1, true),
-        "the panel does not report the failed component: " .. panels
+        "the panel does not report the failed panel: " .. panels
     )
 
     -- A source nothing can bind. The name is shown exactly as the layout
@@ -7259,16 +7317,16 @@ return latebreak
         "the panel does not report the unbound source: " .. wires
     )
 
-    -- A component that builds and then raises later is a different casualty
-    -- from one that never built: the host keeps it, disabled, in `components`,
+    -- A panel that builds and then raises later is a different casualty
+    -- from one that never built: the host keeps it, disabled, in `panels`,
     -- where the one that never built is only in `rejected`. Both have to
     -- appear, and until this covered it only the rejected half ever did.
     local later = entryById(context, "later")
-    assert(later and later.failed, "the component that raises on refresh was not disabled")
+    assert(later and later.failed, "the panel that raises on refresh was not disabled")
     panels = linesOf("panels")
     assert(
         string.find(panels, "later latebreak 1x2 FAILED", 1, true),
-        "the panel does not report the component that failed after building: " .. panels
+        "the panel does not report the panel that failed after building: " .. panels
     )
 
     -- `neon` is not a mode, so the host fell back to Modern and reports
@@ -7287,7 +7345,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: tall
     type: flight-mode
     col: 0
@@ -7401,7 +7459,7 @@ end
 --- The reading is sized from the model the host actually read.
 ---
 --- `regionsFor` is measured directly elsewhere; this is the wiring. A
---- component that never asked the model for its names would fall back to the
+--- panel that never asked the model for its names would fall back to the
 --- ten characters the firmware allows, which still fits at every span, so
 --- nothing about fitting can see the difference. What can is that a model
 --- with short mode names gets a larger reading.
@@ -7411,7 +7469,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: mode
     type: flight-mode
     col: 0
@@ -7447,7 +7505,7 @@ end
 ---
 --- EdgeTX carries a battery meter range at SYS then Hardware then Battery
 --- meter range, set per radio to suit its pack, and it is already right on
---- any radio whose battery icon is sensible. This component used to ask a
+--- any radio whose battery icon is sensible. This panel used to ask a
 --- layout to restate it and drew nothing until one did, which made a dark bar
 --- the normal case rather than the exceptional one.
 ---
@@ -7462,7 +7520,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: stated
     type: tx-battery
     col: 0
@@ -7573,7 +7631,7 @@ end
 --- The shape to watch here is asserting that a glyph exists: an outline with
 --- a zero-width fill satisfies that and is a picture of an empty pack. So the
 --- fill's width is pinned against a number worked out from the voltage and
---- the range, independently of the component, and against the glyph's own
+--- the range, independently of the panel, and against the glyph's own
 --- interior rather than against itself.
 local function testBatteryGlyphFillsFromTheVoltage()
     resetRadio()
@@ -7591,7 +7649,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: healthy
     type: tx-battery
     col: 0
@@ -7769,7 +7827,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: small
     type: tx-battery
     col: 0
@@ -7800,7 +7858,7 @@ components:
     local small = entryById(context, "small").instance
     local large = entryById(context, "large").instance
 
-    -- Read off the label rather than out of the component's own bookkeeping,
+    -- Read off the label rather than out of the panel's own bookkeeping,
     -- so this is the font the panel is drawing in rather than the one it
     -- believes it chose.
     local smallFont = small.value.properties.font()
@@ -7901,7 +7959,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: pack
     type: tx-battery
     col: 0
@@ -8032,7 +8090,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: tx
     type: tx-battery
     col: 0
@@ -8111,9 +8169,9 @@ components:
     resetRadio()
 end
 
---- Every component that carries a unit draws it beside the reading, smaller.
+--- Every panel that carries a unit draws it beside the reading, smaller.
 ---
---- Six components print a unit on their dominant reading, and until now each
+--- Six panels print a unit on their dominant reading, and until now each
 --- did it differently: five glued it onto the reading string and one drew it
 --- on a row of its own. This is the assertion that keeps them one shape.
 ---
@@ -8146,9 +8204,13 @@ local function testUnitsRideBesideEveryReading()
     -- shape the schema allows. Three fit at 2 x 2, so the six are split across
     -- two layouts rather than crammed into one.
     local function layoutAt(colSpan, rowSpan, from, count)
-        local lines = { "version: 1", "grid:", "  columns: 4", "  rows: 4", "components:" }
+        local lines = { "version: 1", "grid:", "  columns: 4", "  rows: 4", "panels:" }
         local panels = {
-            { id = "alt", type = "metric", config = "      source: Alt\n      unit: m\n      precision: 0\n" },
+            {
+                id = "alt",
+                type = "metric",
+                config = "      metrics:\n        - source: Alt\n          unit: m\n          precision: 0\n",
+            },
             { id = "cells", type = "cell-battery", config = "      source: Cels\n      reading: lowest\n" },
             {
                 id = "link",
@@ -8160,7 +8222,7 @@ local function testUnitsRideBesideEveryReading()
             {
                 id = "gv",
                 type = "metric",
-                config = "      source: Curr\n" .. "      rangeMin: 0\n      rangeMax: 120\n",
+                config = "      metrics:\n        - source: Curr\n          rangeMin: 0\n          rangeMax: 120\n",
             },
         }
         local chosen = {}
@@ -8200,7 +8262,7 @@ local function testUnitsRideBesideEveryReading()
             local instance = entryById(context, panel.id).instance
             local where = panel.type .. " at " .. span[1] .. "x" .. span[2]
 
-            -- Its own object. A component that glued the unit back onto the
+            -- Its own object. A panel that glued the unit back onto the
             -- reading would have no unit label at all.
             assert(instance.unit, where .. " draws no separate unit")
 
@@ -8313,7 +8375,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: pack
     type: tx-battery
     col: 0
@@ -8388,13 +8450,13 @@ end
 
 --- The reading and the battery do not overlap, at any span that has both.
 ---
---- Two labels in one panel is the arrangement this component did not have
+--- Two labels in one panel is the arrangement this panel did not have
 --- before, and the failure it invites is arithmetic rather than visible: a
 --- reading fitted to the full content width and a glyph placed at the right
 --- edge of the same width both fit individually and collide.
 local function testBatteryGlyphLeavesTheReadingRoom()
     resetRadio()
-    local lines = { "version: 1", "grid:", "  columns: 4", "  rows: 4", "components:" }
+    local lines = { "version: 1", "grid:", "  columns: 4", "  rows: 4", "panels:" }
     local spans = { { 2, 1, 0, 0 }, { 2, 1, 2, 0 }, { 1, 2, 0, 1 }, { 2, 2, 1, 1 } }
     for index, span in ipairs(spans) do
         lines[#lines + 1] = "  - id: p" .. index
@@ -8473,7 +8535,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: quiet
     type: tx-battery
     col: 0
@@ -8489,7 +8551,7 @@ components:
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
     local ok, err = pcall(settle, context, 30)
     getGeneralSettings = real
-    assert(ok, "a component raised without getGeneralSettings: " .. tostring(err))
+    assert(ok, "a panel raised without getGeneralSettings: " .. tostring(err))
 
     local quiet = entryById(context, "quiet").instance
     assertEqual(quiet.text, "7.9", "the voltage it does know was lost")
@@ -8502,7 +8564,7 @@ end
 --- A timer's supporting caption is drawn where there is room and nowhere else.
 ---
 --- Four assertions in this suite checked that caption's wording on panels one
---- row tall, which shed it. They passed because the component formatted the
+--- row tall, which shed it. They passed because the panel formatted the
 --- string and then wrote it into a hidden label, which is the work this
 --- sweep removes. The wording still matters, so it is checked here, at a span
 --- that actually shows it.
@@ -8515,7 +8577,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: tall
     type: flight-timer
     col: 0
@@ -8592,7 +8654,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: clock
     type: flight-timer
     col: 0
@@ -8609,7 +8671,7 @@ components:
     settle(context, 30)
 
     local clock = entryById(context, "clock").instance
-    local timerModule = assert(loadfile(sourcePath .. "components/flight-timer.lua"))()
+    local timerModule = assert(loadfile(sourcePath .. "panels/flight-timer.lua"))()
     local font = clock.value.properties.font
     font = type(font) == "function" and font() or font
     local budget = clock.area.valueBudget
@@ -8678,7 +8740,7 @@ end
 
 --- A bar is reconciled as one thing, because it is two or three objects.
 ---
---- Five components wrote the show-or-hide pair out by hand and `metric`
+--- Five panels wrote the show-or-hide pair out by hand and `metric`
 --- reconciled `track` and `fill` separately and never touched the marker, so
 --- a bar carrying a neutral tick would have left it behind on a reflow.
 --- Only `primitives.bar` and `placeBar` know how many objects a bar has, and
@@ -8740,7 +8802,7 @@ local function testReconcileBar()
     assertEqual(bar.track.writes, writes)
     assertEqual(bar.track.visibilityCalls, calls)
 
-    -- A component with no bar passes nil, and that is not an error.
+    -- A panel with no bar passes nil, and that is not an error.
     primitivesModule.reconcileBar(nil, true, 0, 0, 10, 1)
     root:clear()
 end
@@ -8757,7 +8819,7 @@ end
 --- - **A zero keeps it.** `0 V` is a measurement, and this specification is
 ---   explicit that a valid zero is shown as the reading it is. Keying the
 ---   rule on the subscription's availability rather than on the drawn string
----   would have been right for most components by luck and wrong for
+---   would have been right for most panels by luck and wrong for
 ---   `link-status`, whose genuine zero is the case it exists to separate.
 --- - **The number does not move.** This is the claim the whole decision
 ---   rests on, so it is measured rather than reasoned about: the reading's x
@@ -8860,7 +8922,7 @@ local function testHeadingNeverWraps()
     -- is of the form "one line", which a mock that always answered one line
     -- would satisfy without checking anything. So an unfitted label is built
     -- directly and held to wrapping, which is what the firmware does and what
-    -- the components must therefore avoid.
+    -- the panels must therefore avoid.
     local box = lvgl.box({ x = 0, y = 0, w = 120, h = 60 })
     local overflowing = primitivesModule.label(box, themeModule.build("modern"), {
         x = 0,
@@ -8887,7 +8949,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: short
     type: tx-battery
     col: 0
@@ -9032,7 +9094,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: panel
     type: tx-battery
     col: 0
@@ -9074,7 +9136,7 @@ end
 --- A row that comes back shows what is true now, not what was true when it
 --- was shed.
 ---
---- Four components shed supporting rows on a small panel, and `apply` does
+--- Four panels shed supporting rows on a small panel, and `apply` does
 --- not write a row it is not drawing. So a value that moves while a row is
 --- hidden leaves that row holding an old wording, and the row is only correct
 --- again if something forces a repaint when it reappears.
@@ -9088,7 +9150,7 @@ end
 --- The care this needs is in what moves when. The value is moved **while the
 --- row is hidden** and nothing at all is moved at the reveal, because a
 --- change in the same window as the reveal would repaint under any
---- implementation and prove nothing. Under a component that declares a row it
+--- implementation and prove nothing. Under a panel that declares a row it
 --- does not draw, the moved value is recorded while hidden and never
 --- painted, so the reveal finds the record already matching and repaints
 --- nothing. That is the stale row this is looking for.
@@ -9101,7 +9163,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: cells
     type: cell-battery
     col: 0
@@ -9129,14 +9191,17 @@ components:
     colSpan: 2
     rowSpan: 2
     config:
-      label: Alt
-      source: Alt
-      unit: m
-      precision: 0
-      extrema: source
-      extremaSource: Alt+
-      secondarySource: VSpd
-      secondaryLabel: VS
+      metrics:
+        - source: Alt
+          label: Alt
+          unit: m
+          precision: 0
+        - source: Alt+
+          label: MAX
+          unit: m
+          precision: 0
+        - source: VSpd
+          label: VS
   - id: nav
     type: navigation
     col: 2
@@ -9179,7 +9244,7 @@ components:
     assertEqual(alt.showSecondary, true, "the metric shed its secondary too early")
     assertEqual(nav.showDetail, true, "the nav panel shed its rows too early")
     -- **One supporting row at this span, not two.** A `2 x 2` panel's tertiary
-    -- quarter is 31 px and this component's two-row group is 32 px of ink, so
+    -- quarter is 31 px and this panel's two-row group is 32 px of ink, so
     -- the coordinates are shed by the band that would have to hold them. The
     -- row that sheds and returns here is therefore the bearing, which is what
     -- the assertions below follow. Two rows at a three-row span are covered by
@@ -9267,14 +9332,14 @@ components:
     resetRadio()
 end
 
---- A trim panel sheds text it has no room for, and stops producing it.
+--- The trim panel sheds text it has no room for, and stops producing it.
 ---
---- Four indicators each carry a caption, a bar and a readout, and a cell too
+--- Three axes each carry a caption, a bar and a readout, and a square too
 --- narrow for text keeps only the bar. What the panel used to do was hide the
---- text and then go on positioning it on every reflow, formatting it four
+--- text and then go on positioning it on every reflow, formatting it three
 --- times a frame, and writing it into labels nobody could see. That is the
---- same invisible work the header pass found, and it is why this panel's
---- reflow was the most expensive callback in the dashboard.
+--- invisible work this test prevents: hidden text must stop being positioned,
+--- formatted, and written until a reflow reveals it again.
 ---
 --- So this checks both halves at the two spans that decide them: the text
 --- exists where there is room for it, and is not merely hidden but not made
@@ -9288,7 +9353,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: trims
     type: trim-panel
     col: 0
@@ -9296,8 +9361,6 @@ components:
     colSpan: 2
     rowSpan: 2
     config:
-      indicators: all
-      orientation: horizontal
       readout: raw
   - id: tight
     type: metric
@@ -9306,21 +9369,24 @@ components:
     colSpan: 2
     rowSpan: 2
     config:
-      label: Alt
-      source: Alt
-      unit: m
-      precision: 0
+      metrics:
+        - source: Alt
+          label: Alt
+          unit: m
+          precision: 0
 ]==]
     local widget = makeWidget("trim-shed", layout)
-    local zone = { x = 0, y = 0, w = 480, h = 272 }
+    -- The normal simulator-sized 2 x 2 square sheds captions. Use a larger
+    -- virtual zone first to test visible captions and their later reflow.
+    local zone = { x = 0, y = 0, w = 800, h = 480 }
     local context = createLoaded(zone, DEFAULT_OPTIONS, widget)
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
     settle(context)
 
     local trims = entryById(context, "trims").instance
-    assertEqual(#trims.indicators, 4)
+    assertEqual(#trims.indicators, 3)
 
-    -- The shared reconcile is what keeps every component off its hidden rows.
+    -- The shared reconcile is what keeps every panel off its hidden rows.
     -- It is proved on a metric rather than on the trim panel, which guards the
     -- call itself and so never reaches reconcile with a row staying shed. The
     -- metric is built at a span that has a unit and then narrowed until it
@@ -9329,17 +9395,17 @@ components:
     assert(tight.unit, "the metric never built a unit to shed")
     assertEqual(tight.unit.hidden, false, "a 2 x 2 metric shed its unit")
 
-    -- Two rows tall and half the width: room for all three parts.
+    -- At this zone size, the 2 x 2 square has room for all three parts.
     assertEqual(trims.showCaption, true, "a 2 x 2 trim panel shed its captions")
     assertEqual(trims.showValue, true, "a 2 x 2 trim panel shed its readouts")
     assertEqual(trims.indicators[1].caption.properties.text, "AIL")
     assertEqual(trims.indicators[1].caption.hidden, false)
-    assertEqual(trims.indicators[1].valueText, "+30", "240 raw is 30 trim units")
+    assertEqual(trims.indicators[1].valueText, "+30 A", "240 raw is 30 trim units")
 
     -- Shrinking the host zone narrows every cell past what text needs, and
     -- shortens the metric beside it past the row its unit needs.
     zone.w = 240
-    zone.h = 130
+    zone.h = 100
     local passes = 0
     repeat
         definition.refresh(context)
@@ -9426,8 +9492,8 @@ components:
 
     -- Widening again must bring the text back with its wording, not with
     -- whatever it held when it was shed.
-    zone.w = 480
-    zone.h = 272
+    zone.w = 800
+    zone.h = 480
     passes = 0
     repeat
         definition.refresh(context)
@@ -9441,14 +9507,14 @@ components:
     assertEqual(trims.indicators[1].caption.hidden, false)
     assertEqual(
         trims.indicators[1].value.properties.text,
-        "+30",
+        "+30 A",
         "a revealed readout came back with what it held when it was shed"
     )
 
     -- A reflow that changes nothing about visibility still has to move the
     -- rows, or a panel that merely narrows leaves its text where it was.
     local captionBefore = trims.indicators[2].caption.properties.x
-    zone.w = 420
+    zone.w = 720
     passes = 0
     repeat
         definition.refresh(context)
@@ -9491,8 +9557,8 @@ components:
         "a panel built without room wrote captions nobody could read"
     )
 
-    narrowZone.w = 480
-    narrowZone.h = 272
+    narrowZone.w = 800
+    narrowZone.h = 480
     passes = 0
     repeat
         definition.refresh(narrow)
@@ -9510,14 +9576,14 @@ components:
     assertEqual(born.indicators[1].caption.hidden, false)
 end
 
---- Each core component must render what the radio reports, in the state the
+--- Each core panel must render what the radio reports, in the state the
 --- radio's own values imply.
-local function testCoreComponents()
+local function testCorePanels()
     resetRadio()
     local widgetPath = makeWidget("core", CORE_LAYOUT)
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-    assertEqual(#context.components, 9)
+    assertEqual(#context.panels, 9)
     settle(context)
 
     -- A countdown shows what EdgeTX's timer says, takes its name from the
@@ -9551,7 +9617,7 @@ local function testCoreComponents()
 
     -- EdgeTX lets a countdown be shown as time used rather than time left, and
     -- says so with showElapsed. The fixture omitted the field entirely, so this
-    -- branch was permanently false and no component ever reached it: the same
+    -- branch was permanently false and no panel ever reached it: the same
     -- 300 second timer with 90 seconds left must read 3:30 used, not 1:30 left,
     -- and it is no longer a countdown to warn about.
     radio.timers[0].showElapsed = true
@@ -9619,7 +9685,7 @@ local function testCoreComponents()
     assertEqual(gv.text, "10")
     assertEqual(gv.unitText, "", "GV metadata is not supplied by the ordinary source interface")
 
-    -- The same component bound to a telemetry source instead.
+    -- The same panel bound to a telemetry source instead.
     local dial = entryById(context, "dial").instance
     assertEqual(dial.text, "10.0")
     -- A single-cell metric intentionally omits its unit.
@@ -9630,11 +9696,10 @@ local function testCoreComponents()
 
     -- Trims are read through EdgeTX's own sources, in stored trim units.
     local trims = entryById(context, "trims").instance
-    assertEqual(#trims.indicators, 4)
-    assertEqual(trims.indicators[1].valueText, "+30", "240 raw is 30 trim units")
-    assertEqual(trims.indicators[2].valueText, "-15")
-    assertEqual(trims.indicators[3].valueText, "+8")
-    assertEqual(trims.indicators[4].valueText, "0")
+    assertEqual(#trims.indicators, 3)
+    assertEqual(trims.indicators[1].valueText, "+30 A", "240 raw is 30 trim units")
+    assertEqual(trims.indicators[2].valueText, "-15 E")
+    assertEqual(trims.indicators[3].valueText, "0 R")
     -- This panel is one row tall, which is not enough for a caption above a
     -- bar, so it sheds them. Asserting the caption's text here would assert
     -- something nobody can see; that it is hidden is the fact on screen. The
@@ -9659,7 +9724,7 @@ local function testCoreComponents()
     -- computes `z = fillFrame ? max(zw, zh) : min(zw, zh)`
     -- (`gui/colorlcd/libui/static.cpp`). The larger zoom covers the frame and
     -- cuts off whatever does not fit; a model image is 192 x 114 and every
-    -- frame this component produces is wider in proportion, so covering cut
+    -- frame this panel produces is wider in proportion, so covering cut
     -- the aircraft's top and bottom off -- a tenth of its height survived at
     -- four cells by two. Nothing else observable changes when this flips,
     -- which is why it is asserted here rather than inferred from a position.
@@ -9690,16 +9755,16 @@ end
 --- No panel in the catalogue draws a unit beside a reading it does not have.
 ---
 --- The property, swept over the whole catalogue rather than over the
---- components someone remembered. The component directory is read from disk,
---- so a component added later is covered the moment it exists, and every
+--- panels someone remembered. The panel directory is read from disk,
+--- so a panel added later is covered the moment it exists, and every
 --- span it declares is built, because whether a panel is granted a unit is a
 --- function of its box.
 ---
---- **Each component carries the configuration that gives it a unit to draw**,
+--- **Each panel carries the configuration that gives it a unit to draw**,
 --- which is the declaration rule this suite already holds itself to: a
---- declaration that names a component but not the configuration that builds
+--- declaration that names a panel but not the configuration that builds
 --- its arrangement watches nothing while reporting it covered. Two
---- components know their unit without being told -- a transmitter pack and a
+--- panels know their unit without being told -- a transmitter pack and a
 --- cell are both measured in volts -- and two learn it from a resolved
 --- sensor or from the layout, so those two are told.
 ---
@@ -9710,16 +9775,16 @@ end
 --- and then never reports is the case that pairs a known unit with no value,
 --- and it is what a pilot sees when the model is switched off.
 local function testUnitsAreNotDrawnBesideAnAbsentReading()
-    local componentHost = assert(loadfile(sourcePath .. "lib/component_host.lua"))()
+    local panelHost = assert(loadfile(sourcePath .. "lib/panel_host.lua"))()
 
     -- Live enough to resolve a unit, absent enough to have no value.
     local UNIT_CONFIG = {
         ["link-status"] = "      reading: rssi\n      rssiSource: RSSI\n",
-        ["metric"] = "      source: VSpd\n      unit: m/s\n",
+        ["metric"] = "      metrics:\n        - source: VSpd\n          unit: m/s\n",
     }
 
-    local listingPath = root .. "/build/unit-components.txt"
-    os.execute("ls '" .. sourcePath .. "components' > '" .. listingPath .. "'")
+    local listingPath = root .. "/build/unit-panels.txt"
+    os.execute("ls '" .. sourcePath .. "panels' > '" .. listingPath .. "'")
     local listing = assert(hostIo.open(listingPath, "r"))
     local stems = {}
     for name in listing:lines() do
@@ -9730,15 +9795,15 @@ local function testUnitsAreNotDrawnBesideAnAbsentReading()
     end
     listing:close()
     os.remove(listingPath)
-    assert(#stems > 0, "no components were found to sweep")
+    assert(#stems > 0, "no panels were found to sweep")
 
     local constructed = {}
     local built = 0
     for _, stem in ipairs(stems) do
-        local module = assert(loadfile(sourcePath .. "components/" .. stem .. ".lua"))()
+        local module = assert(loadfile(sourcePath .. "panels/" .. stem .. ".lua"))()
         for colSpan = 1, 4 do
             for rowSpan = 1, 4 do
-                if componentHost.supportsSpan(module, colSpan, rowSpan) then
+                if panelHost.supportsSpan(module, colSpan, rowSpan) then
                     resetRadio()
                     -- Every sensor resolves through getFieldInfo and none of them
                     -- delivers, because EdgeTX reports integer zero for a telemetry
@@ -9751,7 +9816,7 @@ local function testUnitsAreNotDrawnBesideAnAbsentReading()
                     local widgetPath = makeWidget(
                         "unit-sweep",
                         table.concat({
-                            "version: 1\ngrid:\n  columns: 4\n  rows: 4\ncomponents:\n",
+                            "version: 1\ngrid:\n  columns: 4\n  rows: 4\npanels:\n",
                             "  - id: probe\n    type: ",
                             stem,
                             "\n    col: 0\n    row: 0\n    colSpan: ",
@@ -9807,7 +9872,7 @@ local function testUnitsAreNotDrawnBesideAnAbsentReading()
     assert(built >= 40, "only " .. built .. " panels were swept")
 
     -- **A sweep that constructed no unit at all would satisfy every assertion
-    -- above.** These four are the components measured to have drawn one beside
+    -- above.** These four are the panels measured to have drawn one beside
     -- a sentinel before the fix; naming them is what stops the test passing
     -- because a panel stopped learning its unit rather than because it stopped
     -- drawing it.
@@ -9846,7 +9911,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: pack
     type: cell-battery
     col: 0
@@ -9919,7 +9984,7 @@ components:
     assertEqual(instance.unit.hidden, false, "a reading arrived and its unit stayed away")
 end
 
---- Every component must degrade visibly rather than raise when the radio
+--- Every panel must degrade visibly rather than raise when the radio
 --- cannot answer: a firmware without the API, a source that does not exist, a
 --- timer the model has not configured, and a model bitmap that is not on the
 --- card.
@@ -9930,11 +9995,11 @@ end
 --- refused at load now and is covered by `testTimerIndexIsRefusedAtLoad`.
 --- The two look identical on screen, which is exactly why they were confused:
 --- both draw `NO TIMER`. Only one of them is the author's to fix.
-local function testComponentsDegrade()
+local function testPanelsDegrade()
     resetRadio()
     -- A timer the radio has and the model has not set up. `luaModelGetTimer`
     -- answers nothing for an unconfigured slot the same way it does for one
-    -- out of range, so this is the shape a component must survive.
+    -- out of range, so this is the shape a panel must survive.
     radio.timers[2] = nil
     local widgetPath = makeWidget(
         "degrade",
@@ -9943,7 +10008,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: timer
     type: flight-timer
     col: 0
@@ -9959,7 +10024,8 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      source: NoSuchSensor
+      metrics:
+        - source: NoSuchSensor
   - id: trims
     type: trim-panel
     col: 0
@@ -9967,9 +10033,9 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      indicators: pair
       trim1: not-a-trim
       trim2: also-not-a-trim
+      trim4: another-missing-trim
   - id: identity
     type: model-identity
     col: 2
@@ -10005,7 +10071,7 @@ components:
     local ok, err = pcall(settle, context)
     getFlightMode = realFlightMode
     model.getInfo = realGetInfo
-    assert(ok, "a component raised inside a callback: " .. tostring(err))
+    assert(ok, "a panel raised inside a callback: " .. tostring(err))
 
     local function assertUnavailable(id)
         local instance = entryById(context, id).instance
@@ -10021,7 +10087,7 @@ components:
     -- The dominant reading, which every span draws. This panel is one row
     -- tall and sheds its caption, so the caption is checked where it is shown.
     assertEqual(entryById(context, "timer").instance.text, "--:--")
-    assertEqual(entryById(context, "trims").instance.indicators[1].valueText, "--")
+    assertEqual(entryById(context, "trims").instance.indicators[1].valueText, "-- A")
 
     -- A bitmap the card does not have falls back to the model name rather than
     -- leaving an empty hole where the picture would be.
@@ -10037,9 +10103,9 @@ components:
     resetRadio()
 end
 
---- Every core component must survive a zone change and stay inside its own
+--- Every core panel must survive a zone change and stay inside its own
 --- container afterwards, at a size that sheds most of its optional content.
-local function testCoreComponentsReflow()
+local function testCorePanelsReflow()
     resetRadio()
     local widgetPath = makeWidget("core-reflow", CORE_LAYOUT)
     local zone = { x = 0, y = 0, w = 480, h = 272 }
@@ -10057,7 +10123,7 @@ local function testCoreComponentsReflow()
 
     --- Assert every visible object sits inside the container it belongs to.
     local function assertContained(what)
-        for _, entry in ipairs(context.components) do
+        for _, entry in ipairs(context.panels) do
             local bounds = boundsOf(entry)
             local panel = panelOf(entry)
             assertEqual(panel.w, bounds.w, what .. ": " .. entry.placement.id .. " did not follow its container width")
@@ -10111,15 +10177,15 @@ local function testCoreComponentsReflow()
     resetRadio()
 end
 
---- A layout carrying the three telemetry-specialized components at spans that
+--- A layout carrying the three telemetry-specialized panels at spans that
 --- exercise every part of them: a cells table, both link source styles, and
---- navigation both computing a distance and preferring a native one.
+--- navigation computing distance from GPS.
 local TELEMETRY_LAYOUT = [[
 version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: pack
     type: cell-battery
     col: 0
@@ -10146,8 +10212,8 @@ components:
       # threshold whose unit depends on which source resolved first is
       # refused at load.
       reading: quality
-      warning: 50
-      critical: 30
+      qualityWarning: 50
+      qualityCritical: 30
       extrema: source
       extremaSource: RQly-
   - id: elrs
@@ -10162,8 +10228,8 @@ components:
       reading: rssi
       barMin: -110
       barMax: -30
-      warning: -90
-      critical: -100
+      rssiWarning: -90
+      rssiCritical: -100
   - id: nav
     type: navigation
     col: 0
@@ -10182,19 +10248,18 @@ components:
     rowSpan: 2
     config:
       source: GPS2
-      distanceSource: Dist
       label: Native
       presentation: compass
 ]]
 
---- Each telemetry component must render what the radio reports, in the state
+--- Each telemetry panel must render what the radio reports, in the state
 --- the radio's own values imply.
-local function testTelemetryComponents()
+local function testTelemetryPanels()
     resetRadio()
     local widgetPath = makeWidget("telemetry", TELEMETRY_LAYOUT)
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-    assertEqual(#context.components, 5)
+    assertEqual(#context.panels, 5)
     settle(context)
 
     -- The pack is judged by its worst cell, and the summed pack voltage is
@@ -10268,7 +10333,7 @@ local function testTelemetryComponents()
     assert(themeModule.textWidth(nav.fonts.label, nav.origin) <= nav.originWidth, "the origin caption overran its box")
     -- **No coordinates at this span**, and asserting their text here would be
     -- asserting a string nobody can see. A `2 x 2` panel's tertiary quarter is
-    -- 31 px and two supporting rows are 32 px of ink, so this component draws
+    -- 31 px and two supporting rows are 32 px of ink, so this panel draws
     -- the bearing alone and the coordinates are shed by the band that would
     -- have had to hold them. They are checked at a three-row span, in
     -- testTwoRowFooterClearsTheReading.
@@ -10278,11 +10343,11 @@ local function testTelemetryComponents()
     assertEqual(nav.showCompass, true, "an explicit compass presentation must reserve room for the dial")
     assert(not nav.compass.ring.hidden, "the requested compass was hidden")
 
-    -- A configured native distance sensor wins over the computed one, because
-    -- the receiver may compute it from data this dashboard never sees.
-    local native = entryById(context, "native").instance
-    assertEqual(native.text, "812.0")
-    assertEqual(native.feed.distanceSource, "source")
+    local shared = entryById(context, "native").instance
+    assertEqual(shared.text, nav.text)
+    assertEqual(shared.feed.distance, nav.feed.distance)
+    assertEqual(shared.feed.pilotLatitude, nav.feed.pilotLatitude)
+    assertEqual(shared.feed.pilotLongitude, nav.feed.pilotLongitude)
 
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
     resetRadio()
@@ -10309,7 +10374,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: nav
     type: navigation
     col: 0
@@ -10384,7 +10449,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: nav
     type: navigation
     col: 0
@@ -10557,7 +10622,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: extreme
     type: cell-battery
     col: 0
@@ -10595,7 +10660,7 @@ components:
         local instance = entryById(context, id).instance
         assertEqual(instance.summary.shape, "number", id .. " read a plain number as a cells table")
         assertEqual(instance.stateName, "unavailable")
-        -- One wording, which fits every row this component draws, so it is
+        -- One wording, which fits every row this panel draws, so it is
         -- pinned rather than matched on a prefix. `CELLS ERR` says something is
         -- arriving and is wrong; a source the radio has never heard of says
         -- nothing at all, and that difference is asserted below.
@@ -10665,7 +10730,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: nav
     type: navigation
     col: 0
@@ -10729,7 +10794,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: link
     type: link-status
     col: 0
@@ -10784,9 +10849,9 @@ components:
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 end
 
---- Every telemetry component must survive a zone change and stay inside its
+--- Every telemetry panel must survive a zone change and stay inside its
 --- own container, at a size that sheds most of its optional content.
-local function testTelemetryComponentsReflow()
+local function testTelemetryPanelsReflow()
     resetRadio()
     local widgetPath = makeWidget("telemetry-reflow", TELEMETRY_LAYOUT)
     local zone = { x = 0, y = 0, w = 480, h = 272 }
@@ -10806,7 +10871,7 @@ local function testTelemetryComponentsReflow()
     --- An arc is positioned by its centre, so its bounds are derived rather
     --- than read straight from x and y.
     local function assertContained(what)
-        for _, entry in ipairs(context.components) do
+        for _, entry in ipairs(context.panels) do
             local bounds = boundsOf(entry)
             local instance = entry.instance
 
@@ -10903,18 +10968,18 @@ local function testTelemetryComponentsReflow()
 end
 
 --- A metric large enough to carry its supporting row, so the altitude
---- preset's extrema source and secondary reading are proven somewhere the
+--- metric's extrema source and secondary reading are proven somewhere the
 --- shipped dashboard's span cannot take away.
-local function testMetricPresetDetail()
+local function testMetricSupportingDetail()
     resetRadio()
     local widgetPath = makeWidget(
-        "preset-detail",
+        "metric-detail",
         [[
 version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: altitude
     type: metric
     col: 0
@@ -10922,7 +10987,16 @@ components:
     colSpan: 2
     rowSpan: 2
     config:
-      preset: altitude
+      metrics:
+        - source: Alt
+          label: ALT
+          rangeMin: 0
+          rangeMax: 400
+        - source: Alt+
+          label: MAX
+        - source: VSpd
+          label: VS
+      accent: green
 ]]
     )
 
@@ -10930,9 +11004,9 @@ components:
     settle(context)
 
     local altitude = entryById(context, "altitude").instance
-    assertEqual(altitude.extremeFeed.name, "Alt+", "the preset lost its extrema")
+    assertEqual(altitude.detailFeed.name, "Alt+", "the metric lost its maximum source")
     assertEqual(altitude.range.properties.text, "MAX 180 m")
-    assertEqual(altitude.secondary.properties.text, "VS 2.5m/s")
+    assertEqual(altitude.secondary.properties.text, "VS 2.5 m/s")
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 end
 
@@ -10956,7 +11030,7 @@ testRuntimeFailureIsContained()
 testServiceDiagnostics()
 testDiagnosticsFitTheirPanels()
 testMissingServiceModule()
-testCoreComponents()
+testCorePanels()
 testTrimPanelShedsText()
 testShedRowsComeBackCurrent()
 testFlightModeIndexRow()
@@ -10982,10 +11056,10 @@ testHostDiagnosticsWarnsAboutBytecode()
 testHostDiagnosticsReportsFailures()
 testUnitsAreNotDrawnBesideAnAbsentReading()
 testAReflowDoesNotRestoreAnOrphanedUnit()
-testComponentsDegrade()
-testCoreComponentsReflow()
-testMetricPresetDetail()
-testTelemetryComponents()
+testPanelsDegrade()
+testCorePanelsReflow()
+testMetricSupportingDetail()
+testTelemetryPanels()
 testCompassPointsWhereTheFixIs()
 testCompassShedsWhenThePanelNarrows()
 testTelemetryDegrades()
@@ -10993,7 +11067,7 @@ testCellSourceShapes()
 testRefreshSeesEverythingItDraws()
 testNavigationSeesItsSensorAppear()
 testProtocolWithoutRssi()
-testTelemetryComponentsReflow()
+testTelemetryPanelsReflow()
 testInstructionBudget()
 
 -- Last of the checks, because it builds every shipped layout in both zones

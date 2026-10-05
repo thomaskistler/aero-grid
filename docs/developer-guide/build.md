@@ -24,7 +24,7 @@ site in `build/docs/`. Run `make docs-serve` for a local preview at
 `.github/workflows/docs.yml` validates documentation changes in pull requests
 and publishes to GitHub Pages after they land on `main`. Repository
 **Settings > Pages > Source** must be set to **GitHub Actions**. The workflow
-can also be run manually from `main`. Component references remain ordinary
+can also be run manually from `main`. Panel references remain ordinary
 Markdown files, readable directly on GitHub.
 
 ### Make targets
@@ -51,7 +51,7 @@ make build
 
 `make test` and `make check` run `make setup` automatically when the development environment is missing or `requirements-dev.txt` changed. `make check` looks for `edgetx-luac`, `luac5.3`, then `luac` on `PATH`; `LUA_COMPILER` overrides detection. Use EdgeTX's `edgetx-luac` when available because it validates the firmware's exact Lua 5.3 configuration.
 
-The tests cover grid rounding, gutters, overlap validation, constrained YAML parsing, malformed and corrupt layout handling, forward-compatible unknown keys, layout-path sanitization across real model filenames, the component module contract, declared settings and spans, component lifecycle failure isolation, hostile modules, theme derivation and legibility, component states, zone reflow, Dashboard ID reload behavior, snapshot immutability, service scheduling and subscription caps, telemetry freshness against a dropped link and a valid zero, trim scaling, global variable bounds, arm-switch flight sessions, GPS distance and bearing, graceful degradation when a firmware API or a whole service module is missing, metric preset resolution, timer count-up and expired-countdown semantics, the optional transmitter charge estimate, global variable and bar normalization, trim rounding and three-position handling, model bitmap fallback, width-aware font fitting, cells-table shape validation, protocol-dependent link source selection, a link that drops and returns, a missing GPS fix, an unavailable home position, and a protocol that populates no RSSI sensor at all. Each Lua behavior suite runs once with normal string methods and once with the string metatable removed to match EdgeTX firmware behavior.
+The tests cover grid rounding, gutters, overlap validation, constrained YAML parsing, malformed and corrupt layout handling, forward-compatible unknown keys, layout-path sanitization across real model filenames, the panel module contract, declared settings and spans, panel lifecycle failure isolation, hostile modules, theme derivation and legibility, panel states, zone reflow, Dashboard ID reload behavior, snapshot immutability, service scheduling and subscription caps, telemetry freshness against a dropped link and a valid zero, trim scaling, global variable bounds, arm-switch flight sessions, GPS distance and bearing, graceful degradation when a firmware API or a whole service module is missing, per-metric range and threshold settings, timer count-up and expired-countdown semantics, the optional transmitter charge estimate, global variable and bar normalization, trim rounding and three-position handling, model bitmap fallback, width-aware font fitting, cells-table shape validation, protocol-dependent link source selection, a link that drops and returns, a missing GPS fix, an unavailable home position, and a protocol that populates no RSSI sensor at all. Each Lua behavior suite runs once with normal string methods and once with the string metatable removed to match EdgeTX firmware behavior.
 
 Additional commands: `make lint` checks Lua with lua-language-server; `make format` runs StyLua; `make mocks` renders panel geometry.
 
@@ -94,31 +94,31 @@ remove stale `.luac` files within the AeroGrid package and stamp the Lua sources
 for recompilation. For normal user upgrades, replace the complete folder as
 described in [Installation and upgrades](../user-guide/installation.md#upgrade).
 
-`lib/package.lua` defines the package version and the runtime, component, and
+`lib/package.lua` defines the package version and the runtime, panel, and
 layout API versions. The host rejects incompatible or unversioned runtime modules;
 a failed service leaves unrelated panels running. Dashboard ID `host` reports the
 loaded version. These checks detect API-incompatible mixtures, not every mixture
 of compatible releases or stale bytecode.
 
-## Component screenshot prototype
+## Panel screenshots
 
 On macOS with EdgeTX Companion 2.12 installed and the Xcode command-line tools,
 run from the repository root:
 
 ```sh
 make capture-setup
-build/capture-venv/bin/python tools/capture-panels.py --component trim-panel
-build/capture-venv/bin/python tools/capture-panels.py --component flight-timer
+build/capture-venv/bin/python tools/capture-panels.py --panel trim-panel
+build/capture-venv/bin/python tools/capture-panels.py --panel flight-timer
 build/capture-venv/bin/python tools/capture-panels.py --all
 ```
 
 Use `--companion /path/to/Companion.app` for a different installation location.
-The prototype currently supports the single-architecture native TX16S library;
+The capture tool supports the single-architecture native TX16S library;
 an Intel library requires Rosetta on Apple Silicon. It does not need VS Code.
 `make capture-setup` installs the optional PyYAML dependency into a separate
 `build/capture-venv/` environment, without changing runtime or documentation dependencies.
 
-Captures are saved directly under `build/doc-capture/<component>/`, containing a
+Captures are saved directly under `build/doc-capture/<panel>/`, containing a
 dedicated SD image, simulator log, full-frame PNG, `1x2.png`, `2x1.png`, `2x2.png`,
 recipe, and provenance. Regenerating a panel replaces its entire previous output;
 no run history is kept. A failed attempt leaves diagnostic output in that panel's
@@ -132,13 +132,13 @@ recipe uses a stopped, persistent countdown named Flight with 3:04 remaining
 of a 5:00 start.
 
 The isolated widget copy verifies recipe values through real services and waits
-for populated component presentation before capture. Trim, timer, flight mode,
+for populated panel presentation before capture. Trim, timer, flight mode,
 and model identity use actual isolated firmware model settings. Other panels use
 **real EdgeTX rendering with synthetic sample data**: capture-only firmware API
 overrides are passed into the real service environment in the isolated widget.
 Telemetry resolution, precision scanning, battery calculations, link
 classification, and GPS distance/bearing calculations still run in the real
-services and components. These images demonstrate presentation, not receiver
+services and panels. These images demonstrate presentation, not receiver
 telemetry validity. Production widget files and APIs on your radio or active
 simulator are not changed.
 
@@ -165,7 +165,7 @@ disclosure, settings, and crop geometry.
 The native runner stops firmware tasks after capture or its readiness timeout.
 Failures are explicit and point to the simulator log; failed captures do not
 publish documentation assets. Existing simulator SD images are not modified.
-This is a local macOS catalogue generator, not yet a portable or pinned CI tool.
+The capture tool runs locally on macOS; it is not part of CI.
 
 ### Configure a capture
 
@@ -176,16 +176,16 @@ example, edit it, and select it explicitly:
 build/capture-venv/bin/python tools/capture-panels.py --recipe /path/to/example.yaml
 ```
 
-`--component` selects that component's bundled default recipe; `--all` selects
+`--panel` selects that panel's bundled default recipe; `--all` selects
 all YAML recipes in the bundled directory. These options are mutually exclusive.
 Each run saves the selected recipe alongside its images and provenance.
 
-Recipes configure `component`, `theme` (`modern` or `edgetx`), `border.pixels`,
-`border.rgb`, named `panels` placements, component `config` settings, and `sample`
+Recipes configure `panel`, `theme` (`modern` or `edgetx`), `border.pixels`,
+`border.rgb`, named `panels` placements, panel `config` settings, and `sample`
 values. `config` also accepts nested metric lists. Positions are zero-based in the
 4 x 4 grid. Panel names are used in image
 filenames; a span-shaped name such as `2x2` must match the placement's span.
-Placements must not overlap. This prototype supports row spans of 1 or 2.
+Placements must not overlap. Captures support row spans of 1 or 2.
 
 Baseline captures omit bottom progress bars: metric and link-status use
 `config.visual: none`. The timer recipe uses `hide_bottom_bar: true`, a
@@ -235,22 +235,22 @@ verifies values and precision before emitting images. See the bundled recipes
 for complete examples.
 
 Recipe structure, sample ranges, and placements are checked before startup.
-The actual widget validates component settings during loading; invalid settings
+The actual widget validates panel settings during loading; invalid settings
 fail capture and leave diagnostic logs rather than publishing an image.
 
-`tools/capture_recipes.py` holds each component's model setup and Lua readiness
+`tools/capture_recipes.py` holds each panel's model setup and Lua readiness
 adapters, deriving both from the recipe sample. `capture-panels.py` handles shared fixture
 preparation, simulator invocation, cropping, borders, and provenance. The native
 runner reads capture regions generated by Python rather than hardcoding panel
-positions. The original `capture-trim.py` command remains a compatibility wrapper.
+positions.
 Run recipe tests with `build/capture-venv/bin/python -m unittest discover -s tools -p 'test_capture_*.py'`.
 
 ### Publish generated examples
 
 Panel reference pages use checked-in PNGs under
-`docs/assets/components/<component>/<span>.png`. After regeneration and visual
+`docs/assets/panels/<panel>/<span>.png`. After regeneration and visual
 review, copy only `1x2.png`, `2x1.png`, and `2x2.png` from each panel's build
-directory into that component's asset directory, then run `make docs`.
+directory into that panel's asset directory, then run `make docs`.
 Keep SD images, framebuffer dumps, logs, and full frames in ignored build output.
 Normal documentation builds use the checked-in images without the simulator.
 
@@ -258,6 +258,36 @@ The example captions disclose synthetic inputs and capture-only presentation
 overrides. Update those captions when changing a recipe's sample or settings.
 
 ## Continuous integration
+
+### Publishing a release
+
+Releases are manually initiated, not created on every merge. Update
+`src/WIDGETS/AeroGrid/lib/package.lua` in a PR and merge it into `main`.
+Versions must be `X.Y.Z`, `X.Y.Z-beta.N`, or `X.Y.Z-rc.N`; beta and release-candidate
+versions are published as prereleases.
+
+In GitHub, open **Actions > Release > Run workflow**, select **main**, and run.
+The workflow uses the exact commit selected when the run starts, executes the
+existing CI checks, validates documentation and packaging, then creates the
+matching `v<version>` tag. It uploads `AeroGrid-<version>.zip` and its SHA-256
+checksum to a draft and publishes only after both uploads succeed.
+Generated release notes include installation links and hardware coverage.
+No release has to be created manually in the Releases UI.
+
+`make release-package` builds the same deterministic archive locally in
+`build/release/`. It contains source Lua files, only `default` and `host` layouts,
+and the license. It never packages a simulator SD image, bytecode, or capture
+assets. The layout allowlist is defined in `tools/package-release.py`.
+
+If validation fails, fix and merge before running again. If publishing fails
+after creating the tag or draft, rerun the **same workflow run** against the same
+commit: a matching tag and draft can be resumed, replacing incomplete assets.
+A tag pointing to another commit or an already public release is rejected.
+Do not move a published tag; fixes require a new package version. A changed
+commit cannot reuse a version whose tag already exists. If abandoning an
+unpublished attempt, explicitly remove its draft and tag before retrying that
+version. Release runs are serialized and are not cancelled by newer requests.
+The write token is scoped to the publishing job; validation uses read access.
 
 `.github/workflows/ci.yml` runs on every pull request and on pushes to `main`. It installs Lua 5.3, runs `make check` (the behaviour suites in both string modes, then parses every Lua file with `luac5.3`), builds the SD image, and verifies the packaged image matches its sources and that the build leaves no untracked output.
 
@@ -280,4 +310,4 @@ Do not check generated `.luac` files, logs, screenshots, or mutable `build/sdcar
 
 Pure module tests live under `tests/unit/`. Tests that exercise the AeroGrid host through mocked EdgeTX APIs live under `tests/integration/`. `tests/run.py` executes both groups in normal Lua mode and with method-style string lookup disabled to match EdgeTX firmware behavior.
 
-See [plans/aerogrid-spec.md](https://github.com/thomaskistler/aero-grid/blob/main/plans/aerogrid-spec.md) for the complete project specification and implementation milestones.
+See [plans/aerogrid-spec.md](https://github.com/thomaskistler/aero-grid/blob/main/plans/aerogrid-spec.md) for the complete project specification.

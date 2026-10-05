@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
-"""Capture component recipes through the native macOS/Companion TX16S simulator."""
+"""Capture panel recipes through the native macOS/Companion TX16S simulator."""
 import argparse
 import hashlib
 import json
@@ -9,7 +9,7 @@ import shutil
 import struct
 import subprocess
 import zlib
-from capture_recipes import (COMPONENTS, RECIPE_DIR, configure_model, config_yaml,
+from capture_recipes import (PANELS, RECIPE_DIR, configure_model, config_yaml,
                             fixture_inputs, load_recipe, readiness)
 
 
@@ -58,7 +58,7 @@ def model_image(path):
 
 
 def prepare(sd, recipe, recipe_path=None):
-    component = recipe["component"]
+    panel = recipe["panel"]
     sd.mkdir()
     shutil.copytree(ROOT / "tests/fixtures/sdcard", sd, dirs_exist_ok=True)
     widget = sd / "WIDGETS/AeroGrid"
@@ -73,9 +73,9 @@ def prepare(sd, recipe, recipe_path=None):
     prefix, rest = text.split("screenData:", 1)
     _, suffix = rest.split("view:", 1)
     prefix = configure_model(prefix, recipe)
-    if component == "model-identity":
+    if panel == "model-identity":
         if "bitmap" in recipe["sample"]:
-            path = recipe_path or RECIPE_DIR / f"{component}.yaml"
+            path = recipe_path or RECIPE_DIR / f"{panel}.yaml"
             bitmap = path.resolve().parent / recipe["sample"]["bitmap"]
             shutil.copyfile(bitmap, sd / "IMAGES" / bitmap.name)
         else:
@@ -100,9 +100,9 @@ def prepare(sd, recipe, recipe_path=None):
 view: 0
 """.replace("stringValue: modern", f"stringValue: {recipe['theme']}")
                      + suffix.split("\n", 1)[1])
-    layout = f"version: 1\ntheme:\n  mode: {recipe['theme']}\ngrid:\n  columns: 4\n  rows: 4\ncomponents:\n"
+    layout = f"version: 1\ntheme:\n  mode: {recipe['theme']}\ngrid:\n  columns: 4\n  rows: 4\npanels:\n"
     for name, (col, row, cols, rows) in placements(recipe).items():
-        layout += (f"  - id: subject-{name}\n    type: {component}\n"
+        layout += (f"  - id: subject-{name}\n    type: {panel}\n"
                    f"    col: {col}\n    row: {row}\n    colSpan: {cols}\n    rowSpan: {rows}\n"
                    "    config:\n" + config_yaml(recipe["config"]))
     (widget / "layouts/capture-panels.yaml").write_text(layout)
@@ -138,8 +138,8 @@ end
     source = source.replace("    refresh = refresh,", """    refresh = function(context)
         refresh(context)
         if #context.errors > 0 then error(table.concat(context.errors, "\\n")) end
-        if context.stage or #context.components ~= PANEL_COUNT then return end
-        for _, entry in ipairs(context.components) do
+        if context.stage or #context.panels ~= PANEL_COUNT then return end
+        for _, entry in ipairs(context.panels) do
 """.replace("PANEL_COUNT", str(len(recipe["panels"]))) + ("""
             local instance = entry.instance
             if instance.bar then
@@ -164,13 +164,13 @@ end
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     selection = parser.add_mutually_exclusive_group(required=True)
-    selection.add_argument("--component", choices=COMPONENTS)
+    selection.add_argument("--panel", choices=PANELS)
     selection.add_argument("--recipe", type=Path, help="Path to a named YAML capture recipe")
     selection.add_argument("--all", action="store_true")
     parser.add_argument("--companion", type=Path, default=Path("/Applications/EdgeTX Companion 2.12.app"))
     args = parser.parse_args()
     paths = (sorted(RECIPE_DIR.glob("*.yaml")) if args.all else
-             [args.recipe or RECIPE_DIR / f"{args.component}.yaml"])
+             [args.recipe or RECIPE_DIR / f"{args.panel}.yaml"])
     if not paths:
         parser.error(f"No YAML recipes found in {RECIPE_DIR}")
     try:
@@ -191,21 +191,21 @@ def main():
     subprocess.run(["clang++", "-std=c++11", "-arch", architecture[0],
                     str(ROOT / "tools/capture-native.cpp"), f"-Wl,-rpath,{frameworks}",
                     "-o", str(executable)], check=True)
-    components = [recipe["component"] for _, recipe in recipes]
-    if len(set(components)) != len(components):
+    panels = [recipe["panel"] for _, recipe in recipes]
+    if len(set(panels)) != len(panels):
         parser.error("Select at most one recipe per panel type in each invocation.")
     for path, recipe in recipes:
         capture(recipe, path, executable, library)
 
 
 def capture(recipe, recipe_path, executable, library):
-    component = recipe["component"]
+    panel = recipe["panel"]
     spans = placements(recipe)
     border = recipe["border"]["pixels"]
     color = recipe["border"]["rgb"]
-    if component not in COMPONENTS:
-        raise ValueError(f"Unsupported component output: {component}")
-    directory = OUTPUT / component
+    if panel not in PANELS:
+        raise ValueError(f"Unsupported panel output: {panel}")
+    directory = OUTPUT / panel
     if directory.is_symlink():
         raise RuntimeError(f"Capture output must not be a symlink: {directory}")
     if directory.exists():
@@ -254,17 +254,17 @@ def capture(recipe, recipe_path, executable, library):
                   "capture_sha256": {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
                                      for path in (Path(__file__), ROOT / "tools/capture_recipes.py",
                                                   ROOT / "tools/capture-native.cpp")},
-                  "theme": recipe["theme"], "component": component,
+                  "theme": recipe["theme"], "panel": panel,
                   "sample_data": ("synthetic firmware API inputs; real services and EdgeTX rendering"
                                   if fixture_inputs(recipe) else "isolated firmware model settings"),
                   "recipe": recipe, "recipe_path": str(recipe_path),
                   "captures": crops}
-    if component == "model-identity" and "bitmap" in recipe["sample"]:
+    if panel == "model-identity" and "bitmap" in recipe["sample"]:
         bitmap = recipe_path.resolve().parent / recipe["sample"]["bitmap"]
         provenance["bitmap"] = {"path": recipe["sample"]["bitmap"],
                                 "sha256": hashlib.sha256(bitmap.read_bytes()).hexdigest()}
     (directory / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
-    print(f"Verified {component} captures: {directory}")
+    print(f"Verified {panel} captures: {directory}")
     return directory
 
 

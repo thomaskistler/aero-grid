@@ -1,0 +1,184 @@
+version: 1
+
+# The shipped dashboard. It demonstrates ten of the twelve catalogue
+# panels, at a mixture of spans, so a fresh install shows real
+# behaviour rather than placeholders. Change the source names to sensors your
+# own model has; a source the radio does not recognize degrades to an explicit
+# unavailable state rather than pretending to read zero.
+#
+# Theme mode may be modern, edgetx, or custom. When present this overrides the
+# native Theme widget option. Custom mode accepts canvas, surface, text, and
+# accent overrides only.
+theme:
+  mode: modern
+
+grid:
+  columns: 4
+  rows: 4
+
+panels:
+  # Navigation takes the top-left quarter. In App mode EdgeTX draws its own
+  # menu button over that corner, 47 x 45 pixels, and the dashboard lays this
+  # panel out around it: the label sits to the right of the button and the
+  # reading below it. A 2 x 2 span is the smallest that stays fully readable
+  # there; a single cell would keep its reading but lose its label.
+  #
+  # The dial is north-up and measured from the pilot position EdgeTX recorded
+  # when the fix was acquired. It is not aircraft heading, which EdgeTX cannot
+  # report.
+  - id: nav
+    type: navigation
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      source: GPS
+      label: Nav
+      presentation: compass
+      accent: cyan
+      warning: 500
+      critical: 900
+  # The flight pack, judged by its worst cell. The bar runs from the critical
+  # voltage to full rather than from zero, and no remaining-capacity
+  # percentage is shown: voltage under load does not support one.
+  - id: pack
+    type: cell-battery
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      source: Cels
+      label: Pack
+      reading: lowest
+      warning: 3.5
+      critical: 3.3
+      accent: cyan
+  # RSSI and link quality are named separately because protocols disagree.
+  # FrSky populates RSSI; ELRS populates 1RSS in dBm alongside RQly as a
+  # percentage. Either source may be absent, and an absent one reads N/A
+  # rather than zero.
+  - id: link
+    type: link-status
+    col: 2
+    row: 1
+    colSpan: 2
+    rowSpan: 1
+    config:
+      rssiSource: RSSI
+      qualitySource: RQly
+      # Stated rather than left to `auto`, because the thresholds below are
+      # percentages. Under `auto` a radio with no link-quality sensor falls
+      # back to RSSI in dBm, where every reading is below 30 and the panel
+      # would have sat permanently critical.
+      reading: quality
+      label: Link
+      barMin: 0
+      barMax: 100
+      qualityWarning: 50
+      qualityCritical: 30
+      extrema: flight
+      accent: green
+  # Timer 1 exactly as EdgeTX configured it. AeroGrid never runs a timer of
+  # its own; it only presents the one the model already owns.
+  - id: flight-clock
+    type: flight-timer
+    col: 0
+    row: 2
+    colSpan: 1
+    rowSpan: 1
+    config:
+      timer: 0
+      accent: green
+      warning: 60
+      critical: 20
+  # Altitude with independently configured maximum and vertical-speed readings.
+  - id: altitude
+    type: metric
+    col: 2
+    row: 2
+    colSpan: 2
+    rowSpan: 1
+    config:
+      metrics:
+        - source: Alt
+          label: ALT
+          rangeMin: 0
+          rangeMax: 400
+          warning: 250
+          critical: 350
+        - source: Alt+
+          label: MAX
+        - source: VSpd
+          label: VS
+      accent: green
+  - id: identity
+    type: model-identity
+    col: 0
+    row: 3
+    colSpan: 1
+    rowSpan: 1
+    config:
+      presentation: auto
+      accent: cyan
+  - id: mode
+    type: flight-mode
+    col: 1
+    row: 2
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: Mode
+      accent: green
+  # The transmitter pack. The estimate below is calibrated for a 2S Li-ion
+  # TX16S; a radio with different cells needs its own range, which is why the
+  # panel ships without one.
+  - id: radio-battery
+    type: tx-battery
+    col: 1
+    row: 3
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: TX
+      packEmpty: 6.6
+      packFull: 8.4
+      warning: 7.0
+      critical: 6.8
+      accent: green
+  # Global variable 1, read only. A flight counter kept in a global variable is
+  # displayed exactly the same way; AeroGrid never increments one.
+  - id: rates
+    type: metric
+    col: 2
+    row: 3
+    colSpan: 1
+    rowSpan: 1
+    config:
+      metrics:
+        - source: gvar1
+          label: Rates
+          precision: 1
+          rangeMin: -100
+          rangeMax: 100
+      visual: bar
+      accent: cyan
+  # Trim source names are configurable; the panel assigns its three positions
+  # to aileron, elevator, and rudder.
+  - id: trims
+    type: trim-panel
+    col: 3
+    row: 3
+    colSpan: 1
+    rowSpan: 1
+    config:
+      scale: auto
+      readout: percent
+      accent: cyan
+
+# One dashboard, one flight. The extrema service subscribes to this once and
+# every panel that tracks a flight extreme observes the same session,
+# which is why the switch is named here rather than in each of them.
+session:
+  armSource: sf

@@ -13,7 +13,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: altitude
     type: placeholder
     col: 0
@@ -34,10 +34,10 @@ components:
 
     local normalized, errors = layout.validate(document, grid)
     assertions.assertEqual(#errors, 0)
-    assertions.assertEqual(#normalized.components, 2)
-    assertions.assertEqual(normalized.components[1].config.title, "Altitude #1")
-    assertions.assertEqual(normalized.components[1].config.warning, 120.5)
-    assertions.assertEqual(normalized.components[1].config.enabled, true)
+    assertions.assertEqual(#normalized.panels, 2)
+    assertions.assertEqual(normalized.panels[1].config.title, "Altitude #1")
+    assertions.assertEqual(normalized.panels[1].config.warning, 120.5)
+    assertions.assertEqual(normalized.panels[1].config.enabled, true)
 end
 
 local function testOverlapIsRejected()
@@ -46,7 +46,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: first
     type: placeholder
     col: 0
@@ -62,7 +62,7 @@ components:
 ]]))
 
     local normalized, errors = layout.validate(document, grid)
-    assertions.assertEqual(#normalized.components, 1)
+    assertions.assertEqual(#normalized.panels, 1)
     assertions.assertEqual(#errors, 1)
     assert(string.match(errors[1], "overlaps first"), errors[1])
 end

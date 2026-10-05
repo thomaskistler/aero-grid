@@ -4,7 +4,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: upper-case
     type: service-probe
     col: 0

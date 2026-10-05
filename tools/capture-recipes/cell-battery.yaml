@@ -1,5 +1,5 @@
 version: 1
-component: cell-battery
+panel: cell-battery
 theme: modern
 brighten_supporting_text: true
 border:

@@ -1,6 +1,6 @@
 version: 1
 
-# Span gallery, 2 x 2: four components on identical square panels, chosen
+# Span gallery, 2 x 2: four panels on identical square panels, chosen
 # because at this one span their dominant readings land four sizes apart.
 #
 # Set the widget's Dashboard ID to `span2x2` to load this screen on any model.
@@ -14,7 +14,7 @@ version: 1
 #
 # Four panels of exactly the same size, one dashboard, and the dominant reading
 # on the smallest is a quarter the height of the dominant reading on the
-# largest. Each is individually defensible: every component fits its value to
+# largest. Each is individually defensible: every panel fits its value to
 # the widest string it could ever print, and "888.88km" is simply longer than
 # "4.44V". Whether the result reads as one instrument is the question, and it
 # is a question for a screen rather than for a measurement.
@@ -31,7 +31,7 @@ grid:
   columns: 4
   rows: 4
 
-components:
+panels:
   - id: g-cells
     type: cell-battery
     col: 0
@@ -49,12 +49,13 @@ components:
     colSpan: 2
     rowSpan: 2
     config:
-      label: Metric
-      source: RxBt
-      unit: V
-      rangeMin: 6.0
-      rangeMax: 8.4
-      precision: 1
+      metrics:
+        - source: RxBt
+          label: Metric
+          unit: V
+          precision: 1
+          rangeMin: 6.0
+          rangeMax: 8.4
 
   - id: g-mode
     type: flight-mode

@@ -8,7 +8,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: pack
     type: cell-battery
     col: 0

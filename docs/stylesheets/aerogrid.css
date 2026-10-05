@@ -1,0 +1,201 @@
+/* AeroGrid Modern palette from lib/theme.lua. */
+:root,
+[data-bs-theme="dark"] {
+  color-scheme: dark;
+  --ag-canvas: #0a0c0e;
+  --ag-surface: #212830;
+  --ag-surface-raised: #2e3841;
+  --ag-border: #3a434b;
+  --ag-text: #f4f6f7;
+  --ag-muted: #a7b0b6;
+  --ag-cyan: #70d6f3;
+  --ag-green: #55d990;
+  --ag-amber: #f2b84b;
+  --ag-critical: #f05252;
+  --bs-body-bg: var(--ag-canvas);
+  --bs-body-bg-rgb: 10, 12, 14;
+  --bs-body-color: var(--ag-text);
+  --bs-body-color-rgb: 244, 246, 247;
+  --bs-emphasis-color: var(--ag-text);
+  --bs-secondary-color: var(--ag-muted);
+  --bs-secondary-bg: var(--ag-surface);
+  --bs-tertiary-bg: var(--ag-surface-raised);
+  --bs-border-color: var(--ag-border);
+  --bs-link-color: var(--ag-cyan);
+  --bs-link-color-rgb: 112, 214, 243;
+  --bs-link-hover-color: var(--ag-green);
+  --bs-link-hover-color-rgb: 85, 217, 144;
+  --bs-code-color: var(--ag-cyan);
+  --bs-primary-text-emphasis: var(--ag-cyan);
+  --bs-primary-bg-subtle: var(--ag-surface);
+  --bs-primary-border-subtle: var(--ag-cyan);
+  --bs-info-text-emphasis: var(--ag-cyan);
+  --bs-info-bg-subtle: var(--ag-surface);
+  --bs-info-border-subtle: var(--ag-cyan);
+  --bs-warning-text-emphasis: var(--ag-amber);
+  --bs-warning-bg-subtle: var(--ag-surface);
+  --bs-warning-border-subtle: var(--ag-amber);
+  --bs-danger-text-emphasis: var(--ag-critical);
+  --bs-danger-bg-subtle: var(--ag-surface);
+  --bs-danger-border-subtle: var(--ag-critical);
+  --bs-secondary-bg-subtle: var(--ag-surface);
+  --bs-secondary-border-subtle: var(--ag-border);
+}
+
+body::before {
+  background: var(--ag-canvas);
+}
+
+.navbar.bg-dark {
+  background: var(--ag-surface) !important;
+  border-bottom: 2px solid var(--ag-cyan);
+  box-shadow: none;
+}
+
+.navbar {
+  --bs-navbar-color: var(--ag-muted);
+  --bs-navbar-hover-color: var(--ag-cyan);
+  --bs-navbar-active-color: var(--ag-text);
+  --bs-navbar-brand-color: var(--ag-text);
+  --bs-navbar-brand-hover-color: var(--ag-cyan);
+}
+
+.navbar .nav-link.active {
+  color: var(--ag-cyan);
+}
+
+.bs-sidebar.card {
+  --bs-card-bg: var(--ag-surface);
+  --bs-card-border-color: var(--ag-border);
+  border-left: 3px solid var(--ag-cyan);
+  border-radius: 8px;
+}
+
+.bs-sidebar .nav > li > a {
+  color: var(--ag-muted);
+}
+
+.bs-sidebar .nav > li > a.active,
+.bs-sidebar .nav > li > a:hover,
+.bs-sidebar .nav > li > a:focus {
+  color: var(--ag-cyan);
+}
+
+.dropdown-menu {
+  --bs-dropdown-bg: var(--ag-surface);
+  --bs-dropdown-color: var(--ag-text);
+  --bs-dropdown-link-color: var(--ag-text);
+  --bs-dropdown-link-hover-color: var(--ag-cyan);
+  --bs-dropdown-link-hover-bg: var(--ag-surface-raised);
+  --bs-dropdown-link-active-color: var(--ag-canvas);
+  --bs-dropdown-link-active-bg: var(--ag-cyan);
+  --bs-dropdown-border-color: var(--ag-border);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: var(--ag-text);
+  font-weight: 600;
+}
+
+pre,
+code,
+.hljs {
+  background: var(--ag-surface);
+  color: var(--ag-text);
+}
+
+pre {
+  border-color: var(--ag-border);
+  border-radius: 8px;
+}
+
+:not(pre) > code {
+  color: var(--ag-cyan);
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-attr {
+  color: var(--ag-cyan);
+}
+
+.hljs-string,
+.hljs-literal {
+  color: var(--ag-green);
+}
+
+.hljs-number {
+  color: var(--ag-amber);
+}
+
+.hljs-comment {
+  color: var(--ag-muted);
+}
+
+.table {
+  --bs-table-bg: var(--ag-surface);
+  --bs-table-color: var(--ag-text);
+  --bs-table-border-color: var(--ag-border);
+  --bs-table-striped-bg: var(--ag-surface-raised);
+  --bs-table-striped-color: var(--ag-text);
+  --bs-table-hover-bg: var(--ag-surface-raised);
+  --bs-table-hover-color: var(--ag-text);
+}
+
+.table thead {
+  --bs-table-bg: var(--ag-surface-raised);
+}
+
+.col-md-9 img {
+  background: var(--ag-canvas);
+  border-color: var(--ag-border);
+  border-radius: 8px;
+}
+
+.modal-content {
+  --bs-modal-bg: var(--ag-surface);
+  --bs-modal-color: var(--ag-text);
+  --bs-modal-border-color: var(--ag-border);
+}
+
+.form-control {
+  background: var(--ag-canvas);
+  color: var(--ag-text);
+  border-color: var(--ag-border);
+}
+
+.form-control:focus {
+  background: var(--ag-canvas);
+  color: var(--ag-text);
+  border-color: var(--ag-cyan);
+  box-shadow: 0 0 0 0.2rem rgb(112 214 243 / 20%);
+}
+
+blockquote {
+  color: var(--ag-muted);
+  border-left-color: var(--ag-cyan);
+}
+
+hr {
+  border-color: var(--ag-border);
+}
+
+footer {
+  color: var(--ag-muted);
+}
+
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--ag-cyan);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: var(--ag-cyan);
+  color: var(--ag-canvas);
+}

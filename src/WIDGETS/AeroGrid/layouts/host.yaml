@@ -16,7 +16,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   # Which file, chosen by which of the three candidate names, and what is
   # actually executing. The last of those is the one that ends a stale
   # bytecode session in a minute rather than an evening.
@@ -45,16 +45,16 @@ components:
       label: THEME
       accent: green
 
-  # Every placement, and which of them failed. A failed component is otherwise
+  # Every placement, and which of them failed. A failed panel is otherwise
   # an error banner that may have scrolled.
-  - id: components
+  - id: panels
     type: host-diagnostics
     col: 0
     row: 2
     colSpan: 2
     rowSpan: 2
     config:
-      section: components
+      section: panels
       label: PANELS
       accent: amber
 

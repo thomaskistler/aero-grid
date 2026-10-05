@@ -4,7 +4,7 @@
 
 Start from the current `main` branch in your own branch or fork. Keep changes
 focused, follow existing naming and formatting, and update the relevant guide or
-component reference when behavior changes.
+panel reference when behavior changes.
 
 Use the [build instructions](build.md) to set up development. Runtime code lives
 in `src/WIDGETS/AeroGrid/`; pure module tests live in `tests/unit/`, and mocked
@@ -44,12 +44,12 @@ Do not commit generated `.luac` files, logs, screenshots, virtual environments,
 or mutable `build/sdcard/` state. Preserve personal model configuration outside
 the fixture.
 
-## Adding a component
+## Adding a panel
 
 Read the [architecture guide](architecture.md) and the
-[component module contract](https://github.com/thomaskistler/aero-grid/blob/main/plans/aerogrid-spec.md)
+[panel module contract](https://github.com/thomaskistler/aero-grid/blob/main/plans/aerogrid-spec.md)
 before adding a panel. Declare supported spans and typed settings, use shared
 services and primitives, and respect the callback instruction budget.
 
-Include tests and a component reference page, add it to `mkdocs.yml`, and provide
+Include tests and a panel reference page, add it to `mkdocs.yml`, and provide
 a reachable fixture layout when introducing a shipped dashboard.

@@ -18,7 +18,7 @@ LUACHECK ?= $(shell command -v luacheck 2>/dev/null)
 LUA_LS ?= $(shell command -v lua-language-server 2>/dev/null)
 STYLUA ?= $(shell command -v stylua 2>/dev/null)
 
-.PHONY: help setup test check build mocks clean lint format docs docs-serve capture-setup
+.PHONY: help setup test check build mocks clean lint format docs docs-serve capture-setup release-package
 
 help:
 	@printf '%s\n' \
@@ -33,9 +33,13 @@ help:
 	  'make docs    Build and validate the documentation website' \
 	  'make docs-serve Preview documentation at http://127.0.0.1:8000' \
 	  'make capture-setup Install optional screenshot dependencies' \
+	  'make release-package Build the source-only installation ZIP and checksum' \
 	  'make clean   Remove generated build output'
 
 setup: $(VENV_STAMP)
+
+release-package:
+	@"$(PYTHON)" tools/package-release.py --output "$(BUILD_DIR)/release"
 
 capture-setup: $(CAPTURE_VENV_STAMP)
 

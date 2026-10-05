@@ -1,5 +1,5 @@
 version: 1
-component: tx-battery
+panel: tx-battery
 theme: modern
 brighten_supporting_text: true
 border:

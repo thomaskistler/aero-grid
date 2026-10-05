@@ -7,7 +7,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: pack
     type: metric
     col: 0
@@ -15,15 +15,16 @@ components:
     colSpan: 2
     rowSpan: 2
     config:
-      label: Pack
-      source: RxBt
-      unit: V
+      metrics:
+        - source: RxBt
+          label: Pack
+          unit: V
+          precision: 1
+          rangeMin: 18
+          rangeMax: 25.2
+          warning: 21.0
+          critical: 19.8
       accent: cyan
-      rangeMin: 18
-      rangeMax: 25.2
-      warning: 21.0
-      critical: 19.8
-      precision: 1
       visual: bar
 ]]
 
@@ -32,7 +33,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: first
     type: placeholder
     col: 0
@@ -52,7 +53,7 @@ version: 1
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: pack
     type: metric
     col: 0

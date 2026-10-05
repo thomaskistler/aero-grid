@@ -9,7 +9,7 @@ fixture.reset()
 local context = fixture.createLoaded(nil, { DashID = "review-navigation", Theme = "modern" })
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-assertions.assertEqual(#context.components, 6)
+assertions.assertEqual(#context.panels, 6)
 fixture.assertNoOverlap(context)
 for _, id in ipairs({ "detailed", "compass", "compact", "wide-distance", "bearing" }) do
     local instance = fixture.instanceOf(context, id)
@@ -67,7 +67,7 @@ for bearing = 0, 359 do
         end
     end
 end
-local navigation = fixture.module("components/navigation.lua")
+local navigation = fixture.module("panels/navigation.lua")
 local theme = fixture.module("lib/theme.lua")
 assertions.assertEqual(navigation.bearingText({ bearing = 29 }, theme, TINSIZE, 20, "quadrant"), "NE")
 for _, rect in ipairs({ { w = 238, h = 134 }, { w = 238, h = 110 }, { w = 359, h = 134 } }) do
@@ -97,7 +97,7 @@ fixture.reset()
 
 for _, showBearing in ipairs({ false, true }) do
     for _, showCoordinates in ipairs({ false, true }) do
-        local navigation = fixture.module("components/navigation.lua")
+        local navigation = fixture.module("panels/navigation.lua")
         local theme = fixture.module("lib/theme.lua")
         local settings = { presentation = "compass", showBearing = showBearing, showCoordinates = showCoordinates }
         local layout = navigation.presentationFor(settings.presentation)
@@ -118,7 +118,7 @@ for _, showBearing in ipairs({ false, true }) do
         if showCoordinates and not showBearing then
             assertions.assertEqual(area.coordinatesY, area.detailY, "coordinate-only footer must use its first row")
         end
-        local host = fixture.module("lib/component_host.lua")
+        local host = fixture.module("lib/panel_host.lua")
         local resolved = host.resolveSettings(navigation, settings)
         local instance = navigation.create(
             lvgl.box({ x = 0, y = 0, w = 238, h = 134 }),

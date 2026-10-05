@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 --- Shared LVGL building blocks drawn from host theme tokens.
---- Components compose these instead of styling panels themselves, so the
+--- Panels compose these instead of styling panels themselves, so the
 --- dashboard keeps one coherent visual language.
 
 local primitives = { RUNTIME_API = 1 }
@@ -75,9 +75,9 @@ local function setRound(object, centreX, centreY, changes)
     object:set(changes)
 end
 
---- Decide whether anything a component draws has changed since it last drew.
+--- Decide whether anything a panel draws has changed since it last drew.
 ---
---- Repainting is expensive and a component is refreshed tens of times a
+--- Repainting is expensive and a panel is refreshed tens of times a
 --- second, so every one of them short-circuits. The bug is always the same:
 --- the short-circuit compares a hand-written list of fields, `apply` draws
 --- something that is not on it, and that something then freezes on screen
@@ -85,7 +85,7 @@ end
 --- this catalogue. The first three were fixed one at a time, by adding the
 --- missed field to the list, which is exactly why there was a fourth.
 ---
---- The list is the defect, so this removes the list. A component writes
+--- The list is the defect, so this removes the list. A panel writes
 --- everything it draws into one table, and `apply` is handed that table and
 --- may draw nothing else. The comparison is then over the same values the
 --- panel is painted from, by construction rather than by remembering: a field
@@ -94,9 +94,9 @@ end
 --- nothing worse.
 ---
 --- Two tables are kept and swapped rather than allocated, because this runs on
---- every refresh of every component and the host pays it inside one
+--- every refresh of every panel and the host pays it inside one
 --- instruction budget.
----@param context table Component context; owns `rendered` and `scratch`.
+---@param context table Panel context; owns `rendered` and `scratch`.
 ---@param render fun(context: table, out: table)
 ---@return boolean changed
 ---@return table drawn Values to paint from.
@@ -107,7 +107,7 @@ function primitives.changed(context, render)
         context.scratch = out
     end
 
-    -- Cleared rather than replaced, so a key the component stops writing cannot
+    -- Cleared rather than replaced, so a key the panel stops writing cannot
     -- linger and compare equal forever.
     for key in pairs(out) do
         out[key] = nil
@@ -212,7 +212,7 @@ end
 
 --- Set a heading's text, fitted to the column it has.
 ---
---- Components that rewrite their own heading at runtime -- for example, a timer
+--- Panels that rewrite their own heading at runtime -- for example, a timer
 --- taking its name from the model --
 --- have to go through this rather than writing the label directly, or they
 --- reintroduce exactly the overflow `header` now prevents.
@@ -280,7 +280,7 @@ end
 --- Write a badge's text and colour, and place it flush with its column.
 ---
 --- **The position depends on the text, so the two are written together.**
---- Ten components carried the same line -- `badge:set{text =, color =}` --
+--- Ten panels carried the same line -- `badge:set{text =, color =}` --
 --- and none of them placed it, because placement was `theme.frame`'s job and
 --- the frame only ever knew the box. A position derived from a size has to
 --- be recomputed when the size changes, and a badge's size is its word.
@@ -290,7 +290,7 @@ end
 --- measurement and a write. The anchor is the text itself: two words of one
 --- length are not one width, which is the mistake `followUnit` made when it
 --- anchored on a string's length.
----@param context table Component context, which owns the anchor.
+---@param context table Panel context, which owns the anchor.
 ---@param themeBuilder table
 ---@param badge any
 ---@param frame table
@@ -390,7 +390,7 @@ end
 
 --- Show or hide a supporting object, positioning it only when it is visible.
 ---
---- Four components had written this out privately and `trim-panel` had not
+--- Four panels had written this out privately and `trim-panel` had not
 --- written it at all, which is why it was repositioning eight labels it had
 --- just hidden. Moving a hidden object is not merely wasted: it is invisible
 --- work, and invisible work is the one kind the suite cannot see either.
@@ -398,7 +398,7 @@ end
 --- the show or hide entirely, which matters where a panel repeats the pair
 --- per indicator rather than once. Omitting it is always safe: nil reads as
 --- "it may have changed", which is what every caller did before.
----@param object? any LVGL object, or nil when the component never built one.
+---@param object? any LVGL object, or nil when the panel never built one.
 ---@param visible boolean
 ---@param changes? table Geometry to apply when the object is shown.
 ---@param settled? boolean Visibility is unchanged since the last call.
@@ -421,7 +421,7 @@ end
 --- Show or hide a bar, positioning and filling it only when it is visible.
 ---
 --- A bar is two or three LVGL objects that always move together, which the
---- single-object `reconcile` cannot express, so five components wrote the
+--- single-object `reconcile` cannot express, so five panels wrote the
 --- pair out by hand and a sixth wrote a `reconcile` per object and then
 --- forgot the marker. That last one is why this exists rather than a note
 --- asking people to remember: `placeBar` knows a bar may carry a neutral
@@ -461,7 +461,7 @@ end
 primitives.ACCENT_TOP = { start = 180, finish = 270 }
 primitives.ACCENT_BOTTOM = { start = 90, finish = 180 }
 
---- Create a component panel: an elevated fill with a narrow semantic accent.
+--- Create a panel panel: an elevated fill with a narrow semantic accent.
 --- The accent carries state, so it is never purely decorative.
 ---
 --- The accent is not a stripe drawn on the panel. It is the panel: the base
@@ -720,7 +720,7 @@ function primitives.stylePanel(panel, presentation)
         panel.background:set({ color = surface })
     end
 
-    -- A component calls this on every repaint, and a panel's state changes far
+    -- A panel calls this on every repaint, and a panel's state changes far
     -- less often than its reading does, so nothing is touched unless it actually
     -- moved. Three objects carry the accent now rather than one, which made
     -- repainting it unconditionally the largest single cost in a steady frame.
@@ -801,9 +801,9 @@ end
 --- Create the unit label that sits beside a dominant reading.
 ---
 --- Beside rather than beneath, at a smaller font, sharing the number's
---- baseline. Five components printed their unit into the reading string and
+--- baseline. Five panels printed their unit into the reading string and
 --- one drew it on its own row underneath; this is the one shape, and it is
---- here rather than in any of them because the next component to grow a unit
+--- here rather than in any of them because the next panel to grow a unit
 --- should not have to invent it again.
 ---@param parent any
 ---@param theme AeroGridTheme
@@ -860,15 +860,15 @@ end
 
 --- The strings a reading prints in place of a value.
 ---
---- `--` is what every component prints for a value it does not have.
+--- `--` is what every panel prints for a value it does not have.
 --- `link-status` additionally prints `N/A`, for a source the protocol does
 --- not publish at all, which is a different cause and the same absence. Both
 --- are the reading saying there is no number.
 ---
 --- It is a set rather than a comparison so that adding a sentinel is one
---- entry here rather than a condition in six components, and
---- `testReadingsPrintADeclaredSentinel` holds every component's own
---- formatter to producing a member of it. A component that invents a
+--- entry here rather than a condition in six panels, and
+--- `testReadingsPrintADeclaredSentinel` holds every panel's own
+--- formatter to producing a member of it. A panel that invents a
 --- seventh spelling of "no value" fails by name instead of quietly drawing
 --- its unit again.
 primitives.SENTINELS = { ["--"] = true, ["N/A"] = true }
@@ -936,22 +936,22 @@ end
 --- panels refreshing every frame, that was 480 instructions of the steady
 --- frame for no pixel changed.
 ---
---- The anchor lives on the component's own context, which is a plain Lua
+--- The anchor lives on the panel's own context, which is a plain Lua
 --- table. It cannot live on the label: an LVGL object is userdata on a radio
 --- and holds no fields.
 --- The reading's font is passed rather than read off `area`, because the
---- components did not agree on what to call it: five said `value` and
+--- panels did not agree on what to call it: five said `value` and
 --- `metric` said `primary`. Reaching for one of those names put `metric`'s
 --- unit against a nil font, which the fixture measured as SMLSIZE and placed
 --- 38 pixels off the baseline it was supposed to share. They agree on
 --- `value` now, and the font is still passed -- being handed what to draw
 --- with is what made this immune to the disagreement in the first place.
----@param context table The component's own context.
+---@param context table The panel's own context.
 ---@param themeBuilder table
 ---@param area table Regions, for `pad`, `valueY` and `unitFont`.
 ---@param font any The font the reading is drawn in.
 ---@param text string What the reading now says. Always a string: every
---- component's `render` writes `out.text` through `string.format` or a
+--- panel's `render` writes `out.text` through `string.format` or a
 --- literal, so there is nothing here to coerce and a `tostring` per panel per
 --- frame would be the fixture-cost mistake made in the widget.
 function primitives.followUnit(context, themeBuilder, area, font, text)
@@ -963,7 +963,7 @@ function primitives.followUnit(context, themeBuilder, area, font, text)
     -- length are not one width: `--` and `12` are both two characters and
     -- differ by 12 pixels at DBLSIZE, because a dash is a fifth of a line
     -- height and a digit is three sevenths. A length anchor therefore held the
-    -- unit still across exactly the change every telemetry component makes
+    -- unit still across exactly the change every telemetry panel makes
     -- when its sensor goes quiet. Comparing the strings costs no more: Lua
     -- interns short strings, so this is a pointer comparison.
     if text == context.unitAnchor then
@@ -985,7 +985,7 @@ end
 --- number left of the slot it was supposed to sit in, and they compounded:
 --- the width came from `theme.textWidth`, which over-reports digits, and it
 --- was the width of the *widest*
---- string the component can ever print rather than the one on screen. Half
+--- string the panel can ever print rather than the one on screen. Half
 --- of each error went straight into the left edge. On a `2 x 1` transmitter
 --- panel that put the reading at 22% of the panel where the rule asks for
 --- 32%, and on the bar panel beside it at 41% where the rule asks for 51%.
@@ -1009,13 +1009,13 @@ end
 --- voltage changes a few times a minute and a panel refreshes far more
 --- often, so re-measuring on every update would pay for a placement that
 --- almost never moves.
----@param context table The component's own context, for `value` and `unit`.
+---@param context table The panel's own context, for `value` and `unit`.
 ---@param themeBuilder table
 ---@param area table Regions, for `valueCentre`, `valueY` and `unitFont`.
 ---@param font any The font the reading is drawn in.
 ---@param text string What the reading now says.
 function primitives.centreReading(context, themeBuilder, area, font, text)
-    -- A component that does not slot its reading has nothing to centre it on,
+    -- A panel that does not slot its reading has nothing to centre it on,
     -- and says so by leaving `valueCentre` unset rather than by being named
     -- here.
     if area.valueCentre == nil then
@@ -1028,7 +1028,7 @@ function primitives.centreReading(context, themeBuilder, area, font, text)
     -- becoming `1.23 km` widens the group while the digit count holds. An
     -- anchor that watched only the number would have held the group still
     -- across exactly that change -- the ninth instance of the shape whose
-    -- eighth was an anchor keyed on a proxy, in the component converted
+    -- eighth was an anchor keyed on a proxy, in the panel converted
     -- immediately after it was written down.
     -- **What the panel is drawing, not what it expected to draw.** `showUnit`
     -- on the region is a build-time answer, and a unit that arrives later --
@@ -1082,7 +1082,7 @@ function primitives.centreReading(context, themeBuilder, area, font, text)
 
     context.value:set({ x = x, w = math.max(1, span) })
     context.valueX = x
-    -- A component may not have built a unit at all: `metric` creates one only
+    -- A panel may not have built a unit at all: `metric` creates one only
     -- where its layout asks for it, so a panel with no unit reaches here with
     -- nothing to move.
     --
@@ -1116,14 +1116,14 @@ end
 --- The slot centres are a property of the panel, so every row uses them: a
 --- row of one item centres across the whole content box exactly as a lone
 --- reading does, and a row of two takes the same two centres the reading and
---- its visual use. The component decides which centre each item gets; this
---- owns the measuring, the anchoring and the write, so nine components can
+--- its visual use. The panel decides which centre each item gets; this
+--- owns the measuring, the anchoring and the write, so nine panels can
 --- adopt the rule without nine copies of it.
 ---
 --- Anchored on the text itself. A supporting row changes as often as a
 --- reading does -- a bearing every time the aircraft turns -- so measuring
 --- on every update would pay for a placement that mostly does not move.
----@param context table The component's own context, for the anchor.
+---@param context table The panel's own context, for the anchor.
 ---@param key string Where to keep this label's anchor on the context.
 ---@param themeBuilder table
 ---@param label any
@@ -1159,7 +1159,7 @@ end
 --- span granted a unit it had not had would show `-- V` again the moment the
 --- zone changed -- the rule holding in one path and not the other, which is
 --- the shape this project keeps finding.
----@param context table The component's own context, for the drawn flag.
+---@param context table The panel's own context, for the drawn flag.
 ---@param unit? any
 ---@param visible boolean Whether the panel is permitted a unit here.
 ---@param themeBuilder table
@@ -1445,7 +1445,7 @@ end
 
 --- Work out the parts of an upright battery of a given size.
 ---
---- Separate from building it so a component can ask what a glyph would occupy
+--- Separate from building it so a panel can ask what a glyph would occupy
 --- before deciding whether to have one, and so the arithmetic is testable
 --- without an LVGL object anywhere near it.
 ---@param x integer
@@ -2063,7 +2063,7 @@ end
 --- Create an image loaded from an SD-card path.
 ---
 --- EdgeTX's `lvgl.image` wraps `StaticImage`, which clears its source when the
---- file cannot be decoded and reports nothing back to Lua. A component must
+--- file cannot be decoded and reports nothing back to Lua. A panel must
 --- therefore decide on a fallback before creating one, rather than after.
 ---@param parent any
 ---@param options table

@@ -39,7 +39,7 @@ PALETTE = {k: rgb(G.PALETTE[k]) for k in G.PALETTE.keys()}
 FONTS = {k: (int(G.FONTS[k].height), int(G.FONTS[k].ascent)) for k in G.FONTS.keys()}
 
 # Panel padding, from theme.spacing. Read rather than assumed: it is the left
-# inset every component's content starts at.
+# inset every panel's content starts at.
 PAD = 8
 
 
@@ -78,7 +78,7 @@ class Obj:
 def classify(objects, panel_w, panel_h):
     """Name each object's part in the arrangement.
 
-    Derived from what the objects are rather than from a list of component
+    Derived from what the objects are rather than from a list of panel
     internals: the heading is the first small label on the header row, the
     badge is the one in the reserved right-hand column, the reading is the
     label in the largest font, the unit is the only label with no width
@@ -215,7 +215,7 @@ def scaled_width(textW, from_font, to_font):
 def fit_into(reading, widest_at, width):
     """The largest ladder font whose widest reading and unit fit `width`.
 
-    Sized from the **widest** string the component can ever print, not from
+    Sized from the **widest** string the panel can ever print, not from
     what it happens to say now, because that is what the dashboard's own
     fitter does and it is the only question worth asking: a `tx-battery`
     reading `7.9` must still hold `88.8` without resizing under the pilot.
@@ -279,7 +279,7 @@ def place_unit(reading, unit):
 def slot_margin(flowed, pad, content, widest_at, bands=None):
     """Pixels between the reading's slot and the secondary's, at the widest.
 
-    Measured from the **widest** string the component can print, at the font
+    Measured from the **widest** string the panel can print, at the font
     it is actually drawn in, because the question is whether the two can ever
     meet rather than whether they meet today. A negative answer is a
     collision. `None` means the panel has no secondary element and the
@@ -438,7 +438,7 @@ def clamp_to_panel(y, obj, panel_h):
     The alternative -- falling back to the older stacking below a threshold --
     was rejected deliberately. **Two layout rules with a size threshold
     between them is a worse thing to own than one rule that bends at the
-    bottom of its range**: every component, every span and every future
+    bottom of its range**: every panel, every span and every future
     addition then has to be reasoned about twice, once on each side of a
     line whose position is itself arbitrary.
     """
@@ -489,7 +489,7 @@ def centre_in_band(band, height):
 #:
 #: That guarantee is what tightening spends. Two centres 40% apart do not own
 #: disjoint regions, so a wide reading and a wide secondary can meet in the
-#: middle. Every case is checked against the widest string each component can
+#: middle. Every case is checked against the widest string each panel can
 #: print, and the margins are in the page.
 SLOT_STRICT = (0.25, 0.75)
 SLOT_TIGHT = (0.30, 0.70)
@@ -671,7 +671,7 @@ def group_rows(items):
 
     Grouped by their drawn `y` rather than by any declared structure,
     because the dump is geometry: what makes two labels a row is that the
-    component put them on the same line.
+    panel put them on the same line.
     """
     byline = {}
     for o in items:
@@ -704,7 +704,7 @@ def row_margin(flowed, pad, content):
     """The tightest clearance between two items sharing a supporting row.
 
     `None` where no row holds two, so the question does not arise. Measured
-    at the strings the component is drawn with: unlike the reading, the
+    at the strings the panel is drawn with: unlike the reading, the
     geometry dump carries no widest form for a supporting label, and the
     page says so rather than implying a guarantee it has not checked.
     """
@@ -725,7 +725,7 @@ def arrange(objects, panel_w, panel_h, pad, content, widest_at=None,
     two elements cannot meet. Where they would, the panel falls back to
     strict halves, which cannot collide by construction.
 
-    **The fallback is decided from the widest string the component can ever
+    **The fallback is decided from the widest string the panel can ever
     print, not from the value on screen, and that is the whole point of
     writing this down.** Deciding it from the current reading would make the
     arrangement a function of the data: a voltage crossing from `9.9` to
@@ -736,7 +736,7 @@ def arrange(objects, panel_w, panel_h, pad, content, widest_at=None,
     Asking the widest form instead fixes the arrangement once, at build. A
     panel with room to spare today keeps the layout it will need at its
     widest, and nothing it can ever display will rearrange it. So the
-    fallback is a property of the component and its span, not of the moment,
+    fallback is a property of the panel and its span, not of the moment,
     and `navigation` at `2x2` is a strict-halves panel permanently: it is
     not that it sometimes overlaps, it is that its content does not fit the
     tighter arrangement.
@@ -1054,7 +1054,7 @@ findings = []
 #: descender -- every unit is `V`, `A`, `m` or `dBm` and every heading is
 #: upper case -- so the cost of choosing a font by ink cannot be shown from
 #: real geometry. It is shown from an invented one instead, and labelled as
-#: invented wherever it appears, because a rule has to survive a component
+#: invented wherever it appears, because a rule has to survive a panel
 #: nobody has written yet.
 CONSTRUCTED_UNIT = "mph"
 
@@ -1162,7 +1162,7 @@ def describe(entry):
 
 def collide_audit():
     """Every label overlap and every label off the panel, in every column."""
-    lines = ['<table><thead><tr><th>zone</th><th>component</th><th>span</th>'
+    lines = ['<table><thead><tr><th>zone</th><th>panel</th><th>span</th>'
              '<th>column</th><th>what collides</th></tr></thead><tbody>']
     clean = True
     for zone, name, span, col, hits in collide_log:
@@ -1215,7 +1215,7 @@ for case in cases:
     bounds = visual_bounds(objects)
     spans = bounds is not None and (bounds[2] - bounds[0]) >= content - 2
 
-    # Widths of the widest reading the component can print, at the font it
+    # Widths of the widest reading the panel can print, at the font it
     # is currently drawn in, so the slot question is asked of the string the
     # fitter actually sized for.
     widest_at = {k: (int(case.widestAt[k][1]), int(case.widestAt[k][2]))
@@ -1226,7 +1226,7 @@ for case in cases:
         f'<div class="frame">{svg_of(objects, w, h, hole)}</div>'
         f'<p class="cap">as shipped</p></figure>'
     ]
-    collide_log.append((case.zone, case.component, case.span, "today",
+    collide_log.append((case.zone, case.panel, case.span, "today",
                         collisions(objects, h)))
 
     variants = {}
@@ -1245,7 +1245,7 @@ for case in cases:
         flowed, steps, fits, bands, used, margin, rmargin = variants[rule]
         fill = band_fill(flowed, bands)
         hits = collisions(flowed, h)
-        collide_log.append((case.zone, case.component, case.span, label, hits))
+        collide_log.append((case.zone, case.panel, case.span, label, hits))
         notes = []
         if used == SLOT_STRICT and margin is not None:
             notes.append('<span class="fb">strict-halves fallback</span>')
@@ -1270,7 +1270,7 @@ for case in cases:
     after = next((o for o in flowed if o.role == "reading"), None)
     if before is not None and after is not None:
         ladder_rows.append((
-            case.zone, case.component, case.span,
+            case.zone, case.panel, case.span,
             before.font, after.font,
             LADDER.index(after.font) - LADDER.index(before.font)
             if before.font in LADDER and after.font in LADDER else 0,
@@ -1288,24 +1288,24 @@ for case in cases:
         strict_margin = slot_margin(s_out, pad, content, widest_at, s_bands)
         strict_rmargin = row_margin(s_out, pad, content)
         if margin is not None:
-            collide_rows.append((case.zone, case.component, case.span,
+            collide_rows.append((case.zone, case.panel, case.span,
                                  margin, strict_margin))
-        fallback_rows.append((case.zone, case.component, case.span,
+        fallback_rows.append((case.zone, case.panel, case.span,
                               used == SLOT_STRICT, margin, strict_margin,
                               rmargin, strict_rmargin))
-    halves_steps.append((case.zone, case.component, case.span, steps, fits))
-    case_index[(case.zone, case.component, case.span)] = (
+    halves_steps.append((case.zone, case.panel, case.span, steps, fits))
+    case_index[(case.zone, case.panel, case.span)] = (
         objects, w, h, pad, content, int(case.compact), int(case.bottom),
         widest_at, int(case.top), (int(case.bodyY), int(case.bodyH)))
 
     kind = "none"
     if bounds is not None:
         kind = "full-width bar" if spans else "compact"
-    slack_rows.append((case.zone, case.component, case.span,
+    slack_rows.append((case.zone, case.panel, case.span,
                        hole[0][2] if hole else 0, kind))
 
     by_zone[case.zone].append(
-        f'<section><h3>{html.escape(case.component)} '
+        f'<section><h3>{html.escape(case.panel)} '
         f'<span class="span">{html.escape(case.span)}</span> '
         f'<span class="px">{w} &times; {h} px</span></h3>'
         f'<div class="row">{"".join(cells)}</div></section>'
@@ -1328,7 +1328,7 @@ def descender_case(key=("widget", "metric-radial", "2x1")):
 
     The panel below is therefore real in every respect except its unit
     string, which is replaced with `mph`. It is labelled as constructed
-    wherever it appears. The rule is being decided for components nobody has
+    wherever it appears. The rule is being decided for panels nobody has
     written yet, and `mph` is not an exotic unit to expect one of them to
     print.
     """
@@ -1401,7 +1401,7 @@ def optical_pair(key=("widget", "navigation", "4x2")):
 
 
 def ladder_table():
-    lines = ['<table><thead><tr><th>component</th><th>span</th>'
+    lines = ['<table><thead><tr><th>panel</th><th>span</th>'
              '<th>body band</th><th>today</th><th>banded</th><th>change</th>'
              '</tr></thead><tbody>']
     for zone, name, span, old, new, delta, band_h in ladder_rows:
@@ -1430,7 +1430,7 @@ def ink_table():
             continue
         seen.setdefault((name, span), (old, new, band_h))
 
-    lines = ['<table><thead><tr><th>component</th><th>span</th>'
+    lines = ['<table><thead><tr><th>panel</th><th>span</th>'
              '<th>body band</th><th>today</th>'
              '<th>banded by line height</th><th>ink fills</th>'
              '<th>banded by ink</th><th>ink fills</th></tr></thead><tbody>']
@@ -1450,7 +1450,7 @@ def ink_table():
 
 
 def collide_table():
-    lines = ['<table><thead><tr><th>component</th><th>span</th>'
+    lines = ['<table><thead><tr><th>panel</th><th>span</th>'
              '<th>strict halves</th><th>tightened</th><th></th>'
              '</tr></thead><tbody>']
     for zone, name, span, tight, strict in collide_rows:
@@ -1472,7 +1472,7 @@ def collide_table():
 
 
 def slack_table():
-    lines = ['<table><thead><tr><th>zone</th><th>component</th><th>span</th>'
+    lines = ['<table><thead><tr><th>zone</th><th>panel</th><th>span</th>'
              '<th>slack</th><th>visual</th></tr></thead><tbody>']
     for zone, name, span, slack, kind in slack_rows:
         mark = ' class="has-slack"' if slack else ''
@@ -1527,7 +1527,7 @@ def label_band_case(key=("widget", "link-status", "1x1")):
 
 def fallback_table():
     """Which panels took the strict-halves fallback, and what forced it."""
-    lines = ['<table><thead><tr><th>component</th><th>span</th>'
+    lines = ['<table><thead><tr><th>panel</th><th>span</th>'
              '<th>body, tightened</th><th>rows, tightened</th>'
              '<th>body, strict</th><th>rows, strict</th>'
              '<th>arrangement</th><th>forced by</th></tr></thead><tbody>']
@@ -1627,7 +1627,7 @@ for _z, _n, _s, _old, _new, _d, _bh in ladder_rows:
     if ink_font(_bh) != band_font(_bh):
         ink_moved_cases += 1
 
-# Supporting rows, at the strings the components are drawn with.
+# Supporting rows, at the strings the panels are drawn with.
 _rw = [r for r in fallback_rows if r[0] == "widget" and r[6] is not None]
 row_total = len(_rw)
 row_worst = min((r[6] for r in _rw), default=0)
@@ -1643,7 +1643,7 @@ row_worst_chars = int(row_worst / _per_char) if _per_char else 0
 # would leave it. Digits have none; units and labels do.
 #
 # **The bands come from the generator's own enumeration, not from the cases
-# on this page.** They used to be the distinct bands among the six components
+# on this page.** They used to be the distinct bands among the six panels
 # rendered here, at four spans, in one zone, all of them placed in the grid's
 # top left cell -- which is 24 panels of the 272 the schema permits, and the
 # one cell EdgeTX covers with its menu button. That set was missing four of
@@ -1714,7 +1714,7 @@ for case in cases:
     moved = reflow(objs, cw, ch, cpad, ccontent, "centre")
     cread = next((o for o in moved if o.role == "reading"), None)
     if head and cread:
-        offsets.append((cread.x - head.x, f"{case.component} {case.span}", cw))
+        offsets.append((cread.x - head.x, f"{case.panel} {case.span}", cw))
 worst_offset, worst_offset_case, worst_offset_w = max(offsets, default=(0, "-", 1))
 worst_offset_pct = round(worst_offset * 100 / worst_offset_w)
 
@@ -1739,7 +1739,7 @@ for case in cases:
         body=(int(case.bodyY), int(case.bodyH)))
     fit_total += 1
     fit_ok += 1 if ok else 0
-    if f"{case.component} {case.span}" == worst_offset_case:
+    if f"{case.panel} {case.span}" == worst_offset_case:
         head = next((o for o in objs if o.role == "heading"), None)
         hr = next((o for o in moved if o.role == "reading"), None)
         if head and hr:
@@ -1844,7 +1844,7 @@ transformations applied in <code>tools/flow-render.py</code> to that same
 geometry, kept so the page still shows the comparison the rule was chosen
 from. <strong>Corrected: this said &ldquo;nothing in the widget implements
 any of this&rdquo;.</strong> The widget implements all of it &mdash; every
-component that draws a reading takes its font through the shared ladder, and
+panel that draws a reading takes its font through the shared ladder, and
 the section below this one already said the questions had been answered. Two
 claims on one page, contradicting each other, and the stale one read as the
 authoritative one because it was the alarming one.</div>
@@ -1920,7 +1920,7 @@ have overlapping territory, and only the actual widths keep them separate.
 Where they would meet, the panel falls back to strict halves.</p>
 
 <div class="real"><strong>The fallback is chosen at build, from the widest
-string the component can ever print &mdash; not from the value on screen.
+string the panel can ever print &mdash; not from the value on screen.
 This is the part that matters and the part most likely to be reinvented
 wrongly.</strong>
 <p>Deciding it from the current reading would make the arrangement a
@@ -1932,14 +1932,14 @@ switch.</p>
 <p>Asking the widest form instead fixes the arrangement once. A panel with
 room to spare today keeps the layout it will need at its widest, and nothing
 it can ever display rearranges it. So the fallback is a property of the
-component and its span rather than of the moment:
+panel and its span rather than of the moment:
 <strong>{fb_list or "no panel"}</strong> {"is" if len(fb_taken) == 1 else "are"}
 {"a" if len(fb_taken) == 1 else ""} strict-halves panel{"" if len(fb_taken) == 1 else "s"}
 permanently. It is not that they sometimes overlap; it is that their content
 does not fit the tighter arrangement.</p></div>
 
 <p class="intro">Measured against the <strong>widest</strong> string each
-component can print, at the font it is drawn in. {len(fb_taken)} of
+panel can print, at the font it is drawn in. {len(fb_taken)} of
 {fb_total} panels take the fallback, and they are marked in the mocks:</p>
 
 {fallback_table}
@@ -1951,7 +1951,7 @@ That is not a failure of either: <code>888.88km</code> needs 60&nbsp;px, half
 that panel is 48, and the reading is already at <code>SMLSIZE</code>, the
 bottom of the reading ladder. Strict halves' guarantee assumes each element
 fits its half, and here one does not.
-<p>It resolves itself on a radio. The component already drops its dial
+<p>It resolves itself on a radio. The panel already drops its dial
 rather than let a distance clip &mdash; a distance's unit changes with range,
 so it cannot be shortened. With the dial gone the panel has one element, and
 a one-element panel does not split. The overlap is an artefact of forcing
@@ -2000,7 +2000,7 @@ granularity blocking the metric. 36&nbsp;px is not in the table above. 51 is,
 and there the two rules do still agree, so half of the old argument survives
 as a fact about one band rather than as a verdict on the rule.
 <p><strong>What was wrong was the case set, not the arithmetic.</strong> The
-bands were taken from the panels rendered on this page: six components, four
+bands were taken from the panels rendered on this page: six panels, four
 spans, one zone, every one of them in the grid's top left cell. The walk
 above is the whole schema, and it is checked against every panel the real
 host built here.</p></div>
@@ -2080,9 +2080,9 @@ clearance anywhere is <strong>{row_worst}&nbsp;px</strong>, on
 {row_total} rows; {row_forced} rows force a fallback.</p>
 
 <div class="warn"><strong>That number is measured at the strings the
-components are drawn with, and not at their widest &mdash; state it plainly
+panels are drawn with, and not at their widest &mdash; state it plainly
 rather than implying a guarantee.</strong> The geometry dump carries a
-widest form for the <em>reading</em>, because the component's own fitter
+widest form for the <em>reading</em>, because the panel's own fitter
 needs one, and carries nothing equivalent for a supporting label. So the
 body clearances in the table above are worst-case and the row clearances are
 not.
@@ -2091,7 +2091,7 @@ not.
 under the same width model the rest of the page uses, on the tightest row in
 the catalogue. <code>LQ 88%</code> becoming <code>LQ 100%</code> spends one
 of them. That is comfortable, but it is headroom rather than a proof, and
-making it a proof means the components declaring their widest supporting
+making it a proof means the panels declaring their widest supporting
 strings the way they already declare their widest reading.</p></div>
 
 <h3 class="plain">Per panel or per row &mdash; and which is rendered</h3>
@@ -2123,7 +2123,7 @@ edge:</p>
 stacking below a size &mdash; was rejected, and the reason is worth keeping.
 Two layout rules with a size threshold between them is a worse thing to own
 than one rule that bends at the bottom of its range.</strong> Every
-component, every span and every future addition would then have to be
+panel, every span and every future addition would then have to be
 reasoned about twice, once on each side of a line whose position is itself
 arbitrary. A rule that degrades gracefully at its smallest size stays one
 rule.</div>
@@ -2152,7 +2152,7 @@ were right, the bands held, and two labels were on top of each other.</p>
 {collide_table}
 
 <h3 class="plain">Does half a panel hold a reading?</h3>
-<p class="intro">Asked of the <strong>widest</strong> string each component
+<p class="intro">Asked of the <strong>widest</strong> string each panel
 can print, not what it happens to say &mdash; a <code>tx-battery</code>
 reading <code>7.9</code> must still hold <code>88.8</code> without resizing
 under the pilot. Measured with <code>lcd.sizeText</code> at every font on the
@@ -2163,7 +2163,7 @@ size at all.</strong> The exception is <code>navigation</code> at
 is 48, and the reading is already at <code>SMLSIZE</code>, the bottom of the
 reading ladder, so there is nothing left to give.</p>
 <p class="intro">That case resolves itself, and worth knowing why. The
-component already drops its dial rather than let a distance clip &mdash; a
+panel already drops its dial rather than let a distance clip &mdash; a
 distance's unit changes with range, so it cannot be shortened. With the dial
 gone the panel has one element, and under this rule a one-element panel does
 not split. So <code>navigation</code> at <code>1x1</code> centres across the
@@ -2186,7 +2186,7 @@ stop being proportional.</p>
 <table><thead><tr><th>panel</th><th>bands L/B/T</th><th>what overflows</th>
 </tr></thead><tbody>
 <tr><td>117&times;53, 238&times;53</td><td>11 / 36 / &mdash;</td>
-  <td class="bad">label by 6&nbsp;px, on every component</td></tr>
+  <td class="bad">label by 6&nbsp;px, on every panel</td></tr>
 <tr><td>238&times;111, 480&times;111</td><td>25 / 51 / 25</td>
   <td class="bad">tertiary by 11&nbsp;px, <code>navigation</code> only</td></tr>
 </tbody></table>
@@ -2225,7 +2225,7 @@ checking, since today it is sized against the whole content box: at
 <div class="warn"><strong>So the honest summary is that the proportional
 model works above a size and not below it.</strong> At 111&nbsp;px panels it
 holds everywhere except <code>navigation</code>'s tertiary. At 53&nbsp;px the
-label band is wrong on every component and cannot be made right by any font
+label band is wrong on every panel and cannot be made right by any font
 the dashboard has. A rule that applies at two rows and falls back to today's
 stacking at one is a legitimate answer; a rule that claims to be universal
 would not be.</div>
@@ -2234,7 +2234,7 @@ would not be.</div>
 <p class="intro"><strong>This is the most important table on the page.</strong>
 The font comes from the panel's own height, which inverted the rule that came
 before it, where the composition came from the box and the font from the
-composition. Every component at every span, the older reading font against
+composition. Every panel at every span, the older reading font against
 the derived one &mdash; this is the record of the change, not a proposal:</p>
 
 {ladder_table}
@@ -2274,12 +2274,12 @@ a number on it is a judgement, and it is the largest single change this
 proposal would make anywhere.</div>
 
 <p class="intro"><strong>The stability guarantee survives, and for free.</strong>
-Today's fitter sizes a reading against the widest string a component can ever
+Today's fitter sizes a reading against the widest string a panel can ever
 print, so a value never resizes as it changes. A band-derived font does not
 consult the content at all, so it cannot resize with it &mdash; the guarantee
 holds by construction rather than by discipline. That is the strongest
 argument for the new rule, and it is stronger than the one it replaces:
-today's guarantee depends on every component remembering to pass its widest
+today's guarantee depends on every panel remembering to pass its widest
 form, and this one does not.</p>
 
 <p class="intro"><strong>The secondary element follows the reading's new
@@ -2354,7 +2354,7 @@ place, and it is worth knowing before committing to the rule.</strong></p>
 <p>Under this rule a panel with two elements splits and a panel with one does
 not. So anything that makes a visual appear or disappear changes the
 arrangement. Across the catalogue that is almost always a question of
-<em>space</em>, which only changes when the zone does. <strong>One component
+<em>space</em>, which only changes when the zone does. <strong>One panel
 gates its visual on <em>data</em>:</strong> <code>tx-battery</code> hides its
 battery until there is a voltage range to measure against, and that range is
 a live subscription to <code>getGeneralSettings</code> rather than something
@@ -2367,7 +2367,7 @@ pilot editing SYS &rarr; Hardware &rarr; Battery meter range would move it
 again, in flight &mdash; which is precisely the objection that ruled out
 centring, reappearing in the arrangement chosen to avoid it.</p>
 
-<p>It is confined to one component and is fixable &mdash; reserving the slot
+<p>It is confined to one panel and is fixable &mdash; reserving the slot
 whenever the layout could ever show a visual, rather than when one is
 currently drawn, would hold the reading still at the cost of a permanently
 empty right half on a panel that never gets a range. That is a real trade and
@@ -2396,7 +2396,7 @@ the user should make it rather than discover it.</p></div>
       from the reading's current width every time, and the audit above now
       checks mechanically for it.</li>
   <li><strong>The heading falls {label_band_above}&nbsp;px off the top of
-      every 53&nbsp;px panel</strong> under the banded rule. Not a component
+      every 53&nbsp;px panel</strong> under the banded rule. Not a panel
       defect &mdash; the small-panel label band has no font that fits it,
       and this is that unresolved question presenting concretely. Three
       answers are rendered above.</li>

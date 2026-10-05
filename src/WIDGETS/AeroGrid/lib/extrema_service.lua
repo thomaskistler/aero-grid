@@ -82,8 +82,8 @@ end
 
 --- Configure the arm source and subscribe to the flight session.
 --- One dashboard has one flight, so the source comes from the layout's
---- `session` block rather than from a component. It used to be a per-component
---- setting, which let two components name two switches and left the second one
+--- `session` block rather than from a panel. It used to be a per-panel
+--- setting, which let two panels name two switches and left the second one
 --- silently ignored by the first-caller-wins rule below.
 ---@param armSource? string Switch or source name that marks the model armed.
 ---@return AeroGridFlightSession

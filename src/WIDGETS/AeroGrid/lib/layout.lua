@@ -5,17 +5,17 @@
 ---@class AeroGridLayoutDocument
 ---@field version integer
 ---@field grid table
----@field components table[]
+---@field panels table[]
 
 ---@class AeroGridValidatedLayout
 ---@field version integer
 ---@field grid table
----@field components table[] Only valid, non-overlapping components.
+---@field panels table[] Only valid, non-overlapping panels.
 --- Unrecognized top-level keys from the source document are preserved verbatim.
 
 local layout = { RUNTIME_API = 1 }
 
---- Restrict IDs and component types to path-safe characters.
+--- Restrict IDs and panel types to path-safe characters.
 ---@param value any
 ---@return boolean
 local function isSafeIdentifier(value)
@@ -77,9 +77,9 @@ end
 --- Validate the optional layout-level flight session block.
 ---
 --- The arm switch bounds one flight, and a dashboard has one flight. It used
---- to be a per-component setting, which let two components state different
+--- to be a per-panel setting, which let two panels state different
 --- switches; `extremaService:flight` takes the first caller's and ignores the
---- rest, so the second component's was silently discarded. A setting whose
+--- rest, so the second panel's was silently discarded. A setting whose
 --- value is thrown away is worse than no setting, because it reads like a
 --- choice. It belongs to the layout, which is the thing there is one of.
 ---@param value any
@@ -106,9 +106,9 @@ local function validateSession(value, errors)
     return result
 end
 
---- Validate the document's own fields, excluding its components.
+--- Validate the document's own fields, excluding its panels.
 --- A document this loader cannot interpret fails closed, because rendering its
---- components under phase-one assumptions would silently misplace them.
+--- panels under phase-one assumptions would silently misplace them.
 ---@param document table
 ---@return table? header
 ---@return string[] errors
@@ -127,7 +127,7 @@ function layout.validateDocument(document)
     end
     normalized.version = document.version
     normalized.grid = document.grid
-    normalized.components = {}
+    normalized.panels = {}
     normalized.theme = validateTheme(document.theme, errors)
     normalized.session = validateSession(document.session, errors)
 
@@ -141,50 +141,50 @@ function layout.validateDocument(document)
     return normalized, errors
 end
 
---- Validate one component against the grid and the entries already accepted.
---- Returning the outcome per entry lets the host validate and build components
+--- Validate one panel against the grid and the entries already accepted.
+--- Returning the outcome per entry lets the host validate and build panels
 --- one at a time, rather than holding the whole layout in one callback.
----@param component any
+---@param panel any
 ---@param index integer Position in the sequence, for error messages.
 ---@param grid table
----@param accepted table[] Components already accepted.
+---@param accepted table[] Panels already accepted.
 ---@param identifiers table<string, boolean> Ids already used.
 ---@return boolean valid
 ---@return string? error
-function layout.validateComponent(component, index, grid, accepted, identifiers)
-    local prefix = "component " .. index .. ": "
+function layout.validatePanel(panel, index, grid, accepted, identifiers)
+    local prefix = "panel " .. index .. ": "
 
-    if type(component) ~= "table" then
+    if type(panel) ~= "table" then
         return false, prefix .. "entry must be a mapping"
     end
 
-    if not isSafeIdentifier(component.id) then
+    if not isSafeIdentifier(panel.id) then
         return false, prefix .. "invalid id"
     end
-    if identifiers[component.id] then
-        return false, prefix .. "duplicate id " .. component.id
+    if identifiers[panel.id] then
+        return false, prefix .. "duplicate id " .. panel.id
     end
-    if not isSafeIdentifier(component.type) then
+    if not isSafeIdentifier(panel.type) then
         return false, prefix .. "invalid type"
     end
 
-    local placementValid, placementError = grid.validatePlacement(component, 4, 4)
+    local placementValid, placementError = grid.validatePlacement(panel, 4, 4)
     if not placementValid then
         return false, prefix .. placementError
     end
 
     for _, existing in ipairs(accepted) do
-        if grid.overlaps(existing, component) then
+        if grid.overlaps(existing, panel) then
             return false, prefix .. "overlaps " .. existing.id
         end
     end
 
-    component.config = type(component.config) == "table" and component.config or {}
+    panel.config = type(panel.config) == "table" and panel.config or {}
     return true
 end
 
---- Validate a parsed phase-one document while retaining valid components.
---- Invalid components are reported and omitted so they cannot block the
+--- Validate a parsed phase-one document while retaining valid panels.
+--- Invalid panels are reported and omitted so they cannot block the
 --- dashboard. The host loads incrementally instead; this remains for callers
 --- that can afford to validate a whole document at once.
 ---@param document AeroGridLayoutDocument
@@ -197,20 +197,19 @@ function layout.validate(document, grid)
         return nil, errors
     end
 
-    if not isSequence(document.components) then
-        errors[#errors + 1] = "components must be a sequence"
+    if not isSequence(document.panels) then
+        errors[#errors + 1] = "panels must be a sequence"
         return normalized, errors
     end
 
     local identifiers = {}
-    for index, component in ipairs(document.components) do
-        local valid, componentError =
-            layout.validateComponent(component, index, grid, normalized.components, identifiers)
+    for index, panel in ipairs(document.panels) do
+        local valid, panelError = layout.validatePanel(panel, index, grid, normalized.panels, identifiers)
         if valid then
-            identifiers[component.id] = true
-            normalized.components[#normalized.components + 1] = component
+            identifiers[panel.id] = true
+            normalized.panels[#normalized.panels + 1] = panel
         else
-            errors[#errors + 1] = componentError
+            errors[#errors + 1] = panelError
         end
     end
 

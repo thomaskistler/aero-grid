@@ -1,15 +1,40 @@
 # SPDX-License-Identifier: GPL-2.0-only
 import copy
+import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
 
 import yaml
-from capture_recipes import (COMPONENTS, RECIPE_DIR, configure_model, config_yaml,
+from capture_recipes import (PANELS, RECIPE_DIR, configure_model, config_yaml,
                             fixture_inputs, load_recipe, readiness)
 
 
 class CaptureRecipeTests(unittest.TestCase):
+    def test_old_recipe_field_is_rejected(self):
+        recipe = load_recipe(RECIPE_DIR / "flight-timer.yaml")
+        recipe["component"] = recipe.pop("panel")
+        with self.assertRaises(ValueError):
+            self.load(recipe)
+
+    def test_prepared_captures_use_panel_contract(self):
+        path = Path(__file__).with_name("capture-panels.py")
+        spec = importlib.util.spec_from_file_location("capture_panels", path)
+        capture = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(capture)
+        for recipe_path in RECIPE_DIR.glob("*.yaml"):
+            with self.subTest(panel=recipe_path.stem), tempfile.TemporaryDirectory() as directory:
+                recipe = load_recipe(recipe_path)
+                sd = Path(directory) / "sdcard"
+                capture.prepare(sd, recipe, recipe_path)
+                widget = sd / "WIDGETS/AeroGrid"
+                layout = yaml.safe_load((widget / "layouts/capture-panels.yaml").read_text())
+                self.assertEqual(len(layout["panels"]), len(recipe["panels"]))
+                self.assertTrue(all(entry["type"] == recipe["panel"] for entry in layout["panels"]))
+                self.assertTrue((widget / "panels" / f"{recipe['panel']}.lua").is_file())
+                self.assertTrue((widget / "lib/panel_host.lua").is_file())
+                self.assertIn("ipairs(context.panels)", (widget / "main.lua").read_text())
+
     def load(self, recipe):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "recipe.yaml"
@@ -17,7 +42,7 @@ class CaptureRecipeTests(unittest.TestCase):
             return load_recipe(path)
 
     def test_shipped_recipes(self):
-        self.assertEqual({path.stem for path in RECIPE_DIR.glob("*.yaml")}, set(COMPONENTS))
+        self.assertEqual({path.stem for path in RECIPE_DIR.glob("*.yaml")}, set(PANELS))
         for path in RECIPE_DIR.glob("*.yaml"):
             recipe = load_recipe(path)
             self.assertEqual(len(recipe["panels"]), 3)
@@ -31,8 +56,8 @@ class CaptureRecipeTests(unittest.TestCase):
             self.load(recipe)
 
     def test_synthetic_samples_propagate(self):
-        for component in ("metric", "cell-battery", "link-status", "navigation"):
-            recipe = load_recipe(RECIPE_DIR / f"{component}.yaml")
+        for panel in ("metric", "cell-battery", "link-status", "navigation"):
+            recipe = load_recipe(RECIPE_DIR / f"{panel}.yaml")
             inputs = fixture_inputs(recipe)
             for name in recipe["sample"]["sources"]:
                 self.assertIn(name, inputs)
@@ -43,8 +68,8 @@ class CaptureRecipeTests(unittest.TestCase):
         recipe["sample"]["voltage"] = 7.6
         self.assertIn("return 7.6", fixture_inputs(self.load(recipe)))
         self.assertIn("feed.value ~= 7.6", readiness(recipe))
-        for component in ("flight-timer", "flight-mode", "model-identity", "trim-panel"):
-            self.assertIsNone(fixture_inputs(load_recipe(RECIPE_DIR / f"{component}.yaml")))
+        for panel in ("flight-timer", "flight-mode", "model-identity", "trim-panel"):
+            self.assertIsNone(fixture_inputs(load_recipe(RECIPE_DIR / f"{panel}.yaml")))
 
     def test_model_and_flight_mode_setup(self):
         identity = load_recipe(RECIPE_DIR / "model-identity.yaml")
@@ -71,9 +96,9 @@ class CaptureRecipeTests(unittest.TestCase):
             ("tx-battery", lambda r: r["config"].update(packFull=6.4)),
             ("flight-mode", lambda r: r["sample"].update(name="too long for firmware")),
         ]
-        for component, mutate in cases:
-            with self.subTest(component=component):
-                recipe = load_recipe(RECIPE_DIR / f"{component}.yaml")
+        for panel, mutate in cases:
+            with self.subTest(panel=panel):
+                recipe = load_recipe(RECIPE_DIR / f"{panel}.yaml")
                 mutate(recipe)
                 with self.assertRaises(ValueError):
                     self.load(recipe)
@@ -114,7 +139,7 @@ class CaptureRecipeTests(unittest.TestCase):
             lambda r: r["panels"]["2x2"].update(row=3),
             lambda r: r["panels"]["2x2"].update(row=0),
             lambda r: r["panels"]["1x2"].update(colSpan=2),
-            lambda r: r.update(component="unknown"),
+            lambda r: r.update(panel="unknown"),
             lambda r: r.update(hide_bottom_bar="true"),
             lambda r: r.update(brighten_supporting_text="true"),
         ]

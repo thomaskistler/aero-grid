@@ -2,8 +2,8 @@
 
 --- Cached telemetry readings with units, precision, and freshness.
 ---
---- Components subscribe by EdgeTX source name and hold the returned immutable
---- reading for their lifetime. Two components naming the same sensor share one
+--- Panels subscribe by EdgeTX source name and hold the returned immutable
+--- reading for their lifetime. Two panels naming the same sensor share one
 --- subscription, so the dashboard reads each source once per poll no matter how
 --- many panels display it.
 ---
@@ -52,8 +52,8 @@
 local telemetryService = { RUNTIME_API = 1 }
 telemetryService.__index = telemetryService
 
---- Ticks of 10ms between polls. Faster than any component's refresh so a
---- component never renders a reading older than its own interval.
+--- Ticks of 10ms between polls. Faster than any panel's refresh so a
+--- panel never renders a reading older than its own interval.
 telemetryService.INTERVAL = 10
 
 --- Subscriptions refreshed per update, served round robin. Sixteen sources
@@ -173,7 +173,7 @@ end
 
 --- Subscribe to an EdgeTX source by name.
 --- An absent or empty name yields a permanently unavailable reading rather
---- than nil, so a component can render an unconfigured source without
+--- than nil, so a panel can render an unconfigured source without
 --- branching and without ever indexing nil.
 ---@param name any
 ---@return AeroGridReading
@@ -219,7 +219,7 @@ function telemetryService:link()
             updatedAt = nil,
         }
         self.linkView = self.support.snapshot(self.linkState)
-        -- A component referencing the link is a reason to run the service, even
+        -- A panel referencing the link is a reason to run the service, even
         -- when it subscribed to no source the radio happens to recognize.
         self.count = self.count + 1
     end
@@ -467,7 +467,7 @@ end
 
 --- Format a reading for display, honoring its precision.
 --- Provided as a module function rather than a snapshot field so formatting is
---- paid only by the components that actually render text.
+--- paid only by the panels that actually render text.
 ---@param reading AeroGridReading?
 ---@param precision? integer Overrides the sensor's own precision.
 ---@return string
@@ -501,7 +501,7 @@ end
 
 --- Describe a reading as diagnostic rows.
 --- The rows exist so a diagnostic view can prove normalized output without
---- depending on any production component's presentation.
+--- depending on any production panel's presentation.
 ---@param rows table Reusable row array of {label = , text = } tables.
 ---@param reading AeroGridReading? Subscription to describe.
 ---@return integer count

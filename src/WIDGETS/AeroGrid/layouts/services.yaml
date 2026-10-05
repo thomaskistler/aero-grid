@@ -9,7 +9,7 @@ version: 1
 #
 # Each panel prints one shared service's normalized output as plain rows, so a
 # wrong unit, a missing precision, a stale classification, or a bearing taken
-# from the wrong end is visible before any component depends on it. Change the
+# from the wrong end is visible before any panel depends on it. Change the
 # source names below to sensors your model actually has.
 
 theme:
@@ -19,7 +19,7 @@ grid:
   columns: 4
   rows: 4
 
-components:
+panels:
   - id: telemetry
     type: service-probe
     col: 0
@@ -41,5 +41,4 @@ components:
       service: navigation
       label: Navigation
       source: GPS
-      extra: Dist
       accent: green

@@ -34,12 +34,12 @@ local function testRepresentativeDashboardBuilds()
     local context = fixture.createLoaded()
 
     assertions.assertEqual(context.stage, nil, "staged loading should finish")
-    assert(#context.components > 0, "builder did not create any dashboard components")
+    assert(#context.panels > 0, "builder did not create any dashboard panels")
     assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 
-    for _, entry in ipairs(context.components) do
-        assert(entry.container, "component is missing its host container")
-        assert(entry.instance, "component is missing its instance")
+    for _, entry in ipairs(context.panels) do
+        assert(entry.container, "panel is missing its host container")
+        assert(entry.instance, "panel is missing its instance")
         local bounds = entry.container.properties
         assert(bounds.w > 0 and bounds.h > 0, "builder created an empty panel")
     end
@@ -77,7 +77,7 @@ local function testMissingWidgetPathFailsExplicitly()
     local fixture = WidgetFixture.new()
     local context = fixture.createLoaded(nil, { DashID = "main", Theme = "modern" }, "/path/does/not/exist/")
     assert(#context.errors > 0, "missing widget modules should be reported as errors")
-    assertions.assertEqual(#context.components, 0)
+    assertions.assertEqual(#context.panels, 0)
 end
 
 local function run()

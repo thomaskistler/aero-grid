@@ -1,6 +1,6 @@
 version: 1
 
-# Span gallery, 1 x 1: every component that declares a single cell, at that
+# Span gallery, 1 x 1: every panel that declares a single cell, at that
 # single cell, side by side.
 #
 # Set the widget's Dashboard ID to `span1x1` to load this screen on any model.
@@ -8,13 +8,13 @@ version: 1
 # This is not a dashboard. `sim` and `sim2` are arranged to be useful; this one
 # is arranged to make the catalogue disagree with itself in a way a person can
 # see, by putting the same span in front of you thirteen times at once. Paging
-# between the four `span*` galleries then compares the same components across
+# between the four `span*` galleries then compares the same panels across
 # spans.
 #
 # What to look for, in rough order of how loud it should be:
 #
 #   * The dominant reading is a different size on almost every panel. They are
-#     all fitted to the widest string each component could ever print, which is
+#     all fitted to the widest string each panel could ever print, which is
 #     3 characters for a metric and 15 for a model name, so the fitting is doing
 #     what it was told and the instruction is what is wrong.
 #   * Header labels are cut off. A single-column panel gives the state badge
@@ -35,7 +35,7 @@ grid:
   columns: 4
   rows: 4
 
-components:
+panels:
   # Top-left is under the EdgeTX menu button in App mode. A single cell cannot
   # be saved there and the specification says so; it keeps its reading and
   # drops its label. It is occupied here on purpose, so the damage is visible
@@ -47,12 +47,13 @@ components:
     colSpan: 1
     rowSpan: 1
     config:
-      label: Metric
-      source: RxBt
-      unit: V
-      rangeMin: 6.0
-      rangeMax: 8.4
-      precision: 1
+      metrics:
+        - source: RxBt
+          label: Metric
+          unit: V
+          precision: 1
+          rangeMin: 6.0
+          rangeMax: 8.4
 
   - id: g-cells
     type: cell-battery
@@ -120,8 +121,9 @@ components:
     colSpan: 1
     rowSpan: 1
     config:
-      source: gvar1
-      precision: 1
+      metrics:
+        - source: gvar1
+          precision: 1
       visual: none
 
   - id: g-trim
@@ -130,10 +132,6 @@ components:
     row: 2
     colSpan: 1
     rowSpan: 1
-    config:
-      indicators: single
-      trim1: trim-ail
-      orientation: horizontal
 
   - id: g-model
     type: model-identity
@@ -168,7 +166,7 @@ components:
       section: identity
       label: Host
 
-  # The same component three times, differing only in its visualization, so the
+  # The same panel three times, differing only in its visualization, so the
   # three can be compared without remembering what the fourth looked like.
   - id: g-metric-radial
     type: metric
@@ -177,11 +175,12 @@ components:
     colSpan: 1
     rowSpan: 1
     config:
-      label: Radial
-      source: RQly
-      rangeMin: 0
-      rangeMax: 100
-      precision: 0
+      metrics:
+        - source: RQly
+          label: Radial
+          precision: 0
+          rangeMin: 0
+          rangeMax: 100
       visual: radial
 
   - id: g-metric-bar
@@ -191,11 +190,12 @@ components:
     colSpan: 1
     rowSpan: 1
     config:
-      label: Bar
-      source: RQly
-      rangeMin: 0
-      rangeMax: 100
-      precision: 0
+      metrics:
+        - source: RQly
+          label: Bar
+          precision: 0
+          rangeMin: 0
+          rangeMax: 100
       visual: bar
 
   - id: g-metric-plain
@@ -205,9 +205,10 @@ components:
     colSpan: 1
     rowSpan: 1
     config:
-      label: Plain
-      source: RQly
-      rangeMin: 0
-      rangeMax: 100
-      precision: 0
+      metrics:
+        - source: RQly
+          label: Plain
+          precision: 0
+          rangeMin: 0
+          rangeMax: 100
       visual: none

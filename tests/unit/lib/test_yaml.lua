@@ -14,7 +14,7 @@ vendorExtra: keep-me
 grid:
   columns: 4
   rows: 4
-components:
+panels:
   - id: only
     type: placeholder
     col: 0
@@ -27,34 +27,34 @@ components:
     local normalized, errors = layout.validate(document, grid)
     assertions.assertEqual(#errors, 0)
     assertions.assertEqual(normalized.vendorExtra, "keep-me")
-    assertions.assertEqual(normalized.components[1].futureKey, "keep-me-too")
+    assertions.assertEqual(normalized.panels[1].futureKey, "keep-me-too")
 end
 
 local function testMalformedInput()
     local cases = {
         {
-            name = "scalar component entry",
-            text = "version: 1\ngrid:\n  columns: 4\n  rows: 4\ncomponents:\n  - bare-scalar\n",
+            name = "scalar panel entry",
+            text = "version: 1\ngrid:\n  columns: 4\n  rows: 4\npanels:\n  - bare-scalar\n",
         },
         {
-            name = "numeric component entry",
-            text = "version: 1\ngrid:\n  columns: 4\n  rows: 4\ncomponents:\n  - 42\n",
+            name = "numeric panel entry",
+            text = "version: 1\ngrid:\n  columns: 4\n  rows: 4\npanels:\n  - 42\n",
         },
-        { name = "components mapping", text = "version: 1\ngrid:\n  columns: 4\n  rows: 4\ncomponents:\n  nope: 1\n" },
-        { name = "missing grid", fatal = true, text = "version: 1\ncomponents: []\n" },
+        { name = "panels mapping", text = "version: 1\ngrid:\n  columns: 4\n  rows: 4\npanels:\n  nope: 1\n" },
+        { name = "missing grid", fatal = true, text = "version: 1\npanels: []\n" },
         {
             name = "future version",
             fatal = true,
-            text = "version: 99\ngrid:\n  columns: 4\n  rows: 4\ncomponents: []\n",
+            text = "version: 99\ngrid:\n  columns: 4\n  rows: 4\npanels: []\n",
         },
         {
             name = "wrong grid size",
             fatal = true,
-            text = "version: 1\ngrid:\n  columns: 3\n  rows: 3\ncomponents: []\n",
+            text = "version: 1\ngrid:\n  columns: 3\n  rows: 3\npanels: []\n",
         },
         {
             name = "unsafe type",
-            text = "version: 1\ngrid:\n  columns: 4\n  rows: 4\ncomponents:\n  - id: a\n    type: ../evil\n    col: 0\n    row: 0\n    colSpan: 1\n    rowSpan: 1\n",
+            text = "version: 1\ngrid:\n  columns: 4\n  rows: 4\npanels:\n  - id: a\n    type: ../evil\n    col: 0\n    row: 0\n    colSpan: 1\n    rowSpan: 1\n",
         },
     }
 

@@ -1,5 +1,5 @@
 version: 1
-component: flight-timer
+panel: flight-timer
 theme: modern
 brighten_supporting_text: true
 hide_bottom_bar: true
@@ -12,7 +12,6 @@ panels:
   2x2: {col: 2, row: 2, colSpan: 2, rowSpan: 2}
 config:
   timer: 0
-  reading: model
   accent: green
   label: Flight Timer
 sample:

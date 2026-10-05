@@ -13,10 +13,10 @@ radio.values[140] = 2.5
 radio.values[142] = 4.2
 radio.values[100] = 8.0
 
-local context = fixture.createLoaded(nil, { DashID = "aircraft", Theme = "modern" })
+local context = fixture.createLoaded(nil, { DashID = "default", Theme = "modern" })
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-assertions.assertEqual(#context.components, 8)
+assertions.assertEqual(#context.panels, 8)
 fixture.assertNoOverlap(context)
 
 local expected = {
@@ -67,7 +67,7 @@ fixture.pump(context, 40)
 assertions.assertEqual(fixture.instanceOf(context, "flight-count").text, "40")
 assertions.assertEqual(fixture.instanceOf(context, "expo").text, "65")
 
-local corner = fixture.createLoaded(fixture.lvglMock.appZone(), { DashID = "aircraft", Theme = "modern" })
+local corner = fixture.createLoaded(fixture.lvglMock.appZone(), { DashID = "default", Theme = "modern" })
 fixture.pump(corner, 40)
 local timer = fixture.instanceOf(corner, "flight-clock")
 assert(timer.area.frame.reserved.side)
@@ -76,7 +76,7 @@ assert(timer.area.valueY < timer.area.frame.reserved.h, "timer was still forced 
 assertions.assertEqual(timer.area.clock, fixture.instanceOf(context, "flight-clock").area.clock)
 assertions.assertEqual(timer.area.valueCentre, fixture.instanceOf(context, "flight-clock").area.valueCentre)
 
-local cellBattery = fixture.module("components/cell-battery.lua")
+local cellBattery = fixture.module("panels/cell-battery.lua")
 local originalRect = battery.rect
 local originalFont = battery.area.value
 cellBattery.update(battery, { x = 0, y = 0, w = 80, h = originalRect.h })

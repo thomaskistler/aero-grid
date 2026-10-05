@@ -15,7 +15,7 @@ grid:
   columns: 4
   rows: 4
 
-components:
+panels:
   - id: nav
     type: navigation
     col: 0
@@ -33,13 +33,14 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      label: Altitude
-      source: GAlt
-      unit: m
+      metrics:
+        - source: GAlt
+          label: Altitude
+          unit: m
+          precision: 0
+          rangeMin: 0
+          rangeMax: 500
       accent: green
-      rangeMin: 0
-      rangeMax: 500
-      precision: 0
       visual: radial
 
   - id: link-dial
@@ -49,16 +50,17 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      label: Quality
-      source: RQly
-      unit: "%"
+      metrics:
+        - source: RQly
+          label: Quality
+          unit: "%"
+          precision: 0
+          rangeMin: 0
+          rangeMax: 100
+          warning: 50
+          critical: 30
+          direction: falling
       accent: cyan
-      rangeMin: 0
-      rangeMax: 100
-      warning: 50
-      critical: 30
-      direction: falling
-      precision: 0
       visual: radial
 
   - id: pack
@@ -68,16 +70,17 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      label: Pack
-      source: RxBt
-      unit: V
+      metrics:
+        - source: RxBt
+          label: Pack
+          unit: V
+          precision: 2
+          rangeMin: 6.0
+          rangeMax: 8.4
+          warning: 7.0
+          critical: 6.6
+          direction: falling
       accent: cyan
-      rangeMin: 6.0
-      rangeMax: 8.4
-      warning: 7.0
-      critical: 6.6
-      direction: falling
-      precision: 2
       visual: bar
 
   - id: link
@@ -98,16 +101,17 @@ components:
     colSpan: 2
     rowSpan: 1
     config:
-      label: Battery
-      source: "Bat%"
-      unit: "%"
+      metrics:
+        - source: "Bat%"
+          label: Battery
+          unit: "%"
+          precision: 0
+          rangeMin: 0
+          rangeMax: 100
+          warning: 40
+          critical: 20
+          direction: falling
       accent: amber
-      rangeMin: 0
-      rangeMax: 100
-      warning: 40
-      critical: 20
-      direction: falling
-      precision: 0
       visual: bar
 
   - id: trims
