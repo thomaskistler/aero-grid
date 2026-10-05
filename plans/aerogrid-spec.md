@@ -1661,6 +1661,22 @@ a generic arbitrary-image panel, nor a completely caption-free image mode.
 Generic text and arbitrary/caption-free image panels have no implemented
 settings contract yet.
 
+### Proposed panel to-dos
+
+These are backlog items, not implemented features or Phase 1 acceptance claims.
+
+- [ ] Design and implement `flight-status` for configured armed/disarmed,
+  flight-controller mode, and gyro/stabilization sources, with explicit
+  mappings and honest stale/unavailable states.
+- [ ] Design and implement a generic text-only panel for static text or a
+  selected text telemetry source, with responsive fitting and optional
+  layout-owned state mappings.
+- [ ] Design and implement a generic image-only panel for a configured SD-card
+  image, including a caption-free presentation, aspect-preserving scaling,
+  and an explicit missing-image fallback.
+- [ ] Design and implement a glyph-only TX battery presentation for compact
+  panels, without numeric voltage and with explicit unavailable-range behavior.
+
 ### Aircraft-state telemetry research
 
 **What the radio actually publishes.** This table is the design constraint: the same sensor name carries a different shape on different links.
