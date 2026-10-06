@@ -129,6 +129,12 @@ local function disconnectedMinute(minute)
     assert(link.text == "NO LINK" and battery.stateName == "stale")
     local timer = fixture.module("panels/flight-timer.lua")
     local expected = timer.formatClock(timer.clamp(timer.displayValue(clock.feed)))
+    for _ = 1, #context.panels do
+        if clock.text == expected then
+            break
+        end
+        pump(1)
+    end
     assert(clock.text == expected, "continuously advancing disconnected timer was not rendered")
     fixture.lvglMock.releaseClearedObjects()
     assert(fixture.lvglMock.replacedFontRefCount() == 0, "timer updates replaced firmware font callbacks")

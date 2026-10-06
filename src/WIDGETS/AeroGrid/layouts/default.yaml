@@ -101,3 +101,16 @@ panels:
     rowSpan: 2
     config:
       presentation: image
+  - id: mode
+    type: text
+    col: 2
+    row: 0
+    colSpan: 1
+    rowSpan: 1
+    config:
+      texts:
+        - label: Mode
+          source: sf
+          positions:
+            up: DISARMED
+            down: ARMED

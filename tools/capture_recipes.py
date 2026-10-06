@@ -10,8 +10,8 @@ import yaml
 
 RECIPE_DIR = Path(__file__).with_name("capture-recipes")
 PANELS = ("trim-panel", "flight-timer", "metric", "flight-mode", "tx-battery",
-              "model-identity", "cell-battery", "link-status", "navigation")
-SYNTHETIC_PANELS = ("metric", "tx-battery", "cell-battery", "link-status", "navigation")
+              "model-identity", "cell-battery", "link-status", "navigation", "text")
+SYNTHETIC_PANELS = ("metric", "tx-battery", "cell-battery", "link-status", "navigation", "text")
 
 
 class RecipeLoader(yaml.SafeLoader):
@@ -223,6 +223,27 @@ def load_recipe(path):
             if (not bitmap.is_file() or bitmap.suffix.lower() != ".png"
                     or not re.fullmatch(r"[a-zA-Z0-9_-]{1,10}\.png", bitmap.name)):
                 raise ValueError("sample.bitmap must be an existing PNG with a firmware-safe filename")
+    elif recipe["panel"] == "text":
+        fields(sample, ("switches",))
+        switches = sample["switches"]
+        entries = config.get("texts")
+        if not isinstance(entries, list) or not 1 <= len(entries) <= 3:
+            raise ValueError("config.texts must contain 1 to 3 readings")
+        if not isinstance(switches, dict) or not 1 <= len(switches) <= 3:
+            raise ValueError("sample.switches must contain 1 to 3 switches")
+        for name, position in switches.items():
+            if not re.fullmatch(r"s[a-z]", name) or position not in ("up", "middle", "down"):
+                raise ValueError("Switch samples require lowercase switch names and up/middle/down positions")
+        for entry in entries:
+            fields(entry, ("source", "label", "positions"))
+            positions = entry["positions"]
+            fields(positions, ("up", "down"), ("middle",))
+            for value in [entry["label"], *positions.values()]:
+                if not isinstance(value, str) or not value or any(ord(c) < 32 or ord(c) > 126 for c in value):
+                    raise ValueError("Text labels and mappings must be nonempty single-line ASCII strings")
+            if (not isinstance(entry["source"], str) or entry["source"] not in switches
+                    or switches[entry["source"]] not in positions):
+                raise ValueError("Missing mapped switch sample")
     elif recipe["panel"] == "tx-battery":
         fields(sample, ("voltage",))
         number(sample["voltage"], 3, 16, "sample.voltage")
@@ -270,6 +291,20 @@ def configure_model(prefix, recipe):
 
 def readiness(recipe):
     sample = recipe["sample"]
+    if recipe["panel"] == "text":
+        result = ""
+        for index, item in enumerate(recipe["config"]["texts"], 1):
+            position = sample["switches"][item["source"]]
+            value = {"up": -1024, "middle": 0, "down": 1024}[position]
+            result += f"""            do
+                local feed = entry.instance.feeds[{index}]
+                if not feed or not feed.available or feed.telemetry or feed.value ~= {value} then return end
+            end
+"""
+            expected = item["positions"][position]
+            if index == 1:
+                result += f"            if entry.instance.text ~= {json.dumps(expected)} then return end\n"
+        return result
     if recipe["panel"] == "trim-panel":
         expected = ", ".join(str(sample[key]) for key in ("aileron", "elevator", "rudder"))
         return """            local indicators = entry.instance.indicators
@@ -352,6 +387,25 @@ def fixture_inputs(recipe):
     """Synthetic firmware API inputs, installed only in the isolated service environment."""
     if recipe["panel"] not in SYNTHETIC_PANELS:
         return None
+    if recipe["panel"] == "text":
+        switches = {name: {"id": 300 + index,
+                          "value": {"up": -1024, "middle": 0, "down": 1024}[position]}
+                    for index, (name, position) in enumerate(recipe["sample"]["switches"].items())}
+        return """local switches = """ + lua_value(switches) + """
+return {
+    getFieldInfo = function(name)
+        local switch = switches[name]
+        if switch then return { id = switch.id, name = name } end
+        return getFieldInfo(name)
+    end,
+    getValue = function(id)
+        for name, switch in pairs(switches) do
+            if id == name or id == switch.id then return switch.value end
+        end
+        return getValue(id)
+    end,
+}
+"""
     if recipe["panel"] == "tx-battery":
         return f"""return {{
     getValue = function(source)

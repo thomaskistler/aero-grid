@@ -72,6 +72,15 @@ settings carry `manuallyEdited: 1` so EdgeTX accepts the edited selection
 despite the original checksum, then writes a fresh checksum on save. Keep
 that flag set when manually changing the tracked radio settings.
 
+The review model already uses all ten available screens. Select **AEROGRID TEXT**
+(`model3.yml`) for the `review-text` dashboard. Its first screen compares compact,
+tall, wide, and large text panels with one to three readings. SF changes MODE,
+SA changes RATE, and SB changes FLAP. The NO MIDDLE panel deliberately leaves
+SA's middle position unmapped.
+
+Select **AEROGRID DEFAULT** (`model4.yml`) for a dedicated model whose first
+screen displays the default dashboard in App mode with the Modern theme.
+
 **Rebuilding resets simulator radio and model configuration to the fixture.**
 To verify packaging without overwriting customized simulator state, use a separate
 output directory:
@@ -109,6 +118,7 @@ run from the repository root:
 make capture-setup
 build/capture-venv/bin/python tools/capture-panels.py --panel trim-panel
 build/capture-venv/bin/python tools/capture-panels.py --panel flight-timer
+build/capture-venv/bin/python tools/capture-panels.py --panel text
 build/capture-venv/bin/python tools/capture-panels.py --all
 ```
 
@@ -125,7 +135,7 @@ no run history is kept. A failed attempt leaves diagnostic output in that panel'
 directory, not a retained set of old images. `--all` regenerates every bundled
 panel recipe sequentially; on failure, already completed panels remain updated.
 Documentation assets are not overwritten.
-All nine display panels are supported. Captures use the Modern theme, a 480 x 272 App-mode dashboard,
+All ten display panels are supported. Captures use the Modern theme, a 480 x 272 App-mode dashboard,
 and placements outside the menu overlay. Stored aileron/elevator/rudder trims
 are +26/-26/0 (displayed as +20%/-20%/0% at standard range). The flight-timer
 recipe uses a stopped, persistent countdown named Flight with 3:04 remaining

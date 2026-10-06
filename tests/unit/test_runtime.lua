@@ -472,7 +472,7 @@ local function testSettingsVocabulary()
     -- the host contract and are fixtures under `tests/fixtures/panels`, so
     -- they are not read here: the vocabulary rules below are about what a
     -- person configures on a radio.
-    assertEqual(#kinds, 11, "the catalogue changed size; the spec names eleven")
+    assertEqual(#kinds, 12, "the catalogue changed size; the spec names twelve")
 
     for kind, settings in pairs(catalog) do
         local declared = {}
@@ -884,7 +884,7 @@ local function testPanelDocumentationLoads()
     assertEqual(documented + owed, #kinds, "every panel is either documented or listed as owing a page")
     assertEqual(
         documented,
-        9,
+        10,
         "the number of documented panels changed; update this count as the" .. " review works through the catalogue"
     )
 end

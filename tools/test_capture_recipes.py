@@ -55,6 +55,25 @@ class CaptureRecipeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Missing sample"):
             self.load(recipe)
 
+    def test_text_switch_samples(self):
+        recipe = load_recipe(RECIPE_DIR / "text.yaml")
+        self.assertEqual(yaml.safe_load(config_yaml(recipe["config"])), recipe["config"])
+        self.assertIn('entry.instance.text ~= "ARMED"', readiness(recipe))
+        self.assertIn("feed.telemetry", readiness(recipe))
+        inputs = fixture_inputs(recipe)
+        self.assertIn("return { id = switch.id, name = name }", inputs)
+        self.assertNotIn("unit =", inputs)
+        for mutate in (
+            lambda r: r["sample"]["switches"].update(sf="invalid"),
+            lambda r: r["sample"]["switches"].pop("sf"),
+            lambda r: r["config"]["texts"][0]["positions"].update(down=True),
+            lambda r: r["config"].update(texts=[]),
+        ):
+            invalid = copy.deepcopy(recipe)
+            mutate(invalid)
+            with self.assertRaises(ValueError):
+                self.load(invalid)
+
     def test_synthetic_samples_propagate(self):
         for panel in ("metric", "cell-battery", "link-status", "navigation"):
             recipe = load_recipe(RECIPE_DIR / f"{panel}.yaml")

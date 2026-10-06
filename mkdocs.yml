@@ -22,6 +22,7 @@ nav:
       - Overview: reference-guide/index.md
       - Panels:
           - Metric: panels/metric.md
+          - Text: panels/text.md
           - Flight timer: panels/flight-timer.md
           - Flight mode: panels/flight-mode.md
           - TX battery: panels/tx-battery.md
