@@ -7,7 +7,7 @@
 - Status last updated: 2026-10-04
 - EdgeTX source: `../edgetx`
 - Project root: `aero-grid/`
-- Implementation: Phase 1, milestones 1 to 8 complete; eleven shipped panels, five using the shared standard panel; all nine display panels reviewed and documented. Global-variable display uses ordinary metric sources.
+- Implementation: Phase 1, milestones 1 to 8 complete; twelve shipped panels, six using the shared standard panel. The original nine display panels are reviewed and documented; the new switch-driven text panel is documented with simulator captures pending. Global-variable display uses ordinary metric sources.
 - Next work: Milestone 9 target-matrix validation and resource baselining. Initial dashboard validation passed on TX16S v2 with EdgeTX 2.12.4, as reported by the user on 2026-10-04.
 - The retirement and software-hardening work is merged into `main`. The aircraft dashboard, compact-layout refinements, and initial hardware records are the current follow-up change set. See [Resuming work](#resuming-work) for the state and the exact next steps.
 
@@ -125,7 +125,7 @@ Most panels are variations of one arrangement: a heading, a dominant reading, an
 - **It is told what the panel draws, never what its span permits.** `spec.draws` carries the panel's own answer, and `theme.ladder` may only narrow it. The interface has no way to express "permitted", because the gap between the two is a recurring defect in this project rather than a subtlety.
 - **It builds nothing itself that the panel was handed.** It takes `spec.frame` rather than calling `theme.frame`, because the host wraps that function per panel to lay a panel out around the menu button's corner, and a shared helper reaching for the module's own copy draws the heading under the button.
 
-Five panels use it: `cell-battery`, `flight-mode`, `flight-timer`, `link-status`, and `metric`. Three keep their own arrangement: `navigation` draws two supporting rows; `tx-battery` retains the arrangement recorded in the design guide; `model-identity` fits a picture and moves the model name into the heading. Three draw no panel reading and are exempt: `trim-panel`, `host-diagnostics`, and `service-probe`.
+Six panels use it: `cell-battery`, `flight-mode`, `flight-timer`, `link-status`, `metric`, and `text`. Three keep their own arrangement: `navigation` draws two supporting rows; `tx-battery` retains the arrangement recorded in the design guide; `model-identity` fits a picture and moves the model name into the heading. Three draw no panel reading and are exempt: `trim-panel`, `host-diagnostics`, and `service-probe`.
 
 **A panel is expected to carry special code only where it has a special visualization** -- the compass, the battery glyph, the trim cells. A flag on the builder for one panel's preference is the thing this is meant to replace, not a way of extending it: a builder that can express everything expresses nothing.
 
@@ -152,6 +152,7 @@ The initial release should provide these panels:
 | --- | --- | --- |
 | `cell-battery` | Lowest/average cell or pack voltage, upright battery glyph, optional supporting voltage and measured/configured cell count; explicit bar mode retained | Specialized |
 | `metric` | Up to three independently configured numeric readings | Generic |
+| `text` | Up to three explicit physical-switch position text mappings | Generic |
 | `flight-timer` | EdgeTX model timer with count-up or count-down presentation | Specialized |
 | `link-status` | RSSI, link quality, optional minimum quality, and link freshness | Specialized |
 | `navigation` | GPS position, bearing from home to model, distance to home, and GPS state | Specialized and responsive |
@@ -162,7 +163,7 @@ The initial release should provide these panels:
 | `service-probe` | The live state of one shared service, for diagnosis on the radio | Diagnostic |
 | `host-diagnostics` | What the host loaded and what it resolved to, in one section per panel | Diagnostic |
 
-Eleven panels ship, two of them diagnostic. Two more, `heartbeat` and `placeholder`, live under `tests/fixtures/panels`: they prove the host contract and never ship. `service-probe` inspects a service on the radio; `host-diagnostics` reports what the host loaded.
+Twelve panels ship, two of them diagnostic. Two more, `heartbeat` and `placeholder`, live under `tests/fixtures/panels`: they prove the host contract and never ship. `service-probe` inspects a service on the radio; `host-diagnostics` reports what the host loaded.
 
 The `metric` panel accepts an ordered `metrics` list of one to three
 EdgeTX numeric sources. The first entry supplies the large reading and header;
@@ -248,6 +249,21 @@ belong to the panel.
 - In `source` mode, read an explicitly selected EdgeTX minimum or maximum source.
 - In `flight` mode, use the shared flight-session extrema service.
 - Altitude may show vertical speed only when a configured source is valid. Derived vertical speed is deferred until filtering and sampling behavior are defined.
+
+#### Text
+
+- Require an ordered `texts` list of one to three entries with `label`,
+  a lowercase physical switch `source`, and `positions` mapping `up` and
+  `down`, optionally `middle`. These correspond to `-1024`, `+1024`, and `0`.
+- Use shared radio-local source subscriptions; never poll EdgeTX from the panel.
+- Display the first entry as the main reading and the others as supporting
+  captions/readings through the shared footer, side-stack, or hidden fallback.
+- Fit all configured texts by measured width. Retain exact mapped text,
+  selecting a smaller font rather than truncating. Refuse impossible main
+  text with `NO FIT`; hide supporting text that cannot fit intact.
+- Distinguish unavailable sources from unmapped positions. Infer neither
+  aircraft state nor alarm colors from configured text.
+- Static text and telemetry text sources are outside this panel's scope.
 
 #### Flight timer
 
@@ -363,6 +379,7 @@ Panels consume immutable snapshots. A service mutates its own state table in pla
 ├── panels/
 │   ├── cell-battery.lua
 │   ├── metric.lua
+│   ├── text.lua
 │   ├── flight-timer.lua
 │   ├── link-status.lua
 │   ├── navigation.lua
@@ -431,7 +448,7 @@ The host creates one LVGL box or equivalent parent object for each rectangle. Pa
 
 ## Visual Design Direction
 
-**The design decisions and their reasoning live in [`aerogrid-design-guide.md`](aerogrid-design-guide.md).** Eight panels draw a panel reading: five assemble it through `theme.panel`, while `model-identity`, `navigation`, and `tx-battery` use shared slots directly. All eleven shipped panels use `theme.frame`. The three without a panel reading are `host-diagnostics`, `service-probe`, and `trim-panel`.
+**The design decisions and their reasoning live in [`aerogrid-design-guide.md`](aerogrid-design-guide.md).** Nine panels draw a panel reading: six assemble it through `theme.panel`, while `model-identity`, `navigation`, and `tx-battery` use shared slots directly. All twelve shipped panels use `theme.frame`. The three without a panel reading are `host-diagnostics`, `service-probe`, and `trim-panel`.
 
 The claim was true when this section was first written and survived the milestone that built it, the presentation pass, the vertical-rhythm pass and the #85 audit -- which corrected the same sentence in the design guide and did not find this copy. **That is the shape worth naming: a claim copied into two documents is corrected in one of them.** It is the fifth time in this project, and it is the most dangerous kind of stale, because a reader is told that a section describing working behaviour is aspirational and may build it a second time.
 

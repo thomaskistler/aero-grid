@@ -42,6 +42,11 @@ Freshness deserves care. EdgeTX returns integer zero for a telemetry source both
 
 Two limitations remain, and neither is solvable from Lua: staleness is link-wide rather than per sensor, and a sensor that is configured but has never been received reads as a valid zero while the link is up.
 
+Physical switch sources carry no telemetry unit, so their numeric readings
+remain fresh without a receiver, including zero at the middle position.
+The `text` panel uses these shared subscriptions and explicit position mappings;
+it never interprets a missing reading as a switch position.
+
 Every service degrades rather than raising. A missing firmware API, an unknown source name, a sensor never received, an out-of-range timer, or a GPS source with no fix all produce an `unavailable` snapshot.
 
 ### Service diagnostics

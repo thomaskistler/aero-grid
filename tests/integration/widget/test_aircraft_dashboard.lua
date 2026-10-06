@@ -16,7 +16,7 @@ radio.values[100] = 8.0
 local context = fixture.createLoaded(nil, { DashID = "default", Theme = "modern" })
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-assertions.assertEqual(#context.panels, 8)
+assertions.assertEqual(#context.panels, 9)
 fixture.assertNoOverlap(context)
 
 local expected = {
@@ -28,6 +28,7 @@ local expected = {
     ["flight-count"] = { 2, 1, 1, 1 },
     expo = { 3, 1, 1, 1 },
     identity = { 2, 2, 2, 2 },
+    mode = { 2, 0, 1, 1 },
 }
 for id, dimensions in pairs(expected) do
     local placement = assert(fixture.entryById(context, id)).placement

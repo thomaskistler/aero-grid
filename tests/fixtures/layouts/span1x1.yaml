@@ -36,6 +36,21 @@ grid:
   rows: 4
 
 panels:
+  - id: g-text
+    type: text
+    col: 0
+    row: 3
+    colSpan: 1
+    rowSpan: 1
+    config:
+      texts:
+        - label: MODE
+          source: sa
+          positions:
+            up: LOW
+            middle: MID
+            down: HIGH
+
   # Top-left is under the EdgeTX menu button in App mode. A single cell cannot
   # be saved there and the specification says so; it keeps its reading and
   # drops its label. It is occupied here on purpose, so the damage is visible

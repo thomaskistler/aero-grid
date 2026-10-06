@@ -5,6 +5,7 @@ Choose a panel below for visual examples, settings, behavior, and configuration 
 | Panel | Purpose |
 | --- | --- |
 | [`metric`](../panels/metric.md) | Up to three numeric readings, including telemetry and global variables. |
+| [`text`](../panels/text.md) | Up to three switch-position text readings. |
 | [`flight-timer`](../panels/flight-timer.md) | An EdgeTX model timer. |
 | [`flight-mode`](../panels/flight-mode.md) | The active EdgeTX flight mode. |
 | [`tx-battery`](../panels/tx-battery.md) | Transmitter battery voltage and an optional voltage-based estimate. |

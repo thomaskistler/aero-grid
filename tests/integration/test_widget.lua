@@ -607,12 +607,10 @@ end
 --- Setup and Screens once per layout, which is enough friction that nobody
 --- would look at it -- which is the whole point of it existing.
 ---
---- **Two models, because ten screens is the ceiling.** `MAX_CUSTOM_SCREENS`
---- is 10 (`radio/src/dataconstants.h`), and there are ten reviewable
---- panels plus the dashboards, the two palette screens and the debug
---- screen. That is eleven and does not fit, so the review screens have a
---- model of their own and the working model keeps the dashboards, the
---- palette comparison and the debug screen.
+--- `MAX_CUSTOM_SCREENS` is 10 (`radio/src/dataconstants.h`). The working
+--- model keeps dashboards, palette comparison and debug screens. Review
+--- models hold panel screens, with text on a separate model because the
+--- original review model is full.
 local function testScreensReachEveryShippedLayout()
     local function readModel(name)
         local handle = assert(hostIo.open(root .. "/tests/fixtures/sdcard/MODELS/" .. name, "r"))
@@ -622,7 +620,14 @@ local function testScreensReachEveryShippedLayout()
     end
 
     local working = readModel("model1.yml")
-    local review = readModel("model2.yml")
+    local mainReview = readModel("model2.yml")
+    local textReview = readModel("model3.yml")
+    local defaultModel = readModel("model4.yml")
+    assert(
+        string.find(defaultModel, "stringValue: default", 1, true),
+        "default model must select the default dashboard"
+    )
+    local review = mainReview .. "\n" .. textReview
 
     local listingPath = root .. "/build/screen-layouts.txt"
     os.execute("ls '" .. sourcePath .. "layouts' > '" .. listingPath .. "'")
@@ -707,10 +712,13 @@ local function testScreensReachEveryShippedLayout()
 
     -- EdgeTX stops at MAX_CUSTOM_SCREENS, which is 10 on colour targets
     -- (radio/src/dataconstants.h). A model carrying more is one the radio will
-    -- not load as written. Asserted on both, because the review model is the
-    -- one that will grow: seven panels are still to be reviewed and each
-    -- takes a screen.
-    for name, text in pairs({ ["model1.yml"] = working, ["model2.yml"] = review }) do
+    -- not load as written. Check each model independently.
+    for name, text in pairs({
+        ["model1.yml"] = working,
+        ["model2.yml"] = mainReview,
+        ["model3.yml"] = textReview,
+        ["model4.yml"] = defaultModel,
+    }) do
         local screens = 0
         for _ in string.gmatch(text, "\n      LayoutId:") do
             screens = screens + 1
@@ -4253,6 +4261,15 @@ local function testReadingsAreCentredOnTheirPanel()
     --- the panel directory rather than listed, so a panel added to the
     --- catalogue is covered from the moment it exists.
     local CONFIG = {
+        ["text"] = {
+            "      texts:",
+            "        - label: MODE",
+            "          source: sa",
+            "          positions:",
+            "            up: LOW",
+            "            middle: MID",
+            "            down: HIGH",
+        },
         ["metric"] = { "      metrics:", "        - source: Alt", "          label: ALT", "          unit: m" },
         ["flight-timer"] = { "      label: TIMER", "      timer: 0" },
         ["flight-mode"] = { "      label: MODE" },
@@ -4707,6 +4724,15 @@ panels:
     local sweepPath = makeWidget("appmode-sweep")
     --- What each panel needs to draw something real during the sweep.
     local SWEEP_CONFIG = {
+        ["text"] = {
+            "      texts:",
+            "        - label: MODE",
+            "          source: sa",
+            "          positions:",
+            "            up: LOW",
+            "            middle: MID",
+            "            down: HIGH",
+        },
         ["metric"] = { "      metrics:", "        - source: RxBt", "          label: Probe" },
         ["flight-timer"] = { "      label: Probe", "      timer: 0" },
         ["flight-mode"] = { "      label: Probe" },
@@ -5505,6 +5531,22 @@ local function testInstructionBudget()
     --- Every core panel, at sixteen single cells, with the services each one
     --- must genuinely drive while it is measured.
     local CORE_EXERCISES = {
+        {
+            type = "text",
+            services = { "telemetry" },
+            config = function()
+                local lines = { "texts:" }
+                for _, source in ipairs({ "sf", "sa", "sb" }) do
+                    lines[#lines + 1] = "  - label: MODE"
+                    lines[#lines + 1] = "    source: " .. source
+                    lines[#lines + 1] = "    positions:"
+                    lines[#lines + 1] = "      up: LOW"
+                    lines[#lines + 1] = "      middle: MID"
+                    lines[#lines + 1] = "      down: HIGH"
+                end
+                return lines
+            end,
+        },
         {
             type = "metric",
             services = { "telemetry" },
@@ -9779,6 +9821,8 @@ local function testUnitsAreNotDrawnBesideAnAbsentReading()
 
     -- Live enough to resolve a unit, absent enough to have no value.
     local UNIT_CONFIG = {
+        ["text"] = "      texts:\n        - label: MODE\n          source: sa\n"
+            .. "          positions:\n            up: LOW\n            down: HIGH\n",
         ["link-status"] = "      reading: rssi\n      rssiSource: RSSI\n",
         ["metric"] = "      metrics:\n        - source: VSpd\n          unit: m/s\n",
     }

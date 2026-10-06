@@ -8,12 +8,13 @@ fixture.radio.rssi = 0
 local context = fixture.createLoaded(nil, { DashID = "default", Theme = "modern" })
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-assertions.assertEqual(#context.panels, 8)
+assertions.assertEqual(#context.panels, 9)
 fixture.assertNoOverlap(context)
 for id, position in pairs({
     ["flight-clock"] = { 0, 0, 2, 1 },
     ["transmitter-battery"] = { 3, 0, 1, 1 },
     identity = { 2, 2, 2, 2 },
+    mode = { 2, 0, 1, 1 },
 }) do
     local entry = assert(fixture.entryById(context, id))
     assertions.assertEqual(entry.placement.col, position[1])

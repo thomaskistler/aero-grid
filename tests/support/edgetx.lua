@@ -1440,6 +1440,8 @@ function support.radio(hostIo)
             gvar2 = { id = 331, name = "gvar2", desc = "Global variable 2" },
             gvar9 = { id = 338, name = "gvar9", desc = "Global variable 9" },
             sa = { id = 300, name = "sa", desc = "Switch A" },
+            sb = { id = 301, name = "sb", desc = "Switch B" },
+            sf = { id = 305, name = "sf", desc = "Switch F" },
             ["trim-ail"] = { id = 310, name = "trim-ail", desc = "Aileron trim" },
             ["tx-voltage"] = { id = 320, name = "tx-voltage", desc = "Tx voltage" },
         },
@@ -1458,6 +1460,8 @@ function support.radio(hostIo)
             [112] = 42,
             [115] = 812,
             [300] = 1024,
+            [301] = 0,
+            [305] = -1024,
             [310] = 240,
             [320] = 7.9,
         },
@@ -1830,6 +1834,8 @@ function support.radio(hostIo)
         -- one reading its value. Found when one did.
         radio.values[120] = 2.5
         radio.values[300] = 1024
+        radio.values[301] = 0
+        radio.values[305] = -1024
         -- And the transmitter's own voltage, for the same reason and found the
         -- same way: a test that took it away to give `tx-battery` no reading
         -- left every later test's transmitter flat.
