@@ -7,7 +7,7 @@
 - Status last updated: 2026-10-04
 - EdgeTX source: `../edgetx`
 - Project root: `aero-grid/`
-- Implementation: Phase 1, milestones 1 to 8 complete; twelve shipped panels, six using the shared standard panel. The original nine display panels are reviewed and documented; the new switch-driven text panel is documented with simulator captures pending. Global-variable display uses ordinary metric sources.
+- Implementation: Phase 1, milestones 1 to 8 complete; thirteen shipped panels, seven using the shared standard panel. The original nine display panels are reviewed and documented; the text and flight-counter panels are documented with simulator captures. Global-variable display uses ordinary metric sources; the flight counter reserves GV9 FM0 for its persistent total.
 - Next work: Milestone 9 target-matrix validation and resource baselining. Initial dashboard validation passed on TX16S v2 with EdgeTX 2.12.4, as reported by the user on 2026-10-04.
 - The retirement and software-hardening work is merged into `main`. The aircraft dashboard, compact-layout refinements, and initial hardware records are the current follow-up change set. See [Resuming work](#resuming-work) for the state and the exact next steps.
 
@@ -154,6 +154,7 @@ The initial release should provide these panels:
 | `metric` | Up to three independently configured numeric readings | Generic |
 | `text` | Up to three explicit physical-switch position text mappings | Generic |
 | `flight-timer` | EdgeTX model timer with count-up or count-down presentation | Specialized |
+| `flight-counter` | Qualified-flight GV9 FM0 total, disarm-timeout completion, blue active state, announcements, and CSV history | Specialized |
 | `link-status` | RSSI, link quality, optional minimum quality, and link freshness | Specialized |
 | `navigation` | GPS position, bearing from home to model, distance to home, and GPS state | Specialized and responsive |
 | `flight-mode` | Current EdgeTX flight-mode name | Simple |
@@ -163,7 +164,7 @@ The initial release should provide these panels:
 | `service-probe` | The live state of one shared service, for diagnosis on the radio | Diagnostic |
 | `host-diagnostics` | What the host loaded and what it resolved to, in one section per panel | Diagnostic |
 
-Twelve panels ship, two of them diagnostic. Two more, `heartbeat` and `placeholder`, live under `tests/fixtures/panels`: they prove the host contract and never ship. `service-probe` inspects a service on the radio; `host-diagnostics` reports what the host loaded.
+Thirteen panels ship, two of them diagnostic. Two more, `heartbeat` and `placeholder`, live under `tests/fixtures/panels`: they prove the host contract and never ship. `service-probe` inspects a service on the radio; `host-diagnostics` reports what the host loaded.
 
 The `metric` panel accepts an ordered `metrics` list of one to three
 EdgeTX numeric sources. The first entry supplies the large reading and header;
@@ -448,7 +449,7 @@ The host creates one LVGL box or equivalent parent object for each rectangle. Pa
 
 ## Visual Design Direction
 
-**The design decisions and their reasoning live in [`aerogrid-design-guide.md`](aerogrid-design-guide.md).** Nine panels draw a panel reading: six assemble it through `theme.panel`, while `model-identity`, `navigation`, and `tx-battery` use shared slots directly. All twelve shipped panels use `theme.frame`. The three without a panel reading are `host-diagnostics`, `service-probe`, and `trim-panel`.
+**The design decisions and their reasoning live in [`aerogrid-design-guide.md`](aerogrid-design-guide.md).** Ten panels draw a panel reading: seven assemble it through `theme.panel`, while `model-identity`, `navigation`, and `tx-battery` use shared slots directly. All thirteen shipped panels use `theme.frame`. The three without a panel reading are `host-diagnostics`, `service-probe`, and `trim-panel`.
 
 The claim was true when this section was first written and survived the milestone that built it, the presentation pass, the vertical-rhythm pass and the #85 audit -- which corrected the same sentence in the design guide and did not find this copy. **That is the shape worth naming: a claim copied into two documents is corrected in one of them.** It is the fifth time in this project, and it is the most dangerous kind of stale, because a reader is told that a section describing working behaviour is aspirational and may build it a second time.
 
@@ -1987,7 +1988,7 @@ Every visible surface must be a **filled `lvgl.rectangle`**. Boxes are used only
 | `state(name, accent)` | Resolves a state name into concrete colors, border weight, and badge text. |
 | `telemetry` | Cached source readings with units, precision, and freshness. |
 | `model` | Model identity, bitmap path, timers, flight mode, and transmitter voltage. |
-| `control` | Effective trim positions and read-only global variables. |
+| `control` | Effective trims and global-variable snapshots; verified GV9 FM0 increments for the flight counter. |
 | `extrema` | EdgeTX sensor extrema and dashboard flight sessions. |
 | `navigation` | GPS fix, pilot position, distance, and north-up home-to-model bearing. |
 

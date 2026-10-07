@@ -1,0 +1,21 @@
+version: 1
+panel: flight-counter
+theme: modern
+border:
+  pixels: 10
+  rgb: [0, 0, 0]
+panels:
+  1x2: {col: 1, row: 0, colSpan: 1, rowSpan: 2}
+  2x1: {col: 2, row: 0, colSpan: 2, rowSpan: 1}
+  2x2: {col: 2, row: 2, colSpan: 2, rowSpan: 2}
+config:
+  label: FLIGHTS
+  armSwitch: SFv
+  motorSource: ch3
+  minFlightDuration: 1
+  disarmDuration: 10
+  announcements: false
+  history: false
+sample:
+  count: 42
+  rssi: 80

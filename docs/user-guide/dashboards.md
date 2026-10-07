@@ -19,6 +19,16 @@ Before using the bundled layout, adjust its source names, battery cell count,
 and alarm thresholds for your model. Its battery source must measure the
 flight pack, not a regulated receiver supply.
 
+The bundled dashboard includes a [flight-counter](../panels/flight-counter.md)
+tracker using GV9 FM0, `armSwitch: "SFv"` for armed, and CH3 for motor output.
+Adjust the panel's `armSwitch` and `motorSource` to match your model;
+the separate Mode text panel also needs matching switch mappings. Reserve GV9
+with precision 0 and limits allowing `0..999`. The tracker uses 30-second
+qualification, a 10-second disarm timeout, and CSV history by default.
+Use only one tracking panel across all dashboards and do not run EdgeTX Flights
+alongside it. When copying the default layout for a second dashboard, remove the
+tracker or replace it with a read-only `metric` using `gvar9`.
+
 ## Create a layout
 
 Copy `default.yaml` to a new filename and edit it, or start with this example.

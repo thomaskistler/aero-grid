@@ -95,6 +95,10 @@ function services.environment(overrides)
         getRSSI = callable(overrides.getRSSI) or callable(getRSSI),
         getFlightMode = callable(overrides.getFlightMode) or callable(getFlightMode),
         getTime = callable(overrides.getTime) or callable(getTime),
+        getSwitchIndex = callable(overrides.getSwitchIndex) or callable(getSwitchIndex),
+        getSwitchValue = callable(overrides.getSwitchValue) or callable(getSwitchValue),
+        charUp = CHAR_UP,
+        charDown = CHAR_DOWN,
         -- A global like `getValue`, not part of the model API: `etxlib` is in
         -- `_global_symbols` and reached through _G's __index
         -- (`radio/src/thirdparty/lua/src/linit.c`), so a widget sees it directly.
@@ -103,7 +107,14 @@ function services.environment(overrides)
         getTimer = callable(modelApi.getTimer),
         getSensor = callable(modelApi.getSensor),
         getGlobalVariable = callable(modelApi.getGlobalVariable),
+        setGlobalVariable = callable(modelApi.setGlobalVariable),
         getGlobalVariableDetails = callable(modelApi.getGlobalVariableDetails),
+        getDateTime = callable(overrides.getDateTime) or callable(getDateTime),
+        playNumber = callable(overrides.playNumber) or callable(playNumber),
+        playTone = callable(overrides.playTone) or callable(playTone),
+        fileOpen = callable(overrides.fileOpen) or callable(io.open),
+        fileWrite = callable(overrides.fileWrite) or callable(io.write),
+        fileClose = callable(overrides.fileClose) or callable(io.close),
     }
 end
 

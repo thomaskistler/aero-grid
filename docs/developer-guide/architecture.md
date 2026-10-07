@@ -30,7 +30,7 @@ end
 | --- | --- |
 | `telemetry` | Cached source readings with units, precision, and freshness. |
 | `model` | Model identity, bitmap path, timers, flight mode, and transmitter voltage. |
-| `control` | Effective trim positions and read-only global variables, for the active or a pinned flight mode. |
+| `control` | Effective trims and GV snapshots, plus verified GV9 FM0 increments for the flight counter. |
 | `extrema` | EdgeTX sensor extrema and dashboard flight sessions. |
 | `navigation` | GPS fix, pilot position, distance, and north-up home-to-model bearing. |
 
@@ -94,3 +94,23 @@ Services are bounded the same way panels are: at most one service is updated per
 Because EdgeTX refreshes widgets on every main loop pass, panels declare a `refreshInterval` in 10ms ticks rather than being serviced every frame, and panels sharing an interval are phase staggered so they fall due on different frames. A per-frame cap bounds the worst case for layouts that defeat staggering.
 
 Resource tests cover reload collectibility, font callback replacement, sustained timer updates, and changing telemetry. They do not measure native LVGL or bitmap memory or reproduce firmware GC cadence. Hardware validation remains necessary.
+
+## Flight counter ownership
+
+The `flight-counter` panel owns its qualification and disarm-timeout state
+machine. It subscribes to motor/link, switch-position, and pinned GV9 FM0 snapshots;
+foreground and background callbacks advance the same state. Unlike display-only
+panels, it asks the control service to commit verified GV increments and the
+model service to capture dates, announce flights, and append confirmed history.
+These side effects happen at transitions, not on every frame. The host supplies
+its clock alongside the shared services.
+
+The panel's `armSwitch` is independent of the extrema session's `armSource`.
+The control service resolves ASCII positions (`SF^`, `SA-`, `SFv`) using EdgeTX's
+switch character constants and `getSwitchIndex`, then polls the boolean
+`getSwitchValue`. Logical switch names such as `L01` use the same API. This
+selects an exact armed condition rather than interpreting the sign of a source.
+
+Each dashboard still owns independent services, so only one tracking panel
+should be installed per model. Other dashboards can display GV9 with `metric`.
+Detection state is not persisted across dashboard reloads; the GV count is.

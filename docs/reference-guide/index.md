@@ -7,6 +7,7 @@ Choose a panel below for visual examples, settings, behavior, and configuration 
 | [`metric`](../panels/metric.md) | Up to three numeric readings, including telemetry and global variables. |
 | [`text`](../panels/text.md) | Up to three switch-position text readings. |
 | [`flight-timer`](../panels/flight-timer.md) | An EdgeTX model timer. |
+| [`flight-counter`](../panels/flight-counter.md) | Panel-owned flight detection, GV9 count, and completed-flight history. |
 | [`flight-mode`](../panels/flight-mode.md) | The active EdgeTX flight mode. |
 | [`tx-battery`](../panels/tx-battery.md) | Transmitter battery voltage and an optional voltage-based estimate. |
 | [`trim-panel`](../panels/trim-panel.md) | Aileron, elevator, and rudder trims. |

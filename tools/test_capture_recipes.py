@@ -74,6 +74,26 @@ class CaptureRecipeTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.load(invalid)
 
+    def test_flight_counter_samples(self):
+        recipe = load_recipe(RECIPE_DIR / "flight-counter.yaml")
+        self.assertIn("model.setGlobalVariable(8, 0, 39)", fixture_inputs(recipe))
+        self.assertIn("feed.raw ~= 42", readiness(recipe))
+        self.assertIn('entry.instance.badgeText ~= "IN-FLIGHT"', readiness(recipe))
+        recipe["sample"]["count"] = 72
+        self.assertIn("model.setGlobalVariable(8, 0, 69)", fixture_inputs(self.load(recipe)))
+        for mutate in (
+            lambda r: r["sample"].update(count=1000),
+            lambda r: r["sample"].update(count=2),
+            lambda r: r["sample"].update(rssi=0),
+            lambda r: r["config"].update(history=True),
+            lambda r: r["config"].update(motorReversed=True),
+            lambda r: r["config"].update(minFlightDuration=30),
+        ):
+            invalid = copy.deepcopy(recipe)
+            mutate(invalid)
+            with self.assertRaises(ValueError):
+                self.load(invalid)
+
     def test_synthetic_samples_propagate(self):
         for panel in ("metric", "cell-battery", "link-status", "navigation"):
             recipe = load_recipe(RECIPE_DIR / f"{panel}.yaml")

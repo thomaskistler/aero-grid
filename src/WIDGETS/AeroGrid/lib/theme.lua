@@ -14,6 +14,7 @@
 ---@field textMuted integer
 ---@field textFaint integer
 ---@field cyan integer
+---@field blue integer Active-flight indication.
 ---@field green integer
 ---@field amber integer
 ---@field orange integer
@@ -74,6 +75,7 @@ local MODERN = {
     textMuted = 0xA7B0B6,
     textFaint = 0x69737A,
     cyan = 0x70D6F3,
+    blue = 0x72AEFF,
     green = 0x55D990,
     amber = 0xF2B84B,
     orange = 0xFF762E,
@@ -343,7 +345,7 @@ local function enforceLegibility(tokens, notices)
     correctContrast(tokens, "textFaint", tokens.surface, MIN_FAINT_CONTRAST, notices)
 
     -- Decorative accents may be nudged to stay visible on the panel surface.
-    for _, key in ipairs({ "cyan", "green", "amber", "orange" }) do
+    for _, key in ipairs({ "cyan", "green", "amber", "orange", "blue" }) do
         correctAccent(tokens, key, tokens.surface, MIN_ACCENT_CONTRAST, notices)
     end
 
@@ -385,7 +387,7 @@ local function enforceLegibility(tokens, notices)
         correctContrast(tokens, "text", tokens.surface, MIN_TEXT_CONTRAST, notices)
         correctContrast(tokens, "textMuted", tokens.surface, MIN_MUTED_CONTRAST, notices)
         correctContrast(tokens, "textFaint", tokens.surface, MIN_FAINT_CONTRAST, notices)
-        for _, key in ipairs({ "cyan", "green", "amber", "orange" }) do
+        for _, key in ipairs({ "cyan", "green", "amber", "orange", "blue" }) do
             correctAccent(tokens, key, tokens.surface, MIN_ACCENT_CONTRAST, notices)
         end
     end
@@ -425,8 +427,10 @@ end
 --- taken far darker than the accent rather than toward its lightness.
 ---@param tokens table Resolved 24-bit tokens.
 ---@param accent integer Accent this state draws, which the tint is mixed from.
+---@param preferred? integer Preferred surface, subject to the same contrast guarantees.
+---@param faintTextUsed? boolean False for states whose panels draw no faint supporting text.
 ---@return integer? surface Nil when no tint satisfies the guarantees.
-function theme.alertSurface(tokens, accent)
+function theme.alertSurface(tokens, accent, preferred, faintTextUsed)
     local surface = tokens.surface
 
     -- Each guarantee is a contrast ratio against a colour that does not change
@@ -450,6 +454,19 @@ function theme.alertSurface(tokens, accent)
         return (a + 0.05) / (b + 0.05)
     end
 
+    local function legible(candidateLum)
+        return ratio(surfaceLum, candidateLum) >= MIN_TINT_SEPARATION
+            and ratio(canvasLum, candidateLum) >= MIN_ELEVATION_CONTRAST
+            and (faintTextUsed == false or ratio(candidateLum, faintLum) >= MIN_FAINT_CONTRAST)
+            and ratio(candidateLum, accentLum) >= MIN_ACCENT_CONTRAST
+            and ratio(candidateLum, mutedLum) >= MIN_MUTED_CONTRAST
+            and ratio(candidateLum, textLum) >= MIN_TEXT_CONTRAST
+    end
+
+    if preferred and legible(luminance(preferred)) then
+        return preferred
+    end
+
     -- Hue first, then lightness, and both directions of lightness.
     --
     -- Mixing alone is only enough on a dark surface. Modern's panel is very
@@ -468,14 +485,7 @@ function theme.alertSurface(tokens, accent)
 
             -- Cheapest to fail first: a candidate too close to the resting surface
             -- is the common rejection, and testing it first skips the rest.
-            if
-                ratio(surfaceLum, candidateLum) >= MIN_TINT_SEPARATION
-                and ratio(canvasLum, candidateLum) >= MIN_ELEVATION_CONTRAST
-                and ratio(candidateLum, faintLum) >= MIN_FAINT_CONTRAST
-                and ratio(candidateLum, accentLum) >= MIN_ACCENT_CONTRAST
-                and ratio(candidateLum, mutedLum) >= MIN_MUTED_CONTRAST
-                and ratio(candidateLum, textLum) >= MIN_TEXT_CONTRAST
-            then
+            if legible(candidateLum) then
                 return candidate
             end
         end
@@ -728,12 +738,13 @@ function theme.build(mode, overrides, env)
     local alertRgb = {
         warning = theme.alertSurface(tokens, tokens.amber),
         critical = theme.alertSurface(tokens, tokens.critical),
+        active = theme.alertSurface(tokens, tokens.blue, 0x365673, false),
     }
     local alertColor = {}
     for name, value in pairs(alertRgb) do
         alertColor[name] = lcd.RGB(value)
     end
-    for _, name in ipairs({ "warning", "critical" }) do
+    for _, name in ipairs({ "warning", "critical", "active" }) do
         if not alertRgb[name] then
             theme.notice(notices, "warning", "no legible " .. name .. " tint; the panel keeps its resting surface")
         end
@@ -1550,8 +1561,9 @@ local MIN_LABEL_WIDTH = 30
 ---@param rect AeroGridRect
 ---@param fonts table Typography roles for this panel's span.
 ---@param reserved? table Width and height of an obstructed top-left corner.
+---@param badgeText? string Additional panel-specific state badge.
 ---@return table frame
-function theme.frame(resolved, rect, fonts, reserved)
+function theme.frame(resolved, rect, fonts, reserved, badgeText)
     local spacing = resolved.spacing
     -- Short panels cannot afford the standard vertical rhythm, but the left
     -- padding has a floor their height has no say in: the accent occupies that
@@ -1575,6 +1587,9 @@ function theme.frame(resolved, rect, fonts, reserved)
     -- informative. The label now yields to the badge and is dropped outright
     -- when what is left would only clip.
     local badgeWidth = theme.badgeWidth(fonts.badge)
+    if badgeText then
+        badgeWidth = math.max(badgeWidth, theme.measureText(fonts.badge, badgeText))
+    end
     if badgeWidth > content then
         badgeWidth = content
     end
@@ -2556,6 +2571,10 @@ function theme.state(resolved, state, accentName)
         presentation.label = color.textFaint
         presentation.badge = theme.BADGES.stale
         presentation.dim = true
+    elseif state == "active" then
+        presentation.accent = color.blue
+        presentation.surface = resolved.alertColor.active
+        presentation.badge = "IN-FLIGHT"
     elseif state == "warning" then
         -- The field carries the alarm, not the frame. `borderWidth` stays zero, so
         -- the panel draws no outline and the border keeps one meaning.

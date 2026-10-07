@@ -68,18 +68,15 @@ panels:
       timer: 0
       label: Flight timer
   - id: flight-count
-    type: metric
+    type: flight-counter
     col: 2
     row: 1
     colSpan: 1
     rowSpan: 1
     config:
-      metrics:
-        - source: gvar9
-          label: Flights
-          unit: ""
-          precision: 0
-      visual: none
+      label: Flights
+      armSwitch: SFv
+      motorSource: ch3
   - id: expo
     type: metric
     col: 3
