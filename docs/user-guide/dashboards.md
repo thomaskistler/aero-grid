@@ -13,7 +13,8 @@ files in order:
 3. `default.yaml` if neither file exists.
 
 Use a different Dashboard ID on each EdgeTX screen to select different layouts.
-Edit layout files on your computer, then copy them to the SD card.
+You can edit layouts on the radio in temporary fullscreen mode, or edit YAML
+files on a computer and copy them to the SD card.
 
 Before using the bundled layout, adjust its source names, battery cell count,
 and alarm thresholds for your model. Its battery source must measure the
@@ -62,6 +63,29 @@ The `type` selects the panel; `config` contains its settings.
 See the [Panel reference](../reference-guide/index.md) for settings and examples.
 Use exact, case-sensitive source names from your model's telemetry configuration.
 Follow the YAML structure above and the panel examples.
+
+## Edit a dashboard on the radio
+
+Temporarily take AeroGrid fullscreen, then choose **EDIT** in the upper-right
+corner or press Enter. The editor supports touch and rotary/key input.
+Use the panel selector, **Add panel**, **Move**, **Resize**, **Configure**,
+**Remove**, or **Defaults** actions. Move panels one cell at a time; resize
+keeps the selected panel's top-left cell fixed. Out-of-bounds moves, unsupported
+spans, and overlaps are rejected and shown in the editor.
+
+Configuration fields come from each panel's settings schema. Use the supplied
+choices and numeric bounds where available; text fields accept source names as
+typed, case-sensitive values. Adding or changing values only affects the
+in-memory draft. **Apply / Save** validates the whole layout before writing it
+to the model- and Dashboard ID-specific YAML file. The previous saved file is
+kept as `.bak`. **Cancel** discards the draft without changing the active
+dashboard or saved layout. **Defaults** replaces the draft with the shipped
+default layout; it is not persisted until Apply / Save.
+
+If the primary layout cannot be read, parsed, or validated, AeroGrid tries its
+backup, then the shared Dashboard ID layout and its backup, and finally the
+shipped default and its backup. Review the active path in the `host` diagnostics
+panel after recovery.
 
 ## App mode and Full screen
 

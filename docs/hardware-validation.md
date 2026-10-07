@@ -270,7 +270,19 @@ user-confirmed hardware verification without inventing quantitative measurements
   their configured ranges.
 - [ ] Change flight mode, timer state, trims, and GVs; confirm updates and
   flight-mode inheritance. Verify decimal GVs using explicit metric precision.
-- [ ] Confirm all panels remain read-only and do not alter model settings.
+- [ ] Enter temporary fullscreen and verify the editor affordance, touch,
+  rotary, and key controls are usable at normal viewing distance.
+- [ ] Add, move, resize, configure, and remove a panel; confirm collision and
+  bounds errors are clear and resize keeps the top-left cell fixed.
+- [ ] Cancel a draft and confirm the live layout and SD-card files are unchanged.
+- [ ] Apply a valid draft; power-cycle/reload and confirm the layout persists
+  for the selected model and Dashboard ID.
+- [ ] Verify a successful save retains the previous layout as `.bak`; restore
+  from a deliberately invalid primary on a test SD card and confirm fallback.
+- [ ] Confirm dashboard panels remain read-only and the editor only changes
+  AeroGrid layout files, not model settings.
+- [ ] On each supported radio/EdgeTX version, verify the file API supports the
+  temporary-file write/read/rename/remove sequence used by Apply / Save.
 
 ## Receiver telemetry
 

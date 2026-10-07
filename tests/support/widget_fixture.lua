@@ -18,6 +18,9 @@ io = {
     read = function(handle, size)
         return handle:read(size)
     end,
+    write = function(handle, content)
+        return handle:write(content)
+    end,
     close = function(handle)
         return handle:close()
     end,

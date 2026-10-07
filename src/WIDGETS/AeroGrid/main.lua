@@ -55,6 +55,12 @@
 ---@field tokens? table Tokens held between the tokenize and parse steps.
 ---@field pending? table[] Validated placements still awaiting construction.
 ---@field pendingIndex? integer Next placement to build.
+---@field editorModule? table On-radio layout editor, loaded only on demand.
+---@field editorUiModule? table LVGL editor controls, loaded only on demand.
+---@field editorSession? table Uncommitted editor working copy.
+---@field editorUi? table Active editor screen state.
+---@field editButton? any Fullscreen affordance for entering the editor.
+---@field editButtonLabel? any Fullscreen affordance label.
 
 local options = {
     { "DashID", STRING, "main" },
@@ -293,6 +299,34 @@ local function showErrors(context)
     })
 end
 
+--- Show or hide the fullscreen-only editor entry affordance.
+---@param context AeroGridContext
+local function updateEditorButton(context)
+    local width = math.min(72, math.max(1, context.zone.w - 8))
+    local x = math.max(4, context.zone.w - width - 6)
+    local shown = context.editButton ~= nil
+        and not context.editorUi
+        and not context.runtimeFailed
+        and context.stage == nil
+        and context.reloadState == nil
+        and context.document ~= nil
+        and isFullScreen()
+    if context.editButton then
+        if context.editButtonX ~= x or context.editButtonWidth ~= width then
+            context.editButton:set({ x = x, y = 4, w = width })
+            context.editButtonLabel:set({ x = x, y = 4, w = width })
+            context.editButtonX = x
+            context.editButtonWidth = width
+        end
+    end
+    if context.editButton and context.editorButtonVisible ~= shown then
+        local visibility = shown and lvgl.show or lvgl.hide
+        visibility(context.editButton)
+        visibility(context.editButtonLabel)
+        context.editorButtonVisible = shown
+    end
+end
+
 --- Dispatch one lifecycle callback to every live panel in isolation.
 --- A panel that raises is disabled and reported without affecting the others.
 ---@param context AeroGridContext
@@ -314,6 +348,179 @@ local function dispatchAll(context, event, ...)
     if failures then
         showErrors(context)
     end
+end
+
+--- Advance to the next layout candidate after a read or parse failure.
+---@param context AeroGridContext
+---@param reason string
+---@return boolean recovered
+local function recoverLayout(context, reason)
+    local candidates = context.loadCandidates
+    if type(candidates) ~= "table" then
+        return false
+    end
+
+    local index = context.loadCandidateIndex or 0
+    local nextIndex = index + 1
+    local candidate = candidates[nextIndex]
+    if not candidate then
+        return false
+    end
+
+    context.recoveryCandidate = {
+        candidate = candidate,
+        index = nextIndex,
+        reason = context.recoveryReason or reason,
+    }
+    context.recoveryReason = context.recoveryCandidate.reason
+    context.reloadState = "clear"
+    return true
+end
+
+--- Enter the editor while preserving the current dashboard until Apply succeeds.
+---@param context AeroGridContext
+---@return boolean opened
+local function openEditor(context)
+    if not isFullScreen() or context.stage or context.reloadState or not context.document then
+        return false
+    end
+    local runtimeApi = context.packageInfo and context.packageInfo.runtimeApi or 1
+    if not context.editorModule then
+        local module, moduleError = loadModule(context.path, "lib/editor.lua", runtimeApi)
+        if not module then
+            addError(context, "editor: " .. tostring(moduleError))
+            showErrors(context)
+            return false
+        end
+        context.editorModule = module
+    end
+    if not context.editorUiModule then
+        local module, moduleError = loadModule(context.path, "lib/editor_ui.lua", runtimeApi)
+        if not module then
+            addError(context, "editor UI: " .. tostring(moduleError))
+            showErrors(context)
+            return false
+        end
+        context.editorUiModule = module
+    end
+
+    context.editorPanelCache = context.editorPanelCache or {}
+    local function loadPanel(typeName)
+        if context.editorPanelCache[typeName] then
+            return context.editorPanelCache[typeName]
+        end
+        if type(typeName) ~= "string" or not string.match(typeName, "^[%w_-]+$") then
+            return nil, "invalid panel type"
+        end
+        local panel, panelError = loadModule(context.path, "panels/" .. typeName .. ".lua")
+        if panel then
+            context.editorPanelCache[typeName] = panel
+        end
+        return panel, panelError
+    end
+
+    local created, session, sessionError = pcall(
+        context.editorModule.new,
+        context.document,
+        context.grid,
+        context.layoutValidator,
+        context.panelHost,
+        loadPanel
+    )
+    if not created or not session then
+        addError(context, "editor: " .. tostring(sessionError or session))
+        showErrors(context)
+        return false
+    end
+
+    lvgl.hide(context.page)
+    context.editorSession = session
+    local handlers = {
+        editor = context.editorModule,
+        loadDefault = function()
+            return context.layoutStore.loadDefault(
+                context.path,
+                context.yaml,
+                context.layoutValidator,
+                context.grid
+            )
+        end,
+        save = function(document)
+            local saved, saveError, filename = context.layoutStore.save(
+                context.path,
+                context.modelFilename or "default",
+                context.dashboardId,
+                document,
+                context.yaml,
+                context.layoutValidator,
+                context.grid
+            )
+            if saved then
+                context.layoutPath = filename
+                context.layoutOrigin = "model"
+            end
+            return saved, saveError
+        end,
+        close = function(saved)
+            context.editorUiModule.close(context, false)
+            context.editorSession = nil
+            if saved then
+                context.reloadState = "clear"
+            end
+            updateEditorButton(context)
+        end,
+    }
+    local opened, openError = pcall(context.editorUiModule.open, context, session, handlers)
+    if not opened then
+        if context.editorUi then
+            pcall(context.editorUiModule.close, context, true)
+        end
+        context.editorSession = nil
+        lvgl.show(context.page)
+        addError(context, "editor UI: " .. tostring(openError))
+        showErrors(context)
+        return false
+    end
+    updateEditorButton(context)
+    return true
+end
+
+--- Whether an event or touch activates the fullscreen editor affordance.
+---@param context AeroGridContext
+---@param widgetEvent any
+---@param touchState any
+---@return boolean
+local function editorEntryHit(context, widgetEvent, touchState)
+    if
+        not isFullScreen()
+        or context.stage
+        or context.reloadState
+        or context.editorUi
+        or context.runtimeFailed
+        or not context.document
+    then
+        return false
+    end
+    local enter = rawget(_G, "EVT_VIRTUAL_ENTER")
+    if enter ~= nil and widgetEvent == enter then
+        return true
+    end
+    if
+        widgetEvent ~= rawget(_G, "EVT_TOUCH_TAP")
+        or type(touchState) ~= "table"
+        or type(touchState.x) ~= "number"
+        or type(touchState.y) ~= "number"
+    then
+        return false
+    end
+    local x, y = touchState.x, touchState.y
+    local left, top = context.left or 0, context.top or 0
+    if x >= left and x < left + context.zone.w and y >= top and y < top + context.zone.h then
+        x, y = x - left, y - top
+    end
+    local width = math.min(72, math.max(1, context.zone.w - 8))
+    local x0 = math.max(4, context.zone.w - width - 6)
+    return x >= x0 and x < x0 + width and y >= 4 and y < 30
 end
 
 --- The rectangle one placement occupies inside the host zone.
@@ -554,10 +761,16 @@ local function advanceLoad(context)
 
     --- Abandon the load, reporting why.
     local function fail(message)
-        addError(context, message)
+        if stage ~= "services" and recoverLayout(context, tostring(message)) then
+            return true
+        end
+        addError(context, context.recoveryReason or message)
         context.stage = nil
         context.tokens = nil
         context.source = nil
+        context.loadCandidates = nil
+        context.loadCandidateIndex = nil
+        updateEditorButton(context)
         showErrors(context)
         return false
     end
@@ -569,12 +782,53 @@ local function advanceLoad(context)
         end
 
         local modelInfo = model.getInfo()
-        local content, readError, filename, origin =
-            context.layoutStore.read(context.path, modelInfo and modelInfo.filename or "default", context.dashboardId)
+        local content, readError, filename, origin, candidates
+        local recoveryIndex
+        if context.recoveryCandidate then
+            local recovery = context.recoveryCandidate
+            context.recoveryCandidate = nil
+            context.recoveryReason = recovery.reason
+            local candidate = recovery.candidate
+            content, readError = context.layoutStore.readCandidate(candidate.filename)
+            filename, origin = candidate.filename, candidate.origin
+            candidates = context.layoutStore.candidates(
+                context.path,
+                modelInfo and modelInfo.filename or "default",
+                context.dashboardId
+            )
+            recoveryIndex = recovery.index
+        elseif type(context.layoutStore.readCandidates) == "function" then
+            content, readError, filename, origin, candidates = context.layoutStore.readCandidates(
+                context.path,
+                modelInfo and modelInfo.filename or "default",
+                context.dashboardId
+            )
+        else
+            content, readError, filename, origin = context.layoutStore.read(
+                context.path,
+                modelInfo and modelInfo.filename or "default",
+                context.dashboardId
+            )
+        end
 
-        context.layoutPath = filename
-        context.layoutOrigin = origin
+        if content or context.layoutPath == nil then
+            context.layoutPath = filename
+            context.layoutOrigin = origin
+        end
         context.modelFilename = modelInfo and modelInfo.filename or nil
+        context.loadCandidates = candidates
+        context.loadCandidateIndex = recoveryIndex
+        if candidates and not recoveryIndex then
+            for index, candidate in ipairs(candidates) do
+                if candidate.filename == filename then
+                    context.loadCandidateIndex = index
+                    break
+                end
+            end
+            if not context.loadCandidateIndex and origin == "none" then
+                context.loadCandidateIndex = #candidates
+            end
+        end
         if not content then
             return fail(readError)
         end
@@ -646,12 +900,23 @@ local function advanceLoad(context)
         end
 
         local validated, headerErrors = context.layoutValidator.validateDocument(document)
-        for _, headerError in ipairs(headerErrors or {}) do
-            addError(context, headerError)
-        end
-        if not validated then
+        if not validated or #(headerErrors or {}) > 0 then
+            local reason = table.concat(headerErrors or { "unsupported layout header" }, "; ")
+            if recoverLayout(context, reason) then
+                return true
+            end
+            if context.recoveryReason then
+                addError(context, context.recoveryReason)
+            else
+                for _, headerError in ipairs(headerErrors or {}) do
+                    addError(context, headerError)
+                end
+            end
             context.stage = nil
             context.tokens = nil
+            context.loadCandidates = nil
+            context.loadCandidateIndex = nil
+            updateEditorButton(context)
             showErrors(context)
             return false
         end
@@ -746,6 +1011,13 @@ local function advanceLoad(context)
         if not index or not token or token.indent < context.itemIndent then
             context.tokens = nil
             context.stage = nil
+            context.loadCandidates = nil
+            context.loadCandidateIndex = nil
+            if context.recoveryReason then
+                addNotice(context, "warning", "layout recovered after: " .. context.recoveryReason)
+                context.recoveryReason = nil
+            end
+            updateEditorButton(context)
             showErrors(context)
             return false
         end
@@ -793,6 +1065,8 @@ local function beginLoad(context)
     context.document = nil
     context.identifiers = nil
     context.itemIndex = nil
+    context.loadCandidates = nil
+    context.loadCandidateIndex = nil
     context.itemNumber = 0
     -- Subscriptions belong to the panels that made them, so the registry is
     -- rebuilt with the dashboard rather than reused across a reload.
@@ -891,6 +1165,27 @@ local function create(zone, widgetOptions, path)
         filled = true,
     })
 
+    context.editButton = lvgl.rectangle(context.root, {
+        x = math.max(4, zone.w - 78),
+        y = 4,
+        w = math.min(72, math.max(1, zone.w - 8)),
+        h = 26,
+        color = lcd.RGB(0x212830),
+        filled = true,
+    })
+    context.editButtonLabel = lvgl.label(context.root, {
+        x = math.max(4, zone.w - 78),
+        y = 4,
+        w = math.min(72, math.max(1, zone.w - 8)),
+        h = 26,
+        text = "EDIT",
+        color = lcd.RGB(0xF4F6F7),
+        font = function()
+            return SMLSIZE
+        end,
+    })
+    updateEditorButton(context)
+
     if
         not context.packageInfo
         or not context.grid
@@ -910,6 +1205,7 @@ local function create(zone, widgetOptions, path)
         -- Loading is deliberately deferred to refresh(). Doing it here would
         -- exceed EdgeTX's per-callback instruction budget on a full dashboard.
         beginLoad(context)
+        updateEditorButton(context)
     end
 
     return context
@@ -961,6 +1257,7 @@ local function beginReflow(context)
     context.left = context.zone.xabs or 0
     context.top = context.zone.yabs or 0
     context.fullScreen = isFullScreen()
+    updateEditorButton(context)
     context.reflowIndex = 1
 end
 
@@ -1035,7 +1332,15 @@ end
 ---@param context AeroGridContext
 ---@param widgetEvent any
 ---@return boolean consumed
-local function event(context, widgetEvent)
+local function event(context, widgetEvent, touchState)
+    if context.editorUi then
+        return context.editorUiModule.handle(context, widgetEvent, touchState)
+    end
+    if editorEntryHit(context, widgetEvent, touchState) then
+        openEditor(context)
+        return true
+    end
+
     for _, entry in ipairs(context.panels) do
         if not entry.failed then
             local ok, dispatchError, consumed = context.panelHost.dispatch(entry, "event", widgetEvent)
@@ -1132,6 +1437,11 @@ end
 --- exceeded no matter how large the layout is.
 ---@param context AeroGridContext
 local function refresh(context)
+    if context.editorUi and not isFullScreen() then
+        context.editorUiModule.close(context, true)
+        context.editorSession = nil
+    end
+
     -- A reload takes two callbacks on purpose. EdgeTX defers the cleanup that
     -- follows `clear()` until after the callback returns, and that cleanup
     -- invalidates every object in the cleared object's child list, including
@@ -1211,6 +1521,7 @@ local function refresh(context)
     then
         beginReflow(context)
     end
+    updateEditorButton(context)
     if context.reflowIndex then
         advanceReflow(context)
         return

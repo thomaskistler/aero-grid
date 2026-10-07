@@ -62,11 +62,12 @@ local function decodeDoubleQuoted(value)
     local replacements = {
         ['\\"'] = '"',
         ["\\n"] = "\n",
+        ["\\r"] = "\r",
         ["\\t"] = "\t",
         ["\\\\"] = "\\",
     }
 
-    return (string.gsub(value, '\\["nt\\]', replacements))
+    return (string.gsub(value, '\\["nrt\\]', replacements))
 end
 
 --- Parse a scalar supported by the constrained AeroGrid schema.
@@ -456,6 +457,163 @@ function yaml.parse(text)
     end
 
     return yaml.build(tokens)
+end
+
+local function quoteString(value)
+    if string.find(value, "[%z\1-\8\11\12\14-\31]") then
+        return nil, "YAML strings contain an unsupported control character"
+    end
+    local escaped = string.gsub(value, "[\r\n\t\\\"]", function(character)
+        local replacements = {
+            ["\\"] = "\\\\",
+            ['"'] = '\\"',
+            ["\n"] = "\\n",
+            ["\r"] = "\\r",
+            ["\t"] = "\\t",
+        }
+        return replacements[character]
+    end)
+    return '"' .. escaped .. '"'
+end
+
+local function isArray(value)
+    local count, maximum = 0, 0
+    for key in pairs(value) do
+        if type(key) ~= "number" or key < 1 or key % 1 ~= 0 then
+            return false
+        end
+        count = count + 1
+        if key > maximum then
+            maximum = key
+        end
+    end
+    return count == maximum
+end
+
+local function scalar(value)
+    local valueType = type(value)
+    if valueType == "string" then
+        return quoteString(value)
+    end
+    if valueType == "boolean" then
+        return value and "true" or "false"
+    end
+    if valueType == "number" then
+        if value ~= value or value == math.huge or value == -math.huge then
+            return nil, "YAML numbers must be finite"
+        end
+        return tostring(value)
+    end
+    return nil, "unsupported YAML value type: " .. valueType
+end
+
+local function sortedKeys(value)
+    local keys = {}
+    for key in pairs(value) do
+        if type(key) ~= "string" and type(key) ~= "number" then
+            return nil, "YAML mapping keys must be strings or integers"
+        end
+        keys[#keys + 1] = key
+    end
+    table.sort(keys, function(first, second)
+        if type(first) ~= type(second) then
+            return type(first) < type(second)
+        end
+        return first < second
+    end)
+    return keys
+end
+
+local function emit(value, indentation, firstPrefix, lines)
+    local valueType = type(value)
+    if valueType ~= "table" then
+        local text, scalarError = scalar(value)
+        if not text then
+            return scalarError
+        end
+        lines[#lines + 1] = firstPrefix .. text
+        return nil
+    end
+
+    local keys, keyError = sortedKeys(value)
+    if not keys then
+        return keyError
+    end
+    if #keys == 0 then
+        lines[#lines + 1] = firstPrefix .. "{}"
+        return nil
+    end
+
+    if isArray(value) then
+        for index = 1, #value do
+            local item = value[index]
+            local prefix = string.rep(" ", indentation) .. "- "
+            if type(item) == "table" then
+                local itemError = emit(item, indentation + 2, prefix, lines)
+                if itemError then
+                    return itemError
+                end
+            else
+                local text, scalarError = scalar(item)
+                if not text then
+                    return scalarError
+                end
+                lines[#lines + 1] = prefix .. text
+            end
+        end
+        return nil
+    end
+
+    local first = true
+    for _, key in ipairs(keys) do
+        if type(key) ~= "string" or not string.match(key, "^[%a_][%w_-]*$") then
+            return "invalid YAML mapping key: " .. tostring(key)
+        end
+        local prefix
+        if first and firstPrefix ~= nil then
+            prefix = firstPrefix .. key .. ": "
+        else
+            prefix = string.rep(" ", indentation) .. key .. ": "
+        end
+        local child = value[key]
+        if type(child) == "table" and next(child) ~= nil then
+            lines[#lines + 1] = string.sub(prefix, 1, -2)
+            local childError = emit(child, indentation + 2, nil, lines)
+            if childError then
+                return childError
+            end
+        else
+            local childText
+            if type(child) == "table" then
+                childText = "{}"
+            else
+                local scalarError
+                childText, scalarError = scalar(child)
+                if not childText then
+                    return scalarError
+                end
+            end
+            lines[#lines + 1] = prefix .. childText
+        end
+        first = false
+    end
+    return nil
+end
+
+--- Serialize supported Lua layout values to deterministic constrained YAML.
+---@param document table
+---@return string? text
+---@return string? error
+function yaml.serialize(document)
+    if type(document) ~= "table" then
+        return nil, "YAML document must be a table"
+    end
+    local lines = {}
+    local encodeError = emit(document, 0, "", lines)
+    if encodeError then
+        return nil, encodeError
+    end
+    return table.concat(lines, "\n") .. "\n"
 end
 
 return yaml

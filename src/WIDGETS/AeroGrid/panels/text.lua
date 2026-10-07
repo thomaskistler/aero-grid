@@ -6,7 +6,20 @@ local text = {
     supportedSpans = { "1x1", "2x1", "3x1", "4x1", "1x2", "2x2", "3x2", "4x2" },
     refreshInterval = 20,
     settings = {
-        { key = "texts", label = "Texts", type = "table" },
+        {
+            key = "texts",
+            label = "Texts",
+            type = "table",
+            minItems = 1,
+            maxItems = 3,
+            default = {
+                {
+                    label = "SW1",
+                    source = "sa",
+                    positions = { up = "UP", middle = "MID", down = "DOWN" },
+                },
+            },
+        },
         {
             key = "accent",
             label = "Accent",

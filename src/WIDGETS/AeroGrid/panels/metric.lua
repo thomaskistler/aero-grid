@@ -58,7 +58,22 @@ local metric = {
     -- the host pays every panel's refresh inside one instruction budget.
     refreshInterval = 20,
     settings = {
-        { key = "metrics", label = "Metrics", type = "table" },
+        {
+            key = "metrics",
+            label = "Metrics",
+            type = "table",
+            minItems = 1,
+            maxItems = 3,
+            default = {
+                {
+                    source = "RSSI",
+                    label = "RSSI",
+                    unit = "",
+                    precision = 0,
+                    direction = "auto",
+                },
+            },
+        },
         {
             key = "accent",
             label = "Accent",
