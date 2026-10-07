@@ -14,6 +14,30 @@ local theme = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/theme.lua"))()
 
 local function testModernThemeBuilds()
     local resolved = theme.build("modern")
+    local active = theme.state(resolved, "active")
+    assertions.assertEqual(active.accent, resolved.color.blue)
+    assertions.assertEqual(active.badge, "IN-FLIGHT")
+    assertions.assertEqual(resolved.alertRgb.active, 0x365673)
+    assert(active.surface and active.surface ~= resolved.color.surface, "active flights need a visible blue tint")
+    assert(theme.contrast(resolved.rgb.text, resolved.alertRgb.active) >= 4.5)
+    assert(theme.contrast(resolved.rgb.textMuted, resolved.alertRgb.active) >= 3.0)
+    assert(theme.contrast(resolved.rgb.surface, resolved.alertRgb.active) >= 1.3)
+    local frame = theme.frame(resolved, { w = 117, h = 134 }, { label = SMLSIZE, badge = SMLSIZE }, nil, "IN-FLIGHT")
+    assert(frame.badgeWidth >= theme.measureText(SMLSIZE, "IN-FLIGHT"))
+    assert(frame.labelHidden or frame.labelX + frame.labelWidth < frame.badgeX)
+    for _, overrides in ipairs({
+        { surface = 0xFFFFFF },
+        { surface = 0x000000 },
+        { surface = 0x205090 },
+    }) do
+        local derived = theme.build("custom", overrides)
+        local surface = derived.alertRgb.active
+        if surface then
+            assert(theme.contrast(derived.rgb.text, surface) >= 4.5)
+            assert(theme.contrast(derived.rgb.textMuted, surface) >= 3.0)
+            assert(theme.contrast(derived.rgb.blue, surface) >= 2.5)
+        end
+    end
     assertions.assertEqual(resolved.mode, "modern")
     assertions.assertTableHasKey(resolved.color, "surface", "theme.result should expose a surface color")
     assertions.assertEqual(type(resolved.warnings), "table")

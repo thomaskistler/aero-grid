@@ -34,7 +34,7 @@ local function inputs(index)
     radio.values[146] = index % 2 == 0 and 21 or 27
     radio.values[320] = 6.5 + (index % 19) / 10
     radio.globals[0] = index % 101
-    radio.globals[8] = index % 10000
+    radio.globals[8] = index % 999
     radio.timers[0].value = index
 end
 

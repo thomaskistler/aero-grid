@@ -10,8 +10,9 @@ import yaml
 
 RECIPE_DIR = Path(__file__).with_name("capture-recipes")
 PANELS = ("trim-panel", "flight-timer", "metric", "flight-mode", "tx-battery",
-              "model-identity", "cell-battery", "link-status", "navigation", "text")
-SYNTHETIC_PANELS = ("metric", "tx-battery", "cell-battery", "link-status", "navigation", "text")
+              "model-identity", "cell-battery", "link-status", "navigation", "text", "flight-counter")
+SYNTHETIC_PANELS = ("metric", "tx-battery", "cell-battery", "link-status", "navigation", "text",
+                    "flight-counter")
 
 
 class RecipeLoader(yaml.SafeLoader):
@@ -223,6 +224,16 @@ def load_recipe(path):
             if (not bitmap.is_file() or bitmap.suffix.lower() != ".png"
                     or not re.fullmatch(r"[a-zA-Z0-9_-]{1,10}\.png", bitmap.name)):
                 raise ValueError("sample.bitmap must be an existing PNG with a firmware-safe filename")
+    elif recipe["panel"] == "flight-counter":
+        fields(sample, ("count", "rssi"))
+        integer(sample["count"], len(panels), 999, "sample.count")
+        number(sample["rssi"], 1, 100, "sample.rssi")
+        if (config.get("armSwitch") != "SFv" or config.get("motorSource") != "ch3"
+                or config.get("motorReversed", False) or config.get("history") is not False
+                or config.get("announcements") is not False):
+            raise ValueError("Flight counter capture requires SFv armSwitch, ch3 motor, "
+                             "non-reversed motor, and disabled history/announcements")
+        number(config.get("minFlightDuration"), 0.2, 2, "config.minFlightDuration")
     elif recipe["panel"] == "text":
         fields(sample, ("switches",))
         switches = sample["switches"]
@@ -291,6 +302,13 @@ def configure_model(prefix, recipe):
 
 def readiness(recipe):
     sample = recipe["sample"]
+    if recipe["panel"] == "flight-counter":
+        return f"""            local feed = entry.instance.feed
+            if not feed or not feed.available or feed.raw ~= {sample['count']}
+                or feed.precision ~= 0 or entry.instance.text ~= "{sample['count']}"
+                or entry.instance.phase ~= "active" or entry.instance.stateName ~= "active"
+                or entry.instance.badgeText ~= "IN-FLIGHT" then return end
+"""
     if recipe["panel"] == "text":
         result = ""
         for index, item in enumerate(recipe["config"]["texts"], 1):
@@ -387,6 +405,29 @@ def fixture_inputs(recipe):
     """Synthetic firmware API inputs, installed only in the isolated service environment."""
     if recipe["panel"] not in SYNTHETIC_PANELS:
         return None
+    if recipe["panel"] == "flight-counter":
+        # Each gallery instance qualifies once against the isolated real GV9.
+        initial = recipe["sample"]["count"] - len(recipe["panels"])
+        return f"""model.setGlobalVariable(8, 0, {initial})
+assert(model.getGlobalVariable(8, 0) == {initial}, "capture could not initialize GV9")
+local armIndex = assert(getSwitchIndex("SF" .. CHAR_DOWN))
+return {{
+    getSwitchValue = function(index)
+        if index == armIndex then return true end
+        return getSwitchValue(index)
+    end,
+    getFieldInfo = function(name)
+        if name == "sf" then return {{ id = 300, name = name }} end
+        if name == "ch3" then return {{ id = 301, name = name }} end
+        return getFieldInfo(name)
+    end,
+    getValue = function(id)
+        if id == "sf" or id == 300 or id == "ch3" or id == 301 then return 1024 end
+        return getValue(id)
+    end,
+    getRSSI = function() return {recipe['sample']['rssi']} end,
+}}
+"""
     if recipe["panel"] == "text":
         switches = {name: {"id": 300 + index,
                           "value": {"up": -1024, "middle": 0, "down": 1024}[position]}

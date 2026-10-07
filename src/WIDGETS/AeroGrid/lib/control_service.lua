@@ -1,11 +1,12 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
---- Effective trim positions and read-only global variables.
+--- Effective trim positions and global variables.
 ---
 --- Both are resolved by EdgeTX rather than by AeroGrid. A trim is read through
 --- a selectable trim source, so EdgeTX applies flight-mode trim inheritance,
 --- and a global variable is read for a flight mode so EdgeTX applies global
---- variable inheritance. AeroGrid never writes either one.
+--- variable inheritance. Only the flight counter writes a reserved global
+--- variable; ordinary control subscriptions remain read-only.
 ---
 --- Trim scaling is the awkward part. `getValue` on a trim source returns eight
 --- times the stored trim, so a standard trim spans -1000 to 1000 and an
@@ -85,7 +86,34 @@ function controlService.new(env, support)
         cursor = 1,
         trims = {},
         variables = {},
+        variableEntries = {},
     }, controlService)
+end
+
+--- Resolve a physical position or logical switch through the firmware.
+function controlService:armSwitch(name)
+    local env = self.env
+    assert(env.getSwitchIndex and env.getSwitchValue, "flight counter requires switch APIs")
+    local physical, position = string.match(name, "^(S[A-Z])([%^v%-])$")
+    local firmwareName = name
+    if physical then
+        local suffix = position == "^" and env.charUp or position == "v" and env.charDown or "-"
+        assert(type(suffix) == "string", "flight counter requires switch character constants")
+        firmwareName = physical .. suffix
+    end
+    local index = env.getSwitchIndex(firmwareName)
+    assert(type(index) == "number" and index > 0, "flight counter armSwitch does not exist: " .. name)
+    return self:add({
+        fresh = false,
+        value = 0,
+        updatedAt = 0,
+    }, function(_, entry, now)
+        local value = env.getSwitchValue(index)
+        assert(type(value) == "boolean", "flight counter could not read armSwitch " .. name)
+        entry.state.value = value and 1 or 0
+        entry.state.fresh = true
+        entry.state.updatedAt = now
+    end).view
 end
 
 --- Register a subscription and publish its immutable view.
@@ -323,8 +351,29 @@ function controlService:globalVariable(index, flightMode)
     }, controlService.readVariable)
 
     entry.pinnedMode = flightMode
+    self.variableEntries[key] = entry
     self.variables[key] = entry.view
     return entry.view
+end
+
+--- Increment the reserved flight counter, reading FM0 again at commit time.
+--- Verify the stored value so a configured GV limit cannot silently lose a flight.
+function controlService:incrementFlightCount()
+    local read, write = self.env.getGlobalVariable, self.env.setGlobalVariable
+    assert(read and write, "flight counter requires global-variable read/write APIs")
+    local current = read(8, 0)
+    assert(
+        type(current) == "number" and current >= 0 and current == math.floor(current) and current < 999,
+        "flight counter requires GV9 FM0 in the range 0..998; count is invalid or full"
+    )
+    local nextCount = current + 1
+    write(8, 0, nextCount)
+    assert(read(8, 0) == nextCount, "flight counter could not save GV9 FM0; check its configured limits")
+    local entry = self.variableEntries["8:0"]
+    if entry then
+        self:readVariable(entry)
+    end
+    return nextCount
 end
 
 --- Refresh a bounded slice of the subscriptions.

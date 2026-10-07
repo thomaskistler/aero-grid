@@ -129,17 +129,15 @@ panels:
       packEmpty: 6.6
       packFull: 8.4
 
-  - id: g-gvar
-    type: metric
+  - id: g-flights
+    type: flight-counter
     col: 3
     row: 1
     colSpan: 1
     rowSpan: 1
     config:
-      metrics:
-        - source: gvar1
-          precision: 1
-      visual: none
+      label: FLT
+      history: false
 
   - id: g-trim
     type: trim-panel

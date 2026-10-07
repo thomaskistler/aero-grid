@@ -1682,6 +1682,27 @@ function support.radio(hostIo)
         return radio.fields[name]
     end
 
+    CHAR_UP, CHAR_DOWN = string.char(192), string.char(193)
+    local switchPositions = {}
+    function getSwitchIndex(name)
+        local source, position = string.match(name, "^(S[A-Z])(.)$")
+        local field = source and radio.fields[string.lower(source)]
+        if not field then
+            return 0
+        end
+        local target = position == CHAR_UP and -1024 or position == CHAR_DOWN and 1024 or position == "-" and 0
+        if target == nil or source == "SF" and target == 0 then
+            return 0
+        end
+        local index = field.id * 3 + (target + 1024) / 1024
+        switchPositions[index] = { field.id, target }
+        return index
+    end
+    function getSwitchValue(index)
+        local position = assert(switchPositions[index], "unknown mock switch")
+        return radio.values[position[1]] == position[2]
+    end
+
     --- luaGetRSSI pushes min((uint8_t)99, TELEMETRY_RSSI()), then
     --- g_model.rfAlarms.warning and .critical. A reading above 99 is a number
     --- no radio can produce, so the mock cannot hand one out either.
@@ -1765,6 +1786,13 @@ function support.radio(hostIo)
                 return value
             end
             return radio.globals[index]
+        end,
+        setGlobalVariable = function(index, flightMode, value)
+            assert(index >= 0 and index < 9 and flightMode >= 0 and flightMode < 9)
+            local details = radio.globalDetails[index]
+            local low, high = details and details.min or -1024, details and details.max or 1024
+            radio.globalsByMode[index] = radio.globalsByMode[index] or {}
+            radio.globalsByMode[index][flightMode] = math.max(low, math.min(high, value))
         end,
         getGlobalVariableDetails = function(index)
             return radio.globalDetails[index]

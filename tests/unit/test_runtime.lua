@@ -467,12 +467,12 @@ end
 local function testSettingsVocabulary()
     local catalog = settingsCatalog()
     local kinds = panelTypes()
-    -- Twelve panels ship, two of them diagnostic. `heartbeat` and
+    -- Thirteen panels ship, two of them diagnostic. `heartbeat` and
     -- `placeholder` were built to prove
     -- the host contract and are fixtures under `tests/fixtures/panels`, so
     -- they are not read here: the vocabulary rules below are about what a
     -- person configures on a radio.
-    assertEqual(#kinds, 12, "the catalogue changed size; the spec names twelve")
+    assertEqual(#kinds, 13, "the catalogue changed size; the spec names thirteen")
 
     for kind, settings in pairs(catalog) do
         local declared = {}
@@ -884,7 +884,7 @@ local function testPanelDocumentationLoads()
     assertEqual(documented + owed, #kinds, "every panel is either documented or listed as owing a page")
     assertEqual(
         documented,
-        10,
+        11,
         "the number of documented panels changed; update this count as the" .. " review works through the catalogue"
     )
 end
@@ -1454,6 +1454,7 @@ local function testRenderConsultsWhatIsShown()
     local NO_SUPPORTING_ROW = {
         ["host-diagnostics"] = true,
         ["service-probe"] = true,
+        ["flight-counter"] = true,
     }
 
     local checked, exempt = 0, 0
@@ -1466,7 +1467,17 @@ local function testRenderConsultsWhatIsShown()
         local body = string.match(source, "\nfunction [%w]+%.render%b()(.-)\n[%w]")
         if NO_SUPPORTING_ROW[kind] then
             exempt = exempt + 1
-            assert(not body, kind .. " has a render function but is listed as" .. " having no supporting row to gate")
+            if kind == "flight-counter" then
+                assert(
+                    body and not string.find(body, "out.detail", 1, true),
+                    "flight counter only renders its count/state"
+                )
+            else
+                assert(
+                    not body,
+                    kind .. " has a render function but is listed as" .. " having no supporting row to gate"
+                )
+            end
         else
             assert(
                 body,

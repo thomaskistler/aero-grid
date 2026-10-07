@@ -324,6 +324,68 @@ function modelService:widestFlightModeName()
     return widest
 end
 
+--- Capture the timestamp once, at the beginning of a flight attempt.
+function modelService:flightDate()
+    assert(self.env.getDateTime, "flight history requires getDateTime")
+    local date = self.env.getDateTime()
+    assert(type(date) == "table", "flight history could not read the radio date")
+    for _, key in ipairs({ "year", "mon", "day", "hour", "min" }) do
+        assert(type(date[key]) == "number", "flight history date is missing " .. key)
+    end
+    return string.format("%04d-%02d-%02d %02d:%02d", date.year, date.mon, date.day, date.hour, date.min)
+end
+
+--- Announce qualification/end without requiring external WAV files.
+function modelService:announceFlight(count, ended)
+    assert(self.env.playTone and self.env.playNumber, "flight announcements require playTone and playNumber")
+    self.env.playTone(ended and 800 or 1200, 150, 0, 0)
+    self.env.playNumber(count, 0)
+end
+
+local function csvText(value)
+    if not string.find(value, '[,"\r\n]') then
+        return value
+    end
+    return '"' .. string.gsub(value, '"', '""') .. '"'
+end
+
+--- Append only confirmed completed flights; the CSV is not the count store.
+function modelService:logFlight(date, duration, count)
+    local env = self.env
+    assert(env.fileOpen and env.fileWrite and env.fileClose, "flight history requires file APIs")
+    assert(env.getInfo, "flight history requires model.getInfo")
+    local info = env.getInfo()
+    assert(
+        type(info) == "table" and type(info.name) == "string" and type(info.filename) == "string",
+        "flight history could not read model identity"
+    )
+    local filename = "/flights-history.csv"
+    local existing = env.fileOpen(filename, "r")
+    if existing then
+        env.fileClose(existing)
+    end
+    local handle, openError = env.fileOpen(filename, "a")
+    assert(handle, "flight history could not open " .. filename .. ": " .. tostring(openError))
+    local ok, writeError = pcall(function()
+        if not existing then
+            env.fileWrite(handle, "flight_date,model_name,flight_count,duration,model_id\n# api_ver=1\n")
+        end
+        env.fileWrite(
+            handle,
+            string.format(
+                "%s,%s,%d,%d,%s\n",
+                csvText(date),
+                csvText(info.name),
+                count,
+                math.floor(duration),
+                csvText(info.filename)
+            )
+        )
+    end)
+    env.fileClose(handle)
+    assert(ok, "flight history could not write " .. filename .. ": " .. tostring(writeError))
+end
+
 --- Read the transmitter battery voltage.
 ---@param state table
 ---@param now integer

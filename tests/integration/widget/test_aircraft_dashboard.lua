@@ -38,6 +38,13 @@ for id, dimensions in pairs(expected) do
     assertions.assertEqual(placement.rowSpan, dimensions[4])
 end
 assertions.assertEqual(fixture.instanceOf(context, "flight-count").text, "39")
+assertions.assertEqual(fixture.entryById(context, "flight-count").placement.type, "flight-counter")
+local flights = fixture.instanceOf(context, "flight-count")
+assertions.assertEqual(flights.settings.armSwitch, "SFv")
+assertions.assertEqual(flights.settings.motorSource, "ch3")
+assertions.assertEqual(flights.settings.history, true)
+assertions.assertEqual(flights.settings.minFlightDuration, 30)
+assertions.assertEqual(flights.settings.disarmDuration, 10)
 assertions.assertEqual(fixture.instanceOf(context, "expo").text, "70")
 assertions.assertEqual(fixture.entryById(context, "transmitter-battery").placement.type, "tx-battery")
 assertions.assertEqual(fixture.entryById(context, "receiver-battery").placement.type, "cell-battery")

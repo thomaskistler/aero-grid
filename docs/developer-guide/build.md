@@ -119,6 +119,7 @@ make capture-setup
 build/capture-venv/bin/python tools/capture-panels.py --panel trim-panel
 build/capture-venv/bin/python tools/capture-panels.py --panel flight-timer
 build/capture-venv/bin/python tools/capture-panels.py --panel text
+build/capture-venv/bin/python tools/capture-panels.py --panel flight-counter
 build/capture-venv/bin/python tools/capture-panels.py --all
 ```
 
@@ -135,7 +136,7 @@ no run history is kept. A failed attempt leaves diagnostic output in that panel'
 directory, not a retained set of old images. `--all` regenerates every bundled
 panel recipe sequentially; on failure, already completed panels remain updated.
 Documentation assets are not overwritten.
-All ten display panels are supported. Captures use the Modern theme, a 480 x 272 App-mode dashboard,
+All eleven display panels are supported. Captures use the Modern theme, a 480 x 272 App-mode dashboard,
 and placements outside the menu overlay. Stored aileron/elevator/rudder trims
 are +26/-26/0 (displayed as +20%/-20%/0% at standard range). The flight-timer
 recipe uses a stopped, persistent countdown named Flight with 3:04 remaining
@@ -156,6 +157,7 @@ simulator are not changed.
 | --- | --- |
 | `metric` | ALTITUDE 128 m, MAX 176 m, VS 2.4 m/s (synthetic maximum vertical speed). |
 | `flight-timer` | Flight countdown, 3:04 remaining of 5:00. |
+| `flight-counter` | Active count 42 and IN-FLIGHT badge, with synthetic armed/motor/link inputs and real isolated GV9 persistence. |
 | `flight-mode` | Active mode 0 named ACRO. |
 | `tx-battery` | 7.9 V, explicitly calibrated to 6.4-8.4 V; percentage disabled because 2x1 does not support it. |
 | `trim-panel` | Stored aileron/elevator/rudder +26/-26/0. |
@@ -209,6 +211,14 @@ displays. This is a capture-only color override, recorded in the saved recipe
 and provenance; fonts, geometry, and production radio colors are unchanged.
 Documentation using these images should disclose the brighter supporting text.
 Set it to `false` or omit it to capture the exact production palette.
+
+The flight-counter recipe uses the exact production palette, one-second
+qualification, and no history or audio. Synthetic SF and CH3 readings stay at
+`+1024` with RSSI `80`. Its three gallery instances each qualify once against real
+GV9 FM0, initialized to `sample.count - 3`; readiness requires the final shared
+count and active `IN-FLIGHT` presentation in every span. This isolated screenshot
+fixture is not a supported multi-tracker layout: install only one tracker per
+model. `sample.count` sets the final displayed total.
 
 For example, a timer recipe can change its sample without code edits:
 

@@ -5,6 +5,10 @@ return {
             "inject-field",
         },
         globals = {
+            "CHAR_UP",
+            "CHAR_DOWN",
+            "getSwitchIndex",
+            "getSwitchValue",
             "COLOR_THEME_ACTIVE",
             "COLOR_THEME_EDIT",
             "COLOR_THEME_FOCUS",
@@ -24,6 +28,7 @@ return {
             "TINSIZE",
             "XXLSIZE",
             "fstat",
+            "getDateTime",
             "getFieldInfo",
             "getFlightMode",
             "getGeneralSettings",
@@ -34,6 +39,8 @@ return {
             "loadScript",
             "lvgl",
             "model",
+            "playNumber",
+            "playTone",
         },
     },
 }

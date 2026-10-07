@@ -382,8 +382,8 @@ local function buildServices(context, placement)
     -- that moves is picked up by the update that follows it.
     if context.reserved then
         builder = setmetatable({
-            frame = function(resolved, rect, fonts)
-                return context.themeBuilder.frame(resolved, rect, fonts, reservedFor(context, placement))
+            frame = function(resolved, rect, fonts, reserved, badgeText)
+                return context.themeBuilder.frame(resolved, rect, fonts, reservedFor(context, placement), badgeText)
             end,
         }, { __index = context.themeBuilder })
     end
@@ -400,6 +400,7 @@ local function buildServices(context, placement)
         state = function(name, accentName)
             return builder.state(theme, name, accentName)
         end,
+        clock = getTime,
         -- The host's own state, for the diagnostics view and nothing else.
         --
         -- The live context, not a copy. A diagnostics view reporting on a
