@@ -1436,7 +1436,9 @@ end
 --- At most one loading step runs per call, so the instruction budget is never
 --- exceeded no matter how large the layout is.
 ---@param context AeroGridContext
-local function refresh(context)
+---@param widgetEvent? number Fullscreen input supplied by EdgeTX.
+---@param touchState? table
+local function refresh(context, widgetEvent, touchState)
     if context.editorUi and not isFullScreen() then
         context.editorUiModule.close(context, true)
         context.editorSession = nil
@@ -1492,6 +1494,14 @@ local function refresh(context)
     if context.stage then
         advanceLoad(context)
         return
+    end
+
+    -- EdgeTX delivers fullscreen input through refresh, not an event callback.
+    if widgetEvent ~= nil and widgetEvent ~= 0 and isFullScreen() then
+        event(context, widgetEvent, touchState)
+        if context.reloadState then
+            return
+        end
     end
 
     -- A zone change repositions every panel, which a full grid cannot

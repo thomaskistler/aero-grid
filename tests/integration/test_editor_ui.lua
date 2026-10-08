@@ -52,12 +52,11 @@ assert(not hostIo.open(savedPath, "r"), "model-specific layout existed before ed
 
 widget.lvglMock.setFullScreen(true)
 widget.pump(context, 10)
-local touchConsumed = widget.module("main.lua").event(context, EVT_TOUCH_TAP, { x = 430, y = 10 })
+widget.module("main.lua").refresh(context, EVT_TOUCH_TAP, { x = 430, y = 10 })
 assert(
-    touchConsumed and context.editorUi,
+    context.editorUi,
     "touching the fullscreen editor affordance did not open the editor: "
-        .. tostring(touchConsumed)
-        .. ", button="
+        .. "button="
         .. tostring(context.editButton.properties.x)
         .. ", fullscreen="
         .. tostring(context.fullScreen)
@@ -66,17 +65,45 @@ assert(
         .. ", errors="
         .. table.concat(context.errors, "; ")
 )
+
+local function tap(x, y)
+    widget.module("main.lua").refresh(context, EVT_TOUCH_TAP, { x = x, y = y })
+end
+
+local function tapAction(id)
+    for _, action in ipairs(context.editorUi.actions) do
+        if action.id == id then
+            tap(action.rect.x + 2, action.rect.y + 2)
+            return
+        end
+    end
+    error("missing editor action: " .. id)
+end
+
+tapAction("add")
+assertEqual(context.editorUi.mode, "add", "Add did not open the catalog")
+local catalogRow = context.editorUi.catalogRows[3]
+tap(catalogRow.rect.x + 2, catalogRow.rect.y + 2)
+assertEqual(#context.editorSession.draft.panels, 2, "catalog tap did not add a panel")
+assertEqual(context.editorSession.selected, 2, "added panel was not selected")
+local geometry = context.editorUi.geometry
+tap(geometry.gridX + 2, geometry.gridY + 2)
+assertEqual(context.editorSession.selected, 1, "grid tap did not select the original panel")
+tap(geometry.gridX + geometry.cell + 2, geometry.gridY + 2)
+assertEqual(context.editorSession.selected, 2, "grid tap did not select the added panel")
+tapAction("remove")
+assertEqual(#context.editorSession.draft.panels, 1, "Remove did not remove the selected panel")
 assert(context.editorModule.move(context.editorSession, 1, 0))
-assert(widget.module("main.lua").event(context, EVT_VIRTUAL_EXIT))
+widget.module("main.lua").refresh(context, EVT_VIRTUAL_EXIT)
 assert(not context.editorUi, "Cancel did not close the editor")
 assertEqual(context.document.panels[1].col, 0, "Cancel changed the active document")
 assert(not hostIo.open(savedPath, "r"), "Cancel wrote a layout")
 
-assert(widget.module("main.lua").event(context, EVT_VIRTUAL_ENTER))
+widget.module("main.lua").refresh(context, EVT_VIRTUAL_ENTER)
 assert(context.editorUi, "rotary/key entry did not open the editor")
 assert(context.editorModule.move(context.editorSession, 1, 0))
 context.editorUi.actionIndex = 9
-assert(widget.module("main.lua").event(context, EVT_VIRTUAL_ENTER))
+widget.module("main.lua").refresh(context, EVT_VIRTUAL_ENTER)
 assert(not context.editorUi, "Apply did not close the editor: " .. tostring(context.editorUi and context.editorUi.status))
 
 local guard = 0
