@@ -91,27 +91,22 @@ end
 
 local function layoutGeometry(context)
     local width, height = context.zone.w, context.zone.h
-    local cell = math.floor(math.min((width * 0.46 - 12) / 4, (height - 78) / 4))
-    cell = math.max(22, cell)
-    local gridX, gridY = 8, 34
-    local gridSize = cell * 4
-    local rightX = gridX + gridSize + 12
-    local rowHeight = math.max(16, math.min(22, math.floor((height - 76) / 10)))
-    local actionsY = gridY + 2
+    local rightX = math.floor(width * 0.4)
+    local rowHeight = 22
+    local actionsY = 34
     local fieldHeight = math.max(16, math.min(22, math.floor((height - 92) / 9)))
     return {
         width = width,
         height = height,
-        cell = cell,
-        gridX = gridX,
-        gridY = gridY,
-        gridSize = gridSize,
+        cell = width / 4,
+        gridX = 0,
+        gridY = 0,
         rightX = rightX,
         rightWidth = math.max(24, width - rightX - 8),
         actionsY = actionsY,
         rowHeight = rowHeight,
         fieldHeight = fieldHeight,
-        statusY = height - 23,
+        statusY = height - 68,
     }
 end
 
@@ -120,17 +115,21 @@ local function addCellObjects(state, context)
     local geometry = state.geometry
     for row = 0, 3 do
         for col = 0, 3 do
-            local rect = {
-                x = geometry.gridX + col * geometry.cell + 1,
-                y = geometry.gridY + row * geometry.cell + 1,
-                w = geometry.cell - 2,
-                h = geometry.cell - 2,
-            }
-            local background = rectangle(
-                state.screen,
-                rect,
-                color(context, "surface", 0x212830)
-            )
+            local rect = assert(context.grid.rect(context.zone, {
+                col = col,
+                row = row,
+                colSpan = 1,
+                rowSpan = 1,
+            }, 4, 4, 4))
+            local background = lvgl.rectangle(state.screen, {
+                x = rect.x,
+                y = rect.y,
+                w = rect.w,
+                h = rect.h,
+                color = color(context, "cyan", 0x70D6F3),
+                filled = false,
+                thickness = 1,
+            })
             local text = label(state.screen, rect, "", color(context, "text", 0xF4F6F7))
             state.cells[#state.cells + 1] = { background = background, text = text, rect = rect, col = col, row = row }
         end
@@ -141,18 +140,15 @@ local function addMainActions(state, context)
     state.actions = {}
     for index, action in ipairs(ACTIONS) do
         local rect = {
-            x = state.geometry.rightX,
-            y = state.geometry.actionsY + (index - 1) * state.geometry.rowHeight,
-            w = state.geometry.rightWidth,
+            x = 4 + ((index - 1) % 5) * math.floor((state.geometry.width - 8) / 5),
+            y = state.geometry.height - 44 + math.floor((index - 1) / 5) * state.geometry.rowHeight,
+            w = math.floor((state.geometry.width - 8) / 5) - 2,
             h = state.geometry.rowHeight - 2,
         }
-        local background = rectangle(
-            state.screen,
-            rect,
-            color(context, "surface", 0x212830)
-        )
+        local background = rectangle(state.screen, rect, color(context, "surface", 0x212830))
         local text = label(state.screen, rect, action.text, color(context, "text", 0xF4F6F7))
-        state.actions[index] = { id = action.id, background = background, text = text, rect = rect, title = action.text }
+        state.actions[index] =
+            { id = action.id, background = background, text = text, rect = rect, title = action.text }
     end
 end
 
@@ -165,12 +161,8 @@ local function addFieldRows(state, context)
             w = state.geometry.rightWidth,
             h = state.geometry.fieldHeight - 2,
         }
-        local background = rectangle(
-            state.screen,
-            rect,
-            color(context, "surface", 0x212830),
-            color(context, "border", 0x3A434B)
-        )
+        local background =
+            rectangle(state.screen, rect, color(context, "surface", 0x212830), color(context, "border", 0x3A434B))
         local text = label(state.screen, rect, "", color(context, "text", 0xF4F6F7))
         state.fieldRows[index] = { background = background, text = text, rect = rect }
     end
@@ -179,7 +171,6 @@ end
 local function createScreen(context, session, handlers)
     local geometry = layoutGeometry(context)
     local screen = lvgl.box(context.root, { x = 0, y = 0, w = geometry.width, h = geometry.height })
-    rectangle(screen, { x = 0, y = 0, w = geometry.width, h = geometry.height }, color(context, "canvas", 0x0A0C0E))
     local state = {
         session = session,
         handlers = handlers,
@@ -190,10 +181,16 @@ local function createScreen(context, session, handlers)
         catalogIndex = 1,
         fieldIndex = 1,
         status = "Select a panel, then edit its layout.",
-        title = label(screen, { x = 8, y = 5, w = geometry.width - 16, h = 25 }, "AEROGRID EDITOR", color(context, "text", 0xF4F6F7), MIDSIZE),
+        title = label(
+            screen,
+            { x = 8, y = 5, w = geometry.width - 16, h = 25 },
+            "EDIT DASHBOARD",
+            color(context, "text", 0xF4F6F7),
+            SMLSIZE
+        ),
         details = label(
             screen,
-            { x = 8, y = geometry.gridY + geometry.gridSize + 4, w = geometry.gridSize, h = 26 },
+            { x = 8, y = 27, w = geometry.rightX - 16, h = 26 },
             "",
             color(context, "textMuted", 0xA7B0B6)
         ),
@@ -204,13 +201,58 @@ local function createScreen(context, session, handlers)
             color(context, "amber", 0xF2B84B)
         ),
     }
-    rectangle(
-        screen,
-        { x = geometry.gridX, y = geometry.gridY, w = geometry.gridSize, h = geometry.gridSize },
-        color(context, "canvas", 0x0A0C0E)
-    )
     addCellObjects(state, context)
+    state.previews = {}
+    for index = 1, 16 do
+        local rect = { x = 0, y = 0, w = 1, h = 1 }
+        state.previews[index] = {
+            background = rectangle(screen, rect, color(context, "surface", 0x212830)),
+            text = label(screen, rect, "", color(context, "text", 0xF4F6F7)),
+        }
+    end
+    state.selection = lvgl.rectangle(screen, {
+        x = 0,
+        y = 0,
+        w = 1,
+        h = 1,
+        color = color(context, "cyan", 0x70D6F3),
+        filled = false,
+        thickness = 3,
+    })
+    state.drawer = rectangle(screen, {
+        x = geometry.rightX - 4,
+        y = 30,
+        w = geometry.rightWidth + 8,
+        h = geometry.height - 98,
+    }, color(context, "canvas", 0x0A0C0E))
     addMainActions(state, context)
+    state.back = {
+        background = rectangle(
+            screen,
+            { x = 4, y = geometry.height - 22, w = geometry.width - 8, h = 20 },
+            color(context, "surface", 0x212830)
+        ),
+        text = label(
+            screen,
+            { x = 8, y = geometry.height - 22, w = geometry.width - 16, h = 20 },
+            "Back to dashboard",
+            color(context, "text", 0xF4F6F7)
+        ),
+    }
+    state.navigation = {}
+    for index, title in ipairs({ "Previous", "Next", "-", "+", "Delete" }) do
+        local rect = {
+            x = 4 + (index - 1) * math.floor((geometry.width - 8) / 5),
+            y = geometry.height - 44,
+            w = math.floor((geometry.width - 8) / 5) - 2,
+            h = 20,
+        }
+        state.navigation[index] = {
+            rect = rect,
+            background = rectangle(screen, rect, color(context, "surface", 0x212830)),
+            text = label(screen, rect, title, color(context, "text", 0xF4F6F7)),
+        }
+    end
     addFieldRows(state, context)
     state.catalogRows = {}
     for index = 1, 12 do
@@ -220,11 +262,7 @@ local function createScreen(context, session, handlers)
             w = geometry.rightWidth,
             h = geometry.fieldHeight - 2,
         }
-        local background = rectangle(
-            screen,
-            rect,
-            color(context, "surface", 0x212830)
-        )
+        local background = rectangle(screen, rect, color(context, "surface", 0x212830))
         local text = label(screen, rect, "", color(context, "text", 0xF4F6F7))
         state.catalogRows[index] = { background = background, text = text, rect = rect }
     end
@@ -260,31 +298,44 @@ end
 
 local function renderCells(context, state)
     local placements = state.session.draft.panels
+    local previewed, previewError = state.handlers.preview(state.session.draft)
+    if not previewed then
+        state.status = tostring(previewError)
+    end
     for _, cell in ipairs(state.cells) do
-        local occupied, selected
-        for index, placement in ipairs(placements) do
-            if
-                cell.col >= placement.col
-                and cell.col < placement.col + placement.colSpan
-                and cell.row >= placement.row
-                and cell.row < placement.row + placement.rowSpan
-            then
-                occupied = placement
-                selected = index == state.session.selected
-                break
+        setVisible(cell.background, state.mode == "move" or state.mode == "resize")
+        setVisible(cell.text, false)
+    end
+    for index, preview in ipairs(state.previews) do
+        local placement = placements[index]
+        local existing = false
+        if placement then
+            for _, entry in ipairs(context.panels) do
+                if entry.placement.id == placement.id and entry.placement.type == placement.type then
+                    existing = true
+                    break
+                end
             end
         end
-        local fill = occupied and (selected and color(context, "surfaceRaised", 0x2E3841)
-            or color(context, "surface", 0x212830)) or color(context, "canvas", 0x0A0C0E)
-        cell.background:set({
-            color = fill,
-        })
-        local text = occupied and cell.col == occupied.col and cell.row == occupied.row and panelLabel(occupied) or ""
-        setText(cell.text, text)
+        setVisible(preview.background, placement ~= nil and not existing)
+        setVisible(preview.text, placement ~= nil and not existing)
+        if placement and not existing then
+            local rect = assert(context.grid.rect(context.zone, placement, 4, 4, 4))
+            preview.background:set(rect)
+            preview.text:set({
+                x = rect.x + 4,
+                y = rect.y + 4,
+                w = math.max(1, rect.w - 8),
+                h = rect.h - 8,
+                text = "NEW: " .. panelLabel(placement),
+            })
+        end
     end
 
     local placement = placements[state.session.selected]
+    setVisible(state.selection, placement ~= nil)
     if placement then
+        state.selection:set(assert(context.grid.rect(context.zone, placement, 4, 4, 4)))
         setText(
             state.details,
             string.format(
@@ -315,7 +366,11 @@ local function renderFields(context, state)
     if not fields then
         state.status = tostring(fieldError)
     end
-    local visible = math.min(#state.fieldRows, math.floor((state.geometry.height - 72) / state.geometry.fieldHeight))
+    local visible = math.min(
+        #state.fieldRows,
+        math.floor((state.geometry.statusY - state.geometry.actionsY) / state.geometry.fieldHeight)
+    )
+    state.visibleFieldRows = visible
     local first = math.max(1, math.min(state.fieldIndex - visible + 1, #state.fields - visible + 1))
     first = math.max(1, first)
     state.fieldOffset = first
@@ -331,7 +386,17 @@ local function renderFields(context, state)
             else
                 local value = field
                 if state.mode == "string" and first + visibleIndex - 1 == state.fieldIndex then
-                    value = { value = state.stringBuffer }
+                    local position = state.stringPosition
+                    value = {
+                        value = string.sub(state.stringBuffer, 1, position - 1) .. "[" .. (string.sub(
+                            state.stringBuffer,
+                            position,
+                            position
+                        ) ~= "" and string.sub(state.stringBuffer, position, position) or " ") .. "]" .. string.sub(
+                            state.stringBuffer,
+                            position + 1
+                        ),
+                    }
                 end
                 title = title .. ": " .. valueText(value.value)
             end
@@ -345,7 +410,11 @@ end
 
 local function renderCatalog(context, state)
     local catalog = state.handlers.editor.CATALOG
-    local visible = math.min(#state.catalogRows, math.floor((state.geometry.height - 72) / state.geometry.fieldHeight))
+    local visible = math.min(
+        #state.catalogRows,
+        math.floor((state.geometry.statusY - state.geometry.actionsY) / state.geometry.fieldHeight)
+    )
+    state.visibleCatalogRows = visible
     local first = math.max(1, math.min(state.catalogIndex - visible + 1, #catalog - visible + 1))
     first = math.max(1, first)
     state.catalogOffset = first
@@ -365,6 +434,18 @@ end
 
 local function render(context, state)
     renderCells(context, state)
+    local drawer = state.mode == "add" or state.mode == "configure" or state.mode == "string"
+    setVisible(state.drawer, drawer)
+    setVisible(state.back.background, drawer)
+    setVisible(state.back.text, drawer)
+    setText(state.back.text, state.mode == "string" and "Accept text" or "Back to dashboard")
+    for index, row in ipairs(state.navigation) do
+        local visible = drawer and (index < 5 or state.mode == "string")
+        setVisible(row.background, visible)
+        setVisible(row.text, visible)
+    end
+    showRows(state.fieldRows, 0)
+    showRows(state.catalogRows, 0)
     if state.mode == "menu" or state.mode == "move" or state.mode == "resize" then
         showRows(state.fieldRows, 0)
         showRows(state.catalogRows, 0)
@@ -372,13 +453,11 @@ local function render(context, state)
             setVisible(row.background, true)
             setVisible(row.text, true)
             colorRow(context, row, index == state.actionIndex and state.mode == "menu")
-            setText(row.text, state.mode == "menu" and row.title or (
-                state.mode == "move" and "Move: directions / tap cell" or "Size: directions / tap cell"
-            ))
+            setText(row.text, row.title)
         end
         setText(
             state.title,
-            state.mode == "menu" and "AEROGRID EDITOR"
+            state.mode == "menu" and "EDIT DASHBOARD"
                 or (state.mode == "move" and "MOVE SELECTED PANEL" or "RESIZE FROM TOP-LEFT")
         )
     elseif state.mode == "add" then
@@ -406,12 +485,6 @@ end
 
 local function setSelectedAction(context, state, index)
     state.actionIndex = ((index - 1) % #ACTIONS) + 1
-    local id = ACTIONS[state.actionIndex].id
-    if id == "previous" then
-        state.handlers.editor.select(state.session, state.session.selected - 1)
-    elseif id == "next" then
-        state.handlers.editor.select(state.session, state.session.selected + 1)
-    end
     render(context, state)
 end
 
@@ -495,7 +568,7 @@ local function startStringEdit(state, field)
     state.stringPosition = 1
     local current = string.sub(state.stringBuffer, state.stringPosition, state.stringPosition)
     state.stringCharIndex = math.max(1, string.find(CHARACTERS, current, 1, true) or 1)
-    state.status = "PREV/NEXT change a character; LEFT/RIGHT move."
+    state.status = "Keys: PREV/NEXT change character; LEFT/RIGHT move."
 end
 
 local function finishStringEdit(context, state, accept)
@@ -600,8 +673,13 @@ local function activate(context, state)
         render(context, state)
     elseif state.mode == "configure" then
         local field = state.fields and state.fields[state.fieldIndex]
-        if field and field.type == "string" then
-            startStringEdit(state, field)
+        if field then
+            if field.type == "string" and not field.choices then
+                startStringEdit(state, field)
+            else
+                local changed, changeError = updateFieldValue(context, state, field, 1)
+                state.status = changed and "Setting updated in the working copy." or tostring(changeError)
+            end
             render(context, state)
         end
     elseif state.mode == "string" then
@@ -681,9 +759,62 @@ local function touch(context, state, touchState)
         return false
     end
     local geometry = state.geometry
-    if x >= geometry.gridX and x < geometry.gridX + geometry.gridSize and y >= geometry.gridY and y < geometry.gridY + geometry.gridSize then
-        local col = math.floor((x - geometry.gridX) / geometry.cell)
-        local row = math.floor((y - geometry.gridY) / geometry.cell)
+    if state.mode == "menu" or state.mode == "move" or state.mode == "resize" then
+        for index, action in ipairs(state.actions) do
+            if hit(action.rect, x, y) then
+                state.actionIndex = index
+                state.mode = "menu"
+                activateAction(context, state, action.id)
+                return true
+            end
+        end
+    elseif y >= geometry.height - 22 then
+        if state.mode == "string" then
+            finishStringEdit(context, state, true)
+        else
+            state.mode = "menu"
+            state.status = "Returned to dashboard editing."
+            render(context, state)
+        end
+        return true
+    elseif y >= geometry.height - 44 then
+        for index, navigation in ipairs(state.navigation) do
+            if hit(navigation.rect, x, y) then
+                if state.mode == "string" then
+                    if index <= 2 then
+                        local delta = index == 1 and -1 or 1
+                        state.stringPosition =
+                            math.max(1, math.min(#state.stringBuffer + 1, state.stringPosition + delta))
+                        local current = string.sub(state.stringBuffer, state.stringPosition, state.stringPosition)
+                        state.stringCharIndex = math.max(1, string.find(CHARACTERS, current, 1, true) or 1)
+                    elseif index <= 4 then
+                        applyStringCharacter(state, index == 3 and -1 or 1)
+                    else
+                        state.stringBuffer = string.sub(state.stringBuffer, 1, state.stringPosition - 1)
+                            .. string.sub(state.stringBuffer, state.stringPosition + 1)
+                    end
+                elseif index <= 2 then
+                    vertical(context, state, index == 1 and -1 or 1)
+                elseif state.mode == "configure" and index <= 4 then
+                    direction(context, state, true, index == 3 and -1 or 1)
+                end
+                render(context, state)
+                return true
+            end
+        end
+        return true
+    end
+    if not (state.mode == "add" or state.mode == "configure" or state.mode == "string") then
+        local col, row
+        for _, cell in ipairs(state.cells) do
+            if hit(cell.rect, x, y) then
+                col, row = cell.col, cell.row
+                break
+            end
+        end
+        if col == nil then
+            return false
+        end
         if state.mode == "menu" then
             for index, placement in ipairs(state.session.draft.panels) do
                 if
@@ -701,11 +832,8 @@ local function touch(context, state, touchState)
         elseif state.mode == "move" then
             local placement = state.session.draft.panels[state.session.selected]
             if placement then
-                local moved, moveError = state.handlers.editor.move(
-                    state.session,
-                    col - placement.col,
-                    row - placement.row
-                )
+                local moved, moveError =
+                    state.handlers.editor.move(state.session, col - placement.col, row - placement.row)
                 state.status = moved and "Panel moved." or tostring(moveError)
                 render(context, state)
             end
@@ -725,18 +853,14 @@ local function touch(context, state, touchState)
         end
     end
 
-    if state.mode == "menu" then
-        for index, action in ipairs(state.actions) do
-            if hit(action.rect, x, y) then
-                state.actionIndex = index
-                activateAction(context, state, action.id)
-                return true
-            end
-        end
-    elseif state.mode == "add" then
+    if state.mode == "add" then
         for index, row in ipairs(state.catalogRows) do
             local catalogIndex = state.catalogOffset + index - 1
-            if hit(row.rect, x, y) and state.handlers.editor.CATALOG[catalogIndex] then
+            if
+                index <= state.visibleCatalogRows
+                and hit(row.rect, x, y)
+                and state.handlers.editor.CATALOG[catalogIndex]
+            then
                 state.catalogIndex = catalogIndex
                 activate(context, state)
                 return true
@@ -746,18 +870,18 @@ local function touch(context, state, touchState)
         for index, row in ipairs(state.fieldRows) do
             local fieldIndex = state.fieldOffset + index - 1
             local field = state.fields and state.fields[fieldIndex]
-            if hit(row.rect, x, y) and field then
+            if index <= state.visibleFieldRows and hit(row.rect, x, y) and field then
                 state.fieldIndex = fieldIndex
                 local delta = x > row.rect.x + row.rect.w * 0.66 and 1
                     or (x < row.rect.x + row.rect.w * 0.33 and -1 or 0)
                 if delta ~= 0 then
                     local changed, changeError = updateFieldValue(context, state, field, delta)
                     state.status = changed and "Setting updated in the working copy." or tostring(changeError)
-                elseif field.type == "table-list" then
-                    updateFieldValue(context, state, field, 1)
-                    state.status = "Entry added to the working copy."
-                elseif field.type == "string" then
+                elseif field.type == "string" and not field.choices then
                     startStringEdit(state, field)
+                else
+                    local changed, changeError = updateFieldValue(context, state, field, 1)
+                    state.status = changed and "Setting updated in the working copy." or tostring(changeError)
                 end
                 render(context, state)
                 return true

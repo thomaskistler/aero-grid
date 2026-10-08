@@ -558,7 +558,13 @@ function editor.settings(session)
     if not module then
         return nil, moduleError
     end
-    return module.settings or {}, copy(placement.config or {}), module
+    local config = copy(placement.config or {})
+    for _, setting in ipairs(module.settings or {}) do
+        if config[setting.key] == nil then
+            config[setting.key] = copy(setting.default)
+        end
+    end
+    return module.settings or {}, config, module
 end
 
 function editor.restoreDefault(session, document)
@@ -594,13 +600,7 @@ function editor.validate(session)
 
     local identifiers, accepted = {}, {}
     for index, placement in ipairs(document.panels) do
-        local valid, panelError = session.layout.validatePanel(
-            placement,
-            index,
-            session.grid,
-            accepted,
-            identifiers
-        )
+        local valid, panelError = session.layout.validatePanel(placement, index, session.grid, accepted, identifiers)
         if not valid then
             errors[#errors + 1] = panelError
         else

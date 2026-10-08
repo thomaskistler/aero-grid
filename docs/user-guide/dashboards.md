@@ -67,19 +67,32 @@ Follow the YAML structure above and the panel examples.
 ## Edit a dashboard on the radio
 
 Temporarily take AeroGrid fullscreen, then choose **EDIT** in the upper-right
-corner or press Enter. The editor supports touch and rotary/key input.
-Use the panel selector, **Add panel**, **Move**, **Resize**, **Configure**,
-**Remove**, or **Defaults** actions. Move panels one cell at a time; resize
+corner or press Enter. The dashboard stays visible and live while editing.
+Tap an actual panel to select it; a cyan outline marks its bounds. The bottom
+toolbar offers **Panel - / Panel +**, **Add panel**, **Move**, **Resize**,
+**Configure**, **Remove**, **Defaults**, **Apply / Save**, and **Cancel**.
+The editor supports touch and rotary/key input. Move panels one cell at a time; resize
 keeps the selected panel's top-left cell fixed. Out-of-bounds moves, unsupported
 spans, and overlaps are rejected and shown in the editor.
 
-Configuration fields come from each panel's settings schema. Use the supplied
+Move and Resize show grid guides over the dashboard. Tap a destination cell
+to move, or the desired bottom-right cell to resize. Existing panels preview
+their new bounds without constructing another instance; removing one hides it
+until Apply. Newly added panels use a labeled preview card until Apply, so
+draft additions cannot start a second flight tracker or other panel side effects.
+
+Configuration and the panel catalog open in a drawer over the dashboard.
+Use **Previous / Next** to scroll its entries, **- / +** to change a value,
+and **Back to dashboard** to close the drawer. Text editing uses **Previous /
+Next** to move the cursor, **- / +** to change the character, **Delete** to remove
+it, and **Accept text** to finish. Configuration fields come from each panel's settings schema. Use the supplied
 choices and numeric bounds where available; text fields accept source names as
 typed, case-sensitive values. Adding or changing values only affects the
 in-memory draft. **Apply / Save** validates the whole layout before writing it
 to the model- and Dashboard ID-specific YAML file. The previous saved file is
 kept as `.bak`. **Cancel** discards the draft without changing the active
-dashboard or saved layout. **Defaults** replaces the draft with the shipped
+dashboard or saved layout, restoring the original panel geometry and visibility.
+**Defaults** replaces the draft with the shipped
 default layout; it is not persisted until Apply / Save.
 
 If the primary layout cannot be read, parsed, or validated, AeroGrid tries its

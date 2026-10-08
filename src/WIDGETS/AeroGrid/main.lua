@@ -377,6 +377,61 @@ local function recoverLayout(context, reason)
     return true
 end
 
+local function previewLayout(context, document)
+    local placements = {}
+    for _, placement in ipairs(document.panels) do
+        placements[placement.id] = placement
+    end
+    for _, entry in ipairs(context.panels) do
+        local placement = placements[entry.placement.id]
+        local visible = placement ~= nil and placement.type == entry.placement.type
+        if entry.editorVisible ~= visible then
+            local visibility = visible and lvgl.show or lvgl.hide
+            visibility(entry.container)
+            entry.editorVisible = visible
+        end
+        if visible and not entry.failed then
+            local rect, rectError = context.grid.rect(context.zone, placement, 4, 4, 4)
+            if not rect then
+                return false, rectError
+            end
+            local previous = entry.editorRect or context.grid.rect(context.zone, entry.placement, 4, 4, 4)
+            if
+                not previous
+                or previous.x ~= rect.x
+                or previous.y ~= rect.y
+                or previous.w ~= rect.w
+                or previous.h ~= rect.h
+            then
+                entry.container:set({ x = rect.x, y = rect.y, w = rect.w, h = rect.h })
+                local ok, updateError = context.panelHost.dispatch(
+                    entry,
+                    "update",
+                    { x = 0, y = 0, w = rect.w, h = rect.h },
+                    entry.settings
+                )
+                if not ok then
+                    return false, entry.placement.id .. ": preview: " .. tostring(updateError)
+                end
+                entry.editorRect = rect
+            end
+        end
+    end
+    return true
+end
+
+local function restorePreview(context)
+    local restored, restoreError = previewLayout(context, context.document)
+    if not restored then
+        addError(context, restoreError)
+        showErrors(context)
+    end
+    for _, entry in ipairs(context.panels) do
+        entry.editorRect = nil
+        entry.editorVisible = nil
+    end
+end
+
 --- Enter the editor while preserving the current dashboard until Apply succeeds.
 ---@param context AeroGridContext
 ---@return boolean opened
@@ -433,17 +488,14 @@ local function openEditor(context)
         return false
     end
 
-    lvgl.hide(context.page)
     context.editorSession = session
     local handlers = {
         editor = context.editorModule,
+        preview = function(document)
+            return previewLayout(context, document)
+        end,
         loadDefault = function()
-            return context.layoutStore.loadDefault(
-                context.path,
-                context.yaml,
-                context.layoutValidator,
-                context.grid
-            )
+            return context.layoutStore.loadDefault(context.path, context.yaml, context.layoutValidator, context.grid)
         end,
         save = function(document)
             local saved, saveError, filename = context.layoutStore.save(
@@ -463,6 +515,7 @@ local function openEditor(context)
         end,
         close = function(saved)
             context.editorUiModule.close(context, false)
+            restorePreview(context)
             context.editorSession = nil
             if saved then
                 context.reloadState = "clear"
@@ -1310,6 +1363,11 @@ local function update(context, widgetOptions)
     end
 
     if dashboardId ~= context.dashboardId or themeMode ~= context.themeMode then
+        if context.editorUi then
+            context.editorUiModule.close(context, true)
+            restorePreview(context)
+            context.editorSession = nil
+        end
         context.dashboardId = dashboardId
         context.themeMode = themeMode
         context.reloadState = "clear"
@@ -1441,6 +1499,7 @@ end
 local function refresh(context, widgetEvent, touchState)
     if context.editorUi and not isFullScreen() then
         context.editorUiModule.close(context, true)
+        restorePreview(context)
         context.editorSession = nil
     end
 
@@ -1511,6 +1570,12 @@ local function refresh(context, widgetEvent, touchState)
         if context.reloadState then
             return
         end
+    end
+
+    if context.editorUi then
+        updateServices(context)
+        dispatchDue(context)
+        return
     end
 
     -- A zone change repositions every panel, which a full grid cannot

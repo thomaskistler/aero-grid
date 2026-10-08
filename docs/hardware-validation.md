@@ -272,9 +272,14 @@ user-confirmed hardware verification without inventing quantitative measurements
   flight-mode inheritance. Verify decimal GVs using explicit metric precision.
 - [ ] Enter temporary fullscreen and verify the editor affordance, touch,
   rotary, and key controls are usable at normal viewing distance.
+- [ ] Confirm editing keeps the dashboard visible and updating, selection
+  outlines the actual panel, and Move/Resize preview its bounds in place.
+- [ ] Confirm configuration/catalog drawers scroll and return to the dashboard;
+  new draft panels remain preview cards until Apply rather than starting trackers.
 - [ ] Add, move, resize, configure, and remove a panel; confirm collision and
   bounds errors are clear and resize keeps the top-left cell fixed.
-- [ ] Cancel a draft and confirm the live layout and SD-card files are unchanged.
+- [ ] Cancel a draft and confirm original geometry, visibility, and configuration
+  are restored without duplicate panel instances or changes to SD-card files.
 - [ ] Apply a valid draft; power-cycle/reload and confirm the layout persists
   for the selected model and Dashboard ID.
 - [ ] Verify a successful save retains the previous layout as `.bak`; restore

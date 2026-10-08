@@ -980,6 +980,15 @@ Layouts are keyed by sanitized model filename and Dashboard ID as `<model-identi
 
 The editor runs inside the dashboard's temporary fullscreen state.
 
+Editing is in place: the live dashboard stays visible, tapping a panel selects
+and outlines its actual bounds, and a compact bottom toolbar exposes actions.
+Move and Resize show grid guides and preview existing panel geometry without
+constructing another instance. Remove hides the panel until Apply. New draft
+panels are labeled preview cards until Apply to avoid starting side-effectful
+panels before committing. Configuration and catalog selection use overlay drawers.
+Cancel restores original geometry and visibility; Apply persists the validated
+draft and rebuilds the committed dashboard.
+
 ### Required actions
 
 - Add panel
@@ -1010,7 +1019,8 @@ The editor runs inside the dashboard's temporary fullscreen state.
 - Reject out-of-bounds placement.
 - Reject overlap, or optionally offer to swap/move the conflicting panel.
 - Keep an in-memory working copy until Apply.
-- Rebuild affected LVGL containers after an accepted geometry change.
+- Reposition and update existing LVGL containers for draft geometry changes;
+  rebuild the dashboard only after Apply.
 
 Touch radios may support drag and resize handles. Rotary/key-only radios should use explicit Move and Size modes with directional controls. The persisted placement model is identical for both input styles.
 

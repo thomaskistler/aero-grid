@@ -7,7 +7,10 @@ local widget = fixture.new()
 local widgetPath = root .. "/build/test-widgets/editor-ui/"
 
 local function assertEqual(actual, expected, message)
-    assert(actual == expected, (message or "values differ") .. ": expected " .. tostring(expected) .. ", got " .. tostring(actual))
+    assert(
+        actual == expected,
+        (message or "values differ") .. ": expected " .. tostring(expected) .. ", got " .. tostring(actual)
+    )
 end
 
 os.execute("rm -rf '" .. string.gsub(widgetPath, "/$", "") .. "'")
@@ -44,17 +47,19 @@ for name in pairs(events) do
     rawset(_G, name, nil)
 end
 -- Firmware constants resolve through the global lookup, not raw table fields.
-setmetatable(_G, { __index = function(_, key)
-    if events[key] then
-        return events[key]
-    end
-    local index = previousMetatable and previousMetatable.__index
-    if type(index) == "function" then
-        return index(_G, key)
-    elseif type(index) == "table" then
-        return index[key]
-    end
-end })
+setmetatable(_G, {
+    __index = function(_, key)
+        if events[key] then
+            return events[key]
+        end
+        local index = previousMetatable and previousMetatable.__index
+        if type(index) == "function" then
+            return index(_G, key)
+        elseif type(index) == "table" then
+            return index[key]
+        end
+    end,
+})
 
 local context = widget.createLoaded(
     { x = 0, y = 0, w = 480, h = 272 },
@@ -82,6 +87,16 @@ assert(
         .. ", errors="
         .. table.concat(context.errors, "; ")
 )
+local originalEntry = context.panels[1]
+local originalInstance = originalEntry.instance
+local originalBounds = {
+    x = originalEntry.container.properties.x,
+    y = originalEntry.container.properties.y,
+    w = originalEntry.container.properties.w,
+    h = originalEntry.container.properties.h,
+}
+assert(not context.page.hidden, "editing hid the live dashboard")
+assertEqual(originalEntry.instance, originalInstance, "editing recreated the live panel")
 
 local function tap(x, y)
     widget.module("main.lua").refresh(context, EVT_TOUCH_FIRST, { x = x, y = y })
@@ -115,18 +130,50 @@ assertEqual(#context.editorSession.draft.panels, 1, "Remove did not remove the s
 local remove = context.editorUi.actions[7].rect
 widget.module("main.lua").refresh(context, EVT_TOUCH_TAP, { x = remove.x + 2, y = remove.y + 2 })
 assertEqual(#context.editorSession.draft.panels, 1, "bubbled duplicate tap removed another panel")
+tapAction("configure")
+assertEqual(context.editorUi.mode, "configure", "Configure did not open a drawer")
+assertEqual(context.editorUi.fields[2].value, "green", "drawer did not show the schema default")
+local accentField = context.editorUi.fieldRows[2].rect
+tap(accentField.x + accentField.w - 2, accentField.y + 2)
+assertEqual(context.editorSession.draft.panels[1].config.accent, "amber", "drawer did not edit the draft setting")
+assertEqual(originalEntry.settings.accent, "green", "drawer changed live panel settings before Apply")
+tap(10, context.zone.h - 10)
+assertEqual(context.editorUi.mode, "menu", "Back did not return to dashboard editing")
 assert(context.editorModule.move(context.editorSession, 1, 0))
-widget.module("main.lua").refresh(context, EVT_VIRTUAL_EXIT)
+-- Render the draft without replacing the panel instance.
+tapAction("move")
+assert(originalEntry.container.properties.x > originalBounds.x, "moving did not preview on the actual panel")
+assertEqual(originalEntry.instance, originalInstance, "geometry preview replaced the panel instance")
+assertEqual(context.document.panels[1].col, 0, "preview mutated the committed placement")
+assertEqual(
+    context.editorUi.selection.properties.x,
+    originalEntry.container.properties.x,
+    "selection did not outline the actual panel"
+)
+tapAction("resize")
+tap(geometry.gridX + geometry.cell * 2 + 2, geometry.gridY + 2)
+assert(originalEntry.container.properties.w > originalBounds.w, "resize did not preview on the actual panel")
+assertEqual(context.editorSession.draft.panels[1].col, 1, "resize moved the top-left cell")
+tapAction("remove")
+assert(originalEntry.container.hidden, "removed panel remained visible in the draft")
+tapAction("cancel")
 assert(not context.editorUi, "Cancel did not close the editor")
 assertEqual(context.document.panels[1].col, 0, "Cancel changed the active document")
+assert(not originalEntry.container.hidden, "Cancel did not restore the removed live panel")
+assertEqual(originalEntry.container.properties.x, originalBounds.x, "Cancel did not restore original geometry")
+assertEqual(originalEntry.container.properties.w, originalBounds.w, "Cancel did not restore original size")
+assertEqual(originalEntry.instance, originalInstance, "Cancel recreated the original panel")
 assert(not hostIo.open(savedPath, "r"), "Cancel wrote a layout")
 
 widget.module("main.lua").refresh(context, EVT_VIRTUAL_ENTER)
 assert(context.editorUi, "rotary/key entry did not open the editor")
-assert(context.editorModule.move(context.editorSession, 1, 0))
-context.editorUi.actionIndex = 9
-widget.module("main.lua").refresh(context, EVT_VIRTUAL_ENTER)
-assert(not context.editorUi, "Apply did not close the editor: " .. tostring(context.editorUi and context.editorUi.status))
+tapAction("move")
+tap(geometry.gridX + geometry.cell + 2, geometry.gridY + 2)
+tapAction("apply")
+assert(
+    not context.editorUi,
+    "Apply did not close the editor: " .. tostring(context.editorUi and context.editorUi.status)
+)
 
 local guard = 0
 while context.stage or context.reloadState do
