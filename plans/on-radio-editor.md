@@ -50,14 +50,23 @@ must stay within the editor's 15,000-instruction regression-test budget.
 
 ## Planned exit dialog (not implemented)
 
-User decision, 2026-10-07: When Return exits editor mode, open a dialog that
-allows changing the **layout name** and offers **Save** and **Cancel**, instead
-of immediately saving. Return inside a drawer still closes that drawer first.
+User decisions, 2026-10-07:
 
-Before implementing this follow-up, define the meaning of Cancel, how the
-layout name is persisted and relates to the Dashboard ID/file name, and how
-the dialog interacts with leaving fullscreen. These details have not yet
-been agreed; this note does not change runtime behavior.
+- Return from dashboard editing exits immediately if nothing changed.
+- Otherwise, show a **Save / Cancel** dialog instead of immediately saving.
+- Save validates and overwrites the current layout under its existing
+  name/path. Do not offer an editable name, rename, or Save As for now.
+- Cancel discards draft changes and exits editing, restoring the committed
+  dashboard without writing the layout.
+- Leaving fullscreen does nothing: it must not trigger saving, discard,
+  or the exit dialog. Retain the draft so fullscreen reentry can resume it.
+- Return inside a settings/catalog drawer still closes that drawer first.
+
+These decisions supersede the earlier editable-name dialog proposal.
+Layout naming, rename/copy behavior, and existing-name conflicts belong to
+the separate [layout-management issue #127](https://github.com/thomaskistler/aero-grid/issues/127).
+The exit workflow above is planned, not implemented; current behavior still
+saves automatically on Return and fullscreen exit.
 
 ## Configuration drawer redesign (planned)
 
@@ -77,8 +86,8 @@ draft editing and the firmware callback budget.
 - The header back control and physical RTN perform the same action: close
   the drawer, retain draft changes, and return to dashboard editing without
   saving. Nested text editing/pickers return one level first.
-- RTN from dashboard editing opens the planned layout-name / Save / Cancel
-  dialog once that feature is implemented; it currently saves and exits.
+- RTN from dashboard editing opens the planned Save / Cancel dialog if the
+  draft changed, or exits immediately otherwise. It currently saves and exits.
 - Settings update the draft without a separate drawer Apply/Save action.
 
 EdgeTX navigation references:
@@ -152,4 +161,5 @@ Return/back behavior at radio resolution and within callback limits.
 - Refine drawer UX as needed; do not claim physical verification from mocks
   or native simulator runs.
 - Undo is not implemented.
-- Implement the exit dialog only after settling its remaining semantics.
+- Implement the agreed Save / Cancel exit workflow; layout management is
+  deferred separately and does not block it.
