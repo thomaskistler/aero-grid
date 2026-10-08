@@ -501,12 +501,12 @@ local function editorEntryHit(context, widgetEvent, touchState)
     then
         return false
     end
-    local enter = rawget(_G, "EVT_VIRTUAL_ENTER")
+    local enter = _G.EVT_VIRTUAL_ENTER
     if enter ~= nil and widgetEvent == enter then
         return true
     end
     if
-        widgetEvent ~= rawget(_G, "EVT_TOUCH_TAP")
+        widgetEvent ~= _G.EVT_TOUCH_TAP
         or type(touchState) ~= "table"
         or type(touchState.x) ~= "number"
         or type(touchState.y) ~= "number"
@@ -1498,7 +1498,16 @@ local function refresh(context, widgetEvent, touchState)
 
     -- EdgeTX delivers fullscreen input through refresh, not an event callback.
     if widgetEvent ~= nil and widgetEvent ~= 0 and isFullScreen() then
-        event(context, widgetEvent, touchState)
+        if widgetEvent == _G.EVT_TOUCH_FIRST then
+            context.touchTapHandled = false
+        end
+        -- LVGL bubbling can enqueue multiple taps for the same physical press.
+        if widgetEvent ~= _G.EVT_TOUCH_TAP or not context.touchTapHandled then
+            if widgetEvent == _G.EVT_TOUCH_TAP then
+                context.touchTapHandled = true
+            end
+            event(context, widgetEvent, touchState)
+        end
         if context.reloadState then
             return
         end

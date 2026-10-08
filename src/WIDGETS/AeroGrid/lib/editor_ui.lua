@@ -59,14 +59,14 @@ local function setVisible(object, visible)
 end
 
 local function eventMatches(event, name)
-    local expected = rawget(_G, name)
+    local expected = _G[name]
     return expected ~= nil and event == expected
 end
 
 local function keyMatches(event, keyName)
-    local key = rawget(_G, keyName)
-    local first = rawget(_G, "EVT_KEY_FIRST")
-    local repeatEvent = rawget(_G, "EVT_KEY_REPT")
+    local key = _G[keyName]
+    local first = _G.EVT_KEY_FIRST
+    local repeatEvent = _G.EVT_KEY_REPT
     if type(key) ~= "number" then
         return false
     end

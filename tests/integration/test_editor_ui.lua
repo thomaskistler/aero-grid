@@ -31,14 +31,30 @@ local layoutFile = assert(hostIo.open(widgetPath .. "layouts/default.yaml", "w")
 layoutFile:write(layout)
 layoutFile:close()
 
-local previousEvents = {
-    EVT_TOUCH_TAP = rawget(_G, "EVT_TOUCH_TAP"),
-    EVT_VIRTUAL_ENTER = rawget(_G, "EVT_VIRTUAL_ENTER"),
-    EVT_VIRTUAL_EXIT = rawget(_G, "EVT_VIRTUAL_EXIT"),
+local events = {
+    EVT_TOUCH_TAP = 9101,
+    EVT_VIRTUAL_ENTER = 9102,
+    EVT_VIRTUAL_EXIT = 9103,
+    EVT_TOUCH_FIRST = 9104,
+    EVT_TOUCH_BREAK = 9105,
 }
-EVT_TOUCH_TAP = 9101
-EVT_VIRTUAL_ENTER = 9102
-EVT_VIRTUAL_EXIT = 9103
+local previousEvents, previousMetatable = {}, getmetatable(_G)
+for name in pairs(events) do
+    previousEvents[name] = rawget(_G, name)
+    rawset(_G, name, nil)
+end
+-- Firmware constants resolve through the global lookup, not raw table fields.
+setmetatable(_G, { __index = function(_, key)
+    if events[key] then
+        return events[key]
+    end
+    local index = previousMetatable and previousMetatable.__index
+    if type(index) == "function" then
+        return index(_G, key)
+    elseif type(index) == "table" then
+        return index[key]
+    end
+end })
 
 local context = widget.createLoaded(
     { x = 0, y = 0, w = 480, h = 272 },
@@ -52,6 +68,7 @@ assert(not hostIo.open(savedPath, "r"), "model-specific layout existed before ed
 
 widget.lvglMock.setFullScreen(true)
 widget.pump(context, 10)
+widget.module("main.lua").refresh(context, EVT_TOUCH_FIRST, { x = 430, y = 10 })
 widget.module("main.lua").refresh(context, EVT_TOUCH_TAP, { x = 430, y = 10 })
 assert(
     context.editorUi,
@@ -67,6 +84,8 @@ assert(
 )
 
 local function tap(x, y)
+    widget.module("main.lua").refresh(context, EVT_TOUCH_FIRST, { x = x, y = y })
+    widget.module("main.lua").refresh(context, EVT_TOUCH_BREAK)
     widget.module("main.lua").refresh(context, EVT_TOUCH_TAP, { x = x, y = y })
 end
 
@@ -93,6 +112,9 @@ tap(geometry.gridX + geometry.cell + 2, geometry.gridY + 2)
 assertEqual(context.editorSession.selected, 2, "grid tap did not select the added panel")
 tapAction("remove")
 assertEqual(#context.editorSession.draft.panels, 1, "Remove did not remove the selected panel")
+local remove = context.editorUi.actions[7].rect
+widget.module("main.lua").refresh(context, EVT_TOUCH_TAP, { x = remove.x + 2, y = remove.y + 2 })
+assertEqual(#context.editorSession.draft.panels, 1, "bubbled duplicate tap removed another panel")
 assert(context.editorModule.move(context.editorSession, 1, 0))
 widget.module("main.lua").refresh(context, EVT_VIRTUAL_EXIT)
 assert(not context.editorUi, "Cancel did not close the editor")
@@ -137,8 +159,9 @@ assertEqual(recovered.layoutPath, savedPath .. ".bak", "invalid primary did not 
 assertEqual(recovered.layoutOrigin, "model-backup", "backup recovery origin was not reported")
 assertEqual(recovered.document.panels[1].col, 1, "backup recovery loaded the wrong document")
 
-for name, value in pairs(previousEvents) do
-    rawset(_G, name, value)
+setmetatable(_G, previousMetatable)
+for name in pairs(events) do
+    rawset(_G, name, previousEvents[name])
 end
 widget.lvglMock.setFullScreen(false)
 print("AeroGrid editor UI integration test passed")
