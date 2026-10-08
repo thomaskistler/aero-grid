@@ -1,8 +1,0 @@
-<!-- Tabler Icons: outline/x, MIT licensed; see LICENSE.txt. -->
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
-  <circle cx="12" cy="12" r="11" fill="#343c44"/>
-  <g transform="translate(3 3) scale(.75)" fill="none" stroke="#a0a8af" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M18 6l-12 12"/>
-    <path d="M6 6l12 12"/>
-  </g>
-</svg>

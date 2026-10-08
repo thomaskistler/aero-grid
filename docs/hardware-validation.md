@@ -272,11 +272,11 @@ user-confirmed hardware verification without inventing quantitative measurements
   flight-mode inheritance. Verify decimal GVs using explicit metric precision.
 - [ ] Enter temporary fullscreen and long-press a panel; verify touch,
   rotary, and key controls are usable at normal viewing distance.
-- [ ] Confirm editing groups gray circular X/gear controls at the top-right without an EDIT button,
+- [ ] Confirm editing shows a gray circular gear at each panel's top-right without a corner X or EDIT button,
   toolbar, selection outline, or grid guides; dragging snaps only to fitting positions.
 - [ ] Confirm configuration/catalog drawers scroll and return to the dashboard;
   new draft panels remain preview cards until saving rather than starting trackers.
-- [ ] Add, move, resize, configure, and remove a panel; confirm collision and
+- [ ] Add, move, resize, configure, and remove a panel through settings; confirm collision and
   bounds errors are clear and resize keeps the top-left cell fixed.
 - [ ] Confirm + appears in the first empty cell and hides on a full grid.
 - [ ] Press Return to close drawers, then save and exit; power-cycle/reload and confirm the layout persists

@@ -269,8 +269,7 @@ local function renderCells(context, state)
             })
         end
         local controls = state.controls[index]
-        setVisible(controls.left, placement ~= nil and state.mode == "menu")
-        setVisible(controls.right, placement ~= nil and state.mode == "menu")
+        setVisible(controls.configure, placement ~= nil and state.mode == "menu")
         if placement then
             local previous = controls.placement
             if
@@ -291,8 +290,7 @@ local function renderCells(context, state)
                     colSpan = placement.colSpan,
                     rowSpan = placement.rowSpan,
                 }
-                controls.left:set({ x = rect.x + rect.w - 60, y = rect.y + 4 })
-                controls.right:set({ x = rect.x + rect.w - 28, y = rect.y + 4 })
+                controls.configure:set({ x = rect.x + rect.w - 28, y = rect.y + 4 })
             end
         else
             controls.placement = nil
@@ -305,11 +303,9 @@ local function renderCells(context, state)
         local first = available[1]
         state.addRect = first and assert(context.grid.rect(context.zone, first, 4, 4, 4)) or nil
     end
-    setVisible(state.addPanel, state.addRect ~= nil and state.mode == "menu")
+    setVisible(state.addPanel.root, state.addRect ~= nil and state.mode == "menu")
     if state.addRect then
-        state.addPanel:set(state.addRect)
-        state.addBackground:set({ w = state.addRect.w, h = state.addRect.h })
-        state.addAccent:set({ h = math.max(1, state.addRect.h - 16) })
+        context.primitives.resizePanel(state.addPanel, state.addRect)
         state.addLabel:set({
             x = math.floor((state.addRect.w - 30) / 2),
             y = math.floor((state.addRect.h - 30) / 2),
@@ -591,8 +587,6 @@ local function saveAndClose(context, state)
 end
 
 local function activateAction(context, state, action)
-    local editor = state.handlers.editor
-    local success, result
     if action == "add" then
         state.mode = "add"
         state.catalogIndex = 1
@@ -601,9 +595,6 @@ local function activateAction(context, state, action)
         state.mode = "configure"
         state.fieldIndex = 1
         state.status = "Select a value; LEFT/RIGHT changes it."
-    elseif action == "remove" then
-        success, result = editor.remove(state.session)
-        state.status = success and "Panel removed from the working copy." or tostring(result)
     end
     render(context, state)
 end
@@ -709,11 +700,7 @@ local function touch(context, state, touchState)
         for index, controls in ipairs(state.controls) do
             if index <= #state.session.draft.panels then
                 local rect = controls.rect
-                if rect and hit({ x = rect.x + rect.w - 64, y = rect.y, w = 32, h = 32 }, x, y) then
-                    state.handlers.editor.select(state.session, index)
-                    activateAction(context, state, "remove")
-                    return true
-                elseif rect and hit({ x = rect.x + rect.w - 32, y = rect.y, w = 32, h = 32 }, x, y) then
+                if rect and hit({ x = rect.x + rect.w - 32, y = rect.y, w = 32, h = 32 }, x, y) then
                     state.handlers.editor.select(state.session, index)
                     activateAction(context, state, "configure")
                     return true
@@ -753,8 +740,10 @@ local function touch(context, state, touchState)
                     end
                 elseif index <= 2 then
                     vertical(context, state, index == 1 and -1 or 1)
+                    return true
                 elseif state.mode == "configure" and index <= 4 then
                     direction(context, state, true, index == 3 and -1 or 1)
+                    return true
                 end
                 render(context, state)
                 return true
@@ -880,8 +869,8 @@ function uiModule.advance(context)
                 background = rectangle(state.screen, rect, color(context, "surface", 0x212830)),
                 text = label(state.screen, rect, "", color(context, "text", 0xF4F6F7)),
             }
-            local function button(name)
-                local filename = context.path .. "assets/editor-" .. name .. ".png"
+            local function button()
+                local filename = context.path .. "assets/editor-configure.png"
                 if type(fstat) == "function" and not fstat(filename) then
                     error("editor icon missing: " .. filename)
                 end
@@ -894,19 +883,18 @@ function uiModule.advance(context)
                     fill = false,
                 })
             end
-            local left, right = button("remove"), button("configure")
-            state.controls[index] = { left = left, right = right }
+            state.controls[index] = { configure = button() }
         end
     elseif stage == 9 then
         addControls(state, context)
-        state.addPanel = lvgl.box(state.screen, { x = 0, y = 0, w = 115, h = 63 })
-        state.addBackground = lvgl.rectangle(
-            state.addPanel,
-            { x = 0, y = 0, w = 115, h = 63, rounded = 8, color = color(context, "surface", 0x212830), filled = true }
+        state.addPanel = context.primitives.panel(
+            state.screen,
+            { x = 0, y = 0, w = 115, h = 63 },
+            context.theme,
+            { accent = context.theme.color.textMuted, border = context.theme.color.border, borderWidth = 0 }
         )
-        state.addAccent =
-            lvgl.rectangle(state.addPanel, { x = 0, y = 8, w = 4, h = 47, color = lcd.RGB(0x78828D), filled = true })
-        state.addLabel = label(state.addPanel, { x = 45, y = 12, w = 30, h = 30 }, "+", lcd.RGB(0xB8C6D4), MIDSIZE)
+        state.addLabel =
+            label(state.addPanel.root, { x = 45, y = 12, w = 30, h = 30 }, "+", context.theme.color.textMuted, MIDSIZE)
     elseif stage <= 12 then
         addFieldRows(state, context, (stage - 10) * 4 + 1, (stage - 9) * 4)
     elseif stage <= 15 then
@@ -970,7 +958,7 @@ local function drag(context, state, event, touchState)
         for index, controls in ipairs(state.controls) do
             local rect = index <= #state.session.draft.panels and controls.rect
             if rect and hit(rect, x, y) then
-                if y < rect.y + 32 and x >= rect.x + rect.w - 64 then
+                if y < rect.y + 32 and x >= rect.x + rect.w - 32 then
                     return false
                 end
                 state.handlers.editor.select(state.session, index)

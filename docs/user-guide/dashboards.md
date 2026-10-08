@@ -75,19 +75,19 @@ Once fullscreen, long-press a panel to enter editing, or press Enter for key
 input. An empty dashboard accepts a long-press anywhere. The dashboard stays
 visible; controls appear after a short, staged initialization.
 
-- Both controls sit at the panel's top-right in muted gray circles.
-  Tap the **X**, left of the gear, to remove the panel.
-- Tap the **gear** to open settings, including **Size**.
+- Tap the muted gray circular **gear** at the panel's top-right to open
+  settings, including **Size** and **Remove panel**.
   Size offers only supported dimensions that fit at the current top-left cell.
 
 - Drag a panel's body to move it. It snaps only to fitting, non-overlapping
   positions, without grid guides or selection outlines.
-- Tap the **+ panel**, with its gray sidebar, to choose a new panel. It appears
+- Tap the **+ panel**, with its gray sidebar and the same rounded panel styling
+  as dashboard panels, to choose a new panel. It appears
   in the first free 1 x 1 cell, scanning left-to-right and top-to-bottom, and
   disappears when the grid is full. New panels use the first available placement
   supporting their size; the + panel is never saved as a dashboard panel.
 
-The circular controls use bundled, antialiased icon images. When installing or
+The circular control uses a bundled, antialiased icon image. When installing or
 updating AeroGrid, copy its `assets` directory along with the Lua files.
 
 Existing panels preview geometry without constructing another instance.

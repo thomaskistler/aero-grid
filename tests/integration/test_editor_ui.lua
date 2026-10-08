@@ -140,17 +140,21 @@ equal(context.editorUi, nil, "moving finger cancels long-press entry")
 open()
 local entry, instance = context.panels[1], context.panels[1].instance
 local state = context.editorUi
-equal(state.controls[1].left.kind, "image", "remove control uses a rendered icon")
-equal(state.controls[1].right.kind, "image", "settings control uses a rendered icon")
-equal(state.controls[1].left.properties.file, path .. "assets/editor-remove.png", "remove icon asset")
-equal(state.controls[1].right.properties.file, path .. "assets/editor-configure.png", "settings icon asset")
+equal(state.controls[1].left, nil, "no corner remove control")
+equal(state.controls[1].configure.kind, "image", "settings control uses a rendered icon")
+equal(state.controls[1].configure.properties.file, path .. "assets/editor-configure.png", "settings icon asset")
 equal(state.addRect.x, state.cells[2].rect.x, "+ appears in first free cell")
+equal(state.addPanel.background.properties.rounded, context.theme.spacing.radius, "+ uses shared panel radius")
+equal(state.addPanel.accent.properties.color, context.theme.color.textMuted, "+ has a theme-gray sidebar")
+equal(state.addPanel.column.properties.w, context.theme.spacing.accentWidth, "+ uses shared sidebar clipping")
+equal(state.addPanel.column.properties.h, state.addRect.h, "+ sidebar follows panel height")
+equal(state.addPanel.topArc.arc.kind, "arc", "+ sidebar follows the top panel corner")
+equal(state.addPanel.bottomArc.arc.kind, "arc", "+ sidebar follows the bottom panel corner")
 equal(#context.panels, 1, "editor reuses live instances")
 
 -- Gear opens settings; corner controls must not begin dragging.
 local rect = state.controls[1].rect
-equal(state.controls[1].left.properties.x, rect.x + rect.w - 60, "X is grouped at top-right")
-equal(state.controls[1].right.properties.x, rect.x + rect.w - 28, "gear follows X at top-right")
+equal(state.controls[1].configure.properties.x, rect.x + rect.w - 28, "gear stays at top-right")
 tap(rect.x + 12, rect.y + 12)
 equal(#context.editorSession.draft.panels, 1, "old top-left X target does not remove panel")
 equal(state.mode, "menu", "top-left panel tap does not configure")
@@ -189,7 +193,20 @@ equal(#context.editorSession.draft.panels, 2, "catalog adds panel")
 equal(#context.panels, 1, "new panel is only a draft preview")
 rect = state.controls[2].rect
 tap(rect.x + rect.w - 48, rect.y + 12)
-equal(#context.editorSession.draft.panels, 1, "X removes panel")
+equal(#context.editorSession.draft.panels, 2, "former X target does not remove panel")
+equal(state.mode, "menu", "former X target does not configure")
+refresh(EVT_TOUCH_FIRST, { x = rect.x + rect.w - 48, y = rect.y + 12 })
+assert(state.drag, "former X target is draggable panel body")
+refresh(EVT_TOUCH_BREAK)
+tap(rect.x + rect.w - 12, rect.y + 12)
+for _ = 1, 3 do
+    local nextButton = state.navigation[2].rect
+    tap(nextButton.x + 5, nextButton.y + 5)
+end
+equal(state.fields[state.fieldIndex].key, "__remove", "Remove panel is available in settings")
+refresh(EVT_VIRTUAL_ENTER)
+equal(#context.editorSession.draft.panels, 1, "settings removes panel")
+equal(state.mode, "menu", "removal returns to dashboard editing")
 refresh(EVT_TOUCH_TAP, { x = rect.x + rect.w - 48, y = rect.y + 12 })
 equal(#context.editorSession.draft.panels, 1, "duplicate tap is deduplicated")
 
@@ -232,11 +249,17 @@ rect = state.controls[6].rect
 tap(rect.x + rect.w - 12, rect.y + 12)
 equal(state.mode, "configure", "full-grid gear works")
 equal(#state.fields[1].choices, 1, "blocked sizes are unavailable")
-refresh(EVT_VIRTUAL_EXIT)
-rect = state.controls[6].rect
-tap(rect.x + rect.w - 48, rect.y + 12)
-equal(#context.editorSession.draft.panels, 15, "full-grid X removes only one panel")
+for _ = 1, 3 do
+    local nextButton = state.navigation[2].rect
+    tap(nextButton.x + 5, nextButton.y + 5)
+end
+equal(state.fields[state.fieldIndex].key, "__remove", "full-grid settings includes Remove panel")
+row = state.fieldRows[state.fieldIndex - state.fieldOffset + 1].rect
+tap(row.x + row.w - 5, row.y + 5)
+equal(#context.editorSession.draft.panels, 15, "full-grid settings removes only one panel")
 assert(state.addRect, "removing panel makes + appear")
+equal(state.addPanel.root.properties.x, state.addRect.x, "+ panel moves to newly available cell")
+equal(state.addPanel.root.properties.y, state.addRect.y, "+ panel keeps shared geometry")
 rect = state.controls[1].rect
 refresh(EVT_TOUCH_FIRST, { x = rect.x + 55, y = rect.y + 40 })
 refresh(EVT_TOUCH_SLIDE, { x = 170, y = 110 })

@@ -1,6 +1,6 @@
 Editor icon glyphs adapted from Tabler Icons:
 https://github.com/tabler/tabler-icons
-outline/x and filled/settings. AeroGrid adds the colored circular backgrounds.
+filled/settings. AeroGrid adds the colored circular background.
 The license below applies to the SVG sources and their rendered PNG assets.
 
 MIT License

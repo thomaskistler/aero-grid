@@ -983,10 +983,10 @@ Layouts are keyed by sanitized model filename and Dashboard ID as `<model-identi
 The editor runs inside the dashboard's temporary fullscreen state.
 
 Editing starts by long-pressing a panel in explicit fullscreen (Enter is the
-key-only alternative). Normal App mode remains read-only. Muted gray circular X and
-gear controls are grouped at each panel's top-right, with X left of gear. There is no EDIT
-button, toolbar, selection outline, or grid overlay. The X removes a panel;
-the gear opens its settings, including fitting supported sizes. Dragging snaps
+key-only alternative). Normal App mode remains read-only. A muted gray circular
+gear sits at each panel's top-right. There is no corner X, EDIT
+button, toolbar, selection outline, or grid overlay. The gear opens settings,
+including Remove panel and fitting supported sizes. Dragging snaps
 only to valid placements. A panel-styled + tile with a gray sidebar occupies
 the first free 1x1 cell as an editing affordance, not a persisted panel.
 New draft panels remain preview cards until saving. Return closes drawers,

@@ -9,8 +9,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = re.compile(r'(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:beta|rc)\.[1-9]\d*)?')
 LAYOUTS = {"default.yaml", "host.yaml"}
-ASSETS = {"editor-remove.png", "editor-configure.png",
-          "editor-remove.svg", "editor-configure.svg", "LICENSE.txt"}
+ASSETS = {"editor-configure.png", "editor-configure.svg", "LICENSE.txt"}
 
 
 def version(source):
