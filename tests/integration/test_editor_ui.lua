@@ -71,8 +71,21 @@ local originalPath = assert(context.layoutPath)
 local savedPath = context.layoutStore.path(widgetPath, context.modelFilename or "default", context.dashboardId)
 assert(not hostIo.open(savedPath, "r"), "model-specific layout existed before editing")
 
+widget.lvglMock.setAppMode(true)
+widget.lvglMock.setFullScreen(false)
+widget.pump(context, 10)
+assertEqual(context.editorButtonVisible, false, "App mode must not show EDIT")
+widget.module("main.lua").refresh(context, EVT_VIRTUAL_ENTER)
+widget.module("main.lua").refresh(context, EVT_TOUCH_FIRST, { x = 430, y = 10 })
+widget.module("main.lua").refresh(context, EVT_TOUCH_TAP, { x = 430, y = 10 })
+widget.module("main.lua").refresh(context, EVT_TOUCH_FIRST, { x = 20, y = 40 })
+widget.module("main.lua").refresh(context, EVT_TOUCH_TAP, { x = 20, y = 40 })
+assertEqual(context.editorUi, nil, "App mode input must not open the editor")
+assertEqual(context.editorSession, nil, "App mode input must not select or edit panels")
+
 widget.lvglMock.setFullScreen(true)
 widget.pump(context, 10)
+assertEqual(context.editorButtonVisible, true, "explicit fullscreen must show EDIT even on an App-mode layout")
 widget.module("main.lua").refresh(context, EVT_TOUCH_FIRST, { x = 430, y = 10 })
 widget.module("main.lua").refresh(context, EVT_TOUCH_TAP, { x = 430, y = 10 })
 widget.pumpUntil(context, function()
@@ -322,6 +335,7 @@ assert(
     "initialization error was not surfaced"
 )
 widget.lvglMock.setFullScreen(false)
+widget.lvglMock.setAppMode(false)
 for name in pairs(events) do
     rawset(_G, name, previousEvents[name])
 end

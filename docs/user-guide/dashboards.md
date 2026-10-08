@@ -66,6 +66,11 @@ Follow the YAML structure above and the panel examples.
 
 ## Edit a dashboard on the radio
 
+Editing is available only in explicit fullscreen. Normal App mode remains
+read-only even though the dashboard fills the display: it has no **EDIT** button
+and tapping panels does not select them. Long-press the dashboard to enter
+fullscreen.
+
 Temporarily take AeroGrid fullscreen, then choose **EDIT** in the upper-right
 corner or press Enter. The dashboard stays visible and live while editing.
 The editor prepares its controls over several frames; wait for the bottom toolbar
