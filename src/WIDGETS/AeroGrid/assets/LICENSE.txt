@@ -1,11 +1,11 @@
-Editor icon glyphs adapted from Tabler Icons:
-https://github.com/tabler/tabler-icons
-filled/settings. AeroGrid adds the colored circular background.
+Editor icon glyph adapted from Heroicons:
+https://github.com/tailwindlabs/heroicons
+solid/cog-6-tooth. AeroGrid adds the gray circular background.
 The license below applies to the SVG sources and their rendered PNG assets.
 
 MIT License
 
-Copyright (c) 2020-2026 Paweł Kuna
+Copyright (c) Tailwind Labs, Inc.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
