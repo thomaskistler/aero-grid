@@ -59,6 +59,77 @@ layout name is persisted and relates to the Dashboard ID/file name, and how
 the dialog interacts with leaving fullscreen. These details have not yet
 been agreed; this note does not change runtime behavior.
 
+## Configuration drawer redesign (planned)
+
+The current drawer edits schema-generated generic rows. Replace that basic
+presentation with clear, setting-specific controls while retaining isolated
+draft editing and the firmware callback budget.
+
+### Layout and navigation
+
+- Show the selected panel's name in a clear header, with readable setting
+  labels and values below it.
+- Use a scrollable settings area with an obvious scroll affordance and
+  consistent touch, rotary, and key focus behavior.
+- Provide a small touch back control in the top-left header, rather than the
+  mockup's labeled Back button. This follows the touch-to-return header
+  convention on ordinary EdgeTX 2.12 pages.
+- The header back control and physical RTN perform the same action: close
+  the drawer, retain draft changes, and return to dashboard editing without
+  saving. Nested text editing/pickers return one level first.
+- RTN from dashboard editing opens the planned layout-name / Save / Cancel
+  dialog once that feature is implemented; it currently saves and exits.
+- Settings update the draft without a separate drawer Apply/Save action.
+
+EdgeTX navigation references:
+[manual](https://manual.edgetx.org/color-radios/user-interface) and
+[2.12 page implementation](https://github.com/EdgeTX/edgetx/blob/2.12/radio/src/gui/colorlcd/libui/page.cpp).
+Header appearance varies by firmware version; do not assume a labeled Back
+button is a native EdgeTX control.
+
+### Settings controls
+
+- Booleans: toggles.
+- Enumerated choices: selectors.
+- Colors/accents: labeled color swatches or a color selector.
+- Sources, switches, and timers: dedicated selection controls rather than
+  character-by-character entry.
+- Numbers: bounded inputs honoring schema limits and steps.
+- Text: a more usable text-entry interface than the current character editor.
+- Structured lists, such as metric entries and text lines: clear grouped
+  add/edit/remove controls rather than a flattened list of fields.
+- Size: an explicit selector for supported dimensions that fit, anchored at
+  the current top-left cell. Make blocked/unavailable choices understandable.
+- Remove panel: visually separate it from ordinary settings to reduce
+  accidental activation.
+- Validation: show feedback beside the affected setting and preserve the
+  draft on errors.
+
+### Mockup and open design points
+
+The browser prototype at `build/drawer-mockup.html` shows a 480 x 272 radio
+viewport with a 320-pixel right-hand drawer over a dimmed dashboard. It has
+Model identity and Metric panel examples, size choices, accent swatches,
+scrollable settings, and metric-list editing. It is an ignored local design
+artifact, not firmware or a committed deliverable.
+
+The prototype uses browser-native inputs only to illustrate interactions;
+these are not proof that equivalent controls are exposed by EdgeTX's Lua
+LVGL API. Confirm available firmware controls before choosing implementation.
+
+The following remain proposals, not settled requirements:
+
+- Exact drawer width, spacing, and visual treatment.
+- Whether blocked sizes should be shown disabled or omitted; the current
+  runtime offers fitting sizes only.
+- Confirmation before removing a panel, as illustrated in the prototype.
+- Live configuration preview and rendering real new panels before save.
+  Currently configuration applies on save/reload and additions are placeholders.
+
+Review the simple and structured-list mockups before replacing the runtime
+drawer. Verify navigation, scrolling, input controls, error feedback, and
+Return/back behavior at radio resolution and within callback limits.
+
 ## Code surfaces
 
 - `src/WIDGETS/AeroGrid/main.lua`: fullscreen lifecycle, input routing,
