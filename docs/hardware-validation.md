@@ -272,7 +272,7 @@ user-confirmed hardware verification without inventing quantitative measurements
   flight-mode inheritance. Verify decimal GVs using explicit metric precision.
 - [ ] Enter temporary fullscreen and long-press a panel; verify touch,
   rotary, and key controls are usable at normal viewing distance.
-- [ ] Confirm editing uses light-red X/light-blue gear circular corner controls without an EDIT button,
+- [ ] Confirm editing groups gray circular X/gear controls at the top-right without an EDIT button,
   toolbar, selection outline, or grid guides; dragging snaps only to fitting positions.
 - [ ] Confirm configuration/catalog drawers scroll and return to the dashboard;
   new draft panels remain preview cards until saving rather than starting trackers.

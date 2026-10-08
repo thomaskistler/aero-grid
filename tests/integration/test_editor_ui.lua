@@ -149,6 +149,11 @@ equal(#context.panels, 1, "editor reuses live instances")
 
 -- Gear opens settings; corner controls must not begin dragging.
 local rect = state.controls[1].rect
+equal(state.controls[1].left.properties.x, rect.x + rect.w - 60, "X is grouped at top-right")
+equal(state.controls[1].right.properties.x, rect.x + rect.w - 28, "gear follows X at top-right")
+tap(rect.x + 12, rect.y + 12)
+equal(#context.editorSession.draft.panels, 1, "old top-left X target does not remove panel")
+equal(state.mode, "menu", "top-left panel tap does not configure")
 tap(rect.x + rect.w - 12, rect.y + 12)
 equal(state.mode, "configure", "gear opens settings")
 equal(state.drag, nil, "gear press must not start drag")
@@ -183,9 +188,9 @@ tap(catalog.x + 20, catalog.y + 5)
 equal(#context.editorSession.draft.panels, 2, "catalog adds panel")
 equal(#context.panels, 1, "new panel is only a draft preview")
 rect = state.controls[2].rect
-tap(rect.x + 12, rect.y + 12)
+tap(rect.x + rect.w - 48, rect.y + 12)
 equal(#context.editorSession.draft.panels, 1, "X removes panel")
-refresh(EVT_TOUCH_TAP, { x = rect.x + 12, y = rect.y + 12 })
+refresh(EVT_TOUCH_TAP, { x = rect.x + rect.w - 48, y = rect.y + 12 })
 equal(#context.editorSession.draft.panels, 1, "duplicate tap is deduplicated")
 
 local savedPath = context.layoutStore.path(path, context.modelFilename or "default", context.dashboardId)
@@ -229,7 +234,7 @@ equal(state.mode, "configure", "full-grid gear works")
 equal(#state.fields[1].choices, 1, "blocked sizes are unavailable")
 refresh(EVT_VIRTUAL_EXIT)
 rect = state.controls[6].rect
-tap(rect.x + 12, rect.y + 12)
+tap(rect.x + rect.w - 48, rect.y + 12)
 equal(#context.editorSession.draft.panels, 15, "full-grid X removes only one panel")
 assert(state.addRect, "removing panel makes + appear")
 rect = state.controls[1].rect

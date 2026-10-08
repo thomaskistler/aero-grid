@@ -291,7 +291,7 @@ local function renderCells(context, state)
                     colSpan = placement.colSpan,
                     rowSpan = placement.rowSpan,
                 }
-                controls.left:set({ x = rect.x + 4, y = rect.y + 4 })
+                controls.left:set({ x = rect.x + rect.w - 60, y = rect.y + 4 })
                 controls.right:set({ x = rect.x + rect.w - 28, y = rect.y + 4 })
             end
         else
@@ -709,7 +709,7 @@ local function touch(context, state, touchState)
         for index, controls in ipairs(state.controls) do
             if index <= #state.session.draft.panels then
                 local rect = controls.rect
-                if rect and hit({ x = rect.x, y = rect.y, w = 32, h = 32 }, x, y) then
+                if rect and hit({ x = rect.x + rect.w - 64, y = rect.y, w = 32, h = 32 }, x, y) then
                     state.handlers.editor.select(state.session, index)
                     activateAction(context, state, "remove")
                     return true
@@ -970,7 +970,7 @@ local function drag(context, state, event, touchState)
         for index, controls in ipairs(state.controls) do
             local rect = index <= #state.session.draft.panels and controls.rect
             if rect and hit(rect, x, y) then
-                if y < rect.y + 32 and (x < rect.x + 32 or x >= rect.x + rect.w - 32) then
+                if y < rect.y + 32 and x >= rect.x + rect.w - 64 then
                     return false
                 end
                 state.handlers.editor.select(state.session, index)
