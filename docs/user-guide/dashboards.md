@@ -75,8 +75,8 @@ Once fullscreen, long-press a panel to enter editing, or press Enter for key
 input. An empty dashboard accepts a long-press anywhere. The dashboard stays
 visible; controls appear after a short, staged initialization.
 
-- Tap the gray **X** at a panel's top-left to remove it.
-- Tap the gray **gear** at its top-right to open settings, including **Size**.
+- Tap the **X** in a light-red circle at a panel's top-left to remove it.
+- Tap the **gear** in a light-blue circle at its top-right to open settings, including **Size**.
   Size offers only supported dimensions that fit at the current top-left cell.
 - Drag a panel's body to move it. It snaps only to fitting, non-overlapping
   positions, without grid guides or selection outlines.

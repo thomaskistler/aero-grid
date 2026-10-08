@@ -880,18 +880,18 @@ function uiModule.advance(context)
                 background = rectangle(state.screen, rect, color(context, "surface", 0x212830)),
                 text = label(state.screen, rect, "", color(context, "text", 0xF4F6F7)),
             }
-            local function button()
+            local function button(background)
                 local parent = lvgl.box(state.screen, { x = 0, y = 0, w = 24, h = 24 })
                 lvgl.rectangle(
                     parent,
-                    { x = 1, y = 1, w = 22, h = 22, rounded = 11, color = lcd.RGB(0x343C44), filled = true }
+                    { x = 1, y = 1, w = 22, h = 22, rounded = 11, color = lcd.RGB(background), filled = true }
                 )
                 return parent
             end
-            local left, right = button(), button()
-            local ink = lcd.RGB(0xA0A8AF)
-            lvgl.line(left, { pts = { { 8, 8 }, { 16, 16 } }, color = ink, thickness = 2 })
-            lvgl.line(left, { pts = { { 16, 8 }, { 8, 16 } }, color = ink, thickness = 2 })
+            local left, right = button(0xF2B8BC), button(0xB8DDF2)
+            local removeInk, ink = lcd.RGB(0x783039), lcd.RGB(0x28536D)
+            lvgl.line(left, { pts = { { 8, 8 }, { 16, 16 } }, color = removeInk, thickness = 2 })
+            lvgl.line(left, { pts = { { 16, 8 }, { 8, 16 } }, color = removeInk, thickness = 2 })
             local points = {}
             for step = 0, 32 do
                 local angle = step * math.pi / 16
