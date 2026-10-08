@@ -150,6 +150,17 @@ equal(state.addPanel.column.properties.w, context.theme.spacing.accentWidth, "+ 
 equal(state.addPanel.column.properties.h, state.addRect.h, "+ sidebar follows panel height")
 equal(state.addPanel.topArc.arc.kind, "arc", "+ sidebar follows the top panel corner")
 equal(state.addPanel.bottomArc.arc.kind, "arc", "+ sidebar follows the bottom panel corner")
+equal(state.addLabel.properties.w, context.themeBuilder.measureText(MIDSIZE, "+"), "+ label fits its glyph")
+equal(
+    state.addLabel.properties.x,
+    math.floor((state.addRect.w - state.addLabel.properties.w) / 2),
+    "+ is horizontally centered"
+)
+equal(
+    state.addLabel.properties.y,
+    math.floor((state.addRect.h - context.themeBuilder.fontHeight(MIDSIZE)) / 2),
+    "+ is vertically centered"
+)
 equal(#context.panels, 1, "editor reuses live instances")
 
 -- Gear opens settings; corner controls must not begin dragging.

@@ -307,8 +307,8 @@ local function renderCells(context, state)
     if state.addRect then
         context.primitives.resizePanel(state.addPanel, state.addRect)
         state.addLabel:set({
-            x = math.floor((state.addRect.w - 30) / 2),
-            y = math.floor((state.addRect.h - 30) / 2),
+            x = math.floor((state.addRect.w - state.addSymbolWidth) / 2),
+            y = math.floor((state.addRect.h - state.addSymbolHeight) / 2),
         })
     end
 end
@@ -893,8 +893,15 @@ function uiModule.advance(context)
             context.theme,
             { accent = context.theme.color.textMuted, border = context.theme.color.border, borderWidth = 0 }
         )
-        state.addLabel =
-            label(state.addPanel.root, { x = 45, y = 12, w = 30, h = 30 }, "+", context.theme.color.textMuted, MIDSIZE)
+        state.addSymbolWidth = context.themeBuilder.measureText(MIDSIZE, "+")
+        state.addSymbolHeight = context.themeBuilder.fontHeight(MIDSIZE)
+        state.addLabel = label(
+            state.addPanel.root,
+            { x = 0, y = 0, w = state.addSymbolWidth, h = state.addSymbolHeight },
+            "+",
+            context.theme.color.textMuted,
+            MIDSIZE
+        )
     elseif stage <= 12 then
         addFieldRows(state, context, (stage - 10) * 4 + 1, (stage - 9) * 4)
     elseif stage <= 15 then
