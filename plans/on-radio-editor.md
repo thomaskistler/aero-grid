@@ -53,20 +53,49 @@ must stay within the editor's 15,000-instruction regression-test budget.
 User decisions, 2026-10-07:
 
 - Return from dashboard editing exits immediately if nothing changed.
-- Otherwise, show a **Save / Cancel** dialog instead of immediately saving.
-- Save validates and overwrites the current layout under its existing
-  name/path. Do not offer an editable name, rename, or Save As for now.
+- Otherwise, show the current layout name and **Cancel / Save / Save As**
+  actions instead of immediately saving.
+- Save validates and updates the current named layout, then exits editing.
+  Other dashboards referencing that layout pick up the changes on reload.
+- Save As asks for a new name, validates and saves an independent copy,
+  switches this dashboard to that copy, and exits editing. Leave the
+  original layout unchanged.
+- Dismissing the Save As name entry returns to the exit dialog without
+  losing the draft.
 - Cancel discards draft changes and exits editing, restoring the committed
   dashboard without writing the layout.
 - Leaving fullscreen does nothing: it must not trigger saving, discard,
   or the exit dialog. Retain the draft so fullscreen reentry can resume it.
 - Return inside a settings/catalog drawer still closes that drawer first.
 
-These decisions supersede the earlier editable-name dialog proposal.
-Layout naming, rename/copy behavior, and existing-name conflicts belong to
-the separate [layout-management issue #127](https://github.com/thomaskistler/aero-grid/issues/127).
+The three-action dialog supersedes the earlier Save / Cancel-only decision.
+Layout management is tracked in
+[issue #127](https://github.com/thomaskistler/aero-grid/issues/127);
+existing-name conflict handling and shipped-template write protection still
+need to be settled there before implementing the shared-layout workflow.
 The exit workflow above is planned, not implemented; current behavior still
 saves automatically on Return and fullscreen exit.
+
+## Named shared layouts (planned)
+
+User decision, 2026-10-07: Keep sharing simple. Dashboards can reference the
+same complete named layout rather than always creating model-specific copies
+from a template.
+
+- Saving an existing shared name updates that layout for all dashboards
+  referencing it on their next load/reload.
+- Save As creates an independent named layout for the current dashboard.
+- Share the entire layout, including panel settings. Users decide whether
+  sources, switches, timers, and other settings suit the models sharing it.
+- Do not add inheritance, per-model overrides, or automatic compatibility
+  decisions. Normal validation and unavailable-source reporting still apply.
+- Keep the reusable layout name distinct from the dashboard-instance
+  identifier (`DashID`).
+
+This supersedes the copy-only template proposal. First-run template selection,
+an Empty layout, storage organization, and shipped-template handling were
+discussed but are not settled requirements. Restore defaults remains part of
+the separate layout-management topic.
 
 ## Configuration drawer redesign (planned)
 
@@ -89,7 +118,7 @@ draft editing and the firmware callback budget.
 - The header back control and physical RTN perform the same action: close
   the drawer, retain draft changes, and return to dashboard editing without
   saving. Nested text editing/pickers return one level first.
-- RTN from dashboard editing opens the planned Save / Cancel dialog if the
+- RTN from dashboard editing opens the planned Cancel / Save / Save As dialog if the
   draft changed, or exits immediately otherwise. It currently saves and exits.
 - Settings update the draft without a separate drawer Apply/Save action.
 
@@ -176,5 +205,6 @@ Return/back behavior at radio resolution and within callback limits.
 - Restore defaults belongs to
   [layout management #127](https://github.com/thomaskistler/aero-grid/issues/127),
   not this editor UI.
-- Implement the agreed Save / Cancel exit workflow; layout management is
-  deferred separately and does not block it.
+- Implement the agreed Cancel / Save / Save As exit workflow alongside the
+  named-layout reference/persistence support it requires. Broader layout
+  management remains tracked separately.
