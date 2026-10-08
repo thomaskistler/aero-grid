@@ -78,12 +78,16 @@ visible; controls appear after a short, staged initialization.
 - Tap the **X** in a light-red circle at a panel's top-left to remove it.
 - Tap the **gear** in a light-blue circle at its top-right to open settings, including **Size**.
   Size offers only supported dimensions that fit at the current top-left cell.
+
 - Drag a panel's body to move it. It snaps only to fitting, non-overlapping
   positions, without grid guides or selection outlines.
 - Tap the **+ panel**, with its gray sidebar, to choose a new panel. It appears
   in the first free 1 x 1 cell, scanning left-to-right and top-to-bottom, and
   disappears when the grid is full. New panels use the first available placement
   supporting their size; the + panel is never saved as a dashboard panel.
+
+The circular controls use bundled, antialiased icon images. When installing or
+updating AeroGrid, copy its `assets` directory along with the Lua files.
 
 Existing panels preview geometry without constructing another instance.
 New draft panels remain labeled preview cards until saving, so they cannot

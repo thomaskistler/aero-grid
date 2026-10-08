@@ -140,6 +140,10 @@ equal(context.editorUi, nil, "moving finger cancels long-press entry")
 open()
 local entry, instance = context.panels[1], context.panels[1].instance
 local state = context.editorUi
+equal(state.controls[1].left.kind, "image", "remove control uses a rendered icon")
+equal(state.controls[1].right.kind, "image", "settings control uses a rendered icon")
+equal(state.controls[1].left.properties.file, path .. "assets/editor-remove.png", "remove icon asset")
+equal(state.controls[1].right.properties.file, path .. "assets/editor-configure.png", "settings icon asset")
 equal(state.addRect.x, state.cells[2].rect.x, "+ appears in first free cell")
 equal(#context.panels, 1, "editor reuses live instances")
 
