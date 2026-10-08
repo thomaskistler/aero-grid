@@ -78,6 +78,9 @@ draft editing and the firmware callback budget.
 
 - Show the selected panel's name in a clear header, with readable setting
   labels and values below it.
+- Open the drawer centered on the screen, sized similarly to standard
+  EdgeTX dialogs/drawers on the target display. Inspect native dimensions
+  before implementing; do not retain the prototype's right-edge placement.
 - Use a scrollable settings area with an obvious scroll affordance and
   consistent touch, rotary, and key focus behavior.
 - Provide a small touch back control in the top-left header, rather than the
@@ -107,10 +110,12 @@ button is a native EdgeTX control.
 - Text: a more usable text-entry interface than the current character editor.
 - Structured lists, such as metric entries and text lines: clear grouped
   add/edit/remove controls rather than a flattened list of fields.
-- Size: an explicit selector for supported dimensions that fit, anchored at
-  the current top-left cell. Make blocked/unavailable choices understandable.
+- Size: use the built-in EdgeTX Lua LVGL picker where available, anchored at
+  the current top-left cell. If it supports disabled entries, show supported
+  sizes that do not fit as disabled; otherwise hide those sizes. Do not build
+  a custom picker solely to support disabled entries.
 - Remove panel: visually separate it from ordinary settings to reduce
-  accidental activation.
+  accidental activation, but remove immediately without confirmation.
 - Validation: show feedback beside the affected setting and preserve the
   draft on errors.
 
@@ -126,14 +131,21 @@ The prototype uses browser-native inputs only to illustrate interactions;
 these are not proof that equivalent controls are exposed by EdgeTX's Lua
 LVGL API. Confirm available firmware controls before choosing implementation.
 
-The following remain proposals, not settled requirements:
+User decisions, 2026-10-07, supersede these aspects of the initial prototype:
 
-- Exact drawer width, spacing, and visual treatment.
-- Whether blocked sizes should be shown disabled or omitted; the current
-  runtime offers fitting sizes only.
-- Confirmation before removing a panel, as illustrated in the prototype.
-- Live configuration preview and rendering real new panels before save.
+- Center the drawer and follow standard EdgeTX sizing; exact dimensions
+  depend on native conventions and the target display.
+- Disable blocked sizes only if the native picker supports it; hide them
+  otherwise.
+- Remove panels immediately; the prototype's confirmation is not required.
+- Prefer live configuration and new-panel previews if straightforward to
+  implement. This is conditional, not a requirement for a complex preview
+  framework. Preserve draft isolation, avoid duplicate trackers or persistent
+  side effects, and stay within callback limits. If those constraints make
+  previews substantial work, retain save/reload behavior and document it.
   Currently configuration applies on save/reload and additions are placeholders.
+
+The initial browser prototype has not yet been updated to these decisions.
 
 Review the simple and structured-list mockups before replacing the runtime
 drawer. Verify navigation, scrolling, input controls, error feedback, and
@@ -160,6 +172,9 @@ Return/back behavior at radio resolution and within callback limits.
 - Verify repeated native editor entry/exit for memory and object stability.
 - Refine drawer UX as needed; do not claim physical verification from mocks
   or native simulator runs.
-- Undo is not implemented.
+- Undo is not needed and is out of scope.
+- Restore defaults belongs to
+  [layout management #127](https://github.com/thomaskistler/aero-grid/issues/127),
+  not this editor UI.
 - Implement the agreed Save / Cancel exit workflow; layout management is
   deferred separately and does not block it.
