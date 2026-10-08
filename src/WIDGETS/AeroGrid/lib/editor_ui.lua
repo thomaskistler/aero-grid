@@ -110,35 +110,31 @@ local function layoutGeometry(context)
     }
 end
 
-local function addCellObjects(state, context)
-    state.cells = {}
-    local geometry = state.geometry
-    for row = 0, 3 do
-        for col = 0, 3 do
-            local rect = assert(context.grid.rect(context.zone, {
-                col = col,
-                row = row,
-                colSpan = 1,
-                rowSpan = 1,
-            }, 4, 4, 4))
-            local background = lvgl.rectangle(state.screen, {
-                x = rect.x,
-                y = rect.y,
-                w = rect.w,
-                h = rect.h,
-                color = color(context, "cyan", 0x70D6F3),
-                filled = false,
-                thickness = 1,
-            })
-            local text = label(state.screen, rect, "", color(context, "text", 0xF4F6F7))
-            state.cells[#state.cells + 1] = { background = background, text = text, rect = rect, col = col, row = row }
-        end
+local function addCellObjects(state, context, first, last)
+    for index = first, last do
+        local col, row = (index - 1) % 4, math.floor((index - 1) / 4)
+        local rect = assert(context.grid.rect(context.zone, {
+            col = col,
+            row = row,
+            colSpan = 1,
+            rowSpan = 1,
+        }, 4, 4, 4))
+        local background = lvgl.rectangle(state.screen, {
+            x = rect.x,
+            y = rect.y,
+            w = rect.w,
+            h = rect.h,
+            color = color(context, "cyan", 0x70D6F3),
+            filled = false,
+            thickness = 1,
+        })
+        state.cells[index] = { background = background, rect = rect, col = col, row = row }
     end
 end
 
-local function addMainActions(state, context)
-    state.actions = {}
-    for index, action in ipairs(ACTIONS) do
+local function addMainActions(state, context, first, last)
+    for index = first, last do
+        local action = ACTIONS[index]
         local rect = {
             x = 4 + ((index - 1) % 5) * math.floor((state.geometry.width - 8) / 5),
             y = state.geometry.height - 44 + math.floor((index - 1) / 5) * state.geometry.rowHeight,
@@ -152,9 +148,8 @@ local function addMainActions(state, context)
     end
 end
 
-local function addFieldRows(state, context)
-    state.fieldRows = {}
-    for index = 1, 12 do
+local function addFieldRows(state, context, first, last)
+    for index = first, last do
         local rect = {
             x = state.geometry.rightX,
             y = state.geometry.actionsY + (index - 1) * state.geometry.fieldHeight,
@@ -180,6 +175,13 @@ local function createScreen(context, session, handlers)
         actionIndex = 1,
         catalogIndex = 1,
         fieldIndex = 1,
+        buildStage = 1,
+        cells = {},
+        previews = {},
+        actions = {},
+        fieldRows = {},
+        catalogRows = {},
+        existing = {},
         status = "Select a panel, then edit its layout.",
         title = label(
             screen,
@@ -201,15 +203,15 @@ local function createScreen(context, session, handlers)
             color(context, "amber", 0xF2B84B)
         ),
     }
-    addCellObjects(state, context)
-    state.previews = {}
-    for index = 1, 16 do
-        local rect = { x = 0, y = 0, w = 1, h = 1 }
-        state.previews[index] = {
-            background = rectangle(screen, rect, color(context, "surface", 0x212830)),
-            text = label(screen, rect, "", color(context, "text", 0xF4F6F7)),
-        }
+    for _, entry in ipairs(context.panels) do
+        state.existing[entry.placement.id] = entry.placement.type
     end
+    lvgl.hide(screen)
+    return state
+end
+
+local function addControls(state, context)
+    local geometry, screen = state.geometry, state.screen
     state.selection = lvgl.rectangle(screen, {
         x = 0,
         y = 0,
@@ -225,7 +227,6 @@ local function createScreen(context, session, handlers)
         w = geometry.rightWidth + 8,
         h = geometry.height - 98,
     }, color(context, "canvas", 0x0A0C0E))
-    addMainActions(state, context)
     state.back = {
         background = rectangle(
             screen,
@@ -253,9 +254,11 @@ local function createScreen(context, session, handlers)
             text = label(screen, rect, title, color(context, "text", 0xF4F6F7)),
         }
     end
-    addFieldRows(state, context)
-    state.catalogRows = {}
-    for index = 1, 12 do
+end
+
+local function addCatalogRows(state, context, first, last)
+    local geometry, screen = state.geometry, state.screen
+    for index = first, last do
         local rect = {
             x = geometry.rightX,
             y = geometry.actionsY + (index - 1) * geometry.fieldHeight,
@@ -266,7 +269,6 @@ local function createScreen(context, session, handlers)
         local text = label(screen, rect, "", color(context, "text", 0xF4F6F7))
         state.catalogRows[index] = { background = background, text = text, rect = rect }
     end
-    return state
 end
 
 local function panelLabel(placement)
@@ -304,19 +306,10 @@ local function renderCells(context, state)
     end
     for _, cell in ipairs(state.cells) do
         setVisible(cell.background, state.mode == "move" or state.mode == "resize")
-        setVisible(cell.text, false)
     end
     for index, preview in ipairs(state.previews) do
         local placement = placements[index]
-        local existing = false
-        if placement then
-            for _, entry in ipairs(context.panels) do
-                if entry.placement.id == placement.id and entry.placement.type == placement.type then
-                    existing = true
-                    break
-                end
-            end
-        end
+        local existing = placement and state.existing[placement.id] == placement.type
         setVisible(preview.background, placement ~= nil and not existing)
         setVisible(preview.text, placement ~= nil and not existing)
         if placement and not existing then
@@ -894,8 +887,42 @@ end
 function uiModule.open(context, session, handlers)
     local state = createScreen(context, session, handlers)
     context.editorUi = state
-    render(context, state)
     return state
+end
+
+function uiModule.advance(context)
+    local state = context.editorUi
+    local stage = state and state.buildStage
+    if not stage then
+        return false
+    end
+    -- Build bounded groups while the overlay is hidden; reveal it only when complete.
+    if stage <= 4 then
+        addCellObjects(state, context, (stage - 1) * 4 + 1, stage * 4)
+    elseif stage <= 8 then
+        for index = (stage - 5) * 4 + 1, (stage - 4) * 4 do
+            local rect = { x = 0, y = 0, w = 1, h = 1 }
+            state.previews[index] = {
+                background = rectangle(state.screen, rect, color(context, "surface", 0x212830)),
+                text = label(state.screen, rect, "", color(context, "text", 0xF4F6F7)),
+            }
+        end
+    elseif stage == 9 then
+        addControls(state, context)
+    elseif stage <= 11 then
+        addMainActions(state, context, (stage - 10) * 5 + 1, (stage - 9) * 5)
+    elseif stage <= 14 then
+        addFieldRows(state, context, (stage - 12) * 4 + 1, (stage - 11) * 4)
+    elseif stage <= 17 then
+        addCatalogRows(state, context, (stage - 15) * 4 + 1, (stage - 14) * 4)
+    else
+        render(context, state)
+        state.buildStage = nil
+        lvgl.show(state.screen)
+        return true
+    end
+    state.buildStage = stage + 1
+    return true
 end
 
 function uiModule.close(context, discard)
@@ -914,7 +941,7 @@ end
 
 function uiModule.handle(context, event, touchState)
     local state = context.editorUi
-    if not state then
+    if not state or state.buildStage then
         return false
     end
     if isTap(event, touchState) then

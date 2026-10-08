@@ -75,6 +75,9 @@ widget.lvglMock.setFullScreen(true)
 widget.pump(context, 10)
 widget.module("main.lua").refresh(context, EVT_TOUCH_FIRST, { x = 430, y = 10 })
 widget.module("main.lua").refresh(context, EVT_TOUCH_TAP, { x = 430, y = 10 })
+widget.pumpUntil(context, function()
+    return context.editorUi and not context.editorUi.buildStage
+end, 30)
 assert(
     context.editorUi,
     "touching the fullscreen editor affordance did not open the editor: "
@@ -166,6 +169,9 @@ assertEqual(originalEntry.instance, originalInstance, "Cancel recreated the orig
 assert(not hostIo.open(savedPath, "r"), "Cancel wrote a layout")
 
 widget.module("main.lua").refresh(context, EVT_VIRTUAL_ENTER)
+widget.pumpUntil(context, function()
+    return context.editorUi and not context.editorUi.buildStage
+end, 30)
 assert(context.editorUi, "rotary/key entry did not open the editor")
 tapAction("move")
 tap(geometry.gridX + geometry.cell + 2, geometry.gridY + 2)
@@ -206,9 +212,118 @@ assertEqual(recovered.layoutPath, savedPath .. ".bak", "invalid primary did not 
 assertEqual(recovered.layoutOrigin, "model-backup", "backup recovery origin was not reported")
 assertEqual(recovered.document.panels[1].col, 1, "backup recovery loaded the wrong document")
 
-setmetatable(_G, previousMetatable)
+widget.lvglMock.setFullScreen(false)
+
+local fullLines = { "version: 1", "grid:", "  columns: 4", "  rows: 4", "panels:" }
+for index = 1, 16 do
+    fullLines[#fullLines + 1] = string.format(
+        "  - id: m%d\n    type: metric\n    col: %d\n    row: %d\n    colSpan: 1\n    rowSpan: 1\n    config:\n      metrics:\n        - source: Alt\n          label: ALT\n      visual: none",
+        index,
+        (index - 1) % 4,
+        math.floor((index - 1) / 4)
+    )
+end
+local fullFile = assert(hostIo.open(widgetPath .. "layouts/full-editor.yaml", "w"))
+fullFile:write(table.concat(fullLines, "\n"))
+fullFile:close()
+local full = widget.createLoaded(
+    { x = 0, y = 0, w = 480, h = 272 },
+    { DashID = "full-editor", Theme = "modern" },
+    widgetPath
+)
+widget.lvglMock.setFullScreen(true)
+widget.pump(full, 10)
+local definition = widget.module("main.lua")
+local function measured(label, input, touch)
+    widget.lvglMock.setPropertyValidation(false)
+    widget.lvglMock.setCallCounting(false)
+    widget.lcdMock.setTextMeasurement(false)
+    local ticks = 0
+    debug.sethook(function()
+        ticks = ticks + 1
+    end, "", 200)
+    local ok, err = pcall(definition.refresh, full, input, touch)
+    debug.sethook()
+    widget.lvglMock.setPropertyValidation(true)
+    widget.lvglMock.setCallCounting(true)
+    widget.lcdMock.setTextMeasurement(true)
+    assert(ok, tostring(err))
+    assert(ticks * 200 <= 15000, label .. " exceeded editor callback budget: " .. tostring(ticks * 200))
+end
+measured("entry", EVT_VIRTUAL_ENTER)
+for index = 1, 30 do
+    if not full.editorUi.buildStage then
+        break
+    end
+    measured("build " .. index)
+end
+assert(not full.editorUi.buildStage, "editor initialization did not settle")
+local function measuredTap(label, x, y)
+    measured(label .. " first", EVT_TOUCH_FIRST, { x = x, y = y })
+    measured(label .. " tap", EVT_TOUCH_TAP, { x = x, y = y })
+end
+measuredTap("select", 125, 70)
+assertEqual(full.editorSession.selected, 6, "full-grid panel selection")
+local configure = full.editorUi.actions[6].rect
+measuredTap("configure", configure.x + 2, configure.y + 2)
+assertEqual(full.editorUi.mode, "configure", "full-grid configuration drawer")
+measuredTap("back", 10, full.zone.h - 10)
+local add = full.editorUi.actions[3].rect
+measuredTap("catalog", add.x + 2, add.y + 2)
+assertEqual(full.editorUi.mode, "add", "full-grid catalog drawer")
+measuredTap("back", 10, full.zone.h - 10)
+local removeFull = full.editorUi.actions[7].rect
+measuredTap("remove", removeFull.x + 2, removeFull.y + 2)
+assertEqual(#full.editorSession.draft.panels, 15, "full-grid panel removal")
+local moveFull = full.editorUi.actions[4].rect
+measuredTap("move mode", moveFull.x + 2, moveFull.y + 2)
+assertEqual(full.editorUi.mode, "move", "full-grid move mode")
+measuredTap("move", 125, 70)
+local resizeFull = full.editorUi.actions[5].rect
+measuredTap("resize mode", resizeFull.x + 2, resizeFull.y + 2)
+measuredTap("resize rejection", 250, 70)
+local cancel = full.editorUi.actions[10].rect
+measuredTap("cancel", cancel.x + 2, cancel.y + 2)
+assertEqual(full.editorUi, nil, "full-grid Cancel closes editor")
+assertEqual(#full.document.panels, 16, "full-grid Cancel preserves committed layout")
+measured("warm entry", EVT_VIRTUAL_ENTER)
+measured("warm build")
+widget.lvglMock.setFullScreen(false)
+measured("leave fullscreen during startup")
+assertEqual(full.editorUi, nil, "leaving fullscreen cancels incomplete startup")
+assertEqual(#full.document.panels, 16, "incomplete startup preserves committed layout")
+widget.lvglMock.setFullScreen(true)
+full = widget.createLoaded(
+    { x = 0, y = 0, w = 480, h = 272 },
+    { DashID = "default", Theme = "modern" },
+    root .. "/src/WIDGETS/AeroGrid/"
+)
+widget.pump(full, 10)
+measured("aircraft entry", EVT_VIRTUAL_ENTER)
+for index = 1, 30 do
+    if not full.editorUi.buildStage then
+        break
+    end
+    measured("aircraft build " .. index)
+end
+widget.lvglMock.setFullScreen(false)
+definition.refresh(full)
+widget.lvglMock.setFullScreen(true)
+definition.refresh(full, EVT_VIRTUAL_ENTER)
+local advance = full.editorUiModule.advance
+full.editorUiModule.advance = function()
+    error("simulated editor initialization failure")
+end
+definition.refresh(full)
+full.editorUiModule.advance = advance
+assertEqual(full.editorUi, nil, "failed initialization closes partial editor")
+assert(
+    string.find(table.concat(full.errors, "; "), "simulated editor initialization failure", 1, true),
+    "initialization error was not surfaced"
+)
+widget.lvglMock.setFullScreen(false)
 for name in pairs(events) do
     rawset(_G, name, previousEvents[name])
 end
-widget.lvglMock.setFullScreen(false)
+setmetatable(_G, previousMetatable)
 print("AeroGrid editor UI integration test passed")

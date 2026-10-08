@@ -68,6 +68,8 @@ Follow the YAML structure above and the panel examples.
 
 Temporarily take AeroGrid fullscreen, then choose **EDIT** in the upper-right
 corner or press Enter. The dashboard stays visible and live while editing.
+The editor prepares its controls over several frames; wait for the bottom toolbar
+to appear before selecting panels.
 Tap an actual panel to select it; a cyan outline marks its bounds. The bottom
 toolbar offers **Panel - / Panel +**, **Add panel**, **Move**, **Resize**,
 **Configure**, **Remove**, **Defaults**, **Apply / Save**, and **Cancel**.

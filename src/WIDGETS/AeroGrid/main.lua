@@ -391,18 +391,17 @@ local function previewLayout(context, document)
             entry.editorVisible = visible
         end
         if visible and not entry.failed then
-            local rect, rectError = context.grid.rect(context.zone, placement, 4, 4, 4)
-            if not rect then
-                return false, rectError
-            end
-            local previous = entry.editorRect or context.grid.rect(context.zone, entry.placement, 4, 4, 4)
+            local previous = entry.editorPlacement or entry.placement
             if
-                not previous
-                or previous.x ~= rect.x
-                or previous.y ~= rect.y
-                or previous.w ~= rect.w
-                or previous.h ~= rect.h
+                previous.col ~= placement.col
+                or previous.row ~= placement.row
+                or previous.colSpan ~= placement.colSpan
+                or previous.rowSpan ~= placement.rowSpan
             then
+                local rect, rectError = context.grid.rect(context.zone, placement, 4, 4, 4)
+                if not rect then
+                    return false, rectError
+                end
                 entry.container:set({ x = rect.x, y = rect.y, w = rect.w, h = rect.h })
                 local ok, updateError = context.panelHost.dispatch(
                     entry,
@@ -413,7 +412,12 @@ local function previewLayout(context, document)
                 if not ok then
                     return false, entry.placement.id .. ": preview: " .. tostring(updateError)
                 end
-                entry.editorRect = rect
+                entry.editorPlacement = {
+                    col = placement.col,
+                    row = placement.row,
+                    colSpan = placement.colSpan,
+                    rowSpan = placement.rowSpan,
+                }
             end
         end
     end
@@ -427,7 +431,7 @@ local function restorePreview(context)
         showErrors(context)
     end
     for _, entry in ipairs(context.panels) do
-        entry.editorRect = nil
+        entry.editorPlacement = nil
         entry.editorVisible = nil
     end
 end
@@ -1555,6 +1559,18 @@ local function refresh(context, widgetEvent, touchState)
         return
     end
 
+    if context.editorUi and context.editorUi.buildStage then
+        local advanced, advanceError = pcall(context.editorUiModule.advance, context)
+        if not advanced then
+            context.editorUiModule.close(context, true)
+            context.editorSession = nil
+            updateEditorButton(context)
+            addError(context, "editor UI: " .. tostring(advanceError))
+            showErrors(context)
+        end
+        return
+    end
+
     -- EdgeTX delivers fullscreen input through refresh, not an event callback.
     if widgetEvent ~= nil and widgetEvent ~= 0 and isFullScreen() then
         if widgetEvent == _G.EVT_TOUCH_FIRST then
@@ -1568,6 +1584,10 @@ local function refresh(context, widgetEvent, touchState)
             event(context, widgetEvent, touchState)
         end
         if context.reloadState then
+            return
+        end
+        -- Input rendering gets its own callback budget, separate from live panels.
+        if context.editorUi then
             return
         end
     end
