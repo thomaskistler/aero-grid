@@ -992,6 +992,13 @@ the first free 1x1 cell as an editing affordance, not a persisted panel.
 New draft panels remain preview cards until saving. Return closes drawers,
 then validates, saves, and exits editing; save failure retains the draft.
 
+### Planned exit dialog (not implemented)
+
+When Return exits editor mode, open a dialog that allows changing the layout
+name and offers **Save** and **Cancel**, instead of immediately saving.
+The exact Cancel behavior and layout-name persistence are still to be defined.
+Return within a settings or catalog drawer continues to close that drawer first.
+
 ### Required actions
 
 - Add panel
