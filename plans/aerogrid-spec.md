@@ -960,14 +960,16 @@ EdgeTX exposes Lua file access through `io.open`, `io.read`, `io.write`, and `io
 
 Release phase 1 is read-only: layouts are authored externally and the dashboard never writes, migrates, or reformats them. The save workflow below applies to the phase 2 editor.
 
-The editor must save only on an explicit Apply or Save action to reduce SD-card writes.
+The editor saves a changed draft once when Return exits editing or fullscreen
+is left, not after each gesture. Unchanged layouts are not rewritten.
 
 Recommended save sequence:
 
 1. Serialize and validate the complete layout in memory.
 2. Write `<layout>.tmp` using `io.open(..., "w")`.
 3. Close the temporary file.
-4. Read and parse the temporary file to verify it.
+4. Read the temporary file and verify it exactly matches the serialized,
+   round-trip-validated content. Build and validate one panel per callback.
 5. Rotate the existing file to `<layout>.bak` where practical.
 6. Rename the temporary file to the final filename.
 7. Keep the backup until the next successful save.
@@ -980,26 +982,25 @@ Layouts are keyed by sanitized model filename and Dashboard ID as `<model-identi
 
 The editor runs inside the dashboard's temporary fullscreen state.
 
-Editing is in place: the live dashboard stays visible, tapping a panel selects
-and outlines its actual bounds, and a compact bottom toolbar exposes actions.
-Move and Resize show grid guides and preview existing panel geometry without
-constructing another instance. Remove hides the panel until Apply. New draft
-panels are labeled preview cards until Apply to avoid starting side-effectful
-panels before committing. Configuration and catalog selection use overlay drawers.
-Cancel restores original geometry and visibility; Apply persists the validated
-draft and rebuilds the committed dashboard.
+Editing starts by long-pressing a panel in explicit fullscreen (Enter is the
+key-only alternative). Normal App mode remains read-only. Gray circular X and
+gear controls appear at each panel's top-left and top-right. There is no EDIT
+button, toolbar, selection outline, or grid overlay. The X removes a panel;
+the gear opens its settings, including fitting supported sizes. Dragging snaps
+only to valid placements. A panel-styled + tile with a gray sidebar occupies
+the first free 1x1 cell as an editing affordance, not a persisted panel.
+New draft panels remain preview cards until saving. Return closes drawers,
+then validates, saves, and exits editing; save failure retains the draft.
 
 ### Required actions
 
 - Add panel
 - Select panel type
-- Move panel by one grid cell
-- Resize panel by one grid cell in each direction
+- Drag panel between fitting grid positions
+- Choose a fitting supported size with the top-left cell fixed
 - Edit panel-specific configuration
 - Remove panel
-- Cancel uncommitted changes
-- Apply and persist changes
-- Restore the default layout
+- Save and exit with Return
 
 ### Panel settings behavior
 
@@ -1008,21 +1009,21 @@ draft and rebuilds the committed dashboard.
 - Edit an isolated in-memory working copy rather than the live YAML data.
 - Show defaults for missing values and validation feedback for invalid values.
 - Apply settings to the live panel only after validation succeeds.
-- Persist settings together with placement when the dashboard Apply or Save action is confirmed.
+- Persist settings together with placement when Return exits editing.
 - Preserve unknown config keys so a newer panel configuration is not destroyed by an older dashboard host.
 
 ### Placement behavior
 
-- Show the 4 x 4 grid while editing.
-- Highlight the selected panel.
-- Show occupied and available cells.
+- Do not show grid guides or a selection outline.
 - Reject out-of-bounds placement.
-- Reject overlap, or optionally offer to swap/move the conflicting panel.
-- Keep an in-memory working copy until Apply.
+- Snap only to non-overlapping positions; do not move other panels.
+- Keep an in-memory working copy until save-on-exit.
 - Reposition and update existing LVGL containers for draft geometry changes;
-  rebuild the dashboard only after Apply.
+  rebuild the dashboard only after saving.
 
-Touch radios may support drag and resize handles. Rotary/key-only radios should use explicit Move and Size modes with directional controls. The persisted placement model is identical for both input styles.
+Touch radios use drag and gear settings. Rotary/key-only radios cycle panels,
+open settings with Enter, and use Column, Row, Size, and Remove controls.
+The persisted placement model is identical for both input styles.
 
 ## Validation and Recovery
 

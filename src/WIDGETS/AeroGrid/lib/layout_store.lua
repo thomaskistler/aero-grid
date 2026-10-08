@@ -216,43 +216,30 @@ function layoutStore.loadDefault(widgetPath, yaml, layout, grid)
     return nil, lastErrors, candidates[1]
 end
 
---- Save a validated layout through a verified temporary file and backup.
----@param widgetPath string
----@param modelFilename string
----@param dashboardId string
----@param document table
----@param yaml table
----@param layout table
----@param grid table
----@param fileOps? table Injectable I/O functions for tests.
----@return boolean saved
----@return string? error
----@return string filename
-function layoutStore.save(widgetPath, modelFilename, dashboardId, document, yaml, layout, grid, fileOps)
-    local filename = layoutStore.path(widgetPath, modelFilename, dashboardId)
-    local serialized, serializeError = yaml.serialize(document)
-    if not serialized then
-        return false, serializeError, filename
+--- Install prevalidated content only after a byte-for-byte readback check.
+local function persistSerialized(filename, serialized, fileOps)
+    local function radioOperation(operation)
+        if type(operation) ~= "function" then
+            return nil
+        end
+        return function(...)
+            local result = operation(...)
+            if result == 0 then
+                return true
+            end
+            return false, "filesystem error " .. tostring(result)
+        end
     end
-
-    local parsed, parseError = yaml.parse(serialized)
-    if not parsed then
-        return false, "serialized layout could not be parsed: " .. tostring(parseError), filename
-    end
-    local validated, validationErrors = layout.validate(parsed, grid)
-    if not validated or #validationErrors > 0 then
-        return false, "serialized layout failed validation: " .. table.concat(validationErrors, "; "), filename
-    end
-
-    local operations = fileOps or {
-        open = io.open,
-        read = io.read,
-        write = io.write,
-        close = io.close,
-        rename = os.rename,
-        remove = os.remove,
-        stat = fstat,
-    }
+    local operations = fileOps
+        or {
+            open = io.open,
+            read = io.read,
+            write = io.write,
+            close = io.close,
+            rename = radioOperation(_G.rename) or (os and os.rename),
+            remove = radioOperation(_G.del) or (os and os.remove),
+            stat = fstat,
+        }
     for _, name in ipairs({ "open", "read", "write", "close", "rename", "remove", "stat" }) do
         if type(operations[name]) ~= "function" then
             return false, "file operation unavailable: " .. name, filename
@@ -281,17 +268,9 @@ function layoutStore.save(widgetPath, modelFilename, dashboardId, document, yaml
         operations.remove(temporary)
         return false, temporaryError or "cannot verify temporary layout", filename
     end
-    local temporaryDocument, temporaryParseError = yaml.parse(temporaryContent)
-    if not temporaryDocument then
+    if temporaryContent ~= serialized then
         operations.remove(temporary)
-        return false, "temporary layout is invalid: " .. tostring(temporaryParseError), filename
-    end
-    local temporaryValidated, temporaryValidationErrors = layout.validate(temporaryDocument, grid)
-    if not temporaryValidated or #temporaryValidationErrors > 0 then
-        operations.remove(temporary)
-        return false,
-            "temporary layout failed validation: " .. table.concat(temporaryValidationErrors, "; "),
-            filename
+        return false, "temporary layout differs from validated content", filename
     end
 
     if operations.stat(filename) then
@@ -314,6 +293,90 @@ function layoutStore.save(widgetPath, modelFilename, dashboardId, document, yaml
         return false, commitError or "cannot install validated layout", filename
     end
     return true, nil, filename
+end
+
+--- Synchronous save for callers that do not need staged callback budgets.
+function layoutStore.save(widgetPath, modelFilename, dashboardId, document, yaml, layout, grid, fileOps)
+    local filename = layoutStore.path(widgetPath, modelFilename, dashboardId)
+    local serialized, serializeError = yaml.serialize(document)
+    if not serialized then
+        return false, serializeError, filename
+    end
+    local parsed, parseError = yaml.parse(serialized)
+    if not parsed then
+        return false, "serialized layout could not be parsed: " .. tostring(parseError), filename
+    end
+    local validated, validationErrors = layout.validate(parsed, grid)
+    if not validated or #validationErrors > 0 then
+        return false, "serialized layout failed validation: " .. table.concat(validationErrors, "; "), filename
+    end
+    return persistSerialized(filename, serialized, fileOps)
+end
+
+--- Build and verify one panel per callback before atomically installing the file.
+function layoutStore.startSave(widgetPath, modelFilename, dashboardId, document, yaml, layout, grid, fileOps)
+    return {
+        filename = layoutStore.path(widgetPath, modelFilename, dashboardId),
+        document = document,
+        yaml = yaml,
+        layout = layout,
+        grid = grid,
+        operations = fileOps,
+        index = 0,
+        parts = {},
+        accepted = {},
+        identifiers = {},
+    }
+end
+
+function layoutStore.advanceSave(state)
+    local yaml, layout, grid = state.yaml, state.layout, state.grid
+    if state.index == 0 then
+        local header = {}
+        for key, value in pairs(state.document) do
+            if key ~= "panels" then
+                header[key] = value
+            end
+        end
+        local text, encodeError = yaml.serialize(header)
+        if not text then
+            return true, false, encodeError
+        end
+        local parsed, parseError = yaml.parse(text)
+        if not parsed then
+            return true, false, parseError
+        end
+        parsed.panels = {}
+        local valid, validationErrors = layout.validateDocument(parsed)
+        if not valid then
+            return true, false, table.concat(validationErrors, "; ")
+        end
+        state.parts[1] = text
+        state.parts[2] = #state.document.panels == 0 and "panels: {}\n" or "panels:\n"
+        state.index = 1
+    elseif state.index <= #state.document.panels then
+        local text, encodeError = yaml.serialize({ panels = { state.document.panels[state.index] } })
+        if not text then
+            return true, false, encodeError
+        end
+        local parsed, parseError = yaml.parse(text)
+        if not parsed then
+            return true, false, parseError
+        end
+        local panel = parsed.panels[1]
+        local valid, panelError = layout.validatePanel(panel, state.index, grid, state.accepted, state.identifiers)
+        if not valid then
+            return true, false, panelError
+        end
+        state.accepted[#state.accepted + 1] = panel
+        state.identifiers[panel.id] = true
+        state.parts[#state.parts + 1] = string.sub(text, #"panels:\n" + 1)
+        state.index = state.index + 1
+    else
+        local saved, saveError = persistSerialized(state.filename, table.concat(state.parts), state.operations)
+        return true, saved, saveError
+    end
+    return false
 end
 
 return layoutStore

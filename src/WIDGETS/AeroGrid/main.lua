@@ -59,8 +59,6 @@
 ---@field editorUiModule? table LVGL editor controls, loaded only on demand.
 ---@field editorSession? table Uncommitted editor working copy.
 ---@field editorUi? table Active editor screen state.
----@field editButton? any Fullscreen affordance for entering the editor.
----@field editButtonLabel? any Fullscreen affordance label.
 
 local options = {
     { "DashID", STRING, "main" },
@@ -299,34 +297,6 @@ local function showErrors(context)
     })
 end
 
---- Show or hide the fullscreen-only editor entry affordance.
----@param context AeroGridContext
-local function updateEditorButton(context)
-    local width = math.min(72, math.max(1, context.zone.w - 8))
-    local x = math.max(4, context.zone.w - width - 6)
-    local shown = context.editButton ~= nil
-        and not context.editorUi
-        and not context.runtimeFailed
-        and context.stage == nil
-        and context.reloadState == nil
-        and context.document ~= nil
-        and isFullScreen()
-    if context.editButton then
-        if context.editButtonX ~= x or context.editButtonWidth ~= width then
-            context.editButton:set({ x = x, y = 4, w = width })
-            context.editButtonLabel:set({ x = x, y = 4, w = width })
-            context.editButtonX = x
-            context.editButtonWidth = width
-        end
-    end
-    if context.editButton and context.editorButtonVisible ~= shown then
-        local visibility = shown and lvgl.show or lvgl.hide
-        visibility(context.editButton)
-        visibility(context.editButtonLabel)
-        context.editorButtonVisible = shown
-    end
-end
-
 --- Dispatch one lifecycle callback to every live panel in isolation.
 --- A panel that raises is disabled and reported without affecting the others.
 ---@param context AeroGridContext
@@ -498,11 +468,8 @@ local function openEditor(context)
         preview = function(document)
             return previewLayout(context, document)
         end,
-        loadDefault = function()
-            return context.layoutStore.loadDefault(context.path, context.yaml, context.layoutValidator, context.grid)
-        end,
-        save = function(document)
-            local saved, saveError, filename = context.layoutStore.save(
+        startSave = function(document)
+            return context.layoutStore.startSave(
                 context.path,
                 context.modelFilename or "default",
                 context.dashboardId,
@@ -511,20 +478,24 @@ local function openEditor(context)
                 context.layoutValidator,
                 context.grid
             )
+        end,
+        advanceSave = function(state)
+            local done, saved, saveError = context.layoutStore.advanceSave(state)
             if saved then
-                context.layoutPath = filename
+                context.layoutPath = state.filename
                 context.layoutOrigin = "model"
             end
-            return saved, saveError
+            return done, saved, saveError
         end,
         close = function(saved)
             context.editorUiModule.close(context, false)
-            restorePreview(context)
+            if not saved then
+                restorePreview(context)
+            end
             context.editorSession = nil
             if saved then
                 context.reloadState = "clear"
             end
-            updateEditorButton(context)
         end,
     }
     local opened, openError = pcall(context.editorUiModule.open, context, session, handlers)
@@ -538,16 +509,33 @@ local function openEditor(context)
         showErrors(context)
         return false
     end
-    updateEditorButton(context)
+    context.touchTapHandled = true
+    context.editorPress = nil
     return true
 end
 
---- Whether an event or touch activates the fullscreen editor affordance.
+--- Advance editor setup or saving without discarding a failed save's draft.
+local function advanceEditor(context)
+    local saving = context.editorUi.saving ~= nil
+    local advanced, advanceError = pcall(context.editorUiModule.advance, context)
+    if not advanced then
+        if saving then
+            context.editorUiModule.saveFailure(context, advanceError)
+        else
+            context.editorUiModule.close(context, true)
+            context.editorSession = nil
+            addError(context, "editor UI: " .. tostring(advanceError))
+            showErrors(context)
+        end
+    end
+end
+
+--- Whether input starts fullscreen editing.
 ---@param context AeroGridContext
 ---@param widgetEvent any
 ---@param touchState any
 ---@return boolean
-local function editorEntryHit(context, widgetEvent, touchState)
+local function editorEntryHit(context, widgetEvent, touchState, held)
     if
         not isFullScreen()
         or context.stage
@@ -563,7 +551,7 @@ local function editorEntryHit(context, widgetEvent, touchState)
         return true
     end
     if
-        widgetEvent ~= _G.EVT_TOUCH_TAP
+        (not held and (not _G.EVT_TOUCH_LONG or widgetEvent ~= _G.EVT_TOUCH_LONG))
         or type(touchState) ~= "table"
         or type(touchState.x) ~= "number"
         or type(touchState.y) ~= "number"
@@ -575,9 +563,14 @@ local function editorEntryHit(context, widgetEvent, touchState)
     if x >= left and x < left + context.zone.w and y >= top and y < top + context.zone.h then
         x, y = x - left, y - top
     end
-    local width = math.min(72, math.max(1, context.zone.w - 8))
-    local x0 = math.max(4, context.zone.w - width - 6)
-    return x >= x0 and x < x0 + width and y >= 4 and y < 30
+    for _, entry in ipairs(context.panels) do
+        local rect = context.grid.rect(context.zone, entry.placement, 4, 4, 4)
+        if rect and x >= rect.x and x < rect.x + rect.w and y >= rect.y and y < rect.y + rect.h then
+            return true
+        end
+    end
+    -- An empty dashboard must still offer a way to start adding panels.
+    return #context.panels == 0 and x >= 0 and x < context.zone.w and y >= 0 and y < context.zone.h
 end
 
 --- The rectangle one placement occupies inside the host zone.
@@ -827,7 +820,6 @@ local function advanceLoad(context)
         context.source = nil
         context.loadCandidates = nil
         context.loadCandidateIndex = nil
-        updateEditorButton(context)
         showErrors(context)
         return false
     end
@@ -973,7 +965,6 @@ local function advanceLoad(context)
             context.tokens = nil
             context.loadCandidates = nil
             context.loadCandidateIndex = nil
-            updateEditorButton(context)
             showErrors(context)
             return false
         end
@@ -1074,7 +1065,6 @@ local function advanceLoad(context)
                 addNotice(context, "warning", "layout recovered after: " .. context.recoveryReason)
                 context.recoveryReason = nil
             end
-            updateEditorButton(context)
             showErrors(context)
             return false
         end
@@ -1222,27 +1212,6 @@ local function create(zone, widgetOptions, path)
         filled = true,
     })
 
-    context.editButton = lvgl.rectangle(context.root, {
-        x = math.max(4, zone.w - 78),
-        y = 4,
-        w = math.min(72, math.max(1, zone.w - 8)),
-        h = 26,
-        color = lcd.RGB(0x212830),
-        filled = true,
-    })
-    context.editButtonLabel = lvgl.label(context.root, {
-        x = math.max(4, zone.w - 78),
-        y = 4,
-        w = math.min(72, math.max(1, zone.w - 8)),
-        h = 26,
-        text = "EDIT",
-        color = lcd.RGB(0xF4F6F7),
-        font = function()
-            return SMLSIZE
-        end,
-    })
-    updateEditorButton(context)
-
     if
         not context.packageInfo
         or not context.grid
@@ -1262,7 +1231,6 @@ local function create(zone, widgetOptions, path)
         -- Loading is deliberately deferred to refresh(). Doing it here would
         -- exceed EdgeTX's per-callback instruction budget on a full dashboard.
         beginLoad(context)
-        updateEditorButton(context)
     end
 
     return context
@@ -1314,7 +1282,6 @@ local function beginReflow(context)
     context.left = context.zone.xabs or 0
     context.top = context.zone.yabs or 0
     context.fullScreen = isFullScreen()
-    updateEditorButton(context)
     context.reflowIndex = 1
 end
 
@@ -1502,9 +1469,23 @@ end
 ---@param touchState? table
 local function refresh(context, widgetEvent, touchState)
     if context.editorUi and not isFullScreen() then
-        context.editorUiModule.close(context, true)
-        restorePreview(context)
-        context.editorSession = nil
+        if context.editorUi.buildStage then
+            context.editorUiModule.close(context, true)
+            restorePreview(context)
+            context.editorSession = nil
+        elseif not context.editorUi.suspended and not context.editorUi.saving then
+            if context.editorUi.saveFailed then
+                context.editorUi.suspended = true
+                lvgl.hide(context.editorUi.screen)
+                addError(context, "Layout save failed; return to fullscreen to retry.")
+                showErrors(context)
+            else
+                context.editorUiModule.finish(context)
+            end
+        end
+    elseif context.editorUi and context.editorUi.suspended then
+        context.editorUi.suspended = nil
+        lvgl.show(context.editorUi.screen)
     end
 
     -- A reload takes two callbacks on purpose. EdgeTX defers the cleanup that
@@ -1559,15 +1540,31 @@ local function refresh(context, widgetEvent, touchState)
         return
     end
 
-    if context.editorUi and context.editorUi.buildStage then
-        local advanced, advanceError = pcall(context.editorUiModule.advance, context)
-        if not advanced then
-            context.editorUiModule.close(context, true)
-            context.editorSession = nil
-            updateEditorButton(context)
-            addError(context, "editor UI: " .. tostring(advanceError))
-            showErrors(context)
+    -- EdgeTX reports FIRST/BREAK but does not forward LVGL's long-press event.
+    if not context.editorUi and isFullScreen() then
+        if widgetEvent == _G.EVT_TOUCH_FIRST and editorEntryHit(context, widgetEvent, touchState, true) then
+            context.editorPress = { started = getTime() }
+        elseif
+            widgetEvent ~= nil
+            and (
+                widgetEvent == _G.EVT_TOUCH_BREAK
+                or widgetEvent == _G.EVT_TOUCH_SLIDE
+                or widgetEvent == _G.EVT_TOUCH_TAP
+            )
+        then
+            context.editorPress = nil
         end
+        if context.editorPress and getTime() - context.editorPress.started >= 60 then
+            context.editorPress = nil
+            openEditor(context)
+            return
+        end
+    elseif not isFullScreen() then
+        context.editorPress = nil
+    end
+
+    if context.editorUi and (context.editorUi.buildStage or context.editorUi.saving) then
+        advanceEditor(context)
         return
     end
 
@@ -1625,7 +1622,6 @@ local function refresh(context, widgetEvent, touchState)
     then
         beginReflow(context)
     end
-    updateEditorButton(context)
     if context.reflowIndex then
         advanceReflow(context)
         return
@@ -1642,6 +1638,10 @@ end
 --- a hole whenever the pilot looks at another screen.
 ---@param context AeroGridContext
 local function background(context)
+    if context.editorUi and context.editorUi.saving then
+        advanceEditor(context)
+        return
+    end
     if context.stage or context.reloadState or context.reflowIndex then
         return
     end

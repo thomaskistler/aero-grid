@@ -270,24 +270,25 @@ user-confirmed hardware verification without inventing quantitative measurements
   their configured ranges.
 - [ ] Change flight mode, timer state, trims, and GVs; confirm updates and
   flight-mode inheritance. Verify decimal GVs using explicit metric precision.
-- [ ] Enter temporary fullscreen and verify the editor affordance, touch,
+- [ ] Enter temporary fullscreen and long-press a panel; verify touch,
   rotary, and key controls are usable at normal viewing distance.
-- [ ] Confirm editing keeps the dashboard visible and updating, selection
-  outlines the actual panel, and Move/Resize preview its bounds in place.
+- [ ] Confirm editing uses gray X/gear corner controls without an EDIT button,
+  toolbar, selection outline, or grid guides; dragging snaps only to fitting positions.
 - [ ] Confirm configuration/catalog drawers scroll and return to the dashboard;
-  new draft panels remain preview cards until Apply rather than starting trackers.
+  new draft panels remain preview cards until saving rather than starting trackers.
 - [ ] Add, move, resize, configure, and remove a panel; confirm collision and
   bounds errors are clear and resize keeps the top-left cell fixed.
-- [ ] Cancel a draft and confirm original geometry, visibility, and configuration
-  are restored without duplicate panel instances or changes to SD-card files.
-- [ ] Apply a valid draft; power-cycle/reload and confirm the layout persists
+- [ ] Confirm + appears in the first empty cell and hides on a full grid.
+- [ ] Press Return to close drawers, then save and exit; power-cycle/reload and confirm the layout persists
   for the selected model and Dashboard ID.
 - [ ] Verify a successful save retains the previous layout as `.bak`; restore
   from a deliberately invalid primary on a test SD card and confirm fallback.
 - [ ] Confirm dashboard panels remain read-only and the editor only changes
   AeroGrid layout files, not model settings.
 - [ ] On each supported radio/EdgeTX version, verify the file API supports the
-  temporary-file write/read/rename/remove sequence used by Apply / Save.
+  temporary-file write/read/rename/delete sequence used by save-on-exit.
+- [ ] Simulate a save failure; confirm the error is visible and the draft remains
+  available for retry, including after leaving and re-entering fullscreen.
 
 ## Receiver telemetry
 

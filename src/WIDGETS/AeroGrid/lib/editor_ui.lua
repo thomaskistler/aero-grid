@@ -4,19 +4,6 @@
 
 local uiModule = { RUNTIME_API = 1 }
 
-local ACTIONS = {
-    { id = "previous", text = "Panel -" },
-    { id = "next", text = "Panel +" },
-    { id = "add", text = "Add panel" },
-    { id = "move", text = "Move" },
-    { id = "resize", text = "Resize" },
-    { id = "configure", text = "Configure" },
-    { id = "remove", text = "Remove" },
-    { id = "defaults", text = "Defaults" },
-    { id = "apply", text = "Apply / Save" },
-    { id = "cancel", text = "Cancel" },
-}
-
 local CHARACTERS = " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-."
 
 local function color(context, name, fallback)
@@ -119,32 +106,7 @@ local function addCellObjects(state, context, first, last)
             colSpan = 1,
             rowSpan = 1,
         }, 4, 4, 4))
-        local background = lvgl.rectangle(state.screen, {
-            x = rect.x,
-            y = rect.y,
-            w = rect.w,
-            h = rect.h,
-            color = color(context, "cyan", 0x70D6F3),
-            filled = false,
-            thickness = 1,
-        })
-        state.cells[index] = { background = background, rect = rect, col = col, row = row }
-    end
-end
-
-local function addMainActions(state, context, first, last)
-    for index = first, last do
-        local action = ACTIONS[index]
-        local rect = {
-            x = 4 + ((index - 1) % 5) * math.floor((state.geometry.width - 8) / 5),
-            y = state.geometry.height - 44 + math.floor((index - 1) / 5) * state.geometry.rowHeight,
-            w = math.floor((state.geometry.width - 8) / 5) - 2,
-            h = state.geometry.rowHeight - 2,
-        }
-        local background = rectangle(state.screen, rect, color(context, "surface", 0x212830))
-        local text = label(state.screen, rect, action.text, color(context, "text", 0xF4F6F7))
-        state.actions[index] =
-            { id = action.id, background = background, text = text, rect = rect, title = action.text }
+        state.cells[index] = { rect = rect, col = col, row = row }
     end
 end
 
@@ -172,13 +134,12 @@ local function createScreen(context, session, handlers)
         screen = screen,
         geometry = geometry,
         mode = "menu",
-        actionIndex = 1,
         catalogIndex = 1,
         fieldIndex = 1,
         buildStage = 1,
         cells = {},
         previews = {},
-        actions = {},
+        controls = {},
         fieldRows = {},
         catalogRows = {},
         existing = {},
@@ -189,12 +150,6 @@ local function createScreen(context, session, handlers)
             "EDIT DASHBOARD",
             color(context, "text", 0xF4F6F7),
             SMLSIZE
-        ),
-        details = label(
-            screen,
-            { x = 8, y = 27, w = geometry.rightX - 16, h = 26 },
-            "",
-            color(context, "textMuted", 0xA7B0B6)
         ),
         statusLabel = label(
             screen,
@@ -212,15 +167,6 @@ end
 
 local function addControls(state, context)
     local geometry, screen = state.geometry, state.screen
-    state.selection = lvgl.rectangle(screen, {
-        x = 0,
-        y = 0,
-        w = 1,
-        h = 1,
-        color = color(context, "cyan", 0x70D6F3),
-        filled = false,
-        thickness = 3,
-    })
     state.drawer = rectangle(screen, {
         x = geometry.rightX - 4,
         y = 30,
@@ -300,12 +246,11 @@ end
 
 local function renderCells(context, state)
     local placements = state.session.draft.panels
+    local layoutChanged = state.panelCount ~= #placements
+    state.panelCount = #placements
     local previewed, previewError = state.handlers.preview(state.session.draft)
     if not previewed then
         state.status = tostring(previewError)
-    end
-    for _, cell in ipairs(state.cells) do
-        setVisible(cell.background, state.mode == "move" or state.mode == "resize")
     end
     for index, preview in ipairs(state.previews) do
         local placement = placements[index]
@@ -323,25 +268,52 @@ local function renderCells(context, state)
                 text = "NEW: " .. panelLabel(placement),
             })
         end
+        local controls = state.controls[index]
+        setVisible(controls.left, placement ~= nil and state.mode == "menu")
+        setVisible(controls.right, placement ~= nil and state.mode == "menu")
+        if placement then
+            local previous = controls.placement
+            if
+                not previous
+                or previous.id ~= placement.id
+                or previous.col ~= placement.col
+                or previous.row ~= placement.row
+                or previous.colSpan ~= placement.colSpan
+                or previous.rowSpan ~= placement.rowSpan
+            then
+                layoutChanged = true
+                local rect = assert(context.grid.rect(context.zone, placement, 4, 4, 4))
+                controls.rect = rect
+                controls.placement = {
+                    id = placement.id,
+                    col = placement.col,
+                    row = placement.row,
+                    colSpan = placement.colSpan,
+                    rowSpan = placement.rowSpan,
+                }
+                controls.left:set({ x = rect.x + 4, y = rect.y + 4 })
+                controls.right:set({ x = rect.x + rect.w - 28, y = rect.y + 4 })
+            end
+        else
+            controls.placement = nil
+            controls.rect = nil
+        end
     end
 
-    local placement = placements[state.session.selected]
-    setVisible(state.selection, placement ~= nil)
-    if placement then
-        state.selection:set(assert(context.grid.rect(context.zone, placement, 4, 4, 4)))
-        setText(
-            state.details,
-            string.format(
-                "%s  %d,%d  %dx%d",
-                placement.id,
-                placement.col + 1,
-                placement.row + 1,
-                placement.colSpan,
-                placement.rowSpan
-            )
-        )
-    else
-        setText(state.details, "No panels yet")
+    if layoutChanged then
+        local available = state.handlers.editor.availablePositions(state.session, 1, 1)
+        local first = available[1]
+        state.addRect = first and assert(context.grid.rect(context.zone, first, 4, 4, 4)) or nil
+    end
+    setVisible(state.addPanel, state.addRect ~= nil and state.mode == "menu")
+    if state.addRect then
+        state.addPanel:set(state.addRect)
+        state.addBackground:set({ w = state.addRect.w, h = state.addRect.h })
+        state.addAccent:set({ h = math.max(1, state.addRect.h - 16) })
+        state.addLabel:set({
+            x = math.floor((state.addRect.w - 30) / 2),
+            y = math.floor((state.addRect.h - 30) / 2),
+        })
     end
 end
 
@@ -358,6 +330,22 @@ local function renderFields(context, state)
     state.fields = fields or {}
     if not fields then
         state.status = tostring(fieldError)
+    end
+    local placement = state.session.draft.panels[state.session.selected]
+    local sizes, sizeError = state.handlers.editor.sizes(state.session)
+    if not sizes then
+        state.status = tostring(sizeError)
+    elseif placement then
+        table.insert(state.fields, 1, { key = "__remove", label = "Remove panel", type = "action" })
+        table.insert(state.fields, 1, { key = "__row", label = "Row", type = "number", value = placement.row + 1 })
+        table.insert(state.fields, 1, { key = "__col", label = "Column", type = "number", value = placement.col + 1 })
+        table.insert(state.fields, 1, {
+            key = "__size",
+            label = "Size",
+            type = "string",
+            choices = sizes,
+            value = placement.colSpan .. "x" .. placement.rowSpan,
+        })
     end
     local visible = math.min(
         #state.fieldRows,
@@ -428,6 +416,8 @@ end
 local function render(context, state)
     renderCells(context, state)
     local drawer = state.mode == "add" or state.mode == "configure" or state.mode == "string"
+    setVisible(state.title, drawer)
+    setVisible(state.statusLabel, drawer or state.statusError == true)
     setVisible(state.drawer, drawer)
     setVisible(state.back.background, drawer)
     setVisible(state.back.text, drawer)
@@ -439,32 +429,10 @@ local function render(context, state)
     end
     showRows(state.fieldRows, 0)
     showRows(state.catalogRows, 0)
-    if state.mode == "menu" or state.mode == "move" or state.mode == "resize" then
-        showRows(state.fieldRows, 0)
-        showRows(state.catalogRows, 0)
-        for index, row in ipairs(state.actions) do
-            setVisible(row.background, true)
-            setVisible(row.text, true)
-            colorRow(context, row, index == state.actionIndex and state.mode == "menu")
-            setText(row.text, row.title)
-        end
-        setText(
-            state.title,
-            state.mode == "menu" and "EDIT DASHBOARD"
-                or (state.mode == "move" and "MOVE SELECTED PANEL" or "RESIZE FROM TOP-LEFT")
-        )
-    elseif state.mode == "add" then
-        for _, row in ipairs(state.actions) do
-            setVisible(row.background, false)
-            setVisible(row.text, false)
-        end
+    if state.mode == "add" then
         renderCatalog(context, state)
         setText(state.title, "ADD PANEL")
     else
-        for _, row in ipairs(state.actions) do
-            setVisible(row.background, false)
-            setVisible(row.text, false)
-        end
         if state.mode == "configure" then
             renderFields(context, state)
             setText(state.title, "CONFIGURE PANEL  (LEFT/RIGHT EDIT)")
@@ -476,11 +444,6 @@ local function render(context, state)
     setText(state.statusLabel, state.status)
 end
 
-local function setSelectedAction(context, state, index)
-    state.actionIndex = ((index - 1) % #ACTIONS) + 1
-    render(context, state)
-end
-
 local function setFieldSelection(context, state, index)
     state.fieldIndex = math.max(1, math.min(index, #(state.fields or {})))
     render(context, state)
@@ -488,6 +451,32 @@ end
 
 local function updateFieldValue(context, state, field, direction)
     local editor = state.handlers.editor
+    if field.key == "__col" or field.key == "__row" then
+        return editor.move(
+            state.session,
+            field.key == "__col" and direction or 0,
+            field.key == "__row" and direction or 0
+        )
+    elseif field.key == "__remove" then
+        local removed, removeError = editor.remove(state.session)
+        if removed then
+            state.mode = "menu"
+        end
+        return removed, removeError
+    end
+    if field.key == "__size" then
+        local position = 1
+        for index, choice in ipairs(field.choices) do
+            if choice == field.value then
+                position = index
+                break
+            end
+        end
+        local choice = field.choices[((position - 1 + direction) % #field.choices) + 1]
+        local width, height = string.match(choice, "^(%d+)x(%d+)$")
+        local placement = state.session.draft.panels[state.session.selected]
+        return editor.resize(state.session, tonumber(width) - placement.colSpan, tonumber(height) - placement.rowSpan)
+    end
     local function write(value)
         if field.path then
             return editor.setPath(state.session, field.key, field.path, value)
@@ -587,41 +576,27 @@ local function finishStringEdit(context, state, accept)
 end
 
 local function saveAndClose(context, state)
-    local valid, documentOrErrors = state.handlers.editor.validate(state.session)
-    if not valid then
-        state.status = table.concat(documentOrErrors, "; ")
-        return render(context, state)
+    if state.saving then
+        return
     end
-    local saved, saveError = state.handlers.save(documentOrErrors)
-    if not saved then
-        state.status = tostring(saveError)
-        return render(context, state)
+    if not state.session.dirty then
+        state.handlers.close(false)
+        return
     end
-    state.handlers.editor.apply(state.session)
-    state.status = "Layout saved."
-    state.handlers.close(true)
+    state.saveFailed = false
+    state.saving = { index = 1, accepted = {}, identifiers = {} }
+    state.status = "Saving layout..."
+    state.statusError = true
+    render(context, state)
 end
 
 local function activateAction(context, state, action)
     local editor = state.handlers.editor
     local success, result
-    if action == "previous" or action == "next" then
-        local delta = action == "previous" and -1 or 1
-        local selected = state.session.selected + delta
-        success, result = editor.select(state.session, selected)
-        if not success then
-            state.status = tostring(result)
-        end
-    elseif action == "add" then
+    if action == "add" then
         state.mode = "add"
         state.catalogIndex = 1
         state.status = "Choose a panel type."
-    elseif action == "move" then
-        state.mode = "move"
-        state.status = "Move with arrows or tap a destination cell."
-    elseif action == "resize" then
-        state.mode = "resize"
-        state.status = "Top-left fixed; grow right/down or shrink left/up."
     elseif action == "configure" then
         state.mode = "configure"
         state.fieldIndex = 1
@@ -629,27 +604,13 @@ local function activateAction(context, state, action)
     elseif action == "remove" then
         success, result = editor.remove(state.session)
         state.status = success and "Panel removed from the working copy." or tostring(result)
-    elseif action == "defaults" then
-        local default, defaultError = state.handlers.loadDefault()
-        if not default then
-            state.status = table.concat(defaultError or { "cannot load the default layout" }, "; ")
-        else
-            success, result = editor.restoreDefault(state.session, default)
-            state.status = success and "Default restored in the working copy." or tostring(result)
-        end
-    elseif action == "apply" then
-        return saveAndClose(context, state)
-    elseif action == "cancel" then
-        editor.cancel(state.session)
-        state.handlers.close(false)
-        return
     end
     render(context, state)
 end
 
 local function activate(context, state)
     if state.mode == "menu" then
-        activateAction(context, state, ACTIONS[state.actionIndex].id)
+        activateAction(context, state, (state.keyAdd or #state.session.draft.panels == 0) and "add" or "configure")
     elseif state.mode == "add" then
         local item = state.handlers.editor.CATALOG[state.catalogIndex]
         if item then
@@ -660,10 +621,6 @@ local function activate(context, state)
             end
             render(context, state)
         end
-    elseif state.mode == "move" or state.mode == "resize" then
-        state.mode = "menu"
-        state.status = "Placement mode finished."
-        render(context, state)
     elseif state.mode == "configure" then
         local field = state.fields and state.fields[state.fieldIndex]
         if field then
@@ -681,17 +638,7 @@ local function activate(context, state)
 end
 
 local function direction(context, state, horizontal, amount)
-    if state.mode == "move" then
-        local col = horizontal and amount or 0
-        local row = horizontal and 0 or amount
-        local moved, moveError = state.handlers.editor.move(state.session, col, row)
-        state.status = moved and "Panel moved." or tostring(moveError)
-    elseif state.mode == "resize" then
-        local col = horizontal and amount or 0
-        local row = horizontal and 0 or amount
-        local resized, resizeError = state.handlers.editor.resize(state.session, col, row)
-        state.status = resized and "Panel resized." or tostring(resizeError)
-    elseif state.mode == "configure" then
+    if state.mode == "configure" then
         local field = state.fields and state.fields[state.fieldIndex]
         if field then
             local changed, changeError = updateFieldValue(context, state, field, amount)
@@ -701,7 +648,21 @@ local function direction(context, state, horizontal, amount)
         local catalog = state.handlers.editor.CATALOG
         state.catalogIndex = math.max(1, math.min(#catalog, state.catalogIndex + amount))
     elseif state.mode == "menu" then
-        setSelectedAction(context, state, state.actionIndex + amount)
+        local count = #state.session.draft.panels
+        local index = state.keyAdd and count + 1 or state.session.selected
+        local total = count + (state.addRect and 1 or 0)
+        if total > 0 then
+            index = ((index - 1 + amount) % total) + 1
+            state.keyAdd = index > count
+            if not state.keyAdd then
+                state.handlers.editor.select(state.session, index)
+                state.keyAdd = false
+            end
+            state.status = state.keyAdd and "Add panel: ENTER"
+                or (state.session.draft.panels[index].id .. ": ENTER for settings")
+            state.statusError = true
+        end
+        render(context, state)
         return
     end
     render(context, state)
@@ -717,16 +678,8 @@ local function vertical(context, state, amount)
     elseif state.mode == "string" then
         applyStringCharacter(state, amount)
         render(context, state)
-    elseif state.mode == "move" then
-        local moved, moveError = state.handlers.editor.move(state.session, 0, amount)
-        state.status = moved and "Panel moved." or tostring(moveError)
-        render(context, state)
-    elseif state.mode == "resize" then
-        local resized, resizeError = state.handlers.editor.resize(state.session, 0, amount)
-        state.status = resized and "Panel resized." or tostring(resizeError)
-        render(context, state)
     elseif state.mode == "menu" then
-        setSelectedAction(context, state, state.actionIndex + amount)
+        direction(context, state, true, amount)
     end
 end
 
@@ -752,16 +705,28 @@ local function touch(context, state, touchState)
         return false
     end
     local geometry = state.geometry
-    if state.mode == "menu" or state.mode == "move" or state.mode == "resize" then
-        for index, action in ipairs(state.actions) do
-            if hit(action.rect, x, y) then
-                state.actionIndex = index
-                state.mode = "menu"
-                activateAction(context, state, action.id)
-                return true
+    if state.mode == "menu" then
+        for index, controls in ipairs(state.controls) do
+            if index <= #state.session.draft.panels then
+                local rect = controls.rect
+                if rect and hit({ x = rect.x, y = rect.y, w = 32, h = 32 }, x, y) then
+                    state.handlers.editor.select(state.session, index)
+                    activateAction(context, state, "remove")
+                    return true
+                elseif rect and hit({ x = rect.x + rect.w - 32, y = rect.y, w = 32, h = 32 }, x, y) then
+                    state.handlers.editor.select(state.session, index)
+                    activateAction(context, state, "configure")
+                    return true
+                end
             end
         end
-    elseif y >= geometry.height - 22 then
+        if state.addRect and hit(state.addRect, x, y) then
+            activateAction(context, state, "add")
+            return true
+        end
+        return false
+    end
+    if y >= geometry.height - 22 then
         if state.mode == "string" then
             finishStringEdit(context, state, true)
         else
@@ -797,55 +762,6 @@ local function touch(context, state, touchState)
         end
         return true
     end
-    if not (state.mode == "add" or state.mode == "configure" or state.mode == "string") then
-        local col, row
-        for _, cell in ipairs(state.cells) do
-            if hit(cell.rect, x, y) then
-                col, row = cell.col, cell.row
-                break
-            end
-        end
-        if col == nil then
-            return false
-        end
-        if state.mode == "menu" then
-            for index, placement in ipairs(state.session.draft.panels) do
-                if
-                    col >= placement.col
-                    and col < placement.col + placement.colSpan
-                    and row >= placement.row
-                    and row < placement.row + placement.rowSpan
-                then
-                    state.handlers.editor.select(state.session, index)
-                    state.status = "Panel selected."
-                    render(context, state)
-                    return true
-                end
-            end
-        elseif state.mode == "move" then
-            local placement = state.session.draft.panels[state.session.selected]
-            if placement then
-                local moved, moveError =
-                    state.handlers.editor.move(state.session, col - placement.col, row - placement.row)
-                state.status = moved and "Panel moved." or tostring(moveError)
-                render(context, state)
-            end
-            return true
-        elseif state.mode == "resize" then
-            local placement = state.session.draft.panels[state.session.selected]
-            if placement then
-                local resized, resizeError = state.handlers.editor.resize(
-                    state.session,
-                    col - placement.col + 1 - placement.colSpan,
-                    row - placement.row + 1 - placement.rowSpan
-                )
-                state.status = resized and "Panel resized." or tostring(resizeError)
-                render(context, state)
-            end
-            return true
-        end
-    end
-
     if state.mode == "add" then
         for index, row in ipairs(state.catalogRows) do
             local catalogIndex = state.catalogOffset + index - 1
@@ -892,6 +808,64 @@ end
 
 function uiModule.advance(context)
     local state = context.editorUi
+    if state and state.saving then
+        local saving = state.saving
+        local editor, session = state.handlers.editor, state.session
+        local function failed(message)
+            state.status, state.saveFailed, state.statusError = tostring(message), true, true
+            state.saving = nil
+            render(context, state)
+        end
+        if not saving.store then
+            local placement = session.draft.panels[saving.index]
+            if placement then
+                local valid, panelError = session.layout.validatePanel(
+                    placement,
+                    saving.index,
+                    session.grid,
+                    saving.accepted,
+                    saving.identifiers
+                )
+                if not valid then
+                    failed(panelError)
+                    return true
+                end
+                local single = {}
+                for key, value in pairs(session.draft) do
+                    single[key] = value
+                end
+                single.panels = { placement }
+                local isolated = {
+                    draft = single,
+                    layout = session.layout,
+                    grid = session.grid,
+                    panelHost = session.panelHost,
+                    loadPanel = session.loadPanel,
+                }
+                local checked, validationErrors = editor.validate(isolated)
+                if not checked then
+                    failed(table.concat(validationErrors, "; "))
+                    return true
+                end
+                saving.accepted[#saving.accepted + 1] = placement
+                saving.identifiers[placement.id] = true
+                saving.index = saving.index + 1
+            else
+                saving.store = state.handlers.startSave(session.draft)
+            end
+        else
+            local done, saved, saveError = state.handlers.advanceSave(saving.store)
+            if done then
+                state.saving = nil
+                if saved then
+                    state.handlers.close(true)
+                else
+                    failed(saveError)
+                end
+            end
+        end
+        return true
+    end
     local stage = state and state.buildStage
     if not stage then
         return false
@@ -906,15 +880,45 @@ function uiModule.advance(context)
                 background = rectangle(state.screen, rect, color(context, "surface", 0x212830)),
                 text = label(state.screen, rect, "", color(context, "text", 0xF4F6F7)),
             }
+            local function button()
+                local parent = lvgl.box(state.screen, { x = 0, y = 0, w = 24, h = 24 })
+                lvgl.rectangle(
+                    parent,
+                    { x = 1, y = 1, w = 22, h = 22, rounded = 11, color = lcd.RGB(0x343C44), filled = true }
+                )
+                return parent
+            end
+            local left, right = button(), button()
+            local ink = lcd.RGB(0xA0A8AF)
+            lvgl.line(left, { pts = { { 8, 8 }, { 16, 16 } }, color = ink, thickness = 2 })
+            lvgl.line(left, { pts = { { 16, 8 }, { 8, 16 } }, color = ink, thickness = 2 })
+            local points = {}
+            for step = 0, 32 do
+                local angle = step * math.pi / 16
+                local radius = step % 4 < 2 and 8 or 6
+                points[#points + 1] = { 12 + math.cos(angle) * radius, 12 + math.sin(angle) * radius }
+            end
+            lvgl.line(right, { pts = points, color = ink, thickness = 2 })
+            lvgl.rectangle(
+                right,
+                { x = 9, y = 9, w = 6, h = 6, rounded = 3, color = ink, filled = false, thickness = 2 }
+            )
+            state.controls[index] = { left = left, right = right }
         end
     elseif stage == 9 then
         addControls(state, context)
-    elseif stage <= 11 then
-        addMainActions(state, context, (stage - 10) * 5 + 1, (stage - 9) * 5)
-    elseif stage <= 14 then
-        addFieldRows(state, context, (stage - 12) * 4 + 1, (stage - 11) * 4)
-    elseif stage <= 17 then
-        addCatalogRows(state, context, (stage - 15) * 4 + 1, (stage - 14) * 4)
+        state.addPanel = lvgl.box(state.screen, { x = 0, y = 0, w = 115, h = 63 })
+        state.addBackground = lvgl.rectangle(
+            state.addPanel,
+            { x = 0, y = 0, w = 115, h = 63, rounded = 8, color = color(context, "surface", 0x212830), filled = true }
+        )
+        state.addAccent =
+            lvgl.rectangle(state.addPanel, { x = 0, y = 8, w = 4, h = 47, color = lcd.RGB(0x78828D), filled = true })
+        state.addLabel = label(state.addPanel, { x = 45, y = 12, w = 30, h = 30 }, "+", lcd.RGB(0xB8C6D4), MIDSIZE)
+    elseif stage <= 12 then
+        addFieldRows(state, context, (stage - 10) * 4 + 1, (stage - 9) * 4)
+    elseif stage <= 15 then
+        addCatalogRows(state, context, (stage - 13) * 4 + 1, (stage - 12) * 4)
     else
         render(context, state)
         state.buildStage = nil
@@ -939,10 +943,95 @@ function uiModule.close(context, discard)
     context.editorUi = nil
 end
 
+function uiModule.finish(context)
+    local state = context.editorUi
+    if state then
+        saveAndClose(context, state)
+        return context.editorUi == nil
+    end
+
+    return true
+end
+
+function uiModule.saveFailure(context, message)
+    local state = context.editorUi
+    state.saving = nil
+    state.saveFailed = true
+    state.statusError = true
+    state.status = "Cannot save layout: " .. tostring(message)
+    setText(state.statusLabel, state.status)
+    lvgl.show(state.statusLabel)
+end
+local function drag(context, state, event, touchState)
+    if state.mode ~= "menu" then
+        return false
+    end
+    if eventMatches(event, "EVT_TOUCH_BREAK") then
+        state.drag = nil
+        return true
+    end
+    local x, y = coordinates(state, context, touchState)
+    if not x then
+        return false
+    end
+    if eventMatches(event, "EVT_TOUCH_FIRST") then
+        for index, controls in ipairs(state.controls) do
+            local rect = index <= #state.session.draft.panels and controls.rect
+            if rect and hit(rect, x, y) then
+                if y < rect.y + 32 and (x < rect.x + 32 or x >= rect.x + rect.w - 32) then
+                    return false
+                end
+                state.handlers.editor.select(state.session, index)
+                state.keyAdd = false
+                local placement = state.session.draft.panels[index]
+                state.drag = {
+                    x = x,
+                    y = y,
+                    offsetX = x - rect.x,
+                    offsetY = y - rect.y,
+                    positions = state.handlers.editor.availablePositions(
+                        state.session,
+                        placement.colSpan,
+                        placement.rowSpan,
+                        index
+                    ),
+                }
+                return true
+            end
+        end
+    elseif eventMatches(event, "EVT_TOUCH_SLIDE") and state.drag then
+        local moving = state.drag
+        local nearest, distance
+        for _, placement in ipairs(moving.positions) do
+            local rect = context.grid.rect(context.zone, placement, 4, 4, 4)
+            local dx, dy = rect.x - (x - moving.offsetX), rect.y - (y - moving.offsetY)
+            local candidate = dx * dx + dy * dy
+            if not distance or candidate < distance then
+                nearest, distance = placement, candidate
+            end
+        end
+        local placement = state.session.draft.panels[state.session.selected]
+        if nearest and (nearest.col ~= placement.col or nearest.row ~= placement.row) then
+            local moved, moveError =
+                state.handlers.editor.move(state.session, nearest.col - placement.col, nearest.row - placement.row)
+            if not moved then
+                state.status = tostring(moveError)
+                state.statusError = true
+            end
+            render(context, state)
+        end
+        return true
+    end
+    return false
+end
+
 function uiModule.handle(context, event, touchState)
     local state = context.editorUi
-    if not state or state.buildStage then
+    if not state or state.buildStage or state.saving then
         return false
+    end
+    if drag(context, state, event, touchState) then
+        return true
     end
     if isTap(event, touchState) then
         return touch(context, state, touchState)
@@ -950,14 +1039,13 @@ function uiModule.handle(context, event, touchState)
 
     if eventMatches(event, "EVT_VIRTUAL_EXIT") then
         if state.mode == "string" then
-            finishStringEdit(context, state, false)
+            finishStringEdit(context, state, true)
         elseif state.mode ~= "menu" then
             state.mode = "menu"
             state.status = "Returned to the editor."
             render(context, state)
         else
-            state.handlers.editor.cancel(state.session)
-            state.handlers.close(false)
+            saveAndClose(context, state)
         end
         return true
     end

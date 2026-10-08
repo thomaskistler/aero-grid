@@ -225,6 +225,49 @@ local function candidateSpans(module)
     return result
 end
 
+function editor.availablePositions(session, colSpan, rowSpan, excluded)
+    local positions = {}
+    for row = 0, 4 - rowSpan do
+        for col = 0, 4 - colSpan do
+            local placement = { col = col, row = row, colSpan = colSpan, rowSpan = rowSpan }
+            if not overlapsAny(session.grid, session.draft.panels, placement, excluded) then
+                positions[#positions + 1] = placement
+            end
+        end
+    end
+    return positions
+end
+
+function editor.sizes(session)
+    local placement = session.draft.panels[session.selected]
+    if not placement then
+        return {}
+    end
+    local module, moduleError = getPanelModule(session, placement.type)
+    if not module then
+        return nil, moduleError
+    end
+    local sizes = {}
+    for rowSpan = 1, 4 do
+        for colSpan = 1, 4 do
+            local candidate = {
+                col = placement.col,
+                row = placement.row,
+                colSpan = colSpan,
+                rowSpan = rowSpan,
+            }
+            if
+                supportsSpan(module, colSpan, rowSpan)
+                and placement.col + colSpan <= 4
+                and placement.row + rowSpan <= 4
+                and not overlapsAny(session.grid, session.draft.panels, candidate, session.selected)
+            then
+                sizes[#sizes + 1] = tostring(colSpan) .. "x" .. tostring(rowSpan)
+            end
+        end
+    end
+    return sizes
+end
 function editor.add(session, typeName)
     if not safeIdentifier(typeName) then
         return false, "invalid panel type"

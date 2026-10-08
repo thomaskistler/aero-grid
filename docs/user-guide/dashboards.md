@@ -71,22 +71,25 @@ read-only even though the dashboard fills the display: it has no **EDIT** button
 and tapping panels does not select them. Long-press the dashboard to enter
 fullscreen.
 
-Temporarily take AeroGrid fullscreen, then choose **EDIT** in the upper-right
-corner or press Enter. The dashboard stays visible and live while editing.
-The editor prepares its controls over several frames; wait for the bottom toolbar
-to appear before selecting panels.
-Tap an actual panel to select it; a cyan outline marks its bounds. The bottom
-toolbar offers **Panel - / Panel +**, **Add panel**, **Move**, **Resize**,
-**Configure**, **Remove**, **Defaults**, **Apply / Save**, and **Cancel**.
-The editor supports touch and rotary/key input. Move panels one cell at a time; resize
-keeps the selected panel's top-left cell fixed. Out-of-bounds moves, unsupported
-spans, and overlaps are rejected and shown in the editor.
+Once fullscreen, long-press a panel to enter editing, or press Enter for key
+input. An empty dashboard accepts a long-press anywhere. The dashboard stays
+visible; controls appear after a short, staged initialization.
 
-Move and Resize show grid guides over the dashboard. Tap a destination cell
-to move, or the desired bottom-right cell to resize. Existing panels preview
-their new bounds without constructing another instance; removing one hides it
-until Apply. Newly added panels use a labeled preview card until Apply, so
-draft additions cannot start a second flight tracker or other panel side effects.
+- Tap the gray **X** at a panel's top-left to remove it.
+- Tap the gray **gear** at its top-right to open settings, including **Size**.
+  Size offers only supported dimensions that fit at the current top-left cell.
+- Drag a panel's body to move it. It snaps only to fitting, non-overlapping
+  positions, without grid guides or selection outlines.
+- Tap the **+ panel**, with its gray sidebar, to choose a new panel. It appears
+  in the first free 1 x 1 cell, scanning left-to-right and top-to-bottom, and
+  disappears when the grid is full. New panels use the first available placement
+  supporting their size; the + panel is never saved as a dashboard panel.
+
+Existing panels preview geometry without constructing another instance.
+New draft panels remain labeled preview cards until saving, so they cannot
+start another flight tracker or other panel side effects.
+Rotary/key input cycles panels and the add action; Enter opens settings or the
+catalog. Settings also provide Column, Row, and Remove panel for key-only use.
 
 Configuration and the panel catalog open in a drawer over the dashboard.
 Use **Previous / Next** to scroll its entries, **- / +** to change a value,
@@ -95,12 +98,15 @@ Next** to move the cursor, **- / +** to change the character, **Delete** to remo
 it, and **Accept text** to finish. Configuration fields come from each panel's settings schema. Use the supplied
 choices and numeric bounds where available; text fields accept source names as
 typed, case-sensitive values. Adding or changing values only affects the
-in-memory draft. **Apply / Save** validates the whole layout before writing it
-to the model- and Dashboard ID-specific YAML file. The previous saved file is
-kept as `.bak`. **Cancel** discards the draft without changing the active
-dashboard or saved layout, restoring the original panel geometry and visibility.
-**Defaults** replaces the draft with the shipped
-default layout; it is not persisted until Apply / Save.
+in-memory draft.
+
+**Return** closes text editing or a drawer one level at a time. From the editing
+dashboard, Return validates and saves the layout, then exits editing.
+Leaving fullscreen also saves. Saving runs over several callbacks to respect
+the radio's CPU limit; wait for it to finish before powering off. Unchanged
+layouts are not rewritten. The previous saved file is kept as `.bak`.
+If saving fails, the draft is retained with an error so you can retry; if you
+left fullscreen, return to fullscreen to resume. There is no Apply/Cancel toolbar.
 
 If the primary layout cannot be read, parsed, or validated, AeroGrid tries its
 backup, then the shared Dashboard ID layout and its backup, and finally the
