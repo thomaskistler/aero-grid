@@ -622,7 +622,107 @@ local function advancePanelPreview(context, job)
     return false
 end
 
---- Enter the editor while preserving the current dashboard until Apply succeeds.
+--- Empty-state decoration belongs to the page, never the layout document.
+---@param context AeroGridContext
+local function updateEmptyHint(context)
+    local hint = context.emptyHint
+    local show = context.document
+        and #context.document.panels == 0
+        and not context.stage
+        and not context.reloadState
+        and not context.editorUi
+        and #context.errors == 0
+    if not show then
+        if hint and hint.visible then
+            for _, object in ipairs(hint.objects) do
+                lvgl.hide(object)
+            end
+            hint.visible = false
+        end
+        return
+    end
+    if not hint then
+        hint = { objects = {}, lines = {} }
+        context.emptyHint = hint
+        for index = 1, 7 do
+            local line = lvgl.rectangle(context.page, { x = 0, y = 0, w = 1, h = 1, filled = index ~= 1 })
+            hint.lines[index] = line
+            hint.objects[#hint.objects + 1] = line
+        end
+        hint.backdrop = lvgl.rectangle(context.page, { x = 0, y = 0, w = 1, h = 1, filled = true })
+        hint.objects[#hint.objects + 1] = hint.backdrop
+        for _, key in ipairs({ "icon", "title", "instruction" }) do
+            hint[key] = lvgl.label(context.page, {
+                text = "",
+                font = function()
+                    return SMLSIZE
+                end,
+            })
+            hint.objects[#hint.objects + 1] = hint[key]
+        end
+    end
+    local w, h = context.zone.w, context.zone.h
+    local fullscreen = isFullScreen()
+    if hint.w ~= w or hint.h ~= h or hint.fullscreen ~= fullscreen then
+        hint.w, hint.h, hint.fullscreen = w, h, fullscreen
+        hint.lines[1]:set({
+            x = 4,
+            y = 4,
+            w = math.max(1, w - 8),
+            h = math.max(1, h - 8),
+            color = context.theme.color.border,
+        })
+        for index = 1, 3 do
+            hint.lines[index + 1]:set({
+                x = math.floor(w * index / 4),
+                y = 4,
+                w = 1,
+                h = math.max(1, h - 8),
+                color = context.theme.color.border,
+            })
+            hint.lines[index + 4]:set({
+                x = 4,
+                y = math.floor(h * index / 4),
+                w = math.max(1, w - 8),
+                h = 1,
+                color = context.theme.color.border,
+            })
+        end
+        local instruction = fullscreen and "Long-press to start editing" or "Long-press for fullscreen"
+        local texts = { "+", "Empty dashboard", instruction }
+        local keys = { "icon", "title", "instruction" }
+        local lineHeight = context.themeBuilder.fontHeight(SMLSIZE)
+        local blockHeight = lineHeight * 3 + 12
+        local blockWidth = math.min(w - 16, context.themeBuilder.textWidth(SMLSIZE, instruction) + 24)
+        local top = math.floor((h - blockHeight) / 2)
+        hint.backdrop:set({
+            x = math.floor((w - blockWidth) / 2),
+            y = top - 4,
+            w = blockWidth,
+            h = blockHeight + 8,
+            color = context.theme.color.canvas,
+        })
+        for index, key in ipairs(keys) do
+            local width = math.min(w, context.themeBuilder.textWidth(SMLSIZE, texts[index]))
+            hint[key]:set({
+                x = math.floor((w - width) / 2),
+                y = top + (index - 1) * (lineHeight + 6),
+                w = width,
+                h = lineHeight,
+                text = texts[index],
+                color = context.theme.color.textMuted,
+            })
+        end
+    end
+    if not hint.visible then
+        for _, object in ipairs(hint.objects) do
+            lvgl.show(object)
+        end
+        hint.visible = true
+    end
+end
+
+--- Enter the editor while preserving the current dashboard until saving succeeds.
 ---@param context AeroGridContext
 ---@return boolean opened
 local function openEditor(context)
@@ -775,6 +875,7 @@ local function openEditor(context)
     end
     context.touchTapHandled = true
     context.editorPress = nil
+    updateEmptyHint(context)
     return true
 end
 
@@ -1853,6 +1954,7 @@ local function refresh(context, widgetEvent, touchState)
 
         context.page = nil
         context.canvas = nil
+        context.emptyHint = nil
         context.panels = {}
         context.rejected = {}
         context.errors = {}
@@ -1891,6 +1993,8 @@ local function refresh(context, widgetEvent, touchState)
         advanceLoad(context)
         return
     end
+
+    updateEmptyHint(context)
 
     -- EdgeTX reports FIRST/BREAK but does not forward LVGL's long-press event.
     if not context.editorUi and isFullScreen() then
