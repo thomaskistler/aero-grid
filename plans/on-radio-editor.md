@@ -66,6 +66,12 @@ For adjacent, aligned panels, movement instead exchanges their order within
 their combined rectangle: vertical movement requires matching widths, horizontal
 movement requires matching heights. The other dimension may differ. For example,
 a 2x1 above a 2x2 becomes a 2x2 above a 2x1 without leaving a hole or overlapping.
+Different widths/heights also reorder when adjacent empty cells accommodate
+the larger panel. Preserve each panel's cross-axis origin, shift their order
+along the movement axis, and validate both resulting rectangles against every
+other panel. A 1x1 plus an empty neighbouring 1x1 can therefore exchange rows
+with a 2-column panel, or columns with a 2-row panel. Occupied neighbouring cells
+still block displacement; this does not become whole-dashboard auto-arrangement.
 Spans and settings remain unchanged; unrelated panels never auto-arrange.
 Movement candidates include compatible swaps, even on a full grid. Resizing
 and new-panel placement remain non-overlapping operations without displacement.

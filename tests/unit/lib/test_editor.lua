@@ -98,7 +98,7 @@ local function testPlacementRulesAndResizeAnchor()
 
     editor.select(session, 2)
     local neighbour = editor.clone(session.draft.panels[2])
-    neighbour.id, neighbour.col = "third", 2
+    neighbour.id, neighbour.col = "third", 0
     session.draft.panels[3] = neighbour
     local moved, conflict = editor.move(session, 0, 1)
     assert(not moved and string.find(conflict, "overlaps", 1, true))
@@ -267,6 +267,60 @@ local function testDirectionalReordering()
     end
 end
 
+local function testReorderingWithEmptySpace()
+    for _, vertical in ipairs({ true, false }) do
+        for offset = 0, 1 do
+            for largeSpan = 1, 3 do
+                local input = document()
+                local first, second = input.panels[1], input.panels[2]
+                first.col, first.row = vertical and offset or 0, vertical and 0 or offset
+                second.col, second.row = vertical and 0 or 1, vertical and 1 or 0
+                second.colSpan, second.rowSpan = vertical and 2 or largeSpan, vertical and largeSpan or 2
+                for selected = 1, 2 do
+                    local session = newSession(input)
+                    editor.select(session, selected)
+                    local delta = selected == 1 and largeSpan or -1
+                    local wantedCol = vertical and (selected == 1 and offset or 0) or (selected == 1 and largeSpan or 0)
+                    local wantedRow = vertical and (selected == 1 and largeSpan or 0) or (selected == 1 and offset or 0)
+                    local offered = false
+                    for _, candidate in ipairs(editor.movePositions(session)) do
+                        if candidate.col == wantedCol and candidate.row == wantedRow then
+                            offered = true
+                        end
+                    end
+                    assert(offered, "empty adjacent space permits either panel's drag")
+                    assert(editor.move(session, vertical and 0 or delta, vertical and delta or 0))
+                    local a, b = session.draft.panels[1], session.draft.panels[2]
+                    assert(a.col == (vertical and offset or largeSpan))
+                    assert(a.row == (vertical and largeSpan or offset))
+                    assert(b.col == 0 and b.row == 0)
+                    assert(a.colSpan == 1 and a.rowSpan == 1)
+                    assert(b.colSpan == second.colSpan and b.rowSpan == second.rowSpan)
+                    assert(not grid.overlaps(a, b))
+                    assert(input.panels[2].col == second.col and input.panels[2].row == second.row)
+                    assert(editor.move(session, vertical and 0 or -delta, vertical and -delta or 0))
+                    assert(a.col == first.col and a.row == first.row)
+                    assert(b.col == second.col and b.row == second.row)
+                end
+                local blocker = editor.clone(first)
+                blocker.id = "blocker"
+                blocker.col, blocker.row = vertical and (1 - offset) or 0, vertical and 0 or (1 - offset)
+                input.panels[3] = blocker
+                for selected = 1, 2 do
+                    local session = newSession(input)
+                    editor.select(session, selected)
+                    local delta = selected == 1 and largeSpan or -1
+                    assert(not editor.move(session, vertical and 0 or delta, vertical and delta or 0))
+                    assert(not session.dirty, "occupied adjacent space blocks the reorder atomically")
+                    assert(session.draft.panels[1].col == first.col and session.draft.panels[1].row == first.row)
+                    assert(session.draft.panels[2].col == second.col and session.draft.panels[2].row == second.row)
+                end
+            end
+        end
+    end
+end
+
+testReorderingWithEmptySpace()
 testDirectionalReordering()
 testCompatibleSwaps()
 testWorkingCopyCancelAndApply()

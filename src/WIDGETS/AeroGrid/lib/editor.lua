@@ -384,20 +384,24 @@ local function moveTarget(session, placement, index, col, row)
             rowSpan = conflict.rowSpan,
         }
         local reordered = false
-        if col == placement.col and conflict.col == placement.col and conflict.colSpan == placement.colSpan then
+        if col == placement.col then
             if conflict.row == placement.row + placement.rowSpan then
+                displaced.col = conflict.col
                 moved.row = placement.row + conflict.rowSpan
                 reordered = true
             elseif placement.row == conflict.row + conflict.rowSpan then
+                displaced.col = conflict.col
                 moved.row = conflict.row
                 displaced.row = conflict.row + placement.rowSpan
                 reordered = true
             end
-        elseif row == placement.row and conflict.row == placement.row and conflict.rowSpan == placement.rowSpan then
+        elseif row == placement.row then
             if conflict.col == placement.col + placement.colSpan then
+                displaced.row = conflict.row
                 moved.col = placement.col + conflict.colSpan
                 reordered = true
             elseif placement.col == conflict.col + conflict.colSpan then
+                displaced.row = conflict.row
                 moved.col = conflict.col
                 displaced.col = conflict.col + placement.colSpan
                 reordered = true
@@ -406,7 +410,11 @@ local function moveTarget(session, placement, index, col, row)
         if not reordered and (conflict.col ~= col or conflict.row ~= row) then
             return nil, "overlaps panel " .. conflict.id
         end
-        if not session.grid.validatePlacement(displaced, 4, 4) or session.grid.overlaps(displaced, moved) then
+        if
+            not session.grid.validatePlacement(displaced, 4, 4)
+            or not session.grid.validatePlacement(moved, 4, 4)
+            or session.grid.overlaps(displaced, moved)
+        then
             return nil, "overlaps panel " .. conflict.id .. "; panels cannot swap"
         end
         for otherIndex, other in ipairs(session.draft.panels) do

@@ -581,6 +581,62 @@ for _, vertical in ipairs({ true, false }) do
     equal(context.document.panels[2].rowSpan, vertical and 2 or 1, "displaced span persists unchanged")
 end
 
+-- A small panel and empty neighbouring cell can trade rows/columns with a larger panel.
+for _, vertical in ipairs({ true, false }) do
+    for offset = 0, 1 do
+        local id = "edit-empty-swap-" .. (vertical and "vertical" or "horizontal") .. offset
+        write(
+            id,
+            table.concat({
+                "version: 1\ngrid:\n  columns: 4\n  rows: 4\npanels:",
+                string.format(
+                    "  - id: small\n    type: metric\n    col: %d\n    row: %d\n    colSpan: 1\n    rowSpan: 1\n    config:\n      visual: none",
+                    vertical and offset or 0,
+                    vertical and 0 or offset
+                ),
+                string.format(
+                    "  - id: large\n    type: metric\n    col: %d\n    row: %d\n    colSpan: 2\n    rowSpan: 2\n    config:\n      visual: none",
+                    vertical and 0 or 1,
+                    vertical and 1 or 0
+                ),
+            }, "\n")
+        )
+        load(id)
+        open()
+        state = context.editorUi
+        local smallInstance, largeInstance = context.panels[1].instance, context.panels[2].instance
+        local from = state.controls[1].rect
+        local target = assert(context.grid.rect(context.zone, {
+            col = vertical and offset or 2,
+            row = vertical and 2 or offset,
+            colSpan = 1,
+            rowSpan = 1,
+        }, 4, 4, 4))
+        refresh(EVT_TOUCH_FIRST, { x = from.x + 55, y = from.y + 40 })
+        refresh(EVT_TOUCH_SLIDE, { x = target.x + 55, y = target.y + 40 })
+        refresh(EVT_TOUCH_BREAK)
+        equal(context.editorSession.draft.panels[1].col, vertical and offset or 2, "small panel reorders horizontally")
+        equal(context.editorSession.draft.panels[1].row, vertical and 2 or offset, "small panel reorders vertically")
+        equal(context.editorSession.draft.panels[2].col, 0, "large panel occupies vacated column plus empty space")
+        equal(context.editorSession.draft.panels[2].row, 0, "large panel occupies vacated row plus empty space")
+        equal(context.panels[1].instance, smallInstance, "small instance survives empty-space reorder")
+        equal(context.panels[2].instance, largeInstance, "large instance survives empty-space reorder")
+        equal(context.panels[1].container.properties.x, target.x, "small preview follows new origin")
+        equal(context.panels[1].container.properties.y, target.y, "small preview follows new row")
+        equal(context.panels[2].container.properties.x, 0, "large preview occupies empty adjacent column")
+        equal(context.panels[2].container.properties.y, 0, "large preview occupies empty adjacent row")
+        refresh(EVT_VIRTUAL_EXIT)
+        settleSave()
+        for _ = 1, 70 do
+            refresh()
+        end
+        equal(context.document.panels[2].col, 0, "large reordered column persists")
+        equal(context.document.panels[2].row, 0, "large reordered row persists")
+        equal(context.document.panels[1].col, vertical and offset or 2, "small reordered column persists")
+        equal(context.document.panels[1].row, vertical and 2 or offset, "small reordered row persists")
+    end
+end
+
 -- Repeated content previews reuse containers and can be discarded without saving.
 widget.lvglMock.setFullScreen(true)
 load("edit-sparse")

@@ -81,10 +81,11 @@ visible; controls appear after a short, staged initialization.
 
 - Drag a panel's body to move it. It snaps only to fitting, non-overlapping
   positions, without grid guides or selection outlines. Drag onto another
-  panel to exchange their order. Adjacent panels aligned in the same columns
-  can reorder vertically if their widths match, even when their heights differ;
-  adjacent panels aligned in the same rows can reorder horizontally if their
-  heights match, even when their widths differ. Both fill their combined space
+  panel to exchange their order. Adjacent panels with overlapping columns
+  can reorder vertically even with different widths when the extra space beside
+  the smaller panel is empty. Horizontally, their rows must overlap and the extra
+  space above or below the shorter panel must be empty. Each keeps its cross-axis
+  alignment, and both use their combined space
   in the new order, keeping sizes and settings. Other fitting origin swaps remain
   supported; unrelated panels stay put. Multi-panel displacement stays blocked.
 - Drag the top-left, bottom-left, or bottom-right corner to resize. The opposite
