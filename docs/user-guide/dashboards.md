@@ -43,7 +43,7 @@ Choose a layout to decide what that dashboard displays.
 
 | Layout | Purpose |
 | --- | --- |
-| **Empty** | A blank starting point for your own dashboard. Shows instructions until you start editing. Save As gives it a new name; Empty is never overwritten. |
+| **Empty** | A blank starting point for your own dashboard. Shows instructions until you start editing. |
 | **Default** | A ready-made aircraft dashboard. Configure its sources, switches, battery cell count, and alarms for your model before using it. |
 | **Host** | A diagnostics dashboard for checking loaded components and errors. |
 
