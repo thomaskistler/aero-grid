@@ -46,6 +46,10 @@ editor decisions here rather than changing `plans/aerogrid-spec.md`.
 
 Moving onto an occupied top-left position swaps the two panels when each fits
 at the other's origin without overlapping either panel or any neighbour.
+For adjacent, aligned panels, movement instead exchanges their order within
+their combined rectangle: vertical movement requires matching widths, horizontal
+movement requires matching heights. The other dimension may differ. For example,
+a 2x1 above a 2x2 becomes a 2x2 above a 2x1 without leaving a hole or overlapping.
 Spans and settings remain unchanged; unrelated panels never auto-arrange.
 Movement candidates include compatible swaps, even on a full grid. Resizing
 and new-panel placement remain non-overlapping operations without displacement.

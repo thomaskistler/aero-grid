@@ -100,7 +100,7 @@ local function testPlacementRulesAndResizeAnchor()
     local neighbour = editor.clone(session.draft.panels[2])
     neighbour.id, neighbour.col = "third", 2
     session.draft.panels[3] = neighbour
-    local moved, conflict = editor.move(session, -1, 1)
+    local moved, conflict = editor.move(session, 0, 1)
     assert(not moved and string.find(conflict, "overlaps", 1, true))
     local resized, spanError = editor.resize(session, 2, 0)
     assert(not resized and string.find(spanError, "does not support", 1, true))
@@ -195,14 +195,12 @@ local function testCompatibleSwaps()
     original.panels[2].col = 2
     session = newSession(original)
     assert(editor.move(session, 2, 0), "different spans can swap when both fit")
-    assert(session.draft.panels[1].col == 2 and session.draft.panels[1].colSpan == 2)
+    assert(session.draft.panels[1].col == 1 and session.draft.panels[1].colSpan == 2)
     assert(session.draft.panels[2].col == 0 and session.draft.panels[2].colSpan == 1)
     session = newSession(original)
     editor.select(session, 2)
-    local before = editor.clone(session.draft)
-    assert(not editor.move(session, -1, 0), "partial overlap is not an anchored swap")
-    assert(session.draft.panels[1].col == before.panels[1].col)
-    assert(session.draft.panels[2].col == before.panels[2].col)
+    assert(editor.move(session, -1, 0), "smaller panel can move into its adjacent wider neighbour")
+    assert(session.draft.panels[1].col == 1 and session.draft.panels[2].col == 0)
 
     original.panels[1].col, original.panels[1].colSpan = 3, 1
     original.panels[2].col, original.panels[2].colSpan = 0, 2
@@ -216,8 +214,60 @@ local function testCompatibleSwaps()
     session = newSession(original)
     assert(not editor.move(session, 2, 0), "multiple occupied panels cannot be displaced")
     assert(not session.dirty)
+    original.panels[1].colSpan = 1
+    original.panels[2].col, original.panels[2].row, original.panels[2].colSpan = 0, 2, 2
+    original.panels[3].col, original.panels[3].row = 1, 0
+    session = newSession(original)
+    assert(not editor.move(session, 0, 2), "displaced panel must not overlap a later-listed neighbour")
+    assert(not session.dirty)
 end
 
+local function testDirectionalReordering()
+    for _, vertical in ipairs({ true, false }) do
+        for firstSpan = 1, 3 do
+            for secondSpan = 1, 4 - firstSpan do
+                local input = document()
+                local first, second = input.panels[1], input.panels[2]
+                first.colSpan = vertical and 2 or firstSpan
+                first.rowSpan = vertical and firstSpan or 1
+                second.col = vertical and 0 or firstSpan
+                second.row = vertical and firstSpan or 0
+                second.colSpan = vertical and 2 or secondSpan
+                second.rowSpan = vertical and secondSpan or 1
+                local neighbour = editor.clone(first)
+                neighbour.id, neighbour.col, neighbour.row = "unrelated", vertical and 2 or 0, vertical and 0 or 1
+                input.panels[3] = neighbour
+                local session = newSession(input)
+                local candidates = editor.movePositions(session)
+                local offered = false
+                for _, position in ipairs(candidates) do
+                    if
+                        position.col == (vertical and 0 or secondSpan)
+                        and position.row == (vertical and secondSpan or 0)
+                    then
+                        offered = true
+                    end
+                end
+                assert(offered, "unequal-size directional reorder must be a drag candidate")
+                assert(editor.move(session, vertical and 0 or secondSpan, vertical and secondSpan or 0))
+                local a, b = session.draft.panels[1], session.draft.panels[2]
+                assert(a.col == (vertical and 0 or secondSpan) and a.row == (vertical and secondSpan or 0))
+                assert(b.col == 0 and b.row == 0)
+                assert(not grid.overlaps(a, b))
+                assert(a.colSpan == first.colSpan and a.rowSpan == first.rowSpan)
+                assert(b.colSpan == second.colSpan and b.rowSpan == second.rowSpan)
+                assert(a.config.label == "First" and b.config.label == "Second")
+                assert(session.draft.panels[3].col == neighbour.col and session.draft.panels[3].row == neighbour.row)
+                assert(input.panels[1].col == 0 and input.panels[1].row == 0, "reorder stays in draft")
+                assert(editor.move(session, vertical and 0 or -secondSpan, vertical and -secondSpan or 0))
+                assert(a.col == 0 and a.row == 0, "reverse reorder restores selected origin")
+                assert(b.col == second.col and b.row == second.row, "reverse reorder restores neighbour origin")
+            end
+        end
+    end
+end
+
+testDirectionalReordering()
 testCompatibleSwaps()
 testWorkingCopyCancelAndApply()
 testPlacementRulesAndResizeAnchor()

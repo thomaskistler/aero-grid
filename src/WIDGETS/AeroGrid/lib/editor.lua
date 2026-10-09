@@ -362,16 +362,20 @@ local function moveTarget(session, placement, index, col, row)
     local conflict, conflictIndex
     for otherIndex, other in ipairs(session.draft.panels) do
         if otherIndex ~= index and session.grid.overlaps(other, moved) then
-            if conflict or other.col ~= col or other.row ~= row then
+            if conflict then
                 return nil, "overlaps panel " .. other.id
             end
             conflict, conflictIndex = other, otherIndex
         end
     end
     if conflict then
-        -- Equal spans occupy exactly the two already-valid rectangles.
-        if conflict.colSpan == placement.colSpan and conflict.rowSpan == placement.rowSpan then
-            return moved, nil, conflict
+        if
+            conflict.col == col
+            and conflict.row == row
+            and conflict.colSpan == placement.colSpan
+            and conflict.rowSpan == placement.rowSpan
+        then
+            return moved, nil, conflict, placement
         end
         local displaced = {
             col = placement.col,
@@ -379,14 +383,42 @@ local function moveTarget(session, placement, index, col, row)
             colSpan = conflict.colSpan,
             rowSpan = conflict.rowSpan,
         }
+        local reordered = false
+        if col == placement.col and conflict.col == placement.col and conflict.colSpan == placement.colSpan then
+            if conflict.row == placement.row + placement.rowSpan then
+                moved.row = placement.row + conflict.rowSpan
+                reordered = true
+            elseif placement.row == conflict.row + conflict.rowSpan then
+                moved.row = conflict.row
+                displaced.row = conflict.row + placement.rowSpan
+                reordered = true
+            end
+        elseif row == placement.row and conflict.row == placement.row and conflict.rowSpan == placement.rowSpan then
+            if conflict.col == placement.col + placement.colSpan then
+                moved.col = placement.col + conflict.colSpan
+                reordered = true
+            elseif placement.col == conflict.col + conflict.colSpan then
+                moved.col = conflict.col
+                displaced.col = conflict.col + placement.colSpan
+                reordered = true
+            end
+        end
+        if not reordered and (conflict.col ~= col or conflict.row ~= row) then
+            return nil, "overlaps panel " .. conflict.id
+        end
         if not session.grid.validatePlacement(displaced, 4, 4) or session.grid.overlaps(displaced, moved) then
             return nil, "overlaps panel " .. conflict.id .. "; panels cannot swap"
         end
         for otherIndex, other in ipairs(session.draft.panels) do
-            if otherIndex ~= index and otherIndex ~= conflictIndex and session.grid.overlaps(other, displaced) then
+            if
+                otherIndex ~= index
+                and otherIndex ~= conflictIndex
+                and (session.grid.overlaps(other, displaced) or session.grid.overlaps(other, moved))
+            then
                 return nil, "overlaps panel " .. other.id .. "; panels cannot swap"
             end
         end
+        return moved, nil, conflict, displaced
     end
     return moved, nil, conflict
 end
@@ -396,11 +428,13 @@ function editor.movePositions(session)
     if not placement then
         return nil, selectionError
     end
-    local positions = {}
+    local positions, seen = {}, {}
     for row = 0, 4 - placement.rowSpan do
         for col = 0, 4 - placement.colSpan do
             local moved = moveTarget(session, placement, index, col, row)
-            if moved then
+            local key = moved and moved.row * 4 + moved.col
+            if moved and not seen[key] then
+                seen[key] = true
                 positions[#positions + 1] = moved
             end
         end
@@ -413,7 +447,7 @@ function editor.move(session, colDelta, rowDelta)
     if not placement then
         return false, selectionError
     end
-    local moved, placementError, displaced =
+    local moved, placementError, displaced, displacedPosition =
         moveTarget(session, placement, index, placement.col + colDelta, placement.row + rowDelta)
     if not moved then
         return false, placementError
@@ -422,7 +456,7 @@ function editor.move(session, colDelta, rowDelta)
         return true
     end
     if displaced then
-        displaced.col, displaced.row = placement.col, placement.row
+        displaced.col, displaced.row = displacedPosition.col, displacedPosition.row
     end
     placement.col, placement.row = moved.col, moved.row
     session.dirty = true

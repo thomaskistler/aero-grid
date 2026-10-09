@@ -58,6 +58,21 @@ local function document(count)
 end
 write("edit-sparse", document(1))
 write("edit-full", document(16))
+for _, vertical in ipairs({ true, false }) do
+    write(
+        vertical and "edit-vertical-swap" or "edit-horizontal-swap",
+        table.concat({
+            "version: 1\ngrid:\n  columns: 4\n  rows: 4\npanels:",
+            "  - id: first\n    type: metric\n    col: 0\n    row: 0\n    colSpan: 2\n    rowSpan: 1\n    config:\n      visual: none",
+            vertical
+                    and "  - id: second\n    type: metric\n    col: 0\n    row: 1\n    colSpan: 2\n    rowSpan: 2\n    config:\n      visual: none"
+                or "  - id: second\n    type: metric\n    col: 2\n    row: 0\n    colSpan: 1\n    rowSpan: 1\n    config:\n      visual: none",
+            vertical
+                    and "  - id: neighbour\n    type: metric\n    col: 0\n    row: 3\n    colSpan: 2\n    rowSpan: 1\n    config:\n      visual: none"
+                or "  - id: neighbour\n    type: metric\n    col: 3\n    row: 0\n    colSpan: 1\n    rowSpan: 1\n    config:\n      visual: none",
+        }, "\n")
+    )
+end
 local definition = widget.module("main.lua")
 local context
 local worst = 0
@@ -522,6 +537,44 @@ widget.lvglMock.setFullScreen(false)
 refresh()
 settleSave()
 equal(context.editorUi, nil, "fullscreen exit saves completed editor")
+
+-- Unequal panels exchange order within their combined space, not origins.
+for _, vertical in ipairs({ true, false }) do
+    widget.lvglMock.setFullScreen(true)
+    load(vertical and "edit-vertical-swap" or "edit-horizontal-swap")
+    open()
+    state = context.editorUi
+    local originalFirst, originalSecond = context.panels[1].instance, context.panels[2].instance
+    local from = state.controls[1].rect
+    local target = assert(context.grid.rect(context.zone, {
+        col = vertical and 0 or 1,
+        row = vertical and 2 or 0,
+        colSpan = 2,
+        rowSpan = 1,
+    }, 4, 4, 4))
+    refresh(EVT_TOUCH_FIRST, { x = from.x + 55, y = from.y + 40 })
+    refresh(EVT_TOUCH_SLIDE, { x = target.x + 55, y = target.y + 40 })
+    refresh(EVT_TOUCH_BREAK)
+    local first, second, neighbour = table.unpack(context.editorSession.draft.panels)
+    equal(first.col, vertical and 0 or 1, "horizontal reorder accounts for neighbour width")
+    equal(first.row, vertical and 2 or 0, "vertical reorder accounts for neighbour height")
+    equal(second.col, 0, "displaced panel starts at combined-space left edge")
+    equal(second.row, 0, "displaced panel starts at combined-space top edge")
+    equal(neighbour.col, vertical and 0 or 3, "reorder leaves unrelated column unchanged")
+    equal(neighbour.row, vertical and 3 or 0, "reorder leaves unrelated row unchanged")
+    equal(context.panels[1].instance, originalFirst, "directional reorder retains selected instance")
+    equal(context.panels[2].instance, originalSecond, "directional reorder retains displaced instance")
+    equal(context.panels[1].container.properties.y, target.y, "selected preview uses reordered geometry")
+    equal(context.panels[2].container.properties.x, 0, "displaced preview moves to combined-space origin")
+    refresh(EVT_VIRTUAL_EXIT)
+    settleSave()
+    for _ = 1, 70 do
+        refresh()
+    end
+    equal(context.document.panels[1].col, vertical and 0 or 1, "horizontal reordered position persists")
+    equal(context.document.panels[1].row, vertical and 2 or 0, "vertical reordered position persists")
+    equal(context.document.panels[2].rowSpan, vertical and 2 or 1, "displaced span persists unchanged")
+end
 
 -- Repeated content previews reuse containers and can be discarded without saving.
 widget.lvglMock.setFullScreen(true)
