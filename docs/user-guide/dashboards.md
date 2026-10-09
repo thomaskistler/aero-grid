@@ -149,11 +149,16 @@ Choose **Theme** in the widget settings.
 
 ## Troubleshoot a reading
 
-Check the panel's source name and expected data type first. A cells-table
-source and a numeric pack-voltage source are not interchangeable. Check receiver
-connection, sensor discovery, GPS fix, and model timer configuration as applicable.
+If a panel shows no reading or an unexpected value:
 
-Use `Host` to inspect the loaded layout, panel loading, and service failures.
-Interpret missing or stale states using the panel's reference page rather than
-treating them as zero. If a copied fix is not taking effect, follow the
-[upgrade instructions](installation.md#upgrade).
+1. Open the panel's settings using its **gear** icon while editing. If it has
+   a **Source** setting, check that you selected the value you want to display.
+2. For a telemetry reading, check that the receiver is connected and the
+   sensor appears on the radio's **Telemetry** page.
+3. Check the guide for that panel for any additional setup:
+   [battery](../panels/cell-battery.md),
+   [timer](../panels/flight-timer.md),
+   [navigation](../panels/navigation.md), or
+   [metric](../panels/metric.md).
+
+A missing reading does not mean the value is zero.
