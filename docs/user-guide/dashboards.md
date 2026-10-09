@@ -5,8 +5,6 @@ Install [AeroGrid](installation.md) first and select the model you want to use.
 
 ## Add a dashboard
 
-### Add a radio screen
-
 Open the main screen's top-left menu and choose **UI Setup**.
 
 ![EdgeTX main menu with UI Setup at the right](../assets/editor/screen-menu.png)
@@ -14,8 +12,6 @@ Open the main screen's top-left menu and choose **UI Setup**.
 Select the **+** tab, then tap **Add Screen**.
 
 ![Add Screen tab and button in EdgeTX UI Setup](../assets/editor/add-screen.png)
-
-### Choose App mode
 
 On the new screen, tap the **Layout** thumbnail and choose **App mode**.
 This makes one widget fill the screen.
@@ -25,8 +21,6 @@ This makes one widget fill the screen.
 Tap **Setup widgets**, then tap the empty widget area.
 
 ![App mode screen with Setup widgets button](../assets/editor/app-screen.png)
-
-### Add AeroGrid and choose a layout
 
 Choose **AeroGrid** in **Select widget**.
 
@@ -52,8 +46,6 @@ A **dashboard** is AeroGrid on a radio screen. A **layout** defines its panels,
 their positions and sizes, and their settings, including sources and alarms.
 Choose a layout to decide what that dashboard displays.
 
-### Bundled layouts
-
 | Layout | Purpose |
 | --- | --- |
 | **Empty** | A blank starting point for your own dashboard. Shows instructions until you start editing. Save As gives it a new name; Empty is never overwritten. |
@@ -66,8 +58,6 @@ covering `0..999`, and configure the counter's arm switch and motor source.
 Use only one tracking panel across your dashboards and do not run EdgeTX
 Flights alongside it. The flight-pack battery panel must read the pack,
 not a regulated receiver supply.
-
-### Saved layouts and sharing
 
 Bundled layouts are stored in `/WIDGETS/AeroGrid/layouts/`. Your saved layouts
 are stored separately in `/AEROGRID/layouts/`, so upgrading AeroGrid leaves
@@ -89,8 +79,6 @@ falls back to **Default**.
 
 ## Edit a dashboard on the radio
 
-### Start editing
-
 1. Select a layout in the AeroGrid widget's **Layout** setting. Choose
    **Empty** to start a new dashboard.
 2. Long-press the dashboard to enter fullscreen.
@@ -101,8 +89,6 @@ Normal App mode is read-only, even when the dashboard fills the display.
 An empty dashboard shows centred instructions until you start editing.
 
 ![Editor showing panel gears and the add-panel tile](../assets/editor/overview.png)
-
-### Add and arrange panels
 
 | Action | How |
 | --- | --- |
@@ -117,8 +103,6 @@ Panels snap to the 4 × 4 layout grid. Moves and sizes must fit without
 overlapping other panels. The **+ panel** disappears when there is no free
 cell. There are no grid lines or resize handles: drag the corners directly.
 Moving and resizing require touch.
-
-### Change settings
 
 Use the native choices, toggles, number controls, and text keyboard in the
 settings dialog. Sources, switches, and timers use EdgeTX pickers.
@@ -135,8 +119,6 @@ Press **RTN** or tap outside a dialog to return one level. Changes remain in
 your draft. Placement and size preview immediately; settings preview when you
 close the main panel dialog. Rotary/key input can select panels and open
 settings, but cannot move or resize them.
-
-### Save or discard
 
 From the editing dashboard, press **RTN**. If nothing changed, editing closes.
 Otherwise choose an action:
@@ -170,8 +152,6 @@ screens using that name see the changes when they reload.
 
 Wait for saving to finish before powering off. A save error keeps your draft
 so you can retry; the previous saved file is retained as `.bak`.
-
-### Leave fullscreen without saving
 
 Leaving fullscreen keeps the draft in memory and shows the saved dashboard.
 Return to fullscreen to resume editing. Restarting the radio, changing model,
