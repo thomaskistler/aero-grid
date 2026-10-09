@@ -1257,6 +1257,7 @@ function support.lvgl()
         rawset(object, "hidden", false)
     end
 
+    local menu
     lvgl = {
         box = constructor("box"),
         rectangle = constructor("rectangle"),
@@ -1275,6 +1276,11 @@ function support.lvgl()
         source = constructor("source"),
         switch = constructor("switch"),
         timer = constructor("timer"),
+        menu = function(properties)
+            assert(type(properties.title) == "string", "native menu needs a title")
+            assert(type(properties.values) == "table", "native menu needs selection values")
+            menu = properties
+        end,
         close = function(object)
             if object.properties.close then
                 object.properties.close()
@@ -1303,6 +1309,9 @@ function support.lvgl()
     local width = support.scaffold.DISPLAY_WIDTH
     local height = support.scaffold.DISPLAY_HEIGHT
     local handle = { settle = settle, objects = objects }
+    function handle.menu()
+        return menu
+    end
 
     function handle.replacedFontRefCount()
         local count = 0

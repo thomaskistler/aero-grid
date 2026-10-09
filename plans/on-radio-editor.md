@@ -99,10 +99,16 @@ the separate layout-management topic.
 
 ## Configuration drawers (implemented)
 
-Configuration and catalog drawers now use EdgeTX Lua LVGL native dialogs,
+Configuration drawers now use EdgeTX Lua LVGL native dialogs,
 replacing the custom character editor and Previous/Next navigation. Construction
 is staged one row per callback; controls are inactive while building or applying
 a queued edit. Configuration remains isolated in the draft.
+
+The + action opens `lvgl.menu` with the title **Select panel**, matching the
+native **Select widget** selection style instead of a settings drawer or a
+column of buttons. Selection queues a draft addition and opens the new panel's
+configuration drawer immediately; native RTN
+or outside-touch cancellation leaves the draft unchanged.
 
 ### Layout and navigation
 

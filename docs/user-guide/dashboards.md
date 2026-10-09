@@ -86,6 +86,10 @@ visible; controls appear after a short, staged initialization.
   in the first free 1 x 1 cell, scanning left-to-right and top-to-bottom, and
   disappears when the grid is full. New panels use the first available placement
   supporting their size; the + panel is never saved as a dashboard panel.
+  Panel types appear in a native **Select panel** popup, like EdgeTX's
+  **Select widget** menu. Select a type to add it and open its configuration
+  drawer immediately; RTN or a tap
+  outside dismisses the popup without adding anything.
 
 The circular control uses a bundled, antialiased icon image. When installing or
 updating AeroGrid, copy its `assets` directory along with the Lua files.
@@ -96,7 +100,7 @@ start another flight tracker or other panel side effects.
 Rotary/key input cycles panels and the add action; Enter opens settings or the
 catalog. Settings also provide Column, Row, and Remove panel for key-only use.
 
-Configuration and the panel catalog open in centered native EdgeTX dialogs,
+Configuration opens in centered native EdgeTX dialogs,
 using the standard dialog size and scrollable settings area. Use touch or
 rotary/key focus to operate native choices, toggles, numeric inputs, and the
 text-entry keyboard. Sources, switches, and model timers use radio pickers;

@@ -98,30 +98,46 @@ end
 
 function drawer.open(context, state, mode, listKey, itemIndex)
     closeDialog(state)
+    if mode == "add" then
+        assert(type(lvgl.menu) == "function", "panel selection requires EdgeTX Lua LVGL menu")
+        local catalog, values = state.handlers.editor.CATALOG, {}
+        for index, item in ipairs(catalog) do
+            values[index] = item.label
+        end
+        local generation = state.drawerGeneration
+        -- Native menus own input and cancellation; no drawer state needs unwinding.
+        state.mode = "menu"
+        lvgl.menu({
+            title = "Select panel",
+            values = values,
+            get = function()
+                return 1
+            end,
+            set = function(index)
+                if context.editorUi == state and generation == state.drawerGeneration and not state.drawerPending then
+                    local item = assert(catalog[index], "invalid panel selection")
+                    state.drawerPending = { action = "add", panelType = item.type }
+                end
+            end,
+        })
+        return
+    end
     for _, name in ipairs({ "dialog", "setting", "button", "choice", "toggle", "numberEdit", "textEdit", "close" }) do
         if type(lvgl[name]) ~= "function" then
             error("configuration drawer requires EdgeTX Lua LVGL " .. name)
         end
     end
     state.mode = mode
-    local title, fields
-    if mode == "add" then
-        title, fields = "Add panel", {}
-        for _, item in ipairs(state.handlers.editor.CATALOG) do
-            fields[#fields + 1] = { label = item.label, action = "add", panelType = item.type }
+    local placement = state.session.draft.panels[state.session.selected]
+    local title = placement.type
+    for _, item in ipairs(state.handlers.editor.CATALOG) do
+        if item.type == placement.type then
+            title = item.label
+            break
         end
-    else
-        local placement = state.session.draft.panels[state.session.selected]
-        title = placement.type
-        for _, item in ipairs(state.handlers.editor.CATALOG) do
-            if item.type == placement.type then
-                title = item.label
-                break
-            end
-        end
-        title = title .. (listKey and (" / " .. listKey .. " " .. itemIndex) or "")
-        fields = fieldsFor(state, listKey, itemIndex)
     end
+    title = title .. (listKey and (" / " .. listKey .. " " .. itemIndex) or "")
+    local fields = fieldsFor(state, listKey, itemIndex)
     state.drawerListKey, state.drawerItemIndex = listKey, itemIndex
     state.drawerFields, state.drawerControls = fields, {}
     state.drawerBuild = 0
@@ -380,8 +396,12 @@ function drawer.advance(context, state)
             ok, err = editor.add(state.session, command.panelType)
         end
         if ok then
-            drawer.close(state)
-            state.mode = "menu"
+            if command.action == "add" then
+                drawer.open(context, state, "configure")
+            else
+                drawer.close(state)
+                state.mode = "menu"
+            end
         end
     elseif command.action == "error" then
         ok, err = false, command.message
