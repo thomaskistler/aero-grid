@@ -126,7 +126,8 @@ Controls become available after a short, staged construction.
 Metric entries and text lines have separate entry dialogs with add/edit/remove
 actions. Physical **RTN** or a tap outside the native dialog returns one level;
 there is no custom return button. Removing a panel or entry is immediate,
-without confirmation. Rows use standard EdgeTX input height and spacing;
+without confirmation, using a full-width native button with standard theme
+colours rather than red text. Rows use standard EdgeTX input height and spacing;
 validation feedback expands only the affected row. Configuration fields come from
 each panel's schema, with its supplied choices, numeric bounds, and steps.
 Changes affect only the in-memory draft. Configuration previews when the main

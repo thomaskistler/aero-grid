@@ -161,6 +161,12 @@ end
 local function action(name, key)
     for _, row in ipairs(context.editorUi.drawerControls) do
         if row.field.action == name and (not key or row.field.key == key) then
+            if name == "remove" or name == "remove-item" then
+                equal(row.row.properties.title, "", "remove action has no duplicated row label")
+                equal(row.object.properties.x, 0, "remove button spans the settings row")
+                equal(row.object.properties.w, row.row.properties.w - 8, "remove button uses full row width")
+                equal(row.object.properties.textColor, nil, "remove button uses native theme text")
+            end
             return row.object
         end
     end
@@ -413,7 +419,7 @@ settleDrawer()
 local function removePanel()
     for _, row in ipairs(state.drawerControls) do
         if row.field.action == "remove" then
-            row.object.properties.press()
+            action("remove").properties.press()
             settleDrawer()
             return
         end

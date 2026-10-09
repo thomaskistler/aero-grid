@@ -192,9 +192,12 @@ local function addControl(context, state, field, index)
     end
     local width = state.drawerWidth - 16
     local y = state.drawerPadding * 2 + (index - 1) * state.drawerRowHeight
-    local row =
-        lvgl.setting(state.nativeDrawer, { x = 4, y = y, w = width, h = state.drawerRowHeight, title = field.label })
-    local controlX = math.floor(width * 0.48)
+    local remove = field.action == "remove" or field.action == "remove-item"
+    local row = lvgl.setting(
+        state.nativeDrawer,
+        { x = 4, y = y, w = width, h = state.drawerRowHeight, title = remove and "" or field.label }
+    )
+    local controlX = remove and 0 or math.floor(width * 0.48)
     local options = {
         x = controlX,
         y = 0,
@@ -228,9 +231,6 @@ local function addControl(context, state, field, index)
         options.text = field.text or field.label
         options.press = function()
             queue(field)
-        end
-        if field.action == "remove" or field.action == "remove-item" then
-            options.textColor = context.theme.color.critical
         end
     elseif field.choices then
         kind = "choice"
