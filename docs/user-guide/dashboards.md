@@ -68,7 +68,8 @@ picker. A missing layout falls back to **Default**.
 1. Long-press the dashboard to enter fullscreen. The EdgeTX logo in the
    top-left corner disappears.
 2. In fullscreen, long-press a panel again to start editing. On an empty
-   dashboard, long-press anywhere. **Enter** also starts editing.
+   dashboard, long-press anywhere. **Enter** also starts editing. A **gear**
+   icon appears in the top-right corner of each panel.
 
 Normal App mode is read-only, even when the dashboard fills the display.
 An empty dashboard shows centred instructions until you start editing.
