@@ -913,17 +913,22 @@ function metric.update(context, rect)
             context.unitText,
             area.valueBudget
         )
+    local unit, previousShowUnit = context.unit, context.showUnit
+    -- Centre the reading first; reconcileUnit handles the rider's font and position once.
+    context.unit, context.showUnit = nil, shows
+    context.primitives.centreReading(context, context.themeBuilder, area, area.value, context.text or "--")
+    context.unit = unit
     context.primitives.reconcileUnit(
         context,
         context.unit,
         shows,
         context.themeBuilder,
-        area.valueX,
+        area.valueCentre and context.valueX or area.valueX,
         area.valueY,
         area.value,
         context.text or "--",
         area.unitFont,
-        shows == context.showUnit
+        shows == previousShowUnit
     )
     context.showUnit = shows
     context.unitAnchor = nil

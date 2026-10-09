@@ -44,6 +44,11 @@ editor decisions here rather than changing `plans/aerogrid-spec.md`.
 
 ## Current implementation
 
+Metric reflow immediately recentres the current reading and places its unit
+beside it, even when telemetry has not changed. Fullscreen/App-mode transitions
+must not leave unchanged readings at the left padding while units retain their
+previous positions. Transition regressions cover all metric review panels.
+
 Moving onto an occupied top-left position swaps the two panels when each fits
 at the other's origin without overlapping either panel or any neighbour.
 For adjacent, aligned panels, movement instead exchanges their order within
