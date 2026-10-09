@@ -670,6 +670,7 @@ function flightTimer.update(context, rect)
     context.area = area
     -- Every anchor is about a slot and a font that have just moved.
     context.readingAnchor, context.readingUnitAnchor = nil, nil
+    context.primitives.centreReading(context, context.themeBuilder, area, area.clock, context.text)
     context.detailAnchor = nil
 
     local primitives = context.primitives

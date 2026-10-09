@@ -44,10 +44,18 @@ editor decisions here rather than changing `plans/aerogrid-spec.md`.
 
 ## Current implementation
 
-Metric reflow immediately recentres the current reading and places its unit
-beside it, even when telemetry has not changed. Fullscreen/App-mode transitions
+Panel reflow immediately recentres the current reading and places its unit
+beside it, even when telemetry has not changed. Metric, link-status, TX battery,
+cell battery, and navigation share the same reading/unit reflow helper; timers
+also recenter their unchanged time. Supporting link, cell, and navigation labels
+are repositioned immediately. Fullscreen/App-mode transitions
 must not leave unchanged readings at the left padding while units retain their
-previous positions. Transition regressions cover all metric review panels.
+previous positions. Transition regressions cover every delivered panel type,
+repeated fullscreen/App-mode transitions, and zone resizing, checking positions
+before another telemetry tick or refresh can hide a stale-placement failure.
+Native TX16S captures also verified that link-status readings and supporting
+labels remain centred when entering fullscreen with unchanged unavailable
+readings. Physical-radio confirmation remains outstanding.
 
 Moving onto an occupied top-left position swaps the two panels when each fits
 at the other's origin without overlapping either panel or any neighbour.

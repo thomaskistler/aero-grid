@@ -894,8 +894,6 @@ function metric.update(context, rect)
         y = area.valueY,
         w = area.valueWidth,
     })
-    context.readingAnchor, context.readingUnitAnchor = nil, nil
-
     --- Show or hide an optional element, positioning it only when visible.
     local reconcile = context.primitives.reconcile
 
@@ -913,25 +911,7 @@ function metric.update(context, rect)
             context.unitText,
             area.valueBudget
         )
-    local unit, previousShowUnit = context.unit, context.showUnit
-    -- Centre the reading first; reconcileUnit handles the rider's font and position once.
-    context.unit, context.showUnit = nil, shows
-    context.primitives.centreReading(context, context.themeBuilder, area, area.value, context.text or "--")
-    context.unit = unit
-    context.primitives.reconcileUnit(
-        context,
-        context.unit,
-        shows,
-        context.themeBuilder,
-        area.valueCentre and context.valueX or area.valueX,
-        area.valueY,
-        area.value,
-        context.text or "--",
-        area.unitFont,
-        shows == previousShowUnit
-    )
-    context.showUnit = shows
-    context.unitAnchor = nil
+    context.primitives.reflowReading(context, context.themeBuilder, area, area.value, context.text or "--", shows)
     context.rangeAnchor, context.secondaryAnchor = nil, nil
     reconcile(context.range, context.showRange, { x = area.detailX, y = area.detailY, w = area.detailWidth })
     context.primitives.centreLabel(

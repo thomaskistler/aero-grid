@@ -908,22 +908,9 @@ function cellBattery.update(context, rect)
         w = area.valueWidth,
     })
 
-    context.primitives.reconcileUnit(
-        context,
-        context.unit,
-        area.showUnit,
-        context.themeBuilder,
-        area.valueX,
-        area.valueY,
-        area.value,
-        context.text,
-        area.unitFont,
-        area.showUnit == context.showUnit
-    )
-    context.showUnit = area.showUnit
+    context.primitives.reflowReading(context, context.themeBuilder, area, area.value, context.text, area.showUnit)
     -- Every anchor is about a slot and a font that have just moved.
     context.unitAnchor = nil
-    context.readingAnchor, context.readingUnitAnchor = nil, nil
     context.countAnchor, context.packAnchor = nil, nil
     context.area = area
     if context.layout.supporting then
@@ -945,6 +932,28 @@ function cellBattery.update(context, rect)
 
     reconcile(context.countLabel, context.showDetail, { x = area.detailX, y = area.detailY, w = area.detailWidth })
     reconcile(context.packLabel, context.showDetail, { x = area.rowRightX, y = area.rowRightY, w = area.rowRightWidth })
+    if context.showDetail then
+        context.primitives.centreLabel(
+            context,
+            "countAnchor",
+            context.themeBuilder,
+            context.countLabel,
+            area.detailCentre,
+            area.detailY,
+            context.fonts.label,
+            context.countText
+        )
+        context.primitives.centreLabel(
+            context,
+            "packAnchor",
+            context.themeBuilder,
+            context.packLabel,
+            area.rowRightCentre,
+            area.rowRightY,
+            context.fonts.label,
+            context.packText
+        )
+    end
 
     if context.bar then
         context.primitives.reconcileBar(

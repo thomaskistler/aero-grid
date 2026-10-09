@@ -765,26 +765,7 @@ function txBattery.update(context, rect)
         w = area.valueWidth,
     })
 
-    context.primitives.reconcileUnit(
-        context,
-        context.unit,
-        area.showUnit,
-        context.themeBuilder,
-        area.valueX,
-        area.valueY,
-        area.value,
-        context.text,
-        area.unitFont,
-        area.showUnit == context.showUnit
-    )
-    context.showUnit = area.showUnit
-    -- Both anchors are about a slot and a font that have just moved, so they
-    -- are discarded rather than trusted. Without clearing the reading's, a
-    -- panel that reflowed while its voltage held steady would keep the
-    -- position it had at the old span.
-    context.unitAnchor = nil
-    context.readingAnchor = nil
-
+    context.primitives.reflowReading(context, context.themeBuilder, area, area.value, context.text, area.showUnit)
     context.primitives.reconcile(
         context.detailLabel,
         area.showDetail,
