@@ -35,9 +35,6 @@ Choose **Modern** or **EdgeTX** for **Theme**.
 Press **RTN** to close the settings and leave setup. Your dashboard is now
 on the new screen. Repeat these steps to add another dashboard.
 
-*Captures on this page use the EdgeTX 2.12 TX16S simulator. Menu placement may
-vary by radio or firmware; sample readings are illustrative.*
-
 ## Understand layouts
 
 A **dashboard** is AeroGrid on a radio screen. A **layout** defines its panels,
