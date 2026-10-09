@@ -15,8 +15,7 @@ screen.
    merging new files into the old installation. This also removes stale
    compiled Lua files.
 2. Copy the complete new `AeroGrid` folder into `/WIDGETS/`.
-3. Restart the radio and check your dashboards. Select Layout `host` to
-   check the loaded package version.
+3. Restart the radio and check your dashboards.
 
 Your layouts and layout list live in `/AEROGRID/`, outside the widget folder.
 Leave that folder untouched: there is no need to back up and restore layouts
