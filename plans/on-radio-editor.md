@@ -345,7 +345,7 @@ mock test suite, or native simulator runs.
 - Layout and Theme pickers, stable layout registry, and user storage outside
   the widget package.
 - Text-only empty-dashboard guidance with native centred alignment.
-- [Editor user guide](../docs/user-guide/editor.md), with native TX16S simulator
+- [Dashboard and editor user guide](../docs/user-guide/dashboards.md), with native TX16S simulator
   captures of editing, metric configuration, the exit menu, and Save As.
 
 No remaining feature work is identified for the agreed editor scope.
