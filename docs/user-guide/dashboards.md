@@ -127,10 +127,6 @@ showing its previous layout until you select the new one.
 Wait for saving to finish before powering off. A save error keeps your draft
 so you can retry; the previous saved file is retained as `.bak`.
 
-Leaving fullscreen keeps the draft in memory and shows the saved dashboard.
-Return to fullscreen to resume editing. Restarting the radio, changing model,
-or changing the widget's **Layout** or **Theme** discards the unsaved draft.
-
 ## App mode and Full screen
 
 | Layout | What you see |
