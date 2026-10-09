@@ -221,10 +221,8 @@ button is a native EdgeTX control.
 - Text: a more usable text-entry interface than the current character editor.
 - Structured lists, such as metric entries and text lines: clear grouped
   add/edit/remove controls rather than a flattened list of fields.
-- Size: use the built-in EdgeTX Lua LVGL picker where available, anchored at
-  the current top-left cell. If it supports disabled entries, show supported
-  sizes that do not fit as disabled; otherwise hide those sizes. Do not build
-  a custom picker solely to support disabled entries.
+- Size and position: edited only by gestures. The drawer's Size picker was
+  removed after gesture resizing was confirmed on the radio.
 - Remove panel: visually separate it from ordinary settings to reduce
   accidental activation, but remove immediately without confirmation.
 - Validation: show feedback beside the affected setting and preserve the
@@ -239,12 +237,14 @@ button is a native EdgeTX control.
 EdgeTX 2.12 native dialogs center themselves and use 80% of the LCD width and
 height (384 x 218 on TX16S). Their body supplies scrolling and native RTN
 handling. Native choices omit unavailable entries; they do not expose per-item
-disabled styling, so the Size picker contains only fitting sizes.
+disabled styling (relevant only to the since-removed Size picker).
 
 Settings use `choice`, `toggle`, `numberEdit`, `textEdit`, `source`, `switch`,
 and `timer` controls. Source/switch selections are converted back to the named
 references already stored in layouts, including ASCII physical-switch
-positions. Accent settings retain their schema's named choices rather than
+positions. `getSourceName` prefixes names with a two-byte menu icon (for
+example the telemetry symbol); the drawer stores the plain name when it
+resolves to the same source. Accent settings retain their schema's named choices rather than
 switching to numeric colors. Current shipped schemas do not declare file inputs.
 Text inputs receive a literal initial string for compatibility with installed
 EdgeTX builds that reject value callbacks; queued edits resynchronize that
@@ -323,17 +323,55 @@ Return/back behavior at radio resolution and within callback limits.
 - `tests/integration/test_editor_ui.lua` and editor/persistence unit tests:
   input behavior, isolation, recovery, and callback budgets.
 
-## Remaining verification and limitations
+## Remaining UI work
 
-- Verify controls, drawer usability, and persistence on physical radios and
-  across supported display sizes and EdgeTX versions.
-- Verify repeated native editor entry/exit for memory and object stability.
-- Refine drawer UX as needed; do not claim physical verification from mocks
-  or native simulator runs.
-- Undo is not needed and is out of scope.
-- Restore defaults belongs to
-  [layout management #127](https://github.com/thomaskistler/aero-grid/issues/127),
-  not this editor UI.
-- Implement the agreed Cancel / Save / Save As exit workflow alongside the
-  named-layout reference/persistence support it requires. Broader layout
-  management remains tracked separately.
+Status as of 2026-10-09. Do not claim physical verification from mocks, the
+mock test suite, or native simulator runs.
+
+### Still to build
+
+- **Exit dialog:** Replace automatic saving on Return with the agreed
+  Cancel / Save / Save As dialog (see "Planned exit dialog"). Return with
+  no changes exits immediately. Leaving fullscreen keeps the draft without
+  saving or prompting; today it still saves.
+- **Save As name entry:** Native text entry for the new layout name.
+  Dismissing it returns to the exit dialog with the draft intact.
+- **Named shared layouts:** The reference and persistence support that Save
+  and Save As need, tracked in
+  [#127](https://github.com/thomaskistler/aero-grid/issues/127). Settle
+  existing-name conflicts and shipped-template write protection there first.
+- **Entry fields for new panels:** Metric and text, the only shipped panels
+  with list settings, declare their entry `fields`. Any future list setting
+  must declare `fields` too; without them the drawer falls back to showing
+  only the keys present in the layout file.
+
+### Awaiting physical-radio confirmation
+
+- No crash when opening, closing and reopening drawers and dialogs
+  repeatedly (hosted-dialog fix).
+- No white/black flash when returning from editing to fullscreen or from
+  fullscreen to App mode (saved-layout adoption).
+- Top-left panel layout and menu-button corner reservation are correct
+  after returning to App mode.
+- Fullscreen can be re-entered after returning to App mode.
+- Every metric and text entry setting appears in the drawer; "Off" and
+  "Sensor" display correctly for unset values, and clearing removes them.
+  The native `numberEdit` sentinel for unset values is not yet checked in
+  the simulator.
+- Picked sources are saved without the EdgeTX menu icon. Sources picked
+  before this fix keep the icon and must be picked again or edited by hand.
+
+### Broader verification
+
+- Supported display sizes other than TX16S and other EdgeTX versions.
+- Memory and object stability across repeated editor entry and exit on the
+  radio.
+- Drawer usability refinements found during radio testing.
+- Take PR #126 out of draft once hardware validation passes.
+
+### Out of scope
+
+- Undo.
+- Key-only geometry editing (retired in favour of gestures).
+- Restore defaults, which belongs to
+  [layout management #127](https://github.com/thomaskistler/aero-grid/issues/127).
