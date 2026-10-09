@@ -161,6 +161,10 @@ and `timer` controls. Source/switch selections are converted back to the named
 references already stored in layouts, including ASCII physical-switch
 positions. Accent settings retain their schema's named choices rather than
 switching to numeric colors. Current shipped schemas do not declare file inputs.
+Text inputs receive a literal initial string for compatibility with installed
+EdgeTX builds that reject value callbacks; queued edits resynchronize that
+string with the accepted draft value. Toggle getters return native integer
+0/1, while layout values remain booleans.
 
 Native TX16S simulation verified centering, the Size popup, nested physical RTN,
 and repeated dialog close/reopen. Native cancellation must clear the dialog's

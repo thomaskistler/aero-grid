@@ -404,16 +404,20 @@ for index = 1, #context.editorSession.draft.panels do
     if panelType == "flight-timer" then
         equal(control("timer").kind, "timer", "model timer uses native timer selection")
         equal(control("label").kind, "textEdit", "labels use the native keyboard")
+        equal(type(control("label").properties.value), "string", "native text entry starts with a string")
         control("label").properties.set("Elapsed")
         settleDrawer()
         equal(context.editorSession.draft.panels[index].config.label, "Elapsed", "native text updates draft")
+        equal(control("label").properties.value, "Elapsed", "text input reflects accepted draft value")
     elseif panelType == "flight-counter" then
         equal(control("armSwitch").kind, "switch", "arm position uses native switch selection")
         equal(control("motorSource").kind, "source", "motor channel uses source selection")
         equal(control("announcements").kind, "toggle", "booleans use native toggles")
+        equal(control("announcements").properties.get(), 0, "toggle getter returns native integer false")
         control("announcements").properties.set(1)
         settleDrawer()
         equal(context.editorSession.draft.panels[index].config.announcements, true, "toggle stores boolean")
+        equal(control("announcements").properties.get(), 1, "toggle getter returns native integer true")
         equal(control("minFlightDuration").kind, "numberEdit", "numbers use native bounded inputs")
     end
     back()

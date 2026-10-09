@@ -1226,6 +1226,13 @@ function support.lvgl()
 
     local function constructor(kind)
         return function(first, second)
+            local properties = second or first
+            if kind == "textEdit" then
+                assert(type(properties.value) == "string", "native textEdit value must be a string")
+            elseif kind == "toggle" and properties.get then
+                local value = properties.get()
+                assert(type(value) == "number" and value % 1 == 0, "native toggle getter must return an integer")
+            end
             if second then
                 return newObject(kind, first, second)
             end

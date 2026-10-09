@@ -226,7 +226,10 @@ local function addControl(context, state, field, index)
             set(field.choices[choiceIndex])
         end
     elseif field.type == "boolean" then
-        kind, options.get = "toggle", get
+        kind = "toggle"
+        options.get = function()
+            return get() and 1 or 0
+        end
         options.set = function(value)
             set(value ~= 0 and value ~= false)
         end
@@ -284,10 +287,7 @@ local function addControl(context, state, field, index)
             end
         end
     else
-        kind, options.value, options.length =
-            "textEdit", function()
-                return tostring(get() or "")
-            end, 128
+        kind, options.value, options.length = "textEdit", tostring(get() or ""), 128
         options.set = set
     end
     control = assert(lvgl[kind](row, options), "cannot create native " .. kind)
@@ -301,7 +301,7 @@ local function addControl(context, state, field, index)
         color = context.theme.color.critical,
     })
     lvgl.hide(errorLabel)
-    state.drawerControls[index] = { object = control, errorLabel = errorLabel, field = field }
+    state.drawerControls[index] = { object = control, errorLabel = errorLabel, field = field, kind = kind }
     field.control = state.drawerControls[index]
 end
 
@@ -350,6 +350,9 @@ function drawer.advance(context, state)
     elseif command.action == "write" then
         ok, err = writeField(state, command.field, command.value)
         if command.control and state.nativeDrawer then
+            if command.control.kind == "textEdit" then
+                command.control.object:set({ value = tostring(current(state, command.field) or "") })
+            end
             command.control.errorLabel:set({ text = ok and "" or tostring(err) })
             if ok then
                 lvgl.hide(command.control.errorLabel)
