@@ -101,11 +101,11 @@ def prepare(sd, recipe, recipe_path=None):
                         value:
                            unsignedValue: POSITION
                      1:
-                        type: String
+                        type: Unsigned
                         value:
-                           stringValue: modern
+                           unsignedValue: THEME
 view: 0
-""".replace("stringValue: modern", f"stringValue: {recipe['theme']}")
+""".replace("THEME", str(["modern", "edgetx"].index(recipe["theme"]) + 1))
                      .replace("POSITION", str(position))
                      + suffix.split("\n", 1)[1])
     layout = f"version: 1\ntheme:\n  mode: {recipe['theme']}\ngrid:\n  columns: 4\n  rows: 4\npanels:\n"

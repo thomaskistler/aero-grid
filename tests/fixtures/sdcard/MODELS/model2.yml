@@ -669,9 +669,9 @@ screenData:
                         value: 
                            unsignedValue: 6
                      1:
-                        type: String
+                        type: Unsigned
                         value: 
-                           stringValue: 
+                           unsignedValue: 1
    1:
       LayoutId: Layout1x1AM
       layoutData: 
@@ -685,9 +685,9 @@ screenData:
                         value: 
                            unsignedValue: 14
                      1:
-                        type: String
+                        type: Unsigned
                         value: 
-                           stringValue: 
+                           unsignedValue: 1
    2:
       LayoutId: Layout1x1AM
       layoutData: 
@@ -701,9 +701,9 @@ screenData:
                         value: 
                            unsignedValue: 10
                      1:
-                        type: String
+                        type: Unsigned
                         value: 
-                           stringValue: 
+                           unsignedValue: 1
 
    3:
       LayoutId: Layout1x1AM
@@ -718,9 +718,9 @@ screenData:
                         value: 
                            unsignedValue: 7
                      1:
-                        type: String
+                        type: Unsigned
                         value: 
-                           stringValue: 
+                           unsignedValue: 1
    4:
       LayoutId: Layout1x1AM
       layoutData:
@@ -734,9 +734,9 @@ screenData:
                         value:
                            unsignedValue: 4
                      1:
-                        type: String
+                        type: Unsigned
                         value:
-                           stringValue:
+                           unsignedValue: 1
    5:
       LayoutId: Layout1x1AM
       layoutData:
@@ -750,9 +750,9 @@ screenData:
                         value:
                            unsignedValue: 5
                      1:
-                        type: String
+                        type: Unsigned
                         value:
-                           stringValue:
+                           unsignedValue: 1
    6:
       LayoutId: Layout1x1AM
       layoutData:
@@ -766,9 +766,9 @@ screenData:
                         value:
                            unsignedValue: 13
                      1:
-                        type: String
+                        type: Unsigned
                         value:
-                           stringValue:
+                           unsignedValue: 1
    7:
       LayoutId: Layout1x1AM
       layoutData:
@@ -782,9 +782,9 @@ screenData:
                         value:
                            unsignedValue: 11
                      1:
-                        type: String
+                        type: Unsigned
                         value:
-                           stringValue:
+                           unsignedValue: 1
    8:
       LayoutId: Layout1x1AM
       layoutData:
@@ -798,9 +798,9 @@ screenData:
                         value:
                            unsignedValue: 8
                      1:
-                        type: String
+                        type: Unsigned
                         value:
-                           stringValue:
+                           unsignedValue: 1
    9:
       LayoutId: Layout1x1AM
       layoutData:
@@ -814,9 +814,9 @@ screenData:
                         value:
                            unsignedValue: 9
                      1:
-                        type: String
+                        type: Unsigned
                         value:
-                           stringValue:
+                           unsignedValue: 1
 topbarData: 
    zones: 
       3:

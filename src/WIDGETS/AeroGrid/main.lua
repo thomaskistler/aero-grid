@@ -13,7 +13,7 @@
 
 ---@class AeroGridWidgetOptions
 ---@field Layout integer|string Position in the layout registry, or a layout name.
----@field Theme string
+---@field Theme integer|string Position in Modern, EdgeTX; or a mode name.
 
 ---@class AeroGridContext
 ---@field zone AeroGridZone Live zone table maintained by EdgeTX.
@@ -76,9 +76,14 @@ if type(dir) == "function" and type(loadScript) == "function" then
     end
 end
 
+--- Theme modes behind the native CHOICE option, in stored-position order.
+--- `custom` is omitted: it only applies a layout's own `theme` overrides, so
+--- selecting it here would show Modern.
+local THEME_MODES = { "modern", "edgetx" }
+
 local options = {
     { "Layout", CHOICE, 1, layoutNames },
-    { "Theme", STRING, "modern" },
+    { "Theme", CHOICE, 1, { "Modern", "EdgeTX" } },
 }
 
 --- Resolve the Layout option to a name. A stale position selects Empty.
@@ -89,6 +94,16 @@ local function layoutName(value)
         return value
     end
     return layoutNames[tonumber(value) or 1] or layoutNames[1]
+end
+
+--- Resolve the Theme option to a mode. An unknown position selects Modern.
+---@param value any
+---@return string
+local function themeModeOf(value)
+    if type(value) == "string" and value ~= "" then
+        return value
+    end
+    return THEME_MODES[tonumber(value) or 1] or THEME_MODES[1]
 end
 
 --- Join a widget directory and package-relative path.
@@ -1391,7 +1406,7 @@ local function create(zone, widgetOptions, path)
         zone = zone,
         path = path,
         layoutName = layoutName(widgetOptions.Layout),
-        themeMode = widgetOptions.Theme,
+        themeMode = themeModeOf(widgetOptions.Theme),
         panels = {},
         rejected = {},
         errors = {},
@@ -1626,7 +1641,7 @@ end
 ---@param widgetOptions AeroGridWidgetOptions
 local function update(context, widgetOptions)
     local name = layoutName(widgetOptions.Layout)
-    local themeMode = widgetOptions.Theme
+    local themeMode = themeModeOf(widgetOptions.Theme)
 
     -- Without a runtime there is nothing to rebuild, and restaging would fail.
     if context.runtimeFailed then

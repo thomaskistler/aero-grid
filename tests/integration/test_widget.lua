@@ -631,11 +631,16 @@ local function testScreensReachEveryShippedLayout()
         local handle = assert(hostIo.open(root .. "/tests/fixtures/sdcard/MODELS/" .. name, "r"))
         local text = handle:read("a")
         handle:close()
-        return (
-            string.gsub(text, "unsignedValue: (%d+)", function(position)
-                return "stringValue: " .. assert(registered[tonumber(position)], "unregistered layout " .. position)
-            end)
-        )
+        -- Option 0 is Layout and option 1 is Theme, both stored as positions.
+        local themes = { "modern", "edgetx" }
+        text = string.gsub(text, "(\n%s*0:%s*type: Unsigned%s*value:%s*)unsignedValue: (%d+)", function(head, position)
+            return head .. "stringValue: " .. assert(registered[tonumber(position)], "unregistered layout " .. position)
+        end)
+        text = string.gsub(text, "(\n%s*1:%s*type: Unsigned%s*value:%s*)unsignedValue: (%d+)", function(head, position)
+            return head .. "stringValue: " .. assert(themes[tonumber(position)], "unknown theme " .. position)
+        end)
+        assert(not string.find(text, "unsignedValue", 1, true), "an AeroGrid option was not decoded")
+        return text
     end
 
     local working = readModel("model1.yml")
@@ -709,9 +714,11 @@ local function testScreensReachEveryShippedLayout()
         order[#order + 1] = value
     end
     local position = {}
-    for index, name in ipairs(order) do
-        if not position[name] then
-            position[name] = index
+    local screen = 0
+    for _, name in ipairs(order) do
+        if name ~= "modern" and name ~= "edgetx" then
+            screen = screen + 1
+            position[name] = position[name] or screen
         end
     end
     assert(position.sim == 1 and position.sim2 == 2, "the two dashboards are not the first two screens")
@@ -1966,6 +1973,20 @@ local function testOptionReload()
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, referencePath)
     definition.update(context, { Layout = "main", Theme = "custom" })
     assertEqual(context.reloadState, "clear")
+
+    -- The radio stores Theme as a position in the CHOICE list: 1 is Modern,
+    -- 2 EdgeTX, and a position from a longer list falls back to Modern.
+    local options = definition.options[2]
+    assertEqual(options[1], "Theme")
+    assertEqual(table.concat(options[4], ","), "Modern,EdgeTX")
+    for position, mode in pairs({ [1] = "modern", [2] = "edgetx", [9] = "modern" }) do
+        local selected = createLoaded(
+            { x = 0, y = 0, w = 480, h = 272 },
+            { Layout = "main", Theme = position },
+            referencePath
+        )
+        assertEqual(selected.themeMode, mode, "Theme position " .. position)
+    end
 end
 
 --- A reload must not depend on when EdgeTX collects a pending clear.

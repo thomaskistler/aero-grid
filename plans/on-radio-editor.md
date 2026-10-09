@@ -157,6 +157,8 @@ User decisions, 2026-10-07 and 2026-10-09:
   append-only `/AEROGRID/registry.txt` plus the names found in both
   folders. EdgeTX stores a CHOICE as a position, so names are never removed
   or reordered; new layouts appear after a restart.
+- **Theme** is also a CHOICE (Modern, EdgeTX). `custom` stays layout-only,
+  since its overrides live in the layout. Decided 2026-10-09.
 - No migration. A widget saved with the old **Dashboard ID** string resets
   to `Empty` (the firmware resets an option whose stored type changed), and
   `<model>--<dashboard>.yaml` files are no longer read.

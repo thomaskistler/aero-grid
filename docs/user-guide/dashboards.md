@@ -22,8 +22,9 @@ Use a different layout on each EdgeTX screen to show different dashboards.
 You can edit layouts on the radio in temporary fullscreen mode, or edit YAML
 files on a computer and copy them to the SD card.
 
-Upgrading from a version with a **Dashboard ID** text setting resets each
-AeroGrid widget to `Empty`; select its layout again. Model-specific files named
+Upgrading from a version with **Dashboard ID** and **Theme** text settings
+resets each AeroGrid widget to `Empty` and Modern; select its layout and theme
+again. Model-specific files named
 `<model>--<dashboard>.yaml` are no longer read; rename one to a plain layout
 name and move it to `/AEROGRID/layouts/` to keep it.
 
@@ -197,8 +198,9 @@ leaves more room beside the menu button.
 
 ## Theming
 
-Choose **Theme** in the widget settings. A layout's optional `theme` block
-overrides that selection.
+Choose **Theme** in the widget settings: **Modern** or **EdgeTX**. A layout's
+optional `theme` block overrides that selection, and is the only place to use
+`custom`, because custom colours are defined there.
 
 | Mode | Behavior |
 | --- | --- |

@@ -18,6 +18,6 @@ screenData:
                         value:
                            unsignedValue: 2
                      1:
-                        type: String
+                        type: Unsigned
                         value:
-                           stringValue: modern
+                           unsignedValue: 1
