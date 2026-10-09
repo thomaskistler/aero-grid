@@ -432,13 +432,18 @@ state.handlers.advanceSave = function()
     return true, false, "simulated SD write failure"
 end
 refresh(EVT_VIRTUAL_EXIT)
+assert(state.saving, "save still runs asynchronously")
+equal(state.status, "", "saving has no progress text")
+equal(state.statusLabel.hidden, true, "saving hides the status overlay")
 settleSave()
 equal(context.editorUi, state, "save failure keeps draft open")
 assert(string.find(state.status, "simulated SD write failure", 1, true), "save error is displayed")
+equal(state.statusLabel.hidden, false, "save failures remain visible")
 state.handlers.advanceSave = function()
     error("simulated file API exception")
 end
 refresh(EVT_VIRTUAL_EXIT)
+equal(state.statusLabel.hidden, true, "retry hides the previous failure while saving")
 settleSave()
 equal(context.editorUi, state, "file API exception retains draft")
 assert(string.find(state.status, "simulated file API exception", 1, true), "file API exception is surfaced")

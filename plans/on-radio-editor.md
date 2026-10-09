@@ -44,6 +44,9 @@ editor decisions here rather than changing `plans/aerogrid-spec.md`.
 
 ## Current implementation
 
+Saving does not show a progress/status message. The dashboard remains visible
+while staged saving finishes; failures still show an error and retain the draft.
+
 Panel reflow immediately recentres the current reading and places its unit
 beside it, even when telemetry has not changed. Metric, link-status, TX battery,
 cell battery, and navigation share the same reading/unit reflow helper; timers

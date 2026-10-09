@@ -134,7 +134,7 @@ metric or text-entry drawer returns to the main drawer before previewing.
 
 **Return** closes text editing or a drawer one level at a time. From the editing
 dashboard, Return validates and saves the layout, then exits editing.
-Leaving fullscreen also saves. Saving runs over several callbacks to respect
+Leaving fullscreen also saves. Saving is silent and runs over several callbacks to respect
 the radio's CPU limit; wait for it to finish before powering off. Unchanged
 layouts are not rewritten. The previous saved file is kept as `.bak`.
 If saving fails, the draft is retained with an error so you can retry; if you

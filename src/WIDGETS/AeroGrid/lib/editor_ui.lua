@@ -128,7 +128,7 @@ local function saveAndClose(context, state)
     state.mode = "menu"
     state.saveFailed = false
     state.saving = { index = 1, accepted = {}, identifiers = {} }
-    state.status, state.statusError = "Saving layout...", true
+    state.status, state.statusError = "", false
     render(context, state)
 end
 
