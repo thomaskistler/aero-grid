@@ -16,7 +16,7 @@ Select the **+** tab, then tap **Add Screen**.
 On the new screen, tap the **Layout** thumbnail and choose **App mode**.
 This makes one widget fill the screen.
 
-![Screen layout picker with App mode at the top](../assets/editor/screen-layout.png)
+![Screen layout picker with App mode highlighted](../assets/editor/screen-layout.png)
 
 Tap **Setup widgets**, then tap the empty widget area.
 
@@ -31,8 +31,6 @@ own dashboard, or **Default** to start with the bundled aircraft dashboard.
 Choose **Modern** or **EdgeTX** for **Theme**.
 
 ![AeroGrid widget settings with Layout and Theme pickers](../assets/editor/widget-options.png)
-
-![Layout picker offering Empty, default, and host](../assets/editor/select-layout.png)
 
 Press **RTN** to close the settings and leave setup. Your dashboard is now
 on the new screen. Repeat these steps to add another dashboard.
