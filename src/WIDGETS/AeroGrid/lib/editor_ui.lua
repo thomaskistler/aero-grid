@@ -115,19 +115,23 @@ local function openDrawer(context, state, mode)
     render(context, state)
 end
 
-local function saveAndClose(context, state)
+--- Save the draft to `name`, or to this dashboard's own layout when nil.
+local function saveAndClose(context, state, name)
     if state.saving then
         return
     end
-    if not state.session.dirty then
+    if not state.session.dirty and not name then
         state.handlers.close(false)
         return
+    end
+    if name == state.handlers.layoutName() then
+        name = nil
     end
     context.editorDrawerModule.close(state)
     state.previewPending, state.previewRefresh = nil, nil
     state.mode = "menu"
     state.saveFailed = false
-    state.saving = { index = 1, accepted = {}, identifiers = {} }
+    state.saving = { index = 1, accepted = {}, identifiers = {}, name = name }
     state.status, state.statusError = "", false
     render(context, state)
 end
@@ -189,6 +193,34 @@ function uiModule.advance(context)
         end
         return true
     end
+    local command = state.exitCommand
+    if command then
+        state.exitCommand = nil
+        local drawerModule, handlers = context.editorDrawerModule, state.handlers
+        if command.action == "save" then
+            saveAndClose(context, state)
+        elseif command.action == "save-as" then
+            drawerModule.openName(context, state, handlers.suggestName())
+        elseif command.action == "exit" then
+            drawerModule.openExit(context, state)
+        elseif command.action == "discard" then
+            drawerModule.close(state)
+            handlers.editor.cancel(state.session)
+            handlers.close(false)
+        elseif command.action == "name" then
+            local valid, nameError = handlers.validName(command.name)
+            if not valid then
+                drawerModule.openName(context, state, command.name or "", nameError)
+            elseif handlers.exists(command.name) then
+                drawerModule.confirmOverwrite(context, state, command.name)
+            else
+                saveAndClose(context, state, command.name)
+            end
+        elseif command.action == "write" then
+            saveAndClose(context, state, command.name)
+        end
+        return true
+    end
     if state.drawerBuild ~= nil or state.drawerPending then
         context.editorDrawerModule.advance(context, state)
         if state.drawerBuild == nil then
@@ -237,13 +269,25 @@ function uiModule.advance(context)
                 saving.identifiers[placement.id] = true
                 saving.index = saving.index + 1
             else
-                saving.store = state.handlers.startSave(session.draft)
+                saving.store = state.handlers.startSave(session.draft, saving.name)
             end
         else
             local done, saved, saveError = state.handlers.advanceSave(saving.store)
             if done then
                 state.saving = nil
-                if saved then
+                if saved and saving.name then
+                    -- Lua cannot change widget options, so this dashboard keeps
+                    -- its own layout; the new name is listed after a restart.
+                    state.handlers.close(false)
+                    if type(lvgl.message) == "function" then
+                        lvgl.message({
+                            title = "Saved as " .. saving.name,
+                            message = "Restart the radio, then select "
+                                .. saving.name
+                                .. " in the widget's Layout setting.",
+                        })
+                    end
+                elseif saved then
                     state.handlers.close(true)
                 else
                     failed(saveError)
@@ -308,6 +352,8 @@ function uiModule.advance(context)
         render(context, state)
         state.buildStage = nil
         lvgl.show(state.screen)
+        -- A resumed draft differs from the committed dashboard just rebuilt.
+        state.previewPending = state.handlers.resumed or nil
         return true
     end
     state.buildStage = stage + 1
@@ -327,13 +373,6 @@ function uiModule.close(context, discard)
     lvgl.hide(state.screen)
     lvgl.show(context.page)
     context.editorUi = nil
-end
-
-function uiModule.finish(context)
-    if context.editorUi then
-        saveAndClose(context, context.editorUi)
-    end
-    return context.editorUi == nil
 end
 
 function uiModule.saveFailure(context, message)
@@ -445,7 +484,14 @@ end
 
 function uiModule.handle(context, event, touch)
     local state = context.editorUi
-    if not state or state.buildStage or state.saving or state.previewPending or state.previewRefresh then
+    if
+        not state
+        or state.buildStage
+        or state.saving
+        or state.previewPending
+        or state.previewRefresh
+        or state.exitCommand
+    then
         return false
     end
     -- Modal input, including picker/keyboard RTN, belongs to native LVGL.
@@ -473,7 +519,11 @@ function uiModule.handle(context, event, touch)
             return true
         end
     elseif matches(event, "EVT_VIRTUAL_EXIT") then
-        saveAndClose(context, state)
+        if state.session.dirty then
+            context.editorDrawerModule.openExit(context, state)
+        else
+            state.handlers.close(false)
+        end
         return true
     elseif matches(event, "EVT_VIRTUAL_ENTER") then
         openDrawer(context, state, (state.keyAdd or #state.session.draft.panels == 0) and "add" or "configure")

@@ -124,54 +124,50 @@ writes, backup rotation, and recovery. Preserve unknown configuration keys
 and do not rewrite unsupported newer layout versions. Firmware callbacks
 must stay within the editor's 15,000-instruction regression-test budget.
 
-## Planned exit dialog (not implemented)
+## Exit dialog and named layouts (implemented)
 
-User decisions, 2026-10-07:
+User decisions, 2026-10-07 and 2026-10-09:
 
 - Return from dashboard editing exits immediately if nothing changed.
-- Otherwise, show the current layout name and **Cancel / Save / Save As**
-  actions instead of immediately saving.
-- Save validates and updates the current named layout, then exits editing.
-  Other dashboards referencing that layout pick up the changes on reload.
-- Save As asks for a new name, validates and saves an independent copy,
-  switches this dashboard to that copy, and exits editing. Leave the
-  original layout unchanged.
-- Dismissing the Save As name entry returns to the exit dialog without
-  losing the draft.
-- Cancel discards draft changes and exits editing, restoring the committed
-  dashboard without writing the layout.
-- Leaving fullscreen does nothing: it must not trigger saving, discard,
-  or the exit dialog. Retain the draft so fullscreen reentry can resume it.
+  Otherwise a native **Unsaved changes** menu offers **Save**,
+  **Save as...** and **Discard changes**. Dismissing the menu keeps editing.
+  This supersedes the earlier Save / Cancel-only decision and the interim
+  automatic save on Return.
+- The layout name is the identity. There is no separate dashboard-instance
+  identifier and no model-specific file: the widget's **Layout** setting
+  names a complete layout, and every dashboard selecting it shares it.
+  Saving updates it for all of them on their next load.
+- Storage is split. Shipped layouts stay in `/WIDGETS/AeroGrid/layouts/`;
+  user layouts go to `/AEROGRID/layouts/<name>.yaml`, outside the widget,
+  so updates never touch them. A user layout shadows a shipped one of the
+  same name. Load order: user, user backup, shipped, `default`, default
+  backup.
+- Save writes the current name. Saving a shipped layout writes a user copy
+  under the same name, which is the shipped-template write protection.
+- `Empty` is a shipped blank layout and is never overwritten: Save is not
+  offered on it, and the name is reserved.
+- Save As suggests the sanitized model name plus the first unused number
+  (`Sonic1`), validates the name (letters, digits, `-`, `_`; at most 24
+  characters), and asks before overwriting an existing name. Return in the
+  name entry goes back to the menu with the draft intact.
+- Lua cannot write widget options, so Save As cannot switch this dashboard
+  to the new layout. The dashboard keeps its current layout, and a message
+  tells the user to restart and select the new name. Decided 2026-10-09.
+- **Layout** is a CHOICE built when EdgeTX loads the script, from an
+  append-only `/AEROGRID/registry.txt` plus the names found in both
+  folders. EdgeTX stores a CHOICE as a position, so names are never removed
+  or reordered; new layouts appear after a restart.
+- No migration. A widget saved with the old **Dashboard ID** string resets
+  to `Empty` (the firmware resets an option whose stored type changed), and
+  `<model>--<dashboard>.yaml` files are no longer read.
+- Leaving fullscreen does nothing to the draft: no save, discard or prompt.
+  The committed layout is shown and fullscreen reentry resumes the draft,
+  which lives in memory until restart, model change, or a Layout or Theme
+  change.
 - Return inside a settings/catalog drawer still closes that drawer first.
 
-The three-action dialog supersedes the earlier Save / Cancel-only decision.
-Layout management is tracked in
-[issue #127](https://github.com/thomaskistler/aero-grid/issues/127);
-existing-name conflict handling and shipped-template write protection still
-need to be settled there before implementing the shared-layout workflow.
-The exit workflow above is planned, not implemented; current behavior still
-saves automatically on Return and fullscreen exit.
-
-## Named shared layouts (planned)
-
-User decision, 2026-10-07: Keep sharing simple. Dashboards can reference the
-same complete named layout rather than always creating model-specific copies
-from a template.
-
-- Saving an existing shared name updates that layout for all dashboards
-  referencing it on their next load/reload.
-- Save As creates an independent named layout for the current dashboard.
-- Share the entire layout, including panel settings. Users decide whether
-  sources, switches, timers, and other settings suit the models sharing it.
-- Do not add inheritance, per-model overrides, or automatic compatibility
-  decisions. Normal validation and unavailable-source reporting still apply.
-- Keep the reusable layout name distinct from the dashboard-instance
-  identifier (`DashID`).
-
-This supersedes the copy-only template proposal. First-run template selection,
-an Empty layout, storage organization, and shipped-template handling were
-discussed but are not settled requirements. Restore defaults remains part of
-the separate layout-management topic.
+Layout management beyond this (deleting, renaming, restoring defaults) is
+tracked in [issue #127](https://github.com/thomaskistler/aero-grid/issues/127).
 
 ## Configuration drawers (implemented)
 
@@ -200,8 +196,8 @@ or outside-touch cancellation leaves the draft unchanged.
 - Outside-touch dismissal and physical RTN perform the same action: close
   the drawer, retain draft changes, and return to dashboard editing without
   saving. Nested text editing/pickers return one level first.
-- RTN from dashboard editing opens the planned Cancel / Save / Save As dialog if the
-  draft changed, or exits immediately otherwise. It currently saves and exits.
+- RTN from dashboard editing opens the Save / Save as / Discard menu if the
+  draft changed, or exits immediately otherwise.
 - Settings update the draft without a separate drawer Apply/Save action.
 
 EdgeTX navigation references:
@@ -334,16 +330,6 @@ mock test suite, or native simulator runs.
 
 ### Still to build
 
-- **Exit dialog:** Replace automatic saving on Return with the agreed
-  Cancel / Save / Save As dialog (see "Planned exit dialog"). Return with
-  no changes exits immediately. Leaving fullscreen keeps the draft without
-  saving or prompting; today it still saves.
-- **Save As name entry:** Native text entry for the new layout name.
-  Dismissing it returns to the exit dialog with the draft intact.
-- **Named shared layouts:** The reference and persistence support that Save
-  and Save As need, tracked in
-  [#127](https://github.com/thomaskistler/aero-grid/issues/127). Settle
-  existing-name conflicts and shipped-template write protection there first.
 - **Entry fields for new panels:** Metric and text, the only shipped panels
   with list settings, declare their entry `fields`. Any future list setting
   must declare `fields` too; without them the drawer falls back to showing
@@ -351,21 +337,16 @@ mock test suite, or native simulator runs.
 
 ### Awaiting physical-radio confirmation
 
-- No crash when opening, closing and reopening drawers and dialogs
-  repeatedly (hosted-dialog fix).
-- No white/black flash when returning from editing to fullscreen or from
-  fullscreen to App mode (saved-layout adoption).
-- Top-left panel layout and menu-button corner reservation are correct
-  after returning to App mode.
-- Fullscreen can be re-entered after returning to App mode.
-- Every metric and text entry setting appears in the drawer; "Off" and
-  "Sensor" display correctly for unset values, and clearing removes them.
-  The native `numberEdit` sentinel for unset values is not yet checked in
-  the simulator.
-- Picked sources are saved under the Lua field name panels read (`gvar1`,
-  `ch3`, `sf`, plain sensor labels). Sources picked before this fix, such as
-  `GV1` or an icon-prefixed sensor, must be picked again or edited by hand.
-  Global-variable selection is not yet checked in the simulator.
+Confirmed on the radio 2026-10-09 for the build before the exit dialog:
+repeated drawer and dialog use without crashes, no flash on leaving editing
+or fullscreen, App mode corner reservation and fullscreen reentry, every
+entry setting in the drawer, and source picking including global variables.
+
+- Exit dialog: Save, Save as (suggested name, overwrite confirmation,
+  restart message), Discard, no Save on `Empty`, and draft resume after
+  leaving fullscreen.
+- The **Layout** list after a restart includes newly saved layouts and keeps
+  every earlier position.
 
 ### Broader verification
 

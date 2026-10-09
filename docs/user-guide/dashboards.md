@@ -2,19 +2,30 @@
 
 ## Select a layout
 
-Set **Dashboard ID** in the widget settings to the layout's filename without
-`.yaml`. Use `default` for the bundled aircraft dashboard.
+Choose **Layout** in the widget settings. The list contains `Empty`, every
+layout shipped in `/WIDGETS/AeroGrid/layouts/`, and every layout you have saved
+in `/AEROGRID/layouts/`. Use `default` for the bundled aircraft dashboard, or
+`Empty` to start a new screen from a blank grid.
 
-Layouts are stored in `/WIDGETS/AeroGrid/layouts/`. AeroGrid looks for these
-files in order:
+The layout name is its identity on every model. A layout you saved under the
+same name as a shipped one takes precedence over it, and widget updates never
+touch `/AEROGRID/`. A name with no file falls back to `default`.
 
-1. `<model-identifier>--<dashboard-id>.yaml` for a model-specific layout.
-2. `<dashboard-id>.yaml` for a layout shared across models.
-3. `default.yaml` if neither file exists.
+EdgeTX reads the list only when the radio starts, so a layout saved or copied
+to the SD card appears after a restart. The list order is recorded in
+`/AEROGRID/registry.txt` and only ever grows: EdgeTX stores the setting as a
+position in the list, so deleting a layout file leaves its entry, and
+selecting it then shows `default`. Delete the registry file only if no screen
+selects a saved layout, because every position is reassigned.
 
-Use a different Dashboard ID on each EdgeTX screen to select different layouts.
+Use a different layout on each EdgeTX screen to show different dashboards.
 You can edit layouts on the radio in temporary fullscreen mode, or edit YAML
 files on a computer and copy them to the SD card.
+
+Upgrading from a version with a **Dashboard ID** text setting resets each
+AeroGrid widget to `Empty`; select its layout again. Model-specific files named
+`<model>--<dashboard>.yaml` are no longer read; rename one to a plain layout
+name and move it to `/AEROGRID/layouts/` to keep it.
 
 Before using the bundled layout, adjust its source names, battery cell count,
 and alarm thresholds for your model. Its battery source must measure the
@@ -52,8 +63,8 @@ panels:
       accent: green
 ```
 
-Save it as `/WIDGETS/AeroGrid/layouts/my-dashboard.yaml` and select
-`my-dashboard` as Dashboard ID.
+Save it as `/AEROGRID/layouts/my-dashboard.yaml`, restart the radio, and
+select `my-dashboard` as Layout. Names may use letters, digits, `-` and `_`.
 
 Positions are zero-based: `col: 0`, `row: 0` is the top-left cell. Spans specify
 how many cells a panel occupies. Keep placements within the 4 x 4 grid without
@@ -138,18 +149,36 @@ panel drawer closes; placement and size preview immediately. Leaving a nested
 metric or text-entry drawer returns to the main drawer before previewing.
 
 **Return** closes text editing or a drawer one level at a time. From the editing
-dashboard, Return validates and saves the layout, then exits editing.
-Leaving fullscreen also saves. Saving is silent and runs over several callbacks to respect
-the radio's CPU limit; wait for it to finish before powering off. Unchanged
-layouts are not rewritten. The previous saved file is kept as `.bak`.
-If saving fails, the draft is retained with an error so you can retry; if you
-left fullscreen, return to fullscreen to resume. There is no Apply/Cancel toolbar.
-After a fullscreen rebuild, returning to App mode briefly reloads the dashboard
-so EdgeTX's native long-press entry remains available.
+dashboard, Return exits editing directly when nothing changed. Otherwise an
+**Unsaved changes** menu offers:
+
+- **Save** writes the layout under its current name. Saving a shipped layout
+  writes your copy to `/AEROGRID/layouts/` under the same name, leaving the
+  shipped file intact. `Empty` is never overwritten, so it does not offer Save.
+- **Save as...** asks for a new name, suggesting the model name followed by the
+  first unused number, such as `Sonic1`. Choosing an existing name asks for
+  confirmation before overwriting it. The widget keeps showing its current
+  layout: EdgeTX does not let a widget change its own settings, so restart the
+  radio and select the new name in **Layout**. Return in the name dialog goes
+  back to the menu.
+- **Discard changes** restores the saved layout.
+
+Return or a tap outside the menu keeps editing. Saving runs over several
+callbacks to respect the radio's CPU limit; wait for it to finish before
+powering off. Unchanged layouts are not rewritten. The previous saved file is
+kept as `.bak`. If saving fails, the draft is retained with an error so you can
+retry.
+
+Leaving fullscreen while editing neither saves nor discards. The dashboard
+shows its saved layout, and returning to fullscreen resumes the draft. The
+draft is kept in memory only: restarting the radio, changing model, or
+changing the widget's Layout or Theme discards it. After a fullscreen rebuild,
+returning to App mode briefly reloads the dashboard so EdgeTX's native
+long-press entry remains available.
 
 If the primary layout cannot be read, parsed, or validated, AeroGrid tries its
-backup, then the shared Dashboard ID layout and its backup, and finally the
-shipped default and its backup. Review the active path in the `host` diagnostics
+backup, then the shipped layout of that name, and finally the shipped
+default and its backup. Review the active path in the `host` diagnostics
 panel after recovery.
 
 ## App mode and Full screen

@@ -122,6 +122,7 @@ claim("FONT_MASK", FONTS_H, "FONT_MASK", 0x0F00)
 
 -- A widget option type, sharing no numbering with the fonts above.
 claim("STRING", LUA_CONSTANTS, "LROT_NUMENTRY(STRING, WidgetOption::String)", 3)
+claim("CHOICE", LUA_CONSTANTS, "LROT_NUMENTRY(CHOICE, WidgetOption::Choice)", 10)
 
 --- Line heights of the font set a 480 x 272 radio is built with.
 ---
@@ -587,6 +588,7 @@ function support.constants()
     XXLSIZE = firmware.XXLSIZE
     BOLD = firmware.BOLD
     STRING = firmware.STRING
+    CHOICE = firmware.CHOICE
 end
 
 --- Publish `lcd`, and the theme role constants it answers for.
@@ -1273,7 +1275,16 @@ function support.lvgl()
         rawset(object, "hidden", false)
     end
 
-    local menu
+    local menu, confirmation, message
+    -- `confirm` and `message` are popups (`luaLvglPopup` in
+    -- radio/src/lua/api_colorlcd_lvgl.cpp), returning nothing to Lua, with the
+    -- keys `LvglWidgetConfirmDialog` and `LvglWidgetMessageDialog` parse.
+    local function popupKeys(properties, allowed)
+        for key in pairs(properties) do
+            assert(allowed[key], "native popup has no property " .. tostring(key))
+        end
+        assert(type(properties.title) == "string", "native popup needs a title")
+    end
     lvgl = {
         clear = function()
             for _, object in ipairs(objects) do
@@ -1306,6 +1317,14 @@ function support.lvgl()
             assert(type(properties.values) == "table", "native menu needs selection values")
             menu = properties
         end,
+        confirm = function(properties)
+            popupKeys(properties, { title = true, message = true, confirm = true, cancel = true })
+            confirmation = properties
+        end,
+        message = function(properties)
+            popupKeys(properties, { title = true, message = true, details = true })
+            message = properties
+        end,
         close = function(object)
             if object.properties.close then
                 object.properties.close()
@@ -1336,6 +1355,12 @@ function support.lvgl()
     local handle = { settle = settle, objects = objects }
     function handle.menu()
         return menu
+    end
+    function handle.confirm()
+        return confirmation
+    end
+    function handle.message()
+        return message
     end
 
     function handle.replacedFontRefCount()
@@ -1921,6 +1946,12 @@ function support.radio(hostIo)
         size = handle:seek("end")
         handle:close()
         return stat(size)
+    end
+
+    --- firmware: `luaMkdir` returns FatFs's result, 0 when created.
+    function mkdir(directory)
+        os.execute("mkdir -p '" .. directory .. "'")
+        return 0
     end
 
     local handle = { state = radio }

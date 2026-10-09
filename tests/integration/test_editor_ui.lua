@@ -6,6 +6,8 @@ local widget = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().n
 local path = root .. "/build/test-widgets/editor-ui/"
 os.execute("mkdir -p '" .. path .. "'")
 os.execute("cp -R '" .. root .. "/src/WIDGETS/AeroGrid/.' '" .. path .. "'")
+-- User layouts are saved beside the copy, as /AEROGRID/ sits beside /WIDGETS/.
+os.execute("rm -rf '" .. path .. "AEROGRID'")
 local events = {
     EVT_TOUCH_FIRST = 9101,
     EVT_TOUCH_LONG = 9102,
@@ -114,6 +116,24 @@ local function settleSave()
     end
     error("save did not settle")
 end
+--- Leave the editor with RTN and, when changes ask, pick `choice` in the menu.
+local function exitWith(choice)
+    refresh(EVT_VIRTUAL_EXIT)
+    local state = context.editorUi
+    if not state or state.saving or not choice then
+        return
+    end
+    local menu = widget.lvglMock.menu()
+    equal(menu.title, "Unsaved changes", "changed draft asks before leaving")
+    for index, value in ipairs(menu.values) do
+        if value == choice then
+            menu.set(index)
+            refresh()
+            return
+        end
+    end
+    error("exit menu has no " .. choice .. ": " .. table.concat(menu.values, ", "))
+end
 local function tap(x, y)
     refresh(EVT_TOUCH_FIRST, { x = x, y = y })
     refresh(EVT_TOUCH_BREAK, { x = x, y = y })
@@ -204,7 +224,8 @@ local function action(name, key)
     error("drawer action not found: " .. name)
 end
 local function open()
-    local rect = context.grid.rect(context.zone, context.document.panels[1], 4, 4, 4)
+    local first = context.document.panels[1] or { col = 0, row = 0, colSpan = 1, rowSpan = 1 }
+    local rect = context.grid.rect(context.zone, first, 4, 4, 4)
     refresh(EVT_TOUCH_FIRST, { x = rect.x + 50, y = rect.y + 40 })
     widget.tick(59)
     refresh()
@@ -216,10 +237,10 @@ local function open()
     refresh(EVT_TOUCH_BREAK)
 end
 local function load(id)
-    local savePath = path .. "layouts/test-model--" .. id .. ".yaml"
+    local savePath = path .. "AEROGRID/layouts/" .. id .. ".yaml"
     os.remove(savePath)
     os.remove(savePath .. ".bak")
-    context = widget.createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { DashID = id, Theme = "modern" }, path)
+    context = widget.createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = id, Theme = "modern" }, path)
     assert(#context.errors == 0, table.concat(context.errors, "; "))
     widget.pump(context, 10)
 end
@@ -530,12 +551,13 @@ equal(state.mode, "menu", "removal returns to dashboard editing")
 refresh(EVT_TOUCH_TAP, { x = rect.x + rect.w - 48, y = rect.y + 12 })
 equal(#context.editorSession.draft.panels, 1, "duplicate tap is deduplicated")
 
-local savedPath = context.layoutStore.path(path, context.modelFilename or "default", context.dashboardId)
+local savedPath = context.layoutStore.path(path, context.layoutName)
+equal(savedPath, path .. "AEROGRID/layouts/edit-sparse.yaml", "Save writes the user layout of the same name")
 local save = state.handlers.advanceSave
 state.handlers.advanceSave = function()
     return true, false, "simulated SD write failure"
 end
-refresh(EVT_VIRTUAL_EXIT)
+exitWith("Save")
 assert(state.saving, "save still runs asynchronously")
 equal(state.status, "", "saving has no progress text")
 equal(state.statusLabel.hidden, true, "saving hides the status overlay")
@@ -546,13 +568,13 @@ equal(state.statusLabel.hidden, false, "save failures remain visible")
 state.handlers.advanceSave = function()
     error("simulated file API exception")
 end
-refresh(EVT_VIRTUAL_EXIT)
+exitWith("Save")
 equal(state.statusLabel.hidden, true, "retry hides the previous failure while saving")
 settleSave()
 equal(context.editorUi, state, "file API exception retains draft")
 assert(string.find(state.status, "simulated file API exception", 1, true), "file API exception is surfaced")
 state.handlers.advanceSave = save
-refresh(EVT_VIRTUAL_EXIT)
+exitWith("Save")
 settleSave()
 equal(context.editorUi, nil, "Return saves and exits")
 for _ = 1, 60 do
@@ -618,7 +640,7 @@ context.editorSession.selected = 14
 assert(
     state.handlers.editor.move(context.editorSession, swapSecond.col - swapFirst.col, swapSecond.row - swapFirst.row)
 )
-refresh(EVT_VIRTUAL_EXIT)
+exitWith("Save")
 settleSave()
 equal(context.editorUi, nil, "full-grid save exits")
 for _ = 1, 60 do
@@ -644,7 +666,8 @@ open()
 widget.lvglMock.setFullScreen(false)
 refresh()
 settleSave()
-equal(context.editorUi, nil, "fullscreen exit saves completed editor")
+equal(context.editorUi, nil, "fullscreen exit closes an unchanged editor")
+equal(context.editorStash, nil, "an unchanged draft is not kept")
 
 -- A geometry-only save keeps the previewed dashboard instead of reloading it,
 -- so no box is built in fullscreen and App mode needs no rebuild.
@@ -658,7 +681,7 @@ for cycle = 1, 3 do
     local placement = context.editorSession.draft.panels[1]
     local targetCol = placement.col == 0 and 1 or 0
     assert(context.editorUi.handlers.editor.move(context.editorSession, targetCol - placement.col, 0))
-    refresh(EVT_VIRTUAL_EXIT)
+    exitWith("Save")
     settleSave()
     equal(context.editorUi, nil, "geometry save exits the editor")
     equal(context.reloadState, nil, "geometry save keeps the previewed dashboard")
@@ -677,7 +700,7 @@ end
 widget.lvglMock.setFullScreen(false)
 local reloaded = widget.createLoaded(
     { x = 0, y = 0, w = 480, h = 272 },
-    { DashID = "edit-sparse", Theme = "modern" },
+    { Layout = "edit-sparse", Theme = "modern" },
     path
 )
 equal(reloaded.document.panels[1].col, context.document.panels[1].col, "adopted geometry matches the saved file")
@@ -717,12 +740,12 @@ open()
 context.editorSession.selected = 2
 assert(context.editorUi.handlers.editor.move(context.editorSession, -1, 0))
 equal(context.editorSession.draft.panels[2].col, 0, "second panel moves into the corner")
-refresh(EVT_VIRTUAL_EXIT)
+exitWith("Save")
 settleSave()
 widget.lvglMock.setFullScreen(false)
 widget.pump(context, 40)
 assert(context.reserved, "App return reserves the menu button corner")
-local fresh = widget.createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { DashID = "edit-pair", Theme = "modern" }, path)
+local fresh = widget.createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "edit-pair", Theme = "modern" }, path)
 widget.pump(fresh, 10)
 equal(labelLayout(context), labelLayout(fresh), "corner panel moved in fullscreen reserves the menu button")
 
@@ -739,7 +762,7 @@ context.editorSession.selected = 1
 assert(context.editorModule.setPath(context.editorSession, "metrics", { 1, "label" }, "NEW"))
 context.editorUi.previewPending = true
 settleDrawer()
-refresh(EVT_VIRTUAL_EXIT)
+exitWith("Save")
 settleSave()
 equal(context.reloadState, nil, "content save keeps the previewed dashboard")
 equal(context.page, appPage, "content save does not reload in fullscreen")
@@ -779,7 +802,7 @@ settleDrawer()
 equal(dismissedDialog.invalid, true, "closed native dialog wrapper is unregistered")
 equal(state.nativeDrawerHost, nil, "dialog host is released")
 equal(context.nativeDialogsCreated, nil, "hosted dialogs need no host-wide reload")
-refresh(EVT_VIRTUAL_EXIT)
+exitWith("Save")
 settleSave()
 widget.lvglMock.setFullScreen(false)
 widget.pump(context, 150)
@@ -815,7 +838,7 @@ for _, vertical in ipairs({ true, false }) do
     equal(context.panels[2].instance, originalSecond, "directional reorder retains displaced instance")
     equal(context.panels[1].container.properties.y, target.y, "selected preview uses reordered geometry")
     equal(context.panels[2].container.properties.x, 0, "displaced preview moves to combined-space origin")
-    refresh(EVT_VIRTUAL_EXIT)
+    exitWith("Save")
     settleSave()
     for _ = 1, 70 do
         refresh()
@@ -869,7 +892,7 @@ for _, vertical in ipairs({ true, false }) do
         equal(context.panels[1].container.properties.y, target.y, "small preview follows new row")
         equal(context.panels[2].container.properties.x, 0, "large preview occupies empty adjacent column")
         equal(context.panels[2].container.properties.y, 0, "large preview occupies empty adjacent row")
-        refresh(EVT_VIRTUAL_EXIT)
+        exitWith("Save")
         settleSave()
         for _ = 1, 70 do
             refresh()
@@ -926,7 +949,164 @@ for _ = 1, 70 do
 end
 equal(context.panels[1].instance.label.properties.text, "ALT", "discard restores original panel contents")
 equal(context.document.panels[1].config.metrics[1].label, "ALT", "previews never mutate committed layout")
-assert(not hostIo.open(path .. "layouts/test-model--edit-sparse.yaml", "r"), "discard does not write a layout")
+assert(not hostIo.open(path .. "AEROGRID/layouts/edit-sparse.yaml", "r"), "discard does not write a layout")
+
+-- Exit menu: Discard, Save As with a suggested name, overwrite confirmation.
+local function changeFirstLabel(text)
+    assert(context.editorModule.setPath(context.editorSession, "metrics", { 1, "label" }, text))
+end
+local function savedLabel(name)
+    local file = hostIo.open(path .. "AEROGRID/layouts/" .. name .. ".yaml", "r")
+    if not file then
+        return nil
+    end
+    local parsed = assert(context.yaml.parse(file:read("*a")))
+    file:close()
+    return parsed.panels[1].config.metrics[1].label
+end
+widget.lvglMock.setFullScreen(true)
+load("edit-sparse")
+open()
+changeFirstLabel("GONE")
+refresh(EVT_VIRTUAL_EXIT)
+local exitMenu = widget.lvglMock.menu()
+equal(table.concat(exitMenu.values, "|"), "Save|Save as...|Discard changes", "exit menu offers three actions")
+equal(context.editorUi.mode, "menu", "RTN on the exit menu keeps editing")
+exitWith("Discard changes")
+equal(context.editorUi, nil, "Discard leaves the editor")
+equal(savedLabel("edit-sparse"), nil, "Discard writes nothing")
+for _ = 1, 70 do
+    refresh()
+end
+equal(context.document.panels[1].config.metrics[1].label, "ALT", "Discard keeps the committed layout")
+
+os.remove(path .. "AEROGRID/layouts/" .. model.getInfo().name .. "1.yaml")
+open()
+changeFirstLabel("COPY")
+exitWith("Save as...")
+state = context.editorUi
+equal(state.mode, "name", "Save As asks for a name")
+local nameEdit, nameButton
+for _, child in ipairs(state.nativeDrawer.children) do
+    if child.kind == "textEdit" then
+        nameEdit = child
+    elseif child.kind == "button" then
+        nameButton = child
+    end
+end
+local suggested = string.gsub(model.getInfo().name, "[^%w_-]+", "-") .. "1"
+equal(nameEdit.properties.value, suggested, "Save As suggests the model name and a free number")
+lvgl.close(state.nativeDrawer)
+refresh()
+equal(widget.lvglMock.menu().title, "Unsaved changes", "RTN on the name returns to the exit menu")
+exitWith("Save as...")
+state = context.editorUi
+for _, child in ipairs(state.nativeDrawer.children) do
+    if child.kind == "textEdit" then
+        nameEdit = child
+    elseif child.kind == "button" then
+        nameButton = child
+    end
+end
+nameEdit.properties.set("Empty")
+nameButton.properties.press()
+refresh()
+equal(context.editorUi.mode, "name", "a reserved name is refused")
+local refused
+for _, child in ipairs(context.editorUi.nativeDrawer.children) do
+    if child.kind == "label" and child.properties.text ~= "" then
+        refused = child.properties.text
+    end
+end
+assert(refused and string.find(refused, "reserved", 1, true), "the refusal is explained")
+for _, child in ipairs(context.editorUi.nativeDrawer.children) do
+    if child.kind == "textEdit" then
+        nameEdit = child
+    elseif child.kind == "button" then
+        nameButton = child
+    end
+end
+nameEdit.properties.set("Copy_1")
+nameButton.properties.press()
+refresh()
+settleSave()
+equal(context.editorUi, nil, "Save As leaves the editor")
+equal(savedLabel("Copy_1"), "COPY", "Save As writes the draft under the new name")
+equal(savedLabel("edit-sparse"), nil, "Save As leaves this dashboard's layout alone")
+local note = widget.lvglMock.message()
+equal(note.title, "Saved as Copy_1", "Save As reports the saved name")
+assert(string.find(note.message, "Restart the radio", 1, true), "Save As explains the restart")
+for _ = 1, 70 do
+    refresh()
+end
+equal(context.document.panels[1].config.metrics[1].label, "ALT", "this dashboard keeps its committed layout")
+equal(context.layoutName, "edit-sparse", "this dashboard keeps its layout name")
+
+open()
+changeFirstLabel("AGAIN")
+exitWith("Save as...")
+state = context.editorUi
+for _, child in ipairs(state.nativeDrawer.children) do
+    if child.kind == "textEdit" then
+        nameEdit = child
+    elseif child.kind == "button" then
+        nameButton = child
+    end
+end
+nameEdit.properties.set("Copy_1")
+nameButton.properties.press()
+refresh()
+local overwrite = widget.lvglMock.confirm()
+equal(overwrite.title, "Overwrite Copy_1?", "an existing name asks before replacing")
+equal(context.editorUi.mode, "name", "Back keeps the name dialog")
+overwrite.confirm()
+refresh()
+settleSave()
+equal(savedLabel("Copy_1"), "AGAIN", "Overwrite replaces the existing layout")
+
+-- Empty is never written: Save is not offered, and Save As names the copy.
+write("Empty", "version: 1\ngrid:\n  columns: 4\n  rows: 4\npanels: {}\n")
+load("Empty")
+equal(#context.document.panels, 0, "Empty starts blank")
+open()
+local addTile = assert(context.editorUi.addRect)
+tap(addTile.x + 50, addTile.y + 40)
+settleDrawer()
+for index, item in ipairs(context.editorUi.handlers.editor.CATALOG) do
+    if item.type == "metric" then
+        widget.lvglMock.menu().set(index)
+        break
+    end
+end
+settleDrawer()
+back()
+refresh(EVT_VIRTUAL_EXIT)
+equal(table.concat(widget.lvglMock.menu().values, "|"), "Save as...|Discard changes", "Empty offers no Save")
+exitWith("Discard changes")
+assert(not hostIo.open(path .. "AEROGRID/layouts/Empty.yaml", "r"), "Empty is never written")
+
+-- Leaving fullscreen neither saves nor discards; the draft resumes on return.
+load("edit-sparse")
+os.remove(path .. "AEROGRID/layouts/edit-sparse.yaml")
+widget.lvglMock.setFullScreen(true)
+open()
+changeFirstLabel("KEPT")
+local stashed = context.editorSession
+widget.lvglMock.setFullScreen(false)
+refresh()
+equal(context.editorUi, nil, "App mode shows no editor")
+equal(context.editorStash, stashed, "the changed draft is kept")
+equal(savedLabel("edit-sparse"), nil, "leaving fullscreen does not save")
+widget.pump(context, 80)
+equal(context.panels[1].instance.label.properties.text, "ALT", "App mode shows the committed layout")
+widget.lvglMock.setFullScreen(true)
+settle()
+equal(context.editorSession, stashed, "returning to fullscreen resumes the draft")
+settleDrawer()
+equal(context.panels[1].instance.label.properties.text, "KEPT", "the resumed draft is previewed")
+exitWith("Save")
+settleSave()
+equal(savedLabel("edit-sparse"), "KEPT", "the resumed draft saves")
 
 widget.lvglMock.setFullScreen(true)
 lvgl.UI_ELEMENT_HEIGHT = 48
@@ -987,7 +1167,7 @@ for index = 1, #context.editorSession.draft.panels do
     end
 end
 context.editorSession.dirty = true
-refresh(EVT_VIRTUAL_EXIT)
+exitWith("Save")
 settleSave()
 equal(context.editorUi, nil, "aircraft layout and service configuration save")
 lvgl.UI_ELEMENT_HEIGHT = nil

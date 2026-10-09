@@ -642,9 +642,9 @@ screenData:
                widgetData: 
                   options: 
                      0:
-                        type: String
+                        type: Unsigned
                         value: 
-                           stringValue: sim
+                           unsignedValue: 17
                      1:
                         type: String
                         value: 
@@ -658,9 +658,9 @@ screenData:
                widgetData: 
                   options: 
                      0:
-                        type: String
+                        type: Unsigned
                         value: 
-                           stringValue: sim2
+                           unsignedValue: 18
                      1:
                         type: String
                         value: 
@@ -674,9 +674,9 @@ screenData:
                widgetData: 
                   options: 
                      0:
-                        type: String
+                        type: Unsigned
                         value: 
-                           stringValue: states
+                           unsignedValue: 19
                      1:
                         type: String
                         value: 
@@ -690,9 +690,9 @@ screenData:
                widgetData: 
                   options: 
                      0:
-                        type: String
+                        type: Unsigned
                         value: 
-                           stringValue: states
+                           unsignedValue: 19
                      1:
                         type: String
                         value: 
@@ -706,9 +706,9 @@ screenData:
                widgetData: 
                   options: 
                      0:
-                        type: String
+                        type: Unsigned
                         value: 
-                           stringValue: host
+                           unsignedValue: 3
                      1:
                         type: String
                         value: 
@@ -723,9 +723,9 @@ screenData:
                widgetData:
                   options:
                      0:
-                        type: String
+                        type: Unsigned
                         value:
-                           stringValue: default
+                           unsignedValue: 2
                      1:
                         type: String
                         value:
@@ -739,9 +739,9 @@ screenData:
                widgetData:
                   options:
                      0:
-                        type: String
+                        type: Unsigned
                         value:
-                           stringValue: default
+                           unsignedValue: 2
                      1:
                         type: String
                         value:

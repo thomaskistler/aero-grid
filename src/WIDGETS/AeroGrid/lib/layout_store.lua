@@ -65,37 +65,123 @@ local function readFile(filename, fileOps)
     return content
 end
 
---- Resolve the model- and dashboard-specific YAML filename.
----@param widgetPath string Absolute AeroGrid widget directory.
----@param modelFilename string Current EdgeTX model filename.
----@param dashboardId string Native Dashboard ID option.
+--- The always-blank layout. It is never written, so new screens start empty.
+layoutStore.EMPTY = "Empty"
+
+--- Longest layout name accepted from the editor.
+layoutStore.NAME_LIMIT = 24
+
+local function directory(path)
+    return string.sub(path, -1) == "/" and path or path .. "/"
+end
+
+--- SD-card root that holds the widget directory.
+--- `/WIDGETS/AeroGrid/` yields `/`; any other location yields the widget
+--- directory itself, which keeps test copies self-contained.
+---@param widgetPath string
 ---@return string
-function layoutStore.path(widgetPath, modelFilename, dashboardId)
-    local base = widgetPath
-    if string.sub(base, -1) ~= "/" then
-        base = base .. "/"
+function layoutStore.sdRoot(widgetPath)
+    local base = directory(widgetPath)
+    return string.match(base, "^(.*/)WIDGETS/[^/]+/$") or base
+end
+
+--- Directory of user layouts, kept outside the widget so updates leave it alone.
+---@param widgetPath string
+---@return string
+function layoutStore.userDirectory(widgetPath)
+    return layoutStore.sdRoot(widgetPath) .. "AEROGRID/layouts/"
+end
+
+--- Whether a layout name names the reserved blank layout.
+---@param name any
+---@return boolean
+function layoutStore.isEmpty(name)
+    return name == nil or name == "" or string.lower(tostring(name)) == string.lower(layoutStore.EMPTY)
+end
+
+--- Check a layout name typed in the editor.
+---@param name any
+---@return boolean ok
+---@return string? error
+function layoutStore.validName(name)
+    if type(name) ~= "string" or name == "" then
+        return false, "Enter a layout name"
     end
-    return base .. "layouts/" .. sanitize(modelFilename) .. "--" .. sanitize(dashboardId) .. ".yaml"
+    if #name > layoutStore.NAME_LIMIT then
+        return false, "Use at most " .. layoutStore.NAME_LIMIT .. " characters"
+    end
+    if not string.match(name, "^[%w_-]+$") then
+        return false, "Use only letters, digits, - and _"
+    end
+    if layoutStore.isEmpty(name) then
+        return false, layoutStore.EMPTY .. " is reserved"
+    end
+    return true
+end
+
+--- Resolve the user YAML filename that Save writes for a layout name.
+---@param widgetPath string Absolute AeroGrid widget directory.
+---@param name string Layout name selected in the native widget settings.
+---@return string
+function layoutStore.path(widgetPath, name)
+    return layoutStore.userDirectory(widgetPath) .. sanitize(name) .. ".yaml"
+end
+
+--- Whether a user or shipped layout already uses this name.
+---@param widgetPath string
+---@param name string
+---@return boolean
+function layoutStore.exists(widgetPath, name)
+    local stat = fstat
+    if type(stat) ~= "function" then
+        return false
+    end
+    return stat(layoutStore.path(widgetPath, name)) ~= nil
+        or stat(directory(widgetPath) .. "layouts/" .. sanitize(name) .. ".yaml") ~= nil
+end
+
+--- Suggest `<model><N>` with the first number no layout uses yet.
+---@param widgetPath string
+---@param modelName any
+---@return string
+function layoutStore.suggestName(widgetPath, modelName)
+    local base = string.gsub(tostring(modelName or ""), "[^%w_-]+", "-")
+    base = string.gsub(string.gsub(base, "^%-+", ""), "%-+$", "")
+    if base == "" then
+        base = "Layout"
+    end
+    for number = 1, 999 do
+        local suffix = tostring(number)
+        local name = string.sub(base, 1, layoutStore.NAME_LIMIT - #suffix) .. suffix
+        if not layoutStore.exists(widgetPath, name) then
+            return name
+        end
+    end
+    return string.sub(base, 1, layoutStore.NAME_LIMIT - 4) .. "1000"
 end
 
 --- Return layout paths in recovery order, including the previous committed copy.
+--- A user layout and its backup come first, then the shipped layout of that
+--- name, then the shipped default. Empty is never written, so it has no user
+--- candidates.
 ---@param widgetPath string
----@param modelFilename string
----@param dashboardId string
+---@param name string Layout name selected in the native widget settings.
 ---@return table[]
-function layoutStore.candidates(widgetPath, modelFilename, dashboardId)
-    local base = string.sub(widgetPath, -1) == "/" and widgetPath or widgetPath .. "/"
-    local modelPath = layoutStore.path(widgetPath, modelFilename, dashboardId)
-    local sharedPath = base .. "layouts/" .. sanitize(dashboardId) .. ".yaml"
+function layoutStore.candidates(widgetPath, name)
+    local base = directory(widgetPath)
+    local shippedPath = base .. "layouts/" .. sanitize(name) .. ".yaml"
     local defaultPath = base .. "layouts/default.yaml"
-    local paths = {
-        { filename = modelPath, origin = "model" },
-        { filename = modelPath .. ".bak", origin = "model-backup" },
-        { filename = sharedPath, origin = "dashboard" },
-        { filename = sharedPath .. ".bak", origin = "dashboard-backup" },
-        { filename = defaultPath, origin = "default" },
-        { filename = defaultPath .. ".bak", origin = "default-backup" },
-    }
+    local paths = {}
+    if not layoutStore.isEmpty(name) then
+        local userPath = layoutStore.path(widgetPath, name)
+        paths[#paths + 1] = { filename = userPath, origin = "user" }
+        paths[#paths + 1] = { filename = userPath .. ".bak", origin = "user-backup" }
+    else
+        shippedPath = base .. "layouts/" .. layoutStore.EMPTY .. ".yaml"
+    end
+    paths[#paths + 1] = { filename = shippedPath, origin = "shipped" }
+    paths[#paths + 1] = { filename = defaultPath, origin = "default" }
+    paths[#paths + 1] = { filename = defaultPath .. ".bak", origin = "default-backup" }
     local seen = {}
     local unique = {}
     for _, candidate in ipairs(paths) do
@@ -113,15 +199,14 @@ end
 
 --- Read the first existing primary, backup, shared, or shipped default file.
 ---@param widgetPath string
----@param modelFilename string
----@param dashboardId string
+---@param name string
 ---@return string? content
 ---@return string? error
 ---@return string filename
 ---@return string origin
 ---@return table[] candidates
-function layoutStore.readCandidates(widgetPath, modelFilename, dashboardId)
-    local candidates = layoutStore.candidates(widgetPath, modelFilename, dashboardId)
+function layoutStore.readCandidates(widgetPath, name)
+    local candidates = layoutStore.candidates(widgetPath, name)
     local lastError
     for _, candidate in ipairs(candidates) do
         local content, readError = readFile(candidate.filename)
@@ -138,34 +223,30 @@ end
 --- Reading, tokenizing, parsing, and validating are separate steps so the host
 --- can spend one widget callback on each and stay inside EdgeTX's budget.
 ---
---- Three candidates are tried in order: the model- and dashboard-specific
---- layout, a dashboard-specific layout shared by every model, and the shipped
---- default. The middle candidate is what makes a layout such as the bundled
---- service diagnostics usable on any model simply by naming its Dashboard ID.
+--- Candidates are tried in order: the user layout of that name, the shipped
+--- layout of that name, and the shipped default.
 ---@param widgetPath string Absolute AeroGrid widget directory.
----@param modelFilename string Current EdgeTX model filename.
----@param dashboardId string Native Dashboard ID option.
+---@param name string Layout name selected in the native widget settings.
 ---@return string? content
 ---@return string? error
 ---@return string filename
----@return string origin One of `model`, `dashboard`, `default`, or `none`. Selected specific or fallback layout path.
-function layoutStore.read(widgetPath, modelFilename, dashboardId)
-    return layoutStore.readCandidates(widgetPath, modelFilename, dashboardId)
+---@return string origin One of `user`, `shipped`, `default`, or `none`.
+function layoutStore.read(widgetPath, name)
+    return layoutStore.readCandidates(widgetPath, name)
 end
 
 --- Read, parse, and validate a layout, falling back to default.yaml.
 --- Retained for tests and callers that can afford the whole cost at once.
 ---@param widgetPath string Absolute AeroGrid widget directory.
----@param modelFilename string Current EdgeTX model filename.
----@param dashboardId string Native Dashboard ID option.
+---@param name string Layout name selected in the native widget settings.
 ---@param yaml table YAML module implementing parse.
 ---@param layout table Layout module implementing validate.
 ---@param grid table Grid module used during validation.
 ---@return table? document
 ---@return string[] errors
 ---@return string filename Selected specific or fallback layout path.
-function layoutStore.load(widgetPath, modelFilename, dashboardId, yaml, layout, grid)
-    local candidates = layoutStore.candidates(widgetPath, modelFilename, dashboardId)
+function layoutStore.load(widgetPath, name, yaml, layout, grid)
+    local candidates = layoutStore.candidates(widgetPath, name)
     local lastErrors = {}
     for _, candidate in ipairs(candidates) do
         local content, readError = readFile(candidate.filename)
@@ -239,10 +320,24 @@ local function persistSerialized(filename, serialized, fileOps)
             rename = radioOperation(_G.rename) or (os and os.rename),
             remove = radioOperation(_G.del) or (os and os.remove),
             stat = fstat,
+            mkdir = _G.mkdir,
         }
     for _, name in ipairs({ "open", "read", "write", "close", "rename", "remove", "stat" }) do
         if type(operations[name]) ~= "function" then
             return false, "file operation unavailable: " .. name, filename
+        end
+    end
+
+    -- The user directory does not exist on a fresh card. `mkdir` reports an
+    -- existing directory as an error, so the result is ignored and the open
+    -- below decides.
+    if type(operations.mkdir) == "function" then
+        local parent = ""
+        for segment in string.gmatch(string.match(filename, "^(.*)/[^/]*$") or "", "[^/]+") do
+            parent = parent .. "/" .. segment
+            if not operations.stat(parent) then
+                operations.mkdir(parent)
+            end
         end
     end
 
@@ -296,8 +391,8 @@ local function persistSerialized(filename, serialized, fileOps)
 end
 
 --- Synchronous save for callers that do not need staged callback budgets.
-function layoutStore.save(widgetPath, modelFilename, dashboardId, document, yaml, layout, grid, fileOps)
-    local filename = layoutStore.path(widgetPath, modelFilename, dashboardId)
+function layoutStore.save(widgetPath, name, document, yaml, layout, grid, fileOps)
+    local filename = layoutStore.path(widgetPath, name)
     local serialized, serializeError = yaml.serialize(document)
     if not serialized then
         return false, serializeError, filename
@@ -314,9 +409,9 @@ function layoutStore.save(widgetPath, modelFilename, dashboardId, document, yaml
 end
 
 --- Build and verify one panel per callback before atomically installing the file.
-function layoutStore.startSave(widgetPath, modelFilename, dashboardId, document, yaml, layout, grid, fileOps)
+function layoutStore.startSave(widgetPath, name, document, yaml, layout, grid, fileOps)
     return {
-        filename = layoutStore.path(widgetPath, modelFilename, dashboardId),
+        filename = layoutStore.path(widgetPath, name),
         document = document,
         yaml = yaml,
         layout = layout,

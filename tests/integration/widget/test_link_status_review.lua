@@ -11,7 +11,7 @@ fixture.radio.values[140] = 0
 fixture.radio.values[141] = 0
 fixture.radio.values[143] = 0
 fixture.radio.values[147] = 0
-local context = fixture.createLoaded(nil, { DashID = "review-link-status", Theme = "modern" })
+local context = fixture.createLoaded(nil, { Layout = "review-link-status", Theme = "modern" })
 fixture.pump(context, 40)
 local disconnected = fixture.instanceOf(context, "detailed")
 assertions.assertEqual(disconnected.stateName, "unavailable")
@@ -23,7 +23,7 @@ fixture.pump(context, 40)
 assertions.assertEqual(disconnected.link.live, true, "receiver telemetry can establish a live link without getRSSI")
 assertions.assertEqual(disconnected.readingCache.margin, 36)
 fixture.reset()
-context = fixture.createLoaded(nil, { DashID = "review-link-status", Theme = "modern" })
+context = fixture.createLoaded(nil, { Layout = "review-link-status", Theme = "modern" })
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assertions.assertEqual(#context.panels, 6)

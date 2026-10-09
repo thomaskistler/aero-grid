@@ -7,7 +7,7 @@ local fixture = WidgetFixture.new()
 fixture.reset()
 fixture.radio.fields.GAlt = { id = 106, name = "GAlt", unit = fixture.radio.fields.Alt.unit }
 fixture.radio.fields["GAlt+"] = { id = 108, name = "GAlt+", unit = fixture.radio.fields.Alt.unit }
-local context = fixture.createLoaded(nil, { DashID = "review-metric", Theme = "modern" })
+local context = fixture.createLoaded(nil, { Layout = "review-metric", Theme = "modern" })
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assertions.assertEqual(#context.panels, 7)

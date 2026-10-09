@@ -2,8 +2,8 @@ version: 1
 
 # Service diagnostics, page 2: model, control, and extrema.
 #
-# Set the widget's Dashboard ID to `services2` to load this screen on any
-# model. See layouts/services.yaml for how Dashboard ID resolution works.
+# Select `services2` as the widget's Layout to load this screen on any
+# model.
 #
 # `index` selects the model timer for the model service and the global
 # variable for the control service. `extra` names the arm switch the extrema

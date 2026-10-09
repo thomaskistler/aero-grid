@@ -296,8 +296,12 @@ user-confirmed hardware verification without inventing quantitative measurements
   drag responsiveness, and repeated expand/shrink cycles. Verify saved geometry
   after reload. Configuration no longer offers Size/Column/Row, so gestures are
   the only way to change geometry.
-- [ ] Press Return to close drawers, then save and exit; power-cycle/reload and confirm the layout persists
-  for the selected model and Dashboard ID.
+- [ ] Press Return to close drawers, then choose Save in **Unsaved changes**;
+  power-cycle and confirm the layout persists as `/AEROGRID/layouts/<name>.yaml`.
+- [ ] Choose **Save as...**, accept the suggested name, restart, and select it
+  in **Layout**. Confirm an existing name asks before overwriting, `Empty`
+  offers no Save, Discard restores the saved layout, and leaving fullscreen
+  mid-edit resumes the draft on return.
 - [ ] Verify a successful save retains the previous layout as `.bak`; restore
   from a deliberately invalid primary on a test SD card and confirm fallback.
 - [ ] Confirm dashboard panels remain read-only and the editor only changes
@@ -328,7 +332,7 @@ Perform link-loss tests on the bench with propulsion disabled.
 
 - [ ] Confirm the `host` identity section reports package version `0.10.0`.
   Install the complete package and remove stale bytecode before recording results.
-- [ ] Run Dashboard ID `host`; inspect layout path, panel loading,
+- [ ] Select Layout `host`; inspect layout path, panel loading,
   unresolved sources, and failures. Check readings against the model's sensors.
 - [ ] Check missing/corrupt layouts and missing sources produce useful errors
   without disabling unrelated panels.

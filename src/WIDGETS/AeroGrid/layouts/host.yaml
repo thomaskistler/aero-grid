@@ -6,7 +6,7 @@
 # evening on an arc drifting by its own radius and another on a radio running
 # bytecode that was no longer on the card.
 #
-# Reached the way everything else here is reached: a Dashboard ID on its own
+# Reached the way everything else here is reached: a Layout on its own
 # screen, paged to. It cannot be a widget setting, because in App mode the
 # widget menu is unreachable from the main view at all.
 #

@@ -214,6 +214,117 @@ function drawer.open(context, state, mode, listKey, itemIndex)
     state.drawerWidth = math.floor(context.zone.w * 0.8)
 end
 
+--- Queue an exit-flow command from a native callback of this generation.
+local function exitCommand(context, state, generation, command)
+    if context.editorUi == state and generation == state.drawerGeneration and not state.exitCommand then
+        state.exitCommand = command
+    end
+end
+
+--- Offer Save, Save As and Discard for a changed draft. RTN keeps editing.
+function drawer.openExit(context, state)
+    closeDialog(state)
+    assert(type(lvgl.menu) == "function", "exit dialog requires EdgeTX Lua LVGL menu")
+    local actions, values = {}, {}
+    if not state.handlers.isEmpty(state.handlers.layoutName()) then
+        actions[#actions + 1], values[#values + 1] = "save", "Save"
+    end
+    actions[#actions + 1], values[#values + 1] = "save-as", "Save as..."
+    actions[#actions + 1], values[#values + 1] = "discard", "Discard changes"
+    local generation = state.drawerGeneration
+    state.mode = "menu"
+    lvgl.menu({
+        title = "Unsaved changes",
+        values = values,
+        get = function()
+            return 1
+        end,
+        set = function(index)
+            exitCommand(context, state, generation, { action = assert(actions[index], "invalid exit choice") })
+        end,
+    })
+end
+
+--- Ask for the Save As name; RTN returns to the exit menu.
+function drawer.openName(context, state, name, message)
+    closeDialog(state)
+    for _, kind in ipairs({ "dialog", "textEdit", "button", "label", "confirm" }) do
+        if type(lvgl[kind]) ~= "function" then
+            error("save as requires EdgeTX Lua LVGL " .. kind)
+        end
+    end
+    state.mode = "name"
+    state.saveAsName = name
+    local generation = state.drawerGeneration
+    state.nativeDrawer = assert(
+        hostedDialog(context, state, {
+            title = "Save layout as",
+            close = function()
+                if not state.drawerClosing then
+                    state.nativeDrawer:clear()
+                    state.nativeDrawer = nil
+                    retireDialogHost(state)
+                    exitCommand(context, state, generation, { action = "exit" })
+                end
+            end,
+        }),
+        "cannot open editor dialog"
+    )
+    local height = lvgl.UI_ELEMENT_HEIGHT or 32
+    local width = math.floor(context.zone.w * 0.8) - 16
+    local function active()
+        return generation == state.drawerGeneration and state.nativeDrawer ~= nil and not state.exitCommand
+    end
+    lvgl.textEdit(state.nativeDrawer, {
+        x = 4,
+        y = 4,
+        w = width,
+        h = height,
+        value = name,
+        length = 32,
+        active = active,
+        set = function(value)
+            if generation == state.drawerGeneration then
+                state.saveAsName = value
+            end
+        end,
+    })
+    lvgl.label(state.nativeDrawer, {
+        x = 8,
+        y = height + 8,
+        w = width - 8,
+        h = math.floor(height * 0.56 + 0.5),
+        text = message or "",
+        font = function()
+            return SMLSIZE
+        end,
+        color = context.theme.color.critical,
+    })
+    lvgl.button(state.nativeDrawer, {
+        x = 4,
+        y = math.floor(height * 1.8) + 8,
+        w = width,
+        h = height,
+        text = "Save",
+        active = active,
+        press = function()
+            exitCommand(context, state, generation, { action = "name", name = state.saveAsName })
+        end,
+    })
+end
+
+--- Ask before replacing an existing layout; Back keeps the name dialog open.
+function drawer.confirmOverwrite(context, state, name)
+    local generation = state.drawerGeneration
+    lvgl.confirm({
+        title = "Overwrite " .. name .. "?",
+        message = "A layout named " .. name .. " already exists.",
+        confirm = function()
+            exitCommand(context, state, generation, { action = "write", name = name })
+        end,
+    })
+end
+
 local function writeField(state, field, value)
     local editor = state.handlers.editor
     if field.path then

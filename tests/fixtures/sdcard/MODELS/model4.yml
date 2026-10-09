@@ -14,9 +14,9 @@ screenData:
                widgetData:
                   options:
                      0:
-                        type: String
+                        type: Unsigned
                         value:
-                           stringValue: default
+                           unsignedValue: 2
                      1:
                         type: String
                         value:

@@ -12,13 +12,13 @@
 ---@field yabs? integer Absolute screen position of the zone's top edge.
 
 ---@class AeroGridWidgetOptions
----@field DashID string
+---@field Layout integer|string Position in the layout registry, or a layout name.
 ---@field Theme string
 
 ---@class AeroGridContext
 ---@field zone AeroGridZone Live zone table maintained by EdgeTX.
 ---@field path string Absolute widget directory path.
----@field dashboardId string Layout identity selected in native widget settings.
+---@field layoutName string Layout name selected in native widget settings.
 ---@field panels AeroGridPanelEntry[]
 ---@field errors string[] Failures, shown on the overlay.
 ---@field notices table[] `{severity, text}` records of the host adapting.
@@ -40,8 +40,8 @@
 ---@field services table Shared objects handed to panels.
 ---@field rejected table[] Placements that would not build, with the reason.
 ---@field layoutPath? string
----@field layoutOrigin? string Which filename answered: model, dashboard, default, none.
----@field modelFilename? string Model filename the layout name was derived from.
+---@field layoutOrigin? string Which filename answered: user, shipped, default, none.
+---@field modelFilename? string Current model filename, for diagnostics.
 ---@field themeSource? string Whether the layout or the widget option chose the mode.
 ---@field errorLabel? any
 ---@field page any Container holding one generation of the dashboard.
@@ -60,10 +60,36 @@
 ---@field editorSession? table Uncommitted editor working copy.
 ---@field editorUi? table Active editor screen state.
 
+local WIDGET_PATH = "/WIDGETS/AeroGrid/"
+
+--- Layout names behind the native CHOICE option, built once at script load.
+--- Without `dir` (an older firmware, or a host test) only Empty is offered.
+local layoutNames = { "Empty" }
+if type(dir) == "function" and type(loadScript) == "function" then
+    local chunk = loadScript(WIDGET_PATH .. "lib/layout_registry.lua")
+    local loaded, registry = pcall(chunk or error)
+    if loaded and type(registry) == "table" then
+        local listed, names = pcall(registry.load, "/", WIDGET_PATH)
+        if listed and type(names) == "table" and #names > 0 then
+            layoutNames = names
+        end
+    end
+end
+
 local options = {
-    { "DashID", STRING, "main" },
+    { "Layout", CHOICE, 1, layoutNames },
     { "Theme", STRING, "modern" },
 }
+
+--- Resolve the Layout option to a name. A stale position selects Empty.
+---@param value any
+---@return string
+local function layoutName(value)
+    if type(value) == "string" and value ~= "" then
+        return value
+    end
+    return layoutNames[tonumber(value) or 1] or layoutNames[1]
+end
 
 --- Join a widget directory and package-relative path.
 ---@param base string
@@ -632,14 +658,20 @@ local function openEditor(context)
         return panel, panelError
     end
 
-    local created, session, sessionError = pcall(
-        context.editorModule.new,
-        context.document,
-        context.grid,
-        context.layoutValidator,
-        context.panelHost,
-        loadPanel
-    )
+    -- A draft set aside when fullscreen was left resumes where it stopped.
+    local resumed = context.editorStash
+    context.editorStash = nil
+    local created, session, sessionError = true, resumed, nil
+    if not resumed then
+        created, session, sessionError = pcall(
+            context.editorModule.new,
+            context.document,
+            context.grid,
+            context.layoutValidator,
+            context.panelHost,
+            loadPanel
+        )
+    end
     if not created or not session then
         addError(context, "editor: " .. tostring(sessionError or session))
         showErrors(context)
@@ -649,6 +681,7 @@ local function openEditor(context)
     context.editorSession = session
     local handlers = {
         editor = context.editorModule,
+        resumed = resumed ~= nil,
         preview = function(document)
             return previewLayout(context, document)
         end,
@@ -658,26 +691,46 @@ local function openEditor(context)
         advancePreview = function(job)
             return advancePanelPreview(context, job)
         end,
-        startSave = function(document)
+        layoutName = function()
+            return context.layoutName
+        end,
+        isEmpty = function(name)
+            return context.layoutStore.isEmpty(name)
+        end,
+        validName = function(name)
+            return context.layoutStore.validName(name)
+        end,
+        exists = function(name)
+            return context.layoutStore.exists(context.path, name)
+        end,
+        suggestName = function()
+            local info = model and model.getInfo and model.getInfo()
+            return context.layoutStore.suggestName(context.path, info and info.name)
+        end,
+        startSave = function(document, name)
+            name = name or context.layoutName
             context.editorSavedDocument = document
-            return context.layoutStore.startSave(
+            local state = context.layoutStore.startSave(
                 context.path,
-                context.modelFilename or "default",
-                context.dashboardId,
+                name,
                 document,
                 context.yaml,
                 context.layoutValidator,
                 context.grid
             )
+            state.name = name
+            return state
         end,
         advanceSave = function(state)
             local done, saved, saveError = context.layoutStore.advanceSave(state)
-            if saved then
+            if saved and state.name == context.layoutName then
                 context.layoutPath = state.filename
-                context.layoutOrigin = "model"
+                context.layoutOrigin = "user"
             end
             return done, saved, saveError
         end,
+        --- `saved` is true only when the dashboard's own layout was written;
+        --- after Save As this dashboard keeps showing its committed layout.
         close = function(saved)
             context.editorUiModule.close(context, false)
             if not saved then
@@ -1057,24 +1110,13 @@ local function advanceLoad(context)
             local candidate = recovery.candidate
             content, readError = context.layoutStore.readCandidate(candidate.filename)
             filename, origin = candidate.filename, candidate.origin
-            candidates = context.layoutStore.candidates(
-                context.path,
-                modelInfo and modelInfo.filename or "default",
-                context.dashboardId
-            )
+            candidates = context.layoutStore.candidates(context.path, context.layoutName)
             recoveryIndex = recovery.index
         elseif type(context.layoutStore.readCandidates) == "function" then
-            content, readError, filename, origin, candidates = context.layoutStore.readCandidates(
-                context.path,
-                modelInfo and modelInfo.filename or "default",
-                context.dashboardId
-            )
+            content, readError, filename, origin, candidates =
+                context.layoutStore.readCandidates(context.path, context.layoutName)
         else
-            content, readError, filename, origin = context.layoutStore.read(
-                context.path,
-                modelInfo and modelInfo.filename or "default",
-                context.dashboardId
-            )
+            content, readError, filename, origin = context.layoutStore.read(context.path, context.layoutName)
         end
 
         if content or context.layoutPath == nil then
@@ -1348,7 +1390,7 @@ local function create(zone, widgetOptions, path)
     local context = {
         zone = zone,
         path = path,
-        dashboardId = widgetOptions.DashID,
+        layoutName = layoutName(widgetOptions.Layout),
         themeMode = widgetOptions.Theme,
         panels = {},
         rejected = {},
@@ -1579,11 +1621,11 @@ local function advanceAppRebuild(context)
     showErrors(context)
 end
 
---- Apply native host options; changing Dashboard ID or Theme rebuilds safely.
+--- Apply native host options; changing Layout or Theme rebuilds safely.
 ---@param context AeroGridContext
 ---@param widgetOptions AeroGridWidgetOptions
 local function update(context, widgetOptions)
-    local dashboardId = widgetOptions.DashID
+    local name = layoutName(widgetOptions.Layout)
     local themeMode = widgetOptions.Theme
 
     -- Without a runtime there is nothing to rebuild, and restaging would fail.
@@ -1591,13 +1633,14 @@ local function update(context, widgetOptions)
         return
     end
 
-    if dashboardId ~= context.dashboardId or themeMode ~= context.themeMode then
+    if name ~= context.layoutName or themeMode ~= context.themeMode then
+        context.editorStash = nil
         if context.editorUi then
             context.editorUiModule.close(context, true)
             restorePreview(context)
             context.editorSession = nil
         end
-        context.dashboardId = dashboardId
+        context.layoutName = name
         context.themeMode = themeMode
         context.reloadState = "clear"
     end
@@ -1606,8 +1649,8 @@ end
 ---@param name string
 ---@return string
 local function translate(name)
-    if name == "DashID" then
-        return "Dashboard ID"
+    if name == "Layout" then
+        return "Layout"
     end
     if name == "Theme" then
         return "Theme"
@@ -1726,24 +1769,27 @@ end
 ---@param widgetEvent? number Fullscreen input supplied by EdgeTX.
 ---@param touchState? table
 local function refresh(context, widgetEvent, touchState)
-    if context.editorUi and not isFullScreen() then
-        if context.editorUi.buildStage then
-            context.editorUiModule.close(context, true)
-            restorePreview(context)
-            context.editorSession = nil
-        elseif not context.editorUi.suspended and not context.editorUi.saving then
-            if context.editorUi.saveFailed then
-                context.editorUi.suspended = true
-                lvgl.hide(context.editorUi.screen)
-                addError(context, "Layout save failed; return to fullscreen to retry.")
-                showErrors(context)
-            else
-                context.editorUiModule.finish(context)
-            end
-        end
-    elseif context.editorUi and context.editorUi.suspended then
-        context.editorUi.suspended = nil
-        lvgl.show(context.editorUi.screen)
+    -- Leaving fullscreen neither saves nor discards. Editor boxes built in
+    -- fullscreen would swallow the long press in App mode, so the editor is
+    -- torn down and a changed draft is set aside until fullscreen returns.
+    -- A save already running finishes first, in `background`.
+    if context.editorUi and not isFullScreen() and not context.editorUi.saving then
+        local session = context.editorSession
+        local keep = session and session.dirty and not context.editorUi.buildStage
+        context.editorUiModule.close(context, false)
+        restorePreview(context)
+        context.editorSession = nil
+        context.editorPreviewContainers = nil
+        context.editorStash = keep and session or nil
+    elseif
+        context.editorStash
+        and not context.editorUi
+        and isFullScreen()
+        and not context.stage
+        and not context.reloadState
+        and context.document
+    then
+        openEditor(context)
     end
 
     -- EdgeTX 2.12 only makes Lua boxes touch-transparent when constructing
@@ -1861,6 +1907,7 @@ local function refresh(context, widgetEvent, touchState)
             or context.editorUi.saving
             or context.editorUi.drawerBuild ~= nil
             or context.editorUi.drawerPending
+            or context.editorUi.exitCommand
             or context.editorUi.previewPending
             or context.editorUi.previewRefresh
         )

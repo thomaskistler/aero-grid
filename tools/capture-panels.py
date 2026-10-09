@@ -68,6 +68,13 @@ def prepare(sd, recipe, recipe_path=None):
     radio = sd / "RADIO/radio.yml"
     radio.write_text(radio.read_text().replace('currModelFilename: "model2.yml"',
                                               'currModelFilename: "model1.yml"'))
+    # The Layout option is a CHOICE stored as a 1-based registry position.
+    registry = sd / "AEROGRID/registry.txt"
+    names = registry.read_text().split()
+    if "capture-panels" not in names:
+        names.append("capture-panels")
+        registry.write_text("\n".join(names) + "\n")
+    position = names.index("capture-panels") + 1
     model = sd / "MODELS/model1.yml"
     text = model.read_text()
     prefix, rest = text.split("screenData:", 1)
@@ -90,15 +97,16 @@ def prepare(sd, recipe, recipe_path=None):
                widgetData:
                   options:
                      0:
-                        type: String
+                        type: Unsigned
                         value:
-                           stringValue: capture-panels
+                           unsignedValue: POSITION
                      1:
                         type: String
                         value:
                            stringValue: modern
 view: 0
 """.replace("stringValue: modern", f"stringValue: {recipe['theme']}")
+                     .replace("POSITION", str(position))
                      + suffix.split("\n", 1)[1])
     layout = f"version: 1\ntheme:\n  mode: {recipe['theme']}\ngrid:\n  columns: 4\n  rows: 4\npanels:\n"
     for name, (col, row, cols, rows) in placements(recipe).items():

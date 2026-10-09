@@ -149,7 +149,7 @@ assert(type(definition.background) == "function", "host must expose background")
 assert(type(definition.event) == "function", "host must expose event")
 assertEqual(definition.translate("Theme"), "Theme")
 
-local DEFAULT_OPTIONS = { DashID = "main", Theme = "modern" }
+local DEFAULT_OPTIONS = { Layout = "main", Theme = "modern" }
 
 --- Advance the clock and refresh, so rate-limited panels fall due.
 local function pump(context, count, step)
@@ -358,7 +358,8 @@ local function testShippedLayoutsLoad()
     local names = {}
     for name in listing:lines() do
         local stem = string.match(name, "^(.+)%.yaml$")
-        if stem and stem ~= "default" then
+        -- Empty is the deliberately blank start for a new screen.
+        if stem and stem ~= "default" and stem ~= "Empty" then
             names[#names + 1] = stem
         end
     end
@@ -553,7 +554,7 @@ local function testStatesCoverBothPalettes()
     --- Build the states layout under one Theme option and report what it drew.
     local function render(mode)
         resetRadio()
-        local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { DashID = "main", Theme = mode }, widgetPath)
+        local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "main", Theme = mode }, widgetPath)
         pump(context, 60)
         assertEqual(#context.errors, 0, mode .. ": " .. table.concat(context.errors, "\n"))
         return context
@@ -615,11 +616,26 @@ end
 --- models hold panel screens, with text on a separate model because the
 --- original review model is full.
 local function testScreensReachEveryShippedLayout()
+    -- The Layout setting is a CHOICE, which EdgeTX stores as a 1-based position
+    -- in the list `layout_registry` builds from AEROGRID/registry.txt. The
+    -- fixture seeds that file so the stored positions are reproducible.
+    local registryHandle = assert(hostIo.open(root .. "/tests/fixtures/sdcard/AEROGRID/registry.txt", "r"))
+    local registered = {}
+    for name in registryHandle:lines() do
+        registered[#registered + 1] = name
+    end
+    registryHandle:close()
+    assertEqual(registered[1], "Empty", "the fixture registry must list Empty first")
+
     local function readModel(name)
         local handle = assert(hostIo.open(root .. "/tests/fixtures/sdcard/MODELS/" .. name, "r"))
         local text = handle:read("a")
         handle:close()
-        return text
+        return (
+            string.gsub(text, "unsignedValue: (%d+)", function(position)
+                return "stringValue: " .. assert(registered[tonumber(position)], "unregistered layout " .. position)
+            end)
+        )
     end
 
     local working = readModel("model1.yml")
@@ -645,12 +661,19 @@ local function testScreensReachEveryShippedLayout()
     listing:close()
     os.remove(listingPath)
     assert(#shipped > 0, "no shipped layouts were found")
+    for _, stem in ipairs(shipped) do
+        local listed = false
+        for _, name in ipairs(registered) do
+            listed = listed or name == stem
+        end
+        assert(listed, stem .. " ships but tests/fixtures/sdcard/AEROGRID/registry.txt does not list it")
+    end
 
     -- Which layouts are selected by a screen on either model. `default` is the
     -- host's own fallback and is reached by a widget that names nothing, so it
     -- needs no screen; `services` and `services2` are fixtures for the service
     -- runtime rather than anything to look at.
-    local EXEMPT = { default = true, services = true, services2 = true }
+    local EXEMPT = { Empty = true, default = true, services = true, services2 = true }
 
     local reviews = 0
     for _, stem in ipairs(shipped) do
@@ -694,7 +717,7 @@ local function testScreensReachEveryShippedLayout()
     assert(position.sim == 1 and position.sim2 == 2, "the two dashboards are not the first two screens")
 
     -- The states layout is carried twice, and the two screens are only worth
-    -- the space if they resolve different palettes. Each screen stores DashID
+    -- the space if they resolve different palettes. Each screen stores Layout
     -- then Theme, so the value after a `states` entry is that screen's theme.
     local themes = {}
     for index, name in ipairs(order) do
@@ -1893,7 +1916,7 @@ end
 
 --- Changing Dashboard ID or Theme tears down and restages without leaking.
 local function testOptionReload()
-    definition.update(appContext, { DashID = "alternate", Theme = "modern" })
+    definition.update(appContext, { Layout = "alternate", Theme = "modern" })
 
     -- A reload discards the whole page and builds the next generation as a
     -- fresh child of the root, which is never cleared. The clearing callback
@@ -1929,7 +1952,7 @@ local function testOptionReload()
     appContext.canvas:set({ color = appContext.theme.color.canvas })
 
     -- Reloading a second time must behave identically.
-    definition.update(appContext, { DashID = "main", Theme = "modern" })
+    definition.update(appContext, { Layout = "main", Theme = "modern" })
     local rounds = 0
     repeat
         definition.refresh(appContext)
@@ -1941,7 +1964,7 @@ local function testOptionReload()
 
     -- Switching only the theme must also trigger a rebuild.
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, referencePath)
-    definition.update(context, { DashID = "main", Theme = "custom" })
+    definition.update(context, { Layout = "main", Theme = "custom" })
     assertEqual(context.reloadState, "clear")
 end
 
@@ -1955,7 +1978,7 @@ local function testReloadSurvivesLateCleanup()
     local context = createLoaded(zone, DEFAULT_OPTIONS, referencePath)
     local firstPage = context.page
 
-    definition.update(context, { DashID = "alternate", Theme = "modern" })
+    definition.update(context, { Layout = "alternate", Theme = "modern" })
 
     -- Withhold cleanup across the entire reload, the worst case.
     lvglMock.setDeferCleanup(true)
@@ -4966,7 +4989,7 @@ panels:
     )
 
     writeFile(
-        widgetPath .. "layouts/model1--alpha.yaml",
+        widgetPath .. "layouts/alpha.yaml",
         [[
 version: 1
 grid:
@@ -4988,7 +5011,7 @@ panels:
     )
 
     writeFile(
-        widgetPath .. "layouts/model1--beta.yaml",
+        widgetPath .. "layouts/beta.yaml",
         [[
 version: 1
 grid:
@@ -5015,8 +5038,11 @@ panels:
 ]]
     )
 
+    -- A user layout lives outside the widget folder. A test package is not
+    -- under WIDGETS/, so its SD root is the package itself.
+    os.execute("mkdir -p '" .. widgetPath .. "AEROGRID/layouts'")
     writeFile(
-        widgetPath .. "layouts/other--alpha.yaml",
+        widgetPath .. "AEROGRID/layouts/alpha.yaml",
         [[
 version: 1
 grid:
@@ -5060,13 +5086,18 @@ panels:
 
     resetRadio()
     radio.modelFilename = "model1.yml"
+    local userAlpha = widgetPath .. "AEROGRID/layouts/alpha.yaml"
+    local saved = assert(hostIo.open(userAlpha, "r"))
+    local userYaml = saved:read("a")
+    saved:close()
+    os.remove(userAlpha)
 
-    -- Two Dashboard IDs, one model: two separate screens of the same radio.
-    local alpha = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { DashID = "alpha", Theme = "modern" }, widgetPath)
-    local beta = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { DashID = "beta", Theme = "modern" }, widgetPath)
+    -- Two layouts, one model: two separate screens of the same radio.
+    local alpha = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "alpha", Theme = "modern" }, widgetPath)
+    local beta = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "beta", Theme = "modern" }, widgetPath)
 
-    assertEqual(alpha.layoutPath, widgetPath .. "layouts/model1--alpha.yaml")
-    assertEqual(beta.layoutPath, widgetPath .. "layouts/model1--beta.yaml")
+    assertEqual(alpha.layoutPath, widgetPath .. "layouts/alpha.yaml")
+    assertEqual(beta.layoutPath, widgetPath .. "layouts/beta.yaml")
     assertEqual(idsOf(alpha), "alt")
     assertEqual(idsOf(beta), "mode,pack")
 
@@ -5102,30 +5133,30 @@ panels:
     assertEqual(definition.event(alpha, 34), false, "the host consumed an event it has no page to turn with")
     assertEqual(
         alpha.layoutPath,
-        widgetPath .. "layouts/model1--alpha.yaml",
+        widgetPath .. "layouts/alpha.yaml",
         "an event changed which layout an instance was showing"
     )
     assertEqual(visiblePages(alpha), 1, "an event added a page")
 
-    -- A different model resolves a different file for the same Dashboard ID.
-    -- EdgeTX rebuilds every widget across a model change, so this is what the
-    -- radio really does rather than a reload the host would have to detect.
+    -- A layout saved on the radio shadows the shipped one of the same name, on
+    -- every model: the name is the identity, not the model.
+    writeFile(userAlpha, userYaml)
     radio.modelFilename = "other.yml"
     local switched = createLoaded(
         { x = 0, y = 0, w = 480, h = 272 },
-        { DashID = "alpha", Theme = "modern" },
+        { Layout = "alpha", Theme = "modern" },
         widgetPath
     )
-    assertEqual(switched.layoutPath, widgetPath .. "layouts/other--alpha.yaml")
+    assertEqual(switched.layoutPath, userAlpha)
     assertEqual(idsOf(switched), "speed")
     assertEqual(#switched.errors, 0, table.concat(switched.errors, "\n"))
 
-    -- A model with no file of its own falls back to the dashboard-wide layout,
-    -- then to the shipped default, rather than failing to load.
+    -- A name with no file falls back to the shipped default rather than
+    -- failing to load.
     radio.modelFilename = "third.yml"
     local fallback = createLoaded(
         { x = 0, y = 0, w = 480, h = 272 },
-        { DashID = "gamma", Theme = "modern" },
+        { Layout = "gamma", Theme = "modern" },
         widgetPath
     )
     assertEqual(fallback.layoutPath, widgetPath .. "layouts/default.yaml")
@@ -5134,8 +5165,9 @@ panels:
     -- The instances created before the switch are untouched by it, because
     -- nothing about them was keyed on a global.
     assertEqual(idsOf(alpha), "alt", "a later instance disturbed an earlier one")
-    assertEqual(alpha.layoutPath, widgetPath .. "layouts/model1--alpha.yaml")
+    assertEqual(alpha.layoutPath, widgetPath .. "layouts/alpha.yaml")
 
+    os.remove(userAlpha)
     radio.modelFilename = previous
 end
 
@@ -5334,7 +5366,7 @@ local function testPackageCompatibility()
         local joined = table.concat(context.errors, "\n")
         assert(string.match(joined, case.error), joined)
         assert(context.errorLabel, case.name .. " failure was not shown")
-        definition.update(context, { DashID = "host", Theme = "modern" })
+        definition.update(context, { Layout = "host", Theme = "modern" })
         pump(context, 5)
         assertEqual(context.stage, nil, case.name .. " attempted to reload a broken runtime")
     end
@@ -5370,7 +5402,7 @@ local function testRejectedLayouts()
         end
         local context = createLoaded(
             { x = 0, y = 0, w = 480, h = 272 },
-            { DashID = "no-such-dashboard", Theme = "modern" },
+            { Layout = "no-such-dashboard", Theme = "modern" },
             widgetPath
         )
 
@@ -6058,7 +6090,7 @@ local function testRuntimeFailureIsContained()
     assert(string.match(table.concat(context.errors, "\n"), "runtime module failed"))
 
     -- Changing an option previously restaged a load that indexed a nil module.
-    definition.update(context, { DashID = "other", Theme = "modern" })
+    definition.update(context, { Layout = "other", Theme = "modern" })
     assertEqual(context.reloadState, nil, "a broken runtime must not restage")
 
     for _ = 1, 5 do
@@ -6107,7 +6139,7 @@ local function testServiceDiagnostics()
 
     --- Load one diagnostics page and let its services settle.
     local function page(dashboardId)
-        local context = createLoaded(zone, { DashID = dashboardId, Theme = "modern" }, sourcePath)
+        local context = createLoaded(zone, { Layout = dashboardId, Theme = "modern" }, sourcePath)
         -- A dashboard-scoped layout is found without a model-specific file.
         assertEqual(context.layoutPath, sourcePath .. "layouts/" .. dashboardId .. ".yaml")
         assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
@@ -6164,7 +6196,7 @@ end
 local function testDiagnosticsFitTheirPanels()
     resetRadio()
     local zone = { x = 0, y = 0, w = 480, h = 272 }
-    local context = createLoaded(zone, { DashID = "services2", Theme = "modern" }, sourcePath)
+    local context = createLoaded(zone, { Layout = "services2", Theme = "modern" }, sourcePath)
 
     --- Drain a batched reflow.
     local function settle()
@@ -7134,10 +7166,10 @@ end
 
 --- Which of the three candidate filenames answered, at each of the three.
 ---
---- The search tries the model-specific name, then the dashboard-scoped name,
---- then `default.yaml`, and until now it reported only the path it settled
---- on. That is not the same fact: a dashboard called `main` on a model called
---- `main` produces two candidates that read alike, and a layout silently
+--- The search tries the layout saved on the radio, then the shipped layout
+--- of that name, then `default.yaml`, and until now it reported only the path
+--- it settled on. That is not the same fact: a saved and a shipped layout of
+--- the same name read alike, and a layout silently
 --- falling back to `default.yaml` looks exactly like one that was found.
 --- The diagnostics view reports the branch, so each branch is driven here.
 local function testLayoutOriginIsReported()
@@ -7161,7 +7193,6 @@ panels:
     -- `makeWidget` writes `layouts/default.yaml`, which is the last candidate,
     -- so this package starts at the bottom of the search.
     local widgetPath = makeWidget("origin", layout)
-    local modelName = radio.modelFilename
 
     local function originOf()
         local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
@@ -7180,21 +7211,23 @@ panels:
     assert(string.find(lines, "-> default", 1, true), lines)
     assert(string.find(path, "default.yaml", 1, true), path)
 
-    -- Adding the dashboard-scoped name makes the middle branch answer. The
+    -- Shipping the named layout makes the middle branch answer. The
     -- default file is still there, which is the point: the path changes and so
     -- does the reason, and only one of those was visible before.
     writeFile(widgetPath .. "layouts/main.yaml", layout)
     origin, lines, path = originOf()
-    assertEqual(origin, "dashboard", "a dashboard-scoped layout did not take precedence over the default")
-    assert(string.find(lines, "-> dashboard", 1, true), lines)
+    assertEqual(origin, "shipped", "a shipped named layout did not take precedence over the default")
+    assert(string.find(lines, "-> shipped", 1, true), lines)
 
-    -- And the model-specific name beats both.
-    local specific = layoutStoreModule.path(widgetPath, modelName, "main")
-    writeFile(specific, layout)
+    -- And a layout saved on the radio under that name beats both.
+    local saved = layoutStoreModule.path(widgetPath, "main")
+    os.execute("mkdir -p '" .. string.match(saved, "^(.*)/") .. "'")
+    writeFile(saved, layout)
     origin, lines, path = originOf()
-    assertEqual(origin, "model", "a model-specific layout did not take precedence")
-    assert(string.find(lines, "-> model", 1, true), lines)
-    assertEqual(path, specific)
+    assertEqual(origin, "user", "a saved layout did not take precedence")
+    assert(string.find(lines, "-> user", 1, true), lines)
+    assertEqual(path, saved)
+    os.remove(saved)
 end
 
 --- The bytecode alarm, which is the single most useful line in the view.

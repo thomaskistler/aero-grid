@@ -4,48 +4,156 @@ local root = (... and ... ~= "" and ...) or "."
 
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local layoutStore = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/layout_store.lua"))()
+local registry = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/layout_registry.lua"))()
 
-local function testLayoutPath()
-    local path = layoutStore.path("/WIDGETS/AeroGrid", "My Model.yml", "nav 1")
-    assert(string.match(path, "^/WIDGETS/AeroGrid/layouts/My%-Model%-%x%x%x%x%-%-nav%-1%-%x%x%x%x%.yaml$"), path)
-    assertions.assertEqual(
-        layoutStore.path("/WIDGETS/AeroGrid", "model.yml", "main"),
-        "/WIDGETS/AeroGrid/layouts/model--main.yaml"
-    )
+--- User layouts live beside WIDGETS/, so a widget update leaves them alone.
+local function testUserLayoutPath()
+    assertions.assertEqual(layoutStore.sdRoot("/WIDGETS/AeroGrid/"), "/")
+    assertions.assertEqual(layoutStore.sdRoot("/WIDGETS/AeroGrid"), "/")
+    assertions.assertEqual(layoutStore.path("/WIDGETS/AeroGrid", "Sonic1"), "/AEROGRID/layouts/Sonic1.yaml")
+    -- A package outside WIDGETS/ (a test copy) keeps everything inside itself.
+    assertions.assertEqual(layoutStore.userDirectory("/tmp/pkg/"), "/tmp/pkg/AEROGRID/layouts/")
+
+    -- A registry name is a filename stem already, so it maps to itself, and
+    -- anything unsafe cannot leave the user folder.
+    local path = layoutStore.path("/WIDGETS/AeroGrid", "../escape")
+    local segment = string.match(path, "^/AEROGRID/layouts/([^/]+)%.yaml$")
+    assert(segment and not string.find(segment, "%.%."), path)
 end
 
-local function testModelFilenameResolution()
-    local names = {
-        "model1.yml",
-        "MODEL01.yml",
-        "Kavan Sonic.yml",
-        "FPV-7in.yml",
-        "Heli_450.yml",
-        "..%2fescape.yml",
-        "model1.yml.bak",
+local function testValidName()
+    assert(layoutStore.validName("Sonic_1"))
+    assert(layoutStore.validName("fpv-7in"))
+    for _, name in ipairs({
         "",
-    }
-    local seen = {}
-
-    for _, name in ipairs(names) do
-        local path = layoutStore.path("/WIDGETS/AeroGrid", name, "main")
-        local segment = string.match(path, "^/WIDGETS/AeroGrid/layouts/([^/]+)%.yaml$")
-        assert(segment, "unsafe layout path for " .. name .. ": " .. path)
-        assert(not string.find(segment, "%.%."), "traversal survived for " .. name)
-        assert(not seen[path], "filename collision for " .. name .. ": " .. path)
-        seen[path] = true
+        "a b",
+        "x.yaml",
+        "../up",
+        string.rep("a", layoutStore.NAME_LIMIT + 1),
+        "Empty",
+        "empty",
+    }) do
+        local ok, message = layoutStore.validName(name)
+        assert(not ok, name .. " was accepted")
+        assert(type(message) == "string" and message ~= "", "no reason given for " .. name)
     end
+    assert(layoutStore.validName(string.rep("a", layoutStore.NAME_LIMIT)))
+end
 
+--- Recovery order: the saved layout, its backup, the shipped one, then default.
+local function testCandidates()
+    local origins = {}
+    for _, candidate in ipairs(layoutStore.candidates("/WIDGETS/AeroGrid/", "sim")) do
+        origins[#origins + 1] = candidate.origin .. "=" .. candidate.filename
+    end
     assertions.assertEqual(
-        layoutStore.path("/WIDGETS/AeroGrid", "model1.yml", "main")
-            ~= layoutStore.path("/WIDGETS/AeroGrid", "model1.yml", "nav"),
-        true
+        table.concat(origins, ","),
+        "user=/AEROGRID/layouts/sim.yaml,user-backup=/AEROGRID/layouts/sim.yaml.bak,"
+            .. "shipped=/WIDGETS/AeroGrid/layouts/sim.yaml,default=/WIDGETS/AeroGrid/layouts/default.yaml,"
+            .. "default-backup=/WIDGETS/AeroGrid/layouts/default.yaml.bak"
     )
+
+    -- Empty is never written, so nothing saved can shadow it.
+    local empty = layoutStore.candidates("/WIDGETS/AeroGrid/", "Empty")
+    assertions.assertEqual(empty[1].origin, "shipped")
+    assertions.assertEqual(empty[1].filename, "/WIDGETS/AeroGrid/layouts/Empty.yaml")
+end
+
+--- Save As offers the model name with the first number no layout uses.
+local function testSuggestName()
+    local taken = {
+        ["/AEROGRID/layouts/My-Model1.yaml"] = true,
+        ["/WIDGETS/AeroGrid/layouts/My-Model2.yaml"] = true,
+    }
+    _G.fstat = function(filename)
+        return taken[filename] and { size = 1 } or nil
+    end
+    assertions.assertEqual(layoutStore.suggestName("/WIDGETS/AeroGrid/", "My Model"), "My-Model3")
+    assertions.assertEqual(layoutStore.suggestName("/WIDGETS/AeroGrid/", "  "), "Layout1")
+    local long = layoutStore.suggestName("/WIDGETS/AeroGrid/", string.rep("x", 40))
+    assert(#long <= layoutStore.NAME_LIMIT and layoutStore.validName(long), long)
+    assert(layoutStore.exists("/WIDGETS/AeroGrid/", "My-Model2"), "a shipped name was not reported as taken")
+    _G.fstat = nil
+end
+
+--- A fake card: `files` maps paths to content, `folders` lists dir() results.
+local function fakeCard(files, folders)
+    local ops = {}
+    ops.stat = function(filename)
+        if files[filename] then
+            return { size = #files[filename] }
+        end
+        return folders[filename] and {} or nil
+    end
+    ops.dir = function(folder)
+        local entries = folders[folder]
+        if not entries then
+            error("no such folder " .. folder)
+        end
+        local index = 0
+        return function()
+            index = index + 1
+            return entries[index]
+        end
+    end
+    ops.open = function(filename, mode)
+        return { filename = filename, mode = mode, buffer = {} }
+    end
+    ops.read = function(handle)
+        return files[handle.filename]
+    end
+    ops.write = function(handle, text)
+        handle.buffer[#handle.buffer + 1] = text
+    end
+    ops.close = function(handle)
+        if handle.mode == "w" then
+            files[handle.filename] = table.concat(handle.buffer)
+        end
+    end
+    ops.mkdir = function(folder)
+        folders[folder] = folders[folder] or {}
+    end
+    return ops
+end
+
+--- CHOICE stores a position, so names are only ever appended.
+local function testRegistryIsAppendOnly()
+    local files = {}
+    local folders = {
+        ["/WIDGETS/AeroGrid/layouts"] = { "Empty.yaml", "default.yaml", "sim.yaml", "notes.txt", "x.yaml.bak" },
+    }
+    local ops = fakeCard(files, folders)
+
+    local names = registry.load("/", "/WIDGETS/AeroGrid/", ops)
+    assertions.assertEqual(table.concat(names, ","), "Empty,default,sim")
+    assertions.assertEqual(files["/AEROGRID/registry.txt"], "Empty\ndefault\nsim\n")
+
+    -- A user layout saved later, and a shipped one whose listing order changed,
+    -- keep every earlier position.
+    folders["/WIDGETS/AeroGrid/layouts"] = { "zeta.yaml", "sim.yaml", "default.yaml", "Empty.yaml" }
+    folders["/AEROGRID/layouts"] = { "Sonic1.yaml", "SIM.yaml" }
+    names = registry.load("/", "/WIDGETS/AeroGrid/", ops)
+    assertions.assertEqual(table.concat(names, ","), "Empty,default,sim,zeta,Sonic1")
+
+    -- A deleted file keeps its slot, so no widget silently changes layout.
+    folders["/WIDGETS/AeroGrid/layouts"] = { "Empty.yaml", "default.yaml" }
+    folders["/AEROGRID/layouts"] = {}
+    names = registry.load("/", "/WIDGETS/AeroGrid/", ops)
+    assertions.assertEqual(table.concat(names, ","), "Empty,default,sim,zeta,Sonic1")
+end
+
+local function testRegistryWithoutFileApi()
+    local names = registry.load("/", "/WIDGETS/AeroGrid/", {})
+    assertions.assertEqual(table.concat(names, ","), "Empty")
 end
 
 local function run()
-    testLayoutPath()
-    testModelFilenameResolution()
+    testUserLayoutPath()
+    testValidName()
+    testCandidates()
+    testSuggestName()
+    testRegistryIsAppendOnly()
+    testRegistryWithoutFileApi()
 end
 
 run()

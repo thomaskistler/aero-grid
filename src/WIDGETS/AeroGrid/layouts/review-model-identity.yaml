@@ -1,6 +1,6 @@
 # Review harness for `model-identity`. Not a dashboard.
 #
-# One review screen exists at a time and its Dashboard ID names the panel
+# One review screen exists at a time and its Layout names the panel
 # under review; this replaces whatever preceded it as the screen's target
 # rather than adding an eleventh screen, because `MAX_CUSTOM_SCREENS` is 10
 # and the fixture already carries ten. Earlier review layouts stay in the

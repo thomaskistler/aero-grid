@@ -14,9 +14,9 @@ screenData:
                widgetData:
                   options:
                      0:
-                        type: String
+                        type: Unsigned
                         value:
-                           stringValue: review-text
+                           unsignedValue: 12
                      1:
                         type: String
                         value:

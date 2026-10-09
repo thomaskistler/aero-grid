@@ -1,6 +1,6 @@
 # Review harness for `tx-battery`. Not a dashboard.
 #
-# One review screen exists at a time and its Dashboard ID names the panel
+# One review screen exists at a time and its Layout names the panel
 # under review; this replaces `review-flight-mode` as the screen's target
 # rather than adding a tenth screen, because `MAX_CUSTOM_SCREENS` is 10 and
 # the fixture already carries ten. The previous review layout stays in the

@@ -28,7 +28,7 @@ local function create(span, failWrite)
     radio.globalDetails[8] = { name = "Flights", min = 0, max = 999, prec = 0, unit = 0 }
     local context = definition.create(
         { x = 0, y = 0, w = 480, h = 272 },
-        { DashID = "flight-test", Theme = "modern" },
+        { Layout = "flight-test", Theme = "modern" },
         root .. "/src/WIDGETS/AeroGrid/"
     )
     context.source = table.concat({

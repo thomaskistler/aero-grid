@@ -665,9 +665,9 @@ screenData:
                widgetData: 
                   options: 
                      0:
-                        type: String
+                        type: Unsigned
                         value: 
-                           stringValue: review-flight-mode
+                           unsignedValue: 6
                      1:
                         type: String
                         value: 
@@ -681,9 +681,9 @@ screenData:
                widgetData: 
                   options: 
                      0:
-                        type: String
+                        type: Unsigned
                         value: 
-                           stringValue: review-tx-battery
+                           unsignedValue: 14
                      1:
                         type: String
                         value: 
@@ -697,9 +697,9 @@ screenData:
                widgetData: 
                   options: 
                      0:
-                        type: String
+                        type: Unsigned
                         value: 
-                           stringValue: review-model-identity
+                           unsignedValue: 10
                      1:
                         type: String
                         value: 
@@ -714,9 +714,9 @@ screenData:
                widgetData: 
                   options: 
                      0:
-                        type: String
+                        type: Unsigned
                         value: 
-                           stringValue: review-flight-timer
+                           unsignedValue: 7
                      1:
                         type: String
                         value: 
@@ -730,9 +730,9 @@ screenData:
                widgetData:
                   options:
                      0:
-                        type: String
+                        type: Unsigned
                         value:
-                           stringValue: review-cell-battery
+                           unsignedValue: 4
                      1:
                         type: String
                         value:
@@ -746,9 +746,9 @@ screenData:
                widgetData:
                   options:
                      0:
-                        type: String
+                        type: Unsigned
                         value:
-                           stringValue: review-cell-sources
+                           unsignedValue: 5
                      1:
                         type: String
                         value:
@@ -762,9 +762,9 @@ screenData:
                widgetData:
                   options:
                      0:
-                        type: String
+                        type: Unsigned
                         value:
-                           stringValue: review-trim-panel
+                           unsignedValue: 13
                      1:
                         type: String
                         value:
@@ -778,9 +778,9 @@ screenData:
                widgetData:
                   options:
                      0:
-                        type: String
+                        type: Unsigned
                         value:
-                           stringValue: review-navigation
+                           unsignedValue: 11
                      1:
                         type: String
                         value:
@@ -794,9 +794,9 @@ screenData:
                widgetData:
                   options:
                      0:
-                        type: String
+                        type: Unsigned
                         value:
-                           stringValue: review-link-status
+                           unsignedValue: 8
                      1:
                         type: String
                         value:
@@ -810,9 +810,9 @@ screenData:
                widgetData:
                   options:
                      0:
-                        type: String
+                        type: Unsigned
                         value:
-                           stringValue: review-metric
+                           unsignedValue: 9
                      1:
                         type: String
                         value:

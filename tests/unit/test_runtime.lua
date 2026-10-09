@@ -156,43 +156,20 @@ panels:
     assert(string.match(errors[1], "overlaps first"), errors[1])
 end
 
-local function testLayoutPath()
-    local path = layoutStore.path("/WIDGETS/AeroGrid", "My Model.yml", "nav 1")
-    assert(string.match(path, "^/WIDGETS/AeroGrid/layouts/My%-Model%-%x%x%x%x%-%-nav%-1%-%x%x%x%x%.yaml$"), path)
-    assertEqual(
-        layoutStore.path("/WIDGETS/AeroGrid", "model.yml", "main"),
-        "/WIDGETS/AeroGrid/layouts/model--main.yaml"
-    )
-end
-
---- Real EdgeTX model filenames must all resolve to distinct, path-safe layouts.
-local function testModelFilenameResolution()
-    local names = {
-        "model1.yml",
-        "MODEL01.yml",
-        "Kavan Sonic.yml",
-        "FPV-7in.yml",
-        "Heli_450.yml",
-        "..%2fescape.yml",
-        "model1.yml.bak",
-        "",
-    }
+--- Layout names, including ones no editor would accept, resolve to distinct
+--- path-safe files inside the user layout folder.
+local function testLayoutNameResolution()
+    assertEqual(layoutStore.path("/WIDGETS/AeroGrid", "main"), "/AEROGRID/layouts/main.yaml")
+    local names = { "main", "MAIN2", "Kavan Sonic", "FPV-7in", "Heli_450", "..%2fescape", "a/b" }
     local seen = {}
-
     for _, name in ipairs(names) do
-        local path = layoutStore.path("/WIDGETS/AeroGrid", name, "main")
-        local segment = string.match(path, "^/WIDGETS/AeroGrid/layouts/([^/]+)%.yaml$")
+        local path = layoutStore.path("/WIDGETS/AeroGrid", name)
+        local segment = string.match(path, "^/AEROGRID/layouts/([^/]+)%.yaml$")
         assert(segment, "unsafe layout path for " .. name .. ": " .. path)
         assert(not string.find(segment, "%.%."), "traversal survived for " .. name)
         assert(not seen[path], "filename collision for " .. name .. ": " .. path)
         seen[path] = true
     end
-
-    -- Distinct dashboard IDs must not collide for one model either.
-    assert(
-        layoutStore.path("/WIDGETS/AeroGrid", "model1.yml", "main")
-            ~= layoutStore.path("/WIDGETS/AeroGrid", "model1.yml", "nav")
-    )
 end
 
 --- Unknown top-level keys are retained so newer authoring tools survive a load.
@@ -2485,8 +2462,7 @@ end
 testGridGeometry()
 testValidation()
 testOverlapIsRejected()
-testLayoutPath()
-testModelFilenameResolution()
+testLayoutNameResolution()
 testUnknownKeysArePreserved()
 testMalformedInput()
 testInvalidEntryIsIsolated()
