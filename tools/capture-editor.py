@@ -107,11 +107,12 @@ def prepare(sd, scene):
         return
     layout = TEXT_LAYOUT if scene == "text-settings" else LAYOUT
     if scene == "settings":
-        layout = layout.replace("          label: Reading", """          label: Reading
-          unit: V
-        - source: RSSI
-          label: Signal
-          unit: dB""")
+        layout = layout.replace("        - source: gvar1\n          label: Reading", """        - source: Alt
+          label: Altitude
+          unit: m
+        - source: GSpd
+          label: Speed
+          unit: km/h""")
     (sd / "WIDGETS/AeroGrid/layouts/Default.yaml").write_text(layout)
     main = sd / "WIDGETS/AeroGrid/main.lua"
     source = main.read_text()
