@@ -25,6 +25,9 @@ editor decisions here rather than changing `plans/aerogrid-spec.md`.
   anchoring the opposite corner. Snap to supported, in-bounds, collision-free
   grid spans with live geometry previews. Preserve the top-right configuration
   gear hit area. Drawer Size still anchors the top-left and supports key input.
+- Resizing preserves configuration and validates span-dependent settings before
+  accepting a size. Both corner candidates and the Size picker exclude incompatible
+  spans, such as one-row flight-mode panels with `showIndex` enabled.
 - Physical-radio usability is the gate for removing Size, Column, and Row
   from configuration. The user confirmed simulator resizing works; keep these
   controls for now. Once movement and corner resizing work well on the radio,

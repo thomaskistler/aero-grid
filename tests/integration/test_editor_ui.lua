@@ -481,7 +481,16 @@ for index = 1, #context.editorSession.draft.panels do
         "row spacing follows scaled native control height"
     )
     local panelType = context.editorSession.draft.panels[index].type
-    if panelType == "flight-timer" then
+    if panelType == "flight-mode" then
+        control("showIndex").properties.set(1)
+        settleDrawer()
+        local sizes = control("__size").properties.values
+        for _, size in ipairs(sizes) do
+            assert(not string.match(size, "x1$"), "size picker respects enabled mode-number constraint")
+        end
+        control("showIndex").properties.set(0)
+        settleDrawer()
+    elseif panelType == "flight-timer" then
         equal(control("timer").kind, "timer", "model timer uses native timer selection")
         equal(control("label").kind, "textEdit", "labels use the native keyboard")
         equal(type(control("label").properties.value), "string", "native text entry starts with a string")

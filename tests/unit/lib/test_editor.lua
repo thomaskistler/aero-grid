@@ -145,7 +145,38 @@ local function testRestoreDefaultDoesNotApply()
     assert(session.draft.panels[1].id == "first")
 end
 
+local function testResizePreservesSpanDependentSettings()
+    local flightMode = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/flight-mode.lua"))()
+    local input = document()
+    input.panels = { input.panels[1] }
+    local panel = input.panels[1]
+    panel.type, panel.rowSpan, panel.config = "flight-mode", 2, { showIndex = true }
+    local session = assert(editor.new(input, grid, layout, panelHost, function()
+        return flightMode
+    end))
+    local ok, err = editor.resize(session, 0, -1)
+    assert(not ok and string.find(err, "showIndex", 1, true), "incompatible resize reports setting constraint")
+    assert(session.draft.panels[1].rowSpan == 2 and not session.dirty)
+    assert(session.draft.panels[1].config.showIndex == true, "resize must not change user settings")
+    for _, size in ipairs(editor.sizes(session)) do
+        assert(not string.match(size, "x1$"), "picker must exclude incompatible spans")
+    end
+    for _, position in ipairs(editor.resizePositions(session, false, false)) do
+        assert(position.rowSpan >= 2, "corner candidates must honor settings")
+    end
+    assert(editor.setValue(session, "showIndex", false))
+    assert(editor.resize(session, 0, -1), "explicitly disabling detail permits single-row resize")
+    assert(session.draft.panels[1].rowSpan == 1)
+
+    flightMode.validateSettings = function()
+        error("broken validator")
+    end
+    local resized, message = editor.resize(session, 1, 0)
+    assert(not resized and string.find(message, "validateSettings raised", 1, true))
+end
+
 testWorkingCopyCancelAndApply()
 testPlacementRulesAndResizeAnchor()
 testAddRemoveAndStrictSettings()
 testRestoreDefaultDoesNotApply()
+testResizePreservesSpanDependentSettings()

@@ -383,6 +383,15 @@ function drawer.advance(context, state)
         end
         if ok and not state.drawerDismiss and string.sub(command.field.key, 1, 2) == "__" then
             drawer.open(context, state, "configure")
+        elseif ok and not state.drawerDismiss then
+            for _, entry in ipairs(state.drawerControls) do
+                if entry.field.key == "__size" then
+                    local sizes = assert(editor.sizes(state.session))
+                    entry.field.choices = sizes
+                    entry.object:set({ values = sizes })
+                    break
+                end
+            end
         end
     elseif command.action == "append" then
         ok, err = editor.appendItem(state.session, command.key)

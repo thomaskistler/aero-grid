@@ -108,6 +108,7 @@ local function settingsFor(module, config)
             if value == nil then
                 value = setting.default
             end
+
             values[setting.key] = copy(value)
             if config[setting.key] ~= nil then
                 knownConfig[setting.key] = copy(config[setting.key])
@@ -119,6 +120,20 @@ local function settingsFor(module, config)
         end
     end
     return values, knownConfig, errors
+end
+
+local function validatePanelSettings(module, settings, knownConfig, span)
+    if type(module.validateSettings) ~= "function" then
+        return true
+    end
+    local ok, reported = pcall(module.validateSettings, settings, span, knownConfig)
+    if not ok then
+        return false, "validateSettings raised: " .. tostring(reported)
+    end
+    if type(reported) == "table" and #reported > 0 then
+        return false, table.concat(reported, "; ")
+    end
+    return true
 end
 
 --- Create an editor session from a validated phase-one document.
@@ -247,6 +262,7 @@ function editor.sizes(session)
     if not module then
         return nil, moduleError
     end
+    local settings, knownConfig = settingsFor(module, placement.config or {})
     local sizes = {}
     for rowSpan = 1, 4 do
         for colSpan = 1, 4 do
@@ -261,6 +277,7 @@ function editor.sizes(session)
                 and placement.col + colSpan <= 4
                 and placement.row + rowSpan <= 4
                 and not overlapsAny(session.grid, session.draft.panels, candidate, session.selected)
+                and validatePanelSettings(module, settings, knownConfig, candidate)
             then
                 sizes[#sizes + 1] = tostring(colSpan) .. "x" .. tostring(rowSpan)
             end
@@ -377,6 +394,11 @@ function editor.resize(session, colDelta, rowDelta, col, row)
     if not supportsSpan(module, resized.colSpan, resized.rowSpan) then
         return false, "panel does not support span " .. tostring(resized.colSpan) .. "x" .. tostring(resized.rowSpan)
     end
+    local settings, knownConfig = settingsFor(module, placement.config or {})
+    local compatible, settingError = validatePanelSettings(module, settings, knownConfig, resized)
+    if not compatible then
+        return false, settingError
+    end
     local conflict = overlapsAny(session.grid, session.draft.panels, resized, session.selected)
     if conflict then
         return false, "overlaps panel " .. conflict.id
@@ -396,6 +418,7 @@ function editor.resizePositions(session, left, top)
     if not module then
         return nil, moduleError
     end
+    local settings, knownConfig = settingsFor(module, placement.config or {})
     local positions = {}
     for height = 1, 4 do
         for width = 1, 4 do
@@ -409,6 +432,7 @@ function editor.resizePositions(session, left, top)
                 session.grid.validatePlacement(candidate, 4, 4)
                 and supportsSpan(module, width, height)
                 and not overlapsAny(session.grid, session.draft.panels, candidate, index)
+                and validatePanelSettings(module, settings, knownConfig, candidate)
             then
                 positions[#positions + 1] = candidate
             end

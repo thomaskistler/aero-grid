@@ -85,6 +85,9 @@ visible; controls appear after a short, staged initialization.
   corner stays fixed; sizes snap to supported, non-overlapping grid dimensions.
   Drag inward to shrink or outward to expand. The top-right corner remains the
   configuration gear. Size in the drawer remains available for key-only use.
+  Resizing preserves settings and skips sizes incompatible with them. For
+  example, disable **Show mode number** before shrinking a flight-mode panel
+  to one row.
 - Tap the **+ panel**, with its gray sidebar and the same rounded panel styling
   as dashboard panels, to choose a new panel. It appears
   in the first free 1 x 1 cell, scanning left-to-right and top-to-bottom, and
