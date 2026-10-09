@@ -28,12 +28,6 @@ Use a different layout on each EdgeTX screen to show different dashboards.
 You can edit layouts on the radio in temporary fullscreen mode, or edit YAML
 files on a computer and copy them to the SD card.
 
-Upgrading from a version with **Dashboard ID** and **Theme** text settings
-resets each AeroGrid widget to `Empty` and Modern; select its layout and theme
-again. Model-specific files named
-`<model>--<dashboard>.yaml` are no longer read; rename one to a plain layout
-name and move it to `/AEROGRID/layouts/` to keep it.
-
 Before using the bundled layout, adjust its source names, battery cell count,
 and alarm thresholds for your model. Its battery source must measure the
 flight pack, not a regulated receiver supply.

@@ -20,8 +20,3 @@ screen.
 Your layouts and layout list live in `/AEROGRID/`, outside the widget folder.
 Leave that folder untouched: there is no need to back up and restore layouts
 as part of an upgrade.
-
-If upgrading from an older version that stored custom layouts inside
-`/WIDGETS/AeroGrid/layouts/`, move those files to `/AEROGRID/layouts/` before
-removing the old widget. See [layout selection](dashboards.md#select-a-layout)
-for the old naming and widget-setting changes.
