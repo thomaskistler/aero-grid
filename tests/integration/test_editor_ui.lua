@@ -206,6 +206,25 @@ equal(
 )
 equal(#context.panels, 1, "editor reuses live instances")
 
+local function dragOntoAdd(index)
+    local from, target = state.controls[index].rect, assert(state.addRect)
+    local x, y = from.x + 50, from.y + 40
+    refresh(EVT_TOUCH_FIRST, { x = x, y = y })
+    refresh(EVT_TOUCH_SLIDE, { x = target.x + 50, y = target.y + 40 })
+    refresh(EVT_TOUCH_BREAK)
+    local expected = context.editorModule.availablePositions(context.editorSession, 1, 1)[1]
+    assert(expected and state.addRect, "moving onto + must leave an add tile in another free cell")
+    local expectedRect = context.grid.rect(context.zone, expected, 4, 4, 4)
+    equal(state.addRect.x, expectedRect.x, "+ relocates to first free column")
+    equal(state.addRect.y, expectedRect.y, "+ relocates to first free row")
+    equal(state.addPanel.root.properties.x, expectedRect.x, "visible add tile follows hit target")
+    equal(state.addPanel.root.properties.y, expectedRect.y, "visible add tile follows hit target row")
+    equal(state.addPanel.root.hidden, false, "add tile remains visible after drag")
+    equal(state.addLabel.properties.text, "+", "relocated add tile retains plus glyph")
+end
+dragOntoAdd(1)
+dragOntoAdd(1)
+
 -- Gear opens settings; corner controls must not begin dragging.
 local rect = state.controls[1].rect
 equal(state.controls[1].gear.properties.x, rect.x + rect.w - 28, "gear stays at top-right")
@@ -310,6 +329,7 @@ selection.set(2)
 equal(state.drawerPending, nil, "closed selection callbacks cannot add twice")
 equal(#context.panels, 1, "new panel is only a draft preview")
 back()
+dragOntoAdd(2)
 rect = state.controls[2].rect
 tap(rect.x + rect.w - 48, rect.y + 12)
 equal(#context.editorSession.draft.panels, 2, "former X target does not remove panel")
