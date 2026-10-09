@@ -14,6 +14,11 @@ editing YAML.
 Normal App mode is read-only, even when the dashboard fills the display.
 An empty dashboard shows centred instructions until you start editing.
 
+![Editor showing panel gears and the add-panel tile](../assets/editor/overview.png)
+
+*Editor overview. Captures on this page use the EdgeTX 2.12 TX16S simulator
+with a sample layout; readings are illustrative.*
+
 ## Add and arrange panels
 
 | Action | How |
@@ -36,8 +41,12 @@ Use the native choices, toggles, number controls, and text keyboard in the
 settings dialog. Sources, switches, and timers use EdgeTX pickers.
 Global variables appear as **GV1–GV9** when enabled for the model.
 
+![Metric panel settings with entry, accent, visualization, and removal controls](../assets/editor/settings.png)
+
 For a metric panel, open **Metrics**, choose an entry, then **Source**.
 Metric entries and text lines have their own add, edit, and remove dialogs.
+
+![Metric-entry dialog with GV1 selected as Source](../assets/editor/metric-entry.png)
 
 Press **RTN** or tap outside a dialog to return one level. Changes remain in
 your draft. Placement and size preview immediately; settings preview when you
@@ -55,6 +64,8 @@ Otherwise choose an action:
 | **Save as...** | Asks for a name and saves a separate layout. |
 | **Discard changes** | Exits editing and restores the saved layout. |
 
+![Unsaved changes menu offering Save, Save as, and Discard changes](../assets/editor/exit.png)
+
 Dismiss the menu to keep editing. **Save** is not offered for **Empty**:
 use **Save as...** to name your new dashboard.
 
@@ -63,6 +74,8 @@ Save As suggests the model name plus the first unused number, such as
 24 characters). An existing name requires overwrite confirmation.
 Press **RTN** in the name dialog to return to the exit menu without losing
 your draft.
+
+![Save layout as dialog with Sonic1 entered as the new name](../assets/editor/save-as.png)
 
 **After Save As, restart the radio and select the new name in the widget's
 Layout setting.** The widget cannot change its own settings, so it continues

@@ -18,8 +18,13 @@ template<typename T> T symbol(void* library, const char* name) {
 }
 
 int main(int argc, char** argv) {
-    if (argc != 5) {
-        std::fprintf(stderr, "Usage: capture-native LIBRARY ISOLATED_SD OUTPUT_RGB565 REGIONS\n");
+    if (argc != 5 && argc != 6) {
+        std::fprintf(stderr, "Usage: capture-native LIBRARY ISOLATED_SD OUTPUT_RGB565 REGIONS [fullscreen]\n");
+        return 2;
+    }
+    bool fullscreen = argc == 6 && std::strcmp(argv[5], "fullscreen") == 0;
+    if (argc == 6 && !fullscreen) {
+        std::fprintf(stderr, "Unknown capture mode\n");
         return 2;
     }
     std::ifstream input(argv[4]);
@@ -57,9 +62,12 @@ int main(int argc, char** argv) {
     auto flush = symbol<void(*)()>(library, "lcdFlushed");
     auto buffer = symbol<unsigned char**>(library, "simuLcdBuf");
     auto changed = symbol<bool*>(library, "simuLcdRefresh");
+    auto touchDown = fullscreen ? symbol<void(*)(short, short)>(library, "_Z14touchPanelDownss") : nullptr;
+    auto touchUp = fullscreen ? symbol<void(*)()>(library, "_Z12touchPanelUpv") : nullptr;
     if (!init || !start || !stop || !flush || !buffer || !changed) {
         return 1;
     }
+    if (fullscreen && (!touchDown || !touchUp)) return 1;
     const size_t bytes = 480 * 272 * 2;
     std::vector<unsigned char> previous(bytes), image(bytes);
     std::string ready = std::string(argv[2]) + "/capture-ready.txt";
@@ -68,6 +76,8 @@ int main(int argc, char** argv) {
     init();
     start(false, argv[2], argv[2]);
     for (int tick = 0; tick < 3000; ++tick) {
+        if (fullscreen && tick == 500) touchDown(200, 140);
+        if (fullscreen && tick == 600) touchUp();
         if (*buffer) {
             std::memcpy(image.data(), *buffer, bytes);
             if (*changed) {

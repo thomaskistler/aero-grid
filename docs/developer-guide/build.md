@@ -109,7 +109,28 @@ a failed service leaves unrelated panels running. Layout `host` reports the
 loaded version. These checks detect API-incompatible mixtures, not every mixture
 of compatible releases or stale bytecode.
 
-## Panel screenshots
+## Documentation screenshots
+
+### Editor screenshots
+
+On macOS with EdgeTX Companion 2.12 and the Xcode command-line tools, run:
+
+```sh
+python3 tools/capture-editor.py
+```
+
+This uses only Python's standard library. It captures the overview, metric
+settings and entry dialogs, exit menu, and Save As dialog in
+`build/editor-capture/`. Use `--companion /path/to/Companion.app` to select a
+different installation.
+
+The tool boots an isolated fixture SD card, enters fullscreen through a native
+long-press, and automates the production editor commands in a copied widget.
+It does not modify `src/` or `build/sdcard/`. Frames are captured after the UI
+settles; `provenance.json` records the source and simulator hashes. Copy reviewed
+PNGs and the provenance file into `docs/assets/editor/` to update the guide.
+
+### Panel screenshots
 
 On macOS with EdgeTX Companion 2.12 installed and the Xcode command-line tools,
 run from the repository root:
