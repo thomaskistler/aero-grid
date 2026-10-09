@@ -35,7 +35,7 @@ local function testRoundTrip()
                     label = "quoted: value",
                     enabled = true,
                     count = 2.5,
-                    future = { "one", "two\nlines", "quote: \"ok\"" },
+                    future = { "one", "two\nlines", 'quote: "ok"' },
                     empty = {},
                 },
             },

@@ -463,7 +463,7 @@ local function quoteString(value)
     if string.find(value, "[%z\1-\8\11\12\14-\31]") then
         return nil, "YAML strings contain an unsupported control character"
     end
-    local escaped = string.gsub(value, "[\r\n\t\\\"]", function(character)
+    local escaped = string.gsub(value, '[\r\n\t\\"]', function(character)
         local replacements = {
             ["\\"] = "\\\\",
             ['"'] = '\\"',

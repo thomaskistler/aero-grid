@@ -231,6 +231,7 @@ end
 ---@return string? error
 ---@return string filename
 ---@return string origin One of `user`, `shipped`, `default`, or `none`.
+---@return table[] candidates
 function layoutStore.read(widgetPath, name)
     return layoutStore.readCandidates(widgetPath, name)
 end
@@ -245,6 +246,7 @@ end
 ---@return table? document
 ---@return string[] errors
 ---@return string filename Selected specific or fallback layout path.
+---@return string origin
 function layoutStore.load(widgetPath, name, yaml, layout, grid)
     local candidates = layoutStore.candidates(widgetPath, name)
     local lastErrors = {}

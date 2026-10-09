@@ -146,7 +146,7 @@ local function fieldsFor(state, listKey, itemIndex)
             for index, item in ipairs(config[field.key]) do
                 local title = type(item) == "table" and (item.label or item.source) or item
                 result[#result + 1] = {
-                    label = tostring(title or "Entry " .. index),
+                    label = tostring(title or ("Entry " .. index)),
                     text = function()
                         return entrySummary(state, field.key, index, config)
                     end,
@@ -558,7 +558,7 @@ local function addControl(context, state, field, index)
                 set(nil)
                 return
             end
-            local step = field.step or 1 / scale
+            local step = field.step or (1 / scale)
             set(math.floor(value / scale / step + 0.5) * step)
         end
         if scale ~= 1 or unset then
@@ -641,7 +641,8 @@ function drawer.advance(context, state)
         return false
     end
     state.drawerPending = nil
-    local editor, ok, err = state.handlers.editor
+    local editor = state.handlers.editor
+    local ok, err
     if command.action == "back" then
         drawer.close(state)
         state.mode = "menu"

@@ -440,10 +440,12 @@ function editor.movePositions(session)
     for row = 0, 4 - placement.rowSpan do
         for col = 0, 4 - placement.colSpan do
             local moved = moveTarget(session, placement, index, col, row)
-            local key = moved and moved.row * 4 + moved.col
-            if moved and not seen[key] then
-                seen[key] = true
-                positions[#positions + 1] = moved
+            if moved then
+                local key = moved.row * 4 + moved.col
+                if not seen[key] then
+                    seen[key] = true
+                    positions[#positions + 1] = moved
+                end
             end
         end
     end
@@ -464,6 +466,7 @@ function editor.move(session, colDelta, rowDelta)
         return true
     end
     if displaced then
+        assert(displacedPosition, "swapped panel has no destination")
         displaced.col, displaced.row = displacedPosition.col, displacedPosition.row
     end
     placement.col, placement.row = moved.col, moved.row
@@ -674,7 +677,7 @@ function editor.setPath(session, key, path, value)
         return false, "nested setting value is required"
     end
     local target, targetKey = resolvePath(placement.config and placement.config[key], path)
-    if not target then
+    if not target or targetKey == nil then
         return false, "nested setting path does not exist"
     end
     local current = target[targetKey]
@@ -778,7 +781,7 @@ end
 
 function editor.formFields(session)
     local settings, config, module = editor.settings(session)
-    if not settings then
+    if not settings or type(config) ~= "table" then
         return nil, config
     end
     local fields = {}
