@@ -25,6 +25,18 @@ local function enqueue(state, action, generation)
     end
 end
 
+-- EdgeTX keeps a dismissed dialog's Lua wrapper registered after deleting its
+-- native window, and a later refresh dereferences that window. Clearing the
+-- dialog's registration parent unregisters the wrapper without touching it.
+local function retireDialogHost(state)
+    local host = state.nativeDrawerHost
+    state.nativeDrawerHost = nil
+    if host then
+        host:clear()
+        lvgl.hide(host)
+    end
+end
+
 local function closeDialog(state)
     local dialog = state.nativeDrawer
     state.nativeDrawer = nil
@@ -35,6 +47,47 @@ local function closeDialog(state)
         lvgl.close(dialog)
         state.drawerClosing = nil
     end
+    retireDialogHost(state)
+end
+
+-- Objects created while EdgeTX constructs a parented object are registered
+-- under that parent, so the dialog is created from a child's visibility probe.
+local function hostedDialog(context, state, properties)
+    local host = lvgl.box(state.screen, { x = 0, y = 0, w = 0, h = 0 })
+    local dialog, failure, attempted
+    lvgl.box(host, {
+        x = 0,
+        y = 0,
+        w = 0,
+        h = 0,
+        visible = function()
+            if not attempted then
+                attempted = true
+                local ok, result = pcall(lvgl.dialog, properties)
+                if ok then
+                    dialog = result
+                else
+                    failure = result
+                end
+            end
+            return true
+        end,
+    })
+    if failure then
+        host:clear()
+        lvgl.hide(host)
+        error(failure, 0)
+    end
+    if not attempted then
+        -- Firmware without construction-time probes registers dialogs at top
+        -- level; only the host-wide reload on App return can retire those.
+        host:clear()
+        lvgl.hide(host)
+        context.nativeDialogsCreated = true
+        return lvgl.dialog(properties)
+    end
+    state.nativeDrawerHost = host
+    return dialog
 end
 
 function drawer.close(state)
@@ -145,16 +198,16 @@ function drawer.open(context, state, mode, listKey, itemIndex)
     state.drawerPadding = math.floor(state.drawerControlHeight / 16 + 0.5)
     state.drawerRowHeight = state.drawerControlHeight + state.drawerPadding * 2
     state.drawerErrorHeight = math.floor(state.drawerControlHeight * 0.56 + 0.5)
-    context.nativeDialogsCreated = true
     -- Native dialogs supply centering, 80%-screen dimensions, scrolling and RTN.
     state.nativeDrawer = assert(
-        lvgl.dialog({
+        hostedDialog(context, state, {
             title = title,
             close = function()
                 if not state.drawerClosing then
                     -- RTN deletes native children; retire their Lua callbacks first.
                     state.nativeDrawer:clear()
                     state.nativeDrawer = nil
+                    retireDialogHost(state)
                     state.drawerBuild = nil
                     local command = { action = listKey and "parent" or "back" }
                     if state.drawerPending then

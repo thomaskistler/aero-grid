@@ -49,22 +49,31 @@ while staged saving finishes; failures still show an error and retain the draft.
 
 Native TX16S testing reproduced fullscreen reentry failing after a changed layout
 was saved and the widget returned to App mode. EdgeTX 2.12 makes Lua boxes
-touch-transparent only when constructing them outside fullscreen; boxes rebuilt
-while fullscreen intercepted the native widget long press after exit. On return
-to App mode, a fullscreen-built dashboard is now retired and rebuilt using the
-existing staged reload. A fullscreen-built root is replaced as well. Suspended
-save-failure drafts are left intact. Repeated transition regressions cover saved
-geometry, and the native probe confirmed fullscreen reentry after a saved drag.
+touch-transparent only when constructing them outside fullscreen; boxes built
+while fullscreen intercepted the native widget long press after exit. Saving no
+longer reloads the dashboard: when the saved document matches the live preview
+(same panels, types, configuration and resolved settings), the previewed panels
+are adopted in place, so leaving the editor and returning to App mode does not
+flash. Panels that a preview rebuilt in fullscreen are rebuilt one at a time in
+App mode after the reflow; panels built in App mode are kept. Only a page or root
+first created in fullscreen still uses the staged full reload. Adoption updates
+each panel's placement in place, so a panel moved into the top-left corner
+reserves the menu button again in App mode. Suspended save-failure drafts are
+left intact.
 
-A reported simulator/radio hard crash on fullscreen exit was a native
-use-after-free: after a configuration dialog closed, EdgeTX deleted its native
-window while the top-level Lua dialog wrapper stayed registered, and
-`LuaWidget::foreground` later checked the freed window's visibility. Page and
-root `clear()` cannot reach that wrapper. After a dialog has been opened, the
-App-mode rebuild now calls host-level `lvgl.clear()`, which unregisters every
-wrapper. Under `MallocScribble=1`, a native probe reproduced the crash before the
-fix and completed 22 dialog/exit cycles after it. Physical-radio confirmation is
-still outstanding.
+A reported simulator/radio hard crash was a native use-after-free: after a
+configuration dialog closed, EdgeTX deleted its native window while the Lua
+dialog wrapper stayed registered, and `LuaWidget::foreground` later checked the
+freed window's visibility. This could happen on any later refresh, not only on
+fullscreen exit. EdgeTX registers objects created during another object's
+construction under that object, so each dialog is created from the visibility
+callback of a child of a disposable host box. Closing the dialog clears the
+host, which unregisters the wrapper without touching the freed window. Firmware
+that does not run that callback falls back to a top-level dialog and a
+host-level `lvgl.clear()` on App return. Under `MallocScribble=1`, the native
+probe reproduced the crash before the fix and completed every dialog/exit cycle
+after it without a full reload. Physical-radio confirmation is still
+outstanding.
 
 Panel reflow immediately recentres the current reading and places its unit
 beside it, even when telemetry has not changed. Metric, link-status, TX battery,

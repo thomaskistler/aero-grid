@@ -58,6 +58,7 @@ local function document(count)
 end
 write("edit-sparse", document(1))
 write("edit-full", document(16))
+write("edit-pair", document(2))
 for _, vertical in ipairs({ true, false }) do
     write(
         vertical and "edit-vertical-swap" or "edit-horizontal-swap",
@@ -549,11 +550,13 @@ refresh()
 settleSave()
 equal(context.editorUi, nil, "fullscreen exit saves completed editor")
 
--- Saving in fullscreen rebuilds native boxes with different hit testing.
+-- A geometry-only save keeps the previewed dashboard instead of reloading it,
+-- so no box is built in fullscreen and App mode needs no rebuild.
 widget.lvglMock.setFullScreen(false)
 load("edit-sparse")
 for cycle = 1, 3 do
     local appPage = context.page
+    local appInstance = context.panels[1].instance
     widget.lvglMock.setFullScreen(true)
     open()
     local placement = context.editorSession.draft.panels[1]
@@ -561,36 +564,131 @@ for cycle = 1, 3 do
     assert(context.editorUi.handlers.editor.move(context.editorSession, targetCol - placement.col, 0))
     refresh(EVT_VIRTUAL_EXIT)
     settleSave()
-    widget.pump(context, 80)
-    equal(context.page.builtFullscreen, true, "saved page was constructed fullscreen")
-    local fullscreenPage = context.page
+    equal(context.editorUi, nil, "geometry save exits the editor")
+    equal(context.reloadState, nil, "geometry save keeps the previewed dashboard")
+    equal(context.page, appPage, "geometry save does not rebuild the page")
+    equal(context.panels[1].instance, appInstance, "geometry save keeps live panel instances")
+    equal(context.document.panels[1].col, targetCol, "geometry save adopts the saved layout")
+    equal(context.panels[1].placement, context.document.panels[1], "panel placement follows saved layout")
     widget.lvglMock.setFullScreen(false)
     refresh()
-    equal(context.reloadState, "rebuild", "App exit retires fullscreen-built hit targets")
-    equal(fullscreenPage.parent.hostRetired, true, "host reload unregisters the fullscreen tree")
-    widget.pump(context, 80)
-    assert(context.page ~= appPage and context.page ~= fullscreenPage, "App page is reconstructed")
-    equal(context.page.builtFullscreen, false, "App page uses native touch-transparent construction")
-    equal(context.root.builtFullscreen, false, "App root is touch-transparent")
-    equal(context.document.panels[1].col, targetCol, "App rebuild retains saved geometry")
-    equal(context.editorUi, nil, "App rebuild does not reopen the editor")
+    equal(context.reloadState, nil, "App exit after geometry save needs no rebuild")
+    widget.pump(context, 20)
+    equal(context.page, appPage, "App page is kept")
+    equal(context.page.builtFullscreen, false, "kept App page remains touch-transparent")
+    equal(context.editorUi, nil, "App exit does not reopen the editor")
 end
+widget.lvglMock.setFullScreen(false)
+local reloaded = widget.createLoaded(
+    { x = 0, y = 0, w = 480, h = 272 },
+    { DashID = "edit-sparse", Theme = "modern" },
+    path
+)
+equal(reloaded.document.panels[1].col, context.document.panels[1].col, "adopted geometry matches the saved file")
 
+-- A panel moved into the menu-button corner in fullscreen, where nothing is
+-- reserved, must lay out around the button once App mode returns.
+local function labelLayout(target)
+    local found = {}
+    local function walk(object, path)
+        for index, child in ipairs(object.children) do
+            if not child.invalid and not child.hidden then
+                local key = path .. "/" .. index
+                if child.kind == "label" then
+                    found[#found + 1] = key
+                        .. "="
+                        .. tostring(child.properties.text)
+                        .. "@"
+                        .. tostring(child.properties.x)
+                        .. ","
+                        .. tostring(child.properties.y)
+                end
+                walk(child, key)
+            end
+        end
+    end
+    for _, entry in ipairs(target.panels) do
+        walk(entry.container, entry.placement.id)
+    end
+    table.sort(found)
+    return table.concat(found, "\n")
+end
+widget.lvglMock.setFullScreen(false)
+load("edit-pair")
+assert(context.reserved, "App mode reserves the menu button corner")
 widget.lvglMock.setFullScreen(true)
+open()
+context.editorSession.selected = 2
+assert(context.editorUi.handlers.editor.move(context.editorSession, -1, 0))
+equal(context.editorSession.draft.panels[2].col, 0, "second panel moves into the corner")
+refresh(EVT_VIRTUAL_EXIT)
+settleSave()
+widget.lvglMock.setFullScreen(false)
+widget.pump(context, 40)
+assert(context.reserved, "App return reserves the menu button corner")
+local fresh = widget.createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { DashID = "edit-pair", Theme = "modern" }, path)
+widget.pump(fresh, 10)
+equal(labelLayout(context), labelLayout(fresh), "corner panel moved in fullscreen reserves the menu button")
+
+-- A preview that built a panel in fullscreen rebuilds only that panel for App
+-- mode; the rest of the dashboard stays on screen.
+widget.lvglMock.setFullScreen(false)
+load("edit-pair")
+local appPage = context.page
+local appRoot = context.root
+local untouchedInstance = context.panels[2].instance
+widget.lvglMock.setFullScreen(true)
+open()
+context.editorSession.selected = 1
+assert(context.editorModule.setPath(context.editorSession, "metrics", { 1, "label" }, "NEW"))
+context.editorUi.previewPending = true
+settleDrawer()
+refresh(EVT_VIRTUAL_EXIT)
+settleSave()
+equal(context.reloadState, nil, "content save keeps the previewed dashboard")
+equal(context.page, appPage, "content save does not reload in fullscreen")
+equal(context.panels[1].instance.label.properties.text, "NEW", "content save keeps the edited preview")
+equal(context.panels[1].builtFullscreen, true, "edited preview is marked as built in fullscreen")
+local previewInstance = context.panels[1].instance
+widget.lvglMock.setFullScreen(false)
+widget.pump(context, 40)
+equal(context.reloadState, nil, "App exit does not reload the dashboard")
+equal(context.page, appPage, "App exit keeps the page")
+equal(context.root, appRoot, "App exit keeps the root")
+equal(appPage.cleared, false, "App exit does not clear the page")
+equal(context.panels[2].instance, untouchedInstance, "App exit keeps panels built in App mode")
+assert(context.panels[1].instance ~= previewInstance, "fullscreen-built panel is rebuilt")
+equal(context.panels[1].builtFullscreen, nil, "rebuilt panel is App-built")
+equal(context.panels[1].container.builtFullscreen, false, "rebuilt panel container is touch-transparent")
+equal(context.panels[1].instance.label.builtFullscreen, false, "rebuilt panel contents are touch-transparent")
+equal(context.panels[1].instance.label.properties.text, "NEW", "App rebuild retains the saved content")
+equal(context.panels[1].placement, context.document.panels[1], "rebuilt panel keeps its order")
+equal(context.appRebuild, nil, "App rebuild completes")
+equal(context.editorUi, nil, "App rebuild does not reopen the editor")
+
+-- A dismissed native dialog is registered under a disposable host, so closing
+-- it retires the wrapper without a host-wide App reload.
+widget.lvglMock.setFullScreen(false)
 load("edit-sparse")
+appPage = context.page
+widget.lvglMock.setFullScreen(true)
 open()
 state = context.editorUi
 context.editorDrawerModule.open(context, state, "configure")
 settleDrawer()
 local dismissedDialog = state.nativeDrawer
+assert(dismissedDialog.registeredParent, "configuration dialog is registered under its host")
 lvgl.close(dismissedDialog)
 settleDrawer()
+equal(dismissedDialog.invalid, true, "closed native dialog wrapper is unregistered")
+equal(state.nativeDrawerHost, nil, "dialog host is released")
+equal(context.nativeDialogsCreated, nil, "hosted dialogs need no host-wide reload")
 refresh(EVT_VIRTUAL_EXIT)
 settleSave()
 widget.lvglMock.setFullScreen(false)
 widget.pump(context, 150)
-equal(dismissedDialog.hostRetired, true, "fullscreen exit unregisters deleted native dialog wrapper")
-equal(context.nativeDialogsCreated, nil, "retired native dialogs no longer trigger reloads")
+equal(context.page, appPage, "dialog retirement keeps the App page")
+equal(appPage.parent.hostRetired, nil, "dialog retirement avoids a host-wide clear")
 equal(context.editorUi, nil, "dialog retirement preserves clean editor exit")
 
 -- Unequal panels exchange order within their combined space, not origins.

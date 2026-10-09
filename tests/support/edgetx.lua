@@ -883,6 +883,7 @@ function support.lvgl()
 
     local objects = {}
     local pendingClears = {}
+    local tempParent
     local deferCleanup = false
     local appMode = false
     local fullScreen = false
@@ -1220,6 +1221,11 @@ function support.lvgl()
 
         if parent then
             parent.children[#parent.children + 1] = object
+        elseif tempParent then
+            -- LuaScriptManager::saveLvglObjectRef files an object created during
+            -- another object's construction under that object, not top level.
+            rawset(object, "registeredParent", tempParent)
+            tempParent.children[#tempParent.children + 1] = object
         end
         objects[#objects + 1] = object
         return object
@@ -1234,10 +1240,19 @@ function support.lvgl()
                 local value = properties.get()
                 assert(type(value) == "number" and value % 1 == 0, "native toggle getter must return an integer")
             end
-            if second then
-                return newObject(kind, first, second)
+            local object = second and newObject(kind, first, second) or newObject(kind, nil, first)
+            -- LvglWidgetObjectBase::create runs callRefs while luaLvglObjEx still
+            -- has the explicit parent installed as the temporary parent.
+            if second and type(properties.visible) == "function" then
+                local previous = tempParent
+                tempParent = first
+                local ok, failure = pcall(properties.visible)
+                tempParent = previous
+                if not ok then
+                    error(failure, 0)
+                end
             end
-            return newObject(kind, nil, first)
+            return object
         end
     end
 
@@ -1262,7 +1277,7 @@ function support.lvgl()
     lvgl = {
         clear = function()
             for _, object in ipairs(objects) do
-                if not object.parent and not object.invalid then
+                if not object.parent and not object.registeredParent and not object.invalid then
                     clearObject(object)
                     rawset(object, "hidden", true)
                     rawset(object, "hostRetired", true)

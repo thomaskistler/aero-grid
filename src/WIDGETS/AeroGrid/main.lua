@@ -430,6 +430,87 @@ local function sameConfig(left, right)
     return true
 end
 
+--- Keep the previewed dashboard after a save instead of reloading it.
+--- Returns false whenever the preview is not exactly what a reload would build.
+local function adoptSavedLayout(context, document)
+    local current = context.document
+    if not document or not current or context.stage or #context.errors > 0 or #context.rejected > 0 then
+        return false
+    end
+    for key, value in pairs(document) do
+        if key ~= "panels" and not sameConfig(value, current[key]) then
+            return false
+        end
+    end
+    for key in pairs(current) do
+        if key ~= "panels" and document[key] == nil then
+            return false
+        end
+    end
+    if #document.panels ~= #context.panels then
+        return false
+    end
+    local entries = {}
+    for _, entry in ipairs(context.panels) do
+        if entry.failed or entry.editorVisible == false then
+            return false
+        end
+        entries[entry.placement.id] = entry
+    end
+    local ordered = {}
+    for index, placement in ipairs(document.panels) do
+        local entry = entries[placement.id]
+        if
+            not entry
+            or entry.placement.type ~= placement.type
+            or not sameConfig(placement.config, entry.placement.config)
+        then
+            return false
+        end
+        local shown = entry.editorPlacement or entry.placement
+        if
+            shown.col ~= placement.col
+            or shown.row ~= placement.row
+            or shown.colSpan ~= placement.colSpan
+            or shown.rowSpan ~= placement.rowSpan
+        then
+            return false
+        end
+        -- Settings can depend on span, so a resized panel must resolve to the
+        -- same settings a reload would give it.
+        if entry.placement.colSpan ~= placement.colSpan or entry.placement.rowSpan ~= placement.rowSpan then
+            local resolved, warnings = context.panelHost.resolveSettings(
+                entry.module,
+                placement.config,
+                { colSpan = placement.colSpan, rowSpan = placement.rowSpan }
+            )
+            if #warnings > 0 or not sameConfig(resolved, entry.settings) then
+                return false
+            end
+        end
+        ordered[index] = entry
+    end
+    -- The saved draft is owned by the closing editor session, which is
+    -- discarded, so it becomes the active document without a copy.
+    -- Panel services captured the live placement table, so it is updated in
+    -- place and becomes the document's entry.
+    for index, entry in ipairs(ordered) do
+        local placement = entry.placement
+        for key in pairs(placement) do
+            placement[key] = nil
+        end
+        for key, value in pairs(document.panels[index]) do
+            placement[key] = value
+        end
+        document.panels[index] = placement
+        entry.editorPlacement = nil
+        entry.editorVisible = nil
+    end
+    context.panels = ordered
+    context.document = document
+    return true
+end
+
 local function startPanelPreview(context, document)
     local placements, existing, actions = {}, {}, {}
     for _, placement in ipairs(document.panels) do
@@ -578,6 +659,7 @@ local function openEditor(context)
             return advancePanelPreview(context, job)
         end,
         startSave = function(document)
+            context.editorSavedDocument = document
             return context.layoutStore.startSave(
                 context.path,
                 context.modelFilename or "default",
@@ -605,8 +687,11 @@ local function openEditor(context)
             context.editorPreviewContainers = nil
             if saved then
                 context.editorPreviewChanged = nil
-                context.reloadState = "clear"
+                if not adoptSavedLayout(context, context.editorSavedDocument) then
+                    context.reloadState = "clear"
+                end
             end
+            context.editorSavedDocument = nil
         end,
     }
     local opened, openError = pcall(context.editorUiModule.open, context, session, handlers)
@@ -750,13 +835,13 @@ local function buildServices(context, placement)
     -- someone else is laid out correctly too, without knowing any of this
     -- exists. The reservation is read on each call, not captured, so a zone
     -- that moves is picked up by the update that follows it.
-    if context.reserved then
-        builder = setmetatable({
-            frame = function(resolved, rect, fonts, reserved, badgeText)
-                return context.themeBuilder.frame(resolved, rect, fonts, reservedFor(context, placement), badgeText)
-            end,
-        }, { __index = context.themeBuilder })
-    end
+    -- Always bound: a panel built in fullscreen, where nothing is reserved, is
+    -- still shown in App mode later. Saving an edit updates `placement` in place.
+    builder = setmetatable({
+        frame = function(resolved, rect, fonts, reserved, badgeText)
+            return context.themeBuilder.frame(resolved, rect, fonts, reservedFor(context, placement), badgeText)
+        end,
+    }, { __index = context.themeBuilder })
 
     return {
         theme = theme,
@@ -860,6 +945,11 @@ buildPanel = function(context, placement, container, preview)
         lvgl.show(container)
     else
         container = lvgl.box(context.page, geometry)
+        -- Preview pools reuse containers, so their origin follows the object.
+        if isFullScreen() then
+            context.fullscreenContainers = context.fullscreenContainers or setmetatable({}, { __mode = "k" })
+            context.fullscreenContainers[container] = true
+        end
     end
 
     local services = buildServices(context, placement)
@@ -903,6 +993,8 @@ buildPanel = function(context, placement, container, preview)
             instance = instance,
             settings = settings,
             container = container,
+            -- Boxes built in fullscreen stay touchable in App mode.
+            builtFullscreen = isFullScreen() or nil,
             interval = interval,
             -- Stagger panels that share an interval so they do not all fall
             -- due on the same frame.
@@ -1448,6 +1540,45 @@ local function advanceReflow(context)
     return true
 end
 
+--- Rebuild one fullscreen-built panel for App mode, over two callbacks.
+--- EdgeTX 2.12 only makes Lua boxes touch-transparent when constructing them
+--- outside fullscreen, so such a panel would swallow the widget's long press.
+--- The retire and build steps are split because a cleared container sweeps
+--- objects created in it during the same callback.
+---@param context AeroGridContext
+local function advanceAppRebuild(context)
+    local job = context.appRebuild
+    local entry = job.entry
+    if not job.retired then
+        job.retired = true
+        local ok, destroyError = context.panelHost.dispatch(entry, "destroy")
+        if not ok and destroyError then
+            addError(context, entry.placement.id .. ": destroy: " .. destroyError)
+        end
+        entry.container:clear()
+        lvgl.hide(entry.container)
+        local fullscreenContainers = context.fullscreenContainers
+        if not (fullscreenContainers and fullscreenContainers[entry.container]) then
+            job.container = entry.container
+        end
+        for index, current in ipairs(context.panels) do
+            if current == entry then
+                table.remove(context.panels, index)
+                job.index = index
+                break
+            end
+        end
+        return
+    end
+    context.appRebuild = nil
+    local rebuilt = buildPanel(context, entry.placement, job.container)
+    if rebuilt then
+        table.remove(context.panels)
+        table.insert(context.panels, math.min(job.index, #context.panels + 1), rebuilt)
+    end
+    showErrors(context)
+end
+
 --- Apply native host options; changing Dashboard ID or Theme rebuilds safely.
 ---@param context AeroGridContext
 ---@param widgetOptions AeroGridWidgetOptions
@@ -1635,23 +1766,29 @@ local function refresh(context, widgetEvent, touchState)
     if context.reloadState == "clear" then
         dispatchAll(context, "destroy")
 
-        -- Host clear synchronously unregisters all Lua UI wrappers, including
-        -- native dialogs whose bodies EdgeTX has already deleted. Clearing only
-        -- the page leaves those top-level wrappers pointing at freed windows.
-        -- Otherwise discard only the page: EdgeTX collects that clear whenever
-        -- it next runs callRefs, so the next page is built as a fresh child of
-        -- the root, where the pending cleanup cannot reach it.
-        if
-            not isFullScreen()
-            and (context.pageBuiltFullscreen or context.rootBuiltFullscreen or context.nativeDialogsCreated)
-        then
+        -- Discard the whole page. EdgeTX collects the clear whenever it next runs
+        -- callRefs, which is not guaranteed to be this callback: it is skipped
+        -- while the widget is off screen, such as behind the settings dialog, and
+        -- once an error has been reported. The next page is therefore built as a
+        -- fresh child of the root, where this pending cleanup cannot reach it.
+        --
+        -- Only a firmware fallback creates top-level native dialogs. EdgeTX
+        -- keeps those wrappers registered after deleting their windows, and
+        -- only a host-wide clear unregisters them.
+        if context.nativeDialogsCreated and not isFullScreen() then
             lvgl.clear()
             context.root = nil
             context.nativeDialogsCreated = nil
+        elseif context.rootBuiltFullscreen and not isFullScreen() then
+            context.root:clear()
+            lvgl.hide(context.root)
+            context.root = nil
         elseif context.page then
             context.page:clear()
             lvgl.hide(context.page)
         end
+        context.fullscreenContainers = nil
+        context.appRebuild = nil
 
         context.page = nil
         context.canvas = nil
@@ -1788,6 +1925,18 @@ local function refresh(context, widgetEvent, touchState)
     end
     if context.reflowIndex then
         advanceReflow(context)
+        return
+    end
+    if not context.appRebuild and not isFullScreen() and not context.editorUi then
+        for index, entry in ipairs(context.panels) do
+            if entry.builtFullscreen then
+                context.appRebuild = { entry = entry, index = index }
+                break
+            end
+        end
+    end
+    if context.appRebuild then
+        advanceAppRebuild(context)
         return
     end
 
