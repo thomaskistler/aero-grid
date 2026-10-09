@@ -89,7 +89,6 @@ Moving and resizing require touch.
 
 Use the native choices, toggles, number controls, and text keyboard in the
 settings dialog. Sources, switches, and timers use EdgeTX pickers.
-Global variables appear as **GV1–GV9** when enabled for the model.
 
 ![Metric panel settings with entry, accent, visualization, and removal controls](../assets/editor/settings.png)
 
