@@ -98,9 +98,7 @@ Metric entries and text lines have their own add, edit, and remove dialogs.
 ![Metric-entry dialog with GV1 selected as Source](../assets/editor/metric-entry.png)
 
 Press **RTN** or tap outside a dialog to return one level. Changes remain in
-your draft. Placement and size preview immediately; settings preview when you
-close the main panel dialog. Rotary/key input can select panels and open
-settings, but cannot move or resize them.
+your draft.
 
 From the editing dashboard, press **RTN**. If nothing changed, editing closes.
 Otherwise choose an action:
