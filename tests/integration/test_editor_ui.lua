@@ -121,7 +121,7 @@ local function control(key, leaf)
     error("drawer control not found: " .. key)
 end
 local function back()
-    context.editorUi.drawerBack.properties.press()
+    lvgl.close(context.editorUi.nativeDrawer)
     settleDrawer()
 end
 getSourceIndex = function(name)
@@ -217,6 +217,10 @@ settleDrawer()
 equal(state.mode, "configure", "gear opens settings")
 equal(state.drag, nil, "gear press must not start drag")
 equal(state.nativeDrawer.kind, "dialog", "configuration uses native centered dialog")
+equal(state.drawerBack, nil, "standard configuration has no custom return button")
+equal(state.drawerControls[1].row.properties.y, 4, "first setting starts below native header")
+equal(state.drawerControls[2].row.properties.y - state.drawerControls[1].row.properties.y, 36, "native row spacing")
+equal(control("__row").properties.h, 32, "controls use native input height")
 equal(state.drawerFields[1].key, "__size", "size is first setting")
 equal(control("__size").kind, "choice", "size uses native picker")
 equal(control("__size").properties.active(), true, "controls activate after construction")
@@ -262,10 +266,16 @@ for _, row in ipairs(state.drawerControls) do
     if row.field.key == "__row" then
         equal(row.errorLabel.hidden, false, "validation feedback appears beside the field")
         assert(row.errorLabel.properties.text ~= "", "validation feedback explains failure")
+        equal(state.drawerControls[4].row.properties.y, row.errorLabel.properties.y + 18, "error shifts next row")
     end
 end
 rowControl.properties.set(unchangedRow + 1)
 settleDrawer()
+equal(
+    state.drawerControls[4].row.properties.y - state.drawerControls[3].row.properties.y,
+    36,
+    "correcting an error restores compact spacing"
+)
 lvgl.close(state.nativeDrawer)
 settleDrawer()
 equal(state.mode, "menu", "Return closes drawer first")
@@ -403,6 +413,7 @@ settleSave()
 equal(context.editorUi, nil, "fullscreen exit saves completed editor")
 
 widget.lvglMock.setFullScreen(true)
+lvgl.UI_ELEMENT_HEIGHT = 48
 load("default")
 open()
 for index = 1, #context.editorSession.draft.panels do
@@ -410,6 +421,11 @@ for index = 1, #context.editorSession.draft.panels do
     tap(rect.x + rect.w - 12, rect.y + 12)
     settleDrawer()
     equal(context.editorUi.mode, "configure", "aircraft panel settings open")
+    equal(
+        context.editorUi.drawerControls[2].row.properties.y - context.editorUi.drawerControls[1].row.properties.y,
+        54,
+        "row spacing follows scaled native control height"
+    )
     local panelType = context.editorSession.draft.panels[index].type
     if panelType == "flight-timer" then
         equal(control("timer").kind, "timer", "model timer uses native timer selection")
@@ -436,6 +452,7 @@ context.editorSession.dirty = true
 refresh(EVT_VIRTUAL_EXIT)
 settleSave()
 equal(context.editorUi, nil, "aircraft layout and service configuration save")
+lvgl.UI_ELEMENT_HEIGHT = nil
 widget.lvglMock.setFullScreen(false)
 
 widget.lvglMock.setAppMode(false)

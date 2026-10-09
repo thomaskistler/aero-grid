@@ -108,9 +108,10 @@ accent names use the panel's supplied choices. Sizes that do not fit are hidden.
 Controls become available after a short, staged construction.
 
 Metric entries and text lines have separate entry dialogs with add/edit/remove
-actions. The small **<** button at the top of the dialog's content returns one
-level; removing a panel or entry is immediate, without confirmation. Validation
-feedback appears below the affected setting. Configuration fields come from
+actions. Physical **RTN** or a tap outside the native dialog returns one level;
+there is no custom return button. Removing a panel or entry is immediate,
+without confirmation. Rows use standard EdgeTX input height and spacing;
+validation feedback expands only the affected row. Configuration fields come from
 each panel's schema, with its supplied choices, numeric bounds, and steps.
 Changes affect only the in-memory draft; configuration takes effect on
 save/reload, while placement and size preview immediately.

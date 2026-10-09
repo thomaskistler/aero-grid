@@ -140,7 +140,11 @@ function drawer.open(context, state, mode, listKey, itemIndex)
     local fields = fieldsFor(state, listKey, itemIndex)
     state.drawerListKey, state.drawerItemIndex = listKey, itemIndex
     state.drawerFields, state.drawerControls = fields, {}
-    state.drawerBuild = 0
+    state.drawerBuild = 1
+    state.drawerControlHeight = lvgl.UI_ELEMENT_HEIGHT or 32
+    state.drawerPadding = math.floor(state.drawerControlHeight / 16 + 0.5)
+    state.drawerRowHeight = state.drawerControlHeight + state.drawerPadding * 2
+    state.drawerErrorHeight = math.floor(state.drawerControlHeight * 0.56 + 0.5)
     -- Native dialogs supply centering, 80%-screen dimensions, scrolling and RTN.
     state.nativeDrawer = assert(
         lvgl.dialog({
@@ -187,14 +191,15 @@ local function addControl(context, state, field, index)
         enqueue(state, command, generation)
     end
     local width = state.drawerWidth - 16
+    local y = state.drawerPadding * 2 + (index - 1) * state.drawerRowHeight
     local row =
-        lvgl.setting(state.nativeDrawer, { x = 4, y = 40 + (index - 1) * 58, w = width, h = 38, title = field.label })
+        lvgl.setting(state.nativeDrawer, { x = 4, y = y, w = width, h = state.drawerRowHeight, title = field.label })
     local controlX = math.floor(width * 0.48)
     local options = {
         x = controlX,
-        y = 4,
+        y = 0,
         w = width - controlX - 8,
-        h = 30,
+        h = state.drawerControlHeight,
         active = function()
             return generation == state.drawerGeneration
                 and state.nativeDrawer ~= nil
@@ -309,39 +314,44 @@ local function addControl(context, state, field, index)
     control = assert(lvgl[kind](row, options), "cannot create native " .. kind)
     local errorLabel = lvgl.label(state.nativeDrawer, {
         x = 12,
-        y = 40 + (index - 1) * 58 + 38,
+        y = y + state.drawerRowHeight,
         w = width - 8,
-        h = 18,
+        h = state.drawerErrorHeight,
         text = "",
         font = SMLSIZE,
         color = context.theme.color.critical,
     })
     lvgl.hide(errorLabel)
-    state.drawerControls[index] = { object = control, errorLabel = errorLabel, field = field, kind = kind }
+    state.drawerControls[index] = { object = control, row = row, errorLabel = errorLabel, field = field, kind = kind }
     field.control = state.drawerControls[index]
+end
+
+local function fieldError(state, control, message)
+    control.errorLabel:set({ text = message or "" })
+    if message then
+        lvgl.show(control.errorLabel)
+    else
+        lvgl.hide(control.errorLabel)
+    end
+    local shown = message ~= nil
+    if (control.errorShown == true) == shown then
+        return
+    end
+    control.errorShown = shown
+    local y = state.drawerPadding * 2
+    for _, entry in ipairs(state.drawerControls) do
+        entry.row:set({ y = y })
+        y = y + state.drawerRowHeight
+        entry.errorLabel:set({ y = y })
+        if entry.errorShown then
+            y = y + state.drawerErrorHeight
+        end
+    end
 end
 
 function drawer.advance(context, state)
     if state.drawerBuild ~= nil then
-        if state.drawerBuild == 0 then
-            local generation = state.drawerGeneration
-            state.drawerBack = lvgl.button(state.nativeDrawer, {
-                x = 8,
-                y = 4,
-                w = 36,
-                h = 30,
-                text = "<",
-                press = function()
-                    enqueue(state, { action = state.drawerListKey and "parent" or "back" }, generation)
-                end,
-                active = function()
-                    return generation == state.drawerGeneration
-                        and state.nativeDrawer ~= nil
-                        and state.drawerBuild == nil
-                        and not state.drawerPending
-                end,
-            })
-        elseif state.drawerBuild <= #state.drawerFields then
+        if state.drawerBuild <= #state.drawerFields then
             addControl(context, state, state.drawerFields[state.drawerBuild], state.drawerBuild)
         else
             state.drawerBuild = nil
@@ -369,12 +379,7 @@ function drawer.advance(context, state)
             if command.control.kind == "textEdit" then
                 command.control.object:set({ value = tostring(current(state, command.field) or "") })
             end
-            command.control.errorLabel:set({ text = ok and "" or tostring(err) })
-            if ok then
-                lvgl.hide(command.control.errorLabel)
-            else
-                lvgl.show(command.control.errorLabel)
-            end
+            fieldError(state, command.control, not ok and tostring(err) or nil)
         end
         if ok and not state.drawerDismiss and string.sub(command.field.key, 1, 2) == "__" then
             drawer.open(context, state, "configure")
@@ -409,8 +414,7 @@ function drawer.advance(context, state)
     if ok == false then
         state.status, state.statusError = tostring(err), true
         if command.control and state.nativeDrawer then
-            command.control.errorLabel:set({ text = tostring(err) })
-            lvgl.show(command.control.errorLabel)
+            fieldError(state, command.control, tostring(err))
         end
     end
     if state.drawerDismiss then

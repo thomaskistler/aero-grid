@@ -119,10 +119,9 @@ or outside-touch cancellation leaves the draft unchanged.
   before implementing; do not retain the prototype's right-edge placement.
 - Use a scrollable settings area with an obvious scroll affordance and
   consistent touch, rotary, and key focus behavior.
-- Provide a small touch **<** control at the top-left of the dialog content.
-  EdgeTX 2.12 exposes the native dialog body, not its title bar, to Lua;
-  this replaces the originally planned header control without a custom dialog.
-- The touch back control and physical RTN perform the same action: close
+- Do not add a custom return button; match standard EdgeTX widget settings.
+  This supersedes the earlier header/top-content **<** control.
+- Outside-touch dismissal and physical RTN perform the same action: close
   the drawer, retain draft changes, and return to dashboard editing without
   saving. Nested text editing/pickers return one level first.
 - RTN from dashboard editing opens the planned Cancel / Save / Save As dialog if the
@@ -154,6 +153,10 @@ button is a native EdgeTX control.
   accidental activation, but remove immediately without confirmation.
 - Validation: show feedback beside the affected setting and preserve the
   draft on errors.
+- Match native form line spacing: firmware `UI_ELEMENT_HEIGHT` plus two
+  scaled `PAD_TINY` paddings (32 + 4 pixels on TX16S). Start settings directly
+  below the native header. Reserve extra feedback space only for rows with
+  visible validation errors, moving subsequent rows down while needed.
 
 ### Native API findings and preview scope
 
@@ -212,7 +215,7 @@ User decisions, 2026-10-07, supersede these aspects of the initial prototype:
   Currently configuration applies on save/reload and additions are placeholders.
 
 The local browser prototype now reflects centering, hidden blocked sizes,
-top-content back, and immediate removal. Its browser controls and inline metric
+native dismissal without a return button, and immediate removal. Its browser controls and inline metric
 cards remain conceptual; the native runtime uses separate grouped-entry dialogs.
 
 Review the simple and structured-list mockups before replacing the runtime
@@ -227,7 +230,7 @@ Return/back behavior at radio resolution and within callback limits.
   placements/sizes, schema settings, and strict validation.
 - `src/WIDGETS/AeroGrid/lib/editor_ui.lua`: gesture controls, shared + panel,
   live geometry previews, and editor exit flow.
-- `src/WIDGETS/AeroGrid/lib/editor_drawer.lua`: native settings/catalog dialogs,
+- `src/WIDGETS/AeroGrid/lib/editor_drawer.lua`: native settings dialogs and panel selection menu,
   grouped entries, staged construction, and queued edits.
 - `src/WIDGETS/AeroGrid/lib/layout_store.lua` and `lib/yaml.lua`: deterministic
   serialization, verified writes, backups, and recovery.

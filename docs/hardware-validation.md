@@ -279,7 +279,8 @@ user-confirmed hardware verification without inventing quantitative measurements
 - [ ] Verify native dialogs are centered and sized like standard EdgeTX dialogs.
   Check touch/rotary focus, toggles, choices, numeric inputs, the native keyboard,
   source/switch/timer pickers, and grouped metric/text entry dialogs.
-- [ ] Check the top-content < button and physical RTN return one level without
+- [ ] Confirm there is no custom return button and row spacing matches native
+  widget settings. Check physical RTN and outside-touch dismissal return one level without
   saving; dismiss a nested picker or keyboard before closing its parent.
   Repeat close/reopen cycles and check memory/object stability.
 - [ ] Confirm blocked sizes are hidden, removal is immediate, and invalid
