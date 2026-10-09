@@ -124,6 +124,55 @@ local function testAddRemoveAndStrictSettings()
     assert(not valid and string.find(table.concat(errors, "\n"), "label must not be empty", 1, true))
 end
 
+local function testDeclaredEntryFieldsAreAlwaysOffered()
+    modules.listed = {
+        id = "listed",
+        apiVersion = 1,
+        supportedSpans = { "1x1" },
+        settings = {
+            {
+                key = "items",
+                type = "table",
+                minItems = 1,
+                maxItems = 3,
+                fields = {
+                    { key = "source", label = "Source", type = "string", required = true },
+                    { key = "limit", label = "Limit", type = "number", min = 0, max = 5 },
+                    { path = { "positions", "middle" }, label = "Middle", type = "string" },
+                },
+                default = { { source = "A", positions = {} } },
+            },
+        },
+        create = function()
+            return {}
+        end,
+    }
+    local input = document()
+    input.panels[1].type = "listed"
+    input.panels[1].config = { items = { { source = "A", positions = {} }, { source = "B", positions = {} } } }
+    local session = newSession(input)
+    local fields = assert(editor.formFields(session))
+    local offered = {}
+    for _, field in ipairs(fields) do
+        if field.path then
+            offered[#offered + 1] = field.path[1] .. ":" .. field.entryLabel
+        end
+    end
+    assert(
+        table.concat(offered, ",") == "1:Source,1:Limit,1:Middle,2:Source,2:Limit,2:Middle",
+        "unset declared entry fields must still be offered: " .. table.concat(offered, ",")
+    )
+    assert(editor.setPath(session, "items", { 2, "limit" }, 4))
+    assert(session.draft.panels[1].config.items[2].limit == 4)
+    assert(not editor.setPath(session, "items", { 2, "limit" }, 6), "declared ranges are enforced")
+    assert(not editor.setPath(session, "items", { 2, "source" }, nil), "required entry fields cannot be removed")
+    assert(editor.setPath(session, "items", { 2, "limit" }, nil), "optional entry fields can be removed")
+    assert(session.draft.panels[1].config.items[2].limit == nil)
+    assert(editor.setPath(session, "items", { 1, "positions", "middle" }, "MID"))
+    assert(session.draft.panels[1].config.items[1].positions.middle == "MID")
+    modules.listed = nil
+end
+
 local function testRestoreDefaultDoesNotApply()
     local session = newSession()
     local default = {
@@ -327,4 +376,5 @@ testWorkingCopyCancelAndApply()
 testPlacementRulesAndResizeAnchor()
 testAddRemoveAndStrictSettings()
 testRestoreDefaultDoesNotApply()
+testDeclaredEntryFieldsAreAlwaysOffered()
 testResizePreservesSpanDependentSettings()

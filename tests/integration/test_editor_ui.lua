@@ -357,6 +357,44 @@ equal(
     36,
     "correcting an error restores compact spacing"
 )
+-- The entry only sets source and label, yet every reading setting is offered.
+local entryLabels = {}
+for _, row in ipairs(state.drawerControls) do
+    if row.field.path then
+        entryLabels[#entryLabels + 1] = row.field.label
+    end
+end
+equal(
+    table.concat(entryLabels, ","),
+    "Source,Label,Unit,Precision,Direction,Range min,Range max,Warning,Critical",
+    "metric entries offer every reading setting"
+)
+local entry = context.editorSession.draft.panels[1].config.metrics[1]
+equal(entry.warning, nil, "fixture entry omits warning")
+equal(control("metrics", "direction").kind, "choice", "direction uses native picker")
+equal(control("metrics", "direction").properties.get(), 1, "omitted direction shows its default")
+local warningControl = control("metrics", "warning")
+equal(warningControl.kind, "numberEdit", "thresholds use native number entry")
+equal(warningControl.properties.get(), warningControl.properties.min, "omitted warning shows as unset")
+equal(warningControl.properties.display(warningControl.properties.min), "Off", "unset warning is labelled")
+warningControl.properties.set(225)
+settleDrawer()
+equal(entry.warning, 22.5, "number entry sets an omitted reading setting")
+equal(warningControl.properties.get(), 225, "number entry reflects the new value")
+warningControl.properties.set(warningControl.properties.min)
+settleDrawer()
+equal(entry.warning, nil, "choosing unset removes the reading setting")
+control("metrics", "unit").properties.set("m")
+settleDrawer()
+equal(entry.unit, "m", "text entry sets an omitted reading setting")
+control("metrics", "unit").properties.set("")
+settleDrawer()
+equal(entry.unit, nil, "clearing optional text removes it")
+equal(
+    control("metrics", "precision").properties.display(control("metrics", "precision").properties.min),
+    "Sensor",
+    "unset precision follows the sensor"
+)
 state.nativeDrawer.properties.close()
 settleDrawer()
 equal(context.document.panels[1].colSpan, 1, "settings do not mutate committed layout")
@@ -816,13 +854,18 @@ for index = 1, 5 do
     refresh()
     equal(context.panels[1].failed, nil, "reused container survives deferred cleanup")
 end
-assert(context.editorModule.setPath(context.editorSession, "metrics", { 1, "precision" }, 4))
+local rejectedPrecision, precisionError =
+    context.editorModule.setPath(context.editorSession, "metrics", { 1, "precision" }, 4)
+equal(rejectedPrecision, false, "declared entry fields are validated when written")
+assert(precisionError, "rejected entry field explains why")
+local previewSource = context.editorSession.draft.panels[1].config.metrics[1].source
+assert(context.editorModule.setPath(context.editorSession, "metrics", { 1, "source" }, ""))
 context.editorUi.previewPending = true
 settleDrawer()
 assert(context.editorUi.previewError, "invalid settings report a preview failure")
 equal(context.editorUi.statusLabel.hidden, false, "preview failure is visible in editing")
 equal(#context.panels, 0, "failed preview does not leave a second or stale live instance")
-assert(context.editorModule.setPath(context.editorSession, "metrics", { 1, "precision" }, 0))
+assert(context.editorModule.setPath(context.editorSession, "metrics", { 1, "source" }, previewSource))
 context.editorUi.previewPending = true
 settleDrawer()
 equal(context.editorUi.previewError, nil, "corrected settings clear the preview failure")

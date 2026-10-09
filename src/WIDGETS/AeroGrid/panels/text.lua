@@ -12,6 +12,14 @@ local text = {
             type = "table",
             minItems = 1,
             maxItems = 3,
+            -- Every entry setting, so the editor offers ones an entry omits.
+            fields = {
+                { key = "label", label = "Label", type = "string", required = true },
+                { key = "source", label = "Source", type = "string", required = true },
+                { path = { "positions", "up" }, label = "Up", type = "string", required = true },
+                { path = { "positions", "middle" }, label = "Middle", type = "string" },
+                { path = { "positions", "down" }, label = "Down", type = "string", required = true },
+            },
             default = {
                 {
                     label = "SW1",

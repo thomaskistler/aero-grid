@@ -106,7 +106,7 @@ local function fieldsFor(state, listKey, itemIndex)
     if listKey then
         for _, field in ipairs(fields) do
             if field.key == listKey and field.path and field.path[1] == itemIndex then
-                field.label = tostring(field.path[#field.path])
+                field.label = field.entryLabel or tostring(field.path[#field.path])
                 result[#result + 1] = field
             end
         end
@@ -322,24 +322,51 @@ local function addControl(context, state, field, index)
         kind, options.get, options.set = "timer", get, set
     elseif field.type == "number" then
         kind = "numberEdit"
-        local scale = (field.step and field.step < 1 or (get() or 0) % 1 ~= 0) and 100 or 1
-        options.min = math.floor((field.min or -1000000) * scale)
-        options.max = math.floor((field.max or 1000000) * scale)
+        local scale = field.step and field.step < 1 and math.floor(1 / field.step + 0.5) or 1
+        if ((get() or 0) * scale) % 1 ~= 0 then
+            scale = 100
+        end
+        options.min = math.floor((field.min or -100000) * scale)
+        options.max = math.floor((field.max or 100000) * scale)
+        -- An optional field without a default is shown below its minimum as
+        -- "unset", and choosing that entry removes the field again.
+        local unset = field.empty and options.min - 1
+        if unset then
+            options.min = unset
+        end
         options.get = function()
-            return math.floor((get() or 0) * scale + 0.5)
+            local value = get()
+            if value == nil then
+                return unset or 0
+            end
+            return math.floor(value * scale + 0.5)
         end
         options.set = function(value)
+            if unset and value <= unset then
+                set(nil)
+                return
+            end
             local step = field.step or 1 / scale
             set(math.floor(value / scale / step + 0.5) * step)
         end
-        if scale ~= 1 then
+        if scale ~= 1 or unset then
             options.display = function(value)
+                if unset and value <= unset then
+                    return field.empty
+                end
                 return tostring(value / scale)
             end
         end
     else
         kind, options.value, options.length = "textEdit", tostring(get() or ""), 128
-        options.set = set
+        options.set = function(value)
+            -- Clearing an optional text removes it, so the panel's own
+            -- fallback applies again.
+            if value == "" and field.path and not field.required then
+                value = nil
+            end
+            set(value)
+        end
     end
     control = assert(lvgl[kind](row, options), "cannot create native " .. kind)
     local errorLabel = lvgl.label(state.nativeDrawer, {

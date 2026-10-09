@@ -567,6 +567,59 @@ function editor.setValue(session, key, value)
     return true
 end
 
+--- Path of a declared entry field, relative to its entry.
+local function entryPath(field)
+    return field.path or { field.key }
+end
+
+--- One control per declared field of every entry, whether or not it is set.
+local function entryFields(setting, entries, result)
+    for index = 1, #entries do
+        for _, field in ipairs(setting.fields) do
+            local relative = entryPath(field)
+            local path = { index }
+            for _, key in ipairs(relative) do
+                path[#path + 1] = key
+            end
+            result[#result + 1] = {
+                key = setting.key,
+                path = path,
+                label = (setting.label or setting.key) .. "[" .. index .. "]." .. table.concat(relative, "."),
+                entryLabel = field.label,
+                -- Shown when the entry omits the field; never the live value,
+                -- which the drawer reads from the draft.
+                value = field.default,
+                type = field.type,
+                choices = field.choices,
+                min = field.min,
+                max = field.max,
+                step = field.step,
+                required = field.required,
+                empty = field.empty,
+            }
+        end
+    end
+end
+
+--- Declared entry field addressed by a nested path, if the setting has any.
+local function declaredEntryField(setting, path)
+    for _, field in ipairs(setting.fields or {}) do
+        local relative = entryPath(field)
+        if #relative == #path - 1 then
+            local matches = true
+            for index, key in ipairs(relative) do
+                if path[index + 1] ~= key then
+                    matches = false
+                    break
+                end
+            end
+            if matches then
+                return field
+            end
+        end
+    end
+end
+
 local function resolvePath(value, path)
     local parent = value
     for index = 1, #path - 1 do
@@ -593,22 +646,39 @@ function editor.setPath(session, key, path, value)
     if not module then
         return false, moduleError
     end
-    local declared = false
+    local declared
     for _, setting in ipairs(module.settings or {}) do
         if setting.key == key and setting.type == "table" then
-            declared = true
+            declared = setting
             break
         end
     end
     if not declared then
         return false, "setting is not a structured table"
     end
+    local field = declaredEntryField(declared, path)
+    if field then
+        local valid, fieldError = validateSetting({
+            key = field.label or field.key,
+            type = field.type,
+            choices = field.choices,
+            min = field.min,
+            max = field.max,
+            step = field.step,
+            required = field.required,
+        }, value)
+        if not valid then
+            return false, fieldError
+        end
+    elseif value == nil then
+        return false, "nested setting value is required"
+    end
     local target, targetKey = resolvePath(placement.config and placement.config[key], path)
     if not target then
         return false, "nested setting path does not exist"
     end
     local current = target[targetKey]
-    if current ~= nil and type(current) ~= type(value) then
+    if value ~= nil and current ~= nil and type(current) ~= type(value) then
         return false, "nested setting value has the wrong type"
     end
     target[targetKey] = copy(value)
@@ -724,7 +794,11 @@ function editor.formFields(session)
                     minItems = setting.minItems,
                     maxItems = setting.maxItems,
                 }
-                flattenFields(value, { setting.key }, setting.label or setting.key, fields)
+                if type(setting.fields) == "table" then
+                    entryFields(setting, value, fields)
+                else
+                    flattenFields(value, { setting.key }, setting.label or setting.key, fields)
+                end
             else
                 fields[#fields + 1] = {
                     key = setting.key,

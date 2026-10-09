@@ -64,6 +64,32 @@ local metric = {
             type = "table",
             minItems = 1,
             maxItems = 3,
+            -- Every reading setting, so the editor offers ones an entry omits.
+            fields = {
+                { key = "source", label = "Source", type = "string", required = true },
+                { key = "label", label = "Label", type = "string" },
+                { key = "unit", label = "Unit", type = "string" },
+                {
+                    key = "precision",
+                    label = "Precision",
+                    type = "number",
+                    min = 0,
+                    max = 3,
+                    step = 1,
+                    empty = "Sensor",
+                },
+                {
+                    key = "direction",
+                    label = "Direction",
+                    type = "string",
+                    choices = { "auto", "rising", "falling" },
+                    default = "auto",
+                },
+                { key = "rangeMin", label = "Range min", type = "number", step = 0.1, default = 0 },
+                { key = "rangeMax", label = "Range max", type = "number", step = 0.1, default = 100 },
+                { key = "warning", label = "Warning", type = "number", step = 0.1, empty = "Off" },
+                { key = "critical", label = "Critical", type = "number", step = 0.1, empty = "Off" },
+            },
             default = {
                 {
                     source = "RSSI",

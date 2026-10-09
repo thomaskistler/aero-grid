@@ -18,6 +18,9 @@ editor decisions here rather than changing `plans/aerogrid-spec.md`.
   There is no corner X; remove panels through **gear -> Remove panel**.
 - The gear opens schema-driven settings and Remove panel. Position and size
   are edited only by gestures.
+- Metric and text list entries always show every declared entry setting, even
+  those the layout file omits. Unset optional numbers show "Off" or "Sensor";
+  clearing optional values removes them from the entry.
 - Drag a panel's body to move it. Snap only to fitting, non-overlapping
   positions, including compatible two-panel swaps at occupied origins. Never
   auto-arrange unrelated panels to make room.
