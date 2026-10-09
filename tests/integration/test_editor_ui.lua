@@ -293,12 +293,14 @@ equal(state.nativeDrawer.kind, "dialog", "configuration uses native centered dia
 equal(state.drawerBack, nil, "standard configuration has no custom return button")
 equal(state.drawerControls[1].row.properties.y, 4, "first setting starts below native header")
 equal(state.drawerControls[2].row.properties.y - state.drawerControls[1].row.properties.y, 36, "native row spacing")
-equal(control("__row").properties.h, 32, "controls use native input height")
-equal(state.drawerFields[1].key, "__size", "size is first setting")
-equal(control("__size").kind, "choice", "size uses native picker")
-equal(control("__size").properties.active(), true, "controls activate after construction")
+equal(control("accent").properties.h, 32, "controls use native input height")
+for _, field in ipairs(state.drawerFields) do
+    assert(string.sub(field.key or "", 1, 2) ~= "__", "geometry is edited by gestures, not settings")
+end
+equal(control("accent").kind, "choice", "choices use native picker")
+equal(control("accent").properties.active(), true, "controls activate after construction")
 action("item", "metrics").properties.press()
-equal(control("__size").properties.active(), false, "controls disable while a command is pending")
+equal(control("accent").properties.active(), false, "controls disable while a command is pending")
 settleDrawer()
 equal(control("metrics", "source").kind, "source", "metric sources use native source selection")
 local staleSource = control("metrics", "source")
@@ -322,33 +324,42 @@ settleDrawer()
 action("remove-item").properties.press()
 settleDrawer()
 equal(#context.editorSession.draft.panels[1].config.metrics, 1, "entry removal is immediate")
-control("__size").properties.set(2)
+action("item", "metrics").properties.press()
 settleDrawer()
-assert(
-    context.editorSession.draft.panels[1].colSpan ~= 1 or context.editorSession.draft.panels[1].rowSpan ~= 1,
-    "size changes draft"
-)
-equal(context.document.panels[1].colSpan, 1, "settings do not mutate committed layout")
-local rowControl = control("__row")
-local unchangedRow = context.editorSession.draft.panels[1].row
-rowControl.properties.set(5)
-settleDrawer()
-equal(context.editorSession.draft.panels[1].row, unchangedRow, "invalid geometry leaves draft unchanged")
-assert(state.statusError, "invalid geometry surfaces an error")
-for _, row in ipairs(state.drawerControls) do
-    if row.field.key == "__row" then
-        equal(row.errorLabel.hidden, false, "validation feedback appears beside the field")
-        assert(row.errorLabel.properties.text ~= "", "validation feedback explains failure")
-        equal(state.drawerControls[4].row.properties.y, row.errorLabel.properties.y + 18, "error shifts next row")
-    end
-end
-rowControl.properties.set(unchangedRow + 1)
+local sourceControl = control("metrics", "source")
+local validSource = context.editorSession.draft.panels[1].config.metrics[1].source
+sourceControl.properties.set(999)
 settleDrawer()
 equal(
-    state.drawerControls[4].row.properties.y - state.drawerControls[3].row.properties.y,
+    context.editorSession.draft.panels[1].config.metrics[1].source,
+    validSource,
+    "invalid setting leaves draft unchanged"
+)
+assert(state.statusError, "invalid setting surfaces an error")
+local errorIndex
+for index, row in ipairs(state.drawerControls) do
+    if row.field.path and row.field.path[#row.field.path] == "source" then
+        errorIndex = index
+        equal(row.errorLabel.hidden, false, "validation feedback appears beside the field")
+        assert(row.errorLabel.properties.text ~= "", "validation feedback explains failure")
+        equal(
+            state.drawerControls[index + 1].row.properties.y,
+            row.errorLabel.properties.y + 18,
+            "error shifts next row"
+        )
+    end
+end
+assert(errorIndex, "source control is shown")
+sourceControl.properties.set(validSource == "Alt" and 100 or 101)
+settleDrawer()
+equal(
+    state.drawerControls[errorIndex + 1].row.properties.y - state.drawerControls[errorIndex].row.properties.y,
     36,
     "correcting an error restores compact spacing"
 )
+state.nativeDrawer.properties.close()
+settleDrawer()
+equal(context.document.panels[1].colSpan, 1, "settings do not mutate committed layout")
 lvgl.close(state.nativeDrawer)
 settleDrawer()
 equal(state.mode, "menu", "Return closes drawer first")
@@ -503,7 +514,6 @@ rect = state.controls[6].rect
 tap(rect.x + rect.w - 12, rect.y + 12)
 settleDrawer()
 equal(state.mode, "configure", "full-grid gear works")
-equal(#control("__size").properties.values, 1, "blocked sizes are hidden by native picker")
 removePanel()
 equal(#context.editorSession.draft.panels, 15, "full-grid settings removes only one panel")
 assert(state.addRect, "removing panel makes + appear")
@@ -845,10 +855,6 @@ for index = 1, #context.editorSession.draft.panels do
     if panelType == "flight-mode" then
         control("showIndex").properties.set(1)
         settleDrawer()
-        local sizes = control("__size").properties.values
-        for _, size in ipairs(sizes) do
-            assert(not string.match(size, "x1$"), "size picker respects enabled mode-number constraint")
-        end
         control("showIndex").properties.set(0)
         settleDrawer()
     elseif panelType == "flight-timer" then

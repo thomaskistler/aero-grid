@@ -16,24 +16,21 @@ editor decisions here rather than changing `plans/aerogrid-spec.md`.
 - Edit the live dashboard without a selection outline, grid guides, or toolbar.
 - Each panel has one muted gray circular configuration gear at its top-right.
   There is no corner X; remove panels through **gear -> Remove panel**.
-- The gear opens schema-driven settings, including Size, Column, Row, and
-  Remove panel. Offer only supported sizes that fit with the top-left cell
-  fixed.
+- The gear opens schema-driven settings and Remove panel. Position and size
+  are edited only by gestures.
 - Drag a panel's body to move it. Snap only to fitting, non-overlapping
   positions, including compatible two-panel swaps at occupied origins. Never
   auto-arrange unrelated panels to make room.
 - Drag the top-left, bottom-left, or bottom-right corner to expand/shrink,
   anchoring the opposite corner. Snap to supported, in-bounds, collision-free
   grid spans with live geometry previews. Preserve the top-right configuration
-  gear hit area. Drawer Size still anchors the top-left and supports key input.
+  gear hit area.
 - Resizing preserves configuration and validates span-dependent settings before
-  accepting a size. Both corner candidates and the Size picker exclude incompatible
+  accepting a size. Corner candidates exclude incompatible
   spans, such as one-row flight-mode panels with `showIndex` enabled.
-- Physical-radio usability is the gate for removing Size, Column, and Row
-  from configuration. The user confirmed simulator resizing works; keep these
-  controls for now. Once movement and corner resizing work well on the radio,
-  remove the geometry fields. This would intentionally retire key-only geometry
-  editing, while retaining key navigation and panel configuration.
+- Physical-radio testing confirmed corner resizing, so Size, Column, and Row
+  were removed from configuration. This intentionally retires key-only
+  geometry editing, while retaining key navigation and panel configuration.
 - Show an actual panel-styled **+** tile in the first available 1 x 1 cell,
   scanning left-to-right and top-to-bottom. Hide it when the grid is full.
   Use the shared panel drawing and resize functions with a gray sidebar.

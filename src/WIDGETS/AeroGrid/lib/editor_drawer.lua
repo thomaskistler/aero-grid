@@ -113,15 +113,6 @@ local function fieldsFor(state, listKey, itemIndex)
         result[#result + 1] = { label = "Remove entry", action = "remove-item", key = listKey, index = itemIndex }
         return result
     end
-    local placement = state.session.draft.panels[state.session.selected]
-    local sizes, sizeError = editor.sizes(state.session)
-    if not sizes then
-        error(sizeError)
-    end
-    result[1] =
-        { key = "__size", label = "Size", choices = sizes, value = placement.colSpan .. "x" .. placement.rowSpan }
-    result[2] = { key = "__col", label = "Column", type = "number", min = 1, max = 4, value = placement.col + 1 }
-    result[3] = { key = "__row", label = "Row", type = "number", min = 1, max = 4, value = placement.row + 1 }
     for _, field in ipairs(fields) do
         if field.type == "table-list" then
             local _, config = editor.settings(state.session)
@@ -225,15 +216,7 @@ end
 
 local function writeField(state, field, value)
     local editor = state.handlers.editor
-    local placement = state.session.draft.panels[state.session.selected]
-    if field.key == "__size" then
-        local width, height = string.match(value, "^(%d+)x(%d+)$")
-        return editor.resize(state.session, tonumber(width) - placement.colSpan, tonumber(height) - placement.rowSpan)
-    elseif field.key == "__col" then
-        return editor.move(state.session, value - placement.col - 1, 0)
-    elseif field.key == "__row" then
-        return editor.move(state.session, 0, value - placement.row - 1)
-    elseif field.path then
+    if field.path then
         return editor.setPath(state.session, field.key, field.path, value)
     end
     return editor.setValue(state.session, field.key, value)
@@ -266,13 +249,6 @@ local function addControl(context, state, field, index)
         end,
     }
     local function get()
-        if field.key == "__size" then
-            local p = state.session.draft.panels[state.session.selected]
-            return p.colSpan .. "x" .. p.rowSpan
-        elseif field.key == "__col" or field.key == "__row" then
-            local p = state.session.draft.panels[state.session.selected]
-            return (field.key == "__col" and p.col or p.row) + 1
-        end
         return current(state, field)
     end
     local function set(value)
@@ -435,18 +411,6 @@ function drawer.advance(context, state)
                 command.control.object:set({ value = tostring(current(state, command.field) or "") })
             end
             fieldError(state, command.control, not ok and tostring(err) or nil)
-        end
-        if ok and not state.drawerDismiss and string.sub(command.field.key, 1, 2) == "__" then
-            drawer.open(context, state, "configure")
-        elseif ok and not state.drawerDismiss then
-            for _, entry in ipairs(state.drawerControls) do
-                if entry.field.key == "__size" then
-                    local sizes = assert(editor.sizes(state.session))
-                    entry.field.choices = sizes
-                    entry.object:set({ values = sizes })
-                    break
-                end
-            end
         end
     elseif command.action == "append" then
         ok, err = editor.appendItem(state.session, command.key)
