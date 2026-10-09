@@ -86,22 +86,12 @@ body::before {
   overflow-y: auto;
 }
 
-.bs-sidebar .sidebar-group {
+.bs-sidebar .sidebar-group-title {
+  display: block;
   padding: 15px 20px 5px;
   color: var(--ag-muted);
   font-size: 0.85rem;
   font-weight: 600;
-}
-
-.bs-sidebar .sidebar-page details {
-  padding: 0;
-  margin: 0;
-  border: 0;
-}
-
-.bs-sidebar .sidebar-page summary {
-  padding: 5px 12px;
-  cursor: pointer;
 }
 
 .bs-sidebar .sidebar-page-link {
@@ -115,11 +105,11 @@ body::before {
   color: var(--ag-cyan);
 }
 
-.bs-sidebar .sidebar-sections {
+.bs-sidebar .sidebar-pages {
   margin-left: 1rem;
 }
 
-.bs-sidebar .sidebar-sections .nav-link {
+.bs-sidebar .sidebar-pages .sidebar-page-link {
   font-size: 0.9rem;
 }
 

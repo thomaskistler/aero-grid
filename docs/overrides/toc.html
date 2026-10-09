@@ -1,31 +1,9 @@
-{% macro sidebar_page(source, target, title, sections=[]) %}
+{% macro sidebar_page(source, target, title) %}
   {% set current = page.file.src_uri == source %}
-  <li class="nav-item sidebar-page" data-bs-level="1">
-    {% if sections %}
-      <details{% if current %} open{% endif %}>
-        <summary>
-          <a class="sidebar-page-link{% if current %} current{% endif %}" href="{{ target | url }}"{% if current %} aria-current="page"{% endif %}>{{ title }}</a>
-        </summary>
-        <ul class="nav flex-column sidebar-sections">
-          {% for anchor, label in sections %}
-            <li class="nav-item" data-bs-level="2">
-              <a class="nav-link" href="{% if not current %}{{ target | url }}{% endif %}#{{ anchor }}">{{ label }}</a>
-            </li>
-          {% endfor %}
-        </ul>
-      </details>
-    {% else %}
-      <a class="sidebar-page-link{% if current %} current{% endif %}" href="{{ target | url }}"{% if current %} aria-current="page"{% endif %}>{{ title }}</a>
-    {% endif %}
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link{% if current %} current{% endif %}" href="{{ target | url }}"{% if current %} aria-current="page"{% endif %}>{{ title }}</a>
   </li>
 {% endmacro %}
-
-{% set panel_sections = [
-  ("settings", "Settings"),
-  ("behavior", "Behavior"),
-  ("states", "States"),
-  ("examples", "Examples")
-] %}
 
 <nav class="navbar-expand-md bs-sidebar hidden-print affix" aria-label="Documentation">
   <div class="navbar-header">
@@ -35,67 +13,40 @@
   </div>
   <div id="toc-collapse" class="navbar-collapse collapse card bg-body-tertiary">
     <ul class="nav flex-column">
-      {{ sidebar_page("index.md", ".", "Home", [
-        ("why-aerogrid", "Why AeroGrid?"),
-        ("user-guide", "User Guide"),
-        ("reference-guide", "Reference Guide"),
-        ("developer-guide", "Developer Guide")
-      ]) }}
-      <li class="sidebar-group">User Guide</li>
-      {{ sidebar_page("user-guide/installation.md", "user-guide/installation/", "Installation and upgrades", [
-        ("install-on-an-sd-card", "Install on an SD card"),
-        ("upgrade", "Upgrade")
-      ]) }}
-      {{ sidebar_page("user-guide/dashboards.md", "user-guide/dashboards/", "Add, configure and edit a dashboard", [
-        ("add-a-dashboard", "Add a dashboard"),
-        ("understand-layouts", "Understand layouts"),
-        ("edit-a-dashboard-on-the-radio", "Edit a dashboard on the radio"),
-        ("app-mode-and-full-screen", "App mode and Full screen"),
-        ("theming", "Theming"),
-        ("troubleshoot-a-reading", "Troubleshoot a reading")
-      ]) }}
-      <li class="sidebar-group">Reference Guide</li>
-      {{ sidebar_page("reference-guide/index.md", "reference-guide/", "Overview") }}
-      {{ sidebar_page("panels/metric.md", "panels/metric/", "Metric", panel_sections) }}
-      {{ sidebar_page("panels/text.md", "panels/text/", "Text", panel_sections) }}
-      {{ sidebar_page("panels/flight-timer.md", "panels/flight-timer/", "Flight timer", panel_sections) }}
-      {{ sidebar_page("panels/flight-counter.md", "panels/flight-counter/", "Flight counter", panel_sections) }}
-      {{ sidebar_page("panels/flight-mode.md", "panels/flight-mode/", "Flight mode", panel_sections) }}
-      {{ sidebar_page("panels/tx-battery.md", "panels/tx-battery/", "TX battery", panel_sections) }}
-      {{ sidebar_page("panels/cell-battery.md", "panels/cell-battery/", "Cell battery", panel_sections) }}
-      {{ sidebar_page("panels/link-status.md", "panels/link-status/", "Link status", panel_sections) }}
-      {{ sidebar_page("panels/trim-panel.md", "panels/trim-panel/", "Trim panel", panel_sections) }}
-      {{ sidebar_page("panels/model-identity.md", "panels/model-identity/", "Model identity", panel_sections) }}
-      {{ sidebar_page("panels/navigation.md", "panels/navigation/", "Navigation", panel_sections) }}
-      <li class="sidebar-group">Developer Guide</li>
-      {{ sidebar_page("developer-guide/build.md", "developer-guide/build/", "Build and simulator", [
-        ("prerequisites", "Prerequisites"),
-        ("development", "Development"),
-        ("edgetx-dev-kit-simulator", "EdgeTX Dev Kit simulator"),
-        ("documentation-screenshots", "Documentation screenshots"),
-        ("continuous-integration", "Continuous integration"),
-        ("simulator-fixture-convention", "Simulator fixture convention")
-      ]) }}
-      {{ sidebar_page("developer-guide/contributing.md", "developer-guide/contributing/", "Contributing", [
-        ("prepare-a-change", "Prepare a change"),
-        ("validate-and-submit", "Validate and submit"),
-        ("keep-fixtures-deterministic", "Keep fixtures deterministic"),
-        ("adding-a-panel", "Adding a panel")
-      ]) }}
-      {{ sidebar_page("developer-guide/architecture.md", "developer-guide/architecture/", "Architecture", [
-        ("host-and-panels", "Host and panels"),
-        ("shared-data-services", "Shared data services"),
-        ("rendering-and-lifetime", "Rendering and lifetime"),
-        ("instruction-budget", "Instruction budget"),
-        ("flight-counter-ownership", "Flight counter ownership")
-      ]) }}
-      {{ sidebar_page("hardware-validation.md", "hardware-validation/", "Hardware validation", [
-        ("record-for-each-run", "Record for each run"),
-        ("display-and-controls", "Display and controls"),
-        ("receiver-telemetry", "Receiver telemetry"),
-        ("diagnostics-and-release-budgets", "Diagnostics and release budgets"),
-        ("automated-mock-baseline", "Automated mock baseline")
-      ]) }}
+      {{ sidebar_page("index.md", ".", "Home") }}
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">User Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          {{ sidebar_page("user-guide/installation.md", "user-guide/installation/", "Installation and upgrades") }}
+          {{ sidebar_page("user-guide/dashboards.md", "user-guide/dashboards/", "Add, configure and edit a dashboard") }}
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Reference Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          {{ sidebar_page("reference-guide/index.md", "reference-guide/", "Overview") }}
+          {{ sidebar_page("panels/metric.md", "panels/metric/", "Metric") }}
+          {{ sidebar_page("panels/text.md", "panels/text/", "Text") }}
+          {{ sidebar_page("panels/flight-timer.md", "panels/flight-timer/", "Flight timer") }}
+          {{ sidebar_page("panels/flight-counter.md", "panels/flight-counter/", "Flight counter") }}
+          {{ sidebar_page("panels/flight-mode.md", "panels/flight-mode/", "Flight mode") }}
+          {{ sidebar_page("panels/tx-battery.md", "panels/tx-battery/", "TX battery") }}
+          {{ sidebar_page("panels/cell-battery.md", "panels/cell-battery/", "Cell battery") }}
+          {{ sidebar_page("panels/link-status.md", "panels/link-status/", "Link status") }}
+          {{ sidebar_page("panels/trim-panel.md", "panels/trim-panel/", "Trim panel") }}
+          {{ sidebar_page("panels/model-identity.md", "panels/model-identity/", "Model identity") }}
+          {{ sidebar_page("panels/navigation.md", "panels/navigation/", "Navigation") }}
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Developer Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          {{ sidebar_page("developer-guide/build.md", "developer-guide/build/", "Build and simulator") }}
+          {{ sidebar_page("developer-guide/contributing.md", "developer-guide/contributing/", "Contributing") }}
+          {{ sidebar_page("developer-guide/architecture.md", "developer-guide/architecture/", "Architecture") }}
+          {{ sidebar_page("hardware-validation.md", "hardware-validation/", "Hardware validation") }}
+        </ul>
+      </li>
     </ul>
   </div>
 </nav>
