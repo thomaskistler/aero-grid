@@ -473,6 +473,16 @@ claim("PROPERTY_KEYS", LVGL_H, "LvglWidget* parseParam overrides", {
     image = keysOf(OBJECT, "file", "fill"),
     triangle = keysOf(OBJECT_BASE, "pts"),
     line = keysOf(OBJECT_BASE, "pts", "thickness", "rounded"),
+    dialog = keysOf(OBJECT, "title", "close"),
+    setting = keysOf(OBJECT, "title"),
+    button = keysOf(OBJECT, "text", "press", "longpress", "textColor", "cornerRadius"),
+    choice = keysOf(OBJECT, "title", "values", "get", "set", "filter", "popupWidth"),
+    toggle = keysOf(OBJECT, "get", "set"),
+    numberEdit = keysOf(OBJECT, "get", "set", "edited", "min", "max", "display"),
+    textEdit = keysOf(OBJECT, "value", "length", "set"),
+    source = keysOf(OBJECT, "get", "set", "filter"),
+    switch = keysOf(OBJECT, "get", "set", "filter"),
+    timer = keysOf(OBJECT, "get", "set"),
 })
 
 --- Keys EdgeTX reads as a colour.
@@ -1248,6 +1258,22 @@ function support.lvgl()
         triangle = constructor("triangle"),
         line = constructor("line"),
         image = constructor("image"),
+        dialog = constructor("dialog"),
+        setting = constructor("setting"),
+        button = constructor("button"),
+        choice = constructor("choice"),
+        toggle = constructor("toggle"),
+        numberEdit = constructor("numberEdit"),
+        textEdit = constructor("textEdit"),
+        source = constructor("source"),
+        switch = constructor("switch"),
+        timer = constructor("timer"),
+        close = function(object)
+            if object.properties.close then
+                object.properties.close()
+            end
+            clearObject(object)
+        end,
         -- `visibilityCalls` is counted for the same reason as `writes`: telling
         -- an already-hidden object to hide again changes nothing on screen and
         -- so cannot be seen by any assertion about what is drawn.

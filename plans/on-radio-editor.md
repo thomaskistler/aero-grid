@@ -97,11 +97,12 @@ an Empty layout, storage organization, and shipped-template handling were
 discussed but are not settled requirements. Restore defaults remains part of
 the separate layout-management topic.
 
-## Configuration drawer redesign (planned)
+## Configuration drawers (implemented)
 
-The current drawer edits schema-generated generic rows. Replace that basic
-presentation with clear, setting-specific controls while retaining isolated
-draft editing and the firmware callback budget.
+Configuration and catalog drawers now use EdgeTX Lua LVGL native dialogs,
+replacing the custom character editor and Previous/Next navigation. Construction
+is staged one row per callback; controls are inactive while building or applying
+a queued edit. Configuration remains isolated in the draft.
 
 ### Layout and navigation
 
@@ -112,10 +113,10 @@ draft editing and the firmware callback budget.
   before implementing; do not retain the prototype's right-edge placement.
 - Use a scrollable settings area with an obvious scroll affordance and
   consistent touch, rotary, and key focus behavior.
-- Provide a small touch back control in the top-left header, rather than the
-  mockup's labeled Back button. This follows the touch-to-return header
-  convention on ordinary EdgeTX 2.12 pages.
-- The header back control and physical RTN perform the same action: close
+- Provide a small touch **<** control at the top-left of the dialog content.
+  EdgeTX 2.12 exposes the native dialog body, not its title bar, to Lua;
+  this replaces the originally planned header control without a custom dialog.
+- The touch back control and physical RTN perform the same action: close
   the drawer, retain draft changes, and return to dashboard editing without
   saving. Nested text editing/pickers return one level first.
 - RTN from dashboard editing opens the planned Cancel / Save / Save As dialog if the
@@ -148,10 +149,36 @@ button is a native EdgeTX control.
 - Validation: show feedback beside the affected setting and preserve the
   draft on errors.
 
+### Native API findings and preview scope
+
+EdgeTX 2.12 native dialogs center themselves and use 80% of the LCD width and
+height (384 x 218 on TX16S). Their body supplies scrolling and native RTN
+handling. Native choices omit unavailable entries; they do not expose per-item
+disabled styling, so the Size picker contains only fitting sizes.
+
+Settings use `choice`, `toggle`, `numberEdit`, `textEdit`, `source`, `switch`,
+and `timer` controls. Source/switch selections are converted back to the named
+references already stored in layouts, including ASCII physical-switch
+positions. Accent settings retain their schema's named choices rather than
+switching to numeric colors. Current shipped schemas do not declare file inputs.
+
+Native TX16S simulation verified centering, the Size popup, nested physical RTN,
+and repeated dialog close/reopen. Native cancellation must clear the dialog's
+child callbacks before EdgeTX deletes their windows; omitting that cleanup
+caused an intermittent simulator crash during reopening. Regression tests cover
+grouped list editing, typed controls, draft isolation, inline errors, queued
+edits surviving dismissal, and stale callbacks. Physical-radio verification
+and broader display-size testing remain outstanding.
+
+Live geometry previews remain enabled. Configuration/new-panel previews still
+apply on save/reload: panel instances own subscriptions and potentially
+persistent tracker state, so rebuilding them per setting would not be a simple,
+side-effect-free preview. A new preview framework is outside this drawer change.
+
 ### Mockup and open design points
 
 The browser prototype at `build/drawer-mockup.html` shows a 480 x 272 radio
-viewport with a 320-pixel right-hand drawer over a dimmed dashboard. It has
+viewport with a centered 384 x 218 dialog over a dimmed dashboard. It has
 Model identity and Metric panel examples, size choices, accent swatches,
 scrollable settings, and metric-list editing. It is an ignored local design
 artifact, not firmware or a committed deliverable.
@@ -174,7 +201,9 @@ User decisions, 2026-10-07, supersede these aspects of the initial prototype:
   previews substantial work, retain save/reload behavior and document it.
   Currently configuration applies on save/reload and additions are placeholders.
 
-The initial browser prototype has not yet been updated to these decisions.
+The local browser prototype now reflects centering, hidden blocked sizes,
+top-content back, and immediate removal. Its browser controls and inline metric
+cards remain conceptual; the native runtime uses separate grouped-entry dialogs.
 
 Review the simple and structured-list mockups before replacing the runtime
 drawer. Verify navigation, scrolling, input controls, error feedback, and
@@ -187,7 +216,9 @@ Return/back behavior at radio resolution and within callback limits.
 - `src/WIDGETS/AeroGrid/lib/editor.lua`: working-copy operations, fitting
   placements/sizes, schema settings, and strict validation.
 - `src/WIDGETS/AeroGrid/lib/editor_ui.lua`: gesture controls, shared + panel,
-  configuration/catalog drawers, and editor exit flow.
+  live geometry previews, and editor exit flow.
+- `src/WIDGETS/AeroGrid/lib/editor_drawer.lua`: native settings/catalog dialogs,
+  grouped entries, staged construction, and queued edits.
 - `src/WIDGETS/AeroGrid/lib/layout_store.lua` and `lib/yaml.lua`: deterministic
   serialization, verified writes, backups, and recovery.
 - `src/WIDGETS/AeroGrid/assets/`: licensed SVG sources and rendered icons.

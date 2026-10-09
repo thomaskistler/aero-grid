@@ -96,14 +96,20 @@ start another flight tracker or other panel side effects.
 Rotary/key input cycles panels and the add action; Enter opens settings or the
 catalog. Settings also provide Column, Row, and Remove panel for key-only use.
 
-Configuration and the panel catalog open in a drawer over the dashboard.
-Use **Previous / Next** to scroll its entries, **- / +** to change a value,
-and **Back to dashboard** to close the drawer. Text editing uses **Previous /
-Next** to move the cursor, **- / +** to change the character, **Delete** to remove
-it, and **Accept text** to finish. Configuration fields come from each panel's settings schema. Use the supplied
-choices and numeric bounds where available; text fields accept source names as
-typed, case-sensitive values. Adding or changing values only affects the
-in-memory draft.
+Configuration and the panel catalog open in centered native EdgeTX dialogs,
+using the standard dialog size and scrollable settings area. Use touch or
+rotary/key focus to operate native choices, toggles, numeric inputs, and the
+text-entry keyboard. Sources, switches, and model timers use radio pickers;
+accent names use the panel's supplied choices. Sizes that do not fit are hidden.
+Controls become available after a short, staged construction.
+
+Metric entries and text lines have separate entry dialogs with add/edit/remove
+actions. The small **<** button at the top of the dialog's content returns one
+level; removing a panel or entry is immediate, without confirmation. Validation
+feedback appears below the affected setting. Configuration fields come from
+each panel's schema, with its supplied choices, numeric bounds, and steps.
+Changes affect only the in-memory draft; configuration takes effect on
+save/reload, while placement and size preview immediately.
 
 **Return** closes text editing or a drawer one level at a time. From the editing
 dashboard, Return validates and saves the layout, then exits editing.

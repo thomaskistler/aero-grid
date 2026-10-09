@@ -276,6 +276,14 @@ user-confirmed hardware verification without inventing quantitative measurements
   toolbar, selection outline, or grid guides; dragging snaps only to fitting positions.
 - [ ] Confirm configuration/catalog drawers scroll and return to the dashboard;
   new draft panels remain preview cards until saving rather than starting trackers.
+- [ ] Verify native dialogs are centered and sized like standard EdgeTX dialogs.
+  Check touch/rotary focus, toggles, choices, numeric inputs, the native keyboard,
+  source/switch/timer pickers, and grouped metric/text entry dialogs.
+- [ ] Check the top-content < button and physical RTN return one level without
+  saving; dismiss a nested picker or keyboard before closing its parent.
+  Repeat close/reopen cycles and check memory/object stability.
+- [ ] Confirm blocked sizes are hidden, removal is immediate, and invalid
+  settings show feedback without overlapping the following row.
 - [ ] Add, move, resize, configure, and remove a panel through settings; confirm collision and
   bounds errors are clear and resize keeps the top-left cell fixed.
 - [ ] Confirm + appears in the first empty cell and hides on a full grid.

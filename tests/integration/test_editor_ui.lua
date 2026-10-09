@@ -102,6 +102,49 @@ local function tap(x, y)
     refresh(EVT_TOUCH_BREAK, { x = x, y = y })
     refresh(EVT_TOUCH_TAP, { x = x, y = y })
 end
+local function settleDrawer()
+    for _ = 1, 150 do
+        refresh()
+        assert(context.editorUi, "drawer failed: " .. table.concat(context.errors, "; "))
+        if not context.editorUi.drawerPending and context.editorUi.drawerBuild == nil then
+            return
+        end
+    end
+    error("drawer did not settle")
+end
+local function control(key, leaf)
+    for _, row in ipairs(context.editorUi.drawerControls) do
+        if row.field.key == key and (not leaf or row.field.path and row.field.path[#row.field.path] == leaf) then
+            return row.object
+        end
+    end
+    error("drawer control not found: " .. key)
+end
+local function back()
+    context.editorUi.drawerBack.properties.press()
+    settleDrawer()
+end
+getSourceIndex = function(name)
+    return name == "Alt" and 100 or 101
+end
+getSourceName = function(index)
+    return index == 100 and "Alt" or index == 101 and "RSSI" or nil
+end
+CHAR_UP, CHAR_DOWN = "^", "v"
+getSwitchIndex = function(name)
+    return name == "SF^" and 1 or 2
+end
+getSwitchName = function(index)
+    return index == 1 and "SF^" or "L01"
+end
+local function action(name, key)
+    for _, row in ipairs(context.editorUi.drawerControls) do
+        if row.field.action == name and (not key or row.field.key == key) then
+            return row.object
+        end
+    end
+    error("drawer action not found: " .. name)
+end
 local function open()
     local rect = context.grid.rect(context.zone, context.document.panels[1], 4, 4, 4)
     refresh(EVT_TOUCH_FIRST, { x = rect.x + 50, y = rect.y + 40 })
@@ -141,8 +184,8 @@ open()
 local entry, instance = context.panels[1], context.panels[1].instance
 local state = context.editorUi
 equal(state.controls[1].left, nil, "no corner remove control")
-equal(state.controls[1].configure.kind, "image", "settings control uses a rendered icon")
-equal(state.controls[1].configure.properties.file, path .. "assets/editor-configure.png", "settings icon asset")
+equal(state.controls[1].gear.kind, "image", "settings control uses a rendered icon")
+equal(state.controls[1].gear.properties.file, path .. "assets/editor-configure.png", "settings icon asset")
 equal(state.addRect.x, state.cells[2].rect.x, "+ appears in first free cell")
 equal(state.addPanel.background.properties.rounded, context.theme.spacing.radius, "+ uses shared panel radius")
 equal(state.addPanel.accent.properties.color, context.theme.color.textMuted, "+ has a theme-gray sidebar")
@@ -165,22 +208,66 @@ equal(#context.panels, 1, "editor reuses live instances")
 
 -- Gear opens settings; corner controls must not begin dragging.
 local rect = state.controls[1].rect
-equal(state.controls[1].configure.properties.x, rect.x + rect.w - 28, "gear stays at top-right")
+equal(state.controls[1].gear.properties.x, rect.x + rect.w - 28, "gear stays at top-right")
 tap(rect.x + 12, rect.y + 12)
 equal(#context.editorSession.draft.panels, 1, "old top-left X target does not remove panel")
 equal(state.mode, "menu", "top-left panel tap does not configure")
 tap(rect.x + rect.w - 12, rect.y + 12)
+settleDrawer()
 equal(state.mode, "configure", "gear opens settings")
 equal(state.drag, nil, "gear press must not start drag")
-equal(state.fields[1].key, "__size", "size is first setting")
-local row = state.fieldRows[1].rect
-tap(row.x + row.w - 5, row.y + 5)
+equal(state.nativeDrawer.kind, "dialog", "configuration uses native centered dialog")
+equal(state.drawerFields[1].key, "__size", "size is first setting")
+equal(control("__size").kind, "choice", "size uses native picker")
+equal(control("__size").properties.active(), true, "controls activate after construction")
+action("item", "metrics").properties.press()
+equal(control("__size").properties.active(), false, "controls disable while a command is pending")
+settleDrawer()
+equal(control("metrics", "source").kind, "source", "metric sources use native source selection")
+local staleSource = control("metrics", "source")
+staleSource.properties.set(999)
+settleDrawer()
+equal(context.editorSession.draft.panels[1].config.metrics[1].source, "Alt", "unresolved sources preserve draft")
+assert(state.statusError, "unresolved source selection reports an error")
+staleSource.properties.set(101)
+state.nativeDrawer.properties.close()
+settleDrawer()
+equal(state.drawerListKey, nil, "native Return leaves nested settings one level")
+equal(context.editorSession.draft.panels[1].config.metrics[1].source, "RSSI", "pending edits survive Return")
+equal(context.document.panels[1].config.metrics[1].source, "Alt", "source edits are isolated")
+staleSource.properties.set(100)
+equal(state.drawerPending, nil, "dismissed controls cannot change a reopened drawer")
+action("append", "metrics").properties.press()
+settleDrawer()
+equal(#context.editorSession.draft.panels[1].config.metrics, 2, "list entry can be added")
+action("item", "metrics").properties.press()
+settleDrawer()
+action("remove-item").properties.press()
+settleDrawer()
+equal(#context.editorSession.draft.panels[1].config.metrics, 1, "entry removal is immediate")
+control("__size").properties.set(2)
+settleDrawer()
 assert(
     context.editorSession.draft.panels[1].colSpan ~= 1 or context.editorSession.draft.panels[1].rowSpan ~= 1,
     "size changes draft"
 )
 equal(context.document.panels[1].colSpan, 1, "settings do not mutate committed layout")
-refresh(EVT_VIRTUAL_EXIT)
+local rowControl = control("__row")
+local unchangedRow = context.editorSession.draft.panels[1].row
+rowControl.properties.set(5)
+settleDrawer()
+equal(context.editorSession.draft.panels[1].row, unchangedRow, "invalid geometry leaves draft unchanged")
+assert(state.statusError, "invalid geometry surfaces an error")
+for _, row in ipairs(state.drawerControls) do
+    if row.field.key == "__row" then
+        equal(row.errorLabel.hidden, false, "validation feedback appears beside the field")
+        assert(row.errorLabel.properties.text ~= "", "validation feedback explains failure")
+    end
+end
+rowControl.properties.set(unchangedRow + 1)
+settleDrawer()
+lvgl.close(state.nativeDrawer)
+settleDrawer()
 equal(state.mode, "menu", "Return closes drawer first")
 equal(entry.instance, instance, "resize reuses instance")
 
@@ -197,9 +284,10 @@ for _, cell in ipairs(state.cells) do
 end
 local free = assert(state.addRect)
 tap(free.x + 50, free.y + 40)
+settleDrawer()
 equal(state.mode, "add", "+ opens catalog")
-local catalog = state.catalogRows[1].rect
-tap(catalog.x + 20, catalog.y + 5)
+state.drawerControls[1].object.properties.press()
+settleDrawer()
 equal(#context.editorSession.draft.panels, 2, "catalog adds panel")
 equal(#context.panels, 1, "new panel is only a draft preview")
 rect = state.controls[2].rect
@@ -210,12 +298,18 @@ refresh(EVT_TOUCH_FIRST, { x = rect.x + rect.w - 48, y = rect.y + 12 })
 assert(state.drag, "former X target is draggable panel body")
 refresh(EVT_TOUCH_BREAK)
 tap(rect.x + rect.w - 12, rect.y + 12)
-for _ = 1, 3 do
-    local nextButton = state.navigation[2].rect
-    tap(nextButton.x + 5, nextButton.y + 5)
+settleDrawer()
+local function removePanel()
+    for _, row in ipairs(state.drawerControls) do
+        if row.field.action == "remove" then
+            row.object.properties.press()
+            settleDrawer()
+            return
+        end
+    end
+    error("Remove panel missing")
 end
-equal(state.fields[state.fieldIndex].key, "__remove", "Remove panel is available in settings")
-refresh(EVT_VIRTUAL_ENTER)
+removePanel()
 equal(#context.editorSession.draft.panels, 1, "settings removes panel")
 equal(state.mode, "menu", "removal returns to dashboard editing")
 refresh(EVT_TOUCH_TAP, { x = rect.x + rect.w - 48, y = rect.y + 12 })
@@ -258,15 +352,10 @@ state = context.editorUi
 equal(state.addRect, nil, "full grid hides + tile")
 rect = state.controls[6].rect
 tap(rect.x + rect.w - 12, rect.y + 12)
+settleDrawer()
 equal(state.mode, "configure", "full-grid gear works")
-equal(#state.fields[1].choices, 1, "blocked sizes are unavailable")
-for _ = 1, 3 do
-    local nextButton = state.navigation[2].rect
-    tap(nextButton.x + 5, nextButton.y + 5)
-end
-equal(state.fields[state.fieldIndex].key, "__remove", "full-grid settings includes Remove panel")
-row = state.fieldRows[state.fieldIndex - state.fieldOffset + 1].rect
-tap(row.x + row.w - 5, row.y + 5)
+equal(#control("__size").properties.values, 1, "blocked sizes are hidden by native picker")
+removePanel()
 equal(#context.editorSession.draft.panels, 15, "full-grid settings removes only one panel")
 assert(state.addRect, "removing panel makes + appear")
 equal(state.addPanel.root.properties.x, state.addRect.x, "+ panel moves to newly available cell")
@@ -309,8 +398,25 @@ open()
 for index = 1, #context.editorSession.draft.panels do
     rect = context.editorUi.controls[index].rect
     tap(rect.x + rect.w - 12, rect.y + 12)
+    settleDrawer()
     equal(context.editorUi.mode, "configure", "aircraft panel settings open")
-    refresh(EVT_VIRTUAL_EXIT)
+    local panelType = context.editorSession.draft.panels[index].type
+    if panelType == "flight-timer" then
+        equal(control("timer").kind, "timer", "model timer uses native timer selection")
+        equal(control("label").kind, "textEdit", "labels use the native keyboard")
+        control("label").properties.set("Elapsed")
+        settleDrawer()
+        equal(context.editorSession.draft.panels[index].config.label, "Elapsed", "native text updates draft")
+    elseif panelType == "flight-counter" then
+        equal(control("armSwitch").kind, "switch", "arm position uses native switch selection")
+        equal(control("motorSource").kind, "source", "motor channel uses source selection")
+        equal(control("announcements").kind, "toggle", "booleans use native toggles")
+        control("announcements").properties.set(1)
+        settleDrawer()
+        equal(context.editorSession.draft.panels[index].config.announcements, true, "toggle stores boolean")
+        equal(control("minFlightDuration").kind, "numberEdit", "numbers use native bounded inputs")
+    end
+    back()
 end
 context.editorSession.dirty = true
 refresh(EVT_VIRTUAL_EXIT)

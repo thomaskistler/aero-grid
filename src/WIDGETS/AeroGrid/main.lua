@@ -432,6 +432,15 @@ local function openEditor(context)
         end
         context.editorUiModule = module
     end
+    if not context.editorDrawerModule then
+        local module, moduleError = loadModule(context.path, "lib/editor_drawer.lua", runtimeApi)
+        if not module then
+            addError(context, "editor drawer: " .. tostring(moduleError))
+            showErrors(context)
+            return false
+        end
+        context.editorDrawerModule = module
+    end
 
     context.editorPanelCache = context.editorPanelCache or {}
     local function loadPanel(typeName)
@@ -1563,7 +1572,15 @@ local function refresh(context, widgetEvent, touchState)
         context.editorPress = nil
     end
 
-    if context.editorUi and (context.editorUi.buildStage or context.editorUi.saving) then
+    if
+        context.editorUi
+        and (
+            context.editorUi.buildStage
+            or context.editorUi.saving
+            or context.editorUi.drawerBuild ~= nil
+            or context.editorUi.drawerPending
+        )
+    then
         advanceEditor(context)
         return
     end
