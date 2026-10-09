@@ -52,7 +52,8 @@ are stored separately in `/AEROGRID/layouts/`, so upgrading AeroGrid leaves
 them untouched.
 
 **Save** updates the current layout. For a bundled layout it creates your
-copy under the same name, leaving the bundled original untouched.
+copy in `/AEROGRID/layouts/` under the same name, leaving the bundled original
+untouched.
 **Save as...** creates a separately named layout.
 
 Several dashboards, even on different models, can select the same layout.
@@ -122,10 +123,6 @@ your draft.
 **After Save As, restart the radio and select the new name in the widget's
 Layout setting.** The widget cannot change its own settings, so it continues
 showing its previous layout until you select the new one.
-
-User layouts are saved in `/AEROGRID/layouts/`. Saving a shipped layout creates
-a user copy under the same name; the shipped file stays untouched. Other
-screens using that name see the changes when they reload.
 
 Wait for saving to finish before powering off. A save error keeps your draft
 so you can retry; the previous saved file is retained as `.bak`.
