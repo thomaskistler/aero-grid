@@ -71,9 +71,6 @@ picker. A missing layout falls back to **Default**.
    **Enter** also starts editing. A **gear**
    icon appears in the top-right corner of each panel.
 
-Normal App mode is read-only, even when the dashboard fills the display.
-An empty dashboard shows centred instructions until you start editing.
-
 ![Editor showing panel gears and the add-panel tile](../assets/editor/overview.png)
 
 | Action | How |
