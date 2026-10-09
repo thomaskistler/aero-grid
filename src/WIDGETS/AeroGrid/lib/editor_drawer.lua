@@ -311,6 +311,12 @@ local function addControl(context, state, field, index)
                     if physical then
                         name = physical .. (position == CHAR_UP and "^" or position == CHAR_DOWN and "v" or position)
                     end
+                else
+                    -- Drop EdgeTX's two-byte menu icon unless the plain name resolves to another source.
+                    local plain = string.match(name, "^\194[\128-\191](.+)$")
+                    if plain and indexOf(plain) == value then
+                        name = plain
+                    end
                 end
                 set(type(get()) == "number" and value or name)
             end

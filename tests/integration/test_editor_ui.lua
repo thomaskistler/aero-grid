@@ -146,11 +146,14 @@ local function back()
     lvgl.close(context.editorUi.nativeDrawer)
     settleDrawer()
 end
+-- EdgeTX prefixes telemetry names with a two-byte icon and accepts names with or without it.
+local TELEMETRY_ICON = "\194\147"
 getSourceIndex = function(name)
+    name = string.gsub(name, "^" .. TELEMETRY_ICON, "")
     return name == "Alt" and 100 or 101
 end
 getSourceName = function(index)
-    return index == 100 and "Alt" or index == 101 and "RSSI" or nil
+    return index == 100 and TELEMETRY_ICON .. "Alt" or index == 101 and TELEMETRY_ICON .. "RSSI" or nil
 end
 CHAR_UP, CHAR_DOWN = "^", "v"
 getSwitchIndex = function(name)
