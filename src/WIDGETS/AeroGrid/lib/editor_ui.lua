@@ -355,6 +355,26 @@ local function drag(context, state, event, touch)
                 state.handlers.editor.select(state.session, index)
                 state.keyAdd = false
                 local p = state.session.draft.panels[index]
+                local cornerWidth, cornerHeight = math.min(24, rect.w / 3), math.min(24, rect.h / 3)
+                local left, right = x < rect.x + cornerWidth, x >= rect.x + rect.w - cornerWidth
+                local top, bottom = y < rect.y + cornerHeight, y >= rect.y + rect.h - cornerHeight
+                if (left or right) and (top or bottom) then
+                    local positions, err = state.handlers.editor.resizePositions(state.session, left, top)
+                    if not positions then
+                        state.status, state.statusError = tostring(err), true
+                        render(context, state)
+                        return true
+                    end
+                    state.drag = {
+                        resize = true,
+                        left = left,
+                        top = top,
+                        offsetX = x - (left and rect.x or rect.x + rect.w),
+                        offsetY = y - (top and rect.y or rect.y + rect.h),
+                        positions = positions,
+                    }
+                    return true
+                end
                 state.drag = {
                     offsetX = x - rect.x,
                     offsetY = y - rect.y,
@@ -367,7 +387,9 @@ local function drag(context, state, event, touch)
         local nearest, distance
         for _, position in ipairs(state.drag.positions) do
             local rect = assert(context.grid.rect(context.zone, position, 4, 4, 4))
-            local dx, dy = x - state.drag.offsetX - rect.x, y - state.drag.offsetY - rect.y
+            local edgeX = state.drag.resize and not state.drag.left and rect.x + rect.w or rect.x
+            local edgeY = state.drag.resize and not state.drag.top and rect.y + rect.h or rect.y
+            local dx, dy = x - state.drag.offsetX - edgeX, y - state.drag.offsetY - edgeY
             local candidate = dx * dx + dy * dy
             if not distance or candidate < distance then
                 nearest, distance = position, candidate
@@ -375,7 +397,18 @@ local function drag(context, state, event, touch)
         end
         if nearest then
             local p = state.session.draft.panels[state.session.selected]
-            local moved, err = state.handlers.editor.move(state.session, nearest.col - p.col, nearest.row - p.row)
+            local moved, err
+            if state.drag.resize then
+                moved, err = state.handlers.editor.resize(
+                    state.session,
+                    nearest.colSpan - p.colSpan,
+                    nearest.rowSpan - p.rowSpan,
+                    nearest.col,
+                    nearest.row
+                )
+            else
+                moved, err = state.handlers.editor.move(state.session, nearest.col - p.col, nearest.row - p.row)
+            end
             if not moved then
                 state.status, state.statusError = tostring(err), true
             end

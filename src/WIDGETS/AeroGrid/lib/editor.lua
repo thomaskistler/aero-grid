@@ -357,7 +357,7 @@ function editor.move(session, colDelta, rowDelta)
     return true
 end
 
-function editor.resize(session, colDelta, rowDelta)
+function editor.resize(session, colDelta, rowDelta, col, row)
     local placement, _, selectionError = findSelected(session)
     if not placement then
         return false, selectionError
@@ -365,6 +365,7 @@ function editor.resize(session, colDelta, rowDelta)
     local resized = copy(placement)
     resized.colSpan = resized.colSpan + colDelta
     resized.rowSpan = resized.rowSpan + rowDelta
+    resized.col, resized.row = col or resized.col, row or resized.row
     local valid, placementError = session.grid.validatePlacement(resized, 4, 4)
     if not valid then
         return false, placementError
@@ -380,9 +381,40 @@ function editor.resize(session, colDelta, rowDelta)
     if conflict then
         return false, "overlaps panel " .. conflict.id
     end
+    placement.col, placement.row = resized.col, resized.row
     placement.colSpan, placement.rowSpan = resized.colSpan, resized.rowSpan
     session.dirty = true
     return true
+end
+
+function editor.resizePositions(session, left, top)
+    local placement, index, selectionError = findSelected(session)
+    if not placement then
+        return nil, selectionError
+    end
+    local module, moduleError = getPanelModule(session, placement.type)
+    if not module then
+        return nil, moduleError
+    end
+    local positions = {}
+    for height = 1, 4 do
+        for width = 1, 4 do
+            local candidate = {
+                col = left and placement.col + placement.colSpan - width or placement.col,
+                row = top and placement.row + placement.rowSpan - height or placement.row,
+                colSpan = width,
+                rowSpan = height,
+            }
+            if
+                session.grid.validatePlacement(candidate, 4, 4)
+                and supportsSpan(module, width, height)
+                and not overlapsAny(session.grid, session.draft.panels, candidate, index)
+            then
+                positions[#positions + 1] = candidate
+            end
+        end
+    end
+    return positions
 end
 
 function editor.setValue(session, key, value)

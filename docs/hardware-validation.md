@@ -288,6 +288,9 @@ user-confirmed hardware verification without inventing quantitative measurements
 - [ ] Add, move, resize, configure, and remove a panel through settings; confirm collision and
   bounds errors are clear and resize keeps the top-left cell fixed.
 - [ ] Confirm + appears in the first empty cell and hides on a full grid.
+- [ ] Drag each resize corner inward/outward; verify the opposite corner stays
+  fixed, unsupported/occupied/out-of-bounds sizes are skipped, the + relocates,
+  and the top-right gear remains usable. Check shrinking and saved geometry.
 - [ ] Press Return to close drawers, then save and exit; power-cycle/reload and confirm the layout persists
   for the selected model and Dashboard ID.
 - [ ] Verify a successful save retains the previous layout as `.bak`; restore

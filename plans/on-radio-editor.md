@@ -21,6 +21,10 @@ editor decisions here rather than changing `plans/aerogrid-spec.md`.
   fixed.
 - Drag a panel's body to move it. Snap only to fitting, non-overlapping
   positions; never move other panels to make room.
+- Drag the top-left, bottom-left, or bottom-right corner to expand/shrink,
+  anchoring the opposite corner. Snap to supported, in-bounds, collision-free
+  grid spans with live geometry previews. Preserve the top-right configuration
+  gear hit area. Drawer Size still anchors the top-left and supports key input.
 - Show an actual panel-styled **+** tile in the first available 1 x 1 cell,
   scanning left-to-right and top-to-bottom. Hide it when the grid is full.
   Use the shared panel drawing and resize functions with a gray sidebar.

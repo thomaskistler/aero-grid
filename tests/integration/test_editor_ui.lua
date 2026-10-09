@@ -225,6 +225,32 @@ end
 dragOntoAdd(1)
 dragOntoAdd(1)
 
+local function resizeCorner(left, top, target)
+    local from = state.controls[1].rect
+    local x = left and from.x + 8 or from.x + from.w - 8
+    local y = top and from.y + 8 or from.y + from.h - 8
+    local to = context.grid.rect(context.zone, target, 4, 4, 4)
+    refresh(EVT_TOUCH_FIRST, { x = x, y = y })
+    assert(state.drag and state.drag.resize, "corner starts resize gesture")
+    refresh(EVT_TOUCH_SLIDE, {
+        x = (left and to.x or to.x + to.w) + state.drag.offsetX,
+        y = (top and to.y or to.y + to.h) + state.drag.offsetY,
+    })
+    refresh(EVT_TOUCH_BREAK)
+    local actual = context.editorSession.draft.panels[1]
+    for _, key in ipairs({ "col", "row", "colSpan", "rowSpan" }) do
+        equal(actual[key], target[key], "corner resize " .. key)
+    end
+    equal(entry.instance, instance, "corner resize reuses live instance")
+    equal(context.document.panels[1].colSpan, 1, "corner resize preserves committed size")
+end
+resizeCorner(false, false, { col = 0, row = 0, colSpan = 2, rowSpan = 2 })
+resizeCorner(true, true, { col = 1, row = 1, colSpan = 1, rowSpan = 1 })
+resizeCorner(true, false, { col = 0, row = 1, colSpan = 2, rowSpan = 2 })
+resizeCorner(false, false, { col = 0, row = 1, colSpan = 2, rowSpan = 1 })
+resizeCorner(true, true, { col = 0, row = 0, colSpan = 2, rowSpan = 2 })
+resizeCorner(false, false, { col = 0, row = 0, colSpan = 1, rowSpan = 1 })
+
 -- Gear opens settings; corner controls must not begin dragging.
 local rect = state.controls[1].rect
 equal(state.controls[1].gear.properties.x, rect.x + rect.w - 28, "gear stays at top-right")
@@ -390,6 +416,14 @@ load("edit-full")
 open()
 state = context.editorUi
 equal(state.addRect, nil, "full grid hides + tile")
+local blockedRect = state.controls[1].rect
+refresh(EVT_TOUCH_FIRST, { x = blockedRect.x + blockedRect.w - 8, y = blockedRect.y + blockedRect.h - 8 })
+assert(state.drag and state.drag.resize, "full-grid corner starts resizing")
+equal(#state.drag.positions, 1, "occupied cells exclude expanded resize candidates")
+refresh(EVT_TOUCH_SLIDE, { x = 470, y = 260 })
+refresh(EVT_TOUCH_BREAK)
+equal(context.editorSession.draft.panels[1].colSpan, 1, "blocked resize retains width")
+equal(context.editorSession.draft.panels[1].rowSpan, 1, "blocked resize retains height")
 rect = state.controls[6].rect
 tap(rect.x + rect.w - 12, rect.y + 12)
 settleDrawer()

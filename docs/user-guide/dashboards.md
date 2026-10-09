@@ -81,6 +81,10 @@ visible; controls appear after a short, staged initialization.
 
 - Drag a panel's body to move it. It snaps only to fitting, non-overlapping
   positions, without grid guides or selection outlines.
+- Drag the top-left, bottom-left, or bottom-right corner to resize. The opposite
+  corner stays fixed; sizes snap to supported, non-overlapping grid dimensions.
+  Drag inward to shrink or outward to expand. The top-right corner remains the
+  configuration gear. Size in the drawer remains available for key-only use.
 - Tap the **+ panel**, with its gray sidebar and the same rounded panel styling
   as dashboard panels, to choose a new panel. It appears
   in the first free 1 x 1 cell, scanning left-to-right and top-to-bottom, and
