@@ -67,10 +67,8 @@ falls back to **Default**.
 
 ## Edit a dashboard on the radio
 
-1. Select a layout in the AeroGrid widget's **Layout** setting. Choose
-   **Empty** to start a new dashboard.
-2. Long-press the dashboard to enter fullscreen.
-3. In fullscreen, long-press a panel again to start editing. On an empty
+1. Long-press the dashboard to enter fullscreen.
+2. In fullscreen, long-press a panel again to start editing. On an empty
    dashboard, long-press anywhere. **Enter** also starts editing.
 
 Normal App mode is read-only, even when the dashboard fills the display.
