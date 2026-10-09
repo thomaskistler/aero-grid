@@ -2,7 +2,7 @@ version: 1
 
 # Tuned to the sensors an ELRS or Crossfire link exposes in the EdgeTX
 # simulator: GPS, Alt, RXBt, Batt%, 1RSS, 2RSS and RQly. The shipped
-# default.yaml stays generic; this layout exists so the dashboard can be
+# Default.yaml stays generic; this layout exists so the dashboard can be
 # exercised against live values without a receiver.
 #
 # Two metrics deliberately use the radial visualization, because the arc

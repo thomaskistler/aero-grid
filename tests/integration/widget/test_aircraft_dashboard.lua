@@ -13,7 +13,7 @@ radio.values[140] = 2.5
 radio.values[142] = 4.2
 radio.values[100] = 8.0
 
-local context = fixture.createLoaded(nil, { Layout = "default", Theme = "modern" })
+local context = fixture.createLoaded(nil, { Layout = "Default", Theme = "modern" })
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assertions.assertEqual(#context.panels, 9)
@@ -75,7 +75,7 @@ fixture.pump(context, 40)
 assertions.assertEqual(fixture.instanceOf(context, "flight-count").text, "40")
 assertions.assertEqual(fixture.instanceOf(context, "expo").text, "65")
 
-local corner = fixture.createLoaded(fixture.lvglMock.appZone(), { Layout = "default", Theme = "modern" })
+local corner = fixture.createLoaded(fixture.lvglMock.appZone(), { Layout = "Default", Theme = "modern" })
 fixture.pump(corner, 40)
 local timer = fixture.instanceOf(corner, "flight-clock")
 assert(timer.area.frame.reserved.side)

@@ -9,7 +9,7 @@ radio.fields.VSpd = { id = 150, name = "VSpd", unit = fixture.firmware.UNIT.METE
 radio.fields["VSpd+"] = { id = 151, name = "VSpd+", unit = fixture.firmware.UNIT.METERS_PER_SECOND }
 fixture.radioMock.indexFields()
 radio.globalDetails[0].prec = 0
-local context = fixture.createLoaded(nil, { Layout = "default", Theme = "modern" })
+local context = fixture.createLoaded(nil, { Layout = "Default", Theme = "modern" })
 
 local callbacks = 0
 local function pump(count)

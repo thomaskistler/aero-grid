@@ -12,6 +12,27 @@ import zlib
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "build/editor-capture"
 SCENES = ("overview", "settings", "metric-entry", "exit", "save-as")
+SETUP_SCENES = {
+    "screen-menu": [(500, 20, 20, 1), (520, 20, 20, 0)],
+    "screens": [(500, 20, 20, 1), (520, 20, 20, 0),
+                (650, 395, 98, 1), (670, 395, 98, 0)],
+}
+SETUP_SCENES["add-screen"] = SETUP_SCENES["screens"] + [
+    (800, 130, 22, 1), (820, 130, 22, 0)]
+SETUP_SCENES["new-screen"] = SETUP_SCENES["add-screen"] + [
+    (950, 240, 158, 1), (970, 240, 158, 0)]
+SETUP_SCENES["screen-layout"] = SETUP_SCENES["new-screen"] + [
+    (1100, 225, 95, 1), (1120, 225, 95, 0)]
+SETUP_SCENES["app-screen"] = SETUP_SCENES["screen-layout"] + [
+    (1250, 230, 52, 1), (1270, 230, 52, 0)]
+SETUP_SCENES["setup-widgets"] = SETUP_SCENES["app-screen"] + [
+    (1400, 345, 95, 1), (1420, 345, 95, 0)]
+SETUP_SCENES["select-widget"] = SETUP_SCENES["setup-widgets"] + [
+    (1550, 220, 130, 1), (1570, 220, 130, 0)]
+SETUP_SCENES["widget-options"] = SETUP_SCENES["select-widget"] + [
+    (1700, 215, 60, 1), (1720, 215, 60, 0)]
+SETUP_SCENES["select-layout"] = SETUP_SCENES["widget-options"] + [
+    (1850, 277, 133, 1), (1870, 277, 133, 0)]
 
 LAYOUT = """version: 1
 grid:
@@ -45,7 +66,16 @@ def prepare(sd, scene):
     radio = sd / "RADIO/radio.yml"
     radio.write_text(radio.read_text().replace('currModelFilename: "model2.yml"',
                                               'currModelFilename: "model4.yml"'))
-    (sd / "WIDGETS/AeroGrid/layouts/default.yaml").write_text(LAYOUT)
+    if scene in SETUP_SCENES:
+        # Show only the layouts included in the installation ZIP, not the
+        # development fixture's review and diagnostic screens.
+        for layout in (sd / "WIDGETS/AeroGrid/layouts").glob("*.yaml"):
+            if layout.stem not in ("Empty", "Default", "Host"):
+                layout.unlink()
+        (sd / "AEROGRID/registry.txt").write_text("Empty\nDefault\nHost\n")
+        (sd / "capture-ready.txt").write_text("native setup capture")
+        return
+    (sd / "WIDGETS/AeroGrid/layouts/Default.yaml").write_text(LAYOUT)
     main = sd / "WIDGETS/AeroGrid/main.lua"
     source = main.read_text()
     needle = "    refresh = refresh,"
@@ -112,6 +142,7 @@ def write_png(path, frame):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--companion", type=Path, default=Path("/Applications/EdgeTX Companion 2.12.app"))
+    parser.add_argument("--scene", choices=SCENES + tuple(SETUP_SCENES))
     args = parser.parse_args()
     library = args.companion / "Contents/Resources/libedgetx-tx16s-simulator.dylib"
     if not library.is_file():
@@ -125,7 +156,7 @@ def main():
                     str(ROOT / "tools/capture-native.cpp"),
                     f"-Wl,-rpath,{args.companion / 'Contents/Frameworks'}",
                     "-o", str(executable)], check=True)
-    for scene in SCENES:
+    for scene in (args.scene,) if args.scene else SCENES + tuple(SETUP_SCENES):
         directory = OUTPUT / scene
         if directory.is_symlink():
             raise RuntimeError(f"Capture directory must not be a symlink: {directory}")
@@ -137,10 +168,16 @@ def main():
         regions = directory / "regions.txt"
         regions.write_text("0 0 480 272\n")
         frame = directory / "frame.rgb565"
+        mode = "fullscreen"
+        if scene in SETUP_SCENES:
+            actions = directory / "actions.txt"
+            actions.write_text("".join(" ".join(map(str, action)) + "\n"
+                                      for action in SETUP_SCENES[scene]))
+            mode = "actions=" + str(actions)
         with (directory / "simulator.log").open("w") as log:
             try:
                 subprocess.run([str(executable), str(library), str(sd), str(frame),
-                                str(regions), "fullscreen"], stdout=log,
+                                str(regions), mode], stdout=log,
                                stderr=subprocess.STDOUT, check=True, timeout=45)
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
                 raise RuntimeError(f"Capture failed; inspect {directory / 'simulator.log'}") from error
@@ -159,7 +196,7 @@ def main():
             if path.is_file()
         },
         "method": "Native TX16S framebuffer; isolated sample layout and editor command automation.",
-        "scenes": SCENES,
+        "scenes": (args.scene,) if args.scene else SCENES + tuple(SETUP_SCENES),
     }, indent=2) + "\n")
 
 

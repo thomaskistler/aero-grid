@@ -10,6 +10,7 @@
 --- restart.
 
 local registry = { RUNTIME_API = 1, EMPTY = "Empty" }
+local BUILTIN_NAMES = { empty = "Empty", default = "Default", host = "Host" }
 
 --- Read `filename` whole, or nil when it does not exist.
 local function readText(ops, filename)
@@ -70,7 +71,9 @@ function registry.load(sdRoot, widgetPath, ops)
     local changed = false
     local stored = readText(ops, filename)
     if stored then
-        for name in string.gmatch(stored, "[^\r\n]+") do
+        for storedName in string.gmatch(stored, "[^\r\n]+") do
+            local name = BUILTIN_NAMES[string.lower(storedName)] or storedName
+            changed = changed or name ~= storedName
             if not seen[string.lower(name)] then
                 seen[string.lower(name)] = true
                 names[#names + 1] = name

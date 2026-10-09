@@ -97,7 +97,7 @@ end
 --- Build an isolated copy of the widget package so a test can supply its own
 --- layout and panel files without touching the shipped sources.
 ---@param name string Unique scratch directory name under build/.
----@param layoutYaml? string Replacement layouts/default.yaml content.
+---@param layoutYaml? string Replacement layouts/Default.yaml content.
 ---@param extraPanels? table<string, string> Panel filename to Lua source.
 ---@return string widgetPath
 local function makeWidget(name, layoutYaml, extraPanels)
@@ -107,7 +107,7 @@ local function makeWidget(name, layoutYaml, extraPanels)
     os.execute("cp -R '" .. sourcePath .. ".' '" .. directory .. "'")
 
     if layoutYaml then
-        writeFile(directory .. "/layouts/default.yaml", layoutYaml)
+        writeFile(directory .. "/layouts/Default.yaml", layoutYaml)
     end
     -- `heartbeat` and `placeholder` exist to exercise the host contract, not to
     -- fly, so they are fixtures rather than shipped panels. They are copied
@@ -359,7 +359,7 @@ local function testShippedLayoutsLoad()
     for name in listing:lines() do
         local stem = string.match(name, "^(.+)%.yaml$")
         -- Empty is the deliberately blank start for a new screen.
-        if stem and stem ~= "default" and stem ~= "Empty" then
+        if stem and stem ~= "Default" and stem ~= "Empty" then
             names[#names + 1] = stem
         end
     end
@@ -370,7 +370,7 @@ local function testShippedLayoutsLoad()
     for _, stem in ipairs(names) do
         resetRadio()
 
-        -- The host loads layouts/default.yaml unless a dashboard is named, so each
+        -- The host loads layouts/Default.yaml unless a dashboard is named, so each
         -- candidate takes that name inside its own copy of the package.
         local source = assert(hostIo.open(sourcePath .. "layouts/" .. stem .. ".yaml", "r"))
         local yaml = source:read("a")
@@ -648,7 +648,7 @@ local function testScreensReachEveryShippedLayout()
     local textReview = readModel("model3.yml")
     local defaultModel = readModel("model4.yml")
     assert(
-        string.find(defaultModel, "stringValue: default", 1, true),
+        string.find(defaultModel, "stringValue: Default", 1, true),
         "default model must select the default dashboard"
     )
     local review = mainReview .. "\n" .. textReview
@@ -678,7 +678,7 @@ local function testScreensReachEveryShippedLayout()
     -- host's own fallback and is reached by a widget that names nothing, so it
     -- needs no screen; `services` and `services2` are fixtures for the service
     -- runtime rather than anything to look at.
-    local EXEMPT = { Empty = true, default = true, services = true, services2 = true }
+    local EXEMPT = { Empty = true, Default = true, services = true, services2 = true }
 
     local reviews = 0
     for _, stem in ipairs(shipped) do
@@ -770,7 +770,7 @@ local function testShippedLayout()
     resetRadio()
     local zone = { x = 0, y = 0, w = 480, h = 272 }
     local context = testRendersInBothModes("gallery", zone, galleryPath, 10)
-    assertEqual(context.layoutPath, galleryPath .. "layouts/default.yaml")
+    assertEqual(context.layoutPath, galleryPath .. "layouts/Default.yaml")
 
     local types = {}
     for _, entry in ipairs(context.panels) do
@@ -4378,7 +4378,7 @@ local function testReadingsAreCentredOnTheirPanel()
                     local col = math.max(0, place[2] - span[1])
                     local row = math.max(0, place[3] - span[2])
                     writeFile(
-                        widgetPath .. "layouts/default.yaml",
+                        widgetPath .. "layouts/Default.yaml",
                         table.concat({
                             "version: 1",
                             "grid:",
@@ -4829,7 +4829,7 @@ panels:
             for rowSpan = 1, 4 do
                 resetRadio()
                 writeFile(
-                    sweepPath .. "layouts/default.yaml",
+                    sweepPath .. "layouts/Default.yaml",
                     table.concat({
                         "version: 1",
                         "grid:",
@@ -5180,7 +5180,7 @@ panels:
         { Layout = "gamma", Theme = "modern" },
         widgetPath
     )
-    assertEqual(fallback.layoutPath, widgetPath .. "layouts/default.yaml")
+    assertEqual(fallback.layoutPath, widgetPath .. "layouts/Default.yaml")
     assertEqual(idsOf(fallback), "fallback")
 
     -- The instances created before the switch are untouched by it, because
@@ -5387,7 +5387,7 @@ local function testPackageCompatibility()
         local joined = table.concat(context.errors, "\n")
         assert(string.match(joined, case.error), joined)
         assert(context.errorLabel, case.name .. " failure was not shown")
-        definition.update(context, { Layout = "host", Theme = "modern" })
+        definition.update(context, { Layout = "Host", Theme = "modern" })
         pump(context, 5)
         assertEqual(context.stage, nil, case.name .. " attempted to reload a broken runtime")
     end
@@ -5395,7 +5395,10 @@ local function testPackageCompatibility()
     local path = makeWidget("mixed-service")
     writeFile(path .. "lib/telemetry_service.lua", "return {RUNTIME_API=99}")
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, path)
-    assert(string.match(table.concat(context.errors, "\n"), "telemetry:.*incompatible runtime API"))
+    assert(
+        string.match(table.concat(context.errors, "\n"), "telemetry:.*incompatible runtime API"),
+        table.concat(context.errors, "\n")
+    )
     assert(#context.panels > 0, "incompatible service disabled unrelated panels")
 
     local diagnostics = assert(loadfile(sourcePath .. "panels/host-diagnostics.lua"))()
@@ -5419,7 +5422,7 @@ local function testRejectedLayouts()
     for _, case in ipairs(cases) do
         local widgetPath = makeWidget("rejected-" .. case.name, case.yaml)
         if case.name == "missing" then
-            assert(os.remove(widgetPath .. "layouts/default.yaml"))
+            assert(os.remove(widgetPath .. "layouts/Default.yaml"))
         end
         local context = createLoaded(
             { x = 0, y = 0, w = 480, h = 272 },
@@ -5431,7 +5434,7 @@ local function testRejectedLayouts()
         local joined = table.concat(context.errors, "\n")
         assert(string.match(joined, case.error), case.name .. ": " .. joined)
         assert(context.errorLabel, case.name .. " layout failure was not shown")
-        assertEqual(context.layoutPath, widgetPath .. "layouts/default.yaml")
+        assertEqual(context.layoutPath, widgetPath .. "layouts/Default.yaml")
         pump(context, 5)
         assertEqual(table.concat(context.errors, "\n"), joined, case.name .. " failed repeatedly")
     end
@@ -6128,7 +6131,7 @@ local function testModelFilenames()
     for _, name in ipairs({ "model1.yml", "Kavan Sonic.yml", "FPV-7in.yml" }) do
         radio.modelFilename = name
         local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, referencePath)
-        assertEqual(context.layoutPath, referencePath .. "layouts/default.yaml", "unexpected layout for " .. name)
+        assertEqual(context.layoutPath, referencePath .. "layouts/Default.yaml", "unexpected layout for " .. name)
         assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
         assertEqual(#context.panels, 5)
     end
@@ -7092,7 +7095,7 @@ end
 
 local function testHostDiagnosticsReportsTheHost()
     resetRadio()
-    local source = assert(hostIo.open(sourcePath .. "layouts/host.yaml", "r"))
+    local source = assert(hostIo.open(sourcePath .. "layouts/Host.yaml", "r"))
     local yaml = source:read("a")
     source:close()
 
@@ -7132,7 +7135,7 @@ local function testHostDiagnosticsReportsTheHost()
         "the panel reported bytecode that is not there: " .. identity
     )
 
-    -- `host.yaml` states no theme block, so the widget option is what decided.
+    -- `Host.yaml` states no theme block, so the widget option is what decided.
     local theme = linesOf("theme")
     assert(
         string.find(theme, "mode: " .. context.theme.mode, 1, true),
@@ -7188,10 +7191,10 @@ end
 --- Which of the three candidate filenames answered, at each of the three.
 ---
 --- The search tries the layout saved on the radio, then the shipped layout
---- of that name, then `default.yaml`, and until now it reported only the path
+--- of that name, then `Default.yaml`, and until now it reported only the path
 --- it settled on. That is not the same fact: a saved and a shipped layout of
 --- the same name read alike, and a layout silently
---- falling back to `default.yaml` looks exactly like one that was found.
+--- falling back to `Default.yaml` looks exactly like one that was found.
 --- The diagnostics view reports the branch, so each branch is driven here.
 local function testLayoutOriginIsReported()
     resetRadio()
@@ -7211,7 +7214,7 @@ panels:
       section: identity
 ]]
 
-    -- `makeWidget` writes `layouts/default.yaml`, which is the last candidate,
+    -- `makeWidget` writes `layouts/Default.yaml`, which is the last candidate,
     -- so this package starts at the bottom of the search.
     local widgetPath = makeWidget("origin", layout)
 
@@ -7230,7 +7233,7 @@ panels:
     local origin, lines, path = originOf()
     assertEqual(origin, "default")
     assert(string.find(lines, "-> default", 1, true), lines)
-    assert(string.find(path, "default.yaml", 1, true), path)
+    assert(string.find(path, "Default.yaml", 1, true), path)
 
     -- Shipping the named layout makes the middle branch answer. The
     -- default file is still there, which is the point: the path changes and so

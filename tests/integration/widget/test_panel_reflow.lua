@@ -85,9 +85,9 @@ for _, dashboard in ipairs({
     "review-model-identity",
     "review-text",
     "review-trim-panel",
-    "default",
+    "Default",
     "services",
-    "host",
+    "Host",
 }) do
     fixture.reset()
     fixture.lvglMock.setAppMode(true)

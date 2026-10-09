@@ -19,11 +19,19 @@ template<typename T> T symbol(void* library, const char* name) {
 
 int main(int argc, char** argv) {
     if (argc != 5 && argc != 6) {
-        std::fprintf(stderr, "Usage: capture-native LIBRARY ISOLATED_SD OUTPUT_RGB565 REGIONS [fullscreen]\n");
+        std::fprintf(stderr, "Usage: capture-native LIBRARY ISOLATED_SD OUTPUT_RGB565 REGIONS [fullscreen|actions=FILE]\n");
         return 2;
     }
     bool fullscreen = argc == 6 && std::strcmp(argv[5], "fullscreen") == 0;
-    if (argc == 6 && !fullscreen) {
+    bool scripted = argc == 6 && std::strncmp(argv[5], "actions=", 8) == 0;
+    std::vector<std::array<int, 4>> actions;
+    if (scripted) {
+        std::ifstream script(argv[5] + 8);
+        std::array<int, 4> action;
+        while (script >> action[0] >> action[1] >> action[2] >> action[3]) actions.push_back(action);
+        if (actions.empty() || !script.eof()) return 2;
+    }
+    if (argc == 6 && !fullscreen && !scripted) {
         std::fprintf(stderr, "Unknown capture mode\n");
         return 2;
     }
@@ -62,12 +70,12 @@ int main(int argc, char** argv) {
     auto flush = symbol<void(*)()>(library, "lcdFlushed");
     auto buffer = symbol<unsigned char**>(library, "simuLcdBuf");
     auto changed = symbol<bool*>(library, "simuLcdRefresh");
-    auto touchDown = fullscreen ? symbol<void(*)(short, short)>(library, "_Z14touchPanelDownss") : nullptr;
-    auto touchUp = fullscreen ? symbol<void(*)()>(library, "_Z12touchPanelUpv") : nullptr;
+    auto touchDown = fullscreen || scripted ? symbol<void(*)(short, short)>(library, "_Z14touchPanelDownss") : nullptr;
+    auto touchUp = fullscreen || scripted ? symbol<void(*)()>(library, "_Z12touchPanelUpv") : nullptr;
     if (!init || !start || !stop || !flush || !buffer || !changed) {
         return 1;
     }
-    if (fullscreen && (!touchDown || !touchUp)) return 1;
+    if ((fullscreen || scripted) && (!touchDown || !touchUp)) return 1;
     const size_t bytes = 480 * 272 * 2;
     std::vector<unsigned char> previous(bytes), image(bytes);
     std::string ready = std::string(argv[2]) + "/capture-ready.txt";
@@ -78,13 +86,20 @@ int main(int argc, char** argv) {
     for (int tick = 0; tick < 3000; ++tick) {
         if (fullscreen && tick == 500) touchDown(200, 140);
         if (fullscreen && tick == 600) touchUp();
+        for (const auto& action : actions) {
+            if (tick == action[0]) {
+                if (action[3]) touchDown(action[1], action[2]);
+                else touchUp();
+            }
+        }
         if (*buffer) {
             std::memcpy(image.data(), *buffer, bytes);
             if (*changed) {
                 *changed = false;
                 flush();
             }
-            if (access(ready.c_str(), F_OK) == 0) {
+            if (access(ready.c_str(), F_OK) == 0
+                && (!scripted || tick > actions.back()[0] + 100)) {
                 bool same = true;
                 for (const auto& region : regions) {
                     for (int y = region[1]; y < region[1] + region[3]; ++y) {

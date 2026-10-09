@@ -49,8 +49,8 @@ local function testCandidates()
     assertions.assertEqual(
         table.concat(origins, ","),
         "user=/AEROGRID/layouts/sim.yaml,user-backup=/AEROGRID/layouts/sim.yaml.bak,"
-            .. "shipped=/WIDGETS/AeroGrid/layouts/sim.yaml,default=/WIDGETS/AeroGrid/layouts/default.yaml,"
-            .. "default-backup=/WIDGETS/AeroGrid/layouts/default.yaml.bak"
+            .. "shipped=/WIDGETS/AeroGrid/layouts/sim.yaml,default=/WIDGETS/AeroGrid/layouts/Default.yaml,"
+            .. "default-backup=/WIDGETS/AeroGrid/layouts/Default.yaml.bak"
     )
 
     -- Empty is never written, so nothing saved can shadow it.
@@ -120,31 +120,42 @@ end
 local function testRegistryIsAppendOnly()
     local files = {}
     local folders = {
-        ["/WIDGETS/AeroGrid/layouts"] = { "Empty.yaml", "default.yaml", "sim.yaml", "notes.txt", "x.yaml.bak" },
+        ["/WIDGETS/AeroGrid/layouts"] = { "Empty.yaml", "Default.yaml", "sim.yaml", "notes.txt", "x.yaml.bak" },
     }
     local ops = fakeCard(files, folders)
 
     local names = registry.load("/", "/WIDGETS/AeroGrid/", ops)
-    assertions.assertEqual(table.concat(names, ","), "Empty,default,sim")
-    assertions.assertEqual(files["/AEROGRID/registry.txt"], "Empty\ndefault\nsim\n")
+    assertions.assertEqual(table.concat(names, ","), "Empty,Default,sim")
+    assertions.assertEqual(files["/AEROGRID/registry.txt"], "Empty\nDefault\nsim\n")
 
     -- A user layout saved later, and a shipped one whose listing order changed,
     -- keep every earlier position.
-    folders["/WIDGETS/AeroGrid/layouts"] = { "zeta.yaml", "sim.yaml", "default.yaml", "Empty.yaml" }
+    folders["/WIDGETS/AeroGrid/layouts"] = { "zeta.yaml", "sim.yaml", "Default.yaml", "Empty.yaml" }
     folders["/AEROGRID/layouts"] = { "Sonic1.yaml", "SIM.yaml" }
     names = registry.load("/", "/WIDGETS/AeroGrid/", ops)
-    assertions.assertEqual(table.concat(names, ","), "Empty,default,sim,zeta,Sonic1")
+    assertions.assertEqual(table.concat(names, ","), "Empty,Default,sim,zeta,Sonic1")
 
     -- A deleted file keeps its slot, so no widget silently changes layout.
-    folders["/WIDGETS/AeroGrid/layouts"] = { "Empty.yaml", "default.yaml" }
+    folders["/WIDGETS/AeroGrid/layouts"] = { "Empty.yaml", "Default.yaml" }
     folders["/AEROGRID/layouts"] = {}
     names = registry.load("/", "/WIDGETS/AeroGrid/", ops)
-    assertions.assertEqual(table.concat(names, ","), "Empty,default,sim,zeta,Sonic1")
+    assertions.assertEqual(table.concat(names, ","), "Empty,Default,sim,zeta,Sonic1")
 end
 
 local function testRegistryWithoutFileApi()
     local names = registry.load("/", "/WIDGETS/AeroGrid/", {})
     assertions.assertEqual(table.concat(names, ","), "Empty")
+end
+
+local function testBuiltinNamesKeepPositions()
+    local files = { ["/AEROGRID/registry.txt"] = "Empty\nSonic1\ndefault\nhost\n" }
+    local folders = {
+        ["/WIDGETS/AeroGrid/layouts"] = { "Empty.yaml", "Default.yaml", "Host.yaml" },
+        ["/AEROGRID/layouts"] = {},
+    }
+    local names = registry.load("/", "/WIDGETS/AeroGrid/", fakeCard(files, folders))
+    assertions.assertEqual(table.concat(names, ","), "Empty,Sonic1,Default,Host")
+    assertions.assertEqual(files["/AEROGRID/registry.txt"], "Empty\nSonic1\nDefault\nHost\n")
 end
 
 local function run()
@@ -154,6 +165,7 @@ local function run()
     testSuggestName()
     testRegistryIsAppendOnly()
     testRegistryWithoutFileApi()
+    testBuiltinNamesKeepPositions()
 end
 
 run()

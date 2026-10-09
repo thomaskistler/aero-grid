@@ -170,7 +170,7 @@ end
 function layoutStore.candidates(widgetPath, name)
     local base = directory(widgetPath)
     local shippedPath = base .. "layouts/" .. sanitize(name) .. ".yaml"
-    local defaultPath = base .. "layouts/default.yaml"
+    local defaultPath = base .. "layouts/Default.yaml"
     local paths = {}
     if not layoutStore.isEmpty(name) then
         local userPath = layoutStore.path(widgetPath, name)
@@ -235,7 +235,7 @@ function layoutStore.read(widgetPath, name)
     return layoutStore.readCandidates(widgetPath, name)
 end
 
---- Read, parse, and validate a layout, falling back to default.yaml.
+--- Read, parse, and validate a layout, falling back to Default.yaml.
 --- Retained for tests and callers that can afford the whole cost at once.
 ---@param widgetPath string Absolute AeroGrid widget directory.
 ---@param name string Layout name selected in the native widget settings.
@@ -273,8 +273,8 @@ end
 function layoutStore.loadDefault(widgetPath, yaml, layout, grid)
     local base = string.sub(widgetPath, -1) == "/" and widgetPath or widgetPath .. "/"
     local candidates = {
-        base .. "layouts/default.yaml",
-        base .. "layouts/default.yaml.bak",
+        base .. "layouts/Default.yaml",
+        base .. "layouts/Default.yaml.bak",
     }
     local lastErrors = {}
     for _, filename in ipairs(candidates) do

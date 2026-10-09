@@ -398,7 +398,7 @@ Panels consume immutable snapshots. A service mutates its own state table in pla
 │   ├── theme.lua
 │   └── ...
 └── layouts/
-    ├── default.yaml
+    ├── Default.yaml
     ├── services.yaml
     ├── services2.yaml
     └── <model-identifier>--<dashboard-id>.yaml
@@ -801,7 +801,7 @@ Different EdgeTX custom screens use different Dashboard IDs, allowing multiple i
 
 1. Receive the EdgeTX zone, options, and widget folder path.
 2. Select the layout filename for the active model.
-3. Read and parse the YAML layout, falling back to `default.yaml`.
+3. Read and parse the YAML layout, falling back to `Default.yaml`.
 4. Validate and normalize all placements.
 5. Load each referenced panel script.
 6. Create an LVGL parent container for each placement.
@@ -974,7 +974,7 @@ Recommended save sequence:
 6. Rename the temporary file to the final filename.
 7. Keep the backup until the next successful save.
 
-On load, try the final file, then the backup, then `default.yaml`.
+On load, try the final file, then the backup, then `Default.yaml`.
 
 Layouts are keyed by sanitized model filename and Dashboard ID as `<model-identifier>--<dashboard-id>.yaml`. Sanitization must be deterministic, reject traversal, and append a short hash when normalization could create collisions.
 
@@ -1765,7 +1765,7 @@ It ships as four sections, one per panel, on the `host` dashboard:
 
 **It reads the live host context and re-derives nothing.** A diagnostics view that resolved the layout filename a second time, or rebuilt the theme to see what it would say, would be reporting on a world assembled for it rather than the one the dashboard is running, and would be confidently wrong at exactly the moment it is being trusted. That is the same mistake as a fixture that encodes what we assume. Where a fact was not recoverable afterwards, the host now records it where it is decided rather than letting the view guess later, and each of those was a guess the view would otherwise have had to make:
 
-- `layoutStore.read` reports **which** of the three candidate names answered, not only the path it settled on. A dashboard called `main` on a model called `main` produces two candidates that read alike, and a layout quietly falling back to `default.yaml` looks exactly like one that was found.
+- `layoutStore.read` reports **which** of the three candidate names answered, not only the path it settled on. A dashboard called `main` on a model called `main` produces two candidates that read alike, and a layout quietly falling back to `Default.yaml` looks exactly like one that was found.
 - `context.themeSource` records whether the layout's own block or the widget option chose the mode. The option was inert for a while while looking identical to a working one.
 - `theme.build` reports the mode it was **asked** for beside the one it settled on, because a fallback to Modern reports `modern` and is otherwise invisible.
 - `context.rejected` holds placements that never built, with the reason. A panel that raises during `create` is discarded and is not in `panels` at all, so before this the view could have reported every panel that works and no panel that does not, which is the wrong half.
@@ -2088,7 +2088,7 @@ Deliverable: a runnable dashboard whose placeholder panels occupy stable configu
 #### Milestone 2: Read-only YAML loader
 
 - Implement the constrained schema-versioned YAML parser.
-- Resolve `<model-identifier>--<dashboard-id>.yaml` and fall back to `default.yaml`.
+- Resolve `<model-identifier>--<dashboard-id>.yaml` and fall back to `Default.yaml`.
 - Validate panel IDs, safe type names, coordinates, spans, overlap, and supported schema version.
 - Preserve unknown keys in memory for forward compatibility.
 - Render visible placeholders for invalid entries without preventing valid entries from loading.
@@ -2148,7 +2148,7 @@ This order establishes value formatting, source access (including ordinary GV so
 
 Deliverable: six responsive core panels operating from YAML configuration.
 
-Delivered. All six ship, driven by YAML and shared services, and the shipped `layouts/default.yaml` demonstrates all of them. Global-variable readings use `metric` through ordinary EdgeTX sources.
+Delivered. All six ship, driven by YAML and shared services, and the shipped `layouts/Default.yaml` demonstrates all of them. Global-variable readings use `metric` through ordinary EdgeTX sources.
 
 Three shared additions came out of the work rather than being planned:
 
@@ -2177,7 +2177,7 @@ Implement these panels in order:
 
 Deliverable: the full ten-panel catalog with graceful telemetry degradation.
 
-Delivered. All three ship, and `layouts/default.yaml` now demonstrates the
+Delivered. All three ship, and `layouts/Default.yaml` now demonstrates the
 complete ten-panel catalogue on one screen.
 
 Value shapes are validated rather than assumed. `cellBattery.summarize`

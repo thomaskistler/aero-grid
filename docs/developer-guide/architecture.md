@@ -57,7 +57,7 @@ Every service degrades rather than raising. A missing firmware API, an unknown s
 
 ### Service diagnostics
 
-The bundled `host` dashboard reports package identity, loading, and service
+The bundled `Host` dashboard reports package identity, loading, and service
 failures. Automated service tests cover normalized readings, precision,
 freshness, and navigation calculations independently of display panels.
 

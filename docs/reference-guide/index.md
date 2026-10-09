@@ -16,4 +16,4 @@ Choose a panel below for visual examples, settings, behavior, and configuration 
 | [`link-status`](../panels/link-status.md) | Link quality, signal strength, and optional RF details. |
 | [`navigation`](../panels/navigation.md) | GPS position, distance from home, and bearing toward the model. |
 
-To add or arrange panels, see [Configure a dashboard](../user-guide/dashboards.md).
+To add or arrange panels, see [Add, configure and edit a dashboard](../user-guide/dashboards.md).

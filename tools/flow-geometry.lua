@@ -130,7 +130,7 @@ for _, zone in ipairs(ZONES) do
             local colSpan = tonumber(string.sub(span, 1, 1))
             local rowSpan = tonumber(string.sub(span, 3, 3))
 
-            writeFile(widgetPath .. "layouts/default.yaml", layoutFor(typeName, colSpan, rowSpan))
+            writeFile(widgetPath .. "layouts/Default.yaml", layoutFor(typeName, colSpan, rowSpan))
 
             radioMock.reset()
             -- The readings the panels display, so the mock shows real strings.

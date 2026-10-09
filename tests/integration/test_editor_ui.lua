@@ -1110,7 +1110,7 @@ equal(savedLabel("edit-sparse"), "KEPT", "the resumed draft saves")
 
 widget.lvglMock.setFullScreen(true)
 lvgl.UI_ELEMENT_HEIGHT = 48
-load("default")
+load("Default")
 open()
 for index = 1, #context.editorSession.draft.panels do
     rect = context.editorUi.controls[index].rect

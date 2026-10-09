@@ -105,7 +105,7 @@ described in [Installation and upgrades](../user-guide/installation.md#upgrade).
 
 `lib/package.lua` defines the package version and the runtime, panel, and
 layout API versions. The host rejects incompatible or unversioned runtime modules;
-a failed service leaves unrelated panels running. Layout `host` reports the
+a failed service leaves unrelated panels running. Layout `Host` reports the
 loaded version. These checks detect API-incompatible mixtures, not every mixture
 of compatible releases or stale bytecode.
 
@@ -119,13 +119,16 @@ On macOS with EdgeTX Companion 2.12 and the Xcode command-line tools, run:
 python3 tools/capture-editor.py
 ```
 
-This uses only Python's standard library. It captures the overview, metric
-settings and entry dialogs, exit menu, and Save As dialog in
+This uses only Python's standard library. It captures screen creation, App mode,
+widget and layout selection, the editor overview, metric settings and entry
+dialogs, the exit menu, and Save As dialog in
 `build/editor-capture/`. Use `--companion /path/to/Companion.app` to select a
-different installation.
+different installation. Use `--scene select-layout` (or another scene name)
+to regenerate a single capture.
 
-The tool boots an isolated fixture SD card, enters fullscreen through a native
-long-press, and automates the production editor commands in a copied widget.
+The tool boots an isolated fixture SD card. Setup scenes use native touch input
+to add a screen and select the widget. Editor scenes enter fullscreen through a
+native long-press and automate production editor commands in a copied widget.
 It does not modify `src/` or `build/sdcard/`. Frames are captured after the UI
 settles; `provenance.json` records the source and simulator hashes. Copy reviewed
 PNGs and the provenance file into `docs/assets/editor/` to update the guide.
@@ -316,7 +319,7 @@ Generated release notes include installation links and hardware coverage.
 No release has to be created manually in the Releases UI.
 
 `make release-package` builds the same deterministic archive locally in
-`build/release/`. It contains source Lua files, only `default` and `host` layouts,
+`build/release/`. It contains source Lua files, only `Default` and `Host` layouts,
 and the license. It never packages a simulator SD image, bytecode, or capture
 assets. The layout allowlist is defined in `tools/package-release.py`.
 

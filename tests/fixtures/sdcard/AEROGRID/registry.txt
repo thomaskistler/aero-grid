@@ -1,6 +1,6 @@
 Empty
-default
-host
+Default
+Host
 review-cell-battery
 review-cell-sources
 review-flight-mode

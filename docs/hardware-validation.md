@@ -330,9 +330,9 @@ Perform link-loss tests on the bench with propulsion disabled.
 
 ## Diagnostics and release budgets
 
-- [ ] Confirm the `host` identity section reports package version `0.10.0`.
+- [ ] Confirm the `Host` identity section reports package version `0.10.0`.
   Install the complete package and remove stale bytecode before recording results.
-- [ ] Select Layout `host`; inspect layout path, panel loading,
+- [ ] Select Layout `Host`; inspect layout path, panel loading,
   unresolved sources, and failures. Check readings against the model's sensors.
 - [ ] Check missing/corrupt layouts and missing sources produce useful errors
   without disabling unrelated panels.

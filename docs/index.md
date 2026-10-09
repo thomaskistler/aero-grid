@@ -30,7 +30,7 @@ typography, spacing, colors, and state indicators across the dashboard.
 ## User Guide
 
 Start with [installation and upgrades](user-guide/installation.md), then learn
-how to [configure and edit a dashboard](user-guide/dashboards.md), including
+how to [add, configure and edit a dashboard](user-guide/dashboards.md), including
 selecting layouts, using the on-radio editor, binding sources, and
 troubleshooting unavailable readings.
 

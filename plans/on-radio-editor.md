@@ -345,8 +345,10 @@ mock test suite, or native simulator runs.
 - Layout and Theme pickers, stable layout registry, and user storage outside
   the widget package.
 - Text-only empty-dashboard guidance with native centred alignment.
-- [Dashboard and editor user guide](../docs/user-guide/dashboards.md), with native TX16S simulator
-  captures of editing, metric configuration, the exit menu, and Save As.
+- [Add, configure and edit a dashboard](../docs/user-guide/dashboards.md), with
+  native TX16S simulator captures of adding a screen, choosing App mode,
+  selecting AeroGrid and its layout, editing, metric configuration, the exit
+  menu, and Save As. Bundled layout names are Empty, Default, and Host.
 
 No remaining feature work is identified for the agreed editor scope.
 Future panels with list settings must declare entry `fields`, as metric and

@@ -1,80 +1,91 @@
-# Configure and edit a dashboard
+# Add, configure and edit a dashboard
 
-Select a layout, customize its panels on the radio, and save your dashboard.
-You do not need to edit YAML to use the editor.
+Add AeroGrid to a radio screen, choose a layout, then customize it on the radio.
+Install [AeroGrid](installation.md) first and select the model you want to use.
 
-## Select a layout
+## Add a dashboard
 
-Choose **Layout** in the widget settings. The list contains `Empty`, every
-layout shipped in `/WIDGETS/AeroGrid/layouts/`, and every layout you have saved
-in `/AEROGRID/layouts/`. Use `default` for the bundled aircraft dashboard, or
-`Empty` to start a new screen from a blank grid.
+### Add a radio screen
 
-An empty dashboard shows centred text explaining how to enter fullscreen and
-start editing. The hint disappears during editing and is never saved as a panel.
+Open the main screen's top-left menu and choose **UI Setup**.
 
-The layout name is its identity on every model. A layout you saved under the
-same name as a shipped one takes precedence over it, and widget updates never
-touch `/AEROGRID/`. A name with no file falls back to `default`.
+![EdgeTX main menu with UI Setup at the right](../assets/editor/screen-menu.png)
 
-EdgeTX reads the list only when the radio starts, so a layout saved or copied
-to the SD card appears after a restart. The list order is recorded in
-`/AEROGRID/registry.txt` and only ever grows: EdgeTX stores the setting as a
-position in the list, so deleting a layout file leaves its entry, and
-selecting it then shows `default`. Delete the registry file only if no screen
-selects a saved layout, because every position is reassigned.
+Select the **+** tab, then tap **Add Screen**.
 
-Use a different layout on each EdgeTX screen to show different dashboards.
-You can edit layouts on the radio in temporary fullscreen mode, or edit YAML
-files on a computer and copy them to the SD card.
+![Add Screen tab and button in EdgeTX UI Setup](../assets/editor/add-screen.png)
 
-Before using the bundled layout, adjust its source names, battery cell count,
-and alarm thresholds for your model. Its battery source must measure the
-flight pack, not a regulated receiver supply.
+### Choose App mode
 
-The bundled dashboard includes a [flight-counter](../panels/flight-counter.md)
-tracker using GV9 FM0, `armSwitch: "SFv"` for armed, and CH3 for motor output.
-Adjust the panel's `armSwitch` and `motorSource` to match your model;
-the separate Mode text panel also needs matching switch mappings. Reserve GV9
-with precision 0 and limits allowing `0..999`. The tracker uses 30-second
-qualification, a 10-second disarm timeout, and CSV history by default.
-Use only one tracking panel across all dashboards and do not run EdgeTX Flights
-alongside it. When copying the default layout for a second dashboard, remove the
-tracker or replace it with a read-only `metric` using `gvar9`.
+On the new screen, tap the **Layout** thumbnail and choose **App mode**.
+This makes one widget fill the screen.
 
-## Create a layout
+![Screen layout picker with App mode at the top](../assets/editor/screen-layout.png)
 
-Copy `default.yaml` to a new filename and edit it, or start with this example.
-This minimal layout displays EdgeTX timer 1:
+Tap **Setup widgets**, then tap the empty widget area.
 
-```yaml
-version: 1
-grid:
-  columns: 4
-  rows: 4
-panels:
-  - id: flight-clock
-    type: flight-timer
-    col: 0
-    row: 0
-    colSpan: 2
-    rowSpan: 1
-    config:
-      timer: 0
-      accent: green
-```
+![App mode screen with Setup widgets button](../assets/editor/app-screen.png)
 
-Save it as `/AEROGRID/layouts/my-dashboard.yaml`, restart the radio, and
-select `my-dashboard` as Layout. Names may use letters, digits, `-` and `_`.
+### Add AeroGrid and choose a layout
 
-Positions are zero-based: `col: 0`, `row: 0` is the top-left cell. Spans specify
-how many cells a panel occupies. Keep placements within the 4 x 4 grid without
-overlap, use unique panel IDs, and choose spans supported by the panel.
-The `type` selects the panel; `config` contains its settings.
+Choose **AeroGrid** in **Select widget**.
 
-See the [Panel reference](../reference-guide/index.md) for settings and examples.
-Use exact, case-sensitive source names from your model's telemetry configuration.
-Follow the YAML structure above and the panel examples.
+![Select widget menu with AeroGrid highlighted](../assets/editor/select-widget.png)
+
+In the AeroGrid settings, choose **Layout**. Select **Empty** to build your
+own dashboard, or **Default** to start with the bundled aircraft dashboard.
+Choose **Modern** or **EdgeTX** for **Theme**.
+
+![AeroGrid widget settings with Layout and Theme pickers](../assets/editor/widget-options.png)
+
+![Layout picker offering Empty, default, and host](../assets/editor/select-layout.png)
+
+Press **RTN** to close the settings and leave setup. Your dashboard is now
+on the new screen. Repeat these steps to add another dashboard.
+
+*Captures on this page use the EdgeTX 2.12 TX16S simulator. Menu placement may
+vary by radio or firmware; sample readings are illustrative.*
+
+## Understand layouts
+
+A **dashboard** is AeroGrid on a radio screen. A **layout** defines its panels,
+their positions and sizes, and their settings, including sources and alarms.
+Choose a layout to decide what that dashboard displays.
+
+### Bundled layouts
+
+| Layout | Purpose |
+| --- | --- |
+| **Empty** | A blank starting point for your own dashboard. Shows instructions until you start editing. Save As gives it a new name; Empty is never overwritten. |
+| **Default** | A ready-made aircraft dashboard. Configure its sources, switches, battery cell count, and alarms for your model before using it. |
+| **Host** | A diagnostics dashboard for checking loaded components and errors. |
+
+The default dashboard includes a [flight counter](../panels/flight-counter.md)
+using GV9, flight mode 0, for the count. Reserve GV9 with precision 0 and limits
+covering `0..999`, and configure the counter's arm switch and motor source.
+Use only one tracking panel across your dashboards and do not run EdgeTX
+Flights alongside it. The flight-pack battery panel must read the pack,
+not a regulated receiver supply.
+
+### Saved layouts and sharing
+
+Bundled layouts are stored in `/WIDGETS/AeroGrid/layouts/`. Your saved layouts
+are stored separately in `/AEROGRID/layouts/`, so upgrading AeroGrid leaves
+them untouched.
+
+**Save** updates the current layout. For a bundled layout it creates your
+copy under the same name, leaving the bundled original untouched.
+**Save as...** creates a separately named layout.
+
+Several dashboards, even on different models, can select the same layout.
+They share all panel settings, so check that the sources and switches suit
+each model. Saving changes under that name affects all dashboards using it
+when they next reload.
+
+Restart the radio after saving a new name so it appears in the **Layout**
+picker. The layout list is kept in `/AEROGRID/registry.txt`; leave that file
+alone so existing screen selections keep their positions. A missing layout
+falls back to **Default**.
 
 ## Edit a dashboard on the radio
 
@@ -90,9 +101,6 @@ Normal App mode is read-only, even when the dashboard fills the display.
 An empty dashboard shows centred instructions until you start editing.
 
 ![Editor showing panel gears and the add-panel tile](../assets/editor/overview.png)
-
-*Editor overview. Captures on this page use the EdgeTX 2.12 TX16S simulator
-with a sample layout; readings are illustrative.*
 
 ### Add and arrange panels
 
@@ -173,13 +181,10 @@ or changing the widget's **Layout** or **Theme** discards the unsaved draft.
 
 If the primary layout cannot be read, parsed, or validated, AeroGrid tries its
 backup, then the shipped layout of that name, and finally the shipped
-default and its backup. Review the active path in the `host` diagnostics
+default and its backup. Review the active path in the `Host` diagnostics
 panel after recovery.
 
 ## App mode and Full screen
-
-Choose the screen layout in EdgeTX's **Model Setup → Screens**, then assign
-AeroGrid to its widget area.
 
 | Layout | What you see |
 | --- | --- |
@@ -192,15 +197,12 @@ leaves more room beside the menu button.
 
 ## Theming
 
-Choose **Theme** in the widget settings: **Modern** or **EdgeTX**. A layout's
-optional `theme` block overrides that selection, and is the only place to use
-`custom`, because custom colours are defined there.
+Choose **Theme** in the widget settings.
 
 | Mode | Behavior |
 | --- | --- |
-| `modern` | AeroGrid's dark instrument palette. |
-| `edgetx` | Colors based on the radio's active theme. |
-| `custom` | The modern palette with overrides for `canvas`, `surface`, `text`, and `accent`. |
+| **Modern** | AeroGrid's dark instrument palette. |
+| **EdgeTX** | Colors based on the radio's active theme. |
 
 ## Troubleshoot a reading
 
@@ -208,7 +210,7 @@ Check the panel's source name and expected data type first. A cells-table
 source and a numeric pack-voltage source are not interchangeable. Check receiver
 connection, sensor discovery, GPS fix, and model timer configuration as applicable.
 
-Use `host` to inspect the loaded layout, panel loading, and service failures.
+Use `Host` to inspect the loaded layout, panel loading, and service failures.
 Interpret missing or stale states using the panel's reference page rather than
 treating them as zero. If a copied fix is not taking effect, follow the
 [upgrade instructions](installation.md#upgrade).

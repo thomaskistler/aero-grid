@@ -78,7 +78,7 @@ local function create(entries, cols, rows)
             end
         end
     end
-    local file = assert(io.open(widgetPath .. "layouts/default.yaml", "w"))
+    local file = assert(io.open(widgetPath .. "layouts/Default.yaml", "w"))
     file:write(table.concat(lines, "\n") .. "\n")
     file:close()
     local context = fixture.createLoaded(nil, nil, widgetPath)
