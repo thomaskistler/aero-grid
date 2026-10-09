@@ -291,6 +291,11 @@ user-confirmed hardware verification without inventing quantitative measurements
 - [ ] Drag each resize corner inward/outward; verify the opposite corner stays
   fixed, unsupported/occupied/out-of-bounds sizes are skipped, the + relocates,
   and the top-right gear remains usable. Check shrinking and saved geometry.
+- [ ] On the physical radio, check finger-sized corner targets on 1 x 1 panels,
+  accidental moves versus resizes, gear activation, edge/corner reachability,
+  drag responsiveness, and repeated expand/shrink cycles. Verify saved geometry
+  after reload. Keep Size/Column/Row until the user confirms these gestures work
+  well on hardware; only then remove those configuration fields.
 - [ ] Press Return to close drawers, then save and exit; power-cycle/reload and confirm the layout persists
   for the selected model and Dashboard ID.
 - [ ] Verify a successful save retains the previous layout as `.bak`; restore

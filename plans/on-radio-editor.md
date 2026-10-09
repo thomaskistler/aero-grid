@@ -25,6 +25,11 @@ editor decisions here rather than changing `plans/aerogrid-spec.md`.
   anchoring the opposite corner. Snap to supported, in-bounds, collision-free
   grid spans with live geometry previews. Preserve the top-right configuration
   gear hit area. Drawer Size still anchors the top-left and supports key input.
+- Physical-radio usability is the gate for removing Size, Column, and Row
+  from configuration. The user confirmed simulator resizing works; keep these
+  controls for now. Once movement and corner resizing work well on the radio,
+  remove the geometry fields. This would intentionally retire key-only geometry
+  editing, while retaining key navigation and panel configuration.
 - Show an actual panel-styled **+** tile in the first available 1 x 1 cell,
   scanning left-to-right and top-to-bottom. Hide it when the grid is full.
   Use the shared panel drawing and resize functions with a gray sidebar.
