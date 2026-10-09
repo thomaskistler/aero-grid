@@ -7,9 +7,8 @@ layout shipped in `/WIDGETS/AeroGrid/layouts/`, and every layout you have saved
 in `/AEROGRID/layouts/`. Use `default` for the bundled aircraft dashboard, or
 `Empty` to start a new screen from a blank grid.
 
-An empty dashboard shows a faint grid and a centred hint explaining how to
-enter fullscreen and start editing. These are only visual guides: they
-disappear during editing and are never saved as panels.
+An empty dashboard shows centred text explaining how to enter fullscreen and
+start editing. The hint disappears during editing and is never saved as a panel.
 
 The layout name is its identity on every model. A layout you saved under the
 same name as a shipped one takes precedence over it, and widget updates never

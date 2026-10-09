@@ -642,18 +642,12 @@ local function updateEmptyHint(context)
         return
     end
     if not hint then
-        hint = { objects = {}, lines = {} }
+        hint = { objects = {} }
         context.emptyHint = hint
-        for index = 1, 7 do
-            local line = lvgl.rectangle(context.page, { x = 0, y = 0, w = 1, h = 1, filled = index ~= 1 })
-            hint.lines[index] = line
-            hint.objects[#hint.objects + 1] = line
-        end
-        hint.backdrop = lvgl.rectangle(context.page, { x = 0, y = 0, w = 1, h = 1, filled = true })
-        hint.objects[#hint.objects + 1] = hint.backdrop
-        for _, key in ipairs({ "icon", "title", "instruction" }) do
+        for _, key in ipairs({ "title", "instruction" }) do
             hint[key] = lvgl.label(context.page, {
                 text = "",
+                align = CENTERED,
                 font = function()
                     return SMLSIZE
                 end,
@@ -665,49 +659,17 @@ local function updateEmptyHint(context)
     local fullscreen = isFullScreen()
     if hint.w ~= w or hint.h ~= h or hint.fullscreen ~= fullscreen then
         hint.w, hint.h, hint.fullscreen = w, h, fullscreen
-        hint.lines[1]:set({
-            x = 4,
-            y = 4,
-            w = math.max(1, w - 8),
-            h = math.max(1, h - 8),
-            color = context.theme.color.border,
-        })
-        for index = 1, 3 do
-            hint.lines[index + 1]:set({
-                x = math.floor(w * index / 4),
-                y = 4,
-                w = 1,
-                h = math.max(1, h - 8),
-                color = context.theme.color.border,
-            })
-            hint.lines[index + 4]:set({
-                x = 4,
-                y = math.floor(h * index / 4),
-                w = math.max(1, w - 8),
-                h = 1,
-                color = context.theme.color.border,
-            })
-        end
         local instruction = fullscreen and "Long-press to start editing" or "Long-press for fullscreen"
-        local texts = { "+", "Empty dashboard", instruction }
-        local keys = { "icon", "title", "instruction" }
+        local texts = { "Empty dashboard", instruction }
+        local keys = { "title", "instruction" }
         local lineHeight = context.themeBuilder.fontHeight(SMLSIZE)
-        local blockHeight = lineHeight * 3 + 12
-        local blockWidth = math.min(w - 16, context.themeBuilder.textWidth(SMLSIZE, instruction) + 24)
+        local blockHeight = lineHeight * 2 + 6
         local top = math.floor((h - blockHeight) / 2)
-        hint.backdrop:set({
-            x = math.floor((w - blockWidth) / 2),
-            y = top - 4,
-            w = blockWidth,
-            h = blockHeight + 8,
-            color = context.theme.color.canvas,
-        })
         for index, key in ipairs(keys) do
-            local width = math.min(w, context.themeBuilder.textWidth(SMLSIZE, texts[index]))
             hint[key]:set({
-                x = math.floor((w - width) / 2),
+                x = 0,
                 y = top + (index - 1) * (lineHeight + 6),
-                w = width,
+                w = w,
                 h = lineHeight,
                 text = texts[index],
                 color = context.theme.color.textMuted,
