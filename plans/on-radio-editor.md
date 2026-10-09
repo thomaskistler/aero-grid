@@ -47,9 +47,12 @@ The gesture editor and persistence workflow are implemented in the draft PR,
 but broader hardware verification remains outstanding.
 
 Edits are isolated in an in-memory working copy. Existing panel instances
-preview placement and size without reconstruction. New additions remain
-placeholder cards until saving, avoiding duplicate trackers and other panel
-side effects. Configuration changes take effect on save/reload.
+preview placement and size without reconstruction. Returning from the main
+configuration drawer renders new panels and rebuilds panels with changed
+configuration. Rebuilds retire the old instance before creating its replacement
+in a later foreground callback, reusing cleared containers. Unchanged panels
+retain their instances. Unsaved flight-counter instances are display-only:
+they cannot increment GV9, announce flights, or write history.
 
 Currently, Return from dashboard editing validates, saves a changed layout,
 and exits. Leaving fullscreen also initiates saving. Save failures retain the
@@ -195,10 +198,18 @@ grouped list editing, typed controls, draft isolation, inline errors, queued
 edits surviving dismissal, and stale callbacks. Physical-radio verification
 and broader display-size testing remain outstanding.
 
-Live geometry previews remain enabled. Configuration/new-panel previews still
-apply on save/reload: panel instances own subscriptions and potentially
-persistent tracker state, so rebuilding them per setting would not be a simple,
-side-effect-free preview. A new preview framework is outside this drawer change.
+Live geometry previews remain enabled. Configuration/new-panel previews now
+refresh after returning to editing, rather than on every field change.
+Subscription services deduplicate shared sources; replacement instances do not
+coexist with the retired instance. Changed flight-counter panels restart their
+runtime state after saving; their unsaved previews cannot perform persistent
+actions. Discarding or abandoning a rebuilt preview reloads the committed layout.
+Native TX16S simulation verified two consecutive drawer-dismissal content
+rebuilds, reusing the panel container and drawing the changed metric heading
+while remaining in edit mode. Regression coverage includes new metric panels,
+nested-drawer dismissal, repeated rebuilds with deferred LVGL cleanup, unchanged
+instance reuse, visible preview failures and correction, discard restoration,
+and flight-counter preview side-effect suppression.
 
 ### Mockup and open design points
 
@@ -224,7 +235,8 @@ User decisions, 2026-10-07, supersede these aspects of the initial prototype:
   framework. Preserve draft isolation, avoid duplicate trackers or persistent
   side effects, and stay within callback limits. If those constraints make
   previews substantial work, retain save/reload behavior and document it.
-  Currently configuration applies on save/reload and additions are placeholders.
+  Implemented on main-drawer dismissal, with staged instance replacement and
+  display-only unsaved flight counters.
 
 The local browser prototype now reflects centering, hidden blocked sizes,
 native dismissal without a return button, and immediate removal. Its browser controls and inline metric

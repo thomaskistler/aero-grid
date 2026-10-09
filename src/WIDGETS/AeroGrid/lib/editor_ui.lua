@@ -124,6 +124,7 @@ local function saveAndClose(context, state)
         return
     end
     context.editorDrawerModule.close(state)
+    state.previewPending, state.previewRefresh = nil, nil
     state.mode = "menu"
     state.saveFailed = false
     state.saving = { index = 1, accepted = {}, identifiers = {} }
@@ -163,6 +164,30 @@ function uiModule.advance(context)
     local state = context.editorUi
     if not state then
         return false
+    end
+    if state.previewPending then
+        state.previewPending = nil
+        state.previewRefresh = state.handlers.startPreview(state.session.draft)
+        return true
+    end
+    if state.previewRefresh then
+        local done, previewError = state.handlers.advancePreview(state.previewRefresh)
+        if done then
+            state.previewRefresh = nil
+            state.existing = {}
+            for _, entry in ipairs(context.panels) do
+                state.existing[entry.placement.id] = entry.placement.type
+            end
+            if state.previewError and state.status == state.previewError then
+                state.status, state.statusError = "", false
+            end
+            state.previewError = previewError
+            if previewError then
+                state.status, state.statusError = previewError, true
+            end
+            render(context, state)
+        end
+        return true
     end
     if state.drawerBuild ~= nil or state.drawerPending then
         context.editorDrawerModule.advance(context, state)
@@ -421,7 +446,7 @@ end
 
 function uiModule.handle(context, event, touch)
     local state = context.editorUi
-    if not state or state.buildStage or state.saving then
+    if not state or state.buildStage or state.saving or state.previewPending or state.previewRefresh then
         return false
     end
     -- Modal input, including picker/keyboard RTN, belongs to native LVGL.

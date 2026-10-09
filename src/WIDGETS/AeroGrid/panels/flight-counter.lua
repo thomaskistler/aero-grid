@@ -181,6 +181,7 @@ function flightCounter.create(parent, rect, settings, services)
         state = services.state,
         fonts = services.fonts,
         clock = services.clock,
+        preview = services.preview == true,
         control = services.control,
         model = services.model,
         feed = services.control:globalVariable(8, 0),
@@ -229,7 +230,9 @@ local function tick(context)
         end
     end
     context.lastTick = now
-    flightCounter.advance(context, now)
+    if not context.preview then
+        flightCounter.advance(context, now)
+    end
     local changed, drawn = context.primitives.changed(context, flightCounter.render)
     if changed then
         flightCounter.apply(context, drawn)

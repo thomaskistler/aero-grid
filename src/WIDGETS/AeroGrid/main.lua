@@ -395,6 +395,11 @@ local function previewLayout(context, document)
 end
 
 local function restorePreview(context)
+    if context.editorPreviewChanged then
+        context.editorPreviewChanged = nil
+        context.reloadState = "clear"
+        return
+    end
     local restored, restoreError = previewLayout(context, context.document)
     if not restored then
         addError(context, restoreError)
@@ -404,6 +409,95 @@ local function restorePreview(context)
         entry.editorPlacement = nil
         entry.editorVisible = nil
     end
+end
+
+local buildPanel
+
+local function sameConfig(left, right)
+    if type(left) ~= "table" or type(right) ~= "table" then
+        return left == right
+    end
+    for key, value in pairs(left) do
+        if not sameConfig(value, right[key]) then
+            return false
+        end
+    end
+    for key in pairs(right) do
+        if left[key] == nil then
+            return false
+        end
+    end
+    return true
+end
+
+local function startPanelPreview(context, document)
+    local placements, existing, actions = {}, {}, {}
+    for _, placement in ipairs(document.panels) do
+        placements[placement.id] = placement
+    end
+    for _, entry in ipairs(context.panels) do
+        local placement = placements[entry.placement.id]
+        existing[entry.placement.id] = true
+        if
+            not placement
+            or placement.type ~= entry.placement.type
+            or not sameConfig(placement.config, entry.placement.config)
+        then
+            actions[#actions + 1] = { entry = entry, placement = placement }
+        end
+    end
+    for _, placement in ipairs(document.panels) do
+        if not existing[placement.id] then
+            actions[#actions + 1] = { placement = placement }
+        end
+    end
+    return { actions = actions, index = 1 }
+end
+
+local function advancePanelPreview(context, job)
+    local action = job.actions[job.index]
+    if not action then
+        return true
+    end
+    if not action.retired then
+        context.editorPreviewChanged = true
+        local entry = action.entry
+        if entry then
+            -- Retire callbacks before rebuilding, in a separate foreground callback.
+            local ok, destroyError = context.panelHost.dispatch(entry, "destroy")
+            if not ok and destroyError then
+                return true, entry.placement.id .. ": preview destroy: " .. destroyError
+            end
+            entry.container:clear()
+            lvgl.hide(entry.container)
+            context.editorPreviewContainers = context.editorPreviewContainers or {}
+            context.editorPreviewContainers[#context.editorPreviewContainers + 1] = entry.container
+            for index, current in ipairs(context.panels) do
+                if current == entry then
+                    table.remove(context.panels, index)
+                    break
+                end
+            end
+        end
+        action.retired = true
+        if not action.placement then
+            job.index = job.index + 1
+        end
+        return false
+    end
+    local pool = context.editorPreviewContainers or {}
+    local container = table.remove(pool)
+    local placement = context.editorModule.clone(action.placement)
+    local entry, buildError, failedContainer = buildPanel(context, placement, container, true)
+    job.index = job.index + 1
+    if not entry then
+        if failedContainer or container then
+            context.editorPreviewContainers = pool
+            pool[#pool + 1] = failedContainer or container
+        end
+        return true, placement.id .. ": preview: " .. tostring(buildError)
+    end
+    return false
 end
 
 --- Enter the editor while preserving the current dashboard until Apply succeeds.
@@ -477,6 +571,12 @@ local function openEditor(context)
         preview = function(document)
             return previewLayout(context, document)
         end,
+        startPreview = function(document)
+            return startPanelPreview(context, document)
+        end,
+        advancePreview = function(job)
+            return advancePanelPreview(context, job)
+        end,
         startSave = function(document)
             return context.layoutStore.startSave(
                 context.path,
@@ -502,7 +602,9 @@ local function openEditor(context)
                 restorePreview(context)
             end
             context.editorSession = nil
+            context.editorPreviewContainers = nil
             if saved then
+                context.editorPreviewChanged = nil
                 context.reloadState = "clear"
             end
         end,
@@ -532,6 +634,8 @@ local function advanceEditor(context)
             context.editorUiModule.saveFailure(context, advanceError)
         else
             context.editorUiModule.close(context, true)
+            restorePreview(context)
+            context.editorPreviewContainers = nil
             context.editorSession = nil
             addError(context, "editor UI: " .. tostring(advanceError))
             showErrors(context)
@@ -690,7 +794,7 @@ end
 --- Instantiate one validated placement.
 ---@param context AeroGridContext
 ---@param placement table
-local function buildPanel(context, placement)
+buildPanel = function(context, placement, container, preview)
     local host = context.panelHost
 
     --- Record a placement that will not be built, and why.
@@ -701,11 +805,14 @@ local function buildPanel(context, placement)
     --- it is known. Without this the diagnostics view could report every panel
     --- that works and no panel that does not, which is the wrong half.
     local function reject(reason)
-        addError(context, placement.id .. ": " .. tostring(reason))
-        context.rejected[#context.rejected + 1] = {
-            placement = placement,
-            reason = tostring(reason),
-        }
+        if not preview then
+            addError(context, placement.id .. ": " .. tostring(reason))
+            context.rejected[#context.rejected + 1] = {
+                placement = placement,
+                reason = tostring(reason),
+            }
+        end
+        return nil, tostring(reason)
     end
 
     local panel, panelError = loadModule(context.path, "panels/" .. placement.type .. ".lua")
@@ -716,26 +823,25 @@ local function buildPanel(context, placement)
     end
 
     if not panel then
-        reject(panelError)
-        return
+        return reject(panelError)
     end
     if not contractValid then
-        reject(contractError)
-        return
+        return reject(contractError)
     end
     if not host.supportsSpan(panel, placement.colSpan, placement.rowSpan) then
-        reject("panel does not support span " .. host.spanName(placement.colSpan, placement.rowSpan))
-        return
+        return reject("panel does not support span " .. host.spanName(placement.colSpan, placement.rowSpan))
     end
 
     local rect, rectError = panelRect(context, placement)
     if not rect then
-        reject(rectError)
-        return
+        return reject(rectError)
     end
 
     local settings, warnings =
         host.resolveSettings(panel, placement.config, { colSpan = placement.colSpan, rowSpan = placement.rowSpan })
+    if preview and #warnings > 0 then
+        return reject(table.concat(warnings, "; "))
+    end
     for _, warning in ipairs(warnings) do
         addError(context, placement.id .. ": " .. warning)
     end
@@ -743,14 +849,21 @@ local function buildPanel(context, placement)
     -- Each panel draws inside its own container, so it cannot reach the
     -- dashboard root or paint over a neighbour. The container is deliberately
     -- unpainted; the panel's own panel fills it.
-    local container = lvgl.box(context.page, {
+    local geometry = {
         x = rect.x,
         y = rect.y,
         w = rect.w,
         h = rect.h,
-    })
+    }
+    if container then
+        container:set(geometry)
+        lvgl.show(container)
+    else
+        container = lvgl.box(context.page, geometry)
+    end
 
     local services = buildServices(context, placement)
+    services.preview = preview == true
     local ok, instance = pcall(panel.create, container, { x = 0, y = 0, w = rect.w, h = rect.h }, settings, services)
 
     -- A heading too long for its column is cut to fit, because the alternative
@@ -795,10 +908,13 @@ local function buildPanel(context, placement)
             -- due on the same frame.
             nextRefresh = getTime() + host.phaseOffset(interval, #context.panels + 1),
         }
+        return context.panels[#context.panels]
     else
         -- Discard whatever the failed panel managed to build.
         container:clear()
-        reject(instance)
+        lvgl.hide(container)
+        local _, message = reject(instance)
+        return nil, message, container
     end
 end
 
@@ -1579,6 +1695,8 @@ local function refresh(context, widgetEvent, touchState)
             or context.editorUi.saving
             or context.editorUi.drawerBuild ~= nil
             or context.editorUi.drawerPending
+            or context.editorUi.previewPending
+            or context.editorUi.previewRefresh
         )
     then
         advanceEditor(context)

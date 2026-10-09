@@ -78,6 +78,7 @@ local function refresh(event, touch)
     assert(ok, tostring(err))
     worst = math.max(worst, ticks * 200)
     assert(ticks * 200 <= 15000, "editor callback exceeded budget: " .. tostring(ticks * 200))
+    widget.lvglMock.settle()
 end
 local function settle()
     for _ = 1, 60 do
@@ -106,7 +107,12 @@ local function settleDrawer()
     for _ = 1, 150 do
         refresh()
         assert(context.editorUi, "drawer failed: " .. table.concat(context.errors, "; "))
-        if not context.editorUi.drawerPending and context.editorUi.drawerBuild == nil then
+        if
+            not context.editorUi.drawerPending
+            and context.editorUi.drawerBuild == nil
+            and not context.editorUi.previewPending
+            and not context.editorUi.previewRefresh
+        then
             return
         end
     end
@@ -324,7 +330,15 @@ equal(
 lvgl.close(state.nativeDrawer)
 settleDrawer()
 equal(state.mode, "menu", "Return closes drawer first")
-equal(entry.instance, instance, "resize reuses instance")
+assert(context.panels[1].instance ~= instance, "configuration preview rebuilds changed panel")
+equal(context.panels[1].settings.metrics[1].source, "RSSI", "preview uses edited nested settings")
+equal(context.document.panels[1].config.metrics[1].source, "Alt", "preview leaves committed configuration intact")
+instance = context.panels[1].instance
+rect = state.controls[1].rect
+tap(rect.x + rect.w - 12, rect.y + 12)
+settleDrawer()
+back()
+equal(context.panels[1].instance, instance, "unchanged drawer dismissal preserves panel instance")
 
 local placement = context.editorSession.draft.panels[1]
 local oldCol, oldRow = placement.col, placement.row
@@ -346,15 +360,31 @@ local selection = widget.lvglMock.menu()
 equal(selection.title, "Select panel", "+ opens native panel selection")
 equal(#selection.values, #state.handlers.editor.CATALOG, "popup offers catalog labels")
 equal(#context.editorSession.draft.panels, 1, "opening or dismissing picker does not add")
-selection.set(1)
+for index, item in ipairs(state.handlers.editor.CATALOG) do
+    if item.type == "metric" then
+        selection.set(index)
+        break
+    end
+end
 settleDrawer()
 equal(#context.editorSession.draft.panels, 2, "catalog adds panel")
 equal(state.mode, "configure", "selecting a panel opens its configuration immediately")
 equal(context.editorSession.selected, 2, "new panel is selected for configuration")
 selection.set(2)
 equal(state.drawerPending, nil, "closed selection callbacks cannot add twice")
-equal(#context.panels, 1, "new panel is only a draft preview")
+equal(#context.panels, 1, "new panel waits for configuration dismissal")
+action("item", "metrics").properties.press()
+settleDrawer()
+control("metrics", "label").properties.set("LIVE")
+settleDrawer()
 back()
+equal(#context.panels, 1, "nested drawer return does not rebuild behind main configuration")
+back()
+assert(not state.previewError, tostring(state.previewError))
+equal(#context.panels, 2, "new panel renders on returning to editing")
+equal(context.panels[2].instance.label.properties.text, "LIVE", "new panel renders edited metric heading")
+equal(state.previews[2].background.hidden, true, "new panel replaces placeholder")
+equal(#context.document.panels, 1, "new panel preview does not commit the draft")
 dragOntoAdd(2)
 rect = state.controls[2].rect
 tap(rect.x + rect.w - 48, rect.y + 12)
@@ -466,6 +496,48 @@ refresh()
 settleSave()
 equal(context.editorUi, nil, "fullscreen exit saves completed editor")
 
+-- Repeated content previews reuse containers and can be discarded without saving.
+widget.lvglMock.setFullScreen(true)
+load("edit-sparse")
+open()
+local container = context.panels[1].container
+for index = 1, 5 do
+    state = context.editorUi
+    rect = state.controls[1].rect
+    tap(rect.x + rect.w - 12, rect.y + 12)
+    settleDrawer()
+    action("item", "metrics").properties.press()
+    settleDrawer()
+    control("metrics", "label").properties.set("LIVE" .. index)
+    settleDrawer()
+    back()
+    back()
+    equal(context.panels[1].container, container, "successive previews reuse the retired container")
+    equal(context.panels[1].instance.label.properties.text, "LIVE" .. index, "edited heading is drawn immediately")
+    refresh()
+    equal(context.panels[1].failed, nil, "reused container survives deferred cleanup")
+end
+assert(context.editorModule.setPath(context.editorSession, "metrics", { 1, "precision" }, 4))
+context.editorUi.previewPending = true
+settleDrawer()
+assert(context.editorUi.previewError, "invalid settings report a preview failure")
+equal(context.editorUi.statusLabel.hidden, false, "preview failure is visible in editing")
+equal(#context.panels, 0, "failed preview does not leave a second or stale live instance")
+assert(context.editorModule.setPath(context.editorSession, "metrics", { 1, "precision" }, 0))
+context.editorUi.previewPending = true
+settleDrawer()
+equal(context.editorUi.previewError, nil, "corrected settings clear the preview failure")
+equal(context.editorUi.statusLabel.hidden, true, "corrected preview hides its old error")
+equal(context.panels[1].container, container, "corrected preview reuses the retired container")
+context.editorUi.handlers.close(false)
+equal(context.reloadState, "clear", "discarding content previews reloads original layout")
+for _ = 1, 70 do
+    refresh()
+end
+equal(context.panels[1].instance.label.properties.text, "ALT", "discard restores original panel contents")
+equal(context.document.panels[1].config.metrics[1].label, "ALT", "previews never mutate committed layout")
+assert(not hostIo.open(path .. "layouts/test-model--edit-sparse.yaml", "r"), "discard does not write a layout")
+
 widget.lvglMock.setFullScreen(true)
 lvgl.UI_ELEMENT_HEIGHT = 48
 load("default")
@@ -510,6 +582,23 @@ for index = 1, #context.editorSession.draft.panels do
         equal(control("minFlightDuration").kind, "numberEdit", "numbers use native bounded inputs")
     end
     back()
+    if panelType == "flight-timer" then
+        local preview
+        for _, panel in ipairs(context.panels) do
+            if panel.placement.type == panelType then
+                preview = panel
+            end
+        end
+        equal(preview.settings.label, "Elapsed", "timer label renders after returning to edit mode")
+    elseif panelType == "flight-counter" then
+        local preview
+        for _, panel in ipairs(context.panels) do
+            if panel.placement.type == panelType then
+                preview = panel
+            end
+        end
+        equal(preview.instance.preview, true, "unsaved counter preview cannot track or write flights")
+    end
 end
 context.editorSession.dirty = true
 refresh(EVT_VIRTUAL_EXIT)

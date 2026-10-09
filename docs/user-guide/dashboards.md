@@ -102,8 +102,10 @@ The circular control uses a bundled, antialiased icon image. When installing or
 updating AeroGrid, copy its `assets` directory along with the Lua files.
 
 Existing panels preview geometry without constructing another instance.
-New draft panels remain labeled preview cards until saving, so they cannot
-start another flight tracker or other panel side effects.
+Returning from a panel's configuration drawer refreshes its contents, including
+newly added panels. Unchanged panels keep their instances; changed panels are
+rebuilt over a few callbacks. An unsaved flight-counter preview displays the
+current count but does not count flights, announce them, or write history.
 Rotary/key input cycles panels and the add action; Enter opens settings or the
 catalog. Settings also provide Column, Row, and Remove panel for key-only use.
 
@@ -120,8 +122,9 @@ there is no custom return button. Removing a panel or entry is immediate,
 without confirmation. Rows use standard EdgeTX input height and spacing;
 validation feedback expands only the affected row. Configuration fields come from
 each panel's schema, with its supplied choices, numeric bounds, and steps.
-Changes affect only the in-memory draft; configuration takes effect on
-save/reload, while placement and size preview immediately.
+Changes affect only the in-memory draft. Configuration previews when the main
+panel drawer closes; placement and size preview immediately. Leaving a nested
+metric or text-entry drawer returns to the main drawer before previewing.
 
 **Return** closes text editing or a drawer one level at a time. From the editing
 dashboard, Return validates and saves the layout, then exits editing.

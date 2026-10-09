@@ -369,6 +369,7 @@ function drawer.advance(context, state)
     if command.action == "back" then
         drawer.close(state)
         state.mode = "menu"
+        state.previewPending = true
     elseif command.action == "parent" then
         drawer.open(context, state, "configure")
     elseif command.action == "item" then
@@ -415,6 +416,7 @@ function drawer.advance(context, state)
             else
                 drawer.close(state)
                 state.mode = "menu"
+                state.previewPending = true
             end
         end
     elseif command.action == "error" then
