@@ -111,9 +111,6 @@ Otherwise choose an action:
 
 ![Unsaved changes menu offering Save, Save as, and Discard changes](../assets/editor/exit.png)
 
-Dismiss the menu to keep editing. **Save** is not offered for **Empty**:
-use **Save as...** to name your new dashboard.
-
 Save As suggests the model name plus the first unused number, such as
 `Sonic1`. You can change it using letters, digits, `-`, and `_` (at most
 24 characters). An existing name requires overwrite confirmation.
