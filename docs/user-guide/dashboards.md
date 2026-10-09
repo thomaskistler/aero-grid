@@ -61,9 +61,7 @@ each model. Saving changes under that name affects all dashboards using it
 when they next reload.
 
 Restart the radio after saving a new name so it appears in the **Layout**
-picker. The layout list is kept in `/AEROGRID/registry.txt`; leave that file
-alone so existing screen selections keep their positions. A missing layout
-falls back to **Default**.
+picker. A missing layout falls back to **Default**.
 
 ## Edit a dashboard on the radio
 
