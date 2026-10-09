@@ -47,13 +47,6 @@ Choose a layout to decide what that dashboard displays.
 | **Default** | A ready-made aircraft dashboard. Configure its sources, switches, battery cell count, and alarms for your model before using it. |
 | **Host** | A diagnostics dashboard for checking loaded components and errors. |
 
-The default dashboard includes a [flight counter](../panels/flight-counter.md)
-using GV9, flight mode 0, for the count. Reserve GV9 with precision 0 and limits
-covering `0..999`, and configure the counter's arm switch and motor source.
-Use only one tracking panel across your dashboards and do not run EdgeTX
-Flights alongside it. The flight-pack battery panel must read the pack,
-not a regulated receiver supply.
-
 Bundled layouts are stored in `/WIDGETS/AeroGrid/layouts/`. Your saved layouts
 are stored separately in `/AEROGRID/layouts/`, so upgrading AeroGrid leaves
 them untouched.
