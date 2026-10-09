@@ -131,13 +131,6 @@ Leaving fullscreen keeps the draft in memory and shows the saved dashboard.
 Return to fullscreen to resume editing. Restarting the radio, changing model,
 or changing the widget's **Layout** or **Theme** discards the unsaved draft.
 
-## Layout recovery
-
-If the primary layout cannot be read, parsed, or validated, AeroGrid tries its
-backup, then the shipped layout of that name, and finally the shipped
-default and its backup. Review the active path in the `Host` diagnostics
-panel after recovery.
-
 ## App mode and Full screen
 
 | Layout | What you see |
