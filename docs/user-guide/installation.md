@@ -1,4 +1,4 @@
-# Installation and upgrades
+# Install and upgrade
 
 Back up your SD card and model configuration before making changes. AeroGrid targets EdgeTX color radios with the LVGL widget API.
 

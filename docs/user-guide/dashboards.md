@@ -138,7 +138,7 @@ Use App mode for a clean dashboard, or Full screen to keep the radio's
 standard information alongside it. In App mode, a wider top-left panel
 leaves more room beside the menu button.
 
-## Theming
+## Choose a theme
 
 Choose **Theme** in the widget settings.
 

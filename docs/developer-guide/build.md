@@ -1,4 +1,4 @@
-# Build and simulator
+# Build and run the simulator
 
 ## Prerequisites
 
@@ -105,7 +105,7 @@ does nothing and errors citing line numbers that no longer exist in the source.
 as new. When incrementally copying development sources to a simulator or radio,
 remove stale `.luac` files within the AeroGrid package and stamp the Lua sources
 for recompilation. For normal user upgrades, replace the complete folder as
-described in [Installation and upgrades](../user-guide/installation.md#upgrade).
+described in [Install and upgrade](../user-guide/installation.md#upgrade).
 
 `lib/package.lua` defines the package version and the runtime, panel, and
 layout API versions. The host rejects incompatible or unversioned runtime modules;
@@ -307,7 +307,7 @@ overrides. Update those captions when changing a recipe's sample or settings.
 
 ## Continuous integration
 
-### Publishing a release
+### Publish a release
 
 Releases are manually initiated, not created on every merge. Update
 `src/WIDGETS/AeroGrid/lib/package.lua` in a PR and merge it into `main`.
