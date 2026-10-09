@@ -1320,13 +1320,15 @@ local function create(zone, widgetOptions, path)
         w = zone.w,
         h = zone.h,
     })
+    context.rootBuiltFullscreen = isFullScreen()
 
     -- The canvas must be a filled rectangle. A box ignores `color`, leaving the
     -- radio's own screen background, including its logo, visible behind us.
     -- Everything the dashboard draws lives inside a page, so a reload can
     -- discard the page wholesale and build the next one somewhere the discarded
-    -- one's deferred cleanup cannot reach. The root itself is never cleared.
+    -- one's deferred cleanup cannot reach. The root is normally retained.
     context.page = lvgl.box(context.root, { x = 0, y = 0, w = zone.w, h = zone.h })
+    context.pageBuiltFullscreen = isFullScreen()
 
     context.canvas = lvgl.rectangle(context.page, {
         x = 0,
@@ -1613,6 +1615,18 @@ local function refresh(context, widgetEvent, touchState)
         lvgl.show(context.editorUi.screen)
     end
 
+    -- EdgeTX 2.12 only makes Lua boxes touch-transparent when constructing
+    -- them in App mode. Fullscreen-built boxes otherwise consume the native
+    -- widget's long press after exit; the Lua API cannot change that flag.
+    if
+        not isFullScreen()
+        and not context.editorUi
+        and not context.reloadState
+        and (context.pageBuiltFullscreen or context.rootBuiltFullscreen)
+    then
+        context.reloadState = "clear"
+    end
+
     -- A reload takes two callbacks on purpose. EdgeTX defers the cleanup that
     -- follows `clear()` until after the callback returns, and that cleanup
     -- invalidates every object in the cleared object's child list, including
@@ -1626,8 +1640,14 @@ local function refresh(context, widgetEvent, touchState)
         -- while the widget is off screen, such as behind the settings dialog, and
         -- once an error has been reported. The next page is therefore built as a
         -- fresh child of the root, where this pending cleanup cannot reach it.
-        context.page:clear()
-        lvgl.hide(context.page)
+        if context.rootBuiltFullscreen and not isFullScreen() then
+            context.root:clear()
+            lvgl.hide(context.root)
+            context.root = nil
+        else
+            context.page:clear()
+            lvgl.hide(context.page)
+        end
 
         context.page = nil
         context.canvas = nil
@@ -1641,12 +1661,17 @@ local function refresh(context, widgetEvent, touchState)
     end
 
     if context.reloadState == "rebuild" then
+        if not context.root then
+            context.root = lvgl.box({ x = 0, y = 0, w = context.zone.w, h = context.zone.h })
+            context.rootBuiltFullscreen = isFullScreen()
+        end
         context.page = lvgl.box(context.root, {
             x = 0,
             y = 0,
             w = context.zone.w,
             h = context.zone.h,
         })
+        context.pageBuiltFullscreen = isFullScreen()
         context.canvas = lvgl.rectangle(context.page, {
             x = 0,
             y = 0,

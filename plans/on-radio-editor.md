@@ -47,6 +47,16 @@ editor decisions here rather than changing `plans/aerogrid-spec.md`.
 Saving does not show a progress/status message. The dashboard remains visible
 while staged saving finishes; failures still show an error and retain the draft.
 
+Native TX16S testing reproduced fullscreen reentry failing after a changed layout
+was saved and the widget returned to App mode. EdgeTX 2.12 makes Lua boxes
+touch-transparent only when constructing them outside fullscreen; boxes rebuilt
+while fullscreen intercepted the native widget long press after exit. On return
+to App mode, a fullscreen-built dashboard is now retired and rebuilt using the
+existing staged reload. A fullscreen-built root is replaced as well. Suspended
+save-failure drafts are left intact. Repeated transition regressions cover saved
+geometry, and the native probe confirmed fullscreen reentry after a saved drag.
+The separately reported physical-radio hard crash remains unresolved.
+
 Panel reflow immediately recentres the current reading and places its unit
 beside it, even when telemetry has not changed. Metric, link-status, TX battery,
 cell battery, and navigation share the same reading/unit reflow helper; timers

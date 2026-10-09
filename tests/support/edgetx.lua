@@ -1165,6 +1165,7 @@ function support.lvgl()
             invalid = false,
             writes = 0,
             visibilityCalls = 0,
+            builtFullscreen = fullScreen,
             set = validateProperties and setChecked or setUnchecked,
             clear = clearObject,
         }

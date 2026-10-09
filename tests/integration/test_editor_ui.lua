@@ -542,12 +542,39 @@ widget.lvglMock.setFullScreen(false)
 refresh()
 equal(context.editorUi, nil, "fullscreen exit cancels incomplete startup")
 widget.lvglMock.setFullScreen(true)
-widget.pump(context, 10)
+widget.pump(context, 150)
 open()
 widget.lvglMock.setFullScreen(false)
 refresh()
 settleSave()
 equal(context.editorUi, nil, "fullscreen exit saves completed editor")
+
+-- Saving in fullscreen rebuilds native boxes with different hit testing.
+widget.lvglMock.setFullScreen(false)
+load("edit-sparse")
+for cycle = 1, 3 do
+    local appPage = context.page
+    widget.lvglMock.setFullScreen(true)
+    open()
+    local placement = context.editorSession.draft.panels[1]
+    local targetCol = placement.col == 0 and 1 or 0
+    assert(context.editorUi.handlers.editor.move(context.editorSession, targetCol - placement.col, 0))
+    refresh(EVT_VIRTUAL_EXIT)
+    settleSave()
+    widget.pump(context, 80)
+    equal(context.page.builtFullscreen, true, "saved page was constructed fullscreen")
+    local fullscreenPage = context.page
+    widget.lvglMock.setFullScreen(false)
+    refresh()
+    equal(context.reloadState, "rebuild", "App exit retires fullscreen-built hit targets")
+    equal(fullscreenPage.hidden, true, "retired fullscreen page cannot intercept touches")
+    widget.pump(context, 80)
+    assert(context.page ~= appPage and context.page ~= fullscreenPage, "App page is reconstructed")
+    equal(context.page.builtFullscreen, false, "App page uses native touch-transparent construction")
+    equal(context.root.builtFullscreen, false, "App root is touch-transparent")
+    equal(context.document.panels[1].col, targetCol, "App rebuild retains saved geometry")
+    equal(context.editorUi, nil, "App rebuild does not reopen the editor")
+end
 
 -- Unequal panels exchange order within their combined space, not origins.
 for _, vertical in ipairs({ true, false }) do

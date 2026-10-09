@@ -141,6 +141,8 @@ the radio's CPU limit; wait for it to finish before powering off. Unchanged
 layouts are not rewritten. The previous saved file is kept as `.bak`.
 If saving fails, the draft is retained with an error so you can retry; if you
 left fullscreen, return to fullscreen to resume. There is no Apply/Cancel toolbar.
+After a fullscreen rebuild, returning to App mode briefly reloads the dashboard
+so EdgeTX's native long-press entry remains available.
 
 If the primary layout cannot be read, parsed, or validated, AeroGrid tries its
 backup, then the shared Dashboard ID layout and its backup, and finally the
