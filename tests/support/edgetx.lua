@@ -1260,6 +1260,15 @@ function support.lvgl()
 
     local menu
     lvgl = {
+        clear = function()
+            for _, object in ipairs(objects) do
+                if not object.parent and not object.invalid then
+                    clearObject(object)
+                    rawset(object, "hidden", true)
+                    rawset(object, "hostRetired", true)
+                end
+            end
+        end,
         box = constructor("box"),
         rectangle = constructor("rectangle"),
         label = constructor("label"),

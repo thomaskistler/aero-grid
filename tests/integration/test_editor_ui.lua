@@ -567,7 +567,7 @@ for cycle = 1, 3 do
     widget.lvglMock.setFullScreen(false)
     refresh()
     equal(context.reloadState, "rebuild", "App exit retires fullscreen-built hit targets")
-    equal(fullscreenPage.hidden, true, "retired fullscreen page cannot intercept touches")
+    equal(fullscreenPage.parent.hostRetired, true, "host reload unregisters the fullscreen tree")
     widget.pump(context, 80)
     assert(context.page ~= appPage and context.page ~= fullscreenPage, "App page is reconstructed")
     equal(context.page.builtFullscreen, false, "App page uses native touch-transparent construction")
@@ -575,6 +575,23 @@ for cycle = 1, 3 do
     equal(context.document.panels[1].col, targetCol, "App rebuild retains saved geometry")
     equal(context.editorUi, nil, "App rebuild does not reopen the editor")
 end
+
+widget.lvglMock.setFullScreen(true)
+load("edit-sparse")
+open()
+state = context.editorUi
+context.editorDrawerModule.open(context, state, "configure")
+settleDrawer()
+local dismissedDialog = state.nativeDrawer
+lvgl.close(dismissedDialog)
+settleDrawer()
+refresh(EVT_VIRTUAL_EXIT)
+settleSave()
+widget.lvglMock.setFullScreen(false)
+widget.pump(context, 150)
+equal(dismissedDialog.hostRetired, true, "fullscreen exit unregisters deleted native dialog wrapper")
+equal(context.nativeDialogsCreated, nil, "retired native dialogs no longer trigger reloads")
+equal(context.editorUi, nil, "dialog retirement preserves clean editor exit")
 
 -- Unequal panels exchange order within their combined space, not origins.
 for _, vertical in ipairs({ true, false }) do

@@ -145,6 +145,7 @@ function drawer.open(context, state, mode, listKey, itemIndex)
     state.drawerPadding = math.floor(state.drawerControlHeight / 16 + 0.5)
     state.drawerRowHeight = state.drawerControlHeight + state.drawerPadding * 2
     state.drawerErrorHeight = math.floor(state.drawerControlHeight * 0.56 + 0.5)
+    context.nativeDialogsCreated = true
     -- Native dialogs supply centering, 80%-screen dimensions, scrolling and RTN.
     state.nativeDrawer = assert(
         lvgl.dialog({

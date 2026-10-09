@@ -1622,7 +1622,7 @@ local function refresh(context, widgetEvent, touchState)
         not isFullScreen()
         and not context.editorUi
         and not context.reloadState
-        and (context.pageBuiltFullscreen or context.rootBuiltFullscreen)
+        and (context.pageBuiltFullscreen or context.rootBuiltFullscreen or context.nativeDialogsCreated)
     then
         context.reloadState = "clear"
     end
@@ -1635,16 +1635,20 @@ local function refresh(context, widgetEvent, touchState)
     if context.reloadState == "clear" then
         dispatchAll(context, "destroy")
 
-        -- Discard the whole page. EdgeTX collects the clear whenever it next runs
-        -- callRefs, which is not guaranteed to be this callback: it is skipped
-        -- while the widget is off screen, such as behind the settings dialog, and
-        -- once an error has been reported. The next page is therefore built as a
-        -- fresh child of the root, where this pending cleanup cannot reach it.
-        if context.rootBuiltFullscreen and not isFullScreen() then
-            context.root:clear()
-            lvgl.hide(context.root)
+        -- Host clear synchronously unregisters all Lua UI wrappers, including
+        -- native dialogs whose bodies EdgeTX has already deleted. Clearing only
+        -- the page leaves those top-level wrappers pointing at freed windows.
+        -- Otherwise discard only the page: EdgeTX collects that clear whenever
+        -- it next runs callRefs, so the next page is built as a fresh child of
+        -- the root, where the pending cleanup cannot reach it.
+        if
+            not isFullScreen()
+            and (context.pageBuiltFullscreen or context.rootBuiltFullscreen or context.nativeDialogsCreated)
+        then
+            lvgl.clear()
             context.root = nil
-        else
+            context.nativeDialogsCreated = nil
+        elseif context.page then
             context.page:clear()
             lvgl.hide(context.page)
         end

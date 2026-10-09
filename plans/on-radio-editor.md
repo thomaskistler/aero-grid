@@ -55,7 +55,16 @@ to App mode, a fullscreen-built dashboard is now retired and rebuilt using the
 existing staged reload. A fullscreen-built root is replaced as well. Suspended
 save-failure drafts are left intact. Repeated transition regressions cover saved
 geometry, and the native probe confirmed fullscreen reentry after a saved drag.
-The separately reported physical-radio hard crash remains unresolved.
+
+A reported simulator/radio hard crash on fullscreen exit was a native
+use-after-free: after a configuration dialog closed, EdgeTX deleted its native
+window while the top-level Lua dialog wrapper stayed registered, and
+`LuaWidget::foreground` later checked the freed window's visibility. Page and
+root `clear()` cannot reach that wrapper. After a dialog has been opened, the
+App-mode rebuild now calls host-level `lvgl.clear()`, which unregisters every
+wrapper. Under `MallocScribble=1`, a native probe reproduced the crash before the
+fix and completed 22 dialog/exit cycles after it. Physical-radio confirmation is
+still outstanding.
 
 Panel reflow immediately recentres the current reading and places its unit
 beside it, even when telemetry has not changed. Metric, link-status, TX battery,
