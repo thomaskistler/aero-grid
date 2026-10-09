@@ -120,7 +120,10 @@ Configuration opens in centered native EdgeTX dialogs,
 using the standard dialog size and scrollable settings area. Use touch or
 rotary/key focus to operate native choices, toggles, numeric inputs, and the
 text-entry keyboard. Sources, switches, and model timers use radio pickers;
-accent names use the panel's supplied choices. Sizes that do not fit are hidden.
+the source picker includes global variables (GV1-GV9) when the model enables
+them, and saves each choice under the name the layout file uses, such as
+`gvar1` or `ch3`. A source the dashboard cannot read is rejected with a message.
+Accent names use the panel's supplied choices. Sizes that do not fit are hidden.
 Controls become available after a short, staged construction.
 
 Metric entries and text lines have separate entry dialogs with add/edit/remove

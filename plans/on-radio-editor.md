@@ -242,9 +242,13 @@ disabled styling (relevant only to the since-removed Size picker).
 Settings use `choice`, `toggle`, `numberEdit`, `textEdit`, `source`, `switch`,
 and `timer` controls. Source/switch selections are converted back to the named
 references already stored in layouts, including ASCII physical-switch
-positions. `getSourceName` prefixes names with a two-byte menu icon (for
-example the telemetry symbol); the drawer stores the plain name when it
-resolves to the same source. Accent settings retain their schema's named choices rather than
+positions. The picker shows menu names (`GV1:Thr`, `CH3`, a telemetry icon
+before sensor labels) while panels resolve sources with `getFieldInfo`, which
+accepts only Lua field names (`gvar1`, `ch3`, `sf`, plain sensor labels). Both
+share one source index, so the drawer stores `getFieldInfo(index).name` (or the
+plain menu name) only when it maps back to the picked index, and rejects
+sources Lua cannot read. Stored names reopen through `getFieldInfo(name).id`,
+falling back to `getSourceIndex` for menu names. Accent settings retain their schema's named choices rather than
 switching to numeric colors. Current shipped schemas do not declare file inputs.
 Text inputs receive a literal initial string for compatibility with installed
 EdgeTX builds that reject value callbacks; queued edits resynchronize that
@@ -358,8 +362,10 @@ mock test suite, or native simulator runs.
   "Sensor" display correctly for unset values, and clearing removes them.
   The native `numberEdit` sentinel for unset values is not yet checked in
   the simulator.
-- Picked sources are saved without the EdgeTX menu icon. Sources picked
-  before this fix keep the icon and must be picked again or edited by hand.
+- Picked sources are saved under the Lua field name panels read (`gvar1`,
+  `ch3`, `sf`, plain sensor labels). Sources picked before this fix, such as
+  `GV1` or an icon-prefixed sensor, must be picked again or edited by hand.
+  Global-variable selection is not yet checked in the simulator.
 
 ### Broader verification
 

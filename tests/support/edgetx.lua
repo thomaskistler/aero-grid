@@ -1744,8 +1744,17 @@ function support.radio(hostIo)
     end
 
     --- luaGetFieldInfo pushes id, name and desc, and pushes `unit` only for a
-    --- source between MIXSRC_FIRST_TELEM and MIXSRC_LAST_TELEM.
+    --- source between MIXSRC_FIRST_TELEM and MIXSRC_LAST_TELEM. Since 2.6 it
+    --- also accepts a source index and returns that source's Lua field name.
     function getFieldInfo(name)
+        if type(name) == "number" then
+            for _, field in pairs(radio.fields) do
+                if field.id == name then
+                    return field
+                end
+            end
+            return nil
+        end
         return radio.fields[name]
     end
 

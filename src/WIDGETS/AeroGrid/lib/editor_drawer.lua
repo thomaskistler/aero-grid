@@ -288,8 +288,20 @@ local function addControl(context, state, field, index)
         kind = (leaf == "source" or string.match(leaf, "Source$")) and "source" or "switch"
         local indexOf = kind == "source" and getSourceIndex or getSwitchIndex
         local nameOf = kind == "source" and getSourceName or getSwitchName
-        if type(lvgl[kind]) ~= "function" or type(indexOf) ~= "function" or type(nameOf) ~= "function" then
+        if
+            type(lvgl[kind]) ~= "function"
+            or type(indexOf) ~= "function"
+            or type(nameOf) ~= "function"
+            or kind == "source" and type(getFieldInfo) ~= "function"
+        then
             error("native " .. leaf .. " picker APIs unavailable")
+        end
+        -- Panels read sources through getFieldInfo, whose names ("gvar1", "ch3",
+        -- "sf") differ from the menu names the picker shows ("GV1:Thr", "CH3").
+        -- Both share one index, so a name is stored only if it maps back to it.
+        local function fieldId(name)
+            local info = getFieldInfo(name)
+            return type(info) == "table" and type(info.id) == "number" and info.id or nil
         end
         options.get = function()
             local value = get()
@@ -299,26 +311,54 @@ local function addControl(context, state, field, index)
                     value = physical .. (position == "^" and CHAR_UP or position == "v" and CHAR_DOWN or "-")
                 end
             end
-            return type(value) == "number" and value or indexOf(value or "") or 0
+            if type(value) == "number" then
+                return value
+            end
+            if kind == "source" and type(value) == "string" and value ~= "" then
+                local id = fieldId(value)
+                if id then
+                    return id
+                end
+            end
+            return indexOf(value or "") or 0
         end
         options.set = function(value)
             local name = nameOf(value)
-            if type(name) ~= "string" or name == "" then
+            if kind == "source" and value == 0 and not field.required then
+                set("")
+            elseif type(name) ~= "string" or name == "" then
                 queue({ action = "error", message = "Cannot resolve selected " .. leaf, control = field.control })
+            elseif type(get()) == "number" then
+                set(value)
+            elseif kind == "switch" then
+                local physical, position = string.match(name, "^(S[A-Z])(.+)$")
+                if physical then
+                    name = physical .. (position == CHAR_UP and "^" or position == CHAR_DOWN and "v" or position)
+                end
+                set(name)
             else
-                if kind == "switch" then
-                    local physical, position = string.match(name, "^(S[A-Z])(.+)$")
-                    if physical then
-                        name = physical .. (position == CHAR_UP and "^" or position == CHAR_DOWN and "v" or position)
-                    end
-                else
-                    -- Drop EdgeTX's two-byte menu icon unless the plain name resolves to another source.
-                    local plain = string.match(name, "^\194[\128-\191](.+)$")
-                    if plain and indexOf(plain) == value then
-                        name = plain
+                local info = getFieldInfo(value)
+                local plain = string.match(name, "^\194[\128-\191](.+)$") or name
+                local readable
+                for _, candidate in ipairs({
+                    type(info) == "table" and info.name or nil,
+                    plain,
+                    string.lower(plain),
+                }) do
+                    if type(candidate) == "string" and candidate ~= "" and fieldId(candidate) == value then
+                        readable = candidate
+                        break
                     end
                 end
-                set(type(get()) == "number" and value or name)
+                if readable then
+                    set(readable)
+                else
+                    queue({
+                        action = "error",
+                        message = "Lua cannot read source " .. plain,
+                        control = field.control,
+                    })
+                end
             end
         end
         if leaf == "motorSource" then

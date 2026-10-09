@@ -146,15 +146,42 @@ local function back()
     lvgl.close(context.editorUi.nativeDrawer)
     settleDrawer()
 end
--- EdgeTX prefixes telemetry names with a two-byte icon and accepts names with or without it.
+-- EdgeTX's picker shares getFieldInfo's indices but shows menu names: sensors
+-- carry a two-byte icon, channels and switches are upper case, and a named
+-- global variable is "GVn:name". getSourceIndex matches them case-insensitively.
 local TELEMETRY_ICON = "\194\147"
+local UNREADABLE_SOURCE = 500
+local function menuName(index)
+    if index == UNREADABLE_SOURCE then
+        return "SW1"
+    end
+    local field = getFieldInfo(index)
+    local name = field and field.name
+    if not name then
+        return nil
+    end
+    local gvar = string.match(name, "^gvar(%d)$")
+    if gvar then
+        return "GV" .. gvar .. (gvar == "1" and ":Thr" or "")
+    elseif string.match(name, "^ch%d+$") or string.match(name, "^s%l$") then
+        return string.upper(name)
+    end
+    return field.unit and TELEMETRY_ICON .. name or nil
+end
 getSourceIndex = function(name)
-    name = string.gsub(name, "^" .. TELEMETRY_ICON, "")
-    return name == "Alt" and 100 or 101
+    name = string.lower(string.gsub(name, "^" .. TELEMETRY_ICON, ""))
+    for index = 1, UNREADABLE_SOURCE do
+        local shown = menuName(index)
+        if shown then
+            shown = string.lower(string.gsub(shown, "^" .. TELEMETRY_ICON, ""))
+            if shown == name or string.match(shown, "^(gv%d):") == name then
+                return index
+            end
+        end
+    end
+    return nil
 end
-getSourceName = function(index)
-    return index == 100 and TELEMETRY_ICON .. "Alt" or index == 101 and TELEMETRY_ICON .. "RSSI" or nil
-end
+getSourceName = menuName
 CHAR_UP, CHAR_DOWN = "^", "v"
 getSwitchIndex = function(name)
     return name == "SF^" and 1 or 2
@@ -311,13 +338,13 @@ staleSource.properties.set(999)
 settleDrawer()
 equal(context.editorSession.draft.panels[1].config.metrics[1].source, "Alt", "unresolved sources preserve draft")
 assert(state.statusError, "unresolved source selection reports an error")
-staleSource.properties.set(101)
+staleSource.properties.set(140)
 state.nativeDrawer.properties.close()
 settleDrawer()
 equal(state.drawerListKey, nil, "native Return leaves nested settings one level")
 equal(context.editorSession.draft.panels[1].config.metrics[1].source, "RSSI", "pending edits survive Return")
 equal(context.document.panels[1].config.metrics[1].source, "Alt", "source edits are isolated")
-staleSource.properties.set(100)
+staleSource.properties.set(106)
 equal(state.drawerPending, nil, "dismissed controls cannot change a reopened drawer")
 action("append", "metrics").properties.press()
 settleDrawer()
@@ -353,13 +380,31 @@ for index, row in ipairs(state.drawerControls) do
     end
 end
 assert(errorIndex, "source control is shown")
-sourceControl.properties.set(validSource == "Alt" and 100 or 101)
+sourceControl.properties.set(getFieldInfo(validSource).id)
 settleDrawer()
 equal(
     state.drawerControls[errorIndex + 1].row.properties.y - state.drawerControls[errorIndex].row.properties.y,
     36,
     "correcting an error restores compact spacing"
 )
+local function pickSource(index)
+    control("metrics", "source").properties.set(index)
+    settleDrawer()
+    return context.editorSession.draft.panels[1].config.metrics[1].source
+end
+equal(pickSource(330), "gvar1", "a named global variable stores its Lua field name, not GV1:Thr")
+equal(control("metrics", "source").properties.get(), 330, "a stored global variable reopens on its picker entry")
+equal(pickSource(338), "gvar9", "every global variable stores a readable name")
+equal(pickSource(305), "sf", "a switch source stores the lower-case name getFieldInfo reads")
+equal(pickSource(140), "RSSI", "a sensor stores its label without the menu icon")
+equal(control("metrics", "source").properties.get(), 140, "a stored sensor reopens on its picker entry")
+equal(pickSource(UNREADABLE_SOURCE), "RSSI", "a source Lua cannot read leaves the draft unchanged")
+assert(string.find(state.status, "Lua cannot read source SW1", 1, true), "unreadable source explains why")
+local legacy = context.editorSession.draft.panels[1].config.metrics[1]
+legacy.source = "GV1"
+equal(control("metrics", "source").properties.get(), 330, "a menu-name source still reopens on its entry")
+legacy.source = "RSSI"
+pickSource(getFieldInfo(validSource).id)
 -- The entry only sets source and label, yet every reading setting is offered.
 local entryLabels = {}
 for _, row in ipairs(state.drawerControls) do
