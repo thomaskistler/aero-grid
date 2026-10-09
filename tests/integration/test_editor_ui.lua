@@ -446,6 +446,24 @@ load("edit-full")
 open()
 state = context.editorUi
 equal(state.addRect, nil, "full grid hides + tile")
+local firstPanel, secondPanel = context.panels[1], context.panels[2]
+local firstRect, secondRect = state.controls[1].rect, state.controls[2].rect
+refresh(EVT_TOUCH_FIRST, { x = firstRect.x + 55, y = firstRect.y + 40 })
+equal(#state.drag.positions, 16, "full grid offers compatible swap positions")
+refresh(EVT_TOUCH_SLIDE, { x = secondRect.x + 55, y = secondRect.y + 40 })
+refresh(EVT_TOUCH_BREAK)
+equal(context.editorSession.draft.panels[1].col, 1, "body drag swaps selected panel on full grid")
+equal(context.editorSession.draft.panels[2].col, 0, "body drag moves displaced panel to vacated origin")
+equal(firstPanel.instance, context.panels[1].instance, "swap keeps first live instance")
+equal(secondPanel.instance, context.panels[2].instance, "swap keeps second live instance")
+equal(firstPanel.container.properties.x, secondRect.x, "first live panel follows swap")
+equal(secondPanel.container.properties.x, firstRect.x, "second live panel follows swap")
+equal(context.document.panels[1].col, 0, "swap leaves committed geometry untouched")
+firstRect = state.controls[1].rect
+refresh(EVT_TOUCH_FIRST, { x = firstRect.x + 55, y = firstRect.y + 40 })
+refresh(EVT_TOUCH_SLIDE, { x = secondPanel.container.properties.x + 55, y = firstRect.y + 40 })
+refresh(EVT_TOUCH_BREAK)
+equal(context.editorSession.draft.panels[1].col, 0, "reverse drag swaps back")
 local blockedRect = state.controls[1].rect
 refresh(EVT_TOUCH_FIRST, { x = blockedRect.x + blockedRect.w - 8, y = blockedRect.y + blockedRect.h - 8 })
 assert(state.drag and state.drag.resize, "full-grid corner starts resizing")
@@ -470,12 +488,21 @@ refresh(EVT_TOUCH_SLIDE, { x = 170, y = 110 })
 refresh(EVT_TOUCH_BREAK)
 equal(context.editorSession.draft.panels[1].col, 1, "drag skips occupied destinations")
 equal(context.editorSession.draft.panels[1].row, 1, "drag uses free destination")
+local swapFirst = context.editorSession.draft.panels[14]
+local swapSecond = context.editorSession.draft.panels[15]
+local swapFirstCol, swapSecondCol = swapFirst.col, swapSecond.col
+context.editorSession.selected = 14
+assert(
+    state.handlers.editor.move(context.editorSession, swapSecond.col - swapFirst.col, swapSecond.row - swapFirst.row)
+)
 refresh(EVT_VIRTUAL_EXIT)
 settleSave()
 equal(context.editorUi, nil, "full-grid save exits")
 for _ = 1, 60 do
     definition.refresh(context)
 end
+equal(context.document.panels[14].col, swapSecondCol, "saved layout retains selected swap position")
+equal(context.document.panels[15].col, swapFirstCol, "saved layout retains displaced swap position")
 open()
 refresh(EVT_VIRTUAL_EXIT)
 

@@ -20,7 +20,8 @@ editor decisions here rather than changing `plans/aerogrid-spec.md`.
   Remove panel. Offer only supported sizes that fit with the top-left cell
   fixed.
 - Drag a panel's body to move it. Snap only to fitting, non-overlapping
-  positions; never move other panels to make room.
+  positions, including compatible two-panel swaps at occupied origins. Never
+  auto-arrange unrelated panels to make room.
 - Drag the top-left, bottom-left, or bottom-right corner to expand/shrink,
   anchoring the opposite corner. Snap to supported, in-bounds, collision-free
   grid spans with live geometry previews. Preserve the top-right configuration
@@ -42,6 +43,12 @@ editor decisions here rather than changing `plans/aerogrid-spec.md`.
 - Support touch and rotary/key input.
 
 ## Current implementation
+
+Moving onto an occupied top-left position swaps the two panels when each fits
+at the other's origin without overlapping either panel or any neighbour.
+Spans and settings remain unchanged; unrelated panels never auto-arrange.
+Movement candidates include compatible swaps, even on a full grid. Resizing
+and new-panel placement remain non-overlapping operations without displacement.
 
 The gesture editor and persistence workflow are implemented in the draft PR,
 but broader hardware verification remains outstanding.

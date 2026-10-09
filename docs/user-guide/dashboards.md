@@ -80,7 +80,10 @@ visible; controls appear after a short, staged initialization.
   Size offers only supported dimensions that fit at the current top-left cell.
 
 - Drag a panel's body to move it. It snaps only to fitting, non-overlapping
-  positions, without grid guides or selection outlines.
+  positions, without grid guides or selection outlines. Drag onto another
+  panel's top-left position to swap locations when both panels fit. Each keeps
+  its size and settings; unrelated panels stay put. Moves that overlap several
+  panels or cannot fit the displaced panel in the vacated position stay blocked.
 - Drag the top-left, bottom-left, or bottom-right corner to resize. The opposite
   corner stays fixed; sizes snap to supported, non-overlapping grid dimensions.
   Drag inward to shrink or outward to expand. The top-right corner remains the

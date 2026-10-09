@@ -379,7 +379,6 @@ local function drag(context, state, event, touch)
                 end
                 state.handlers.editor.select(state.session, index)
                 state.keyAdd = false
-                local p = state.session.draft.panels[index]
                 local cornerWidth, cornerHeight = math.min(24, rect.w / 3), math.min(24, rect.h / 3)
                 local left, right = x < rect.x + cornerWidth, x >= rect.x + rect.w - cornerWidth
                 local top, bottom = y < rect.y + cornerHeight, y >= rect.y + rect.h - cornerHeight
@@ -403,7 +402,7 @@ local function drag(context, state, event, touch)
                 state.drag = {
                     offsetX = x - rect.x,
                     offsetY = y - rect.y,
-                    positions = state.handlers.editor.availablePositions(state.session, p.colSpan, p.rowSpan, index),
+                    positions = assert(state.handlers.editor.movePositions(state.session)),
                 }
                 return true
             end

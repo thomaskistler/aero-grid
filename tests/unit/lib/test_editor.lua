@@ -66,8 +66,8 @@ end
 
 local function testWorkingCopyCancelAndApply()
     local session = newSession()
-    local moved, conflict = editor.move(session, 1, 0)
-    assert(not moved and string.find(conflict, "overlaps", 1, true))
+    local moved = editor.move(session, -1, 0)
+    assert(not moved)
     assert(not session.dirty, "rejected movement must not alter the draft")
 
     editor.select(session, 2)
@@ -97,6 +97,9 @@ local function testPlacementRulesAndResizeAnchor()
     assert(session.draft.panels[1].colSpan == 2)
 
     editor.select(session, 2)
+    local neighbour = editor.clone(session.draft.panels[2])
+    neighbour.id, neighbour.col = "third", 2
+    session.draft.panels[3] = neighbour
     local moved, conflict = editor.move(session, -1, 1)
     assert(not moved and string.find(conflict, "overlaps", 1, true))
     local resized, spanError = editor.resize(session, 2, 0)
@@ -175,6 +178,47 @@ local function testResizePreservesSpanDependentSettings()
     assert(not resized and string.find(message, "validateSettings raised", 1, true))
 end
 
+local function testCompatibleSwaps()
+    local original = document()
+    local session = newSession(original)
+    assert(editor.move(session, 0, 0))
+    assert(not session.dirty, "no-op movement does not dirty the draft")
+    assert(#editor.movePositions(session) == 16, "equal-sized occupied cell is a move candidate")
+    assert(editor.move(session, 1, 0))
+    assert(session.draft.panels[1].col == 1 and session.draft.panels[2].col == 0)
+    assert(session.draft.panels[1].config.label == "First")
+    assert(session.draft.panels[2].config.label == "Second")
+    assert(original.panels[1].col == 0 and original.panels[2].col == 1, "swap remains isolated")
+    assert(editor.move(session, -1, 0), "swapping back restores origins")
+
+    original.panels[1].colSpan = 2
+    original.panels[2].col = 2
+    session = newSession(original)
+    assert(editor.move(session, 2, 0), "different spans can swap when both fit")
+    assert(session.draft.panels[1].col == 2 and session.draft.panels[1].colSpan == 2)
+    assert(session.draft.panels[2].col == 0 and session.draft.panels[2].colSpan == 1)
+    session = newSession(original)
+    editor.select(session, 2)
+    local before = editor.clone(session.draft)
+    assert(not editor.move(session, -1, 0), "partial overlap is not an anchored swap")
+    assert(session.draft.panels[1].col == before.panels[1].col)
+    assert(session.draft.panels[2].col == before.panels[2].col)
+
+    original.panels[1].col, original.panels[1].colSpan = 3, 1
+    original.panels[2].col, original.panels[2].colSpan = 0, 2
+    session = newSession(original)
+    assert(not editor.move(session, -3, 0), "displaced panel must fit inside the grid")
+    assert(not session.dirty)
+    original.panels[1].col, original.panels[1].colSpan = 0, 2
+    original.panels[2].col, original.panels[2].colSpan = 2, 1
+    original.panels[3] = editor.clone(original.panels[2])
+    original.panels[3].id, original.panels[3].col = "third", 3
+    session = newSession(original)
+    assert(not editor.move(session, 2, 0), "multiple occupied panels cannot be displaced")
+    assert(not session.dirty)
+end
+
+testCompatibleSwaps()
 testWorkingCopyCancelAndApply()
 testPlacementRulesAndResizeAnchor()
 testAddRemoveAndStrictSettings()

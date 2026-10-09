@@ -353,21 +353,76 @@ local function findSelected(session)
     return placement, index
 end
 
+local function moveTarget(session, placement, index, col, row)
+    local moved = { col = col, row = row, colSpan = placement.colSpan, rowSpan = placement.rowSpan }
+    local valid, placementError = session.grid.validatePlacement(moved, 4, 4)
+    if not valid then
+        return nil, placementError
+    end
+    local conflict, conflictIndex
+    for otherIndex, other in ipairs(session.draft.panels) do
+        if otherIndex ~= index and session.grid.overlaps(other, moved) then
+            if conflict or other.col ~= col or other.row ~= row then
+                return nil, "overlaps panel " .. other.id
+            end
+            conflict, conflictIndex = other, otherIndex
+        end
+    end
+    if conflict then
+        -- Equal spans occupy exactly the two already-valid rectangles.
+        if conflict.colSpan == placement.colSpan and conflict.rowSpan == placement.rowSpan then
+            return moved, nil, conflict
+        end
+        local displaced = {
+            col = placement.col,
+            row = placement.row,
+            colSpan = conflict.colSpan,
+            rowSpan = conflict.rowSpan,
+        }
+        if not session.grid.validatePlacement(displaced, 4, 4) or session.grid.overlaps(displaced, moved) then
+            return nil, "overlaps panel " .. conflict.id .. "; panels cannot swap"
+        end
+        for otherIndex, other in ipairs(session.draft.panels) do
+            if otherIndex ~= index and otherIndex ~= conflictIndex and session.grid.overlaps(other, displaced) then
+                return nil, "overlaps panel " .. other.id .. "; panels cannot swap"
+            end
+        end
+    end
+    return moved, nil, conflict
+end
+
+function editor.movePositions(session)
+    local placement, index, selectionError = findSelected(session)
+    if not placement then
+        return nil, selectionError
+    end
+    local positions = {}
+    for row = 0, 4 - placement.rowSpan do
+        for col = 0, 4 - placement.colSpan do
+            local moved = moveTarget(session, placement, index, col, row)
+            if moved then
+                positions[#positions + 1] = moved
+            end
+        end
+    end
+    return positions
+end
+
 function editor.move(session, colDelta, rowDelta)
     local placement, index, selectionError = findSelected(session)
     if not placement then
         return false, selectionError
     end
-    local moved = copy(placement)
-    moved.col = moved.col + colDelta
-    moved.row = moved.row + rowDelta
-    local valid, placementError = session.grid.validatePlacement(moved, 4, 4)
-    if not valid then
+    local moved, placementError, displaced =
+        moveTarget(session, placement, index, placement.col + colDelta, placement.row + rowDelta)
+    if not moved then
         return false, placementError
     end
-    local conflict = overlapsAny(session.grid, session.draft.panels, moved, index)
-    if conflict then
-        return false, "overlaps panel " .. conflict.id
+    if moved.col == placement.col and moved.row == placement.row then
+        return true
+    end
+    if displaced then
+        displaced.col, displaced.row = placement.col, placement.row
     end
     placement.col, placement.row = moved.col, moved.row
     session.dirty = true
