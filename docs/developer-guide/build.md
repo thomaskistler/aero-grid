@@ -1,4 +1,4 @@
-# Build and simulator
+# Build and run the simulator
 
 ## Prerequisites
 
@@ -20,6 +20,10 @@ The site uses MkDocs with the Markdown sources in `docs/`. Run `make docs` to
 install the separate documentation dependencies and build a strictly validated
 site in `build/docs/`. Run `make docs-serve` for a local preview at
 `http://127.0.0.1:8000`; stop it with Ctrl-C.
+
+The sidebar explicitly lists Home and the guide categories, with pages nested
+under each category, in `docs/overrides/toc.html`. Update it when adding or
+renaming pages. Styling is in `docs/stylesheets/aerogrid.css`.
 
 `.github/workflows/docs.yml` validates documentation changes in pull requests
 and publishes to GitHub Pages after they land on `main`. Repository
@@ -51,7 +55,7 @@ make build
 
 `make test` and `make check` run `make setup` automatically when the development environment is missing or `requirements-dev.txt` changed. `make check` looks for `edgetx-luac`, `luac5.3`, then `luac` on `PATH`; `LUA_COMPILER` overrides detection. Use EdgeTX's `edgetx-luac` when available because it validates the firmware's exact Lua 5.3 configuration.
 
-The tests cover grid rounding, gutters, overlap validation, constrained YAML parsing, malformed and corrupt layout handling, forward-compatible unknown keys, layout-path sanitization across real model filenames, the panel module contract, declared settings and spans, panel lifecycle failure isolation, hostile modules, theme derivation and legibility, panel states, zone reflow, Dashboard ID reload behavior, snapshot immutability, service scheduling and subscription caps, telemetry freshness against a dropped link and a valid zero, trim scaling, global variable bounds, arm-switch flight sessions, GPS distance and bearing, graceful degradation when a firmware API or a whole service module is missing, per-metric range and threshold settings, timer count-up and expired-countdown semantics, the optional transmitter charge estimate, global variable and bar normalization, trim rounding and three-position handling, model bitmap fallback, width-aware font fitting, cells-table shape validation, protocol-dependent link source selection, a link that drops and returns, a missing GPS fix, an unavailable home position, and a protocol that populates no RSSI sensor at all. Each Lua behavior suite runs once with normal string methods and once with the string metatable removed to match EdgeTX firmware behavior.
+The tests cover grid rounding, gutters, overlap validation, constrained YAML parsing, malformed and corrupt layout handling, forward-compatible unknown keys, layout-name path sanitization, the append-only layout registry, the panel module contract, declared settings and spans, panel lifecycle failure isolation, hostile modules, theme derivation and legibility, panel states, zone reflow, Layout reload behavior, snapshot immutability, service scheduling and subscription caps, telemetry freshness against a dropped link and a valid zero, trim scaling, global variable bounds, arm-switch flight sessions, GPS distance and bearing, graceful degradation when a firmware API or a whole service module is missing, per-metric range and threshold settings, timer count-up and expired-countdown semantics, the optional transmitter charge estimate, global variable and bar normalization, trim rounding and three-position handling, model bitmap fallback, width-aware font fitting, cells-table shape validation, protocol-dependent link source selection, a link that drops and returns, a missing GPS fix, an unavailable home position, and a protocol that populates no RSSI sensor at all. Each Lua behavior suite runs once with normal string methods and once with the string metatable removed to match EdgeTX firmware behavior.
 
 Additional commands: `make lint` checks Lua with lua-language-server; `make format` runs StyLua; `make mocks` renders panel geometry.
 
@@ -101,15 +105,39 @@ does nothing and errors citing line numbers that no longer exist in the source.
 as new. When incrementally copying development sources to a simulator or radio,
 remove stale `.luac` files within the AeroGrid package and stamp the Lua sources
 for recompilation. For normal user upgrades, replace the complete folder as
-described in [Installation and upgrades](../user-guide/installation.md#upgrade).
+described in [Install and upgrade](../user-guide/installation.md#upgrade).
 
 `lib/package.lua` defines the package version and the runtime, panel, and
 layout API versions. The host rejects incompatible or unversioned runtime modules;
-a failed service leaves unrelated panels running. Dashboard ID `host` reports the
+a failed service leaves unrelated panels running. Layout `Host` reports the
 loaded version. These checks detect API-incompatible mixtures, not every mixture
 of compatible releases or stale bytecode.
 
-## Panel screenshots
+## Documentation screenshots
+
+### Editor screenshots
+
+On macOS with EdgeTX Companion 2.12 and the Xcode command-line tools, run:
+
+```sh
+python3 tools/capture-editor.py
+```
+
+This uses only Python's standard library. It captures screen creation, App mode,
+widget and layout selection, the editor overview, metric and text settings,
+the metric entry dialog, the exit menu, and Save As dialog in
+`build/editor-capture/`. Use `--companion /path/to/Companion.app` to select a
+different installation. Use `--scene select-layout` (or another scene name)
+to regenerate a single capture.
+
+The tool boots an isolated fixture SD card. Setup scenes use native touch input
+to add a screen and select the widget. Editor scenes enter fullscreen through a
+native long-press and automate production editor commands in a copied widget.
+It does not modify `src/` or `build/sdcard/`. Frames are captured after the UI
+settles; `provenance.json` records the source and simulator hashes. Copy reviewed
+PNGs and the provenance file into `docs/assets/editor/` to update the guide.
+
+### Panel screenshots
 
 On macOS with EdgeTX Companion 2.12 installed and the Xcode command-line tools,
 run from the repository root:
@@ -279,7 +307,7 @@ overrides. Update those captions when changing a recipe's sample or settings.
 
 ## Continuous integration
 
-### Publishing a release
+### Publish a release
 
 Releases are manually initiated, not created on every merge. Update
 `src/WIDGETS/AeroGrid/lib/package.lua` in a PR and merge it into `main`.
@@ -295,7 +323,7 @@ Generated release notes include installation links and hardware coverage.
 No release has to be created manually in the Releases UI.
 
 `make release-package` builds the same deterministic archive locally in
-`build/release/`. It contains source Lua files, only `default` and `host` layouts,
+`build/release/`. It contains source Lua files, only `Default` and `Host` layouts,
 and the license. It never packages a simulator SD image, bytecode, or capture
 assets. The layout allowlist is defined in `tools/package-release.py`.
 

@@ -7,7 +7,7 @@ local WidgetFixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua
 local fixture = WidgetFixture.new()
 fixture.reset()
 fixture.radio.values[100] = 16.4
-local context = fixture.createLoaded(nil, { DashID = "review-cell-battery", Theme = "modern" })
+local context = fixture.createLoaded(nil, { Layout = "review-cell-battery", Theme = "modern" })
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assertions.assertEqual(#context.panels, 7)
@@ -187,7 +187,7 @@ assertVerticalAlignment()
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 fixture.reset()
 fixture.radio.fields.RxBt = nil
-local missing = fixture.createLoaded(nil, { DashID = "review-cell-battery", Theme = "modern" })
+local missing = fixture.createLoaded(nil, { Layout = "review-cell-battery", Theme = "modern" })
 fixture.pump(missing, 40)
 local missingPack = fixture.instanceOf(missing, "pack")
 assertions.assertEqual(missingPack.glyphShown, false, "missing voltage must not draw an empty battery")

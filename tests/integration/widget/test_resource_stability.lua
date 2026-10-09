@@ -3,7 +3,7 @@
 local root = assert(..., "repository root argument is required")
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
 local definition = fixture.module("main.lua")
-local context = fixture.createLoaded(nil, { DashID = "resource-initial", Theme = "modern" })
+local context = fixture.createLoaded(nil, { Layout = "resource-initial", Theme = "modern" })
 local zone = context.zone
 
 local function refresh()
@@ -27,7 +27,7 @@ local function finish()
     collectgarbage("collect")
 end
 
-local dashboards = { "main", "review-metric", "review-navigation", "host", "services", "services2" }
+local dashboards = { "main", "review-metric", "review-navigation", "Host", "services", "services2" }
 local baseline = {}
 local maxGrowth = 0
 local peakObjects = 0
@@ -39,10 +39,10 @@ for cycle = 1, 21 do
     for _, dashboard in ipairs(dashboards) do
         weak.page = context.page
         weak.runtime = context.serviceRuntime
-        definition.update(context, { DashID = dashboard, Theme = "modern" })
+        definition.update(context, { Layout = dashboard, Theme = "modern" })
         finish()
         assert(
-            context.layoutOrigin == (dashboard == "main" and "default" or "dashboard"),
+            context.layoutOrigin == (dashboard == "main" and "default" or "shipped"),
             dashboard .. " did not load its intended layout"
         )
         assert(weak.page == nil, "a retired page remains reachable")

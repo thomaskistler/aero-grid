@@ -1,4 +1,4 @@
-# Installation and upgrades
+# Install and upgrade
 
 Back up your SD card and model configuration before making changes. AeroGrid targets EdgeTX color radios with the LVGL widget API.
 
@@ -11,8 +11,12 @@ screen.
 
 ## Upgrade
 
-1. Back up any custom layout files from `/WIDGETS/AeroGrid/layouts/` to your computer.
-2. Remove the old `/WIDGETS/AeroGrid/` folder from the SD card rather than merging new files into the old installation. Dashboard ID `host` reports the loaded package version.
-3. Copy the complete new `AeroGrid` folder into `/WIDGETS/`.
-4. Restore your custom layout files without overwriting the new bundled layouts.
-5. Restart the radio and check your dashboards.
+1. Remove the old `/WIDGETS/AeroGrid/` folder from the SD card rather than
+   merging new files into the old installation. This also removes stale
+   compiled Lua files.
+2. Copy the complete new `AeroGrid` folder into `/WIDGETS/`.
+3. Restart the radio and check your dashboards.
+
+Your layouts and layout list live in `/AEROGRID/`, outside the widget folder.
+Leave that folder untouched: there is no need to back up and restore layouts
+as part of an upgrade.

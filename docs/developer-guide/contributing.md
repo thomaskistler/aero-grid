@@ -1,4 +1,4 @@
-# Contributing
+# Contribute changes
 
 ## Prepare a change
 
@@ -44,7 +44,7 @@ Do not commit generated `.luac` files, logs, screenshots, virtual environments,
 or mutable `build/sdcard/` state. Preserve personal model configuration outside
 the fixture.
 
-## Adding a panel
+## Add a panel
 
 Read the [architecture guide](architecture.md) and the
 [panel module contract](https://github.com/thomaskistler/aero-grid/blob/main/plans/aerogrid-spec.md)

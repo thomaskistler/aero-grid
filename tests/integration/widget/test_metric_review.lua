@@ -7,7 +7,7 @@ local fixture = WidgetFixture.new()
 fixture.reset()
 fixture.radio.fields.GAlt = { id = 106, name = "GAlt", unit = fixture.radio.fields.Alt.unit }
 fixture.radio.fields["GAlt+"] = { id = 108, name = "GAlt+", unit = fixture.radio.fields.Alt.unit }
-local context = fixture.createLoaded(nil, { DashID = "review-metric", Theme = "modern" })
+local context = fixture.createLoaded(nil, { Layout = "review-metric", Theme = "modern" })
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assertions.assertEqual(#context.panels, 7)
@@ -101,6 +101,31 @@ for _, zone in ipairs({ { w = 320, h = 240 }, { w = 480, h = 272 } }) do
         assert(wide.range.hidden and wide.secondary.hidden)
     end
 end
+fixture.lvglMock.setAppMode(true)
+for _, fullscreen in ipairs({ false, true, false, true }) do
+    fixture.lvglMock.setFullScreen(fullscreen)
+    fixture.pump(context, 40)
+    for _, entry in ipairs(context.panels) do
+        local panel = entry.instance
+        if panel.area.valueCentre then
+            local x, width = panel.value.properties.x, panel.value.properties.w
+            local unitX = panel.unit and panel.unit.properties.x
+            panel.readingAnchor, panel.readingUnitAnchor = nil, nil
+            context.primitives.centreReading(panel, context.themeBuilder, panel.area, panel.area.value, panel.text)
+            assertions.assertEqual(panel.value.properties.x, x, "fullscreen reflow already centres unchanged readings")
+            assertions.assertEqual(panel.value.properties.w, width, "fullscreen reflow preserves reading group width")
+            if panel.unit then
+                assertions.assertEqual(
+                    panel.unit.properties.x,
+                    unitX,
+                    "fullscreen reflow keeps unit beside unchanged reading"
+                )
+            end
+        end
+    end
+end
+fixture.lvglMock.setFullScreen(false)
+fixture.lvglMock.setAppMode(false)
 fixture.reset()
 fixture.radio.fields.GAlt = nil
 fixture.radio.fields["GAlt+"] = nil

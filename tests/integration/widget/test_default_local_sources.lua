@@ -5,7 +5,7 @@ local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 fixture.reset()
 fixture.radio.rssi = 0
-local context = fixture.createLoaded(nil, { DashID = "default", Theme = "modern" })
+local context = fixture.createLoaded(nil, { Layout = "Default", Theme = "modern" })
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assertions.assertEqual(#context.panels, 9)

@@ -270,7 +270,46 @@ user-confirmed hardware verification without inventing quantitative measurements
   their configured ranges.
 - [ ] Change flight mode, timer state, trims, and GVs; confirm updates and
   flight-mode inheritance. Verify decimal GVs using explicit metric precision.
-- [ ] Confirm all panels remain read-only and do not alter model settings.
+- [ ] Enter temporary fullscreen and long-press a panel; verify touch,
+  rotary, and key controls are usable at normal viewing distance.
+- [ ] Confirm editing shows a gray circular gear at each panel's top-right without a corner X or EDIT button,
+  toolbar, selection outline, or grid guides; dragging snaps only to fitting positions.
+- [ ] Confirm configuration/catalog drawers scroll and return to the dashboard;
+  new draft panels remain preview cards until saving rather than starting trackers.
+- [ ] Verify native dialogs are centered and sized like standard EdgeTX dialogs.
+  Check touch/rotary focus, toggles, choices, numeric inputs, the native keyboard,
+  source/switch/timer pickers, and grouped metric/text entry dialogs.
+- [ ] Confirm there is no custom return button and row spacing matches native
+  widget settings. Check physical RTN and outside-touch dismissal return one level without
+  saving; dismiss a nested picker or keyboard before closing its parent.
+  Repeat close/reopen cycles and check memory/object stability.
+- [ ] Confirm blocked sizes are hidden, removal is immediate, and invalid
+  settings show feedback without overlapping the following row.
+- [ ] Add, move, resize, configure, and remove a panel through settings; confirm collision and
+  bounds errors are clear and resize keeps the top-left cell fixed.
+- [ ] Confirm + appears in the first empty cell and hides on a full grid.
+- [ ] Drag each resize corner inward/outward; verify the opposite corner stays
+  fixed, unsupported/occupied/out-of-bounds sizes are skipped, the + relocates,
+  and the top-right gear remains usable. Check shrinking and saved geometry.
+- [ ] On the physical radio, check finger-sized corner targets on 1 x 1 panels,
+  accidental moves versus resizes, gear activation, edge/corner reachability,
+  drag responsiveness, and repeated expand/shrink cycles. Verify saved geometry
+  after reload. Configuration no longer offers Size/Column/Row, so gestures are
+  the only way to change geometry.
+- [ ] Press Return to close drawers, then choose Save in **Unsaved changes**;
+  power-cycle and confirm the layout persists as `/AEROGRID/layouts/<name>.yaml`.
+- [ ] Choose **Save as...**, accept the suggested name, restart, and select it
+  in **Layout**. Confirm an existing name asks before overwriting, `Empty`
+  offers no Save, Discard restores the saved layout, and leaving fullscreen
+  mid-edit resumes the draft on return.
+- [ ] Verify a successful save retains the previous layout as `.bak`; restore
+  from a deliberately invalid primary on a test SD card and confirm fallback.
+- [ ] Confirm dashboard panels remain read-only and the editor only changes
+  AeroGrid layout files, not model settings.
+- [ ] On each supported radio/EdgeTX version, verify the file API supports the
+  temporary-file write/read/rename/delete sequence used by save-on-exit.
+- [ ] Simulate a save failure; confirm the error is visible and the draft remains
+  available for retry, including after leaving and re-entering fullscreen.
 
 ## Receiver telemetry
 
@@ -291,9 +330,9 @@ Perform link-loss tests on the bench with propulsion disabled.
 
 ## Diagnostics and release budgets
 
-- [ ] Confirm the `host` identity section reports package version `0.10.0`.
+- [ ] Confirm the `Host` identity section reports package version `0.10.0`.
   Install the complete package and remove stale bytecode before recording results.
-- [ ] Run Dashboard ID `host`; inspect layout path, panel loading,
+- [ ] Select Layout `Host`; inspect layout path, panel loading,
   unresolved sources, and failures. Check readings against the model's sensors.
 - [ ] Check missing/corrupt layouts and missing sources produce useful errors
   without disabling unrelated panels.

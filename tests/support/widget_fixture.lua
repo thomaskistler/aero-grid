@@ -18,6 +18,9 @@ io = {
     read = function(handle, size)
         return handle:read(size)
     end,
+    write = function(handle, content)
+        return handle:write(content)
+    end,
     close = function(handle)
         return handle:close()
     end,
@@ -46,7 +49,7 @@ function WidgetFixture.new()
         local definition = loadModule("main.lua")
         local context = definition.create(
             zone or { x = defaultZone.x, y = defaultZone.y, w = defaultZone.w, h = defaultZone.h },
-            options or { DashID = "main", Theme = "modern" },
+            options or { Layout = "main", Theme = "modern" },
             path or widgetRoot
         )
         local guard = 0

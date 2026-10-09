@@ -6,7 +6,28 @@ local text = {
     supportedSpans = { "1x1", "2x1", "3x1", "4x1", "1x2", "2x2", "3x2", "4x2" },
     refreshInterval = 20,
     settings = {
-        { key = "texts", label = "Texts", type = "table" },
+        {
+            key = "texts",
+            label = "Texts",
+            type = "table",
+            minItems = 1,
+            maxItems = 3,
+            -- Every entry setting, so the editor offers ones an entry omits.
+            fields = {
+                { key = "label", label = "Label", type = "string", required = true },
+                { key = "source", label = "Source", type = "string", required = true },
+                { path = { "positions", "up" }, label = "Up", type = "string", required = true },
+                { path = { "positions", "middle" }, label = "Middle", type = "string" },
+                { path = { "positions", "down" }, label = "Down", type = "string", required = true },
+            },
+            default = {
+                {
+                    label = "SW1",
+                    source = "sa",
+                    positions = { up = "UP", middle = "MID", down = "DOWN" },
+                },
+            },
+        },
         {
             key = "accent",
             label = "Accent",

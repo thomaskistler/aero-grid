@@ -989,16 +989,6 @@ function navigation.update(context, rect)
         context.settings.label,
         context.badgeText
     )
-    context.primitives.placeUnit(
-        context.unit,
-        context.themeBuilder,
-        area.valueX,
-        area.valueY,
-        area.value,
-        context.text,
-        area.unitFont
-    )
-    context.primitives.setFont(context.unit, area.unitFont)
     -- Every anchor is about a slot and a font that have just moved, so all of
     -- them are discarded rather than trusted. A panel that reflowed while its
     -- distance and bearing held steady would otherwise keep the positions it
@@ -1014,6 +1004,7 @@ function navigation.update(context, rect)
         y = area.valueY,
         w = area.valueWidth,
     })
+    context.primitives.reflowReading(context, context.themeBuilder, area, area.value, context.text)
 
     --- Show or hide a supporting row, positioning it only when visible.
     local reconcile = context.primitives.reconcile
@@ -1030,6 +1021,40 @@ function navigation.update(context, rect)
     context.showCompass = context.compass ~= nil and area.showCompass == true
     reconcile(context.originLabel, area.showDetail, { x = area.originX, y = area.detailY, w = area.originWidth })
     reconcile(context.coordinatesLabel, area.showCoordinates, { x = area.pad, y = area.coordinatesY, w = area.content })
+    if context.showDetail then
+        context.primitives.centreLabel(
+            context,
+            "detailAnchor",
+            context.themeBuilder,
+            context.detailLabel,
+            context.origin == "" and area.coordinatesCentre or area.detailCentre,
+            area.detailY,
+            area.rowFont,
+            context.detail
+        )
+        context.primitives.centreLabel(
+            context,
+            "originAnchor",
+            context.themeBuilder,
+            context.originLabel,
+            area.originCentre,
+            area.detailY,
+            area.rowFont,
+            context.origin
+        )
+    end
+    if context.showCoordinates then
+        context.primitives.centreLabel(
+            context,
+            "coordinatesAnchor",
+            context.themeBuilder,
+            context.coordinatesLabel,
+            area.coordinatesCentre,
+            area.coordinatesY,
+            area.rowFont,
+            context.coordinates
+        )
+    end
 
     if context.compass then
         if area.showCompass then

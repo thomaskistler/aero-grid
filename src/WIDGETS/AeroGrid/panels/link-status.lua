@@ -1152,21 +1152,7 @@ function linkStatus.update(context, rect)
             context.unitText,
             area.content
         )
-    context.primitives.reconcileUnit(
-        context,
-        context.unit,
-        shows,
-        context.themeBuilder,
-        area.valueX,
-        area.valueY,
-        area.value,
-        context.text,
-        area.unitFont,
-        shows == context.showUnit
-    )
-    context.showUnit = shows
-    context.unitAnchor = nil
-    context.area = area
+    context.primitives.reflowReading(context, context.themeBuilder, area, area.value, context.text, shows)
 
     --- Show or hide a supporting row, positioning it only when visible.
     local reconcile = context.primitives.reconcile
@@ -1206,6 +1192,34 @@ function linkStatus.update(context, rect)
             area.showSide,
             { x = area.pad, y = area.marginY or area.detailY, w = area.sideWidth or area.rowRightWidth }
         )
+    end
+    for _, row in ipairs({
+        { context.showDetail, context.detailLabel, "detailAnchor", area.detailCentre, area.detailY, context.detail },
+        { context.showDetail, context.linkLabel, "linkAnchor", area.rowRightCentre, area.detailY, context.linkDetail },
+        {
+            context.showExtra,
+            context.extraLabel,
+            "extraAnchor",
+            area.pad + math.floor(area.content / 2),
+            area.extraY,
+            context.extra,
+        },
+        { context.showSide, context.detailLabel, "sideAnchor", area.sideCentre, area.sideY, context.side },
+        { context.showSide, context.linkLabel, "marginAnchor", area.sideCentre, area.marginY, context.margin },
+    }) do
+        context[row[3]] = nil
+        if row[1] then
+            context.primitives.centreLabel(
+                context,
+                row[3],
+                context.themeBuilder,
+                row[2],
+                row[4],
+                row[5],
+                context.fonts.label,
+                row[6]
+            )
+        end
     end
 
     context.primitives.reconcileBar(

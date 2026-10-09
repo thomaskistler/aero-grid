@@ -11,6 +11,12 @@ container and container-local coordinates, preventing drawing over neighboring
 panels. Panels declare supported spans, typed settings, and lifecycle callbacks.
 The host owns scheduling, shared services, and theme tokens.
 
+A list setting (`type = "table"`) should declare its entry `fields`, each with a
+`key` (or nested `path`), `label`, `type`, and optional `choices`, `min`, `max`,
+`step`, `default`, `required`, and `empty`. The on-radio editor offers every
+declared field for every entry, including ones the layout omits, and removes
+optional fields that are cleared. Numbers with `empty` text show it while unset.
+
 See the
 [project specification](https://github.com/thomaskistler/aero-grid/blob/main/plans/aerogrid-spec.md)
 for the complete module contract and schema.
@@ -51,7 +57,7 @@ Every service degrades rather than raising. A missing firmware API, an unknown s
 
 ### Service diagnostics
 
-The bundled `host` dashboard reports package identity, loading, and service
+The bundled `Host` dashboard reports package identity, loading, and service
 failures. Automated service tests cover normalized readings, precision,
 freshness, and navigation calculations independently of display panels.
 

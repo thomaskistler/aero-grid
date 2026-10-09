@@ -28,7 +28,7 @@ local function create(span, failWrite)
     radio.globalDetails[8] = { name = "Flights", min = 0, max = 999, prec = 0, unit = 0 }
     local context = definition.create(
         { x = 0, y = 0, w = 480, h = 272 },
-        { DashID = "flight-test", Theme = "modern" },
+        { Layout = "flight-test", Theme = "modern" },
         root .. "/src/WIDGETS/AeroGrid/"
     )
     context.source = table.concat({
@@ -180,3 +180,20 @@ backgroundUntil(context, function()
     return panel.phase == "ground"
 end)
 assert(worstCallback > 0, "the flight counter budget was not measured")
+
+local recorded
+context, panel, recorded = create({ 2, 2 })
+panel.preview = true
+fixture.radio.values[305], fixture.radio.values[306] = 1024, 0
+for _ = 1, 100 do
+    fixture.tick(20)
+    measured(definition.background, context)
+end
+equal(model.getGlobalVariable(8, 0), 39, "unsaved preview cannot increment the persistent counter")
+equal(panel.phase, "ground", "unsaved preview cannot start a flight tracker")
+fixture.radio.values[305] = -1024
+fixture.pump(context, 30)
+local history, sounds = recorded()
+equal(history, nil, "unsaved preview cannot write flight history")
+equal(#sounds, 0, "unsaved preview cannot announce flights")
+equal(panel.value.properties.text, "39", "unsaved preview still displays the current count")

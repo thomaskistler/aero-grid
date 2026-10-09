@@ -6,7 +6,7 @@ local WidgetFixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua
 
 local fixture = WidgetFixture.new()
 fixture.reset()
-local context = fixture.createLoaded(nil, { DashID = "review-navigation", Theme = "modern" })
+local context = fixture.createLoaded(nil, { Layout = "review-navigation", Theme = "modern" })
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assertions.assertEqual(#context.panels, 6)

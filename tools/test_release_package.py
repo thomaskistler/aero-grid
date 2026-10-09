@@ -23,6 +23,8 @@ class ReleaseTests(unittest.TestCase):
                 self.assertEqual(layouts, release.LAYOUTS)
                 self.assertIn("WIDGETS/AeroGrid/main.lua", names)
                 self.assertIn("LICENSE", names)
+                assets = {name.split("/")[-1] for name in names if "/assets/" in name}
+                self.assertEqual(assets, release.ASSETS)
                 self.assertFalse(any(name.endswith(".luac") or "/RADIO/" in name or "/MODELS/" in name
                                      for name in names))
                 for name in names:

@@ -58,7 +58,48 @@ local metric = {
     -- the host pays every panel's refresh inside one instruction budget.
     refreshInterval = 20,
     settings = {
-        { key = "metrics", label = "Metrics", type = "table" },
+        {
+            key = "metrics",
+            label = "Metrics",
+            type = "table",
+            minItems = 1,
+            maxItems = 3,
+            -- Every reading setting, so the editor offers ones an entry omits.
+            fields = {
+                { key = "source", label = "Source", type = "string", required = true },
+                { key = "label", label = "Label", type = "string" },
+                { key = "unit", label = "Unit", type = "string" },
+                {
+                    key = "precision",
+                    label = "Precision",
+                    type = "number",
+                    min = 0,
+                    max = 3,
+                    step = 1,
+                    empty = "Sensor",
+                },
+                {
+                    key = "direction",
+                    label = "Direction",
+                    type = "string",
+                    choices = { "auto", "rising", "falling" },
+                    default = "auto",
+                },
+                { key = "rangeMin", label = "Range min", type = "number", step = 0.1, default = 0 },
+                { key = "rangeMax", label = "Range max", type = "number", step = 0.1, default = 100 },
+                { key = "warning", label = "Warning", type = "number", step = 0.1, empty = "Off" },
+                { key = "critical", label = "Critical", type = "number", step = 0.1, empty = "Off" },
+            },
+            default = {
+                {
+                    source = "RSSI",
+                    label = "RSSI",
+                    unit = "",
+                    precision = 0,
+                    direction = "auto",
+                },
+            },
+        },
         {
             key = "accent",
             label = "Accent",
@@ -879,8 +920,6 @@ function metric.update(context, rect)
         y = area.valueY,
         w = area.valueWidth,
     })
-    context.readingAnchor, context.readingUnitAnchor = nil, nil
-
     --- Show or hide an optional element, positioning it only when visible.
     local reconcile = context.primitives.reconcile
 
@@ -898,20 +937,7 @@ function metric.update(context, rect)
             context.unitText,
             area.valueBudget
         )
-    context.primitives.reconcileUnit(
-        context,
-        context.unit,
-        shows,
-        context.themeBuilder,
-        area.valueX,
-        area.valueY,
-        area.value,
-        context.text or "--",
-        area.unitFont,
-        shows == context.showUnit
-    )
-    context.showUnit = shows
-    context.unitAnchor = nil
+    context.primitives.reflowReading(context, context.themeBuilder, area, area.value, context.text or "--", shows)
     context.rangeAnchor, context.secondaryAnchor = nil, nil
     reconcile(context.range, context.showRange, { x = area.detailX, y = area.detailY, w = area.detailWidth })
     context.primitives.centreLabel(

@@ -12,7 +12,7 @@ for _, source in ipairs({
     fixture.reset()
     local context = definition.create(
         { x = 0, y = 0, w = 480, h = 272 },
-        { DashID = "default", Theme = "modern" },
+        { Layout = "Default", Theme = "modern" },
         root .. "/src/WIDGETS/AeroGrid/"
     )
     context.source = source

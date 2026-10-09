@@ -6,7 +6,7 @@
 # and the clipping are all on one page.
 #
 # Naming and placement, chosen to survive eleven of these: one review screen,
-# whose Dashboard ID names the panel under review, replacing itself each
+# whose Layout names the panel under review, replacing itself each
 # time rather than accumulating. `MAX_CUSTOM_SCREENS` is 10 and the fixture
 # already carries nine, so a screen per panel was never available;
 # `customScreens[MAX_CUSTOM_SCREENS]` indexed by `i < MAX_CUSTOM_SCREENS`

@@ -1204,6 +1204,33 @@ function primitives.reconcileUnit(
     end
 end
 
+--- Reposition an unchanged reading and its unit after the layout moves.
+function primitives.reflowReading(context, themeBuilder, area, font, text, showUnit)
+    local unit, previousShowUnit = context.unit, context.showUnit
+    if showUnit ~= nil then
+        context.showUnit = showUnit
+    end
+    context.area = area
+    context.readingAnchor, context.readingUnitAnchor = nil, nil
+    -- Reconcile the rider once, including its new font, after centring the value.
+    context.unit = nil
+    primitives.centreReading(context, themeBuilder, area, font, text)
+    context.unit = unit
+    primitives.reconcileUnit(
+        context,
+        unit,
+        context.showUnit,
+        themeBuilder,
+        area.valueCentre and context.valueX or area.valueX,
+        area.valueY,
+        font,
+        text,
+        area.unitFont,
+        context.showUnit == previousShowUnit
+    )
+    context.unitAnchor = nil
+end
+
 --- Create a horizontal progress bar with a muted track.
 --- An optional marker fraction draws a persistent tick, which a range that
 --- crosses zero needs so the reader can see which side of zero a value is on.

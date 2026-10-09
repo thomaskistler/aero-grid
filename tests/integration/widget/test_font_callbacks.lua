@@ -3,7 +3,7 @@
 local root = assert(..., "repository root argument is required")
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
 local definition = fixture.module("main.lua")
-local context = fixture.createLoaded(nil, { DashID = "default", Theme = "modern" })
+local context = fixture.createLoaded(nil, { Layout = "Default", Theme = "modern" })
 local timer = assert(fixture.instanceOf(context, "flight-clock"))
 local valueCallback = timer.value.properties.font
 local headingCallback = timer.label.properties.font

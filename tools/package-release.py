@@ -8,7 +8,8 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = re.compile(r'(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:beta|rc)\.[1-9]\d*)?')
-LAYOUTS = {"default.yaml", "host.yaml"}
+LAYOUTS = {"Default.yaml", "Empty.yaml", "Host.yaml"}
+ASSETS = {"editor-configure.png", "editor-configure.svg", "LICENSE.txt"}
 
 
 def version(source):
@@ -24,6 +25,9 @@ def package(source, output):
     for name in LAYOUTS:
         if not (source / "layouts" / name).is_file():
             raise ValueError(f"Missing bundled layout: {name}")
+    for name in ASSETS:
+        if not (source / "assets" / name).is_file():
+            raise ValueError(f"Missing bundled asset: {name}")
     files = []
     for path in sorted(source.rglob("*")):
         if path.is_symlink():
@@ -34,6 +38,9 @@ def package(source, output):
         if relative.parts[0] == "layouts":
             if relative.as_posix() not in {f"layouts/{name}" for name in LAYOUTS}:
                 continue
+        elif relative.parts[0] == "assets":
+            if relative.as_posix() not in {f"assets/{name}" for name in ASSETS}:
+                raise ValueError(f"Unexpected runtime asset: {relative}")
         elif path.suffix != ".lua":
             raise ValueError(f"Unexpected runtime file: {relative}")
         files.append((path, relative))

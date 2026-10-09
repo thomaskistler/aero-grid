@@ -122,6 +122,7 @@ claim("FONT_MASK", FONTS_H, "FONT_MASK", 0x0F00)
 
 -- A widget option type, sharing no numbering with the fonts above.
 claim("STRING", LUA_CONSTANTS, "LROT_NUMENTRY(STRING, WidgetOption::String)", 3)
+claim("CHOICE", LUA_CONSTANTS, "LROT_NUMENTRY(CHOICE, WidgetOption::Choice)", 10)
 
 --- Line heights of the font set a 480 x 272 radio is built with.
 ---
@@ -473,6 +474,16 @@ claim("PROPERTY_KEYS", LVGL_H, "LvglWidget* parseParam overrides", {
     image = keysOf(OBJECT, "file", "fill"),
     triangle = keysOf(OBJECT_BASE, "pts"),
     line = keysOf(OBJECT_BASE, "pts", "thickness", "rounded"),
+    dialog = keysOf(OBJECT, "title", "close"),
+    setting = keysOf(OBJECT, "title"),
+    button = keysOf(OBJECT, "text", "press", "longpress", "textColor", "cornerRadius"),
+    choice = keysOf(OBJECT, "title", "values", "get", "set", "filter", "popupWidth"),
+    toggle = keysOf(OBJECT, "get", "set"),
+    numberEdit = keysOf(OBJECT, "get", "set", "edited", "min", "max", "display"),
+    textEdit = keysOf(OBJECT, "value", "length", "set"),
+    source = keysOf(OBJECT, "get", "set", "filter"),
+    switch = keysOf(OBJECT, "get", "set", "filter"),
+    timer = keysOf(OBJECT, "get", "set"),
 })
 
 --- Keys EdgeTX reads as a colour.
@@ -577,6 +588,7 @@ function support.constants()
     XXLSIZE = firmware.XXLSIZE
     BOLD = firmware.BOLD
     STRING = firmware.STRING
+    CHOICE = firmware.CHOICE
 end
 
 --- Publish `lcd`, and the theme role constants it answers for.
@@ -873,6 +885,7 @@ function support.lvgl()
 
     local objects = {}
     local pendingClears = {}
+    local tempParent
     local deferCleanup = false
     local appMode = false
     local fullScreen = false
@@ -1155,6 +1168,7 @@ function support.lvgl()
             invalid = false,
             writes = 0,
             visibilityCalls = 0,
+            builtFullscreen = fullScreen,
             set = validateProperties and setChecked or setUnchecked,
             clear = clearObject,
         }
@@ -1209,6 +1223,11 @@ function support.lvgl()
 
         if parent then
             parent.children[#parent.children + 1] = object
+        elseif tempParent then
+            -- LuaScriptManager::saveLvglObjectRef files an object created during
+            -- another object's construction under that object, not top level.
+            rawset(object, "registeredParent", tempParent)
+            tempParent.children[#tempParent.children + 1] = object
         end
         objects[#objects + 1] = object
         return object
@@ -1216,10 +1235,26 @@ function support.lvgl()
 
     local function constructor(kind)
         return function(first, second)
-            if second then
-                return newObject(kind, first, second)
+            local properties = second or first
+            if kind == "textEdit" then
+                assert(type(properties.value) == "string", "native textEdit value must be a string")
+            elseif kind == "toggle" and properties.get then
+                local value = properties.get()
+                assert(type(value) == "number" and value % 1 == 0, "native toggle getter must return an integer")
             end
-            return newObject(kind, nil, first)
+            local object = second and newObject(kind, first, second) or newObject(kind, nil, first)
+            -- LvglWidgetObjectBase::create runs callRefs while luaLvglObjEx still
+            -- has the explicit parent installed as the temporary parent.
+            if second and type(properties.visible) == "function" then
+                local previous = tempParent
+                tempParent = first
+                local ok, failure = pcall(properties.visible)
+                tempParent = previous
+                if not ok then
+                    error(failure, 0)
+                end
+            end
+            return object
         end
     end
 
@@ -1240,7 +1275,26 @@ function support.lvgl()
         rawset(object, "hidden", false)
     end
 
+    local menu, confirmation, message
+    -- `confirm` and `message` are popups (`luaLvglPopup` in
+    -- radio/src/lua/api_colorlcd_lvgl.cpp), returning nothing to Lua, with the
+    -- keys `LvglWidgetConfirmDialog` and `LvglWidgetMessageDialog` parse.
+    local function popupKeys(properties, allowed)
+        for key in pairs(properties) do
+            assert(allowed[key], "native popup has no property " .. tostring(key))
+        end
+        assert(type(properties.title) == "string", "native popup needs a title")
+    end
     lvgl = {
+        clear = function()
+            for _, object in ipairs(objects) do
+                if not object.parent and not object.registeredParent and not object.invalid then
+                    clearObject(object)
+                    rawset(object, "hidden", true)
+                    rawset(object, "hostRetired", true)
+                end
+            end
+        end,
         box = constructor("box"),
         rectangle = constructor("rectangle"),
         label = constructor("label"),
@@ -1248,6 +1302,35 @@ function support.lvgl()
         triangle = constructor("triangle"),
         line = constructor("line"),
         image = constructor("image"),
+        dialog = constructor("dialog"),
+        setting = constructor("setting"),
+        button = constructor("button"),
+        choice = constructor("choice"),
+        toggle = constructor("toggle"),
+        numberEdit = constructor("numberEdit"),
+        textEdit = constructor("textEdit"),
+        source = constructor("source"),
+        switch = constructor("switch"),
+        timer = constructor("timer"),
+        menu = function(properties)
+            assert(type(properties.title) == "string", "native menu needs a title")
+            assert(type(properties.values) == "table", "native menu needs selection values")
+            menu = properties
+        end,
+        confirm = function(properties)
+            popupKeys(properties, { title = true, message = true, confirm = true, cancel = true })
+            confirmation = properties
+        end,
+        message = function(properties)
+            popupKeys(properties, { title = true, message = true, details = true })
+            message = properties
+        end,
+        close = function(object)
+            if object.properties.close then
+                object.properties.close()
+            end
+            clearObject(object)
+        end,
         -- `visibilityCalls` is counted for the same reason as `writes`: telling
         -- an already-hidden object to hide again changes nothing on screen and
         -- so cannot be seen by any assertion about what is drawn.
@@ -1270,6 +1353,15 @@ function support.lvgl()
     local width = support.scaffold.DISPLAY_WIDTH
     local height = support.scaffold.DISPLAY_HEIGHT
     local handle = { settle = settle, objects = objects }
+    function handle.menu()
+        return menu
+    end
+    function handle.confirm()
+        return confirmation
+    end
+    function handle.message()
+        return message
+    end
 
     function handle.replacedFontRefCount()
         local count = 0
@@ -1677,8 +1769,17 @@ function support.radio(hostIo)
     end
 
     --- luaGetFieldInfo pushes id, name and desc, and pushes `unit` only for a
-    --- source between MIXSRC_FIRST_TELEM and MIXSRC_LAST_TELEM.
+    --- source between MIXSRC_FIRST_TELEM and MIXSRC_LAST_TELEM. Since 2.6 it
+    --- also accepts a source index and returns that source's Lua field name.
     function getFieldInfo(name)
+        if type(name) == "number" then
+            for _, field in pairs(radio.fields) do
+                if field.id == name then
+                    return field
+                end
+            end
+            return nil
+        end
         return radio.fields[name]
     end
 
@@ -1845,6 +1946,12 @@ function support.radio(hostIo)
         size = handle:seek("end")
         handle:close()
         return stat(size)
+    end
+
+    --- firmware: `luaMkdir` returns FatFs's result, 0 when created.
+    function mkdir(directory)
+        os.execute("mkdir -p '" .. directory .. "'")
+        return 0
     end
 
     local handle = { state = radio }

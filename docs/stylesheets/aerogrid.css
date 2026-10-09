@@ -81,6 +81,38 @@ body::before {
   color: var(--ag-cyan);
 }
 
+.bs-sidebar .navbar-collapse {
+  max-height: calc(100dvh - 7rem);
+  overflow-y: auto;
+}
+
+.bs-sidebar .sidebar-group-title {
+  display: block;
+  padding: 15px 20px 5px;
+  color: var(--ag-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.bs-sidebar .sidebar-page-link {
+  color: var(--ag-text);
+  font-weight: 600;
+}
+
+.bs-sidebar .sidebar-page-link.current,
+.bs-sidebar .sidebar-page-link:hover,
+.bs-sidebar .sidebar-page-link:focus {
+  color: var(--ag-cyan);
+}
+
+.bs-sidebar .sidebar-pages {
+  margin-left: 1rem;
+}
+
+.bs-sidebar .sidebar-pages .sidebar-page-link {
+  font-size: 0.9rem;
+}
+
 .dropdown-menu {
   --bs-dropdown-bg: var(--ag-surface);
   --bs-dropdown-color: var(--ag-text);

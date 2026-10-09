@@ -160,7 +160,7 @@ function diagnostics.identity(host)
 
     -- The filename search has three branches and leaves nothing behind to say
     -- which one won; two of them can produce similar-looking paths.
-    lines[#lines + 1] = "dash " .. tostring(host.dashboardId) .. " -> " .. tostring(host.layoutOrigin or "--")
+    lines[#lines + 1] = "layout " .. tostring(host.layoutName) .. " -> " .. tostring(host.layoutOrigin or "--")
     lines[#lines + 1] = tostring(host.layoutPath or "no layout")
     lines[#lines + 1] = "model " .. tostring(host.modelFilename or "--")
 

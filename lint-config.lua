@@ -7,6 +7,13 @@ return {
         globals = {
             "CHAR_UP",
             "CHAR_DOWN",
+            "CHOICE",
+            "CENTERED",
+            "dir",
+            "mkdir",
+            "getSourceIndex",
+            "getSourceName",
+            "getSwitchName",
             "getSwitchIndex",
             "getSwitchValue",
             "COLOR_THEME_ACTIVE",

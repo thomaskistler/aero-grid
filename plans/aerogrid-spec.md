@@ -7,8 +7,8 @@
 - Status last updated: 2026-10-04
 - EdgeTX source: `../edgetx`
 - Project root: `aero-grid/`
-- Implementation: Phase 1, milestones 1 to 8 complete; thirteen shipped panels, seven using the shared standard panel. The original nine display panels are reviewed and documented; the text and flight-counter panels are documented with simulator captures. Global-variable display uses ordinary metric sources; the flight counter reserves GV9 FM0 for its persistent total.
-- Next work: Milestone 9 target-matrix validation and resource baselining. Initial dashboard validation passed on TX16S v2 with EdgeTX 2.12.4, as reported by the user on 2026-10-04.
+- Implementation: Phase 1 runtime complete; Phase 2 has a schema-driven on-radio editor, strict whole-layout validation, and recoverable YAML persistence. Thirteen shipped panels, seven using the shared standard panel. The original nine display panels are reviewed and documented; the text and flight-counter panels are documented with simulator captures. Global-variable display uses ordinary metric sources; the flight counter reserves GV9 FM0 for its persistent total.
+- Next work: Verify the editor controls and file operations on the target-radio/EdgeTX matrix, then complete milestone 9 resource baselining. Initial dashboard validation passed on TX16S v2 with EdgeTX 2.12.4, as reported by the user on 2026-10-04.
 - The retirement and software-hardening work is merged into `main`. The aircraft dashboard, compact-layout refinements, and initial hardware records are the current follow-up change set. See [Resuming work](#resuming-work) for the state and the exact next steps.
 
 ## Summary
@@ -398,7 +398,7 @@ Panels consume immutable snapshots. A service mutates its own state table in pla
 │   ├── theme.lua
 │   └── ...
 └── layouts/
-    ├── default.yaml
+    ├── Default.yaml
     ├── services.yaml
     ├── services2.yaml
     └── <model-identifier>--<dashboard-id>.yaml
@@ -801,7 +801,7 @@ Different EdgeTX custom screens use different Dashboard IDs, allowing multiple i
 
 1. Receive the EdgeTX zone, options, and widget folder path.
 2. Select the layout filename for the active model.
-3. Read and parse the YAML layout, falling back to `default.yaml`.
+3. Read and parse the YAML layout, falling back to `Default.yaml`.
 4. Validate and normalize all placements.
 5. Load each referenced panel script.
 6. Create an LVGL parent container for each placement.
@@ -960,19 +960,21 @@ EdgeTX exposes Lua file access through `io.open`, `io.read`, `io.write`, and `io
 
 Release phase 1 is read-only: layouts are authored externally and the dashboard never writes, migrates, or reformats them. The save workflow below applies to the phase 2 editor.
 
-The editor must save only on an explicit Apply or Save action to reduce SD-card writes.
+The editor saves a changed draft once when Return exits editing or fullscreen
+is left, not after each gesture. Unchanged layouts are not rewritten.
 
 Recommended save sequence:
 
 1. Serialize and validate the complete layout in memory.
 2. Write `<layout>.tmp` using `io.open(..., "w")`.
 3. Close the temporary file.
-4. Read and parse the temporary file to verify it.
+4. Read the temporary file and verify it exactly matches the serialized,
+   round-trip-validated content. Build and validate one panel per callback.
 5. Rotate the existing file to `<layout>.bak` where practical.
 6. Rename the temporary file to the final filename.
 7. Keep the backup until the next successful save.
 
-On load, try the final file, then the backup, then `default.yaml`.
+On load, try the final file, then the backup, then `Default.yaml`.
 
 Layouts are keyed by sanitized model filename and Dashboard ID as `<model-identifier>--<dashboard-id>.yaml`. Sanitization must be deterministic, reject traversal, and append a short hash when normalization could create collisions.
 
@@ -980,17 +982,25 @@ Layouts are keyed by sanitized model filename and Dashboard ID as `<model-identi
 
 The editor runs inside the dashboard's temporary fullscreen state.
 
+Editing starts by long-pressing a panel in explicit fullscreen (Enter is the
+key-only alternative). Normal App mode remains read-only. A muted gray circular
+gear sits at each panel's top-right. There is no corner X, EDIT
+button, toolbar, selection outline, or grid overlay. The gear opens settings,
+including Remove panel and fitting supported sizes. Dragging snaps
+only to valid placements. A panel-styled + tile with a gray sidebar occupies
+the first free 1x1 cell as an editing affordance, not a persisted panel.
+New draft panels remain preview cards until saving. Return closes drawers,
+then validates, saves, and exits editing; save failure retains the draft.
+
 ### Required actions
 
 - Add panel
 - Select panel type
-- Move panel by one grid cell
-- Resize panel by one grid cell in each direction
+- Drag panel between fitting grid positions
+- Choose a fitting supported size with the top-left cell fixed
 - Edit panel-specific configuration
 - Remove panel
-- Cancel uncommitted changes
-- Apply and persist changes
-- Restore the default layout
+- Save and exit with Return
 
 ### Panel settings behavior
 
@@ -999,20 +1009,21 @@ The editor runs inside the dashboard's temporary fullscreen state.
 - Edit an isolated in-memory working copy rather than the live YAML data.
 - Show defaults for missing values and validation feedback for invalid values.
 - Apply settings to the live panel only after validation succeeds.
-- Persist settings together with placement when the dashboard Apply or Save action is confirmed.
+- Persist settings together with placement when Return exits editing.
 - Preserve unknown config keys so a newer panel configuration is not destroyed by an older dashboard host.
 
 ### Placement behavior
 
-- Show the 4 x 4 grid while editing.
-- Highlight the selected panel.
-- Show occupied and available cells.
+- Do not show grid guides or a selection outline.
 - Reject out-of-bounds placement.
-- Reject overlap, or optionally offer to swap/move the conflicting panel.
-- Keep an in-memory working copy until Apply.
-- Rebuild affected LVGL containers after an accepted geometry change.
+- Snap only to non-overlapping positions; do not move other panels.
+- Keep an in-memory working copy until save-on-exit.
+- Reposition and update existing LVGL containers for draft geometry changes;
+  rebuild the dashboard only after saving.
 
-Touch radios may support drag and resize handles. Rotary/key-only radios should use explicit Move and Size modes with directional controls. The persisted placement model is identical for both input styles.
+Touch radios use drag and gear settings. Rotary/key-only radios cycle panels,
+open settings with Enter, and use Column, Row, Size, and Remove controls.
+The persisted placement model is identical for both input styles.
 
 ## Validation and Recovery
 
@@ -1638,7 +1649,7 @@ Status last verified on 2026-09-21:
 | Milestone 7: Telemetry-specialized panels | Complete | `cell-battery` with cells-table validation; `link-status` with independent RSSI and quality; `navigation` with responsive presentations and a north-up dial; a shipped dashboard demonstrating the nine display panels, with separate diagnostics screens | Hardware confirmation of the cells shape and of no-RSSI-sensor detection |
 | Milestone 8: The App mode menu button and multiple screens | Complete | Dashboard ID option, per-model/per-dashboard filename resolution, dashboard-scoped layouts shared by every model, panels laid out around the App mode menu button through the shared frame, an error overlay that clears it, notices separated from errors, and two-instance and model-change coverage | Status rail deferred by decision, not outstanding; simulator confirmation of the corner on a radio |
 | Milestone 9: Hardening | In progress | Unit/integration tests, firmware-like string behavior tests, CI running Lua 5.3 parsing, simulator fixture, corrupt-layout, contract-rejection, hostile-module, and legibility coverage, panel failure isolation, an enforced instruction budget measured at the largest legal layout for both panels and services, diagnostic views over every service, and a host diagnostics view on its own screen | Target-radio matrix and physical-radio testing |
-| Milestone 10: On-radio editor | Not started | None | Entire phase 2 editor and write/recovery workflow |
+| Milestone 10: On-radio editor | In progress | Touch and rotary/key editor for add, move, resize, configure, remove, defaults, Apply, and Cancel; strict validation; deterministic YAML writing; verified temporary-file saves and backup rotation; backup/default recovery; unit and simulator integration coverage | Physical-radio control/usability checks and verification of EdgeTX file write/rename/remove behavior |
 | Presentation and consistency pass | Complete | An audit of every panel at every declared span measured through the real host, then: the panel as a card with a clipped accent stripe, alert states tinting the surface instead of the frame, the badge vocabulary cut from thirteen strings to five, header geometry that never reflows on a state change, one shared responsive ladder replacing eight private copies, a render declaration the redraw comparison is derived from, one settings vocabulary with enforced `choices`, and `trim-panel` no longer drawing what it hides | Six items deliberately set aside, listed under [Deliberately set aside](#deliberately-set-aside); none of it seen on a radio |
 | Vertical-rhythm pass and panel reviews | Complete | The heading pinned to the top inset and the supporting row hung from the bottom one, the reading's ink centred on the panel and sized from the panel's height, superseding fixed band proportions, which superseded redistribution; font choice and placement moved onto a font's ink; headings pinned to the top of their band; badges placed from their measured text; `model-identity`'s picture fitted whole and its name moved into the body band or the heading; single-form supporting rows wherever one fits; a display clamp on the timer's clock; a unit withheld beside a reading with no value; per-panel review screens on a second model and the span galleries retired to fixtures | Navigation visual acceptance remains in progress; bearing formats and compact coordinate rows are implemented. Three panels do not yet route their row through `fitLabel`. |
 
@@ -1754,7 +1765,7 @@ It ships as four sections, one per panel, on the `host` dashboard:
 
 **It reads the live host context and re-derives nothing.** A diagnostics view that resolved the layout filename a second time, or rebuilt the theme to see what it would say, would be reporting on a world assembled for it rather than the one the dashboard is running, and would be confidently wrong at exactly the moment it is being trusted. That is the same mistake as a fixture that encodes what we assume. Where a fact was not recoverable afterwards, the host now records it where it is decided rather than letting the view guess later, and each of those was a guess the view would otherwise have had to make:
 
-- `layoutStore.read` reports **which** of the three candidate names answered, not only the path it settled on. A dashboard called `main` on a model called `main` produces two candidates that read alike, and a layout quietly falling back to `default.yaml` looks exactly like one that was found.
+- `layoutStore.read` reports **which** of the three candidate names answered, not only the path it settled on. A dashboard called `main` on a model called `main` produces two candidates that read alike, and a layout quietly falling back to `Default.yaml` looks exactly like one that was found.
 - `context.themeSource` records whether the layout's own block or the widget option chose the mode. The option was inert for a while while looking identical to a working one.
 - `theme.build` reports the mode it was **asked** for beside the one it settled on, because a fallback to Modern reports `modern` and is otherwise invisible.
 - `context.rejected` holds placements that never built, with the reason. A panel that raises during `create` is discarded and is not in `panels` at all, so before this the view could have reported every panel that works and no panel that does not, which is the wrong half.
@@ -2077,7 +2088,7 @@ Deliverable: a runnable dashboard whose placeholder panels occupy stable configu
 #### Milestone 2: Read-only YAML loader
 
 - Implement the constrained schema-versioned YAML parser.
-- Resolve `<model-identifier>--<dashboard-id>.yaml` and fall back to `default.yaml`.
+- Resolve `<model-identifier>--<dashboard-id>.yaml` and fall back to `Default.yaml`.
 - Validate panel IDs, safe type names, coordinates, spans, overlap, and supported schema version.
 - Preserve unknown keys in memory for forward compatibility.
 - Render visible placeholders for invalid entries without preventing valid entries from loading.
@@ -2137,7 +2148,7 @@ This order establishes value formatting, source access (including ordinary GV so
 
 Deliverable: six responsive core panels operating from YAML configuration.
 
-Delivered. All six ship, driven by YAML and shared services, and the shipped `layouts/default.yaml` demonstrates all of them. Global-variable readings use `metric` through ordinary EdgeTX sources.
+Delivered. All six ship, driven by YAML and shared services, and the shipped `layouts/Default.yaml` demonstrates all of them. Global-variable readings use `metric` through ordinary EdgeTX sources.
 
 Three shared additions came out of the work rather than being planned:
 
@@ -2166,7 +2177,7 @@ Implement these panels in order:
 
 Deliverable: the full ten-panel catalog with graceful telemetry degradation.
 
-Delivered. All three ship, and `layouts/default.yaml` now demonstrates the
+Delivered. All three ship, and `layouts/Default.yaml` now demonstrates the
 complete ten-panel catalogue on one screen.
 
 Value shapes are validated rather than assumed. `cellBattery.summarize`
