@@ -91,10 +91,13 @@ Moving and resizing require touch.
 Use the native choices, toggles, number controls, and text keyboard in the
 settings dialog. Sources, switches, and timers use EdgeTX pickers.
 
-![Metric panel settings with entry, accent, visualization, and removal controls](../assets/editor/settings.png)
+![Metric panel settings with named summary rows and an add-entry button](../assets/editor/settings.png)
 
-For a metric panel, open **Metrics**, choose an entry, then **Source**.
-Metric entries and text lines have their own add, edit, and remove dialogs.
+Metrics and text lines appear as named rows with a summary of their settings.
+Tap a row to edit it, or tap the full-width **+** row to add an entry.
+In a metric entry, choose **Source** to change the reading.
+
+![Text panel settings with switch-position summaries and an add-entry button](../assets/editor/text-settings.png)
 
 ![Metric-entry dialog with GV1 selected as Source](../assets/editor/metric-entry.png)
 

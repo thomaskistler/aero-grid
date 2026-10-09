@@ -11,7 +11,7 @@ import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "build/editor-capture"
-SCENES = ("overview", "settings", "metric-entry", "exit", "save-as")
+SCENES = ("overview", "settings", "text-settings", "metric-entry", "exit", "save-as")
 SETUP_SCENES = {
     "screen-menu": [(500, 20, 20, 1), (520, 20, 20, 0)],
     "screens": [(500, 20, 20, 1), (520, 20, 20, 0),
@@ -63,6 +63,32 @@ panels:
       timer: 0
 """
 
+TEXT_LAYOUT = """version: 1
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: labels
+    type: text
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      texts:
+        - label: MODE
+          source: sa
+          positions:
+            up: UP
+            middle: MID
+            down: DOWN
+        - label: GEAR
+          source: sb
+          positions:
+            up: UP
+            down: DOWN
+"""
+
 
 def prepare(sd, scene):
     shutil.copytree(ROOT / "tests/fixtures/sdcard", sd)
@@ -79,7 +105,14 @@ def prepare(sd, scene):
         (sd / "AEROGRID/registry.txt").write_text("Empty\nDefault\nHost\n")
         (sd / "capture-ready.txt").write_text("native setup capture")
         return
-    (sd / "WIDGETS/AeroGrid/layouts/Default.yaml").write_text(LAYOUT)
+    layout = TEXT_LAYOUT if scene == "text-settings" else LAYOUT
+    if scene == "settings":
+        layout = layout.replace("          label: Reading", """          label: Reading
+          unit: V
+        - source: RSSI
+          label: Signal
+          unit: dB""")
+    (sd / "WIDGETS/AeroGrid/layouts/Default.yaml").write_text(layout)
     main = sd / "WIDGETS/AeroGrid/main.lua"
     source = main.read_text()
     needle = "    refresh = refresh,"
@@ -104,7 +137,7 @@ def prepare(sd, scene):
         if not context.captureSceneOpened then
             state.session.selected = 1
             local scene = "SCENE"
-            if scene == "settings" then
+            if scene == "settings" or scene == "text-settings" then
                 context.editorDrawerModule.open(context, state, "configure")
             elseif scene == "metric-entry" then
                 context.editorDrawerModule.open(context, state, "configure", "metrics", 1)

@@ -343,13 +343,38 @@ equal(state.drag, nil, "gear press must not start drag")
 equal(state.nativeDrawer.kind, "dialog", "configuration uses native centered dialog")
 equal(state.drawerBack, nil, "standard configuration has no custom return button")
 equal(state.drawerControls[1].row.properties.y, 4, "first setting starts below native header")
-equal(state.drawerControls[2].row.properties.y - state.drawerControls[1].row.properties.y, 36, "native row spacing")
+equal(
+    state.drawerControls[2].row.properties.y - state.drawerControls[1].row.properties.y,
+    20,
+    "compact section heading"
+)
+equal(state.drawerControls[3].row.properties.y - state.drawerControls[2].row.properties.y, 36, "native row spacing")
 equal(control("accent").properties.h, 32, "controls use native input height")
 for _, field in ipairs(state.drawerFields) do
     assert(string.sub(field.key or "", 1, 2) ~= "__", "geometry is edited by gestures, not settings")
 end
 equal(control("accent").kind, "choice", "choices use native picker")
 equal(control("accent").properties.active(), true, "controls activate after construction")
+equal(state.drawerControls[1].kind, "label", "metrics have a section heading")
+equal(state.drawerControls[1].object.properties.text, "Metrics", "section uses the collection name")
+equal(state.drawerControls[2].row.children[1].properties.text, "ALT", "metric row shows its configured label")
+equal(
+    state.drawerControls[2].row.children[1].properties.w,
+    action("item", "metrics").properties.x - 8,
+    "entry name cannot overlap summary"
+)
+assert(string.find(action("item", "metrics").properties.text(), "Alt", 1, true), "metric summary shows its source")
+assert(string.find(action("item", "metrics").properties.text(), "none", 1, true), "metric summary shows visualization")
+control("visual").properties.set(1)
+settleDrawer()
+assert(
+    string.find(action("item", "metrics").properties.text(), "bar", 1, true),
+    "summary updates when visualization changes"
+)
+local addMetric = action("append", "metrics")
+equal(addMetric.properties.text, "+", "add entry is a plus row")
+equal(addMetric.properties.x, 0, "plus spans the full row")
+equal(addMetric.properties.w, state.drawerControls[3].row.properties.w - 8, "plus uses full row width")
 action("item", "metrics").properties.press()
 equal(control("accent").properties.active(), false, "controls disable while a command is pending")
 settleDrawer()
@@ -364,6 +389,10 @@ state.nativeDrawer.properties.close()
 settleDrawer()
 equal(state.drawerListKey, nil, "native Return leaves nested settings one level")
 equal(context.editorSession.draft.panels[1].config.metrics[1].source, "RSSI", "pending edits survive Return")
+assert(
+    string.find(action("item", "metrics").properties.text(), "RSSI", 1, true),
+    "parent summary reflects edited source"
+)
 equal(context.document.panels[1].config.metrics[1].source, "Alt", "source edits are isolated")
 staleSource.properties.set(106)
 equal(state.drawerPending, nil, "dismissed controls cannot change a reopened drawer")
@@ -951,6 +980,66 @@ equal(context.panels[1].instance.label.properties.text, "ALT", "discard restores
 equal(context.document.panels[1].config.metrics[1].label, "ALT", "previews never mutate committed layout")
 assert(not hostIo.open(path .. "AEROGRID/layouts/edit-sparse.yaml", "r"), "discard does not write a layout")
 
+-- Text entries use the same summary rows, with switch-position labels.
+write(
+    "edit-text",
+    [[version: 1
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: labels
+    type: text
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      texts:
+        - label: MODE
+          source: sa
+          positions:
+            up: CRUISE
+            down: LAND
+]]
+)
+load("edit-text")
+open()
+state = context.editorUi
+rect = state.controls[1].rect
+tap(rect.x + rect.w - 12, rect.y + 12)
+settleDrawer()
+equal(state.drawerControls[1].object.properties.text, "Texts", "text entries have a section heading")
+equal(state.drawerControls[2].row.children[1].properties.text, "MODE", "text row uses its label")
+equal(action("item", "texts").properties.text(), "SA  CRUISE  --  LAND", "text summary includes source and positions")
+equal(action("append", "texts").properties.text, "+", "text list uses plus row")
+action("item", "texts").properties.press()
+settleDrawer()
+control("texts", "label").properties.set("FLIGHT")
+settleDrawer()
+control("texts", "middle").properties.set("HOVER")
+settleDrawer()
+back()
+equal(state.drawerControls[2].row.children[1].properties.text, "FLIGHT", "parent shows edited text label")
+equal(action("item", "texts").properties.text(), "SA  CRUISE  HOVER  LAND", "parent shows edited positions")
+for _ = 1, 2 do
+    action("append", "texts").properties.press()
+    settleDrawer()
+end
+equal(#context.editorSession.draft.panels[1].config.texts, 3, "text plus adds entries")
+equal(action("append", "texts").properties.active(), false, "plus disables at the entry limit")
+action("item", "texts").properties.press()
+settleDrawer()
+action("remove-item").properties.press()
+settleDrawer()
+equal(#context.editorSession.draft.panels[1].config.texts, 2, "text entry removal returns to summary")
+equal(action("append", "texts").properties.active(), true, "removal re-enables plus")
+back()
+exitWith("Discard changes")
+for _ = 1, 70 do
+    refresh()
+end
+
 -- Exit menu: Discard, Save As with a suggested name, overwrite confirmation.
 local function changeFirstLabel(text)
     assert(context.editorModule.setPath(context.editorSession, "metrics", { 1, "label" }, text))
@@ -1119,7 +1208,7 @@ for index = 1, #context.editorSession.draft.panels do
     equal(context.editorUi.mode, "configure", "aircraft panel settings open")
     equal(
         context.editorUi.drawerControls[2].row.properties.y - context.editorUi.drawerControls[1].row.properties.y,
-        54,
+        context.editorUi.drawerControls[1].field.type == "section" and 30 or 54,
         "row spacing follows scaled native control height"
     )
     local panelType = context.editorSession.draft.panels[index].type

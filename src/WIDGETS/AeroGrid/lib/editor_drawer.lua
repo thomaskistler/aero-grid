@@ -96,6 +96,29 @@ function drawer.close(state)
     state.drawerDismiss = nil
 end
 
+local function entrySummary(state, key, index, defaults)
+    local config = state.session.draft.panels[state.session.selected].config or {}
+    local item = (config[key] or defaults[key])[index]
+    local source = item.source
+    if type(getFieldInfo) == "function" and type(getSourceName) == "function" then
+        local info = getFieldInfo(source)
+        source = type(info) == "table" and getSourceName(info.id) or source
+    end
+    local summary = { tostring(source or "--") }
+    if key == "texts" then
+        local positions = item.positions or {}
+        for _, position in ipairs({ "up", "middle", "down" }) do
+            summary[#summary + 1] = positions[position] or "--"
+        end
+    else
+        if item.unit and item.unit ~= "" then
+            summary[#summary + 1] = item.unit
+        end
+        summary[#summary + 1] = config.visual or defaults.visual or "bar"
+    end
+    return table.concat(summary, "  ")
+end
+
 local function fieldsFor(state, listKey, itemIndex)
     local editor = state.handlers.editor
     local fields, fieldError = editor.formFields(state.session)
@@ -116,18 +139,24 @@ local function fieldsFor(state, listKey, itemIndex)
     for _, field in ipairs(fields) do
         if field.type == "table-list" then
             local _, config = editor.settings(state.session)
+            result[#result + 1] = {
+                label = string.gsub(field.label, " entries$", ""),
+                type = "section",
+            }
             for index, item in ipairs(config[field.key]) do
                 local title = type(item) == "table" and (item.label or item.source) or item
                 result[#result + 1] = {
-                    label = (string.gsub(field.label, " entries$", "")) .. " " .. index,
-                    text = tostring(title or "Edit entry"),
+                    label = tostring(title or "Entry " .. index),
+                    text = function()
+                        return entrySummary(state, field.key, index, config)
+                    end,
                     action = "item",
                     key = field.key,
                     index = index,
                 }
             end
             result[#result + 1] = {
-                label = "Add " .. string.gsub(field.label, " entries$", ""),
+                label = "+",
                 action = "append",
                 key = field.key,
                 active = field.value < (field.maxItems or 3),
@@ -188,6 +217,7 @@ function drawer.open(context, state, mode, listKey, itemIndex)
     state.drawerControlHeight = lvgl.UI_ELEMENT_HEIGHT or 32
     state.drawerPadding = math.floor(state.drawerControlHeight / 16 + 0.5)
     state.drawerRowHeight = state.drawerControlHeight + state.drawerPadding * 2
+    state.drawerNextY = state.drawerPadding * 2
     state.drawerErrorHeight = math.floor(state.drawerControlHeight * 0.56 + 0.5)
     -- Native dialogs supply centering, 80%-screen dimensions, scrolling and RTN.
     state.nativeDrawer = assert(
@@ -339,13 +369,30 @@ local function addControl(context, state, field, index)
         enqueue(state, command, generation)
     end
     local width = state.drawerWidth - 16
-    local y = state.drawerPadding * 2 + (index - 1) * state.drawerRowHeight
-    local remove = field.action == "remove" or field.action == "remove-item"
-    local row = lvgl.setting(
-        state.nativeDrawer,
-        { x = 4, y = y, w = width, h = state.drawerRowHeight, title = remove and "" or field.label }
-    )
-    local controlX = remove and 0 or math.floor(width * 0.48)
+    local y = state.drawerNextY
+    local rowHeight = field.type == "section" and math.floor(state.drawerControlHeight * 0.625) or state.drawerRowHeight
+    state.drawerNextY = y + rowHeight
+    local fullWidth = field.action == "remove"
+        or field.action == "remove-item"
+        or field.action == "append"
+        or field.type == "section"
+    local row = lvgl.setting(state.nativeDrawer, {
+        x = 4,
+        y = y,
+        w = width,
+        h = rowHeight,
+        title = (fullWidth or field.action == "item") and "" or field.label,
+    })
+    local controlX = fullWidth and 0 or math.floor(width * (field.action == "item" and 0.28 or 0.48))
+    if field.action == "item" then
+        lvgl.label(row, {
+            x = 0,
+            y = math.floor((state.drawerControlHeight - context.themeBuilder.fontHeight(0)) / 2),
+            w = controlX - 8,
+            h = state.drawerControlHeight,
+            text = field.label,
+        })
+    end
     local options = {
         x = controlX,
         y = 0,
@@ -367,7 +414,15 @@ local function addControl(context, state, field, index)
     end
     local kind, control
     local leaf = field.path and field.path[#field.path] or field.key
-    if field.action then
+    if field.type == "section" then
+        kind = "label"
+        options.active = nil
+        options.text = field.label
+        options.h = rowHeight
+        options.font = function()
+            return SMLSIZE
+        end
+    elseif field.action then
         kind = "button"
         options.text = field.text or field.label
         options.press = function()
@@ -528,7 +583,7 @@ local function addControl(context, state, field, index)
     control = assert(lvgl[kind](row, options), "cannot create native " .. kind)
     local errorLabel = lvgl.label(state.nativeDrawer, {
         x = 12,
-        y = y + state.drawerRowHeight,
+        y = y + rowHeight,
         w = width - 8,
         h = state.drawerErrorHeight,
         text = "",
@@ -536,7 +591,14 @@ local function addControl(context, state, field, index)
         color = context.theme.color.critical,
     })
     lvgl.hide(errorLabel)
-    state.drawerControls[index] = { object = control, row = row, errorLabel = errorLabel, field = field, kind = kind }
+    state.drawerControls[index] = {
+        object = control,
+        row = row,
+        height = rowHeight,
+        errorLabel = errorLabel,
+        field = field,
+        kind = kind,
+    }
     field.control = state.drawerControls[index]
 end
 
@@ -555,7 +617,7 @@ local function fieldError(state, control, message)
     local y = state.drawerPadding * 2
     for _, entry in ipairs(state.drawerControls) do
         entry.row:set({ y = y })
-        y = y + state.drawerRowHeight
+        y = y + entry.height
         entry.errorLabel:set({ y = y })
         if entry.errorShown then
             y = y + state.drawerErrorHeight

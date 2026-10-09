@@ -124,8 +124,8 @@ python3 tools/capture-editor.py
 ```
 
 This uses only Python's standard library. It captures screen creation, App mode,
-widget and layout selection, the editor overview, metric settings and entry
-dialogs, the exit menu, and Save As dialog in
+widget and layout selection, the editor overview, metric and text settings,
+the metric entry dialog, the exit menu, and Save As dialog in
 `build/editor-capture/`. Use `--companion /path/to/Companion.app` to select a
 different installation. Use `--scene select-layout` (or another scene name)
 to regenerate a single capture.
