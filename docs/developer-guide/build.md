@@ -21,6 +21,10 @@ install the separate documentation dependencies and build a strictly validated
 site in `build/docs/`. Run `make docs-serve` for a local preview at
 `http://127.0.0.1:8000`; stop it with Ctrl-C.
 
+The sidebar's pages and section links are explicitly listed in
+`docs/overrides/toc.html`; update them when adding pages or renaming sections.
+Styling is in `docs/stylesheets/aerogrid.css`. The current page starts expanded.
+
 `.github/workflows/docs.yml` validates documentation changes in pull requests
 and publishes to GitHub Pages after they land on `main`. Repository
 **Settings > Pages > Source** must be set to **GitHub Actions**. The workflow
