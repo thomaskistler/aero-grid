@@ -23,6 +23,10 @@ SETUP_SCENES["new-screen"] = SETUP_SCENES["add-screen"] + [
     (950, 240, 158, 1), (970, 240, 158, 0)]
 SETUP_SCENES["screen-layout"] = SETUP_SCENES["new-screen"] + [
     (1100, 225, 95, 1), (1120, 225, 95, 0)]
+# Reopen after choosing App mode so the chooser highlights the recommended row.
+SETUP_SCENES["app-mode-choice"] = SETUP_SCENES["screen-layout"] + [
+    (1250, 230, 52, 1), (1270, 230, 52, 0),
+    (1400, 225, 95, 1), (1420, 225, 95, 0)]
 SETUP_SCENES["app-screen"] = SETUP_SCENES["screen-layout"] + [
     (1250, 230, 52, 1), (1270, 230, 52, 0)]
 SETUP_SCENES["setup-widgets"] = SETUP_SCENES["app-screen"] + [
