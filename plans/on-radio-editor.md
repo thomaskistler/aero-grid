@@ -115,9 +115,10 @@ in a later foreground callback, reusing cleared containers. Unchanged panels
 retain their instances. Unsaved flight-counter instances are display-only:
 they cannot increment GV9, announce flights, or write history.
 
-Currently, Return from dashboard editing validates, saves a changed layout,
-and exits. Leaving fullscreen also initiates saving. Save failures retain the
-draft and report the error; there is no per-gesture autosave.
+Return from dashboard editing opens Save / Save as / Discard when the draft
+changed, or exits directly otherwise. Leaving fullscreen keeps the draft for
+resumption without saving. Save failures retain the draft and report the error;
+there is no per-gesture autosave.
 
 Saving uses staged validation and serialization, verified temporary-file
 writes, backup rotation, and recovery. Preserve unknown configuration keys
@@ -167,6 +168,10 @@ User decisions, 2026-10-07 and 2026-10-09:
   which lives in memory until restart, model change, or a Layout or Theme
   change.
 - Return inside a settings/catalog drawer still closes that drawer first.
+- Empty dashboards show only two centred text lines: **Empty dashboard**
+  and a mode-specific long-press instruction. The grid and + decoration were
+  removed after hardware feedback. The hint disappears during editing and
+  is never saved as a panel.
 
 Layout management beyond this (deleting, renaming, restoring defaults) is
 tracked in [issue #127](https://github.com/thomaskistler/aero-grid/issues/127).
@@ -330,12 +335,21 @@ Return/back behavior at radio resolution and within callback limits.
 Status as of 2026-10-09. Do not claim physical verification from mocks, the
 mock test suite, or native simulator runs.
 
-### Still to build
+### Implemented
 
-- **Entry fields for new panels:** Metric and text, the only shipped panels
-  with list settings, declare their entry `fields`. Any future list setting
-  must declare `fields` too; without them the drawer falls back to showing
-  only the keys present in the layout file.
+- Gesture placement, resizing and compatible reordering; native panel
+  selection and settings drawers, including metric/text entry editing.
+- Global-variable source picking with canonical Lua field names.
+- Save / Save as / Discard, protected `Empty`, overwrite confirmation,
+  shared named layouts, and draft resume after leaving fullscreen.
+- Layout and Theme pickers, stable layout registry, and user storage outside
+  the widget package.
+- Text-only empty-dashboard guidance with native centred alignment.
+- [Editor user guide](../docs/user-guide/editor.md).
+
+No remaining feature work is identified for the agreed editor scope.
+Future panels with list settings must declare entry `fields`, as metric and
+text already do.
 
 ### Awaiting physical-radio confirmation
 
@@ -344,11 +358,15 @@ repeated drawer and dialog use without crashes, no flash on leaving editing
 or fullscreen, App mode corner reservation and fullscreen reentry, every
 entry setting in the drawer, and source picking including global variables.
 
-- Exit dialog: Save, Save as (suggested name, overwrite confirmation,
-  restart message), Discard, no Save on `Empty`, and draft resume after
-  leaving fullscreen.
-- The **Layout** list after a restart includes newly saved layouts and keeps
-  every earlier position.
+The user also tested the exit-dialog/named-layout build and reported that it
+seems to work. Individual exit actions and registry-stability cases were not
+separately reported; do not treat that as exhaustive validation.
+
+- Confirm the Theme picker on hardware.
+- Confirm the revised text-only empty hint is centred in both App mode and
+  fullscreen; the earlier grid/+ version was rejected on hardware.
+- Exercise Save As overwrite and error handling, draft resume, and stable
+  Layout positions after adding layouts and restarting.
 
 ### Broader verification
 

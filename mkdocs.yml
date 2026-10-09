@@ -18,6 +18,7 @@ nav:
   - User Guide:
       - Installation and upgrades: user-guide/installation.md
       - Configure a dashboard: user-guide/dashboards.md
+      - On-radio editor: user-guide/editor.md
   - Reference Guide:
       - Overview: reference-guide/index.md
       - Panels:

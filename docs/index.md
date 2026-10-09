@@ -31,7 +31,9 @@ typography, spacing, colors, and state indicators across the dashboard.
 
 Start with [installation and upgrades](user-guide/installation.md), then learn
 how to [select and configure dashboards](user-guide/dashboards.md), bind sources,
-and troubleshoot unavailable readings.
+and troubleshoot unavailable readings. Use the
+[on-radio editor](user-guide/editor.md) to add, arrange, and configure panels
+without editing YAML.
 
 ## Reference Guide
 

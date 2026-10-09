@@ -81,104 +81,14 @@ Follow the YAML structure above and the panel examples.
 
 ## Edit a dashboard on the radio
 
-Editing is available only in explicit fullscreen. Normal App mode remains
-read-only even though the dashboard fills the display: it has no **EDIT** button
-and tapping panels does not select them. Long-press the dashboard to enter
-fullscreen.
+Long-press to enter fullscreen, then long-press again to start editing.
+Use **Empty** for a new dashboard, the **+ panel** to add panels, and the
+**gear** to configure them. Press **RTN** to save or discard your changes.
 
-Once fullscreen, long-press a panel to enter editing, or press Enter for key
-input. An empty dashboard accepts a long-press anywhere. The dashboard stays
-visible; controls appear after a short, staged initialization.
+See the [On-radio editor guide](editor.md) for moving, resizing, source
+selection, Save As, and resuming an unsaved draft.
 
-- Tap the muted gray circular **gear** at the panel's top-right to open
-  settings, including **Size** and **Remove panel**.
-  Size offers only supported dimensions that fit at the current top-left cell.
-
-- Drag a panel's body to move it. It snaps only to fitting, non-overlapping
-  positions, without grid guides or selection outlines. Drag onto another
-  panel to exchange their order. Adjacent panels with overlapping columns
-  can reorder vertically even with different widths when the extra space beside
-  the smaller panel is empty. Horizontally, their rows must overlap and the extra
-  space above or below the shorter panel must be empty. Each keeps its cross-axis
-  alignment, and both use their combined space
-  in the new order, keeping sizes and settings. Other fitting origin swaps remain
-  supported; unrelated panels stay put. Multi-panel displacement stays blocked.
-- Drag the top-left, bottom-left, or bottom-right corner to resize. The opposite
-  corner stays fixed; sizes snap to supported, non-overlapping grid dimensions.
-  Drag inward to shrink or outward to expand. The top-right corner remains the
-  configuration gear. Size in the drawer remains available for key-only use.
-  Resizing preserves settings and skips sizes incompatible with them. For
-  example, disable **Show mode number** before shrinking a flight-mode panel
-  to one row.
-- Tap the **+ panel**, with its gray sidebar and the same rounded panel styling
-  as dashboard panels, to choose a new panel. It appears
-  in the first free 1 x 1 cell, scanning left-to-right and top-to-bottom, and
-  disappears when the grid is full. New panels use the first available placement
-  supporting their size; the + panel is never saved as a dashboard panel.
-  Panel types appear in a native **Select panel** popup, like EdgeTX's
-  **Select widget** menu. Select a type to add it and open its configuration
-  drawer immediately; RTN or a tap
-  outside dismisses the popup without adding anything.
-
-The circular control uses a bundled, antialiased icon image. When installing or
-updating AeroGrid, copy its `assets` directory along with the Lua files.
-
-Existing panels preview geometry without constructing another instance.
-Returning from a panel's configuration drawer refreshes its contents, including
-newly added panels. Unchanged panels keep their instances; changed panels are
-rebuilt over a few callbacks. An unsaved flight-counter preview displays the
-current count but does not count flights, announce them, or write history.
-Rotary/key input cycles panels and the add action; Enter opens settings or the
-catalog. Settings also provide Column, Row, and Remove panel for key-only use.
-
-Configuration opens in centered native EdgeTX dialogs,
-using the standard dialog size and scrollable settings area. Use touch or
-rotary/key focus to operate native choices, toggles, numeric inputs, and the
-text-entry keyboard. Sources, switches, and model timers use radio pickers;
-the source picker includes global variables (GV1-GV9) when the model enables
-them, and saves each choice under the name the layout file uses, such as
-`gvar1` or `ch3`. A source the dashboard cannot read is rejected with a message.
-Accent names use the panel's supplied choices. Sizes that do not fit are hidden.
-Controls become available after a short, staged construction.
-
-Metric entries and text lines have separate entry dialogs with add/edit/remove
-actions. Physical **RTN** or a tap outside the native dialog returns one level;
-there is no custom return button. Removing a panel or entry is immediate,
-without confirmation, using a full-width native button with standard theme
-colours rather than red text. Rows use standard EdgeTX input height and spacing;
-validation feedback expands only the affected row. Configuration fields come from
-each panel's schema, with its supplied choices, numeric bounds, and steps.
-Changes affect only the in-memory draft. Configuration previews when the main
-panel drawer closes; placement and size preview immediately. Leaving a nested
-metric or text-entry drawer returns to the main drawer before previewing.
-
-**Return** closes text editing or a drawer one level at a time. From the editing
-dashboard, Return exits editing directly when nothing changed. Otherwise an
-**Unsaved changes** menu offers:
-
-- **Save** writes the layout under its current name. Saving a shipped layout
-  writes your copy to `/AEROGRID/layouts/` under the same name, leaving the
-  shipped file intact. `Empty` is never overwritten, so it does not offer Save.
-- **Save as...** asks for a new name, suggesting the model name followed by the
-  first unused number, such as `Sonic1`. Choosing an existing name asks for
-  confirmation before overwriting it. The widget keeps showing its current
-  layout: EdgeTX does not let a widget change its own settings, so restart the
-  radio and select the new name in **Layout**. Return in the name dialog goes
-  back to the menu.
-- **Discard changes** restores the saved layout.
-
-Return or a tap outside the menu keeps editing. Saving runs over several
-callbacks to respect the radio's CPU limit; wait for it to finish before
-powering off. Unchanged layouts are not rewritten. The previous saved file is
-kept as `.bak`. If saving fails, the draft is retained with an error so you can
-retry.
-
-Leaving fullscreen while editing neither saves nor discards. The dashboard
-shows its saved layout, and returning to fullscreen resumes the draft. The
-draft is kept in memory only: restarting the radio, changing model, or
-changing the widget's Layout or Theme discards it. After a fullscreen rebuild,
-returning to App mode briefly reloads the dashboard so EdgeTX's native
-long-press entry remains available.
+## Layout recovery
 
 If the primary layout cannot be read, parsed, or validated, AeroGrid tries its
 backup, then the shipped layout of that name, and finally the shipped
