@@ -92,6 +92,8 @@ local function readThemeDefinition(base, name, parser)
             if not handle then
                 return nil, openError or ("cannot open " .. filename)
             end
+            -- EdgeTX exposes io.read(handle, size), unlike standard Lua.
+            ---@diagnostic disable-next-line: param-type-mismatch
             local content = io.read(handle, size)
             io.close(handle)
             if type(content) ~= "string" then
