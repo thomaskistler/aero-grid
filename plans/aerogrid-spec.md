@@ -547,8 +547,8 @@ local theme = {
   surfaceRaised = 0x2E3841,
   border = 0x3A434B,
   text = 0xF4F6F7,
-  textMuted = 0xA7B0B6,
-  textFaint = 0x69737A,
+  textMuted = 0xDCE2E6,
+  textFaint = 0xC4CDD3,
   cyan = 0x70D6F3,
   green = 0x55D990,
   amber = 0xF2B84B,
@@ -556,6 +556,10 @@ local theme = {
   critical = 0xF05252,
 }
 ```
+
+Muted and faint text were brightened after outdoor radio review showed headings
+and supporting details losing readability under glare. Size and placement carry
+more of the hierarchy; primary text and backgrounds are unchanged.
 
 Panels may select a semantic accent, but the dashboard should not become a rainbow of unrelated panel colors. Warning and freshness states override decorative accents.
 

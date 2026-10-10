@@ -53,6 +53,11 @@ brighten `textFaint` from `#69737A` to `#A7B0B6`. These are recorded in recipes
 and provenance and must be disclosed in published captions. Production colors
 and behavior remain unchanged; there is no post-processing of framebuffer pixels.
 
+The Modern production palette was subsequently brightened after outdoor review:
+muted is now `#DCE2E6` and faint is `#C4CDD3`. New captures with
+`brighten_supporting_text` use the resolved muted color for faint text; the
+existing images retain the historical colors recorded above.
+
 ## Outcome and scope
 
 Provide real EdgeTX-rendered examples for all nine display panel references,
