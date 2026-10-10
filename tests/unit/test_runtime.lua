@@ -2135,10 +2135,7 @@ local function testAlertTintGuarantees()
     -- exists for. Near-white body text and dark faint text leave no candidate
     -- that meets both contrast floors against this near-white resting surface.
     assertEqual(
-        theme.alertSurface(
-            tokensWith({ surface = 0xF2F4F5, canvas = 0xFFFFFF, textFaint = 0x69737A }),
-            modern.amber
-        ),
+        theme.alertSurface(tokensWith({ surface = 0xF2F4F5, canvas = 0xFFFFFF, textFaint = 0x69737A }), modern.amber),
         nil,
         "a palette with no legible tint produced one anyway"
     )
