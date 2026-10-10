@@ -1,30 +1,47 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local text = {
-    id = "text",
+local statePanel = {
+    id = "state",
     apiVersion = 1,
     supportedSpans = { "1x1", "2x1", "3x1", "4x1", "1x2", "2x2", "3x2", "4x2" },
     refreshInterval = 20,
     settings = {
         {
-            key = "texts",
-            label = "Texts",
+            key = "entries",
+            label = "Entries",
             type = "table",
             minItems = 1,
             maxItems = 3,
-            -- Every entry setting, so the editor offers ones an entry omits.
             fields = {
                 { key = "label", label = "Label", type = "string", required = true },
-                { key = "source", label = "Source", type = "string", required = true },
-                { path = { "positions", "up" }, label = "Up", type = "string", required = true },
-                { path = { "positions", "middle" }, label = "Middle", type = "string" },
-                { path = { "positions", "down" }, label = "Down", type = "string", required = true },
+                {
+                    key = "states",
+                    label = "States",
+                    type = "table",
+                    minItems = 1,
+                    maxItems = 3,
+                    fields = {
+                        { key = "switch", label = "When", type = "string", required = true },
+                        { key = "text", label = "Text", type = "string", required = true },
+                        {
+                            key = "background",
+                            label = "Background",
+                            type = "string",
+                            default = "normal",
+                            choices = { "normal", "active", "warning", "critical" },
+                        },
+                    },
+                    itemDefault = { switch = "SA^", text = "UP" },
+                },
             },
             default = {
                 {
                     label = "SW1",
-                    source = "sa",
-                    positions = { up = "UP", middle = "MID", down = "DOWN" },
+                    states = {
+                        { switch = "SA^", text = "UP" },
+                        { switch = "SA-", text = "MID" },
+                        { switch = "SAv", text = "DOWN" },
+                    },
                 },
             },
         },
@@ -38,89 +55,98 @@ local text = {
     },
 }
 
-local POSITIONS = { [-1024] = "up", [0] = "middle", [1024] = "down" }
-
 local function singleLine(value)
     return type(value) == "string" and value ~= "" and not string.find(value, "[\r\n]")
 end
 
-function text.validateSettings(settings)
-    local warnings = {}
-    local entries = settings.texts
-    if type(entries) ~= "table" then
-        return { "texts must contain a contiguous list of 1 to 3 entries" }
+local function list(value)
+    if type(value) ~= "table" then
+        return false
     end
     local count = 0
-    for key, entry in pairs(entries) do
-        count = count + 1
-        local prefix = "texts[" .. tostring(key) .. "]"
+    for key in pairs(value) do
         if type(key) ~= "number" or key % 1 ~= 0 or key < 1 or key > 3 then
-            warnings[#warnings + 1] = prefix .. " must be an index from 1 to 3"
-        elseif type(entry) ~= "table" then
+            return false
+        end
+        count = count + 1
+    end
+    return count >= 1 and count <= 3 and #value == count
+end
+
+function statePanel.validateSettings(settings)
+    local warnings = {}
+    local entries = settings.entries
+    if not list(entries) then
+        return { "entries must contain a contiguous list of 1 to 3 entries" }
+    end
+    for key, entry in ipairs(entries) do
+        local prefix = "entries[" .. key .. "]"
+        if type(entry) ~= "table" then
             warnings[#warnings + 1] = prefix .. " must be a mapping"
         else
             if not singleLine(entry.label) then
                 warnings[#warnings + 1] = prefix .. ".label must be a nonempty single-line string"
             end
-            if type(entry.source) ~= "string" or not string.match(entry.source, "^s[a-z]$") then
-                warnings[#warnings + 1] = prefix .. ".source must name a physical switch, such as sa or sb"
-            end
             for field in pairs(entry) do
-                if field ~= "label" and field ~= "source" and field ~= "positions" then
-                    warnings[#warnings + 1] = prefix .. "." .. tostring(field) .. " is not a text setting"
+                if field ~= "label" and field ~= "states" then
+                    warnings[#warnings + 1] = prefix .. "." .. tostring(field) .. " is not a state setting"
                 end
             end
-            local positions = entry.positions
-            if type(positions) ~= "table" then
-                warnings[#warnings + 1] = prefix .. ".positions must map up and down, with optional middle"
+            if not list(entry.states) then
+                warnings[#warnings + 1] = prefix .. ".states must contain a contiguous list of 1 to 3 conditions"
             else
-                for _, position in ipairs({ "up", "down" }) do
-                    if not singleLine(positions[position]) then
-                        warnings[#warnings + 1] = prefix
-                            .. ".positions."
-                            .. position
-                            .. " must be a nonempty single-line string"
-                    end
-                end
-                for position, value in pairs(positions) do
-                    if position ~= "up" and position ~= "middle" and position ~= "down" then
-                        warnings[#warnings + 1] = prefix .. ".positions." .. tostring(position) .. " is unknown"
-                    elseif not singleLine(value) then
-                        warnings[#warnings + 1] = prefix
-                            .. ".positions."
-                            .. position
-                            .. " must be a nonempty single-line string"
+                for index, condition in ipairs(entry.states) do
+                    local path = prefix .. ".states[" .. index .. "]"
+                    if type(condition) ~= "table" then
+                        warnings[#warnings + 1] = path .. " must be a mapping"
+                    else
+                        if not singleLine(condition.text) then
+                            warnings[#warnings + 1] = path .. ".text must be a nonempty single-line string"
+                        end
+                        local switch = condition.switch
+                        if
+                            type(switch) ~= "string"
+                            or not (string.match(switch, "^S[A-Z][%^v%-]$") or string.match(switch, "^L%d%d$"))
+                        then
+                            warnings[#warnings + 1] = path
+                                .. ".switch must name a position such as SF^ or a logical switch such as L01"
+                        end
+                        local bg = condition.background
+                        if bg ~= nil and bg ~= "normal" and bg ~= "active" and bg ~= "warning" and bg ~= "critical" then
+                            warnings[#warnings + 1] = path .. ".background must be normal, active, warning, or critical"
+                        end
+                        for field in pairs(condition) do
+                            if field ~= "switch" and field ~= "text" and field ~= "background" then
+                                warnings[#warnings + 1] = path .. "." .. tostring(field) .. " is not a state setting"
+                            end
+                        end
                     end
                 end
             end
         end
     end
-    if count < 1 or count > 3 or #entries ~= count then
-        warnings[#warnings + 1] = "texts must contain a contiguous list of 1 to 3 entries"
-    end
     return warnings
 end
 
-function text.reading(entry, feed)
-    -- Switches are radio-local: a zero is a real middle position even with no
-    -- receiver. Never turn an absent, stale, or telemetry reading into a mode.
-    if not feed or not feed.known or not feed.available or not feed.fresh or feed.telemetry then
-        return "--", "unavailable"
+function statePanel.reading(entry, feeds)
+    for index, condition in ipairs(entry.states) do
+        local feed = feeds and feeds[index]
+        if not feed or not feed.known or not feed.available or not feed.fresh then
+            return "--", "unavailable", "normal"
+        end
+        if feed.value then
+            return condition.text, "normal", condition.background or "normal"
+        end
     end
-    local position = POSITIONS[feed.value]
-    local value = position and entry.positions[position]
-    if value == nil then
-        return "UNMAPPED", "unavailable"
-    end
-    return value, "normal"
+    return "UNMAPPED", "unavailable", "normal"
 end
 
 local function widest(builder, font, entry, supporting)
     local prefix = supporting and (entry.label .. " ") or ""
     local sample = prefix .. "--"
     local width = builder.measureText(font, sample)
-    for _, value in pairs(entry.positions) do
-        local candidate = prefix .. value
+    for _, condition in ipairs(entry.states) do
+        local candidate = prefix .. condition.text
         local measured = builder.measureText(font, candidate)
         if measured > width then
             sample, width = candidate, measured
@@ -129,9 +155,9 @@ local function widest(builder, font, entry, supporting)
     return sample
 end
 
-function text.regionsFor(context, rect)
+function statePanel.regionsFor(context, rect)
     local builder, fonts = context.themeBuilder, context.fonts
-    local entries = context.settings.texts
+    local entries = context.settings.entries
     local supporting = entries[2] and { widest(builder, fonts.label, entries[2], true) } or nil
     if entries[3] then
         supporting[2] = widest(builder, fonts.label, entries[3], true)
@@ -166,8 +192,8 @@ function text.regionsFor(context, rect)
     return area
 end
 
-function text.render(context, out)
-    out.text, out.state = text.reading(context.settings.texts[1], context.feeds[1])
+function statePanel.render(context, out)
+    out.text, out.state, out.background = statePanel.reading(context.settings.entries[1], context.feeds[1])
     if
         out.state == "unavailable"
         and out.text == "UNMAPPED"
@@ -176,12 +202,15 @@ function text.render(context, out)
         out.text = "?"
     end
     if not context.area.primaryFits then
-        out.text, out.state = "NO FIT", "unavailable"
+        out.text, out.state, out.background = "NO FIT", "unavailable", "normal"
+    end
+    if out.state == "normal" then
+        out.state = out.background
     end
     if context.showSupporting then
-        for index = 2, #context.settings.texts do
-            local entry = context.settings.texts[index]
-            local value, state = text.reading(entry, context.feeds[index])
+        for index = 2, #context.settings.entries do
+            local entry = context.settings.entries[index]
+            local value, state = statePanel.reading(entry, context.feeds[index])
             if state == "unavailable" and value == "UNMAPPED" then
                 value = "?"
             end
@@ -191,9 +220,12 @@ function text.render(context, out)
     end
 end
 
-function text.apply(context, drawn)
+function statePanel.apply(context, drawn)
     local primitives, builder, area = context.primitives, context.themeBuilder, context.area
     local presentation = context.state(drawn.state, context.settings.accent)
+    if drawn.state == "warning" or drawn.state == "critical" then
+        presentation.badge = nil
+    end
     context.text, context.stateName = drawn.text, drawn.state
     context.value:set({ text = drawn.text, color = presentation.value })
     primitives.centreReading(context, builder, area, area.value, drawn.text)
@@ -208,13 +240,15 @@ function text.apply(context, drawn)
         presentation.accent
     )
     primitives.stylePanel(context.panel, presentation)
-    for index = 2, #context.settings.texts do
+    for index = 2, #context.settings.entries do
         local label = context.supporting[index]
         local value = drawn["text" .. index]
         if value then
             label:set({
                 text = value,
-                color = context.state(drawn["state" .. index], context.settings.accent).label,
+                color = (drawn.state == "active" or drawn.state == "warning" or drawn.state == "critical")
+                        and context.theme.color.text
+                    or context.state(drawn["state" .. index], context.settings.accent).label,
             })
             primitives.centreLabel(
                 context,
@@ -230,8 +264,8 @@ function text.apply(context, drawn)
     end
 end
 
-function text.create(parent, rect, settings, services)
-    local warnings = text.validateSettings(settings)
+function statePanel.create(parent, rect, settings, services)
+    local warnings = statePanel.validateSettings(settings)
     if #warnings > 0 then
         error(table.concat(warnings, "; "))
     end
@@ -245,12 +279,15 @@ function text.create(parent, rect, settings, services)
         feeds = {},
         supporting = {},
     }
-    for index, entry in ipairs(settings.texts) do
-        if services.telemetry then
-            context.feeds[index] = services.telemetry:subscribe(entry.source, false)
+    for index, entry in ipairs(settings.entries) do
+        context.feeds[index] = {}
+        if services.control then
+            for conditionIndex, condition in ipairs(entry.states) do
+                context.feeds[index][conditionIndex] = services.control:switch(condition.switch)
+            end
         end
     end
-    local area = text.regionsFor(context, rect)
+    local area = statePanel.regionsFor(context, rect)
     context.area = area
     context.showSupporting = area.showDetail or area.showSide
     local presentation = services.state("unavailable", settings.accent)
@@ -261,7 +298,7 @@ function text.create(parent, rect, settings, services)
         services.theme,
         area.frame,
         services.fonts,
-        settings.texts[1].label,
+        settings.entries[1].label,
         presentation,
         services.themeBuilder
     )
@@ -273,7 +310,7 @@ function text.create(parent, rect, settings, services)
         color = presentation.value,
         font = area.value,
     })
-    for index = 2, #settings.texts do
+    for index = 2, #settings.entries do
         context.supporting[index] = primitives.label(context.panel.root, services.theme, {
             x = area.pad,
             y = area.detailY,
@@ -286,21 +323,21 @@ function text.create(parent, rect, settings, services)
             lvgl.hide(context.supporting[index])
         end
     end
-    local _, drawn = primitives.changed(context, text.render)
-    text.apply(context, drawn)
+    local _, drawn = primitives.changed(context, statePanel.render)
+    statePanel.apply(context, drawn)
     return context
 end
 
-function text.refresh(context)
-    local changed, drawn = context.primitives.changed(context, text.render)
+function statePanel.refresh(context)
+    local changed, drawn = context.primitives.changed(context, statePanel.render)
     if changed then
-        text.apply(context, drawn)
+        statePanel.apply(context, drawn)
     end
 end
 
-function text.update(context, rect)
+function statePanel.update(context, rect)
     local primitives = context.primitives
-    local area = text.regionsFor(context, rect)
+    local area = statePanel.regionsFor(context, rect)
     local previous = context.area
     context.area = area
     primitives.resizePanel(context.panel, rect)
@@ -310,7 +347,7 @@ function text.update(context, rect)
         area.frame,
         context.themeBuilder,
         context.fonts,
-        context.settings.texts[1].label,
+        context.settings.entries[1].label,
         context.badgeText
     )
     primitives.setFont(context.value, area.value)
@@ -319,12 +356,12 @@ function text.update(context, rect)
     local visible = area.showDetail or area.showSide
     context.showSupporting = visible
     local settled = visible == (previous.showDetail or previous.showSide)
-    for index = 2, #context.settings.texts do
+    for index = 2, #context.settings.entries do
         primitives.reconcile(context.supporting[index], visible, {}, settled)
         context["anchor" .. index] = nil
     end
     context.rendered = nil
-    text.refresh(context)
+    statePanel.refresh(context)
 end
 
-return text
+return statePanel

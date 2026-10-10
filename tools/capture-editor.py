@@ -11,7 +11,7 @@ import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "build/editor-capture"
-SCENES = ("overview", "settings", "text-settings", "metric-entry", "exit", "save-as")
+SCENES = ("overview", "settings", "state-settings", "metric-entry", "exit", "save-as")
 THEME_SCENES = ("theme-modern-dark", "theme-modern-light", "theme-custom")
 SETUP_SCENES = {
     "screen-menu": [(500, 20, 20, 1), (520, 20, 20, 0)],
@@ -64,30 +64,33 @@ panels:
       timer: 0
 """
 
-TEXT_LAYOUT = """version: 1
+STATE_LAYOUT = """version: 1
 grid:
   columns: 4
   rows: 4
 panels:
   - id: labels
-    type: text
+    type: state
     col: 0
     row: 0
     colSpan: 2
     rowSpan: 2
     config:
-      texts:
+      entries:
         - label: MODE
-          source: sa
-          positions:
-            up: UP
-            middle: MID
-            down: DOWN
+          states:
+            - switch: SA^
+              text: UP
+            - switch: SA-
+              text: MID
+            - switch: SAv
+              text: DOWN
         - label: GEAR
-          source: sb
-          positions:
-            up: UP
-            down: DOWN
+          states:
+            - switch: SB^
+              text: UP
+            - switch: SBv
+              text: DOWN
 """
 
 
@@ -128,13 +131,13 @@ screenData:
         # Show only the layouts included in the installation ZIP, not the
         # development fixture's review and diagnostic screens.
         for layout in (sd / "WIDGETS/AeroGrid/layouts").glob("*.yaml"):
-            if layout.stem not in ("Empty", "Default", "Host", "Theme"):
+            if layout.stem not in ("Empty", "Default", "Diagnostics", "Palette"):
                 layout.unlink()
         (sd / "AEROGRID/registry.txt").write_text("Empty\nDefault\nHost\nTheme\n")
         (sd / "capture-ready.txt").write_text("native setup capture")
         return
     if scene in THEME_SCENES:
-        layout = (ROOT / "src/WIDGETS/AeroGrid/layouts/Theme.yaml").read_text()
+        layout = (ROOT / "src/WIDGETS/AeroGrid/layouts/Palette.yaml").read_text()
         mode = scene.removeprefix("theme-")
         if mode == "custom":
             source = sd / "WIDGETS/AeroGrid/themes/modern-dark.yml"
@@ -151,7 +154,7 @@ screenData:
             (user_themes / "custom.yml").write_text(custom)
             (sd / "AEROGRID/theme-registry.txt").write_text("modern-dark\nmodern-light\ncustom\n")
     else:
-        layout = TEXT_LAYOUT if scene == "text-settings" else LAYOUT
+        layout = STATE_LAYOUT if scene == "state-settings" else LAYOUT
     if scene == "settings":
         layout = layout.replace("        - source: gvar1\n          label: Reading", """        - source: Alt
           label: Altitude
@@ -200,7 +203,7 @@ screenData:
         if not context.captureSceneOpened then
             state.session.selected = 1
             local scene = "SCENE"
-            if scene == "settings" or scene == "text-settings" then
+            if scene == "settings" or scene == "state-settings" then
                 context.editorDrawerModule.open(context, state, "configure")
             elseif scene == "metric-entry" then
                 context.editorDrawerModule.open(context, state, "configure", "metrics", 1)

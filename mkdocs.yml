@@ -23,7 +23,7 @@ nav:
       - Overview: reference-guide/index.md
       - Panels:
           - Metric: panels/metric.md
-          - Text: panels/text.md
+          - State: panels/state.md
           - Flight timer: panels/flight-timer.md
           - Flight counter: panels/flight-counter.md
           - Flight mode: panels/flight-mode.md

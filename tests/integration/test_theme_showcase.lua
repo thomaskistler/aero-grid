@@ -10,7 +10,7 @@ local themeCatalog = assert(loadfile(root .. "/tests/support/theme_catalog.lua")
 
 for _, mode in ipairs({ "modern-dark", "modern-light" }) do
     fixture.reset()
-    local host = fixture.createLoaded(nil, { Layout = "Theme", Theme = mode })
+    local host = fixture.createLoaded(nil, { Layout = "Palette", Theme = mode })
     equal(#host.errors, 0, table.concat(host.errors, "\n"))
     equal(#host.panels, 1)
     local instance = assert(fixture.instanceOf(host, "showcase"))
@@ -77,7 +77,7 @@ end
 fixture.pump(dashboard, 20)
 equal(#dashboard.errors, 0, table.concat(dashboard.errors, "\n"))
 fixture.reset()
-local host = fixture.createLoaded(nil, { Layout = "Theme", Theme = "modern-dark" })
+local host = fixture.createLoaded(nil, { Layout = "Palette", Theme = "modern-dark" })
 local builder = host.themeBuilder
 local customCatalog = assert(yaml.parse(assert(yaml.serialize(themeCatalog))))
 local customDefinition = assert(yaml.parse(assert(yaml.serialize(customCatalog.themes[1]))))

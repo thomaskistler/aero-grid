@@ -659,7 +659,7 @@ local function testScreensReachEveryShippedLayout()
         {
             filename = "model1.yml",
             name = "AEROGRID STD",
-            layouts = { "Default", "Empty", "Host", "services", "services2", "Theme" },
+            layouts = { "Default", "Empty", "Diagnostics", "services", "services2", "Palette" },
         },
         {
             filename = "model2.yml",
@@ -679,7 +679,7 @@ local function testScreensReachEveryShippedLayout()
             layouts = {
                 "review-model-identity",
                 "review-navigation",
-                "review-text",
+                "review-state",
                 "review-trim-panel",
                 "review-tx-battery",
             },
@@ -2473,6 +2473,28 @@ panels:
 end
 
 --- A user theme with a shipped name takes precedence over the built-in file.
+local function testChangingToNewTheme()
+    local widgetPath = makeWidget("theme-option-change")
+    addTheme(widgetPath, "new-theme", {
+        correctForContrast = false,
+        colors = { canvas = 0x102030 },
+    })
+    local context = createLoaded(
+        { x = 0, y = 0, w = 480, h = 272 },
+        { Layout = "Default", Theme = "modern-dark" },
+        widgetPath
+    )
+    definition.update(context, { Layout = "Default", Theme = "new-theme" })
+    pump(context, 100)
+    assertEqual(context.theme.mode, "new-theme", "option changes load a previously unused theme")
+    assertEqual(context.theme.rgb.canvas, 0x102030)
+    assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+    definition.update(context, { Layout = "Default", Theme = "modern-light" })
+    pump(context, 100)
+    assertEqual(context.theme.mode, "modern-light", "theme changes also load the other built-in palette")
+    assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+end
+
 local function testUserThemeOverridesShippedTheme()
     local widgetPath = makeWidget("theme-override")
     addTheme(widgetPath, "modern-dark", {
@@ -4333,14 +4355,16 @@ local function testReadingsAreCentredOnTheirPanel()
     --- the panel directory rather than listed, so a panel added to the
     --- catalogue is covered from the moment it exists.
     local CONFIG = {
-        ["text"] = {
-            "      texts:",
+        ["state"] = {
+            "      entries:",
             "        - label: MODE",
-            "          source: sa",
-            "          positions:",
-            "            up: LOW",
-            "            middle: MID",
-            "            down: HIGH",
+            "          states:",
+            "            - switch: SA^",
+            "              text: LOW",
+            "            - switch: SA-",
+            "              text: MID",
+            "            - switch: SAv",
+            "              text: HIGH",
         },
         ["metric"] = { "      metrics:", "        - source: Alt", "          label: ALT", "          unit: m" },
         ["flight-timer"] = { "      label: TIMER", "      timer: 0" },
@@ -4801,14 +4825,16 @@ panels:
     local sweepPath = makeWidget("appmode-sweep")
     --- What each panel needs to draw something real during the sweep.
     local SWEEP_CONFIG = {
-        ["text"] = {
-            "      texts:",
+        ["state"] = {
+            "      entries:",
             "        - label: MODE",
-            "          source: sa",
-            "          positions:",
-            "            up: LOW",
-            "            middle: MID",
-            "            down: HIGH",
+            "          states:",
+            "            - switch: SA^",
+            "              text: LOW",
+            "            - switch: SA-",
+            "              text: MID",
+            "            - switch: SAv",
+            "              text: HIGH",
         },
         ["metric"] = { "      metrics:", "        - source: RxBt", "          label: Probe" },
         ["flight-timer"] = { "      label: Probe", "      timer: 0" },
@@ -5418,7 +5444,7 @@ local function testPackageCompatibility()
         local joined = table.concat(context.errors, "\n")
         assert(string.match(joined, case.error), joined)
         assert(context.errorLabel, case.name .. " failure was not shown")
-        definition.update(context, { Layout = "Host", Theme = "modern-dark" })
+        definition.update(context, { Layout = "Diagnostics", Theme = "modern-dark" })
         pump(context, 5)
         assertEqual(context.stage, nil, case.name .. " attempted to reload a broken runtime")
     end
@@ -5624,17 +5650,21 @@ local function testInstructionBudget()
     --- must genuinely drive while it is measured.
     local CORE_EXERCISES = {
         {
-            type = "text",
-            services = { "telemetry" },
+            type = "state",
+            services = { "control" },
             config = function()
-                local lines = { "texts:" }
+                local lines = { "entries:" }
                 for _, source in ipairs({ "sf", "sa", "sb" }) do
                     lines[#lines + 1] = "  - label: MODE"
-                    lines[#lines + 1] = "    source: " .. source
-                    lines[#lines + 1] = "    positions:"
-                    lines[#lines + 1] = "      up: LOW"
-                    lines[#lines + 1] = "      middle: MID"
-                    lines[#lines + 1] = "      down: HIGH"
+                    lines[#lines + 1] = "    states:"
+                    lines[#lines + 1] = "      - switch: " .. string.upper(source) .. "^"
+                    lines[#lines + 1] = "        text: LOW"
+                    if source ~= "sf" then
+                        lines[#lines + 1] = "      - switch: " .. string.upper(source) .. "-"
+                        lines[#lines + 1] = "        text: MID"
+                    end
+                    lines[#lines + 1] = "      - switch: " .. string.upper(source) .. "v"
+                    lines[#lines + 1] = "        text: HIGH"
                 end
                 return lines
             end,
@@ -7128,7 +7158,7 @@ end
 
 local function testHostDiagnosticsReportsTheHost()
     resetRadio()
-    local source = assert(hostIo.open(sourcePath .. "layouts/Host.yaml", "r"))
+    local source = assert(hostIo.open(sourcePath .. "layouts/Diagnostics.yaml", "r"))
     local yaml = source:read("a")
     source:close()
 
@@ -7168,7 +7198,7 @@ local function testHostDiagnosticsReportsTheHost()
         "the panel reported bytecode that is not there: " .. identity
     )
 
-    -- `Host.yaml` states no theme block, so the widget option is what decided.
+    -- `Diagnostics.yaml` states no theme block, so the widget option is what decided.
     local theme = linesOf("theme")
     assert(
         string.find(theme, "mode: " .. context.theme.mode, 1, true),
@@ -9908,8 +9938,8 @@ local function testUnitsAreNotDrawnBesideAnAbsentReading()
 
     -- Live enough to resolve a unit, absent enough to have no value.
     local UNIT_CONFIG = {
-        ["text"] = "      texts:\n        - label: MODE\n          source: sa\n"
-            .. "          positions:\n            up: LOW\n            down: HIGH\n",
+        ["state"] = "      entries:\n        - label: MODE\n          states:\n"
+            .. "            - switch: SA^\n              text: LOW\n            - switch: SAv\n              text: HIGH\n",
         ["link-status"] = "      reading: rssi\n      rssiSource: RSSI\n",
         ["metric"] = "      metrics:\n        - source: VSpd\n          unit: m/s\n",
     }
@@ -11143,6 +11173,7 @@ end
 
 testLayoutSelectsLightTheme()
 testCustomTheme()
+testChangingToNewTheme()
 testUserThemeOverridesShippedTheme()
 testRadialReflow()
 testRadialDoesNotDrift()

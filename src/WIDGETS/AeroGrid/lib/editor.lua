@@ -13,7 +13,7 @@ editor.CATALOG = {
     { type = "metric", label = "Metric" },
     { type = "model-identity", label = "Model identity" },
     { type = "navigation", label = "Navigation" },
-    { type = "text", label = "Switch text" },
+    { type = "state", label = "State" },
     { type = "trim-panel", label = "Trim panel" },
     { type = "tx-battery", label = "Transmitter battery" },
     { type = "host-diagnostics", label = "Host diagnostics" },
@@ -576,30 +576,42 @@ local function entryPath(field)
 end
 
 --- One control per declared field of every entry, whether or not it is set.
-local function entryFields(setting, entries, result)
+local function entryFields(setting, entries, result, rootKey, prefix)
+    rootKey, prefix = rootKey or setting.key, prefix or {}
     for index = 1, #entries do
         for _, field in ipairs(setting.fields) do
             local relative = entryPath(field)
-            local path = { index }
+            local path = copy(prefix)
+            path[#path + 1] = index
             for _, key in ipairs(relative) do
                 path[#path + 1] = key
             end
             result[#result + 1] = {
-                key = setting.key,
+                key = rootKey,
                 path = path,
                 label = (setting.label or setting.key) .. "[" .. index .. "]." .. table.concat(relative, "."),
                 entryLabel = field.label,
                 -- Shown when the entry omits the field; never the live value,
                 -- which the drawer reads from the draft.
                 value = field.default,
-                type = field.type,
+                type = field.fields and "table-list" or field.type,
                 choices = field.choices,
                 min = field.min,
                 max = field.max,
                 step = field.step,
                 required = field.required,
                 empty = field.empty,
+                minItems = field.minItems,
+                maxItems = field.maxItems,
             }
+            if field.fields then
+                local value = entries[index]
+                for _, key in ipairs(relative) do
+                    value = type(value) == "table" and value[key] or nil
+                end
+                result[#result].value = type(value) == "table" and #value or 0
+                entryFields(field, value or {}, result, rootKey, path)
+            end
         end
     end
 end
@@ -618,6 +630,21 @@ local function declaredEntryField(setting, path)
             end
             if matches then
                 return field
+            end
+        elseif field.fields and #path > #relative + 1 then
+            local matches = true
+            for index, key in ipairs(relative) do
+                if path[index + 1] ~= key then
+                    matches = false
+                    break
+                end
+            end
+            if matches then
+                local nested = {}
+                for index = #relative + 2, #path do
+                    nested[#nested + 1] = path[index]
+                end
+                return declaredEntryField(field, nested)
             end
         end
     end
@@ -689,60 +716,66 @@ function editor.setPath(session, key, path, value)
     return true
 end
 
-function editor.appendItem(session, key)
+local function tableSetting(session, key, path)
     local placement, _, selectionError = findSelected(session)
     if not placement then
-        return false, selectionError
+        return nil, nil, selectionError
     end
     local module, moduleError = getPanelModule(session, placement.type)
     if not module then
-        return false, moduleError
+        return nil, nil, moduleError
     end
     for _, setting in ipairs(module.settings or {}) do
         if setting.key == key and setting.type == "table" then
             local value = placement.config and placement.config[key]
             if type(value) ~= "table" then
-                return false, key .. " is not a table"
+                return nil, nil, key .. " is not a table"
             end
-            local maximum = setting.maxItems or 3
-            if #value >= maximum then
-                return false, key .. " already has the maximum number of entries"
+            if path then
+                setting = declaredEntryField(setting, path)
+                local target, leaf = resolvePath(value, path)
+                value = target and target[leaf]
             end
-            if #value == 0 then
-                return false, "cannot duplicate an entry from an empty list"
+            if not setting or setting.type ~= "table" or type(value) ~= "table" then
+                return nil, nil, "nested list does not exist"
             end
-            value[#value + 1] = copy(value[#value])
-            session.dirty = true
-            return true
+            return setting, value
         end
     end
-    return false, "unknown table setting " .. tostring(key)
+    return nil, nil, "unknown table setting " .. tostring(key)
 end
 
-function editor.removeItem(session, key, index)
-    local placement, _, selectionError = findSelected(session)
-    if not placement then
-        return false, selectionError
+function editor.appendItem(session, key, path)
+    local setting, value, err = tableSetting(session, key, path)
+    if not setting or type(value) ~= "table" then
+        return false, err
     end
-    local module, moduleError = getPanelModule(session, placement.type)
-    if not module then
-        return false, moduleError
+    if #value >= (setting.maxItems or 3) then
+        return false, key .. " already has the maximum number of entries"
     end
-    for _, setting in ipairs(module.settings or {}) do
-        if setting.key == key and setting.type == "table" then
-            local value = placement.config and placement.config[key]
-            if type(value) ~= "table" or index < 1 or index > #value then
-                return false, "table entry does not exist"
-            end
-            if #value <= (setting.minItems or 0) then
-                return false, key .. " must keep at least " .. tostring(setting.minItems or 0) .. " entries"
-            end
-            table.remove(value, index)
-            session.dirty = true
-            return true
-        end
+    local item = setting.itemDefault or value[#value]
+    if not item then
+        return false, "cannot duplicate an entry from an empty list"
     end
-    return false, "unknown table setting " .. tostring(key)
+    value[#value + 1] = copy(item)
+    session.dirty = true
+    return true
+end
+
+function editor.removeItem(session, key, index, path)
+    local setting, value, err = tableSetting(session, key, path)
+    if not setting or type(value) ~= "table" then
+        return false, err
+    end
+    if type(index) ~= "number" or index % 1 ~= 0 or index < 1 or index > #value then
+        return false, "table entry does not exist"
+    end
+    if #value <= (setting.minItems or 0) then
+        return false, key .. " must keep at least " .. tostring(setting.minItems or 0) .. " entries"
+    end
+    table.remove(value, index)
+    session.dirty = true
+    return true
 end
 
 local function flattenFields(value, path, label, result)

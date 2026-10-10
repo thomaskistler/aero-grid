@@ -109,11 +109,11 @@ python3 tools/capture-editor.py --scene select-layout
 ```
 
 This tool uses only Python's standard library plus the same native capture
-runner. It covers setup/widget/layout choices, editor overview, metric/text
+runner. It covers setup/widget/layout choices, editor overview, Metric/State
 settings, entry dialogs, exit, and Save As. Use `--help` for supported scene
 names.
 
-It also captures the telemetry-free **Theme** showcase with real production
+It also captures the telemetry-free **Palette** layout with real production
 primitives. These scenes are opt-in and do not open the editor:
 
 ```sh
@@ -166,7 +166,7 @@ python3 -m unittest discover -s tools -p 'test_release_*.py'
 `tools/package-release.py` reads the package version, checks required
 layouts/assets, rejects unexpected runtime files and symlinks, and writes
 a deterministic source-only ZIP plus SHA-256 checksum. Its explicit allowlists
-include `Default`, `Empty`, `Host`, and `Theme`, excluding review layouts and mutable
+include `Default`, `Empty`, `Diagnostics`, and `Palette`, excluding review layouts and mutable
 simulator data. Use `--output <directory>` to choose another output location.
 
 See [Issues, changes, and releases](contributing.md#publish-a-release)

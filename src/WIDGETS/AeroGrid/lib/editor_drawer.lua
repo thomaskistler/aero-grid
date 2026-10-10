@@ -96,80 +96,132 @@ function drawer.close(state)
     state.drawerDismiss = nil
 end
 
-local function entrySummary(state, key, index, defaults)
+local function firmwareSwitchName(name)
+    local physical, position = string.match(name, "^(S[A-Z])([%^v%-])$")
+    if physical then
+        return physical .. (position == "^" and CHAR_UP or position == "v" and CHAR_DOWN or "-")
+    end
+    return name
+end
+
+local function switchSummary(name)
+    assert(type(getSwitchIndex) == "function" and type(getSwitchName) == "function", "switch display APIs unavailable")
+    local index = getSwitchIndex(firmwareSwitchName(name))
+    if type(index) == "number" and index ~= 0 then
+        local displayed = getSwitchName(index)
+        if type(displayed) == "string" and displayed ~= "" then
+            return displayed
+        end
+    end
+    return name
+end
+
+local function entrySummary(state, key, index, defaults, path)
     local config = state.session.draft.panels[state.session.selected].config or {}
-    local item = (config[key] or defaults[key])[index]
+    local items = config[key] or defaults[key]
+    for _, part in ipairs(path or {}) do
+        items = items[part]
+    end
+    local item = items[index]
+    if item.states then
+        local summaries = {}
+        for _, condition in ipairs(item.states) do
+            summaries[#summaries + 1] = switchSummary(condition.switch) .. ": " .. condition.text
+        end
+        return table.concat(summaries, " / ")
+    elseif item.switch then
+        return switchSummary(item.switch) .. ": " .. item.text .. " (" .. (item.background or "normal") .. ")"
+    end
     local source = item.source
     if type(getFieldInfo) == "function" and type(getSourceName) == "function" then
         local info = getFieldInfo(source)
         source = type(info) == "table" and getSourceName(info.id) or source
     end
     local summary = { tostring(source or "--") }
-    if key == "texts" then
-        local positions = item.positions or {}
-        for _, position in ipairs({ "up", "middle", "down" }) do
-            summary[#summary + 1] = positions[position] or "--"
-        end
-    else
-        if item.unit and item.unit ~= "" then
-            summary[#summary + 1] = item.unit
-        end
-        summary[#summary + 1] = config.visual or defaults.visual or "bar"
+    if item.unit and item.unit ~= "" then
+        summary[#summary + 1] = item.unit
     end
+    summary[#summary + 1] = config.visual or defaults.visual or "bar"
     return table.concat(summary, "  ")
 end
 
-local function fieldsFor(state, listKey, itemIndex)
+local function fieldsFor(state, listKey, itemIndex, itemPath)
     local editor = state.handlers.editor
     local fields, fieldError = editor.formFields(state.session)
     if not fields then
         error(fieldError)
     end
     local result = {}
-    if listKey then
-        for _, field in ipairs(fields) do
-            if field.key == listKey and field.path and field.path[1] == itemIndex then
-                field.label = field.entryLabel or tostring(field.path[#field.path])
-                result[#result + 1] = field
+    local selected = itemPath or (listKey and { itemIndex } or {})
+    for _, field in ipairs(fields) do
+        local matches = not listKey or field.key == listKey
+        for index, part in ipairs(selected) do
+            matches = matches and field.path ~= nil and field.path[index] == part
+        end
+        for index = #selected + 1, #(field.path or {}) do
+            if type(field.path[index]) == "number" then
+                matches = false
             end
         end
-        result[#result + 1] = { label = "Remove entry", action = "remove-item", key = listKey, index = itemIndex }
-        return result
-    end
-    for _, field in ipairs(fields) do
-        if field.type == "table-list" then
+        if matches and field.type == "table-list" then
             local _, config = editor.settings(state.session)
             result[#result + 1] = {
-                label = string.gsub(field.label, " entries$", ""),
+                label = field.entryLabel or string.gsub(field.label, " entries$", ""),
                 type = "section",
             }
-            for index, item in ipairs(config[field.key]) do
-                local title = type(item) == "table" and (item.label or item.source) or item
+            local items = config[field.key]
+            for _, part in ipairs(field.path or {}) do
+                items = items[part]
+            end
+            for index, item in ipairs(items) do
+                local title
+                if type(item) == "table" then
+                    title = item.label or item.source
+                else
+                    title = item
+                end
+                local path = editor.clone(field.path or {})
+                path[#path + 1] = index
                 result[#result + 1] = {
-                    label = tostring(title or ("Entry " .. index)),
+                    label = tostring(title or ("State " .. index)),
                     text = function()
-                        return entrySummary(state, field.key, index, config)
+                        return entrySummary(state, field.key, index, config, field.path)
                     end,
                     action = "item",
                     key = field.key,
                     index = index,
+                    itemPath = path,
                 }
             end
             result[#result + 1] = {
                 label = "+",
                 action = "append",
                 key = field.key,
+                path = field.path,
                 active = field.value < (field.maxItems or 3),
             }
-        elseif not field.path then
+        elseif matches and (listKey or not field.path) then
+            field.label = field.entryLabel or field.label
             result[#result + 1] = field
         end
     end
-    result[#result + 1] = { label = "Remove panel", action = "remove" }
+    if listKey then
+        local path = editor.clone(selected)
+        local index = table.remove(path)
+        result[#result + 1] = {
+            label = #selected > 1 and "Remove state" or "Remove entry",
+            action = "remove-item",
+            key = listKey,
+            index = index,
+            path = #path > 0 and path or nil,
+        }
+    else
+        result[#result + 1] = { label = "Remove panel", action = "remove" }
+    end
     return result
 end
 
-function drawer.open(context, state, mode, listKey, itemIndex)
+function drawer.open(context, state, mode, listKey, itemIndex, itemPath)
     closeDialog(state)
     if mode == "add" then
         assert(type(lvgl.menu) == "function", "panel selection requires EdgeTX Lua LVGL menu")
@@ -209,9 +261,14 @@ function drawer.open(context, state, mode, listKey, itemIndex)
             break
         end
     end
-    title = title .. (listKey and (" / " .. listKey .. " " .. itemIndex) or "")
-    local fields = fieldsFor(state, listKey, itemIndex)
+    itemPath = itemPath or (listKey and { itemIndex } or nil)
+    title = title .. (listKey and (" / " .. listKey .. " " .. itemPath[1]) or "")
+    if itemPath and #itemPath > 1 then
+        title = title .. " / State " .. itemPath[#itemPath]
+    end
+    local fields = fieldsFor(state, listKey, itemIndex, itemPath)
     state.drawerListKey, state.drawerItemIndex = listKey, itemIndex
+    state.drawerItemPath = itemPath
     state.drawerFields, state.drawerControls = fields, {}
     state.drawerBuild = 1
     state.drawerControlHeight = lvgl.UI_ELEMENT_HEIGHT or 32
@@ -230,7 +287,12 @@ function drawer.open(context, state, mode, listKey, itemIndex)
                     state.nativeDrawer = nil
                     retireDialogHost(state)
                     state.drawerBuild = nil
-                    local command = { action = listKey and "parent" or "back" }
+                    local command = { action = listKey and "parent" or "back", key = listKey }
+                    if itemPath and #itemPath > 1 then
+                        command.itemPath = state.handlers.editor.clone(itemPath)
+                        table.remove(command.itemPath)
+                        table.remove(command.itemPath)
+                    end
                     if state.drawerPending then
                         state.drawerDismiss = command
                     else
@@ -472,10 +534,7 @@ local function addControl(context, state, field, index)
         options.get = function()
             local value = get()
             if kind == "switch" and type(value) == "string" then
-                local physical, position = string.match(value, "^(S[A-Z])([%^v%-])$")
-                if physical then
-                    value = physical .. (position == "^" and CHAR_UP or position == "v" and CHAR_DOWN or "-")
-                end
+                value = firmwareSwitchName(value)
             end
             if type(value) == "number" then
                 return value
@@ -648,9 +707,9 @@ function drawer.advance(context, state)
         state.mode = "menu"
         state.previewPending = true
     elseif command.action == "parent" then
-        drawer.open(context, state, "configure")
+        drawer.open(context, state, "configure", command.itemPath and command.key, nil, command.itemPath)
     elseif command.action == "item" then
-        drawer.open(context, state, "configure", command.key, command.index)
+        drawer.open(context, state, "configure", command.key, command.index, command.itemPath)
     elseif command.action == "write" then
         ok, err = writeField(state, command.field, command.value)
         if command.control and state.nativeDrawer then
@@ -660,14 +719,22 @@ function drawer.advance(context, state)
             fieldError(state, command.control, not ok and tostring(err) or nil)
         end
     elseif command.action == "append" then
-        ok, err = editor.appendItem(state.session, command.key)
+        ok, err = editor.appendItem(state.session, command.key, command.path)
         if ok then
-            drawer.open(context, state, "configure")
+            local parent = command.path and editor.clone(command.path)
+            if parent then
+                table.remove(parent)
+            end
+            drawer.open(context, state, "configure", parent and command.key, nil, parent)
         end
     elseif command.action == "remove-item" then
-        ok, err = editor.removeItem(state.session, command.key, command.index)
+        ok, err = editor.removeItem(state.session, command.key, command.index, command.path)
         if ok then
-            drawer.open(context, state, "configure")
+            local parent = command.path and editor.clone(command.path)
+            if parent then
+                table.remove(parent)
+            end
+            drawer.open(context, state, "configure", parent and command.key, nil, parent)
         end
     elseif command.action == "remove" or command.action == "add" then
         if command.action == "remove" then

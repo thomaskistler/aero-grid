@@ -122,25 +122,25 @@ radio's model-selection UI, just as on a radio.
 
 | Model | What to exercise |
 | --- | --- |
-| **AEROGRID STD** (`model1.yml`) | Six screens: Default, Empty, Host, services, services2, and Theme. All four shipped layouts, plus both diagnostic panel types. |
+| **AEROGRID STD** (`model1.yml`) | Six screens: Default, Empty, Diagnostics, services, services2, and Palette. All four shipped layouts, plus both diagnostic panel types. |
 | **AEROGRID PANEL1** (`model2.yml`) | Six screens: cell battery, flight counter, flight mode, flight timer, link status, and metric. |
-| **AEROGRID PANEL2** (`model3.yml`) | Five screens: model identity, navigation, text, trim panel, and TX battery. |
+| **AEROGRID PANEL2** (`model3.yml`) | Five screens: model identity, navigation, state, trim panel, and TX battery. |
 
 Review and simulator-only layouts live in
 `tests/fixtures/layouts/development/`; `make build` adds them to the disposable
 simulator image without including them in the widget source or release ZIP.
 The two panel models contain exactly one dashboard per user-facing panel type.
-All screens use App mode and the Modern Dark theme. On the text dashboard, SF
+All screens use App mode and the Modern Dark theme. On the State dashboard, SF
 changes MODE, SA changes RATE, and SB changes FLAP; NO MIDDLE deliberately
 leaves SA's middle position unmapped.
 
-The last screen of **AEROGRID STD** is a telemetry-free theme showcase. Its
+The last screen of **AEROGRID STD** is the telemetry-free **Palette** layout. Its
 fixed samples show token swatches, text levels, accents, a dial, bars, and
 the six dashboard panel states. Change the widget's Theme option to compare
 Modern Dark and Modern Light, or add a `.yml` theme file as described in
 [Customize themes](../user-guide/dashboards.md#customize-themes).
 
-**Host** reports loading, package identity, and service errors; `services`
+**Diagnostics** reports loading, package identity, and service errors; `services`
 and `services2` exercise the service-probe panel across all five services.
 Auxiliary layouts (`sim`, `sim2`, `states`, and `review-cell-sources`) are
 available in the development simulator image through the widget's **Layout**

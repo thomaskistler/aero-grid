@@ -7,7 +7,7 @@
 - Status last updated: 2026-10-04
 - EdgeTX source: `../edgetx`
 - Project root: `aero-grid/`
-- Implementation: Phase 1 runtime complete; Phase 2 has a schema-driven on-radio editor, strict whole-layout validation, and recoverable YAML persistence. Thirteen shipped panels, seven using the shared standard panel. The original nine display panels are reviewed and documented; the text and flight-counter panels are documented with simulator captures. Global-variable display uses ordinary metric sources; the flight counter reserves GV9 FM0 for its persistent total.
+- Implementation: Phase 1 runtime complete; Phase 2 has a schema-driven on-radio editor, strict whole-layout validation, and recoverable YAML persistence. Thirteen shipped panels, seven using the shared standard panel. The original nine display panels are reviewed and documented; the State and flight-counter panels are documented with simulator captures. Global-variable display uses ordinary metric sources; the flight counter reserves GV9 FM0 for its persistent total.
 - Next work: Verify the editor controls and file operations on the target-radio/EdgeTX matrix, then complete milestone 9 resource baselining. Initial dashboard validation passed on TX16S v2 with EdgeTX 2.12.4, as reported by the user on 2026-10-04.
 - The retirement and software-hardening work is merged into `main`. The aircraft dashboard, compact-layout refinements, and initial hardware records are the current follow-up change set. See [Resuming work](#resuming-work) for the state and the exact next steps.
 
@@ -125,7 +125,7 @@ Most panels are variations of one arrangement: a heading, a dominant reading, an
 - **It is told what the panel draws, never what its span permits.** `spec.draws` carries the panel's own answer, and `theme.ladder` may only narrow it. The interface has no way to express "permitted", because the gap between the two is a recurring defect in this project rather than a subtlety.
 - **It builds nothing itself that the panel was handed.** It takes `spec.frame` rather than calling `theme.frame`, because the host wraps that function per panel to lay a panel out around the menu button's corner, and a shared helper reaching for the module's own copy draws the heading under the button.
 
-Six panels use it: `cell-battery`, `flight-mode`, `flight-timer`, `link-status`, `metric`, and `text`. Three keep their own arrangement: `navigation` draws two supporting rows; `tx-battery` retains the arrangement recorded in the design guide; `model-identity` fits a picture and moves the model name into the heading. Three draw no panel reading and are exempt: `trim-panel`, `host-diagnostics`, and `service-probe`.
+Six panels use it: `cell-battery`, `flight-mode`, `flight-timer`, `link-status`, `metric`, and `state`. Three keep their own arrangement: `navigation` draws two supporting rows; `tx-battery` retains the arrangement recorded in the design guide; `model-identity` fits a picture and moves the model name into the heading. Three draw no panel reading and are exempt: `trim-panel`, `host-diagnostics`, and `service-probe`.
 
 **A panel is expected to carry special code only where it has a special visualization** -- the compass, the battery glyph, the trim cells. A flag on the builder for one panel's preference is the thing this is meant to replace, not a way of extending it: a builder that can express everything expresses nothing.
 
@@ -151,7 +151,7 @@ The initial release should provide these panels:
 | --- | --- | --- |
 | `cell-battery` | Lowest/average cell or pack voltage, upright battery glyph, optional supporting voltage and measured/configured cell count; explicit bar mode retained | Specialized |
 | `metric` | Up to three independently configured numeric readings | Generic |
-| `text` | Up to three explicit physical-switch position text mappings | Generic |
+| `state` | Up to three readings with ordered physical/logical conditions and optional semantic backgrounds | Generic |
 | `flight-timer` | EdgeTX model timer with count-up or count-down presentation | Specialized |
 | `flight-counter` | Qualified-flight GV9 FM0 total, disarm-timeout completion, blue active state, announcements, and CSV history | Specialized |
 | `link-status` | RSSI, link quality, optional minimum quality, and link freshness | Specialized |
@@ -250,18 +250,27 @@ belong to the panel.
 - In `flight` mode, use the shared flight-session extrema service.
 - Altitude may show vertical speed only when a configured source is valid. Derived vertical speed is deferred until filtering and sampling behavior are defined.
 
-#### Text
+#### State
 
-- Require an ordered `texts` list of one to three entries with `label`,
-  a lowercase physical switch `source`, and `positions` mapping `up` and
-  `down`, optionally `middle`. These correspond to `-1024`, `+1024`, and `0`.
-- Use shared radio-local source subscriptions; never poll EdgeTX from the panel.
+- Require an ordered `entries` list of one to three entries with `label`
+  and one to three ordered `states`. Each state has a physical or logical
+  `switch` condition (`SF^`, `SA-`, `SFv`, `L01`), exact `text`, and an optional
+  `background`: `normal`, `active`, `warning`, or `critical`.
+- Use shared radio-local switch subscriptions; never poll EdgeTX from the panel.
+- Evaluate top to bottom and stop at the first true condition. An unavailable
+  earlier condition blocks fallthrough; no match is unmapped.
+- Use the main entry's winning background as the whole-panel semantic mode,
+  including its surface, sidebar, and text colors. Retain the active flight
+  badge, but omit WARN and CRIT badges for State panels.
+  Supporting entries never override the panel mode.
+- Edit conditions in a nested entry drawer. Append and delete, without reorder
+  controls; retain at least one condition and cap each entry at three.
 - Display the first entry as the main reading and the others as supporting
   captions/readings through the shared footer, side-stack, or hidden fallback.
 - Fit all configured texts by measured width. Retain exact mapped text,
   selecting a smaller font rather than truncating. Refuse impossible main
   text with `NO FIT`; hide supporting text that cannot fit intact.
-- Distinguish unavailable sources from unmapped positions. Infer neither
+- Distinguish unavailable conditions from unmatched entries. Infer neither
   aircraft state nor alarm colors from configured text.
 - Static text and telemetry text sources are outside this panel's scope.
 
@@ -379,7 +388,7 @@ Panels consume immutable snapshots. A service mutates its own state table in pla
 ├── panels/
 │   ├── cell-battery.lua
 │   ├── metric.lua
-│   ├── text.lua
+│   ├── state.lua
 │   ├── flight-timer.lua
 │   ├── link-status.lua
 │   ├── navigation.lua
@@ -1263,7 +1272,7 @@ The worst callback rose 85 when the heading notice started working. It had been 
 - CI (`.github/workflows/ci.yml`) runs `make check` under Lua 5.3 on every pull request, plus the SD image build and two integrity assertions.
 - The dashboard has been confirmed running in the EdgeTX simulator on a TX16S profile through milestone 7. Navigation, link status, the radial and bar metrics and the trim panel have all been read against live simulated telemetry, which is where the arc drift in constraint 11 was found. Two of milestone 7's behaviours still cannot be judged there: whether a cells source on a real receiver returns the table shape assumed here, since nothing on an ELRS link publishes one, and whether a protocol without an RSSI sensor is recognized as a link rather than a dead one.
 - Milestone 8's corner work and the whole presentation and consistency pass have been seen in the EdgeTX simulator and judged there. The accent geometry in particular took five rounds of looking, and the version that was accepted came from the person at the screen rather than from any measurement, which is the standing argument for building something to look at rather than reasoning about it in prose. Initial dashboard acceptance has now been reported on TX16S v2 / EdgeTX 2.12.4; see [Hardware validation status](#hardware-validation-status).
-- The simulator fixture has **three models**, every screen holding an AeroGrid instance in App mode with the Modern theme. `model1` (**AEROGRID STD**) starts on `Default`, then offers `Empty`, `Host`, `services`, and `services2`: all installation layouts plus both diagnostic panel types. `model2` (**AEROGRID PANEL1**) carries six reviews: cell battery, flight counter, flight mode, flight timer, link status, and metric. `model3` (**AEROGRID PANEL2**) carries five: model identity, navigation, text, trim panel, and TX battery. Each user-facing panel type has exactly one dashboard. The flight-counter review uses only one tracker; resize it to compare spans.
+- The simulator fixture has **three models**, every screen holding an AeroGrid instance in App mode with the Modern theme. `model1` (**AEROGRID STD**) starts on `Default`, then offers `Empty`, `Diagnostics`, `services`, and `services2`: all installation layouts plus both diagnostic panel types. `model2` (**AEROGRID PANEL1**) carries six reviews: cell battery, flight counter, flight mode, flight timer, link status, and metric. `model3` (**AEROGRID PANEL2**) carries five: model identity, navigation, state, trim panel, and TX battery. Each user-facing panel type has exactly one dashboard. The flight-counter review uses only one tracker; resize it to compare spans.
 
   `MAX_CUSTOM_SCREENS` is 10, so eleven panel reviews are split across two models. Paging between screens switches dashboards without opening widget settings. Auxiliary layouts `sim`, `sim2`, `states`, and `review-cell-sources` remain available through the Layout picker rather than dedicated screens.
 
