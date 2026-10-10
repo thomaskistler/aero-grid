@@ -191,14 +191,14 @@ function flightCounter.create(parent, rect, settings, services)
         area = area,
         phase = "ground",
     }
-    context.panel = services.primitives.panel(parent, rect, services.theme, presentation)
-    context.label, context.badge = services.primitives.header(
-        context.panel.root,
+    context.panel, context.label, context.badge = services.primitives.panelWithHeader(
+        parent,
+        rect,
         services.theme,
+        presentation,
         area.frame,
         services.fonts,
         settings.label,
-        presentation,
         services.themeBuilder
     )
     context.value = services.primitives.value(context.panel.root, services.theme, {
@@ -244,16 +244,7 @@ flightCounter.background = tick
 
 function flightCounter.update(context, rect)
     local area = flightCounter.regionsFor(context.theme, context.themeBuilder, rect, context.fonts)
-    context.primitives.resizePanel(context.panel, rect)
-    context.primitives.placeHeader(
-        context.label,
-        context.badge,
-        area.frame,
-        context.themeBuilder,
-        context.fonts,
-        context.settings.label,
-        context.badgeText
-    )
+    context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
     context.area = area
     context.primitives.setFont(context.value, area.value)
     context.value:set({ x = area.valueX, y = area.valueY, w = area.valueWidth })

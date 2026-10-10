@@ -45,16 +45,16 @@ controlService.__index = controlService
 
 --- Ticks of 10ms between updates. Trims move under the pilot's thumb, so this
 --- is the same rate a telemetry readout uses.
-controlService.INTERVAL = 20
+local INTERVAL = 20
 
 --- Subscriptions refreshed per update, served round robin.
-controlService.POLL_CAP = 6
+local POLL_CAP = 6
 
 --- Ticks between attempts to resolve a source or switch the radio rejects.
-controlService.RESOLVE_RETRY = 500
+local RESOLVE_RETRY = 500
 
 --- `getValue` returns eight times the stored trim value.
-controlService.TRIM_SCALE = 8
+local TRIM_SCALE = 8
 
 --- Standard and extended trim travel, already multiplied by TRIM_SCALE.
 --- EdgeTX clamps a stored trim to TRIM_MAX (128) or TRIM_EXTENDED_MAX (512),
@@ -67,7 +67,7 @@ controlService.EXTENDED_RANGE = 4096
 --- EdgeTX's full stick deflection, returned by a trim configured as a
 --- three-position toggle. It is also exactly a standard trim's end stop, which
 --- is why one sample can never tell the two apart.
-controlService.RESX = 1024
+local RESX = 1024
 
 --- Create the service.
 ---@param env table Result of services.environment.
@@ -76,7 +76,7 @@ controlService.RESX = 1024
 function controlService.new(env, support)
     return setmetatable({
         id = "control",
-        interval = controlService.INTERVAL,
+        interval = INTERVAL,
         revision = 0,
         count = 0,
         due = 0,
@@ -107,7 +107,7 @@ function controlService:readSwitch(entry, now)
         if now < entry.nextResolve then
             return
         end
-        entry.nextResolve = now + controlService.RESOLVE_RETRY
+        entry.nextResolve = now + RESOLVE_RETRY
         local index = env.getSwitchIndex(firmwareSwitchName(state.name, env))
         if type(index) ~= "number" or index == 0 then
             state.available, state.fresh = false, false
@@ -164,15 +164,11 @@ end
 ---@param read fun(self: table, entry: table, now: integer)
 ---@return table entry
 function controlService:add(state, read)
-    local entry = {
+    return self.support.addSubscription(self, self.entries, {
         state = state,
         read = read,
-        view = self.support.snapshot(state),
         nextResolve = 0,
-    }
-    self.entries[#self.entries + 1] = entry
-    self.count = self.count + 1
-    return entry
+    })
 end
 
 --- Read one trim position.
@@ -185,7 +181,7 @@ function controlService:readTrim(entry, now)
         if now < entry.nextResolve then
             return
         end
-        entry.nextResolve = now + controlService.RESOLVE_RETRY
+        entry.nextResolve = now + RESOLVE_RETRY
 
         local lookup = self.env.getFieldInfo
         local info = lookup and lookup(state.name)
@@ -213,7 +209,7 @@ function controlService:readTrim(entry, now)
     -- tell them apart. Claim a toggle only after seeing both a centre and a full
     -- deflection with nothing in between: a real trim moved to its stop passes
     -- through intermediate values, and one parked at the stop never reads zero.
-    if magnitude == controlService.RESX then
+    if magnitude == RESX then
         entry.sawExtreme = true
     elseif raw == 0 then
         entry.sawCentre = true
@@ -230,7 +226,7 @@ function controlService:readTrim(entry, now)
 
     local range = state.scale == "extended" and controlService.EXTENDED_RANGE or controlService.STANDARD_RANGE
     if state.threePosition then
-        range = controlService.RESX
+        range = RESX
     end
 
     local fraction = raw / range
@@ -245,8 +241,7 @@ function controlService:readTrim(entry, now)
     state.state = "normal"
     state.raw = raw
     -- Integer trim units: EdgeTX stores whole trim steps and scales by eight.
-    state.value = raw >= 0 and math.floor(raw / controlService.TRIM_SCALE)
-        or -math.floor(-raw / controlService.TRIM_SCALE)
+    state.value = raw >= 0 and math.floor(raw / TRIM_SCALE) or -math.floor(-raw / TRIM_SCALE)
     state.fraction = fraction
     state.centered = raw == 0
 end
@@ -421,32 +416,12 @@ end
 
 --- Refresh a bounded slice of the subscriptions.
 ---@param now integer
+local function readEntry(service, entry, now)
+    entry.read(service, entry, now)
+end
+
 function controlService:update(now)
-    local entries = self.entries
-    local total = #entries
-    if total == 0 then
-        return
-    end
-
-    local cursor = self.cursor
-    if cursor > total then
-        cursor = 1
-    end
-
-    local cap = controlService.POLL_CAP
-    if cap > total then
-        cap = total
-    end
-
-    for _ = 1, cap do
-        local entry = entries[cursor]
-        cursor = cursor % total + 1
-        if entry then
-            entry.read(self, entry, now)
-        end
-    end
-
-    self.cursor = cursor
+    self.cursor = self.support.roundRobin(self.entries, self.cursor, POLL_CAP, readEntry, self, now)
 end
 
 --- Round a signed percentage half away from zero.

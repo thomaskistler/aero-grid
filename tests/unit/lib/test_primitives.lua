@@ -1,13 +1,22 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 local root = (... and ... ~= "" and ...) or "."
+local moduleLoader = assert(loadfile(root .. "/tests/support/module_loader.lua"))(root)
 
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
-local primitives = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/primitives.lua"))()
+local primitives = moduleLoader("lib/primitives.lua")
 
 local function testContentWidthRespectsPadding()
     local theme = { spacing = { padding = 8 } }
     assertions.assertEqual(primitives.contentWidth(theme, 120), 104)
+end
+
+local function testNumericHelpers()
+    assertions.assertEqual(primitives.fraction(5, 0, 10), 0.5)
+    assertions.assertEqual(primitives.fraction(-5, 0, 10), 0)
+    assertions.assertEqual(primitives.fraction(15, 0, 10), 1)
+    assertions.assertEqual(primitives.fraction(5, 10, 0), 0.5)
+    assertions.assertEqual(primitives.fraction(5, 1, 1), 0)
 end
 
 local function testChangedSkipsUnchangedRender()
@@ -32,6 +41,7 @@ end
 
 local function run()
     testContentWidthRespectsPadding()
+    testNumericHelpers()
     testChangedSkipsUnchangedRender()
 end
 

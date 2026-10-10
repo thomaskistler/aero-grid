@@ -58,14 +58,7 @@ local flightTimer = {
         },
         { key = "warning", label = "Warning seconds", type = "number" },
         { key = "critical", label = "Critical seconds", type = "number" },
-        -- A countdown is judged on the time it has left and a count-up timer on
-        -- the time it has used, so the direction follows the timer rather than
-        -- the layout and cannot be stated.
-        -- No `direction`. It is real here -- a countdown alarms on the time it
-        -- has left and a count-up timer on the time it has used -- but EdgeTX
-        -- already says which a timer is, through `model.getTimer`, and
-        -- `resolveState` has always read that rather than the setting. Stating
-        -- it was restating the radio.
+        -- Countdown thresholds count down; count-up thresholds count up.
     },
 }
 
@@ -352,8 +345,9 @@ end
 --- Fraction of a countdown that has been used, for the optional bar.
 --- A count-up timer has no total, so it has no fraction and no bar.
 ---@param feed? AeroGridModelTimer
+---@param primitives table
 ---@return number
-function flightTimer.fraction(feed)
+function flightTimer.fraction(feed, primitives)
     if type(feed) ~= "table" or not feed.available then
         return 0
     end
@@ -361,14 +355,7 @@ function flightTimer.fraction(feed)
         return 0
     end
 
-    local used = feed.elapsed / feed.start
-    if used < 0 then
-        return 0
-    end
-    if used > 1 then
-        return 1
-    end
-    return used
+    return primitives.fraction(feed.elapsed, 0, feed.start)
 end
 
 --- Compute the content regions for the current rectangle.
@@ -444,21 +431,21 @@ function flightTimer.create(parent, rect, settings, services)
     -- absent.
     context.formatTime = flightTimer.formatClock
 
-    local panel = primitives.panel(parent, rect, theme, presentation)
-    context.panel = panel
-
     -- The timer's configured name is the most useful label there is, so it wins
     -- unless the layout states one. It is only known once the service has read
     -- the timer, which is why refresh revisits it.
-    context.label, context.badge = primitives.header(
-        panel.root,
+    local panel
+    context.panel, context.label, context.badge = primitives.panelWithHeader(
+        parent,
+        rect,
         theme,
+        presentation,
         area.frame,
         fonts,
         flightTimer.labelText(context),
-        presentation,
         services.themeBuilder
     )
+    panel = context.panel
     -- The heading is refitted whenever it changes, so the column it has to
     -- fit is kept beside it.
     context.frame = area.frame
@@ -564,7 +551,7 @@ function flightTimer.render(context, out)
         )
     end
     if context.showVisual then
-        out.fraction = flightTimer.fraction(feed)
+        out.fraction = flightTimer.fraction(feed, context.primitives)
     end
     out.label = string.upper(flightTimer.labelText(context))
 end
@@ -648,18 +635,9 @@ function flightTimer.update(context, rect)
     local area =
         flightTimer.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts, context.area)
 
-    context.primitives.resizePanel(context.panel, rect)
     -- The heading is the model's timer name rather than the setting, so the
     -- refit is given what the panel currently shows.
-    context.primitives.placeHeader(
-        context.label,
-        context.badge,
-        area.frame,
-        context.themeBuilder,
-        context.fonts,
-        context.labelValue,
-        context.badgeText
-    )
+    context.primitives.resizeHeader(context, rect, area.frame, context.labelValue)
     context.frame = area.frame
     context.primitives.setFont(context.value, area.clock)
     context.value:set({
@@ -698,7 +676,7 @@ function flightTimer.update(context, rect)
         area.pad,
         area.barY,
         area.content,
-        flightTimer.fraction(context.feed),
+        flightTimer.fraction(context.feed, context.primitives),
         showVisual == context.showVisual
     )
 

@@ -1,9 +1,11 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 local root = (... and ... ~= "" and ...) or "."
+local moduleLoader = assert(loadfile(root .. "/tests/support/module_loader.lua"))(root)
 
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local timer = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/flight-timer.lua"))()
+local primitives = moduleLoader("lib/primitives.lua")
 
 local function testTimerSemantics()
     local countdown = {
@@ -49,8 +51,8 @@ local function testTimerSemantics()
     assertions.assertEqual(timer.resolveState({ warning = 180 }, countUp), "warning")
     assertions.assertEqual(timer.displayValue(countUp), 200)
     assertions.assertEqual(timer.detailText(countUp, tostring), "COUNTING UP")
-    assertions.assertEqual(timer.fraction(countUp), 0)
-    assertions.assertEqual(timer.fraction(countdown), 0.7)
+    assertions.assertEqual(timer.fraction(countUp, primitives), 0)
+    assertions.assertEqual(timer.fraction(countdown, primitives), 0.7)
     assertions.assertEqual(timer.resolveState({}, nil), "unavailable")
     assertions.assertEqual(timer.detailText(nil, tostring), "NO TIMER")
 

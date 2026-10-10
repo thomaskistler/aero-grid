@@ -706,11 +706,18 @@ function navigation.create(parent, rect, settings, services)
 
     local area = navigation.regionsFor(theme, services.themeBuilder, rect, layout, fonts, context.sample)
 
-    local panel = primitives.panel(parent, rect, theme, presentation)
-    context.panel = panel
-
-    context.label, context.badge =
-        primitives.header(panel.root, theme, area.frame, fonts, settings.label, presentation, services.themeBuilder)
+    local panel
+    context.panel, context.label, context.badge = primitives.panelWithHeader(
+        parent,
+        rect,
+        theme,
+        presentation,
+        area.frame,
+        fonts,
+        settings.label,
+        services.themeBuilder
+    )
+    panel = context.panel
 
     context.value = primitives.value(panel.root, theme, {
         x = area.pad,
@@ -979,16 +986,7 @@ function navigation.update(context, rect)
     local area =
         navigation.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts, context.sample)
 
-    context.primitives.resizePanel(context.panel, rect)
-    context.primitives.placeHeader(
-        context.label,
-        context.badge,
-        area.frame,
-        context.themeBuilder,
-        context.fonts,
-        context.settings.label,
-        context.badgeText
-    )
+    context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
     -- Every anchor is about a slot and a font that have just moved, so all of
     -- them are discarded rather than trusted. A panel that reflowed while its
     -- distance and bearing held steady would otherwise keep the positions it

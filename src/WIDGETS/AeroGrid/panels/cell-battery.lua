@@ -83,18 +83,12 @@ local cellBattery = {
             default = "lowest",
             choices = { "lowest", "average", "pack" },
         },
-        -- The usable range, per cell: a LiPo is flat at 3.3 V and full at 4.2 V.
-        -- Named for what they range over, because `min` and `max` meant four
-        -- different things across the catalogue and nothing in the key said which.
+        -- The usable range per cell; typical LiPo limits are 3.3 V and 4.2 V.
         { key = "cellEmpty", label = "Empty volts per cell", type = "number", default = 3.3 },
         { key = "cellFull", label = "Full volts per cell", type = "number", default = 4.2 },
         { key = "warning", label = "Warning volts per cell", type = "number", default = 3.5 },
         { key = "critical", label = "Critical volts per cell", type = "number", default = 3.3 },
-        -- Cell voltages only ever count downward, but it is stated rather than
-        -- assumed so every threshold in the catalogue reads the same way.
-        -- No `direction`. A cell only ever alarms downward, so the setting had
-        -- one valid value and told a reader nothing except to wonder what the
-        -- other one would do. The behaviour is documented instead.
+        -- Cell-voltage alarms always count downward; no direction setting is needed.
         { key = "cells", label = "Cell count (0 = sensor)", type = "number", default = 0 },
         { key = "showPack", label = "Show supporting voltage", type = "boolean", default = true },
         { key = "showCount", label = "Show cell count", type = "boolean", default = true },
@@ -305,12 +299,9 @@ end
 ---@param settings AeroGridCellSettings
 ---@param value any
 ---@param cells integer Divisor for a pack reading.
+---@param primitives table
 ---@return number
-function cellBattery.fraction(settings, value, cells)
-    if type(value) ~= "number" or value ~= value then
-        return 0
-    end
-
+function cellBattery.fraction(settings, value, cells, primitives)
     local low = type(settings.cellEmpty) == "number" and settings.cellEmpty or 3.3
     local high = type(settings.cellFull) == "number" and settings.cellFull or 4.2
     if high <= low then
@@ -325,14 +316,7 @@ function cellBattery.fraction(settings, value, cells)
         perCell = value / cells
     end
 
-    local fraction = (perCell - low) / (high - low)
-    if fraction < 0 then
-        return 0
-    end
-    if fraction > 1 then
-        return 1
-    end
-    return fraction
+    return primitives.fraction(perCell, low, high)
 end
 
 --- Wordings for the cell-count row, which is where a shape problem is named.
@@ -601,34 +585,22 @@ function cellBattery.create(parent, rect, settings, services)
     context.detailWidth = area.detailWidth
     context.showDetail = area.showDetail or area.showSide
 
-    local panel = primitives.panel(parent, rect, theme, presentation)
-    context.panel = panel
+    local panel
+    context.panel, context.label, context.badge = primitives.panelWithHeader(
+        parent,
+        rect,
+        theme,
+        presentation,
+        area.frame,
+        fonts,
+        settings.label,
+        services.themeBuilder
+    )
+    panel = context.panel
 
-    context.label, context.badge =
-        primitives.header(panel.root, theme, area.frame, fonts, settings.label, presentation, services.themeBuilder)
-
-    context.value = primitives.value(panel.root, theme, {
-        x = area.valueX,
-        y = area.valueY,
-        w = area.valueWidth,
-        text = "--",
-        color = presentation.value,
-        font = area.value,
-    })
-
-    -- Recorded as well as drawn. The reading is centred on its slot and the
-    -- unit rides past it, so the helper that places the pair has to know how
-    -- wide the pair is -- and an LVGL object is userdata on a radio, with no
-    -- readable text to ask. This panel's unit never changes, unlike
-    -- `link-status`, whose telemetry answers with one.
+    -- LVGL userdata cannot report its text; keep it for reading/unit placement.
     context.unitText = sample.unit
-    context.unit = primitives.unit(panel.root, theme, {
-        x = area.valueX,
-        y = area.valueY,
-        text = sample.unit,
-        color = theme.color.textMuted,
-        font = area.unitFont,
-    })
+    context.value, context.unit = primitives.reading(panel.root, theme, area, presentation, sample.unit)
 
     context.countLabel = primitives.label(panel.root, theme, {
         x = area.detailX,
@@ -748,7 +720,7 @@ function cellBattery.render(context, out)
     -- Digits alone. The `V` is its own label beside them, so there is no
     -- longer a shorter form of this string to measure and then not draw.
     out.text = type(value) == "number" and string.format("%.2f", value) or "--"
-    out.fraction = cellBattery.fraction(settings, value, summary.count)
+    out.fraction = cellBattery.fraction(settings, value, summary.count, context.primitives)
     out.value = value
 
     if context.showDetail then
@@ -891,16 +863,7 @@ function cellBattery.update(context, rect)
         context.primitives
     )
 
-    context.primitives.resizePanel(context.panel, rect)
-    context.primitives.placeHeader(
-        context.label,
-        context.badge,
-        area.frame,
-        context.themeBuilder,
-        context.fonts,
-        context.settings.label,
-        context.badgeText
-    )
+    context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
     context.primitives.setFont(context.value, area.value)
     context.value:set({
         x = area.valueX,

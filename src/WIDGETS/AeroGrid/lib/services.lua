@@ -185,6 +185,50 @@ function services.update(runtime, now)
     return nil
 end
 
+--- Publish service-owned state and append one subscription in polling order.
+--- Name lookup and duplicate detection remain with the domain service.
+---@param owner table Service with support and count fields.
+---@param entries table[] Service-owned polling list.
+---@param entry table Mutable state plus domain-specific polling metadata.
+---@return table entry Entry with its immutable live view.
+function services.addSubscription(owner, entries, entry)
+    entry.view = owner.support.snapshot(entry.state)
+    entries[#entries + 1] = entry
+    owner.count = owner.count + 1
+    return entry
+end
+
+--- Visit a bounded round-robin slice of a subscription list.
+---@param entries table[]
+---@param cursor integer
+---@param cap integer
+---@param visit fun(owner: table, entry: table, now: integer)
+---@param owner table Service instance passed to `visit`.
+---@param now integer
+---@return integer cursor Next entry to visit.
+function services.roundRobin(entries, cursor, cap, visit, owner, now)
+    local total = #entries
+    if total == 0 then
+        return cursor
+    end
+
+    if cursor < 1 or cursor > total then
+        cursor = 1
+    end
+    if cap > total then
+        cap = total
+    end
+
+    for _ = 1, cap do
+        local entry = entries[cursor]
+        cursor = cursor % total + 1
+        if entry then
+            visit(owner, entry, now)
+        end
+    end
+    return cursor
+end
+
 --- Report whether any registered service has subscriptions.
 ---@param runtime table
 ---@return boolean

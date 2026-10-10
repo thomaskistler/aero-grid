@@ -276,11 +276,18 @@ function trimPanel.create(parent, rect, settings, services)
         area = area,
     }
 
-    local panel = primitives.panel(parent, rect, theme, presentation)
-    context.panel = panel
-
-    context.label, context.badge =
-        primitives.header(panel.root, theme, area.frame, fonts, settings.label, presentation, services.themeBuilder)
+    local panel
+    context.panel, context.label, context.badge = primitives.panelWithHeader(
+        parent,
+        rect,
+        theme,
+        presentation,
+        area.frame,
+        fonts,
+        settings.label,
+        services.themeBuilder
+    )
+    panel = context.panel
 
     local control = services.control
     local scale = settings.scale
@@ -506,16 +513,7 @@ function trimPanel.update(context, rect)
 
     context.area = area
     context.dot:set({ x = area.centreX - 3, y = area.centreY - 3 })
-    primitives.resizePanel(context.panel, rect)
-    primitives.placeHeader(
-        context.label,
-        context.badge,
-        area.frame,
-        context.themeBuilder,
-        context.fonts,
-        context.settings.label,
-        context.badgeText
-    )
+    primitives.resizeHeader(context, rect, area.frame, context.settings.label)
 
     local reconcile = primitives.reconcile
     local captionsChanged = area.showCaption ~= context.showCaption

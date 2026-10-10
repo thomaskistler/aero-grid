@@ -46,8 +46,7 @@ local txBattery = {
     settings = {
         -- "TX BATTERY" needs ten characters of a header that has about five.
         { key = "label", label = "Label", type = "string", default = "TX" },
-        -- Cyan, because the specification reserves it for electrical data and this
-        -- is a battery. `cell-battery` was already cyan and these two disagreed.
+        -- Cyan is the shared accent for electrical and battery readings.
         {
             key = "accent",
             label = "Accent",
@@ -60,11 +59,7 @@ local txBattery = {
         { key = "packFull", label = "Full volts, whole pack", type = "number" },
         { key = "warning", label = "Warning volts", type = "number" },
         { key = "critical", label = "Critical volts", type = "number" },
-        -- No `direction`. A transmitter pack only ever alarms downward.
-        -- A battery rather than a bar, because a bar says "some of something"
-        -- and this panel is about which something. The bar stays available: on a
-        -- panel four cells wide a glyph is a small shape in a lot of space, and a
-        -- track running the width reads better there.
+        -- Battery glyph is the default; bars suit wider panels.
         {
             key = "visual",
             label = "Visualization",
@@ -154,24 +149,14 @@ end
 ---@param settings AeroGridTxBatterySettings
 ---@param value any
 ---@param range? table
+---@param primitives table
 ---@return number
-function txBattery.fraction(settings, value, range)
+function txBattery.fraction(settings, value, range, primitives)
     local low, high = txBattery.rangeFor(settings, range)
     if not low then
         return 0
     end
-    if type(value) ~= "number" or value ~= value then
-        return 0
-    end
-
-    local fraction = (value - low) / (high - low)
-    if fraction < 0 then
-        return 0
-    end
-    if fraction > 1 then
-        return 1
-    end
-    return fraction
+    return primitives.fraction(value, low, high)
 end
 
 --- Resolve the panel state. Voltage thresholds always count downward.
@@ -237,8 +222,8 @@ end
 --- Describe how the panel presents itself at a given span.
 ---@param colSpan integer
 ---@param rowSpan integer
+---@param showPercent? boolean Whether the layout asked for the estimate.
 ---@return table
---- @param showPercent? boolean Whether the layout asked for the estimate.
 function txBattery.presentationFor(colSpan, rowSpan, showPercent)
     local cells = (colSpan or 1) * (rowSpan or 1)
     -- The estimate is the only thing this panel's supporting row carries, and
@@ -501,34 +486,20 @@ function txBattery.create(parent, rect, settings, services)
         context.range = modelService:batteryRange()
     end
 
-    local panel = primitives.panel(parent, rect, theme, presentation)
-    context.panel = panel
+    local panel
+    context.panel, context.label, context.badge = primitives.panelWithHeader(
+        parent,
+        rect,
+        theme,
+        presentation,
+        area.frame,
+        fonts,
+        settings.label,
+        services.themeBuilder
+    )
+    panel = context.panel
 
-    context.label, context.badge =
-        primitives.header(panel.root, theme, area.frame, fonts, settings.label, presentation, services.themeBuilder)
-
-    context.value = primitives.value(panel.root, theme, {
-        x = area.valueX,
-        y = area.valueY,
-        -- Exactly what the reading and its unit occupy, because it is centred on
-        -- a slot rather than started at an edge: a label given more width than it
-        -- needs would centre the slot on the wrong point.
-        w = area.valueWidth,
-        text = "--",
-        color = presentation.value,
-        font = area.value,
-    })
-
-    -- Created whenever the panel could ever show it, and hidden until it does,
-    -- for the reason every optional object here is: whether it is shown can
-    -- change on a reflow and rebuilding an object is not free.
-    context.unit = primitives.unit(panel.root, theme, {
-        x = area.valueX,
-        y = area.valueY,
-        text = txBattery.UNIT,
-        color = theme.color.textMuted,
-        font = area.unitFont,
-    })
+    context.value, context.unit = primitives.reading(panel.root, theme, area, presentation, txBattery.UNIT)
 
     -- Built only where the layout asked for the estimate: on every other
     -- panel it was an object built to be hidden, and a row that could never be
@@ -630,7 +601,7 @@ function txBattery.render(context, out)
     -- decides whether the bar and the percentage appear, and it can change
     -- after the panel is built.
     out.ranged = txBattery.hasRange(settings, context.range)
-    out.fraction = txBattery.fraction(settings, value, context.range)
+    out.fraction = txBattery.fraction(settings, value, context.range, context.primitives)
     out.value = value
 
     -- One decimal: a transmitter pack reported to three flickers constantly and
@@ -748,16 +719,7 @@ function txBattery.update(context, rect)
         context.fonts
     )
 
-    context.primitives.resizePanel(context.panel, rect)
-    context.primitives.placeHeader(
-        context.label,
-        context.badge,
-        area.frame,
-        context.themeBuilder,
-        context.fonts,
-        context.settings.label,
-        context.badgeText
-    )
+    context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
     context.primitives.setFont(context.value, area.value)
     context.value:set({
         x = area.valueX,
@@ -785,7 +747,7 @@ function txBattery.update(context, rect)
     context.area = area
 
     local ranged = txBattery.hasRange(context.settings, context.range)
-    local fraction = txBattery.fraction(context.settings, context.reading, context.range)
+    local fraction = txBattery.fraction(context.settings, context.reading, context.range, context.primitives)
 
     context.barX, context.barY, context.barWidth = area.pad, area.barY, area.content
     local barShown = context.bar ~= nil and area.showVisual and ranged

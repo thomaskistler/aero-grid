@@ -650,26 +650,15 @@ end
 --- Convert the primary reading into a 0..1 fraction of the configured range.
 ---@param settings AeroGridLinkSettings
 ---@param value any
+---@param primitives table
 ---@return number
-function linkStatus.fraction(settings, value)
-    if type(value) ~= "number" or value ~= value then
-        return 0
-    end
-
+function linkStatus.fraction(settings, value, primitives)
     local low = type(settings.barMin) == "number" and settings.barMin or 0
     local high = type(settings.barMax) == "number" and settings.barMax or 100
     if high <= low then
         return 0
     end
-
-    local fraction = (value - low) / (high - low)
-    if fraction < 0 then
-        return 0
-    end
-    if fraction > 1 then
-        return 1
-    end
-    return fraction
+    return primitives.fraction(value, low, high)
 end
 
 --- Compute the content regions for the current rectangle.
@@ -826,30 +815,20 @@ function linkStatus.create(parent, rect, settings, services)
     context.unitText = ""
     context.area = area
 
-    local panel = primitives.panel(parent, rect, theme, presentation)
-    context.panel = panel
+    local panel
+    context.panel, context.label, context.badge = primitives.panelWithHeader(
+        parent,
+        rect,
+        theme,
+        presentation,
+        area.frame,
+        fonts,
+        settings.label,
+        services.themeBuilder
+    )
+    panel = context.panel
 
-    context.label, context.badge =
-        primitives.header(panel.root, theme, area.frame, fonts, settings.label, presentation, services.themeBuilder)
-
-    context.value = primitives.value(panel.root, theme, {
-        x = area.valueX,
-        y = area.valueY,
-        w = area.valueWidth,
-        text = "--",
-        color = presentation.value,
-        font = area.value,
-    })
-
-    -- The unit is whatever the source resolves to, which is not known yet, so
-    -- it is built empty and filled once the telemetry service answers.
-    context.unit = primitives.unit(panel.root, theme, {
-        x = area.valueX,
-        y = area.valueY,
-        text = "",
-        color = theme.color.textMuted,
-        font = area.unitFont,
-    })
+    context.value, context.unit = primitives.reading(panel.root, theme, area, presentation, "")
 
     context.detailLabel = primitives.label(panel.root, theme, {
         x = area.detailX,
@@ -952,7 +931,8 @@ function linkStatus.render(context, out)
 
     -- A reading the panel is not showing must not leave a bar behind that still
     -- looks like a healthy link.
-    out.fraction = (noLink or out.state == "unavailable") and 0 or linkStatus.fraction(settings, reading.value)
+    out.fraction = (noLink or out.state == "unavailable") and 0
+        or linkStatus.fraction(settings, reading.value, context.primitives)
 
     if context.showDetail then
         out.detail = context.pairedRow and "" or linkStatus.detailText(context, reading)
@@ -1125,16 +1105,7 @@ function linkStatus.update(context, rect)
     local area =
         linkStatus.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts, context.sample)
 
-    context.primitives.resizePanel(context.panel, rect)
-    context.primitives.placeHeader(
-        context.label,
-        context.badge,
-        area.frame,
-        context.themeBuilder,
-        context.fonts,
-        context.settings.label,
-        context.badgeText
-    )
+    context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
     context.primitives.setFont(context.value, area.value)
     context.value:set({
         x = area.pad,
@@ -1228,7 +1199,7 @@ function linkStatus.update(context, rect)
         area.pad,
         area.barY,
         area.content,
-        linkStatus.fraction(context.settings, context.reading),
+        linkStatus.fraction(context.settings, context.reading, context.primitives),
         area.showVisual == context.showVisual
     )
     context.showVisual = area.showVisual

@@ -41,20 +41,20 @@ modelService.__index = modelService
 
 --- Ticks of 10ms between updates. Timers advance once a second, so this is
 --- already far faster than anything the model can actually change.
-modelService.INTERVAL = 20
+local INTERVAL = 20
 
 --- Facets refreshed per update, served round robin.
-modelService.FACET_CAP = 4
+local FACET_CAP = 4
 
 --- Ticks between model identity reads. Identity changes only when the model
 --- changes, which reloads the widget anyway, so it is polled rarely.
-modelService.IDENTITY_INTERVAL = 500
+local IDENTITY_INTERVAL = 500
 
 --- EdgeTX stores model bitmaps in this directory.
-modelService.IMAGE_PATH = "/IMAGES/"
+local IMAGE_PATH = "/IMAGES/"
 
 --- The source name EdgeTX uses for the transmitter battery.
-modelService.TX_VOLTAGE_SOURCE = "tx-voltage"
+local TX_VOLTAGE_SOURCE = "tx-voltage"
 
 --- Create the service.
 ---@param env table Result of services.environment.
@@ -63,7 +63,7 @@ modelService.TX_VOLTAGE_SOURCE = "tx-voltage"
 function modelService.new(env, support)
     return setmetatable({
         id = "model",
-        interval = modelService.INTERVAL,
+        interval = INTERVAL,
         revision = 0,
         count = 0,
         due = 0,
@@ -80,9 +80,7 @@ end
 ---@param read fun(self: table, state: table, now: integer)
 ---@return table view
 function modelService:add(state, read)
-    local facet = { state = state, read = read, view = self.support.snapshot(state) }
-    self.facets[#self.facets + 1] = facet
-    self.count = self.count + 1
+    local facet = self.support.addSubscription(self, self.facets, { state = state, read = read })
     return facet.view
 end
 
@@ -114,7 +112,7 @@ function modelService:readIdentity(state, now)
     if state.available and now < (state.nextRead or 0) then
         return
     end
-    state.nextRead = now + modelService.IDENTITY_INTERVAL
+    state.nextRead = now + IDENTITY_INTERVAL
 
     local getInfo = self.env.getInfo
     local info = getInfo and getInfo()
@@ -132,7 +130,7 @@ function modelService:readIdentity(state, now)
     state.bitmap = bitmap
     -- A panel still has to open the file; the service only resolves where
     -- it lives, because a missing image must fall back to the model name.
-    state.bitmapPath = bitmap ~= "" and (modelService.IMAGE_PATH .. bitmap) or nil
+    state.bitmapPath = bitmap ~= "" and (IMAGE_PATH .. bitmap) or nil
 end
 
 --- Subscribe to model identity and bitmap metadata.
@@ -257,7 +255,7 @@ end
 --- Subscribe to the active flight mode.
 ---@return AeroGridFlightMode
 --- firmware: `MAX_FLIGHT_MODES`, `radio/src/dataconstants.h`.
-modelService.FLIGHT_MODES = 9
+local FLIGHT_MODES = 9
 
 function modelService:flightMode()
     if self.flightModeView then
@@ -305,7 +303,7 @@ function modelService:widestFlightModeName()
     local widest = ""
 
     if read then
-        for index = 0, modelService.FLIGHT_MODES - 1 do
+        for index = 0, FLIGHT_MODES - 1 do
             local ok, _, name = pcall(read, index)
             if not ok or type(name) ~= "string" or name == "" then
                 name = "FM" .. tostring(index)
@@ -391,7 +389,7 @@ end
 ---@param now integer
 function modelService:readTxVoltage(state, now)
     local read = self.env.getValue
-    local value = read and read(modelService.TX_VOLTAGE_SOURCE)
+    local value = read and read(TX_VOLTAGE_SOURCE)
 
     if type(value) ~= "number" then
         -- Keep any earlier reading rather than replacing it with nothing.
@@ -492,7 +490,7 @@ function modelService:txVoltage()
     end
 
     self.txVoltageView = self:add({
-        name = modelService.TX_VOLTAGE_SOURCE,
+        name = TX_VOLTAGE_SOURCE,
         known = true,
         telemetry = false,
         available = false,
@@ -514,32 +512,13 @@ end
 
 --- Refresh a bounded slice of the subscribed facets.
 ---@param now integer
+local function readFacet(service, facet, now)
+    facet.read(service, facet.state, now)
+end
+
 function modelService:update(now)
     local facets = self.facets
-    local total = #facets
-    if total == 0 then
-        return
-    end
-
-    local cursor = self.cursor
-    if cursor > total then
-        cursor = 1
-    end
-
-    local cap = modelService.FACET_CAP
-    if cap > total then
-        cap = total
-    end
-
-    for _ = 1, cap do
-        local facet = facets[cursor]
-        cursor = cursor % total + 1
-        if facet then
-            facet.read(self, facet.state, now)
-        end
-    end
-
-    self.cursor = cursor
+    self.cursor = self.support.roundRobin(facets, self.cursor, FACET_CAP, readFacet, self, now)
 end
 
 --- Describe the subscribed model facets as diagnostic rows.

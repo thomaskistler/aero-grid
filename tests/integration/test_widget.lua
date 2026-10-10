@@ -1,9 +1,11 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 local root = assert(..., "repository root argument is required")
+local moduleLoader = assert(loadfile(root .. "/tests/support/module_loader.lua"))(root)
 local sourcePath = root .. "/src/WIDGETS/AeroGrid/"
 local developmentLayoutsPath = root .. "/tests/fixtures/layouts/development/"
 local hostIo = io
+local widgetHelpers = assert(loadfile(root .. "/tests/support/widget_helpers.lua"))()
 
 --- The EdgeTX surface this suite runs against.
 ---
@@ -93,7 +95,7 @@ local function writeFile(path, text)
     handle:close()
 end
 
-local themeModule = assert(loadfile(sourcePath .. "lib/theme.lua"))()
+local themeModule = moduleLoader("lib/theme.lua")
 local themeYamlModule = assert(loadfile(sourcePath .. "lib/yaml.lua"))()
 local themeDocument = assert(loadfile(root .. "/tests/support/theme_catalog.lua"))()(root, themeYamlModule)
 assert(themeModule.setCatalog(themeDocument))
@@ -165,7 +167,7 @@ for _, name in ipairs({ "create", "update", "refresh", "background", "event" }) 
         return first, second
     end
 end
-local primitivesModule = assert(loadfile(sourcePath .. "lib/primitives.lua"))()
+local primitivesModule = moduleLoader("lib/primitives.lua")
 local layoutStoreModule = assert(loadfile(sourcePath .. "lib/layout_store.lua"))()
 
 assertEqual(definition.name, "AeroGrid")
@@ -178,39 +180,24 @@ local DEFAULT_OPTIONS = { Layout = "main", Theme = "modern-dark" }
 
 --- Advance the clock and refresh, so rate-limited panels fall due.
 local function pump(context, count, step)
-    for _ = 1, count do
-        tick(step or 20)
-        definition.refresh(context)
-    end
+    widgetHelpers.pump(context, count, step, tick, definition.refresh)
 end
 
 --- Create a host and pump refresh until the staged loader finishes.
 --- EdgeTX budgets instructions per callback, so loading is spread over
 --- consecutive refreshes rather than completed inside create().
 local function createLoaded(zone, options, path)
-    local context = definition.create(zone, options or DEFAULT_OPTIONS, path)
-    local guard = 0
-    while context.stage do
-        definition.refresh(context)
-        guard = guard + 1
-        assert(guard < 200, "staged load never finished")
-    end
-    return context
+    return widgetHelpers.createLoaded(definition, zone, options or DEFAULT_OPTIONS, path)
 end
 
 --- Find a loaded panel entry by its layout id.
 local function entryById(context, id)
-    for _, entry in ipairs(context.panels) do
-        if entry.placement.id == id then
-            return entry
-        end
-    end
-    return nil
+    return widgetHelpers.entryById(context, id)
 end
 
 --- Every shipped panel exposes its panel through the shared primitive.
 local function panelOf(entry)
-    return entry.instance.panel.root.properties
+    return widgetHelpers.panelOf(entry)
 end
 
 --- The host owns placement, so bounds come from the panel's container.

@@ -194,7 +194,7 @@ screenData:
         context.captureTicks = (context.captureTicks or 0) + 1
         if context.captureTicks < 12 then return end
         if not context.editorUi then
-            assert(openEditor(context), "capture could not open editor")
+            assert(context.editorController.openEditor(context), "capture could not open editor")
             return
         end
         local state = context.editorUi

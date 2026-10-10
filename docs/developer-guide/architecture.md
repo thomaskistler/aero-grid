@@ -9,7 +9,7 @@ EdgeTX widgets.
 
 | Path | What belongs here |
 | --- | --- |
-| `src/WIDGETS/AeroGrid/main.lua` | EdgeTX entry point, staged loading, scheduling, reload/reflow, and editor activation. |
+| `src/WIDGETS/AeroGrid/main.lua` | EdgeTX entry points, native options, event routing, and callback scheduling. |
 | `src/WIDGETS/AeroGrid/lib/` | Layout parsing/storage, grid geometry, panel hosting, shared services, rendering primitives, themes, and editor modules. |
 | `src/WIDGETS/AeroGrid/panels/` | Eleven user-facing panel types plus `host-diagnostics`, `service-probe`, and the fixed-data `theme-showcase`. |
 | `src/WIDGETS/AeroGrid/layouts/` | Shipped layouts. |
@@ -48,6 +48,20 @@ current signatures; planning examples can describe earlier contracts.
    panel work. A zone or fullscreen change triggers bounded reflow rather
    than reconstructing every object in a single frame.
 
+Host coordination has three boundaries:
+
+| Module | Ownership |
+| --- | --- |
+| `dashboard_loader.lua` | Layout recovery, staged parsing, service/panel construction, and placement-local services. |
+| `dashboard_lifecycle.lua` | Empty-page decoration, batched reflow, fullscreen-to-App rebuilds, and page retirement/replacement. |
+| `editor_controller.lua` | Editor activation, staged advancement, dashboard previews, draft restoration, and adoption after saving. |
+
+Their `new` functions bind host operations once per widget. They do not capture
+another widget's context or introduce per-refresh forwarding wrappers. `main.lua`
+decides which operation advances; loading and cleanup keep their explicit stages.
+Page retirement and replacement run in separate callbacks so deferred cleanup
+cannot invalidate objects belonging to the replacement page.
+
 Panels use container-local coordinates. They must not draw at absolute screen
 coordinates or assume the TX16S's dimensions. In App mode the host accounts
 for the top-left EdgeTX menu button; fullscreen removes that reservation.
@@ -73,11 +87,16 @@ does not consume scheduled work.
 | `control_service.lua` | Trims, switch conditions, GV snapshots, and verified GV9 FM0 increments. |
 | `extrema_service.lua` | Sensor extrema and dashboard flight-session tracking. |
 | `navigation_service.lua` | GPS fix, pilot/home position, distance, and north-up bearing. |
-| `services.lua` | Construction, subscription-aware scheduling, and bounded update dispatch. |
+| `services.lua` | Environment/snapshots, subscription registration, and bounded scheduling/update dispatch. |
 
 Snapshots are read-only views over service-owned state, mutated in place by
 the service to avoid per-frame allocations. Missing APIs, unknown sources, and
 missing fixes yield unavailable data; panel code must handle that explicitly.
+
+`services.addSubscription` publishes an entry's live view and records its polling
+order/count. Each domain service still owns name lookup, duplicate detection,
+source resolution, and its polling metadata. Link/session-only subscriptions
+remain separate from source polling lists.
 
 Telemetry zero is not inherently unavailable. EdgeTX can return zero both for
 a real reading and for a stopped stream. AeroGrid preserves the last live
@@ -121,8 +140,21 @@ types, and appropriate defaults/bounds/choices. The editor uses this schema
 to offer even fields omitted from the YAML, and can remove cleared optional
 fields. Do not build a separate settings UI for each panel.
 
+The public `theme.lua` API composes palette/state resolution with
+`typography.lua` (measurement, font fitting, unit metrics) and `panel_layout.lua`
+(frames, slots, bands, and regions). The public `primitives.lua` API composes LVGL
+objects with `reading.lua` (reading/unit composition, redraw detection, and
+visibility/reflow reconciliation). Installed functions are direct references,
+not per-call wrappers; each widget has its own caches and mutable API tables.
+
+The host supplies these dependencies when executing the modules. Pure-Lua tests
+use `tests/support/module_loader.lua` to compose the same APIs without installing
+firmware globals.
+
 Use `theme.lua` for bands, font fitting, shared colors, and spacing, and
-`primitives.lua` for reusable LVGL objects. Keep a reading's font stable as
+`primitives.lua` for reusable LVGL objects. `primitives.reading` constructs the
+matching value/unit arrangement used by the battery and link readouts; optional
+units and differing initial geometry remain panel-specific. Keep a reading's font stable as
 its value changes, using the widest expected representation to choose it.
 When changing settings vocabulary or rendering, inspect sibling panels so
 the same setting retains the same meaning.
@@ -135,7 +167,8 @@ in [Project tools](tools.md#change-a-capture-recipe).
 ## Editor and persistence
 
 `editor.lua` owns draft operations; `editor_ui.lua` and `editor_drawer.lua`
-present them. `layout_store.lua` handles saving, backups, and user-versus-shipped
+present them; `editor_controller.lua` coordinates them with the live dashboard.
+`layout_store.lua` handles saving, backups, and user-versus-shipped
 resolution; `layout_registry.lua` maintains name-to-choice positions.
 Keep these boundaries intact when changing save behavior.
 

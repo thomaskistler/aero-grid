@@ -176,8 +176,8 @@ end
 --- than nil, so a panel can render an unconfigured source without
 --- branching and without ever indexing nil.
 ---@param name any
----@return AeroGridReading
 ---@param linkEvidence? boolean False identifies a transmitter-local source shared by all subscribers.
+---@return AeroGridReading
 function telemetryService:subscribe(name, linkEvidence)
     if type(name) ~= "string" or name == "" then
         if not self.noneView then
@@ -188,11 +188,8 @@ function telemetryService:subscribe(name, linkEvidence)
 
     local entry = self.names[name]
     if not entry then
-        entry = newEntry(name)
-        entry.view = self.support.snapshot(entry.state)
+        entry = self.support.addSubscription(self, self.entries, newEntry(name))
         self.names[name] = entry
-        self.entries[#self.entries + 1] = entry
-        self.count = self.count + 1
     end
 
     if linkEvidence == false then
@@ -404,6 +401,10 @@ end
 
 --- Poll a bounded slice of the subscriptions.
 ---@param now integer
+local function pollEntry(service, entry, now)
+    service:poll(entry, now)
+end
+
 function telemetryService:update(now)
     local read = self.env.getRSSI
     local rssi = read and read() or 0
@@ -418,31 +419,10 @@ function telemetryService:update(now)
     self:publishLink(now)
 
     local entries = self.entries
-    local total = #entries
-    if total == 0 then
+    if #entries == 0 then
         return
     end
-
-    local cursor = self.cursor
-    if cursor > total then
-        cursor = 1
-    end
-
-    local polled = 0
-    local cap = telemetryService.POLL_CAP
-    if cap > total then
-        cap = total
-    end
-
-    while polled < cap do
-        local entry = entries[cursor]
-        cursor = cursor % total + 1
-        polled = polled + 1
-        if entry then
-            self:poll(entry, now)
-        end
-    end
-    self.cursor = cursor
+    self.cursor = self.support.roundRobin(entries, self.cursor, telemetryService.POLL_CAP, pollEntry, self, now)
 
     -- Republished after the polls, because a live reading can prove the
     -- indicator wrong part way through this very update.
@@ -450,6 +430,7 @@ function telemetryService:update(now)
 
     -- Advance at most one precision search per update, in rotation, so a
     -- dashboard of sixteen sources never pays sixteen table scans at once.
+    local total = #entries
     local scan = self.scanCursor
     if scan > total then
         scan = 1

@@ -98,6 +98,13 @@ Model images resolve relative to the recipe and need a firmware-safe PNG name.
 Establish redistribution permission before publishing a replacement image;
 the bundled Crack Yak image's permission was confirmed by its contributor.
 
+Capture instrumentation follows the runtime module boundaries: panel captures
+inject synthetic service inputs and optional text-color overrides into the
+isolated `lib/dashboard_loader.lua`; editor captures call
+`context.editorController.openEditor`. Readiness checks wrap the isolated
+`main.lua` refresh export. Update these hooks when moving runtime code; do not
+add capture-specific behavior to production modules.
+
 Run the [capture-recipe tests](testing.md#python-tooling-tests) after changing
 recipes/adapters, then inspect the resulting frame and provenance.
 

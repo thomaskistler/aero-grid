@@ -45,9 +45,46 @@ local function testEnvironmentAndRuntime()
     assertions.assertEqual(updatedId, "demo")
 end
 
+local function recordVisit(owner, entry, now)
+    owner.visited[#owner.visited + 1] = entry .. ":" .. now
+end
+
+local function testSubscriptionOwnership()
+    local owner = { support = services, count = 2 }
+    local entries = {}
+    local state = { value = 12 }
+    local metadata = { state = state, nextResolve = 7 }
+    local entry = services.addSubscription(owner, entries, metadata)
+    assertions.assertEqual(entry, metadata)
+    assertions.assertEqual(entries[1], metadata)
+    assertions.assertEqual(owner.count, 3)
+    assertions.assertEqual(entry.nextResolve, 7)
+    assertions.assertEqual(entry.view.value, 12)
+    state.value = 24
+    assertions.assertEqual(entry.view.value, 24)
+    assert(not pcall(function()
+        entry.view.value = 0
+    end), "subscribers must not mutate service-owned state")
+end
+
+local function testRoundRobin()
+    local state = { visited = {} }
+    local cursor = services.roundRobin({ "a", "b", "c", "d" }, 3, 3, recordVisit, state, 12)
+    assertions.assertEqual(table.concat(state.visited, ","), "c:12,d:12,a:12")
+    assertions.assertEqual(cursor, 2)
+
+    state.visited = {}
+    cursor = services.roundRobin({ "a", "b" }, 9, 8, recordVisit, state, 20)
+    assertions.assertEqual(table.concat(state.visited, ","), "a:20,b:20")
+    assertions.assertEqual(cursor, 1)
+    assertions.assertEqual(services.roundRobin({}, 7, 3, recordVisit, state, 0), 7)
+end
+
 local function run()
     testSnapshotIsReadOnly()
     testEnvironmentAndRuntime()
+    testRoundRobin()
+    testSubscriptionOwnership()
 end
 
 run()

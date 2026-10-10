@@ -345,11 +345,18 @@ function modelIdentity.create(parent, rect, settings, services)
         context.feed = modelService:identity()
     end
 
-    local panel = primitives.panel(parent, rect, theme, presentation)
-    context.panel = panel
-
-    context.label, context.badge =
-        primitives.header(panel.root, theme, area.frame, fonts, settings.label, presentation, services.themeBuilder)
+    local panel
+    context.panel, context.label, context.badge = primitives.panelWithHeader(
+        parent,
+        rect,
+        theme,
+        presentation,
+        area.frame,
+        fonts,
+        settings.label,
+        services.themeBuilder
+    )
+    panel = context.panel
 
     context.value = primitives.value(panel.root, theme, {
         x = area.valueX,
@@ -619,16 +626,7 @@ function modelIdentity.update(context, rect)
     local area = modelIdentity.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts)
     context.area = area
 
-    context.primitives.resizePanel(context.panel, rect)
-    context.primitives.placeHeader(
-        context.label,
-        context.badge,
-        area.frame,
-        context.themeBuilder,
-        context.fonts,
-        context.settings.label,
-        context.badgeText
-    )
+    context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
 
     local primitives = context.primitives
     -- The name stays visible when there is no image, whatever the arrangement
