@@ -2,6 +2,7 @@
 
 local root = assert(..., "repository root argument is required")
 local sourcePath = root .. "/src/WIDGETS/AeroGrid/"
+local developmentLayoutsPath = root .. "/tests/fixtures/layouts/development/"
 local hostIo = io
 
 --- The EdgeTX surface this suite runs against.
@@ -108,6 +109,7 @@ local function makeWidget(name, layoutYaml, extraPanels)
     os.execute("rm -rf '" .. directory .. "'")
     os.execute("mkdir -p '" .. directory .. "'")
     os.execute("cp -R '" .. sourcePath .. ".' '" .. directory .. "'")
+    os.execute("cp -R '" .. developmentLayoutsPath .. ".' '" .. directory .. "/layouts/'")
 
     if layoutYaml then
         writeFile(directory .. "/layouts/Default.yaml", layoutYaml)
@@ -366,35 +368,37 @@ local SHIPPED_TYPES = {
     "navigation",
 }
 
---- Every layout that ships must load, whatever it is for.
+--- Every product and development layout must load, whatever it is for.
 ---
---- The shipped default is covered above, but the simulator layouts are only
---- ever exercised by running the simulator, so a panel type that does not
---- exist, a span a panel refuses, or a grid that overflows would not
---- surface until a radio drew it. They are read from disk rather than listed
---- here, so a new layout is covered the moment it is added.
-local function testShippedLayoutsLoad()
-    local listingPath = root .. "/build/shipped-layouts.txt"
-    os.execute("ls '" .. sourcePath .. "layouts' > '" .. listingPath .. "'")
-    local listing = assert(hostIo.open(listingPath, "r"))
-    local names = {}
-    for name in listing:lines() do
-        local stem = string.match(name, "^(.+)%.yaml$")
-        -- Empty is the deliberately blank start for a new screen.
-        if stem and stem ~= "Default" and stem ~= "Empty" then
-            names[#names + 1] = stem
+---
+--- The shipped default is covered above, but a panel type that does not exist,
+--- a span a panel refuses, or a grid that overflows would not surface until a
+--- radio drew it. The directory contents are the list, so a new layout is
+--- covered as soon as it is added.
+local function testAllLayoutsLoad()
+    local listingPath = root .. "/build/layouts-to-load.txt"
+    local layouts = {}
+    for _, directory in ipairs({ sourcePath .. "layouts/", developmentLayoutsPath }) do
+        os.execute("ls '" .. directory .. "' > '" .. listingPath .. "'")
+        local listing = assert(hostIo.open(listingPath, "r"))
+        for name in listing:lines() do
+            local stem = string.match(name, "^(.+)%.yaml$")
+            -- Empty is the deliberately blank start for a new screen.
+            if stem and stem ~= "Default" and stem ~= "Empty" then
+                layouts[#layouts + 1] = { stem = stem, path = directory .. name }
+            end
         end
+        listing:close()
     end
-    listing:close()
     os.remove(listingPath)
-    assert(#names > 0, "no shipped layouts were found to check")
+    assert(#layouts > 0, "no layouts were found to check")
 
-    for _, stem in ipairs(names) do
+    for _, layout in ipairs(layouts) do
+        local stem = layout.stem
         resetRadio()
 
-        -- The host loads layouts/Default.yaml unless a dashboard is named, so each
-        -- candidate takes that name inside its own copy of the package.
-        local source = assert(hostIo.open(sourcePath .. "layouts/" .. stem .. ".yaml", "r"))
+        -- Each candidate takes the Default name inside its own package copy.
+        local source = assert(hostIo.open(layout.path, "r"))
         local yaml = source:read("a")
         source:close()
 
@@ -550,7 +554,7 @@ end
 --- The layout must follow the native option so both built-in palettes can be
 --- compared without changing its panels or thresholds.
 local function testStatesCoverBothPalettes()
-    local handle = assert(hostIo.open(sourcePath .. "layouts/states.yaml", "r"))
+    local handle = assert(hostIo.open(developmentLayoutsPath .. "states.yaml", "r"))
     local layout = handle:read("a")
     handle:close()
 
@@ -704,7 +708,7 @@ local function testScreensReachEveryShippedLayout()
                 local panelType =
                     assert(string.match(layout, "^review%-(.+)$"), "review model selects a non-panel layout")
                 panelReviews[panelType] = true
-                local handle = assert(hostIo.open(sourcePath .. "layouts/" .. layout .. ".yaml", "r"))
+                local handle = assert(hostIo.open(developmentLayoutsPath .. layout .. ".yaml", "r"))
                 local yaml = handle:read("a")
                 handle:close()
                 local placements = 0
@@ -749,14 +753,25 @@ local function testScreensReachEveryShippedLayout()
         end
         assert(listed, stem .. " ships but tests/fixtures/sdcard/AEROGRID/registry.txt does not list it")
     end
-
-    -- Auxiliary development layouts remain available in the picker, but do
-    -- not take a dedicated screen away from standard layouts or panel reviews.
-    local AUXILIARY = { sim = true, sim2 = true, states = true, ["review-cell-sources"] = true }
-    for _, stem in ipairs(shipped) do
-        if not AUXILIARY[stem] then
-            assert(selected[stem], stem .. " has no dedicated fixture screen")
+    os.execute("ls '" .. developmentLayoutsPath .. "' > '" .. listingPath .. "'")
+    local fixtureListing = assert(hostIo.open(listingPath, "r"))
+    for name in fixtureListing:lines() do
+        local stem = string.match(name, "^(.+)%.yaml$")
+        if stem then
+            local listed = false
+            for _, registeredName in ipairs(registered) do
+                listed = listed or registeredName == stem
+            end
+            assert(listed, stem .. " is a development layout but the fixture registry does not list it")
         end
+    end
+    fixtureListing:close()
+    os.remove(listingPath)
+
+    -- The four product layouts are directly reachable; development fixtures
+    -- do not take dedicated screens away from standard layouts or panel reviews.
+    for _, stem in ipairs(shipped) do
+        assert(selected[stem], stem .. " has no dedicated fixture screen")
     end
 
     os.execute("ls '" .. sourcePath .. "panels' > '" .. listingPath .. "'")
@@ -791,7 +806,7 @@ local function testScreensReachEveryShippedLayout()
 end
 
 local function testShippedLayout()
-    testShippedLayoutsLoad()
+    testAllLayoutsLoad()
     testSessionArmsTheFlight()
     testSpanGalleryIsComplete()
     testStatesCoverBothPalettes()
@@ -3089,6 +3104,7 @@ local function testNothingIsDrawnOverAnythingElse()
 
     collect(sourcePath .. "layouts/", "")
     collect(root .. "/tests/fixtures/layouts/", "retired ")
+    collect(developmentLayoutsPath, "development ")
     assert(#names > 1, "no layouts were found to check")
 
     local galleries = 0
@@ -3825,7 +3841,7 @@ end
 --- two zones give a panel different heights.
 local function testBadgesEndFlushWithTheirPanel()
     local theme = themeModule
-    local source = assert(hostIo.open(sourcePath .. "layouts/states.yaml", "r"))
+    local source = assert(hostIo.open(developmentLayoutsPath .. "states.yaml", "r"))
     local yaml = source:read("a")
     source:close()
 
@@ -4719,22 +4735,25 @@ local function testNothingReadableUnderTheMenuButton()
     -- Every shipped layout, because the directory is the list. A new layout is
     -- covered the moment it is added, exactly like the load coverage.
     local listingPath = root .. "/build/appmode-layouts.txt"
-    os.execute("ls '" .. sourcePath .. "layouts' > '" .. listingPath .. "'")
-    local listing = assert(hostIo.open(listingPath, "r"))
     local names = {}
-    for name in listing:lines() do
-        local stem = string.match(name, "^(.+)%.yaml$")
-        if stem then
-            names[#names + 1] = stem
+    for _, directory in ipairs({ sourcePath .. "layouts/", developmentLayoutsPath }) do
+        os.execute("ls '" .. directory .. "' > '" .. listingPath .. "'")
+        local listing = assert(hostIo.open(listingPath, "r"))
+        for name in listing:lines() do
+            local stem = string.match(name, "^(.+)%.yaml$")
+            if stem then
+                names[#names + 1] = { stem = stem, path = directory .. name }
+            end
         end
+        listing:close()
     end
-    listing:close()
     os.remove(listingPath)
-    assert(#names > 1, "no shipped layouts were found to check")
+    assert(#names > 1, "no layouts were found to check")
 
-    for _, stem in ipairs(names) do
+    for _, layout in ipairs(names) do
+        local stem = layout.stem
         resetRadio()
-        local source = assert(hostIo.open(sourcePath .. "layouts/" .. stem .. ".yaml", "r"))
+        local source = assert(hostIo.open(layout.path, "r"))
         local yaml = source:read("a")
         source:close()
 
@@ -5841,7 +5860,7 @@ local function testInstructionBudget()
 
     exercise("gallery", galleryPath, 10, { "telemetry", "model", "control", "extrema", "navigation" })
     exercise("full grid", makeWidget("budget-16", fullGridLayout(16)), 16, { "telemetry" })
-    local linkReview = assert(hostIo.open(sourcePath .. "layouts/review-link-status.yaml", "r"))
+    local linkReview = assert(hostIo.open(developmentLayoutsPath .. "review-link-status.yaml", "r"))
     local linkReviewYaml = linkReview:read("a")
     linkReview:close()
     exercise("link review", makeWidget("budget-link-review", linkReviewYaml), 6, { "telemetry" })
@@ -6172,12 +6191,13 @@ end
 local function testServiceDiagnostics()
     resetRadio()
     local zone = { x = 0, y = 0, w = 480, h = 272 }
+    local widgetPath = makeWidget("service-diagnostics")
 
     --- Load one diagnostics page and let its services settle.
     local function page(dashboardId)
-        local context = createLoaded(zone, { Layout = dashboardId, Theme = "modern-dark" }, sourcePath)
+        local context = createLoaded(zone, { Layout = dashboardId, Theme = "modern-dark" }, widgetPath)
         -- A dashboard-scoped layout is found without a model-specific file.
-        assertEqual(context.layoutPath, sourcePath .. "layouts/" .. dashboardId .. ".yaml")
+        assertEqual(context.layoutPath, widgetPath .. "layouts/" .. dashboardId .. ".yaml")
         assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
         for _ = 1, 80 do
             tick(20)
@@ -6232,7 +6252,8 @@ end
 local function testDiagnosticsFitTheirPanels()
     resetRadio()
     local zone = { x = 0, y = 0, w = 480, h = 272 }
-    local context = createLoaded(zone, { Layout = "services2", Theme = "modern-dark" }, sourcePath)
+    local widgetPath = makeWidget("diagnostics-fit")
+    local context = createLoaded(zone, { Layout = "services2", Theme = "modern-dark" }, widgetPath)
 
     --- Drain a batched reflow.
     local function settle()

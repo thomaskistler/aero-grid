@@ -94,6 +94,11 @@ panels:
 def prepare(sd, scene):
     shutil.copytree(ROOT / "tests/fixtures/sdcard", sd)
     shutil.copytree(ROOT / "src/WIDGETS/AeroGrid", sd / "WIDGETS/AeroGrid")
+    shutil.copytree(
+        ROOT / "tests/fixtures/layouts/development",
+        sd / "WIDGETS/AeroGrid/layouts",
+        dirs_exist_ok=True,
+    )
     # Keep capture scenes independent of the development model's extra screens.
     (sd / "MODELS/model1.yml").write_text("""semver: 3.0.0
 header:

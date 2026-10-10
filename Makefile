@@ -103,6 +103,7 @@ build:
 	@rsync -a --delete "$(SIMULATOR_FIXTURE)/" "$(SDCARD_DIR)/"
 	@mkdir -p "$(dir $(WIDGET_DESTINATION))"
 	@rsync -a --delete "$(WIDGET_SOURCE)/" "$(WIDGET_DESTINATION)/"
+	@rsync -a "tests/fixtures/layouts/development/" "$(WIDGET_DESTINATION)/layouts/"
 # EdgeTX compiles each script to .luac beside it and prefers the bytecode.
 # rsync preserves source timestamps, so a freshly copied .lua can look older
 # than bytecode the radio compiled from the previous build, and the radio then

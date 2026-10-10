@@ -63,6 +63,7 @@ def prepare(sd, recipe, recipe_path=None):
     shutil.copytree(ROOT / "tests/fixtures/sdcard", sd, dirs_exist_ok=True)
     widget = sd / "WIDGETS/AeroGrid"
     shutil.copytree(ROOT / "src/WIDGETS/AeroGrid", widget)
+    shutil.copytree(ROOT / "tests/fixtures/layouts/development", widget / "layouts", dirs_exist_ok=True)
     for bytecode in sd.rglob("*.luac"):
         bytecode.unlink()
     # The Layout option is a CHOICE stored as a 1-based registry position.

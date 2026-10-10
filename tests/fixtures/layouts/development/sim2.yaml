@@ -1,20 +1,11 @@
 version: 1
 
-# The second half of the simulator coverage. sim.yaml fills its grid with the
-# telemetry panels, so the radio-local ones had nowhere to go: model
-# identity, flight mode, the model timer, the transmitter pack and a global
-# variable all read radio state rather than a receiver, and none of them had
-# ever been seen against live values.
+# A radio-local complement to sim.yaml's telemetry dashboard: model identity,
+# flight mode, the model timer, transmitter battery and a global variable.
 #
-# The model is configured with both layouts as separate screens, so paging
-# between them switches dashboards without opening widget settings.
-#
-# Two things here are deliberately unexercised elsewhere: the metric without a
-# visualization, which has only ever been tested carrying a bar or a radial,
-# and its secondary reading.
-#
-# Select Modern Light in this screen's widget settings and Modern Dark in
-# sim.yaml's settings to compare the palettes while paging between screens.
+# This layout also covers less-common panel
+# configurations. Both layouts can be selected from the widget's Layout
+# option in the simulator; the widget's Theme option applies to both.
 
 grid:
   columns: 4
