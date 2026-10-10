@@ -30,18 +30,18 @@ local navigationService = { RUNTIME_API = 1 }
 navigationService.__index = navigationService
 
 --- Ticks of 10ms between updates. Telemetry GPS rarely exceeds a few hertz.
-navigationService.INTERVAL = 20
+local INTERVAL = 20
 
 --- Subscriptions refreshed per update. A dashboard has very few GPS panels,
 --- and each update costs trigonometry, so this cap stays small.
-navigationService.POLL_CAP = 2
+local POLL_CAP = 2
 
 --- Mean earth radius in metres, used for the great-circle distance.
-navigationService.EARTH_RADIUS = 6371000
+local EARTH_RADIUS = 6371000
 
 --- Coordinates closer than this to the null island are treated as no fix.
 --- EdgeTX reports zero for both axes before a sensor has produced a position.
-navigationService.NULL_EPSILON = 0.0000005
+local NULL_EPSILON = 0.0000005
 
 --- Create the service.
 ---@param env table Result of services.environment.
@@ -51,7 +51,7 @@ navigationService.NULL_EPSILON = 0.0000005
 function navigationService.new(env, support, runtime)
     return setmetatable({
         id = "navigation",
-        interval = navigationService.INTERVAL,
+        interval = INTERVAL,
         revision = 0,
         count = 0,
         due = 0,
@@ -88,7 +88,7 @@ function navigationService.hasPosition(latitude, longitude)
         return false
     end
 
-    local epsilon = navigationService.NULL_EPSILON
+    local epsilon = NULL_EPSILON
     local zeroLatitude = latitude < epsilon and latitude > -epsilon
     local zeroLongitude = longitude < epsilon and longitude > -epsilon
     return not (zeroLatitude and zeroLongitude)
@@ -119,7 +119,7 @@ function navigationService.distanceBetween(fromLatitude, fromLongitude, toLatitu
         a = 1
     end
 
-    return 2 * navigationService.EARTH_RADIUS * math.asin(math.sqrt(a))
+    return 2 * EARTH_RADIUS * math.asin(math.sqrt(a))
 end
 
 --- Initial bearing from the home position toward the model, in degrees.
@@ -264,32 +264,12 @@ end
 
 --- Refresh a bounded slice of the subscriptions.
 ---@param now integer
+local function pollEntry(service, entry, now)
+    service:poll(entry, now)
+end
+
 function navigationService:update(now)
-    local entries = self.entries
-    local total = #entries
-    if total == 0 then
-        return
-    end
-
-    local cursor = self.cursor
-    if cursor > total then
-        cursor = 1
-    end
-
-    local cap = navigationService.POLL_CAP
-    if cap > total then
-        cap = total
-    end
-
-    for _ = 1, cap do
-        local entry = entries[cursor]
-        cursor = cursor % total + 1
-        if entry then
-            self:poll(entry, now)
-        end
-    end
-
-    self.cursor = cursor
+    self.cursor = self.support.roundRobin(self.entries, self.cursor, POLL_CAP, pollEntry, self, now)
 end
 
 --- Format a distance with a sensible unit, switching to kilometres when the

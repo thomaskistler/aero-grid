@@ -292,14 +292,14 @@ function statePanel.create(parent, rect, settings, services)
     context.showSupporting = area.showDetail or area.showSide
     local presentation = services.state("unavailable", settings.accent)
     local primitives = services.primitives
-    context.panel = primitives.panel(parent, rect, services.theme, presentation)
-    context.label, context.badge = primitives.header(
-        context.panel.root,
+    context.panel, context.label, context.badge = primitives.panelWithHeader(
+        parent,
+        rect,
         services.theme,
+        presentation,
         area.frame,
         services.fonts,
         settings.entries[1].label,
-        presentation,
         services.themeBuilder
     )
     context.value = primitives.value(context.panel.root, services.theme, {
@@ -340,16 +340,7 @@ function statePanel.update(context, rect)
     local area = statePanel.regionsFor(context, rect)
     local previous = context.area
     context.area = area
-    primitives.resizePanel(context.panel, rect)
-    primitives.placeHeader(
-        context.label,
-        context.badge,
-        area.frame,
-        context.themeBuilder,
-        context.fonts,
-        context.settings.entries[1].label,
-        context.badgeText
-    )
+    primitives.resizeHeader(context, rect, area.frame, context.settings.entries[1].label)
     primitives.setFont(context.value, area.value)
     context.value:set({ x = area.valueX, y = area.valueY, w = area.valueWidth })
     context.readingAnchor, context.readingUnitAnchor = nil, nil

@@ -1111,41 +1111,9 @@ function theme.fitText(text, width, height)
 end
 
 --- Decide what a panel of this size carries, and how large its reading is.
----
---- Every panel used to answer this for itself, with a private copy of the
---- same ladder: reserve the supporting rows I want, shed them if the reading
---- gets uncomfortable, then fit the reading to what is left. Eight copies,
---- and two panels of identical size disagreed because each had shed a
---- different amount and then measured a different string against the result.
---- At `2 x 2` the four panels of the span gallery landed on four different
---- fonts, a range of four to one, on panels the same size to the pixel.
----
---- So composition is decided here, from the panel's box alone, and is the same
---- answer for every panel of that size. A panel asks whether it has a
---- supporting row and a visualization; it does not decide.
----
---- The reading then takes what the composition leaves. Deciding the font from
---- the box rather than from the string is what makes two panels of one size
---- agree, because they are answering the same question.
---- **It is not told what the panel draws, and no longer needs to be.**
---- It used to be, and the reason is worth keeping because the interface was
---- designed around it: the tertiary quarter was reserved only when the panel
---- actually drew a supporting row, so a panel had to declare its
---- intention or be charged a quarter of the panel for a row it would never
---- fill. Three panels default their row off and all three lost a font
---- size to that.
----
---- The bands are fixed proportions now, so there is nothing for a
---- declaration to correct: a panel reserves its bottom quarter whether or
---- not it draws into it. The `draws` argument was removed rather than left
---- accepted and ignored, because an argument that no longer reaches
---- anything is worse than an absent one -- a caller passes it, believes it
---- was honoured, and nothing says otherwise.
----
---- What a panel draws still decides where its *own* row is placed and
---- whether it is drawn at all. That lives in `theme.panel` and in the
---- panels, which is where it always was; only the band arithmetic has
---- stopped asking.
+--- Composition depends on the panel dimensions, not its content, so panels
+--- of the same size share the same bands and reading font. Content-specific
+--- visibility and placement are handled by `theme.panel` and each panel.
 ---@param resolved AeroGridTheme
 ---@param rect AeroGridRect
 ---@param frame table Result of theme.frame.

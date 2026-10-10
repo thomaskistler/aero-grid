@@ -13,6 +13,7 @@ local radioMock = edgetx.radio(io)
 local widgetRoot = root .. "/src/WIDGETS/AeroGrid/"
 local fixtureWidgetRoot = root .. "/build/test-widget-fixture/"
 local defaultZone = { x = 0, y = 0, w = 480, h = 272 }
+local helpers = assert(loadfile(root .. "/tests/support/widget_helpers.lua"))()
 
 io = {
     open = hostIo.open,
@@ -52,25 +53,18 @@ function WidgetFixture.new()
 
     function self.createLoaded(zone, options, path)
         local definition = loadModule("main.lua")
-        local context = definition.create(
+        return helpers.createLoaded(
+            definition,
             zone or { x = defaultZone.x, y = defaultZone.y, w = defaultZone.w, h = defaultZone.h },
             options or { Layout = "main", Theme = "modern-dark" },
             path or fixtureWidgetRoot
         )
-        local guard = 0
-        while context.stage do
-            definition.refresh(context)
-            guard = guard + 1
-            assert(guard < 200, "staged load never finished")
-        end
-        return context
     end
 
     function self.pump(context, count, step)
-        for _ = 1, count do
-            self.tick(step or 20)
-            loadModule("main.lua").refresh(context)
-        end
+        helpers.pump(context, count, step, self.tick, function(value)
+            loadModule("main.lua").refresh(value)
+        end)
     end
 
     function self.pumpUntil(context, predicate, limit, step)
@@ -88,22 +82,11 @@ function WidgetFixture.new()
     end
 
     function self.entryById(context, id)
-        for _, entry in ipairs(context.panels or {}) do
-            if entry.placement and entry.placement.id == id then
-                return entry
-            end
-        end
-        return nil
+        return helpers.entryById(context, id)
     end
 
     function self.panelOf(entry)
-        if not entry then
-            return nil
-        end
-        return entry.instance
-            and entry.instance.panel
-            and entry.instance.panel.root
-            and entry.instance.panel.root.properties
+        return helpers.panelOf(entry)
     end
 
     function self.instanceOf(context, id)

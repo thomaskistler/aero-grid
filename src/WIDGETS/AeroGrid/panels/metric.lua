@@ -356,7 +356,7 @@ function metric.render(context, out)
     -- The sensor's precision is only known once the source resolves, so it has
     -- to repaint even when the reading itself has not moved.
     out.text = metric.format(value, metric.digitsFor(context))
-    out.fraction = metric.fraction(settings, value)
+    out.fraction = metric.fraction(settings, value, context.primitives)
     out.value = value
 
     -- The sensor's unit is likewise only known once the source resolves, so the
@@ -524,26 +524,12 @@ end
 --- Convert a reading into a 0..1 fraction of the configured range.
 ---@param settings AeroGridResolvedMetricSettings
 ---@param value any
+---@param primitives table
 ---@return number
-function metric.fraction(settings, value)
-    if type(value) ~= "number" or value ~= value then
-        return 0
-    end
-
+function metric.fraction(settings, value, primitives)
     local low = type(settings.rangeMin) == "number" and settings.rangeMin or 0
     local high = type(settings.rangeMax) == "number" and settings.rangeMax or 100
-    if high == low then
-        return 0
-    end
-
-    local fraction = (value - low) / (high - low)
-    if fraction < 0 then
-        return 0
-    end
-    if fraction > 1 then
-        return 1
-    end
-    return fraction
+    return primitives.fraction(value, low, high)
 end
 
 --- The forms this metric's reading may be drawn in, longest first.
@@ -731,11 +717,18 @@ function metric.create(parent, rect, config, services)
     context.sample = sample
     context.sampleDigits = metric.digitsFor(context)
 
-    local panel = primitives.panel(parent, rect, theme, presentation)
-    context.panel = panel
-
-    context.label, context.badge =
-        primitives.header(panel.root, theme, area.frame, fonts, settings.label, presentation, services.themeBuilder)
+    local panel
+    context.panel, context.label, context.badge = primitives.panelWithHeader(
+        parent,
+        rect,
+        theme,
+        presentation,
+        area.frame,
+        fonts,
+        settings.label,
+        services.themeBuilder
+    )
+    panel = context.panel
 
     context.value = primitives.value(panel.root, theme, {
         x = area.valueX,
@@ -904,16 +897,7 @@ function metric.update(context, rect)
         context.unitText
     )
 
-    context.primitives.resizePanel(context.panel, rect)
-    context.primitives.placeHeader(
-        context.label,
-        context.badge,
-        area.frame,
-        context.themeBuilder,
-        context.fonts,
-        context.settings.label,
-        context.badgeText
-    )
+    context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
     context.primitives.setFont(context.value, area.value)
     context.value:set({
         x = area.pad,
@@ -972,7 +956,7 @@ function metric.update(context, rect)
         area.pad,
         area.barY,
         area.content,
-        metric.fraction(context.settings, context.reading),
+        metric.fraction(context.settings, context.reading, context.primitives),
         area.showVisual == context.showVisual
     )
     context.showVisual = area.showVisual

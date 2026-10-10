@@ -10,6 +10,14 @@ local function testContentWidthRespectsPadding()
     assertions.assertEqual(primitives.contentWidth(theme, 120), 104)
 end
 
+local function testNumericHelpers()
+    assertions.assertEqual(primitives.fraction(5, 0, 10), 0.5)
+    assertions.assertEqual(primitives.fraction(-5, 0, 10), 0)
+    assertions.assertEqual(primitives.fraction(15, 0, 10), 1)
+    assertions.assertEqual(primitives.fraction(5, 10, 0), 0.5)
+    assertions.assertEqual(primitives.fraction(5, 1, 1), 0)
+end
+
 local function testChangedSkipsUnchangedRender()
     local context = { scratch = {} }
     local renderCount = 0
@@ -32,6 +40,7 @@ end
 
 local function run()
     testContentWidthRespectsPadding()
+    testNumericHelpers()
     testChangedSkipsUnchangedRender()
 end
 

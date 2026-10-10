@@ -4,6 +4,7 @@ local root = (... and ... ~= "" and ...) or "."
 
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local cellBattery = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/cell-battery.lua"))()
+local primitives = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/primitives.lua"))()
 
 local function testCellShapes()
     local out = {}
@@ -32,9 +33,9 @@ local function testCellReadings()
 
     assertions.assertEqual(cellBattery.primaryValue(settings, summary), 3.25)
     assertions.assertEqual(cellBattery.primaryValue(settings, summary, 3.11), 3.11)
-    assertions.assertEqual(cellBattery.fraction(settings, 3.3, 4), 0)
-    assertions.assertEqual(cellBattery.fraction(settings, 4.2, 4), 1)
-    assert(math.abs(cellBattery.fraction(settings, 3.75, 4) - 0.5) < 0.001)
+    assertions.assertEqual(cellBattery.fraction(settings, 3.3, 4, primitives), 0)
+    assertions.assertEqual(cellBattery.fraction(settings, 4.2, 4, primitives), 1)
+    assert(math.abs(cellBattery.fraction(settings, 3.75, 4, primitives) - 0.5) < 0.001)
     assertions.assertEqual(cellBattery.resolveState(settings, 15.57, 3.25, false), "critical")
     assertions.assertEqual(cellBattery.resolveState(settings, 3.45, 3.45, false), "warning")
     assertions.assertEqual(cellBattery.resolveState(settings, 3.9, 3.9, false), "normal")
@@ -67,7 +68,7 @@ local function testPackSource()
     assertions.assertEqual(cellBattery.primaryValue(settings, summary), 16.4)
     assertions.assertEqual(cellBattery.countVariants(summary, settings)[1], "4S")
     assertions.assertEqual(cellBattery.packVariants(summary, settings)[1], "4.10V AVG")
-    assert(math.abs(cellBattery.fraction(settings, 15, 4) - 0.5) < 0.001)
+    assert(math.abs(cellBattery.fraction(settings, 15, 4, primitives) - 0.5) < 0.001)
     settings.reading = "average"
     assert(math.abs(cellBattery.primaryValue(settings, summary) - 4.1) < 0.001)
     assertions.assertEqual(cellBattery.packVariants(summary, settings)[1], "16.4V PACK")

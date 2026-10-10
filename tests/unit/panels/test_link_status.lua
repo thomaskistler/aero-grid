@@ -4,6 +4,7 @@ local root = (... and ... ~= "" and ...) or "."
 
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local linkStatus = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/link-status.lua"))()
+local primitives = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/primitives.lua"))()
 
 local function testSourceClassification()
     assertions.assertEqual(linkStatus.classify(nil), "none")
@@ -49,11 +50,11 @@ end
 
 local function testBarFraction()
     local settings = { barMin = -110, barMax = -30 }
-    assertions.assertEqual(linkStatus.fraction(settings, -110), 0)
-    assertions.assertEqual(linkStatus.fraction(settings, -30), 1)
-    assert(math.abs(linkStatus.fraction(settings, -70) - 0.5) < 0.001)
-    assertions.assertEqual(linkStatus.fraction(settings, -200), 0)
-    assertions.assertEqual(linkStatus.fraction({ barMin = 0, barMax = 0 }, 5), 0)
+    assertions.assertEqual(linkStatus.fraction(settings, -110, primitives), 0)
+    assertions.assertEqual(linkStatus.fraction(settings, -30, primitives), 1)
+    assert(math.abs(linkStatus.fraction(settings, -70, primitives) - 0.5) < 0.001)
+    assertions.assertEqual(linkStatus.fraction(settings, -200, primitives), 0)
+    assertions.assertEqual(linkStatus.fraction({ barMin = 0, barMax = 0 }, 5, primitives), 0)
 end
 
 local function feed(name, value, unit)

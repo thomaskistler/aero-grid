@@ -33,10 +33,10 @@ extremaService.__index = extremaService
 
 --- Ticks of 10ms between updates. Extrema only move when a reading moves, and
 --- the reading itself is rate limited by the telemetry service.
-extremaService.INTERVAL = 20
+local INTERVAL = 20
 
 --- Session trackers refreshed per update, served round robin.
-extremaService.TRACK_CAP = 6
+local TRACK_CAP = 6
 
 --- Create the service.
 ---@param env table Result of services.environment.
@@ -46,7 +46,7 @@ extremaService.TRACK_CAP = 6
 function extremaService.new(env, support, runtime)
     return setmetatable({
         id = "extrema",
-        interval = extremaService.INTERVAL,
+        interval = INTERVAL,
         revision = 0,
         count = 0,
         due = 0,
@@ -213,6 +213,11 @@ local function sample(track)
     state.samples = state.samples + 1
 end
 
+--- Sample one tracked value.
+local function sampleEntry(_, track)
+    sample(track)
+end
+
 --- Advance the flight session and a bounded slice of the trackers.
 ---@param now integer
 function extremaService:update(now)
@@ -242,9 +247,8 @@ function extremaService:update(now)
         end
     end
 
-    local order = self.trackOrder
-    local total = order and #order or 0
-    if total == 0 then
+    local order = self.trackOrder or {}
+    if #order == 0 then
         return
     end
 
@@ -254,25 +258,7 @@ function extremaService:update(now)
         return
     end
 
-    local cursor = self.cursor
-    if cursor > total then
-        cursor = 1
-    end
-
-    local cap = extremaService.TRACK_CAP
-    if cap > total then
-        cap = total
-    end
-
-    for _ = 1, cap do
-        local track = order[cursor]
-        cursor = cursor % total + 1
-        if track then
-            sample(track)
-        end
-    end
-
-    self.cursor = cursor
+    self.cursor = self.support.roundRobin(order, self.cursor, TRACK_CAP, sampleEntry, self, now)
 end
 
 --- Describe the session and tracked extrema as diagnostic rows.

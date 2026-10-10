@@ -124,8 +124,8 @@ end
 --- Describe how the panel presents itself at a given span.
 ---@param colSpan integer
 ---@param rowSpan integer
+---@param showIndex? boolean Whether the layout asked for the mode number.
 ---@return table
---- @param showIndex? boolean Whether the layout asked for the mode number.
 function flightMode.presentationFor(colSpan, rowSpan, showIndex)
     -- The ladder decides whether a panel of this size *can* carry a supporting
     -- row, and grants none at any single-row span whatever the width. What it
@@ -223,11 +223,18 @@ function flightMode.create(parent, rect, settings, services)
         context.feed = modelService:flightMode()
     end
 
-    local panel = primitives.panel(parent, rect, theme, presentation)
-    context.panel = panel
-
-    context.label, context.badge =
-        primitives.header(panel.root, theme, area.frame, fonts, settings.label, presentation, services.themeBuilder)
+    local panel
+    context.panel, context.label, context.badge = primitives.panelWithHeader(
+        parent,
+        rect,
+        theme,
+        presentation,
+        area.frame,
+        fonts,
+        settings.label,
+        services.themeBuilder
+    )
+    panel = context.panel
 
     context.value = primitives.value(panel.root, theme, {
         x = area.valueX,
@@ -355,16 +362,7 @@ function flightMode.update(context, rect)
     local area =
         flightMode.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts, context.widest)
 
-    context.primitives.resizePanel(context.panel, rect)
-    context.primitives.placeHeader(
-        context.label,
-        context.badge,
-        area.frame,
-        context.themeBuilder,
-        context.fonts,
-        context.settings.label,
-        context.badgeText
-    )
+    context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
     context.area = area
     context.primitives.setFont(context.value, area.name)
     context.value:set({

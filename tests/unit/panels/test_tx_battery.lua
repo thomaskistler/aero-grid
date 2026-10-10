@@ -4,6 +4,7 @@ local root = (... and ... ~= "" and ...) or "."
 
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local battery = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/tx-battery.lua"))()
+local primitives = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/primitives.lua"))()
 
 local function testRangeAndEstimate()
     assertions.assertEqual(battery.hasRange({}), false)
@@ -11,10 +12,10 @@ local function testRangeAndEstimate()
     assertions.assertEqual(battery.hasRange({ packEmpty = 8.4, packFull = 6.6 }), false)
     assertions.assertEqual(battery.hasRange({ packEmpty = 6.6, packFull = 8.4 }), true)
 
-    assertions.assertEqual(battery.fraction({}, 7.5), 0)
-    assertions.assertEqual(battery.fraction({ packEmpty = 6.6, packFull = 8.6 }, 7.6), 0.5)
-    assertions.assertEqual(battery.fraction({ packEmpty = 6.6, packFull = 8.6 }, 9.0), 1)
-    assertions.assertEqual(battery.fraction({ packEmpty = 6.6, packFull = 8.6 }, 6.0), 0)
+    assertions.assertEqual(battery.fraction({}, 7.5, nil, primitives), 0)
+    assertions.assertEqual(battery.fraction({ packEmpty = 6.6, packFull = 8.6 }, 7.6, nil, primitives), 0.5)
+    assertions.assertEqual(battery.fraction({ packEmpty = 6.6, packFull = 8.6 }, 9.0, nil, primitives), 1)
+    assertions.assertEqual(battery.fraction({ packEmpty = 6.6, packFull = 8.6 }, 6.0, nil, primitives), 0)
 end
 
 local function testStatesAndReading()

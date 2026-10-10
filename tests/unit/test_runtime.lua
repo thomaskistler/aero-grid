@@ -2134,9 +2134,10 @@ local function testMetricDirection()
     assertEqual(metric.resolveState(inferred, 24.0, true), "stale")
 
     -- A zero-width range must not divide by zero.
-    assertEqual(metric.fraction({ rangeMin = 5, rangeMax = 5 }, 5), 0)
-    assertEqual(metric.fraction({ rangeMin = 0, rangeMax = 10 }, 20), 1)
-    assertEqual(metric.fraction({ rangeMin = 0, rangeMax = 10 }, -5), 0)
+    assertEqual(metric.fraction({ rangeMin = 5, rangeMax = 5 }, 5, primitives), 0)
+    assertEqual(metric.fraction({ rangeMin = 0, rangeMax = 10 }, 20, primitives), 1)
+    assertEqual(metric.fraction({ rangeMin = 0, rangeMax = 10 }, -5, primitives), 0)
+    assertEqual(metric.fraction({ rangeMin = 10, rangeMax = 0 }, 5, primitives), 0.5)
     assertEqual(metric.format(nil, 2), "--")
     assertEqual(metric.format(1.239, 2), "1.24")
 end

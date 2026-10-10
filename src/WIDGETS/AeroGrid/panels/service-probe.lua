@@ -284,16 +284,7 @@ end
 function probe.update(context, rect)
     local area = probe.regionsFor(context.theme, context.themeBuilder, rect, context.fonts)
 
-    context.primitives.resizePanel(context.panel, rect)
-    context.primitives.placeHeader(
-        context.title,
-        context.badge,
-        area.frame,
-        context.themeBuilder,
-        context.fonts,
-        context.settings.label,
-        context.badgeText
-    )
+    context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
 
     local reconcile = context.primitives.reconcile
     local before = context.visibleRows

@@ -8,6 +8,26 @@ local primitives = { RUNTIME_API = 1 }
 
 local labelFonts = setmetatable({}, { __mode = "k" })
 
+--- Convert a value in a numeric range to a clamped 0..1 fraction.
+---@param value any
+---@param low number
+---@param high number
+---@return number
+function primitives.fraction(value, low, high)
+    if type(value) ~= "number" or value ~= value or high == low then
+        return 0
+    end
+
+    local fraction = (value - low) / (high - low)
+    if fraction < 0 then
+        return 0
+    end
+    if fraction > 1 then
+        return 1
+    end
+    return fraction
+end
+
 local function fontLabel(parent, options, font)
     local state = { value = font }
     options.font = function()
@@ -76,26 +96,8 @@ local function setRound(object, centreX, centreY, changes)
 end
 
 --- Decide whether anything a panel draws has changed since it last drew.
----
---- Repainting is expensive and a panel is refreshed tens of times a
---- second, so every one of them short-circuits. The bug is always the same:
---- the short-circuit compares a hand-written list of fields, `apply` draws
---- something that is not on it, and that something then freezes on screen
---- while the panel looks perfectly healthy. Four instances have been found in
---- this catalogue. The first three were fixed one at a time, by adding the
---- missed field to the list, which is exactly why there was a fourth.
----
---- The list is the defect, so this removes the list. A panel writes
---- everything it draws into one table, and `apply` is handed that table and
---- may draw nothing else. The comparison is then over the same values the
---- panel is painted from, by construction rather than by remembering: a field
---- `apply` reads but `render` never wrote is `nil` on screen, which is loud,
---- and a field `render` writes but `apply` ignores costs a comparison and
---- nothing worse.
----
---- Two tables are kept and swapped rather than allocated, because this runs on
---- every refresh of every panel and the host pays it inside one
---- instruction budget.
+--- `render` collects every value `apply` paints. The two tables are swapped
+--- and reused to avoid allocating on each refresh.
 ---@param context table Panel context; owns `rendered` and `scratch`.
 ---@param render fun(context: table, out: table)
 ---@return boolean changed
@@ -278,18 +280,8 @@ function primitives.badgeX(themeBuilder, frame, font, text)
 end
 
 --- Write a badge's text and colour, and place it flush with its column.
----
---- **The position depends on the text, so the two are written together.**
---- Ten panels carried the same line -- `badge:set{text =, color =}` --
---- and none of them placed it, because placement was `theme.frame`'s job and
---- the frame only ever knew the box. A position derived from a size has to
---- be recomputed when the size changes, and a badge's size is its word.
----
---- Anchored on the context like the unit rider and the centred rows, so a
---- badge whose state has not moved costs one comparison rather than a
---- measurement and a write. The anchor is the text itself: two words of one
---- length are not one width, which is the mistake `followUnit` made when it
---- anchored on a string's length.
+--- Placement depends on the displayed text width; the current text is retained
+--- on the context because LVGL labels cannot be queried on radio firmware.
 ---@param context table Panel context, which owns the anchor.
 ---@param themeBuilder table
 ---@param badge any
@@ -303,35 +295,12 @@ function primitives.setBadge(context, themeBuilder, badge, frame, font, text, co
     end
     text = tostring(text == nil and "" or text)
 
-    -- **Measured three ways, and the plainest won.** The badge is placed from
-    -- its measured width on every `apply`, which is every frame a panel has
-    -- anything to redraw, so two obvious savings were tried against the count
-    -- hook at single-instruction resolution:
-    --
-    --   plain                  worst callback 8098  steady 3503  reflow 7547
-    --   guarded on the word    worst callback 8099  steady 3507  reflow 7547
-    --   width memoised         worst callback 8113  steady 3503  reflow 7520
-    --
-    -- The guard is `setHeading`'s guard again and fails for the same reason:
-    -- `apply` only runs when the panel already has something to redraw, so the
-    -- comparison almost never saves the work it costs. Memoising a five-word
-    -- vocabulary buys the reflow 27 and costs the worst callback 14, and the
-    -- worst callback is the binding constraint on a full grid. So neither is
-    -- here, and this comment is why nobody needs to try them again.
-    -- Held so a reflow can re-place the badge without asking the label, which
-    -- on a radio is userdata and answers nil to every field read.
+    -- Retained so a reflow can position the badge without reading LVGL userdata.
     context.badgeText = text
 
     local changes = { text = text, color = color }
     if text == "" then
-        -- **An empty badge goes back to its column rather than keeping the
-        -- geometry of the word that just left.** Nothing is drawn either way, so
-        -- this is not about pixels: a box left where `N/A` put it is a position
-        -- derived from a string that is no longer there, and the next thing to
-        -- read it would read a stale one. It is also what makes a resting panel
-        -- byte-identical to one built before badges were placed at all, which is
-        -- how the geometry sweep can show that this change touches only badges
-        -- that are actually drawn.
+        -- Restore the badge column geometry when no text is displayed.
         changes.x = frame.badgeX
         changes.w = frame.badgeWidth
     else
@@ -596,6 +565,24 @@ function primitives.panel(parent, rect, theme, presentation)
     return panel
 end
 
+--- Create a styled panel and its standard heading.
+---@param parent any
+---@param rect AeroGridRect
+---@param theme AeroGridTheme
+---@param presentation table
+---@param frame table
+---@param fonts table
+---@param text any
+---@param themeBuilder? table
+---@return table panel
+---@return any label
+---@return any badge
+function primitives.panelWithHeader(parent, rect, theme, presentation, frame, fonts, text, themeBuilder)
+    local panel = primitives.panel(parent, rect, theme, presentation)
+    local label, badge = primitives.header(panel.root, theme, frame, fonts, text, presentation, themeBuilder)
+    return panel, label, badge
+end
+
 --- Create one corner band of the panel accent.
 ---
 --- The band's outer edge lands exactly on the panel's own corner arc. LVGL
@@ -702,6 +689,24 @@ function primitives.resizePanel(panel, rect)
     if panel.borderVisible then
         panel.border:set({ w = rect.w, h = rect.h })
     end
+end
+
+--- Resize a panel and reposition its shared header.
+---@param context table Panel context with panel, label, badge, themeBuilder, and fonts.
+---@param rect AeroGridRect
+---@param frame table Updated header frame.
+---@param heading any Current heading text.
+function primitives.resizeHeader(context, rect, frame, heading)
+    primitives.resizePanel(context.panel, rect)
+    primitives.placeHeader(
+        context.label or context.title,
+        context.badge,
+        frame,
+        context.themeBuilder,
+        context.fonts,
+        heading,
+        context.badgeText
+    )
 end
 
 --- Apply a new state presentation to an existing panel.

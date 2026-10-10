@@ -42,9 +42,23 @@ gh issue create --repo thomaskistler/aero-grid
 ## Prepare a focused change
 
 Work on a branch or fork based on current `main`. Keep implementation, tests,
-and directly related documentation together. Follow the existing Lua naming,
-settings vocabulary, type annotations, and shared rendering/service helpers.
-Runtime code and tests use SPDX `GPL-2.0-only` headers.
+and directly related documentation together. Runtime code and tests use SPDX
+`GPL-2.0-only` headers.
+
+Lua naming follows these conventions:
+
+| Element | Convention |
+| --- | --- |
+| Module and test filenames | kebab-case |
+| Panel IDs and layout types | kebab-case; match the panel filename |
+| Lua locals, functions, fields, and settings keys | camelCase |
+| Constants | `UPPER_SNAKE_CASE`; keep implementation details local and expose a module field only when callers or tests use it |
+| LuaDoc | Annotate parameters in signature order, followed by return values |
+
+Comments should explain current contracts, non-obvious decisions, or firmware
+constraints. Keep historical bug narratives and experiment results in tests,
+commit history, or developer documentation rather than beside the implementation.
+Use the established settings vocabulary and shared rendering/service helpers.
 
 For a fix, add a regression test that fails before the change. Exercise absent
 data and boundary values, not only the happy path. For UI changes, cover
