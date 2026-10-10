@@ -13,14 +13,13 @@ version: 1
 # visualization, which has only ever been tested carrying a bar or a radial,
 # and its secondary reading.
 #
-# This screen also carries the Follow EdgeTX palette while sim.yaml keeps
-# Modern, so paging between the two screens compares the designed palette
-# against one derived from the radio's own theme without opening any settings.
+# This screen carries Modern Light while sim.yaml keeps Modern Dark, so paging
+# between the two screens compares the light and dark palettes.
 # A layout's theme block beats the native Theme option, so the two screens can
 # disagree while both widgets keep whatever that option says.
 
 theme:
-  mode: edgetx
+  mode: modern-light
 
 grid:
   columns: 4

@@ -13,7 +13,7 @@
 
 ---@class AeroGridWidgetOptions
 ---@field Layout integer|string Position in the layout registry, or a layout name.
----@field Theme integer|string Position in Modern, EdgeTX; or a mode name.
+---@field Theme integer|string Position in Modern Dark, Modern Light; or a mode name.
 
 ---@class AeroGridContext
 ---@field zone AeroGridZone Live zone table maintained by EdgeTX.
@@ -79,11 +79,11 @@ end
 --- Theme modes behind the native CHOICE option, in stored-position order.
 --- `custom` is omitted: it only applies a layout's own `theme` overrides, so
 --- selecting it here would show Modern.
-local THEME_MODES = { "modern", "edgetx" }
+local THEME_MODES = { "modern", "modern-light" }
 
 local options = {
     { "Layout", CHOICE, 1, layoutNames },
-    { "Theme", CHOICE, 1, { "Modern", "EdgeTX" } },
+    { "Theme", CHOICE, 1, { "Modern Dark", "Modern Light" } },
 }
 
 --- Resolve the Layout option to a name. A stale position selects Empty.
@@ -647,7 +647,6 @@ local function updateEmptyHint(context)
         for _, key in ipairs({ "title", "instruction" }) do
             hint[key] = lvgl.label(context.page, {
                 text = "",
-                align = CENTERED,
                 font = function()
                     return SMLSIZE
                 end,
@@ -666,10 +665,11 @@ local function updateEmptyHint(context)
         local blockHeight = lineHeight * 2 + 6
         local top = math.floor((h - blockHeight) / 2)
         for index, key in ipairs(keys) do
+            local textWidth = context.themeBuilder.measureText(SMLSIZE, texts[index])
             hint[key]:set({
-                x = 0,
+                x = math.floor((w - textWidth) / 2),
                 y = top + (index - 1) * (lineHeight + 6),
-                w = w,
+                w = textWidth,
                 h = lineHeight,
                 text = texts[index],
                 color = context.theme.color.textMuted,

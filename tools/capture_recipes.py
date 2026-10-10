@@ -160,8 +160,8 @@ def load_recipe(path):
     integer(recipe["version"], 1, 1, "version")
     if recipe["panel"] not in PANELS:
         raise ValueError(f"Unsupported capture adapter: {recipe['panel']}")
-    if recipe["theme"] not in ("modern", "edgetx"):
-        raise ValueError("Capture theme must be modern or edgetx")
+    if recipe["theme"] not in ("modern", "modern-light"):
+        raise ValueError("Capture theme must be modern or modern-light")
     border = recipe["border"]
     fields(border, ("pixels", "rgb"))
     integer(border["pixels"], 0, 100, "border.pixels")

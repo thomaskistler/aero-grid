@@ -44,7 +44,7 @@ run history. `--all` runs recipes sequentially, so a failure leaves earlier
 successful panels updated. A failed run keeps diagnostics, raises an error,
 and does not publish documentation assets.
 
-Default panel captures use a 480 x 272 Modern/App-mode dashboard with
+Default panel captures use a 480 x 272 Modern Dark/App-mode dashboard with
 placements outside the menu overlay. Crops are unscaled; a 10-pixel border
 gives output dimensions of 137 x 154, 258 x 85, and 258 x 154 respectively.
 Recipes can override the border.
@@ -84,7 +84,7 @@ production panel logic, when a new sample type needs capture support.
 Be explicit about capture-only differences:
 
 - `brighten_supporting_text: true` uses the resolved muted color for faint text
-  (`#C4CDD3` to `#DCE2E6` in Modern) for computer readability; omit it or set false
+  (`#C4CDD3` to `#DCE2E6` in Modern Dark) for computer readability; omit it or set false
   for production colors.
 - The timer's `hide_bottom_bar: true` hides its bar without reflow. It is not
   a supported production setting.
@@ -112,6 +112,21 @@ This tool uses only Python's standard library plus the same native capture
 runner. It covers setup/widget/layout choices, editor overview, metric/text
 settings, entry dialogs, exit, and Save As. Use `--help` for supported scene
 names.
+
+It also captures the telemetry-free **Theme** showcase with real production
+primitives. These scenes are opt-in and do not open the editor:
+
+```sh
+python3 tools/capture-editor.py --scene theme-modern
+python3 tools/capture-editor.py --scene theme-modern-light
+python3 tools/capture-editor.py --scene theme-custom
+```
+
+The custom scene uses a fixed blue-gray palette with warm text and green
+default accents. To experiment interactively, use the Theme layout and YAML
+overrides described in [Choose a theme](../user-guide/dashboards.md#choose-a-theme).
+Panel recipes also accept `theme: modern-light` for checking individual
+instruments in the built-in light palette.
 
 Each selected scene writes a PNG, isolated SD card, framebuffer, and log
 under `build/editor-capture/<scene>/`. The root `provenance.json` records
@@ -150,7 +165,7 @@ python3 -m unittest discover -s tools -p 'test_release_*.py'
 `tools/package-release.py` reads the package version, checks required
 layouts/assets, rejects unexpected runtime files and symlinks, and writes
 a deterministic source-only ZIP plus SHA-256 checksum. Its explicit allowlists
-include `Default`, `Empty`, and `Host`, excluding review layouts and mutable
+include `Default`, `Empty`, `Host`, and `Theme`, excluding review layouts and mutable
 simulator data. Use `--output <directory>` to choose another output location.
 
 See [Issues, changes, and releases](contributing.md#publish-a-release)

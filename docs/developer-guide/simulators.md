@@ -122,15 +122,21 @@ radio's model-selection UI, just as on a radio.
 
 | Model | What to exercise |
 | --- | --- |
-| **AEROGRID STD** (`model1.yml`) | Five screens: Default, Empty, Host, services, and services2. All three shipped standard layouts, plus both diagnostic panel types. |
+| **AEROGRID STD** (`model1.yml`) | Six screens: Default, Empty, Host, services, services2, and Theme. All four shipped layouts, plus both diagnostic panel types. |
 | **AEROGRID PANEL1** (`model2.yml`) | Six screens: cell battery, flight counter, flight mode, flight timer, link status, and metric. |
 | **AEROGRID PANEL2** (`model3.yml`) | Five screens: model identity, navigation, text, trim panel, and TX battery. |
 
 Review layouts live in `src/WIDGETS/AeroGrid/layouts/review-*.yaml`.
 The two panel models contain exactly one dashboard per user-facing panel type.
-All screens use App mode and the Modern theme. On the text dashboard, SF
+All screens use App mode and the Modern Dark theme. On the text dashboard, SF
 changes MODE, SA changes RATE, and SB changes FLAP; NO MIDDLE deliberately
 leaves SA's middle position unmapped.
+
+The last screen of **AEROGRID STD** is a telemetry-free theme showcase. Its
+fixed samples show token swatches, text levels, accents, a dial, bars, and
+the six dashboard panel states. Change the widget's Theme option to compare Modern Dark
+and Modern Light, or copy the layout and add
+[custom YAML overrides](../user-guide/dashboards.md#create-your-own-theme).
 
 **Host** reports loading, package identity, and service errors; `services`
 and `services2` exercise the service-probe panel across all five services.

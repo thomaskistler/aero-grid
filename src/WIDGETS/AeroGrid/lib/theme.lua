@@ -21,7 +21,7 @@
 ---@field critical integer
 
 ---@class AeroGridTheme
----@field mode "modern"|"edgetx"|"custom"
+---@field mode "modern"|"modern-light"|"custom"
 ---@field rgb AeroGridThemeTokens 24-bit values, kept for contrast math and tests.
 ---@field color table<string, integer> Display values produced by lcd.RGB.
 ---@field spacing table
@@ -41,9 +41,8 @@ local riderDepth
 ---
 --- A contrast correction is the legibility pass doing its job, not a problem,
 --- and reporting it as an error would put a permanent banner on the screen of
---- every radio using a derived palette. Severity separates a routine
---- adjustment from the radio refusing to answer at all, which is still not a
---- failure but is worth knowing about.
+--- every radio using custom colors. Severity separates routine corrections
+--- from invalid theme configuration.
 ---@param notices table[]
 ---@param severity "info"|"warning"
 ---@param text string
@@ -82,7 +81,25 @@ local MODERN = {
     critical = 0xF05252,
 }
 
-theme.MODES = { modern = true, edgetx = true, custom = true }
+--- Light instrument palette with darker accents for white panels.
+local MODERN_LIGHT = {
+    canvas = 0xE5EAF0,
+    surface = 0xFFFFFF,
+    surfaceRaised = 0xE5EAF0,
+    border = 0xB7C3D0,
+    track = 0xCED7E2,
+    text = 0x17212B,
+    textMuted = 0x263642,
+    textFaint = 0x3A4B58,
+    cyan = 0x167BA8,
+    blue = 0x2354C8,
+    green = 0x147642,
+    amber = 0xBC7800,
+    orange = 0xC65B12,
+    critical = 0xC92D2D,
+}
+
+theme.MODES = { modern = true, ["modern-light"] = true, custom = true }
 
 --- Accent tokens a panel may legitimately select.
 --- Warning and freshness states override these, so `critical` is not selectable.
@@ -147,9 +164,8 @@ local MIN_TINT_SEPARATION = 1.30
 ---
 --- This is a target rather than a floor in everything but name: panels carry
 --- no resting outline, so the fill against the screen is the only thing that
---- says where one panel ends and the next begins. It matches what Modern's own
---- pairing achieves, because a derived palette sitting at the old 1.10 looked
---- flat next to Modern on the same radio one page apart.
+--- says where one panel ends and the next begins. Custom palettes use the
+--- same separation target as Modern Dark.
 local MIN_ELEVATION_CONTRAST = 1.30
 --- Separation between a panel and a raised surface drawn on it.
 local MIN_RAISE_CONTRAST = 1.20
@@ -183,7 +199,7 @@ local function pack(red, green, blue)
 end
 
 --- Expand an EdgeTX RGB565 value into a 24-bit color.
---- `lcd.getColor()` returns RGB565, so theme derivation must widen it first.
+--- Used to check palette contrast at the radio's color precision.
 ---@param value integer
 ---@return integer
 function theme.fromRgb565(value)
@@ -254,8 +270,7 @@ local function betterContrast(background, first, second)
 end
 
 --- Force a foreground token to a readable contrast against its surface.
---- Derived EdgeTX themes frequently pair colors that are legible on the radio's
---- own light surfaces but not on the dashboard's dark instrument panels.
+--- Custom overrides can pair colors that are not legible together.
 ---@param tokens table
 ---@param key string
 ---@param background integer
@@ -276,7 +291,7 @@ local function correctContrast(tokens, key, background, minimum, notices)
 end
 
 --- Find a color separated from a base by at least a minimum contrast ratio.
---- Both directions are tried, because a derived theme may be light or dark.
+--- Both directions are tried, because a custom theme may be light or dark.
 ---@param base integer
 ---@param minimum number
 ---@return integer
@@ -322,8 +337,8 @@ local function correctAccent(tokens, key, background, minimum, notices)
     theme.notice(notices, "info", key .. " was replaced for contrast")
 end
 
---- Guarantee that a derived palette is structurally visible and legible.
---- Modern is exempt because its values are specified directly.
+--- Guarantee that a custom palette is structurally visible and legible.
+--- Built-in palettes are exempt because their values are specified directly.
 ---@param tokens table
 ---@param notices table[]
 local function enforceLegibility(tokens, notices)
@@ -413,8 +428,8 @@ end
 --- is noticed while looking somewhere else.
 ---
 --- The tint is mixed from the state's own accent rather than stated, so a
---- derived palette tints from whatever surface the radio gave it instead of
---- from a colour chosen against Modern's. It is mixed by the smallest amount
+--- custom palette tints from its configured surface instead of
+--- from a colour chosen against Modern Dark's. It is mixed by the smallest amount
 --- that is actually noticeable beside an untinted panel, because every step
 --- past that spends contrast the text drawn on it has to give back.
 ---
@@ -429,8 +444,9 @@ end
 ---@param accent integer Accent this state draws, which the tint is mixed from.
 ---@param preferred? integer Preferred surface, subject to the same contrast guarantees.
 ---@param faintTextUsed? boolean False for states whose panels draw no faint supporting text.
+---@param separation? number Built-in light theme's softer surface separation.
 ---@return integer? surface Nil when no tint satisfies the guarantees.
-function theme.alertSurface(tokens, accent, preferred, faintTextUsed)
+function theme.alertSurface(tokens, accent, preferred, faintTextUsed, separation)
     local surface = tokens.surface
 
     -- Each guarantee is a contrast ratio against a colour that does not change
@@ -455,8 +471,8 @@ function theme.alertSurface(tokens, accent, preferred, faintTextUsed)
     end
 
     local function legible(candidateLum)
-        return ratio(surfaceLum, candidateLum) >= MIN_TINT_SEPARATION
-            and ratio(canvasLum, candidateLum) >= MIN_ELEVATION_CONTRAST
+        return ratio(surfaceLum, candidateLum) >= (separation or MIN_TINT_SEPARATION)
+            and ratio(canvasLum, candidateLum) >= (separation or MIN_ELEVATION_CONTRAST)
             and (faintTextUsed == false or ratio(candidateLum, faintLum) >= MIN_FAINT_CONTRAST)
             and ratio(candidateLum, accentLum) >= MIN_ACCENT_CONTRAST
             and ratio(candidateLum, mutedLum) >= MIN_MUTED_CONTRAST
@@ -469,12 +485,7 @@ function theme.alertSurface(tokens, accent, preferred, faintTextUsed)
 
     -- Hue first, then lightness, and both directions of lightness.
     --
-    -- Mixing alone is only enough on a dark surface. Modern's panel is very
-    -- dark, so taking it toward a bright accent lightens it and every guarantee
-    -- survives. A palette derived from a radio whose own surface is mid grey
-    -- behaves oppositely: lightening closes the gap to the muted and faint text
-    -- drawn on it, and the EdgeTX default leaves faint at 1.99 against a floor
-    -- of 1.8 before anything is tinted at all, so there is no room to lighten.
+    -- On a mid-grey custom surface, lightening can erase text contrast.
     -- Darkening the same mix keeps the hue and opens that gap instead.
     for _, fraction in ipairs({ 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40 }) do
         local mixed = blend(surface, accent, fraction)
@@ -495,119 +506,6 @@ function theme.alertSurface(tokens, accent, preferred, faintTextUsed)
     -- says so through its accent and badge alone, which is worse than a tint and
     -- better than an illegible one.
     return nil
-end
-
---- Extract the RGB565 payload from an EdgeTX colour flag word.
----
---- `lcd.getColor` does not return a bare RGB565. `luaLcdGetColor` returns
---- `colorToRGB(flags) & (COLOR_MASK(~0u) | RGB_FLAG)`, and the colour lives in
---- the upper half: `COLOR_VAL(flags)` is `flags >> 16`, with `RGB_FLAG`
---- (`0x8000`) set in the lower half. Reading the low 16 bits instead leaves
---- red 16, green 0 and blue 0 for every role of every theme, which drew every
---- panel on the dashboard in a dark red belonging to no EdgeTX theme at all.
----@param flags integer
----@return integer rgb565
-local function colorValue(flags)
-    return math.floor(flags / 65536) % 65536
-end
-
-local function readRole(env, role)
-    if type(role) ~= "number" then
-        return nil
-    end
-
-    local ok, value = pcall(env.getColor, role)
-    if not ok or type(value) ~= "number" then
-        return nil
-    end
-
-    return theme.fromRgb565(colorValue(value))
-end
-
---- Collect the EdgeTX color environment, allowing tests to inject one.
----@param env? table
----@return table? resolved
-local function resolveEnv(env)
-    env = env or {}
-    local getColor = env.getColor
-    if getColor == nil and type(lcd) == "table" then
-        getColor = lcd.getColor
-    end
-    if type(getColor) ~= "function" then
-        return nil
-    end
-
-    local roles = env.roles
-        or {
-            primary1 = COLOR_THEME_PRIMARY1,
-            primary2 = COLOR_THEME_PRIMARY2,
-            primary3 = COLOR_THEME_PRIMARY3,
-            secondary1 = COLOR_THEME_SECONDARY1,
-            secondary2 = COLOR_THEME_SECONDARY2,
-            secondary3 = COLOR_THEME_SECONDARY3,
-            focus = COLOR_THEME_FOCUS,
-            edit = COLOR_THEME_EDIT,
-            active = COLOR_THEME_ACTIVE,
-            warning = COLOR_THEME_WARNING,
-            disabled = COLOR_THEME_DISABLED,
-        }
-
-    return { getColor = getColor, roles = roles }
-end
-
---- Derive dashboard tokens from the active EdgeTX theme.
---- Roles without a suitable EdgeTX equivalent keep their Modern values, and
---- critical red stays dashboard-controlled so alarms remain recognizable.
----@param notices table[]
----@param env? table
----@return table tokens
-local function deriveFromEdgeTx(notices, env)
-    local resolved = resolveEnv(env)
-    local tokens = {}
-    for key, value in pairs(MODERN) do
-        tokens[key] = value
-    end
-
-    if not resolved then
-        theme.notice(notices, "warning", "EdgeTX colors unavailable; using Modern palette")
-        return tokens
-    end
-
-    -- Structure follows the radio; meaning does not.
-    --
-    -- EdgeTX's roles are menu chrome, and their names do not describe their
-    -- colours. In the shipped EdgeTX Default theme `ACTIVE` is yellow, `EDIT` is
-    -- green and `WARNING` is red, so mapping our accents onto them by name
-    -- scrambled every semantic on the dashboard: healthy read as caution, and a
-    -- warning was rendered in a red indistinguishable from critical. A pilot
-    -- cannot be asked to relearn what a colour means per radio theme, so the
-    -- accents stay exactly as Modern defines them and only the surfaces and text
-    -- follow the radio.
-    local roles = resolved.roles
-    local mapping = {
-        canvas = roles.secondary1,
-        surface = roles.secondary1,
-        border = roles.primary3,
-        text = roles.primary2,
-        textMuted = roles.primary3,
-        textFaint = roles.disabled,
-    }
-
-    local found = false
-    for key, role in pairs(mapping) do
-        local color = readRole(resolved, role)
-        if color then
-            tokens[key] = color
-            found = true
-        end
-    end
-
-    if not found then
-        theme.notice(notices, "warning", "EdgeTX theme roles unreadable; using Modern palette")
-        return tokens
-    end
-
-    return tokens
 end
 
 --- Apply the limited custom override set over the Modern palette.
@@ -667,11 +565,10 @@ end
 --- mistake whose author needs to see it. A notice is the host adapting exactly
 --- as designed, such as the legibility pass nudging a token, or the radio
 --- declining to hand over its palette.
----@param mode? string One of modern, edgetx, or custom.
+---@param mode? string One of modern (Modern Dark), modern-light, or custom.
 ---@param overrides? table Custom mode overrides.
----@param env? table Optional injected EdgeTX color environment.
 ---@return AeroGridTheme
-function theme.build(mode, overrides, env)
+function theme.build(mode, overrides)
     local warnings = {}
     local notices = {}
     local accent = "cyan"
@@ -711,22 +608,22 @@ function theme.build(mode, overrides, env)
     end
     mode = mode or "modern"
 
-    if mode == "edgetx" then
-        tokens = deriveFromEdgeTx(notices, env)
-    elseif mode == "custom" then
+    if mode == "custom" then
         tokens, accent = applyCustom(overrides, warnings)
     else
         tokens = {}
-        for key, value in pairs(MODERN) do
+        local palette = mode == "modern-light" and MODERN_LIGHT or MODERN
+        for key, value in pairs(palette) do
             tokens[key] = value
         end
     end
 
-    -- Critical red is never theme-derived so alarms stay recognizable.
-    tokens.critical = MODERN.critical
+    -- Derived palettes retain the standard red; the built-in light palette
+    -- uses its darker red to preserve the same alarm hue on white.
+    tokens.critical = mode == "modern-light" and MODERN_LIGHT.critical or MODERN.critical
 
-    -- Derived palettes are guaranteed legible; Modern is specified directly.
-    if mode ~= "modern" then
+    -- Built-in palettes are specified and tested; custom ones need correction.
+    if mode ~= "modern" and mode ~= "modern-light" then
         enforceLegibility(tokens, notices)
     end
 
@@ -735,10 +632,13 @@ function theme.build(mode, overrides, env)
     -- to keep critical red visible and then re-derives everything measured
     -- against it, so a tint mixed earlier would be mixed from a surface that no
     -- longer exists.
+    local light = mode == "modern-light"
+    -- Light mode deliberately uses quieter fills; text and badge floors stay unchanged.
+    local separation = light and 1.08 or nil
     local alertRgb = {
-        warning = theme.alertSurface(tokens, tokens.amber),
-        critical = theme.alertSurface(tokens, tokens.critical),
-        active = theme.alertSurface(tokens, tokens.blue, 0x365673, false),
+        warning = theme.alertSurface(tokens, tokens.amber, light and 0xFFF3D8 or nil, nil, separation),
+        critical = theme.alertSurface(tokens, tokens.critical, light and 0xFAD0D0 or nil, nil, separation),
+        active = theme.alertSurface(tokens, tokens.blue, light and 0xD0DEF5 or 0x365673, false, separation),
     }
     local alertColor = {}
     for name, value in pairs(alertRgb) do

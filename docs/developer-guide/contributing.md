@@ -57,7 +57,11 @@ simulator. If a radio/model change intentionally becomes the baseline, stop the
 simulator and update only the relevant tracked fixture files. Keep
 `manuallyEdited: 1` in `RADIO/radio.yml` when manually changing its model
 selection; EdgeTX can then accept the edit and regenerate the checksum.
-Check a fresh `make build` afterwards.
+Companion's SD import still checks the checksum even with that flag. After
+editing, run `python3 -m unittest discover -s tools -p 'test_sdcard_checksum.py'`
+and update the first line to the calculated value reported by a failing check.
+The checksum includes the exact bytes after the first line, including line
+endings. Check a fresh `make build` afterwards.
 
 Do not commit `.luac`, virtual environments, logs, framebuffer dumps,
 `build/sdcard/`, or incidental captures. Reviewed website screenshots belong
