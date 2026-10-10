@@ -46,7 +46,7 @@
 ---@field errorLabel? any
 ---@field page any Container holding one generation of the dashboard.
 ---@field reloadState? "clear"|"rebuild"
----@field stage? "read"|"tokenize"|"header"|"services"|"panels" Staged loader position.
+---@field stage? "theme-read"|"theme-validate"|"read"|"tokenize"|"header"|"services"|"panels" Staged loader position.
 ---@field servicesModule? table Loaded lib/services.lua registry module.
 ---@field packageInfo? table Package identity and compatibility versions.
 ---@field serviceRuntime? table Registry holding every constructed service.
@@ -77,9 +77,10 @@ end
 ---@param base string Widget directory.
 ---@param name string Theme file stem.
 ---@param parser table YAML parser.
+---@param pickerOnly? boolean Read only the name and label during widget registration.
 ---@return table? definition
 ---@return string? error
-local function readThemeDefinition(base, name, parser)
+local function readThemeDefinition(base, name, parser, pickerOnly)
     if type(name) ~= "string" or not string.match(name, "^[%w_-]+$") then
         return nil, "invalid theme name"
     end
@@ -99,6 +100,17 @@ local function readThemeDefinition(base, name, parser)
             if type(content) ~= "string" then
                 return nil, "cannot read " .. filename
             end
+            if pickerOnly then
+                -- Registration has one instruction budget for every installed theme.
+                -- Parse only picker metadata here; the staged loader validates palettes.
+                local fields = {}
+                for line in string.gmatch("\n" .. content, "\n([^%s#][^\r\n]*)") do
+                    if string.match(line, "^name%s*:") or string.match(line, "^label%s*:") then
+                        fields[#fields + 1] = line
+                    end
+                end
+                content = table.concat(fields, "\n")
+            end
             local definition, parseError = parser.parse(content)
             if not definition then
                 return nil, filename .. ": " .. tostring(parseError)
@@ -117,9 +129,10 @@ end
 ---@param names string[]
 ---@param selected string?
 ---@param parser table YAML parser.
+---@param pickerOnly? boolean
 ---@return table? document
 ---@return string? error
-local function readThemeCatalog(base, names, selected, parser)
+local function readThemeCatalog(base, names, selected, parser, pickerOnly)
     local definitions = {}
     local included = {}
     local ordered = {}
@@ -137,7 +150,7 @@ local function readThemeCatalog(base, names, selected, parser)
     end
 
     for _, name in ipairs(ordered) do
-        local definition, err = readThemeDefinition(base, name, parser)
+        local definition, err = readThemeDefinition(base, name, parser, pickerOnly)
         if definition then
             definitions[#definitions + 1] = definition
         elseif err ~= "theme file is missing: " .. name .. ".yml" then
@@ -179,7 +192,7 @@ if themeRegistry and type(dir) == "function" then
 end
 local startupThemeCatalog
 if themeRegistry and themeYamlParser then
-    startupThemeCatalog = readThemeCatalog(WIDGET_PATH, themeModes, nil, themeYamlParser)
+    startupThemeCatalog = readThemeCatalog(WIDGET_PATH, themeModes, nil, themeYamlParser, true)
 end
 
 --- Layout names behind the native CHOICE option, built once at script load.
@@ -1288,7 +1301,12 @@ local function advanceLoad(context)
 
     --- Abandon the load, reporting why.
     local function fail(message)
-        if stage ~= "services" and recoverLayout(context, tostring(message)) then
+        if
+            stage ~= "services"
+            and stage ~= "theme-read"
+            and stage ~= "theme-validate"
+            and recoverLayout(context, tostring(message))
+        then
             return true
         end
         addError(context, context.recoveryReason or message)
@@ -1297,8 +1315,40 @@ local function advanceLoad(context)
         context.source = nil
         context.loadCandidates = nil
         context.loadCandidateIndex = nil
+        context.themeNames, context.themeDefinitions = nil, nil
         showErrors(context)
         return false
+    end
+
+    if stage == "theme-read" then
+        local names = context.themeNames
+        local index = context.themeReadIndex
+        local name = names[index]
+        local definition, readError = readThemeDefinition(context.path, name, context.yaml)
+        if not definition and readError ~= "theme file is missing: " .. name .. ".yml" then
+            return fail("themes: " .. tostring(readError))
+        end
+        if definition then
+            context.themeDefinitions[#context.themeDefinitions + 1] = definition
+        end
+        context.themeReadIndex = index + 1
+        if index == #names then
+            context.stage = "theme-validate"
+        end
+        return true
+    end
+
+    if stage == "theme-validate" then
+        local configured, configureError = context.themeBuilder.setCatalog({
+            version = 1,
+            themes = context.themeDefinitions,
+        })
+        context.themeNames, context.themeDefinitions, context.themeReadIndex = nil, nil, nil
+        if not configured then
+            return fail("themes: " .. tostring(configureError))
+        end
+        context.stage = "read"
+        return true
     end
 
     if stage == "read" then
@@ -1580,7 +1630,13 @@ local function beginLoad(context)
     -- rebuilt with the dashboard rather than reused across a reload.
     context.serviceRuntime = nil
     context.serviceIndex = nil
-    context.stage = "read"
+    context.themeNames = { "modern-dark" }
+    if context.themeMode ~= "modern-dark" then
+        context.themeNames[#context.themeNames + 1] = context.themeMode
+    end
+    context.themeDefinitions = {}
+    context.themeReadIndex = 1
+    context.stage = "theme-read"
 end
 
 --- Create one AeroGrid host instance for an EdgeTX custom-screen zone.
@@ -1691,27 +1747,7 @@ local function create(zone, widgetOptions, path)
         addError(context, "AeroGrid runtime module failed to load")
         showErrors(context)
     else
-        local themeNames = { "modern-dark" }
-        if context.themeMode ~= "modern-dark" then
-            themeNames[#themeNames + 1] = context.themeMode
-        end
-        local themeDocument, themeError = readThemeCatalog(path, themeNames, context.themeMode, context.yaml)
-        if not themeDocument then
-            context.runtimeFailed = true
-            addError(context, "themes: " .. tostring(themeError))
-            showErrors(context)
-        else
-            local configured, configureError = context.themeBuilder.setCatalog(themeDocument)
-            if not configured then
-                context.runtimeFailed = true
-                addError(context, "themes: " .. tostring(configureError))
-                showErrors(context)
-            else
-                -- Loading is deliberately deferred to refresh(). Doing it here
-                -- would exceed EdgeTX's per-callback budget on a full dashboard.
-                beginLoad(context)
-            end
-        end
+        beginLoad(context)
     end
 
     return context

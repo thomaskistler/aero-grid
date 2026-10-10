@@ -5,7 +5,7 @@ Choose a panel below for visual examples, settings, behavior, and configuration 
 | Panel | Purpose |
 | --- | --- |
 | [`metric`](../panels/metric.md) | Up to three numeric readings, including telemetry and global variables. |
-| [`text`](../panels/text.md) | Up to three switch-position text readings. |
+| [`state`](../panels/state.md) | Up to three readings selected by ordered switch conditions. |
 | [`flight-timer`](../panels/flight-timer.md) | An EdgeTX model timer. |
 | [`flight-counter`](../panels/flight-counter.md) | Panel-owned flight detection, GV9 count, and completed-flight history. |
 | [`flight-mode`](../panels/flight-mode.md) | The active EdgeTX flight mode. |

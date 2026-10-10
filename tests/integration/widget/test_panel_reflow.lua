@@ -83,11 +83,11 @@ for _, dashboard in ipairs({
     "review-flight-timer",
     "review-flight-mode",
     "review-model-identity",
-    "review-text",
+    "review-state",
     "review-trim-panel",
     "Default",
     "services",
-    "Host",
+    "Diagnostics",
 }) do
     fixture.reset()
     fixture.lvglMock.setAppMode(true)
@@ -124,7 +124,7 @@ for _, panelType in ipairs({
     "flight-timer",
     "flight-mode",
     "model-identity",
-    "text",
+    "state",
     "trim-panel",
     "flight-counter",
     "service-probe",

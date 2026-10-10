@@ -25,7 +25,7 @@ The armed condition is configured on this panel only, independently of
 `"SF^"` in SF's up position, and `"SFv"` in its down position. `"L01"` arms while
 logical switch 1 is true. Names are case-sensitive and resolved by EdgeTX;
 nonexistent switches or positions produce a panel error.
-If using session extrema or a separate Mode text panel, configure their armed
+If using session extrema or a separate Mode state panel, configure their armed
 conditions to agree with this panel.
 The motor source must also be radio-local, not a telemetry sensor.
 

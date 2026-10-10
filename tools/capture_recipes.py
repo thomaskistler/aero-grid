@@ -10,8 +10,8 @@ import yaml
 
 RECIPE_DIR = Path(__file__).with_name("capture-recipes")
 PANELS = ("trim-panel", "flight-timer", "metric", "flight-mode", "tx-battery",
-              "model-identity", "cell-battery", "link-status", "navigation", "text", "flight-counter")
-SYNTHETIC_PANELS = ("metric", "tx-battery", "cell-battery", "link-status", "navigation", "text",
+              "model-identity", "cell-battery", "link-status", "navigation", "state", "flight-counter")
+SYNTHETIC_PANELS = ("metric", "tx-battery", "cell-battery", "link-status", "navigation", "state",
                     "flight-counter")
 
 
@@ -234,26 +234,34 @@ def load_recipe(path):
             raise ValueError("Flight counter capture requires SFv armSwitch, ch3 motor, "
                              "non-reversed motor, and disabled history/announcements")
         number(config.get("minFlightDuration"), 0.2, 2, "config.minFlightDuration")
-    elif recipe["panel"] == "text":
+    elif recipe["panel"] == "state":
         fields(sample, ("switches",))
         switches = sample["switches"]
-        entries = config.get("texts")
+        entries = config.get("entries")
         if not isinstance(entries, list) or not 1 <= len(entries) <= 3:
-            raise ValueError("config.texts must contain 1 to 3 readings")
-        if not isinstance(switches, dict) or not 1 <= len(switches) <= 3:
-            raise ValueError("sample.switches must contain 1 to 3 switches")
+            raise ValueError("config.entries must contain 1 to 3 readings")
+        if not isinstance(switches, dict) or not 1 <= len(switches) <= 9:
+            raise ValueError("sample.switches must contain 1 to 9 switches")
         for name, position in switches.items():
-            if not re.fullmatch(r"s[a-z]", name) or position not in ("up", "middle", "down"):
-                raise ValueError("Switch samples require lowercase switch names and up/middle/down positions")
+            physical = re.fullmatch(r"s[a-z]", name) and position in ("up", "middle", "down")
+            logical = re.fullmatch(r"L\d\d", name) and isinstance(position, bool)
+            if not physical and not logical:
+                raise ValueError("Switch samples require lowercase physical names with up/middle/down "
+                                 "positions or logical names with boolean values")
         for entry in entries:
-            fields(entry, ("source", "label", "positions"))
-            positions = entry["positions"]
-            fields(positions, ("up", "down"), ("middle",))
-            for value in [entry["label"], *positions.values()]:
+            fields(entry, ("label", "states"))
+            states = entry["states"]
+            if not isinstance(states, list) or not 1 <= len(states) <= 3:
+                raise ValueError("Each entry requires 1 to 3 states")
+            for condition in states:
+                fields(condition, ("switch", "text"), ("background",))
+                state_sample(sample, condition["switch"])
+                if condition.get("background", "normal") not in ("normal", "active", "warning", "critical"):
+                    raise ValueError("Invalid state background")
+            for value in [entry["label"], *(condition["text"] for condition in states)]:
                 if not isinstance(value, str) or not value or any(ord(c) < 32 or ord(c) > 126 for c in value):
                     raise ValueError("Text labels and mappings must be nonempty single-line ASCII strings")
-            if (not isinstance(entry["source"], str) or entry["source"] not in switches
-                    or switches[entry["source"]] not in positions):
+            if not any(state_sample(sample, condition["switch"]) for condition in states):
                 raise ValueError("Missing mapped switch sample")
     elif recipe["panel"] == "tx-battery":
         fields(sample, ("voltage",))
@@ -300,6 +308,19 @@ def configure_model(prefix, recipe):
     return re.sub(r"(?m)^timers:[^\n]*\n(?:[ \t]+[^\n]*\n)*", lambda _: timer, prefix)
 
 
+def state_sample(sample, switch):
+    if isinstance(switch, str) and re.fullmatch(r"L\d\d", switch):
+        if switch not in sample["switches"]:
+            raise ValueError("Missing logical switch sample")
+        return sample["switches"][switch]
+    if not isinstance(switch, str) or not re.fullmatch(r"S[A-Z][\^v-]", switch):
+        raise ValueError("State capture conditions require physical positions or logical switches")
+    name, position = switch[:2].lower(), {"^": "up", "-": "middle", "v": "down"}[switch[-1]]
+    if name not in sample["switches"]:
+        raise ValueError("Missing switch sample")
+    return sample["switches"][name] == position
+
+
 def readiness(recipe):
     sample = recipe["sample"]
     if recipe["panel"] == "flight-counter":
@@ -309,17 +330,18 @@ def readiness(recipe):
                 or entry.instance.phase ~= "active" or entry.instance.stateName ~= "active"
                 or entry.instance.badgeText ~= "IN-FLIGHT" then return end
 """
-    if recipe["panel"] == "text":
+    if recipe["panel"] == "state":
         result = ""
-        for index, item in enumerate(recipe["config"]["texts"], 1):
-            position = sample["switches"][item["source"]]
-            value = {"up": -1024, "middle": 0, "down": 1024}[position]
-            result += f"""            do
-                local feed = entry.instance.feeds[{index}]
-                if not feed or not feed.available or feed.telemetry or feed.value ~= {value} then return end
+        for index, item in enumerate(recipe["config"]["entries"], 1):
+            for condition_index, condition in enumerate(item["states"], 1):
+                value = lua_value(state_sample(sample, condition["switch"]))
+                result += f"""            do
+                local feed = entry.instance.feeds[{index}][{condition_index}]
+                if not feed or not feed.available or not feed.fresh or feed.value ~= {value} then return end
             end
 """
-            expected = item["positions"][position]
+            expected = next(condition["text"] for condition in item["states"]
+                            if state_sample(sample, condition["switch"]))
             if index == 1:
                 result += f"            if entry.instance.text ~= {json.dumps(expected)} then return end\n"
         return result
@@ -428,22 +450,27 @@ return {{
     getRSSI = function() return {recipe['sample']['rssi']} end,
 }}
 """
-    if recipe["panel"] == "text":
-        switches = {name: {"id": 300 + index,
-                          "value": {"up": -1024, "middle": 0, "down": 1024}[position]}
-                    for index, (name, position) in enumerate(recipe["sample"]["switches"].items())}
+    if recipe["panel"] == "state":
+        names = dict.fromkeys(condition["switch"] for entry in recipe["config"]["entries"]
+                              for condition in entry["states"])
+        switches = {name: {"id": 3000 + index, "value": state_sample(recipe["sample"], name)}
+                    for index, name in enumerate(names)}
         return """local switches = """ + lua_value(switches) + """
 return {
-    getFieldInfo = function(name)
-        local switch = switches[name]
-        if switch then return { id = switch.id, name = name } end
-        return getFieldInfo(name)
-    end,
-    getValue = function(id)
-        for name, switch in pairs(switches) do
-            if id == name or id == switch.id then return switch.value end
+    getSwitchIndex = function(name)
+        local physical, suffix = string.match(name, "^(S[A-Z])(.+)$")
+        if physical then
+            name = physical .. (suffix == CHAR_UP and "^" or suffix == CHAR_DOWN and "v" or suffix)
         end
-        return getValue(id)
+        local switch = switches[name]
+        if switch then return switch.id end
+        return getSwitchIndex(name)
+    end,
+    getSwitchValue = function(id)
+        for _, switch in pairs(switches) do
+            if id == switch.id then return switch.value end
+        end
+        return getSwitchValue(id)
     end,
 }
 """

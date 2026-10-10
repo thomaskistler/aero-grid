@@ -31,6 +31,9 @@ local function create(span, failWrite)
         { Layout = "flight-test", Theme = "modern-dark" },
         root .. "/src/WIDGETS/AeroGrid/"
     )
+    while context.stage == "theme-read" or context.stage == "theme-validate" do
+        measured(definition.refresh, context)
+    end
     context.source = table.concat({
         "version: 1",
         "grid:",

@@ -369,6 +369,58 @@ local function testReorderingWithEmptySpace()
     end
 end
 
+local function testNestedStateLists()
+    local statePanel = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/state.lua"))()
+    modules.state = statePanel
+    local input = document()
+    input.panels[1].type = "state"
+    input.panels[1].config = {
+        entries = {
+            { label = "MODE", states = { { switch = "SF^", text = "OFF" } } },
+        },
+    }
+    local session = newSession(input)
+    local fields = assert(editor.formFields(session))
+    local offered = {}
+    for _, field in ipairs(fields) do
+        if field.path then
+            offered[table.concat(field.path, ".")] = field
+        end
+    end
+    assert(offered["1.states"].type == "table-list")
+    assert(offered["1.states"].value == 1)
+    assert(offered["1.states.1.switch"].entryLabel == "When")
+    assert(offered["1.states.1.background"].value == "normal", "omitted nested fields expose their default")
+    assert(not editor.removeItem(session, "entries", 1, { 1, "states" }), "condition minimum is enforced")
+    assert(not session.dirty, "rejected removal does not dirty draft")
+    assert(editor.setPath(session, "entries", { 1, "states", 1, "background" }, "critical"))
+    assert(not editor.setPath(session, "entries", { 1, "states", 1, "background" }, "red"))
+    assert(not editor.setPath(session, "entries", { 1, "states", 1, "switch" }, nil))
+    assert(not editor.setPath(session, "entries", { 1, "states", 1, "text" }, 1))
+    assert(editor.appendItem(session, "entries", { 1, "states" }))
+    assert(editor.appendItem(session, "entries", { 1, "states" }))
+    assert(not editor.appendItem(session, "entries", { 1, "states" }), "condition maximum is enforced")
+    assert(not editor.appendItem(session, "entries", { 1, "label" }), "scalar paths cannot be appended")
+    assert(not editor.appendItem(session, "entries", { 2, "states" }), "missing list paths cannot be appended")
+    local entries = session.draft.panels[1].config.entries
+    assert(entries[1].states[1].background == "critical")
+    assert(entries[1].states[2].background == nil, "append uses a fresh condition, not the winner's background")
+    assert(editor.setPath(session, "entries", { 1, "states", 2, "text" }, "SECOND"))
+    assert(entries[1].states[3].text == "UP", "new conditions never alias each other or the declaration")
+    assert(editor.removeItem(session, "entries", 1, { 1, "states" }))
+    assert(entries[1].states[1].text == "SECOND", "removing preserves priority of remaining conditions")
+    assert(editor.appendItem(session, "entries"))
+    assert(editor.setPath(session, "entries", { 2, "states", 1, "text" }, "COPY"))
+    assert(entries[1].states[1].text == "SECOND", "duplicated entries deep-copy their conditions")
+    assert(input.panels[1].config.entries[1].states[1].background == nil, "nested edits stay in the working copy")
+    local applied, saved = editor.apply(session)
+    assert(applied, table.concat(saved or {}, "; "))
+    local reopened = newSession(saved)
+    assert(reopened.draft.panels[1].config.entries[2].states[1].text == "COPY", "nested lists survive applying")
+    modules.state = nil
+end
+
+testNestedStateLists()
 testReorderingWithEmptySpace()
 testDirectionalReordering()
 testCompatibleSwaps()

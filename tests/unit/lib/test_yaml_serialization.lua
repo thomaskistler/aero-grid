@@ -25,7 +25,7 @@ local function testRoundTrip()
         panels = {
             {
                 id = "first",
-                type = "text",
+                type = "state",
                 col = 0,
                 row = 0,
                 colSpan = 2,

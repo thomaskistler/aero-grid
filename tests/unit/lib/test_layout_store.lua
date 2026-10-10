@@ -150,14 +150,14 @@ local function testRegistryWithoutFileApi()
 end
 
 local function testBuiltinNamesKeepPositions()
-    local files = { ["/AEROGRID/registry.txt"] = "Empty\nSonic1\ndefault\nhost\n" }
+    local files = { ["/AEROGRID/registry.txt"] = "Empty\nSonic1\ndefault\ndiagnostics\n" }
     local folders = {
-        ["/WIDGETS/AeroGrid/layouts"] = { "Empty.yaml", "Default.yaml", "Host.yaml" },
+        ["/WIDGETS/AeroGrid/layouts"] = { "Empty.yaml", "Default.yaml", "Diagnostics.yaml" },
         ["/AEROGRID/layouts"] = {},
     }
     local names = registry.load("/", "/WIDGETS/AeroGrid/", fakeCard(files, folders))
-    assertions.assertEqual(table.concat(names, ","), "Empty,Sonic1,Default,Host")
-    assertions.assertEqual(files["/AEROGRID/registry.txt"], "Empty\nSonic1\nDefault\nHost\n")
+    assertions.assertEqual(table.concat(names, ","), "Empty,Sonic1,Default,Diagnostics")
+    assertions.assertEqual(files["/AEROGRID/registry.txt"], "Empty\nSonic1\nDefault\nDiagnostics\n")
 end
 
 local function testThemeRegistryKeepsPositionsAndAddsNames()

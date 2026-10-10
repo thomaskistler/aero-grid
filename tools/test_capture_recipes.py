@@ -99,24 +99,40 @@ class CaptureRecipeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Missing sample"):
             self.load(recipe)
 
-    def test_text_switch_samples(self):
-        recipe = load_recipe(RECIPE_DIR / "text.yaml")
+    def test_state_switch_samples(self):
+        recipe = load_recipe(RECIPE_DIR / "state.yaml")
         self.assertEqual(yaml.safe_load(config_yaml(recipe["config"])), recipe["config"])
         self.assertIn('entry.instance.text ~= "ARMED"', readiness(recipe))
-        self.assertIn("feed.telemetry", readiness(recipe))
+        self.assertIn("feed.fresh", readiness(recipe))
         inputs = fixture_inputs(recipe)
-        self.assertIn("return { id = switch.id, name = name }", inputs)
+        self.assertIn("return switch.id", inputs)
+        self.assertIn("getSwitchValue", inputs)
         self.assertNotIn("unit =", inputs)
         for mutate in (
             lambda r: r["sample"]["switches"].update(sf="invalid"),
             lambda r: r["sample"]["switches"].pop("sf"),
-            lambda r: r["config"]["texts"][0]["positions"].update(down=True),
-            lambda r: r["config"].update(texts=[]),
+            lambda r: r["config"]["entries"][0]["states"][0].update(text=True),
+            lambda r: r["config"]["entries"][0]["states"][0].update(background="red"),
+            lambda r: r["config"]["entries"][0].update(states=[]),
+            lambda r: r["config"].update(entries=[]),
         ):
             invalid = copy.deepcopy(recipe)
             mutate(invalid)
             with self.assertRaises(ValueError):
                 self.load(invalid)
+
+    def test_state_logical_condition_priority(self):
+        recipe = load_recipe(RECIPE_DIR / "state.yaml")
+        recipe["sample"]["switches"]["L01"] = True
+        recipe["config"]["entries"][0]["states"][0]["switch"] = "L01"
+        recipe = self.load(recipe)
+        self.assertIn('entry.instance.text ~= "DISARMED"', readiness(recipe))
+        self.assertIn('["L01"]', fixture_inputs(recipe))
+        recipe["sample"]["switches"]["L01"] = False
+        self.assertIn('entry.instance.text ~= "ARMED"', readiness(self.load(recipe)))
+        recipe["sample"]["switches"]["L01"] = 1
+        with self.assertRaises(ValueError):
+            self.load(recipe)
 
     def test_flight_counter_samples(self):
         recipe = load_recipe(RECIPE_DIR / "flight-counter.yaml")

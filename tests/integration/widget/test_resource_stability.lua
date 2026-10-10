@@ -27,7 +27,7 @@ local function finish()
     collectgarbage("collect")
 end
 
-local dashboards = { "main", "review-metric", "review-navigation", "Host", "services", "services2" }
+local dashboards = { "main", "review-metric", "review-navigation", "Diagnostics", "services", "services2" }
 local baseline = {}
 local maxGrowth = 0
 local peakObjects = 0

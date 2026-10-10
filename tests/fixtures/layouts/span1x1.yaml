@@ -33,20 +33,22 @@ grid:
   rows: 4
 
 panels:
-  - id: g-text
-    type: text
+  - id: g-state
+    type: state
     col: 0
     row: 3
     colSpan: 1
     rowSpan: 1
     config:
-      texts:
+      entries:
         - label: MODE
-          source: sa
-          positions:
-            up: LOW
-            middle: MID
-            down: HIGH
+          states:
+            - switch: SA^
+              text: LOW
+            - switch: SA-
+              text: MID
+            - switch: SAv
+              text: HIGH
 
   # Top-left is under the EdgeTX menu button in App mode. A single cell cannot
   # be saved there and the specification says so; it keeps its reading and

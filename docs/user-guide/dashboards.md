@@ -45,8 +45,8 @@ Choose a layout to decide what that dashboard displays.
 | --- | --- |
 | **Empty** | A blank starting point for your own dashboard. Shows instructions until you start editing. |
 | **Default** | A ready-made aircraft dashboard. Configure its sources, switches, battery cell count, and alarms for your model before using it. |
-| **Host** | A diagnostics dashboard for checking loaded components and errors. |
-| **Theme** | Fixed theme samples: color tokens, text, bars, a dial, and every panel state. Not flight data. |
+| **Diagnostics** | A diagnostics dashboard for checking loaded components and errors. |
+| **Palette** | Fixed theme samples: color tokens, text, bars, a dial, and every panel state. Not flight data. |
 
 Bundled layouts are stored in `/WIDGETS/AeroGrid/layouts/`. Your saved layouts
 are stored separately in `/AEROGRID/layouts/`, so upgrading AeroGrid leaves
@@ -94,11 +94,19 @@ settings dialog. Sources, switches, and timers use EdgeTX pickers.
 
 ![Metric panel settings with named summary rows and an add-entry button](../assets/editor/settings.png)
 
-Metrics and text lines appear as named rows with a summary of their settings.
+Metrics and State entries appear as named rows with a summary of their settings.
 Tap a row to edit it, or tap the full-width **+** row to add an entry.
 In a metric entry, choose **Source** to change the reading.
 
-![Text panel settings with switch-position summaries and an add-entry button](../assets/editor/text-settings.png)
+In a State entry, open a state to edit **When**, **Text**, and **Background**.
+The first true condition wins. Each entry supports up to three conditions;
+**+** appends one at the bottom. Delete and recreate a condition to change
+its priority. Background choices are **normal**, **active**, **warning**, and
+**critical**. The main entry's winning choice sets the whole panel's appearance,
+including its background, sidebar, text colors, and badge. Supporting entries
+never change the panel mode.
+
+![State panel settings with summary rows and an add-entry button](../assets/editor/text-settings.png)
 
 ![Metric-entry dialog with GV1 selected as Source](../assets/editor/metric-entry.png)
 
@@ -165,10 +173,10 @@ Themes are stored as individual `.yml` files. Shipped themes live in
 `/WIDGETS/AeroGrid/themes/`; add user themes to `/AEROGRID/themes/`. Theme names
 are the filename stems, and user files override shipped files with the same
 name. AeroGrid updates the Theme picker registry automatically; do not edit
-`/AEROGRID/theme-registry.txt`. Use the **Theme** showcase to preview palettes
+`/AEROGRID/theme-registry.txt`. Use the **Palette** layout to preview palettes
 against fixed samples before applying one to a dashboard.
 
-Select **Theme** as the layout on a separate App-mode screen. It shows the
+Select **Palette** as the layout on a separate App-mode screen. It shows the
 actual AeroGrid theme and rendering primitives with fixed sample data, without
 a receiver or telemetry setup. Switch the widget's **Theme** option between
 Modern Dark and Modern Light to compare the same samples. Normal, active,
@@ -187,7 +195,7 @@ white and `0x000000` for black. `accent` selects the default semantic accent
 for YAML indentation, not tabs.
 
 Contrast safeguards may adjust a color to preserve legibility. Review the
-palette on the **Theme** showcase and on the radio as well as in the simulator.
+palette on the **Palette** layout and on the radio as well as in the simulator.
 Restart the radio or simulator after adding a theme so the picker reloads.
 
 ## Troubleshoot a reading

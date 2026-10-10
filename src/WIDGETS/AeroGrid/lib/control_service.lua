@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
---- Effective trim positions and global variables.
+--- Effective trim positions, global variables, and switch conditions.
 ---
 --- Both are resolved by EdgeTX rather than by AeroGrid. A trim is read through
 --- a selectable trim source, so EdgeTX applies flight-mode trim inheritance,
@@ -50,7 +50,7 @@ controlService.INTERVAL = 20
 --- Subscriptions refreshed per update, served round robin.
 controlService.POLL_CAP = 6
 
---- Ticks between attempts to resolve a trim source the radio rejects.
+--- Ticks between attempts to resolve a source or switch the radio rejects.
 controlService.RESOLVE_RETRY = 500
 
 --- `getValue` returns eight times the stored trim value.
@@ -86,22 +86,65 @@ function controlService.new(env, support)
         cursor = 1,
         trims = {},
         variables = {},
+        switches = {},
         variableEntries = {},
     }, controlService)
+end
+
+local function firmwareSwitchName(name, env)
+    local physical, position = string.match(name, "^(S[A-Z])([%^v%-])$")
+    if not physical then
+        return name
+    end
+    local suffix = position == "^" and env.charUp or position == "v" and env.charDown or "-"
+    assert(type(suffix) == "string", "switch conditions require switch character constants")
+    return physical .. suffix
+end
+
+function controlService:readSwitch(entry, now)
+    local state, env = entry.state, self.env
+    if not state.known then
+        if now < entry.nextResolve then
+            return
+        end
+        entry.nextResolve = now + controlService.RESOLVE_RETRY
+        local index = env.getSwitchIndex(firmwareSwitchName(state.name, env))
+        if type(index) ~= "number" or index == 0 then
+            state.available, state.fresh = false, false
+            return
+        end
+        entry.id, state.known = index, true
+    end
+    local value = env.getSwitchValue(entry.id)
+    state.available, state.fresh = type(value) == "boolean", type(value) == "boolean"
+    if state.available then
+        state.value, state.updatedAt = value, now
+    end
+end
+
+--- Shared physical-position and logical-switch conditions; unknown is not false.
+function controlService:switch(name)
+    assert(self.env.getSwitchIndex and self.env.getSwitchValue, "state panel requires switch APIs")
+    if self.switches[name] then
+        return self.switches[name]
+    end
+    local entry = self:add({
+        name = name,
+        known = false,
+        available = false,
+        fresh = false,
+        value = false,
+        updatedAt = 0,
+    }, controlService.readSwitch)
+    self.switches[name] = entry.view
+    return entry.view
 end
 
 --- Resolve a physical position or logical switch through the firmware.
 function controlService:armSwitch(name)
     local env = self.env
     assert(env.getSwitchIndex and env.getSwitchValue, "flight counter requires switch APIs")
-    local physical, position = string.match(name, "^(S[A-Z])([%^v%-])$")
-    local firmwareName = name
-    if physical then
-        local suffix = position == "^" and env.charUp or position == "v" and env.charDown or "-"
-        assert(type(suffix) == "string", "flight counter requires switch character constants")
-        firmwareName = physical .. suffix
-    end
-    local index = env.getSwitchIndex(firmwareName)
+    local index = env.getSwitchIndex(firmwareSwitchName(name, env))
     assert(type(index) == "number" and index > 0, "flight counter armSwitch does not exist: " .. name)
     return self:add({
         fresh = false,

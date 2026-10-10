@@ -1,6 +1,6 @@
 Empty
 Default
-Host
+Diagnostics
 review-cell-battery
 review-cell-sources
 review-flight-mode
@@ -9,7 +9,7 @@ review-link-status
 review-metric
 review-model-identity
 review-navigation
-review-text
+review-state
 review-trim-panel
 review-tx-battery
 services
@@ -18,4 +18,4 @@ sim
 sim2
 states
 review-flight-counter
-Theme
+Palette

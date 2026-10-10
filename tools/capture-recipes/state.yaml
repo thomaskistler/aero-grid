@@ -1,0 +1,42 @@
+version: 1
+panel: state
+theme: modern-dark
+border:
+  pixels: 10
+  rgb: [0, 0, 0]
+panels:
+  1x2: {col: 1, row: 0, colSpan: 1, rowSpan: 2}
+  2x1: {col: 2, row: 0, colSpan: 2, rowSpan: 1}
+  2x2: {col: 2, row: 2, colSpan: 2, rowSpan: 2}
+config:
+  accent: cyan
+  entries:
+    - label: MODE
+      states:
+        - switch: SF^
+          text: DISARMED
+        - switch: SFv
+          text: ARMED
+          background: active
+    - label: RATE
+      states:
+        - switch: SA^
+          text: LOW
+        - switch: SA-
+          text: MID
+        - switch: SAv
+          text: HIGH
+    - label: FLAP
+      states:
+        - switch: SB^
+          text: UP
+        - switch: SB-
+          text: MID
+          background: warning
+        - switch: SBv
+          text: DOWN
+sample:
+  switches:
+    sf: down
+    sa: down
+    sb: middle

@@ -202,12 +202,22 @@ getSourceIndex = function(name)
     return nil
 end
 getSourceName = menuName
-CHAR_UP, CHAR_DOWN = "^", "v"
-getSwitchIndex = function(name)
-    return name == "SF^" and 1 or 2
-end
+CHAR_UP, CHAR_DOWN = string.char(192), string.char(193)
 getSwitchName = function(index)
-    return index == 1 and "SF^" or "L01"
+    if index > 2000 and index <= 2064 then
+        return string.format("L%02d", index - 2000)
+    end
+    for source in pairs(widget.radio.fields) do
+        if string.match(source, "^s[a-z]$") then
+            for _, suffix in ipairs({ CHAR_UP, "-", CHAR_DOWN }) do
+                local name = string.upper(source) .. suffix
+                if getSwitchIndex(name) == index then
+                    return name
+                end
+            end
+        end
+    end
+    return ""
 end
 local function action(name, key)
     for _, row in ipairs(context.editorUi.drawerControls) do
@@ -528,6 +538,18 @@ equal(state.nativeDrawer, nil, "catalog is a native selection popup, not a butto
 local selection = widget.lvglMock.menu()
 equal(selection.title, "Select panel", "+ opens native panel selection")
 equal(#selection.values, #state.handlers.editor.CATALOG, "popup offers catalog labels")
+local stateWidget
+local oldTextType
+for _, item in ipairs(state.handlers.editor.CATALOG) do
+    if item.type == "state" then
+        stateWidget = item
+    elseif item.type == "text" then
+        oldTextType = item
+    end
+end
+assert(stateWidget, "state widget remains in the panel catalog")
+equal(stateWidget.label, "State", "switch-position widget uses its new name")
+assert(not oldTextType, "the old text widget type remains in the panel catalog")
 equal(#context.editorSession.draft.panels, 1, "opening or dismissing picker does not add")
 for index, item in ipairs(state.handlers.editor.CATALOG) do
     if item.type == "metric" then
@@ -984,65 +1006,137 @@ equal(context.panels[1].instance.label.properties.text, "ALT", "discard restores
 equal(context.document.panels[1].config.metrics[1].label, "ALT", "previews never mutate committed layout")
 assert(not hostIo.open(path .. "AEROGRID/layouts/edit-sparse.yaml", "r"), "discard does not write a layout")
 
--- Text entries use the same summary rows, with switch-position labels.
+-- State entries drill into ordered conditions, without reorder controls.
 write(
-    "edit-text",
+    "edit-state",
     [[version: 1
 grid:
   columns: 4
   rows: 4
 panels:
   - id: labels
-    type: text
+    type: state
     col: 0
     row: 0
     colSpan: 2
     rowSpan: 2
     config:
-      texts:
+      entries:
         - label: MODE
-          source: sa
-          positions:
-            up: CRUISE
-            down: LAND
+          states:
+            - switch: SA^
+              text: CRUISE
+            - switch: SAv
+              text: LAND
 ]]
 )
-load("edit-text")
+load("edit-state")
 open()
 state = context.editorUi
 rect = state.controls[1].rect
 tap(rect.x + rect.w - 12, rect.y + 12)
 settleDrawer()
-equal(state.drawerControls[1].object.properties.text, "Texts", "text entries have a section heading")
-equal(state.drawerControls[2].row.children[1].properties.text, "MODE", "text row uses its label")
-equal(action("item", "texts").properties.text(), "SA  CRUISE  --  LAND", "text summary includes source and positions")
-equal(action("append", "texts").properties.text, "+", "text list uses plus row")
-action("item", "texts").properties.press()
+equal(state.drawerControls[1].object.properties.text, "Entries", "state entries have a section heading")
+equal(state.drawerControls[2].row.children[1].properties.text, "MODE", "state row uses its label")
+equal(
+    action("item", "entries").properties.text(),
+    "SA" .. CHAR_UP .. ": CRUISE / SA" .. CHAR_DOWN .. ": LAND",
+    "summary uses firmware switch glyphs in condition order"
+)
+equal(action("append", "entries").properties.text, "+", "entry list uses plus row")
+action("item", "entries").properties.press()
 settleDrawer()
-control("texts", "label").properties.set("FLIGHT")
+control("entries", "label").properties.set("FLIGHT")
 settleDrawer()
-control("texts", "middle").properties.set("HOVER")
+equal(#state.drawerControls, 6, "entry has label, states, two conditions, add, and remove")
+equal(
+    state.drawerControls[3].row.children[1].properties.text,
+    "State 1",
+    "condition row uses a readable title instead of a table address"
+)
+equal(
+    state.drawerControls[4].row.children[1].properties.text,
+    "State 2",
+    "condition titles follow their evaluation order"
+)
+action("item", "entries").properties.press()
+settleDrawer()
+equal(#state.drawerItemPath, 3, "condition adds one drawer level")
+equal(#state.drawerControls, 4, "condition has When, Text, Background, and Remove")
+equal(control("entries", "switch").kind, "switch", "When uses the native switch picker")
+equal(
+    control("entries", "switch").properties.get(),
+    getSwitchIndex("SA" .. CHAR_UP),
+    "stored notation resolves to native picker index"
+)
+equal(control("entries", "background").properties.get(), 1, "omitted background shows normal")
+control("entries", "switch").properties.set(getSwitchIndex("SA-"))
+settleDrawer()
+control("entries", "text").properties.set("HOVER")
+settleDrawer()
+control("entries", "background").properties.set(2)
 settleDrawer()
 back()
-equal(state.drawerControls[2].row.children[1].properties.text, "FLIGHT", "parent shows edited text label")
-equal(action("item", "texts").properties.text(), "SA  CRUISE  HOVER  LAND", "parent shows edited positions")
-for _ = 1, 2 do
-    action("append", "texts").properties.press()
-    settleDrawer()
-end
-equal(#context.editorSession.draft.panels[1].config.texts, 3, "text plus adds entries")
-equal(action("append", "texts").properties.active(), false, "plus disables at the entry limit")
-action("item", "texts").properties.press()
+equal(#state.drawerItemPath, 1, "Return from condition goes to its entry")
+equal(action("item", "entries").properties.text(), "SA-: HOVER (active)", "condition summary updates")
+action("append", "entries").properties.press()
+settleDrawer()
+local editedEntries = context.editorSession.draft.panels[1].config.entries
+equal(#editedEntries[1].states, 3, "new condition appends")
+equal(editedEntries[1].states[2].text, "LAND", "append preserves existing order")
+equal(editedEntries[1].states[3].switch, "SA^", "new condition starts with a configurable default")
+equal(action("append", "entries").properties.active(), false, "three-condition limit disables add")
+action("item", "entries").properties.press()
 settleDrawer()
 action("remove-item").properties.press()
 settleDrawer()
-equal(#context.editorSession.draft.panels[1].config.texts, 2, "text entry removal returns to summary")
-equal(action("append", "texts").properties.active(), true, "removal re-enables plus")
+equal(#state.drawerItemPath, 1, "removing a condition returns to its entry")
+equal(#editedEntries[1].states, 2, "condition removal preserves remaining order")
+equal(editedEntries[1].states[1].text, "LAND", "next condition becomes first")
+equal(action("append", "entries").properties.active(), true, "condition removal re-enables add")
 back()
-exitWith("Discard changes")
+equal(state.drawerControls[2].row.children[1].properties.text, "FLIGHT", "parent shows edited text label")
+equal(state.drawerItemPath, nil, "entry Return goes to widget settings")
+equal(
+    action("item", "entries").properties.text(),
+    "SA" .. CHAR_DOWN .. ": LAND / SA" .. CHAR_UP .. ": UP",
+    "widget summary follows new order with firmware glyphs"
+)
+for _ = 1, 2 do
+    action("append", "entries").properties.press()
+    settleDrawer()
+end
+equal(#editedEntries, 3, "plus adds entries")
+equal(action("append", "entries").properties.active(), false, "plus disables at the entry limit")
+action("item", "entries").properties.press()
+settleDrawer()
+action("remove-item").properties.press()
+settleDrawer()
+equal(#editedEntries, 2, "entry removal returns to widget summary")
+equal(action("append", "entries").properties.active(), true, "removal re-enables plus")
+action("item", "entries").properties.press()
+settleDrawer()
+action("item", "entries").properties.press()
+settleDrawer()
+control("entries", "text").properties.set("SAVED")
+settleDrawer()
+control("entries", "background").properties.set(4)
+back()
+equal(editedEntries[1].states[1].background, "critical", "Return commits queued nested choice edits")
+back()
+back()
+exitWith("Save")
+settleSave()
 for _ = 1, 70 do
     refresh()
 end
+local stateSaved = assert(hostIo.open(path .. "AEROGRID/layouts/edit-state.yaml", "r"))
+local stateDocument = assert(context.yaml.parse(stateSaved:read("*a")))
+stateSaved:close()
+equal(stateDocument.panels[1].config.entries[1].states[1].text, "SAVED", "nested condition text persists")
+equal(stateDocument.panels[1].config.entries[1].states[1].background, "critical", "nested background persists")
+context = widget.createLoaded(nil, { Layout = "edit-state", Theme = "modern-dark" }, path)
+equal(context.document.panels[1].config.entries[1].states[1].background, "critical", "saved nested settings reload")
 
 -- Exit menu: Discard, Save As with a suggested name, overwrite confirmation.
 local function changeFirstLabel(text)

@@ -98,7 +98,7 @@ For a mock assertion, start with the failing file and traceback, reproduce it
 with `make test`, and minimize the fixture. Check whether the failure
 is in code, expected behavior, or an inaccurate mock before changing expectations.
 
-For a firmware error, use the simulator's logs and the **Host** diagnostic
+For a firmware error, use the simulator's logs and the **Diagnostics**
 layout. Record the loaded package identity, failing module/source, exact
 message, model, and layout. An unavailable sensor is not automatically a Lua
 failure: verify its binding and link state first.

@@ -99,15 +99,17 @@ panels:
     config:
       presentation: image
   - id: mode
-    type: text
+    type: state
     col: 2
     row: 0
     colSpan: 1
     rowSpan: 1
     config:
-      texts:
+      entries:
         - label: Mode
-          source: sf
-          positions:
-            up: DISARMED
-            down: ARMED
+          states:
+            - switch: SF^
+              text: DISARMED
+            - switch: SFv
+              text: ARMED
+              background: warning

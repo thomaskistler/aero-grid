@@ -1504,6 +1504,7 @@ function support.radio(hostIo)
     end
 
     local radio = {
+        logicalSwitches = {},
         rssi = 80,
         --- The model's name, which is whatever the pilot typed into Model Setup.
         --- It lives here rather than being a constant because it is radio state
@@ -1786,6 +1787,10 @@ function support.radio(hostIo)
     CHAR_UP, CHAR_DOWN = string.char(192), string.char(193)
     local switchPositions = {}
     function getSwitchIndex(name)
+        local logical = string.match(name, "^L(%d%d)$")
+        if logical and tonumber(logical) >= 1 and tonumber(logical) <= 64 then
+            return 2000 + tonumber(logical)
+        end
         local source, position = string.match(name, "^(S[A-Z])(.)$")
         local field = source and radio.fields[string.lower(source)]
         if not field then
@@ -1800,7 +1805,13 @@ function support.radio(hostIo)
         return index
     end
     function getSwitchValue(index)
+        if index > 2000 and index <= 2064 then
+            return radio.logicalSwitches[index - 2000] == true
+        end
         local position = assert(switchPositions[index], "unknown mock switch")
+        if radio.values[position[1]] == nil then
+            return nil
+        end
         return radio.values[position[1]] == position[2]
     end
 
@@ -1958,6 +1969,7 @@ function support.radio(hostIo)
 
     --- Reset the radio to the state every test starts from.
     function handle.reset()
+        radio.logicalSwitches = {}
         indexFields()
         radio.modelName = scaffold.MODEL_NAME
         radio.rssi = 80

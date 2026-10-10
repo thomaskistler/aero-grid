@@ -1,0 +1,138 @@
+# State review, screen 3 on AEROGRID PANEL2.
+version: 1
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: three-readings
+    type: state
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      entries:
+        - label: MODE 2x2
+          states:
+            - switch: SF^
+              text: DISARMED
+            - switch: SFv
+              text: ARMED
+              background: active
+        - label: RATE
+          states:
+            - switch: SA^
+              text: LOW
+            - switch: SA-
+              text: MID
+            - switch: SAv
+              text: HIGH
+              background: warning
+        - label: FLAP
+          states:
+            - switch: SB^
+              text: UP
+            - switch: SB-
+              text: MID
+            - switch: SBv
+              text: DOWN
+              background: critical
+  - id: tall
+    type: state
+    col: 2
+    row: 0
+    colSpan: 1
+    rowSpan: 2
+    config:
+      accent: green
+      entries:
+        - label: RATE 1x2
+          states:
+            - switch: SA^
+              text: LOW
+            - switch: SA-
+              text: MID
+            - switch: SAv
+              text: HIGH
+  - id: compact
+    type: state
+    col: 3
+    row: 0
+    colSpan: 1
+    rowSpan: 1
+    config:
+      entries:
+        - label: MODE 1x1
+          states:
+            - switch: SF^
+              text: DISARMED
+            - switch: SFv
+              text: ARMED
+  - id: unmapped
+    type: state
+    col: 3
+    row: 1
+    colSpan: 1
+    rowSpan: 1
+    config:
+      accent: amber
+      entries:
+        - label: NO MIDDLE
+          states:
+            - switch: SA^
+              text: LOW
+            - switch: SAv
+              text: HIGH
+  - id: wide
+    type: state
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 1
+    config:
+      entries:
+        - label: MODE 2x1
+          states:
+            - switch: SF^
+              text: DISARMED
+            - switch: SFv
+              text: ARMED
+        - label: RATE
+          states:
+            - switch: SA^
+              text: LOW
+            - switch: SA-
+              text: MID
+            - switch: SAv
+              text: HIGH
+  - id: three-wide
+    type: state
+    col: 0
+    row: 3
+    colSpan: 4
+    rowSpan: 1
+    config:
+      accent: green
+      entries:
+        - label: MODE 4x1
+          states:
+            - switch: SF^
+              text: DISARMED
+            - switch: SFv
+              text: ARMED
+        - label: RATE
+          states:
+            - switch: SA^
+              text: LOW
+            - switch: SA-
+              text: MID
+            - switch: SAv
+              text: HIGH
+        - label: FLAP
+          states:
+            - switch: SB^
+              text: UP
+            - switch: SB-
+              text: MID
+            - switch: SBv
+              text: DOWN

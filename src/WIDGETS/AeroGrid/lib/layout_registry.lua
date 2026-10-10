@@ -2,7 +2,7 @@
 
 --- Append-only list of layout names behind the native Layout setting.
 local registry = { RUNTIME_API = 1, EMPTY = "Empty" }
-local BUILTIN_NAMES = { empty = "Empty", default = "Default", host = "Host" }
+local BUILTIN_NAMES = { empty = "Empty", default = "Default", diagnostics = "Diagnostics", palette = "Palette" }
 
 --- Return layout names in their stable order, with Empty first.
 ---@param sdRoot string SD-card root holding `WIDGETS/` and `AEROGRID/`.
