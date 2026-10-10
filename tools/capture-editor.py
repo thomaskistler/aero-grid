@@ -93,9 +93,31 @@ panels:
 def prepare(sd, scene):
     shutil.copytree(ROOT / "tests/fixtures/sdcard", sd)
     shutil.copytree(ROOT / "src/WIDGETS/AeroGrid", sd / "WIDGETS/AeroGrid")
-    radio = sd / "RADIO/radio.yml"
-    radio.write_text(radio.read_text().replace('currModelFilename: "model2.yml"',
-                                              'currModelFilename: "model4.yml"'))
+    # Keep capture scenes independent of the development model's extra screens.
+    (sd / "MODELS/model1.yml").write_text("""semver: 3.0.0
+header:
+   name: "AEROGRID SHOT"
+   bitmap: ""
+   labels: ""
+disableThrottleWarning: 1
+screenData:
+   0:
+      LayoutId: Layout1x1AM
+      layoutData:
+         zones:
+            0:
+               widgetName: AeroGrid
+               widgetData:
+                  options:
+                     0:
+                        type: Unsigned
+                        value:
+                           unsignedValue: 2
+                     1:
+                        type: Unsigned
+                        value:
+                           unsignedValue: 1
+""")
     if scene in SETUP_SCENES:
         # Show only the layouts included in the installation ZIP, not the
         # development fixture's review and diagnostic screens.

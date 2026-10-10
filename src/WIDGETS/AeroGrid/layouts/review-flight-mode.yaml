@@ -5,14 +5,8 @@
 # the spans where it presents differently, so the ladder steps, the shed rows
 # and the clipping are all on one page.
 #
-# Naming and placement, chosen to survive eleven of these: one review screen,
-# whose Layout names the panel under review, replacing itself each
-# time rather than accumulating. `MAX_CUSTOM_SCREENS` is 10 and the fixture
-# already carries nine, so a screen per panel was never available;
-# `customScreens[MAX_CUSTOM_SCREENS]` indexed by `i < MAX_CUSTOM_SCREENS`
-# (`radio/src/gui/colorlcd/mainview/layout.cpp`) makes ten the ceiling. Each
-# review layout stays in the repository and keeps being loaded by the suite,
-# so nothing is lost by pointing the screen at the next one.
+# Screen 3 on AEROGRID PANEL1. Panel reviews are split across two models
+# to stay below EdgeTX's ten-screen limit.
 #
 # Eight declared spans do not fit on a 4 x 4 grid: they would need thirty
 # cells. These six are the ones that present differently. `3x1` is omitted

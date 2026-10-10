@@ -1,30 +1,30 @@
-/* AeroGrid Modern palette from lib/theme.lua. */
+/* Light documentation palette with AeroGrid-inspired accents. */
 :root,
-[data-bs-theme="dark"] {
-  color-scheme: dark;
-  --ag-canvas: #0a0c0e;
-  --ag-surface: #212830;
-  --ag-surface-raised: #2e3841;
-  --ag-border: #3a434b;
-  --ag-text: #f4f6f7;
-  --ag-muted: #a7b0b6;
-  --ag-cyan: #70d6f3;
-  --ag-green: #55d990;
-  --ag-amber: #f2b84b;
-  --ag-critical: #f05252;
+[data-bs-theme="light"] {
+  color-scheme: light;
+  --ag-canvas: #ffffff;
+  --ag-surface: #f5f7f9;
+  --ag-surface-raised: #e9eef2;
+  --ag-border: #cbd3da;
+  --ag-text: #212830;
+  --ag-muted: #52616b;
+  --ag-cyan: #006b85;
+  --ag-green: #187345;
+  --ag-amber: #865600;
+  --ag-critical: #b52626;
   --bs-body-bg: var(--ag-canvas);
-  --bs-body-bg-rgb: 10, 12, 14;
+  --bs-body-bg-rgb: 255, 255, 255;
   --bs-body-color: var(--ag-text);
-  --bs-body-color-rgb: 244, 246, 247;
+  --bs-body-color-rgb: 33, 40, 48;
   --bs-emphasis-color: var(--ag-text);
   --bs-secondary-color: var(--ag-muted);
   --bs-secondary-bg: var(--ag-surface);
   --bs-tertiary-bg: var(--ag-surface-raised);
   --bs-border-color: var(--ag-border);
   --bs-link-color: var(--ag-cyan);
-  --bs-link-color-rgb: 112, 214, 243;
+  --bs-link-color-rgb: 0, 107, 133;
   --bs-link-hover-color: var(--ag-green);
-  --bs-link-hover-color-rgb: 85, 217, 144;
+  --bs-link-hover-color-rgb: 24, 115, 69;
   --bs-code-color: var(--ag-cyan);
   --bs-primary-text-emphasis: var(--ag-cyan);
   --bs-primary-bg-subtle: var(--ag-surface);
@@ -46,7 +46,7 @@ body::before {
   background: var(--ag-canvas);
 }
 
-.navbar.bg-dark {
+.navbar.bg-light {
   background: var(--ag-surface) !important;
   border-bottom: 2px solid var(--ag-cyan);
   box-shadow: none;
@@ -205,7 +205,7 @@ pre {
   background: var(--ag-canvas);
   color: var(--ag-text);
   border-color: var(--ag-cyan);
-  box-shadow: 0 0 0 0.2rem rgb(112 214 243 / 20%);
+  box-shadow: 0 0 0 0.2rem rgb(0 107 133 / 20%);
 }
 
 blockquote {

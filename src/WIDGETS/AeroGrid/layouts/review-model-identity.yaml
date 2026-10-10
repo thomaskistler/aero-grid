@@ -1,10 +1,7 @@
 # Review harness for `model-identity`. Not a dashboard.
 #
-# One review screen exists at a time and its Layout names the panel
-# under review; this replaces whatever preceded it as the screen's target
-# rather than adding an eleventh screen, because `MAX_CUSTOM_SCREENS` is 10
-# and the fixture already carries ten. Earlier review layouts stay in the
-# repository and keep being loaded by the shipped-layout test.
+# Screen 1 on AEROGRID PANEL2. Panel reviews are split across two models
+# to stay below EdgeTX's ten-screen limit.
 #
 # **Read this screen against the model name you have set.** Every panel draws
 # the same model and the same picture, because there is only one model

@@ -1,6 +1,6 @@
 semver: 3.0.0
 header: 
-   name: "MODEL01"
+   name: "AEROGRID STD"
    bitmap: "04530_x10.png"
    labels: ""
 telemetryProtocol: 0
@@ -9,7 +9,7 @@ noGlobalFunctions: 0
 displayTrims: 0
 ignoreSensorIds: 0
 trimInc: 0
-disableThrottleWarning: 0
+disableThrottleWarning: 1
 displayChecklist: 0
 extendedLimits: 0
 extendedTrims: 0
@@ -644,7 +644,7 @@ screenData:
                      0:
                         type: Unsigned
                         value: 
-                           unsignedValue: 17
+                           unsignedValue: 2
                      1:
                         type: Unsigned
                         value: 
@@ -660,7 +660,7 @@ screenData:
                      0:
                         type: Unsigned
                         value: 
-                           unsignedValue: 18
+                           unsignedValue: 1
                      1:
                         type: Unsigned
                         value: 
@@ -676,7 +676,7 @@ screenData:
                      0:
                         type: Unsigned
                         value: 
-                           unsignedValue: 19
+                           unsignedValue: 3
                      1:
                         type: Unsigned
                         value: 
@@ -692,11 +692,11 @@ screenData:
                      0:
                         type: Unsigned
                         value: 
-                           unsignedValue: 19
+                           unsignedValue: 15
                      1:
                         type: Unsigned
                         value: 
-                           unsignedValue: 2
+                           unsignedValue: 1
    4:
       LayoutId: Layout1x1AM
       layoutData: 
@@ -708,40 +708,7 @@ screenData:
                      0:
                         type: Unsigned
                         value: 
-                           unsignedValue: 3
-                     1:
-                        type: Unsigned
-                        value: 
-                           unsignedValue: 1
-
-   5:
-      LayoutId: Layout1x1AM
-      layoutData:
-         zones:
-            0:
-               widgetName: AeroGrid
-               widgetData:
-                  options:
-                     0:
-                        type: Unsigned
-                        value:
-                           unsignedValue: 2
-                     1:
-                        type: Unsigned
-                        value:
-                           unsignedValue: 1
-   6:
-      LayoutId: Layout1x1AM
-      layoutData:
-         zones:
-            0:
-               widgetName: AeroGrid
-               widgetData:
-                  options:
-                     0:
-                        type: Unsigned
-                        value:
-                           unsignedValue: 2
+                           unsignedValue: 16
                      1:
                         type: Unsigned
                         value:

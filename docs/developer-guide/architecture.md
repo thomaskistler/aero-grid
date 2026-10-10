@@ -1,122 +1,167 @@
-# Architecture
+# Repository and architecture
 
-## Host and panels
+Start with `main.lua` for host behavior, an existing panel for presentation,
+or a service for data acquisition. AeroGrid runs as **one EdgeTX widget**;
+the dashboard's panels are modules managed by that widget, not separate
+EdgeTX widgets.
 
-AeroGrid has one EdgeTX LVGL host widget. It reads and validates a constrained YAML
-layout, creates a responsive 4 x 4 grid, and dynamically loads panel modules
-with API-version checks.
+## Find your way around
 
-Modules live in `panels/<type>.lua`. Each placement receives its own LVGL
-container and container-local coordinates, preventing drawing over neighboring
-panels. Panels declare supported spans, typed settings, and lifecycle callbacks.
-The host owns scheduling, shared services, and theme tokens.
-
-A list setting (`type = "table"`) should declare its entry `fields`, each with a
-`key` (or nested `path`), `label`, `type`, and optional `choices`, `min`, `max`,
-`step`, `default`, `required`, and `empty`. The on-radio editor offers every
-declared field for every entry, including ones the layout omits, and removes
-optional fields that are cleared. Numbers with `empty` text show it while unset.
-
-See the
-[project specification](https://github.com/thomaskistler/aero-grid/blob/main/plans/aerogrid-spec.md)
-for the complete module contract and schema.
-
-## Shared data services
-
-The host polls EdgeTX; panels never do. A panel subscribes once, in `create`, and keeps the immutable snapshot it is given:
-
-```lua
-function example.create(parent, rect, settings, services)
-  local telemetry = services.telemetry
-  return {feed = telemetry and telemetry:subscribe(settings.source)}
-end
-```
-
-| Service | Provides |
+| Path | What belongs here |
 | --- | --- |
-| `telemetry` | Cached source readings with units, precision, and freshness. |
-| `model` | Model identity, bitmap path, timers, flight mode, and transmitter voltage. |
-| `control` | Effective trims and GV snapshots, plus verified GV9 FM0 increments for the flight counter. |
-| `extrema` | EdgeTX sensor extrema and dashboard flight sessions. |
-| `navigation` | GPS fix, pilot position, distance, and north-up home-to-model bearing. |
+| `src/WIDGETS/AeroGrid/main.lua` | EdgeTX entry point, staged loading, scheduling, reload/reflow, and editor activation. |
+| `src/WIDGETS/AeroGrid/lib/` | Layout parsing/storage, grid geometry, panel hosting, shared services, rendering primitives, themes, and editor modules. |
+| `src/WIDGETS/AeroGrid/panels/` | Eleven user-facing panel types plus `host-diagnostics` and `service-probe`. |
+| `src/WIDGETS/AeroGrid/layouts/` | Shipped layouts and development/review dashboards. |
+| `src/WIDGETS/AeroGrid/assets/` | Runtime editor icon and its license. |
+| `tests/unit/` | Focused module and panel tests. |
+| `tests/integration/` | Host, editor, dashboard, budget, and resource tests using mocked EdgeTX. |
+| `tests/support/` | Assertions, firmware-aware EdgeTX/LVGL mocks, and widget/layout fixture helpers. |
+| `tests/fixtures/` | Deterministic simulator SD card, test-only panels, and test layouts. |
+| `tools/` | Release packaging, native screenshots, capture recipes, and Python tooling tests. |
+| `docs/` | Website sources, reference pages, reviewed images, and hardware evidence. |
+| `.vscode/` | TX16S profile and build/test tasks; local settings are ignored. |
+| `.github/workflows/` | CI, documentation publication, and manual release workflow. |
+| `plans/` | Design specifications and historical planning material, not runtime input. |
+| `build/` | Ignored, generated output; never the source of truth. |
 
-`telemetry:link()` publishes the link itself: whether it is live, the raw `getRSSI()` reading, and whether that indicator can be trusted at all. It is what lets `link-status` tell a dead link from a protocol that populates no RSSI sensor.
+The [project specification](https://github.com/thomaskistler/aero-grid/blob/main/plans/aerogrid-spec.md)
+provides design background. Check the implementation and its tests for exact
+current signatures; planning examples can describe earlier contracts.
 
-Subscribing in `create` is the mechanism, not a convention: a source nothing subscribed to is never read, and a service nothing subscribed to is never scheduled. Two panels naming the same source share one poll. Snapshots are read-only views over state the service mutates in place, so they cost no allocation per cycle and cannot be corrupted by the panels reading them.
+## Follow a dashboard from disk to display
 
-Freshness deserves care. EdgeTX returns integer zero for a telemetry source both when the sensor reads zero and when telemetry is not streaming, so only a zero is ambiguous and only a zero is judged: a non-zero value is always a reading, and a zero is stored only while the link is believed up, otherwise the last live value is kept and marked stale. The link indicator is `getRSSI() > 0`, which reads zero on a live link whose protocol has no RSSI sensor, so the service stops trusting it once a source proves it wrong.
+1. EdgeTX loads `main.lua` and passes a zone and the native **Layout** and
+   **Theme** options. Layout choices use stable positions maintained by
+   `layout_registry.lua`.
+2. The host resolves the selected name through `layout_store.lua`. A saved
+   `/AEROGRID/layouts/<name>.yaml` takes precedence over the bundled
+   `/WIDGETS/AeroGrid/layouts/<name>.yaml`; a missing file can fall back to
+   `Default`.
+3. `yaml.lua` tokenizes the constrained YAML format; `layout.lua` validates
+   version, grid, placements, and configuration. `grid.lua` turns zero-based
+   positions and spans in the 4 x 4 grid into pixel rectangles.
+4. The host loads services and panel modules, checks compatibility, resolves
+   typed settings, and creates each panel inside its own LVGL container.
+5. Foreground/background callbacks update subscribed services and dispatch
+   panel work. A zone or fullscreen change triggers bounded reflow rather
+   than reconstructing every object in a single frame.
 
-Two limitations remain, and neither is solvable from Lua: staleness is link-wide rather than per sensor, and a sensor that is configured but has never been received reads as a valid zero while the link is up.
+Panels use container-local coordinates. They must not draw at absolute screen
+coordinates or assume the TX16S's dimensions. In App mode the host accounts
+for the top-left EdgeTX menu button; fullscreen removes that reservation.
+Use the shared geometry instead of adding panel-specific menu offsets.
 
-Physical switch sources carry no telemetry unit, so their numeric readings
-remain fresh without a receiver, including zero at the middle position.
-The `text` panel uses these shared subscriptions and explicit position mappings;
-it never interprets a missing reading as a switch position.
+`lib/package.lua` records package, runtime API, panel API, and layout versions.
+Runtime modules expose `RUNTIME_API`; panels expose `apiVersion`.
+The host surfaces incompatible modules and isolates failures where possible.
+These checks detect incompatible mixtures, not every stale or mixed package:
+deploy the **complete** widget directory.
 
-Every service degrades rather than raising. A missing firmware API, an unknown source name, a sensor never received, an out-of-range timer, or a GPS source with no fix all produce an `unavailable` snapshot.
+## Shared services own firmware reads
 
-### Service diagnostics
+Panels subscribe in `create`, retain read-only snapshots, and render them.
+They do not each poll EdgeTX or maintain their own telemetry cache.
+Subscriptions to the same source share polling, and an unsubscribed service
+does not consume scheduled work.
 
-The bundled `Host` dashboard reports package identity, loading, and service
-failures. Automated service tests cover normalized readings, precision,
-freshness, and navigation calculations independently of display panels.
+| Service module | Responsibility |
+| --- | --- |
+| `telemetry_service.lua` | Source resolution, readings, units, precision, freshness, and link status. |
+| `model_service.lua` | Model identity/image, timers, flight mode, TX voltage, and flight history/audio support. |
+| `control_service.lua` | Trims, switch conditions, GV snapshots, and verified GV9 FM0 increments. |
+| `extrema_service.lua` | Sensor extrema and dashboard flight-session tracking. |
+| `navigation_service.lua` | GPS fix, pilot/home position, distance, and north-up bearing. |
+| `services.lua` | Construction, subscription-aware scheduling, and bounded update dispatch. |
 
-## Rendering and lifetime
+Snapshots are read-only views over service-owned state, mutated in place by
+the service to avoid per-frame allocations. Missing APIs, unknown sources, and
+missing fixes yield unavailable data; panel code must handle that explicitly.
 
-Use shared primitives and theme tokens instead of panel-specific palettes.
+Telemetry zero is not inherently unavailable. EdgeTX can return zero both for
+a real reading and for a stopped stream. AeroGrid preserves the last live
+value when an ambiguous zero arrives with a down link, but accepts a live zero.
+`getRSSI()` is not reliable for every protocol; the service can stop trusting
+it when a non-zero source proves that telemetry is arriving. Staleness is
+link-wide, not per sensor, and a configured but never-received sensor can
+appear as valid zero on a live link. Local switch values remain usable
+without a receiver.
 
-Four things the Lua API will not tell a panel are worth knowing before writing another one:
+The `flight-counter` panel is deliberately stateful: it owns qualification
+and disarm-timeout transitions, requests verified count updates, and asks
+the model service for history/audio side effects. Its `armSwitch` is distinct
+from the extrema session's `armSource`. Each dashboard has independent
+services, so install **only one flight tracker per model**; other dashboards
+can display GV9 through `metric`. Detection state resets on dashboard reload;
+the persisted GV count does not.
 
-- **Text cannot be measured.** `theme.fitText` estimates width from the font's line height and picks a size from the widest string a panel can ever produce, so a reading never resizes as it changes.
-- **A trim source carries no axis.** `trim-panel` assigns each configured source a fixed aileron, elevator, or rudder role and position.
-- **`lvgl.image` cannot report a failed decode.** `model-identity` checks the file with `fstat` first and falls back to the model name.
-- **`lvgl.arc` is positioned by its centre, not its corner.** `LvglWidgetRoundObject::setPos` stores `x - radius`. `primitives.arcBounds` converts between the two conventions, and the tests assert containment through it.
+## Add or change a panel
 
-See the panel module contract in [plans/aerogrid-spec.md](https://github.com/thomaskistler/aero-grid/blob/main/plans/aerogrid-spec.md) for the fields a panel declares and the services it receives.
+Use `panels/flight-mode.lua` as a small working example and
+`lib/panel_host.lua` as the authoritative contract.
 
-Keep font callbacks persistent. Shared labels install one callback and
-`primitives.setFont` changes its backing state. Replacing a callback during refresh
-or reflow retains old Lua registry references in EdgeTX 2.12.4. See the
-[hardware investigation](../hardware-validation.md) for the evidence and regression
-coverage.
+| Declaration or callback | Role |
+| --- | --- |
+| `id`, `apiVersion`, `supportedSpans` | Identify the module, check compatibility, and advertise valid grid sizes. |
+| `settings` | Typed fields, defaults, bounds, and choices used by validation and the editor. |
+| `refreshInterval` | Desired foreground interval in 10 ms ticks; work still shares the host budget. |
+| `create(parent, rect, settings, services)` | Build LVGL objects, subscribe to data, and return private instance state. |
+| `refresh(context)` | Optional callback to update existing objects from snapshots. |
+| `update(context, rect, settings)` | Optional geometry/configuration update. |
+| `background(context)` | Optional work when the dashboard is not visible. |
+| `event(context, event)` | Optional event handling; return true when consumed. |
+| `destroy(context)` | Optional cleanup of panel-owned references. |
+| `validateSettings(settings, span, config)` | Optional cross-field and span-dependent validation. |
 
-## Instruction budget
+Put the module at `panels/<type>.lua` and reference that type in a layout.
+Declare only spans you actually render correctly. A list setting
+(`type = "table"`) declares entry `fields` with keys or nested paths, labels,
+types, and appropriate defaults/bounds/choices. The editor uses this schema
+to offer even fields omitted from the YAML, and can remove cleared optional
+fields. Do not build a separate settings UI for each panel.
 
-EdgeTX aborts a widget callback that exceeds 20000 Lua VM instructions with `CPU limit`. AeroGrid therefore loads in stages: `create` only prepares the runtime, and each `refresh` performs one bounded step (a fixed number of lines tokenized, or one panel parsed, validated, and built). Zone changes are batched the same way. The dashboard fills in over a few frames instead of blocking a single callback, and a layout that fills the grid costs more callbacks rather than larger ones.
+Use `theme.lua` for bands, font fitting, shared colors, and spacing, and
+`primitives.lua` for reusable LVGL objects. Keep a reading's font stable as
+its value changes, using the widest expected representation to choose it.
+When changing settings vocabulary or rendering, inspect sibling panels so
+the same setting retains the same meaning.
 
-`make test` measures every callback the firmware can invoke, against the largest layout the schema permits, and fails if one exceeds 75% of the budget, printing the worst case:
+Add focused tests, an integration case at every declared span, a simulator
+review layout when useful, and a [panel reference page](../reference-guide/index.md).
+If adding screenshot support, add a capture recipe and adapter as described
+in [Project tools](tools.md#change-a-capture-recipe).
 
-```text
-budget headroom: worst callback trim-panel x16 refresh/reflow used 7800 of 20000
-steady state:    worst frame link-status x16 refresh/steady used 2400 of 20000
-```
+## Editor and persistence
 
-Panel callbacks and service updates share this allowance. Per-character string loops are the usual way to exhaust it.
+`editor.lua` owns draft operations; `editor_ui.lua` and `editor_drawer.lua`
+present them. `layout_store.lua` handles saving, backups, and user-versus-shipped
+resolution; `layout_registry.lua` maintains name-to-choice positions.
+Keep these boundaries intact when changing save behavior.
 
-Fourteen sixteen-panel layouts are measured: metrics with sixteen distinct live telemetry sources, sixteen diagnostic panels spanning all five services, sixteen panels demanding a refresh every frame, and one layout per catalogue panel type. Each declares which services it must actually run, and the test fails if one never updated during the sampled frames, so a layout that subscribed to nothing cannot make the service layer measure zero. The test also asserts that every panel really was refreshed during the sampled frames, so a scheduling bug cannot make the measurement pass by measuring an idle dashboard.
+Editing does not overwrite bundled layouts. Save writes to `/AEROGRID/layouts/`,
+and Save As creates a named user layout. The layout registry is initialized
+at script load, so new names require a restart before appearing in the native
+Layout picker. Save errors must preserve the draft and report failure.
+Test persistence through the store/editor suites, not just the visible dialog.
 
-Services are bounded the same way panels are: at most one service is updated per host cycle, services are phase staggered, an unsubscribed service is never scheduled, and each service caps how many subscriptions it refreshes in one update. Removing those caps raises the worst steady frame to 6200.
+## Firmware constraints that affect design
 
-Because EdgeTX refreshes widgets on every main loop pass, panels declare a `refreshInterval` in 10ms ticks rather than being serviced every frame, and panels sharing an interval are phase staggered so they fall due on different frames. A per-frame cap bounds the worst case for layouts that defeat staggering.
+EdgeTX limits a widget callback to **20,000 Lua VM instructions**. Creation,
+parsing, panel building, reload, and reflow are staged across callbacks.
+Services have bounded subscription updates, and panel work is capped and
+phase-staggered. Do not replace this with one synchronous "simpler" loader.
+The [budget tests](testing.md#performance-and-resource-regressions) require
+strictly less than 75% of the callback allowance.
 
-Resource tests cover reload collectibility, font callback replacement, sustained timer updates, and changing telemetry. They do not measure native LVGL or bitmap memory or reproduce firmware GC cadence. Hardware validation remains necessary.
+Avoid object churn and retained callbacks. Shared labels install a persistent
+font callback; change its backing state through `primitives.setFont` rather
+than replacing the callback during refresh/reflow. Replacement retained Lua
+registry references in EdgeTX 2.12.4.
 
-## Flight counter ownership
-
-The `flight-counter` panel owns its qualification and disarm-timeout state
-machine. It subscribes to motor/link, switch-position, and pinned GV9 FM0 snapshots;
-foreground and background callbacks advance the same state. Unlike display-only
-panels, it asks the control service to commit verified GV increments and the
-model service to capture dates, announce flights, and append confirmed history.
-These side effects happen at transitions, not on every frame. The host supplies
-its clock alongside the shared services.
-
-The panel's `armSwitch` is independent of the extrema session's `armSource`.
-The control service resolves ASCII positions (`SF^`, `SA-`, `SFv`) using EdgeTX's
-switch character constants and `getSwitchIndex`, then polls the boolean
-`getSwitchValue`. Logical switch names such as `L01` use the same API. This
-selects an exact armed condition rather than interpreting the sign of a source.
-
-Each dashboard still owns independent services, so only one tracking panel
-should be installed per model. Other dashboards can display GV9 with `metric`.
-Detection state is not persisted across dashboard reloads; the GV count is.
+Other firmware details already have helpers and regression coverage:
+`theme.measureText` uses `lcd.sizeText` where available and estimates otherwise;
+trim sources do not identify their axis, image decode failure is not reported
+by `lvgl.image`, and
+`lvgl.arc` positions use the center rather than the bounding-box corner.
+Reuse the existing panel logic, file checks, and `primitives.arcBounds`
+instead of introducing alternate assumptions.

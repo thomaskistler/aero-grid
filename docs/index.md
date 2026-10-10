@@ -41,8 +41,9 @@ settings, presentations, and behavior when data is unavailable.
 
 ## Developer Guide
 
-Learn how to [build and run the simulator](developer-guide/build.md),
-[contribute changes](developer-guide/contributing.md), and work with the
-[runtime architecture](developer-guide/architecture.md).
-The [hardware validation record](hardware-validation.md) tracks radio observations
-and remaining acceptance work.
+Start with [checking out and building](developer-guide/build.md), then
+[test and debug](developer-guide/testing.md) and
+[run in VS Code or Companion](developer-guide/simulators.md).
+Find your way around the [repository and architecture](developer-guide/architecture.md),
+use the [project tools](developer-guide/tools.md), and learn how to
+[file issues, contribute changes, and publish releases](developer-guide/contributing.md).

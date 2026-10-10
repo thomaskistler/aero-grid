@@ -22,7 +22,7 @@ adapters and readiness checks remain in code and derive their expected values
 from the selected recipe.
 No VS Code extension code is reused and no production widget source
 is changed. Capture-only readiness instrumentation is added to the isolated SD
-copy. See the [developer instructions](../docs/developer-guide/build.md#panel-screenshot-prototype).
+copy. See the [developer instructions](../docs/developer-guide/tools.md#panel-screenshots).
 
 ## Catalogue generation result
 

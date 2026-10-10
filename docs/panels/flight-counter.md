@@ -99,5 +99,5 @@ telemetry have qualified for 30 seconds. Disarming for 10 seconds completes a fl
 ```
 
 The screenshots show count `42` in the active state using real EdgeTX rendering
-with synthetic inputs. See [Panel screenshots](../developer-guide/build.md#panel-screenshots)
+with synthetic inputs. See [Panel screenshots](../developer-guide/tools.md#panel-screenshots)
 for the capture recipe and setup.
