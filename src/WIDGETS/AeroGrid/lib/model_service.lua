@@ -80,9 +80,7 @@ end
 ---@param read fun(self: table, state: table, now: integer)
 ---@return table view
 function modelService:add(state, read)
-    local facet = { state = state, read = read, view = self.support.snapshot(state) }
-    self.facets[#self.facets + 1] = facet
-    self.count = self.count + 1
+    local facet = self.support.addSubscription(self, self.facets, { state = state, read = read })
     return facet.view
 end
 

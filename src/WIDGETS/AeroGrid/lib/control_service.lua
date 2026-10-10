@@ -164,15 +164,11 @@ end
 ---@param read fun(self: table, entry: table, now: integer)
 ---@return table entry
 function controlService:add(state, read)
-    local entry = {
+    return self.support.addSubscription(self, self.entries, {
         state = state,
         read = read,
-        view = self.support.snapshot(state),
         nextResolve = 0,
-    }
-    self.entries[#self.entries + 1] = entry
-    self.count = self.count + 1
-    return entry
+    })
 end
 
 --- Read one trim position.

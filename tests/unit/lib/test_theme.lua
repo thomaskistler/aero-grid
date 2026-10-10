@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 local root = (... and ... ~= "" and ...) or "."
+local moduleLoader = assert(loadfile(root .. "/tests/support/module_loader.lua"))(root)
 
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local edgetx = assert(loadfile(root .. "/tests/support/edgetx.lua"))()
@@ -11,7 +12,7 @@ _G.lcd = {
         return value
     end,
 }
-local theme = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/theme.lua"))()
+local theme = moduleLoader("lib/theme.lua")
 local themes = assert(loadfile(root .. "/tests/support/theme_catalog.lua"))()(root, yaml)
 assert(theme.setCatalog(themes))
 local customIndex = 0

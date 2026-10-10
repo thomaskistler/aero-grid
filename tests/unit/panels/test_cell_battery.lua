@@ -1,10 +1,11 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 local root = (... and ... ~= "" and ...) or "."
+local moduleLoader = assert(loadfile(root .. "/tests/support/module_loader.lua"))(root)
 
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local cellBattery = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/cell-battery.lua"))()
-local primitives = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/primitives.lua"))()
+local primitives = moduleLoader("lib/primitives.lua")
 
 local function testCellShapes()
     local out = {}

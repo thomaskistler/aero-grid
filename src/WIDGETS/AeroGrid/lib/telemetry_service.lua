@@ -188,11 +188,8 @@ function telemetryService:subscribe(name, linkEvidence)
 
     local entry = self.names[name]
     if not entry then
-        entry = newEntry(name)
-        entry.view = self.support.snapshot(entry.state)
+        entry = self.support.addSubscription(self, self.entries, newEntry(name))
         self.names[name] = entry
-        self.entries[#self.entries + 1] = entry
-        self.count = self.count + 1
     end
 
     if linkEvidence == false then

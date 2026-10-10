@@ -55,6 +55,9 @@
 ---@field tokens? table Tokens held between the tokenize and parse steps.
 ---@field pending? table[] Validated placements still awaiting construction.
 ---@field pendingIndex? integer Next placement to build.
+---@field dashboardLoader table Staged layout and panel construction.
+---@field dashboardLifecycle table Page retirement, reflow, and rebuild.
+---@field editorController table Dashboard preview and editor coordination.
 ---@field editorModule? table On-radio layout editor, loaded only on demand.
 ---@field editorUiModule? table LVGL editor controls, loaded only on demand.
 ---@field editorSession? table Uncommitted editor working copy.
@@ -263,15 +266,16 @@ end
 ---@param base string
 ---@param relative string
 ---@param runtimeApi? integer Required internal module API.
+---@param ... table Composition dependencies passed to the module chunk.
 ---@return table? module
 ---@return string? error
-local function loadModule(base, relative, runtimeApi)
+local function loadModule(base, relative, runtimeApi, ...)
     local chunk, loadError = loadScript(joinPath(base, relative))
     if not chunk then
         return nil, loadError
     end
 
-    local ok, module = pcall(chunk)
+    local ok, module = pcall(chunk, ...)
     if not ok then
         return nil, module
     end
@@ -503,1142 +507,6 @@ local function dispatchAll(context, event, ...)
     end
 end
 
---- Advance to the next layout candidate after a read or parse failure.
----@param context AeroGridContext
----@param reason string
----@return boolean recovered
-local function recoverLayout(context, reason)
-    local candidates = context.loadCandidates
-    if type(candidates) ~= "table" then
-        return false
-    end
-
-    local index = context.loadCandidateIndex or 0
-    local nextIndex = index + 1
-    local candidate = candidates[nextIndex]
-    if not candidate then
-        return false
-    end
-
-    context.recoveryCandidate = {
-        candidate = candidate,
-        index = nextIndex,
-        reason = context.recoveryReason or reason,
-    }
-    context.recoveryReason = context.recoveryCandidate.reason
-    context.reloadState = "clear"
-    return true
-end
-
-local function previewLayout(context, document)
-    local placements = {}
-    for _, placement in ipairs(document.panels) do
-        placements[placement.id] = placement
-    end
-    for _, entry in ipairs(context.panels) do
-        local placement = placements[entry.placement.id]
-        local visible = placement ~= nil and placement.type == entry.placement.type
-        if entry.editorVisible ~= visible then
-            local visibility = visible and lvgl.show or lvgl.hide
-            visibility(entry.container)
-            entry.editorVisible = visible
-        end
-        if visible and not entry.failed then
-            local previous = entry.editorPlacement or entry.placement
-            if
-                previous.col ~= placement.col
-                or previous.row ~= placement.row
-                or previous.colSpan ~= placement.colSpan
-                or previous.rowSpan ~= placement.rowSpan
-            then
-                local rect, rectError = context.grid.rect(context.zone, placement, 4, 4, 4)
-                if not rect then
-                    return false, rectError
-                end
-                entry.container:set({ x = rect.x, y = rect.y, w = rect.w, h = rect.h })
-                local ok, updateError = context.panelHost.dispatch(
-                    entry,
-                    "update",
-                    { x = 0, y = 0, w = rect.w, h = rect.h },
-                    entry.settings
-                )
-                if not ok then
-                    return false, entry.placement.id .. ": preview: " .. tostring(updateError)
-                end
-                entry.editorPlacement = {
-                    col = placement.col,
-                    row = placement.row,
-                    colSpan = placement.colSpan,
-                    rowSpan = placement.rowSpan,
-                }
-            end
-        end
-    end
-    return true
-end
-
-local function restorePreview(context)
-    if context.editorPreviewChanged then
-        context.editorPreviewChanged = nil
-        context.reloadState = "clear"
-        return
-    end
-    local restored, restoreError = previewLayout(context, context.document)
-    if not restored then
-        addError(context, restoreError)
-        showErrors(context)
-    end
-    for _, entry in ipairs(context.panels) do
-        entry.editorPlacement = nil
-        entry.editorVisible = nil
-    end
-end
-
-local buildPanel
-
-local function sameConfig(left, right)
-    if type(left) ~= "table" or type(right) ~= "table" then
-        return left == right
-    end
-    for key, value in pairs(left) do
-        if not sameConfig(value, right[key]) then
-            return false
-        end
-    end
-    for key in pairs(right) do
-        if left[key] == nil then
-            return false
-        end
-    end
-    return true
-end
-
---- Keep the previewed dashboard after a save instead of reloading it.
---- Returns false whenever the preview is not exactly what a reload would build.
-local function adoptSavedLayout(context, document)
-    local current = context.document
-    if not document or not current or context.stage or #context.errors > 0 or #context.rejected > 0 then
-        return false
-    end
-    for key, value in pairs(document) do
-        if key ~= "panels" and not sameConfig(value, current[key]) then
-            return false
-        end
-    end
-    for key in pairs(current) do
-        if key ~= "panels" and document[key] == nil then
-            return false
-        end
-    end
-    if #document.panels ~= #context.panels then
-        return false
-    end
-    local entries = {}
-    for _, entry in ipairs(context.panels) do
-        if entry.failed or entry.editorVisible == false then
-            return false
-        end
-        entries[entry.placement.id] = entry
-    end
-    local ordered = {}
-    for index, placement in ipairs(document.panels) do
-        local entry = entries[placement.id]
-        if
-            not entry
-            or entry.placement.type ~= placement.type
-            or not sameConfig(placement.config, entry.placement.config)
-        then
-            return false
-        end
-        local shown = entry.editorPlacement or entry.placement
-        if
-            shown.col ~= placement.col
-            or shown.row ~= placement.row
-            or shown.colSpan ~= placement.colSpan
-            or shown.rowSpan ~= placement.rowSpan
-        then
-            return false
-        end
-        -- Settings can depend on span, so a resized panel must resolve to the
-        -- same settings a reload would give it.
-        if entry.placement.colSpan ~= placement.colSpan or entry.placement.rowSpan ~= placement.rowSpan then
-            local resolved, warnings = context.panelHost.resolveSettings(
-                entry.module,
-                placement.config,
-                { colSpan = placement.colSpan, rowSpan = placement.rowSpan }
-            )
-            if #warnings > 0 or not sameConfig(resolved, entry.settings) then
-                return false
-            end
-        end
-        ordered[index] = entry
-    end
-    -- The saved draft is owned by the closing editor session, which is
-    -- discarded, so it becomes the active document without a copy.
-    -- Panel services captured the live placement table, so it is updated in
-    -- place and becomes the document's entry.
-    for index, entry in ipairs(ordered) do
-        local placement = entry.placement
-        for key in pairs(placement) do
-            placement[key] = nil
-        end
-        for key, value in pairs(document.panels[index]) do
-            placement[key] = value
-        end
-        document.panels[index] = placement
-        entry.editorPlacement = nil
-        entry.editorVisible = nil
-    end
-    context.panels = ordered
-    context.document = document
-    return true
-end
-
-local function startPanelPreview(context, document)
-    local placements, existing, actions = {}, {}, {}
-    for _, placement in ipairs(document.panels) do
-        placements[placement.id] = placement
-    end
-    for _, entry in ipairs(context.panels) do
-        local placement = placements[entry.placement.id]
-        existing[entry.placement.id] = true
-        if
-            not placement
-            or placement.type ~= entry.placement.type
-            or not sameConfig(placement.config, entry.placement.config)
-        then
-            actions[#actions + 1] = { entry = entry, placement = placement }
-        end
-    end
-    for _, placement in ipairs(document.panels) do
-        if not existing[placement.id] then
-            actions[#actions + 1] = { placement = placement }
-        end
-    end
-    return { actions = actions, index = 1 }
-end
-
-local function advancePanelPreview(context, job)
-    local action = job.actions[job.index]
-    if not action then
-        return true
-    end
-    if not action.retired then
-        context.editorPreviewChanged = true
-        local entry = action.entry
-        if entry then
-            -- Retire callbacks before rebuilding, in a separate foreground callback.
-            local ok, destroyError = context.panelHost.dispatch(entry, "destroy")
-            if not ok and destroyError then
-                return true, entry.placement.id .. ": preview destroy: " .. destroyError
-            end
-            entry.container:clear()
-            lvgl.hide(entry.container)
-            context.editorPreviewContainers = context.editorPreviewContainers or {}
-            context.editorPreviewContainers[#context.editorPreviewContainers + 1] = entry.container
-            for index, current in ipairs(context.panels) do
-                if current == entry then
-                    table.remove(context.panels, index)
-                    break
-                end
-            end
-        end
-        action.retired = true
-        if not action.placement then
-            job.index = job.index + 1
-        end
-        return false
-    end
-    local pool = context.editorPreviewContainers or {}
-    local container = table.remove(pool)
-    local placement = context.editorModule.clone(action.placement)
-    local entry, buildError, failedContainer = buildPanel(context, placement, container, true)
-    job.index = job.index + 1
-    if not entry then
-        if failedContainer or container then
-            context.editorPreviewContainers = pool
-            pool[#pool + 1] = failedContainer or container
-        end
-        return true, placement.id .. ": preview: " .. tostring(buildError)
-    end
-    return false
-end
-
---- Empty-state decoration belongs to the page, never the layout document.
----@param context AeroGridContext
-local function updateEmptyHint(context)
-    local hint = context.emptyHint
-    local show = context.document
-        and #context.document.panels == 0
-        and not context.stage
-        and not context.reloadState
-        and not context.editorUi
-        and #context.errors == 0
-    if not show then
-        if hint and hint.visible then
-            for _, object in ipairs(hint.objects) do
-                lvgl.hide(object)
-            end
-            hint.visible = false
-        end
-        return
-    end
-    if not hint then
-        hint = { objects = {} }
-        context.emptyHint = hint
-        for _, key in ipairs({ "title", "instruction" }) do
-            hint[key] = lvgl.label(context.page, {
-                text = "",
-                font = function()
-                    return SMLSIZE
-                end,
-            })
-            hint.objects[#hint.objects + 1] = hint[key]
-        end
-    end
-    local w, h = context.zone.w, context.zone.h
-    local fullscreen = isFullScreen()
-    if hint.w ~= w or hint.h ~= h or hint.fullscreen ~= fullscreen then
-        hint.w, hint.h, hint.fullscreen = w, h, fullscreen
-        local instruction = fullscreen and "Long-press to start editing" or "Long-press for fullscreen"
-        local texts = { "Empty dashboard", instruction }
-        local keys = { "title", "instruction" }
-        local lineHeight = context.themeBuilder.fontHeight(SMLSIZE)
-        local blockHeight = lineHeight * 2 + 6
-        local top = math.floor((h - blockHeight) / 2)
-        for index, key in ipairs(keys) do
-            local textWidth = context.themeBuilder.measureText(SMLSIZE, texts[index])
-            hint[key]:set({
-                x = math.floor((w - textWidth) / 2),
-                y = top + (index - 1) * (lineHeight + 6),
-                w = textWidth,
-                h = lineHeight,
-                text = texts[index],
-                color = context.theme.color.textMuted,
-            })
-        end
-    end
-    if not hint.visible then
-        for _, object in ipairs(hint.objects) do
-            lvgl.show(object)
-        end
-        hint.visible = true
-    end
-end
-
---- Enter the editor while preserving the current dashboard until saving succeeds.
----@param context AeroGridContext
----@return boolean opened
-local function openEditor(context)
-    if not isFullScreen() or context.stage or context.reloadState or not context.document then
-        return false
-    end
-    local runtimeApi = context.packageInfo and context.packageInfo.runtimeApi or 1
-    if not context.editorModule then
-        local module, moduleError = loadModule(context.path, "lib/editor.lua", runtimeApi)
-        if not module then
-            addError(context, "editor: " .. tostring(moduleError))
-            showErrors(context)
-            return false
-        end
-        context.editorModule = module
-    end
-    if not context.editorUiModule then
-        local module, moduleError = loadModule(context.path, "lib/editor_ui.lua", runtimeApi)
-        if not module then
-            addError(context, "editor UI: " .. tostring(moduleError))
-            showErrors(context)
-            return false
-        end
-        context.editorUiModule = module
-    end
-    if not context.editorDrawerModule then
-        local module, moduleError = loadModule(context.path, "lib/editor_drawer.lua", runtimeApi)
-        if not module then
-            addError(context, "editor drawer: " .. tostring(moduleError))
-            showErrors(context)
-            return false
-        end
-        context.editorDrawerModule = module
-    end
-
-    context.editorPanelCache = context.editorPanelCache or {}
-    local function loadPanel(typeName)
-        if context.editorPanelCache[typeName] then
-            return context.editorPanelCache[typeName]
-        end
-        if type(typeName) ~= "string" or not string.match(typeName, "^[%w_-]+$") then
-            return nil, "invalid panel type"
-        end
-        local panel, panelError = loadModule(context.path, "panels/" .. typeName .. ".lua")
-        if panel then
-            context.editorPanelCache[typeName] = panel
-        end
-        return panel, panelError
-    end
-
-    -- A draft set aside when fullscreen was left resumes where it stopped.
-    local resumed = context.editorStash
-    context.editorStash = nil
-    local created, session, sessionError = true, resumed, nil
-    if not resumed then
-        created, session, sessionError = pcall(
-            context.editorModule.new,
-            context.document,
-            context.grid,
-            context.layoutValidator,
-            context.panelHost,
-            loadPanel
-        )
-    end
-    if not created or not session then
-        addError(context, "editor: " .. tostring(sessionError or session))
-        showErrors(context)
-        return false
-    end
-
-    context.editorSession = session
-    local handlers = {
-        editor = context.editorModule,
-        resumed = resumed ~= nil,
-        preview = function(document)
-            return previewLayout(context, document)
-        end,
-        startPreview = function(document)
-            return startPanelPreview(context, document)
-        end,
-        advancePreview = function(job)
-            return advancePanelPreview(context, job)
-        end,
-        layoutName = function()
-            return context.layoutName
-        end,
-        isEmpty = function(name)
-            return context.layoutStore.isEmpty(name)
-        end,
-        validName = function(name)
-            return context.layoutStore.validName(name)
-        end,
-        exists = function(name)
-            return context.layoutStore.exists(context.path, name)
-        end,
-        suggestName = function()
-            local info = model and model.getInfo and model.getInfo()
-            return context.layoutStore.suggestName(context.path, info and info.name)
-        end,
-        startSave = function(document, name)
-            name = name or context.layoutName
-            context.editorSavedDocument = document
-            local state = context.layoutStore.startSave(
-                context.path,
-                name,
-                document,
-                context.yaml,
-                context.layoutValidator,
-                context.grid
-            )
-            state.name = name
-            return state
-        end,
-        advanceSave = function(state)
-            local done, saved, saveError = context.layoutStore.advanceSave(state)
-            if saved and state.name == context.layoutName then
-                context.layoutPath = state.filename
-                context.layoutOrigin = "user"
-            end
-            return done, saved, saveError
-        end,
-        --- `saved` is true only when the dashboard's own layout was written;
-        --- after Save As this dashboard keeps showing its committed layout.
-        close = function(saved)
-            context.editorUiModule.close(context, false)
-            if not saved then
-                restorePreview(context)
-            end
-            context.editorSession = nil
-            context.editorPreviewContainers = nil
-            if saved then
-                context.editorPreviewChanged = nil
-                if not adoptSavedLayout(context, context.editorSavedDocument) then
-                    context.reloadState = "clear"
-                end
-            end
-            context.editorSavedDocument = nil
-        end,
-    }
-    local opened, openError = pcall(context.editorUiModule.open, context, session, handlers)
-    if not opened then
-        if context.editorUi then
-            pcall(context.editorUiModule.close, context, true)
-        end
-        context.editorSession = nil
-        lvgl.show(context.page)
-        addError(context, "editor UI: " .. tostring(openError))
-        showErrors(context)
-        return false
-    end
-    context.touchTapHandled = true
-    context.editorPress = nil
-    updateEmptyHint(context)
-    return true
-end
-
---- Advance editor setup or saving without discarding a failed save's draft.
-local function advanceEditor(context)
-    local saving = context.editorUi.saving ~= nil
-    local advanced, advanceError = pcall(context.editorUiModule.advance, context)
-    if not advanced then
-        if saving then
-            context.editorUiModule.saveFailure(context, advanceError)
-        else
-            context.editorUiModule.close(context, true)
-            restorePreview(context)
-            context.editorPreviewContainers = nil
-            context.editorSession = nil
-            addError(context, "editor UI: " .. tostring(advanceError))
-            showErrors(context)
-        end
-    end
-end
-
---- Whether input starts fullscreen editing.
----@param context AeroGridContext
----@param widgetEvent any
----@param touchState any
----@return boolean
-local function editorEntryHit(context, widgetEvent, touchState, held)
-    if
-        not isFullScreen()
-        or context.stage
-        or context.reloadState
-        or context.editorUi
-        or context.runtimeFailed
-        or not context.document
-    then
-        return false
-    end
-    local enter = _G.EVT_VIRTUAL_ENTER
-    if enter ~= nil and widgetEvent == enter then
-        return true
-    end
-    if
-        (not held and (not _G.EVT_TOUCH_LONG or widgetEvent ~= _G.EVT_TOUCH_LONG))
-        or type(touchState) ~= "table"
-        or type(touchState.x) ~= "number"
-        or type(touchState.y) ~= "number"
-    then
-        return false
-    end
-    local x, y = touchState.x, touchState.y
-    local left, top = context.left or 0, context.top or 0
-    if x >= left and x < left + context.zone.w and y >= top and y < top + context.zone.h then
-        x, y = x - left, y - top
-    end
-    for _, entry in ipairs(context.panels) do
-        local rect = context.grid.rect(context.zone, entry.placement, 4, 4, 4)
-        if rect and x >= rect.x and x < rect.x + rect.w and y >= rect.y and y < rect.y + rect.h then
-            return true
-        end
-    end
-    -- An empty dashboard must still offer a way to start adding panels.
-    return #context.panels == 0 and x >= 0 and x < context.zone.w and y >= 0 and y < context.zone.h
-end
-
---- The rectangle one placement occupies inside the host zone.
---- Both building and reflow go through this, so the two cannot drift apart.
----@param context AeroGridContext
----@param placement table
----@return AeroGridRect? rect
----@return string? error
-local function panelRect(context, placement)
-    return context.grid.rect(context.zone, placement, 4, 4, 4)
-end
-
---- The part of one placement's own rectangle the menu button covers.
----
---- Expressed in the panel's coordinates, because a panel is handed a
---- container-local rectangle and can neither see nor reach the zone. On a
---- 480 x 272 display only a placement at column zero, row zero can overlap,
---- but that is a property of the arithmetic rather than a rule, so the
---- intersection is computed rather than assumed.
----@param context AeroGridContext
----@param placement table
----@return table? reserved
-local function reservedFor(context, placement)
-    local reserved = context.reserved
-    if not reserved then
-        return nil
-    end
-
-    local rect = panelRect(context, placement)
-    if not rect then
-        return nil
-    end
-
-    local width = reserved.w - rect.x
-    local height = reserved.h - rect.y
-    if width <= 0 or height <= 0 then
-        return nil
-    end
-
-    return {
-        w = width < rect.w and width or rect.w,
-        h = height < rect.h and height or rect.h,
-        side = placement.rowSpan == 1,
-    }
-end
-
---- Assemble the shared objects handed to one panel.
---- Typography depends on the panel's span, so services are built per
---- placement rather than shared across the dashboard. The data services
---- themselves are dashboard-wide singletons and are passed through by
---- reference, so two panels naming the same source share one poll.
----@param context AeroGridContext
----@param placement table
----@return table services
-local function buildServices(context, placement)
-    local builder = context.themeBuilder
-    local theme = context.theme
-    local registry = context.serviceRuntime
-    local byId = registry and registry.byId or {}
-
-    -- Where the radio paints over us, the theme builder this panel sees
-    -- resolves its panel frame around that corner. Binding it here rather than
-    -- adding an argument to every panel means a panel written by
-    -- someone else is laid out correctly too, without knowing any of this
-    -- exists. The reservation is read on each call, not captured, so a zone
-    -- that moves is picked up by the update that follows it.
-    -- Always bound: a panel built in fullscreen, where nothing is reserved, is
-    -- still shown in App mode later. Saving an edit updates `placement` in place.
-    builder = setmetatable({
-        frame = function(resolved, rect, fonts, reserved, badgeText)
-            return context.themeBuilder.frame(resolved, rect, fonts, reservedFor(context, placement), badgeText)
-        end,
-    }, { __index = context.themeBuilder })
-
-    return {
-        theme = theme,
-        -- The flight session belongs to the dashboard, not to a panel, so it
-        -- is handed down rather than configured per panel.
-        session = context.session or {},
-        primitives = context.primitives,
-        themeBuilder = builder,
-        fonts = builder.typography(placement.colSpan, placement.rowSpan),
-        span = { colSpan = placement.colSpan, rowSpan = placement.rowSpan },
-        state = function(name, accentName)
-            return builder.state(theme, name, accentName)
-        end,
-        clock = getTime,
-        -- The host's own state, for the diagnostics view and nothing else.
-        --
-        -- The live context, not a copy. A diagnostics view reporting on a
-        -- snapshot assembled for it would be reporting on a world built
-        -- separately from the one the dashboard is using, and would be
-        -- confidently wrong at exactly the moment it is being trusted. Handing it
-        -- over costs one table field per panel and nothing else; a panel
-        -- that abuses it is isolated like any other.
-        host = context,
-        -- Shared data services. Any of these may be absent when its module failed
-        -- to load, so a panel must tolerate nil rather than assume.
-        telemetry = byId.telemetry,
-        model = byId.model,
-        control = byId.control,
-        extrema = byId.extrema,
-        navigation = byId.navigation,
-    }
-end
-
---- Load, validate, and instantiate every panel in the selected layout.
---- Instantiate one validated placement.
----@param context AeroGridContext
----@param placement table
-buildPanel = function(context, placement, container, preview)
-    local host = context.panelHost
-
-    --- Record a placement that will not be built, and why.
-    ---
-    --- A panel that never constructs leaves nothing behind but an error in
-    --- a banner that may have scrolled, and it is absent from `panels`
-    --- because there is no instance to put there. So the reason is kept where
-    --- it is known. Without this the diagnostics view could report every panel
-    --- that works and no panel that does not, which is the wrong half.
-    local function reject(reason)
-        if not preview then
-            addError(context, placement.id .. ": " .. tostring(reason))
-            context.rejected[#context.rejected + 1] = {
-                placement = placement,
-                reason = tostring(reason),
-            }
-        end
-        return nil, tostring(reason)
-    end
-
-    local panel, panelError = loadModule(context.path, "panels/" .. placement.type .. ".lua")
-    local contractValid, contractError
-
-    if panel then
-        contractValid, contractError = host.validateModule(panel, placement.type)
-    end
-
-    if not panel then
-        return reject(panelError)
-    end
-    if not contractValid then
-        return reject(contractError)
-    end
-    if not host.supportsSpan(panel, placement.colSpan, placement.rowSpan) then
-        return reject("panel does not support span " .. host.spanName(placement.colSpan, placement.rowSpan))
-    end
-
-    local rect, rectError = panelRect(context, placement)
-    if not rect then
-        return reject(rectError)
-    end
-
-    local settings, warnings =
-        host.resolveSettings(panel, placement.config, { colSpan = placement.colSpan, rowSpan = placement.rowSpan })
-    if preview and #warnings > 0 then
-        return reject(table.concat(warnings, "; "))
-    end
-    for _, warning in ipairs(warnings) do
-        addError(context, placement.id .. ": " .. warning)
-    end
-
-    -- Each panel draws inside its own container, so it cannot reach the
-    -- dashboard root or paint over a neighbour. The container is deliberately
-    -- unpainted; the panel's own panel fills it.
-    local geometry = {
-        x = rect.x,
-        y = rect.y,
-        w = rect.w,
-        h = rect.h,
-    }
-    if container then
-        container:set(geometry)
-        lvgl.show(container)
-    else
-        container = lvgl.box(context.page, geometry)
-        -- Preview pools reuse containers, so their origin follows the object.
-        if isFullScreen() then
-            context.fullscreenContainers = context.fullscreenContainers or setmetatable({}, { __mode = "k" })
-            context.fullscreenContainers[container] = true
-        end
-    end
-
-    local services = buildServices(context, placement)
-    services.preview = preview == true
-    local ok, instance = pcall(panel.create, container, { x = 0, y = 0, w = rect.w, h = rect.h }, settings, services)
-
-    -- A heading too long for its column is cut to fit, because the alternative
-    -- is LVGL wrapping it down over the reading. Cutting a name the author
-    -- chose is a loss, so it is reported rather than done quietly: being told
-    -- is what makes it an abbreviation instead of a corruption, and the author
-    -- can pick a shorter heading.
-    --
-    -- Collected from the primitive that did the cutting rather than read back
-    -- off the label. A label is userdata on a radio and answers no questions
-    -- about itself, so asking it produced nil there and the truth here.
-    --
-    -- Drained whether or not the panel survived. A panel that raises after
-    -- drawing its header leaves a report behind, and a report left behind is
-    -- one the next panel would be blamed for.
-    local reports = context.primitives.headingReports
-    if #reports > 0 then
-        for _, report in ipairs(reports) do
-            addNotice(
-                context,
-                "warning",
-                placement.id
-                    .. ": heading "
-                    .. tostring(report.requested)
-                    .. " does not fit this panel and is drawn as "
-                    .. tostring(report.drawn)
-            )
-        end
-        context.primitives.headingReports = {}
-    end
-
-    if ok then
-        local interval = host.refreshInterval(panel)
-        context.panels[#context.panels + 1] = {
-            placement = placement,
-            module = panel,
-            instance = instance,
-            settings = settings,
-            container = container,
-            -- Boxes built in fullscreen stay touchable in App mode.
-            builtFullscreen = isFullScreen() or nil,
-            interval = interval,
-            -- Stagger panels that share an interval so they do not all fall
-            -- due on the same frame.
-            nextRefresh = getTime() + host.phaseOffset(interval, #context.panels + 1),
-        }
-        return context.panels[#context.panels]
-    else
-        -- Discard whatever the failed panel managed to build.
-        container:clear()
-        lvgl.hide(container)
-        local _, message = reject(instance)
-        return nil, message, container
-    end
-end
-
---- Lines tokenized per widget callback.
-local TOKENIZE_LINES = 24
-
---- Advance the staged loader by exactly one step.
---- EdgeTX allows roughly 20000 VM instructions per widget callback, and a
---- whole dashboard costs far more than that, so loading is spread over
---- consecutive calls. Every stage is bounded by a fixed amount of work rather
---- than by the size of the layout: the file is tokenized a fixed number of
---- lines at a time, and each panel is parsed, validated, and built in its
---- own callback. A layout that fills the grid therefore costs more callbacks,
---- never a larger callback.
----@param context AeroGridContext
----@return boolean busy True while more work remains.
-local function advanceLoad(context)
-    local stage = context.stage
-
-    --- Abandon the load, reporting why.
-    local function fail(message)
-        if
-            stage ~= "services"
-            and stage ~= "theme-read"
-            and stage ~= "theme-validate"
-            and recoverLayout(context, tostring(message))
-        then
-            return true
-        end
-        addError(context, context.recoveryReason or message)
-        context.stage = nil
-        context.tokens = nil
-        context.source = nil
-        context.loadCandidates = nil
-        context.loadCandidateIndex = nil
-        context.themeNames, context.themeDefinitions = nil, nil
-        showErrors(context)
-        return false
-    end
-
-    if stage == "theme-read" then
-        local names = context.themeNames
-        local index = context.themeReadIndex
-        local name = names[index]
-        local definition, readError = readThemeDefinition(context.path, name, context.yaml)
-        if not definition and readError ~= "theme file is missing: " .. name .. ".yml" then
-            return fail("themes: " .. tostring(readError))
-        end
-        if definition then
-            context.themeDefinitions[#context.themeDefinitions + 1] = definition
-        end
-        context.themeReadIndex = index + 1
-        if index == #names then
-            context.stage = "theme-validate"
-        end
-        return true
-    end
-
-    if stage == "theme-validate" then
-        local configured, configureError = context.themeBuilder.setCatalog({
-            version = 1,
-            themes = context.themeDefinitions,
-        })
-        context.themeNames, context.themeDefinitions, context.themeReadIndex = nil, nil, nil
-        if not configured then
-            return fail("themes: " .. tostring(configureError))
-        end
-        context.stage = "read"
-        return true
-    end
-
-    if stage == "read" then
-        -- The runtime may have failed to load; refuse rather than index nil.
-        if not context.layoutStore then
-            return fail("AeroGrid runtime module failed to load")
-        end
-
-        local modelInfo = model.getInfo()
-        local content, readError, filename, origin, candidates
-        local recoveryIndex
-        if context.recoveryCandidate then
-            local recovery = context.recoveryCandidate
-            context.recoveryCandidate = nil
-            context.recoveryReason = recovery.reason
-            local candidate = recovery.candidate
-            content, readError = context.layoutStore.readCandidate(candidate.filename)
-            filename, origin = candidate.filename, candidate.origin
-            candidates = context.layoutStore.candidates(context.path, context.layoutName)
-            recoveryIndex = recovery.index
-        elseif type(context.layoutStore.readCandidates) == "function" then
-            content, readError, filename, origin, candidates =
-                context.layoutStore.readCandidates(context.path, context.layoutName)
-        else
-            content, readError, filename, origin = context.layoutStore.read(context.path, context.layoutName)
-        end
-
-        if content or context.layoutPath == nil then
-            context.layoutPath = filename
-            context.layoutOrigin = origin
-        end
-        context.modelFilename = modelInfo and modelInfo.filename or nil
-        context.loadCandidates = candidates
-        context.loadCandidateIndex = recoveryIndex
-        if candidates and not recoveryIndex then
-            for index, candidate in ipairs(candidates) do
-                if candidate.filename == filename then
-                    context.loadCandidateIndex = index
-                    break
-                end
-            end
-            if not context.loadCandidateIndex and origin == "none" then
-                context.loadCandidateIndex = #candidates
-            end
-        end
-        if not content then
-            return fail(readError)
-        end
-
-        context.source = content
-        context.tokens = {}
-        context.readPosition = 1
-        context.readLine = 1
-        context.stage = "tokenize"
-        return true
-    end
-
-    if stage == "tokenize" then
-        local position, line, tokenError = context.yaml.tokenizeChunk(
-            context.source,
-            context.readPosition,
-            context.readLine,
-            TOKENIZE_LINES,
-            context.tokens
-        )
-
-        if tokenError then
-            return fail(tokenError)
-        end
-
-        context.readLine = line
-        if position then
-            context.readPosition = position
-            return true
-        end
-
-        context.source = nil
-        context.stage = "header"
-        return true
-    end
-
-    if stage == "header" then
-        local tokens = context.tokens
-        if not tokens then
-            return fail("layout tokens are missing")
-        end
-        -- Split the panel sequence out so the document itself stays small.
-        local header, panelsIndex, panelsIndent = {}, nil, nil
-        local index = 1
-
-        while index <= #tokens do
-            local token = tokens[index]
-            if token.indent == 0 and string.match(token.content, "^panels:") then
-                panelsIndex = index + 1
-                index = index + 1
-                -- Skip the sequence body; it is parsed one entry at a time later.
-                while index <= #tokens and tokens[index].indent > 0 do
-                    panelsIndent = panelsIndent or tokens[index].indent
-                    index = index + 1
-                end
-            else
-                header[#header + 1] = token
-                index = index + 1
-            end
-        end
-
-        if not panelsIndex then
-            return fail("panels must be a sequence")
-        end
-
-        local document, buildError = context.yaml.build(header)
-        if not document then
-            return fail(buildError)
-        end
-
-        local validated, headerErrors = context.layoutValidator.validateDocument(document)
-        if not validated or #(headerErrors or {}) > 0 then
-            local reason = table.concat(headerErrors or { "unsupported layout header" }, "; ")
-            if recoverLayout(context, reason) then
-                return true
-            end
-            if context.recoveryReason then
-                addError(context, context.recoveryReason)
-            else
-                for _, headerError in ipairs(headerErrors or {}) do
-                    addError(context, headerError)
-                end
-            end
-            context.stage = nil
-            context.tokens = nil
-            context.loadCandidates = nil
-            context.loadCandidateIndex = nil
-            showErrors(context)
-            return false
-        end
-
-        context.themeSource = "option"
-        context.theme = context.themeBuilder.build(context.themeMode)
-        for _, warning in ipairs(context.theme.warnings) do
-            addError(context, "theme: " .. warning)
-        end
-        for _, notice in ipairs(context.theme.notices) do
-            addNotice(context, notice.severity, "theme: " .. notice.text)
-        end
-        context.canvas:set({ color = context.theme.color.canvas })
-
-        context.session = validated.session or {}
-        context.document = validated
-        context.itemIndex = panelsIndex
-        context.itemIndent = panelsIndent or 2
-        context.itemNumber = 0
-        context.identifiers = {}
-        context.serviceIndex = 0
-        context.stage = "services"
-        return true
-    end
-
-    if stage == "services" then
-        -- Services are staged for the same reason panels are: each module has
-        -- to be compiled and run, and the whole set does not fit in one callback.
-        -- They are built before any panel, so a panel can subscribe from
-        -- inside its own create call.
-        local index = context.serviceIndex
-
-        if index == 0 then
-            local support, supportError = loadModule(context.path, "lib/services.lua", context.packageInfo.runtimeApi)
-            if not support then
-                -- A dashboard without services still renders: every panel sees
-                -- nil and must degrade to an unavailable presentation.
-                addError(context, "services: " .. tostring(supportError))
-                context.serviceIndex = nil
-                context.stage = "panels"
-                return true
-            end
-
-            context.servicesModule = support
-            context.serviceRuntime = support.runtime(support.environment())
-            context.serviceIndex = 1
-            return true
-        end
-
-        local definition = context.servicesModule.DEFINITIONS[index]
-        if not definition then
-            context.serviceIndex = nil
-            context.stage = "panels"
-            return true
-        end
-
-        context.serviceIndex = index + 1
-
-        local module, moduleError = loadModule(context.path, definition.file, context.packageInfo.runtimeApi)
-        local constructor = module and rawget(module, "new") or nil
-        if type(constructor) == "function" then
-            local runtime = context.serviceRuntime
-            if not runtime then
-                return fail("service runtime is missing")
-            end
-            local ok, instance = pcall(constructor, runtime.env, context.servicesModule, runtime)
-            if ok and type(instance) == "table" then
-                context.servicesModule.register(runtime, instance, getTime())
-            else
-                addError(context, definition.id .. ": " .. tostring(instance))
-            end
-        else
-            addError(context, definition.id .. ": " .. tostring(moduleError or "service module has no constructor"))
-        end
-
-        return true
-    end
-
-    if stage == "panels" then
-        local tokens = context.tokens
-        local index = context.itemIndex
-
-        if not tokens then
-            return fail("layout tokens are missing")
-        end
-        local token = index and tokens[index] or nil
-        if not index or not token or token.indent < context.itemIndent then
-            context.tokens = nil
-            context.stage = nil
-            context.loadCandidates = nil
-            context.loadCandidateIndex = nil
-            if context.recoveryReason then
-                addNotice(context, "warning", "layout recovered after: " .. context.recoveryReason)
-                context.recoveryReason = nil
-            end
-            showErrors(context)
-            return false
-        end
-
-        local placement, nextIndex, itemError = context.yaml.itemAt(tokens, index, context.itemIndent)
-        if itemError then
-            return fail(itemError)
-        end
-
-        context.itemIndex = nextIndex
-        context.itemNumber = context.itemNumber + 1
-
-        local valid, panelError = context.layoutValidator.validatePanel(
-            placement,
-            context.itemNumber,
-            context.grid,
-            context.document.panels,
-            context.identifiers
-        )
-
-        if valid then
-            context.identifiers[placement.id] = true
-            context.document.panels[#context.document.panels + 1] = placement
-            buildPanel(context, placement)
-        else
-            addError(context, panelError)
-        end
-
-        return true
-    end
-
-    return false
-end
-
---- Begin a staged load, discarding anything already on screen.
----@param context AeroGridContext
-local function beginLoad(context)
-    context.panels = {}
-    context.rejected = {}
-    context.errors = {}
-    context.notices = {}
-    context.errorLabel = nil
-    context.tokens = nil
-    context.source = nil
-    context.document = nil
-    context.identifiers = nil
-    context.itemIndex = nil
-    context.loadCandidates = nil
-    context.loadCandidateIndex = nil
-    context.itemNumber = 0
-    -- Subscriptions belong to the panels that made them, so the registry is
-    -- rebuilt with the dashboard rather than reused across a reload.
-    context.serviceRuntime = nil
-    context.serviceIndex = nil
-    context.themeNames = { "modern-dark" }
-    if context.themeMode ~= "modern-dark" then
-        context.themeNames[#context.themeNames + 1] = context.themeMode
-    end
-    context.themeDefinitions = {}
-    context.themeReadIndex = 1
-    context.stage = "theme-read"
-end
-
 --- Create one AeroGrid host instance for an EdgeTX custom-screen zone.
 ---@param zone AeroGridZone
 ---@param widgetOptions AeroGridWidgetOptions
@@ -1686,8 +554,8 @@ local function create(zone, widgetOptions, path)
     if not package then
         addError(context, "package: " .. tostring(packageError))
     else
-        local function runtimeModule(relative)
-            local module, err = loadModule(path, relative, package.runtimeApi)
+        local function runtimeModule(relative, ...)
+            local module, err = loadModule(path, relative, package.runtimeApi, ...)
             if not module then
                 addError(context, relative .. ": " .. tostring(err))
             end
@@ -1698,8 +566,76 @@ local function create(zone, widgetOptions, path)
         context.layoutValidator = runtimeModule("lib/layout.lua")
         context.layoutStore = runtimeModule("lib/layout_store.lua")
         context.panelHost = runtimeModule("lib/panel_host.lua")
-        context.themeBuilder = runtimeModule("lib/theme.lua")
-        context.primitives = runtimeModule("lib/primitives.lua")
+        local typography = runtimeModule("lib/typography.lua")
+        local panelLayout = runtimeModule("lib/panel_layout.lua")
+        local reading = runtimeModule("lib/reading.lua")
+        if typography and panelLayout then
+            context.themeBuilder = runtimeModule("lib/theme.lua", typography, panelLayout)
+        end
+        if reading then
+            context.primitives = runtimeModule("lib/primitives.lua", reading)
+        end
+        local loader = runtimeModule("lib/dashboard_loader.lua")
+        local lifecycle = runtimeModule("lib/dashboard_lifecycle.lua")
+        local controller = runtimeModule("lib/editor_controller.lua")
+        local function bindHost(module, relative, dependencies, operations)
+            local constructor = module and rawget(module, "new")
+            if type(constructor) ~= "function" then
+                addError(context, relative .. ": module has no constructor")
+                return nil
+            end
+            local ok, bound = pcall(constructor, dependencies)
+            if not ok or type(bound) ~= "table" then
+                addError(context, relative .. ": " .. tostring(ok and "constructor did not return a table" or bound))
+                return nil
+            end
+            for _, operation in ipairs(operations) do
+                if type(rawget(bound, operation)) ~= "function" then
+                    addError(context, relative .. ": missing operation " .. operation)
+                    return nil
+                end
+            end
+            return bound
+        end
+        if loader and lifecycle and controller then
+            context.dashboardLoader = bindHost(loader, "lib/dashboard_loader.lua", {
+                addError = addError,
+                addNotice = addNotice,
+                showErrors = showErrors,
+                loadModule = loadModule,
+                isFullScreen = isFullScreen,
+                readThemeDefinition = readThemeDefinition,
+            }, { "beginLoad", "advanceLoad", "panelRect", "buildPanel" })
+        end
+        if context.dashboardLoader then
+            context.dashboardLifecycle = bindHost(lifecycle, "lib/dashboard_lifecycle.lua", {
+                addError = addError,
+                showErrors = showErrors,
+                dispatchAll = dispatchAll,
+                isFullScreen = isFullScreen,
+                reservedCorner = reservedCorner,
+                errorTop = errorTop,
+                panelRect = context.dashboardLoader.panelRect,
+                buildPanel = context.dashboardLoader.buildPanel,
+            }, {
+                "updateEmptyHint",
+                "beginReflow",
+                "advanceReflow",
+                "advanceAppRebuild",
+                "retirePage",
+                "rebuildPage",
+            })
+        end
+        if context.dashboardLifecycle then
+            context.editorController = bindHost(controller, "lib/editor_controller.lua", {
+                addError = addError,
+                showErrors = showErrors,
+                loadModule = loadModule,
+                isFullScreen = isFullScreen,
+                buildPanel = context.dashboardLoader.buildPanel,
+                updateEmptyHint = context.dashboardLifecycle.updateEmptyHint,
+            }, { "restorePreview", "openEditor", "advanceEditor", "editorEntryHit" })
+        end
         if context.panelHost and context.panelHost.API_VERSION ~= package.panelApi then
             addError(context, "panel host: incompatible panel API")
             context.panelHost = nil
@@ -1740,6 +676,9 @@ local function create(zone, widgetOptions, path)
         or not context.panelHost
         or not context.themeBuilder
         or not context.primitives
+        or not context.dashboardLoader
+        or not context.dashboardLifecycle
+        or not context.editorController
     then
         -- Nothing can be loaded without the runtime, and an option change must not
         -- be able to restage a load that would then index a missing module.
@@ -1747,134 +686,10 @@ local function create(zone, widgetOptions, path)
         addError(context, "AeroGrid runtime module failed to load")
         showErrors(context)
     else
-        beginLoad(context)
+        context.dashboardLoader.beginLoad(context)
     end
 
     return context
-end
-
---- Panels repositioned per widget callback during a reflow.
----
---- Three is the current measurement-based setting. Reflow cost grows with the
---- number of panels per batch, so larger values can make one callback the
---- dashboard bottleneck while smaller values take more callbacks to settle.
---- The suite compares the measured worst reflow callback with the dashboard's
---- other live callbacks, so this choice is re-evaluated when panel work changes.
----
---- What it costs is passes. Sixteen panels settle in six callbacks rather
---- than four, and `MainWindow::run` calls `ViewMain::refreshWidgets` once per
---- `MENU_TASK_PERIOD`, which is 50 ms (`radio/src/tasks.cpp:50`), so a full
---- reflow takes about 300 ms rather than 200. A reflow only happens when the
---- host zone moves or resizes, which is a screen change: nobody is reading a
---- value at that moment.
----
---- The headroom is the real argument. Reflow is the only per-callback cost
---- that multiplies one panel's work by a constant, so the constant is the
---- cheapest protection against a future panel being expensive to move. At
---- 4, a panel costing 3750 to reposition breaches the suite's ceiling; at
---- 3 it takes 4935 to do the same.
-local REFLOW_BATCH = 2
-
---- Begin repositioning after EdgeTX changes the host zone.
---- Like loading, this is spread over callbacks: a full grid costs more than
---- the instruction budget allows in one call.
----@param context AeroGridContext
-local function beginReflow(context)
-    context.root:set({ w = context.zone.w, h = context.zone.h })
-    context.page:set({ w = context.zone.w, h = context.zone.h })
-    context.canvas:set({ w = context.zone.w, h = context.zone.h })
-
-    -- A zone that moved may have moved out from under the button, or into it.
-    context.reserved = reservedCorner(context.zone)
-
-    if context.errorLabel then
-        context.errorLabel:set({
-            y = errorTop(context),
-            w = math.max(1, context.zone.w - 16),
-        })
-    end
-
-    context.width = context.zone.w
-    context.height = context.zone.h
-    context.left = context.zone.xabs or 0
-    context.top = context.zone.yabs or 0
-    context.fullScreen = isFullScreen()
-    context.reflowIndex = 1
-end
-
---- Reposition the next batch of panels.
----@param context AeroGridContext
----@return boolean busy True while more panels remain.
-local function advanceReflow(context)
-    local index = context.reflowIndex
-    local last = math.min(index + REFLOW_BATCH - 1, #context.panels)
-
-    for position = index, last do
-        local entry = context.panels[position]
-        if entry and not entry.failed then
-            local rect = panelRect(context, entry.placement)
-            if rect then
-                entry.container:set({ x = rect.x, y = rect.y, w = rect.w, h = rect.h })
-                local ok, dispatchError = context.panelHost.dispatch(
-                    entry,
-                    "update",
-                    { x = 0, y = 0, w = rect.w, h = rect.h },
-                    entry.settings
-                )
-                if not ok and dispatchError then
-                    addError(context, entry.placement.id .. ": update: " .. dispatchError)
-                end
-            end
-        end
-    end
-
-    if last >= #context.panels then
-        context.reflowIndex = nil
-        showErrors(context)
-        return false
-    end
-
-    context.reflowIndex = last + 1
-    return true
-end
-
---- Rebuild one fullscreen-built panel for App mode, over two callbacks.
---- EdgeTX 2.12 only makes Lua boxes touch-transparent when constructing them
---- outside fullscreen, so such a panel would swallow the widget's long press.
---- The retire and build steps are split because a cleared container sweeps
---- objects created in it during the same callback.
----@param context AeroGridContext
-local function advanceAppRebuild(context)
-    local job = context.appRebuild
-    local entry = job.entry
-    if not job.retired then
-        job.retired = true
-        local ok, destroyError = context.panelHost.dispatch(entry, "destroy")
-        if not ok and destroyError then
-            addError(context, entry.placement.id .. ": destroy: " .. destroyError)
-        end
-        entry.container:clear()
-        lvgl.hide(entry.container)
-        local fullscreenContainers = context.fullscreenContainers
-        if not (fullscreenContainers and fullscreenContainers[entry.container]) then
-            job.container = entry.container
-        end
-        for index, current in ipairs(context.panels) do
-            if current == entry then
-                table.remove(context.panels, index)
-                job.index = index
-                break
-            end
-        end
-        return
-    end
-    context.appRebuild = nil
-    local rebuilt = buildPanel(context, entry.placement, job.container)
-    if rebuilt then
-        table.remove(context.panels)
-        table.insert(context.panels, math.min(job.index, #context.panels + 1), rebuilt)
-    end
-    showErrors(context)
 end
 
 --- Apply native host options; changing Layout or Theme rebuilds safely.
@@ -1893,7 +708,7 @@ local function update(context, widgetOptions)
         context.editorStash = nil
         if context.editorUi then
             context.editorUiModule.close(context, true)
-            restorePreview(context)
+            context.editorController.restorePreview(context)
             context.editorSession = nil
         end
         context.layoutName = name
@@ -1919,11 +734,14 @@ end
 ---@param widgetEvent any
 ---@return boolean consumed
 local function event(context, widgetEvent, touchState)
+    if context.runtimeFailed then
+        return false
+    end
     if context.editorUi then
         return context.editorUiModule.handle(context, widgetEvent, touchState)
     end
-    if editorEntryHit(context, widgetEvent, touchState) then
-        openEditor(context)
+    if context.editorController.editorEntryHit(context, widgetEvent, touchState) then
+        context.editorController.openEditor(context)
         return true
     end
 
@@ -2025,6 +843,17 @@ end
 ---@param widgetEvent? number Fullscreen input supplied by EdgeTX.
 ---@param touchState? table
 local function refresh(context, widgetEvent, touchState)
+    if context.runtimeFailed then
+        context.root:set({ w = context.zone.w, h = context.zone.h })
+        context.page:set({ w = context.zone.w, h = context.zone.h })
+        context.canvas:set({ w = context.zone.w, h = context.zone.h })
+        context.reserved = reservedCorner(context.zone)
+        if context.errorLabel then
+            context.errorLabel:set({ y = errorTop(context), w = math.max(1, context.zone.w - 16) })
+        end
+        return
+    end
+
     -- Leaving fullscreen neither saves nor discards. Editor boxes built in
     -- fullscreen would swallow the long press in App mode, so the editor is
     -- torn down and a changed draft is set aside until fullscreen returns.
@@ -2033,7 +862,7 @@ local function refresh(context, widgetEvent, touchState)
         local session = context.editorSession
         local keep = session and session.dirty and not context.editorUi.buildStage
         context.editorUiModule.close(context, false)
-        restorePreview(context)
+        context.editorController.restorePreview(context)
         context.editorSession = nil
         context.editorPreviewContainers = nil
         context.editorStash = keep and session or nil
@@ -2045,7 +874,7 @@ local function refresh(context, widgetEvent, touchState)
         and not context.reloadState
         and context.document
     then
-        openEditor(context)
+        context.editorController.openEditor(context)
     end
 
     -- EdgeTX 2.12 only makes Lua boxes touch-transparent when constructing
@@ -2066,79 +895,29 @@ local function refresh(context, widgetEvent, touchState)
     -- ones created after the clear in the same callback. Anything rebuilt here
     -- would therefore be swept before it was ever drawn.
     if context.reloadState == "clear" then
-        dispatchAll(context, "destroy")
-
-        -- Discard the whole page. EdgeTX collects the clear whenever it next runs
-        -- callRefs, which is not guaranteed to be this callback: it is skipped
-        -- while the widget is off screen, such as behind the settings dialog, and
-        -- once an error has been reported. The next page is therefore built as a
-        -- fresh child of the root, where this pending cleanup cannot reach it.
-        --
-        -- Only a firmware fallback creates top-level native dialogs. EdgeTX
-        -- keeps those wrappers registered after deleting their windows, and
-        -- only a host-wide clear unregisters them.
-        if context.nativeDialogsCreated and not isFullScreen() then
-            lvgl.clear()
-            context.root = nil
-            context.nativeDialogsCreated = nil
-        elseif context.rootBuiltFullscreen and not isFullScreen() then
-            context.root:clear()
-            lvgl.hide(context.root)
-            context.root = nil
-        elseif context.page then
-            context.page:clear()
-            lvgl.hide(context.page)
-        end
-        context.fullscreenContainers = nil
-        context.appRebuild = nil
-
-        context.page = nil
-        context.canvas = nil
-        context.emptyHint = nil
-        context.panels = {}
-        context.rejected = {}
-        context.errors = {}
-        context.notices = {}
-        context.errorLabel = nil
-        context.reloadState = "rebuild"
+        context.dashboardLifecycle.retirePage(context)
         return
     end
 
     if context.reloadState == "rebuild" then
-        if not context.root then
-            context.root = lvgl.box({ x = 0, y = 0, w = context.zone.w, h = context.zone.h })
-            context.rootBuiltFullscreen = isFullScreen()
-        end
-        context.page = lvgl.box(context.root, {
-            x = 0,
-            y = 0,
-            w = context.zone.w,
-            h = context.zone.h,
-        })
-        context.pageBuiltFullscreen = isFullScreen()
-        context.canvas = lvgl.rectangle(context.page, {
-            x = 0,
-            y = 0,
-            w = context.zone.w,
-            h = context.zone.h,
-            color = context.theme and context.theme.color.canvas or lcd.RGB(0x101316),
-            filled = true,
-        })
-        context.reloadState = nil
-        beginLoad(context)
+        context.dashboardLifecycle.rebuildPage(context)
+        context.dashboardLoader.beginLoad(context)
         return
     end
 
     if context.stage then
-        advanceLoad(context)
+        context.dashboardLoader.advanceLoad(context)
         return
     end
 
-    updateEmptyHint(context)
+    context.dashboardLifecycle.updateEmptyHint(context)
 
     -- EdgeTX reports FIRST/BREAK but does not forward LVGL's long-press event.
     if not context.editorUi and isFullScreen() then
-        if widgetEvent == _G.EVT_TOUCH_FIRST and editorEntryHit(context, widgetEvent, touchState, true) then
+        if
+            widgetEvent == _G.EVT_TOUCH_FIRST
+            and context.editorController.editorEntryHit(context, widgetEvent, touchState, true)
+        then
             context.editorPress = { started = getTime() }
         elseif
             widgetEvent ~= nil
@@ -2152,7 +931,7 @@ local function refresh(context, widgetEvent, touchState)
         end
         if context.editorPress and getTime() - context.editorPress.started >= 60 then
             context.editorPress = nil
-            openEditor(context)
+            context.editorController.openEditor(context)
             return
         end
     elseif not isFullScreen() then
@@ -2171,7 +950,7 @@ local function refresh(context, widgetEvent, touchState)
             or context.editorUi.previewRefresh
         )
     then
-        advanceEditor(context)
+        context.editorController.advanceEditor(context)
         return
     end
 
@@ -2227,10 +1006,10 @@ local function refresh(context, widgetEvent, touchState)
         or context.top ~= (context.zone.yabs or 0)
         or context.fullScreen ~= isFullScreen()
     then
-        beginReflow(context)
+        context.dashboardLifecycle.beginReflow(context)
     end
     if context.reflowIndex then
-        advanceReflow(context)
+        context.dashboardLifecycle.advanceReflow(context)
         return
     end
     if not context.appRebuild and not isFullScreen() and not context.editorUi then
@@ -2242,7 +1021,7 @@ local function refresh(context, widgetEvent, touchState)
         end
     end
     if context.appRebuild then
-        advanceAppRebuild(context)
+        context.dashboardLifecycle.advanceAppRebuild(context)
         return
     end
 
@@ -2258,7 +1037,7 @@ end
 ---@param context AeroGridContext
 local function background(context)
     if context.editorUi and context.editorUi.saving then
-        advanceEditor(context)
+        context.editorController.advanceEditor(context)
         return
     end
     if context.stage or context.reloadState or context.reflowIndex then

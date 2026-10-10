@@ -41,6 +41,19 @@ make check LUA_COMPILER=/absolute/path/to/edgetx-luac
 | Editor commands and settings dialogs | `tests/unit/lib/test_editor.lua` and `tests/integration/test_editor_ui.lua`. |
 | Shared rendering or reflow | Builder-matrix, panel-reflow, font-callback, and resource-stability integration suites. |
 
+The formerly combined runtime suite is split under `tests/unit/runtime/` into
+contracts/settings/documentation, palette/state, service behavior, and
+typography/geometry suites. `tests/support/runtime_fixture.lua` preserves the
+minimal constants/LCD surface: these tests deliberately do not install LVGL or
+radio APIs. The full-widget integration suite remains intact so budgeting,
+cross-panel agreement, and deferred cleanup are still exercised together.
+
+`test_module_composition.lua` checks direct API references, per-instance state,
+and reading/unit reconciliation. `test_service_subscriptions.lua` checks stable
+subscription identity across domain services. `test_runtime_modules.lua` checks
+missing/incompatible coordination and visual dependencies, including error
+visibility after resizing.
+
 Reuse `tests/support/widget_fixture.lua` to load a host with mocked APIs.
 Use `tests/support/edgetx.lua` for firmware behavior and LVGL object inspection
 instead of inventing another mock. That module separates **firmware claims**

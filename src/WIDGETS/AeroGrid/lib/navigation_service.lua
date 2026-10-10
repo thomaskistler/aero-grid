@@ -255,10 +255,8 @@ function navigationService:subscribe(name)
         reading = telemetry and telemetry:subscribe(name) or nil,
     }
 
-    entry.view = self.support.snapshot(entry.state)
+    self.support.addSubscription(self, self.entries, entry)
     self.sources[name] = entry.view
-    self.entries[#self.entries + 1] = entry
-    self.count = self.count + 1
     return entry.view
 end
 

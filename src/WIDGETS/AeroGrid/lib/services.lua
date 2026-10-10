@@ -185,6 +185,19 @@ function services.update(runtime, now)
     return nil
 end
 
+--- Publish service-owned state and append one subscription in polling order.
+--- Name lookup and duplicate detection remain with the domain service.
+---@param owner table Service with support and count fields.
+---@param entries table[] Service-owned polling list.
+---@param entry table Mutable state plus domain-specific polling metadata.
+---@return table entry Entry with its immutable live view.
+function services.addSubscription(owner, entries, entry)
+    entry.view = owner.support.snapshot(entry.state)
+    entries[#entries + 1] = entry
+    owner.count = owner.count + 1
+    return entry
+end
+
 --- Visit a bounded round-robin slice of a subscription list.
 ---@param entries table[]
 ---@param cursor integer

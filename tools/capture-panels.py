@@ -114,21 +114,24 @@ view: 0
     (widget / "layouts/capture-panels.yaml").write_text(layout)
     main = widget / "main.lua"
     source = main.read_text()
+    loader = widget / "lib/dashboard_loader.lua"
+    loader_source = loader.read_text()
     if recipe.get("brighten_supporting_text", False):
         theme_setup = "        context.theme = context.themeBuilder.build(context.themeMode)"
-        if source.count(theme_setup) != 1:
+        if loader_source.count(theme_setup) != 1:
             raise RuntimeError("Theme setup changed; update capture instrumentation explicitly.")
-        source = source.replace(theme_setup, theme_setup + """
+        loader_source = loader_source.replace(theme_setup, theme_setup + """
         context.theme.rgb.textFaint = context.theme.rgb.textMuted
         context.theme.color.textFaint = context.theme.color.textMuted
 """)
     inputs = fixture_inputs(recipe)
     if inputs:
         (widget / "capture-inputs.lua").write_text(inputs)
-        if source.count("support.environment()") != 1:
+        if loader_source.count("support.environment()") != 1:
             raise RuntimeError("Service environment setup changed; update capture instrumentation explicitly.")
-        source = source.replace("support.environment()",
+        loader_source = loader_source.replace("support.environment()",
                                 'support.environment(assert(loadScript("/WIDGETS/AeroGrid/capture-inputs.lua"))())')
+    loader.write_text(loader_source)
     source = """local function captureEqual(actual, expected)
     if type(expected) ~= "table" then return actual == expected end
     if type(actual) ~= "table" then return false end

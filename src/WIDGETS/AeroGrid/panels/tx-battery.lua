@@ -499,28 +499,7 @@ function txBattery.create(parent, rect, settings, services)
     )
     panel = context.panel
 
-    context.value = primitives.value(panel.root, theme, {
-        x = area.valueX,
-        y = area.valueY,
-        -- Exactly what the reading and its unit occupy, because it is centred on
-        -- a slot rather than started at an edge: a label given more width than it
-        -- needs would centre the slot on the wrong point.
-        w = area.valueWidth,
-        text = "--",
-        color = presentation.value,
-        font = area.value,
-    })
-
-    -- Created whenever the panel could ever show it, and hidden until it does,
-    -- for the reason every optional object here is: whether it is shown can
-    -- change on a reflow and rebuilding an object is not free.
-    context.unit = primitives.unit(panel.root, theme, {
-        x = area.valueX,
-        y = area.valueY,
-        text = txBattery.UNIT,
-        color = theme.color.textMuted,
-        font = area.unitFont,
-    })
+    context.value, context.unit = primitives.reading(panel.root, theme, area, presentation, txBattery.UNIT)
 
     -- Built only where the layout asked for the estimate: on every other
     -- panel it was an object built to be hidden, and a row that could never be

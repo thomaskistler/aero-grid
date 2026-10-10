@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 local root = assert(..., "repository root argument is required")
+local moduleLoader = assert(loadfile(root .. "/tests/support/module_loader.lua"))(root)
 local sourcePath = root .. "/src/WIDGETS/AeroGrid/"
 local developmentLayoutsPath = root .. "/tests/fixtures/layouts/development/"
 local hostIo = io
@@ -94,7 +95,7 @@ local function writeFile(path, text)
     handle:close()
 end
 
-local themeModule = assert(loadfile(sourcePath .. "lib/theme.lua"))()
+local themeModule = moduleLoader("lib/theme.lua")
 local themeYamlModule = assert(loadfile(sourcePath .. "lib/yaml.lua"))()
 local themeDocument = assert(loadfile(root .. "/tests/support/theme_catalog.lua"))()(root, themeYamlModule)
 assert(themeModule.setCatalog(themeDocument))
@@ -166,7 +167,7 @@ for _, name in ipairs({ "create", "update", "refresh", "background", "event" }) 
         return first, second
     end
 end
-local primitivesModule = assert(loadfile(sourcePath .. "lib/primitives.lua"))()
+local primitivesModule = moduleLoader("lib/primitives.lua")
 local layoutStoreModule = assert(loadfile(sourcePath .. "lib/layout_store.lua"))()
 
 assertEqual(definition.name, "AeroGrid")

@@ -598,28 +598,9 @@ function cellBattery.create(parent, rect, settings, services)
     )
     panel = context.panel
 
-    context.value = primitives.value(panel.root, theme, {
-        x = area.valueX,
-        y = area.valueY,
-        w = area.valueWidth,
-        text = "--",
-        color = presentation.value,
-        font = area.value,
-    })
-
-    -- Recorded as well as drawn. The reading is centred on its slot and the
-    -- unit rides past it, so the helper that places the pair has to know how
-    -- wide the pair is -- and an LVGL object is userdata on a radio, with no
-    -- readable text to ask. This panel's unit never changes, unlike
-    -- `link-status`, whose telemetry answers with one.
+    -- LVGL userdata cannot report its text; keep it for reading/unit placement.
     context.unitText = sample.unit
-    context.unit = primitives.unit(panel.root, theme, {
-        x = area.valueX,
-        y = area.valueY,
-        text = sample.unit,
-        color = theme.color.textMuted,
-        font = area.unitFont,
-    })
+    context.value, context.unit = primitives.reading(panel.root, theme, area, presentation, sample.unit)
 
     context.countLabel = primitives.label(panel.root, theme, {
         x = area.detailX,

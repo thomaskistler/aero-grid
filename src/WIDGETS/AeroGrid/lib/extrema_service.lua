@@ -149,12 +149,9 @@ function extremaService:sessionExtrema(name)
         },
         reading = telemetry and telemetry:subscribe(name) or nil,
     }
-    track.view = self.support.snapshot(track.state)
-
-    self.tracks[name] = track
     self.trackOrder = self.trackOrder or {}
-    self.trackOrder[#self.trackOrder + 1] = track
-    self.count = self.count + 1
+    self.support.addSubscription(self, self.trackOrder, track)
+    self.tracks[name] = track
     return track.view
 end
 

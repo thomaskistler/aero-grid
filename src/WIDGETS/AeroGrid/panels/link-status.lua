@@ -828,24 +828,7 @@ function linkStatus.create(parent, rect, settings, services)
     )
     panel = context.panel
 
-    context.value = primitives.value(panel.root, theme, {
-        x = area.valueX,
-        y = area.valueY,
-        w = area.valueWidth,
-        text = "--",
-        color = presentation.value,
-        font = area.value,
-    })
-
-    -- The unit is whatever the source resolves to, which is not known yet, so
-    -- it is built empty and filled once the telemetry service answers.
-    context.unit = primitives.unit(panel.root, theme, {
-        x = area.valueX,
-        y = area.valueY,
-        text = "",
-        color = theme.color.textMuted,
-        font = area.unitFont,
-    })
+    context.value, context.unit = primitives.reading(panel.root, theme, area, presentation, "")
 
     context.detailLabel = primitives.label(panel.root, theme, {
         x = area.detailX,
