@@ -58,12 +58,33 @@ theme.MODES = {}
 theme.ACCENTS = { cyan = true, green = true, amber = true, orange = true }
 
 local COLOR_KEYS = {
-    "canvas", "surface", "surfaceRaised", "border", "track", "text", "textMuted", "textFaint",
-    "cyan", "blue", "green", "amber", "orange", "critical",
+    "canvas",
+    "surface",
+    "surfaceRaised",
+    "border",
+    "track",
+    "text",
+    "textMuted",
+    "textFaint",
+    "cyan",
+    "blue",
+    "green",
+    "amber",
+    "orange",
+    "critical",
 }
 local SPACING_KEYS = {
-    "outerMargin", "gutter", "padding", "paddingTight", "paddingRight", "paddingCompact",
-    "radius", "accentWidth", "accentGap", "barHeight", "borderFocus",
+    "outerMargin",
+    "gutter",
+    "padding",
+    "paddingTight",
+    "paddingRight",
+    "paddingCompact",
+    "radius",
+    "accentWidth",
+    "accentGap",
+    "barHeight",
+    "borderFocus",
 }
 
 --- Minimum acceptable contrast ratio between text and its surface.
@@ -464,8 +485,15 @@ function theme.validateCatalog(document)
     local validated = {}
     local names = {}
     local allowedFields = {
-        version = true, name = true, label = true, accent = true, light = true, correctForContrast = true,
-        colors = true, spacing = true, tintSeparation = true,
+        version = true,
+        name = true,
+        label = true,
+        accent = true,
+        light = true,
+        correctForContrast = true,
+        colors = true,
+        spacing = true,
+        tintSeparation = true,
     }
     local colorFields, spacingFields = {}, {}
     for _, key in ipairs(COLOR_KEYS) do
@@ -538,7 +566,8 @@ function theme.validateCatalog(document)
         end
         for _, key in ipairs(SPACING_KEYS) do
             local value = definition.spacing[key]
-            if type(value) ~= "number"
+            if
+                type(value) ~= "number"
                 or value ~= value
                 or value == math.huge
                 or value == -math.huge
@@ -549,7 +578,8 @@ function theme.validateCatalog(document)
             end
             spacing[key] = value
         end
-        if definition.tintSeparation ~= nil
+        if
+            definition.tintSeparation ~= nil
             and (
                 type(definition.tintSeparation) ~= "number"
                 or definition.tintSeparation ~= definition.tintSeparation

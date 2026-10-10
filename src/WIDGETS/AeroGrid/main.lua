@@ -1695,12 +1695,7 @@ local function create(zone, widgetOptions, path)
         if context.themeMode ~= "modern-dark" then
             themeNames[#themeNames + 1] = context.themeMode
         end
-        local themeDocument, themeError = readThemeCatalog(
-            path,
-            themeNames,
-            context.themeMode,
-            context.yaml
-        )
+        local themeDocument, themeError = readThemeCatalog(path, themeNames, context.themeMode, context.yaml)
         if not themeDocument then
             context.runtimeFailed = true
             addError(context, "themes: " .. tostring(themeError))

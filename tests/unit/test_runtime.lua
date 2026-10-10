@@ -1600,7 +1600,11 @@ local function testModernTheme()
     -- cleared can leave a space, and the user cannot see it.
     for _, blank in ipairs({ "", " ", "   " }) do
         local unset = theme.build(blank)
-        assertEqual(unset.mode, "modern-dark", string.format("a blank theme option %q did not fall back to Modern", blank))
+        assertEqual(
+            unset.mode,
+            "modern-dark",
+            string.format("a blank theme option %q did not fall back to Modern", blank)
+        )
         assertEqual(
             #unset.warnings,
             0,
@@ -2158,8 +2162,13 @@ local function testContentFitsPanel()
         local layout = metric.presentationFor(case.colSpan, case.rowSpan)
         layout.visual = "bar"
         local fonts = theme.typography(case.colSpan, case.rowSpan)
-        local area =
-            metric.regionsFor(theme.build("modern-dark"), theme, { x = 0, y = 0, w = case.w, h = case.h }, layout, fonts)
+        local area = metric.regionsFor(
+            theme.build("modern-dark"),
+            theme,
+            { x = 0, y = 0, w = case.w, h = case.h },
+            layout,
+            fonts
+        )
 
         -- **The ink, not the line box.** A reading is placed so that its ink is
         -- centred in the band, which leaves the box hanging below it by the

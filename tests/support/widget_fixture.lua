@@ -29,9 +29,7 @@ io = {
 
 os.execute("rm -rf '" .. fixtureWidgetRoot .. "' && mkdir -p '" .. fixtureWidgetRoot .. "'")
 os.execute("cp -R '" .. widgetRoot .. ".' '" .. fixtureWidgetRoot .. "'")
-os.execute(
-    "cp -R '" .. root .. "/tests/fixtures/layouts/development/.' '" .. fixtureWidgetRoot .. "layouts/'"
-)
+os.execute("cp -R '" .. root .. "/tests/fixtures/layouts/development/.' '" .. fixtureWidgetRoot .. "layouts/'")
 
 local function loadModule(relative)
     local chunk, err = loadfile(widgetRoot .. relative)

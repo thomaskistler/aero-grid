@@ -169,10 +169,7 @@ local function testThemeRegistryKeepsPositionsAndAddsNames()
     local ops = fakeCard(files, folders)
     local names = themeRegistry.load("/WIDGETS/AeroGrid/", ops)
     assertions.assertEqual(table.concat(names, ","), "modern-dark,modern-light,custom-night")
-    assertions.assertEqual(
-        files["/AEROGRID/theme-registry.txt"],
-        "modern-dark\nmodern-light\ncustom-night\n"
-    )
+    assertions.assertEqual(files["/AEROGRID/theme-registry.txt"], "modern-dark\nmodern-light\ncustom-night\n")
     local userPath, shippedPath = themeRegistry.paths("/WIDGETS/AeroGrid/", "modern-dark")
     assertions.assertEqual(userPath, "/AEROGRID/themes/modern-dark.yml")
     assertions.assertEqual(shippedPath, "/WIDGETS/AeroGrid/themes/modern-dark.yml")

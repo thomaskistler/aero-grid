@@ -774,7 +774,11 @@ settleSave()
 widget.lvglMock.setFullScreen(false)
 widget.pump(context, 40)
 assert(context.reserved, "App return reserves the menu button corner")
-local fresh = widget.createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "edit-pair", Theme = "modern-dark" }, path)
+local fresh = widget.createLoaded(
+    { x = 0, y = 0, w = 480, h = 272 },
+    { Layout = "edit-pair", Theme = "modern-dark" },
+    path
+)
 widget.pump(fresh, 10)
 equal(labelLayout(context), labelLayout(fresh), "corner panel moved in fullscreen reserves the menu button")
 

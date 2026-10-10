@@ -2451,11 +2451,7 @@ panels:
         colors = { canvas = 0x000000, surface = 0x101010, border = 0xFF00FF },
     })
 
-    local context = createLoaded(
-        { x = 0, y = 0, w = 480, h = 272 },
-        { Layout = "main", Theme = "custom" },
-        widgetPath
-    )
+    local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "main", Theme = "custom" }, widgetPath)
 
     assertEqual(context.theme.mode, "custom")
     assertEqual(context.theme.rgb.canvas, 0x000000)
@@ -4970,11 +4966,7 @@ return exploder
     addTheme(custom, "notice-test", { colors = { surface = 0xFFFFFF } })
 
     resetRadio()
-    local context = createLoaded(
-        { x = 0, y = 0, w = 480, h = 272 },
-        { Layout = "main", Theme = "notice-test" },
-        custom
-    )
+    local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "main", Theme = "notice-test" }, custom)
     assertEqual(context.theme.mode, "notice-test")
 
     -- The deliberately light mock roles guarantee the legibility pass engages,
@@ -5145,8 +5137,16 @@ panels:
     os.remove(userAlpha)
 
     -- Two layouts, one model: two separate screens of the same radio.
-    local alpha = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "alpha", Theme = "modern-dark" }, widgetPath)
-    local beta = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "beta", Theme = "modern-dark" }, widgetPath)
+    local alpha = createLoaded(
+        { x = 0, y = 0, w = 480, h = 272 },
+        { Layout = "alpha", Theme = "modern-dark" },
+        widgetPath
+    )
+    local beta = createLoaded(
+        { x = 0, y = 0, w = 480, h = 272 },
+        { Layout = "beta", Theme = "modern-dark" },
+        widgetPath
+    )
 
     assertEqual(alpha.layoutPath, widgetPath .. "layouts/alpha.yaml")
     assertEqual(beta.layoutPath, widgetPath .. "layouts/beta.yaml")
@@ -7462,7 +7462,6 @@ return latebreak
         string.find(panels, "later latebreak 1x2 FAILED", 1, true),
         "the panel does not report the panel that failed after building: " .. panels
     )
-
 end
 
 --- The mode number is drawn where there is a row for it, and nowhere else.
