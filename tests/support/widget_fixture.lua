@@ -49,7 +49,7 @@ function WidgetFixture.new()
         local definition = loadModule("main.lua")
         local context = definition.create(
             zone or { x = defaultZone.x, y = defaultZone.y, w = defaultZone.w, h = defaultZone.h },
-            options or { Layout = "main", Theme = "modern" },
+            options or { Layout = "main", Theme = "modern-dark" },
             path or widgetRoot
         )
         local guard = 0

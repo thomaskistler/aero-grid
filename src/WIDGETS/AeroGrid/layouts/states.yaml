@@ -30,12 +30,9 @@ version: 1
 #   * Whether the stale and unavailable panels still read as absent rather than
 #     alarming. They are deliberately not tinted.
 #
-# This layout deliberately states no theme. The host resolves a layout's own
-# theme block first and falls back to the widget's native Theme option
-# (`themeConfig.mode or context.themeMode` in main.lua), so a layout that says
-# nothing takes whatever the screen was configured with. Switch between
-# Modern Dark and Modern Light in the widget settings to compare the tints
-# while keeping every panel and threshold identical.
+# This layout follows the widget's native Theme option, so switch between
+# Modern Dark and Modern Light to compare the tints while keeping every panel
+# and threshold identical.
 
 grid:
   columns: 4

@@ -102,10 +102,10 @@ def prepare(sd, recipe, recipe_path=None):
                         value:
                            unsignedValue: THEME
 view: 0
-""".replace("THEME", str(["modern", "modern-light"].index(recipe["theme"]) + 1))
+""".replace("THEME", str(["modern-dark", "modern-light"].index(recipe["theme"]) + 1))
                      .replace("POSITION", str(position))
                      + suffix.split("\n", 1)[1])
-    layout = f"version: 1\ntheme:\n  mode: {recipe['theme']}\ngrid:\n  columns: 4\n  rows: 4\npanels:\n"
+    layout = "version: 1\ngrid:\n  columns: 4\n  rows: 4\npanels:\n"
     for name, (col, row, cols, rows) in placements(recipe).items():
         layout += (f"  - id: subject-{name}\n    type: {panel}\n"
                    f"    col: {col}\n    row: {row}\n    colSpan: {cols}\n    rowSpan: {rows}\n"
@@ -114,7 +114,7 @@ view: 0
     main = widget / "main.lua"
     source = main.read_text()
     if recipe.get("brighten_supporting_text", False):
-        theme_setup = "        context.theme = context.themeBuilder.build(themeConfig.mode or context.themeMode, themeConfig.overrides)"
+        theme_setup = "        context.theme = context.themeBuilder.build(context.themeMode)"
         if source.count(theme_setup) != 1:
             raise RuntimeError("Theme setup changed; update capture instrumentation explicitly.")
         source = source.replace(theme_setup, theme_setup + """

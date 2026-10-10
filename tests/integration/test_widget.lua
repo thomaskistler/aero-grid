@@ -92,6 +92,11 @@ local function writeFile(path, text)
     handle:close()
 end
 
+local themeModule = assert(loadfile(sourcePath .. "lib/theme.lua"))()
+local themeYamlModule = assert(loadfile(sourcePath .. "lib/yaml.lua"))()
+local themeDocument = assert(loadfile(root .. "/tests/support/theme_catalog.lua"))()(root, themeYamlModule)
+assert(themeModule.setCatalog(themeDocument))
+
 --- Build an isolated copy of the widget package so a test can supply its own
 --- layout and panel files without touching the shipped sources.
 ---@param name string Unique scratch directory name under build/.
@@ -121,6 +126,27 @@ local function makeWidget(name, layoutYaml, extraPanels)
     return directory .. "/"
 end
 
+local function addTheme(widgetPath, name, changes)
+    local definition = assert(themeYamlModule.parse(assert(themeYamlModule.serialize(themeDocument.themes[1]))))
+    local copy = assert(themeYamlModule.parse(assert(themeYamlModule.serialize(definition))))
+    copy.version = 1
+    copy.name = name
+    copy.label = name
+    copy.correctForContrast = changes.correctForContrast ~= false
+    for key, value in pairs(changes.colors or {}) do
+        copy.colors[key] = value
+    end
+    for key, value in pairs(changes) do
+        if key ~= "colors" then
+            copy[key] = value
+        end
+    end
+    os.execute("mkdir -p '" .. widgetPath .. "AEROGRID/themes'")
+    local output = assert(hostIo.open(widgetPath .. "AEROGRID/themes/" .. name .. ".yml", "w"))
+    assert(output:write(assert(themeYamlModule.serialize(copy))))
+    output:close()
+end
+
 local widgetChunk = assert(loadfile(sourcePath .. "main.lua"))
 local galleryFile = assert(hostIo.open(root .. "/tests/fixtures/layouts/default-gallery.yaml", "r"))
 local galleryPath = makeWidget("default-gallery", galleryFile:read("*a"))
@@ -137,7 +163,6 @@ for _, name in ipairs({ "create", "update", "refresh", "background", "event" }) 
         return first, second
     end
 end
-local themeModule = assert(loadfile(sourcePath .. "lib/theme.lua"))()
 local primitivesModule = assert(loadfile(sourcePath .. "lib/primitives.lua"))()
 local layoutStoreModule = assert(loadfile(sourcePath .. "lib/layout_store.lua"))()
 
@@ -147,7 +172,7 @@ assert(type(definition.background) == "function", "host must expose background")
 assert(type(definition.event) == "function", "host must expose event")
 assertEqual(definition.translate("Theme"), "Theme")
 
-local DEFAULT_OPTIONS = { Layout = "main", Theme = "modern" }
+local DEFAULT_OPTIONS = { Layout = "main", Theme = "modern-dark" }
 
 --- Advance the clock and refresh, so rate-limited panels fall due.
 local function pump(context, count, step)
@@ -205,8 +230,6 @@ end
 --- spans and configurations those tests measure.
 local REFERENCE_LAYOUT = [[
 version: 1
-theme:
-  mode: modern
 grid:
   columns: 4
   rows: 4
@@ -548,7 +571,7 @@ local function testStatesCoverBothPalettes()
         return context
     end
 
-    for _, mode in ipairs({ "modern", "modern-light" }) do
+    for _, mode in ipairs({ "modern-dark", "modern-light" }) do
         local context = render(mode)
         assertEqual(context.theme.mode, mode, "the Theme option did not decide the palette")
 
@@ -577,7 +600,7 @@ local function testStatesCoverBothPalettes()
     end
 
     -- Both palettes must provide their own light/dark state tints.
-    local modern = render("modern").theme
+    local modern = render("modern-dark").theme
     local light = render("modern-light").theme
     assert(
         modern.alertRgb.critical ~= light.alertRgb.critical,
@@ -617,7 +640,7 @@ local function testScreensReachEveryShippedLayout()
         local text = handle:read("a")
         handle:close()
         -- Option 0 is Layout and option 1 is Theme, both stored as positions.
-        local themes = { "modern", "modern-light" }
+        local themes = { "modern-dark", "modern-light" }
         text = string.gsub(text, "(\n%s*0:%s*type: Unsigned%s*value:%s*)unsignedValue: (%d+)", function(head, position)
             return head .. "stringValue: " .. assert(registered[tonumber(position)], "unregistered layout " .. position)
         end)
@@ -669,7 +692,7 @@ local function testScreensReachEveryShippedLayout()
             string.gmatch(text, "stringValue: ([%w%-]+)%s+1:%s*type: Unsigned%s*value:%s*stringValue: ([%w%-]+)")
         do
             screens[#screens + 1] = layout
-            assertEqual(theme, "modern", model.filename .. " screen theme")
+            assertEqual(theme, "modern-dark", model.filename .. " screen theme")
         end
         assertEqual(#screens, #model.layouts, model.filename .. " screen count")
         assert(#screens <= 10, model.filename .. " exceeds EdgeTX's MAX_CUSTOM_SCREENS")
@@ -859,8 +882,8 @@ end
 --- mock returned its input unchanged the two were the same number, so this
 --- test passed whichever one the host reached for.
 local function testThemeReachesPanels()
-    local modern = themeModule.modern()
-    assertEqual(appContext.theme.mode, "modern")
+    local modern = themeModule.modernDark()
+    assertEqual(appContext.theme.mode, "modern-dark")
     assertEqual(
         appContext.canvas.properties.color,
         lcd.RGB(modern.canvas),
@@ -930,7 +953,7 @@ end
 --- outline while drawing the resting one.
 local function testPanelPresentation()
     local spacing = appContext.theme.spacing
-    local modern = themeModule.modern()
+    local modern = themeModule.modernDark()
 
     -- Panels are told apart from the screen by their fill, so the fill has to
     -- be separable by eye. Measured on the tokens, because contrast arithmetic
@@ -1355,7 +1378,7 @@ panels:
     local entry = entryById(context, "pack")
     local panel = entry.instance.panel
     local metricModule = assert(loadfile(sourcePath .. "panels/metric.lua"))()
-    local modern = themeModule.modern()
+    local modern = themeModule.modernDark()
 
     --- Every object carrying the accent, and where the radio would draw the arcs.
     local function assertAccent(expected, what)
@@ -1818,7 +1841,7 @@ end
 local function testMetricStates()
     local pack = entryById(appContext, "pack").instance
     local metricModule = assert(loadfile(sourcePath .. "panels/metric.lua"))()
-    local modern = themeModule.modern()
+    local modern = themeModule.modernDark()
 
     metricModule.setValue(pack, 24.0)
     assertEqual(pack.stateName, "normal")
@@ -1929,7 +1952,7 @@ end
 
 --- Changing Dashboard ID or Theme tears down and restages without leaking.
 local function testOptionReload()
-    definition.update(appContext, { Layout = "alternate", Theme = "modern" })
+    definition.update(appContext, { Layout = "alternate", Theme = "modern-dark" })
 
     -- A reload discards the whole page and builds the next generation as a
     -- fresh child of the root, which is never cleared. The clearing callback
@@ -1965,7 +1988,7 @@ local function testOptionReload()
     appContext.canvas:set({ color = appContext.theme.color.canvas })
 
     -- Reloading a second time must behave identically.
-    definition.update(appContext, { Layout = "main", Theme = "modern" })
+    definition.update(appContext, { Layout = "main", Theme = "modern-dark" })
     local rounds = 0
     repeat
         definition.refresh(appContext)
@@ -1985,7 +2008,7 @@ local function testOptionReload()
     local options = definition.options[2]
     assertEqual(options[1], "Theme")
     assertEqual(table.concat(options[4], ","), "Modern Dark,Modern Light")
-    for position, mode in pairs({ [1] = "modern", [2] = "modern-light", [3] = "modern", [9] = "modern" }) do
+    for position, mode in pairs({ [1] = "modern-dark", [2] = "modern-light", [3] = "modern-dark", [9] = "modern-dark" }) do
         local selected = createLoaded(
             { x = 0, y = 0, w = 480, h = 272 },
             { Layout = "main", Theme = position },
@@ -2005,7 +2028,7 @@ local function testReloadSurvivesLateCleanup()
     local context = createLoaded(zone, DEFAULT_OPTIONS, referencePath)
     local firstPage = context.page
 
-    definition.update(context, { Layout = "alternate", Theme = "modern" })
+    definition.update(context, { Layout = "alternate", Theme = "modern-dark" })
 
     -- Withhold cleanup across the entire reload, the worst case.
     lvglMock.setDeferCleanup(true)
@@ -2347,14 +2370,12 @@ testReflowAndLifecycle()
 testOptionReload()
 testReloadSurvivesLateCleanup()
 
---- A layout explicitly selects Modern Light, overriding the widget option.
+--- The native picker selects a named theme without changing the layout.
 local function testLayoutSelectsLightTheme()
     local widgetPath = makeWidget(
         "light-theme",
         [[
 version: 1
-theme:
-  mode: modern-light
 grid:
   columns: 4
   rows: 4
@@ -2372,7 +2393,11 @@ panels:
 ]]
     )
 
-    local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
+    local context = createLoaded(
+        { x = 0, y = 0, w = 480, h = 272 },
+        { Layout = "main", Theme = "modern-light" },
+        widgetPath
+    )
 
     assertEqual(context.theme.mode, "modern-light")
     assertEqual(#context.panels, 1)
@@ -2384,19 +2409,12 @@ panels:
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 end
 
---- Custom mode accepts a small override set and rejects the rest.
+--- A complete named theme is loaded from its own YAML file.
 local function testCustomTheme()
     local widgetPath = makeWidget(
         "custom-theme",
         [[
 version: 1
-theme:
-  mode: custom
-  overrides:
-    canvas: 0x000000
-    surface: 0x101010
-    accent: green
-    border: 0xFF00FF
 grid:
   columns: 4
   rows: 4
@@ -2413,8 +2431,16 @@ panels:
           label: Custom
 ]]
     )
+    addTheme(widgetPath, "custom", {
+        accent = "green",
+        colors = { canvas = 0x000000, surface = 0x101010, border = 0xFF00FF },
+    })
 
-    local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
+    local context = createLoaded(
+        { x = 0, y = 0, w = 480, h = 272 },
+        { Layout = "main", Theme = "custom" },
+        widgetPath
+    )
 
     assertEqual(context.theme.mode, "custom")
     assertEqual(context.theme.rgb.canvas, 0x000000)
@@ -2423,18 +2449,33 @@ panels:
     -- lifts it exactly as it lifts a surface that would swallow text.
     assert(
         themeModule.contrast(context.theme.rgb.canvas, context.theme.rgb.surface) >= 1.30,
-        "a custom surface was left flat against its own canvas"
+        "a named theme surface was left flat against its own canvas"
     )
     assertEqual(context.theme.accent, "green")
-    -- border is outside the customizable set and must be reported, not applied.
-    assert(context.theme.rgb.border ~= 0xFF00FF, "an override outside the customizable set was applied anyway")
+    assertEqual(context.theme.rgb.border, 0xFF00FF, "the full theme palette did not apply its border token")
     assert(
         themeModule.contrast(context.theme.rgb.surface, context.theme.rgb.border) >= 1.25,
         "the border vanished into the surface"
     )
 
-    local joined = table.concat(context.errors, "\n")
-    assert(string.match(joined, "border is not customizable"), joined)
+    assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+end
+
+--- A user theme with a shipped name takes precedence over the built-in file.
+local function testUserThemeOverridesShippedTheme()
+    local widgetPath = makeWidget("theme-override")
+    addTheme(widgetPath, "modern-dark", {
+        correctForContrast = false,
+        colors = { canvas = 0x102030 },
+    })
+    local context = createLoaded(
+        { x = 0, y = 0, w = 480, h = 272 },
+        { Layout = "Default", Theme = "modern-dark" },
+        widgetPath
+    )
+    assertEqual(context.theme.mode, "modern-dark")
+    assertEqual(context.theme.rgb.canvas, 0x102030)
+    assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 end
 
 --- A panel that raises must be disabled without affecting its neighbours.
@@ -2789,7 +2830,7 @@ local function testSupportingWordingsStayDistinct()
     local rect = { x = 0, y = 0, w = cellWidth * 2 + GUTTER, h = cellHeight * 2 + GUTTER }
     local fonts = themeModule.typography(2, 2)
     local area = navigationModule.regionsFor(
-        themeModule.build("modern"),
+        themeModule.build("modern-dark"),
         themeModule,
         rect,
         navigationModule.presentationFor("detailed"),
@@ -2949,7 +2990,7 @@ local function assertNothingOverlaps(label, context)
         -- The accent is a stripe one accent-width wide built from a straight
         -- run and two corner arcs, all of it inside the left padding, so the
         -- test is where it is rather than what it is called.
-        local accentWidth = math.max(4, themeModule.modern and 6 or 6)
+        local accentWidth = 6
         local surface = {}
         for index, box in ipairs(boxes) do
             if not box.label then
@@ -3792,7 +3833,7 @@ local function testBadgesEndFlushWithTheirPanel()
     -- it is covered the moment it is added.
     local vocabulary = {}
     for _, name in ipairs({ "warning", "critical", "stale", "unavailable", "selected", "editing" }) do
-        local state = theme.state(theme.build("modern"), name)
+        local state = theme.state(theme.build("modern-dark"), name)
         if state and type(state.badge) == "string" and state.badge ~= "" then
             vocabulary[state.badge] = true
         end
@@ -4854,7 +4895,7 @@ panels:
     local plain = createLoaded(fullScreenZone(), DEFAULT_OPTIONS, cramped)
     pump(plain, 60)
     local plainLabel = entryById(plain, "tight").instance.label
-    local plainSpacing = themeModule.build("modern").spacing
+    local plainSpacing = themeModule.build("modern-dark").spacing
     assertEqual(plainLabel.hidden, false, "a Full screen panel lost its label")
     -- An unobstructed label starts where the content does, which is clear of
     -- the accent stripe rather than hard against it.
@@ -4866,22 +4907,12 @@ panels:
     lvglMock.setAppMode(false)
 end
 
---- The host adapting as designed must not be reported as a failure.
----
---- The legibility pass corrects custom palettes by design, and every
---- correction used to be promoted to an error. Now that the overlay is
---- actually visible, that would leave a permanent banner on the screen of
---- every radio running the Custom theme, announcing that the
---- dashboard had done its job.
+--- The host's legibility adaptations are notices, not palette failures.
 local function testNoticesAreNotErrors()
     local custom = makeWidget(
         "custom-theme",
         [[
 version: 1
-theme:
-  mode: custom
-  overrides:
-    surface: 0xFFFFFF
 grid:
   columns: 4
   rows: 4
@@ -4917,10 +4948,15 @@ return exploder
 ]==],
         }
     )
+    addTheme(custom, "notice-test", { colors = { surface = 0xFFFFFF } })
 
     resetRadio()
-    local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, custom)
-    assertEqual(context.theme.mode, "custom")
+    local context = createLoaded(
+        { x = 0, y = 0, w = 480, h = 272 },
+        { Layout = "main", Theme = "notice-test" },
+        custom
+    )
+    assertEqual(context.theme.mode, "notice-test")
 
     -- The deliberately light mock roles guarantee the legibility pass engages,
     -- so a test that saw no notices would not be testing anything.
@@ -5090,8 +5126,8 @@ panels:
     os.remove(userAlpha)
 
     -- Two layouts, one model: two separate screens of the same radio.
-    local alpha = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "alpha", Theme = "modern" }, widgetPath)
-    local beta = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "beta", Theme = "modern" }, widgetPath)
+    local alpha = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "alpha", Theme = "modern-dark" }, widgetPath)
+    local beta = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "beta", Theme = "modern-dark" }, widgetPath)
 
     assertEqual(alpha.layoutPath, widgetPath .. "layouts/alpha.yaml")
     assertEqual(beta.layoutPath, widgetPath .. "layouts/beta.yaml")
@@ -5141,7 +5177,7 @@ panels:
     radio.modelFilename = "other.yml"
     local switched = createLoaded(
         { x = 0, y = 0, w = 480, h = 272 },
-        { Layout = "alpha", Theme = "modern" },
+        { Layout = "alpha", Theme = "modern-dark" },
         widgetPath
     )
     assertEqual(switched.layoutPath, userAlpha)
@@ -5153,7 +5189,7 @@ panels:
     radio.modelFilename = "third.yml"
     local fallback = createLoaded(
         { x = 0, y = 0, w = 480, h = 272 },
-        { Layout = "gamma", Theme = "modern" },
+        { Layout = "gamma", Theme = "modern-dark" },
         widgetPath
     )
     assertEqual(fallback.layoutPath, widgetPath .. "layouts/Default.yaml")
@@ -5363,7 +5399,7 @@ local function testPackageCompatibility()
         local joined = table.concat(context.errors, "\n")
         assert(string.match(joined, case.error), joined)
         assert(context.errorLabel, case.name .. " failure was not shown")
-        definition.update(context, { Layout = "Host", Theme = "modern" })
+        definition.update(context, { Layout = "Host", Theme = "modern-dark" })
         pump(context, 5)
         assertEqual(context.stage, nil, case.name .. " attempted to reload a broken runtime")
     end
@@ -5402,7 +5438,7 @@ local function testRejectedLayouts()
         end
         local context = createLoaded(
             { x = 0, y = 0, w = 480, h = 272 },
-            { Layout = "no-such-dashboard", Theme = "modern" },
+            { Layout = "no-such-dashboard", Theme = "modern-dark" },
             widgetPath
         )
 
@@ -6090,7 +6126,7 @@ local function testRuntimeFailureIsContained()
     assert(string.match(table.concat(context.errors, "\n"), "runtime module failed"))
 
     -- Changing an option previously restaged a load that indexed a nil module.
-    definition.update(context, { Layout = "other", Theme = "modern" })
+    definition.update(context, { Layout = "other", Theme = "modern-dark" })
     assertEqual(context.reloadState, nil, "a broken runtime must not restage")
 
     for _ = 1, 5 do
@@ -6139,7 +6175,7 @@ local function testServiceDiagnostics()
 
     --- Load one diagnostics page and let its services settle.
     local function page(dashboardId)
-        local context = createLoaded(zone, { Layout = dashboardId, Theme = "modern" }, sourcePath)
+        local context = createLoaded(zone, { Layout = dashboardId, Theme = "modern-dark" }, sourcePath)
         -- A dashboard-scoped layout is found without a model-specific file.
         assertEqual(context.layoutPath, sourcePath .. "layouts/" .. dashboardId .. ".yaml")
         assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
@@ -6196,7 +6232,7 @@ end
 local function testDiagnosticsFitTheirPanels()
     resetRadio()
     local zone = { x = 0, y = 0, w = 480, h = 272 }
-    local context = createLoaded(zone, { Layout = "services2", Theme = "modern" }, sourcePath)
+    local context = createLoaded(zone, { Layout = "services2", Theme = "modern-dark" }, sourcePath)
 
     --- Drain a batched reflow.
     local function settle()
@@ -7287,8 +7323,7 @@ panels:
     )
 end
 
---- The view reports a failed panel, a fallback palette and an unbound
---- source, which are the three things it exists to make visible.
+--- The view reports a failed panel and an unbound source.
 local function testHostDiagnosticsReportsFailures()
     resetRadio()
     local widgetPath = makeWidget(
@@ -7298,8 +7333,6 @@ version: 1
 grid:
   columns: 4
   rows: 4
-theme:
-  mode: neon
 panels:
   - id: probe
     type: metric
@@ -7409,10 +7442,6 @@ return latebreak
         "the panel does not report the panel that failed after building: " .. panels
     )
 
-    -- `neon` is not a mode, so the host fell back to Modern and reports
-    -- `modern`; the fallback is invisible unless what was asked for is kept.
-    assertEqual(context.theme.mode, "modern")
-    assertEqual(context.theme.requested, "neon", "the theme did not record the mode it was asked for")
 end
 
 --- The mode number is drawn where there is a row for it, and nowhere else.
@@ -8832,7 +8861,7 @@ end
 --- screen can still be seen.
 local function testReconcileBar()
     resetRadio()
-    local theme = themeModule.build("modern")
+    local theme = themeModule.build("modern-dark")
     local root = lvgl.box({ x = 0, y = 0, w = 200, h = 100 })
     local bar = primitivesModule.bar(root, theme, {
         x = 0,
@@ -8914,7 +8943,7 @@ end
 --- that work leaving no trace on screen can still be seen.
 local function testUnitNeedsAValueToQualify()
     resetRadio()
-    local theme = themeModule.build("modern")
+    local theme = themeModule.build("modern-dark")
     local root = lvgl.box({ x = 0, y = 0, w = 200, h = 100 })
     local context = {
         value = primitivesModule.value(root, theme, { x = 0, y = 0, w = 100, font = DBLSIZE, text = "--" }),
@@ -9004,7 +9033,7 @@ local function testHeadingNeverWraps()
     -- directly and held to wrapping, which is what the firmware does and what
     -- the panels must therefore avoid.
     local box = lvgl.box({ x = 0, y = 0, w = 120, h = 60 })
-    local overflowing = primitivesModule.label(box, themeModule.build("modern"), {
+    local overflowing = primitivesModule.label(box, themeModule.build("modern-dark"), {
         x = 0,
         y = 0,
         w = 40,
@@ -11094,6 +11123,7 @@ end
 
 testLayoutSelectsLightTheme()
 testCustomTheme()
+testUserThemeOverridesShippedTheme()
 testRadialReflow()
 testRadialDoesNotDrift()
 testCreateFailureIsCleaned()

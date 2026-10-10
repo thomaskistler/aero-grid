@@ -10,9 +10,6 @@ version: 1
 # from the wrong end is visible before any panel depends on it. Change the
 # source names below to sensors your model actually has.
 
-theme:
-  mode: modern
-
 grid:
   columns: 4
   rows: 4

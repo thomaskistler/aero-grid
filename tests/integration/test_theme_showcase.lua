@@ -5,8 +5,10 @@ local Fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))()
 local fixture = Fixture.new()
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local equal = assertions.assertEqual
+local yaml = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/yaml.lua"))()
+local themeCatalog = assert(loadfile(root .. "/tests/support/theme_catalog.lua"))()(root, yaml)
 
-for _, mode in ipairs({ "modern", "modern-light" }) do
+for _, mode in ipairs({ "modern-dark", "modern-light" }) do
     fixture.reset()
     local host = fixture.createLoaded(nil, { Layout = "Theme", Theme = mode })
     equal(#host.errors, 0, table.concat(host.errors, "\n"))
@@ -75,9 +77,20 @@ end
 fixture.pump(dashboard, 20)
 equal(#dashboard.errors, 0, table.concat(dashboard.errors, "\n"))
 fixture.reset()
-local host = fixture.createLoaded(nil, { Layout = "Theme", Theme = "modern" })
+local host = fixture.createLoaded(nil, { Layout = "Theme", Theme = "modern-dark" })
 local builder = host.themeBuilder
-local custom = builder.build("custom", { canvas = 0x101820, surface = 0x304050, text = 0xFFF4DF, accent = "green" })
+local customCatalog = assert(yaml.parse(assert(yaml.serialize(themeCatalog))))
+local customDefinition = assert(yaml.parse(assert(yaml.serialize(customCatalog.themes[1]))))
+customDefinition.name = "showcase-custom"
+customDefinition.label = "Showcase Custom"
+customDefinition.correctForContrast = true
+customDefinition.accent = "green"
+customDefinition.colors.canvas = 0x101820
+customDefinition.colors.surface = 0x304050
+customDefinition.colors.text = 0xFFF4DF
+customCatalog.themes[#customCatalog.themes + 1] = customDefinition
+assert(builder.setCatalog(customCatalog))
+local custom = builder.build("showcase-custom")
 local module = host.panels[1].module
 local instance = module.create(lvgl.box({ x = 0, y = 0, w = 480, h = 272 }), {
     x = 0,

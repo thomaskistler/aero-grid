@@ -49,7 +49,7 @@ end
 local function testThemeFallbackAndReflow()
     local fixture = WidgetFixture.new()
     local context = fixture.createLoaded(nil, { Layout = "main", Theme = "not-a-theme" })
-    assertions.assertEqual(context.theme.mode, "modern")
+    assertions.assertEqual(context.theme.mode, "modern-dark")
 
     local zone = context.zone
     zone.w = 320
@@ -75,7 +75,7 @@ end
 
 local function testMissingWidgetPathFailsExplicitly()
     local fixture = WidgetFixture.new()
-    local context = fixture.createLoaded(nil, { Layout = "main", Theme = "modern" }, "/path/does/not/exist/")
+    local context = fixture.createLoaded(nil, { Layout = "main", Theme = "modern-dark" }, "/path/does/not/exist/")
     assert(#context.errors > 0, "missing widget modules should be reported as errors")
     assertions.assertEqual(#context.panels, 0)
 end

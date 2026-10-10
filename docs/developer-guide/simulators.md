@@ -134,9 +134,9 @@ leaves SA's middle position unmapped.
 
 The last screen of **AEROGRID STD** is a telemetry-free theme showcase. Its
 fixed samples show token swatches, text levels, accents, a dial, bars, and
-the six dashboard panel states. Change the widget's Theme option to compare Modern Dark
-and Modern Light, or copy the layout and add
-[custom YAML overrides](../user-guide/dashboards.md#create-your-own-theme).
+the six dashboard panel states. Change the widget's Theme option to compare
+Modern Dark and Modern Light, or add a `.yml` theme file as described in
+[Customize themes](../user-guide/dashboards.md#customize-themes).
 
 **Host** reports loading, package identity, and service errors; `services`
 and `services2` exercise the service-probe panel across all five services.

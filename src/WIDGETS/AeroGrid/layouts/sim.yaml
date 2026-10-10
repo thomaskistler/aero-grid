@@ -8,9 +8,6 @@ version: 1
 # Two metrics deliberately use the radial visualization, because the arc
 # geometry is the one thing the mocked tests cannot check.
 
-theme:
-  mode: modern
-
 grid:
   columns: 4
   rows: 4

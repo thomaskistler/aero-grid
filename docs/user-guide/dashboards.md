@@ -159,11 +159,14 @@ Choose **Theme** in the widget settings.
 
 *Modern Light palette. Accents, including critical red, are darker for light backgrounds.*
 
-## Create your own theme
+## Customize themes
 
-Custom themes are configured in a layout's YAML file on your computer, not
-through an on-radio color picker. Start with the **Theme** showcase so you can
-judge colors against the same fixed samples before using them on a dashboard.
+Themes are stored as individual `.yml` files. Shipped themes live in
+`/WIDGETS/AeroGrid/themes/`; add user themes to `/AEROGRID/themes/`. Theme names
+are the filename stems, and user files override shipped files with the same
+name. AeroGrid updates the Theme picker registry automatically; do not edit
+`/AEROGRID/theme-registry.txt`. Use the **Theme** showcase to preview palettes
+against fixed samples before applying one to a dashboard.
 
 Select **Theme** as the layout on a separate App-mode screen. It shows the
 actual AeroGrid theme and rendering primitives with fixed sample data, without
@@ -171,69 +174,21 @@ a receiver or telemetry setup. Switch the widget's **Theme** option between
 Modern Dark and Modern Light to compare the same samples. Normal, active,
 warning, critical, stale, and unavailable cards are shown together.
 
-To experiment with your own colors:
+Copy one complete file from `/WIDGETS/AeroGrid/themes/` to
+`/AEROGRID/themes/<name>.yml`. Set `name` to the filename stem and provide a
+`label` and `version: 1`. Define every color token and spacing value; themes do
+not inherit from one another. Colors use `0xRRGGBB`, such as `0xFFFFFF` for
+white and `0x000000` for black. `accent` selects the default semantic accent
+(`cyan`, `green`, `amber`, or `orange`). Put all color values, including optional `warningBg`,
+`criticalBg`, and `activeBg` panel-surface backgrounds, in the `colors:` section.
+`light` and `tintSeparation` tune light-theme alert surfaces.
+`correctForContrast` controls automatic legibility adjustments; it defaults to
+`true`. Set it to `false` to preserve the specified palette values. Use spaces
+for YAML indentation, not tabs.
 
-1. On your SD card, copy `/WIDGETS/AeroGrid/layouts/Theme.yaml` to
-   `/AEROGRID/layouts/MyTheme.yaml`. Create the destination folder if needed.
-2. Open the copy in a text editor. Add the following top-level `theme` block
-   beside `version`, `grid`, and `panels`, not inside a panel. The starter file
-   includes a commented example; uncomment it or add the block, but do not
-   create two `theme` blocks.
-3. Restart the simulator or radio, then select **MyTheme** in AeroGrid's
-   **Layout** setting.
-
-```yaml
-theme:
-  mode: custom
-  overrides:
-    canvas: 0x0A0C0E
-    surface: 0x212830
-    text: 0xF4F6F7
-    accent: green
-```
-
-### Choose colors
-
-| Override | Controls | Accepted value |
-| --- | --- | --- |
-| `canvas` | Background behind the panels. | A 24-bit RGB color such as `0x0A0C0E`. |
-| `surface` | Normal panel background. | A 24-bit RGB color such as `0x212830`. |
-| `text` | Primary text. | A 24-bit RGB color such as `0xF4F6F7`. |
-| `accent` | Default accent for panels that do not specify their own. | `cyan`, `green`, `amber`, or `orange`. |
-
-Write colors as `0xRRGGBB`: `0xFFFFFF` is white and `0x000000` is black.
-Use spaces for YAML indentation, not tabs.
-
-Custom mode starts from **Modern Dark**. Omitted overrides retain its defaults;
-it does not inherit the widget's selected theme. Only the four overrides above
-are supported. Muted and faint text, individual accent colors, and alarm fills
-cannot be set independently through YAML. The showcase displays these tokens
-for review, but not every swatch is an editable setting.
-
-Contrast safeguards may adjust your requested colors and the remaining tokens
-to keep panels and text readable. If a color looks different from the value
-you supplied, copy the same `theme` block into a personal copy of **Host** to
-inspect theme notices or invalid-override warnings.
-
-After changing the YAML, switch layouts away and back to reload it. Review
-primary, muted, and faint text, the bars and dial, and all six panel states.
-Check the result on the radio as well as in the simulator.
-
-### Use it on your dashboard
-
-Copy the complete `theme` block into your saved dashboard's YAML file in
-`/AEROGRID/layouts/`, then reload that layout. A layout's theme takes precedence
-over the widget's **Theme** option, so changing that picker will not change a
-dashboard with an explicit theme block. Remove the block to follow the picker
-again.
-
-The custom theme belongs to the layout; it does not add a new picker entry.
-Repeat the block in other layouts that should use the same colors. Keep your
-personal copies in `/AEROGRID/layouts/` rather than editing bundled files that
-an upgrade replaces.
-
-Keep simulator experiments outside `build/sdcard/` as well: rebuilding that
-disposable image resets its contents.
+Contrast safeguards may adjust a color to preserve legibility. Review the
+palette on the **Theme** showcase and on the radio as well as in the simulator.
+Restart the radio or simulator after adding a theme so the picker reloads.
 
 ## Troubleshoot a reading
 

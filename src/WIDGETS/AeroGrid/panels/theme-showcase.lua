@@ -42,9 +42,7 @@ function showcase.create(parent, rect, settings, services)
     local function label(parentObject, text, color, font)
         return p.label(parentObject, theme, { x = 0, y = 0, w = 1, text = text, color = color, font = font })
     end
-    local name = theme.mode == "modern" and "Modern Dark"
-        or (theme.mode == "modern-light" and "Modern Light" or "Custom")
-    context.title = label(context.root, "THEME: " .. name .. " / SAMPLE DATA", theme.color.text, SMLSIZE)
+    context.title = label(context.root, "THEME: " .. theme.label .. " / SAMPLE DATA", theme.color.text, SMLSIZE)
     context.palette = p.panel(context.root, { x = 0, y = 0, w = 1, h = 1 }, theme, services.state("normal"))
     for _, token in ipairs(TOKENS) do
         context.swatches[#context.swatches + 1] = {

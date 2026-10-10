@@ -240,7 +240,7 @@ local function load(id)
     local savePath = path .. "AEROGRID/layouts/" .. id .. ".yaml"
     os.remove(savePath)
     os.remove(savePath .. ".bak")
-    context = widget.createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = id, Theme = "modern" }, path)
+    context = widget.createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = id, Theme = "modern-dark" }, path)
     assert(#context.errors == 0, table.concat(context.errors, "; "))
     widget.pump(context, 10)
 end
@@ -729,7 +729,7 @@ end
 widget.lvglMock.setFullScreen(false)
 local reloaded = widget.createLoaded(
     { x = 0, y = 0, w = 480, h = 272 },
-    { Layout = "edit-sparse", Theme = "modern" },
+    { Layout = "edit-sparse", Theme = "modern-dark" },
     path
 )
 equal(reloaded.document.panels[1].col, context.document.panels[1].col, "adopted geometry matches the saved file")
@@ -774,7 +774,7 @@ settleSave()
 widget.lvglMock.setFullScreen(false)
 widget.pump(context, 40)
 assert(context.reserved, "App return reserves the menu button corner")
-local fresh = widget.createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "edit-pair", Theme = "modern" }, path)
+local fresh = widget.createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "edit-pair", Theme = "modern-dark" }, path)
 widget.pump(fresh, 10)
 equal(labelLayout(context), labelLayout(fresh), "corner panel moved in fullscreen reserves the menu button")
 

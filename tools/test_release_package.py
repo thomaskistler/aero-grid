@@ -22,6 +22,8 @@ class ReleaseTests(unittest.TestCase):
                 layouts = {name.split("/")[-1] for name in names if "/layouts/" in name}
                 self.assertEqual(layouts, release.LAYOUTS)
                 self.assertIn("WIDGETS/AeroGrid/main.lua", names)
+                self.assertIn("WIDGETS/AeroGrid/themes/modern-dark.yml", names)
+                self.assertIn("WIDGETS/AeroGrid/themes/modern-light.yml", names)
                 self.assertIn("LICENSE", names)
                 assets = {name.split("/")[-1] for name in names if "/assets/" in name}
                 self.assertEqual(assets, release.ASSETS)

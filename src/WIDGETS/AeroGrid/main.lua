@@ -13,7 +13,7 @@
 
 ---@class AeroGridWidgetOptions
 ---@field Layout integer|string Position in the layout registry, or a layout name.
----@field Theme integer|string Position in Modern Dark, Modern Light; or a mode name.
+---@field Theme integer|string Position in the theme catalog; or a theme name.
 
 ---@class AeroGridContext
 ---@field zone AeroGridZone Live zone table maintained by EdgeTX.
@@ -36,13 +36,13 @@
 ---@field themeBuilder table
 ---@field primitives table
 ---@field theme AeroGridTheme Active resolved theme passed to every panel.
----@field themeMode string Mode selected in native widget settings.
+---@field themeMode string Name selected in native widget settings.
 ---@field services table Shared objects handed to panels.
 ---@field rejected table[] Placements that would not build, with the reason.
 ---@field layoutPath? string
 ---@field layoutOrigin? string Which filename answered: user, shipped, default, none.
 ---@field modelFilename? string Current model filename, for diagnostics.
----@field themeSource? string Whether the layout or the widget option chose the mode.
+---@field themeSource? string Theme selection source.
 ---@field errorLabel? any
 ---@field page any Container holding one generation of the dashboard.
 ---@field reloadState? "clear"|"rebuild"
@@ -62,6 +62,124 @@
 
 local WIDGET_PATH = "/WIDGETS/AeroGrid/"
 
+local function directory(path)
+    return string.sub(path, -1) == "/" and path or path .. "/"
+end
+
+local function themePaths(base, name)
+    local folder = directory(base)
+    local root = string.match(folder, "^(.*/)WIDGETS/[^/]+/$") or folder
+    local filename = name .. ".yml"
+    return root .. "AEROGRID/themes/" .. filename, folder .. "themes/" .. filename
+end
+
+--- Read one user theme, falling back to its shipped definition.
+---@param base string Widget directory.
+---@param name string Theme file stem.
+---@param parser table YAML parser.
+---@return table? definition
+---@return string? error
+local function readThemeDefinition(base, name, parser)
+    if type(name) ~= "string" or not string.match(name, "^[%w_-]+$") then
+        return nil, "invalid theme name"
+    end
+    local userFile, shippedFile = themePaths(base, name)
+    for _, filename in ipairs({ userFile, shippedFile }) do
+        local info = type(fstat) == "function" and fstat(filename) or nil
+        local size = type(info) == "table" and info.size or nil
+        if type(size) == "number" and size > 0 then
+            local handle, openError = io.open(filename, "r")
+            if not handle then
+                return nil, openError or ("cannot open " .. filename)
+            end
+            local content = io.read(handle, size)
+            io.close(handle)
+            if type(content) ~= "string" then
+                return nil, "cannot read " .. filename
+            end
+            local definition, parseError = parser.parse(content)
+            if not definition then
+                return nil, filename .. ": " .. tostring(parseError)
+            end
+            if type(definition) ~= "table" or definition.name ~= name then
+                return nil, filename .. ": theme name must match the filename"
+            end
+            return definition
+        end
+    end
+    return nil, "theme file is missing: " .. name .. ".yml"
+end
+
+--- Load an ordered set of per-theme YAML files as the theme builder catalog.
+---@param base string Widget directory.
+---@param names string[]
+---@param selected string?
+---@param parser table YAML parser.
+---@return table? document
+---@return string? error
+local function readThemeCatalog(base, names, selected, parser)
+    local definitions = {}
+    local included = {}
+    local ordered = {}
+    for _, name in ipairs(names) do
+        if not included[name] then
+            included[name] = true
+            ordered[#ordered + 1] = name
+        end
+    end
+    if selected and not included[selected] then
+        ordered[#ordered + 1] = selected
+    end
+    if not included["modern-dark"] then
+        table.insert(ordered, 1, "modern-dark")
+    end
+
+    for _, name in ipairs(ordered) do
+        local definition, err = readThemeDefinition(base, name, parser)
+        if definition then
+            definitions[#definitions + 1] = definition
+        elseif err ~= "theme file is missing: " .. name .. ".yml" then
+            return nil, err
+        end
+    end
+    return { version = 1, themes = definitions }
+end
+
+local function loadYamlParser(base)
+    local folder = directory(base)
+    local chunk, loadError = loadScript(folder .. "lib/yaml.lua")
+    if not chunk then
+        return nil, loadError
+    end
+    local loaded, module = pcall(chunk)
+    if not loaded or type(module) ~= "table" then
+        return nil, loaded and "lib/yaml.lua did not return a module table" or module
+    end
+    return module
+end
+
+local themeRegistry
+local themeRegistryChunk = type(loadScript) == "function" and loadScript(WIDGET_PATH .. "lib/theme_registry.lua") or nil
+if themeRegistryChunk then
+    local ok, module = pcall(themeRegistryChunk)
+    if ok and type(module) == "table" then
+        themeRegistry = module
+    end
+end
+
+local themeYamlParser = loadYamlParser(WIDGET_PATH)
+local themeModes = { "modern-dark", "modern-light" }
+if themeRegistry and type(dir) == "function" then
+    local ok, names = pcall(themeRegistry.load, WIDGET_PATH)
+    if ok and type(names) == "table" and #names > 0 then
+        themeModes = names
+    end
+end
+local startupThemeCatalog
+if themeRegistry and themeYamlParser then
+    startupThemeCatalog = readThemeCatalog(WIDGET_PATH, themeModes, nil, themeYamlParser)
+end
+
 --- Layout names behind the native CHOICE option, built once at script load.
 --- Without `dir` (an older firmware, or a host test) only Empty is offered.
 local layoutNames = { "Empty" }
@@ -76,14 +194,23 @@ if type(dir) == "function" and type(loadScript) == "function" then
     end
 end
 
---- Theme modes behind the native CHOICE option, in stored-position order.
---- `custom` is omitted: it only applies a layout's own `theme` overrides, so
---- selecting it here would show Modern.
-local THEME_MODES = { "modern", "modern-light" }
+--- Theme names and labels behind the native CHOICE option.
+local THEME_MODES, themeLabels = themeModes, {}
+local labels = {}
+for _, definition in ipairs(startupThemeCatalog and startupThemeCatalog.themes or {}) do
+    if type(definition.name) == "string" then
+        labels[definition.name] = definition.label
+    end
+end
+labels["modern-dark"] = labels["modern-dark"] or "Modern Dark"
+labels["modern-light"] = labels["modern-light"] or "Modern Light"
+for _, name in ipairs(THEME_MODES) do
+    themeLabels[#themeLabels + 1] = labels[name] or name
+end
 
 local options = {
     { "Layout", CHOICE, 1, layoutNames },
-    { "Theme", CHOICE, 1, { "Modern Dark", "Modern Light" } },
+    { "Theme", CHOICE, 1, themeLabels },
 }
 
 --- Resolve the Layout option to a name. A stale position selects Empty.
@@ -96,14 +223,14 @@ local function layoutName(value)
     return layoutNames[tonumber(value) or 1] or layoutNames[1]
 end
 
---- Resolve the Theme option to a mode. An unknown position selects Modern.
+--- Resolve the Theme option to a catalog name. An unknown position selects modern-dark.
 ---@param value any
 ---@return string
 local function themeModeOf(value)
     if type(value) == "string" and value ~= "" then
         return value
     end
-    return THEME_MODES[tonumber(value) or 1] or THEME_MODES[1]
+    return THEME_MODES[tonumber(value) or 1] or "modern-dark"
 end
 
 --- Join a widget directory and package-relative path.
@@ -1306,13 +1433,8 @@ local function advanceLoad(context)
             return false
         end
 
-        -- A layout may pin its own theme; otherwise the native option decides.
-        local themeConfig = validated.theme or {}
-        -- Which of the two asked for this palette. The resolved theme records the
-        -- mode it settled on and not where the request came from, and the widget
-        -- option was inert for a while while looking exactly like a working one.
-        context.themeSource = themeConfig.mode and "layout" or "option"
-        context.theme = context.themeBuilder.build(themeConfig.mode or context.themeMode, themeConfig.overrides)
+        context.themeSource = "option"
+        context.theme = context.themeBuilder.build(context.themeMode)
         for _, warning in ipairs(context.theme.warnings) do
             addError(context, "theme: " .. warning)
         end
@@ -1567,9 +1689,32 @@ local function create(zone, widgetOptions, path)
         addError(context, "AeroGrid runtime module failed to load")
         showErrors(context)
     else
-        -- Loading is deliberately deferred to refresh(). Doing it here would
-        -- exceed EdgeTX's per-callback instruction budget on a full dashboard.
-        beginLoad(context)
+        local themeNames = { "modern-dark" }
+        if context.themeMode ~= "modern-dark" then
+            themeNames[#themeNames + 1] = context.themeMode
+        end
+        local themeDocument, themeError = readThemeCatalog(
+            path,
+            themeNames,
+            context.themeMode,
+            context.yaml
+        )
+        if not themeDocument then
+            context.runtimeFailed = true
+            addError(context, "themes: " .. tostring(themeError))
+            showErrors(context)
+        else
+            local configured, configureError = context.themeBuilder.setCatalog(themeDocument)
+            if not configured then
+                context.runtimeFailed = true
+                addError(context, "themes: " .. tostring(configureError))
+                showErrors(context)
+            else
+                -- Loading is deliberately deferred to refresh(). Doing it here
+                -- would exceed EdgeTX's per-callback budget on a full dashboard.
+                beginLoad(context)
+            end
+        end
     end
 
     return context

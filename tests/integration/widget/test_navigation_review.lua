@@ -6,7 +6,14 @@ local WidgetFixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua
 
 local fixture = WidgetFixture.new()
 fixture.reset()
-local context = fixture.createLoaded(nil, { Layout = "review-navigation", Theme = "modern" })
+local yaml = fixture.module("lib/yaml.lua")
+local themeDocument = assert(loadfile(root .. "/tests/support/theme_catalog.lua"))()(root, yaml)
+local function loadTheme()
+    local module = fixture.module("lib/theme.lua")
+    assert(module.setCatalog(themeDocument))
+    return module
+end
+local context = fixture.createLoaded(nil, { Layout = "review-navigation", Theme = "modern-dark" })
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assertions.assertEqual(#context.panels, 6)
@@ -68,13 +75,13 @@ for bearing = 0, 359 do
     end
 end
 local navigation = fixture.module("panels/navigation.lua")
-local theme = fixture.module("lib/theme.lua")
+local theme = loadTheme()
 assertions.assertEqual(navigation.bearingText({ bearing = 29 }, theme, TINSIZE, 20, "quadrant"), "NE")
 for _, rect in ipairs({ { w = 238, h = 134 }, { w = 238, h = 110 }, { w = 359, h = 134 } }) do
     local layout = navigation.presentationFor("compass")
     layout.keepCompass = true
     local area = navigation.regionsFor(
-        theme.build("modern"),
+        theme.build("modern-dark"),
         theme,
         rect,
         layout,
@@ -98,14 +105,14 @@ fixture.reset()
 for _, showBearing in ipairs({ false, true }) do
     for _, showCoordinates in ipairs({ false, true }) do
         local navigation = fixture.module("panels/navigation.lua")
-        local theme = fixture.module("lib/theme.lua")
+        local theme = loadTheme()
         local settings = { presentation = "compass", showBearing = showBearing, showCoordinates = showCoordinates }
         local layout = navigation.presentationFor(settings.presentation)
         layout.showDetail = settings.showBearing
         layout.showCoordinates = settings.showCoordinates
         layout.keepCompass = true
         local area = navigation.regionsFor(
-            theme.build("modern"),
+            theme.build("modern-dark"),
             theme,
             { w = 238, h = 134 },
             layout,
@@ -125,7 +132,7 @@ for _, showBearing in ipairs({ false, true }) do
             { w = 238, h = 134 },
             resolved,
             {
-                theme = theme.build("modern"),
+                theme = theme.build("modern-dark"),
                 themeBuilder = theme,
                 primitives = fixture.module("lib/primitives.lua"),
                 fonts = theme.typography(2, 2),

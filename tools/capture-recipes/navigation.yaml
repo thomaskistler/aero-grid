@@ -1,6 +1,6 @@
 version: 1
 panel: navigation
-theme: modern
+theme: modern-dark
 brighten_supporting_text: true
 border:
   pixels: 10

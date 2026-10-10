@@ -49,6 +49,38 @@ local layout = loadModule("lib/layout.lua")
 local layoutStore = loadModule("lib/layout_store.lua")
 local panelHost = loadModule("lib/panel_host.lua")
 local theme = loadModule("lib/theme.lua")
+local themeDocument = assert(loadfile(root .. "/tests/support/theme_catalog.lua"))()(root, yaml)
+assert(theme.setCatalog(themeDocument))
+local customThemeIndex = 0
+
+local function buildCustomTheme(overrides)
+    customThemeIndex = customThemeIndex + 1
+    local base = themeDocument.themes[1]
+    local definition = {
+        version = 1,
+        name = "runtime-custom-" .. customThemeIndex,
+        label = "Runtime Custom " .. customThemeIndex,
+        accent = overrides.accent or base.accent,
+        colors = {},
+        spacing = {},
+    }
+    for key, value in pairs(base.colors) do
+        definition.colors[key] = value
+    end
+    for key, value in pairs(base.spacing) do
+        definition.spacing[key] = value
+    end
+    for key, value in pairs(overrides) do
+        if key == "accent" then
+            definition.accent = value
+        else
+            definition.colors[key] = value
+        end
+    end
+    themeDocument.themes[#themeDocument.themes + 1] = definition
+    assert(theme.setCatalog(themeDocument))
+    return theme.build(definition.name)
+end
 local primitives = loadModule("lib/primitives.lua")
 local services = loadModule("lib/services.lua")
 local telemetryService = loadModule("lib/telemetry_service.lua")
@@ -630,34 +662,6 @@ local function checkLayoutExample(body, label)
     return normalized
 end
 
---- Check a theme block, which is a fragment of a layout rather than one.
----@param body string
----@param label string
-local function checkThemeExample(body, label)
-    local fragment = yaml.parse(body)
-    assert(type(fragment) == "table" and type(fragment.theme) == "table", label .. " did not parse as a theme block")
-
-    -- Validated in place, as a layout carrying it would be, then built. The
-    -- validator accepts any overrides table; only the build rejects a key that
-    -- is not customizable or a value that is not a colour, so a theme example
-    -- checked only by the validator would prove almost nothing.
-    local document = {
-        version = 1,
-        grid = { columns = 4, rows = 4 },
-        panels = {},
-        theme = fragment.theme,
-    }
-    local normalized, errors = layout.validate(document, grid)
-    assert(normalized, label .. " was rejected: " .. table.concat(errors or {}, "; "))
-    assertEqual(#errors, 0, label .. ": " .. table.concat(errors, "; "))
-
-    local resolved = theme.build(normalized.theme.mode, normalized.theme.overrides, {})
-    assertEqual(#resolved.warnings, 0, label .. ": " .. table.concat(resolved.warnings, "; "))
-    assertEqual(resolved.mode, fragment.theme.mode, label .. " asked for a theme mode the host does not have")
-
-    return resolved
-end
-
 --- Check a single panel entry, which is a layout's panel sequence cut
 --- down to one. Spliced into the smallest document that can carry it, so the
 --- same validation runs: a panel example naming a setting that does not
@@ -675,7 +679,7 @@ local function testSpecificationExamplesLoad()
     local blocks = specificationExamples()
     assert(#blocks > 0, "no YAML examples were found in the specification")
 
-    local layouts, themes, entries = 0, 0, 0
+    local layouts, entries = 0, 0
     for index, body in ipairs(blocks) do
         local label = "specification example " .. index
         assert(#body > 0, label .. " is empty")
@@ -691,9 +695,6 @@ local function testSpecificationExamplesLoad()
                     label .. ": a session block did not survive validation"
                 )
             end
-        elseif string.match(body, "^theme:") then
-            themes = themes + 1
-            checkThemeExample(body, label)
         elseif string.match(body, "^%- id:") then
             entries = entries + 1
             checkPanelExample(body, label)
@@ -704,7 +705,7 @@ local function testSpecificationExamplesLoad()
             -- source-settings section, which no branch covered until one did.
             error(
                 label
-                    .. " is neither a layout nor a theme block, so nothing"
+                    .. " is neither a layout nor a panel entry, so nothing"
                     .. " checks it. Its first line is: "
                     .. tostring(string.match(body, "^([^\n]*)"))
             )
@@ -715,7 +716,7 @@ local function testSpecificationExamplesLoad()
     -- the document would otherwise leave this test passing over whatever
     -- remained.
     assert(layouts > 0, "the specification carries no complete layout example")
-    assert(themes > 0, "the specification carries no theme example")
+    assert(entries > 0, "the specification carries no panel entry example")
 end
 
 --- Link thresholds name their source rather than the selected headline.
@@ -769,8 +770,9 @@ local function testPanelDocumentationLoads()
             local handle = assert(io.open(root .. "/docs/user-guide/dashboards.md", "r"))
             local page = handle:read("*a")
             handle:close()
-            assert(string.find(page, "## Create your own theme", 1, true))
-            assert(string.find(page, "/WIDGETS/AeroGrid/layouts/Theme.yaml", 1, true))
+            assert(string.find(page, "## Customize themes", 1, true))
+            assert(string.find(page, "/WIDGETS/AeroGrid/themes/", 1, true))
+            assert(string.find(page, "/AEROGRID/themes/", 1, true))
             table.remove(kinds, index)
         end
     end
@@ -893,7 +895,7 @@ end
 --- name, not an abbreviation of one, so the font steps down instead.
 local function testFlightModeSizing()
     local flightMode = loadModule("panels/flight-mode.lua")
-    local resolved = theme.build("modern")
+    local resolved = theme.build("modern-dark")
 
     local function modelWith(names)
         return modelService.new(
@@ -1539,9 +1541,9 @@ end
 
 --- Modern mode must reproduce the palette defined in the specification.
 local function testModernTheme()
-    local resolved = theme.build("modern")
+    local resolved = theme.build("modern-dark")
 
-    assertEqual(resolved.mode, "modern")
+    assertEqual(resolved.mode, "modern-dark")
     assertEqual(#resolved.warnings, 0)
     assertEqual(#resolved.notices, 0)
     assertEqual(resolved.rgb.canvas, 0x0A0C0E)
@@ -1580,11 +1582,11 @@ local function testModernTheme()
 
     -- An unknown mode degrades to Modern and says so.
     local fallback = theme.build("neon")
-    assertEqual(fallback.mode, "modern")
-    assert(string.match(fallback.warnings[1], "unknown theme mode"), fallback.warnings[1])
+    assertEqual(fallback.mode, "modern-dark")
+    assert(string.match(fallback.warnings[1], "unknown theme"), fallback.warnings[1])
 
     -- No mode at all is Modern without complaint.
-    assertEqual(theme.build().mode, "modern")
+    assertEqual(theme.build().mode, "modern-dark")
 
     -- **And an empty one is Modern without complaint too, which is not the
     -- same statement.** A Lua widget receives a string option it has never
@@ -1598,7 +1600,7 @@ local function testModernTheme()
     -- cleared can leave a space, and the user cannot see it.
     for _, blank in ipairs({ "", " ", "   " }) do
         local unset = theme.build(blank)
-        assertEqual(unset.mode, "modern", string.format("a blank theme option %q did not fall back to Modern", blank))
+        assertEqual(unset.mode, "modern-dark", string.format("a blank theme option %q did not fall back to Modern", blank))
         assertEqual(
             #unset.warnings,
             0,
@@ -1622,33 +1624,26 @@ local function testModernTheme()
     )
 end
 
---- A retired mode is rejected rather than silently deriving radio colors.
+--- A retired theme name is rejected rather than silently deriving radio colors.
 local function testRetiredTheme()
     local resolved = theme.build("edgetx")
-    assertEqual(resolved.mode, "modern")
+    assertEqual(resolved.mode, "modern-dark")
     assertEqual(#resolved.warnings, 1)
-    assertEqual(resolved.warnings[1], "unknown theme mode edgetx")
+    assertEqual(resolved.warnings[1], "unknown theme edgetx")
 end
 
---- Custom mode accepts only the documented override set.
+--- Full named palettes receive the same contrast protection as all themes.
 local function testCustomTheme()
-    local resolved = theme.build("custom", {
+    local resolved = buildCustomTheme({
         canvas = 0x000000,
         surface = 0x141414,
         accent = "green",
-        border = 0xFF00FF,
-        text = "white",
     })
 
     assertEqual(resolved.rgb.canvas, 0x000000)
-    -- A custom surface is honoured only as far as it stays legible, exactly as
-    -- a custom surface that would swallow text is. 0x141414 on a black canvas
-    -- measures 1.15, and a panel that close to the screen has no edge at all
-    -- now that nothing draws an outline, so the legibility pass lifts it and
-    -- records having done so.
     assert(
         theme.contrast(resolved.rgb.canvas, resolved.rgb.surface) >= 1.30,
-        "a custom surface was left flat against its own canvas"
+        "a named theme surface was left flat against its own canvas"
     )
     local lifted = {}
     for index, notice in ipairs(resolved.notices) do
@@ -1656,27 +1651,15 @@ local function testCustomTheme()
     end
     assert(
         string.match(table.concat(lifted, "\n"), "lifted to elevate"),
-        "the host adapted a custom palette without saying so"
+        "the host adapted the named palette without saying so"
     )
     assertEqual(resolved.accent, "green")
-    assertEqual(resolved.rgb.border, theme.modern().border)
+    assertEqual(resolved.rgb.border, theme.modernDark().border)
+    assertEqual(#resolved.warnings, 0)
+    assertEqual(resolved.rgb.text, theme.modernDark().text)
 
-    local joined = table.concat(resolved.warnings, "\n")
-    assert(string.match(joined, "border is not customizable"), joined)
-    assert(string.match(joined, "text must be a 24%-bit color"), joined)
-
-    -- An invalid accent is rejected and reported.
-    local badAccent = theme.build("custom", { accent = "magenta" })
-    assertEqual(badAccent.accent, "cyan")
-    assert(string.match(table.concat(badAccent.warnings, "\n"), "not a semantic accent"))
-
-    -- A light custom surface must force readable text.
-    local light = theme.build("custom", { surface = 0xFFFFFF })
+    local light = buildCustomTheme({ surface = 0xFFFFFF })
     assert(theme.contrast(light.rgb.surface, light.rgb.text) >= 4.5, "custom light surface left text unreadable")
-
-    -- Overrides must be a mapping.
-    local wrong = theme.build("custom", "nope")
-    assert(string.match(table.concat(wrong.warnings, "\n"), "must be a mapping"))
 end
 
 --- Typography must grow with the panel's span.
@@ -1697,8 +1680,8 @@ end
 --- rather than against the token, which is the difference between asserting
 --- what the radio is given and asserting a mock's identity function.
 local function testStates()
-    local resolved = theme.build("modern")
-    local modern = theme.modern()
+    local resolved = theme.build("modern-dark")
+    local modern = theme.modernDark()
 
     local normal = theme.state(resolved, "normal", "green")
     assertEqual(normal.accent, lcd.RGB(modern.green))
@@ -1871,7 +1854,7 @@ local function testPrimitiveMath()
     assertEqual(primitives.arcSweep(270, 2), 270)
     assertEqual(primitives.arcSweep(270, nil), 0)
 
-    local resolved = theme.build("modern")
+    local resolved = theme.build("modern-dark")
     assertEqual(primitives.contentWidth(resolved, 100), 100 - resolved.spacing.padding * 2)
     assertEqual(primitives.contentWidth(resolved, 4), 1, "width must never collapse")
 end
@@ -1893,7 +1876,7 @@ local function testEmptyCollections()
     assertEqual(type(assert(yaml.parse("a: {}\n")).a), "table")
 end
 
---- The layout schema accepts an optional theme block.
+--- Layout files can no longer select or override a theme.
 local function testLayoutTheme()
     local document = assert(yaml.parse([[
 version: 1
@@ -1908,14 +1891,9 @@ panels: []
 ]]))
 
     local normalized, errors = layout.validate(document, grid)
-    assertEqual(#errors, 0)
-    assertEqual(normalized.theme.mode, "custom")
-    assertEqual(normalized.theme.overrides.canvas, 0x000000)
-
-    -- A malformed theme block is reported without blocking the layout.
-    local broken = assert(yaml.parse("version: 1\ntheme: nope\ngrid:\n  columns: 4\n  rows: 4\npanels: []\n"))
-    local _, brokenErrors = layout.validate(broken, grid)
-    assert(string.match(table.concat(brokenErrors, "\n"), "theme must be a mapping"))
+    assert(normalized)
+    assertEqual(#errors, 1)
+    assert(string.find(errors[1], "layout-level theme settings are no longer supported", 1, true), table.concat(errors))
 end
 
 --- Every guarantee an alert tint carries must be the reason it was chosen.
@@ -1932,7 +1910,7 @@ end
 --- a tint would otherwise take. If that guarantee is removed, `alertSurface`
 --- returns a colour violating it, and the assertion fails.
 local function testAlertTintGuarantees()
-    local modern = theme.modern()
+    local modern = theme.modernDark()
 
     --- Tokens that are legible at rest, with one field replaced.
     local function tokensWith(overrides)
@@ -1971,7 +1949,7 @@ local function testAlertTintGuarantees()
     end
 
     -- The shipped palettes, which must both produce a tint at all.
-    for _, mode in ipairs({ "modern", "custom" }) do
+    for _, mode in ipairs({ "modern-dark", "custom" }) do
         local resolved = theme.build(mode)
         for _, state in ipairs({ "warning", "critical" }) do
             local accent = state == "warning" and resolved.rgb.amber or resolved.rgb.critical
@@ -2039,7 +2017,7 @@ local function testDerivedThemesStayLegible()
     local surfaces = { 0xFFFFFF, 0x000000, 0x69737A, 0x808080, 0xF2B84B, 0x101316, 0x1B3A57, 0x8B1A1A }
 
     for _, surface in ipairs(surfaces) do
-        local resolved = theme.build("custom", { surface = surface, canvas = surface })
+        local resolved = buildCustomTheme({ surface = surface, canvas = surface })
         local tokens = resolved.rgb
         local label = string.format("surface 0x%06X", surface)
 
@@ -2066,7 +2044,7 @@ local function testDerivedThemesStayLegible()
 
         -- Critical red is an alarm: it must look identical on every radio, so it
         -- is never adjusted. The surface moves instead to keep it visible.
-        assertEqual(tokens.critical, theme.modern().critical, label .. ": critical red was altered")
+        assertEqual(tokens.critical, theme.modernDark().critical, label .. ": critical red was altered")
         assert(
             theme.contrast(tokens.surface, tokens.critical) >= 2.5,
             label .. ": critical red vanished into the surface"
@@ -2093,8 +2071,8 @@ end
 
 --- Freshness must override a panel's decorative accent.
 local function testStaleOverridesAccent()
-    local resolved = theme.build("modern")
-    local modern = theme.modern()
+    local resolved = theme.build("modern-dark")
+    local modern = theme.modernDark()
 
     local normal = theme.state(resolved, "normal", "green")
     local stale = theme.state(resolved, "stale", "green")
@@ -2181,7 +2159,7 @@ local function testContentFitsPanel()
         layout.visual = "bar"
         local fonts = theme.typography(case.colSpan, case.rowSpan)
         local area =
-            metric.regionsFor(theme.build("modern"), theme, { x = 0, y = 0, w = case.w, h = case.h }, layout, fonts)
+            metric.regionsFor(theme.build("modern-dark"), theme, { x = 0, y = 0, w = case.w, h = case.h }, layout, fonts)
 
         -- **The ink, not the line box.** A reading is placed so that its ink is
         -- centred in the band, which leaves the box hanging below it by the
@@ -2248,14 +2226,14 @@ local function testContentFitsPanel()
 
     -- A short panel must reduce the primary font rather than overflow.
     local short = metric.regionsFor(
-        theme.build("modern"),
+        theme.build("modern-dark"),
         theme,
         { x = 0, y = 0, w = 238, h = 65 },
         { showUnit = true, showVisual = true, showRange = false, visual = "bar" },
         theme.typography(2, 1)
     )
     local tall = metric.regionsFor(
-        theme.build("modern"),
+        theme.build("modern-dark"),
         theme,
         { x = 0, y = 0, w = 238, h = 134 },
         { showUnit = true, showVisual = true, showRange = true, visual = "bar" },
@@ -3253,7 +3231,7 @@ end
 --- covered both.
 local function testSlotsForAnswersForBothEdges()
     local fonts = theme.typography(1, 1)
-    local built = theme.build("modern")
+    local built = theme.build("modern-dark")
     local frame = theme.frame(built, { x = 0, y = 0, w = 117, h = 53 }, fonts)
     local left = theme.slotCentres(frame, theme.SLOT_STRICT)
     local room = left - frame.pad
@@ -3468,7 +3446,7 @@ local function testTextFitting()
     assertFont(theme.fitText("123456789012", 10, 10), SMLSIZE)
 
     -- A panel frame must keep its badge clear of its label at every width.
-    local resolved = theme.build("modern")
+    local resolved = theme.build("modern-dark")
     for _, width in ipairs({ 60, 117, 238, 480 }) do
         local frame = theme.frame(resolved, { x = 0, y = 0, w = width, h = 134 }, theme.typography(1, 1))
         assert(frame.pad + frame.labelWidth <= frame.badgeX, "badge overlaps the label at width " .. width)
@@ -3622,7 +3600,7 @@ local function testBatteryStaysVisible()
     end
 
     local checked, worst, where = 0, 99, ""
-    for _, mode in ipairs({ "modern", "modern-light" }) do
+    for _, mode in ipairs({ "modern-dark", "modern-light" }) do
         local resolved = theme.build(mode)
         for _, state in ipairs({ "normal", "warning", "critical", "stale", "unavailable" }) do
             local backdrop = primitives.batteryBackdropRgb(resolved, state)
@@ -3661,7 +3639,7 @@ local function testBatteryStaysVisible()
 
     -- And the pairing the whole question was about, named rather than left to
     -- be inferred from the loop.
-    local modern = theme.build("modern")
+    local modern = theme.build("modern-dark")
     assert(
         theme.contrast(modern.rgb.critical, modern.alertRgb.critical) >= LEAST,
         "a red cell on a red panel stopped being readable"
@@ -3907,7 +3885,7 @@ end
 --- it. **Nothing about the numbers says the reading is in the wrong place
 --- unless where it sits is asserted.**
 local function testReadingsSitInTheirBand()
-    local resolved = theme.build("modern")
+    local resolved = theme.build("modern-dark")
     local GUTTER, CELLS, WIDTH, HEIGHT = 4, 4, 480, 272
     local cellWidth = math.floor((WIDTH - GUTTER * (CELLS - 1)) / CELLS)
     local cellHeight = math.floor((HEIGHT - GUTTER * (CELLS - 1)) / CELLS)
@@ -4008,7 +3986,7 @@ end
 --- Reported rather than fixed here, because it is not this change's defect
 --- and the fix needs the bar's own question asked somewhere that knows it.
 local function testAReadingClearsTheRowBeneathIt()
-    local resolved = theme.build("modern")
+    local resolved = theme.build("modern-dark")
     local swept, tightest, where = 0, math.huge, ""
 
     for height = 40, 272 do
@@ -4049,7 +4027,7 @@ end
 --- that recomputed `theme.rowTop` and compared would agree with any
 --- arithmetic at all, including the centring this replaces.
 local function testTheRowHangsFromTheFloor()
-    local resolved = theme.build("modern")
+    local resolved = theme.build("modern-dark")
     local GUTTER, CELLS, WIDTH, HEIGHT = 4, 4, 480, 272
     local cellHeight = math.floor((HEIGHT - GUTTER * (CELLS - 1)) / CELLS)
 
@@ -4175,7 +4153,7 @@ end
 local function testHeadingIsPinnedToTheTop()
     testTheRowHangsFromTheFloor()
     testAReadingClearsTheRowBeneathIt()
-    local resolved = theme.build("modern")
+    local resolved = theme.build("modern-dark")
     local GUTTER, CELLS, WIDTH, HEIGHT = 4, 4, 480, 272
     local cellHeight = math.floor((HEIGHT - GUTTER * (CELLS - 1)) / CELLS)
 
@@ -4270,7 +4248,7 @@ local function testHeadingIsPinnedToTheTop()
 end
 
 local function testSharedLadder()
-    local resolved = theme.build("modern")
+    local resolved = theme.build("modern-dark")
 
     --- The composition a panel of this size carries.
     local function ladderFor(w, h)
@@ -4494,7 +4472,7 @@ end
 --- sees.
 local function testTxBatteryComposition()
     local battery = loadModule("panels/tx-battery.lua")
-    local resolved = theme.build("modern")
+    local resolved = theme.build("modern-dark")
 
     -- span, reading font, unit shown, cell w x h, outline, percentage under
     --
@@ -4725,7 +4703,7 @@ local function testIdentityPresentation()
     -- The image is created after the text and painted with `fill`, so anything
     -- it is allowed to overlap simply disappears. Every row that will be drawn
     -- has to come out of the height the image is given.
-    local resolved = theme.build("modern")
+    local resolved = theme.build("modern-dark")
     local sizes = { { 234, 130 }, { 472, 264 }, { 117, 130 }, { 117, 60 } }
     local cases = {
         { showName = true, showImage = true, showLabels = true },
@@ -4894,7 +4872,7 @@ end
 --- before the dominant reading is shrunk.
 local function testNavigationRegions()
     local navigation = loadModule("panels/navigation.lua")
-    local resolved = theme.build("modern")
+    local resolved = theme.build("modern-dark")
     local fonts = theme.typography(2, 2)
     local layout = navigation.presentationFor("detailed")
 
@@ -4990,7 +4968,7 @@ local function testTelemetryContentFitsPanel()
     local cellBattery = loadModule("panels/cell-battery.lua")
     local linkStatus = loadModule("panels/link-status.lua")
     local navigationPanel = loadModule("panels/navigation.lua")
-    local resolved = theme.build("modern")
+    local resolved = theme.build("modern-dark")
     local heightOf = theme.fontHeight
 
     -- Panel sizes for spans at 480 x 272 with 4 px gutters, plus tight cases.

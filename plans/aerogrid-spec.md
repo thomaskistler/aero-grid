@@ -611,11 +611,12 @@ The point of deriving the slots from the panel rather than from the content is t
 
 The host owns theme tokens and passes the active theme to every panel. Panels must not define independent background palettes. Panel-specific configuration may choose a semantic accent only from host-provided tokens. A global theme may be exposed as a native host widget option and persisted by EdgeTX.
 
-The host provides three theme modes:
-
-- `modern`: The designed instrument palette and default experience.
-- `edgetx`: Derive local dashboard tokens by reading the active EdgeTX theme with `lcd.getColor()`.
-- `custom`: Start from the Modern palette and allow a small set of global overrides such as canvas, surface, text, and accent.
+The host provides complete named themes from separate `.yml` files. The
+`modern-dark` and `modern-light` palettes are shipped entries; user themes live
+under `/AEROGRID/themes/` and override same-named shipped files. Each theme
+defines all color tokens, spacing, and optional alert-tint preferences. A
+separate append-only theme registry preserves the Theme widget option's
+positions. Layout documents do not select or override themes.
 
 The dashboard must never call `lcd.setColor()` because doing so changes the entire radio interface and other widgets. Follow EdgeTX mode maps Primary, Secondary, Focus, Edit, Active, Warning, and Disabled roles into dashboard tokens, then applies contrast correction and dashboard fallbacks where EdgeTX has no suitable role. Critical red remains dashboard-controlled. Warning and critical colors are not independently configurable per panel.
 
@@ -1572,7 +1573,7 @@ So a declaration carries the configuration that builds each arrangement, not mer
 
 The corollary is about the panels rather than the tests, and it generalises past this suite. **A panel whose content depends on configuration rather than on span must be told which, because a span says only what is permitted.** `metric` may carry a secondary reading at `2 x 2`; whether it does depends on a source being set. Handing the geometry the span alone made it arrange a two-item row on a panel that draws one, so a lone supporting row sat on the left slot instead of centred -- correct for the arrangement it was told about and wrong for the one on screen.
 
-**A document that states a contract must be executed, not read.** The layout example in this specification did not load for at least two milestones, and nobody noticed because nothing ran it: it named a setting no panel declares, gave a source as a numeric identifier the telemetry service rejects, and asked `link-status` for a `4 x 3` span it does not support, so the host would have dropped that panel. Two of those three survived being corrected by hand, which is the point — reading an example carefully is not the same as running it. The suite now extracts every fenced YAML block from this file at test time and puts it through `yaml.parse`, `layout.validate`, `panelHost.resolveSettings` and, for a theme block, `theme.build`. It is extracted rather than copied into the test, because a copy is a second source of truth and would drift from the document exactly as the document drifted from the code. A block that matches no known kind fails rather than being skipped, and an extraction that finds nothing fails rather than passing over an empty string, because a test that reads a document it cannot find is a vacuous assertion wearing a new hat.
+**A document that states a contract must be executed, not read.** The layout example in this specification did not load for at least two milestones, and nobody noticed because nothing ran it: it named a setting no panel declares, gave a source as a numeric identifier the telemetry service rejects, and asked `link-status` for a `4 x 3` span it does not support, so the host would have dropped that panel. Two of those three survived being corrected by hand, which is the point — reading an example carefully is not the same as running it. The suite now extracts every fenced YAML block from this file at test time and puts it through `yaml.parse`, `layout.validate` and `panelHost.resolveSettings`. It is extracted rather than copied into the test, because a copy is a second source of truth and would drift from the document exactly as the document drifted from the code. A block that matches no known kind fails rather than being skipped, and an extraction that finds nothing fails rather than passing over an empty string, because a test that reads a document it cannot find is a vacuous assertion wearing a new hat.
 
 **A fixture must model what an object *is*, not only what it accepts.** This one cost a user a dashboard of error banners, and it is the narrowest shape yet. The LVGL stand-in already refused a property key `parseParam` does not accept, which models what an object accepts through `set`. Nothing modelled what the object is. An object handed back by `lvgl.*` is userdata: `LvglWidgetObjectBase::getRef` allocates one pointer with `lua_newuserdata` and attaches `lvgl_base_mt` or `lvgl_mt`, and neither metatable declares `__newindex`, so a field assigned onto a label raises and a field read off one is always nil. The stand-in was a plain Lua table, which accepts any name you invent and returns it again. So `label.headingText = text` in `primitives.header` stored the heading happily here and broke **every panel on the radio at once**, with the suite green; and `label.headingText` in `placeHeader` read back the truth here and nil there, so a reflow silently never refitted. The write was loud and the read was silent, and both came from the same wrong idea about what the fixture was standing in for. The mock now seals its objects with a `__newindex` that raises in the radio's own words, and reaches its own bookkeeping through `rawset`, which is the honest admission that `properties`, `writes` and the rest are the fixture's fields and not the firmware's. Ask of any stand-in not only *what does the real thing accept* but *what kind of thing is it*, because the second question is the one nobody asked for eight milestones.
 
@@ -1636,9 +1637,9 @@ Status last verified on 2026-09-21:
 | --- | --- | --- | --- |
 | Build and test foundation | Complete | Make targets, isolated Python environment, unit/integration suites, EdgeTX Lua parsing, tracked simulator fixture, reproducible `build/sdcard` assembly, and GitHub Actions CI running `make check` against Lua 5.3 | None |
 | Milestone 1: Runtime skeleton | Complete | LVGL host, integer 4 x 4 geometry, gutters, per-panel containers, batched reflow, App mode fixture, and `1 x 1`-sized mocked tests | Additional physical-radio verification belongs to hardening |
-| Milestone 2: Read-only YAML loader | Complete | Constrained parser, empty flow collections, schema version check, model/Dashboard ID resolution, default fallback, fail-closed document validation, per-entry validation, preserved unknown keys, optional theme block, and a malformed-input matrix | Physical-radio verification belongs to hardening |
+| Milestone 2: Read-only YAML loader | Complete | Constrained parser, empty flow collections, schema version check, model/Dashboard ID resolution, default fallback, fail-closed document validation, per-entry validation, preserved unknown keys, and a malformed-input matrix | Physical-radio verification belongs to hardening |
 | Milestone 3: Panel runtime | Complete | Referenced-module loading, metatable-safe contract validation, declared settings with typed defaults, `supportedSpans` enforcement, host-owned containers, declared refresh intervals with phase staggering, and isolated create/update/refresh/background/event/destroy dispatch | Production panels arrive in milestones 6 and 7 |
-| Milestone 4: Design system | Complete | Semantic tokens, panel/typography/bar/radial/badge primitives, Modern, Follow EdgeTX, and Custom modes, guaranteed-legible derived palettes, all seven states, and one shared responsive ladder deciding composition from the box and the font from the composition | Physical readability review at 480 x 272 on a TX16S-class display |
+| Milestone 4: Design system | Complete | Semantic tokens, panel/typography/bar/radial/badge primitives, YAML-defined named themes, guaranteed-legible customizable palettes, all seven states, and one shared responsive ladder deciding composition from the box and the font from the composition | Physical readability review at 480 x 272 on a TX16S-class display |
 | Milestone 5: Shared data services | Complete | Registry with per-service intervals, staggering, and subscription caps; telemetry, model, control, extrema, and navigation services; immutable snapshots; graceful degradation for missing sources, unseen sensors, absent firmware APIs, and stale telemetry; `service-probe` diagnostic views and two shipped diagnostics layouts | Hardware verification, and timer-based extrema reset |
 | Milestone 6: Core panels | Complete | `metric` with independent numeric readings and GV sources; `flight-timer`, `flight-mode`, `tx-battery`, `trim-panel`, and `model-identity`; shared panel geometry, bars/radials, and images; a shipped dashboard demonstrating all six | Physical-radio verification of text widths and model bitmap scaling |
 | Milestone 7: Telemetry-specialized panels | Complete | `cell-battery` with cells-table validation; `link-status` with independent RSSI and quality; `navigation` with responsive presentations and a north-up dial; a shipped dashboard demonstrating the nine display panels, with separate diagnostics screens | Hardware confirmation of the cells shape and of no-RSSI-sensor detection |
@@ -1761,8 +1762,8 @@ It ships as four sections, one per panel, on the `host` dashboard:
 **It reads the live host context and re-derives nothing.** A diagnostics view that resolved the layout filename a second time, or rebuilt the theme to see what it would say, would be reporting on a world assembled for it rather than the one the dashboard is running, and would be confidently wrong at exactly the moment it is being trusted. That is the same mistake as a fixture that encodes what we assume. Where a fact was not recoverable afterwards, the host now records it where it is decided rather than letting the view guess later, and each of those was a guess the view would otherwise have had to make:
 
 - `layoutStore.read` reports **which** of the three candidate names answered, not only the path it settled on. A dashboard called `main` on a model called `main` produces two candidates that read alike, and a layout quietly falling back to `Default.yaml` looks exactly like one that was found.
-- `context.themeSource` records whether the layout's own block or the widget option chose the mode. The option was inert for a while while looking identical to a working one.
-- `theme.build` reports the mode it was **asked** for beside the one it settled on, because a fallback to Modern reports `modern` and is otherwise invisible.
+- `context.themeSource` records that the widget option chose the theme.
+- `theme.build` reports the theme it was **asked** for beside the one it settled on, because a fallback to Modern Dark reports `modern-dark` and is otherwise invisible.
 - `context.rejected` holds placements that never built, with the reason. A panel that raises during `create` is discarded and is not in `panels` at all, so before this the view could have reported every panel that works and no panel that does not, which is the wrong half.
 
 **The bytecode line is the one that earns the view.** EdgeTX compiles a `.luac` beside every script it loads and prefers it afterwards, so a radio can run code that is no longer on the card; that is constraint 10 and it cost hours. `make build` deletes the bytecode, but a card assembled any other way will not have. `fstat` reports `{size, attrib, time}` and nothing at all for a file it cannot stat (`luaFstat`, `radio/src/lua/api_filesystem.cpp`), so the view stamps the source and says plainly when a `.luac` is beside it — in which case the timestamp shown is not the code that is executing.
@@ -2053,18 +2054,15 @@ Every service degrades the same way. A missing firmware API, an out-of-range tim
 
 ### Theme resolution
 
-Modern uses the specified palette verbatim. Follow EdgeTX derives tokens from `lcd.getColor()` (which returns RGB565) and Custom applies a limited override set over Modern. Both derived modes then pass through a legibility pass that guarantees minimum contrast for body, muted, and faint text, for panel elevation and borders, and for every semantic accent. Critical red is never theme-derived. The dashboard never calls `lcd.setColor()`.
-
-A layout file may carry an optional `theme` block, which takes precedence over the native Theme widget option. A layout that omits it defers to that option, which is how one layout is carried on two screens under two palettes: the shipped `states` layout states no theme, and the tracked model gives its two screens `modern` and `edgetx`. Everything else about the two pages is identical because it is the same file, which is what makes the palettes comparable rather than merely both present.
-
-```yaml
-theme:
-  mode: custom
-  overrides:
-    canvas: 0x000000
-    surface: 0x101010
-    accent: green
-```
+Every named theme is a complete mapping in its own `.yml` file, which supplies the
+palette tokens, spacing, default accent, and optional alert-tint preferences.
+The widget reads shipped and user themes with the shared YAML parser and offers
+them in the native Theme setting. An append-only registry preserves the stored
+choice positions, and a user file takes precedence over a shipped file with the
+same name. Themes enable contrast correction by default; a theme can disable it
+to preserve deliberately specified values. The layout schema rejects legacy
+layout-level `theme` blocks; theme selection belongs to the widget setting, not
+individual layout files. The dashboard never calls `lcd.setColor()`.
 
 ### Phase 1: YAML-configured dashboard
 
@@ -2106,12 +2104,12 @@ Deliverable: independently authored panel files run together under a stable host
 #### Milestone 4: Design system
 
 - Implement semantic theme tokens and shared panel, typography, spacing, bar, radial, and state primitives.
-- Implement Modern, Follow EdgeTX, and limited Custom theme modes.
+- Implement complete YAML-defined themes with contrast protection.
 - Implement normal, stale, unavailable, warning, critical, and selected states.
 - Establish responsive presentations for `1 x 1`, `2 x 1`, and `2 x 2` spans before expanding to unusual spans.
 - Verify physical readability at 480 x 272 on a TX16S-class display.
 
-Deliverable: one polished metric panel demonstrating every state, theme mode, and baseline span.
+Deliverable: one polished metric panel demonstrating every state, named theme, and baseline span.
 
 #### Milestone 5: Shared data services
 
@@ -2339,7 +2337,7 @@ Deliverable: layouts created and safely maintained entirely on the radio.
 - Altitude and speed displays use the shared metric panel with explicitly configured labels and supporting values.
 - Navigation shows a north-up direction from home to model and never presents it as aircraft-relative orientation.
 - Flight extrema follow the configured manual, timer, or switch reset policy.
-- The dashboard offers Modern, Follow EdgeTX, and Custom theme modes without changing global EdgeTX colors.
+- The dashboard offers Modern Dark, Modern Light, and user-defined YAML themes without changing global EdgeTX colors.
 - Trim panels display effective trim positions inside the grid without replacing or modifying EdgeTX trim controls.
 - The metric panel displays ordinary global-variable sources for the active flight mode, with explicitly configured label, precision, unit, and visualization range.
 - Bar and radial indicators remain geometrically stable at minimum, maximum, zero, and out-of-range values.

@@ -223,12 +223,11 @@ interaction focus is**. Previously the border carried both, so a selected warnin
 and a warning panel were the same picture, and a pilot had to read the panel to find out
 which.
 
-**The tints are derived per palette rather than fixed.** Modern uses the specified
-palette verbatim; Follow EdgeTX derives its tokens from `lcd.getColor()`; Custom applies
-a limited override set over Modern. A fixed tint would be legible against one of those
-and not the others. Both derived modes pass through a legibility pass that guarantees
-minimum contrast for body, muted and faint text, for panel elevation and borders, and
-for every semantic accent.
+**The tints are resolved per palette rather than fixed.** Each named theme defines a
+complete palette in its own `.yml` file, with optional alert-tint preferences. A fixed tint
+would be legible against one palette and not the others. Themes with contrast
+correction enabled pass through a legibility pass for body, muted and faint text,
+panel elevation and borders, and semantic accents.
 
 **Critical red is never theme-derived.** A derived palette may make every other accent
 agree with the radio's theme; it may not make a critical state quieter than critical.

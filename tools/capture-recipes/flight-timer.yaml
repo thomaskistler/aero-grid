@@ -1,6 +1,6 @@
 version: 1
 panel: flight-timer
-theme: modern
+theme: modern-dark
 brighten_supporting_text: true
 hide_bottom_bar: true
 border:
