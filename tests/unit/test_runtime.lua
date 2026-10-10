@@ -769,7 +769,7 @@ local function testPanelDocumentationLoads()
             local handle = assert(io.open(root .. "/docs/user-guide/dashboards.md", "r"))
             local page = handle:read("*a")
             handle:close()
-            assert(string.find(page, "### Preview and experiment with colors", 1, true))
+            assert(string.find(page, "## Create your own theme", 1, true))
             assert(string.find(page, "/WIDGETS/AeroGrid/layouts/Theme.yaml", 1, true))
             table.remove(kinds, index)
         end
