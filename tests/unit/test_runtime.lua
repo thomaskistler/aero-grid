@@ -2132,11 +2132,10 @@ local function testAlertTintGuarantees()
 
     -- And a palette with nowhere to go returns nothing rather than something
     -- illegible, which is the branch the panel's fallback to its resting surface
-    -- exists for. Body text at 4.5 against a near-white surface is what no tint
-    -- can satisfy: every candidate is lighter still or too close to the surface
-    -- it was mixed from.
+    -- exists for. Near-white body text and dark faint text leave no candidate
+    -- that meets both contrast floors against this near-white resting surface.
     assertEqual(
-        theme.alertSurface(tokensWith({ surface = 0xF2F4F5, canvas = 0xFFFFFF }), modern.amber),
+        theme.alertSurface(tokensWith({ surface = 0xF2F4F5, canvas = 0xFFFFFF, textFaint = 0x69737A }), modern.amber),
         nil,
         "a palette with no legible tint produced one anyway"
     )

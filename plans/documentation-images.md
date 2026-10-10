@@ -48,8 +48,8 @@ All 27 PNGs are now copied into `docs/assets/panels/` and embedded in the
 nine reference pages with sample and presentation disclosures. Changes remain
 local until committed and published.
 
-User-approved capture presentation overrides omit bottom progress bars and
-brighten `textFaint` from `#69737A` to `#A7B0B6`. These are recorded in recipes
+Capture presentation overrides omit bottom progress bars and
+use the resolved muted color for `textFaint`. These are recorded in recipes
 and provenance and must be disclosed in published captions. Production colors
 and behavior remain unchanged; there is no post-processing of framebuffer pixels.
 

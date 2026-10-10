@@ -118,8 +118,8 @@ view: 0
         if source.count(theme_setup) != 1:
             raise RuntimeError("Theme setup changed; update capture instrumentation explicitly.")
         source = source.replace(theme_setup, theme_setup + """
-        context.theme.rgb.textFaint = 0xA7B0B6
-        context.theme.color.textFaint = lcd.RGB(0xA7B0B6)
+        context.theme.rgb.textFaint = context.theme.rgb.textMuted
+        context.theme.color.textFaint = context.theme.color.textMuted
 """)
     inputs = fixture_inputs(recipe)
     if inputs:

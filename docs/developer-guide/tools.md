@@ -83,8 +83,9 @@ production panel logic, when a new sample type needs capture support.
 
 Be explicit about capture-only differences:
 
-- `brighten_supporting_text: true` changes faint text from `#69737A` to
-  `#A7B0B6` for computer readability; omit it or set false for production colors.
+- `brighten_supporting_text: true` uses the resolved muted color for faint text
+  (`#C4CDD3` to `#DCE2E6` in Modern) for computer readability; omit it or set false
+  for production colors.
 - The timer's `hide_bottom_bar: true` hides its bar without reflow. It is not
   a supported production setting.
 - Metric/link-status examples can omit visuals through `config.visual: none`.
