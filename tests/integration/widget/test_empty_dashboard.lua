@@ -11,19 +11,25 @@ assert(hint.visible)
 assert(hint.title.properties.text == "Empty dashboard")
 assert(hint.instruction.properties.text == "Long-press for fullscreen")
 assert(#hint.objects == 2, "empty dashboard should contain only two text labels")
-assert(hint.title.properties.align == CENTERED)
-assert(hint.instruction.properties.align == CENTERED)
-assert(hint.title.properties.x == 0 and hint.title.properties.w == context.zone.w)
-assert(hint.instruction.properties.x == 0 and hint.instruction.properties.w == context.zone.w)
+local function assertHorizontallyCentred()
+    for _, key in ipairs({ "title", "instruction" }) do
+        local label = hint[key].properties
+        local width = context.themeBuilder.measureText(SMLSIZE, label.text)
+        assert(label.w == width, "hint width must match rendered text")
+        assert(math.abs(label.x - (context.zone.w - label.x - width)) <= 1, "hint is not horizontally centred")
+    end
+end
+assertHorizontallyCentred()
 assert(#context.document.panels == 0, "hint was added to the document")
 assert(#context.panels == 0, "hint was instantiated as a panel")
 
 fixture.lvglMock.setFullScreen(true)
 fixture.pump(context, 3)
 assert(hint.instruction.properties.text == "Long-press to start editing")
+assertHorizontallyCentred()
 context.zone.w, context.zone.h = 320, 180
 fixture.pump(context, 3)
-assert(hint.title.properties.w == 320 and hint.instruction.properties.w == 320, "labels did not resize")
+assertHorizontallyCentred()
 local top = hint.title.properties.y
 local bottom = hint.instruction.properties.y + hint.instruction.properties.h
 assert(math.abs(top - (180 - bottom)) <= 1, "text block is not vertically centred")

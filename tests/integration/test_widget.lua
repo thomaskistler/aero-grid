@@ -17,8 +17,6 @@ local lcdMock = edgetx.lcd()
 local lvglMock = edgetx.lvgl()
 local radioMock = edgetx.radio(hostIo)
 
-local toRgb565 = lcdMock.toRgb565
-local edgeTxRoles = lcdMock.roles
 local setTextMeasurement = lcdMock.setTextMeasurement
 
 local settleLvgl = lvglMock.settle
@@ -303,7 +301,8 @@ local function testRendersInBothModes(label, zone, path, expected)
 
         -- Panels are handed container-local coordinates, so their panel must
         -- start at the origin and never exceed the container it was given.
-        local panel = panelOf(entry)
+        -- The showcase composes several sample panels inside one root.
+        local panel = entry.module.id == "theme-showcase" and entry.instance.root.properties or panelOf(entry)
         assertEqual(panel.x, 0, label .. ": " .. entry.placement.id .. " left its container")
         assertEqual(panel.y, 0, label .. ": " .. entry.placement.id .. " left its container")
         assert(
@@ -525,19 +524,8 @@ end
 --- a gallery nobody pages to.
 --- The states layout has to be judgeable on both palettes, from a screen.
 ---
---- Every guarantee an alert tint carries is a contrast ratio, and a ratio can
---- only say a tint is legible. It cannot say whether the colour the search
---- landed on is the right one to look at, and the derived palette is where
---- that is least likely to be right by luck: its tints are mixed from
---- whatever surface the radio supplied, in the opposite lightness direction to
---- Modern's. Modern's critical has been seen and approved; the derived one had
---- only ever been a number.
----
---- So the tracked model carries the same layout twice under different Theme
---- options. That works because `states.yaml` states no theme of its own and
---- the host falls back to the native option, which this pins: a `theme` block
---- creeping back into the layout would silently collapse both screens onto one
---- palette while every assertion about reachability still passed.
+--- The layout must follow the native option so both built-in palettes can be
+--- compared without changing its panels or thresholds.
 local function testStatesCoverBothPalettes()
     local handle = assert(hostIo.open(sourcePath .. "layouts/states.yaml", "r"))
     local layout = handle:read("a")
@@ -546,7 +534,7 @@ local function testStatesCoverBothPalettes()
     assert(
         not string.match(layout, "\ntheme:"),
         "states.yaml pins a theme, so both of its screens resolve the same palette"
-            .. " and the derived tints cannot be looked at"
+            .. " and the light tints cannot be looked at"
     )
 
     local widgetPath = makeWidget("states-palettes", layout)
@@ -560,7 +548,7 @@ local function testStatesCoverBothPalettes()
         return context
     end
 
-    for _, mode in ipairs({ "modern", "edgetx" }) do
+    for _, mode in ipairs({ "modern", "modern-light" }) do
         local context = render(mode)
         assertEqual(context.theme.mode, mode, "the Theme option did not decide the palette")
 
@@ -588,15 +576,14 @@ local function testStatesCoverBothPalettes()
         )
     end
 
-    -- The two screens are only worth having if they differ. Derived tints that
-    -- landed on Modern's would mean the search is ignoring the radio's surface.
+    -- Both palettes must provide their own light/dark state tints.
     local modern = render("modern").theme
-    local derived = render("edgetx").theme
+    local light = render("modern-light").theme
     assert(
-        modern.alertRgb.critical ~= derived.alertRgb.critical,
+        modern.alertRgb.critical ~= light.alertRgb.critical,
         "both palettes resolve the same critical tint, so the second screen shows" .. " nothing the first does not"
     )
-    assert(modern.alertRgb.warning ~= derived.alertRgb.warning, "both palettes resolve the same warning tint")
+    assert(modern.alertRgb.warning ~= light.alertRgb.warning, "both palettes resolve the same warning tint")
 end
 
 --- Every shipped layout is on a screen, and every review screen is on the
@@ -630,7 +617,7 @@ local function testScreensReachEveryShippedLayout()
         local text = handle:read("a")
         handle:close()
         -- Option 0 is Layout and option 1 is Theme, both stored as positions.
-        local themes = { "modern", "edgetx" }
+        local themes = { "modern", "modern-light" }
         text = string.gsub(text, "(\n%s*0:%s*type: Unsigned%s*value:%s*)unsignedValue: (%d+)", function(head, position)
             return head .. "stringValue: " .. assert(registered[tonumber(position)], "unregistered layout " .. position)
         end)
@@ -645,7 +632,7 @@ local function testScreensReachEveryShippedLayout()
         {
             filename = "model1.yml",
             name = "AEROGRID STD",
-            layouts = { "Default", "Empty", "Host", "services", "services2" },
+            layouts = { "Default", "Empty", "Host", "services", "services2", "Theme" },
         },
         {
             filename = "model2.yml",
@@ -754,7 +741,7 @@ local function testScreensReachEveryShippedLayout()
     local count = 0
     for name in listing:lines() do
         local stem = string.match(name, "^(.+)%.lua$")
-        if stem and stem ~= "host-diagnostics" and stem ~= "service-probe" then
+        if stem and stem ~= "host-diagnostics" and stem ~= "service-probe" and stem ~= "theme-showcase" then
             assert(panelReviews[stem], stem .. " has no panel-review screen")
             count = count + 1
         end
@@ -1993,12 +1980,12 @@ local function testOptionReload()
     definition.update(context, { Layout = "main", Theme = "custom" })
     assertEqual(context.reloadState, "clear")
 
-    -- The radio stores Theme as a position in the CHOICE list: 1 is Modern,
-    -- 2 EdgeTX, and a position from a longer list falls back to Modern.
+    -- The radio stores Theme as a position: 1 is Modern Dark, 2 Modern Light,
+    -- and a position from the retired longer list falls back to Modern Dark.
     local options = definition.options[2]
     assertEqual(options[1], "Theme")
-    assertEqual(table.concat(options[4], ","), "Modern,EdgeTX")
-    for position, mode in pairs({ [1] = "modern", [2] = "edgetx", [9] = "modern" }) do
+    assertEqual(table.concat(options[4], ","), "Modern Dark,Modern Light")
+    for position, mode in pairs({ [1] = "modern", [2] = "modern-light", [3] = "modern", [9] = "modern" }) do
         local selected = createLoaded(
             { x = 0, y = 0, w = 480, h = 272 },
             { Layout = "main", Theme = position },
@@ -2360,14 +2347,14 @@ testReflowAndLifecycle()
 testOptionReload()
 testReloadSurvivesLateCleanup()
 
---- A layout may select the EdgeTX-derived theme, which must stay readable.
-local function testEdgeTxTheme()
+--- A layout explicitly selects Modern Light, overriding the widget option.
+local function testLayoutSelectsLightTheme()
     local widgetPath = makeWidget(
-        "edgetx-theme",
+        "light-theme",
         [[
 version: 1
 theme:
-  mode: edgetx
+  mode: modern-light
 grid:
   columns: 4
   rows: 4
@@ -2381,54 +2368,20 @@ panels:
     config:
       metrics:
         - source: Alt
-          label: Derived
+          label: Light
 ]]
     )
 
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
 
-    assertEqual(context.theme.mode, "edgetx")
+    assertEqual(context.theme.mode, "modern-light")
     assertEqual(#context.panels, 1)
 
-    local modern = themeModule.modern()
     local tokens = context.theme.rgb
-
-    -- The canvas must be the radio's own COLOR_THEME_SECONDARY1, widened from
-    -- the RGB565 half of the flag word `lcd.getColor` returns.
-    --
-    -- This previously asserted only that the canvas differed from Modern's,
-    -- which is satisfied by every colour being wrong in the same way. That is
-    -- how a palette in which every role of every theme resolved to 0x840000
-    -- passed this suite while drawing every panel on the radio dark red.
-    assertEqual(
-        tokens.canvas,
-        themeModule.fromRgb565(toRgb565(edgeTxRoles[COLOR_THEME_SECONDARY1])),
-        "the canvas is not the radio's own COLOR_THEME_SECONDARY1"
-    )
-    assertEqual(
-        tokens.text,
-        themeModule.fromRgb565(toRgb565(edgeTxRoles[COLOR_THEME_PRIMARY2])),
-        "body text is not the radio's own COLOR_THEME_PRIMARY2"
-    )
-
-    -- Critical red stays dashboard-owned so alarms remain recognizable.
-    assertEqual(tokens.critical, modern.critical)
-    -- Contrast correction must keep body text readable on the derived surface.
-    assert(themeModule.contrast(tokens.surface, tokens.text) >= 4.5, "derived text failed contrast correction")
-
-    -- A panel has to be visible against the dashboard behind it. Canvas and
-    -- surface derive from the same EdgeTX role, so without the legibility pass
-    -- separating them they are the same colour and a panel has no edge at all.
-    --
-    -- The old assertion here was `contrast(surface, canvas) >= 1.0`, which is
-    -- a tautology: theme.contrast orders its arguments and returns
-    -- (lighter + 0.05) / (darker + 0.05), so it is at least 1 for any two
-    -- colours, including two identical ones. It could not fail for any
-    -- implementation of anything.
-    assert(
-        themeModule.contrast(tokens.surface, tokens.canvas) >= 1.08,
-        "a panel cannot be told apart from the dashboard behind it"
-    )
+    assertEqual(tokens.canvas, 0xE5EAF0)
+    assertEqual(tokens.surface, 0xFFFFFF)
+    assert(themeModule.contrast(tokens.surface, tokens.text) >= 4.5)
+    assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 end
 
 --- Custom mode accepts a small override set and rejects the rest.
@@ -4350,6 +4303,7 @@ local function testReadingsAreCentredOnTheirPanel()
         ["service-probe"] = { "      label: PROBE", "      service: telemetry" },
         ["heartbeat"] = { "      label: BEAT" },
         ["placeholder"] = { "      label: HOLD" },
+        ["theme-showcase"] = {},
     }
 
     local types = {}
@@ -4812,6 +4766,7 @@ panels:
         ["navigation"] = { "      label: Probe", "      source: GPS" },
         ["heartbeat"] = { "      label: Probe" },
         ["placeholder"] = { "      label: Probe" },
+        ["theme-showcase"] = {},
     }
 
     -- Read from both panel directories rather than listed here. A hand-kept
@@ -4913,18 +4868,20 @@ end
 
 --- The host adapting as designed must not be reported as a failure.
 ---
---- The legibility pass corrects derived palettes by design, and every
+--- The legibility pass corrects custom palettes by design, and every
 --- correction used to be promoted to an error. Now that the overlay is
 --- actually visible, that would leave a permanent banner on the screen of
---- every radio running the EdgeTX or Custom theme, announcing that the
+--- every radio running the Custom theme, announcing that the
 --- dashboard had done its job.
 local function testNoticesAreNotErrors()
-    local derived = makeWidget(
-        "derived-theme",
+    local custom = makeWidget(
+        "custom-theme",
         [[
 version: 1
 theme:
-  mode: edgetx
+  mode: custom
+  overrides:
+    surface: 0xFFFFFF
 grid:
   columns: 4
   rows: 4
@@ -4962,8 +4919,8 @@ return exploder
     )
 
     resetRadio()
-    local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, derived)
-    assertEqual(context.theme.mode, "edgetx")
+    local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, custom)
+    assertEqual(context.theme.mode, "custom")
 
     -- The deliberately light mock roles guarantee the legibility pass engages,
     -- so a test that saw no notices would not be testing anything.
@@ -4978,7 +4935,7 @@ return exploder
             corrected = true
         end
     end
-    assert(corrected, "no contrast correction was recorded on a derived palette")
+    assert(corrected, "no contrast correction was recorded on a custom palette")
     assertEqual(
         #context.errors,
         0,
@@ -11135,7 +11092,7 @@ panels:
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 end
 
-testEdgeTxTheme()
+testLayoutSelectsLightTheme()
 testCustomTheme()
 testRadialReflow()
 testRadialDoesNotDrift()

@@ -12,6 +12,7 @@ import zlib
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "build/editor-capture"
 SCENES = ("overview", "settings", "text-settings", "metric-entry", "exit", "save-as")
+THEME_SCENES = ("theme-modern", "theme-modern-light", "theme-custom")
 SETUP_SCENES = {
     "screen-menu": [(500, 20, 20, 1), (520, 20, 20, 0)],
     "screens": [(500, 20, 20, 1), (520, 20, 20, 0),
@@ -116,18 +117,32 @@ screenData:
                      1:
                         type: Unsigned
                         value:
-                           unsignedValue: 1
-""")
+                           unsignedValue: THEME
+""".replace("THEME", "2" if scene == "theme-modern-light" else "1"))
     if scene in SETUP_SCENES:
         # Show only the layouts included in the installation ZIP, not the
         # development fixture's review and diagnostic screens.
         for layout in (sd / "WIDGETS/AeroGrid/layouts").glob("*.yaml"):
-            if layout.stem not in ("Empty", "Default", "Host"):
+            if layout.stem not in ("Empty", "Default", "Host", "Theme"):
                 layout.unlink()
-        (sd / "AEROGRID/registry.txt").write_text("Empty\nDefault\nHost\n")
+        (sd / "AEROGRID/registry.txt").write_text("Empty\nDefault\nHost\nTheme\n")
         (sd / "capture-ready.txt").write_text("native setup capture")
         return
-    layout = TEXT_LAYOUT if scene == "text-settings" else LAYOUT
+    if scene in THEME_SCENES:
+        layout = (ROOT / "src/WIDGETS/AeroGrid/layouts/Theme.yaml").read_text()
+        mode = scene.removeprefix("theme-")
+        if mode == "custom":
+            layout += """
+theme:
+  mode: custom
+  overrides:
+    canvas: 0x101820
+    surface: 0x304050
+    text: 0xFFF4DF
+    accent: green
+"""
+    else:
+        layout = TEXT_LAYOUT if scene == "text-settings" else LAYOUT
     if scene == "settings":
         layout = layout.replace("        - source: gvar1\n          label: Reading", """        - source: Alt
           label: Altitude
@@ -141,6 +156,22 @@ screenData:
     needle = "    refresh = refresh,"
     if source.count(needle) != 1:
         raise RuntimeError("Widget refresh export changed; update capture instrumentation.")
+    if scene in THEME_SCENES:
+        source = source.replace(needle, """
+    refresh = function(context, widgetEvent, touchState)
+        refresh(context, widgetEvent, touchState)
+        if #context.errors > 0 then error(table.concat(context.errors, "\\n")) end
+        if not isFullScreen() or context.stage or context.reloadState or context.captureReady then return end
+        assert(#context.panels == 1 and context.panels[1].instance, "theme showcase not loaded")
+        assert(context.theme.mode == "EXPECTED", "unexpected showcase theme")
+        local file = assert(io.open("/capture-ready.txt", "w"))
+        io.write(file, "production theme showcase ready")
+        io.close(file)
+        context.captureReady = true
+    end,
+""".replace("EXPECTED", mode))
+        main.write_text(source)
+        return
     # Only the isolated copy is instrumented. Fullscreen is entered with a real
     # simulator long-press; these commands open the production editor/dialogs.
     source = source.replace(needle, """
@@ -202,7 +233,7 @@ def write_png(path, frame):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--companion", type=Path, default=Path("/Applications/EdgeTX Companion 2.12.app"))
-    parser.add_argument("--scene", choices=SCENES + tuple(SETUP_SCENES))
+    parser.add_argument("--scene", choices=SCENES + tuple(SETUP_SCENES) + THEME_SCENES)
     args = parser.parse_args()
     library = args.companion / "Contents/Resources/libedgetx-tx16s-simulator.dylib"
     if not library.is_file():
@@ -255,7 +286,7 @@ def main():
             for path in sorted((ROOT / "src/WIDGETS/AeroGrid").rglob("*"))
             if path.is_file()
         },
-        "method": "Native TX16S framebuffer; isolated sample layout and editor command automation.",
+        "method": "Native TX16S framebuffer; isolated sample layouts and editor command automation.",
         "scenes": (args.scene,) if args.scene else SCENES + tuple(SETUP_SCENES),
     }, indent=2) + "\n")
 

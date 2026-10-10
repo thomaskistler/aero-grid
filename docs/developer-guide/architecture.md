@@ -11,7 +11,7 @@ EdgeTX widgets.
 | --- | --- |
 | `src/WIDGETS/AeroGrid/main.lua` | EdgeTX entry point, staged loading, scheduling, reload/reflow, and editor activation. |
 | `src/WIDGETS/AeroGrid/lib/` | Layout parsing/storage, grid geometry, panel hosting, shared services, rendering primitives, themes, and editor modules. |
-| `src/WIDGETS/AeroGrid/panels/` | Eleven user-facing panel types plus `host-diagnostics` and `service-probe`. |
+| `src/WIDGETS/AeroGrid/panels/` | Eleven user-facing panel types plus `host-diagnostics`, `service-probe`, and the fixed-data `theme-showcase`. |
 | `src/WIDGETS/AeroGrid/layouts/` | Shipped layouts and development/review dashboards. |
 | `src/WIDGETS/AeroGrid/assets/` | Runtime editor icon and its license. |
 | `tests/unit/` | Focused module and panel tests. |

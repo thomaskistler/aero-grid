@@ -54,8 +54,66 @@ local function testContrastIsCalculated()
     assert(ratio >= 4.5, "text contrast should remain readable")
 end
 
+local function testModernLightTheme()
+    local resolved = theme.build("modern-light")
+    local tokens = resolved.rgb
+    assertions.assertEqual(resolved.mode, "modern-light")
+    assertions.assertEqual(tokens.canvas, 0xE5EAF0)
+    assertions.assertEqual(tokens.surface, 0xFFFFFF)
+    assertions.assertEqual(tokens.text, 0x17212B)
+    assertions.assertEqual(tokens.critical, 0xC92D2D)
+    assertions.assertEqual(#resolved.warnings, 0)
+    assertions.assertEqual(#resolved.notices, 0, "designed light palette must not need correction or lose its tints")
+    assert(theme.contrast(tokens.canvas, tokens.surface) >= 1.15)
+    assert(theme.contrast(tokens.surface, tokens.surfaceRaised) >= 1.15)
+    assert(theme.contrast(tokens.surface, tokens.track) >= 1.35)
+    assertions.assertEqual(tokens.textMuted, 0x263642)
+    assertions.assertEqual(tokens.textFaint, 0x3A4B58)
+    assertions.assertEqual(resolved.alertRgb.warning, 0xFFF3D8)
+    assertions.assertEqual(resolved.alertRgb.critical, 0xFAD0D0)
+    assertions.assertEqual(resolved.alertRgb.active, 0xD0DEF5)
+    for key, minimum in pairs({
+        text = 4.5,
+        textMuted = 3.0,
+        textFaint = 1.8,
+        cyan = 2.5,
+        green = 2.5,
+        amber = 2.5,
+        orange = 2.5,
+        blue = 2.5,
+        critical = 2.5,
+    }) do
+        assert(theme.contrast(tokens.surface, tokens[key]) >= minimum, key .. " fails light surface contrast")
+    end
+    -- The TX16S framebuffer quantizes colors; check the pixels, not only RGB24.
+    local function quantized(rgb)
+        local r = math.floor(rgb / 65536) % 256
+        local g = math.floor(rgb / 256) % 256
+        local b = rgb % 256
+        return theme.fromRgb565(math.floor(r / 8) * 2048 + math.floor(g / 4) * 32 + math.floor(b / 8))
+    end
+    for name, accent in pairs({ warning = "amber", critical = "critical", active = "blue" }) do
+        local tint = assert(resolved.alertRgb[name], name .. " needs a distinct light tint")
+        for _, convert in ipairs({
+            function(v)
+                return v
+            end,
+            quantized,
+        }) do
+            local surface = convert(tint)
+            assert(theme.contrast(convert(tokens.surface), surface) >= 1.08, name .. " tint is too subtle")
+            assert(theme.contrast(convert(tokens.canvas), surface) >= 1.08, name .. " tint disappears into canvas")
+            assert(theme.contrast(convert(tokens.text), surface) >= 4.5)
+            assert(theme.contrast(convert(tokens.textMuted), surface) >= 3.0)
+            assert(theme.contrast(convert(tokens.textFaint), surface) >= 1.8)
+            assert(theme.contrast(convert(tokens[accent]), surface) >= 2.5, name .. " badge loses contrast")
+        end
+    end
+end
+
 local function run()
     testModernThemeBuilds()
+    testModernLightTheme()
     testContrastIsCalculated()
     local resolved = theme.build("modern")
     local fonts = { label = SMLSIZE, badge = SMLSIZE }

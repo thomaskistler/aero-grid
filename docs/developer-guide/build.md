@@ -120,7 +120,7 @@ make release-package
 
 This writes `AeroGrid-<version>.zip` and its `.sha256` file to `build/release/`,
 using the version in `src/WIDGETS/AeroGrid/lib/package.lua`. The archive contains
-runtime Lua, the editor assets, the `Default`, `Empty`, and `Host` layouts, and
+runtime Lua, the editor assets, the `Default`, `Empty`, `Host`, and `Theme` layouts, and
 the license. Review layouts, fixture models, simulator state, and bytecode are
 not included.
 

@@ -371,7 +371,7 @@ end
 
 --- Every panel's settings schema, read as one catalogue.
 --- The vocabulary rules are properties of the set, not of any one panel,
---- so they are checked over the set. Thirteen modules written to the same
+--- so they are checked over the set. Modules written to the same
 --- contract by different sessions is exactly the situation in which each is
 --- individually defensible and the collection is not.
 --- Read from disk rather than listed here. A hand-kept list would leave a
@@ -444,12 +444,13 @@ end
 local function testSettingsVocabulary()
     local catalog = settingsCatalog()
     local kinds = panelTypes()
-    -- Thirteen panels ship, two of them diagnostic. `heartbeat` and
+    -- Fourteen panels ship: eleven instruments, two diagnostics, and the
+    -- fixed theme showcase. `heartbeat` and
     -- `placeholder` were built to prove
     -- the host contract and are fixtures under `tests/fixtures/panels`, so
     -- they are not read here: the vocabulary rules below are about what a
     -- person configures on a radio.
-    assertEqual(#kinds, 13, "the catalogue changed size; the spec names thirteen")
+    assertEqual(#kinds, 14, "the catalogue changed size; expected eleven instruments and three utility panels")
 
     for kind, settings in pairs(catalog) do
         local declared = {}
@@ -762,6 +763,17 @@ local UNDOCUMENTED = {
 local function testPanelDocumentationLoads()
     local kinds = panelTypes()
     assert(#kinds > 0, "no panels were found to document")
+    -- The utility is documented as a dashboard, not an instrument reference.
+    for index = #kinds, 1, -1 do
+        if kinds[index] == "theme-showcase" then
+            local handle = assert(io.open(root .. "/docs/user-guide/dashboards.md", "r"))
+            local page = handle:read("*a")
+            handle:close()
+            assert(string.find(page, "### Preview and experiment with colors", 1, true))
+            assert(string.find(page, "/WIDGETS/AeroGrid/layouts/Theme.yaml", 1, true))
+            table.remove(kinds, index)
+        end
+    end
 
     local known = {}
     for _, kind in ipairs(kinds) do
@@ -1432,6 +1444,7 @@ local function testRenderConsultsWhatIsShown()
         ["host-diagnostics"] = true,
         ["service-probe"] = true,
         ["flight-counter"] = true,
+        ["theme-showcase"] = true,
     }
 
     local checked, exempt = 0, 0
@@ -1609,137 +1622,12 @@ local function testModernTheme()
     )
 end
 
---- EdgeTX mode derives tokens, corrects contrast, and keeps critical red.
-local function testEdgeTxTheme()
-    local roles = {
-        primary1 = 1,
-        primary2 = 2,
-        primary3 = 3,
-        secondary1 = 4,
-        secondary2 = 5,
-        secondary3 = 6,
-        focus = 7,
-        edit = 8,
-        active = 9,
-        warning = 10,
-        disabled = 11,
-    }
-    -- A pale EdgeTX theme whose own muted and faint colors would be unreadable
-    -- for us. `secondary1` is deliberately dark enough that the legibility pass
-    -- has no reason to move the canvas: the assertion below is the regression
-    -- test for the flag-word decode, and it can only say the radio's colour
-    -- survived if nothing legitimately moved it afterwards. The correction path
-    -- is exercised by the hostile palette further down, which is its own test.
-    local values = {
-        [1] = 0x000000,
-        [2] = 0xF0F0F0,
-        [3] = 0x9E9E9E,
-        [4] = 0x142838,
-        [5] = 0x3F7CA8,
-        [6] = 0xC8D8E4,
-        [7] = 0x1E88E5,
-        [8] = 0xFF8F00,
-        [9] = 0x43A047,
-        [10] = 0xF9A825,
-        [11] = 0x757575,
-    }
-
-    -- `lcd.getColor` returns an LcdFlags word: the colour sits in the upper
-    -- half with RGB_FLAG set in the lower. Handing back a bare RGB565 is the
-    -- shape the firmware never produces. Both sides share one encoder, so
-    -- neither can be corrected without the other.
-    local asFlags = toLcdFlags
-
-    local resolved = theme.build("edgetx", nil, {
-        roles = roles,
-        getColor = function(role)
-            return asFlags(values[role])
-        end,
-    })
-
-    assertEqual(resolved.mode, "edgetx")
-
-    -- The canvas has to be the radio's own colour, not merely different from
-    -- Modern's. Reading the low half of the flag word `lcd.getColor` returns
-    -- yielded red 16, green 0, blue 0 for every role of every theme: a value
-    -- that satisfies "was it derived?" while being wrong for all of them, and
-    -- which drew every panel dark red on a radio while this suite stayed green.
-    assertEqual(
-        resolved.rgb.canvas,
-        theme.fromRgb565(toRgb565(values[4])),
-        "the radio's own colour did not survive being read"
-    )
-    assertEqual(
-        resolved.rgb.text,
-        theme.fromRgb565(toRgb565(values[2])),
-        "the radio's own colour did not survive being read"
-    )
-    assertEqual(resolved.rgb.critical, theme.modern().critical)
-    assert(theme.contrast(resolved.rgb.surface, resolved.rgb.text) >= 4.5, "derived text is unreadable")
-    -- A derived palette has to be elevated to the same degree Modern is, not
-    -- merely to two colours that are not identical. `> 1` is satisfied by any
-    -- pair at all, and a derived palette sitting at the old 1.10 floor looked
-    -- flat next to Modern on the same radio one page apart.
-    assert(theme.contrast(resolved.rgb.surface, resolved.rgb.surfaceRaised) >= 1.20, "surfaces were not separated")
-    assert(
-        theme.contrast(resolved.rgb.canvas, resolved.rgb.surface) >= 1.30,
-        "a derived palette is flatter than Modern"
-    )
-
-    -- Correcting a token for contrast is the legibility pass working, so it is
-    -- a notice rather than a warning. Reporting it as a failure would put a
-    -- permanent banner on every radio running a derived palette.
-    assertEqual(#resolved.warnings, 0, "a derived palette reported its own legibility pass as a problem")
-
-    -- Structure follows the radio; meaning does not. EdgeTX's roles are menu
-    -- chrome and their names do not describe their colours: the shipped theme
-    -- has a yellow ACTIVE, a green EDIT and a red WARNING. Mapping accents onto
-    -- them by name rendered a warning in a red indistinguishable from critical,
-    -- and drew healthy panels in yellow.
-    local modern = theme.modern()
-    for _, key in ipairs({ "cyan", "green", "amber", "orange", "critical" }) do
-        assertEqual(resolved.rgb[key], modern[key], key .. " was taken from the radio instead of keeping its meaning")
-    end
-
-    -- A theme that genuinely needs correcting still records it, so the guard
-    -- that the legibility pass does something is kept rather than weakened: a
-    -- surface this close to the accents leaves them unreadable untouched.
-    local hostile = theme.build("edgetx", nil, {
-        roles = roles,
-        getColor = function(role)
-            if role == 4 then
-                return asFlags(0x70D6F3)
-            end
-            return asFlags(values[role])
-        end,
-    })
-    assertEqual(#hostile.warnings, 0, "a derived palette reported its own legibility pass as a problem")
-    assert(#hostile.notices > 0, "the legibility pass recorded nothing at all")
-    for _, notice in ipairs(hostile.notices) do
-        assertEqual(notice.severity, "info", notice.text)
-    end
-
-    -- A radio without color support falls back. Still not a failure, but the
-    -- radio declined to answer, which is worth more than a contrast nudge.
-    local missing = theme.build("edgetx", nil, { getColor = false })
-    assertEqual(missing.rgb.canvas, theme.modern().canvas)
-    assertEqual(#missing.warnings, 0)
-    assertEqual(missing.notices[1].severity, "warning")
-    assert(string.match(missing.notices[1].text, "unavailable"), missing.notices[1].text)
-
-    -- Unreadable roles also fall back rather than producing an invisible theme.
-    local broken = theme.build("edgetx", nil, {
-        roles = roles,
-        getColor = function()
-            error("no colors", 0)
-        end,
-    })
-    assertEqual(broken.rgb.canvas, theme.modern().canvas)
-    local brokenText = {}
-    for index, notice in ipairs(broken.notices) do
-        brokenText[index] = notice.text
-    end
-    assert(string.match(table.concat(brokenText, "\n"), "unreadable"))
+--- A retired mode is rejected rather than silently deriving radio colors.
+local function testRetiredTheme()
+    local resolved = theme.build("edgetx")
+    assertEqual(resolved.mode, "modern")
+    assertEqual(#resolved.warnings, 1)
+    assertEqual(resolved.warnings[1], "unknown theme mode edgetx")
 end
 
 --- Custom mode accepts only the documented override set.
@@ -2083,7 +1971,7 @@ local function testAlertTintGuarantees()
     end
 
     -- The shipped palettes, which must both produce a tint at all.
-    for _, mode in ipairs({ "modern", "edgetx" }) do
+    for _, mode in ipairs({ "modern", "custom" }) do
         local resolved = theme.build(mode)
         for _, state in ipairs({ "warning", "critical" }) do
             local accent = state == "warning" and resolved.rgb.amber or resolved.rgb.critical
@@ -2481,7 +2369,7 @@ testPanelDocumentationLoads()
 testLifecycleIsolation()
 testColorConversion()
 testModernTheme()
-testEdgeTxTheme()
+testRetiredTheme()
 testCustomTheme()
 testTypography()
 testStates()
@@ -3734,7 +3622,7 @@ local function testBatteryStaysVisible()
     end
 
     local checked, worst, where = 0, 99, ""
-    for _, mode in ipairs({ "modern", "edgetx" }) do
+    for _, mode in ipairs({ "modern", "modern-light" }) do
         local resolved = theme.build(mode)
         for _, state in ipairs({ "normal", "warning", "critical", "stale", "unavailable" }) do
             local backdrop = primitives.batteryBackdropRgb(resolved, state)

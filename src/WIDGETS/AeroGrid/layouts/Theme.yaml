@@ -1,0 +1,22 @@
+version: 1
+
+# Fixed visual samples, not flight data. Follows the widget's Theme option.
+# To experiment, copy this layout under a new name and add:
+# theme:
+#   mode: custom
+#   overrides:
+#     canvas: 0x0A0C0E
+#     surface: 0x212830
+#     text: 0xF4F6F7
+#     accent: green
+
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: showcase
+    type: theme-showcase
+    col: 0
+    row: 0
+    colSpan: 4
+    rowSpan: 4

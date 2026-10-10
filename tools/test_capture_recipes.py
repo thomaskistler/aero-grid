@@ -11,6 +11,22 @@ from capture_recipes import (PANELS, RECIPE_DIR, configure_model, config_yaml,
 
 
 class CaptureRecipeTests(unittest.TestCase):
+    def test_modern_light_capture_uses_native_choice_two(self):
+        spec = importlib.util.spec_from_file_location("capture_panels", Path(__file__).with_name("capture-panels.py"))
+        capture = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(capture)
+        recipe = load_recipe(RECIPE_DIR / "metric.yaml")
+        recipe["theme"] = "modern-light"
+        recipe = self.load(recipe)
+        with tempfile.TemporaryDirectory() as directory:
+            sd = Path(directory) / "sdcard"
+            capture.prepare(sd, recipe)
+            layout = yaml.safe_load((sd / "WIDGETS/AeroGrid/layouts/capture-panels.yaml").read_text())
+            self.assertEqual(layout["theme"]["mode"], "modern-light")
+            model = yaml.safe_load((sd / "MODELS/model1.yml").read_text())
+            options = model["screenData"][0]["layoutData"]["zones"][0]["widgetData"]["options"]
+            self.assertEqual(options[1]["value"]["unsignedValue"], 2)
+
     def test_old_recipe_field_is_rejected(self):
         recipe = load_recipe(RECIPE_DIR / "flight-timer.yaml")
         recipe["component"] = recipe.pop("panel")
