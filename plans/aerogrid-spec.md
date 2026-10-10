@@ -557,10 +557,6 @@ local theme = {
 }
 ```
 
-Muted and faint text were brightened after outdoor radio review showed headings
-and supporting details losing readability under glare. Size and placement carry
-more of the hierarchy; primary text and backgrounds are unchanged.
-
 Panels may select a semantic accent, but the dashboard should not become a rainbow of unrelated panel colors. Warning and freshness states override decorative accents.
 
 ### Panel anatomy
