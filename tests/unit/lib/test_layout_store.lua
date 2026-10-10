@@ -5,6 +5,8 @@ local root = (... and ... ~= "" and ...) or "."
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local layoutStore = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/layout_store.lua"))()
 local registry = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/layout_registry.lua"))()
+local nameRegistry = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/name_registry.lua"))()
+local themeRegistry = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/theme_registry.lua"))()
 
 --- User layouts live beside WIDGETS/, so a widget update leaves them alone.
 local function testUserLayoutPath()
@@ -78,7 +80,7 @@ end
 
 --- A fake card: `files` maps paths to content, `folders` lists dir() results.
 local function fakeCard(files, folders)
-    local ops = {}
+    local ops = { nameRegistry = nameRegistry }
     ops.stat = function(filename)
         if files[filename] then
             return { size = #files[filename] }
@@ -143,7 +145,7 @@ local function testRegistryIsAppendOnly()
 end
 
 local function testRegistryWithoutFileApi()
-    local names = registry.load("/", "/WIDGETS/AeroGrid/", {})
+    local names = registry.load("/", "/WIDGETS/AeroGrid/", { nameRegistry = nameRegistry })
     assertions.assertEqual(table.concat(names, ","), "Empty")
 end
 
@@ -158,6 +160,25 @@ local function testBuiltinNamesKeepPositions()
     assertions.assertEqual(files["/AEROGRID/registry.txt"], "Empty\nSonic1\nDefault\nHost\n")
 end
 
+local function testThemeRegistryKeepsPositionsAndAddsNames()
+    local files = {}
+    local folders = {
+        ["/WIDGETS/AeroGrid/themes"] = { "modern-light.yml", "modern-dark.yml" },
+        ["/AEROGRID/themes"] = { "modern-dark.yml", "custom-night.yml", "ignored.yaml" },
+    }
+    local ops = fakeCard(files, folders)
+    local names = themeRegistry.load("/WIDGETS/AeroGrid/", ops)
+    assertions.assertEqual(table.concat(names, ","), "modern-dark,modern-light,custom-night")
+    assertions.assertEqual(files["/AEROGRID/theme-registry.txt"], "modern-dark\nmodern-light\ncustom-night\n")
+    local userPath, shippedPath = themeRegistry.paths("/WIDGETS/AeroGrid/", "modern-dark")
+    assertions.assertEqual(userPath, "/AEROGRID/themes/modern-dark.yml")
+    assertions.assertEqual(shippedPath, "/WIDGETS/AeroGrid/themes/modern-dark.yml")
+
+    folders["/WIDGETS/AeroGrid/themes"] = { "modern-dark.yml", "modern-light.yml", "sunrise.yml" }
+    names = themeRegistry.load("/WIDGETS/AeroGrid/", ops)
+    assertions.assertEqual(table.concat(names, ","), "modern-dark,modern-light,custom-night,sunrise")
+end
+
 local function run()
     testUserLayoutPath()
     testValidName()
@@ -166,6 +187,7 @@ local function run()
     testRegistryIsAppendOnly()
     testRegistryWithoutFileApi()
     testBuiltinNamesKeepPositions()
+    testThemeRegistryKeepsPositionsAndAddsNames()
 end
 
 run()

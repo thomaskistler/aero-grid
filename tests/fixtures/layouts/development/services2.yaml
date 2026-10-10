@@ -10,9 +10,6 @@ version: 1
 # service uses to decide where one flight ends and the next begins; leave it
 # out to track one open-ended session instead.
 
-theme:
-  mode: modern
-
 grid:
   columns: 4
   rows: 4

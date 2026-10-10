@@ -4,6 +4,7 @@ local root = (... and ... ~= "" and ...) or "."
 
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local edgetx = assert(loadfile(root .. "/tests/support/edgetx.lua"))()
+local yaml = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/yaml.lua"))()
 edgetx.constants()
 _G.lcd = {
     RGB = function(value)
@@ -11,9 +12,48 @@ _G.lcd = {
     end,
 }
 local theme = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/theme.lua"))()
+local themes = assert(loadfile(root .. "/tests/support/theme_catalog.lua"))()(root, yaml)
+assert(theme.setCatalog(themes))
+local customIndex = 0
+
+local function buildCustomTheme(overrides)
+    customIndex = customIndex + 1
+    local base = themes.themes[1]
+    local definition = {
+        version = 1,
+        name = "theme-test-" .. customIndex,
+        label = "Theme Test " .. customIndex,
+        accent = "cyan",
+        colors = {},
+        spacing = {},
+    }
+    for key, value in pairs(base.colors) do
+        definition.colors[key] = value
+    end
+    for key, value in pairs(base.spacing) do
+        definition.spacing[key] = value
+    end
+    for key, value in pairs(overrides) do
+        definition.colors[key] = value
+    end
+    themes.themes[#themes.themes + 1] = definition
+    assert(theme.setCatalog(themes))
+    return theme.build(definition.name)
+end
+
+local function testThemeVersionIsRequiredAndSupported()
+    local document = assert(yaml.parse(assert(yaml.serialize(themes))))
+    document.themes[1].version = nil
+    local validated, err = theme.validateCatalog(document)
+    assert(not validated and string.find(err, "modern-dark must have version 1", 1, true))
+
+    document.themes[1].version = 2
+    validated, err = theme.validateCatalog(document)
+    assert(not validated and string.find(err, "modern-dark must have version 1", 1, true))
+end
 
 local function testModernThemeBuilds()
-    local resolved = theme.build("modern")
+    local resolved = theme.build("modern-dark")
     assertions.assertEqual(resolved.rgb.text, 0xF4F6F7)
     assertions.assertEqual(resolved.rgb.textMuted, 0xDCE2E6)
     assertions.assertEqual(resolved.rgb.textFaint, 0xC4CDD3)
@@ -30,12 +70,12 @@ local function testModernThemeBuilds()
     local frame = theme.frame(resolved, { w = 117, h = 134 }, { label = SMLSIZE, badge = SMLSIZE }, nil, "IN-FLIGHT")
     assert(frame.badgeWidth >= theme.measureText(SMLSIZE, "IN-FLIGHT"))
     assert(frame.labelHidden or frame.labelX + frame.labelWidth < frame.badgeX)
-    for _, overrides in ipairs({
+    for _, colors in ipairs({
         { surface = 0xFFFFFF },
         { surface = 0x000000 },
         { surface = 0x205090 },
     }) do
-        local derived = theme.build("custom", overrides)
+        local derived = buildCustomTheme(colors)
         local surface = derived.alertRgb.active
         if surface then
             assert(theme.contrast(derived.rgb.text, surface) >= 4.5)
@@ -43,13 +83,13 @@ local function testModernThemeBuilds()
             assert(theme.contrast(derived.rgb.blue, surface) >= 2.5)
         end
     end
-    assertions.assertEqual(resolved.mode, "modern")
+    assertions.assertEqual(resolved.mode, "modern-dark")
     assertions.assertTableHasKey(resolved.color, "surface", "theme.result should expose a surface color")
     assertions.assertEqual(type(resolved.warnings), "table")
 end
 
 local function testContrastIsCalculated()
-    local modern = theme.build("modern")
+    local modern = theme.build("modern-dark")
     local ratio = theme.contrast(modern.color.text, modern.color.surface)
     assert(ratio >= 4.5, "text contrast should remain readable")
 end
@@ -112,10 +152,11 @@ local function testModernLightTheme()
 end
 
 local function run()
+    testThemeVersionIsRequiredAndSupported()
     testModernThemeBuilds()
     testModernLightTheme()
     testContrastIsCalculated()
-    local resolved = theme.build("modern")
+    local resolved = theme.build("modern-dark")
     local fonts = { label = SMLSIZE, badge = SMLSIZE }
     for span = 1, 4 do
         local rect = { w = 117 * span, h = 65 }

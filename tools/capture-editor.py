@@ -12,7 +12,7 @@ import zlib
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "build/editor-capture"
 SCENES = ("overview", "settings", "text-settings", "metric-entry", "exit", "save-as")
-THEME_SCENES = ("theme-modern", "theme-modern-light", "theme-custom")
+THEME_SCENES = ("theme-modern-dark", "theme-modern-light", "theme-custom")
 SETUP_SCENES = {
     "screen-menu": [(500, 20, 20, 1), (520, 20, 20, 0)],
     "screens": [(500, 20, 20, 1), (520, 20, 20, 0),
@@ -94,6 +94,11 @@ panels:
 def prepare(sd, scene):
     shutil.copytree(ROOT / "tests/fixtures/sdcard", sd)
     shutil.copytree(ROOT / "src/WIDGETS/AeroGrid", sd / "WIDGETS/AeroGrid")
+    shutil.copytree(
+        ROOT / "tests/fixtures/layouts/development",
+        sd / "WIDGETS/AeroGrid/layouts",
+        dirs_exist_ok=True,
+    )
     # Keep capture scenes independent of the development model's extra screens.
     (sd / "MODELS/model1.yml").write_text("""semver: 3.0.0
 header:
@@ -118,7 +123,7 @@ screenData:
                         type: Unsigned
                         value:
                            unsignedValue: THEME
-""".replace("THEME", "2" if scene == "theme-modern-light" else "1"))
+""".replace("THEME", {"theme-modern-light": "2", "theme-custom": "3"}.get(scene, "1")))
     if scene in SETUP_SCENES:
         # Show only the layouts included in the installation ZIP, not the
         # development fixture's review and diagnostic screens.
@@ -132,15 +137,19 @@ screenData:
         layout = (ROOT / "src/WIDGETS/AeroGrid/layouts/Theme.yaml").read_text()
         mode = scene.removeprefix("theme-")
         if mode == "custom":
-            layout += """
-theme:
-  mode: custom
-  overrides:
-    canvas: 0x101820
-    surface: 0x304050
-    text: 0xFFF4DF
-    accent: green
-"""
+            source = sd / "WIDGETS/AeroGrid/themes/modern-dark.yml"
+            custom = source.read_text()
+            custom = custom.replace("name: modern-dark\n", "name: custom\n", 1)
+            custom = custom.replace("label: Modern Dark\n", "label: Custom\n", 1)
+            custom = custom.replace("accent: cyan\n", "accent: green\n", 1)
+            custom = custom.replace("correctForContrast: false\n", "correctForContrast: true\n", 1)
+            custom = custom.replace("canvas: 0x0A0C0E", "canvas: 0x101820", 1)
+            custom = custom.replace("surface: 0x212830", "surface: 0x304050", 1)
+            custom = custom.replace("text: 0xF4F6F7", "text: 0xFFF4DF", 1)
+            user_themes = sd / "AEROGRID/themes"
+            user_themes.mkdir(parents=True, exist_ok=True)
+            (user_themes / "custom.yml").write_text(custom)
+            (sd / "AEROGRID/theme-registry.txt").write_text("modern-dark\nmodern-light\ncustom\n")
     else:
         layout = TEXT_LAYOUT if scene == "text-settings" else LAYOUT
     if scene == "settings":

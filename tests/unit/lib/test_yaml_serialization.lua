@@ -22,7 +22,6 @@ local function testRoundTrip()
     local source = {
         version = 1,
         grid = { columns = 4, rows = 4 },
-        theme = { mode = "follow-edgeTX", overrides = {} },
         panels = {
             {
                 id = "first",

@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+# Theme schema version. Increment only when the theme file format changes.
+version: 1
+# Theme identifier; must match this file's name without the .yml extension.
+name: modern-dark
+# Human-readable name shown in the radio's Theme picker.
+label: Modern Dark
+# Default panel accent when a panel does not select a semantic accent itself.
+accent: cyan
+# Skip automatic contrast correction of palette color tokens.
+correctForContrast: false
+colors:
+  # Widget background behind all panels.
+  canvas: 0x0A0C0E
+  # Default panel background.
+  surface: 0x212830
+  # Raised panel details and elevated controls.
+  surfaceRaised: 0x2E3841
+  # Panel outlines and borders.
+  border: 0x3A434B
+  # Unfilled tracks behind bars and other meters.
+  track: 0x545F6A
+  # Primary readings and prominent text.
+  text: 0xF4F6F7
+  # Secondary labels and supporting text.
+  textMuted: 0xDCE2E6
+  # Tertiary or low-priority text.
+  textFaint: 0xC4CDD3
+  # Cyan semantic accent.
+  cyan: 0x70D6F3
+  # Blue accent used for active-flight indication.
+  blue: 0x72AEFF
+  # Green semantic accent.
+  green: 0x55D990
+  # Amber semantic accent, including warning indication.
+  amber: 0xF2B84B
+  # Orange semantic accent.
+  orange: 0xFF762E
+  # Critical-state foreground accent.
+  critical: 0xF05252
+  # Active-flight panel background; optional, otherwise derived from blue.
+  activeBg: 0x365673
+spacing:
+  # Reserved spacing value; not currently used by the renderer.
+  outerMargin: 4
+  # Gap between samples in the Theme showcase.
+  gutter: 4
+  # Standard left inset for panel content.
+  padding: 8
+  # Left inset for short panels (less than 80 px high).
+  paddingTight: 8
+  # Right inset for panel content.
+  paddingRight: 4
+  # Vertical inset for compact content placement.
+  paddingCompact: 6
+  # Corner radius for rounded panels and shapes.
+  radius: 8
+  # Width of the panel's semantic accent stripe.
+  accentWidth: 4
+  # Reserved accent spacing value; not currently used by the renderer.
+  accentGap: 4
+  # Height of meter bars.
+  barHeight: 4
+  # Width of the outline shown around the selected panel.
+  borderFocus: 2

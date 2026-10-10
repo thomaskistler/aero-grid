@@ -126,7 +126,9 @@ radio's model-selection UI, just as on a radio.
 | **AEROGRID PANEL1** (`model2.yml`) | Six screens: cell battery, flight counter, flight mode, flight timer, link status, and metric. |
 | **AEROGRID PANEL2** (`model3.yml`) | Five screens: model identity, navigation, text, trim panel, and TX battery. |
 
-Review layouts live in `src/WIDGETS/AeroGrid/layouts/review-*.yaml`.
+Review and simulator-only layouts live in
+`tests/fixtures/layouts/development/`; `make build` adds them to the disposable
+simulator image without including them in the widget source or release ZIP.
 The two panel models contain exactly one dashboard per user-facing panel type.
 All screens use App mode and the Modern Dark theme. On the text dashboard, SF
 changes MODE, SA changes RATE, and SB changes FLAP; NO MIDDLE deliberately
@@ -134,16 +136,18 @@ leaves SA's middle position unmapped.
 
 The last screen of **AEROGRID STD** is a telemetry-free theme showcase. Its
 fixed samples show token swatches, text levels, accents, a dial, bars, and
-the six dashboard panel states. Change the widget's Theme option to compare Modern Dark
-and Modern Light, or copy the layout and add
-[custom YAML overrides](../user-guide/dashboards.md#create-your-own-theme).
+the six dashboard panel states. Change the widget's Theme option to compare
+Modern Dark and Modern Light, or add a `.yml` theme file as described in
+[Customize themes](../user-guide/dashboards.md#customize-themes).
 
 **Host** reports loading, package identity, and service errors; `services`
 and `services2` exercise the service-probe panel across all five services.
-Auxiliary layouts (`sim`, `sim2`, `states`, and `review-cell-sources`) remain
-available through the widget's **Layout** option in UI Setup rather than
-occupying dedicated fixture screens. Development layouts are not included
-in the release ZIP.
+Auxiliary layouts (`sim`, `sim2`, `states`, and `review-cell-sources`) are
+available in the development simulator image through the widget's **Layout**
+option in UI Setup rather than occupying dedicated fixture screens.
+`sim` and `sim2` are complementary live-data dashboards: the first focuses on
+telemetry, while the second focuses on radio-local values and metric modes.
+Development layouts are not included in the release ZIP.
 
 The flight-counter review installs only one tracker. Arm with SF down, raise
 CH3 above 25%, and supply a live telemetry link; qualification and disarm

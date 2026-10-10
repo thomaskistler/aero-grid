@@ -1,6 +1,6 @@
 version: 1
 panel: text
-theme: modern
+theme: modern-dark
 border:
   pixels: 10
   rgb: [0, 0, 0]

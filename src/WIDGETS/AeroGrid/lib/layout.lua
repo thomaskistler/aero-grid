@@ -39,41 +39,6 @@ local function isSequence(value)
     return count == #value
 end
 
---- Validate the optional layout-level theme block.
---- Phase 1 has no editor, so the layout file is the only way to select a theme
---- mode or supply custom overrides.
----@param value any
----@param errors string[]
----@return table? theme
-local function validateTheme(value, errors)
-    if value == nil then
-        return nil
-    end
-    if type(value) ~= "table" then
-        errors[#errors + 1] = "theme must be a mapping"
-        return nil
-    end
-
-    local result = {}
-    if value.mode ~= nil then
-        if type(value.mode) ~= "string" then
-            errors[#errors + 1] = "theme mode must be a string"
-        else
-            result.mode = value.mode
-        end
-    end
-
-    if value.overrides ~= nil then
-        if type(value.overrides) ~= "table" then
-            errors[#errors + 1] = "theme overrides must be a mapping"
-        else
-            result.overrides = value.overrides
-        end
-    end
-
-    return result
-end
-
 --- Validate the optional layout-level flight session block.
 ---
 --- The arm switch bounds one flight, and a dashboard has one flight. It used
@@ -128,7 +93,9 @@ function layout.validateDocument(document)
     normalized.version = document.version
     normalized.grid = document.grid
     normalized.panels = {}
-    normalized.theme = validateTheme(document.theme, errors)
+    if document.theme ~= nil then
+        errors[#errors + 1] = "layout-level theme settings are no longer supported; choose a theme in widget settings"
+    end
     normalized.session = validateSession(document.session, errors)
 
     if document.version ~= 1 then

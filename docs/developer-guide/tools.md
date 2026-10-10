@@ -117,14 +117,15 @@ It also captures the telemetry-free **Theme** showcase with real production
 primitives. These scenes are opt-in and do not open the editor:
 
 ```sh
-python3 tools/capture-editor.py --scene theme-modern
+python3 tools/capture-editor.py --scene theme-modern-dark
 python3 tools/capture-editor.py --scene theme-modern-light
 python3 tools/capture-editor.py --scene theme-custom
 ```
 
 The custom scene uses a fixed blue-gray palette with warm text and green
-default accents. To experiment interactively, use the Theme layout and YAML
-overrides described in [Choose a theme](../user-guide/dashboards.md#choose-a-theme).
+default accents. To experiment interactively, add a `.yml` file in the user
+theme directory described
+in [Customize themes](../user-guide/dashboards.md#customize-themes).
 Panel recipes also accept `theme: modern-light` for checking individual
 instruments in the built-in light palette.
 

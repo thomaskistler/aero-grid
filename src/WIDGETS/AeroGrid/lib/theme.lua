@@ -21,7 +21,7 @@
 ---@field critical integer
 
 ---@class AeroGridTheme
----@field mode "modern"|"modern-light"|"custom"
+---@field mode string
 ---@field rgb AeroGridThemeTokens 24-bit values, kept for contrast math and tests.
 ---@field color table<string, integer> Display values produced by lcd.RGB.
 ---@field spacing table
@@ -30,6 +30,7 @@
 ---@field notices table[] `{severity, text}` records of the host adapting.
 
 local theme = { RUNTIME_API = 1 }
+local catalog = {}
 
 --- Badge column width per font, since typography varies by span.
 local badgeWidths = {}
@@ -50,95 +51,40 @@ function theme.notice(notices, severity, text)
     notices[#notices + 1] = { severity = severity, text = text }
 end
 
---- The designed instrument palette from the project specification.
----
---- Panels are defined by their fill against a darker screen, not by an
---- outline, so the separation between `canvas` and `surface` is the whole of
---- the dashboard's structure and has to be seen from arm's length. The
---- original pairing measured 1.122, which reads as one flat dark field with
---- faint boxes drawn on it. The elevation is now 1.316, reached from both
---- ends: the screen was deepened as well as the panel lifted, because
---- deepening costs nothing elsewhere while lifting the panel spends contrast
---- that every token measured against it has to give up.
----
---- `track` moved with the surface deliberately. It is read against the fill
---- drawn on top of it, and it would otherwise have fallen through the 2.0
---- floor the moment the panel was lifted.
-local MODERN = {
-    canvas = 0x0A0C0E,
-    surface = 0x212830,
-    surfaceRaised = 0x2E3841,
-    border = 0x3A434B,
-    track = 0x545F6A,
-    text = 0xF4F6F7,
-    textMuted = 0xDCE2E6,
-    textFaint = 0xC4CDD3,
-    cyan = 0x70D6F3,
-    blue = 0x72AEFF,
-    green = 0x55D990,
-    amber = 0xF2B84B,
-    orange = 0xFF762E,
-    critical = 0xF05252,
-}
-
---- Light instrument palette with darker accents for white panels.
-local MODERN_LIGHT = {
-    canvas = 0xE5EAF0,
-    surface = 0xFFFFFF,
-    surfaceRaised = 0xE5EAF0,
-    border = 0xB7C3D0,
-    track = 0xCED7E2,
-    text = 0x17212B,
-    textMuted = 0x263642,
-    textFaint = 0x3A4B58,
-    cyan = 0x167BA8,
-    blue = 0x2354C8,
-    green = 0x147642,
-    amber = 0xBC7800,
-    orange = 0xC65B12,
-    critical = 0xC92D2D,
-}
-
-theme.MODES = { modern = true, ["modern-light"] = true, custom = true }
+theme.MODES = {}
 
 --- Accent tokens a panel may legitimately select.
 --- Warning and freshness states override these, so `critical` is not selectable.
 theme.ACCENTS = { cyan = true, green = true, amber = true, orange = true }
 
---- Custom mode may only override this small set of global roles.
-theme.CUSTOM_KEYS = { canvas = true, surface = true, text = true, accent = true }
-
---- Shared spacing baseline at 480 x 272, subject to hardware verification.
----
---- The accent stripe is a rounded pill inset from the panel's top and bottom
---- rather than a full-height bar. A bar running the whole height meets the
---- panel's own rounded corners exactly where both are curving, and the two
---- radii fight: the stripe's square shoulder sits outside the corner arc. The
---- inset is the corner radius, which is where the panel's left edge becomes
---- straight, so the pill only ever runs alongside a straight edge.
-local SPACING = {
-    outerMargin = 4,
-    gutter = 4,
-    padding = 8,
-    --- Horizontal padding on a panel too short for the standard vertical rhythm.
-    --- It is not smaller than the standard padding, despite the name of the case
-    --- it serves: the accent stripe occupies the left edge, and content starting
-    --- at the stripe's own right edge reads as crowded against it. The floor is
-    --- `accentWidth + accentGap`, which a test pins at every span.
-    paddingTight = 8,
-    --- Right-hand margin. Deliberately smaller than the left padding: the left
-    --- exists to clear the accent, and the right has nothing to clear. Making
-    --- them equal spent four pixels of every panel on symmetry, which on a
-    --- single cell is the difference between a four-character header label and
-    --- a three-character one.
-    paddingRight = 4,
-    paddingCompact = 6,
-    radius = 8,
-    accentWidth = 4,
-    --- Clear space between the accent stripe and the content beside it.
-    accentGap = 4,
-    barHeight = 4,
-    borderFocus = 2,
+local COLOR_KEYS = {
+    "canvas",
+    "surface",
+    "surfaceRaised",
+    "border",
+    "track",
+    "text",
+    "textMuted",
+    "textFaint",
+    "cyan",
+    "blue",
+    "green",
+    "amber",
+    "orange",
+    "critical",
+}
+local SPACING_KEYS = {
+    "outerMargin",
+    "gutter",
+    "padding",
+    "paddingTight",
+    "paddingRight",
+    "paddingCompact",
+    "radius",
+    "accentWidth",
+    "accentGap",
+    "barHeight",
+    "borderFocus",
 }
 
 --- Minimum acceptable contrast ratio between text and its surface.
@@ -254,7 +200,13 @@ end
 ---@param value any
 ---@return boolean
 local function isColor(value)
-    return type(value) == "number" and value == math.floor(value) and value >= 0 and value <= 0xFFFFFF
+    return type(value) == "number"
+        and value == value
+        and value ~= math.huge
+        and value ~= -math.huge
+        and value == math.floor(value)
+        and value >= 0
+        and value <= 0xFFFFFF
 end
 
 --- Choose whichever of two candidates contrasts better with a background.
@@ -270,7 +222,7 @@ local function betterContrast(background, first, second)
 end
 
 --- Force a foreground token to a readable contrast against its surface.
---- Custom overrides can pair colors that are not legible together.
+--- A named palette can pair colors that are not legible together.
 ---@param tokens table
 ---@param key string
 ---@param background integer
@@ -281,7 +233,7 @@ local function correctContrast(tokens, key, background, minimum, notices)
         return
     end
 
-    local candidate = betterContrast(background, MODERN[key], theme.shade(background, 0.85))
+    local candidate = betterContrast(background, tokens[key], theme.shade(background, 0.85))
     if theme.contrast(background, candidate) < minimum then
         candidate = betterContrast(background, 0xFFFFFF, 0x000000)
     end
@@ -508,41 +460,171 @@ function theme.alertSurface(tokens, accent, preferred, faintTextUsed, separation
     return nil
 end
 
---- Apply the limited custom override set over the Modern palette.
----@param overrides any
----@param warnings string[]
----@return table tokens
----@return string accent
-local function applyCustom(overrides, warnings)
-    local tokens = {}
-    for key, value in pairs(MODERN) do
-        tokens[key] = value
+--- Validate complete named themes from the shared YAML catalog.
+---@param document any
+---@return table? validated
+---@return string? error
+function theme.validateCatalog(document)
+    if type(document) ~= "table" or document.version ~= 1 then
+        return nil, "theme catalog must have version 1"
     end
-    local accent = "cyan"
-
-    if overrides ~= nil and type(overrides) ~= "table" then
-        warnings[#warnings + 1] = "theme overrides must be a mapping"
-        return tokens, accent
+    if type(document.themes) ~= "table" or #document.themes == 0 then
+        return nil, "theme catalog must have a non-empty theme sequence"
     end
-
-    for key, value in pairs(overrides or {}) do
-        if not theme.CUSTOM_KEYS[key] then
-            warnings[#warnings + 1] = "theme override " .. tostring(key) .. " is not customizable"
-        elseif key == "accent" then
-            if theme.ACCENTS[value] then
-                accent = value
-            else
-                warnings[#warnings + 1] = "theme accent " .. tostring(value) .. " is not a semantic accent"
-            end
-        elseif isColor(value) then
-            tokens[key] = value
-        else
-            warnings[#warnings + 1] = "theme override " .. key .. " must be a 24-bit color"
+    local count = 0
+    for key in pairs(document.themes) do
+        if type(key) ~= "number" or key < 1 or key % 1 ~= 0 then
+            return nil, "theme catalog themes must be a sequence"
         end
+        count = count + 1
+    end
+    if count ~= #document.themes then
+        return nil, "theme catalog themes must be a contiguous sequence"
     end
 
-    -- Overridden surfaces can easily break the default text and accent tokens.
-    return tokens, accent
+    local validated = {}
+    local names = {}
+    local allowedFields = {
+        version = true,
+        name = true,
+        label = true,
+        accent = true,
+        light = true,
+        correctForContrast = true,
+        colors = true,
+        spacing = true,
+        tintSeparation = true,
+    }
+    local colorFields, spacingFields = {}, {}
+    for _, key in ipairs(COLOR_KEYS) do
+        colorFields[key] = true
+    end
+    for _, key in ipairs({ "warningBg", "criticalBg", "activeBg" }) do
+        colorFields[key] = true
+    end
+    for _, key in ipairs(SPACING_KEYS) do
+        spacingFields[key] = true
+    end
+    for index, definition in ipairs(document.themes) do
+        if type(definition) ~= "table" then
+            return nil, "theme " .. index .. " must be a mapping"
+        end
+        local name = definition.name
+        if type(name) ~= "string" or not string.match(name, "^[%w_-]+$") then
+            return nil, "theme " .. index .. " has an invalid name"
+        end
+        if definition.version ~= 1 then
+            return nil, "theme " .. name .. " must have version 1"
+        end
+        if validated[name] then
+            return nil, "duplicate theme name " .. name
+        end
+        if type(definition.label) ~= "string" or definition.label == "" then
+            return nil, "theme " .. name .. " must have a label"
+        end
+        for key in pairs(definition) do
+            if not allowedFields[key] then
+                return nil, "theme " .. name .. " has unknown field " .. tostring(key)
+            end
+        end
+        if type(definition.colors) ~= "table" or type(definition.spacing) ~= "table" then
+            return nil, "theme " .. name .. " must define colors and spacing mappings"
+        end
+        if not theme.ACCENTS[definition.accent] then
+            return nil, "theme " .. name .. " has an invalid accent"
+        end
+        if definition.light ~= nil and type(definition.light) ~= "boolean" then
+            return nil, "theme " .. name .. " light must be a boolean"
+        end
+        if definition.correctForContrast ~= nil and type(definition.correctForContrast) ~= "boolean" then
+            return nil, "theme " .. name .. " correctForContrast must be a boolean"
+        end
+
+        local colors = {}
+        for key in pairs(definition.colors) do
+            if not colorFields[key] then
+                return nil, "theme " .. name .. " has unknown color " .. tostring(key)
+            end
+        end
+        for _, key in ipairs(COLOR_KEYS) do
+            if not isColor(definition.colors[key]) then
+                return nil, "theme " .. name .. " color " .. key .. " must be a 24-bit color"
+            end
+            colors[key] = definition.colors[key]
+        end
+        for _, key in ipairs({ "warningBg", "criticalBg", "activeBg" }) do
+            if definition.colors[key] ~= nil and not isColor(definition.colors[key]) then
+                return nil, "theme " .. name .. " color " .. key .. " must be a 24-bit color"
+            end
+            colors[key] = definition.colors[key]
+        end
+        local spacing = {}
+        for key in pairs(definition.spacing) do
+            if not spacingFields[key] then
+                return nil, "theme " .. name .. " has unknown spacing " .. tostring(key)
+            end
+        end
+        for _, key in ipairs(SPACING_KEYS) do
+            local value = definition.spacing[key]
+            if
+                type(value) ~= "number"
+                or value ~= value
+                or value == math.huge
+                or value == -math.huge
+                or value < 0
+                or value ~= math.floor(value)
+            then
+                return nil, "theme " .. name .. " spacing " .. key .. " must be a non-negative integer"
+            end
+            spacing[key] = value
+        end
+        if
+            definition.tintSeparation ~= nil
+            and (
+                type(definition.tintSeparation) ~= "number"
+                or definition.tintSeparation ~= definition.tintSeparation
+                or definition.tintSeparation < 1
+                or definition.tintSeparation == math.huge
+            )
+        then
+            return nil, "theme " .. name .. " tintSeparation must be at least 1"
+        end
+
+        validated[name] = {
+            label = definition.label,
+            colors = colors,
+            spacing = spacing,
+            accent = definition.accent,
+            light = definition.light == true,
+            correctForContrast = definition.correctForContrast ~= false,
+            warningBg = colors.warningBg,
+            criticalBg = colors.criticalBg,
+            activeBg = colors.activeBg,
+            tintSeparation = definition.tintSeparation,
+        }
+        names[#names + 1] = { name = name, label = definition.label }
+    end
+    if not validated["modern-dark"] then
+        return nil, "theme catalog must define the modern-dark theme"
+    end
+    return { themes = validated, names = names }
+end
+
+--- Install a validated catalog for theme resolution.
+---@param document any
+---@return boolean success
+---@return string? error
+function theme.setCatalog(document)
+    local validated, err = theme.validateCatalog(document)
+    if not validated then
+        return false, err
+    end
+    catalog = validated
+    theme.MODES = {}
+    for name in pairs(catalog.themes) do
+        theme.MODES[name] = true
+    end
+    return true
 end
 
 --- Convert a 24-bit token table into display values.
@@ -557,27 +639,15 @@ local function toDisplay(tokens)
     return colors
 end
 
---- Resolve the active theme.
----
---- Two outcomes are kept apart. A warning is something the layout or the
---- widget option asked for that cannot be honoured, such as a theme mode that
---- does not exist or an override key that is not customizable: an authoring
---- mistake whose author needs to see it. A notice is the host adapting exactly
---- as designed, such as the legibility pass nudging a token, or the radio
---- declining to hand over its palette.
----@param mode? string One of modern (Modern Dark), modern-light, or custom.
----@param overrides? table Custom mode overrides.
+--- Resolve one complete named theme.
+---@param mode? string Theme name selected in widget settings.
 ---@return AeroGridTheme
-function theme.build(mode, overrides)
+function theme.build(mode)
+    if not catalog.themes["modern-dark"] then
+        error("theme catalog is not configured")
+    end
     local warnings = {}
     local notices = {}
-    local accent = "cyan"
-    local tokens
-
-    -- What was asked for, kept apart from what was settled on. A mode this
-    -- does not have falls back to Modern, and the result then reports `modern`
-    -- as though that is what the layout said, so the fallback is invisible in
-    -- the mode alone. The diagnostics view reads this.
     local requested = mode
 
     -- **An empty option is an unset option, not a wrong one.** A string widget
@@ -597,33 +667,25 @@ function theme.build(mode, overrides)
     -- leave a space behind and the user has no way to see the difference.
     -- **A mode that is genuinely a name and genuinely not ours still warns**,
     -- which is the whole value of the warning: `nonsense` is someone's typo or
-    -- a mode we removed, and both are worth saying.
+    -- a theme we removed, and both are worth saying.
     if type(mode) == "string" and string.match(mode, "^%s*$") then
         mode = nil
     end
 
-    if mode ~= nil and not theme.MODES[mode] then
-        warnings[#warnings + 1] = "unknown theme mode " .. tostring(mode)
+    if mode ~= nil and not catalog.themes[mode] then
+        warnings[#warnings + 1] = "unknown theme " .. tostring(mode)
         mode = nil
     end
-    mode = mode or "modern"
+    mode = mode or "modern-dark"
 
-    if mode == "custom" then
-        tokens, accent = applyCustom(overrides, warnings)
-    else
-        tokens = {}
-        local palette = mode == "modern-light" and MODERN_LIGHT or MODERN
-        for key, value in pairs(palette) do
-            tokens[key] = value
-        end
+    local definition = catalog.themes[mode]
+    local tokens = {}
+    for key, value in pairs(definition.colors) do
+        tokens[key] = value
     end
+    local accent = definition.accent
 
-    -- Derived palettes retain the standard red; the built-in light palette
-    -- uses its darker red to preserve the same alarm hue on white.
-    tokens.critical = mode == "modern-light" and MODERN_LIGHT.critical or MODERN.critical
-
-    -- Built-in palettes are specified and tested; custom ones need correction.
-    if mode ~= "modern" and mode ~= "modern-light" then
+    if definition.correctForContrast then
         enforceLegibility(tokens, notices)
     end
 
@@ -632,13 +694,11 @@ function theme.build(mode, overrides)
     -- to keep critical red visible and then re-derives everything measured
     -- against it, so a tint mixed earlier would be mixed from a surface that no
     -- longer exists.
-    local light = mode == "modern-light"
-    -- Light mode deliberately uses quieter fills; text and badge floors stay unchanged.
-    local separation = light and 1.08 or nil
+    local separation = definition.tintSeparation or (definition.light and 1.08 or nil)
     local alertRgb = {
-        warning = theme.alertSurface(tokens, tokens.amber, light and 0xFFF3D8 or nil, nil, separation),
-        critical = theme.alertSurface(tokens, tokens.critical, light and 0xFAD0D0 or nil, nil, separation),
-        active = theme.alertSurface(tokens, tokens.blue, light and 0xD0DEF5 or 0x365673, false, separation),
+        warning = theme.alertSurface(tokens, tokens.amber, definition.warningBg, nil, separation),
+        critical = theme.alertSurface(tokens, tokens.critical, definition.criticalBg, nil, separation),
+        active = theme.alertSurface(tokens, tokens.blue, definition.activeBg, false, separation),
     }
     local alertColor = {}
     for name, value in pairs(alertRgb) do
@@ -652,6 +712,7 @@ function theme.build(mode, overrides)
 
     return {
         mode = mode,
+        label = definition.label,
         requested = requested,
         rgb = tokens,
         color = toDisplay(tokens),
@@ -660,7 +721,7 @@ function theme.build(mode, overrides)
         -- actually work on.
         alertRgb = alertRgb,
         alertColor = alertColor,
-        spacing = SPACING,
+        spacing = definition.spacing,
         accent = accent,
         warnings = warnings,
         notices = notices,
@@ -2503,9 +2564,9 @@ end
 
 --- Expose the Modern palette for tests and documentation.
 ---@return table
-function theme.modern()
+function theme.modernDark()
     local copy = {}
-    for key, value in pairs(MODERN) do
+    for key, value in pairs(catalog.themes["modern-dark"].colors) do
         copy[key] = value
     end
     return copy

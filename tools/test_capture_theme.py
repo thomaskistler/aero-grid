@@ -24,11 +24,17 @@ class ThemeCaptureTests(unittest.TestCase):
                 self.assertNotIn('local scene = "', source)
                 model = (sd / "MODELS/model1.yml").read_text()
                 theme_option = model.split("                     1:\n", 1)[1]
-                position = 2 if scene == "theme-modern-light" else 1
+                position = {"theme-modern-light": 2, "theme-custom": 3}.get(scene, 1)
                 self.assertIn(f"unsignedValue: {position}", theme_option)
                 if scene == "theme-custom":
-                    self.assertIn("mode: custom", layout)
-                    self.assertIn("canvas: 0x101820", layout)
+                    themes = (sd / "AEROGRID/themes/custom.yml").read_text()
+                    self.assertIn("name: custom", themes)
+                    self.assertIn("canvas: 0x101820", themes)
+                    self.assertEqual(
+                        (sd / "AEROGRID/theme-registry.txt").read_text(),
+                        "modern-dark\nmodern-light\ncustom\n",
+                    )
+                    self.assertIn("unsignedValue: 3", theme_option)
                 else:
                     self.assertNotIn("\ntheme:\n", layout)
 

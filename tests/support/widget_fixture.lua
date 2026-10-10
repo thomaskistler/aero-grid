@@ -11,6 +11,7 @@ local lcdMock = edgetx.lcd()
 local lvglMock = edgetx.lvgl()
 local radioMock = edgetx.radio(io)
 local widgetRoot = root .. "/src/WIDGETS/AeroGrid/"
+local fixtureWidgetRoot = root .. "/build/test-widget-fixture/"
 local defaultZone = { x = 0, y = 0, w = 480, h = 272 }
 
 io = {
@@ -25,6 +26,10 @@ io = {
         return handle:close()
     end,
 }
+
+os.execute("rm -rf '" .. fixtureWidgetRoot .. "' && mkdir -p '" .. fixtureWidgetRoot .. "'")
+os.execute("cp -R '" .. widgetRoot .. ".' '" .. fixtureWidgetRoot .. "'")
+os.execute("cp -R '" .. root .. "/tests/fixtures/layouts/development/.' '" .. fixtureWidgetRoot .. "layouts/'")
 
 local function loadModule(relative)
     local chunk, err = loadfile(widgetRoot .. relative)
@@ -49,8 +54,8 @@ function WidgetFixture.new()
         local definition = loadModule("main.lua")
         local context = definition.create(
             zone or { x = defaultZone.x, y = defaultZone.y, w = defaultZone.w, h = defaultZone.h },
-            options or { Layout = "main", Theme = "modern" },
-            path or widgetRoot
+            options or { Layout = "main", Theme = "modern-dark" },
+            path or fixtureWidgetRoot
         )
         local guard = 0
         while context.stage do

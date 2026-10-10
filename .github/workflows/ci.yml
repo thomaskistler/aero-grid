@@ -82,10 +82,18 @@ jobs:
         run: make build
 
       # The packaged image must match the sources it was built from, so a
-      # broken build target cannot ship a stale dashboard.
+      # broken build target cannot ship a stale dashboard. Development layouts
+      # are added from test fixtures only to the disposable simulator image.
       - name: Verify the built image matches sources
         run: |
-          diff -r src/WIDGETS/AeroGrid build/sdcard/WIDGETS/AeroGrid
+          diff -r src/WIDGETS/AeroGrid build/sdcard/WIDGETS/AeroGrid \
+            --exclude='review-*.yaml' \
+            --exclude='services*.yaml' \
+            --exclude='sim*.yaml' \
+            --exclude='states.yaml'
+          for layout in tests/fixtures/layouts/development/*.yaml; do
+            cmp "$layout" "build/sdcard/WIDGETS/AeroGrid/layouts/$(basename "$layout")"
+          done
 
       # Generated output must never be committed.
       - name: Verify the tree is clean

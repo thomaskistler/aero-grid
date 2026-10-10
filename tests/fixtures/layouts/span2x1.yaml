@@ -21,9 +21,6 @@ version: 1
 # Sources match `span1x1`, so paging between the galleries changes only the
 # span.
 
-theme:
-  mode: modern
-
 grid:
   columns: 4
   rows: 4

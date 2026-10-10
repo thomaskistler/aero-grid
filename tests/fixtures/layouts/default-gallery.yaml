@@ -6,12 +6,7 @@ version: 1
 # own model has; a source the radio does not recognize degrades to an explicit
 # unavailable state rather than pretending to read zero.
 #
-# Theme mode may be modern, modern-light, or custom. When present this overrides the
-# native Theme widget option. Custom mode accepts canvas, surface, text, and
-# accent overrides only.
-theme:
-  mode: modern
-
+# The native Theme widget option selects the complete palette.
 grid:
   columns: 4
   rows: 4

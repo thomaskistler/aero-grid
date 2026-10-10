@@ -24,9 +24,6 @@ version: 1
 # to the panel. That is also why it reads smaller here than it does at 2 x 1,
 # where there is no dial.
 
-theme:
-  mode: modern
-
 grid:
   columns: 4
   rows: 4

@@ -122,7 +122,6 @@ end
 local function testStagedSave()
     local files, operations = memoryFiles()
     local document = makeDocument("staged")
-    document.theme = { mode = "modern" }
     document.panels[2] = {
         id = "second",
         type = "example",
@@ -140,7 +139,6 @@ local function testStagedSave()
     local done, saved, saveError = layoutStore.advanceSave(state)
     assert(done and saved, saveError)
     local parsed = assert(yaml.parse(files[state.filename]))
-    assert(parsed.theme.mode == "modern")
     assert(parsed.panels[2].config.future.enabled == true, "unknown keys must survive staged save")
     assert(not files[state.filename .. ".tmp"])
     local previousContent = files[state.filename]

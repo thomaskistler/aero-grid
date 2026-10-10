@@ -3,7 +3,7 @@
 local root = assert(..., "repository root argument is required")
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
 local definition = fixture.module("main.lua")
-local context = fixture.createLoaded(nil, { Layout = "resource-initial", Theme = "modern" })
+local context = fixture.createLoaded(nil, { Layout = "resource-initial", Theme = "modern-dark" })
 local zone = context.zone
 
 local function refresh()
@@ -39,7 +39,7 @@ for cycle = 1, 21 do
     for _, dashboard in ipairs(dashboards) do
         weak.page = context.page
         weak.runtime = context.serviceRuntime
-        definition.update(context, { Layout = dashboard, Theme = "modern" })
+        definition.update(context, { Layout = dashboard, Theme = "modern-dark" })
         finish()
         assert(
             context.layoutOrigin == (dashboard == "main" and "default" or "shipped"),

@@ -28,9 +28,6 @@ version: 1
 # are live there. `Cels` is deliberately absent on that link: the cell panel
 # showing NO CELLS rather than a zero is the point of it being here.
 
-theme:
-  mode: modern
-
 grid:
   columns: 4
   rows: 4

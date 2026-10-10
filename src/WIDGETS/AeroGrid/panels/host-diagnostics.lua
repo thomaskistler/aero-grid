@@ -178,13 +178,12 @@ function diagnostics.theme(host)
 
     local lines = {
         "mode: " .. tostring(theme.mode),
-        -- The layout's own block wins over the widget option, and the widget
-        -- option was inert for a while while looking exactly like a working one.
+        -- The widget option is the sole theme selection source.
         "asked by: " .. tostring(host.themeSource or "--"),
     }
 
-    -- `build` falls back to Modern for a mode it does not have and then reports
-    -- `modern`, so the fallback cannot be seen in the mode alone.
+    -- `build` falls back to modern-dark for an unknown name, so the fallback
+    -- cannot be seen in the resolved mode alone.
     if theme.requested and theme.requested ~= theme.mode then
         lines[#lines + 1] = "fell back from " .. tostring(theme.requested)
     end

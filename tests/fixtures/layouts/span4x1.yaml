@@ -17,9 +17,6 @@ version: 1
 # fixed 56, and the label is given the remaining 400 whether it is three
 # characters or thirty.
 
-theme:
-  mode: modern
-
 grid:
   columns: 4
   rows: 4
