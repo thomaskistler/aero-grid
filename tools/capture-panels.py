@@ -65,9 +65,6 @@ def prepare(sd, recipe, recipe_path=None):
     shutil.copytree(ROOT / "src/WIDGETS/AeroGrid", widget)
     for bytecode in sd.rglob("*.luac"):
         bytecode.unlink()
-    radio = sd / "RADIO/radio.yml"
-    radio.write_text(radio.read_text().replace('currModelFilename: "model2.yml"',
-                                              'currModelFilename: "model1.yml"'))
     # The Layout option is a CHOICE stored as a 1-based registry position.
     registry = sd / "AEROGRID/registry.txt"
     names = registry.read_text().split()

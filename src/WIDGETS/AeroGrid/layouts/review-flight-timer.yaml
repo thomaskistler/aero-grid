@@ -1,4 +1,4 @@
-# Review harness for `flight-timer`. Slot 3 on the review model.
+# Review harness for `flight-timer`. Screen 4 on AEROGRID PANEL1.
 #
 # **Read this against the model's own timers.** The review model configures
 # timer 0 as a five-minute countdown that is already past zero and persistent,

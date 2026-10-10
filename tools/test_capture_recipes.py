@@ -34,6 +34,34 @@ class CaptureRecipeTests(unittest.TestCase):
                 self.assertTrue((widget / "panels" / f"{recipe['panel']}.lua").is_file())
                 self.assertTrue((widget / "lib/panel_host.lua").is_file())
                 self.assertIn("ipairs(context.panels)", (widget / "main.lua").read_text())
+                radio = yaml.safe_load((sd / "RADIO/radio.yml").read_text())
+                self.assertEqual(radio["currModelFilename"], "model1.yml")
+                model = yaml.safe_load((sd / "MODELS/model1.yml").read_text())
+                self.assertEqual(len(model["screenData"]), 1)
+                names = (sd / "AEROGRID/registry.txt").read_text().splitlines()
+                position = model["screenData"][0]["layoutData"]["zones"][0]["widgetData"]["options"][0]["value"]["unsignedValue"]
+                self.assertEqual(names[position - 1], "capture-panels")
+
+    def test_editor_preparation_uses_isolated_default_screen(self):
+        path = Path(__file__).with_name("capture-editor.py")
+        spec = importlib.util.spec_from_file_location("capture_editor", path)
+        capture = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(capture)
+        for scene in capture.SCENES + tuple(capture.SETUP_SCENES):
+            with self.subTest(scene=scene), tempfile.TemporaryDirectory() as directory:
+                sd = Path(directory) / "sdcard"
+                capture.prepare(sd, scene)
+                radio = yaml.safe_load((sd / "RADIO/radio.yml").read_text())
+                self.assertEqual(radio["currModelFilename"], "model1.yml")
+                model = yaml.safe_load((sd / "MODELS/model1.yml").read_text())
+                self.assertEqual(list(model["screenData"]), [0])
+                screen = model["screenData"][0]
+                self.assertEqual(screen["LayoutId"], "Layout1x1AM")
+                options = screen["layoutData"]["zones"][0]["widgetData"]["options"]
+                names = (sd / "AEROGRID/registry.txt").read_text().splitlines()
+                self.assertEqual(names[options[0]["value"]["unsignedValue"] - 1], "Default")
+                self.assertEqual(options[1]["value"]["unsignedValue"], 1)
+                self.assertFalse((sd / "MODELS/model4.yml").exists())
 
     def load(self, recipe):
         with tempfile.TemporaryDirectory() as directory:

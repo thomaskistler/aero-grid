@@ -18,7 +18,7 @@ LUACHECK ?= $(shell command -v luacheck 2>/dev/null)
 LUA_LS ?= $(shell command -v lua-language-server 2>/dev/null)
 STYLUA ?= $(shell command -v stylua 2>/dev/null)
 
-.PHONY: help setup test check build mocks clean lint format docs docs-serve capture-setup release-package
+.PHONY: help setup test check build clean lint format docs docs-serve capture-setup release-package
 
 help:
 	@printf '%s\n' \
@@ -29,7 +29,6 @@ help:
 	  'make lint    Lint Lua files with lua-language-server' \
 	  'make format  Format Lua files with stylua' \
 	  'make build   Recreate build/sdcard from fixture and widget sources' \
-	  'make mocks   Render build/flow-mocks.html from the real panel geometry' \
 	  'make docs    Build and validate the documentation website' \
 	  'make docs-serve Preview documentation at http://127.0.0.1:8000' \
 	  'make capture-setup Install optional screenshot dependencies' \
@@ -112,17 +111,6 @@ build:
 	@find "$(SDCARD_DIR)" -name '*.luac' -delete
 	@find "$(SDCARD_DIR)" -name '*.lua' -exec touch {} +
 	@printf 'Built simulator SD image at %s\n' "$(SDCARD_DIR)"
-
-# Design mocks. Builds every panel through the real host, walks the geometry
-# back out of the LVGL mock, and renders it beside a proposed arrangement. The
-# page is an artefact for looking at, not a test, so nothing depends on it.
-mocks: $(VENV_STAMP)
-	@mkdir -p "$(BUILD_DIR)"
-	@"$(VENV_DIR)/bin/python" -c "import sys;from pathlib import Path;\
-	from lupa import LuaRuntime;l=LuaRuntime(unpack_returned_tuples=True);\
-	l.execute(Path('tools/flow-geometry.lua').read_text(), str(Path('.').resolve()))" \
-	  > "$(BUILD_DIR)/flow-cases.lua"
-	@"$(VENV_DIR)/bin/python" tools/flow-render.py
 
 clean:
 	@rm -rf "$(BUILD_DIR)"

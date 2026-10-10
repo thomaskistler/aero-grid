@@ -1,4 +1,4 @@
-# Cell-battery review, screen 5 on AEROGRID REVIEW.
+# Cell-battery review, screen 1 on AEROGRID PANEL1.
 # RxBt must measure the flight pack, not a regulated receiver supply.
 # Set cells to the actual pack count (4 here); it is never guessed.
 # The upper pair compares pack and average-cell headlines with the opposite

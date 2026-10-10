@@ -8,8 +8,8 @@ copyright: Copyright &copy; AeroGrid contributors. GPL-2.0-only.
 theme:
   name: mkdocs
   custom_dir: docs/overrides
-  color_mode: dark
-  nav_style: dark
+  color_mode: light
+  nav_style: light
 
 extra_css:
   - stylesheets/aerogrid.css
@@ -34,10 +34,12 @@ nav:
           - Model identity: panels/model-identity.md
           - Navigation: panels/navigation.md
   - Developer Guide:
-      - Build and run the simulator: developer-guide/build.md
-      - Contribute changes: developer-guide/contributing.md
-      - Architecture: developer-guide/architecture.md
-      - Hardware validation: hardware-validation.md
+      - Check out and build: developer-guide/build.md
+      - Test and debug: developer-guide/testing.md
+      - Run and test in simulators: developer-guide/simulators.md
+      - Repository and architecture: developer-guide/architecture.md
+      - Project tools: developer-guide/tools.md
+      - Issues, changes, and releases: developer-guide/contributing.md
 
 plugins:
   - search

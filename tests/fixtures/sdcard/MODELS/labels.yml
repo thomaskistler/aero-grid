@@ -4,14 +4,17 @@ Sort: 1
 Models:
   model1.yml:
     hash: "72110000285d081d"
-    name: "MODEL01"
+    name: "AEROGRID STD"
     labels: ""
     bitmap: "04530_x10.png"
     lastopen: 1788838257
   model2.yml:
     hash: "72110000285d081e"
-    name: "AEROGRID REVIEW"
+    name: "AEROGRID PANEL1"
     labels: ""
-    bitmap: ""
+    bitmap: "04530_x10.png"
     lastopen: 1788838257
-
+  model3.yml:
+    name: "AEROGRID PANEL2"
+    labels: ""
+    bitmap: "04530_x10.png"

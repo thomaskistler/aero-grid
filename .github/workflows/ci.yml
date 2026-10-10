@@ -58,8 +58,8 @@ jobs:
           luac5.3 -v
           lua-language-server --version
 
-      # `check` depends on `test`, so this runs the behaviour suites in both
-      # string modes and then parses every Lua file with the 5.3 compiler.
+      # `check` depends on `test`, so this runs the firmware-like behaviour
+      # suites and then parses every Lua file with the 5.3 compiler.
       - name: Test and syntax check
         run: make check LUA_COMPILER=luac5.3
 

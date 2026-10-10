@@ -1,10 +1,7 @@
 # Review harness for `tx-battery`. Not a dashboard.
 #
-# One review screen exists at a time and its Layout names the panel
-# under review; this replaces `review-flight-mode` as the screen's target
-# rather than adding a tenth screen, because `MAX_CUSTOM_SCREENS` is 10 and
-# the fixture already carries ten. The previous review layout stays in the
-# repository and keeps being loaded by the shipped-layout test.
+# Screen 5 on AEROGRID PANEL2. Panel reviews are split across two models
+# to stay below EdgeTX's ten-screen limit.
 #
 # This pass turns the battery upright, thickens its outline, and gives the
 # outline, the terminal and the level one colour that the state carries. The

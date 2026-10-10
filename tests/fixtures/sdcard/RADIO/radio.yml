@@ -188,7 +188,7 @@ switchConfig:
    FL2:
       name: ""
       type: NONE
-currModelFilename: "model2.yml"
+currModelFilename: "model1.yml"
 blOffBright: 20
 bluetoothName: ""
 ownerRegistrationID: "-eC!U*U*"

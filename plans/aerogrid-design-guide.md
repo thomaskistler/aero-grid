@@ -160,23 +160,12 @@ of one.
 
 ## How to check the numbers in this document
 
-Every figure in the [Content flow](#content-flow) section is produced by
-`tools/flow-render.py` from real geometry — panels built through the actual widget
-host, with objects walked back out of the LVGL mock — rather than typed in from
-memory. Run:
-
-```
-make mocks
-```
-
-which writes `build/flow-mocks.html`. Each figure quoted here appears there, computed
-rather than asserted. This matters because hand-typed figures in this project have
-drifted four times: a slack count written as 10/8/6 when the real one was 10/9/5, an
-occupancy range written as 60–71% when it was 60–63%, a caption asserting "the
-ladder has nothing between 40 and 69 px" on panels where that was not the reason, and a
-list of the body bands this dashboard builds that was wrong in twelve of its entries. All
-four were corrected by computing the figure in the generator instead. **Do not add a
-number to this document that the generator cannot produce.**
+The figures in the [Content flow](#content-flow) section were measured from real
+panel geometry using a now-retired design-review generator. They record the
+implementation at the time of measurement, not automatically updated results.
+For current behavior, run the builder/reflow tests and inspect the simulator or
+native captures. **Do not add a number without measuring it against the current
+implementation.**
 
 **A figure the generator can produce may still be produced over the wrong cases.** The
 band list above is the fourth drift and it is a different shape from the other three: it
@@ -540,8 +529,8 @@ anything except having a panel that needs it.
 **Implemented and shipped.** This section was written from rendered mocks and marked "not
 implemented by any panel" while it was a proposal; both halves of it are now live
 everywhere, and the table at the top of this document records which panels assemble it
-through `theme.panel` and which still write the assembly out themselves. Run `make mocks`
-and open `build/flow-mocks.html` to see every figure below drawn at its true pixel size.
+through `theme.panel` and which still write the assembly out themselves. Inspect the
+simulator or native captures to review the current arrangement.
 
 ### The problem it solved
 
@@ -551,11 +540,10 @@ after them: a `tx-battery` at `4x2` had its voltage hard left, its battery hard 
 a hole in the middle that grew with every extra cell of width. The slots were chosen to
 close it and every panel that draws a reading is on them.
 
-The figure this paragraph carried — 392 px, 82% of the panel — is **not reproducible by
-`make mocks`**, because the generator renders the arrangement as it is rather than the one
-it replaced, and no code path computes the old hole any more. It is therefore removed
-rather than restated: this document's own rule is that a number it carries must be one the
-generator can produce, and a figure describing a layout that no longer exists cannot be.
+The figure this paragraph carried — 392 px, 82% of the panel — is **not reproducible
+from the current implementation**, because no code path computes the old hole any
+more. It is therefore removed rather than restated: a figure describing a layout
+that no longer exists cannot be checked against the current code.
 What survives is the shape of the argument, which is still why the slots are there.
 
 ### Two slots, derived from the panel
@@ -715,8 +703,8 @@ qualifies the reading; both are furniture, and furniture that moves as the panel
 the eye to itself. The reading is the content, and it is the one thing allowed to scale and
 to sit in the middle.
 
-The measurements below are reproducible from the code at this commit through
-`tools/flow-geometry.lua` and the wider probe; `frame.compact` is 6 px, or 2 px on a panel
+The measurements below were taken using the retired geometry generator and a
+wider probe; `frame.compact` is 6 px, or 2 px on a panel
 under 80 px tall, and `SMLSIZE` is 13 px of ink in a 17 px line box.
 
 #### Three attempts, and the radio decided each one
@@ -1027,14 +1015,14 @@ and not something the heading decides. Four offsets became two, four pixels apar
 where content begins feeds the ladder's row and visual grants and the body band's
 position, so letting the body rise into the space the heading vacated would change what
 every panel in the catalogue draws — a catalogue-wide font change arriving by accident
-inside a change about a heading. Verified through `tools/flow-geometry.lua` across every
-panel at every span in both zones: headings and badges move, and nothing else does.
+inside a change about a heading. At the time, a geometry probe verified this across
+every panel at every span in both zones: headings and badges move, and nothing else does.
 
 The bands each row count produces, measured at a placement the menu button does not reach.
 **These are the heading's band and the supporting row's band**; the reading is no longer
 sized or placed against the middle one, and the middle column is kept only because the
 compass is still bounded by it. **App mode first, because that is what ships** — every
-screen on both tracked models is `LayoutId: Layout1x1AM`:
+screen on the fixture models is `LayoutId: Layout1x1AM`:
 
 | Zone | Rows | Panel | Extent | Label / body / tertiary |
 | --- | --- | --- | --- | --- |
@@ -1155,14 +1143,14 @@ nothing to do with the measurement — a 51 px band takes `DBLSIZE` at 31 px of 
 step up is `XXLSIZE` at 54, and between 40 and 69 the ladder has nothing — and that was read
 as the ladder's granularity rather than the rule's fault.
 
-**What was wrong was the case set, not the arithmetic.** Those bands came from the panels
-`make mocks` happens to render: six panels at four spans in one zone, every one of them
+**What was wrong was the case set, not the arithmetic.** Those bands came from the
+retired generator's initial case set: six panels at four spans in one zone, every one of them
 placed in the grid's top-left cell. That is 24 of the 272 panels the schema permits, and the
 one cell EdgeTX paints its menu button over.
 
-The generator now walks every placement of every span in both zones through `theme.ladder`,
+The generator was expanded to walk every placement of every span in both zones through `theme.ladder`,
 with the supporting row taken, declined, and taken at the height `navigation`'s two rows
-actually need, and checks the walk against every panel the real host built on the page.
+actually need, and check the walk against every panel the real host built on the page.
 **There are twenty-five bands, and they are these:**
 
 | Band | By line height | Ink fills | By ink | Ink fills | Where it occurs |
@@ -1201,8 +1189,8 @@ Measured through the real host over every panel at every span it declares, in bo
 zones and at an obstructed and an unobstructed placement, the reading's font changes on
 **165 of 1088 panels: 113 in App mode and 52 in Full screen, every one of them larger and
 none smaller.**
-That sweep is not something `make mocks` builds — the generator renders six panels at
-four spans — so it is a figure from a one-off probe rather than one the page can reproduce,
+That sweep was broader than the retired generator's rendered panel cases — six panels at
+four spans — so it is a figure from a one-off probe rather than a rendered comparison,
 and the figure this document stands on is the one above it: five bands of twenty-five.
 
 **Sixteen panels also change what they draw rather than only how large it is**, and every
@@ -1340,12 +1328,11 @@ panel. The first answers "does this panel behave across sizes", the second
 answers "do these panels agree at one size". Both were worth having and only the
 first is now on the radio.
 
-Two things soften it and neither replaces it. The galleries are still built by the test
+The galleries are still built by the test
 suite from `tests/fixtures/layouts/`, so the collision check still sweeps the densest
 arrangement in the catalogue and the single-cell gallery is still held to containing
-every panel that declares that span. And `tools/flow-geometry.lua` renders several
-panels at one span into `build/flow-mocks.html`, which is a page rather than a radio
-but does show alignment.
+every panel that declares that span. This mechanical coverage does not replace a
+visual cross-panel comparison in the simulator.
 
 **If cross-panel drift reappears, this is the view that would have caught it**, and
 the honest position is that nobody will be looking.

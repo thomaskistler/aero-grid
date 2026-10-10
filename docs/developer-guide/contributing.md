@@ -1,55 +1,125 @@
-# Contribute changes
+# Issues, changes, and releases
 
-## Prepare a change
+You can contribute a reproducible bug report, a focused fix, a panel, or clearer
+documentation. Start with the [checkout instructions](build.md) for code work;
+you do not need a working development environment to file an issue.
 
-Start from the current `main` branch in your own branch or fork. Keep changes
-focused, follow existing naming and formatting, and update the relevant guide or
-panel reference when behavior changes.
+## File an issue
 
-Use the [build instructions](build.md) to set up development. Runtime code lives
-in `src/WIDGETS/AeroGrid/`; pure module tests live in `tests/unit/`, and mocked
-EdgeTX host tests live in `tests/integration/`.
+Search [existing issues](https://github.com/thomaskistler/aero-grid/issues)
+first. If none describes the problem, choose
+[New issue](https://github.com/thomaskistler/aero-grid/issues/new).
+There are currently no repository-specific issue templates.
 
-Add regression coverage for fixes and test both normal operation and unavailable
-data. For layout changes, cover supported spans, resizing, content shedding and
-restoration, and App mode's menu-button reservation.
+For a bug report, include:
 
-## Validate and submit
+| Detail | What to provide |
+| --- | --- |
+| Summary | A specific title and what failed. |
+| Version | AeroGrid package version or Git commit; EdgeTX version; radio type and display size. |
+| Environment | Physical radio, VS Code Dev Kit/WASM, Companion native simulator, or mock test; extension/Companion version and desktop OS when relevant. |
+| Reproduction | Steps from a clean baseline, selected model/layout/theme, and the smallest layout or settings that reproduce it. |
+| Expected / actual | What should happen and what actually happens, including exact error text. |
+| Evidence | Relevant logs, screenshots, failing test output, or a recording. For growth/CPU problems, include duration and observed measurements. |
+| Data setup | Source names/types/units, link state, switches, timers, and any synthetic inputs needed to reproduce it. |
 
-Run the checks relevant to your change:
+Attach a minimal YAML layout rather than an entire personal SD card. Remove
+unrelated model information, GPS coordinates, and other private data before
+posting. State whether the issue survives a fresh build/restart; that helps
+separate a code defect from stale bytecode or saved-layout overrides.
+
+For a feature request, describe the developer or pilot problem, an example
+workflow, and the desired behavior. Mention relevant panel sizes and radio
+constraints. Discuss large behavioral changes before implementing them.
+
+The optional GitHub CLI provides the same workflow:
 
 ```sh
-make check
-make lint
-make build BUILD_DIR=build/package-check
-make docs
+gh issue list --repo thomaskistler/aero-grid
+gh issue create --repo thomaskistler/aero-grid
 ```
 
-Use `make format` for Lua changes and inspect the resulting diff. CI runs tests,
-Lua 5.3 parsing, linting, formatting, and package/source parity checks.
-The separate Documentation workflow validates documentation changes.
+## Prepare a focused change
 
-Open a pull request describing the purpose, behavior changes, and evidence.
-Distinguish mock/simulator results from hardware observations, and state remaining
-limitations rather than treating a short run as proof of long-term stability.
+Work on a branch or fork based on current `main`. Keep implementation, tests,
+and directly related documentation together. Follow the existing Lua naming,
+settings vocabulary, type annotations, and shared rendering/service helpers.
+Runtime code and tests use SPDX `GPL-2.0-only` headers.
 
-## Keep fixtures deterministic
+For a fix, add a regression test that fails before the change. Exercise absent
+data and boundary values, not only the happy path. For UI changes, cover
+declared spans, resizing, content shedding/restoration, App mode's menu
+reservation, and editor behavior. See [Test and debug](testing.md) and
+[Repository and architecture](architecture.md).
 
-`tests/fixtures/sdcard/` is checked-in input, not simulator output. Update a fixture
-explicitly when changing the baseline. Keep `manuallyEdited: 1` in the fixture
-radio settings when manually changing model selection so EdgeTX accepts it and
-can regenerate the checksum.
+`tests/fixtures/sdcard/` is deterministic input, not a place to save a running
+simulator. If a radio/model change intentionally becomes the baseline, stop the
+simulator and update only the relevant tracked fixture files. Keep
+`manuallyEdited: 1` in `RADIO/radio.yml` when manually changing its model
+selection; EdgeTX can then accept the edit and regenerate the checksum.
+Check a fresh `make build` afterwards.
 
-Do not commit generated `.luac` files, logs, screenshots, virtual environments,
-or mutable `build/sdcard/` state. Preserve personal model configuration outside
-the fixture.
+Do not commit `.luac`, virtual environments, logs, framebuffer dumps,
+`build/sdcard/`, or incidental captures. Reviewed website screenshots belong
+in `docs/assets/` with the relevant provenance and disclosure.
 
-## Add a panel
+## Check and submit
 
-Read the [architecture guide](architecture.md) and the
-[panel module contract](https://github.com/thomaskistler/aero-grid/blob/main/plans/aerogrid-spec.md)
-before adding a panel. Declare supported spans and typed settings, use shared
-services and primitives, and respect the callback instruction budget.
+For runtime Lua changes, use:
 
-Include tests and a panel reference page, add it to `mkdocs.yml`, and provide
-a reachable fixture layout when introducing a shipped dashboard.
+```sh
+make format
+make check
+make lint
+stylua --check src/WIDGETS tests
+make build BUILD_DIR=build/package-check
+diff -r src/WIDGETS/AeroGrid build/package-check/sdcard/WIDGETS/AeroGrid
+```
+
+Inspect formatting changes before committing. Run the
+[tooling tests](testing.md#python-tooling-tests) if changing Python tools,
+and `make docs` if changing documentation. Exercise behavior/UI changes in
+a simulator; hardware-sensitive changes need radio evidence or an explicit
+statement that hardware remains unverified.
+
+Push your branch and open a pull request against `main`. Explain the problem,
+the behavior change, reproduction/regression coverage, and any remaining
+limitations. Reference the associated issue, using `Fixes #<number>` when the
+PR resolves it. Distinguish mocked, synthetic simulator, and real hardware
+observations rather than calling all three "tested."
+
+GitHub's **CI** workflow runs Lua behavior/syntax checks, release-package tests,
+LuaLS, pinned StyLua formatting, SD-image/source parity, and clean-tree checks.
+The separate **Documentation** workflow strictly builds website changes.
+The native screenshot tools are local macOS tools, not CI jobs.
+
+## Publish a release
+
+This is a maintainer operation, not a required step for a normal contribution.
+
+1. Update `src/WIDGETS/AeroGrid/lib/package.lua` in a PR and merge to `main`.
+   Use `X.Y.Z`, `X.Y.Z-beta.N`, or `X.Y.Z-rc.N`; beta/RC releases become
+   prereleases. Change API versions only when the corresponding contract
+   changes.
+2. Build locally with `make release-package` when checking archive contents.
+   The allowlists in `tools/package-release.py` separate installation content
+   from development fixtures.
+3. In [Actions > Release](https://github.com/thomaskistler/aero-grid/actions/workflows/release.yml),
+   choose **Run workflow** on **main**. The workflow runs CI, documentation,
+   and package validation against the exact selected commit, creates
+   `v<version>`, uploads the ZIP and checksum to a draft, then publishes.
+
+There is no automatic release on every merge, and no need to create a release
+manually in the Releases UI. Release notes include installation links and
+hardware coverage.
+
+If validation fails, fix it in a PR, merge, and run again. If publication fails
+after creating a tag/draft, rerun the **same workflow run** at the same commit:
+it can resume a matching draft and replace incomplete assets. A tag pointing
+to another commit or an already-public release is rejected. Never move a
+published tag; use a new version for fixes. Abandoning an unpublished attempt
+requires deliberately removing its draft and tag before reusing that version.
+
+Documentation publication is independent: the Documentation workflow deploys
+changes on `main` to GitHub Pages. Repository **Settings > Pages > Source**
+must be **GitHub Actions**.

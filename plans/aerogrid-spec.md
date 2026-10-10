@@ -136,9 +136,8 @@ a persistent callback with mutable font state; all refresh/reflow paths
 change that state with `primitives.setFont`, never replace the callback.
 Weak object keys keep retired labels collectible. The firmware-like mock
 retains overwritten references and regression tests assert none accumulate
-during timer advancement, reconnects, or resizing. The timer-correlated
-hardware memory observations and user-confirmed fix verification are recorded in
-the [hardware checklist](../docs/hardware-validation.md).
+during timer advancement, reconnects, or resizing. The user confirmed the
+timer-correlated hardware memory fix on 2026-10-05.
 
 ### Bundled EdgeTX widget baseline
 
@@ -590,7 +589,7 @@ The glyph is sized by search rather than by formula. The answer is not smooth: a
 
 It said **line box** until the band started being measured as ink, and the two are not separable: a line box carries a descent and a leading that no reading in this catalogue draws into, so centring the box centres a rectangle taller than the glyphs and leaves the number sitting high. Choosing the font by ink and centring the box would have split the two by 4.5 px on a `navigation 4 x 2`. The design guide records the decision and what it cost.
 
-**Content is placed on two slots derived from the panel, at 30% and 70% of the content width.** Agreed from rendered mocks and **implemented by every panel that puts two things side by side** -- six through `theme.panel` and three directly. `make mocks` still draws the arrangement, but it draws what the dashboard does rather than what it might do.
+**Content is placed on two slots derived from the panel, at 30% and 70% of the content width.** Agreed from rendered mocks and **implemented by every panel that puts two things side by side** -- six through `theme.panel` and three directly.
 
 *Corrected: this said "not yet implemented by any panel", the second copy of the same stale claim in this file.* The reading takes the left slot and a compact visual the right, and every row below them uses the same two centres -- a row of one item centres across the whole content box, a row of two takes the slots -- so the arrangement is one rule at every level rather than a body rule with a footer exception. A panel holding only a reading does not split; it centres across the whole box.
 
@@ -1121,14 +1120,12 @@ blockers. The user confirmed the font-callback memory fix on 2026-10-05;
 that issue is closed. Protocol-specific coverage and physical resource budgets
 remain unverified follow-up work rather than
 acceptance gates. This decision does not mark unrecorded checks as passed.
-See the [current acceptance record](../docs/hardware-validation.md).
 Earlier open-status statements below describe the historical validation scope.
 
 On 2026-10-04 the user confirmed AeroGrid `0.10.0` on a TX16S v2 running
 EdgeTX 2.12.4 and reported all recommended dashboards verified with no issues
 observed. This is the first recorded dashboard acceptance on physical hardware.
-See the [hardware run record](../docs/hardware-validation.md#2026-10-04-tx16s-v2-edgetx-2124)
-for scope and missing details. Other target radios, protocol-specific evidence,
+Other target radios, protocol-specific evidence,
 and physical resource measurements remain open.
 
 The simulator is a real host running real LVGL, so it catches a great deal, and the test suite measures against a mock whose arithmetic is taken from the firmware source. But a simulator on a desktop monitor is not a 480 x 272 transflective panel at arm's length in daylight, and no amount of contrast arithmetic substitutes for looking at one.
@@ -1206,8 +1203,8 @@ cells. Its documentation covers the shared battery glyph, equal gaps, 30%
 unit-shedding threshold, and digit-ink alignment. The sixth diagnostic screen
 confirmed case-sensitive binding: `RxBt` works, `RXBt` does not.
 
-**`trim-panel` simulator review is complete, by user choice.** The seventh screen
-on AEROGRID REVIEW selects `review-trim-panel`, comparing the three-axis square
+**`trim-panel` simulator review is complete, by user choice.** The fourth screen
+on AEROGRID PANEL2 selects `review-trim-panel`, comparing the three-axis square
 at several spans, raw and percentage readouts, and single-cell shedding. The
 panel uses a three-axis perimeter arrangement:
 aileron at the top, elevator on the left, rudder at the bottom, green
@@ -1218,7 +1215,7 @@ readouts vertically centered on their bars and equal corner clearances.
 Compact typography retains numbers in normal 1x1 cells. This square is the
 panel's only presentation.
 See [trim-panel documentation](../docs/panels/trim-panel.md).
-The fixture now starts on AEROGRID REVIEW (`model2.yml`), with
+The fixture now starts on AEROGRID STD (`model1.yml`), with
 `manuallyEdited: 1` allowing EdgeTX to accept the changed radio settings
 and regenerate their checksum.
 
@@ -1265,9 +1262,9 @@ The worst callback rose 85 when the heading notice started working. It had been 
 - CI (`.github/workflows/ci.yml`) runs `make check` under Lua 5.3 on every pull request, plus the SD image build and two integrity assertions.
 - The dashboard has been confirmed running in the EdgeTX simulator on a TX16S profile through milestone 7. Navigation, link status, the radial and bar metrics and the trim panel have all been read against live simulated telemetry, which is where the arc drift in constraint 11 was found. Two of milestone 7's behaviours still cannot be judged there: whether a cells source on a real receiver returns the table shape assumed here, since nothing on an ELRS link publishes one, and whether a protocol without an RSSI sensor is recognized as a link rather than a dead one.
 - Milestone 8's corner work and the whole presentation and consistency pass have been seen in the EdgeTX simulator and judged there. The accent geometry in particular took five rounds of looking, and the version that was accepted came from the person at the screen rather than from any measurement, which is the standing argument for building something to look at rather than reasoning about it in prose. Initial dashboard acceptance has now been reported on TX16S v2 / EdgeTX 2.12.4; see [Hardware validation status](#hardware-validation-status).
-- The simulator fixture carries **six screens on `model1` and ten on `model2`**, every one holding an AeroGrid instance and every one an App mode layout. `model1` has `sim`, which fills its grid with the telemetry panels; `sim2`, which covers the radio-local ones that had nowhere to go beside them; the `states` layout twice, under the Modern and EdgeTX-derived palettes; the `host` diagnostics view; and the `aircraft` dashboard. The default `model2` carries reviews for `flight-mode`, `tx-battery`, `model-identity`, `flight-timer`, `cell-battery`, `trim-panel`, `navigation`, `link-status`, and `metric`, plus the cell-source diagnostic screen.
+- The simulator fixture has **three models**, every screen holding an AeroGrid instance in App mode with the Modern theme. `model1` (**AEROGRID STD**) starts on `Default`, then offers `Empty`, `Host`, `services`, and `services2`: all installation layouts plus both diagnostic panel types. `model2` (**AEROGRID PANEL1**) carries six reviews: cell battery, flight counter, flight mode, flight timer, link status, and metric. `model3` (**AEROGRID PANEL2**) carries five: model identity, navigation, text, trim panel, and TX battery. Each user-facing panel type has exactly one dashboard. The flight-counter review uses only one tracker; resize it to compare spans.
 
-  Reaching a layout means setting the widget's Dashboard ID, which in App mode cannot be reached from the main view at all: `Widget::openMenu` returns immediately after `setFullscreen(true)` when the widget is not in the top bar and the view is App mode. So a layout without a screen of its own costs a trip through Model Setup and Screens, which is why the review screens exist rather than being Dashboard IDs somebody is expected to type. `MAX_CUSTOM_SCREENS` is 10, and that ceiling is why the reviews are on a second model at all. Paging between screens switches dashboards without opening widget settings, and exercises two widget instances resolving different layouts at once; `sim` carries the Modern palette and `sim2` the EdgeTX-derived one, so the two are one button press apart.
+  `MAX_CUSTOM_SCREENS` is 10, so eleven panel reviews are split across two models. Paging between screens switches dashboards without opening widget settings. Auxiliary layouts `sim`, `sim2`, `states`, and `review-cell-sources` remain available through the Layout picker rather than dedicated screens.
 
   **Corrected: this said nine screens on one model, four of them span galleries.** The galleries were retired to test fixtures in the same pass that added the review screens, and this sentence went on describing the arrangement they were part of -- the next bullet records the retirement, so the two contradicted each other in adjacent lines.
 - Two instances running together are held to owning their own root, page, service registry and telemetry service, because EdgeTX runs every Lua widget in one interpreter state and anything a module kept at its own scope would be shared between dashboards that know nothing about each other.
@@ -1309,8 +1306,7 @@ their own clearance. Slotted visuals and side stacks remain conservatively
 inset as groups. Taller panels keep the vertical reservation. Metric reflows
 its primary sample when deferred sensor precision resolves.
 
-Hardware acceptance and the three Debug-screen snapshots are recorded in
-[`hardware-validation.md`](../docs/hardware-validation.md). Review layouts
+Review layouts
 are smoke tests, not a representative live-source performance baseline;
 future resource baselines should exercise the operating aircraft dashboard.
 Repeated VS Code simulator extension-host crashes remain unexplained.
@@ -1326,8 +1322,7 @@ The glyph-only TX presentation remains proposed follow-up work.
 The simulator panel review and documentation pass is complete. Continue with
 milestone 9 hardening and the hardware verification below. Simulator acceptance
 does not close that separate hardware work.
-Use the [hardware-validation checklist](../docs/hardware-validation.md) to
-record the target-radio and protocol matrix without treating untested cases as passed.
+Record the target-radio and protocol matrix without treating untested cases as passed.
 
 **Metric simulator review and documentation complete:** the ordered `metrics`
 list supports one to three numeric EdgeTX sources, each with its own label,
@@ -1385,7 +1380,7 @@ the tertiary band has room for a second row. Optional details shed by width
 (power first, then SNR); a one-row panel retains the primary reading and
 state badge, with the configured ELRS `2x1` side-column exception above.
 A stale auxiliary reading carries `*`; no stale RFMD is decoded.
-Screen 9 on AEROGRID REVIEW provides 2x3, 2x2, 1x1 and 2x1 examples. Its thresholds
+Screen 5 on AEROGRID PANEL1 provides 2x3, 2x2, 1x1 and 2x1 examples. Its thresholds
 are review examples, not protocol recommendations. Real ELRS 4.x telemetry
 and hardware verification remain outstanding. The simulator's
 RFMD input is limited to 0-8 and TPWR remained fixed at 100 mW, so 2.4 GHz
@@ -2302,7 +2297,6 @@ The visibility policy is settled even though the feature is not built: **the rai
 - Automated resource stability now covers repeated switching across six
   dashboards, three zone sizes, retired-page/service collection, live mock object
   counts, post-GC Lua memory growth, and informational desktop refresh timing.
-  See the [mock baseline and its limitations](../docs/hardware-validation.md#automated-mock-baseline).
   Native LVGL and decoded bitmap memory still require simulator/radio evidence.
 - Establish release budgets from simulator and physical-radio baselines.
 

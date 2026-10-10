@@ -90,7 +90,6 @@ jobs:
 
           [Installation and upgrades](https://thomaskistler.github.io/aero-grid/user-guide/installation/)
           · [Dashboard configuration](https://thomaskistler.github.io/aero-grid/user-guide/dashboards/)
-          · [Hardware coverage and limitations](https://thomaskistler.github.io/aero-grid/hardware-validation/)
           EOF
           gh release view "$tag" --json body --jq '.body' | \
             sed '/^## Install and upgrade$/,$d' > build/release/notes.md

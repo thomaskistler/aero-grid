@@ -611,10 +611,8 @@ end
 --- Setup and Screens once per layout, which is enough friction that nobody
 --- would look at it -- which is the whole point of it existing.
 ---
---- `MAX_CUSTOM_SCREENS` is 10 (`radio/src/dataconstants.h`). The working
---- model keeps dashboards, palette comparison and debug screens. Review
---- models hold panel screens, with text on a separate model because the
---- original review model is full.
+--- `MAX_CUSTOM_SCREENS` is 10 (`radio/src/dataconstants.h`). One model holds
+--- standard layouts and diagnostics; two others cover the user-facing panels.
 local function testScreensReachEveryShippedLayout()
     -- The Layout setting is a CHOICE, which EdgeTX stores as a 1-based position
     -- in the list `layout_registry` builds from AEROGRID/registry.txt. The
@@ -643,15 +641,83 @@ local function testScreensReachEveryShippedLayout()
         return text
     end
 
-    local working = readModel("model1.yml")
-    local mainReview = readModel("model2.yml")
-    local textReview = readModel("model3.yml")
-    local defaultModel = readModel("model4.yml")
+    local models = {
+        {
+            filename = "model1.yml",
+            name = "AEROGRID STD",
+            layouts = { "Default", "Empty", "Host", "services", "services2" },
+        },
+        {
+            filename = "model2.yml",
+            name = "AEROGRID PANEL1",
+            layouts = {
+                "review-cell-battery",
+                "review-flight-counter",
+                "review-flight-mode",
+                "review-flight-timer",
+                "review-link-status",
+                "review-metric",
+            },
+        },
+        {
+            filename = "model3.yml",
+            name = "AEROGRID PANEL2",
+            layouts = {
+                "review-model-identity",
+                "review-navigation",
+                "review-text",
+                "review-trim-panel",
+                "review-tx-battery",
+            },
+        },
+    }
+    local selected = {}
+    local panelReviews = {}
+    for index, model in ipairs(models) do
+        assert(#model.name <= 15, model.filename .. " exceeds EdgeTX's LEN_MODEL_NAME")
+        local text = readModel(model.filename)
+        assert(string.find(text, 'name: "' .. model.name .. '"', 1, true), model.filename .. " has the wrong name")
+        local screens = {}
+        for layout, theme in
+            string.gmatch(text, "stringValue: ([%w%-]+)%s+1:%s*type: Unsigned%s*value:%s*stringValue: ([%w%-]+)")
+        do
+            screens[#screens + 1] = layout
+            assertEqual(theme, "modern", model.filename .. " screen theme")
+        end
+        assertEqual(#screens, #model.layouts, model.filename .. " screen count")
+        assert(#screens <= 10, model.filename .. " exceeds EdgeTX's MAX_CUSTOM_SCREENS")
+        for screen, layout in ipairs(screens) do
+            assertEqual(layout, model.layouts[screen], model.filename .. " screen " .. screen)
+            assert(not selected[layout], layout .. " is selected by more than one fixture screen")
+            selected[layout] = true
+            if index > 1 then
+                local panelType =
+                    assert(string.match(layout, "^review%-(.+)$"), "review model selects a non-panel layout")
+                panelReviews[panelType] = true
+                local handle = assert(hostIo.open(sourcePath .. "layouts/" .. layout .. ".yaml", "r"))
+                local yaml = handle:read("a")
+                handle:close()
+                local placements = 0
+                for typeName in string.gmatch(yaml, "\n    type: ([%w%-]+)") do
+                    assertEqual(typeName, panelType, layout .. " includes another panel type")
+                    placements = placements + 1
+                end
+                assert(placements > 0, layout .. " has no panels")
+                if panelType == "flight-counter" then
+                    assertEqual(placements, 1, "flight-counter review must install only one tracker")
+                end
+            end
+        end
+    end
+
+    local radioHandle = assert(hostIo.open(root .. "/tests/fixtures/sdcard/RADIO/radio.yml", "r"))
+    local radioText = radioHandle:read("a")
+    radioHandle:close()
     assert(
-        string.find(defaultModel, "stringValue: Default", 1, true),
-        "default model must select the default dashboard"
+        string.find(radioText, 'currModelFilename: "model1.yml"', 1, true),
+        "fixture must start on the standard model"
     )
-    local review = mainReview .. "\n" .. textReview
+    assert(string.find(radioText, "manuallyEdited: 1", 1, true), "fixture radio settings must accept manual edits")
 
     local listingPath = root .. "/build/screen-layouts.txt"
     os.execute("ls '" .. sourcePath .. "layouts' > '" .. listingPath .. "'")
@@ -674,91 +740,44 @@ local function testScreensReachEveryShippedLayout()
         assert(listed, stem .. " ships but tests/fixtures/sdcard/AEROGRID/registry.txt does not list it")
     end
 
-    -- Which layouts are selected by a screen on either model. `default` is the
-    -- host's own fallback and is reached by a widget that names nothing, so it
-    -- needs no screen; `services` and `services2` are fixtures for the service
-    -- runtime rather than anything to look at.
-    local EXEMPT = { Empty = true, Default = true, services = true, services2 = true }
-
-    local reviews = 0
+    -- Auxiliary development layouts remain available in the picker, but do
+    -- not take a dedicated screen away from standard layouts or panel reviews.
+    local AUXILIARY = { sim = true, sim2 = true, states = true, ["review-cell-sources"] = true }
     for _, stem in ipairs(shipped) do
-        if not EXEMPT[stem] then
-            local onReview = string.find(review, "stringValue: " .. stem, 1, true)
-            local onWorking = string.find(working, "stringValue: " .. stem, 1, true)
+        if not AUXILIARY[stem] then
+            assert(selected[stem], stem .. " has no dedicated fixture screen")
+        end
+    end
+
+    os.execute("ls '" .. sourcePath .. "panels' > '" .. listingPath .. "'")
+    listing = assert(hostIo.open(listingPath, "r"))
+    local count = 0
+    for name in listing:lines() do
+        local stem = string.match(name, "^(.+)%.lua$")
+        if stem and stem ~= "host-diagnostics" and stem ~= "service-probe" then
+            assert(panelReviews[stem], stem .. " has no panel-review screen")
+            count = count + 1
+        end
+    end
+    listing:close()
+    os.remove(listingPath)
+    assertEqual(count, 11, "fixture user-facing panel coverage")
+
+    os.execute("ls '" .. root .. "/tests/fixtures/sdcard/MODELS' > '" .. listingPath .. "'")
+    listing = assert(hostIo.open(listingPath, "r"))
+    local modelCount = 0
+    for name in listing:lines() do
+        if string.match(name, "^model%d+%.yml$") then
+            modelCount = modelCount + 1
             assert(
-                onReview or onWorking,
-                stem
-                    .. " ships as a layout but no screen of either tracked model selects"
-                    .. " it, so nothing pages to it"
+                name == "model1.yml" or name == "model2.yml" or name == "model3.yml",
+                "unexpected fixture model " .. name
             )
-
-            -- A review screen belongs on the review model. Putting one back on the
-            -- working model is how the single self-replacing review screen came
-            -- about, which is the arrangement this replaced.
-            if string.match(stem, "^review%-") then
-                reviews = reviews + 1
-                assert(
-                    onReview and not onWorking,
-                    stem
-                        .. " is a review layout but is selected by the working model;"
-                        .. " review screens live on the review model"
-                )
-            end
         end
     end
-    assert(reviews >= 3, "only " .. reviews .. " review layouts were checked")
-
-    -- The dashboards come first, because they are what the radio is for.
-    local order = {}
-    for value in string.gmatch(working, "stringValue: ([%w%-]+)") do
-        order[#order + 1] = value
-    end
-    local position = {}
-    local screen = 0
-    for _, name in ipairs(order) do
-        if name ~= "modern" and name ~= "edgetx" then
-            screen = screen + 1
-            position[name] = position[name] or screen
-        end
-    end
-    assert(position.sim == 1 and position.sim2 == 2, "the two dashboards are not the first two screens")
-
-    -- The states layout is carried twice, and the two screens are only worth
-    -- the space if they resolve different palettes. Each screen stores Layout
-    -- then Theme, so the value after a `states` entry is that screen's theme.
-    local themes = {}
-    for index, name in ipairs(order) do
-        if name == "states" then
-            themes[#themes + 1] = order[index + 1]
-        end
-    end
-    assertEqual(#themes, 2, "the states layout is not carried on two screens")
-    assert(
-        themes[1] ~= themes[2],
-        "both states screens are set to the "
-            .. tostring(themes[1])
-            .. " palette, so the derived tints are on no screen at all"
-    )
-    for _, mode in ipairs(themes) do
-        assert(mode == "modern" or mode == "edgetx", "a states screen asks for an unknown palette: " .. tostring(mode))
-    end
-
-    -- EdgeTX stops at MAX_CUSTOM_SCREENS, which is 10 on colour targets
-    -- (radio/src/dataconstants.h). A model carrying more is one the radio will
-    -- not load as written. Check each model independently.
-    for name, text in pairs({
-        ["model1.yml"] = working,
-        ["model2.yml"] = mainReview,
-        ["model3.yml"] = textReview,
-        ["model4.yml"] = defaultModel,
-    }) do
-        local screens = 0
-        for _ in string.gmatch(text, "\n      LayoutId:") do
-            screens = screens + 1
-        end
-        assert(screens >= 1, name .. " carries no screens at all")
-        assert(screens <= 10, name .. " carries " .. screens .. " screens, more than EdgeTX's MAX_CUSTOM_SCREENS of 10")
-    end
+    listing:close()
+    os.remove(listingPath)
+    assertEqual(modelCount, 3, "fixture must contain exactly three models")
 end
 
 local function testShippedLayout()

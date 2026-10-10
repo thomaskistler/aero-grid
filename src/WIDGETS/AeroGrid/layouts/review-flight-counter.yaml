@@ -1,0 +1,22 @@
+# One tracker per model: resize this panel to review its other supported spans.
+# Arm with SF down, raise CH3 above 25%, and stream a live telemetry link.
+version: 1
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: flights
+    type: flight-counter
+    col: 1
+    row: 1
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: Flights
+      armSwitch: SFv
+      motorSource: ch3
+      minMotorPercent: 25
+      minFlightDuration: 3
+      disarmDuration: 3
+      announcements: false
+      history: false
