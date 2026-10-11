@@ -133,7 +133,7 @@ screenData:
         for layout in (sd / "WIDGETS/AeroGrid/layouts").glob("*.yaml"):
             if layout.stem not in ("Empty", "Default", "Diagnostics", "Palette"):
                 layout.unlink()
-        (sd / "AEROGRID/registry.txt").write_text("Empty\nDefault\nHost\nTheme\n")
+        (sd / "AEROGRID/layout-registry.txt").write_text("Empty\nDefault\nHost\nTheme\n")
         (sd / "capture-ready.txt").write_text("native setup capture")
         return
     if scene in THEME_SCENES:
