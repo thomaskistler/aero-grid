@@ -18,4 +18,12 @@ AeroGrid aims to fill that gap with **configurable, modern-looking dashboards
 and panels**: choose your information, arrange it in YAML, and get a consistent
 visual language across the whole dashboard.
 
-See the **[documentation](https://thomaskistler.github.io/aero-grid/)** for the User Guide, panel Reference Guide, and Developer Guide.
+## Download
+
+Download the latest installation ZIP from [GitHub Releases](https://github.com/thomaskistler/aero-grid/releases). Extract the ZIP file, and copy `WIDGETS/AeroGrid/` into the SD card's
+`/WIDGETS/` directory. 
+
+## Documentation
+
+You can find the full [**documentation**](https://thomaskistler.github.io/aero-grid/) for the User Guide, panel Reference Guide, and Developer Guide [here](https://thomaskistler.github.io/aero-grid/).
+
