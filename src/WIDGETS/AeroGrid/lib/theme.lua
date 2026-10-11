@@ -696,10 +696,16 @@ function theme.build(mode)
     -- against it, so a tint mixed earlier would be mixed from a surface that no
     -- longer exists.
     local separation = definition.tintSeparation or (definition.light and 1.08 or nil)
+    local function alertSurface(accentColor, preferred, faintTextUsed)
+        if not definition.correctForContrast and preferred ~= nil then
+            return preferred
+        end
+        return theme.alertSurface(tokens, accentColor, preferred, faintTextUsed, separation)
+    end
     local alertRgb = {
-        warning = theme.alertSurface(tokens, tokens.amber, definition.warningBg, nil, separation),
-        critical = theme.alertSurface(tokens, tokens.critical, definition.criticalBg, nil, separation),
-        active = theme.alertSurface(tokens, tokens.blue, definition.activeBg, false, separation),
+        warning = alertSurface(tokens.amber, definition.warningBg),
+        critical = alertSurface(tokens.critical, definition.criticalBg),
+        active = alertSurface(tokens.blue, definition.activeBg, false),
     }
     local alertColor = {}
     for name, value in pairs(alertRgb) do

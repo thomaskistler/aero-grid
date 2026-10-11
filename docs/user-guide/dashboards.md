@@ -182,6 +182,11 @@ a receiver or telemetry setup. Switch the widget's **Theme** option between
 Modern Dark and Modern Light to compare the same samples. Normal, active,
 warning, critical, stale, and unavailable cards are shown together.
 
+Modern Dark uses yellow `0xFFE000` for its amber accent. Modern Light uses
+gold `0xFFB700` with a pale yellow `0xFFF4B8` warning background. Both palettes
+disable contrast correction; Modern Light's brighter amber intentionally has
+less contrast against its panel backgrounds than the automatic safeguards require.
+
 Copy one complete file from `/WIDGETS/AeroGrid/themes/` to
 `/AEROGRID/themes/<name>.yml`. Set `name` to the filename stem and provide a
 `label` and `version: 1`. Define every color token and spacing value; themes do
@@ -191,10 +196,13 @@ white and `0x000000` for black. `accent` selects the default semantic accent
 `criticalBg`, and `activeBg` panel-surface backgrounds, in the `colors:` section.
 `light` and `tintSeparation` tune light-theme alert surfaces.
 `correctForContrast` controls automatic legibility adjustments; it defaults to
-`true`. Set it to `false` to preserve the specified palette values. Use spaces
-for YAML indentation, not tabs.
+`true`. Set it to `false` to preserve all explicitly specified palette values,
+including `warningBg`, `criticalBg`, and `activeBg`, without contrast-based
+substitution. You are responsible for readability in this mode. Omitted alert
+backgrounds still use contrast-checked derived tints, and invalid theme values
+are still rejected. Use spaces for YAML indentation, not tabs.
 
-Contrast safeguards may adjust a color to preserve legibility. Review the
+With contrast correction enabled, safeguards may adjust a color to preserve legibility. Review the
 palette on the **Palette** layout and on the radio as well as in the simulator.
 Restart the radio or simulator after adding a theme so the picker reloads.
 

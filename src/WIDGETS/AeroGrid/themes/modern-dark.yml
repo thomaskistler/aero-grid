@@ -8,7 +8,7 @@ name: modern-dark
 label: Modern Dark
 # Default panel accent when a panel does not select a semantic accent itself.
 accent: cyan
-# Skip automatic contrast correction of palette color tokens.
+# Preserve explicit palette colors and alert backgrounds without contrast correction.
 correctForContrast: false
 colors:
   # Widget background behind all panels.
@@ -34,7 +34,7 @@ colors:
   # Green semantic accent.
   green: 0x55D990
   # Amber semantic accent, including warning indication.
-  amber: 0xF2B84B
+  amber: 0xFFE000
   # Orange semantic accent.
   orange: 0xFF762E
   # Critical-state foreground accent.
