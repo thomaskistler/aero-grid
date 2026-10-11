@@ -221,6 +221,35 @@ footer {
   color: var(--ag-muted);
 }
 
+.ag-photo-gallery {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.ag-photo-gallery figure {
+  margin: 0;
+}
+
+.ag-photo-gallery img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.ag-photo-gallery figcaption {
+  margin-top: 0.5rem;
+  color: var(--ag-muted);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 575px) {
+  .ag-photo-gallery {
+    grid-template-columns: 1fr;
+  }
+}
+
 a:focus-visible,
 button:focus-visible {
   outline: 2px solid var(--ag-cyan);

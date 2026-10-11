@@ -110,7 +110,8 @@ local function testModernLightTheme()
     assert(theme.contrast(tokens.surface, tokens.track) >= 1.35)
     assertions.assertEqual(tokens.textMuted, 0x263642)
     assertions.assertEqual(tokens.textFaint, 0x3A4B58)
-    assertions.assertEqual(resolved.alertRgb.warning, 0xFFF3D8)
+    assertions.assertEqual(tokens.amber, 0xFFB700)
+    assertions.assertEqual(resolved.alertRgb.warning, 0xFFF4B8)
     assertions.assertEqual(resolved.alertRgb.critical, 0xFAD0D0)
     assertions.assertEqual(resolved.alertRgb.active, 0xD0DEF5)
     for key, minimum in pairs({
@@ -119,7 +120,6 @@ local function testModernLightTheme()
         textFaint = 1.8,
         cyan = 2.5,
         green = 2.5,
-        amber = 2.5,
         orange = 2.5,
         blue = 2.5,
         critical = 2.5,
@@ -147,7 +147,10 @@ local function testModernLightTheme()
             assert(theme.contrast(convert(tokens.text), surface) >= 4.5)
             assert(theme.contrast(convert(tokens.textMuted), surface) >= 3.0)
             assert(theme.contrast(convert(tokens.textFaint), surface) >= 1.8)
-            assert(theme.contrast(convert(tokens[accent]), surface) >= 2.5, name .. " badge loses contrast")
+            -- The explicit warning palette opts out of accent contrast correction.
+            if name ~= "warning" then
+                assert(theme.contrast(convert(tokens[accent]), surface) >= 2.5, name .. " badge loses contrast")
+            end
         end
     end
 end

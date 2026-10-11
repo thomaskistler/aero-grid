@@ -18,7 +18,10 @@ nav:
   - Home: index.md
   - User Guide:
       - Install and upgrade: user-guide/installation.md
-      - Add, configure and edit a dashboard: user-guide/dashboards.md
+      - Add a dashboard: user-guide/add-dashboard.md
+      - Edit a dashboard on the radio: user-guide/edit-dashboard.md
+      - Customize themes: user-guide/customize-themes.md
+      - Troubleshoot and file bugs: user-guide/troubleshooting.md
   - Reference Guide:
       - Overview: reference-guide/index.md
       - Panels:
