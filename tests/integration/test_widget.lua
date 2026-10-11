@@ -616,9 +616,9 @@ end
 --- standard layouts and diagnostics; two others cover the user-facing panels.
 local function testScreensReachEveryShippedLayout()
     -- The Layout setting is a CHOICE, which EdgeTX stores as a 1-based position
-    -- in the list `layout_registry` builds from AEROGRID/registry.txt. The
+    -- in the list `layout_registry` builds from AEROGRID/layout-registry.txt. The
     -- fixture seeds that file so the stored positions are reproducible.
-    local registryHandle = assert(hostIo.open(root .. "/tests/fixtures/sdcard/AEROGRID/registry.txt", "r"))
+    local registryHandle = assert(hostIo.open(root .. "/tests/fixtures/sdcard/AEROGRID/layout-registry.txt", "r"))
     local registered = {}
     for name in registryHandle:lines() do
         registered[#registered + 1] = name
@@ -738,7 +738,7 @@ local function testScreensReachEveryShippedLayout()
         for _, name in ipairs(registered) do
             listed = listed or name == stem
         end
-        assert(listed, stem .. " ships but tests/fixtures/sdcard/AEROGRID/registry.txt does not list it")
+        assert(listed, stem .. " ships but tests/fixtures/sdcard/AEROGRID/layout-registry.txt does not list it")
     end
     os.execute("ls '" .. developmentLayoutsPath .. "' > '" .. listingPath .. "'")
     local fixtureListing = assert(hostIo.open(listingPath, "r"))

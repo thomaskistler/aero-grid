@@ -670,10 +670,10 @@ local function testPanelDocumentationLoads()
     -- The utility is documented as a dashboard, not an instrument reference.
     for index = #kinds, 1, -1 do
         if kinds[index] == "theme-showcase" then
-            local handle = assert(io.open(root .. "/docs/user-guide/dashboards.md", "r"))
+            local handle = assert(io.open(root .. "/docs/user-guide/customize-themes.md", "r"))
             local page = handle:read("*a")
             handle:close()
-            assert(string.find(page, "## Customize themes", 1, true))
+            assert(string.find(page, "# Customize themes", 1, true))
             assert(string.find(page, "/WIDGETS/AeroGrid/themes/", 1, true))
             assert(string.find(page, "/AEROGRID/themes/", 1, true))
             table.remove(kinds, index)

@@ -35,6 +35,8 @@ current signatures; planning examples can describe earlier contracts.
 1. EdgeTX loads `main.lua` and passes a zone and the native **Layout** and
    **Theme** options. Layout choices use stable positions maintained by
    `layout_registry.lua`.
+   Stable layout positions are stored in `/AEROGRID/layout-registry.txt`,
+   separately from `/AEROGRID/theme-registry.txt`.
 2. The host resolves the selected name through `layout_store.lua`. A saved
    `/AEROGRID/layouts/<name>.yaml` takes precedence over the bundled
    `/WIDGETS/AeroGrid/layouts/<name>.yaml`; a missing file can fall back to

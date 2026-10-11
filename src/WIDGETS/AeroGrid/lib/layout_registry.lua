@@ -18,7 +18,7 @@ function registry.load(sdRoot, widgetPath, ops)
     return nameRegistry.load(
         widgetPath .. "layouts",
         sdRoot .. "AEROGRID/layouts",
-        sdRoot .. "AEROGRID/registry.txt",
+        sdRoot .. "AEROGRID/layout-registry.txt",
         ".yaml",
         { registry.EMPTY },
         ops,

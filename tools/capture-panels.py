@@ -67,7 +67,7 @@ def prepare(sd, recipe, recipe_path=None):
     for bytecode in sd.rglob("*.luac"):
         bytecode.unlink()
     # The Layout option is a CHOICE stored as a 1-based registry position.
-    registry = sd / "AEROGRID/registry.txt"
+    registry = sd / "AEROGRID/layout-registry.txt"
     names = registry.read_text().split()
     if "capture-panels" not in names:
         names.append("capture-panels")
