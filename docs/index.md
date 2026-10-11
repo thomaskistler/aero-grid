@@ -4,6 +4,21 @@ AeroGrid is a configurable 4 x 4 glass-cockpit dashboard for EdgeTX color radios
 YAML layouts combine telemetry, model timers, flight tracking, switch states,
 trim positions, and model images in responsive panels.
 
+<div class="ag-photo-gallery">
+  <figure>
+    <a href="assets/photos/aero-grid.jpg"><img src="assets/photos/aero-grid.jpg" alt="AeroGrid running on a RadioMaster TX16S beside a fixed-wing model aircraft on grass"></a>
+    <figcaption>AeroGrid at the flying field.</figcaption>
+  </figure>
+  <figure>
+    <a href="assets/photos/modern-dark.jpg"><img src="assets/photos/modern-dark.jpg" alt="Modern Dark dashboard on a RadioMaster TX16S showing telemetry, switch states, and a model image"></a>
+    <figcaption>Modern Dark on a RadioMaster TX16S.</figcaption>
+  </figure>
+  <figure>
+    <a href="assets/photos/modern-light.jpg"><img src="assets/photos/modern-light.jpg" alt="Modern Light dashboard on a RadioMaster TX16S showing yellow warning and blue in-flight backgrounds"></a>
+    <figcaption>Modern Light on the same radio.</figcaption>
+  </figure>
+</div>
+
 ## Why AeroGrid?
 
 EdgeTX is an excellent foundation: open source, remarkably configurable, and
@@ -26,24 +41,3 @@ AeroGrid's goal is to provide **flexible, configurable, modern-looking dashboard
 and panels**, with a consistent visual language throughout. Choose the information
 that matters to your model, arrange it in a YAML-defined grid, and keep the same
 typography, spacing, colors, and state indicators across the dashboard.
-
-## User Guide
-
-Learn how to [install and upgrade](user-guide/installation.md), then
-[add, configure and edit a dashboard](user-guide/dashboards.md), including
-selecting layouts, using the on-radio editor, binding sources, and
-troubleshooting unavailable readings.
-
-## Reference Guide
-
-The [panel reference](reference-guide/index.md) describes each panel's
-settings, presentations, and behavior when data is unavailable.
-
-## Developer Guide
-
-Start with [checking out and building](developer-guide/build.md), then
-[test and debug](developer-guide/testing.md) and
-[run in VS Code or Companion](developer-guide/simulators.md).
-Find your way around the [repository and architecture](developer-guide/architecture.md),
-use the [project tools](developer-guide/tools.md), and learn how to
-[file issues, contribute changes, and publish releases](developer-guide/contributing.md).

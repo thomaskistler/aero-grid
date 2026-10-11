@@ -132,7 +132,7 @@ python3 tools/capture-editor.py --scene theme-custom
 The custom scene uses a fixed blue-gray palette with warm text and green
 default accents. To experiment interactively, add a `.yml` file in the user
 theme directory described
-in [Customize themes](../user-guide/dashboards.md#customize-themes).
+in [Customize themes](../user-guide/customize-themes.md).
 Panel recipes also accept `theme: modern-light` for checking individual
 instruments in the built-in light palette.
 

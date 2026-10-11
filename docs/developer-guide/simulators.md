@@ -138,7 +138,7 @@ The last screen of **AEROGRID STD** is the telemetry-free **Palette** layout. It
 fixed samples show token swatches, text levels, accents, a dial, bars, and
 the six dashboard panel states. Change the widget's Theme option to compare
 Modern Dark and Modern Light, or add a `.yml` theme file as described in
-[Customize themes](../user-guide/dashboards.md#customize-themes).
+[Customize themes](../user-guide/customize-themes.md).
 
 **Diagnostics** reports loading, package identity, and service errors; `services`
 and `services2` exercise the service-probe panel across all five services.
