@@ -289,11 +289,40 @@ local function loadModule(base, relative, runtimeApi, ...)
     return module
 end
 
---- Append a user-visible runtime error.
+local ERROR_LOG_LIMIT = 64
+
+local function logError(context, message)
+    local text = "[AeroGrid] ERROR layout="
+        .. tostring(context.layoutName or "--")
+        .. " model="
+        .. tostring(context.modelFilename or "--")
+        .. ": "
+        .. tostring(message)
+    local history = context.errorLog
+    if not history then
+        history = { messages = {}, order = {}, next = 1 }
+        context.errorLog = history
+    end
+    if history.messages[text] then
+        return
+    end
+    -- Keep deduplication bounded, and retain it across this widget's reloads.
+    local expired = history.order[history.next]
+    if expired then
+        history.messages[expired] = nil
+    end
+    history.messages[text] = true
+    history.order[history.next] = text
+    history.next = history.next % ERROR_LOG_LIMIT + 1
+    print(text)
+end
+
+--- Append a user-visible runtime error and mirror it to the firmware console.
 ---@param context AeroGridContext
 ---@param message any
 local function addError(context, message)
     context.errors[#context.errors + 1] = tostring(message)
+    logError(context, message)
 end
 
 --- Notices retained for diagnostics; older ones are dropped rather than grown.
@@ -629,6 +658,7 @@ local function create(zone, widgetOptions, path)
         if context.dashboardLifecycle then
             context.editorController = bindHost(controller, "lib/editor_controller.lua", {
                 addError = addError,
+                logError = logError,
                 showErrors = showErrors,
                 loadModule = loadModule,
                 isFullScreen = isFullScreen,

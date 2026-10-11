@@ -756,6 +756,7 @@ function drawer.advance(context, state)
     end
     if ok == false then
         state.status, state.statusError = tostring(err), true
+        state.handlers.logError(command.action .. (command.field and (" setting=" .. command.field.key) or ""), err)
         if command.control and state.nativeDrawer then
             fieldError(state, command.control, tostring(err))
         end

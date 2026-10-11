@@ -2,6 +2,17 @@
 
 local root = assert(...)
 local hostIo = io
+local originalPrint, errorLogs = print, {}
+print = function(message)
+    errorLogs[#errorLogs + 1] = message
+end
+local function logged(fragment)
+    for _, message in ipairs(errorLogs) do
+        if string.find(message, fragment, 1, true) then
+            return message
+        end
+    end
+end
 local widget = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
 local path = root .. "/build/test-widgets/editor-ui/"
 os.execute("mkdir -p '" .. path .. "'")
@@ -616,6 +627,7 @@ settleSave()
 equal(context.editorUi, state, "save failure keeps draft open")
 assert(string.find(state.status, "simulated SD write failure", 1, true), "save error is displayed")
 equal(state.statusLabel.hidden, false, "save failures remain visible")
+assert(logged("simulated SD write failure"), "caught save errors are logged")
 state.handlers.advanceSave = function()
     error("simulated file API exception")
 end
@@ -990,6 +1002,33 @@ context.editorUi.previewPending = true
 settleDrawer()
 assert(context.editorUi.previewError, "invalid settings report a preview failure")
 equal(context.editorUi.statusLabel.hidden, false, "preview failure is visible in editing")
+local previewLog = assert(logged(context.editorUi.previewError), "caught preview validation is logged")
+assert(string.find(previewLog, "[AeroGrid] ERROR layout=edit-sparse model=", 1, true), "log includes host identity")
+assert(string.find(previewLog, "editor preview panel=m1 type=metric", 1, true), "log names operation and panel")
+local logCount, retainedErrors = #errorLogs, #context.errors
+for _ = 1, 100 do
+    context.editorUi.handlers.logError("preview", context.editorUi.previewError)
+end
+equal(#errorLogs, logCount, "repeated per-frame errors are deduplicated")
+equal(#context.errors, retainedErrors, "editor logging does not add permanent dashboard errors")
+for index = 1, 70 do
+    context.editorUi.handlers.logError("test", "distinct error " .. index)
+end
+equal(#context.errorLog.order, 64, "deduplication history is bounded")
+local remembered = 0
+for _ in pairs(context.errorLog.messages) do
+    remembered = remembered + 1
+end
+equal(remembered, 64, "evicted messages do not accumulate in the lookup")
+context.editorUi.handlers.logError("preview", context.editorUi.previewError)
+equal(#errorLogs, logCount + 71, "evicted errors can be reported again")
+equal(widget.lvglMock.message().title, "Panel preview failed", "preview failures open a native error dialog")
+equal(widget.lvglMock.message().details, context.editorUi.previewError, "error details retain the entire explanation")
+equal(
+    context.editorUi.statusLabel.properties.text,
+    "Panel preview failed; see error details.",
+    "the bottom status line does not wrap the full error below the screen"
+)
 equal(#context.panels, 0, "failed preview does not leave a second or stale live instance")
 assert(context.editorModule.setPath(context.editorSession, "metrics", { 1, "source" }, previewSource))
 context.editorUi.previewPending = true
@@ -1005,6 +1044,53 @@ end
 equal(context.panels[1].instance.label.properties.text, "ALT", "discard restores original panel contents")
 equal(context.document.panels[1].config.metrics[1].label, "ALT", "previews never mutate committed layout")
 assert(not hostIo.open(path .. "AEROGRID/layouts/edit-sparse.yaml", "r"), "discard does not write a layout")
+
+-- A newly added identity panel can select either picture mode without treating
+-- the editor's default label as a custom heading.
+for _, presentation in ipairs({ "image", "both" }) do
+    load("edit-sparse")
+    open()
+    assert(context.editorModule.add(context.editorSession, "model-identity"))
+    local index = context.editorSession.selected
+    equal(context.editorSession.draft.panels[index].config.label, "MODEL", "new identity has the fallback label")
+    context.editorUi.previewPending = true
+    settleDrawer()
+    local identityRect = context.editorUi.controls[index].rect
+    tap(identityRect.x + identityRect.w - 12, identityRect.y + 12)
+    settleDrawer()
+    local show = control("presentation")
+    equal(show.kind, "choice", "identity presentation uses the native choice control")
+    show.properties.set(presentation == "image" and 3 or 4)
+    settleDrawer()
+    back()
+    equal(context.editorUi.previewError, nil, "picture mode previews with the default label")
+    equal(
+        context.editorSession.draft.panels[index].config.presentation,
+        presentation,
+        "native selection updates the draft"
+    )
+    local valid, errors = context.editorModule.validate(context.editorSession)
+    assert(valid, table.concat(errors, "; "))
+    local found
+    for _, entry in ipairs(context.panels) do
+        if entry.placement.id == context.editorSession.draft.panels[index].id then
+            found = entry
+        end
+    end
+    assert(found and not found.failed, "identity picture selection builds a live preview")
+    tap(identityRect.x + identityRect.w - 12, identityRect.y + 12)
+    settleDrawer()
+    control("label").properties.set("CUSTOM")
+    settleDrawer()
+    back()
+    assert(
+        string.find(context.editorUi.previewError, "label is not drawn", 1, true),
+        "custom heading is still rejected"
+    )
+    equal(widget.lvglMock.message().details, context.editorUi.previewError, "custom heading conflict is fully readable")
+    context.editorUi.handlers.close(false)
+    widget.pump(context, 70)
+end
 
 -- State entries drill into ordered conditions, without reorder controls.
 write(
@@ -1365,4 +1451,5 @@ for name in pairs(events) do
     rawset(_G, name, previous[name])
 end
 setmetatable(_G, oldMetatable)
+print = originalPrint
 print("Editor UI integration passed; worst callback: " .. worst .. " instructions")

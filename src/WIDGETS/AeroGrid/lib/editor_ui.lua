@@ -48,6 +48,7 @@ local function render(context, state)
     local previewed, previewError = state.handlers.preview(state.session.draft)
     if not previewed then
         state.status, state.statusError = tostring(previewError), true
+        state.handlers.logError("preview geometry", previewError)
     end
     for index, preview in ipairs(state.previews) do
         local placement = placements[index]
@@ -105,7 +106,10 @@ local function render(context, state)
             y = math.floor((state.addRect.h - state.addSymbolHeight) / 2),
         })
     end
-    state.statusLabel:set({ text = state.status })
+    state.statusLabel:set({
+        text = state.previewError and state.status == state.previewError and "Panel preview failed; see error details."
+            or state.status,
+    })
     visible(state.statusLabel, state.statusError == true)
 end
 
@@ -185,9 +189,18 @@ function uiModule.advance(context)
             if state.previewError and state.status == state.previewError then
                 state.status, state.statusError = "", false
             end
+            local previousError = state.previewError
             state.previewError = previewError
             if previewError then
                 state.status, state.statusError = previewError, true
+                state.handlers.logError("preview", previewError)
+                if previewError ~= previousError then
+                    lvgl.message({
+                        title = "Panel preview failed",
+                        message = "Check the panel settings.",
+                        details = previewError,
+                    })
+                end
             end
             render(context, state)
         end
@@ -232,6 +245,7 @@ function uiModule.advance(context)
         local saving, editor, session = state.saving, state.handlers.editor, state.session
         local function failed(message)
             state.status, state.saveFailed, state.statusError = tostring(message), true, true
+            state.handlers.logError("save", message)
             state.saving = nil
             render(context, state)
         end
@@ -380,6 +394,7 @@ function uiModule.saveFailure(context, message)
     state.saving = nil
     state.saveFailed, state.statusError = true, true
     state.status = "Cannot save layout: " .. tostring(message)
+    state.handlers.logError("save", message)
     state.statusLabel:set({ text = state.status })
     lvgl.show(state.statusLabel)
 end
@@ -425,6 +440,7 @@ local function drag(context, state, event, touch)
                     local positions, err = state.handlers.editor.resizePositions(state.session, left, top)
                     if not positions then
                         state.status, state.statusError = tostring(err), true
+                        state.handlers.logError("resize", err)
                         render(context, state)
                         return true
                     end
@@ -474,6 +490,7 @@ local function drag(context, state, event, touch)
             end
             if not moved then
                 state.status, state.statusError = tostring(err), true
+                state.handlers.logError(state.drag.resize and "resize" or "move", err)
             end
             render(context, state)
         end
