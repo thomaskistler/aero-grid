@@ -55,7 +55,7 @@ local function render(context, state)
         visible(preview.background, placement ~= nil and not existing)
         visible(preview.text, placement ~= nil and not existing)
         local controls = state.controls[index]
-        visible(controls.gear, placement ~= nil and state.mode == "menu")
+        visible(controls.gearBackground, placement ~= nil and state.mode == "menu")
         if placement then
             local previous = controls.placement
             if
@@ -76,7 +76,7 @@ local function render(context, state)
                     colSpan = placement.colSpan,
                     rowSpan = placement.rowSpan,
                 }
-                controls.gear:set({ x = rect.x + rect.w - 28, y = rect.y + 4 })
+                controls.gearBackground:set({ x = rect.x + rect.w - 28, y = rect.y + 4 })
             end
             if not existing then
                 local rect = controls.rect
@@ -324,12 +324,23 @@ function uiModule.advance(context)
                 }),
                 text = label(state.screen, { x = 0, y = 0, w = 1, h = 1 }, "", context.theme.color.text),
             }
-            local filename = context.path .. "assets/editor-configure.png"
+            local iconName = context.theme.light and "editor-configure-light.png" or "editor-configure.png"
+            local filename = context.path .. "assets/" .. iconName
             if type(fstat) == "function" and not fstat(filename) then
                 error("editor icon missing: " .. filename)
             end
+            local gearBackground = lvgl.rectangle(state.screen, {
+                x = 0,
+                y = 0,
+                w = 24,
+                h = 24,
+                color = context.theme.color.surfaceRaised,
+                rounded = 12,
+                filled = true,
+            })
             state.controls[index] = {
-                gear = lvgl.image(state.screen, { x = 0, y = 0, w = 24, h = 24, file = filename, fill = false }),
+                gearBackground = gearBackground,
+                gear = lvgl.image(gearBackground, { x = 0, y = 0, w = 24, h = 24, file = filename, fill = false }),
             }
         end
     elseif stage == 9 then

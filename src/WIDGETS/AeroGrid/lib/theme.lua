@@ -26,6 +26,7 @@
 ---@field color table<string, integer> Display values produced by lcd.RGB.
 ---@field spacing table
 ---@field accent string Default semantic accent token name.
+---@field light boolean Whether the theme uses a light palette.
 ---@field warnings string[] Things the layout asked for that cannot be honoured.
 ---@field notices table[] `{severity, text}` records of the host adapting.
 
@@ -720,6 +721,7 @@ function theme.build(mode)
     return {
         mode = mode,
         label = definition.label,
+        light = definition.light == true,
         requested = requested,
         rgb = tokens,
         color = toDisplay(tokens),

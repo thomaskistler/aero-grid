@@ -246,17 +246,21 @@ local function open()
     settle()
     refresh(EVT_TOUCH_BREAK)
 end
-local function load(id)
+local function load(id, theme)
     local savePath = path .. "AEROGRID/layouts/" .. id .. ".yaml"
     os.remove(savePath)
     os.remove(savePath .. ".bak")
-    context = widget.createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = id, Theme = "modern-dark" }, path)
+    context = widget.createLoaded(
+        { x = 0, y = 0, w = 480, h = 272 },
+        { Layout = id, Theme = theme or "modern-dark" },
+        path
+    )
     assert(#context.errors == 0, table.concat(context.errors, "; "))
     widget.pump(context, 10)
 end
 widget.lvglMock.setAppMode(true)
 widget.lvglMock.setFullScreen(false)
-load("edit-sparse")
+load("edit-sparse", "modern-light")
 refresh(EVT_TOUCH_LONG, { x = 50, y = 40 })
 equal(context.editorUi, nil, "App mode is read-only")
 widget.lvglMock.setFullScreen(true)
@@ -270,9 +274,28 @@ widget.tick(100)
 refresh()
 equal(context.editorUi, nil, "moving finger cancels long-press entry")
 open()
+equal(
+    context.editorUi.controls[1].gearBackground.properties.color,
+    context.theme.color.surfaceRaised,
+    "gear backing uses the light theme raised surface"
+)
+equal(
+    context.editorUi.controls[1].gear.properties.file,
+    path .. "assets/editor-configure-light.png",
+    "light theme uses a contrasting settings icon"
+)
+load("edit-sparse")
+open()
 local entry, instance = context.panels[1], context.panels[1].instance
 local state = context.editorUi
 equal(state.controls[1].left, nil, "no corner remove control")
+equal(state.controls[1].gearBackground.kind, "rectangle", "settings control has a theme-colored backing")
+equal(
+    state.controls[1].gearBackground.properties.color,
+    context.theme.color.surfaceRaised,
+    "gear backing uses the dark theme raised surface"
+)
+equal(state.controls[1].gearBackground.properties.rounded, 12, "gear backing is circular")
 equal(state.controls[1].gear.kind, "image", "settings control uses a rendered icon")
 equal(state.controls[1].gear.properties.file, path .. "assets/editor-configure.png", "settings icon asset")
 equal(state.addRect.x, state.cells[2].rect.x, "+ appears in first free cell")
@@ -342,7 +365,14 @@ resizeCorner(false, false, { col = 0, row = 0, colSpan = 1, rowSpan = 1 })
 
 -- Gear opens settings; corner controls must not begin dragging.
 local rect = state.controls[1].rect
-equal(state.controls[1].gear.properties.x, rect.x + rect.w - 28, "gear stays at top-right")
+equal(state.controls[1].gearBackground.properties.x, rect.x + rect.w - 28, "gear stays at top-right")
+equal(
+    state.controls[1].gear.properties.x,
+    0,
+    "gear stays at the local origin of its backing"
+)
+equal(state.controls[1].gear.properties.y, 0, "gear stays vertically centered inside its backing")
+equal(state.controls[1].gear.parent, state.controls[1].gearBackground, "gear moves with its backing")
 tap(rect.x + 12, rect.y + 12)
 equal(#context.editorSession.draft.panels, 1, "old top-left X target does not remove panel")
 equal(state.mode, "menu", "top-left panel tap does not configure")

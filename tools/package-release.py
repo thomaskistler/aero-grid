@@ -9,7 +9,13 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = re.compile(r'(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:beta|rc)\.[1-9]\d*)?')
 LAYOUTS = {"Default.yaml", "Empty.yaml", "Diagnostics.yaml", "Palette.yaml"}
-ASSETS = {"editor-configure.png", "editor-configure.svg", "LICENSE.txt"}
+ASSETS = {
+    "editor-configure-light.png",
+    "editor-configure-light.svg",
+    "editor-configure.png",
+    "editor-configure.svg",
+    "LICENSE.txt",
+}
 THEMES = {"modern-dark.yml", "modern-light.yml"}
 
 
