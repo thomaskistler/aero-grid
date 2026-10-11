@@ -366,11 +366,7 @@ resizeCorner(false, false, { col = 0, row = 0, colSpan = 1, rowSpan = 1 })
 -- Gear opens settings; corner controls must not begin dragging.
 local rect = state.controls[1].rect
 equal(state.controls[1].gearBackground.properties.x, rect.x + rect.w - 28, "gear stays at top-right")
-equal(
-    state.controls[1].gear.properties.x,
-    0,
-    "gear stays at the local origin of its backing"
-)
+equal(state.controls[1].gear.properties.x, 0, "gear stays at the local origin of its backing")
 equal(state.controls[1].gear.properties.y, 0, "gear stays vertically centered inside its backing")
 equal(state.controls[1].gear.parent, state.controls[1].gearBackground, "gear moves with its backing")
 tap(rect.x + 12, rect.y + 12)
