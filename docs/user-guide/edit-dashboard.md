@@ -50,6 +50,14 @@ never change the panel mode.
 Press **RTN** or tap outside a dialog to return one level. Changes remain in
 your draft.
 
+If settings cannot be previewed, a **Panel preview failed** message appears.
+Open its details to read the full panel-specific explanation, then correct
+the settings. The short status line clears when the preview succeeds.
+In Companion's simulator, caught errors also appear in **View > Debug Output**
+(**F6**), with repeated messages suppressed. See
+[Simulator logs and caught errors](../developer-guide/testing.md#simulator-logs-and-caught-errors)
+for console filters and persistent logging.
+
 ## Save or discard changes
 
 From the editing dashboard, press **RTN**. If nothing changed, editing closes.

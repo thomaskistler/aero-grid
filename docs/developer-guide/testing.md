@@ -119,6 +119,40 @@ failure: verify its binding and link state first.
 If the display ignores your code change, check the active SD path, saved layout
 override, and stale `.luac` before investigating rendering.
 
+### Simulator logs and caught errors
+
+In Companion 2.12's simulator, open **View > Debug Output** (**F6**, or
+**Fn+F6** on some Macs). Disable its filter initially so it does not hide
+messages. Firmware Lua errors and Lua `print(...)` output go to this console.
+For a persistent log, enable **Radio Firmware (in Simulator)** in Companion's
+application preferences and choose an **Output Logs Folder** before starting
+the simulation. Files are named `FirmwareDebug_<timestamp>.log`.
+
+AeroGrid mirrors caught runtime, panel, and editor validation/save errors to
+Lua `print(...)`, prefixed with `[AeroGrid] ERROR`. Messages include the layout,
+model filename when known, operation, and panel/setting details when relevant.
+Identical messages are suppressed per widget instance across layout reloads.
+The last 64 distinct messages are retained for deduplication; an older message
+may be logged again after eviction or when a new widget instance is created.
+Disable console filters or include `AeroGrid` to see these messages.
+
+Logging does not replace the live host's retained failures, dashboard error
+overlay, or editor validation messages. Preview errors still appear in
+**Panel preview failed** messages; open the details to read the complete
+explanation. AeroGrid does not write a separate persistent error file; use
+Companion's firmware logging option above when persistence is needed.
+
+The **Diagnostics** layout shows the host it belongs to, not the errors of
+another dashboard. To inspect a failing dashboard's own panels, add a
+**Host diagnostics** panel there and select its **panels** section. It lists
+rejected and failed panels first, including their reasons. The other sections
+show package/layout identity, theme notices, and source bindings.
+
+The native capture tools already redirect simulator output to
+`build/doc-capture/<panel>/simulator.log` or
+`build/editor-capture/<scene>/simulator.log`; these are separate from an
+interactive Companion session.
+
 ## Validate on a radio when needed
 
 Hardware-sensitive work includes native

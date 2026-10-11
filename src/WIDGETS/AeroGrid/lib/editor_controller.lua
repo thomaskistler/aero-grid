@@ -7,6 +7,7 @@ local module = { RUNTIME_API = 1 }
 ---@return table
 function module.new(dependencies)
     local addError = dependencies.addError
+    local logError = dependencies.logError
     local showErrors = dependencies.showErrors
     local loadModule = dependencies.loadModule
     local isFullScreen = dependencies.isFullScreen
@@ -319,6 +320,17 @@ function module.new(dependencies)
         context.editorSession = session
         local handlers = {
             editor = context.editorModule,
+            logError = function(operation, message)
+                local placement = session.draft.panels[session.selected]
+                logError(
+                    context,
+                    "editor "
+                        .. tostring(operation)
+                        .. (placement and (" panel=" .. placement.id .. " type=" .. placement.type) or "")
+                        .. ": "
+                        .. tostring(message)
+                )
+            end,
             resumed = resumed ~= nil,
             preview = function(document)
                 return previewLayout(context, document)

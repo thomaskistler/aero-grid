@@ -11,7 +11,7 @@ Shows which model is loaded: its name, the picture you assigned it, or both.
 | Key | Type | Default | Values | What it does |
 | --- | --- | --- | --- | --- |
 | `presentation` | string | `auto` | `auto`, `name`, `image`, `both` | Which arrangement to draw. `auto` shows the name alone on a panel smaller than four cells and the picture on anything larger. `image` and `both` show a picture with the name in the heading. |
-| `label` | string | `MODEL` | any text | The panel's heading — **only where no picture is drawn**. With a picture the model name takes the heading, so a label set alongside `presentation: image` or `both` is refused at load with the panel named. |
+| `label` | string | `MODEL` | any text | The panel's heading — **only where no picture is drawn**. With a picture the model name takes the heading. The default `MODEL` is allowed as a fallback; a custom label alongside `presentation: image` or `both` is refused with the panel named. |
 | `accent` | string | `cyan` | `cyan`, `green`, `amber`, `orange` | The stripe down the left edge. |
 | `showLabels` | boolean | `false` | `true`, `false` | Adds a supporting row listing the model's configured labels. **Needs a panel two rows tall**; on a single row it is refused at load with the panel named. |
 
@@ -74,8 +74,11 @@ A picture with the model name and labels.
     showLabels: true
 ```
 
-No `label` here, and it would be refused: a panel showing the picture puts
-the model name in the heading, so a configured label has nowhere to go.
+No custom `label` here: a panel showing the picture puts the model name in
+the heading, so a custom label has nowhere to go. The editor's default
+`MODEL` label does not prevent selecting Image or Both. Incompatible custom
+settings are reported in the preview error dialog; open its details to read
+the full explanation.
 
 A wide single row showing the name alone. This is the arrangement that holds
 the longest model name EdgeTX will store without overhanging the panel.

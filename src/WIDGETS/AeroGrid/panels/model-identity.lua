@@ -31,6 +31,8 @@
 ---@field feed? AeroGridModelIdentity
 ---@field stateName string
 
+local DEFAULT_LABEL = "MODEL"
+
 local modelIdentity = {
     id = "model-identity",
     apiVersion = 1,
@@ -62,7 +64,7 @@ local modelIdentity = {
             default = "auto",
             choices = { "auto", "name", "image", "both" },
         },
-        { key = "label", label = "Label", type = "string", default = "MODEL" },
+        { key = "label", label = "Label", type = "string", default = DEFAULT_LABEL },
         {
             key = "accent",
             label = "Accent",
@@ -152,7 +154,7 @@ function modelIdentity.validateSettings(settings, span, config)
         return messages
     end
 
-    -- **A label stated on a panel that asks for a picture is not drawn.** The
+    -- **A custom label on a panel that asks for a picture is not drawn.** The
     -- model name takes the heading there, so the configured label has nowhere
     -- to go. Silently overriding it is the shape this project keeps finding --
     -- a setting read, accepted and then ignored -- so the author is told.
@@ -167,7 +169,13 @@ function modelIdentity.validateSettings(settings, span, config)
     -- `auto` is not included: it means "decide for me", and a label set
     -- alongside it is used at every span that shows no picture. Only an
     -- explicit request for one is a request that the label be replaced.
-    if config.label ~= nil and (config.presentation == "image" or config.presentation == "both") then
+    -- The editor materializes defaults when adding panels. Its default label
+    -- is a fallback heading, not a request to replace the model name.
+    if
+        config.label ~= nil
+        and config.label ~= DEFAULT_LABEL
+        and (config.presentation == "image" or config.presentation == "both")
+    then
         messages[#messages + 1] = "label is not drawn on a panel showing the"
             .. " model picture; the model name takes the heading there. Drop label,"
             .. " or use presentation auto or name if you want your own heading."

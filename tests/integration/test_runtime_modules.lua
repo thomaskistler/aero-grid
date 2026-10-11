@@ -5,6 +5,10 @@ local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(ro
 local definition = fixture.module("main.lua")
 local originalLoadScript = loadScript
 local path = root .. "/build/test-widget-fixture/"
+local originalPrint, logs = print, {}
+print = function(message)
+    logs[#logs + 1] = message
+end
 
 for _, relative in ipairs({
     "lib/dashboard_loader.lua",
@@ -43,6 +47,17 @@ for _, relative in ipairs({
         local context = definition.create(zone, { Layout = "main", Theme = "modern-dark" }, path)
         assert(context.runtimeFailed and not context.stage, relative .. " should fail before staging")
         assert(string.find(table.concat(context.errors, "\n"), relative, 1, true), "missing module was not reported")
+        local reported
+        for _, message in ipairs(logs) do
+            if string.find(message, relative, 1, true) then
+                reported = message
+            end
+        end
+        assert(
+            reported and string.find(reported, "[AeroGrid] ERROR", 1, true),
+            "caught module errors reach the console"
+        )
+        local count = #logs
         definition.update(context, { Layout = "gallery", Theme = "modern-light" })
         zone.w = 320
         definition.refresh(context)
@@ -51,6 +66,7 @@ for _, relative in ipairs({
         assert(context.root.properties.w == 320 and context.page.properties.w == 320)
         assert(context.errorLabel.properties.w == 304, "runtime failures must remain visible after resizing")
         assert(not context.stage, "option changes must not restart an incomplete runtime")
+        assert(#logs == count, "runtime failure is not logged again on each callback")
     end
 end
 loadScript = originalLoadScript
@@ -58,3 +74,4 @@ loadScript = originalLoadScript
 local context = fixture.createLoaded()
 assert(not context.runtimeFailed and #context.errors == 0)
 assert(context.dashboardLoader and context.dashboardLifecycle and context.editorController)
+print = originalPrint
