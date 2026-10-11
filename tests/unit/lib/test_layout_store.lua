@@ -128,7 +128,7 @@ local function testRegistryIsAppendOnly()
 
     local names = registry.load("/", "/WIDGETS/AeroGrid/", ops)
     assertions.assertEqual(table.concat(names, ","), "Empty,Default,sim")
-    assertions.assertEqual(files["/AEROGRID/registry.txt"], "Empty\nDefault\nsim\n")
+    assertions.assertEqual(files["/AEROGRID/layout-registry.txt"], "Empty\nDefault\nsim\n")
 
     -- A user layout saved later, and a shipped one whose listing order changed,
     -- keep every earlier position.
@@ -150,14 +150,14 @@ local function testRegistryWithoutFileApi()
 end
 
 local function testBuiltinNamesKeepPositions()
-    local files = { ["/AEROGRID/registry.txt"] = "Empty\nSonic1\ndefault\ndiagnostics\n" }
+    local files = { ["/AEROGRID/layout-registry.txt"] = "Empty\nSonic1\ndefault\ndiagnostics\n" }
     local folders = {
         ["/WIDGETS/AeroGrid/layouts"] = { "Empty.yaml", "Default.yaml", "Diagnostics.yaml" },
         ["/AEROGRID/layouts"] = {},
     }
     local names = registry.load("/", "/WIDGETS/AeroGrid/", fakeCard(files, folders))
     assertions.assertEqual(table.concat(names, ","), "Empty,Sonic1,Default,Diagnostics")
-    assertions.assertEqual(files["/AEROGRID/registry.txt"], "Empty\nSonic1\nDefault\nDiagnostics\n")
+    assertions.assertEqual(files["/AEROGRID/layout-registry.txt"], "Empty\nSonic1\nDefault\nDiagnostics\n")
 end
 
 local function testThemeRegistryKeepsPositionsAndAddsNames()

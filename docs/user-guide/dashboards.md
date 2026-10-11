@@ -136,6 +136,11 @@ your draft.
 Layout setting.** The widget cannot change its own settings, so it continues
 showing its previous layout until you select the new one.
 
+Layout picker positions are retained in `/AEROGRID/layout-registry.txt`.
+If upgrading an existing installation with `/AEROGRID/registry.txt`, rename
+that file to `layout-registry.txt` before starting the radio to preserve saved
+Layout selections. Do not edit or reorder its entries.
+
 Wait for saving to finish before powering off. A save error keeps your draft
 so you can retry; the previous saved file is retained as `.bak`.
 
