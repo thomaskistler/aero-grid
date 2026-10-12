@@ -182,17 +182,23 @@ local function testSpeedUnitFitsPanel()
         assert(panel.unitDrawn, "the speed unit should be visible")
         local unit = panel.unit.properties
         local right = unit.x + dashboard.themeBuilder.measureText(panel.area.unitFont, "km/h")
-        assert(right <= panel.area.frame.pad + panel.area.frame.content,
-            "the speed unit must not cross the content edge")
+        assert(
+            right <= panel.area.frame.pad + panel.area.frame.content,
+            "the speed unit must not cross the content edge"
+        )
         assert(panel.value.properties.x >= panel.area.frame.pad, "the speed reading must fit on the left")
         local left = panel.value.properties.x
-        assert(math.abs((left + right) / 2 - panel.area.valueCentre) <= 1,
-            "the number and unit must be centered together")
+        assert(
+            math.abs((left + right) / 2 - panel.area.valueCentre) <= 1,
+            "the number and unit must be centered together"
+        )
         metric.setValue(panel, nil)
         local numberWidth = dashboard.themeBuilder.measureText(panel.area.value, "--")
-        assertions.assertEqual(panel.value.properties.x,
+        assertions.assertEqual(
+            panel.value.properties.x,
             panel.area.valueCentre - math.floor(numberWidth / 2),
-            "an unavailable reading must be centered without its unit")
+            "an unavailable reading must be centered without its unit"
+        )
     end
 end
 
@@ -208,7 +214,11 @@ local function testDefaultSensorUnitAfterResize()
         fonts = dashboard.themeBuilder.typography(1, 1),
         span = { colSpan = 1, rowSpan = 1 },
         themeBuilder = dashboard.themeBuilder,
-        telemetry = { subscribe = function() return feed end },
+        telemetry = {
+            subscribe = function()
+                return feed
+            end,
+        },
         state = function(name, accent)
             return dashboard.themeBuilder.state(dashboard.theme, name, accent)
         end,

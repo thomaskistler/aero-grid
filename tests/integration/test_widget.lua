@@ -4462,8 +4462,11 @@ local function testReadingsAreCentredOnTheirPanel()
                                     .. " in "
                                     .. bounds.h
                             )
-                        elseif area.visualSize and area.showUnit
-                            and top == area.frame.labelY + area.frame.labelHeight then
+                        elseif
+                            area.visualSize
+                            and area.showUnit
+                            and top == area.frame.labelY + area.frame.labelHeight
+                        then
                             clamped = clamped + 1
                             assert(top + ink <= bounds.h, where .. ": header clearance pushed the reading off-panel")
                         else
@@ -6980,7 +6983,8 @@ local function testReadingsSitInTheirSlots()
             -- edge of anything centred with it.
             local drawn = lcd.sizeText(text, font)
             if panel.unitDrawn then
-                drawn = drawn + themeModule.unitGap(panel.area.unitFont)
+                drawn = drawn
+                    + themeModule.unitGap(panel.area.unitFont)
                     + themeModule.measureText(panel.area.unitFont, panel.unitText)
             end
             local centre = reading.x + drawn / 2

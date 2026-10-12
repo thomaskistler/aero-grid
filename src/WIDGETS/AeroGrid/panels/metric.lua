@@ -884,8 +884,7 @@ end
 ---@param context AeroGridMetricContext
 ---@param rect AeroGridRect
 function metric.update(context, rect)
-    if not context.unit and (rect.w > context.rect.w or rect.h > context.rect.h)
-        and not context.suppressSensorUnit then
+    if not context.unit and (rect.w > context.rect.w or rect.h > context.rect.h) and not context.suppressSensorUnit then
         context.unitText = context.feed and context.feed.unitText or ""
     end
     local theme = context.theme
