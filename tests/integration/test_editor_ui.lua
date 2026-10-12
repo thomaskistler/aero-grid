@@ -1561,13 +1561,9 @@ end
 equal(drawerRow("showPack").row.hidden, false, "bar visualization offers the alternate reading")
 equal(drawerRow("showCount").row.hidden, false, "bar visualization offers the cell count")
 equal(drawerRow("showDelta").row.hidden, false, "bar visualization offers the cell delta")
-equal(
-    drawerRow("showPack").field.label,
-    "Show secondary reading",
-    "secondary toggle renamed without changing visualization"
-)
+equal(drawerRow("showPack").field.label, "Show alt reading", "secondary toggle renamed without changing visualization")
 local visualValues = control("visual").properties.values
-equal(visualValues[3], "alternate reading", "visualization none is presented as alternate reading")
+equal(visualValues[3], "details", "visualization none is presented as details")
 control("visual").properties.set(3)
 settleDrawer()
 equal(context.editorSession.draft.panels[1].config.visual, "none", "alternate reading is stored as none")
@@ -1623,6 +1619,40 @@ equal(context.document.panels[1].config.showPack, true, "secondary preference su
 equal(context.document.panels[1].config.cells, 6, "numeric count survives save/load")
 equal(context.document.panels[1].config.sourceType, nil, "save/load omits the retired selector")
 widget.lvglMock.setFullScreen(false)
+
+-- A panel created small must gain its visualization during editor resize,
+-- without leaving fullscreen and rebuilding it from the saved layout.
+for _, mode in ipairs({ "battery", "bar", "none" }) do
+    widget.lvglMock.setFullScreen(true)
+    load("Empty")
+    open()
+    local editor = context.editorUi.handlers.editor
+    assert(editor.add(context.editorSession, "rx-battery"))
+    assert(editor.setValue(context.editorSession, "source", "RxBt"))
+    assert(editor.setValue(context.editorSession, "cells", 2))
+    assert(editor.setValue(context.editorSession, "visual", mode))
+    context.editorDrawerModule.open(context, context.editorUi, "configure")
+    settleDrawer()
+    back()
+    local entry = context.panels[1]
+    assert(entry and entry.instance, "new RX battery preview was not built")
+    assert(editor.resize(context.editorSession, 1, 1))
+    assert(context.editorUi.handlers.preview(context.editorSession.draft))
+    for _ = 1, 40 do
+        refresh()
+    end
+    equal(context.panels[1], entry, "resizing must update the existing preview")
+    local instance = entry.instance
+    if mode == "battery" then
+        assert(instance.glyph and instance.glyphShown, "resized preview must show its battery immediately")
+    elseif mode == "bar" then
+        assert(instance.bar and instance.showVisual, "resized preview must show its bar immediately")
+    else
+        assert(instance.showDetail, "resized preview must show its details immediately")
+    end
+    exitWith("Discard changes")
+    widget.lvglMock.setFullScreen(false)
+end
 
 widget.lvglMock.setAppMode(false)
 for name in pairs(events) do

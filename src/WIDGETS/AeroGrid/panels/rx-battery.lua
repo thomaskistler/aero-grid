@@ -59,7 +59,7 @@ local rxBattery = {
         { key = "source", label = "Voltage source", type = "string", default = "Cels" },
         {
             key = "cells",
-            label = "Series cell count (0 = auto)",
+            label = "Cell count (0 = auto)",
             type = "number",
             default = 0,
             min = 0,
@@ -81,11 +81,11 @@ local rxBattery = {
             type = "string",
             default = "battery",
             choices = { "battery", "bar", "none" },
-            choiceLabels = { "battery", "bar", "alternate reading" },
+            choiceLabels = { "battery", "bar", "details" },
         },
         {
             key = "showPack",
-            label = "Show secondary reading",
+            label = "Show alt reading",
             type = "boolean",
             default = true,
             visibleWhen = { key = "visual", value = "battery", invert = true },
@@ -484,9 +484,9 @@ end
 ---@param colSpan integer
 ---@param rowSpan integer
 ---@return table
-function rxBattery.presentationFor(colSpan, rowSpan)
-    local cells = (colSpan or 1) * (rowSpan or 1)
-    return { showVisual = cells >= 2, showDetail = true }
+function rxBattery.presentationFor()
+    -- Measured geometry decides what fits, including after an editor resize.
+    return { showVisual = true, showDetail = true }
 end
 
 --- The form a supporting wording is fitted by: its shortest variant, with
@@ -1024,6 +1024,15 @@ function rxBattery.update(context, rect, _, detailsOnly)
         centreSupporting(context, area)
     end
 
+    if not context.bar and context.settings.visual == "bar" and area.showVisual then
+        context.bar = context.primitives.bar(context.panel.root, context.theme, {
+            x = area.pad,
+            y = area.barY,
+            w = area.content,
+            fraction = context.fraction,
+            color = context.state(context.stateName, context.settings.accent).accent,
+        })
+    end
     if context.bar then
         context.primitives.reconcileBar(
             context.bar,

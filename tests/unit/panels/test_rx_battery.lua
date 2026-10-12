@@ -181,10 +181,10 @@ local function testVisualizationMetadata()
     end
     local visual = byKey.visual
     assertions.assertEqual(table.concat(visual.choices, ","), "battery,bar,none", "stored values must stay compatible")
-    assertions.assertEqual(table.concat(visual.choiceLabels, ","), "battery,bar,alternate reading")
+    assertions.assertEqual(table.concat(visual.choiceLabels, ","), "battery,bar,details")
     assert(byKey.sourceType == nil and rxBattery.drawerGroups == nil)
     assertions.assertEqual(byKey.showDelta.default, false)
-    assertions.assertEqual(byKey.showPack.label, "Show secondary reading")
+    assertions.assertEqual(byKey.showPack.label, "Show alt reading")
     for _, key in ipairs({ "showPack", "showCount", "showDelta" }) do
         local condition = byKey[key].visibleWhen
         assert(

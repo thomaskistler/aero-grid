@@ -20,7 +20,7 @@ capacity from voltage.
 | `label` | `PACK` | Panel heading. |
 | `source` | `Cels` | Exact EdgeTX source name; tables are individual cells, numbers are pack voltage. |
 | `reading` | `cell` | `cell` or `pack`. A cell reading is the table's lowest cell in cells mode and the calculated average in pack mode. |
-| `showPack` | `true` | **Show secondary reading**: show pack voltage when cell voltage is primary, or average cell voltage when pack voltage is primary. A preference, shown only when it fits; ignored by the `battery` visualization. |
+| `showPack` | `true` | **Show alt reading**: show pack voltage when cell voltage is primary, or average cell voltage when pack voltage is primary. A preference, shown only when it fits; ignored by the `battery` visualization. |
 | `showCount` | `true` | Show the cells-monitor count or the pack's configured/estimated series count. A preference, shown only when it fits; ignored by the `battery` visualization. |
 | `showDelta` | `false` | **Show cell delta**: highest minus lowest individual cell voltage, formatted `Δ 0.01v`. Only valid cells tables can supply it; numeric voltage reserves no delta slot. |
 | `cells` | `0` | Numeric sources only: `0` estimates series count; 1–16 sets it explicitly. Tables supply their own count and ignore this setting. |
@@ -28,16 +28,16 @@ capacity from voltage.
 | `warning` | `3.6` | Warning threshold, in V/cell. |
 | `critical` | `3.4` | Critical threshold, in V/cell. |
 | `cellEmpty` | `3.2` | Empty usable-range voltage, in V/cell. |
-| `visual` | `battery` | **Visualization**: `battery`, `bar`, or **alternate reading** (stored as `none`). The battery and bar measure voltage against the usable per-cell range, not remaining charge. |
+| `visual` | `battery` | **Visualization**: `battery`, `bar`, or **details** (stored as `none`). The battery and bar measure voltage against the usable per-cell range, not remaining charge. |
 | `accent` | `cyan` | Semantic accent: `cyan`, `green`, `amber`, or `orange`. |
 
-The flat editor drawer presents **Label**, **Voltage source**, **Series cell count
-(0 = auto)**, **Primary reading**, **Visualization**, **Show secondary reading**,
+The flat editor drawer presents **Label**, **Voltage source**, **Cell count
+(0 = auto)**, **Primary reading**, **Visualization**, **Show alt reading**,
 **Show cell count**, and **Show cell delta**, in that order. Series count remains
 editable without telemetry and is ignored when the source returns a table. Voltage levels
 are grouped under **Voltage levels**, in Full, Warning, Critical, Empty order,
 with V/cell shown in each label. Full and Empty are hidden while visualization is
-**alternate reading**. All three supporting-detail toggles are hidden
+**details**. All three supporting-detail toggles are hidden
 while visualization is **battery**, because that visualization never shows
 them; their stored values are kept.
 
@@ -120,7 +120,7 @@ dropped otherwise rather than reported as a settings problem.
   dropping the next lowest-priority detail.
   If delta cannot fit alongside the count in either placement, a shorter
   secondary reading can still use the remaining room.
-- **alternate reading** (`none`) draws no glyph or bar. It shows the alternate
+- **details** (`none`) draws no glyph or bar. It shows the alternate
   enabled available details as text, with the same priority, either in a footer
   row or, on short wide panels, stacked beside the headline.
 
@@ -130,7 +130,7 @@ U+0088 mapping). The firmware fonts do not require a Unicode Greek-block glyph.
 Small panels usually retain only the headline; fit is measured, not span-gated.
 Count-row wordings such as `NO CELLS`,
 `CELLS ERR`, and `VOLT ERR` use the count slot, so they appear in **bar** and
-**alternate reading** whenever that slot fits, even with `showCount` off.
+**details** whenever that slot fits, even with `showCount` off.
 
 ## States
 
