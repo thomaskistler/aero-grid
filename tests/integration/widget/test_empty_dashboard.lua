@@ -10,9 +10,11 @@ local hint = assert(context.emptyHint, "empty dashboard has no hint")
 assert(hint.visible)
 assert(hint.title.properties.text == "Empty dashboard")
 assert(hint.instruction.properties.text == "Long-press for fullscreen")
-assert(#hint.objects == 2, "empty dashboard should contain only two text labels")
-local function assertHorizontallyCentred()
-    for _, key in ipairs({ "title", "instruction" }) do
+assert(hint.setupHint.properties.text == "If no EdgeTX logo, press RTN to exit setup")
+assert(#hint.objects == 3, "empty dashboard should contain three text labels")
+local function assertHorizontallyCentred(keys)
+    keys = keys or { "title", "instruction", "setupHint" }
+    for _, key in ipairs(keys) do
         local label = hint[key].properties
         local width = context.themeBuilder.measureText(SMLSIZE, label.text)
         assert(label.w == width, "hint width must match rendered text")
@@ -26,10 +28,11 @@ assert(#context.panels == 0, "hint was instantiated as a panel")
 fixture.lvglMock.setFullScreen(true)
 fixture.pump(context, 3)
 assert(hint.instruction.properties.text == "Long-press to start editing")
-assertHorizontallyCentred()
+assert(hint.setupHint.properties.text == "")
+assertHorizontallyCentred({ "title", "instruction" })
 context.zone.w, context.zone.h = 320, 180
 fixture.pump(context, 3)
-assertHorizontallyCentred()
+assertHorizontallyCentred({ "title", "instruction" })
 local top = hint.title.properties.y
 local bottom = hint.instruction.properties.y + hint.instruction.properties.h
 assert(math.abs(top - (180 - bottom)) <= 1, "text block is not vertically centred")

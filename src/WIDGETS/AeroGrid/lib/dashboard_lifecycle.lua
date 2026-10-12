@@ -37,7 +37,7 @@ function module.new(dependencies)
         if not hint then
             hint = { objects = {} }
             context.emptyHint = hint
-            for _, key in ipairs({ "title", "instruction" }) do
+            for _, key in ipairs({ "title", "instruction", "setupHint" }) do
                 hint[key] = lvgl.label(context.page, {
                     text = "",
                     font = function()
@@ -54,14 +54,21 @@ function module.new(dependencies)
             local instruction = fullscreen and "Long-press to start editing" or "Long-press for fullscreen"
             local texts = { "Empty dashboard", instruction }
             local keys = { "title", "instruction" }
+            if not fullscreen then
+                texts[#texts + 1] = "If no EdgeTX logo, press RTN to exit setup"
+                keys[#keys + 1] = "setupHint"
+            else
+                hint.setupHint:set({ text = "", w = 0, h = 0 })
+            end
             local lineHeight = context.themeBuilder.fontHeight(SMLSIZE)
-            local blockHeight = lineHeight * 2 + 6
+            local spacing = 6
+            local blockHeight = #texts * lineHeight + (#texts - 1) * spacing
             local top = math.floor((h - blockHeight) / 2)
             for index, key in ipairs(keys) do
                 local textWidth = context.themeBuilder.measureText(SMLSIZE, texts[index])
                 hint[key]:set({
                     x = math.floor((w - textWidth) / 2),
-                    y = top + (index - 1) * (lineHeight + 6),
+                    y = top + (index - 1) * (lineHeight + spacing),
                     w = textWidth,
                     h = lineHeight,
                     text = texts[index],
