@@ -26,6 +26,24 @@ global variables use isolated firmware model settings.
   </figure>
 </div>
 
+## How to use
+
+Install [AeroGrid](user-guide/installation.md), then follow these two short
+walkthroughs to create and customize your dashboard.
+
+<div class="ag-video-gallery">
+  <section>
+    <h3>Create an Empty dashboard</h3>
+    <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/Z-_Z-rtot8U" title="Create an Empty AeroGrid dashboard" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+    <p><a href="user-guide/add-dashboard/">Read the setup guide</a> or <a href="https://www.youtube.com/watch?v=Z-_Z-rtot8U">watch on YouTube</a>.</p>
+  </section>
+  <section>
+    <h3>Add, move, and resize panels</h3>
+    <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/hJtvJaOf7YY" title="Add, move, and resize AeroGrid panels" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+    <p><a href="user-guide/edit-dashboard/">Read the editing guide</a> or <a href="https://www.youtube.com/watch?v=hJtvJaOf7YY">watch on YouTube</a>.</p>
+  </section>
+</div>
+
 ## Why AeroGrid?
 
 EdgeTX is an excellent foundation: open source, remarkably configurable, and
