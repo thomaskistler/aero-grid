@@ -803,12 +803,15 @@ function module.install(theme)
         local ink = theme.fontAscent(font)
         local blockHeight = math.max(ink, size)
         local blockTop = theme.bodyTop(ladder, blockHeight)
+        -- A centered unit can move the number beneath the header in a split body.
+        if compact and showUnit and frame.labelWidth > 0 then
+            blockTop = math.max(blockTop, frame.labelY + frame.labelHeight)
+        end
 
         out.value = font
         out.formIndex = formIndex
         out.unitFont = unitFont
         out.showUnit = showUnit == true
-        out.centreReadingGroup = equalGap ~= nil
         out.valueCentre = centre
         out.valueX = theme.slotX(centre, width)
         out.valueWidth = width

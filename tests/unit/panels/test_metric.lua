@@ -153,7 +153,51 @@ local function testMetricEntrySettings()
     assertions.assertEqual(ok, false, "a metric without a metrics list must not be created")
 end
 
+local function testSpeedUnitFitsPanel()
+    local fixture = WidgetFixture.new()
+    local dashboard = fixture.createLoaded()
+    local metric = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/metric.lua"))()
+    local services = {
+        theme = dashboard.theme,
+        primitives = dashboard.primitives,
+        fonts = dashboard.themeBuilder.typography(2, 2),
+        span = { colSpan = 2, rowSpan = 2 },
+        themeBuilder = dashboard.themeBuilder,
+        state = function(name, accent)
+            return dashboard.themeBuilder.state(dashboard.theme, name, accent)
+        end,
+    }
+    local rect = { x = 0, y = 0, w = 238, h = 134 }
+    local panel = metric.create(dashboard.page, rect, {
+        metrics = {
+            { source = "GSpd", label = "speed", precision = 1, unit = "km/h" },
+            { source = "GSpd+", label = "max", precision = 1, unit = "km/h" },
+        },
+        visual = "bar",
+    }, services)
+    for _, width in ipairs({ 238, 358, 238 }) do
+        rect.w = width
+        metric.update(panel, rect)
+        metric.setValue(panel, 48)
+        assert(panel.unitDrawn, "the speed unit should be visible")
+        local unit = panel.unit.properties
+        local right = unit.x + dashboard.themeBuilder.measureText(panel.area.unitFont, "km/h")
+        assert(right <= panel.area.frame.pad + panel.area.frame.content,
+            "the speed unit must not cross the content edge")
+        assert(panel.value.properties.x >= panel.area.frame.pad, "the speed reading must fit on the left")
+        local left = panel.value.properties.x
+        assert(math.abs((left + right) / 2 - panel.area.valueCentre) <= 1,
+            "the number and unit must be centered together")
+        metric.setValue(panel, nil)
+        local numberWidth = dashboard.themeBuilder.measureText(panel.area.value, "--")
+        assertions.assertEqual(panel.value.properties.x,
+            panel.area.valueCentre - math.floor(numberWidth / 2),
+            "an unavailable reading must be centered without its unit")
+    end
+end
+
 local function run()
+    testSpeedUnitFitsPanel()
     testMetricStates()
     testSupportingUnits()
     testMetricEntrySettings()

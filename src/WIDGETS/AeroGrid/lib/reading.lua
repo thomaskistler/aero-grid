@@ -383,12 +383,7 @@ function module.install(primitives)
         -- only known at runtime -- which is exactly the permitted-versus-drawn
         -- seam, answered here, on the string the panel is actually drawing.
         --
-        -- The reading does not move when this fires. Its x is
-        -- `valueCentre - measureText(font, text) / 2`, its **own** width rather
-        -- than the pair's; the unit only widens the box below. So a sensor
-        -- dropping and returning takes the unit away and brings it back without
-        -- shifting the number, and the flicker that would otherwise rule this out
-        -- does not arise.
+        -- Center only what is visible: a missing reading has no unit.
         if unit ~= "" and not primitives.hasValue(text) then
             unit = ""
         end
@@ -398,21 +393,13 @@ function module.install(primitives)
         context.readingAnchor, context.readingUnitAnchor = text, unit
 
         local width = themeBuilder.measureText(font, text)
-        local x = area.valueCentre - math.floor(width / 2)
 
-        -- The box has to hold the unit as well as the number, or LVGL wraps the
-        -- pair; the number is what is centred, and the unit rides past the slot.
-        -- Centring the pair instead would line up the *groups* across a row of
-        -- panels and therefore not the numbers, and the numbers are what the rule
-        -- exists to line up: a panel with a unit and one without would put their
-        -- digits in different places.
+        -- Fit and position the same group, including its visible unit.
         local span = width
         if unit ~= "" then
             span = span + themeBuilder.unitGap(area.unitFont) + themeBuilder.measureText(area.unitFont, unit)
         end
-        if area.centreReadingGroup then
-            x = area.valueCentre - math.floor(span / 2)
-        end
+        local x = area.valueCentre - math.floor(span / 2)
         if area.primaryMinX then
             -- A live metric may exceed its declared sizing envelope.
             x = math.max(x, area.primaryMinX)

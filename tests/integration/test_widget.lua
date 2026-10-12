@@ -1892,20 +1892,9 @@ local function testMetricStates()
     metricModule.setValue(current, 115)
     assertEqual(current.stateName, "critical")
 
-    -- **Geometry must stay stable as values and states change, and what
-    -- "stable" means has moved.** The reading is centred on a slot now, and
-    -- its label is exactly as wide as the string it draws -- so the width does
-    -- change with the value, deliberately, and asserting it did not would be
-    -- asserting the old arrangement. What may not move is the centre: the slot
-    -- is a property of the panel, so a value gaining a digit grows the number
-    -- about its middle rather than shifting it.
+    -- The visible reading group stays centered as values and units change.
     local function readingCentre(instance)
-        local font = instance.value.properties.font
-        if type(font) == "function" then
-            font = font()
-        end
-        local text = tostring(instance.value.properties.text or "")
-        return instance.value.properties.x + lcd.sizeText(text, font) / 2
+        return instance.value.properties.x + instance.value.properties.w / 2
     end
 
     local before = readingCentre(pack)
@@ -4473,6 +4462,10 @@ local function testReadingsAreCentredOnTheirPanel()
                                     .. " in "
                                     .. bounds.h
                             )
+                        elseif area.visualSize and area.showUnit
+                            and top == area.frame.labelY + area.frame.labelHeight then
+                            clamped = clamped + 1
+                            assert(top + ink <= bounds.h, where .. ": header clearance pushed the reading off-panel")
                         else
                             -- **Pinned against the panel, not against a band.** One pixel
                             -- of tolerance is the floor of an odd height, and nothing
@@ -6986,6 +6979,10 @@ local function testReadingsSitInTheirSlots()
             -- estimate is generous and half of its generosity lands in the left
             -- edge of anything centred with it.
             local drawn = lcd.sizeText(text, font)
+            if panel.unitDrawn then
+                drawn = drawn + themeModule.unitGap(panel.area.unitFont)
+                    + themeModule.measureText(panel.area.unitFont, panel.unitText)
+            end
             local centre = reading.x + drawn / 2
 
             local expected, arrangement
@@ -7090,7 +7087,7 @@ local function testReadingsSitInTheirSlots()
                 end
                 assertEqual(
                     panel.unit.properties.x,
-                    reading.x + drawn + themeModule.unitGap(unitFont),
+                    reading.x + lcd.sizeText(text, font) + themeModule.unitGap(unitFont),
                     where .. ": the unit did not follow the reading to its slot"
                 )
             end
@@ -8967,13 +8964,8 @@ end
 ---   rule on the subscription's availability rather than on the drawn string
 ---   would have been right for most panels by luck and wrong for
 ---   `link-status`, whose genuine zero is the case it exists to separate.
---- - **The number does not move.** This is the claim the whole decision
----   rests on, so it is measured rather than reasoned about: the reading's x
----   is `valueCentre - measureText(font, text) / 2`, its own width and not
----   the pair's, so taking the unit away shrinks the box and leaves the
----   digits where they were. Were it false, a sensor dropping and returning
----   would twitch the reading every time, and hiding would be the wrong
----   answer.
+--- - **The visible group is centered.** A reading with a unit and a bare
+---   reading each reserve only their own width.
 ---
 --- Driven against the real LVGL mock, because what is being checked is which
 --- object was told what, and the mock counts writes and visibility calls so
@@ -9000,7 +8992,7 @@ local function testUnitNeedsAValueToQualify()
     local readingX = context.value.properties.x
     local pairWidth = context.value.properties.w
 
-    -- The same panel with no value. The unit goes; the number does not move.
+    -- A missing value has no unit.
     place("--")
     assertEqual(context.unit.hidden, true, "a unit was drawn beside `--`")
 
@@ -9017,10 +9009,7 @@ local function testUnitNeedsAValueToQualify()
         "a reading of zero lost its unit, so the rule read availability rather" .. " than what the panel draws"
     )
 
-    -- **The number does not move.** Same string, same slot, unit and no unit:
-    -- only the box changes. Compared against a panel that never had a unit
-    -- rather than against a remembered number, so a wrong answer cannot agree
-    -- with itself.
+    -- Both the pair and a bare number are centered on the same slot.
     place("7.9")
     assertEqual(context.value.properties.x, readingX)
     assertEqual(context.value.properties.w, pairWidth)
@@ -9031,10 +9020,10 @@ local function testUnitNeedsAValueToQualify()
     primitivesModule.centreReading(bare, themeModule, area, DBLSIZE, "7.9")
     assertEqual(
         bare.value.properties.x,
-        readingX,
-        "hiding the unit moved the reading, so the reading is placed from the"
-            .. " pair's width rather than its own and hiding is the wrong answer"
+        area.valueCentre - math.floor(bare.value.properties.w / 2),
+        "a bare reading must be centered without reserving room for a unit"
     )
+    assertEqual(readingX, area.valueCentre - math.floor(pairWidth / 2))
     assert(bare.value.properties.w < pairWidth, "the drawn box did not shrink, so the unit's width is still reserved")
 
     -- A hidden unit is not repositioned. Placing something nobody can see is
