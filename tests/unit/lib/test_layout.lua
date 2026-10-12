@@ -120,18 +120,50 @@ panels:
     assertions.assertEqual(cells.config.lowestSource, nil)
     assertions.assertEqual(cells.config.cells, nil)
     assertions.assertEqual(cells.config.cellFull, 4.15)
-    assertions.assertEqual(cells.config.critical, 3.25)
-    assertions.assertEqual(cells.config.warning, nil, "migration materialized an omitted old default")
+    assertions.assertEqual(cells.config.cellCritical, 3.25)
+    assertions.assertEqual(cells.config.cellWarning, nil, "migration materialized an omitted old default")
+    assertions.assertEqual(cells.config.critical, nil)
     local pack = normalized.panels[2]
     assertions.assertEqual(pack.type, "rx-battery")
     assertions.assertEqual(pack.config.reading, "pack")
     assertions.assertEqual(pack.config.cells, 6)
-    assertions.assertEqual(pack.config.warning, 3.55)
+    assertions.assertEqual(pack.config.cellWarning, 3.55)
+    assertions.assertEqual(pack.config.warning, nil)
     local legacyCells = normalized.panels[3]
     assertions.assertEqual(legacyCells.type, "rx-battery")
     assertions.assertEqual(legacyCells.config.sourceType, nil)
     assertions.assertEqual(legacyCells.config.cells, nil)
     assertions.assertEqual(legacyCells.config.reading, "cell")
+end
+
+local function testCurrentBatteryThresholdNormalization()
+    local panel = { type = "rx-battery", config = { warning = 3.55, critical = 3.25 } }
+    layout.normalizePanel(panel)
+    assertions.assertEqual(panel.config.cellWarning, 3.55)
+    assertions.assertEqual(panel.config.cellCritical, 3.25)
+    assertions.assertEqual(panel.config.warning, nil)
+    assertions.assertEqual(panel.config.critical, nil)
+    layout.normalizePanel(panel)
+    assertions.assertEqual(panel.config.cellWarning, 3.55, "normalization must be idempotent")
+
+    panel.config = { warning = 3.55, critical = 3.25, cellWarning = 3.6, cellCritical = 3.4 }
+    layout.normalizePanel(panel)
+    assertions.assertEqual(panel.config.cellWarning, 3.6, "current keys take precedence")
+    assertions.assertEqual(panel.config.cellCritical, 3.4)
+    assertions.assertEqual(panel.config.warning, nil)
+    assertions.assertEqual(panel.config.critical, nil)
+
+    panel.config = {}
+    layout.normalizePanel(panel)
+    assertions.assertEqual(panel.config.cellWarning, nil, "normalization must not materialize defaults")
+    assertions.assertEqual(panel.config.cellCritical, nil)
+
+    panel.type = "tx-battery"
+    panel.config = { warning = 7.2, critical = 6.8 }
+    layout.normalizePanel(panel)
+    assertions.assertEqual(panel.config.warning, 7.2, "other panel settings must remain unchanged")
+    assertions.assertEqual(panel.config.critical, 6.8)
+    assertions.assertEqual(panel.config.cellWarning, nil)
 end
 
 local function testAdjacentMigrationSteps()
@@ -176,6 +208,7 @@ local function run()
     testValidation()
     testOverlapIsRejected()
     testVersionOneBatteryMigration()
+    testCurrentBatteryThresholdNormalization()
     testAdjacentMigrationSteps()
     testUnsupportedFutureVersion()
 end

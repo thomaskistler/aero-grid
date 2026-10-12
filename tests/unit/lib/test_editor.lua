@@ -65,6 +65,21 @@ local function newSession(input)
     return assert(editor.new(input or document(), grid, layout, panelHost, loadPanel))
 end
 
+local function testCatalogAlphabeticalOrder()
+    local previous = ""
+    local rxIndex
+    for index, entry in ipairs(editor.CATALOG) do
+        local label = string.lower(entry.label)
+        assert(previous < label, "panel types must be ordered alphabetically by label")
+        previous = label
+        if entry.type == "rx-battery" then
+            rxIndex = index
+        end
+    end
+    assert(rxIndex and editor.CATALOG[rxIndex - 1].type == "navigation")
+    assert(editor.CATALOG[rxIndex + 1].type == "service-probe")
+end
+
 local function testWorkingCopyCancelAndApply()
     local session = newSession()
     local moved = editor.move(session, -1, 0)
@@ -133,7 +148,9 @@ local function testRxBatteryFormAndSourceDrawers()
     local config = session.draft.panels[1].config
     assert(config.cells == 0 and config.source == "Cels" and config.sourceType == nil)
     assert(config.reading == "cell")
-    assert(config.cellFull == 4.2 and config.warning == 3.6 and config.critical == 3.4 and config.cellEmpty == 3.2)
+    assert(
+        config.cellFull == 4.2 and config.cellWarning == 3.6 and config.cellCritical == 3.4 and config.cellEmpty == 3.2
+    )
     -- Supporting details are preferences shed by size, never a size error, so
     -- a new panel states them like any other default.
     assert(config.showPack == true and config.showCount == true and config.showDelta == false)
@@ -150,13 +167,13 @@ local function testRxBatteryFormAndSourceDrawers()
         end
     end
     assert(
-        indices.cellFull < indices.warning
-            and indices.warning < indices.critical
-            and indices.critical < indices.cellEmpty
+        indices.cellFull < indices.cellWarning
+            and indices.cellWarning < indices.cellCritical
+            and indices.cellCritical < indices.cellEmpty
     )
     assert(fields[indices.cellFull].label == "Full (V/cell)")
-    assert(fields[indices.warning].label == "Warning (V/cell)")
-    assert(fields[indices.critical].label == "Critical (V/cell)")
+    assert(fields[indices.cellWarning].label == "Warning (V/cell)")
+    assert(fields[indices.cellCritical].label == "Critical (V/cell)")
     assert(fields[indices.cellEmpty].label == "Empty (V/cell)")
     assert(fields[indices.showPack].label == "Show alt reading")
     assert(fields[indices.cells].label == "Cell count (0 = auto)")
@@ -182,23 +199,23 @@ local function testSinglePrecisionVoltageSteps()
     local settings = modules["rx-battery"].settings
     local critical
     for _, setting in ipairs(settings) do
-        if setting.key == "critical" then
+        if setting.key == "cellCritical" then
             critical = setting
             break
         end
     end
     local step = critical.step
     critical.step = 0.009999999776482582
-    local accepted, message = editor.setValue(session, "critical", 3.4000000953674316)
+    local accepted, message = editor.setValue(session, "cellCritical", 3.4000000953674316)
     critical.step = step
     assert(accepted, message)
     assert(editor.setValue(session, "cellFull", 4.199999809265137))
-    assert(editor.setValue(session, "warning", 3.5999999046325684))
+    assert(editor.setValue(session, "cellWarning", 3.5999999046325684))
     assert(editor.setValue(session, "cellEmpty", 3.200000047683716))
     local valid, errors = editor.validate(session)
     assert(valid, table.concat(errors or {}, "; "))
-    assert(not editor.setValue(session, "critical", 3.405), "half-step values must still be rejected")
-    assert(not editor.setValue(session, "critical", 3.4001), "real off-step values must still be rejected")
+    assert(not editor.setValue(session, "cellCritical", 3.405), "half-step values must still be rejected")
+    assert(not editor.setValue(session, "cellCritical", 3.4001), "real off-step values must still be rejected")
     assert(not editor.setValue(session, "cells", 1.001), "integer steps must still be enforced")
 end
 
@@ -498,6 +515,7 @@ local function testNestedStateLists()
     modules.state = nil
 end
 
+testCatalogAlphabeticalOrder()
 testNestedStateLists()
 testReorderingWithEmptySpace()
 testDirectionalReordering()

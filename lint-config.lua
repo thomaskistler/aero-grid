@@ -7,6 +7,7 @@ return {
         globals = {
             "CHAR_UP",
             "CHAR_DOWN",
+            "CHAR_DELTA",
             "CHOICE",
             "CENTERED",
             "dir",

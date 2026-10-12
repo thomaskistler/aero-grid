@@ -1572,7 +1572,7 @@ equal(drawerRow("showCount").row.hidden, false, "alternate reading offers the ce
 equal(drawerRow("cellFull").row.hidden, true, "Full threshold hides when visualization is none")
 equal(drawerRow("cellEmpty").row.hidden, true, "Empty threshold hides when visualization is none")
 equal(
-    drawerRow("critical").row.properties.y - drawerRow("warning").row.properties.y,
+    drawerRow("cellCritical").row.properties.y - drawerRow("cellWarning").row.properties.y,
     36,
     "hidden voltage thresholds reclaim their drawer rows"
 )
@@ -1584,7 +1584,7 @@ equal(drawerRow("showCount").row.hidden, true, "the battery glyph never shows th
 equal(drawerRow("showDelta").row.hidden, true, "the battery glyph never shows the cell delta")
 equal(context.editorSession.draft.panels[1].config.showCount, true, "hidden preferences keep their values")
 equal(
-    drawerRow("critical").row.properties.y - drawerRow("warning").row.properties.y,
+    drawerRow("cellCritical").row.properties.y - drawerRow("cellWarning").row.properties.y,
     36,
     "visible voltage thresholds keep normal row spacing"
 )

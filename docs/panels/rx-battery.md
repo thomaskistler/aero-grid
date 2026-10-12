@@ -25,8 +25,8 @@ capacity from voltage.
 | `showDelta` | `false` | **Show cell delta**: highest minus lowest individual cell voltage, formatted `Δ 0.01v`. Only valid cells tables can supply it; numeric voltage reserves no delta slot. |
 | `cells` | `0` | Numeric sources only: `0` estimates series count; 1–16 sets it explicitly. Tables supply their own count and ignore this setting. |
 | `cellFull` | `4.2` | Full usable-range voltage, in V/cell. |
-| `warning` | `3.6` | Warning threshold, in V/cell. |
-| `critical` | `3.4` | Critical threshold, in V/cell. |
+| `cellWarning` | `3.6` | Warning threshold, in V/cell. |
+| `cellCritical` | `3.4` | Critical threshold, in V/cell. |
 | `cellEmpty` | `3.2` | Empty usable-range voltage, in V/cell. |
 | `visual` | `battery` | **Visualization**: `battery`, `bar`, or **details** (stored as `none`). The battery and bar measure voltage against the usable per-cell range, not remaining charge. |
 | `accent` | `cyan` | Semantic accent: `cyan`, `green`, `amber`, or `orange`. |
@@ -102,8 +102,8 @@ known series count when possible. Pack voltage cannot reveal a weak or
 unbalanced cell, so alarms judge only its calculated average.
 
 All four voltage levels are in **volts per cell**. The battery/bar spans
-`cellEmpty` to `cellFull`; alarm thresholds are separate. `critical` is checked
-before `warning`. A pack headline is total voltage, while its fill is still
+`cellEmpty` to `cellFull`; alarm thresholds are separate. `cellCritical` is checked
+before `cellWarning`. A pack headline is total voltage, while its fill is still
 normalized using average volts per cell.
 
 ### Visualization and details
@@ -136,9 +136,9 @@ Count-row wordings such as `NO CELLS`,
 
 | State | Condition | Presentation |
 | --- | --- | --- |
-| `normal` | Valid, fresh judged voltage above `warning` | Reading and visual in their normal colors. |
-| `warning` | Judged voltage at or below `warning` | Amber state color, tinted panel, `WARN` badge. |
-| `critical` | Judged voltage at or below `critical` | Red state color, tinted panel, `CRIT` badge. |
+| `normal` | Valid, fresh judged voltage above `cellWarning` | Reading and visual in their normal colors. |
+| `warning` | Judged voltage at or below `cellWarning` | Amber state color, tinted panel, `WARN` badge. |
+| `critical` | Judged voltage at or below `cellCritical` | Red state color, tinted panel, `CRIT` badge. |
 | `stale` | Retained reading whose source is stale | Last voltage retained, muted presentation, `STALE` badge. |
 | `unavailable` | No usable headline | `--`, no unit or battery glyph, `N/A` badge. |
 

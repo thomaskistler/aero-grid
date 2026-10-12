@@ -152,7 +152,7 @@ local function testExplicitSavePersistsMigratedBattery()
     assert(persisted.panels[1].config.lowestSource == nil)
     assert(persisted.panels[1].config.cells == nil)
     assert(persisted.panels[1].config.cellFull == 4.15)
-    assert(persisted.panels[1].config.warning == nil, "save materialized an omitted old default")
+    assert(persisted.panels[1].config.cellWarning == nil, "save materialized an omitted old default")
 end
 
 local function testStagedSaveMigratesLegacyBattery()
@@ -295,7 +295,13 @@ local function testCurrentBatteryNormalization()
     assert(persisted.version == 2 and config.sourceType == nil)
     assert(config.source == "RxBt" and config.cells == 6 and config.visual == "none")
     assert(config.showDelta == true and config.showPack == false and config.showCount == true)
-    assert(config.cellFull == 4.15 and config.warning == 3.55 and config.critical == 3.25 and config.cellEmpty == 3.1)
+    assert(
+        config.cellFull == 4.15
+            and config.cellWarning == 3.55
+            and config.cellCritical == 3.25
+            and config.cellEmpty == 3.1
+    )
+    assert(config.warning == nil and config.critical == nil, "Save must persist only current threshold keys")
     local loaded, errors = layout.validate(persisted, grid)
     assert(loaded and #errors == 0 and loaded.panels[1].config.showDelta == true)
 end

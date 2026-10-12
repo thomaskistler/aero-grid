@@ -5,19 +5,19 @@
 local editor = { RUNTIME_API = 1 }
 
 editor.CATALOG = {
-    { type = "rx-battery", label = "RX battery" },
     { type = "flight-counter", label = "Flight counter" },
     { type = "flight-mode", label = "Flight mode" },
     { type = "flight-timer", label = "Flight timer" },
+    { type = "host-diagnostics", label = "Host diagnostics" },
     { type = "link-status", label = "Link status" },
     { type = "metric", label = "Metric" },
     { type = "model-identity", label = "Model identity" },
     { type = "navigation", label = "Navigation" },
-    { type = "state", label = "State" },
-    { type = "trim-panel", label = "Trim panel" },
-    { type = "tx-battery", label = "Transmitter battery" },
-    { type = "host-diagnostics", label = "Host diagnostics" },
+    { type = "rx-battery", label = "RX battery" },
     { type = "service-probe", label = "Service probe" },
+    { type = "state", label = "State" },
+    { type = "tx-battery", label = "Transmitter battery" },
+    { type = "trim-panel", label = "Trim panel" },
 }
 
 local function copy(value, seen)
@@ -822,7 +822,7 @@ end
 
 function editor.formFields(session)
     local settings, config, module = editor.settings(session)
-    if not settings or type(config) ~= "table" then
+    if not settings or type(config) ~= "table" or not module then
         return nil, config
     end
     local fields = {}
@@ -888,7 +888,7 @@ end
 --- Build flat-setting controls for one metadata-defined source drawer.
 function editor.drawerFields(session, groupKey)
     local settings, config, module = editor.settings(session)
-    if not settings then
+    if not settings or type(config) ~= "table" or not module then
         return nil, config
     end
     local group
@@ -929,7 +929,7 @@ end
 --- Short live summary shown on the source-specific drawer row.
 function editor.drawerSummary(session, groupKey)
     local settings, config, module = editor.settings(session)
-    if not settings then
+    if not settings or type(config) ~= "table" or not module then
         return "--"
     end
     for _, group in ipairs(module.drawerGroups or {}) do

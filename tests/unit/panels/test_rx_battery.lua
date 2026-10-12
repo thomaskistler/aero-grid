@@ -27,8 +27,8 @@ local function testCellShapesAndReadings()
         reading = "cell",
         cellEmpty = 3.2,
         cellFull = 4.2,
-        warning = 3.6,
-        critical = 3.4,
+        cellWarning = 3.6,
+        cellCritical = 3.4,
     }
     assertions.assertEqual(rxBattery.primaryValue(settings, summary), 3.25)
     assertions.assertEqual(rxBattery.fraction(settings, 3.2, 4, primitives), 0)
@@ -58,8 +58,8 @@ local function testPackSourceAndAutomaticCount()
         showCount = true,
         cellEmpty = 3.2,
         cellFull = 4.2,
-        warning = 3.6,
-        critical = 3.4,
+        cellWarning = 3.6,
+        cellCritical = 3.4,
     }
     assertions.assertEqual(#rxBattery.validateSettings(settings), 0)
     assertions.assertEqual(rxBattery.estimateCount(16.8, 4.2), 4)
@@ -123,8 +123,8 @@ local function testConfigurationValidation()
         reading = "cell",
         cells = 0,
         cellFull = 4.2,
-        warning = 3.6,
-        critical = 3.4,
+        cellWarning = 3.6,
+        cellCritical = 3.4,
         cellEmpty = 3.2,
     }
     assertions.assertEqual(#rxBattery.validateSettings(settings), 0)

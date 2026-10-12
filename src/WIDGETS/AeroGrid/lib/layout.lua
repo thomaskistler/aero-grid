@@ -21,6 +21,14 @@ function layout.normalizePanel(panel)
     if panel.type == "rx-battery" and type(panel.config) == "table" then
         -- Schema 2 was unreleased: accept its old selector, but never persist it.
         panel.config.sourceType = nil
+        if panel.config.cellWarning == nil then
+            panel.config.cellWarning = panel.config.warning
+        end
+        if panel.config.cellCritical == nil then
+            panel.config.cellCritical = panel.config.critical
+        end
+        panel.config.warning = nil
+        panel.config.critical = nil
     end
     return panel
 end
@@ -102,7 +110,7 @@ end
 function layout.migratePanel(panel, sourceVersion)
     while sourceVersion < layout.VERSION do
         local migrated, nextVersion = layout.migratePanelStep(panel, sourceVersion)
-        if not migrated then
+        if not migrated or type(nextVersion) ~= "number" then
             return panel
         end
         sourceVersion = nextVersion
@@ -172,6 +180,7 @@ end
 ---@param document table
 ---@return table? header
 ---@return string[] errors
+---@return integer? sourceVersion
 function layout.validateHeader(document)
     if type(document) ~= "table" then
         return nil, { "layout document must be a table" }
@@ -249,7 +258,7 @@ function layout.validateDocument(document)
     while normalized.version < layout.VERSION do
         local migrated, migrationError = layout.migrateHeaderStep(normalized)
         if not migrated then
-            errors[#errors + 1] = migrationError
+            errors[#errors + 1] = tostring(migrationError)
             return nil, errors
         end
     end
@@ -313,7 +322,7 @@ end
 ---@return string[] errors
 function layout.validate(document, grid)
     local normalized, errors, sourceVersion = layout.validateDocument(document)
-    if not normalized then
+    if not normalized or not sourceVersion then
         return nil, errors
     end
 

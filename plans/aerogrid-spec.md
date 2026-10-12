@@ -879,10 +879,10 @@ Flight-session state is runtime state and is not written on every telemetry upda
 
 ## YAML Layout Format
 
-Initial schema:
+Current schema:
 
 ```yaml
-version: 1
+version: 2
 grid:
   columns: 4
   rows: 4
@@ -896,8 +896,8 @@ panels:
     config:
       source: Cels
       label: PACK
-      warning: 3.5
-      critical: 3.3
+      cellWarning: 3.5
+      cellCritical: 3.3
       showCount: true
 
   - id: flight-timer
