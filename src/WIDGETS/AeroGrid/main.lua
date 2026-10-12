@@ -949,14 +949,9 @@ local function refresh(context, widgetEvent, touchState)
             and context.editorController.editorEntryHit(context, widgetEvent, touchState, true)
         then
             context.editorPress = { started = getTime() }
-        elseif
-            widgetEvent ~= nil
-            and (
-                widgetEvent == _G.EVT_TOUCH_BREAK
-                or widgetEvent == _G.EVT_TOUCH_SLIDE
-                or widgetEvent == _G.EVT_TOUCH_TAP
-            )
-        then
+        -- Ignore SLIDE: dragging has no action before editing, and EdgeTX can
+        -- keep emitting it on stationary touches after a previous drag.
+        elseif widgetEvent ~= nil and (widgetEvent == _G.EVT_TOUCH_BREAK or widgetEvent == _G.EVT_TOUCH_TAP) then
             context.editorPress = nil
         end
         if context.editorPress and getTime() - context.editorPress.started >= 60 then

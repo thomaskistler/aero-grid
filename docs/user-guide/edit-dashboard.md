@@ -8,6 +8,10 @@
    **Enter** also starts editing. A **gear**
    icon appears in the top-right corner of each panel.
 
+Hold for at least 0.6 seconds; the editor then finishes loading before appearing.
+Movement does not cancel the hold before editing starts; releasing before
+0.6 seconds does. Moving and resizing by dragging are available once editing opens.
+
 ![Editor showing panel gears and the add-panel tile](../assets/editor/overview.png)
 
 | Action | How |
