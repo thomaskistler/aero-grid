@@ -5,14 +5,6 @@ Install [AeroGrid](installation.md) first and select the model you want to use.
 
 ## Add a screen
 
-Watch the walkthrough to create an Empty AeroGrid dashboard in App mode.
-The video reuses the model's initial screen; the steps below show how to add
-an additional screen instead.
-
-<iframe width="560" height="315" style="width: 100%; aspect-ratio: 16 / 9; height: auto;" src="https://www.youtube-nocookie.com/embed/Z-_Z-rtot8U" title="Create an Empty AeroGrid dashboard" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-
-[Watch on YouTube](https://www.youtube.com/watch?v=Z-_Z-rtot8U).
-
 Open the main screen's top-left menu and choose **UI Setup**.
 
 ![EdgeTX main menu with UI Setup at the right](../assets/editor/screen-menu.png)

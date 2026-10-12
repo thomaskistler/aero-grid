@@ -2,13 +2,6 @@
 
 [Add a dashboard](add-dashboard.md) first, then customize its panels on the radio.
 
-This walkthrough shows adding, configuring, moving, resizing, and saving a panel.
-Metric and ground speed are examples; use the same steps for your own dashboard.
-
-<iframe width="560" height="315" style="width: 100%; aspect-ratio: 16 / 9; height: auto;" src="https://www.youtube-nocookie.com/embed/hJtvJaOf7YY" title="Add, move, and resize AeroGrid panels" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-
-[Watch on YouTube](https://www.youtube.com/watch?v=hJtvJaOf7YY).
-
 1. Long-press the dashboard to enter fullscreen. The EdgeTX logo in the
    top-left corner disappears.
 2. In fullscreen, long-press a panel again to start editing.
