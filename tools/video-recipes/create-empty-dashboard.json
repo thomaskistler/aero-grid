@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "id": "create-empty-dashboard",
+  "initial": "fresh-model",
+  "ticks": 5800,
+  "warmup_ticks": 300,
+  "trim_start": 0,
+  "duration": 54.7,
+  "actions": "create-empty-dashboard.actions.txt",
+  "narration": [
+    {"start": 0, "end": 6, "text": "Let's create an empty AeroGrid dashboard, starting with a fresh model and AeroGrid already installed.", "rate": 0, "legacy_cache": "cora-fresh-1.wav"},
+    {"start": 6, "end": 13, "text": "Open the menu in the top left, then choose UI Setup.", "rate": 0, "legacy_cache": "cora-fresh-2.wav"},
+    {"start": 13, "end": 20, "text": "Select Screen One. We'll replace this blank default screen instead of adding another screen.", "rate": 0, "legacy_cache": "cora-fresh-3.wav"},
+    {"start": 20, "end": 28, "text": "Open the Layout picker and select App mode. This gives AeroGrid a single, full-display widget area.", "rate": 0, "legacy_cache": "cora-fresh-4.wav"},
+    {"start": 28, "end": 38, "text": "Choose Setup widgets. Tap the empty area, then select AeroGrid from the widget list.", "rate": 0, "legacy_cache": "cora-fresh-5.wav"},
+    {"start": 38, "end": 47, "text": "In AeroGrid's settings, open Layout and choose Empty. Leave the theme set to Modern Dark.", "rate": 0, "legacy_cache": "cora-fresh-6.wav"},
+    {"start": 47, "end": 54.7, "text": "Press Return three times to close the widget settings and leave setup. Your dashboard is now set up and ready for editing.", "rate": 0, "legacy_cache": "cora-dashboard-set-up.wav"}
+  ],
+  "radio": {
+    "crop": [2080, 1000, 960, 2700],
+    "canvas": [1560, 750],
+    "screen": [317, 80, 930, 532],
+    "return_button": [147, 507],
+    "mask_threshold": [80, 120],
+    "source": "User-supplied 4000x4000 upscale of RadioMaster TX16S product photo: https://radiomasterrc.com/cdn/shop/files/478937e8d66c767632b986b2cb0362f5_1800x1800.jpg?v=1755743144"
+  },
+  "provenance": {
+    "status": "Clean native replay, visually verified on EdgeTX Companion 2.12 TX16S simulator; no frame edits.",
+    "notes": "Starts from a fresh model (no screens configured) with AeroGrid installed. Before recorded frames begin (ticks 100-220), a center tap and RTN prime touch input: without it the firmware dropped the first scripted touch, desynchronizing navigation. That tap opens the EdgeTX menu and RTN closes it, so recording starts on the unchanged main view. Every visible tap and RTN press is genuine simulator input; Empty is chosen at (220,85). No long-press demonstration is included."
+  }
+}

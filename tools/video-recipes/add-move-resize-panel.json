@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "id": "add-move-resize-panel",
+  "initial": "empty-dashboard",
+  "sample_telemetry": true,
+  "ticks": 14800,
+  "warmup_ticks": 300,
+  "trim_start": 9,
+  "duration": 137,
+  "actions": "add-move-resize-panel.actions.txt",
+  "narration": [
+    {"start": 0, "end": 10, "text": "Starting from the Empty dashboard, long-press to enter fullscreen. Then long-press again to open the editor.", "rate": 0, "legacy_cache": "editing-cora-0.wav"},
+    {"start": 10, "end": 17, "text": "Tap the plus tile and choose Metric. We're using this panel type as an example.", "rate": 0, "legacy_cache": "editing-cora-revised-1.wav"},
+    {"start": 17, "end": 29, "text": "Open the first metric's Source picker. Choose Telemetry, then G S P D for ground speed. Speed is just our example; choose a source available on your model.", "rate": 0, "legacy_cache": "editing-cora-revised-2.wav"},
+    {"start": 29, "end": 43, "text": "Change the label to speed. This first metric will be the panel's main reading.", "rate": 0, "legacy_cache": "editing-cora-3.wav"},
+    {"start": 43, "end": 50, "text": "Return to the panel settings, then tap the plus row to add a second metric.", "rate": 0, "legacy_cache": "editing-cora-4.wav"},
+    {"start": 50, "end": 62, "text": "Open the second metric. In the telemetry sources, select G S P D plus. This is Edge T X's maximum ground speed reading.", "rate": 0, "legacy_cache": "editing-cora-5.wav"},
+    {"start": 62, "end": 76, "text": "Change the second label to max, so the supporting reading is easy to identify.", "rate": 0, "legacy_cache": "editing-cora-6.wav"},
+    {"start": 76, "end": 83, "text": "Press Return to leave the metric settings, then Return again to return to the editing dashboard.", "rate": 0, "legacy_cache": "editing-cora-7.wav"},
+    {"start": 83, "end": 89, "text": "To move the panel, drag its body to a free position. It snaps to the grid.", "rate": 0, "legacy_cache": "editing-cora-8.wav"},
+    {"start": 89, "end": 94, "text": "To resize it, drag the bottom-right corner outward.", "rate": 0, "legacy_cache": "editing-cora-9.wav"},
+    {"start": 94, "end": 100, "text": "Rinse and repeat to add other panels, using the same steps.", "rate": 0, "legacy_cache": "editing-cora-revised-10.wav"},
+    {"start": 100, "end": 107, "text": "When you're finished, press Return. Use the save menu to leave editing and return to fullscreen.", "rate": 0, "legacy_cache": "editing-cora-revised-11.wav"},
+    {"start": 107, "end": 114, "text": "Since we started from Empty, choose Save as, then give the layout a name.", "rate": 0, "legacy_cache": "editing-cora-revised-12.wav"},
+    {"start": 114, "end": 121, "text": "Tap Save and wait for saving to finish. Save as creates a separate layout; Save updates an existing one.", "rate": 0, "legacy_cache": "editing-cora-revised-13.wav"},
+    {"start": 121, "end": 137, "text": "Save as requires a radio restart. After rebooting, open the AeroGrid widget settings and select the saved name under Layout. Until you change that setting, the widget still shows its previous layout.", "rate": 0, "legacy_cache": "editing-cora-revised-14.wav"}
+  ],
+  "radio": {
+    "crop": [2080, 1000, 960, 2700],
+    "canvas": [1560, 750],
+    "screen": [317, 80, 930, 532],
+    "return_button": [147, 507],
+    "mask_threshold": [80, 120],
+    "source": "User-supplied 4000x4000 upscale of RadioMaster TX16S product photo: https://radiomasterrc.com/cdn/shop/files/478937e8d66c767632b986b2cb0362f5_1800x1800.jpg?v=1755743144"
+  },
+  "provenance": {
+    "status": "Adapted from the successful editing capture; real production UI and panel rendering.",
+    "notes": "GSpd sensor discovery/max seed and deterministic 48/72 values plus RSSI 85 are injected into an isolated SD widget copy. No panel rendering or unit behavior is patched. This uses current checkout source, including any uncommitted changes. The first long-press at tick 1000 is mostly trimmed (its release remains); tick 1400/1800 contacts are retained. Verify synchronization after firmware/source changes. Final frame is held for one second. Save-as reboot and subsequent Layout selection are narrated instructions, not automated steps. Source-unit appearance depends on the production metric implementation in the checkout."
+  }
+}

@@ -9,6 +9,8 @@ DOCS_VENV_DIR := $(BUILD_DIR)/docs-venv
 DOCS_VENV_STAMP := $(DOCS_VENV_DIR)/.requirements-installed
 CAPTURE_VENV_DIR := $(BUILD_DIR)/capture-venv
 CAPTURE_VENV_STAMP := $(CAPTURE_VENV_DIR)/.requirements-installed
+VIDEO_VENV_DIR := $(BUILD_DIR)/video-venv
+VIDEO_VENV_STAMP := $(VIDEO_VENV_DIR)/.requirements-installed
 SIMULATOR_FIXTURE := tests/fixtures/sdcard
 WIDGET_SOURCE := src/WIDGETS/AeroGrid
 WIDGET_DESTINATION := $(SDCARD_DIR)/WIDGETS/AeroGrid
@@ -18,7 +20,7 @@ LUACHECK ?= $(shell command -v luacheck 2>/dev/null)
 LUA_LS ?= $(shell command -v lua-language-server 2>/dev/null)
 STYLUA ?= $(shell command -v stylua 2>/dev/null)
 
-.PHONY: help setup test check build clean lint format docs docs-serve capture-setup release-package
+.PHONY: help setup test check build clean lint format docs docs-serve capture-setup video-setup release-package
 
 help:
 	@printf '%s\n' \
@@ -32,6 +34,7 @@ help:
 	  'make docs    Build and validate the documentation website' \
 	  'make docs-serve Preview documentation at http://127.0.0.1:8000' \
 	  'make capture-setup Install optional screenshot dependencies' \
+	  'make video-setup Install optional tutorial video dependencies' \
 	  'make release-package Build the source-only installation ZIP and checksum' \
 	  'make clean   Remove generated build output'
 
@@ -41,6 +44,14 @@ release-package:
 	@"$(PYTHON)" tools/package-release.py --output "$(BUILD_DIR)/release"
 
 capture-setup: $(CAPTURE_VENV_STAMP)
+
+video-setup: $(VIDEO_VENV_STAMP)
+
+$(VIDEO_VENV_STAMP): requirements-video.txt
+	@mkdir -p "$(BUILD_DIR)"
+	@test -x "$(VIDEO_VENV_DIR)/bin/python" || "$(PYTHON)" -m venv "$(VIDEO_VENV_DIR)"
+	@"$(VIDEO_VENV_DIR)/bin/python" -m pip install -r requirements-video.txt
+	@touch "$@"
 
 $(CAPTURE_VENV_STAMP): requirements-capture.txt
 	@mkdir -p "$(BUILD_DIR)"

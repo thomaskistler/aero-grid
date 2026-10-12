@@ -94,7 +94,6 @@ local metric = {
                 {
                     source = "RSSI",
                     label = "RSSI",
-                    unit = "",
                     precision = 0,
                     direction = "auto",
                 },
@@ -885,7 +884,10 @@ end
 ---@param context AeroGridMetricContext
 ---@param rect AeroGridRect
 function metric.update(context, rect)
-    context.rect = rect
+    if not context.unit and (rect.w > context.rect.w or rect.h > context.rect.h)
+        and not context.suppressSensorUnit then
+        context.unitText = context.feed and context.feed.unitText or ""
+    end
     local theme = context.theme
     local area = metric.regionsFor(
         theme,
@@ -896,6 +898,17 @@ function metric.update(context, rect)
         context.sample,
         context.unitText
     )
+    if not context.unit and area.showUnit and (rect.w > context.rect.w or rect.h > context.rect.h) then
+        context.unit = context.primitives.unit(context.panel.root, theme, {
+            x = area.valueX,
+            y = area.unitY,
+            text = context.unitText,
+            color = theme.color.textMuted,
+            font = area.unitFont,
+        })
+        context.primitives.reconcile(context.unit, false)
+    end
+    context.rect = rect
 
     context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
     context.primitives.setFont(context.value, area.value)

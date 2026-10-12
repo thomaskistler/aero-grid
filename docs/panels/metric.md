@@ -39,6 +39,8 @@ Configure an ordered `metrics` list with one to three entries:
 The first metric is the main reading; the others show their captions and
 values. Each has its own unit and precision. Missing readings show `--`.
 When a headline unit is visible, the number and unit are centered together.
+New Metric panels inherit the selected sensor's unit. Enlarging a compact panel
+reveals the unit when it fits.
 
 Only the primary metric drives the bar or radial and the panel alarm state.
 The bar or radial is empty at `rangeMin` and full at `rangeMax`.

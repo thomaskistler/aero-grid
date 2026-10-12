@@ -4,6 +4,9 @@ These tools exist to make AeroGrid development reproducible. They do not run
 on the radio, and their generated output belongs in ignored `build/`
 directories unless you deliberately publish reviewed documentation assets.
 
+For native walkthrough recording, cached Cora narration, and radio-photo
+compositing, see [Tutorial videos](videos.md).
+
 ## Capture documentation images with native firmware
 
 The capture tools load Companion's native TX16S simulator library directly

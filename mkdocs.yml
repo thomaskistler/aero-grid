@@ -42,6 +42,7 @@ nav:
       - Run and test in simulators: developer-guide/simulators.md
       - Repository and architecture: developer-guide/architecture.md
       - Project tools: developer-guide/tools.md
+      - Tutorial videos: developer-guide/videos.md
       - Issues, changes, and releases: developer-guide/contributing.md
 
 plugins:

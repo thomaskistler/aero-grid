@@ -1,0 +1,2 @@
+# Optional tutorial encoder (bundled FFmpeg); no Azure SDK required.
+imageio-ffmpeg==0.6.0

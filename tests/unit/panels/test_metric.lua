@@ -196,7 +196,37 @@ local function testSpeedUnitFitsPanel()
     end
 end
 
+local function testDefaultSensorUnitAfterResize()
+    local fixture = WidgetFixture.new()
+    local dashboard = fixture.createLoaded()
+    local metric = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/metric.lua"))()
+    assertions.assertEqual(metric.settings[1].default[1].unit, nil)
+    local feed = { available = true, value = 48, unitText = "km/h", precision = 1 }
+    local services = {
+        theme = dashboard.theme,
+        primitives = dashboard.primitives,
+        fonts = dashboard.themeBuilder.typography(1, 1),
+        span = { colSpan = 1, rowSpan = 1 },
+        themeBuilder = dashboard.themeBuilder,
+        telemetry = { subscribe = function() return feed end },
+        state = function(name, accent)
+            return dashboard.themeBuilder.state(dashboard.theme, name, accent)
+        end,
+    }
+    local panel = metric.create(dashboard.page, { x = 0, y = 0, w = 117, h = 65 }, {
+        metrics = { { source = "GSpd", label = "speed", precision = 1 } },
+        visual = "none",
+    }, services)
+    metric.setValue(panel, 48)
+    assert(not panel.unitDrawn, "the compact panel must hide its unit")
+    metric.update(panel, { x = 0, y = 0, w = 238, h = 134 })
+    metric.setValue(panel, 48)
+    assertions.assertEqual(panel.unitText, "km/h")
+    assert(panel.unitDrawn, "enlargement must reveal the inherited sensor unit")
+end
+
 local function run()
+    testDefaultSensorUnitAfterResize()
     testSpeedUnitFitsPanel()
     testMetricStates()
     testSupportingUnits()
