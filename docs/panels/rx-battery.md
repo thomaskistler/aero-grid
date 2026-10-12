@@ -69,20 +69,13 @@ panels:
       reading: cell
 ```
 
-When a version-1 layout is loaded, the runtime migrates it **in memory** before
-panel validation/loading: `cell-battery` becomes `rx-battery`, `lowestSource`
-is removed, cells-mode `cells` is removed, and `lowest`/`average` readings
-become `cell` (`pack` remains `pack`). Explicit voltage levels are preserved;
-omitted values use the new defaults above. A brief upgrade notice explains
+Layouts are upgraded **in memory** before panel validation/loading.
+Explicit voltage levels are preserved; omitted values use the defaults above.
+A brief upgrade notice explains
 that the migrated layout is not yet saved. Loading never overwrites a layout:
 use the editor's explicit **Save** action to persist it as version 2. Newer or
 malformed layout versions are rejected rather than interpreted with older
 assumptions.
-
-The retired `sourceType` selector is removed during version-1 migration and
-central panel validation for existing version-2 layouts. It is neither used at
-runtime nor written on Save; no new schema version is needed for this unreleased
-version-2 setting. Explicit threshold values remain untouched.
 
 The central migration registry has one adjacent helper per layout version for
 both headers and panels. Runtime loading and staged Save apply at most one

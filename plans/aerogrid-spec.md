@@ -239,7 +239,7 @@ belong to the panel.
 - Validate the table rather than trusting it. Entries that are not plausible cell voltages are rejected instead of folded into a lowest or an average, the walk is bounded because the table comes from the firmware, and malformed sources are reported as configuration mistakes. A table containing rejected cells supplies no delta.
 - Judge the thresholds on the worst cell even when the panel shows the pack sum, because a sum is exactly what hides one sagging cell.
 - With a pack-voltage source, judge those same per-cell thresholds on the derived average instead. This cannot detect a weak cell or imbalance. See [`rx-battery` settings](../docs/panels/rx-battery.md).
-- Schema 2 centrally discards the retired `sourceType` selector on load/save; version-1 migration also removes it. Explicit voltage levels survive unchanged.
+- Layout upgrades preserve explicitly configured voltage levels.
 
 #### Metric
 
