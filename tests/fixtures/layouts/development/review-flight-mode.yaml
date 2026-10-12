@@ -17,7 +17,7 @@
 # `flight-mode` reaches only `normal` and `unavailable`, and `unavailable`
 # needs a radio whose firmware has no `getFlightMode`, so it cannot be staged
 # from a layout at all. There is no configuration that produces it here.
-version: 1
+version: 2
 grid:
   columns: 4
   rows: 4

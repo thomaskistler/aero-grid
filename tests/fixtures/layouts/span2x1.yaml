@@ -1,4 +1,4 @@
-version: 1
+version: 2
 
 # Span gallery, 2 x 1: the eight panels carrying a dominant telemetry or
 # radio reading, all at two cells wide and one tall.
@@ -42,7 +42,7 @@ panels:
           rangeMax: 8.4
 
   - id: g-cells
-    type: cell-battery
+    type: rx-battery
     col: 2
     row: 0
     colSpan: 2

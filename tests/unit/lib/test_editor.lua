@@ -28,6 +28,7 @@ local modules = {
         end,
     },
 }
+modules["rx-battery"] = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/rx-battery.lua"))()
 
 local function loadPanel(typeName)
     return modules[typeName], modules[typeName] and nil or "missing module"
@@ -35,7 +36,7 @@ end
 
 local function document()
     return {
-        version = 1,
+        version = 2,
         grid = { columns = 4, rows = 4 },
         panels = {
             {
@@ -124,6 +125,59 @@ local function testAddRemoveAndStrictSettings()
     assert(not valid and string.find(table.concat(errors, "\n"), "label must not be empty", 1, true))
 end
 
+local function testRxBatteryFormAndSourceDrawers()
+    local input = { version = 2, grid = { columns = 4, rows = 4 }, panels = {} }
+    local session = newSession(input)
+    local added, addError = editor.add(session, "rx-battery")
+    assert(added, addError)
+    local config = session.draft.panels[1].config
+    assert(config.cells == nil, "a cells monitor must not save a pack count")
+    assert(config.reading == "cell")
+    assert(config.cellFull == 4.2 and config.warning == 3.6 and config.critical == 3.4 and config.cellEmpty == 3.2)
+
+    local fields = assert(editor.formFields(session))
+    assert(fields[1].key == "label", "Label is not the first editor control")
+    assert(fields[2].key == "sourceType", "Source type must follow Label")
+    assert(fields[3].drawerGroup == "cells" and fields[3].label == "Cells monitor")
+    assert(fields[3].visibleWhen.value == "cells")
+    assert(fields[4].drawerGroup == "pack" and fields[4].label == "Pack voltage")
+    assert(fields[4].visibleWhen.value == "pack")
+    assert(fields[5].key == "reading" and fields[5].choices[1] == "cell" and fields[5].choices[2] == "pack")
+    local indices = {}
+    for index, field in ipairs(fields) do
+        if field.key then
+            indices[field.key] = index
+        end
+    end
+    assert(
+        indices.cellFull < indices.warning
+            and indices.warning < indices.critical
+            and indices.critical < indices.cellEmpty
+    )
+    assert(fields[indices.cellFull].label == "Full (V/cell)")
+    assert(fields[indices.warning].label == "Warning (V/cell)")
+    assert(fields[indices.critical].label == "Critical (V/cell)")
+    assert(fields[indices.cellEmpty].label == "Empty (V/cell)")
+    assert(fields[indices.cellFull].visibleWhen.invert and fields[indices.cellEmpty].visibleWhen.invert)
+    assert(fields[indices.visual - 1].label == "Appearance")
+
+    local cellsFields = assert(editor.drawerFields(session, "cells"))
+    assert(#cellsFields == 1 and cellsFields[1].key == "source")
+    local packFields = assert(editor.drawerFields(session, "pack"))
+    assert(#packFields == 2 and packFields[1].key == "source" and packFields[2].key == "cells")
+    assert(packFields[2].value == 0 and packFields[2].min == 0)
+    assert(editor.drawerSummary(session, "pack") == "Cels  Auto")
+
+    assert(editor.setValue(session, "sourceType", "pack"))
+    session.draft.panels[1].config.cells = 6
+    assert(editor.setValue(session, "sourceType", "cells"))
+    assert(session.draft.panels[1].config.cells == nil, "switching to cells must remove pack-only series count")
+    fields = assert(editor.formFields(session))
+    assert(fields[3].visibleWhen.value == "cells" and fields[4].visibleWhen.value == "pack")
+    local valid, validationErrors = editor.validate(session)
+    assert(valid, table.concat(validationErrors or {}, "; "))
+end
+
 local function testDeclaredEntryFieldsAreAlwaysOffered()
     modules.listed = {
         id = "listed",
@@ -176,7 +230,7 @@ end
 local function testRestoreDefaultDoesNotApply()
     local session = newSession()
     local default = {
-        version = 1,
+        version = 2,
         grid = { columns = 4, rows = 4 },
         panels = {
             {
@@ -427,6 +481,7 @@ testCompatibleSwaps()
 testWorkingCopyCancelAndApply()
 testPlacementRulesAndResizeAnchor()
 testAddRemoveAndStrictSettings()
+testRxBatteryFormAndSourceDrawers()
 testRestoreDefaultDoesNotApply()
 testDeclaredEntryFieldsAreAlwaysOffered()
 testResizePreservesSpanDependentSettings()

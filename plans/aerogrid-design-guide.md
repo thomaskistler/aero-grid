@@ -104,7 +104,7 @@ would be less than 30% of the full panel width, without reducing the font.
 Keep at least four pixels per gap, shrinking or shedding the glyph if needed. The live
 number and unit center as a pair inside the fixed reading block, while the
 glyph stays fixed. Supporting rows retain the two-slot rule. This is specific
-to `cell-battery`; it does not change `tx-battery` or the other panels.
+to `rx-battery`; it does not change `tx-battery` or the other panels.
 
 **Read this before treating anything below as a description of the dashboard.**
 
@@ -137,7 +137,7 @@ being retyped in each panel. Where a panel stands:
 
 | | Panels |
 | --- | --- |
-| On `theme.panel` | `cell-battery`, `flight-mode`, `flight-timer`, `link-status`, `metric` |
+| On `theme.panel` | `rx-battery`, `flight-mode`, `flight-timer`, `link-status`, `metric` |
 | Own arrangement, by recorded decision | `navigation`, `tx-battery`, `model-identity` |
 | Exempt: no reading to place | `trim-panel`, `host-diagnostics`, `service-probe` |
 
@@ -370,7 +370,7 @@ longer existed.
 A reading with nothing to report prints a sentinel — `--`, or `N/A` where `link-status`
 has a source the protocol does not publish — and a unit beside one is a label for
 nothing. The panel said `-- V`: the pack is measured in volts, and how many is not
-stated. **Four panels drew it**: `tx-battery` and `cell-battery`, whose unit is a
+stated. **Four panels drew it**: `tx-battery` and `rx-battery`, whose unit is a
 constant they know before any reading exists, and `link-status` and `metric`, which keep
 a resolved sensor's unit while its value is withheld. `navigation` already ties
 the unit to whether there is a distance.
@@ -410,7 +410,7 @@ Reserve saturated colour for meaning:
 | Orange | Only where it identifies a distinct measurement family |
 
 **A panel's default accent obeys the colour rule rather than its author's taste.**
-`tx-battery` was green and `cell-battery` cyan for the same concept; both are electrical,
+`tx-battery` was green and `rx-battery` cyan for the same concept; both are electrical,
 so both are cyan.
 
 ---
@@ -630,7 +630,7 @@ to memorise.
 
 #### What the two-item row cost, and why it was chosen anyway
 
-`cell-battery`, `link-status` and `navigation` split their supporting row into a left and a
+`rx-battery`, `link-status` and `navigation` split their supporting row into a left and a
 right column, originally edge-anchored so the two could never collide. **That split was
 built, measured, backed out, rebuilt behind a flag, and finally replaced** — the longest
 route any decision in this document took, and the only one settled on a radio rather than
@@ -772,7 +772,7 @@ baseline exactly 6 px above the panel's floor.
 **A bar changes the answer, and it is why 156 panels do not move.** A bar's length *is* the
 reading, so it spans the panel and sits on the floor; a row on such a panel hangs from the
 bar rather than from the edge. That was already what those panels did, so pinning finds them
-where it wants them. Five panels reserve a bar at every span — `cell-battery`,
+where it wants them. Five panels reserve a bar at every span — `rx-battery`,
 `flight-timer`, `link-status` and `metric` — and `tx-battery` does when
 its layout asks for one.
 
@@ -875,7 +875,7 @@ row moving down hands it room.
 **That cap has to be measured against the *highest* a row can land, which is the one hanging
 from a bar.** The first version of this measured it against the bare floor and argued that
 clearing the lower position clears the higher one, which is the inequality the wrong way
-round. `cell-battery` at a Full screen `2 x 2` then took `XXLSIZE` and put its unit four
+round. `rx-battery` at a Full screen `2 x 2` then took `XXLSIZE` and put its unit four
 pixels into its own supporting row — reading reaching 89, row starting at 85.
 
 The cap is therefore **conservative and panel-independent**: every panel is budgeted as

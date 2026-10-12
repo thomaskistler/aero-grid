@@ -45,7 +45,7 @@
 # so `1 x 1` announces an expired countdown with nothing but a minus sign and
 # the `CRIT` badge. Four cells or more add the progress bar, which a
 # count-up timer has no total for and therefore never draws.
-version: 1
+version: 2
 grid:
   columns: 4
   rows: 4

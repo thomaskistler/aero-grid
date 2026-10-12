@@ -10,8 +10,8 @@ import yaml
 
 RECIPE_DIR = Path(__file__).with_name("capture-recipes")
 PANELS = ("trim-panel", "flight-timer", "metric", "flight-mode", "tx-battery",
-              "model-identity", "cell-battery", "link-status", "navigation", "state", "flight-counter")
-SYNTHETIC_PANELS = ("metric", "tx-battery", "cell-battery", "link-status", "navigation", "state",
+              "model-identity", "rx-battery", "link-status", "navigation", "state", "flight-counter")
+SYNTHETIC_PANELS = ("metric", "tx-battery", "rx-battery", "link-status", "navigation", "state",
                     "flight-counter")
 
 
@@ -86,9 +86,8 @@ def source_names(recipe):
                 names.append(entry["source"])
             return names
         return [config.get("source", "")]
-    if panel == "cell-battery":
-        return [config.get("source", "Cels")] + (
-            [config["lowestSource"]] if config.get("lowestSource") else [])
+    if panel == "rx-battery":
+        return [config.get("source", "Cels")]
     if panel == "navigation":
         return [config.get("source", "GPS")]
     if panel == "link-status":
@@ -138,10 +137,10 @@ def validate_sources(recipe):
     if panel in ("metric", "link-status"):
         if any(not isinstance(sources[name]["value"], (int, float)) for name in source_names(recipe)):
             raise ValueError(f"{panel} requires numeric source samples")
-    elif panel == "cell-battery":
+    elif panel == "rx-battery":
         unit = sources[config.get("source", "Cels")]["unit"]
         if unit != (38 if config.get("sourceType", "cells") == "cells" else 1):
-            raise ValueError("Cell battery sample unit must match sourceType (cells or volts)")
+            raise ValueError("RX battery sample unit must match sourceType (cells or volts)")
     elif panel == "navigation" and sources[config.get("source", "GPS")]["unit"] != 40:
         raise ValueError("Navigation requires a GPS sample")
 

@@ -1,5 +1,5 @@
 # Link-status review, screen 5 on AEROGRID PANEL1.
-version: 1
+version: 2
 grid:
   columns: 4
   rows: 4

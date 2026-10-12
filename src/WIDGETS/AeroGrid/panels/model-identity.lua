@@ -142,7 +142,7 @@ end
 --- than leaving the author to wonder.
 ---
 --- Only a layout that stated it is told. The default is false, so today the
---- distinction changes nothing here, but `cell-battery` defaults its two to
+--- distinction changes nothing here, but `rx-battery` defaults its two to
 --- true and there the difference is the whole point.
 ---@param settings AeroGridIdentitySettings
 ---@param span? table Placement span, when the host knows it.

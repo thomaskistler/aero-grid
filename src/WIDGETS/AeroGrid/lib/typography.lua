@@ -443,7 +443,7 @@ function module.install(theme)
         --
         -- **This comment said the opposite, and the check caught it.** It argued
         -- that clearing the lower position clears the higher one, which is the
-        -- inequality the wrong way round; `cell-battery` at that span took XXLSIZE
+        -- inequality the wrong way round; `rx-battery` at that span took XXLSIZE
         -- and put its unit four pixels into its own supporting row.
         --
         -- **Conservative rather than asked of the panel, and that is the
@@ -682,7 +682,7 @@ function module.install(theme)
     --- however wide its panel happens to be.
     ---
     --- **The row says what to do, not merely which failure occurred**, and that
-    --- is narrower than it first looks. `cell-battery` once drew `NOT CELS`,
+    --- is narrower than it first looks. `rx-battery` once drew `NOT CELS`,
     --- `BAD CELS` and `NO CELS` for three shapes. Two of them -- a source that
     --- is not cells at all, and one reporting nonsense -- are one thing to a
     --- pilot: something is arriving and is wrong, go and fix it. They print one

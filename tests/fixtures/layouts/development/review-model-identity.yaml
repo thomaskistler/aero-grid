@@ -60,7 +60,7 @@
 # file that is on the card and is not a decodable picture and every panel
 # goes blank, because `fstat` cannot tell the two apart. That second one is
 # worth doing once by hand.
-version: 1
+version: 2
 grid:
   columns: 4
   rows: 4

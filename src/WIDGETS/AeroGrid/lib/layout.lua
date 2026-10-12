@@ -15,6 +15,92 @@
 
 local layout = { RUNTIME_API = 1 }
 
+layout.VERSION = 2
+
+local migrations = {
+    [1] = {
+        header = function() end,
+        panel = function(panel)
+            if panel.type == "cell-battery" then
+                panel.type = "rx-battery"
+                local config = type(panel.config) == "table" and panel.config or {}
+                config.lowestSource = nil
+                if config.sourceType == nil or config.sourceType == "cells" then
+                    config.cells = nil
+                end
+                if config.reading == "lowest" or config.reading == "average" then
+                    config.reading = "cell"
+                end
+                panel.config = config
+            end
+        end,
+    },
+}
+
+local function supportedVersion(version)
+    if type(version) ~= "number" or version ~= math.floor(version) or version < 1 or version > layout.VERSION then
+        return false
+    end
+
+    for current = version, layout.VERSION - 1 do
+        if type(migrations[current]) ~= "table" then
+            return false
+        end
+    end
+    return true
+end
+
+layout.supportsVersion = supportedVersion
+
+--- Apply exactly one adjacent header migration step.
+---@param document table
+---@return boolean migrated
+---@return integer|string versionOrError
+function layout.migrateHeaderStep(document)
+    if type(document) ~= "table" or not supportedVersion(document.version) then
+        return false, "unsupported layout version"
+    end
+    if document.version == layout.VERSION then
+        return true, document.version
+    end
+    local version = document.version
+    migrations[version].header(document)
+    document.version = version + 1
+    return true, document.version
+end
+
+--- Apply exactly one adjacent panel migration step.
+---@param panel table
+---@param sourceVersion integer
+---@return boolean migrated
+---@return integer|string versionOrError
+function layout.migratePanelStep(panel, sourceVersion)
+    if type(panel) ~= "table" or not supportedVersion(sourceVersion) then
+        return false, "unsupported layout version"
+    end
+    if sourceVersion == layout.VERSION then
+        return true, sourceVersion
+    end
+    migrations[sourceVersion].panel(panel)
+    return true, sourceVersion + 1
+end
+
+--- Synchronous convenience for callers that can afford the complete chain.
+--- Runtime load and save callbacks use migratePanelStep one step per cycle.
+---@param panel table
+---@param sourceVersion integer
+---@return table panel
+function layout.migratePanel(panel, sourceVersion)
+    while sourceVersion < layout.VERSION do
+        local migrated, nextVersion = layout.migratePanelStep(panel, sourceVersion)
+        if not migrated then
+            return panel
+        end
+        sourceVersion = nextVersion
+    end
+    return panel
+end
+
 --- Restrict IDs and panel types to path-safe characters.
 ---@param value any
 ---@return boolean
@@ -77,7 +163,7 @@ end
 ---@param document table
 ---@return table? header
 ---@return string[] errors
-function layout.validateDocument(document)
+function layout.validateHeader(document)
     if type(document) ~= "table" then
         return nil, { "layout document must be a table" }
     end
@@ -90,7 +176,8 @@ function layout.validateDocument(document)
     for key, value in pairs(document) do
         normalized[key] = value
     end
-    normalized.version = document.version
+    local sourceVersion = document.version
+    normalized.version = sourceVersion
     normalized.grid = document.grid
     normalized.panels = {}
     if document.theme ~= nil then
@@ -98,14 +185,70 @@ function layout.validateDocument(document)
     end
     normalized.session = validateSession(document.session, errors)
 
-    if document.version ~= 1 then
+    if not supportedVersion(sourceVersion) then
         return nil, { "unsupported layout version" }
     end
     if type(document.grid) ~= "table" or document.grid.columns ~= 4 or document.grid.rows ~= 4 then
         return nil, { "phase 1 requires a 4 x 4 grid" }
     end
 
+    return normalized, errors, sourceVersion
+end
+
+--- Finalize a header after its version steps have been applied.
+---@param document table
+---@return table? header
+---@return string[] errors
+function layout.finalizeHeader(document)
+    if type(document) ~= "table" or document.version ~= layout.VERSION then
+        return nil, { "layout header migrations are incomplete" }
+    end
+    local normalized = {}
+    for key, value in pairs(document) do
+        normalized[key] = value
+    end
+    normalized.version = layout.VERSION
+    normalized.panels = {}
+    return normalized, {}
+end
+
+--- Validate a current-version header without applying upgrades in a runtime callback.
+---@param document table
+---@return table? header
+---@return string[] errors
+function layout.validateCurrentHeader(document)
+    local normalized, errors = layout.validateHeader(document)
+    if not normalized then
+        return nil, errors
+    end
+    if normalized.version ~= layout.VERSION then
+        return nil, { "layout must be migrated before editing" }
+    end
     return normalized, errors
+end
+
+--- Synchronous convenience for tests and tools; runtime callbacks step headers.
+---@param document table
+---@return table? header
+---@return string[] errors
+---@return integer? sourceVersion
+function layout.validateDocument(document)
+    local normalized, errors, sourceVersion = layout.validateHeader(document)
+    if not normalized then
+        return nil, errors
+    end
+    while normalized.version < layout.VERSION do
+        local migrated, migrationError = layout.migrateHeaderStep(normalized)
+        if not migrated then
+            errors[#errors + 1] = migrationError
+            return nil, errors
+        end
+    end
+    local finalized, finalErrors = layout.finalizeHeader(normalized)
+    for _, message in ipairs(finalErrors or {}) do
+        errors[#errors + 1] = message
+    end
+    return finalized, errors, sourceVersion
 end
 
 --- Validate one panel against the grid and the entries already accepted.
@@ -159,7 +302,7 @@ end
 ---@return AeroGridValidatedLayout? layout
 ---@return string[] errors
 function layout.validate(document, grid)
-    local normalized, errors = layout.validateDocument(document)
+    local normalized, errors, sourceVersion = layout.validateDocument(document)
     if not normalized then
         return nil, errors
     end
@@ -171,6 +314,7 @@ function layout.validate(document, grid)
 
     local identifiers = {}
     for index, panel in ipairs(document.panels) do
+        layout.migratePanel(panel, sourceVersion)
         local valid, panelError = layout.validatePanel(panel, index, grid, normalized.panels, identifiers)
         if valid then
             identifiers[panel.id] = true

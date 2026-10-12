@@ -1,10 +1,10 @@
-version: 1
+version: 2
 grid:
   columns: 4
   rows: 4
 panels:
   - id: receiver-battery
-    type: cell-battery
+    type: rx-battery
     col: 0
     row: 1
     colSpan: 2
@@ -14,7 +14,7 @@ panels:
       source: RxBt
       sourceType: pack
       cells: 2
-      reading: average
+      reading: cell
       visual: none
       showCount: true
       showPack: true

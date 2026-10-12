@@ -123,7 +123,7 @@ radio's model-selection UI, just as on a radio.
 | Model | What to exercise |
 | --- | --- |
 | **AEROGRID STD** (`model1.yml`) | Six screens: Default, Empty, Diagnostics, services, services2, and Palette. All four shipped layouts, plus both diagnostic panel types. |
-| **AEROGRID PANEL1** (`model2.yml`) | Six screens: cell battery, flight counter, flight mode, flight timer, link status, and metric. |
+| **AEROGRID PANEL1** (`model2.yml`) | Six screens: RX battery, flight counter, flight mode, flight timer, link status, and metric. |
 | **AEROGRID PANEL2** (`model3.yml`) | Five screens: model identity, navigation, state, trim panel, and TX battery. |
 
 Review and simulator-only layouts live in

@@ -1,4 +1,4 @@
-version: 1
+version: 2
 
 # Tuned to the sensors an ELRS or Crossfire link exposes in the EdgeTX
 # simulator: GPS, Alt, RXBt, Batt%, 1RSS, 2RSS and RQly. The shipped

@@ -1,4 +1,4 @@
-version: 1
+version: 2
 
 # Span gallery, 1 x 1: every panel that declares a single cell, at that
 # single cell, side by side.
@@ -70,7 +70,7 @@ panels:
           rangeMax: 8.4
 
   - id: g-cells
-    type: cell-battery
+    type: rx-battery
     col: 1
     row: 0
     colSpan: 1

@@ -1,4 +1,4 @@
-version: 1
+version: 2
 
 # State gallery: every panel state at once, side by side.
 #
@@ -124,7 +124,7 @@ panels:
   # The cells panel has nothing to read on an ELRS link, which is a second
   # route to the same state through a different panel.
   - id: s-nocells
-    type: cell-battery
+    type: rx-battery
     col: 2
     row: 2
     colSpan: 2

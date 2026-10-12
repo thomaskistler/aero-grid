@@ -120,7 +120,7 @@ Sample-data coverage:
 | TX battery | Fixed voltage and explicitly documented calibration, if used. |
 | Trim panel | Signed effective trim positions with visible small deviations. |
 | Model identity | Fixed model name and a redistributable bitmap with known provenance. |
-| Cell battery | Known cells-table or pack reading with matching source settings. |
+| RX battery | Known cells-table or pack reading with matching source settings. |
 | Link status | Live link evidence, LQ/RSSI and configured protocol details. |
 | Navigation | Valid fix, known home/model positions, non-cardinal bearing and distance. |
 

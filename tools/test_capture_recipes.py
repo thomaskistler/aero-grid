@@ -155,7 +155,7 @@ class CaptureRecipeTests(unittest.TestCase):
                 self.load(invalid)
 
     def test_synthetic_samples_propagate(self):
-        for panel in ("metric", "cell-battery", "link-status", "navigation"):
+        for panel in ("metric", "rx-battery", "link-status", "navigation"):
             recipe = load_recipe(RECIPE_DIR / f"{panel}.yaml")
             inputs = fixture_inputs(recipe)
             for name in recipe["sample"]["sources"]:
@@ -187,8 +187,8 @@ class CaptureRecipeTests(unittest.TestCase):
             ("metric", lambda r: r["sample"]["sources"]["GAlt"].update(value=True)),
             ("metric", lambda r: r["sample"]["sources"]["GAlt"].update(precision=4)),
             ("metric", lambda r: r["sample"].update(rssi=0)),
-            ("cell-battery", lambda r: r["sample"]["sources"]["Cels"].update(value=[])),
-            ("cell-battery", lambda r: r["sample"]["sources"]["Cels"].update(unit=1)),
+            ("rx-battery", lambda r: r["sample"]["sources"]["Cels"].update(value=[])),
+            ("rx-battery", lambda r: r["sample"]["sources"]["Cels"].update(unit=1)),
             ("navigation", lambda r: r["sample"]["sources"]["GPS"]["value"].update(lat=91)),
             ("navigation", lambda r: r["sample"]["sources"]["GPS"]["value"].update(
                 **{"pilot-lat": 0, "pilot-lon": 0})),

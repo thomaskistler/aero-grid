@@ -3,7 +3,7 @@
 local fixtures = {}
 
 fixtures.singleMetric = [[
-version: 1
+version: 2
 grid:
   columns: 4
   rows: 4
@@ -29,7 +29,7 @@ panels:
 ]]
 
 fixtures.overlap = [[
-version: 1
+version: 2
 grid:
   columns: 4
   rows: 4
@@ -49,7 +49,7 @@ panels:
 ]]
 
 fixtures.multiPanel = [[
-version: 1
+version: 2
 grid:
   columns: 4
   rows: 4

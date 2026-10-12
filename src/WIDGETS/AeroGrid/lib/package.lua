@@ -4,5 +4,5 @@ return {
     version = "0.1.0",
     runtimeApi = 1,
     panelApi = 1,
-    layoutVersion = 1,
+    layoutVersion = 2,
 }

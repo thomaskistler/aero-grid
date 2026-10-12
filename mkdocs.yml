@@ -25,7 +25,6 @@ nav:
   - Reference Guide:
       - Overview: reference-guide/index.md
       - Panels:
-          - Cell battery: panels/cell-battery.md
           - Flight counter: panels/flight-counter.md
           - Flight mode: panels/flight-mode.md
           - Flight timer: panels/flight-timer.md
@@ -33,6 +32,7 @@ nav:
           - Metric: panels/metric.md
           - Model identity: panels/model-identity.md
           - Navigation: panels/navigation.md
+          - RX battery: panels/rx-battery.md
           - State: panels/state.md
           - Trim panel: panels/trim-panel.md
           - TX battery: panels/tx-battery.md

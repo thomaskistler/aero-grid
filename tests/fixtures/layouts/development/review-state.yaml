@@ -1,5 +1,5 @@
 # State review, screen 3 on AEROGRID PANEL2.
-version: 1
+version: 2
 grid:
   columns: 4
   rows: 4

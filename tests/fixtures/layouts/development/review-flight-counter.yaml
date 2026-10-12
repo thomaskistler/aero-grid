@@ -1,6 +1,6 @@
 # One tracker per model: resize this panel to review its other supported spans.
 # Arm with SF down, raise CH3 above 25%, and stream a live telemetry link.
-version: 1
+version: 2
 grid:
   columns: 4
   rows: 4

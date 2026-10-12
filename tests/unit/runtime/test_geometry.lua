@@ -2116,7 +2116,7 @@ end
 --- over each other on the radio and look like one unreadable smear, and
 --- nothing about the resolved numbers says so unless it is asserted.
 local function testTelemetryContentFitsPanel()
-    local cellBattery = loadModule("panels/cell-battery.lua")
+    local rxBattery = loadModule("panels/rx-battery.lua")
     local linkStatus = loadModule("panels/link-status.lua")
     local navigationPanel = loadModule("panels/navigation.lua")
     local resolved = theme.build("modern-dark")
@@ -2188,7 +2188,7 @@ local function testTelemetryContentFitsPanel()
             -- bottomed out first: a 17 px middle band left SMLSIZE and nothing
             -- else, whatever the width was. A panel with no heading and no row
             -- sizes against its whole height now, so the fitter starts at DBLSIZE
-            -- and steps down on width alone -- and `cell-battery` fits at MIDSIZE
+            -- and steps down on width alone -- and `rx-battery` fits at MIDSIZE
             -- where the old check demanded SMLSIZE.
             --
             -- So the excuse is gone and the real property is asked of every case.
@@ -2236,21 +2236,21 @@ local function testTelemetryContentFitsPanel()
             )
         end
 
-        local cellLayout = cellBattery.presentationFor(case.colSpan, case.rowSpan)
+        local cellLayout = rxBattery.presentationFor(case.colSpan, case.rowSpan)
         cellLayout.visual = "bar"
-        local cells = cellBattery.regionsFor(resolved, theme, rect, cellLayout, fonts, { digits = "4.44", unit = "V" })
-        assertReading("cell-battery", cells, cells.value, cells.content, { digits = "4.44", unit = "V" })
+        local cells = rxBattery.regionsFor(resolved, theme, rect, cellLayout, fonts, { digits = "4.44", unit = "V" })
+        assertReading("rx-battery", cells, cells.value, cells.content, { digits = "4.44", unit = "V" })
         if cells.showDetail then
             assert(
                 cells.detailY + labelHeight <= cells.barY,
-                "cell-battery " .. case.name .. ": the detail row overlaps the bar"
+                "rx-battery " .. case.name .. ": the detail row overlaps the bar"
             )
-            assertColumns("cell-battery", cells, cells.detailWidth, cells.rowRightX, cells.detailWidth)
+            assertColumns("rx-battery", cells, cells.detailWidth, cells.rowRightX, cells.detailWidth)
         end
         if cells.showVisual then
             assert(
                 cells.barY + resolved.spacing.barHeight <= case.h,
-                "cell-battery " .. case.name .. ": the bar overflows the panel"
+                "rx-battery " .. case.name .. ": the bar overflows the panel"
             )
         end
 
@@ -2271,7 +2271,7 @@ local function testTelemetryContentFitsPanel()
             local nav =
                 navigationPanel.regionsFor(resolved, theme, rect, navLayout, fonts, { digits = "888.88", unit = "km" })
             local what = "navigation/" .. presentation
-            -- The room, as `cell-battery` and `link-status` pass their `content`
+            -- The room, as `rx-battery` and `link-status` pass their `content`
             -- above. This asked for `valueWidth` while that field meant both the
             -- room and the drawn box, and kept asking for it after they were
             -- separated -- which is the same name meaning two things, the defect
@@ -2341,15 +2341,12 @@ local function testTelemetryContentFitsPanel()
     local squeezed = { x = 0, y = 0, w = 238, h = 65 }
     local wideFonts = theme.typography(2, 1)
 
-    local cellLayout = cellBattery.presentationFor(2, 1)
+    local cellLayout = rxBattery.presentationFor(2, 1)
     cellLayout.visual = "bar"
     local shedCells =
-        cellBattery.regionsFor(resolved, theme, squeezed, cellLayout, wideFonts, { digits = "4.44", unit = "V" })
-    assertEqual(shedCells.showDetail, false, "cell-battery kept a supporting row a short panel could not afford")
-    assert(
-        heightOf(shedCells.value) >= heightOf(MIDSIZE),
-        "cell-battery shed a row without buying its reading any size"
-    )
+        rxBattery.regionsFor(resolved, theme, squeezed, cellLayout, wideFonts, { digits = "4.44", unit = "V" })
+    assertEqual(shedCells.showDetail, false, "rx-battery kept a supporting row a short panel could not afford")
+    assert(heightOf(shedCells.value) >= heightOf(MIDSIZE), "rx-battery shed a row without buying its reading any size")
 
     local linkLayout = linkStatus.presentationFor(2, 1)
     linkLayout.visual = "bar"

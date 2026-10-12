@@ -9,7 +9,7 @@ If a panel shows no reading or an unexpected value:
 2. For a telemetry reading, check that the receiver is connected and the
    sensor appears on the radio's **Telemetry** page.
 3. Check the guide for that panel for any additional setup:
-   [battery](../panels/cell-battery.md),
+   [battery](../panels/rx-battery.md),
    [timer](../panels/flight-timer.md),
    [navigation](../panels/navigation.md), or
    [metric](../panels/metric.md).

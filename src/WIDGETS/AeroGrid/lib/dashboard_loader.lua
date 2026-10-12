@@ -461,7 +461,53 @@ function module.new(dependencies)
                 return fail(buildError)
             end
 
-            local validated, headerErrors = context.layoutValidator.validateDocument(document)
+            local validated, headerErrors, sourceVersion = context.layoutValidator.validateHeader(document)
+            if not validated or #(headerErrors or {}) > 0 then
+                local reason = table.concat(headerErrors or { "unsupported layout header" }, "; ")
+                if recoverLayout(context, reason) then
+                    return true
+                end
+                if context.recoveryReason then
+                    addError(context, context.recoveryReason)
+                else
+                    for _, headerError in ipairs(headerErrors or {}) do
+                        addError(context, headerError)
+                    end
+                end
+                context.stage = nil
+                context.tokens = nil
+                context.loadCandidates = nil
+                context.loadCandidateIndex = nil
+                showErrors(context)
+                return false
+            end
+
+            context.document = validated
+            context.layoutSourceVersion = sourceVersion
+            context.layoutMigrationVersion = sourceVersion
+            context.itemIndex = panelsIndex
+            context.itemIndent = panelsIndent or 2
+            context.itemNumber = 0
+            context.identifiers = {}
+            context.serviceIndex = 0
+            context.stage = sourceVersion < context.layoutValidator.VERSION and "header-migrate" or "header-finalize"
+            return true
+        end
+
+        if stage == "header-migrate" then
+            local migrated, nextVersion = context.layoutValidator.migrateHeaderStep(context.document)
+            if not migrated then
+                return fail(nextVersion)
+            end
+            context.layoutMigrationVersion = nextVersion
+            if nextVersion == context.layoutValidator.VERSION then
+                context.stage = "header-finalize"
+            end
+            return true
+        end
+
+        if stage == "header-finalize" then
+            local validated, headerErrors = context.layoutValidator.finalizeHeader(context.document)
             if not validated or #(headerErrors or {}) > 0 then
                 local reason = table.concat(headerErrors or { "unsupported layout header" }, "; ")
                 if recoverLayout(context, reason) then
@@ -494,11 +540,17 @@ function module.new(dependencies)
 
             context.session = validated.session or {}
             context.document = validated
-            context.itemIndex = panelsIndex
-            context.itemIndent = panelsIndent or 2
-            context.itemNumber = 0
-            context.identifiers = {}
-            context.serviceIndex = 0
+            if context.layoutSourceVersion < context.layoutValidator.VERSION then
+                addNotice(
+                    context,
+                    "warning",
+                    "Layout version "
+                        .. tostring(context.layoutSourceVersion)
+                        .. " was migrated in memory; use Save to write version "
+                        .. tostring(context.layoutValidator.VERSION)
+                        .. "."
+                )
+            end
             context.stage = "services"
             return true
         end
@@ -585,7 +637,31 @@ function module.new(dependencies)
 
             context.itemIndex = nextIndex
             context.itemNumber = context.itemNumber + 1
+            context.pendingPlacement = placement
+            context.panelMigrationVersion = context.layoutSourceVersion
+            context.stage = context.panelMigrationVersion < context.layoutValidator.VERSION and "panel-migrate"
+                or "panel-validate"
+            return true
+        end
 
+        if stage == "panel-migrate" then
+            local migrated, nextVersion =
+                context.layoutValidator.migratePanelStep(context.pendingPlacement, context.panelMigrationVersion)
+            if not migrated then
+                return fail(nextVersion)
+            end
+            context.panelMigrationVersion = nextVersion
+            if nextVersion == context.layoutValidator.VERSION then
+                context.stage = "panel-validate"
+            end
+            return true
+        end
+
+        if stage == "panel-validate" then
+            local placement = context.pendingPlacement
+            if type(placement) ~= "table" then
+                return fail("pending panel migration is missing")
+            end
             local valid, panelError = context.layoutValidator.validatePanel(
                 placement,
                 context.itemNumber,
@@ -593,7 +669,6 @@ function module.new(dependencies)
                 context.document.panels,
                 context.identifiers
             )
-
             if valid then
                 context.identifiers[placement.id] = true
                 context.document.panels[#context.document.panels + 1] = placement
@@ -601,7 +676,9 @@ function module.new(dependencies)
             else
                 addError(context, panelError)
             end
-
+            context.pendingPlacement = nil
+            context.panelMigrationVersion = nil
+            context.stage = "panels"
             return true
         end
 
@@ -619,6 +696,10 @@ function module.new(dependencies)
         context.tokens = nil
         context.source = nil
         context.document = nil
+        context.layoutSourceVersion = nil
+        context.layoutMigrationVersion = nil
+        context.pendingPlacement = nil
+        context.panelMigrationVersion = nil
         context.identifiers = nil
         context.itemIndex = nil
         context.loadCandidates = nil

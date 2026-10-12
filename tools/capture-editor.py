@@ -86,7 +86,7 @@ SETUP_SCENES["widget-options"] = SETUP_SCENES["select-widget"] + [
 SETUP_SCENES["select-layout"] = SETUP_SCENES["widget-options"] + [
     (1850, 277, 133, 1), (1870, 277, 133, 0)]
 
-LAYOUT = """version: 1
+LAYOUT = """version: 2
 grid:
   columns: 4
   rows: 4
@@ -111,7 +111,7 @@ panels:
       timer: 0
 """
 
-STATE_LAYOUT = """version: 1
+STATE_LAYOUT = """version: 2
 grid:
   columns: 4
   rows: 4

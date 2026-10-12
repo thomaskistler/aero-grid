@@ -997,7 +997,7 @@ end
 ---
 --- A battery rather than a bar because a bar says "some of something" and a
 --- battery says which something, which is the whole of what a pack panel is
---- for. `cell-battery` wants the same shape, which is why this is here beside
+--- for. `rx-battery` wants the same shape, which is why this is here beside
 --- the bar rather than inside `tx-battery`.
 ---
 --- Four rectangles, because `lvgl.box` accepts a `color` and silently ignores

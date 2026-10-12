@@ -1,4 +1,4 @@
-version: 1
+version: 2
 
 # Span gallery, 4 x 1: four full-width rows, stacked, so panels that differ
 # only in their chosen font sit directly above one another.
@@ -38,7 +38,7 @@ panels:
           rangeMax: 8.4
 
   - id: g-cells
-    type: cell-battery
+    type: rx-battery
     col: 0
     row: 1
     colSpan: 4

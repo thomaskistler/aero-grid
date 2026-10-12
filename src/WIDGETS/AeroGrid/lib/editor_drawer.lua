@@ -145,11 +145,19 @@ local function entrySummary(state, key, index, defaults, path)
     return table.concat(summary, "  ")
 end
 
-local function fieldsFor(state, listKey, itemIndex, itemPath)
+local function fieldsFor(state, listKey, itemIndex, itemPath, groupKey)
     local editor = state.handlers.editor
-    local fields, fieldError = editor.formFields(state.session)
+    local fields, fieldError
+    if groupKey then
+        fields, fieldError = editor.drawerFields(state.session, groupKey)
+    else
+        fields, fieldError = editor.formFields(state.session)
+    end
     if not fields then
         error(fieldError)
+    end
+    if groupKey then
+        return fields
     end
     local result = {}
     local selected = itemPath or (listKey and { itemIndex } or {})
@@ -221,7 +229,7 @@ local function fieldsFor(state, listKey, itemIndex, itemPath)
     return result
 end
 
-function drawer.open(context, state, mode, listKey, itemIndex, itemPath)
+function drawer.open(context, state, mode, listKey, itemIndex, itemPath, groupKey)
     closeDialog(state)
     if mode == "add" then
         assert(type(lvgl.menu) == "function", "panel selection requires EdgeTX Lua LVGL menu")
@@ -262,12 +270,22 @@ function drawer.open(context, state, mode, listKey, itemIndex, itemPath)
         end
     end
     itemPath = itemPath or (listKey and { itemIndex } or nil)
-    title = title .. (listKey and (" / " .. listKey .. " " .. itemPath[1]) or "")
+    if groupKey then
+        local _, _, module = state.handlers.editor.settings(state.session)
+        for _, group in ipairs(module.drawerGroups or {}) do
+            if group.key == groupKey then
+                title = title .. " / " .. group.label
+                break
+            end
+        end
+    elseif listKey then
+        title = title .. " / " .. listKey .. " " .. itemPath[1]
+    end
     if itemPath and #itemPath > 1 then
         title = title .. " / State " .. itemPath[#itemPath]
     end
-    local fields = fieldsFor(state, listKey, itemIndex, itemPath)
-    state.drawerListKey, state.drawerItemIndex = listKey, itemIndex
+    local fields = fieldsFor(state, listKey, itemIndex, itemPath, groupKey)
+    state.drawerListKey, state.drawerItemIndex, state.drawerGroupKey = listKey, itemIndex, groupKey
     state.drawerItemPath = itemPath
     state.drawerFields, state.drawerControls = fields, {}
     state.drawerBuild = 1
@@ -287,7 +305,11 @@ function drawer.open(context, state, mode, listKey, itemIndex, itemPath)
                     state.nativeDrawer = nil
                     retireDialogHost(state)
                     state.drawerBuild = nil
-                    local command = { action = listKey and "parent" or "back", key = listKey }
+                    local command = {
+                        action = (listKey or groupKey) and "parent" or "back",
+                        key = listKey,
+                        groupKey = listKey and groupKey or nil,
+                    }
                     if itemPath and #itemPath > 1 then
                         command.itemPath = state.handlers.editor.clone(itemPath)
                         table.remove(command.itemPath)
@@ -423,6 +445,55 @@ local function writeField(state, field, value)
         return editor.setPath(state.session, field.key, field.path, value)
     end
     return editor.setValue(state.session, field.key, value)
+end
+
+local function visible(state, field)
+    local condition = field.visibleWhen
+    if not condition then
+        return true
+    end
+    local _, config = state.handlers.editor.settings(state.session)
+    if type(condition) == "function" then
+        return condition(config)
+    end
+    if type(condition) ~= "table" then
+        return true
+    end
+    local matches = config[condition.key] == condition.value
+    if condition.invert then
+        return not matches
+    end
+    return matches
+end
+
+local function relayout(state)
+    local y = state.drawerPadding * 2
+    for _, entry in ipairs(state.drawerControls or {}) do
+        local show = visible(state, entry.field)
+        local visibility = show and lvgl.show or lvgl.hide
+        visibility(entry.row)
+        if show then
+            entry.row:set({ y = y })
+            y = y + entry.height
+        end
+        if entry.errorShown and show then
+            entry.errorLabel:set({ y = y })
+            lvgl.show(entry.errorLabel)
+            y = y + state.drawerErrorHeight
+        else
+            lvgl.hide(entry.errorLabel)
+        end
+    end
+end
+
+local function refreshVisibility(state)
+    relayout(state)
+    local editor = state.handlers.editor
+    for _, entry in ipairs(state.drawerControls or {}) do
+        if entry.field.drawerGroup then
+            entry.object:set({ text = editor.drawerSummary(state.session, entry.field.drawerGroup) })
+        end
+    end
 end
 
 local function addControl(context, state, field, index)
@@ -659,6 +730,7 @@ local function addControl(context, state, field, index)
         kind = kind,
     }
     field.control = state.drawerControls[index]
+    relayout(state)
 end
 
 local function fieldError(state, control, message)
@@ -670,18 +742,11 @@ local function fieldError(state, control, message)
     end
     local shown = message ~= nil
     if (control.errorShown == true) == shown then
+        relayout(state)
         return
     end
     control.errorShown = shown
-    local y = state.drawerPadding * 2
-    for _, entry in ipairs(state.drawerControls) do
-        entry.row:set({ y = y })
-        y = y + entry.height
-        entry.errorLabel:set({ y = y })
-        if entry.errorShown then
-            y = y + state.drawerErrorHeight
-        end
-    end
+    relayout(state)
 end
 
 function drawer.advance(context, state)
@@ -707,11 +772,24 @@ function drawer.advance(context, state)
         state.mode = "menu"
         state.previewPending = true
     elseif command.action == "parent" then
-        drawer.open(context, state, "configure", command.itemPath and command.key, nil, command.itemPath)
+        drawer.open(
+            context,
+            state,
+            "configure",
+            command.itemPath and command.key,
+            nil,
+            command.itemPath,
+            command.groupKey
+        )
+    elseif command.action == "group" then
+        drawer.open(context, state, "configure", nil, nil, nil, command.drawerGroup)
     elseif command.action == "item" then
         drawer.open(context, state, "configure", command.key, command.index, command.itemPath)
     elseif command.action == "write" then
         ok, err = writeField(state, command.field, command.value)
+        if ok then
+            refreshVisibility(state)
+        end
         if command.control and state.nativeDrawer then
             if command.control.kind == "textEdit" then
                 command.control.object:set({ value = tostring(current(state, command.field) or "") })

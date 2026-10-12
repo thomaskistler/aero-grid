@@ -1,4 +1,4 @@
-version: 1
+version: 2
 
 # Span gallery, 2 x 2: four panels on identical square panels, chosen
 # because at this one span their dominant readings land four sizes apart.
@@ -30,7 +30,7 @@ grid:
 
 panels:
   - id: g-cells
-    type: cell-battery
+    type: rx-battery
     col: 0
     row: 0
     colSpan: 2

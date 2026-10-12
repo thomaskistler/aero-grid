@@ -7,7 +7,7 @@ local WidgetFixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua
 local fixture = WidgetFixture.new()
 fixture.reset()
 fixture.radio.values[100] = 16.4
-local context = fixture.createLoaded(nil, { Layout = "review-cell-battery", Theme = "modern-dark" })
+local context = fixture.createLoaded(nil, { Layout = "review-rx-battery", Theme = "modern-dark" })
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assertions.assertEqual(#context.panels, 7)
@@ -18,12 +18,13 @@ local average = fixture.instanceOf(context, "average")
 assertions.assertEqual(pack.value.properties.text, "16.40")
 assertions.assertEqual(average.value.properties.text, "4.10")
 assertions.assertEqual(pack.countLabel.properties.text, "4S")
-assertions.assertEqual(average.countLabel.properties.text, "4S")
+assertions.assertEqual(average.countLabel.properties.text, "4S EST")
 assertions.assertEqual(pack.packLabel.properties.text, "4.10V AVG")
 assertions.assertEqual(average.packLabel.properties.text, "16.4V")
 assertions.assertEqual(pack.stateName, "normal")
 assertions.assertEqual(average.stateName, "normal")
 assertions.assertEqual(pack.summary.lowest, nil)
+assertions.assertEqual(average.summary.estimated, true)
 assert(pack.glyph, "pack panel must draw a battery glyph")
 assert(average.glyph, "average panel must draw a battery glyph")
 assertions.assertEqual(pack.bar, nil, "battery mode must not draw a bottom bar")
@@ -32,7 +33,7 @@ assertions.assertEqual(pack.glyph.shell.properties.color, pack.glyph.fill.proper
 assertions.assertEqual(fixture.instanceOf(context, "smallest").showDetail, false)
 
 local function assertUnitThreshold()
-    local panel = fixture.module("panels/cell-battery.lua")
+    local panel = fixture.module("panels/rx-battery.lua")
     local kept, dropped = 0, 0
     for width = 100, 320 do
         local rect = { x = 0, y = 0, w = width, h = 136 }
@@ -140,21 +141,23 @@ assertions.assertEqual(pack.themeBuilder.numberInkCentre(fixture.firmware.DBLSIZ
 assertVerticalAlignment()
 local glyphX = pack.glyph.shell.properties.x
 local showUnit = pack.area.showUnit
-fixture.radio.values[100] = 13.6
+fixture.radio.values[100] = 14.0
 fixture.pump(context, 40)
-assertions.assertEqual(pack.value.properties.text, "13.60")
-assertions.assertEqual(average.value.properties.text, "3.40")
-assertions.assertEqual(pack.packLabel.properties.text, "3.40V AVG")
+assertions.assertEqual(pack.value.properties.text, "14.00")
+assertions.assertEqual(average.value.properties.text, "3.50")
+assertions.assertEqual(pack.packLabel.properties.text, "3.50V AVG")
 assertions.assertEqual(pack.stateName, "warning")
 assertions.assertEqual(average.stateName, "warning")
 assertions.assertEqual(pack.summary.count, 4, "cell count must not change as the pack drains")
+assertions.assertEqual(average.summary.count, 4, "estimated cell count changed as pack voltage fell")
+assertions.assertEqual(average.countLabel.properties.text, "4S EST")
 assertions.assertEqual(pack.glyph.shell.properties.x, glyphX, "voltage must not move the glyph")
 assertions.assertEqual(pack.area.showUnit, showUnit, "voltage must not change unit visibility")
 assertEqualGaps(pack)
 assertEqualGaps(average)
 assertVerticalAlignment()
 
-fixture.radio.values[100] = 13.2
+fixture.radio.values[100] = 13.6
 fixture.pump(context, 40)
 assertions.assertEqual(pack.stateName, "critical")
 assertions.assertEqual(average.stateName, "critical")
@@ -164,7 +167,7 @@ fixture.radio.rssi = 0
 fixture.pump(context, 40)
 assertions.assertEqual(pack.stateName, "stale")
 assertions.assertEqual(average.stateName, "stale")
-assertions.assertEqual(pack.value.properties.text, "13.20")
+assertions.assertEqual(pack.value.properties.text, "13.60")
 
 fixture.radio.rssi = 80
 fixture.radio.values[100] = 16.4
@@ -187,7 +190,7 @@ assertVerticalAlignment()
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 fixture.reset()
 fixture.radio.fields.RxBt = nil
-local missing = fixture.createLoaded(nil, { Layout = "review-cell-battery", Theme = "modern-dark" })
+local missing = fixture.createLoaded(nil, { Layout = "review-rx-battery", Theme = "modern-dark" })
 fixture.pump(missing, 40)
 local missingPack = fixture.instanceOf(missing, "pack")
 assertions.assertEqual(missingPack.glyphShown, false, "missing voltage must not draw an empty battery")

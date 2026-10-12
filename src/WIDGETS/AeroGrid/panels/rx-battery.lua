@@ -1,56 +1,45 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
---- Flight-pack cell voltages.
----
---- The lowest cell is the safety reading, because a pack is only as good as
---- its worst cell: a 4S reading 16.2 V looks healthy right up until one cell
---- is at 3.2 V and the other three are carrying it. The lowest cell is
---- therefore the default primary reading, and the summed pack voltage is
---- supporting detail rather than the headline.
+--- Aircraft battery voltage from an EdgeTX cells monitor or pack sensor.
 ---
 --- The bar is scaled over the configured usable range, from the critical
 --- voltage to full, not from zero. A bar that started at zero would sit above
 --- three quarters full on a pack that is nearly empty.
 ---
---- Two EdgeTX behaviours shape everything below. A cells source returns a
---- *table* of individual voltages, from which a count and pack sum can be
---- measured. A pack-voltage source such as "RxBt" instead needs a configured
---- cell count to derive an average; it cannot reveal the lowest cell.
---- The cells sensor's extremes, "Cels-" and "Cels+", carry
---- the same unit but return a plain number, which `telemetryService`
---- normalizes; an explicitly configured lowest-cell source is therefore an
---- ordinary numeric reading and is preferred when the layout names one,
---- because a receiver that computes it has seen samples between our polls.
+--- A cells source returns the monitored cells table. A pack source such as
+--- "RxBt" supplies only total voltage; alarms therefore judge its average,
+--- never a guessed lowest cell. When its series count is automatic, the first
+--- fresh voltage is divided by the configured full-cell voltage and rounded
+--- once. That estimate is held until telemetry disconnects.
 ---
---- No remaining-capacity percentage is shown. The specification forbids
---- estimating one until a panel defines and labels its estimation model,
---- and voltage under load is a poor proxy for charge.
+--- Count estimation assumes the first received pack voltage is near full.
+--- It is an estimate, not a capacity or cell-health measurement; configuring
+--- the known series count is more reliable.
 
----@class AeroGridCellSettings
+---@class AeroGridRxBatterySettings
 ---@field source? string EdgeTX cells or pack-voltage source.
 ---@field sourceType? "cells"|"pack" Shape of the configured source.
----@field lowestSource? string Explicit lowest-cell source such as "Cels-".
 ---@field label? string
----@field reading? "lowest"|"average"|"pack" Which value is dominant.
+---@field reading? "cell"|"pack" Which value is dominant.
 ---@field cellEmpty? number Volts per cell treated as empty by the bar.
 ---@field cellFull? number Volts per cell treated as full by the bar.
 ---@field warning? number Volts per cell.
 ---@field critical? number Volts per cell.
----@field cells? number Expected cell count; required for a pack source.
+---@field cells? number Pack series count; zero estimates it from initial voltage.
 ---@field showPack? boolean Show pack voltage, or average voltage when pack leads.
 ---@field showCount? boolean Show the measured or configured cell count.
 ---@field visual? "battery"|"bar"|"none"
 ---@field accent? string
 
----@class AeroGridCellContext
+---@class AeroGridRxBatteryContext
 ---@field panel table
----@field feed? AeroGridReading Cells subscription.
----@field lowestFeed? AeroGridReading Explicit lowest-cell subscription.
+---@field feed? AeroGridReading Battery voltage subscription.
+---@field estimatedCells? integer
 ---@field summary table Reused result of the last shape validation.
 ---@field stateName string
 
-local cellBattery = {
-    id = "cell-battery",
+local rxBattery = {
+    id = "rx-battery",
     apiVersion = 1,
     supportedSpans = {
         "1x1",
@@ -66,7 +55,7 @@ local cellBattery = {
     -- walks the cells table. Five hertz is already far more than a pilot reads.
     refreshInterval = 20,
     settings = {
-        { key = "source", label = "Voltage source", type = "string", default = "Cels" },
+        { key = "label", label = "Label", type = "string", default = "PACK" },
         {
             key = "sourceType",
             label = "Source type",
@@ -74,30 +63,64 @@ local cellBattery = {
             default = "cells",
             choices = { "cells", "pack" },
         },
-        { key = "lowestSource", label = "Lowest cell source", type = "string", default = "" },
-        { key = "label", label = "Label", type = "string", default = "PACK" },
+        { key = "source", label = "Voltage source", type = "string", default = "Cels", drawerField = true },
+        {
+            key = "cells",
+            label = "Series cell count (0 = auto)",
+            type = "number",
+            default = 0,
+            min = 0,
+            max = 16,
+            step = 1,
+            drawerField = true,
+        },
         {
             key = "reading",
             label = "Primary reading",
             type = "string",
-            default = "lowest",
-            choices = { "lowest", "average", "pack" },
+            default = "cell",
+            choices = { "cell", "pack" },
         },
-        -- The usable range per cell; typical LiPo limits are 3.3 V and 4.2 V.
-        { key = "cellEmpty", label = "Empty volts per cell", type = "number", default = 3.3 },
-        { key = "cellFull", label = "Full volts per cell", type = "number", default = 4.2 },
-        { key = "warning", label = "Warning volts per cell", type = "number", default = 3.5 },
-        { key = "critical", label = "Critical volts per cell", type = "number", default = 3.3 },
-        -- Cell-voltage alarms always count downward; no direction setting is needed.
-        { key = "cells", label = "Cell count (0 = sensor)", type = "number", default = 0 },
-        { key = "showPack", label = "Show supporting voltage", type = "boolean", default = true },
+        { key = "showPack", label = "Supporting voltage", type = "boolean", default = true },
         { key = "showCount", label = "Show cell count", type = "boolean", default = true },
+        {
+            key = "cellFull",
+            label = "Full (V/cell)",
+            type = "number",
+            default = 4.2,
+            min = 0,
+            max = 10,
+            step = 0.01,
+            section = "Voltage levels",
+            visibleWhen = { key = "visual", value = "none", invert = true },
+        },
+        { key = "warning", label = "Warning (V/cell)", type = "number", default = 3.6, min = 0, max = 10, step = 0.01 },
+        {
+            key = "critical",
+            label = "Critical (V/cell)",
+            type = "number",
+            default = 3.4,
+            min = 0,
+            max = 10,
+            step = 0.01,
+        },
+        {
+            key = "cellEmpty",
+            label = "Empty (V/cell)",
+            type = "number",
+            default = 3.2,
+            min = 0,
+            max = 10,
+            step = 0.01,
+            visibleWhen = { key = "visual", value = "none", invert = true },
+        },
         {
             key = "visual",
             label = "Visualization",
             type = "string",
             default = "battery",
             choices = { "battery", "bar", "none" },
+            section = "Appearance",
         },
         {
             key = "accent",
@@ -107,19 +130,23 @@ local cellBattery = {
             choices = { "cyan", "green", "amber", "orange" },
         },
     },
+    drawerGroups = {
+        { key = "cells", label = "Cells monitor", sourceType = "cells", fields = { "source" } },
+        { key = "pack", label = "Pack voltage", sourceType = "pack", fields = { "source", "cells" } },
+    },
 }
 
 --- Most cells any supported protocol reports, and the ceiling on the walk.
 --- The loop is bounded because it runs inside the host's instruction budget
 --- and the table comes from the firmware rather than from this dashboard.
-cellBattery.CELL_LIMIT = 16
+rxBattery.CELL_LIMIT = 16
 
 --- Voltages outside this range are not cells.
 --- A chemistry this dashboard has never heard of still cannot put 30 V across
 --- one cell, so an entry above it is a pack voltage, a raw count, or a sensor
 --- reporting something else entirely, and folding it in would hide a real low
 --- cell behind a nonsense average.
-cellBattery.CELL_MAX = 30
+rxBattery.CELL_MAX = 30
 
 --- Validate a cells value and summarize it.
 ---
@@ -144,7 +171,7 @@ cellBattery.CELL_MAX = 30
 ---@param raw any Value from a telemetry subscription.
 ---@param out table Table to write the summary into.
 ---@return table out
-function cellBattery.summarize(raw, out)
+function rxBattery.summarize(raw, out)
     out.shape = "none"
     out.count = 0
     out.entries = 0
@@ -153,6 +180,7 @@ function cellBattery.summarize(raw, out)
     out.highest = nil
     out.pack = nil
     out.spread = nil
+    out.estimated = nil
 
     if raw == nil then
         return out
@@ -163,8 +191,8 @@ function cellBattery.summarize(raw, out)
         return out
     end
 
-    local limit = cellBattery.CELL_LIMIT
-    local maximum = cellBattery.CELL_MAX
+    local limit = rxBattery.CELL_LIMIT
+    local maximum = rxBattery.CELL_MAX
     local sum = 0
 
     for index = 1, limit do
@@ -211,12 +239,20 @@ end
 ---@param cells number Configured count, validated by the host.
 ---@param out table
 ---@return table
-function cellBattery.summarizePack(raw, cells, out)
-    cellBattery.summarize(nil, out)
+function rxBattery.summarizePack(raw, cells, out)
+    rxBattery.summarize(nil, out)
     if raw == nil then
         return out
     end
-    if type(raw) ~= "number" or raw <= 0 or raw >= cellBattery.CELL_MAX * cells or raw ~= raw then
+    if
+        type(raw) ~= "number"
+        or raw <= 0
+        or raw >= rxBattery.CELL_MAX * rxBattery.CELL_LIMIT
+        or raw ~= raw
+        or type(cells) ~= "number"
+        or cells < 1
+        or cells > rxBattery.CELL_LIMIT
+    then
         out.shape = "invalid"
         return out
     end
@@ -227,28 +263,18 @@ function cellBattery.summarizePack(raw, cells, out)
 end
 
 --- Choose the dominant reading from a validated summary.
---- An explicitly configured lowest-cell source wins for the lowest reading,
---- because the receiver maintaining it has seen every sample between our
---- polls, where this panel only sees the ones it asked for.
----@param settings AeroGridCellSettings
+---@param settings AeroGridRxBatterySettings
 ---@param summary table
----@param lowest? number Value of an explicit lowest-cell source.
 ---@return number? value
-function cellBattery.primaryValue(settings, summary, lowest)
-    local mode = settings.reading
-
-    if mode == "pack" then
+function rxBattery.primaryValue(settings, summary)
+    if settings.reading == "pack" then
         return summary.pack
     end
-    if mode == "average" then
-        if summary.count == 0 or summary.pack == nil then
-            return nil
-        end
-        return summary.pack / summary.count
+    if summary.count == 0 or summary.pack == nil then
+        return nil
     end
-
-    if type(lowest) == "number" then
-        return lowest
+    if settings.sourceType == "pack" then
+        return summary.pack / summary.count
     end
     return summary.lowest
 end
@@ -258,17 +284,35 @@ end
 --- be applied to it.
 ---@param settings AeroGridCellSettings
 ---@return boolean
-function cellBattery.isPerCell(settings)
+function rxBattery.isPerCell(settings)
     return settings.reading ~= "pack"
 end
 
+--- Estimate the series count from the initial voltage of a near-full pack.
+---@param voltage number
+---@param cellFull number
+---@return integer? count
+function rxBattery.estimateCount(voltage, cellFull)
+    if type(voltage) ~= "number" or voltage <= 0 or voltage ~= voltage then
+        return nil
+    end
+    if type(cellFull) ~= "number" or cellFull <= 0 or cellFull ~= cellFull then
+        return nil
+    end
+    local count = math.floor(voltage / cellFull + 0.5)
+    if count < 1 or count > rxBattery.CELL_LIMIT then
+        return nil
+    end
+    return count
+end
+
 --- Resolve the panel state. Cell voltages always count downward.
----@param settings AeroGridCellSettings
+---@param settings AeroGridRxBatterySettings
 ---@param value any Primary reading.
 ---@param perCell any Lowest measured cell, or average for a pack source.
 ---@param stale boolean
 ---@return string
-function cellBattery.resolveState(settings, value, perCell, stale)
+function rxBattery.resolveState(settings, value, perCell, stale)
     if type(value) ~= "number" or value ~= value then
         return "unavailable"
     end
@@ -296,20 +340,20 @@ end
 
 --- Convert a per-cell voltage into a fraction of the usable range.
 --- The range runs from the configured empty voltage to full, never from zero.
----@param settings AeroGridCellSettings
+---@param settings AeroGridRxBatterySettings
 ---@param value any
 ---@param cells integer Divisor for a pack reading.
 ---@param primitives table
 ---@return number
-function cellBattery.fraction(settings, value, cells, primitives)
-    local low = type(settings.cellEmpty) == "number" and settings.cellEmpty or 3.3
+function rxBattery.fraction(settings, value, cells, primitives)
+    local low = type(settings.cellEmpty) == "number" and settings.cellEmpty or 3.2
     local high = type(settings.cellFull) == "number" and settings.cellFull or 4.2
     if high <= low then
         return 0
     end
 
     local perCell = value
-    if not cellBattery.isPerCell(settings) then
+    if not rxBattery.isPerCell(settings) then
         if type(cells) ~= "number" or cells < 1 then
             return 0
         end
@@ -355,7 +399,7 @@ end
 ---@param summary table
 ---@param settings AeroGridCellSettings
 ---@return string[]
-function cellBattery.countVariants(summary, settings)
+function rxBattery.countVariants(summary, settings)
     local shape = summary.shape
 
     -- One wording, not a ladder. A form that fits the narrowest row fits every
@@ -378,6 +422,9 @@ function cellBattery.countVariants(summary, settings)
     end
 
     local count = tostring(summary.count) .. "S"
+    if summary.estimated then
+        return { count .. " EST", count .. "~", count }
+    end
     local expected = settings.cells
     -- A cell that stopped reporting is exactly the failure this panel exists
     -- to catch, so a count below the configured one is called out.
@@ -393,7 +440,7 @@ end
 ---@param summary table
 ---@param settings AeroGridCellSettings
 ---@return string[]
-function cellBattery.packVariants(summary, settings)
+function rxBattery.packVariants(summary, settings)
     if not settings.showPack or type(summary.pack) ~= "number" then
         return { "" }
     end
@@ -421,20 +468,33 @@ end
 ---@param span? table Placement span, when the host knows it.
 ---@param config? table What the layout actually stated.
 ---@return string[] messages
-function cellBattery.validateSettings(settings, span, config)
+function rxBattery.validateSettings(settings, span, config)
     local messages = {}
     if settings.sourceType == "pack" then
         local cells = settings.cells
-        if type(cells) ~= "number" or cells < 1 or cells > cellBattery.CELL_LIMIT or cells ~= math.floor(cells) then
-            messages[#messages + 1] = "A pack-voltage source needs cells set to an integer from 1 to 16."
+        if type(cells) ~= "number" or cells < 0 or cells > rxBattery.CELL_LIMIT or cells ~= math.floor(cells) then
+            messages[#messages + 1] = "Pack series count must be 0 (auto) or an integer from 1 to 16."
         end
-        if settings.reading == "lowest" then
-            messages[#messages + 1] =
-                "A pack-voltage source cannot report the lowest cell; choose reading pack or average."
+    elseif type(config) == "table" and config.cells ~= nil then
+        messages[#messages + 1] = "cells is only used for a pack-voltage source."
+    end
+    local full = settings.cellFull == nil and 4.2 or settings.cellFull
+    local warning = settings.warning == nil and 3.6 or settings.warning
+    local critical = settings.critical == nil and 3.4 or settings.critical
+    local empty = settings.cellEmpty == nil and 3.2 or settings.cellEmpty
+    local levels = { full, warning, critical, empty }
+    local finiteLevels = true
+    for index = 1, 4 do
+        local value = levels[index]
+        if type(value) ~= "number" or value ~= value or value == math.huge or value == -math.huge then
+            finiteLevels = false
+            break
         end
-        if type(settings.lowestSource) == "string" and settings.lowestSource ~= "" then
-            messages[#messages + 1] = "lowestSource is only supported with sourceType cells."
-        end
+    end
+    if not finiteLevels then
+        messages[#messages + 1] = "Voltage levels must be finite numbers."
+    elseif not (full > warning and warning >= critical and critical >= empty) then
+        messages[#messages + 1] = "Voltage levels must be ordered Full > Warning >= Critical >= Empty."
     end
     if type(config) ~= "table" then
         return messages
@@ -463,7 +523,7 @@ end
 ---@param colSpan integer
 ---@param rowSpan integer
 ---@return table
-function cellBattery.presentationFor(colSpan, rowSpan)
+function rxBattery.presentationFor(colSpan, rowSpan)
     local cells = (colSpan or 1) * (rowSpan or 1)
     return { showVisual = cells >= 2, showDetail = cells >= 2 }
 end
@@ -476,7 +536,7 @@ end
 ---@param fonts table
 ---@param sample table Widest digits this panel prints, and its unit.
 ---@return table
-function cellBattery.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, out, primitives)
+function rxBattery.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, out, primitives)
     local frame = themeBuilder.frame(theme, rect, fonts)
     local glyphHeight
     local compact
@@ -525,12 +585,12 @@ end
 ---@param settings AeroGridCellSettings
 ---@param services table
 ---@return AeroGridCellContext
-function cellBattery.create(parent, rect, settings, services)
+function rxBattery.create(parent, rect, settings, services)
     local theme = services.theme
     local primitives = services.primitives
     local fonts = services.fonts
     local span = services.span
-    local layout = cellBattery.presentationFor(span.colSpan, span.rowSpan)
+    local layout = rxBattery.presentationFor(span.colSpan, span.rowSpan)
     layout.visual = settings.visual
     if
         span.rowSpan == 1
@@ -564,9 +624,6 @@ function cellBattery.create(parent, rect, settings, services)
     local telemetry = services.telemetry
     if telemetry then
         context.feed = telemetry:subscribe(settings.source)
-        if type(settings.lowestSource) == "string" and settings.lowestSource ~= "" then
-            context.lowestFeed = telemetry:subscribe(settings.lowestSource)
-        end
     end
 
     -- The widest number this panel can print, taken from what it reads
@@ -576,12 +633,12 @@ function cellBattery.create(parent, rect, settings, services)
     -- where 3.82 V does not. The unit rides beside the number rather than
     -- being part of it.
     local sample = {
-        digits = cellBattery.isPerCell(settings) and "4.44" or "88.88",
+        digits = rxBattery.isPerCell(settings) and "4.44" or "88.88",
         unit = "V",
     }
     context.sample = sample
 
-    local area = cellBattery.regionsFor(theme, services.themeBuilder, rect, layout, fonts, sample, nil, primitives)
+    local area = rxBattery.regionsFor(theme, services.themeBuilder, rect, layout, fonts, sample, nil, primitives)
     context.detailWidth = area.detailWidth
     context.showDetail = area.showDetail or area.showSide
 
@@ -658,8 +715,8 @@ function cellBattery.create(parent, rect, settings, services)
         lvgl.hide(context.bar.fill)
     end
 
-    local _, drawn = primitives.changed(context, cellBattery.render)
-    cellBattery.apply(context, drawn)
+    local _, drawn = primitives.changed(context, rxBattery.render)
+    rxBattery.apply(context, drawn)
     return context
 end
 
@@ -667,60 +724,57 @@ end
 --- Kept separate from `apply` so a refresh can decide whether anything is
 --- worth repainting without summarizing the cells table twice.
 ---@param context AeroGridCellContext
-function cellBattery.gather(context)
+function rxBattery.gather(context)
     local settings = context.settings
     local feed = context.feed
     local raw = type(feed) == "table" and feed.available and feed.raw or nil
     local summary
     if settings.sourceType == "pack" then
-        summary = cellBattery.summarizePack(raw, settings.cells, context.summary)
+        local cells = settings.cells
+        if cells == 0 then
+            if type(feed) == "table" and feed.stale then
+                context.reestimateOnFresh = true
+            elseif context.reestimateOnFresh and type(raw) == "number" then
+                context.estimatedCells = rxBattery.estimateCount(raw, settings.cellFull)
+                context.reestimateOnFresh = nil
+            elseif context.estimatedCells == nil and type(raw) == "number" then
+                context.estimatedCells = rxBattery.estimateCount(raw, settings.cellFull)
+            end
+            cells = context.estimatedCells
+        end
+        summary = rxBattery.summarizePack(raw, cells, context.summary)
+        summary.estimated = settings.cells == 0 and summary.shape == "pack"
     else
-        summary = cellBattery.summarize(raw, context.summary)
+        summary = rxBattery.summarize(raw, context.summary)
     end
-
-    local lowestFeed = context.lowestFeed
-    local lowest = nil
-    local lowestStale = false
-    if type(lowestFeed) == "table" and lowestFeed.available and type(lowestFeed.value) == "number" then
-        lowest = lowestFeed.value
-        lowestStale = lowestFeed.stale == true
-    end
-
-    -- An explicit lowest-cell source keeps this panel useful when the cells
-    -- table itself is unreadable, which is the whole reason it is separate.
-    context.primary = cellBattery.primaryValue(settings, summary, lowest)
-    context.perCell = lowest or summary.lowest
+    context.primary = rxBattery.primaryValue(settings, summary)
+    context.perCell = summary.lowest
     if summary.shape == "pack" then
         context.perCell = summary.pack / summary.count
     end
 
-    -- Freshness follows whichever source actually produced the reading.
-    if summary.shape == "cells" or summary.shape == "pack" then
-        context.stale = type(feed) == "table" and feed.stale == true
-    else
-        context.stale = lowest ~= nil and lowestStale
-    end
+    context.stale = type(feed) == "table" and feed.stale == true
 end
 
 --- Repaint the panel from the gathered reading.
 ---@param context AeroGridCellContext
 --- Collect everything this panel draws.
 ---@param out table
-function cellBattery.render(context, out)
-    cellBattery.gather(context)
+function rxBattery.render(context, out)
+    rxBattery.gather(context)
 
     local settings = context.settings
     local summary = context.summary
     local value = context.primary
     local stale = context.stale == true
 
-    out.state = cellBattery.resolveState(settings, value, context.perCell, stale)
+    out.state = rxBattery.resolveState(settings, value, context.perCell, stale)
     -- Two decimals: cells are compared against each other, and 3.8 V hides a
     -- difference that matters where 3.82 V does not.
     -- Digits alone. The `V` is its own label beside them, so there is no
     -- longer a shorter form of this string to measure and then not draw.
     out.text = type(value) == "number" and string.format("%.2f", value) or "--"
-    out.fraction = cellBattery.fraction(settings, value, summary.count, context.primitives)
+    out.fraction = rxBattery.fraction(settings, value, summary.count, context.primitives)
     out.value = value
 
     if context.showDetail then
@@ -731,8 +785,8 @@ function cellBattery.render(context, out)
         else
             local fit = context.themeBuilder.fitLabel
             local font = context.fonts.label
-            out.count = fit(cellBattery.countVariants(summary, settings), font, context.detailWidth)
-            out.pack = fit(cellBattery.packVariants(summary, settings), font, context.detailWidth)
+            out.count = fit(rxBattery.countVariants(summary, settings), font, context.detailWidth)
+            out.pack = fit(rxBattery.packVariants(summary, settings), font, context.detailWidth)
         end
     end
 end
@@ -740,7 +794,7 @@ end
 --- Paint the panel from what `render` collected, and from nothing else.
 ---@param context AeroGridCellContext
 ---@param drawn table
-function cellBattery.apply(context, drawn)
+function rxBattery.apply(context, drawn)
     local presentation = context.state(drawn.state, context.settings.accent)
 
     context.stateName = drawn.state
@@ -822,15 +876,15 @@ end
 
 --- Advance the panel, repainting only when something drawn changed.
 ---@param context AeroGridCellContext
-function cellBattery.refresh(context)
+function rxBattery.refresh(context)
     if not context.feed and not context.lowestFeed then
         return
     end
     local supporting = context.layout.supporting
     if supporting then
-        cellBattery.gather(context)
-        local count = cellBattery.countVariants(context.summary, context.settings)[1]
-        local pack = cellBattery.packVariants(context.summary, context.settings)
+        rxBattery.gather(context)
+        local count = rxBattery.countVariants(context.summary, context.settings)[1]
+        local pack = rxBattery.packVariants(context.summary, context.settings)
         local voltage = pack[#pack]
         local layout = context.layout
         if layout.countText ~= count or layout.packText ~= voltage then
@@ -838,21 +892,21 @@ function cellBattery.refresh(context)
             layout.packOnly = count == "" and voltage ~= ""
             supporting[1] = count ~= "" and count or voltage
             supporting[2] = count ~= "" and voltage ~= "" and voltage or nil
-            cellBattery.update(context, context.rect)
+            rxBattery.update(context, context.rect)
         end
     end
-    local changed, drawn = context.primitives.changed(context, cellBattery.render)
+    local changed, drawn = context.primitives.changed(context, rxBattery.render)
     if changed then
-        cellBattery.apply(context, drawn)
+        rxBattery.apply(context, drawn)
     end
 end
 
 --- Reposition after a zone change.
 ---@param context AeroGridCellContext
 ---@param rect AeroGridRect
-function cellBattery.update(context, rect)
+function rxBattery.update(context, rect)
     context.rect = rect
-    local area = cellBattery.regionsFor(
+    local area = rxBattery.regionsFor(
         context.theme,
         context.themeBuilder,
         rect,
@@ -965,4 +1019,4 @@ function cellBattery.update(context, rect)
     end
 end
 
-return cellBattery
+return rxBattery

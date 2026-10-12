@@ -1644,7 +1644,7 @@ function support.radio(hostIo)
 
     -- A flight pack. EdgeTX returns a table of individual cell voltages for the
     -- base cells source and a plain number for its extremes, which is exactly
-    -- the shape mismatch cell-battery has to survive.
+    -- the shape mismatch rx-battery has to survive.
     radio.fields.Cels = { id = 130, name = "Cels", desc = "Cells", unit = UNIT.CELLS }
     radio.fields["Cels-"] = { id = 131, name = "Cels-", desc = "Cell min", unit = UNIT.CELLS }
     radio.fields["Cels+"] = { id = 132, name = "Cels+", desc = "Cell max", unit = UNIT.CELLS }

@@ -1,4 +1,4 @@
-version: 1
+version: 2
 
 # The shipped dashboard. It demonstrates ten of the twelve catalogue
 # panels, at a mixture of spans, so a fresh install shows real
@@ -34,11 +34,11 @@ panels:
       accent: cyan
       warning: 500
       critical: 900
-  # The flight pack, judged by its worst cell. The bar runs from the critical
+  # The flight pack, judged by its worst cell. The bar runs from Empty
   # voltage to full rather than from zero, and no remaining-capacity
   # percentage is shown: voltage under load does not support one.
   - id: pack
-    type: cell-battery
+    type: rx-battery
     col: 2
     row: 0
     colSpan: 2
@@ -46,9 +46,7 @@ panels:
     config:
       source: Cels
       label: Pack
-      reading: lowest
-      warning: 3.5
-      critical: 3.3
+      reading: cell
       accent: cyan
   # RSSI and link quality are named separately because protocols disagree.
   # FrSky populates RSSI; ELRS populates 1RSS in dBm alongside RQly as a

@@ -362,7 +362,7 @@ local RETIRED_KEYS = {
 --- What each panel's thresholds are measured in, where the answer is
 --- fixed by the quantity rather than by configuration.
 local FIXED_THRESHOLD_UNITS = {
-    ["cell-battery"] = "volts per cell",
+    ["rx-battery"] = "V/cell",
     ["tx-battery"] = "volts",
     ["flight-timer"] = "seconds",
     ["navigation"] = "metres",
@@ -485,7 +485,7 @@ local function testSettingsVocabulary()
 
     -- The palette reserves cyan for electrical data. Both batteries measure
     -- volts; one of them used to be green.
-    for _, kind in ipairs({ "cell-battery", "tx-battery" }) do
+    for _, kind in ipairs({ "rx-battery", "tx-battery" }) do
         for _, setting in ipairs(catalog[kind]) do
             if setting.key == "accent" then
                 assertEqual(setting.default, "cyan", kind .. " defaults to an accent the colour rule does not allow")
@@ -963,8 +963,8 @@ local function testInertSettingsAreRefused()
 
     local cases = {
         { "tx-battery", "showPercent" },
-        { "cell-battery", "showPack" },
-        { "cell-battery", "showCount" },
+        { "rx-battery", "showPack" },
+        { "rx-battery", "showCount" },
         { "model-identity", "showLabels" },
         { "flight-mode", "showIndex" },
     }
@@ -980,7 +980,7 @@ local function testInertSettingsAreRefused()
         local stated = { [key] = true }
 
         -- Stated on a single row: refused, by name, with what to do about it.
-        local rejectedSpan = kind == "cell-battery" and { colSpan = 1, rowSpan = 1 } or single
+        local rejectedSpan = kind == "rx-battery" and { colSpan = 1, rowSpan = 1 } or single
         local refused = module.validateSettings(stated, rejectedSpan, stated)
         assertEqual(
             #refused,
@@ -992,7 +992,7 @@ local function testInertSettingsAreRefused()
                 .. " has space beneath the reading at any width"
         )
         assert(string.find(refused[1], key, 1, true), refused[1])
-        local requiredSize = kind == "cell-battery" and "two-row panel" or "two rows tall"
+        local requiredSize = kind == "rx-battery" and "two-row panel" or "two rows tall"
         assert(string.find(refused[1], requiredSize, 1, true), refused[1])
         assert(
             string.find(refused[1], "drop " .. key, 1, true),
@@ -1035,7 +1035,7 @@ local function testInertSettingsAreRefused()
 
     -- And a layout that states nothing gets the defaults without being told
     -- off for them, through the host as well as directly.
-    local _, quiet = panelHost.resolveSettings(loadModule("panels/cell-battery.lua"), { source = "Cels" }, single)
+    local _, quiet = panelHost.resolveSettings(loadModule("panels/rx-battery.lua"), { source = "Cels" }, single)
     assertEqual(
         #quiet,
         0,

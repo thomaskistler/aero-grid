@@ -394,8 +394,14 @@ end
 
 --- Synchronous save for callers that do not need staged callback budgets.
 function layoutStore.save(widgetPath, name, document, yaml, layout, grid, fileOps)
+    local normalized, validationErrors = layout.validate(document, grid)
+    if not normalized or #validationErrors > 0 then
+        return false,
+            "layout failed validation: " .. table.concat(validationErrors or {}, "; "),
+            layoutStore.path(widgetPath, name)
+    end
     local filename = layoutStore.path(widgetPath, name)
-    local serialized, serializeError = yaml.serialize(document)
+    local serialized, serializeError = yaml.serialize(normalized)
     if not serialized then
         return false, serializeError, filename
     end
@@ -420,22 +426,50 @@ function layoutStore.startSave(widgetPath, name, document, yaml, layout, grid, f
         grid = grid,
         operations = fileOps,
         index = 0,
+        phase = nil,
         parts = {},
         accepted = {},
         identifiers = {},
+        sourceVersion = nil,
+        header = nil,
+        pendingPanel = nil,
+        panelMigrationVersion = nil,
     }
 end
 
 function layoutStore.advanceSave(state)
     local yaml, layout, grid = state.yaml, state.layout, state.grid
-    if state.index == 0 then
+    if state.phase == nil then
+        state.sourceVersion = state.document.version
         local header = {}
         for key, value in pairs(state.document) do
             if key ~= "panels" then
                 header[key] = value
             end
         end
-        local text, encodeError = yaml.serialize(header)
+        local validated, headerErrors = layout.validateHeader(header)
+        if not validated or #(headerErrors or {}) > 0 then
+            return true, false, table.concat(headerErrors or { "invalid layout header" }, "; ")
+        end
+        state.header = validated
+        if state.sourceVersion < layout.VERSION then
+            state.phase = "header-migrate"
+            return false
+        end
+        state.phase = "header-write"
+    end
+    if state.phase == "header-migrate" then
+        local migrated, nextVersion = layout.migrateHeaderStep(state.header)
+        if not migrated then
+            return true, false, nextVersion
+        end
+        if nextVersion == layout.VERSION then
+            state.phase = "header-write"
+        end
+        return false
+    end
+    if state.phase == "header-write" then
+        local text, encodeError = yaml.serialize(state.header)
         if not text then
             return true, false, encodeError
         end
@@ -444,15 +478,41 @@ function layoutStore.advanceSave(state)
             return true, false, parseError
         end
         parsed.panels = {}
-        local valid, validationErrors = layout.validateDocument(parsed)
+        local valid, validationErrors = layout.finalizeHeader(parsed)
         if not valid then
             return true, false, table.concat(validationErrors, "; ")
+        end
+        local normalizedHeader = {}
+        for key, value in pairs(valid) do
+            if key ~= "panels" then
+                normalizedHeader[key] = value
+            end
+        end
+        state.document.version = layout.VERSION
+        text, encodeError = yaml.serialize(normalizedHeader)
+        if not text then
+            return true, false, encodeError
         end
         state.parts[1] = text
         state.parts[2] = #state.document.panels == 0 and "panels: {}\n" or "panels:\n"
         state.index = 1
-    elseif state.index <= #state.document.panels then
-        local text, encodeError = yaml.serialize({ panels = { state.document.panels[state.index] } })
+        state.phase = "panels"
+        return false
+    end
+    if state.phase == "panels" and state.index <= #state.document.panels then
+        state.pendingPanel = state.document.panels[state.index]
+        if state.panelMigrationVersion == nil then
+            state.panelMigrationVersion = state.sourceVersion
+        end
+        if state.panelMigrationVersion < layout.VERSION then
+            local migrated, nextVersion = layout.migratePanelStep(state.pendingPanel, state.panelMigrationVersion)
+            if not migrated then
+                return true, false, nextVersion
+            end
+            state.panelMigrationVersion = nextVersion
+            return false
+        end
+        local text, encodeError = yaml.serialize({ panels = { state.pendingPanel } })
         if not text then
             return true, false, encodeError
         end
@@ -469,7 +529,11 @@ function layoutStore.advanceSave(state)
         state.identifiers[panel.id] = true
         state.parts[#state.parts + 1] = string.sub(text, #"panels:\n" + 1)
         state.index = state.index + 1
-    else
+        state.pendingPanel = nil
+        state.panelMigrationVersion = nil
+        return false
+    end
+    if state.phase == "panels" then
         local saved, saveError = persistSerialized(state.filename, table.concat(state.parts), state.operations)
         return true, saved, saveError
     end

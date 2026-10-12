@@ -46,7 +46,7 @@
 # **The bar is still there if you want it.** The bottom row holds a bar
 # against a cell at the same span, which is the comparison that decides
 # whether keeping both was right.
-version: 1
+version: 2
 grid:
   columns: 4
   rows: 4

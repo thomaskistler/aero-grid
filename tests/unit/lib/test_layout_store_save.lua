@@ -119,9 +119,93 @@ local function testFutureVersionIsNotSaved()
     assert(next(files) == nil)
 end
 
+local function testExplicitSavePersistsMigratedBattery()
+    local files, operations = memoryFiles()
+    local document = {
+        version = 1,
+        grid = { columns = 4, rows = 4 },
+        panels = {
+            {
+                id = "pack",
+                type = "cell-battery",
+                col = 0,
+                row = 0,
+                colSpan = 2,
+                rowSpan = 2,
+                config = {
+                    sourceType = "cells",
+                    source = "Cels",
+                    lowestSource = "Cels-",
+                    cells = 4,
+                    reading = "average",
+                    cellFull = 4.15,
+                },
+            },
+        },
+    }
+    local saved, saveError, filename = layoutStore.save("/widget", "upgraded", document, yaml, layout, grid, operations)
+    assert(saved, saveError)
+    local persisted = assert(yaml.parse(files[filename]))
+    assert(persisted.version == 2)
+    assert(persisted.panels[1].type == "rx-battery")
+    assert(persisted.panels[1].config.reading == "cell")
+    assert(persisted.panels[1].config.lowestSource == nil)
+    assert(persisted.panels[1].config.cells == nil)
+    assert(persisted.panels[1].config.cellFull == 4.15)
+    assert(persisted.panels[1].config.warning == nil, "save materialized an omitted old default")
+end
+
+local function testStagedSaveMigratesLegacyBattery()
+    local files, operations = memoryFiles()
+    local document = {
+        version = 1,
+        grid = { columns = 4, rows = 4 },
+        panels = {
+            {
+                id = "legacy",
+                type = "cell-battery",
+                col = 0,
+                row = 0,
+                colSpan = 2,
+                rowSpan = 2,
+                config = {
+                    sourceType = "cells",
+                    source = "Cels",
+                    cells = 4,
+                    lowestSource = "Cels-",
+                    reading = "lowest",
+                },
+            },
+        },
+    }
+    local state = layoutStore.startSave("/widget", "legacy-staged", document, yaml, layout, grid, operations)
+    local done, saved, saveError
+    local calls = 0
+    repeat
+        done, saved, saveError = layoutStore.advanceSave(state)
+        calls = calls + 1
+        if calls == 1 then
+            assert(not done and state.header.version == 1, "header setup must not apply a migration chain")
+        elseif calls == 2 then
+            assert(not done and state.header.version == 2, "one header step runs in one save cycle")
+        elseif calls == 4 then
+            assert(not done and state.pendingPanel.type == "rx-battery", "one panel step runs in one save cycle")
+        end
+    until done
+    assert(calls == 6, "staged legacy save should use separate header, panel, validation and persistence cycles")
+    assert(saved, saveError)
+    local persisted = assert(yaml.parse(files[state.filename]))
+    assert(persisted.version == 2)
+    assert(persisted.panels[1].type == "rx-battery")
+    assert(persisted.panels[1].config.reading == "cell")
+    assert(persisted.panels[1].config.cells == nil)
+    assert(persisted.panels[1].config.lowestSource == nil)
+end
+
 local function testStagedSave()
     local files, operations = memoryFiles()
     local document = makeDocument("staged")
+    document.version = 2
     document.panels[2] = {
         id = "second",
         type = "example",
@@ -139,11 +223,13 @@ local function testStagedSave()
     local done, saved, saveError = layoutStore.advanceSave(state)
     assert(done and saved, saveError)
     local parsed = assert(yaml.parse(files[state.filename]))
+    assert(parsed.version == 2, "staged save did not write the current layout schema")
     assert(parsed.panels[2].config.future.enabled == true, "unknown keys must survive staged save")
     assert(not files[state.filename .. ".tmp"])
     local previousContent = files[state.filename]
 
     local broken = makeDocument("broken")
+    broken.version = 2
     broken.panels[2] = broken.panels[1]
     state = layoutStore.startSave("/widget", "main", broken, yaml, layout, grid, operations)
     for _ = 1, 3 do
@@ -197,6 +283,8 @@ end
 testCommitAndBackup()
 testFailedCommitLeavesBackup()
 testFutureVersionIsNotSaved()
+testExplicitSavePersistsMigratedBattery()
 testStagedSave()
+testStagedSaveMigratesLegacyBattery()
 testRadioFileOperations()
 testTemporaryMismatch()

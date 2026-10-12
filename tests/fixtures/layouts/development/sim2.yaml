@@ -1,4 +1,4 @@
-version: 1
+version: 2
 
 # A radio-local complement to sim.yaml's telemetry dashboard: model identity,
 # flight mode, the model timer, transmitter battery and a global variable.
@@ -123,7 +123,7 @@ panels:
   # on purpose: it is the only way to see how a panel reports a source the
   # radio does not have.
   - id: cells
-    type: cell-battery
+    type: rx-battery
     col: 2
     row: 3
     colSpan: 2
@@ -131,7 +131,7 @@ panels:
     config:
       source: Cels
       label: CELLS
-      reading: lowest
+      reading: cell
       # `showPack` and `showCount` are both true by default and both need a
       # supporting row, which this one-row panel does not have. Stating them
       # here asked for something and got nothing.

@@ -1505,6 +1505,90 @@ equal(context.editorUi, nil, "aircraft layout and service configuration save")
 lvgl.UI_ELEMENT_HEIGHT = nil
 widget.lvglMock.setFullScreen(false)
 
+write(
+    "edit-rx-battery",
+    [[
+version: 2
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: rx
+    type: rx-battery
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      sourceType: cells
+      source: Cels
+      reading: cell
+      visual: battery
+]]
+)
+widget.lvglMock.setFullScreen(true)
+load("edit-rx-battery")
+open()
+rect = context.editorUi.controls[1].rect
+tap(rect.x + rect.w - 12, rect.y + 12)
+settleDrawer()
+state = context.editorUi
+local function drawerRow(key)
+    for _, row in ipairs(state.drawerControls) do
+        if row.field.key == key then
+            return row
+        end
+    end
+    error("RX battery drawer row not found: " .. key)
+end
+control("visual").properties.set(3)
+settleDrawer()
+equal(drawerRow("cellFull").row.hidden, true, "Full threshold hides when visualization is none")
+equal(drawerRow("cellEmpty").row.hidden, true, "Empty threshold hides when visualization is none")
+equal(
+    drawerRow("critical").row.properties.y - drawerRow("warning").row.properties.y,
+    36,
+    "hidden voltage thresholds reclaim their drawer rows"
+)
+control("visual").properties.set(1)
+settleDrawer()
+equal(drawerRow("cellFull").row.hidden, false, "Full threshold returns with a visualization")
+equal(
+    drawerRow("critical").row.properties.y - drawerRow("warning").row.properties.y,
+    36,
+    "visible voltage thresholds keep normal row spacing"
+)
+control("sourceType").properties.set(2)
+settleDrawer()
+equal(drawerRow("cells").row.hidden, true, "cells monitor drawer hides for pack source")
+equal(drawerRow("pack").row.hidden, false, "pack drawer appears for pack source")
+action("group", "pack").properties.press()
+settleDrawer()
+local packSource = control("source")
+local savedSource = packSource.properties.get()
+packSource.properties.set(999)
+settleDrawer()
+local sourceRow, countRow = drawerRow("source"), drawerRow("cells")
+equal(sourceRow.errorShown, true, "invalid pack source shows field feedback")
+equal(countRow.row.properties.y, sourceRow.errorLabel.properties.y + 18, "field feedback shifts the next pack setting")
+packSource.properties.set(savedSource)
+settleDrawer()
+equal(countRow.row.properties.y - sourceRow.row.properties.y, 36, "corrected field feedback restores compact spacing")
+control("cells").properties.set(6)
+settleDrawer()
+back()
+equal(state.drawerGroupKey, nil, "source subdrawer returns to main settings")
+equal(action("group", "pack").properties.text, "Cels  6S", "pack summary updates after count edit")
+control("sourceType").properties.set(1)
+settleDrawer()
+equal(context.editorSession.draft.panels[1].config.cells, nil, "switching to cells removes pack count")
+equal(drawerRow("pack").row.hidden, true, "pack drawer hides after switching to cells")
+equal(drawerRow("cells").row.hidden, false, "cells drawer appears after switching to cells")
+local validRx, rxErrors = context.editorUi.handlers.editor.validate(context.editorSession)
+assert(validRx, table.concat(rxErrors or {}, "; "))
+back()
+widget.lvglMock.setFullScreen(false)
+
 widget.lvglMock.setAppMode(false)
 for name in pairs(events) do
     rawset(_G, name, previous[name])

@@ -1,7 +1,7 @@
 Empty
 Default
 Diagnostics
-review-cell-battery
+review-rx-battery
 review-cell-sources
 review-flight-mode
 review-flight-timer

@@ -107,7 +107,7 @@ EdgeTX 1 x 1 or App mode zone
     ├── Lifecycle and event dispatcher
     ├── Dashboard editor
     └── LVGL panel containers
-      ├── Cell battery panel
+      ├── RX battery panel
       ├── Metric panel
       ├── Flight timer panel
       └── Other catalog panels
@@ -125,7 +125,7 @@ Most panels are variations of one arrangement: a heading, a dominant reading, an
 - **It is told what the panel draws, never what its span permits.** `spec.draws` carries the panel's own answer, and `theme.ladder` may only narrow it. The interface has no way to express "permitted", because the gap between the two is a recurring defect in this project rather than a subtlety.
 - **It builds nothing itself that the panel was handed.** It takes `spec.frame` rather than calling `theme.frame`, because the host wraps that function per panel to lay a panel out around the menu button's corner, and a shared helper reaching for the module's own copy draws the heading under the button.
 
-Six panels use it: `cell-battery`, `flight-mode`, `flight-timer`, `link-status`, `metric`, and `state`. Three keep their own arrangement: `navigation` draws two supporting rows; `tx-battery` retains the arrangement recorded in the design guide; `model-identity` fits a picture and moves the model name into the heading. Three draw no panel reading and are exempt: `trim-panel`, `host-diagnostics`, and `service-probe`.
+Six panels use it: `rx-battery`, `flight-mode`, `flight-timer`, `link-status`, `metric`, and `state`. Three keep their own arrangement: `navigation` draws two supporting rows; `tx-battery` retains the arrangement recorded in the design guide; `model-identity` fits a picture and moves the model name into the heading. Three draw no panel reading and are exempt: `trim-panel`, `host-diagnostics`, and `service-probe`.
 
 **A panel is expected to carry special code only where it has a special visualization** -- the compass, the battery glyph, the trim cells. A flag on the builder for one panel's preference is the thing this is meant to replace, not a way of extending it: a builder that can express everything expresses nothing.
 
@@ -149,7 +149,7 @@ The initial release should provide these panels:
 
 | Panel | Purpose | Classification |
 | --- | --- | --- |
-| `cell-battery` | Lowest/average cell or pack voltage, upright battery glyph, optional supporting voltage and measured/configured cell count; explicit bar mode retained | Specialized |
+| `rx-battery` | Lowest/average cell or pack voltage, upright battery glyph, optional supporting voltage and measured/configured cell count; explicit bar mode retained | Specialized |
 | `metric` | Up to three independently configured numeric readings | Generic |
 | `state` | Up to three readings with ordered physical/logical conditions and optional semantic backgrounds | Generic |
 | `flight-timer` | EdgeTX model timer with count-up or count-down presentation | Specialized |
@@ -225,7 +225,7 @@ belong to the panel.
 
 ### Panel requirements
 
-#### Cell battery
+#### RX battery
 
 - Accept an EdgeTX cells source. A cells source may return a table of individual voltages.
 - Also accept a numeric pack-voltage source such as `RxBt` with explicit `sourceType: pack` and a configured integer `cells` count from 1 to 16. Never guess the count. The source must measure the pack, not a regulated receiver supply.
@@ -238,7 +238,7 @@ belong to the panel.
 - Do not estimate remaining battery percentage unless a future panel explicitly defines and labels its estimation model.
 - Validate the table rather than trusting it. Entries that are not plausible cell voltages are rejected instead of folded into a lowest or an average, the walk is bounded because the table comes from the firmware, and a value that is not a table at all is reported as a configuration mistake rather than as a missing source.
 - Judge the thresholds on the worst cell even when the panel shows the pack sum, because a sum is exactly what hides one sagging cell.
-- With a pack-voltage source, judge those same per-cell thresholds on the derived average instead. This cannot detect a weak cell or imbalance. See [`cell-battery` settings](../docs/panels/cell-battery.md).
+- With a pack-voltage source, judge those same per-cell thresholds on the derived average instead. This cannot detect a weak cell or imbalance. See [`rx-battery` settings](../docs/panels/rx-battery.md).
 - Allow an explicitly configured lowest-cell source, such as `Cels-`, to win for that reading. The receiver maintaining it has seen samples between the dashboard's polls, and it keeps the panel useful when the table itself is unreadable.
 
 #### Metric
@@ -386,7 +386,7 @@ Panels consume immutable snapshots. A service mutates its own state table in pla
 ├── layout_store.lua
 ├── yaml.lua
 ├── panels/
-│   ├── cell-battery.lua
+│   ├── rx-battery.lua
 │   ├── metric.lua
 │   ├── state.lua
 │   ├── flight-timer.lua
@@ -419,7 +419,7 @@ The package ships with bundled panels. Advanced users may add compatible panel f
 The widget `create(zone, options, path)` callback receives the widget folder path. Panel scripts can therefore be loaded with:
 
 ```lua
-local chunk, err = loadScript(path .. "panels/cell-battery.lua")
+local chunk, err = loadScript(path .. "panels/rx-battery.lua")
 if not chunk then
   error(err)
 end
@@ -507,7 +507,7 @@ The primary reference viewport is 480 x 272, matching the TX16S and several othe
 - Letter spacing is zero. Text must wrap, abbreviate, or reduce to a defined smaller font before it clips.
 - A supporting row cannot shrink its font, because it is already at the smallest size the dashboard uses. A row therefore offers its wordings longest first, and `theme.fitLabel` takes the longest that fits the width it will actually be given. **Every supporting row in the catalogue is meant to go through it**, and most offer one wording, because one well-chosen form fits every panel that draws a row.
 
-  **Five of the seven panels that draw a row call it today**: `cell-battery`, `flight-timer`, `link-status`, `navigation`, and `tx-battery`. `flight-mode` writes its single form directly; `metric` uses measured widths and the shared builder to choose a footer, side stack, or hidden supporting group.
+  **Five of the seven panels that draw a row call it today**: `rx-battery`, `flight-timer`, `link-status`, `navigation`, and `tx-battery`. `flight-mode` writes its single form directly; `metric` uses measured widths and the shared builder to choose a footer, side stack, or hidden supporting group.
 
   The two budgets a row is written against: **105 px** for a row spanning the panel at `1 x 2`, the narrowest panel the ladder grants a row at all, and **86 px** for one sharing a line with another at `2 x 2`. A form that clears the tighter of those cannot be broken by any arrangement this dashboard can reach.
 
@@ -522,7 +522,7 @@ The primary reference viewport is 480 x 272, matching the TX16S and several othe
 - **A form may drop redundancy, never magnitude.** A reading offers lossless wordings longest-first and `theme.fitReading` takes the largest that fits; where none does, the font steps down instead. A unit the panel's own label already states, a name, a suffix: those are redundancy and may go. A digit of precision, or a field of a clock, may not. `4.44V` to `4.44` removes something the panel says elsewhere. `1:04:12` to `04:12` removes an hour and reports a different reading, which a pilot would believe and no font size is worth. `888.88km` to `888km` removes 880 metres of a number someone is flying by.
 - A panel whose reading holds no redundancy offers exactly one form, and that is how it says so. Every reading is now of that kind, because the unit left the string: `flight-timer` draws a clock, `navigation` draws a distance, and the other four print digits with the unit beside them. What used to be a second form -- `4.44V` shortened to `4.44` -- is no longer a wording at all, it is whether the rider is drawn.
 - **A unit is dropped rather than paid for with a size.** The reading is fitted first and the unit rides at whatever font that produced, or it is not drawn. Buying the unit by shrinking the number would be paying for redundancy with magnitude, and the first thing a pilot reads is how big the number is. The change from a glued-on unit is that dropping it is now rare rather than routine: a `V` beside an `XXLSIZE` number cost 40 pixels as a character of the reading and costs 23 including its gap as a rider.
-- **A unit qualifies a value, so a panel with no value draws no unit.** A reading that has nothing to report prints a sentinel -- `--` everywhere, and `N/A` where `link-status` has a source the protocol does not publish -- and a unit beside one says the pack is measured in volts and declines to say how many. Four panels drew that: `tx-battery` and `cell-battery`, whose unit is a constant they know before any reading arrives, and `link-status` and `metric`, which keep a resolved sensor's unit while its value is withheld.
+- **A unit qualifies a value, so a panel with no value draws no unit.** A reading that has nothing to report prints a sentinel -- `--` everywhere, and `N/A` where `link-status` has a source the protocol does not publish -- and a unit beside one says the pack is measured in volts and declines to say how many. Four panels drew that: `tx-battery` and `rx-battery`, whose unit is a constant they know before any reading arrives, and `link-status` and `metric`, which keep a resolved sensor's unit while its value is withheld.
 
   **The test is on the string the panel is drawing, and it is in `primitives` rather than in any panel.** That is the [permitted-versus-drawn seam](#fixture-discipline) again: whether a panel is *allowed* a unit is settled when it is built, from its box, and whether there is a value is not knowable until there is one. Nothing in the build-time answer can carry the runtime one, so the two meet at the point of drawing, which is the only place both are known.
 
@@ -533,14 +533,14 @@ The primary reference viewport is 480 x 272, matching the TX16S and several othe
 - Stepping down one size is the intent and is what happens almost everywhere, but it is not a cap: the alternative to stepping again is clipping, which is never acceptable. A panel needing two steps is saying its column is genuinely too narrow, which happens where a dial takes half the width.
 - **A badge names the state; the supporting row says why.** The badge vocabulary is a closed set on the theme, and short, because the column is reserved on every panel whether or not a badge is showing: a long word is paid for by every header on the dashboard rather than by the state that uses it. Panels do not override it. A distinction such as a dead link against a protocol with no RSSI sensor belongs in the row, which is fitted to its width and words it at whatever length fits.
 
-  **Corrected: the example this sentence was built on is no longer a distinction the row makes.** It read "a cells sensor returning a number against one returning nonsense", and that pair has been merged: `cell-battery` prints `CELLS ERR` for both. Neither width nor vocabulary forced it -- `NOT CELLS` and `BAD CELLS` are 67 and 66 px against budgets of 105 and 86, so both fitted comfortably. **The test is whether the reader can act on the difference, and a pilot cannot.** Both mean something is arriving and is wrong, and both are fixed on the ground; only `NO CELLS`, which means nothing has arrived and may yet, asks for something else, which is to wait.
+  **Corrected: the example this sentence was built on is no longer a distinction the row makes.** It read "a cells sensor returning a number against one returning nonsense", and that pair has been merged: `rx-battery` prints `CELLS ERR` for both. Neither width nor vocabulary forced it -- `NOT CELLS` and `BAD CELLS` are 67 and 66 px against budgets of 105 and 86, so both fitted comfortably. **The test is whether the reader can act on the difference, and a pilot cannot.** Both mean something is arriving and is wrong, and both are fixed on the ground; only `NO CELLS`, which means nothing has arrived and may yet, asks for something else, which is to wait.
 
   So the rule the row is held to is narrower than "say which failure occurred": **say what the reader should do about it.** Two failures with one remedy are one thing to say. The distinction itself is not discarded -- `summarize` still separates five shapes and the host diagnostics view still reports which arrived, because someone at a desk *can* act on it. It is withheld from the panel rather than lost.
 
   This is the fourth time a claim here has outlived the thing it described, and the shape is the same each time: the sentence was written while the example was true, the example changed, and the sentence went on being quoted. The defence is not care but the example itself -- **an argument carried by a concrete case has to be re-read whenever that case moves**, which is why this one names its cases rather than gesturing at them.
   **What carries that distinction is the vocabulary, not the width**, and the difference matters because the width changed. This sentence used to say the row "has room for words", which was true of a row spanning the panel and stopped being true when a two-item row moved onto the panel's slot centres: each item now gets 40% of the content where the split it replaced reached all of it. A defence resting on room would have been quietly false from that moment, in the same way the claim about compressed font advances sat here being wrong for a milestone.
 
-  So the property is stated as something a test can hold: **the shortest wording of each state a row reports must differ from the shortest wording of every other state it reports.** The shortest form is what a cramped panel prints, so a row can be as narrow as the layout makes it and still say which failure occurred. `navigation` keeps `NO GPS` against `NO FIX` -- no sensor against a sensor with no fix -- and `link-status` keeps `DOWN` against `NO RSS`. `cell-battery` keeps `NO CELLS` against `CELLS ERR`: wait, against go and fix it. Shortening costs detail and must never cost meaning; `testSupportingWordingsStayDistinct` is what holds a panel to it.
+  So the property is stated as something a test can hold: **the shortest wording of each state a row reports must differ from the shortest wording of every other state it reports.** The shortest form is what a cramped panel prints, so a row can be as narrow as the layout makes it and still say which failure occurred. `navigation` keeps `NO GPS` against `NO FIX` -- no sensor against a sensor with no fix -- and `link-status` keeps `DOWN` against `NO RSS`. `rx-battery` keeps `NO CELLS` against `CELLS ERR`: wait, against go and fix it. Shortening costs detail and must never cost meaning; `testSupportingWordingsStayDistinct` is what holds a panel to it.
 - The badge column is exactly as wide as its widest word, and is never squeezed. Clamping it to a fraction of a narrow panel protects the label by clipping the badge, which is the wrong way round: `CRIT` and `CRI` are not equally alarming, while a shortened source name is merely less informative. A header label with too little room left is dropped rather than clipped, on any panel, not only one obstructed by the menu button.
 - Horizontal padding is asymmetric. The left clears the accent; the right has nothing to clear, so it is smaller. On a single cell those four pixels are a character of header label.
 - **The badge column is reserved whether or not a badge is showing, and the header label's width never depends on whether one is.** Handing the label the empty column and taking it back when a badge appears would reflow the label at exactly the moment the panel changes state. That is worse than a permanently shorter label, and not by a little: a header that moves draws the eye to itself, at the instant the reading beside it has just gone critical and is the thing that needs looking at. It is also the stable-geometry rule above, which requires that a warning state does not shift neighbouring content. Every panel in the catalogue can reach a badged state, so a column that was conditional would be conditional on nothing in practice.
@@ -731,7 +731,7 @@ Eleven shipped panels and two fixtures, written to the same contract by differen
 
 - `visual` — the shape the reading is drawn as: `bar`, `radial`, `none`. It selects a drawing, never content.
 - `presentation` — which arrangement of content the panel shows when several are possible and the box decides between them. Only `navigation` and `model-identity` have more than one arrangement.
-- `reading` — which of the panel's own values leads the panel when it holds several, as `cell-battery` holds lowest, pack and average.
+- `reading` — which of the panel's own values leads the panel when it holds several, as `rx-battery` holds lowest, pack and average.
 
 A panel that offers one of these but not the others declares only the one it offers. `display` and `primary` are not used; both were re-spellings of `reading`, and `display` also stood in for `readout` on `trim-panel`, which is neither.
 
@@ -751,7 +751,7 @@ This is the same shape as `armSource` moving to the layout's session block: both
 
 **Dashboard-wide state belongs to the dashboard.** A setting that describes the session rather than the panel belongs in the layout's top-level `session` block, not in each panel's `config`. `armSource` was per-panel, which let two panels name two different switches while the extrema service documented that the first caller wins — so the second was configured, accepted, and ignored. Anything that a second panel could contradict is a candidate for the same move.
 
-**Accent defaults follow the colour rule.** The palette reserves cyan for electrical data and green for healthy state; a panel's default accent obeys that rather than its author's taste. `tx-battery` was green and `cell-battery` cyan for the same concept.
+**Accent defaults follow the colour rule.** The palette reserves cyan for electrical data and green for healthy state; a panel's default accent obeys that rather than its author's taste. `tx-battery` was green and `rx-battery` cyan for the same concept.
 
 **An empty `label` means derive, not omit.** Panels whose heading is only knowable at runtime leave `label` empty by default — for example, the timer's name or the probed service. A panel with a fixed heading states it as its default. The empty string is a deliberate instruction and each such declaration says what it derives from.
 
@@ -773,7 +773,7 @@ Runtime or derived values belong in the panel context and are not persisted. Onl
 
 ```yaml
 - id: pack
-  type: cell-battery
+  type: rx-battery
   col: 0
   row: 0
   colSpan: 2
@@ -888,7 +888,7 @@ grid:
   rows: 4
 panels:
   - id: main-battery
-    type: cell-battery
+    type: rx-battery
     col: 0
     row: 0
     colSpan: 2
@@ -942,7 +942,7 @@ The second half of that message is the more interesting one. The example showed 
 - Missing config keys receive panel defaults. An unknown config key is preserved when saving, for forward compatibility, but is reported at load with the layout, panel and key named: in practice it is a typo or a rename left behind, and silence is how a renamed setting reaches a radio still doing nothing.
 - A config value outside a setting's declared `choices` is reported the same way and falls back to the setting's default.
 - A panel may declare `validateSettings(settings, span, config)`, returning messages, for a rule that spans more than one setting, or one that depends on where the panel is placed. `choices` catches a value that is wrong on its own; this catches a pair that is wrong together, or a value that is fine in itself and meaningless at this size.
-- **Validation that fires on resolved settings must distinguish what the layout stated from what the defaults filled in.** `settings` arrives complete, with every default applied, so a rule reading it cannot tell a request from a resting value. `config` is what the layout actually said, and a rule that complains should read that. `cell-battery`'s `showPack` and `showCount` default to `true` and need a supporting row no single-row span has, so a rule reading `settings` would have reported the panel's own shedding as an ignored request and failed every layout with a one-row `cell-battery`. The distinction is the difference between a rule and a nuisance, and it applies to any future validation, not only to this one.
+- **Validation that fires on resolved settings must distinguish what the layout stated from what the defaults filled in.** `settings` arrives complete, with every default applied, so a rule reading it cannot tell a request from a resting value. `config` is what the layout actually said, and a rule that complains should read that. `rx-battery`'s `showPack` and `showCount` default to `true` and need a supporting row no single-row span has, so a rule reading `settings` would have reported the panel's own shedding as an ignored request and failed every layout with a one-row `rx-battery`. The distinction is the difference between a rule and a nuisance, and it applies to any future validation, not only to this one.
 - Sources are stored as sensor names in the declared source settings.
 
 ## YAML Handling
@@ -1187,7 +1187,7 @@ Two things about that are worth keeping rather than leaving in a PR. **The sympt
 
 **The reviews.** Nine panels have completed the simulator review and
 documentation pass: `flight-mode`, `tx-battery`, `model-identity`,
-`flight-timer`, `cell-battery`, `trim-panel`, `navigation`, `link-status`, and
+`flight-timer`, `rx-battery`, `trim-panel`, `navigation`, `link-status`, and
 `metric`. All nine display-panel reviews are complete.
 Initial physical dashboard validation passed on TX16S v2 / EdgeTX 2.12.4;
 the remaining hardware matrix and resource measurements are outstanding.
@@ -1205,8 +1205,8 @@ presentation requests a footer, not a bearing headline. This limitation is
 documented rather than presented as missing GPS data.
 See [navigation documentation](../docs/panels/navigation.md).
 
-**`cell-battery` review changes landed in #93.** The fifth screen selects
-`review-cell-battery`, comparing pack-first and average-first readings from
+**`rx-battery` review changes landed in #93.** The fifth screen selects
+`review-rx-battery`, comparing pack-first and average-first readings from
 `RxBt` with a configured four-cell count, narrow spans, and a `Cels` monitor.
 The count must match the actual pack. Pack sources cannot reveal individual
 cells. Its documentation covers the shared battery glyph, equal gaps, 30%
@@ -1229,7 +1229,7 @@ The fixture now starts on AEROGRID STD (`model1.yml`), with
 `manuallyEdited: 1` allowing EdgeTX to accept the changed radio settings
 and regenerate their checksum.
 
-**The wordings.** Rows offer single forms wherever one fits, because a form short enough for the narrowest panel is short enough for every panel -- so a ladder's longer rungs were only ever drawn where the shorter one was also correct. `cell-battery`'s three shape wordings became two, `NO CELLS` and `CELLS ERR`, and that one was decided on the reader rather than the width: both of the merged states mean the configuration is wrong and are fixed on the ground, and a row says what to do rather than which failure occurred.
+**The wordings.** Rows offer single forms wherever one fits, because a form short enough for the narrowest panel is short enough for every panel -- so a ladder's longer rungs were only ever drawn where the shorter one was also correct. `rx-battery`'s three shape wordings became two, `NO CELLS` and `CELLS ERR`, and that one was decided on the reader rather than the width: both of the merged states mean the configuration is wrong and are fixed on the ground, and a row says what to do rather than which failure occurred.
 
 **Cost.** Four figures moved and each is recorded where it moved. The instrument itself was wrong twice more -- a collision sweep that ran one zone while reporting two, and a fixture whose reset restored every telemetry value except the timers -- which brings the tally of apparatus-was-the-defect to seven, every one failing towards pass.
 
@@ -1406,7 +1406,7 @@ and [signal-health guidance](https://www.expresslrs.org/info/signal-health/).
 
 1. **Run the shipped dashboard on a radio.** This is first and has been first for three milestones. One screen exercises telemetry, cells, link, GPS, model timers, flight mode, transmitter voltage, a global variable, trims, and the model bitmap at once. Five things can only be judged there: whether the estimated text widths behind `theme.textWidth` hold against the real fonts, whether an `lvgl.image` of a model bitmap scales the way `StaticImage` is expected to, whether the corrected arc centring places the radial and compass dials where they are meant to go, whether the compass pointer reads as a direction at arm's length, and whether an alert tint is noticed without being looked at.
 2. **Run the two diagnostics layouts on a radio.** Set the widget's Dashboard ID to `services` or `services2`; they load on any model without a model-specific file. This is the check that milestone 5's normalization is right against real sensors rather than mocks.
-3. **Confirm the value shapes on real hardware, on more than one protocol.** `cell-battery` assumes a cells source returns a contiguous array of per-cell voltages, and `link-status` assumes a protocol without an RSSI sensor is detected by a source contradicting `getRSSI()`. Both are mocked faithfully but neither has met a receiver.
+3. **Confirm the value shapes on real hardware, on more than one protocol.** `rx-battery` assumes a cells source returns a contiguous array of per-cell voltages, and `link-status` assumes a protocol without an RSSI sensor is detected by a source contradicting `getRSSI()`. Both are mocked faithfully but neither has met a receiver.
 4. **Decide the extrema reset policy beyond arm switch.** The specification names manual, timer, and switch; switch and manual are implemented, timer is not.
 5. **Decide whether the status rail is ever built.** It is deferred rather than cancelled, and the reasoning is recorded so the question starts from where it was left.
 
@@ -1442,7 +1442,7 @@ These came out of the presentation and consistency pass and were not done, each 
 | ~~Host notices are collected but not shown anywhere~~ | Milestone 8 | Closed. Contrast corrections and palette fallbacks are listed by the `theme` section of the host diagnostics view, which is where they were always headed |
 | The status rail is deferred, not cancelled | Milestone 8 | EdgeTX's own top bar fills the role at no Lua cost, and the geometry does not favour a dashboard rail. Default settled as off should it return |
 | Steady-state refresh cost scales with panel count | Milestone 6 | The worst the suite measures is in [Current cost](#current-cost). Watch it as the catalogue grows |
-| A cells source's real shape is unverified | Milestone 7 | `cell-battery` assumes a contiguous array of per-cell voltages and validates every entry, but no receiver has produced one yet |
+| A cells source's real shape is unverified | Milestone 7 | `rx-battery` assumes a contiguous array of per-cell voltages and validates every entry, but no receiver has produced one yet |
 | A protocol without an RSSI sensor is detected indirectly | Milestone 7 | `link-status` relies on `telemetryService` observing a source contradict `getRSSI()`. Until something contradicts it, a genuinely dead link and a missing RSSI sensor are indistinguishable, and both read as no link |
 | Text width is estimated everywhere except where the unit is placed | Milestone 6, narrowed in the unit pass | The premise was wrong: `lcd.sizeText` measures text and is **not** gated on a draw callback. `luaLcdSizeText` carries no `luaLcdAllowed` or `luaLcdBuffer` check, because it reads font metrics and returns. Unit placement now uses it; every other fitting decision still uses the 0.58 estimate, and converting them is a decision for the user with the numbers below in front of them |
 | Trim sources carry no axis metadata | Milestone 6 | The panel assigns its persisted aileron, elevator, and rudder sources to fixed positions and directions |
@@ -1594,7 +1594,7 @@ The panel that hid all four is the one whose reading is text rather than a numbe
 
 **Two layers of the suite can measure the same thing differently, and agree until something exercises the difference.** The integration collision check measures a label by its ink -- `themeModule.fontAscent`, because a font's descent and leading are not drawn and a reading that "overlaps" a bar by its leading overlaps nothing. Two unit tests measured the same readings by their line box, `valueY + fontHeight`. Both were defensible in isolation and the two never disagreed, because every reading was centred by its line box, so the slack sat above the glyphs where neither measure looked.
 
-Changing the placement rule to centre the ink moved that slack below the glyphs, and the two measures immediately disagreed: the unit tests reported a reading sitting on a bar at `2 x 1` and on a supporting row at `cell-battery 2 x 2`, in both cases by a margin no glyph reaches. Nothing was wrong with the dashboard; two parts of the suite had different definitions of where a reading ends.
+Changing the placement rule to centre the ink moved that slack below the glyphs, and the two measures immediately disagreed: the unit tests reported a reading sitting on a bar at `2 x 1` and on a supporting row at `rx-battery 2 x 2`, in both cases by a margin no glyph reaches. Nothing was wrong with the dashboard; two parts of the suite had different definitions of where a reading ends.
 
 The shape is worth naming because it is not the same as a check being wrong. Both checks were right about what they measured. **What was missing was that they measured different things and nothing said so**, and the disagreement was invisible for as long as the system happened not to produce a case that separated them. A suite with two definitions of one quantity is carrying a latent contradiction, and the way it surfaces is as a false failure during an unrelated change -- which is the moment when it is most likely to be "fixed" by adjusting whichever measure is in the way.
 
@@ -1651,7 +1651,7 @@ Status last verified on 2026-09-21:
 | Milestone 4: Design system | Complete | Semantic tokens, panel/typography/bar/radial/badge primitives, YAML-defined named themes, guaranteed-legible customizable palettes, all seven states, and one shared responsive ladder deciding composition from the box and the font from the composition | Physical readability review at 480 x 272 on a TX16S-class display |
 | Milestone 5: Shared data services | Complete | Registry with per-service intervals, staggering, and subscription caps; telemetry, model, control, extrema, and navigation services; immutable snapshots; graceful degradation for missing sources, unseen sensors, absent firmware APIs, and stale telemetry; `service-probe` diagnostic views and two shipped diagnostics layouts | Hardware verification, and timer-based extrema reset |
 | Milestone 6: Core panels | Complete | `metric` with independent numeric readings and GV sources; `flight-timer`, `flight-mode`, `tx-battery`, `trim-panel`, and `model-identity`; shared panel geometry, bars/radials, and images; a shipped dashboard demonstrating all six | Physical-radio verification of text widths and model bitmap scaling |
-| Milestone 7: Telemetry-specialized panels | Complete | `cell-battery` with cells-table validation; `link-status` with independent RSSI and quality; `navigation` with responsive presentations and a north-up dial; a shipped dashboard demonstrating the nine display panels, with separate diagnostics screens | Hardware confirmation of the cells shape and of no-RSSI-sensor detection |
+| Milestone 7: Telemetry-specialized panels | Complete | `rx-battery` with cells-table validation; `link-status` with independent RSSI and quality; `navigation` with responsive presentations and a north-up dial; a shipped dashboard demonstrating the nine display panels, with separate diagnostics screens | Hardware confirmation of the cells shape and of no-RSSI-sensor detection |
 | Milestone 8: The App mode menu button and multiple screens | Complete | Dashboard ID option, per-model/per-dashboard filename resolution, dashboard-scoped layouts shared by every model, panels laid out around the App mode menu button through the shared frame, an error overlay that clears it, notices separated from errors, and two-instance and model-change coverage | Status rail deferred by decision, not outstanding; simulator confirmation of the corner on a radio |
 | Milestone 9: Hardening | In progress | Unit/integration tests, firmware-like string behavior tests, CI running Lua 5.3 parsing, simulator fixture, corrupt-layout, contract-rejection, hostile-module, and legibility coverage, panel failure isolation, an enforced instruction budget measured at the largest legal layout for both panels and services, diagnostic views over every service, and a host diagnostics view on its own screen | Target-radio matrix and physical-radio testing |
 | Milestone 10: On-radio editor | In progress | Touch and rotary/key editor for add, move, resize, configure, remove, defaults, Apply, and Cancel; strict validation; deterministic YAML writing; verified temporary-file saves and backup rotation; backup/default recovery; unit and simulator integration coverage | Physical-radio control/usability checks and verification of EdgeTX file write/rename/remove behavior |
@@ -1843,7 +1843,7 @@ fixture discipline rule about modelling what an object *is*.
 
 ### Why `REFLOW_BATCH` is three
 
-**Updated during the cell-battery glyph review:** the batch is now two. Adding
+**Updated during the rx-battery glyph review:** the batch is now two. Adding
 the upright glyph made the three-panel reflow reach the worst loader callback
 (both reported 8200 instructions by the suite), violating the requirement that
 reflow not be the binding callback. Two panels measured 5600 before the shared
@@ -1883,7 +1883,7 @@ profiling before using them as current build or reflow costs.
 The worst steady frame rose from 2000 to 2400 with milestone 7, on sixteen
 `link-status` panels, which is the panel that reads the most per refresh:
 two sources, a minimum, and the link view. A panel's declared refresh
-interval, not its size, is what decides steady-state cost: `cell-battery`
+interval, not its size, is what decides steady-state cost: `rx-battery`
 walks its cells table on every refresh and declares 20 ticks for it, and
 `navigation` declares 25 because telemetry GPS never arrives faster. It is
 now 2562 on sixteen `navigation` panels; the trim panel's previous
@@ -2169,7 +2169,7 @@ Model bitmaps cannot use `Bitmap.open()` under LVGL; this implementation detail 
 
 Implement these panels in order:
 
-1. `cell-battery`
+1. `rx-battery`
 2. `link-status`
 3. `navigation`
 
@@ -2182,7 +2182,7 @@ Deliverable: the full ten-panel catalog with graceful telemetry degradation.
 Delivered. All three ship, and `layouts/Default.yaml` now demonstrates the
 complete ten-panel catalogue on one screen.
 
-Value shapes are validated rather than assumed. `cellBattery.summarize`
+Value shapes are validated rather than assumed. `rxBattery.summarize`
 classifies what EdgeTX actually returned as `none`, `number`, `empty`,
 `invalid`, or `cells`, rejecting entries that are not plausible cell voltages
 and bounding its walk, because the table comes from the firmware and the walk

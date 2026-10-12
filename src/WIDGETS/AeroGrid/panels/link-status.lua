@@ -1128,7 +1128,7 @@ function linkStatus.update(context, rect)
     --- Show or hide a supporting row, positioning it only when visible.
     local reconcile = context.primitives.reconcile
 
-    -- Recorded and nothing more, as in `cell-battery`: `render` reads all three
+    -- Recorded and nothing more, as in `rx-battery`: `render` reads all three
     -- and declares no detail or link key while the row is shed, so the reveal
     -- is a key reappearing rather than something this has to remember to do.
     context.detailWidth = area.detailWidth

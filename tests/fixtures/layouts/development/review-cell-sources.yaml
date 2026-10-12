@@ -1,6 +1,6 @@
-# Source diagnostics for the cell-battery review. Compare the exact source
+# Source diagnostics for the rx-battery review. Compare the exact source
 # spellings through the same telemetry service the battery panels use.
-version: 1
+version: 2
 grid:
   columns: 4
   rows: 4

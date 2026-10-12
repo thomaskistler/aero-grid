@@ -70,10 +70,23 @@ for the top-left EdgeTX menu button; fullscreen removes that reservation.
 Use the shared geometry instead of adding panel-specific menu offsets.
 
 `lib/package.lua` records package, runtime API, panel API, and layout versions.
-Runtime modules expose `RUNTIME_API`; panels expose `apiVersion`.
-The host surfaces incompatible modules and isolates failures where possible.
-These checks detect incompatible mixtures, not every stale or mixed package:
-deploy the **complete** widget directory.
+The current layout schema is version 2. The central layout module keeps an
+adjacent migration registry: each source version provides a header step and a
+panel step for that version-to-next-version transition. A future version must
+add every intervening step; a layout is rejected if its source version is newer
+or any transition is missing.
+
+Runtime loading validates the header, applies at most one header transition per
+loader callback, then parses each panel and applies at most one panel transition
+per callback before validating and building that panel. Staged Save follows the
+same bounded progression, keeping header migration, each panel migration,
+validation, and persistence in separate callbacks. The synchronous whole-layout
+helpers are for tests and tools, not runtime callback paths. Loading changes
+only the in-memory document and emits an upgrade notice; only explicit editor
+Save persists the current schema. Runtime modules expose `RUNTIME_API`; panels
+expose `apiVersion`. The host surfaces incompatible modules and isolates
+failures where possible. These checks detect incompatible mixtures, not every
+stale or mixed package: deploy the **complete** widget directory.
 
 ## Shared services own firmware reads
 
