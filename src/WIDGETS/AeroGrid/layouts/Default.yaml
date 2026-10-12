@@ -12,7 +12,6 @@ panels:
     config:
       label: RX battery
       source: RxBt
-      sourceType: pack
       cells: 2
       reading: cell
       visual: none

@@ -11,7 +11,6 @@ panels:
   2x2: {col: 2, row: 2, colSpan: 2, rowSpan: 2}
 config:
   source: Cels
-  sourceType: cells
   reading: cell
   label: RX BATTERY
   accent: cyan

@@ -56,6 +56,7 @@ local function claim(name, file, symbol, value)
     if type(name) ~= "string" or name == "" then
         refuse("a claim needs a name")
     end
+
     if citations[name] then
         refuse("duplicate claim for " .. name)
     end
@@ -112,6 +113,7 @@ end
 local FONTS_H = "radio/src/gui/colorlcd/fonts.h"
 local LUA_CONSTANTS = "radio/src/lua/api_general.cpp"
 
+claim("CHAR_DELTA", "radio/src/translations/untranslated.h", "CHAR_DELTA", "\194\136")
 claim("TINSIZE", LUA_CONSTANTS, "LROT_NUMENTRY(TINSIZE, FONT(XXS))", 2 * 256)
 claim("SMLSIZE", LUA_CONSTANTS, "LROT_NUMENTRY(SMLSIZE, FONT(XS))", 3 * 256)
 claim("MIDSIZE", LUA_CONSTANTS, "LROT_NUMENTRY(MIDSIZE, FONT(L))", 4 * 256)
@@ -1785,6 +1787,7 @@ function support.radio(hostIo)
     end
 
     CHAR_UP, CHAR_DOWN = string.char(192), string.char(193)
+    CHAR_DELTA = firmware.CHAR_DELTA
     local switchPositions = {}
     function getSwitchIndex(name)
         local logical = string.match(name, "^L(%d%d)$")

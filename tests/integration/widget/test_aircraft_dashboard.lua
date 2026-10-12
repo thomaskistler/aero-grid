@@ -52,7 +52,7 @@ local battery = fixture.instanceOf(context, "receiver-battery")
 assertions.assertEqual(battery.area.supportingPlacement, "side")
 assertions.assertEqual(battery.text, "4.00")
 assertions.assertEqual(battery.settings.source, "RxBt")
-assertions.assertEqual(battery.settings.sourceType, "pack")
+assertions.assertEqual(battery.settings.sourceType, nil)
 assertions.assertEqual(battery.countText, "2S")
 assertions.assertEqual(battery.packText, "8.0V")
 assert(battery.packLabel.properties.y > battery.countLabel.properties.y)
@@ -104,13 +104,15 @@ rxBattery.refresh(battery)
 assertions.assertEqual(battery.countText, "")
 assertions.assertEqual(battery.packText, "8.0V")
 assertions.assertEqual(battery.packLabel.properties.y, battery.area.detailY)
-assertions.assertEqual(battery.layout.supporting[2], nil, "a disabled count must not reserve a stack row")
+assertions.assertEqual(battery.area.countShown, false, "a disabled count must not reserve a stack row")
+assertions.assertEqual(battery.area.packShown, true)
 battery.settings.showCount = true
 battery.settings.showPack = false
 rxBattery.refresh(battery)
 assertions.assertEqual(battery.countText, "2S")
 assertions.assertEqual(battery.packText, "")
-assertions.assertEqual(battery.layout.supporting[2], nil, "a disabled voltage must not reserve a stack row")
+assertions.assertEqual(battery.area.packShown, false, "a disabled voltage must not reserve a stack row")
+assertions.assertEqual(battery.area.countShown, true)
 battery.settings.showPack = true
 rxBattery.refresh(battery)
 assertions.assertEqual(battery.packText, "8.0V")
@@ -127,4 +129,8 @@ assertions.assertEqual(battery.area.supportingPlacement, "side")
 local span = { colSpan = 2, rowSpan = 1 }
 assertions.assertEqual(#rxBattery.validateSettings(battery.settings, span, { showPack = true, showCount = true }), 0)
 span.colSpan = 1
-assertions.assertEqual(#rxBattery.validateSettings(battery.settings, span, { showPack = true, showCount = true }), 2)
+assertions.assertEqual(
+    #rxBattery.validateSettings(battery.settings, span, { showPack = true, showCount = true }),
+    0,
+    "a panel too small for its details sheds them instead of reporting an error"
+)

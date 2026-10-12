@@ -131,18 +131,18 @@ local function testRxBatteryFormAndSourceDrawers()
     local added, addError = editor.add(session, "rx-battery")
     assert(added, addError)
     local config = session.draft.panels[1].config
-    assert(config.cells == nil, "a cells monitor must not save a pack count")
+    assert(config.cells == 0 and config.source == "Cels" and config.sourceType == nil)
     assert(config.reading == "cell")
     assert(config.cellFull == 4.2 and config.warning == 3.6 and config.critical == 3.4 and config.cellEmpty == 3.2)
+    -- Supporting details are preferences shed by size, never a size error, so
+    -- a new panel states them like any other default.
+    assert(config.showPack == true and config.showCount == true and config.showDelta == false)
 
     local fields = assert(editor.formFields(session))
     assert(fields[1].key == "label", "Label is not the first editor control")
-    assert(fields[2].key == "sourceType", "Source type must follow Label")
-    assert(fields[3].drawerGroup == "cells" and fields[3].label == "Cells monitor")
-    assert(fields[3].visibleWhen.value == "cells")
-    assert(fields[4].drawerGroup == "pack" and fields[4].label == "Pack voltage")
-    assert(fields[4].visibleWhen.value == "pack")
-    assert(fields[5].key == "reading" and fields[5].choices[1] == "cell" and fields[5].choices[2] == "pack")
+    for index, key in ipairs({ "label", "source", "cells", "reading", "visual", "showPack", "showCount", "showDelta" }) do
+        assert(fields[index].key == key, "flat RX drawer order: " .. key)
+    end
     local indices = {}
     for index, field in ipairs(fields) do
         if field.key then
@@ -158,24 +158,47 @@ local function testRxBatteryFormAndSourceDrawers()
     assert(fields[indices.warning].label == "Warning (V/cell)")
     assert(fields[indices.critical].label == "Critical (V/cell)")
     assert(fields[indices.cellEmpty].label == "Empty (V/cell)")
+    assert(fields[indices.showPack].label == "Show secondary reading")
+    assert(fields[indices.showDelta].label == "Show cell delta" and fields[indices.showDelta].value == false)
+    assert(fields[indices.showPack].visibleWhen.value == "battery" and fields[indices.showPack].visibleWhen.invert)
+    assert(fields[indices.showCount].visibleWhen.value == "battery" and fields[indices.showCount].visibleWhen.invert)
+    local visual = fields[indices.visual]
+    assert(visual.choices[3] == "none" and visual.choiceLabels[3] == "alternate reading")
     assert(fields[indices.cellFull].visibleWhen.invert and fields[indices.cellEmpty].visibleWhen.invert)
-    assert(fields[indices.visual - 1].label == "Appearance")
-
-    local cellsFields = assert(editor.drawerFields(session, "cells"))
-    assert(#cellsFields == 1 and cellsFields[1].key == "source")
-    local packFields = assert(editor.drawerFields(session, "pack"))
-    assert(#packFields == 2 and packFields[1].key == "source" and packFields[2].key == "cells")
-    assert(packFields[2].value == 0 and packFields[2].min == 0)
-    assert(editor.drawerSummary(session, "pack") == "Cels  Auto")
-
-    assert(editor.setValue(session, "sourceType", "pack"))
-    session.draft.panels[1].config.cells = 6
-    assert(editor.setValue(session, "sourceType", "cells"))
-    assert(session.draft.panels[1].config.cells == nil, "switching to cells must remove pack-only series count")
-    fields = assert(editor.formFields(session))
-    assert(fields[3].visibleWhen.value == "cells" and fields[4].visibleWhen.value == "pack")
+    for _, field in ipairs(fields) do
+        assert(field.type ~= "drawer" and field.key ~= "sourceType", "RX source subdrawers must be absent")
+    end
+    assert(editor.setValue(session, "cells", 6))
+    assert(editor.setValue(session, "showDelta", true))
+    assert(session.draft.panels[1].config.cells == 6)
     local valid, validationErrors = editor.validate(session)
     assert(valid, table.concat(validationErrors or {}, "; "))
+end
+
+local function testSinglePrecisionVoltageSteps()
+    local session = newSession({ version = 2, grid = { columns = 4, rows = 4 }, panels = {} })
+    assert(editor.add(session, "rx-battery"))
+    local settings = modules["rx-battery"].settings
+    local critical
+    for _, setting in ipairs(settings) do
+        if setting.key == "critical" then
+            critical = setting
+            break
+        end
+    end
+    local step = critical.step
+    critical.step = 0.009999999776482582
+    local accepted, message = editor.setValue(session, "critical", 3.4000000953674316)
+    critical.step = step
+    assert(accepted, message)
+    assert(editor.setValue(session, "cellFull", 4.199999809265137))
+    assert(editor.setValue(session, "warning", 3.5999999046325684))
+    assert(editor.setValue(session, "cellEmpty", 3.200000047683716))
+    local valid, errors = editor.validate(session)
+    assert(valid, table.concat(errors or {}, "; "))
+    assert(not editor.setValue(session, "critical", 3.405), "half-step values must still be rejected")
+    assert(not editor.setValue(session, "critical", 3.4001), "real off-step values must still be rejected")
+    assert(not editor.setValue(session, "cells", 1.001), "integer steps must still be enforced")
 end
 
 local function testDeclaredEntryFieldsAreAlwaysOffered()
@@ -482,6 +505,7 @@ testWorkingCopyCancelAndApply()
 testPlacementRulesAndResizeAnchor()
 testAddRemoveAndStrictSettings()
 testRxBatteryFormAndSourceDrawers()
+testSinglePrecisionVoltageSteps()
 testRestoreDefaultDoesNotApply()
 testDeclaredEntryFieldsAreAlwaysOffered()
 testResizePreservesSpanDependentSettings()

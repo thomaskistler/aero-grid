@@ -1549,6 +1549,7 @@ panels:
     config:
       source: Cels
       label: Pack
+      visual: bar
   - id: notcells
     type: rx-battery
     col: 0
@@ -1558,6 +1559,7 @@ panels:
     config:
       source: Cels-
       label: Wrong
+      visual: bar
 ]]
     )
 
@@ -1604,21 +1606,13 @@ panels:
     assertRow(pack, pack.countText, pack.detailWidth, "4S", "the cell count")
     assertRow(pack, pack.packText, pack.detailWidth, "16.4V", "the pack sum")
 
-    -- **A cells source answering with a plain number and one answering with
-    -- nonsense print the same row, deliberately.** Both mean something is
-    -- arriving and is wrong, and both are fixed on the ground -- so the row
-    -- says `CELLS ERR` for each, and spends no word on a difference the pilot
-    -- cannot act on. The shapes are still separated inside the panel for
-    -- the diagnostics view, which is asserted below.
-    --
-    -- The number case is configured rather than mutated into: the telemetry
-    -- service keeps the last good reading, so a source that has already produced
-    -- a cells table and then produces a number reads as stale data, which is a
-    -- third situation again and not the one being tested here.
+    -- Numeric telemetry is automatically a pack source, even if an old
+    -- configuration called it a cells monitor.
     local wrong = entryById(context, "notcells").instance
-    assertEqual(wrong.summary.shape, "number")
-    assertEqual(wrong.badge.properties.text, "N/A")
-    assertRow(wrong, wrong.countText, wrong.detailWidth, "CELLS ERR", "a plain number from a cells source")
+    assertEqual(wrong.summary.shape, "pack")
+    assertEqual(wrong.summary.estimated, true)
+    assertEqual(wrong.badge.properties.text, "")
+    assertRow(wrong, wrong.countText, wrong.detailWidth, "1S EST", "a numeric source's estimated pack count")
 
     radio.values[130] = { 0, -1, 99 }
     pump(context, 40)
@@ -1628,10 +1622,7 @@ panels:
     assertEqual(pack.text, "--")
     assertEqual(pack.badge.properties.text, "N/A")
     assertRow(pack, pack.countText, pack.detailWidth, "CELLS ERR", "nonsense from a cells source")
-    -- **The two shapes stay separated where they can be acted on.** The row is
-    -- the same because the action is the same; `summary.shape` is not, because
-    -- someone at a desk reading the diagnostics view can use the difference.
-    assertEqual(pack.countText, wrong.countText, "two failures with one fix print different rows")
+    assert(pack.countText ~= wrong.countText, "invalid cells must remain distinct from usable numeric voltage")
     assert(
         pack.summary.shape ~= wrong.summary.shape,
         "the panel stopped telling a wrong sensor from a nonsense table, so"
@@ -2762,26 +2753,13 @@ local function testSupportingWordingsStayDistinct()
             },
         },
         {
-            -- **Two displayed states, where there are five shapes.** `number` and
-            -- `invalid` both print `CELLS ERR`, deliberately: something is
-            -- arriving and it is wrong, and the pilot does the same thing about
-            -- either. They are one state *here* because this check is about what
-            -- the panel says, and two states that print the same thing and imply
-            -- the same action are one state.
-            --
-            -- **This check fired when they were collapsed, and that was it
-            -- working.** It is declared down to two rather than taught to tolerate
-            -- a duplicate, because a check relaxed to fit the code stops being a
-            -- check. `summarize` still separates the five shapes and the
-            -- diagnostics view still reports which arrived; what is asserted here
-            -- is only that the *row* can still say whether to wait or to go and
-            -- fix something.
+            -- Invalid cells and no detected cells imply different actions.
             type = "rx-battery",
             variantsFor = function(module, state)
                 return module.countVariants({ shape = state }, { showCount = true })
             end,
             states = {
-                { "a source answering with something wrong", "number" },
+                { "a source answering with something wrong", "invalid" },
                 { "a source answering with no cells at all", "empty" },
             },
         },
@@ -9366,6 +9344,7 @@ panels:
     rowSpan: 2
     config:
       source: Cels
+      visual: bar
       showCount: true
       showPack: true
   - id: link
@@ -10391,6 +10370,7 @@ panels:
     config:
       source: Cels
       label: Pack
+      visual: bar
       warning: 3.5
       critical: 3.3
   - id: link
@@ -10809,6 +10789,7 @@ end
 --- link, and it reads differently: the detail row says which fix is needed.
 local function testCellSourceShapes()
     resetRadio()
+    radio.values[100] = 16.4
     local widgetPath = makeWidget(
         "cell-shapes",
         [[
@@ -10826,6 +10807,7 @@ panels:
     config:
       source: Cels-
       label: Wrong
+      visual: bar
   - id: voltage
     type: rx-battery
     col: 2
@@ -10835,6 +10817,7 @@ panels:
     config:
       source: RxBt
       label: Pack voltage
+      visual: bar
   - id: absent
     type: rx-battery
     col: 0
@@ -10844,6 +10827,7 @@ panels:
     config:
       source: NoSuchSensor
       label: Missing
+      visual: bar
 ]]
     )
 
@@ -10852,14 +10836,15 @@ panels:
 
     for _, id in ipairs({ "extreme", "voltage" }) do
         local instance = entryById(context, id).instance
-        assertEqual(instance.summary.shape, "number", id .. " read a plain number as a cells table")
-        assertEqual(instance.stateName, "unavailable")
-        -- One wording, which fits every row this panel draws, so it is
-        -- pinned rather than matched on a prefix. `CELLS ERR` says something is
-        -- arriving and is wrong; a source the radio has never heard of says
-        -- nothing at all, and that difference is asserted below.
-        assertEqual(instance.countText, "CELLS ERR", id .. " reported a shape problem as a missing source")
-        assertEqual(instance.text, "--", "a number was shown as a cell voltage")
+        assertEqual(instance.summary.shape, "pack", id .. " must interpret numeric telemetry as pack voltage")
+        assertEqual(instance.stateName, "normal")
+        assertEqual(instance.countText, id == "extreme" and "1S EST" or "4S EST")
+        assertEqual(
+            instance.text,
+            id == "extreme" and "4.09" or "4.10",
+            "numeric pack voltage uses average cell voltage"
+        )
+        assertEqual(instance.summary.lowest, nil, "numeric sources must not imply measured individual cells")
     end
 
     -- A sensor the radio has never heard of is a different problem again, and

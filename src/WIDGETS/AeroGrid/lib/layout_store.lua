@@ -512,6 +512,7 @@ function layoutStore.advanceSave(state)
             state.panelMigrationVersion = nextVersion
             return false
         end
+        layout.normalizePanel(state.pendingPanel)
         local text, encodeError = yaml.serialize({ panels = { state.pendingPanel } })
         if not text then
             return true, false, encodeError

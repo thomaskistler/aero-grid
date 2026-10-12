@@ -946,25 +946,23 @@ end
 --- A setting that cannot apply at this span says so, and only when asked for.
 ---
 --- No single-row span grants a supporting row: a 65 pixel panel has no space
---- beneath the reading whatever its width. Five settings across four
---- panels drive such a row, and all five were accepted and silently
+--- beneath the reading whatever its width. Three settings across three
+--- panels drive such a row, and all three were accepted and silently
 --- ignored there, which is worse than either refusing or working -- a layout
 --- author reads the setting back and believes it.
 ---
---- The second half is the part that needed care. `showPack` and `showCount`
---- default to **true**, so a panel that never mentioned them arrives with
---- them set, and complaining then would report the panel's own shedding as
---- an ignored request and fail every existing layout. The host therefore
---- hands `validateSettings` the layout's own config beside the resolved
---- settings, and only a stated value is refused.
+--- The host hands `validateSettings` the layout's own config beside the
+--- resolved settings, and only a stated value is refused.
+---
+--- `rx-battery` is the deliberate exception: its cell count and alternate
+--- reading are preferences it draws where they fit, beneath the reading or
+--- beside it, and drops quietly where they do not.
 local function testInertSettingsAreRefused()
     local single = { colSpan = 4, rowSpan = 1 }
     local tall = { colSpan = 1, rowSpan = 2 }
 
     local cases = {
         { "tx-battery", "showPercent" },
-        { "rx-battery", "showPack" },
-        { "rx-battery", "showCount" },
         { "model-identity", "showLabels" },
         { "flight-mode", "showIndex" },
     }
@@ -980,8 +978,7 @@ local function testInertSettingsAreRefused()
         local stated = { [key] = true }
 
         -- Stated on a single row: refused, by name, with what to do about it.
-        local rejectedSpan = kind == "rx-battery" and { colSpan = 1, rowSpan = 1 } or single
-        local refused = module.validateSettings(stated, rejectedSpan, stated)
+        local refused = module.validateSettings(stated, single, stated)
         assertEqual(
             #refused,
             1,
@@ -992,8 +989,7 @@ local function testInertSettingsAreRefused()
                 .. " has space beneath the reading at any width"
         )
         assert(string.find(refused[1], key, 1, true), refused[1])
-        local requiredSize = kind == "rx-battery" and "two-row panel" or "two rows tall"
-        assert(string.find(refused[1], requiredSize, 1, true), refused[1])
+        assert(string.find(refused[1], "two rows tall", 1, true), refused[1])
         assert(
             string.find(refused[1], "drop " .. key, 1, true),
             "the message must say what to do about it: " .. refused[1]
@@ -1033,14 +1029,20 @@ local function testInertSettingsAreRefused()
             .. " depends on what was stated can never fire"
     )
 
-    -- And a layout that states nothing gets the defaults without being told
-    -- off for them, through the host as well as directly.
-    local _, quiet = panelHost.resolveSettings(loadModule("panels/rx-battery.lua"), { source = "Cels" }, single)
-    assertEqual(
-        #quiet,
-        0,
-        "a layout that stated neither showPack nor showCount was reported for" .. " both: " .. table.concat(quiet, "; ")
-    )
+    -- RX battery details are shed rather than refused, whether defaulted or
+    -- stated, at every span and with every visualization.
+    local rxBattery = loadModule("panels/rx-battery.lua")
+    for _, span in ipairs({ single, { colSpan = 1, rowSpan = 1 }, tall }) do
+        for _, visual in ipairs({ "battery", "bar", "none" }) do
+            for _, config in ipairs({
+                { source = "Cels", visual = visual },
+                { source = "Cels", visual = visual, showPack = true, showCount = true },
+            }) do
+                local _, quiet = panelHost.resolveSettings(rxBattery, config, span)
+                assertEqual(#quiet, 0, "rx-battery refused a detail it should shed: " .. table.concat(quiet, "; "))
+            end
+        end
+    end
 end
 
 --- Nothing in the host reaches an LVGL object by name.

@@ -1,8 +1,10 @@
 # RX battery review, screen 1 on AEROGRID PANEL1.
 # RxBt must measure the flight pack, not a regulated receiver supply.
-# The upper pair compares explicit and estimated counts with pack and
-# average-cell headlines. The lower panels show narrow and single-row shedding,
-# and a cells-monitor source for comparison. Cels is absent on the ELRS fixture.
+# The upper pair compares a pack headline drawn with the battery glyph, which
+# never carries supporting details, against an estimated average-cell headline
+# in alternate-reading mode (stored as `visual: none`). The lower panels show
+# narrow and single-row shedding in bar and alternate-reading modes, and a
+# cells-monitor source for comparison. Cels is absent on the ELRS fixture.
 version: 2
 grid:
   columns: 4
@@ -16,7 +18,6 @@ panels:
     rowSpan: 2
     config:
       source: RxBt
-      sourceType: pack
       label: PACK VOLTAGE
       reading: pack
       cells: 4
@@ -29,8 +30,8 @@ panels:
     rowSpan: 2
     config:
       source: RxBt
-      sourceType: pack
       label: AVERAGE CELL
+      visual: none
       reading: cell
       cells: 0
 
@@ -42,8 +43,8 @@ panels:
     rowSpan: 2
     config:
       source: RxBt
-      sourceType: pack
       label: PACK 1x2
+      visual: bar
       reading: pack
       cells: 4
 
@@ -55,8 +56,8 @@ panels:
     rowSpan: 2
     config:
       source: RxBt
-      sourceType: pack
       label: AVG 1x2
+      visual: none
       reading: cell
       cells: 4
 
@@ -68,7 +69,6 @@ panels:
     rowSpan: 1
     config:
       source: RxBt
-      sourceType: pack
       label: 1x1
       reading: cell
       cells: 4
@@ -81,7 +81,9 @@ panels:
     rowSpan: 2
     config:
       source: Cels
+      showDelta: true
       label: MONITOR
+      visual: bar
       reading: cell
 
   - id: smallest-pack
@@ -92,7 +94,6 @@ panels:
     rowSpan: 1
     config:
       source: RxBt
-      sourceType: pack
       label: PACK 1x1
       reading: pack
       cells: 4

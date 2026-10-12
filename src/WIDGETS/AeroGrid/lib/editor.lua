@@ -82,7 +82,10 @@ local function validateSetting(setting, value)
         end
         if type(setting.step) == "number" and setting.step > 0 and type(setting.min) == "number" then
             local steps = (value - setting.min) / setting.step
-            if math.abs(steps - math.floor(steps + 0.5)) > 0.000001 then
+            -- Radio Lua uses single-precision numbers; decimal steps accumulate
+            -- rounding error proportional to the number of steps.
+            local tolerance = 0.000001 * math.max(1, math.abs(steps))
+            if math.abs(steps - math.floor(steps + 0.5)) > tolerance then
                 return false, setting.key .. " must use steps of " .. tostring(setting.step)
             end
         end
@@ -321,7 +324,6 @@ function editor.add(session, typeName)
             and type(setting.key) == "string"
             and setting.default ~= nil
             and not setting.drawerField
-            and not (typeName == "rx-battery" and (setting.key == "showPack" or setting.key == "showCount"))
         then
             config[setting.key] = copy(setting.default)
         end
@@ -572,9 +574,6 @@ function editor.setValue(session, key, value)
     end
     placement.config = type(placement.config) == "table" and placement.config or {}
     placement.config[key] = copy(value)
-    if placement.type == "rx-battery" and key == "sourceType" and value == "cells" then
-        placement.config.cells = nil
-    end
     session.dirty = true
     return true
 end
@@ -858,6 +857,7 @@ function editor.formFields(session)
                     value = value,
                     type = setting.type or type(value),
                     choices = setting.choices,
+                    choiceLabels = setting.choiceLabels,
                     step = setting.step,
                     min = setting.min,
                     max = setting.max,
@@ -915,6 +915,7 @@ function editor.drawerFields(session, groupKey)
                 value = config[key],
                 type = setting.type or type(config[key]),
                 choices = setting.choices,
+                choiceLabels = setting.choiceLabels,
                 step = setting.step,
                 min = setting.min,
                 max = setting.max,

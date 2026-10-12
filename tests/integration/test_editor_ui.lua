@@ -1523,7 +1523,7 @@ panels:
       sourceType: cells
       source: Cels
       reading: cell
-      visual: battery
+      visual: bar
 ]]
 )
 widget.lvglMock.setFullScreen(true)
@@ -1541,8 +1541,38 @@ local function drawerRow(key)
     end
     error("RX battery drawer row not found: " .. key)
 end
+for _, key in ipairs({ "showPack", "showCount", "showDelta" }) do
+    for _, value in ipairs({ 0, 1 }) do
+        control(key).properties.set(value)
+        lvgl.close(state.nativeDrawer)
+        widget.lvglMock.settle()
+        settleDrawer()
+        equal(
+            context.editorSession.draft.panels[1].config[key],
+            value == 1,
+            "pending boolean edit survives immediate Return"
+        )
+        equal(state.mode, "menu", "Return completes after accepting pending boolean edit")
+        rect = state.controls[1].rect
+        tap(rect.x + rect.w - 12, rect.y + 12)
+        settleDrawer()
+    end
+end
+equal(drawerRow("showPack").row.hidden, false, "bar visualization offers the alternate reading")
+equal(drawerRow("showCount").row.hidden, false, "bar visualization offers the cell count")
+equal(drawerRow("showDelta").row.hidden, false, "bar visualization offers the cell delta")
+equal(
+    drawerRow("showPack").field.label,
+    "Show secondary reading",
+    "secondary toggle renamed without changing visualization"
+)
+local visualValues = control("visual").properties.values
+equal(visualValues[3], "alternate reading", "visualization none is presented as alternate reading")
 control("visual").properties.set(3)
 settleDrawer()
+equal(context.editorSession.draft.panels[1].config.visual, "none", "alternate reading is stored as none")
+equal(drawerRow("showPack").row.hidden, false, "alternate reading offers the alternate reading")
+equal(drawerRow("showCount").row.hidden, false, "alternate reading offers the cell count")
 equal(drawerRow("cellFull").row.hidden, true, "Full threshold hides when visualization is none")
 equal(drawerRow("cellEmpty").row.hidden, true, "Empty threshold hides when visualization is none")
 equal(
@@ -1553,17 +1583,18 @@ equal(
 control("visual").properties.set(1)
 settleDrawer()
 equal(drawerRow("cellFull").row.hidden, false, "Full threshold returns with a visualization")
+equal(drawerRow("showPack").row.hidden, true, "the battery glyph never shows the alternate reading")
+equal(drawerRow("showCount").row.hidden, true, "the battery glyph never shows the cell count")
+equal(drawerRow("showDelta").row.hidden, true, "the battery glyph never shows the cell delta")
+equal(context.editorSession.draft.panels[1].config.showCount, true, "hidden preferences keep their values")
 equal(
     drawerRow("critical").row.properties.y - drawerRow("warning").row.properties.y,
     36,
     "visible voltage thresholds keep normal row spacing"
 )
-control("sourceType").properties.set(2)
-settleDrawer()
-equal(drawerRow("cells").row.hidden, true, "cells monitor drawer hides for pack source")
-equal(drawerRow("pack").row.hidden, false, "pack drawer appears for pack source")
-action("group", "pack").properties.press()
-settleDrawer()
+equal(state.drawerFields[1].key, "label", "Label leads the flat RX drawer")
+equal(state.drawerFields[2].key, "source", "Voltage source follows Label")
+equal(drawerRow("cells").row.hidden, false, "series count is always available, even without telemetry")
 local packSource = control("source")
 local savedSource = packSource.properties.get()
 packSource.properties.set(999)
@@ -1576,17 +1607,21 @@ settleDrawer()
 equal(countRow.row.properties.y - sourceRow.row.properties.y, 36, "corrected field feedback restores compact spacing")
 control("cells").properties.set(6)
 settleDrawer()
-back()
-equal(state.drawerGroupKey, nil, "source subdrawer returns to main settings")
-equal(action("group", "pack").properties.text, "Cels  6S", "pack summary updates after count edit")
-control("sourceType").properties.set(1)
-settleDrawer()
-equal(context.editorSession.draft.panels[1].config.cells, nil, "switching to cells removes pack count")
-equal(drawerRow("pack").row.hidden, true, "pack drawer hides after switching to cells")
-equal(drawerRow("cells").row.hidden, false, "cells drawer appears after switching to cells")
+equal(context.editorSession.draft.panels[1].config.cells, 6, "series count remains stored for numeric readings")
+equal(context.editorSession.draft.panels[1].config.sourceType, nil, "old schema-2 selector is centrally removed")
 local validRx, rxErrors = context.editorUi.handlers.editor.validate(context.editorSession)
 assert(validRx, table.concat(rxErrors or {}, "; "))
 back()
+exitWith("Save")
+settleSave()
+for _ = 1, 70 do
+    refresh()
+end
+context = widget.createLoaded(nil, { Layout = "edit-rx-battery", Theme = "modern-dark" }, path)
+equal(context.document.panels[1].config.showDelta, true, "cell delta survives save/load")
+equal(context.document.panels[1].config.showPack, true, "secondary preference survives save/load")
+equal(context.document.panels[1].config.cells, 6, "numeric count survives save/load")
+equal(context.document.panels[1].config.sourceType, nil, "save/load omits the retired selector")
 widget.lvglMock.setFullScreen(false)
 
 widget.lvglMock.setAppMode(false)

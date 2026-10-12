@@ -656,7 +656,7 @@ function module.install(theme)
     --- `unit`: a unit that rides beside the reading, or nil for none.
     --- `unitRequired`: the unit carries magnitude and may not be dropped -- a
     ---   distance's `km` against a voltage's `V`.
-    --- `rowItems`: 1 or 2, what the supporting row will actually hold. Not what
+    --- `rowItems`: 1, 2 or 3, what the supporting row will actually hold. Not what
     ---   the panel could put there: a row of two on a panel drawing one
     ---   puts a lone caption on the left slot, which is a defect this project
     ---   has already shipped once.
@@ -876,7 +876,18 @@ function module.install(theme)
         -- being configured. Two boxes centred that far apart can each be half the
         -- distance between them before they meet, and that is the budget each
         -- wording is fitted to.
-        if spec.rowItems == 2 then
+        out.rowThirdCentre, out.rowThirdWidth, out.rowThirdX, out.rowThirdY = nil, nil, nil, nil
+        if spec.rowItems == 3 then
+            local budget = math.max(1, math.floor((frame.content - 8) / 3))
+            out.detailCentre = frame.pad + math.floor(budget / 2)
+            out.detailWidth, out.detailX = budget, frame.pad
+            out.rowRightCentre = frame.pad + math.floor(frame.content / 2)
+            out.rowRightWidth = budget
+            out.rowRightX = theme.slotX(out.rowRightCentre, budget)
+            out.rowThirdCentre = frame.pad + frame.content - math.ceil(budget / 2)
+            out.rowThirdWidth = budget
+            out.rowThirdX = theme.slotX(out.rowThirdCentre, budget)
+        elseif spec.rowItems == 2 then
             -- The row's own slots, which are the tightened pair whatever the body
             -- fell back to: a row is two labels and cannot collide the way a reading
             -- and a dial can.
@@ -902,19 +913,26 @@ function module.install(theme)
             local rowHeight = theme.fontHeight(fonts.label)
             local firstWidth = supporting.width or theme.measureText(fonts.label, supporting[1] or "")
             local secondWidth = supporting.width or theme.measureText(fonts.label, supporting[2] or "")
-            local count = supporting[2] ~= nil and 2 or 1
+            local thirdWidth = supporting.width or theme.measureText(fonts.label, supporting[3] or "")
+            local count = supporting[3] ~= nil and 3 or (supporting[2] ~= nil and 2 or 1)
             local footerFits = rows
                 and not supporting.sideOnly
                 and firstWidth <= out.detailWidth
                 and (count == 1 or secondWidth <= out.rowRightWidth)
+                and (count < 3 or thirdWidth <= out.rowThirdWidth)
             out.showDetail = footerFits
             out.supportingPlacement = footerFits and "footer" or "hidden"
             if not footerFits and not compact then
-                local sideWidth = math.max(firstWidth, secondWidth)
+                local sideWidth = math.max(firstWidth, secondWidth, thirdWidth)
                 local sideSlots, fits = theme.slotsFor(frame, width, sideWidth)
+                local _, sideCentre = theme.slotCentres(frame, sideSlots)
                 local top = math.max(frame.top, math.floor(ladder.centre - rowHeight * count / 2))
                 local floorY = visual and spec.bar and barY or rect.h - frame.bottom
-                if fits and top + rowHeight * count <= floorY then
+                if
+                    fits
+                    and sideCentre + math.ceil(sideWidth / 2) <= frame.pad + frame.content
+                    and top + rowHeight * count <= floorY
+                then
                     local left, right = theme.slotCentres(frame, sideSlots)
                     out.valueCentre = left
                     out.valueBudget = math.min(left - frame.pad, right - math.ceil(sideWidth / 2) - left) * 2
@@ -925,15 +943,20 @@ function module.install(theme)
                     out.supportingPlacement = "side"
                     out.detailCentre, out.detailWidth, out.detailY = right, sideWidth, top
                     out.detailX = theme.slotX(right, sideWidth)
-                    if count == 2 then
+                    if count >= 2 then
                         out.rowRightCentre, out.rowRightWidth = right, sideWidth
                         out.rowRightX, out.rowRightY = out.detailX, top + rowHeight
+                    end
+                    if count == 3 then
+                        out.rowThirdCentre, out.rowThirdWidth = right, sideWidth
+                        out.rowThirdX, out.rowThirdY = out.detailX, top + rowHeight * 2
                     end
                 end
             end
         end
         if not out.showSide then
             out.rowRightY = out.detailY
+            out.rowThirdY = out.detailY
         end
         out.primaryMinX = nil
         if frame.reserved and frame.reserved.side and not spec.cornerCandidate then

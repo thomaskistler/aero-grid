@@ -99,6 +99,16 @@ class CaptureRecipeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Missing sample"):
             self.load(recipe)
 
+    def test_rx_numeric_voltage_needs_no_shape_selector(self):
+        recipe = load_recipe(RECIPE_DIR / "rx-battery.yaml")
+        self.assertNotIn("sourceType", recipe["config"])
+        recipe["config"].update(source="RxBt", cells=0, showDelta=True)
+        recipe["sample"]["sources"] = {"RxBt": {"value": 16.8, "unit": 1, "precision": 2}}
+        self.assertEqual(self.load(recipe)["sample"]["sources"]["RxBt"]["value"], 16.8)
+        recipe["sample"]["sources"]["RxBt"]["unit"] = 0
+        with self.assertRaisesRegex(ValueError, "numeric volts"):
+            self.load(recipe)
+
     def test_state_switch_samples(self):
         recipe = load_recipe(RECIPE_DIR / "state.yaml")
         self.assertEqual(yaml.safe_load(config_yaml(recipe["config"])), recipe["config"])

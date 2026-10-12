@@ -132,7 +132,6 @@ panels:
       source: Cels
       label: CELLS
       reading: cell
-      # `showPack` and `showCount` are both true by default and both need a
-      # supporting row, which this one-row panel does not have. Stating them
-      # here asked for something and got nothing.
+      # A one-row bar keeps whichever supporting details fit, count first,
+      # and drops the rest quietly.
       visual: bar

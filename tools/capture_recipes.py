@@ -139,8 +139,8 @@ def validate_sources(recipe):
             raise ValueError(f"{panel} requires numeric source samples")
     elif panel == "rx-battery":
         unit = sources[config.get("source", "Cels")]["unit"]
-        if unit != (38 if config.get("sourceType", "cells") == "cells" else 1):
-            raise ValueError("RX battery sample unit must match sourceType (cells or volts)")
+        if unit not in (38, 1):
+            raise ValueError("RX battery sample must supply cells or numeric volts")
     elif panel == "navigation" and sources[config.get("source", "GPS")]["unit"] != 40:
         raise ValueError("Navigation requires a GPS sample")
 

@@ -563,7 +563,8 @@ local function addControl(context, state, field, index)
         end
     elseif field.choices then
         kind = "choice"
-        options.title, options.values = field.label, field.choices
+        -- A setting may name its stored values for display; YAML keeps the value.
+        options.title, options.values = field.label, field.choiceLabels or field.choices
         options.get = function()
             for choiceIndex, value in ipairs(field.choices) do
                 if value == get() then
@@ -787,7 +788,9 @@ function drawer.advance(context, state)
         drawer.open(context, state, "configure", command.key, command.index, command.itemPath)
     elseif command.action == "write" then
         ok, err = writeField(state, command.field, command.value)
-        if ok then
+        -- Return may dismiss the native dialog before its queued edit runs.
+        -- Apply the value, but never refresh controls from a retired dialog.
+        if ok and state.nativeDrawer then
             refreshVisibility(state)
         end
         if command.control and state.nativeDrawer then

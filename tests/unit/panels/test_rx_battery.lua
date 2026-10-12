@@ -6,6 +6,8 @@ local moduleLoader = assert(loadfile(root .. "/tests/support/module_loader.lua")
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local rxBattery = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/rx-battery.lua"))()
 local primitives = moduleLoader("lib/primitives.lua")
+-- radio/src/translations/untranslated.h, CHAR_DELTA (U+0088).
+CHAR_DELTA = "\194\136"
 
 local function testCellShapesAndReadings()
     local out = {}
@@ -135,14 +137,128 @@ local function testConfigurationValidation()
     assert(#rxBattery.validateSettings(settings) > 0, "incoherent voltage levels were accepted")
     settings.cellFull = 4.2
     settings.sourceType = "cells"
-    assert(#rxBattery.validateSettings(settings, nil, { cells = 4 }) > 0, "cells source accepted an override count")
-    assertions.assertEqual(#rxBattery.validateSettings(settings, { rowSpan = 1 }, { showPack = true }), 1)
+    assert(
+        #rxBattery.validateSettings(settings, nil, { cells = 4 }) == 0,
+        "stored numeric count must be allowed for tables"
+    )
+    -- Supporting details are preferences the panel sheds where they do not
+    -- fit; no span or visualization makes stating them an error.
+    local stated = { showPack = true, showCount = true }
+    for _, visual in ipairs({ "battery", "bar", "none" }) do
+        settings.visual = visual
+        for _, span in ipairs({
+            { colSpan = 1, rowSpan = 1 },
+            { colSpan = 2, rowSpan = 1 },
+            { colSpan = 4, rowSpan = 1 },
+            { colSpan = 1, rowSpan = 2 },
+        }) do
+            local messages = rxBattery.validateSettings(settings, span, stated)
+            assertions.assertEqual(#messages, 0, table.concat(messages, "; "))
+        end
+    end
+end
+
+local function testSupportingWordings()
+    assertions.assertEqual(rxBattery.measureForm({ "4S EST", "4S~", "4S" }), "8S")
+    assertions.assertEqual(rxBattery.measureForm({ "16.4V PACK", "16.4V" }), "88.8V")
+    assertions.assertEqual(rxBattery.measureForm({ "9.8V PACK", "9.8V" }), "8.8V")
+    assertions.assertEqual(rxBattery.measureForm({ "CELLS ERR" }), "CELLS ERR")
+    assertions.assertEqual(rxBattery.measureForm({ "" }), "")
+    local pack = rxBattery.summarizePack(16.4, 4, {})
+    local variants = rxBattery.packVariants(pack, { showPack = true, reading = "pack" })
+    assertions.assertEqual(variants[1], "4.10V AVG")
+    assertions.assertEqual(variants[2], "4.10V", "the average must have a short form to shed its suffix")
+    assertions.assertEqual(rxBattery.packVariants(pack, { showPack = false, reading = "pack" })[1], "")
+    assertions.assertEqual(rxBattery.countVariants(pack, { showCount = false })[1], "")
+    -- A broken source is named in the count's place whatever the toggle says.
+    assertions.assertEqual(rxBattery.countVariants({ shape = "empty" }, { showCount = false })[1], "NO CELLS")
+end
+
+local function testVisualizationMetadata()
+    local byKey = {}
+    for _, setting in ipairs(rxBattery.settings) do
+        byKey[setting.key] = setting
+    end
+    local visual = byKey.visual
+    assertions.assertEqual(table.concat(visual.choices, ","), "battery,bar,none", "stored values must stay compatible")
+    assertions.assertEqual(table.concat(visual.choiceLabels, ","), "battery,bar,alternate reading")
+    assert(byKey.sourceType == nil and rxBattery.drawerGroups == nil)
+    assertions.assertEqual(byKey.showDelta.default, false)
+    assertions.assertEqual(byKey.showPack.label, "Show secondary reading")
+    for _, key in ipairs({ "showPack", "showCount", "showDelta" }) do
+        local condition = byKey[key].visibleWhen
+        assert(
+            condition and condition.key == "visual" and condition.value == "battery" and condition.invert,
+            key .. " must be hidden only for the battery visualization"
+        )
+    end
+    for _, key in ipairs({ "cellFull", "cellEmpty" }) do
+        local condition = byKey[key].visibleWhen
+        assert(condition.value == "none" and condition.invert, key .. " must be hidden only without a visual")
+    end
+end
+
+local function testAutomaticShapesAndDelta()
+    local settings = { cells = 6, reading = "cell", cellFull = 4.2, showDelta = true, showCount = true }
+    local context = { settings = settings, summary = {}, feed = { available = true, raw = { 4.10, 4.11 } } }
+    rxBattery.gather(context)
+    assertions.assertEqual(context.primary, 4.10)
+    assertions.assertEqual(context.summary.count, 2, "table must ignore configured numeric count")
+    assertions.assertEqual(rxBattery.countVariants(context.summary, settings)[1], "2S")
+    assertions.assertEqual(rxBattery.deltaVariants(context.summary, settings)[1], CHAR_DELTA .. " 0.01v")
+    context.feed.stale = true
+    rxBattery.gather(context)
+    assertions.assertEqual(rxBattery.deltaVariants(context.summary, settings)[1], CHAR_DELTA .. " 0.01v")
+    context.feed.stale = false
+    context.feed.raw = { 4.10 }
+    rxBattery.gather(context)
+    assertions.assertEqual(rxBattery.deltaVariants(context.summary, settings)[1], CHAR_DELTA .. " 0.00v")
+    for _, raw in ipairs({ {}, { 0, -1 }, { 4.1, "bad" }, 25.2, -1, "bad", math.huge, 0 / 0 }) do
+        context.feed.raw = raw
+        rxBattery.gather(context)
+        assertions.assertEqual(rxBattery.deltaVariants(context.summary, settings)[1], "")
+    end
+    context.feed.available = false
+    rxBattery.gather(context)
+    assertions.assertEqual(context.primary, nil)
+    assertions.assertEqual(rxBattery.deltaVariants(context.summary, settings)[1], "")
+    context.feed.available = true
+    context.feed.raw = 25.2
+    rxBattery.gather(context)
+    assertions.assertEqual(context.summary.shape, "pack")
+    assertions.assertEqual(context.primary, 4.2, "numeric sources are pack voltage regardless of previous shape")
+    settings.cells = 0
+    context.feed.raw = 4.2
+    rxBattery.gather(context)
+    assertions.assertEqual(context.summary.count, 1, "small numeric voltages remain pack voltage")
+    settings.showDelta = false
+    context.feed.raw = { 4.1, 4.11 }
+    rxBattery.gather(context)
+    assertions.assertEqual(rxBattery.deltaVariants(context.summary, settings)[1], "")
+    settings.showDelta = true
+    settings.cells = 0
+    context.feed.raw = 16.8
+    context.feed.stale = true
+    rxBattery.gather(context)
+    assertions.assertEqual(context.estimatedCells, nil, "first stale reading must not estimate")
+    context.feed.stale = false
+    rxBattery.gather(context)
+    assertions.assertEqual(context.estimatedCells, 4)
+    context.feed.available = false
+    rxBattery.gather(context)
+    context.feed.available = true
+    context.feed.raw = 12.6
+    rxBattery.gather(context)
+    assertions.assertEqual(context.estimatedCells, 3, "unavailable then fresh starts a new estimate")
 end
 
 local function run()
     testCellShapesAndReadings()
     testPackSourceAndAutomaticCount()
     testConfigurationValidation()
+    testSupportingWordings()
+    testVisualizationMetadata()
+    testAutomaticShapesAndDelta()
 end
 
 run()

@@ -264,6 +264,42 @@ local function testRadioFileOperations()
     io, os, fstat, rename, del = originalIo, originalOs, originalStat, originalRename, originalDelete
 end
 
+local function testCurrentBatteryNormalization()
+    local files, operations = memoryFiles()
+    local document = makeDocument("RX")
+    document.version = 2
+    local panel = document.panels[1]
+    panel.type = "rx-battery"
+    panel.config = {
+        sourceType = "pack",
+        source = "RxBt",
+        cells = 6,
+        reading = "cell",
+        visual = "none",
+        showPack = false,
+        showCount = true,
+        showDelta = true,
+        cellFull = 4.15,
+        warning = 3.55,
+        critical = 3.25,
+        cellEmpty = 3.1,
+    }
+    local saved, err, filename = layoutStore.save("/widget", "rx", document, yaml, layout, grid, operations)
+    assert(saved, err)
+    assert(
+        not string.find(files[filename], "sourceType", 1, true),
+        "current-version Save must strip selector before encoding"
+    )
+    local persisted = assert(yaml.parse(files[filename]))
+    local config = persisted.panels[1].config
+    assert(persisted.version == 2 and config.sourceType == nil)
+    assert(config.source == "RxBt" and config.cells == 6 and config.visual == "none")
+    assert(config.showDelta == true and config.showPack == false and config.showCount == true)
+    assert(config.cellFull == 4.15 and config.warning == 3.55 and config.critical == 3.25 and config.cellEmpty == 3.1)
+    local loaded, errors = layout.validate(persisted, grid)
+    assert(loaded and #errors == 0 and loaded.panels[1].config.showDelta == true)
+end
+
 local function testTemporaryMismatch()
     local files, operations = memoryFiles()
     local filename = layoutStore.path("/widget", "verify")
@@ -288,3 +324,4 @@ testStagedSave()
 testStagedSaveMigratesLegacyBattery()
 testRadioFileOperations()
 testTemporaryMismatch()
+testCurrentBatteryNormalization()

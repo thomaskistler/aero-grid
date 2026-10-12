@@ -18,7 +18,6 @@
 
 ---@class AeroGridRxBatterySettings
 ---@field source? string EdgeTX cells or pack-voltage source.
----@field sourceType? "cells"|"pack" Shape of the configured source.
 ---@field label? string
 ---@field reading? "cell"|"pack" Which value is dominant.
 ---@field cellEmpty? number Volts per cell treated as empty by the bar.
@@ -28,7 +27,8 @@
 ---@field cells? number Pack series count; zero estimates it from initial voltage.
 ---@field showPack? boolean Show pack voltage, or average voltage when pack leads.
 ---@field showCount? boolean Show the measured or configured cell count.
----@field visual? "battery"|"bar"|"none"
+---@field showDelta? boolean Show highest minus lowest measured cell voltage.
+---@field visual? "battery"|"bar"|"none" `none` is shown as "alternate reading".
 ---@field accent? string
 
 ---@class AeroGridRxBatteryContext
@@ -56,14 +56,7 @@ local rxBattery = {
     refreshInterval = 20,
     settings = {
         { key = "label", label = "Label", type = "string", default = "PACK" },
-        {
-            key = "sourceType",
-            label = "Source type",
-            type = "string",
-            default = "cells",
-            choices = { "cells", "pack" },
-        },
-        { key = "source", label = "Voltage source", type = "string", default = "Cels", drawerField = true },
+        { key = "source", label = "Voltage source", type = "string", default = "Cels" },
         {
             key = "cells",
             label = "Series cell count (0 = auto)",
@@ -72,7 +65,6 @@ local rxBattery = {
             min = 0,
             max = 16,
             step = 1,
-            drawerField = true,
         },
         {
             key = "reading",
@@ -81,8 +73,37 @@ local rxBattery = {
             default = "cell",
             choices = { "cell", "pack" },
         },
-        { key = "showPack", label = "Supporting voltage", type = "boolean", default = true },
-        { key = "showCount", label = "Show cell count", type = "boolean", default = true },
+        -- Preferences, not demands: the panel sheds either where it does not
+        -- fit, and the battery visualization never draws them.
+        {
+            key = "visual",
+            label = "Visualization",
+            type = "string",
+            default = "battery",
+            choices = { "battery", "bar", "none" },
+            choiceLabels = { "battery", "bar", "alternate reading" },
+        },
+        {
+            key = "showPack",
+            label = "Show secondary reading",
+            type = "boolean",
+            default = true,
+            visibleWhen = { key = "visual", value = "battery", invert = true },
+        },
+        {
+            key = "showCount",
+            label = "Show cell count",
+            type = "boolean",
+            default = true,
+            visibleWhen = { key = "visual", value = "battery", invert = true },
+        },
+        {
+            key = "showDelta",
+            label = "Show cell delta",
+            type = "boolean",
+            default = false,
+            visibleWhen = { key = "visual", value = "battery", invert = true },
+        },
         {
             key = "cellFull",
             label = "Full (V/cell)",
@@ -115,24 +136,12 @@ local rxBattery = {
             visibleWhen = { key = "visual", value = "none", invert = true },
         },
         {
-            key = "visual",
-            label = "Visualization",
-            type = "string",
-            default = "battery",
-            choices = { "battery", "bar", "none" },
-            section = "Appearance",
-        },
-        {
             key = "accent",
             label = "Accent",
             type = "string",
             default = "cyan",
             choices = { "cyan", "green", "amber", "orange" },
         },
-    },
-    drawerGroups = {
-        { key = "cells", label = "Cells monitor", sourceType = "cells", fields = { "source" } },
-        { key = "pack", label = "Pack voltage", sourceType = "pack", fields = { "source", "cells" } },
     },
 }
 
@@ -154,20 +163,13 @@ rxBattery.CELL_MAX = 30
 --- nothing. `shape` is the honest description of what EdgeTX returned:
 ---
 --- - `none`: nothing has been received, or the source is not configured.
---- - `number`: a plain number, which a cells source never returns; the layout
----   has pointed this panel at an ordinary voltage sensor.
+--- - `number`: a plain number; gather summarizes it as pack voltage instead.
 --- - `empty`: a table with no entries, which is what a pack that has not been
 ---   detected yet looks like.
 --- - `invalid`: a table whose entries are not plausible cell voltages.
 --- - `cells`: a usable table, with at least one valid cell.
 ---
---- **Five shapes, two wordings.** `number` and `invalid` print the same row,
---- `CELLS ERR`, because a pilot does the same thing about both: something is
---- arriving and it is wrong, so go and fix the configuration. They are still
---- separated here, and `service-probe` and the host diagnostics view still
---- report which one arrived -- that is a question someone at a desk can act
---- on, where the row is read at arm's length in flight. **The distinction is
---- withheld from the panel, not discarded**; see `countVariants`.
+--- Numeric values never infer individual cells from their magnitude.
 ---@param raw any Value from a telemetry subscription.
 ---@param out table Table to write the summary into.
 ---@return table out
@@ -181,6 +183,7 @@ function rxBattery.summarize(raw, out)
     out.pack = nil
     out.spread = nil
     out.estimated = nil
+    out.numeric = nil
 
     if raw == nil then
         return out
@@ -273,7 +276,7 @@ function rxBattery.primaryValue(settings, summary)
     if summary.count == 0 or summary.pack == nil then
         return nil
     end
-    if settings.sourceType == "pack" then
+    if summary.shape == "pack" then
         return summary.pack / summary.count
     end
     return summary.lowest
@@ -367,35 +370,13 @@ end
 ---
 --- "N/A" is the right badge for a source that answered with something this
 --- panel cannot read, and it is not enough on its own. What the row adds
---- is **what the pilot should do about it**, and there are two answers:
+--- is **what the pilot should do about it**:
 ---
 --- - `NO CELLS` -- nothing has arrived and may yet. The source answered with
 ---   an empty table, which is what a pack that has not been detected looks
 ---   like. Wait.
---- - `CELLS ERR` -- something is arriving and it is wrong. Either the source
----   is not a cells sensor at all, or it is one reporting implausible
----   voltages. Go and fix the configuration.
----
---- **Three wordings became two, and the reason is the action rather than the
---- width.** All three fitted: `NOT CELLS`, `BAD CELLS` and `NO CELLS` are 67,
---- 66 and 59 px against budgets of 105 and 86. But whether the wrong thing
---- arriving is an ordinary voltage sensor or a nonsense table is a
---- distinction the pilot cannot act on differently -- both mean the layout or
---- the receiver is misconfigured, and both are fixed on the ground. A row
---- that spends a word on a difference nobody can use is spending it twice:
---- once in the reading and once in the reader.
----
---- **The `shape` values stay five.** `summarize` still separates `number`
---- from `invalid`, `service-probe` and the diagnostics view still report
---- which arrived, and a future panel may still care. Only the
---- pilot-facing row collapses; the distinction is not thrown away, it is
---- withheld from a place it cannot be used.
----
---- So there are two displayed states here rather than three, and
---- `testSupportingWordingsStayDistinct` holds *those* two apart. It fires if
---- they are ever collapsed further, which is the check doing its job rather
---- than an obstacle: two states that print the same thing and imply the same
---- action are one state.
+--- - `CELLS ERR` -- unusable cells or a malformed source. Fix configuration.
+--- - `VOLT ERR` -- a numeric source supplied unusable pack voltage/count.
 ---@param summary table
 ---@param settings AeroGridCellSettings
 ---@return string[]
@@ -406,7 +387,7 @@ function rxBattery.countVariants(summary, settings)
     -- row, so a longer one would only ever be drawn where the short one was
     -- also correct.
     if shape == "number" or shape == "invalid" then
-        if settings.sourceType == "pack" then
+        if summary.numeric then
             return { "VOLT ERR" }
         end
         return { "CELLS ERR" }
@@ -425,15 +406,20 @@ function rxBattery.countVariants(summary, settings)
     if summary.estimated then
         return { count .. " EST", count .. "~", count }
     end
-    local expected = settings.cells
-    -- A cell that stopped reporting is exactly the failure this panel exists
-    -- to catch, so a count below the configured one is called out.
-    if type(expected) == "number" and expected > 0 and summary.count ~= expected then
-        local full = count .. " OF " .. tostring(math.floor(expected))
-        return { full, count .. "/" .. tostring(math.floor(expected)), count }
-    end
-
     return { count }
+end
+
+function rxBattery.deltaVariants(summary, settings)
+    if
+        not settings.showDelta
+        or summary.shape ~= "cells"
+        or summary.rejected ~= 0
+        or type(summary.spread) ~= "number"
+    then
+        return { "" }
+    end
+    -- EdgeTX's fonts map delta to U+0088, not the Unicode Greek block.
+    return { string.format(CHAR_DELTA .. " %.2fv", summary.spread) }
 end
 
 --- Wordings for the pack-voltage row.
@@ -449,34 +435,29 @@ function rxBattery.packVariants(summary, settings)
         if summary.count == nil or summary.count < 1 then
             return { "" }
         end
-        return { string.format("%.2fV AVG", summary.pack / summary.count) }
+        local volts = string.format("%.2fV", summary.pack / summary.count)
+        return { volts .. " AVG", volts }
     end
 
     local volts = string.format("%.1fV", summary.pack)
     return { volts .. " PACK", volts }
 end
 
---- Refuse a supporting row on a panel that has nowhere to put one.
+--- Check the configuration itself.
 ---
---- A one-row panel can carry a supporting stack beside a text-only reading,
---- but needs at least two columns. Glyph and bar layouts retain their footer.
----
---- Only a layout that **stated** it is told. These settings arrive filled
---- from their defaults, and a default that cannot apply here is the panel
---- shedding a row, which is normal and silent.
+--- Span never makes a setting invalid here. Supporting details
+--- are preferences: the panel draws them where they fit and quietly
+--- drops them where they do not, and the battery visualization never draws
+--- them at all.
 ---@param settings AeroGridCellSettings
 ---@param span? table Placement span, when the host knows it.
 ---@param config? table What the layout actually stated.
 ---@return string[] messages
-function rxBattery.validateSettings(settings, span, config)
+function rxBattery.validateSettings(settings)
     local messages = {}
-    if settings.sourceType == "pack" then
-        local cells = settings.cells
-        if type(cells) ~= "number" or cells < 0 or cells > rxBattery.CELL_LIMIT or cells ~= math.floor(cells) then
-            messages[#messages + 1] = "Pack series count must be 0 (auto) or an integer from 1 to 16."
-        end
-    elseif type(config) == "table" and config.cells ~= nil then
-        messages[#messages + 1] = "cells is only used for a pack-voltage source."
+    local cells = settings.cells == nil and 0 or settings.cells
+    if type(cells) ~= "number" or cells < 0 or cells > rxBattery.CELL_LIMIT or cells ~= math.floor(cells) then
+        messages[#messages + 1] = "Pack series count must be 0 (auto) or an integer from 1 to 16."
     end
     local full = settings.cellFull == nil and 4.2 or settings.cellFull
     local warning = settings.warning == nil and 3.6 or settings.warning
@@ -496,26 +477,6 @@ function rxBattery.validateSettings(settings, span, config)
     elseif not (full > warning and warning >= critical and critical >= empty) then
         messages[#messages + 1] = "Voltage levels must be ordered Full > Warning >= Critical >= Empty."
     end
-    if type(config) ~= "table" then
-        return messages
-    end
-    if type(span) ~= "table" or type(span.rowSpan) ~= "number" then
-        return messages
-    end
-    if span.rowSpan >= 2 or ((span.colSpan or 1) >= 2 and settings.visual == "none") then
-        return messages
-    end
-
-    if config.showPack then
-        messages[#messages + 1] = "showPack needs a two-row panel or a text-only panel at least two columns wide."
-            .. " Give the panel rowSpan 2, use visual none at width 2 or more, or drop showPack."
-    end
-
-    if config.showCount then
-        messages[#messages + 1] = "showCount needs a two-row panel or a text-only panel at least two columns wide."
-            .. " Give the panel rowSpan 2, use visual none at width 2 or more, or drop showCount."
-    end
-
     return messages
 end
 
@@ -525,10 +486,28 @@ end
 ---@return table
 function rxBattery.presentationFor(colSpan, rowSpan)
     local cells = (colSpan or 1) * (rowSpan or 1)
-    return { showVisual = cells >= 2, showDetail = cells >= 2 }
+    return { showVisual = cells >= 2, showDetail = true }
+end
+
+--- The form a supporting wording is fitted by: its shortest variant, with
+--- every digit widened to `8`.
+---
+--- Measuring digits as the widest one keeps the arrangement steady while the
+--- voltage moves; it is only revisited when the wording's shape changes, such
+--- as a pack crossing ten volts or a count turning into an error.
+---@param variants string[]
+---@return string
+function rxBattery.measureForm(variants)
+    return (string.gsub(variants[#variants] or "", "%d", "8"))
 end
 
 --- Compute the content regions for the current rectangle.
+---
+--- **Supporting details are preferences, shed quietly.** The battery glyph
+--- never carries them. A bar or text-only panel prioritizes count, delta,
+--- then secondary reading. Try footer and side placements before shedding
+--- each priority tier; unavailable details reserve no slot. The measured
+--- forms describe what the panel currently has to say.
 ---@param theme AeroGridTheme
 ---@param themeBuilder table
 ---@param rect AeroGridRect
@@ -547,27 +526,87 @@ function rxBattery.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, 
             return width or 0
         end
     end
-    local area = themeBuilder.panel(theme, rect, fonts, {
+    local spec = {
         -- Built through this panel's own builder, which the host may have
         -- wrapped to lay the panel out around the menu button's corner.
         frame = frame,
         forms = { sample.digits },
         unit = sample.unit,
         draws = {
-            rows = layout.showDetail == true,
+            rows = false,
             visual = layout.showVisual == true and layout.visual ~= "none",
         },
         bar = layout.visual == "bar",
         compact = compact,
         equalGaps = layout.visual == "battery",
         minimumGapFraction = 0.3,
-        -- The cell count on the left, the pack voltage on the right.
-        rowItems = 2,
-        supporting = layout.supporting,
-    }, out or {})
-    if area.showSide and layout.packOnly then
-        area.rowRightCentre, area.rowRightWidth = area.detailCentre, area.detailWidth
-        area.rowRightX, area.rowRightY = area.detailX, area.detailY
+        rowItems = 1,
+    }
+    out = out or {}
+
+    local forms = { layout.countForm or "", layout.deltaForm or "", layout.packForm or "" }
+    local keys = { "count", "delta", "pack" }
+    local requested = {}
+    for index, form in ipairs(forms) do
+        if form ~= "" then
+            requested[#requested + 1] = { key = keys[index], form = form }
+        end
+    end
+    local area
+    local shown = 0
+    local selected = {}
+    if layout.visual ~= "battery" and layout.showDetail == true and #requested > 0 then
+        local supporting = {}
+        spec.draws.rows = true
+        spec.supporting = supporting
+        -- Highest-priority presence wins. If delta cannot fit at all, a
+        -- shorter secondary may still share the count's remaining space.
+        for mask = 2 ^ #requested - 1, 1, -1 do
+            selected = {}
+            for index, item in ipairs(requested) do
+                if math.floor(mask / 2 ^ (#requested - index)) % 2 == 1 then
+                    selected[#selected + 1] = item
+                end
+            end
+            local items = #selected
+            for index = 1, 3 do
+                supporting[index] = index <= items and selected[index].form or nil
+            end
+            spec.rowItems = items
+            area = themeBuilder.panel(theme, rect, fonts, spec, out)
+            if area.supportingPlacement ~= "hidden" then
+                shown = items
+            end
+            if shown > 0 then
+                break
+            end
+        end
+        if shown == 0 then
+            spec.draws.rows, spec.supporting, spec.rowItems = false, nil, 1
+            area = nil
+        end
+    end
+    area = area or themeBuilder.panel(theme, rect, fonts, spec, out)
+    local prefixes = { "detail", "rowRight", "rowThird" }
+    for _, key in ipairs(keys) do
+        area[key .. "Shown"] = false
+        area[key .. "Slot"] = nil
+    end
+    for index = 1, shown do
+        local key = selected[index].key
+        local prefix = prefixes[index]
+        area[key .. "Shown"] = true
+        area[key .. "Slot"] = {
+            x = area[prefix .. "X"],
+            y = area[prefix .. "Y"],
+            w = area[prefix .. "Width"],
+            centre = area[prefix .. "Centre"],
+        }
+    end
+    if area.packShown then
+        local slot = area.packSlot
+        area.rowRightCentre, area.rowRightWidth = slot.centre, slot.w
+        area.rowRightX, area.rowRightY = slot.x, slot.y
     end
     if area.visualSize then
         area.glyphWidth = area.visualSize
@@ -577,6 +616,37 @@ function rxBattery.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, 
             + math.floor(themeBuilder.numberInkCentre(area.value, sample.digits) - glyphHeight / 2 + 0.5)
     end
     return area
+end
+
+--- Record the measured forms of what the supporting row has to say.
+---@param context AeroGridRxBatteryContext
+---@return boolean changed Whether the arrangement must be recomputed.
+function rxBattery.measureSupporting(context)
+    local layout = context.layout
+    if not layout.adaptive then
+        return false
+    end
+    rxBattery.gather(context)
+    context.gathered = true
+    local count = rxBattery.measureForm(rxBattery.countVariants(context.summary, context.settings))
+    local pack = rxBattery.measureForm(rxBattery.packVariants(context.summary, context.settings))
+    local delta = rxBattery.measureForm(rxBattery.deltaVariants(context.summary, context.settings))
+    if layout.countForm == count and layout.packForm == pack and layout.deltaForm == delta then
+        return false
+    end
+    layout.countForm, layout.packForm, layout.deltaForm = count, pack, delta
+    return true
+end
+
+--- The longest wording that fits, or nothing where none does.
+local function fitOrDrop(context, variants, width)
+    local themeBuilder = context.themeBuilder
+    local font = context.fonts.label
+    local text = themeBuilder.fitLabel(variants, font, width)
+    if type(width) ~= "number" or themeBuilder.measureText(font, text) > width then
+        return ""
+    end
+    return text
 end
 
 --- Build the panel's LVGL objects.
@@ -592,14 +662,8 @@ function rxBattery.create(parent, rect, settings, services)
     local span = services.span
     local layout = rxBattery.presentationFor(span.colSpan, span.rowSpan)
     layout.visual = settings.visual
-    if
-        span.rowSpan == 1
-        and span.colSpan >= 2
-        and settings.visual == "none"
-        and (settings.showCount or settings.showPack)
-    then
-        layout.supporting = { "", "" }
-    end
+    -- The glyph alone: it never carries the count or alternate reading.
+    layout.adaptive = settings.visual ~= "battery" and layout.showDetail
     local presentation = services.state("normal", settings.accent)
 
     local context = {
@@ -614,6 +678,7 @@ function rxBattery.create(parent, rect, settings, services)
         text = "--",
         countText = "",
         packText = "",
+        deltaText = "",
         -- Reused so a refresh allocates nothing; the host pays this per frame.
         summary = {},
         rect = rect,
@@ -638,9 +703,10 @@ function rxBattery.create(parent, rect, settings, services)
     }
     context.sample = sample
 
+    rxBattery.measureSupporting(context)
     local area = rxBattery.regionsFor(theme, services.themeBuilder, rect, layout, fonts, sample, nil, primitives)
+    context.showDetail = area.countShown or area.deltaShown or area.packShown
     context.detailWidth = area.detailWidth
-    context.showDetail = area.showDetail or area.showSide
 
     local panel
     context.panel, context.label, context.badge = primitives.panelWithHeader(
@@ -669,9 +735,17 @@ function rxBattery.create(parent, rect, settings, services)
     })
 
     context.packLabel = primitives.label(panel.root, theme, {
-        x = area.rowRightX,
-        y = area.detailY,
-        w = area.detailWidth,
+        x = area.rowRightX or area.detailX,
+        y = area.rowRightY or area.detailY,
+        w = area.rowRightWidth or area.detailWidth,
+        text = "",
+        color = theme.color.textFaint,
+        font = fonts.label,
+    })
+    context.deltaLabel = primitives.label(panel.root, theme, {
+        x = area.deltaSlot and area.deltaSlot.x or area.detailX,
+        y = area.deltaSlot and area.deltaSlot.y or area.detailY,
+        w = area.deltaSlot and area.deltaSlot.w or area.detailWidth,
         text = "",
         color = theme.color.textFaint,
         font = fonts.label,
@@ -698,9 +772,14 @@ function rxBattery.create(parent, rect, settings, services)
         })
     end
 
-    if not context.showDetail then
+    if not area.countShown then
         lvgl.hide(context.countLabel)
+    end
+    if not area.packShown then
         lvgl.hide(context.packLabel)
+    end
+    if not area.deltaShown then
+        lvgl.hide(context.deltaLabel)
     end
     if not area.showUnit then
         lvgl.hide(context.unit)
@@ -729,23 +808,28 @@ function rxBattery.gather(context)
     local feed = context.feed
     local raw = type(feed) == "table" and feed.available and feed.raw or nil
     local summary
-    if settings.sourceType == "pack" then
-        local cells = settings.cells
+    local stale = type(feed) == "table" and feed.stale == true
+    if stale or raw == nil then
+        context.reestimateOnFresh = true
+    end
+    if type(raw) == "number" then
+        local cells = settings.cells or 0
         if cells == 0 then
-            if type(feed) == "table" and feed.stale then
-                context.reestimateOnFresh = true
-            elseif context.reestimateOnFresh and type(raw) == "number" then
+            if not stale and (context.reestimateOnFresh or context.estimatedCells == nil) then
                 context.estimatedCells = rxBattery.estimateCount(raw, settings.cellFull)
                 context.reestimateOnFresh = nil
-            elseif context.estimatedCells == nil and type(raw) == "number" then
-                context.estimatedCells = rxBattery.estimateCount(raw, settings.cellFull)
             end
             cells = context.estimatedCells
         end
         summary = rxBattery.summarizePack(raw, cells, context.summary)
-        summary.estimated = settings.cells == 0 and summary.shape == "pack"
+        summary.numeric = true
+        summary.estimated = (settings.cells or 0) == 0 and summary.shape == "pack"
     else
         summary = rxBattery.summarize(raw, context.summary)
+        if type(raw) == "table" then
+            context.estimatedCells = nil
+            context.reestimateOnFresh = true
+        end
     end
     context.primary = rxBattery.primaryValue(settings, summary)
     context.perCell = summary.lowest
@@ -753,15 +837,18 @@ function rxBattery.gather(context)
         context.perCell = summary.pack / summary.count
     end
 
-    context.stale = type(feed) == "table" and feed.stale == true
+    context.stale = stale
 end
 
---- Repaint the panel from the gathered reading.
----@param context AeroGridCellContext
 --- Collect everything this panel draws.
+---@param context AeroGridCellContext
 ---@param out table
 function rxBattery.render(context, out)
-    rxBattery.gather(context)
+    if context.gathered then
+        context.gathered = nil
+    else
+        rxBattery.gather(context)
+    end
 
     local settings = context.settings
     local summary = context.summary
@@ -778,15 +865,31 @@ function rxBattery.render(context, out)
     out.value = value
 
     if context.showDetail then
-        if context.area.showSide and context.layout.supporting then
-            -- The builder already measured these exact strings for this stack.
-            out.count = context.layout.countText or ""
-            out.pack = context.layout.packText or ""
-        else
-            local fit = context.themeBuilder.fitLabel
-            local font = context.fonts.label
-            out.count = fit(rxBattery.countVariants(summary, settings), font, context.detailWidth)
-            out.pack = fit(rxBattery.packVariants(summary, settings), font, context.detailWidth)
+        local area = context.area
+        out.count = area.countShown and fitOrDrop(context, rxBattery.countVariants(summary, settings), area.countSlot.w)
+            or ""
+        out.pack = area.packShown and fitOrDrop(context, rxBattery.packVariants(summary, settings), area.rowRightWidth)
+            or ""
+        out.delta = area.deltaShown and fitOrDrop(context, rxBattery.deltaVariants(summary, settings), area.deltaSlot.w)
+            or ""
+    end
+end
+
+--- Centre the supporting labels that are shown.
+local function centreSupporting(context, area)
+    for _, key in ipairs({ "count", "delta", "pack" }) do
+        local slot = area[key .. "Slot"]
+        if slot then
+            context.primitives.centreLabel(
+                context,
+                key .. "Anchor",
+                context.themeBuilder,
+                context[key .. "Label"],
+                slot.centre,
+                slot.y,
+                context.fonts.label,
+                context[key .. "Text"]
+            )
         end
     end
 end
@@ -801,8 +904,9 @@ function rxBattery.apply(context, drawn)
     context.reading = drawn.value
     context.fraction = drawn.fraction
     context.text = drawn.text
-    context.countText = drawn.count
-    context.packText = drawn.pack
+    context.countText = drawn.count or ""
+    context.packText = drawn.pack or ""
+    context.deltaText = drawn.delta or ""
 
     context.value:set({ text = drawn.text, color = presentation.value })
     -- The unit follows what the number says, so it stays attached to a short
@@ -821,30 +925,11 @@ function rxBattery.apply(context, drawn)
     context.primitives.stylePanel(context.panel, presentation)
 
     if context.showDetail then
-        context.countLabel:set({ text = drawn.count })
-        context.packLabel:set({ text = drawn.pack })
-        -- Both items take the panel's slot centres, keyed on what they say so a
-        -- steady pack pays nothing.
-        context.primitives.centreLabel(
-            context,
-            "countAnchor",
-            context.themeBuilder,
-            context.countLabel,
-            context.area.detailCentre,
-            context.area.detailY,
-            context.fonts.label,
-            drawn.count
-        )
-        context.primitives.centreLabel(
-            context,
-            "packAnchor",
-            context.themeBuilder,
-            context.packLabel,
-            context.area.rowRightCentre,
-            context.area.rowRightY,
-            context.fonts.label,
-            drawn.pack
-        )
+        context.countLabel:set({ text = context.countText })
+        context.packLabel:set({ text = context.packText })
+        context.deltaLabel:set({ text = context.deltaText })
+        -- Keyed on what they say so a steady pack pays nothing.
+        centreSupporting(context, context.area)
     end
 
     if context.bar then
@@ -880,23 +965,14 @@ function rxBattery.refresh(context)
     if not context.feed and not context.lowestFeed then
         return
     end
-    local supporting = context.layout.supporting
-    if supporting then
-        rxBattery.gather(context)
-        local count = rxBattery.countVariants(context.summary, context.settings)[1]
-        local pack = rxBattery.packVariants(context.summary, context.settings)
-        local voltage = pack[#pack]
-        local layout = context.layout
-        if layout.countText ~= count or layout.packText ~= voltage then
-            layout.countText, layout.packText = count, voltage
-            layout.packOnly = count == "" and voltage ~= ""
-            supporting[1] = count ~= "" and count or voltage
-            supporting[2] = count ~= "" and voltage ~= "" and voltage or nil
-            rxBattery.update(context, context.rect)
-        end
+    -- What the row has to say decides what fits, so a change in its shape
+    -- rearranges the panel before it is painted.
+    local reflowed = rxBattery.measureSupporting(context)
+    if reflowed then
+        rxBattery.update(context, context.rect, nil, true)
     end
     local changed, drawn = context.primitives.changed(context, rxBattery.render)
-    if changed then
+    if changed or reflowed then
         rxBattery.apply(context, drawn)
     end
 end
@@ -904,7 +980,7 @@ end
 --- Reposition after a zone change.
 ---@param context AeroGridCellContext
 ---@param rect AeroGridRect
-function rxBattery.update(context, rect)
+function rxBattery.update(context, rect, _, detailsOnly)
     context.rect = rect
     local area = rxBattery.regionsFor(
         context.theme,
@@ -917,7 +993,11 @@ function rxBattery.update(context, rect)
         context.primitives
     )
 
-    context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
+    -- A telemetry wording change moves only the content. Rebuilding the
+    -- unchanged header wastes the radio's shared callback budget.
+    if not detailsOnly then
+        context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
+    end
     context.primitives.setFont(context.value, area.value)
     context.value:set({
         x = area.valueX,
@@ -928,48 +1008,20 @@ function rxBattery.update(context, rect)
     context.primitives.reflowReading(context, context.themeBuilder, area, area.value, context.text, area.showUnit)
     -- Every anchor is about a slot and a font that have just moved.
     context.unitAnchor = nil
-    context.countAnchor, context.packAnchor = nil, nil
+    context.countAnchor, context.packAnchor, context.deltaAnchor = nil, nil, nil
     context.area = area
-    if context.layout.supporting then
-        context.rendered = nil
-    end
-
-    --- Show or hide a supporting row, positioning it only when visible.
-    local reconcile = context.primitives.reconcile
-
-    -- A resize changes how much room each row has and whether there is a row at
-    -- all. Both are recorded and nothing else is done, because `render` reads
-    -- both: it declares no count or pack key while the row is shed, so the key
-    -- reappearing is what tells `changed` to repaint, and it refits against the
-    -- new width, so a wording that has to change is a value that has changed.
-    -- There used to be a discard here. It was removed once no test could be
-    -- made to fail without it.
+    -- Nothing drawn is discarded: `render` refits the details against these
+    -- slots, so a wording or visibility that must change is a changed value.
+    context.showDetail = area.countShown or area.deltaShown or area.packShown
     context.detailWidth = area.detailWidth
-    context.showDetail = area.showDetail or area.showSide
 
-    reconcile(context.countLabel, context.showDetail, { x = area.detailX, y = area.detailY, w = area.detailWidth })
-    reconcile(context.packLabel, context.showDetail, { x = area.rowRightX, y = area.rowRightY, w = area.rowRightWidth })
-    if context.showDetail then
-        context.primitives.centreLabel(
-            context,
-            "countAnchor",
-            context.themeBuilder,
-            context.countLabel,
-            area.detailCentre,
-            area.detailY,
-            context.fonts.label,
-            context.countText
-        )
-        context.primitives.centreLabel(
-            context,
-            "packAnchor",
-            context.themeBuilder,
-            context.packLabel,
-            area.rowRightCentre,
-            area.rowRightY,
-            context.fonts.label,
-            context.packText
-        )
+    local reconcile = context.primitives.reconcile
+    for _, key in ipairs({ "count", "delta", "pack" }) do
+        local slot = area[key .. "Slot"]
+        reconcile(context[key .. "Label"], area[key .. "Shown"], slot and { x = slot.x, y = slot.y, w = slot.w } or {})
+    end
+    if not detailsOnly then
+        centreSupporting(context, area)
     end
 
     if context.bar then

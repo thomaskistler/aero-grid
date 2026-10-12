@@ -103,8 +103,12 @@ into the middle gap. Drop `V` if the total whitespace with the preferred glyph
 would be less than 30% of the full panel width, without reducing the font.
 Keep at least four pixels per gap, shrinking or shedding the glyph if needed. The live
 number and unit center as a pair inside the fixed reading block, while the
-glyph stays fixed. Supporting rows retain the two-slot rule. This is specific
-to `rx-battery`; it does not change `tx-battery` or the other panels.
+glyph stays fixed. The glyph carries no supporting rows: count, delta and secondary
+reading belong to the bar and text-only (alternate reading) visualizations,
+which measure up to three footer slots or side-stack labels and shed secondary,
+then delta, then count when they do not fit. Try both placements before shedding
+each tier; numeric sources never reserve a delta slot. This is specific to `rx-battery`; it does not change
+`tx-battery` or the other panels.
 
 **Read this before treating anything below as a description of the dashboard.**
 

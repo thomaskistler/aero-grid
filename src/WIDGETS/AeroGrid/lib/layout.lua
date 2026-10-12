@@ -17,6 +17,14 @@ local layout = { RUNTIME_API = 1 }
 
 layout.VERSION = 2
 
+function layout.normalizePanel(panel)
+    if panel.type == "rx-battery" and type(panel.config) == "table" then
+        -- Schema 2 was unreleased: accept its old selector, but never persist it.
+        panel.config.sourceType = nil
+    end
+    return panel
+end
+
 local migrations = {
     [1] = {
         header = function() end,
@@ -31,6 +39,7 @@ local migrations = {
                 if config.reading == "lowest" or config.reading == "average" then
                     config.reading = "cell"
                 end
+                config.sourceType = nil
                 panel.config = config
             end
         end,
@@ -290,6 +299,7 @@ function layout.validatePanel(panel, index, grid, accepted, identifiers)
     end
 
     panel.config = type(panel.config) == "table" and panel.config or {}
+    layout.normalizePanel(panel)
     return true
 end
 
