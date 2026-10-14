@@ -51,10 +51,15 @@ typography, spacing, colors, and state indicators across the dashboard.
 
 ## How to use
 
-Install [AeroGrid](user-guide/installation.md), then follow these two short
-walkthroughs to create and customize your dashboard.
+Follow these three short walkthroughs to install
+[AeroGrid](user-guide/installation.md), create a dashboard, and customize it.
 
 <div class="ag-video-gallery">
+  <section>
+    <h3>Install AeroGrid</h3>
+    <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/JgGA676uW7E" title="Install AeroGrid on an EdgeTX radio" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+    <p><a href="user-guide/installation/">Read the installation guide</a> or <a href="https://www.youtube.com/watch?v=JgGA676uW7E">watch on YouTube</a>.</p>
+  </section>
   <section>
     <h3>Create an Empty dashboard</h3>
     <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/Z-_Z-rtot8U" title="Create an Empty AeroGrid dashboard" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
