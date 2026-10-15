@@ -430,9 +430,12 @@ function navigation.createTape(parent, context, area)
     local function shade(token, amount)
         return lcd.RGB(context.themeBuilder.shade(context.theme.rgb[token], amount))
     end
+    local surface = context.theme.rgb.surface
+    local light = context.themeBuilder.contrast(surface, 0x000000) > context.themeBuilder.contrast(surface, 0xFFFFFF)
+    local shading = light and { -0.08, -0.02, 0, -0.06 } or { -0.45, -0.08, 0.04, -0.32 }
     tape.tickColors = { context.theme.color.textFaint, context.theme.color.textMuted, context.theme.color.text }
     tape.root = lvgl.box(parent, { x = area.tapeX, y = area.tapeY, w = area.tapeWidth, h = area.tapeHeight })
-    for index, amount in ipairs({ -0.45, -0.08, 0.04, -0.32 }) do
+    for index, amount in ipairs(shading) do
         tape.shading[index] = lvgl.rectangle(tape.root, {
             x = 0,
             y = 10,
@@ -450,7 +453,10 @@ function navigation.createTape(parent, context, area)
                 y = 0,
                 w = 1,
                 h = 2,
-                color = shade("surface", strength * (edge == 1 and 0.48 or 0.3)),
+                color = shade(
+                    "surface",
+                    strength * (light and (edge == 1 and -0.18 or -0.12) or (edge == 1 and 0.48 or 0.3))
+                ),
                 filled = true,
             })
         end

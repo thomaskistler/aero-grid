@@ -31,6 +31,33 @@ end
 
 local navigation = fixture.module("panels/navigation.lua")
 local theme = square.themeBuilder
+local catalog = assert(loadfile(root .. "/tests/support/theme_catalog.lua"))()(root, fixture.module("lib/yaml.lua"))
+assert(theme.setCatalog(catalog))
+for _, mode in ipairs({ "modern-dark", "modern-light" }) do
+    local resolved = theme.build(mode)
+    local light = mode == "modern-light"
+    local panel = {
+        theme = resolved,
+        themeBuilder = theme,
+        primitives = fixture.module("lib/primitives.lua"),
+    }
+    local tape = navigation.createTape(lvgl.box({ x = 0, y = 0, w = 200, h = 50 }), panel, {
+        tapeX = 0,
+        tapeY = 0,
+        tapeWidth = 200,
+        tapeHeight = 50,
+        tapeFont = SMLSIZE,
+    })
+    local amounts = light and { -0.08, -0.02, 0, -0.06 } or { -0.45, -0.08, 0.04, -0.32 }
+    for index, amount in ipairs(amounts) do
+        assertions.assertEqual(tape.shading[index].properties.color, lcd.RGB(theme.shade(resolved.rgb.surface, amount)))
+    end
+    assertions.assertEqual(
+        tape.rims[7].properties.color,
+        lcd.RGB(theme.shade(resolved.rgb.surface, light and -0.18 or 0.48)),
+        "rims must darken a light surface and lighten a dark surface"
+    )
+end
 local function instance(cols, rows, rect, settings)
     local host = fixture.module("lib/panel_host.lua")
     local resolved, errors = host.resolveSettings(navigation, settings or { showTape = true })
