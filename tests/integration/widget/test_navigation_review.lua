@@ -57,6 +57,28 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
         lcd.RGB(theme.shade(resolved.rgb.surface, light and -0.18 or 0.48)),
         "rims must darken a light surface and lighten a dark surface"
     )
+    panel.tape = tape
+    panel.area = {
+        showTape = true,
+        tapeX = 0,
+        tapeY = 0,
+        tapeWidth = 200,
+        tapeHeight = 50,
+        tapeFont = SMLSIZE,
+    }
+    for _, state in ipairs({ "warning", "critical", "normal" }) do
+        panel.stateName = state
+        navigation.setTape(panel, 0, resolved.color.text)
+        local surface = resolved.alertRgb[state] or resolved.rgb.surface
+        local isLight = theme.contrast(surface, 0) > theme.contrast(surface, 0xFFFFFF)
+        assertions.assertEqual(tape.surface, surface, "tape must follow the active panel surface")
+        assertions.assertEqual(
+            tape.shading[1].properties.color,
+            lcd.RGB(theme.shade(surface, isLight and -0.08 or -0.45)),
+            "recess shading must follow alert transitions and recovery"
+        )
+        assertions.assertEqual(tape.rims[7].properties.color, lcd.RGB(theme.shade(surface, isLight and -0.18 or 0.48)))
+    end
 end
 local function instance(cols, rows, rect, settings)
     local host = fixture.module("lib/panel_host.lua")

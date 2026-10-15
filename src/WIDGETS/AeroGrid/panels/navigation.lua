@@ -424,42 +424,52 @@ function navigation.regionsFor(theme, themeBuilder, rect, layout, fonts, sample)
     }
 end
 
+local function tapeSurfaceColors(context, surface)
+    local function shade(amount)
+        return lcd.RGB(context.themeBuilder.shade(surface, amount))
+    end
+    local light = context.themeBuilder.contrast(surface, 0x000000) > context.themeBuilder.contrast(surface, 0xFFFFFF)
+    local shading = light and { -0.08, -0.02, 0, -0.06 } or { -0.45, -0.08, 0.04, -0.32 }
+    local rims = {}
+    for index, amount in ipairs(shading) do
+        shading[index] = shade(amount)
+    end
+    for index = 1, 7 do
+        local strength = 1 - math.abs(index - 4) * 0.1
+        for edge = 1, 2 do
+            rims[#rims + 1] =
+                shade(strength * (light and (edge == 1 and -0.18 or -0.12) or (edge == 1 and 0.48 or 0.3)))
+        end
+    end
+    return shading, rims
+end
+
 --- A fixed object pool keeps scrolling allocation-free and wraps through north.
 function navigation.createTape(parent, context, area)
     local tape = { ticks = {}, labels = {}, dots = {}, shading = {}, rims = {}, dotHighlights = {}, pending = true }
-    local function shade(token, amount)
-        return lcd.RGB(context.themeBuilder.shade(context.theme.rgb[token], amount))
-    end
-    local surface = context.theme.rgb.surface
-    local light = context.themeBuilder.contrast(surface, 0x000000) > context.themeBuilder.contrast(surface, 0xFFFFFF)
-    local shading = light and { -0.08, -0.02, 0, -0.06 } or { -0.45, -0.08, 0.04, -0.32 }
+    tape.surface = context.theme.rgb.surface
+    local shading, rims = tapeSurfaceColors(context, tape.surface)
     tape.tickColors = { context.theme.color.textFaint, context.theme.color.textMuted, context.theme.color.text }
     tape.root = lvgl.box(parent, { x = area.tapeX, y = area.tapeY, w = area.tapeWidth, h = area.tapeHeight })
-    for index, amount in ipairs(shading) do
+    for index, color in ipairs(shading) do
         tape.shading[index] = lvgl.rectangle(tape.root, {
             x = 0,
             y = 10,
             w = 1,
             h = 1,
-            color = shade("surface", amount),
+            color = color,
             filled = true,
         })
     end
-    for index = 1, 7 do
-        local strength = 1 - math.abs(index - 4) * 0.1
-        for edge = 1, 2 do
-            tape.rims[#tape.rims + 1] = lvgl.rectangle(tape.root, {
-                x = 0,
-                y = 0,
-                w = 1,
-                h = 2,
-                color = shade(
-                    "surface",
-                    strength * (light and (edge == 1 and -0.18 or -0.12) or (edge == 1 and 0.48 or 0.3))
-                ),
-                filled = true,
-            })
-        end
+    for index, color in ipairs(rims) do
+        tape.rims[index] = lvgl.rectangle(tape.root, {
+            x = 0,
+            y = 0,
+            w = 1,
+            h = 2,
+            color = color,
+            filled = true,
+        })
     end
     for index = 1, 23 do
         tape.ticks[index] = lvgl.line(tape.root, {
@@ -514,6 +524,17 @@ function navigation.setTape(context, bearing, color, status)
     })
     if not area.showTape then
         return
+    end
+    local surface = context.theme.alertRgb[context.stateName] or context.theme.rgb.surface
+    if tape.surface ~= surface then
+        tape.surface = surface
+        local shading, rims = tapeSurfaceColors(context, surface)
+        for index, strip in ipairs(tape.shading) do
+            strip:set({ color = shading[index] })
+        end
+        for index, rim in ipairs(tape.rims) do
+            rim:set({ color = rims[index] })
+        end
     end
     if tape.width ~= area.tapeWidth or tape.height ~= area.tapeHeight then
         tape.width, tape.height = area.tapeWidth, area.tapeHeight

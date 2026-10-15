@@ -44,7 +44,8 @@ The tape spans 210 degrees and scrolls beneath a fixed pointer. Only `N`, `E`,
 at the sides. Major ticks and aligned dots mark every 30 degrees; shorter
 minor ticks mark every 10 degrees. Cardinal labels replace the dots at those
 positions. Shading and highlighted edges give the tape a recessed appearance,
-with softer shadows and darkened rims on light surfaces.
+with softer shadows and darkened rims on light surfaces. Tape shading follows
+the panel's warning or critical tint and returns to normal when the alert clears.
 
 When bearing is unavailable, the pointer, ticks, labels, and dots disappear,
 and the tape shows the reason instead of implying a due-north bearing.
