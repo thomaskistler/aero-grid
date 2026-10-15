@@ -1304,6 +1304,9 @@ function support.lvgl()
         triangle = constructor("triangle"),
         line = constructor("line"),
         image = constructor("image"),
+        -- radio/src/lua/api_colorlcd_lvgl.cpp: qrcode creates LvglWidgetQRCode;
+        -- lua_lvgl_widget.cpp parses data and bgColor in addition to geometry.
+        qrcode = constructor("qrcode"),
         dialog = constructor("dialog"),
         setting = constructor("setting"),
         button = constructor("button"),

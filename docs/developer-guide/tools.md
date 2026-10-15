@@ -116,7 +116,12 @@ recipes/adapters, then inspect the resulting frame and provenance.
 ```sh
 python3 tools/capture-editor.py
 python3 tools/capture-editor.py --scene select-layout
+python3 tools/capture-editor.py --scene navigation-location
 ```
+
+The `navigation-location` scene enters fullscreen and taps the navigation
+panel using native touch input. It closes and reopens the location overlay
+twice before capturing the frozen Google Maps QR code.
 
 This tool uses only Python's standard library plus the same native capture
 runner. It covers setup/widget/layout choices, editor overview, Metric/State

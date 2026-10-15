@@ -76,6 +76,21 @@ There is no longer a distance-only mode: configurations that previously hid
 both compass and bearing text now request bearing text. With the tape on,
 `showBearing` has no replacement because tape and bearing text are exclusive.
 
+### Location details and Google Maps
+
+In fullscreen, tap the navigation panel to open location details. A large QR
+code links to Google Maps at the **model's GPS coordinates**, not home.
+The code and coordinates are frozen when opened so they remain stable while
+scanning; close and reopen to capture a newer position. A stale fix is clearly
+marked **LAST KNOWN POSITION**. Without a valid GPS position, tapping the panel
+does nothing.
+
+Tap anywhere or use the radio's **RTN/Back/Exit** key to return to the dashboard.
+The popup uses the same surface, accent stripe, and state styling as the panels.
+This action is unavailable
+outside fullscreen and while editing. QR generation happens on the radio
+without a network connection; opening the link on your phone uses Google Maps.
+
 ## States
 
 Warning and critical thresholds are always metres, including when the

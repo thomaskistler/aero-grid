@@ -770,9 +770,52 @@ local function event(context, widgetEvent, touchState)
     if context.editorUi then
         return context.editorUiModule.handle(context, widgetEvent, touchState)
     end
+    if context.locationDetails then
+        return context.locationDetailsModule.handle(context, widgetEvent)
+    end
     if context.editorController.editorEntryHit(context, widgetEvent, touchState) then
         context.editorController.openEditor(context)
         return true
+    end
+
+    if widgetEvent == _G.EVT_TOUCH_FIRST then
+        context.panelTouchSlid = false
+    elseif widgetEvent == _G.EVT_TOUCH_SLIDE then
+        context.panelTouchSlid = true
+    elseif widgetEvent == _G.EVT_TOUCH_TAP and touchState and not context.panelTouchSlid and isFullScreen() then
+        for _, entry in ipairs(context.panels) do
+            if not entry.failed and entry.placement.type == "navigation" then
+                local rect = context.dashboardLoader.panelRect(context, entry.placement)
+                if
+                    rect
+                    and touchState.x >= rect.x
+                    and touchState.x < rect.x + rect.w
+                    and touchState.y >= rect.y
+                    and touchState.y < rect.y + rect.h
+                then
+                    if not entry.instance.feed or not entry.instance.feed.fix then
+                        return true
+                    end
+                    local module, moduleError = context.locationDetailsModule
+                    if not module then
+                        module, moduleError = loadModule(context.path, "lib/location_details.lua", 1)
+                    end
+                    if not module then
+                        addError(context, moduleError)
+                        showErrors(context)
+                    else
+                        context.locationDetailsModule = module
+                        local ok, openError = pcall(module.open, context, entry.instance.feed, entry.settings.accent)
+                        if not ok then
+                            module.close(context)
+                            addError(context, "location details: " .. tostring(openError))
+                            showErrors(context)
+                        end
+                    end
+                    return true
+                end
+            end
+        end
     end
 
     for _, entry in ipairs(context.panels) do
@@ -884,6 +927,10 @@ local function refresh(context, widgetEvent, touchState)
         return
     end
 
+    if context.locationDetails and (not isFullScreen() or context.reloadState) then
+        context.locationDetailsModule.close(context)
+    end
+
     -- Leaving fullscreen neither saves nor discards. Editor boxes built in
     -- fullscreen would swallow the long press in App mode, so the editor is
     -- torn down and a changed draft is set aside until fullscreen returns.
@@ -943,7 +990,7 @@ local function refresh(context, widgetEvent, touchState)
     context.dashboardLifecycle.updateEmptyHint(context)
 
     -- EdgeTX reports FIRST/BREAK but does not forward LVGL's long-press event.
-    if not context.editorUi and isFullScreen() then
+    if not context.editorUi and not context.locationDetails and isFullScreen() then
         if
             widgetEvent == _G.EVT_TOUCH_FIRST
             and context.editorController.editorEntryHit(context, widgetEvent, touchState, true)
