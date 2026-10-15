@@ -796,7 +796,8 @@ local function event(context, widgetEvent, touchState)
                     if not entry.instance.feed or not entry.instance.feed.fix then
                         return true
                     end
-                    local module, moduleError = context.locationDetailsModule
+                    local module = context.locationDetailsModule
+                    local moduleError
                     if not module then
                         module, moduleError = loadModule(context.path, "lib/location_details.lua", 1)
                     end
