@@ -3,152 +3,189 @@
 local root = (... and ... ~= "" and ...) or "."
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local WidgetFixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))()
-
 local fixture = WidgetFixture.new()
 fixture.reset()
-local yaml = fixture.module("lib/yaml.lua")
-local themeDocument = assert(loadfile(root .. "/tests/support/theme_catalog.lua"))()(root, yaml)
-local function loadTheme()
-    local module = fixture.module("lib/theme.lua")
-    assert(module.setCatalog(themeDocument))
-    return module
-end
 local context = fixture.createLoaded(nil, { Layout = "review-navigation", Theme = "modern-dark" })
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+assertions.assertEqual(context.document.version, 3)
 assertions.assertEqual(#context.panels, 6)
 fixture.assertNoOverlap(context)
-for _, id in ipairs({ "detailed", "compass", "compact", "wide-distance", "bearing" }) do
-    local instance = fixture.instanceOf(context, id)
-    assert(instance.feed.fix, id .. " must have a GPS fix")
-    assert(instance.feed.home, id .. " must have home coordinates")
-    assertions.assertEqual(instance.stateName, "normal")
-end
-assertions.assertEqual(fixture.instanceOf(context, "unavailable").stateName, "unavailable")
-local compass = fixture.instanceOf(context, "compass").compass
-assert(fixture.instanceOf(context, "compass").showCompass, "review screen must show the compass")
-assertions.assertEqual(#compass.rings, 1)
-assertions.assertEqual(#compass.ticks, 24)
-assertions.assertEqual(compass.ring.properties.bgStartAngle, 0)
-assertions.assertEqual(compass.ring.properties.bgEndAngle, 360)
-assertions.assertEqual(#compass.labels, 4)
-assertions.assertEqual(#compass.pointers, 2)
-for index, caption in ipairs({ "N", "E", "S", "W" }) do
-    assertions.assertEqual(compass.labels[index].properties.text, caption)
-    assert(not compass.labels[index].hidden)
-end
-for _, pointer in ipairs(compass.pointers) do
-    assert(not pointer.hidden)
-    assertions.assertEqual(
-        pointer.properties.color,
-        fixture.instanceOf(context, "compass").state("normal", "green").accent
-    )
-end
-local primitives = fixture.module("lib/primitives.lua")
-assert(not fixture.instanceOf(context, "compass").showCoordinates, "2x2 compass must omit coordinates")
+local square = fixture.instanceOf(context, "compass")
 local detailed = fixture.instanceOf(context, "detailed")
-assert(detailed.showCoordinates, "detailed panel must retain its coordinate row")
-local priorBearing = detailed.detail
-local priorCoordinates = detailed.coordinates
+assert(square.showTape, "legacy compass must become a tape")
+assert(square.detailLabel.hidden, "tape and bearing text must be exclusive")
+assert(not square.showCoordinates)
+assert(detailed.showCoordinates, "legacy detailed must retain coordinates")
+assertions.assertEqual(#square.tape.ticks, 23)
+assertions.assertEqual(#square.tape.labels, 3)
+assertions.assertEqual(#square.tape.shading, 4)
+assertions.assertEqual(#square.tape.rims, 14)
+assert(square.area.valueY + square.themeBuilder.fontAscent(square.area.value) < square.area.tapeY)
+assertions.assertEqual(square.compass, nil)
+assertions.assertEqual(fixture.instanceOf(context, "bearing").tape, nil)
+for _, panel in ipairs(context.document.panels) do
+    assertions.assertEqual(panel.config.presentation, nil)
+    assertions.assertEqual(panel.config.showBearing, nil)
+end
+
+local navigation = fixture.module("panels/navigation.lua")
+local theme = square.themeBuilder
+local function instance(cols, rows, rect, settings)
+    local host = fixture.module("lib/panel_host.lua")
+    local resolved, errors = host.resolveSettings(navigation, settings or { showTape = true })
+    assertions.assertEqual(#errors, 0)
+    return navigation.create(lvgl.box({ x = 0, y = 0, w = rect.w, h = rect.h }), rect, resolved, {
+        theme = square.theme,
+        themeBuilder = theme,
+        primitives = fixture.module("lib/primitives.lua"),
+        fonts = theme.typography(cols, rows),
+        span = { colSpan = cols, rowSpan = rows },
+        state = square.state,
+        navigation = square.service,
+    })
+end
+
+for _, case in ipairs({
+    { 2, 2, 238, 134 },
+    { 3, 3, 359, 203 },
+    { 4, 4, 480, 272 },
+    { 2, 1, 238, 65 },
+    { 3, 1, 359, 65 },
+    { 4, 2, 480, 134 },
+    { 1, 2, 117, 134 },
+}) do
+    local panel = instance(case[1], case[2], { w = case[3], h = case[4] })
+    local area = panel.area
+    assert(panel.showTape, "requested tape must fit standard span " .. case[1] .. "x" .. case[2])
+    assert(not panel.showDetail)
+    assert(area.tapeX + area.tapeWidth <= case[3])
+    assert(area.tapeY + area.tapeHeight <= case[4])
+    if case[1] <= case[2] then
+        assert(area.tapeX >= math.ceil(case[3] * 0.1), "square tape must leave at least 10% on the left")
+        assert(
+            case[3] - area.tapeX - area.tapeWidth >= math.ceil(case[3] * 0.1),
+            "square tape must leave at least 10% on the right"
+        )
+        assertions.assertEqual(area.tapeX * 2 + area.tapeWidth, case[3], "square tape must be centered")
+        if case[1] == case[2] then
+            local previous = navigation.regionsFor(
+                panel.theme,
+                theme,
+                { w = case[3], h = case[4] },
+                { showTape = true },
+                panel.fonts,
+                panel.sample
+            )
+            assertions.assertEqual(
+                area.valueY,
+                math.max(area.frame.top, previous.valueY - math.max(4, math.floor(case[4] * 0.03))),
+                "square distance must move up without crossing the header"
+            )
+            assertions.assertEqual(area.value, previous.value, "moving distance must not shrink its font")
+        end
+    end
+    if case[1] > case[2] then
+        assert(
+            case[3] - area.tapeX - area.tapeWidth >= math.ceil(case[3] * 0.1),
+            "wide tape must leave at least 10% on the right"
+        )
+        assert(area.valueX + area.valueWidth < area.tapeX, "wide tape must sit beside distance")
+    else
+        assert(area.valueY + theme.fontAscent(area.value) < area.tapeY, "square/tall tape must sit below distance")
+    end
+    local pointer = panel.tape.pointer
+    navigation.setTape(panel, 0, panel.state("normal", "green").accent)
+    for index, caption in ipairs({ "W", "N", "E" }) do
+        local label = panel.tape.labels[index]
+        assert(not label.hidden, "north-centered tape must show W, N and E in full")
+        assertions.assertEqual(label.properties.text, caption)
+    end
+    for bearing = 0, 359 do
+        navigation.setTape(panel, bearing, panel.state("normal", "green").accent)
+        assert(not pointer.hidden)
+        local points = pointer.properties.pts
+        assertions.assertEqual(points[3][1], math.floor(area.tapeWidth / 2), "pointer must stay fixed")
+        for _, tick in ipairs(panel.tape.ticks) do
+            if not tick.hidden then
+                assert(tick.properties.pts[1][1] >= 0 and tick.properties.pts[1][1] < area.tapeWidth)
+            end
+        end
+        local found = false
+        for _, label in ipairs(panel.tape.labels) do
+            if not label.hidden then
+                local p = label.properties
+                assert(p.x >= 0 and p.x + p.w <= area.tapeWidth)
+                assert(not string.match(p.text, "^..$"), "tape must label only N, E, S, W")
+                if bearing % 90 == 0 and p.text == navigation.cardinal(bearing) then
+                    found = true
+                    assert(math.abs(p.x + p.w / 2 - math.floor(area.tapeWidth / 2)) <= 1)
+                end
+            end
+        end
+        assert(bearing % 90 ~= 0 or found, "each cardinal must pass under pointer")
+        local visibleDots = 0
+        for _, dot in ipairs(panel.tape.dots) do
+            if not dot.hidden then
+                visibleDots = visibleDots + 1
+                local p = dot.properties
+                assert(p.x >= 0 and p.x + p.w <= area.tapeWidth, "dots must stay inside tape")
+                local degrees = (bearing + (p.x + 1 - math.floor(area.tapeWidth / 2)) / ((area.tapeWidth - 1) / 210))
+                    % 30
+                assert(
+                    math.min(degrees, 30 - degrees) <= 210 / (area.tapeWidth - 1),
+                    "dots must align with 30 degree major ticks"
+                )
+            end
+        end
+        assert(visibleDots >= 2, "tape must show intermediate direction dots")
+    end
+    for _, bearing in ipairs({ -1, 359, 360, 720, 0.5 }) do
+        navigation.setTape(panel, bearing, panel.state("normal", "green").accent)
+        assert(not pointer.hidden)
+    end
+    for _, bearing in ipairs({ false, 0 / 0, math.huge }) do
+        navigation.setTape(panel, bearing, panel.state("normal", "green").accent, "NO FIX")
+        assert(pointer.hidden)
+        assert(not panel.tape.status.hidden)
+        assertions.assertEqual(panel.tape.status.properties.text, "NO FIX")
+        for _, tick in ipairs(panel.tape.ticks) do
+            assert(tick.hidden)
+        end
+        for _, label in ipairs(panel.tape.labels) do
+            assert(label.hidden)
+        end
+        for _, dot in ipairs(panel.tape.dots) do
+            assert(dot.hidden)
+        end
+        for _, highlight in ipairs(panel.tape.dotHighlights) do
+            assert(highlight.hidden)
+        end
+    end
+end
+
+local bearingOnly = instance(2, 2, { w = 238, h = 134 }, { bearingFormat = "quadrant" })
+assert(bearingOnly.showDetail)
+assertions.assertEqual(bearingOnly.tape, nil)
+assert(string.match(bearingOnly.detail, "^BRG N"))
+local priorCoordinates, priorBearing = detailed.coordinates, detailed.bearing
 fixture.radio.values[109].lat = fixture.radio.values[109].lat + 0.002
 fixture.radio.values[109].lon = fixture.radio.values[109].lon + 0.005
 fixture.pump(context, 40)
-assert(detailed.detail ~= priorBearing, "visible bearing must follow GPS changes")
-assert(detailed.coordinates ~= priorCoordinates, "visible coordinates must follow GPS changes")
-assertions.assertEqual(detailed.origin, "")
-assertions.assertEqual(detailed.detailLabel.properties.text, detailed.detail)
+assert(detailed.bearing ~= priorBearing, "tape bearing must follow GPS changes")
+assert(detailed.coordinates ~= priorCoordinates, "coordinate row must follow GPS changes")
 assertions.assertEqual(detailed.coordinatesLabel.properties.text, detailed.coordinates)
-for bearing = 0, 359 do
-    local triangles = primitives.compassPoints(compass, bearing)
-    for _, label in ipairs(compass.labels) do
-        local properties = label.properties
-        local width, height = lcd.sizeText(properties.text, compass.font)
-        local nearestX = math.max(properties.x, math.min(compass.centreX, properties.x + width))
-        local nearestY = math.max(properties.y, math.min(compass.centreY, properties.y + height))
-        local clearance = math.sqrt((nearestX - compass.centreX) ^ 2 + (nearestY - compass.centreY) ^ 2)
-        for _, points in ipairs(triangles) do
-            for _, point in ipairs(points) do
-                local reach = math.sqrt((point[1] - compass.centreX) ^ 2 + (point[2] - compass.centreY) ^ 2)
-                assert(reach + 2 <= clearance, "pointer must clear cardinal text at every bearing")
-            end
-        end
-    end
-end
-local navigation = fixture.module("panels/navigation.lua")
-local theme = loadTheme()
-assertions.assertEqual(navigation.bearingText({ bearing = 29 }, theme, TINSIZE, 20, "quadrant"), "NE")
-for _, rect in ipairs({ { w = 238, h = 134 }, { w = 238, h = 110 }, { w = 359, h = 134 } }) do
-    local layout = navigation.presentationFor("compass")
-    layout.keepCompass = true
-    local area = navigation.regionsFor(
-        theme.build("modern-dark"),
-        theme,
-        rect,
-        layout,
-        theme.typography(2, 2),
-        { digits = navigation.DIGITS, unit = navigation.UNIT }
-    )
-    assert(area.showCompass, "explicit compass must survive standard two-row panels")
-end
-context.zone.w = 320
-context.zone.h = 240
-fixture.pump(context, 40)
-assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-fixture.assertNoOverlap(context)
-context.zone.w = 480
-context.zone.h = 272
-fixture.pump(context, 40)
-assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-fixture.assertNoOverlap(context)
-fixture.reset()
 
-for _, showBearing in ipairs({ false, true }) do
-    for _, showCoordinates in ipairs({ false, true }) do
-        local navigation = fixture.module("panels/navigation.lua")
-        local theme = loadTheme()
-        local settings = { presentation = "compass", showBearing = showBearing, showCoordinates = showCoordinates }
-        local layout = navigation.presentationFor(settings.presentation)
-        layout.showDetail = settings.showBearing
-        layout.showCoordinates = settings.showCoordinates
-        layout.keepCompass = true
-        local area = navigation.regionsFor(
-            theme.build("modern-dark"),
-            theme,
-            { w = 238, h = 134 },
-            layout,
-            theme.typography(2, 2),
-            { digits = navigation.DIGITS, unit = navigation.UNIT }
-        )
-        assertions.assertEqual(area.showDetail, showBearing)
-        assertions.assertEqual(area.showCoordinates, showCoordinates)
-        assert(area.showCompass, "row toggles must not remove the compass")
-        if showCoordinates and not showBearing then
-            assertions.assertEqual(area.coordinatesY, area.detailY, "coordinate-only footer must use its first row")
-        end
-        local host = fixture.module("lib/panel_host.lua")
-        local resolved = host.resolveSettings(navigation, settings)
-        local instance = navigation.create(
-            lvgl.box({ x = 0, y = 0, w = 238, h = 134 }),
-            { w = 238, h = 134 },
-            resolved,
-            {
-                theme = theme.build("modern-dark"),
-                themeBuilder = theme,
-                primitives = fixture.module("lib/primitives.lua"),
-                fonts = theme.typography(2, 2),
-                span = { colSpan = 2, rowSpan = 2 },
-                state = detailed.state,
-                navigation = detailed.service,
-            }
-        )
-        assertions.assertEqual(instance.showDetail, showBearing)
-        assertions.assertEqual(instance.showCoordinates, showCoordinates)
-        assertions.assertEqual(instance.detailLabel.hidden, not showBearing)
-        if showCoordinates then
-            assert(not instance.coordinatesLabel.hidden)
-        end
-        navigation.update(instance, { w = 238, h = 134 })
-        assertions.assertEqual(instance.showDetail, showBearing)
-        assertions.assertEqual(instance.showCoordinates, showCoordinates)
-    end
-end
+fixture.radio.values[109]["pilot-lat"] = 0
+fixture.radio.values[109]["pilot-lon"] = 0
+fixture.pump(context, 40)
+assert(detailed.tape.pointer.hidden)
+assert(string.match(detailed.tape.status.properties.text, "^NO HOME"))
+assertions.assertEqual(detailed.text, "--")
+assertions.assertEqual(detailed.stateName, "normal")
+assert(detailed.coordinates ~= "-- , --", "missing home must not hide a valid position")
+fixture.radio.values[109].lat = 0
+fixture.radio.values[109].lon = 0
+fixture.pump(context, 40)
+assertions.assertEqual(detailed.tape.status.properties.text, "NO FIX")
+fixture.reset()

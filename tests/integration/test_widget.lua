@@ -864,16 +864,16 @@ local function testShippedLayout()
     -- its compass point and keeps the number, which is the measurement; the
     -- caption sheds its last two words. Before this the bearing simply overran
     -- its box and the caption read "NORTH UP FROM" on a radio.
-    assertEqual(nav.detail, "BRG 009 N")
+    assertEqual(nav.detail, nil)
     assertEqual(nav.origin, "")
-    for _, row in ipairs({ { nav.detail, nav.area.content }, { nav.origin, nav.originWidth } }) do
+    for _, row in ipairs({ { nav.origin, nav.originWidth } }) do
         local needed = themeModule.textWidth(nav.fonts.label, row[1])
         assert(
             needed <= row[2],
             string.format("the shipped navigation panel draws %q, needing %d px of %d", row[1], needed, row[2])
         )
     end
-    assert(nav.compass, "the shipped dashboard must demonstrate the dial")
+    assert(nav.tape, "the shipped dashboard must demonstrate the tape")
 end
 
 --- The host owns the palette: every panel uses the resolved surface token.
@@ -2820,7 +2820,7 @@ local function testSupportingWordingsStayDistinct()
         themeModule.build("modern-dark"),
         themeModule,
         rect,
-        navigationModule.presentationFor("detailed"),
+        { showTape = false, showCoordinates = true },
         fonts,
         { digits = navigationModule.DIGITS, unit = navigationModule.UNIT }
     )
@@ -2858,6 +2858,13 @@ local function drawnBoxes(entry)
     local found = {}
     local root = entry.instance.panel and entry.instance.panel.root
     local compassFurniture = {}
+    local tapeBackground = {}
+    local tape = entry.instance.tape
+    if tape then
+        for _, object in ipairs(tape.shading) do
+            tapeBackground[object] = true
+        end
+    end
     local compass = entry.instance.compass
     if compass then
         for _, object in ipairs(compass.labels) do
@@ -2948,6 +2955,7 @@ local function drawnBoxes(entry)
                 elseif child.kind == "rectangle" or child.kind == "image" then
                     found[#found + 1] = clipTo({
                         what = "a " .. child.kind,
+                        background = tapeBackground[child],
                         x = x,
                         y = y,
                         w = child.properties.w or 0,
@@ -2983,7 +2991,7 @@ local function assertNothingOverlaps(label, context)
             if not box.label then
                 local spansPanel = box.w >= rect.w - 2 and box.h >= rect.h - 2
                 local inAccentColumn = box.x + box.w <= accentWidth + 2
-                if spansPanel or inAccentColumn then
+                if spansPanel or inAccentColumn or box.background then
                     surface[index] = true
                 end
             end
@@ -3164,7 +3172,7 @@ local function testTwoRowFooterClearsTheReading()
                 "\n",
                 "    colSpan: 2\n    rowSpan: 3\n",
                 "    config:\n      label: HOME\n      source: GPS\n",
-                "      presentation: detailed\n",
+                "      presentation: bearing\n      showCoordinates: true\n",
             })
         )
         local context = createLoaded(appZone(), DEFAULT_OPTIONS, widget)
@@ -5387,7 +5395,7 @@ local function testPackageCompatibility()
         {
             name = "future-layout-contract",
             file = "lib/package.lua",
-            text = 'return {version="next",runtimeApi=1,panelApi=1,layoutVersion=3}',
+            text = 'return {version="next",runtimeApi=1,panelApi=1,layoutVersion=4}',
             error = "incompatible package contract",
         },
         { name = "missing-core", file = "lib/yaml.lua", error = "lib/yaml.lua:" },
@@ -5461,9 +5469,9 @@ panels:
         assert(steps < 200, "legacy migration load did not finish")
     end
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-    assertEqual(stageCounts["header-migrate"], 1, "one adjacent header step runs in its own loader callback")
-    assertEqual(stageCounts["panel-migrate"], 1, "one adjacent panel step runs in its own loader callback")
-    assertEqual(context.document.version, 2)
+    assertEqual(stageCounts["header-migrate"], 2, "each adjacent header step runs in its own loader callback")
+    assertEqual(stageCounts["panel-migrate"], 2, "each adjacent panel step runs in its own loader callback")
+    assertEqual(context.document.version, 3)
     local placement = context.document.panels[1]
     assertEqual(placement.type, "rx-battery")
     assertEqual(placement.config.reading, "cell")
@@ -6815,18 +6823,10 @@ local function testReadingsSitInTheirSlots()
         },
         {
             type = "navigation",
-            config = { "label: HOME", "source: GPS" },
+            config = { "label: HOME", "source: GPS", "presentation: bearing" },
             variants = { {} },
-            visual = function(panel)
-                if not (panel.showCompass and panel.compass) then
-                    return nil
-                end
-                -- An arc stores its corner rather than its centre and walks when it
-                -- is updated, so the ring's own drawn position is asked for rather
-                -- than the centre the caller passed.
-                local drawn = panel.compass.ring.round.drawn
-                local diameter = panel.compass.ring.round.radius() * 2
-                return { x = drawn.x, w = diameter }
+            visual = function()
+                return nil
             end,
             -- **Supporting rows are slotted too, so they are checked too.** A row
             -- of two takes the same two centres the reading and the visual use,
@@ -9383,7 +9383,8 @@ panels:
     rowSpan: 2
     config:
       source: GPS
-      presentation: detailed
+      presentation: bearing
+      showCoordinates: true
 ]]
     )
 
@@ -10500,9 +10501,8 @@ local function testTelemetryPanels()
     -- Fitted to the row rather than overrunning it. Whichever wording is chosen
     -- has to fit, which is the property that matters; pinning the string alone
     -- would pass on a helper that always returned the shortest one.
-    assertEqual(nav.detail, "BRG 009 N")
+    assertEqual(nav.detail, nil, "tape replaces bearing text")
     assertEqual(nav.origin, "")
-    assert(themeModule.textWidth(nav.area.rowFont, nav.detail) <= nav.area.content, "the bearing row overran its box")
     assert(themeModule.textWidth(nav.fonts.label, nav.origin) <= nav.originWidth, "the origin caption overran its box")
     -- **No coordinates at this span**, and asserting their text here would be
     -- asserting a string nobody can see. A `2 x 2` panel's tertiary quarter is
@@ -10513,8 +10513,8 @@ local function testTelemetryPanels()
     assertEqual(nav.showCoordinates, true, "compact footer must retain coordinates at 2 x 2")
     assert(nav.rendered.coordinates ~= nil)
     assertEqual(nav.stateName, "normal")
-    assertEqual(nav.showCompass, true, "an explicit compass presentation must reserve room for the dial")
-    assert(not nav.compass.ring.hidden, "the requested compass was hidden")
+    assertEqual(nav.showTape, true, "legacy compass presentation must become a tape")
+    assert(not nav.tape.root.hidden, "the requested tape was hidden")
 
     local shared = entryById(context, "native").instance
     assertEqual(shared.text, nav.text)
@@ -10576,8 +10576,8 @@ panels:
     end
 
     local nav = entryById(context, "nav").instance
-    assertEqual(nav.compass.ring.hidden, false, "the dial was never shown")
-    local firstRadius = nav.compass.ring.properties.radius
+    assertEqual(nav.tape.root.hidden, false, "the tape was never shown")
+    local firstWidth = nav.area.tapeWidth
 
     zone.w = 320
     drain()
@@ -10588,13 +10588,13 @@ panels:
     -- tightened left slot has 67 px to its left. The reading's left edge would
     -- land at -23, and at strict halves at -34, so the dial goes rather than
     -- the distance shrinking.
-    assertEqual(nav.compass.ring.hidden, true, "the dial kept its room on a panel whose distance needed it")
+    assertEqual(nav.tape.root.hidden, false, "tape must remain visible at standard narrower zone")
 
     zone.w = 480
     drain()
     pump(context, 10)
-    assertEqual(nav.compass.ring.hidden, false, "the dial was not restored")
-    assertEqual(nav.compass.ring.properties.radius, firstRadius, "the dial was not restored to its full size")
+    assertEqual(nav.tape.root.hidden, false, "the tape was not restored")
+    assertEqual(nav.area.tapeWidth, firstWidth, "the tape was not restored to its full size")
 
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
     resetRadio()
@@ -10643,13 +10643,13 @@ panels:
     local nav = entryById(context, "nav").instance
     -- The precondition. Without it every assertion below is about an object
     -- nobody draws and nothing writes to.
-    assertEqual(nav.showCompass, true, "the panel shed its compass, so this test proves nothing")
-    assertEqual(nav.compass.ring.hidden, false, "the dial was not on screen")
+    assertEqual(nav.showTape, true, "the panel must show its tape")
+    assertEqual(nav.tape.root.hidden, false, "the tape was not on screen")
 
     -- A real fix, 9 degrees from home. Three cells wide gives the row enough
     -- for the compass point as well as the number, which a `2 x 2` sheds.
-    assertEqual(nav.detail, "BRG 009 N")
-    assert(not nav.compass.pointers[1].hidden, "a known bearing must show a filled pointer")
+    assertEqual(nav.detail, nil)
+    assert(not nav.tape.pointer.hidden, "a known bearing must show a filled pointer")
 
     -- And nowhere when there is nowhere to point. Zero for both axes is what
     -- EdgeTX reports before it has a fix, and it is a real place off the coast
@@ -10658,8 +10658,7 @@ panels:
     radio.values[109].lon = 0
     pump(context, 40)
     assertEqual(nav.origin, "NO FIX")
-    assertEqual(nav.compass.pointers[1].hidden, true, "an unknown bearing must hide the pointer")
-    assertEqual(nav.compass.pointers[2].hidden, true, "both halves of the pointer must hide")
+    assertEqual(nav.tape.pointer.hidden, true, "an unknown bearing must hide the pointer")
 
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
     resetRadio()
@@ -10697,18 +10696,7 @@ local function testTelemetryDegrades()
 
     assertEqual(nav.stateName, "stale")
     assertEqual(nav.text, "778", "the last known position was discarded")
-    -- **`LAST` rather than `LAST KNOWN`, and that is the slot rule's price.**
-    -- A two-item row is centred on the panel's two slot centres, so each item
-    -- can be half the distance between them before they meet -- 40% of the
-    -- content where the column split it replaces reached 100%. The user chose
-    -- that on a radio with both drawn side by side.
-    --
-    -- What the narrowing must never cost is meaning, and the assertion that
-    -- guards it is `testSupportingWordingsStayDistinct`: the shortest form of
-    -- every state this row reports has to stay distinct from the shortest form
-    -- of every other. `LAST` is less informative than `LAST KNOWN`; it is not
-    -- confusable with `NO FIX`.
-    assertEqual(nav.origin, "LAST")
+    assertEqual(nav.origin, "LAST KNOWN")
 
     -- Reconnect. Nothing may be left marked once readings arrive again.
     radio.rssi = 80
@@ -10732,7 +10720,7 @@ local function testTelemetryDegrades()
     -- not on screen and is not asserted. The state, the badge and the origin
     -- caption are what this panel actually reports a lost fix with.
     -- The dial must not point anywhere when there is nowhere to point.
-    assertEqual(nav.compass.pointers[1].hidden, true, "an unknown bearing must hide the pointer")
+    assertEqual(nav.tape.pointer.hidden, true, "an unknown bearing must hide the pointer")
 
     -- A fix without a home position: the position is perfectly good, but a
     -- distance and a bearing would be measured from nowhere.
@@ -10747,8 +10735,8 @@ local function testTelemetryDegrades()
     assertEqual(nav.badge.properties.text, "")
     assert(string.match(nav.origin, "^NO HOME"), nav.origin)
     assertEqual(nav.text, "--")
-    assertEqual(nav.detail, "BRG --", "a bearing was invented without a home")
-    assertEqual(nav.origin, "NO HOME")
+    assertEqual(nav.detail, nil, "tape must not invent a bearing text row")
+    assertEqual(nav.origin, "NO HOME POSITION")
     -- **That the position itself is still known is asserted at a span that
     -- draws it.** The specification's promise is that a missing home withholds
     -- only the two values measured from home and leaves the coordinates
@@ -10928,7 +10916,7 @@ panels:
     local nav = entryById(context, "nav").instance
     assertEqual(nav.stateName, "unavailable")
     assertEqual(nav.badge.properties.text, "N/A")
-    assertEqual(nav.origin, "NO GPS")
+    assertEqual(nav.origin, "NO GPS SOURCE")
 
     -- The sensor arrives, but without a position yet: this is the cold start,
     -- and it is a different message from a layout naming a sensor that is not
@@ -11107,21 +11095,11 @@ local function testTelemetryPanelsReflow()
 
     assertContained("full size")
     local nav = entryById(context, "nav").instance
-    assertEqual(nav.showCompass, true)
-    -- **The bearing row is the one that sheds and returns here.** A `2 x 2`
-    -- panel's tertiary quarter holds one supporting row, so the coordinates
-    -- are shed at this span whatever the zone does; two rows at a three-row
-    -- span are testTwoRowFooterClearsTheReading.
+    assertEqual(nav.showTape, true)
+    -- Tape mode never adds a duplicate numeric bearing row.
     assertEqual(nav.showCoordinates, true)
-    assertEqual(nav.detailLabel.hidden, false, "the bearing row was never shown")
-    local function readingFont()
-        local font = nav.value.properties.font
-        if type(font) == "function" then
-            font = font()
-        end
-        return font
-    end
-    assertFont(readingFont(), MIDSIZE, "the explicit compass panel's distance")
+    assertEqual(nav.detailLabel.hidden, true, "tape replaces bearing row")
+    assert(nav.area.value ~= nil, "tape panel must have a reading font")
 
     zone.w = 320
     zone.h = 140
@@ -11131,16 +11109,15 @@ local function testTelemetryPanelsReflow()
     -- Supporting rows are shed before the dominant reading is touched.
     assertEqual(nav.detailLabel.hidden, true, "a shed bearing row stayed visible")
 
-    assertFont(readingFont(), SMLSIZE, "the distance must fit beside the requested compass")
-    assertEqual(nav.showCompass, true, "the explicit compass should survive while both elements fit")
+    assert(nav.area.value ~= nil, "shrunk tape panel must retain its reading")
 
     zone.w = 480
     zone.h = 272
     drain()
     settle(context, 10)
     assertContained("restored")
-    assertFont(readingFont(), MIDSIZE, "the distance was not restored")
-    assertEqual(nav.detailLabel.hidden, false, "the bearing row was not restored")
+    assertEqual(nav.showTape, true, "tape must return after restoring size")
+    assertEqual(nav.detailLabel.hidden, true, "bearing row must stay hidden with tape")
 
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
     resetRadio()

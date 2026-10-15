@@ -113,7 +113,7 @@ panels:
 ]]))
     local normalized, errors = layout.validate(document, grid)
     assertions.assertEqual(#errors, 0)
-    assertions.assertEqual(normalized.version, 2)
+    assertions.assertEqual(normalized.version, 3)
     local cells = normalized.panels[1]
     assertions.assertEqual(cells.type, "rx-battery")
     assertions.assertEqual(cells.config.reading, "cell")
@@ -176,9 +176,13 @@ local function testAdjacentMigrationSteps()
     assert(migrated)
     assertions.assertEqual(nextVersion, 2)
     assertions.assertEqual(validated.version, 2)
+    assertions.assertEqual(layout.finalizeHeader(validated), nil, "each adjacent step is required")
+    migrated, nextVersion = layout.migrateHeaderStep(validated)
+    assert(migrated)
+    assertions.assertEqual(nextVersion, 3)
     local finalized, finalizeErrors = layout.finalizeHeader(validated)
     assertions.assertEqual(#finalizeErrors, 0)
-    assertions.assertEqual(finalized.version, 2)
+    assertions.assertEqual(finalized.version, 3)
 
     local panel = {
         type = "cell-battery",
@@ -190,18 +194,77 @@ local function testAdjacentMigrationSteps()
     assertions.assertEqual(panel.type, "rx-battery")
     assertions.assertEqual(panel.config.cells, nil)
     assertions.assertEqual(panel.config.reading, "cell")
-    assertions.assertEqual(layout.supportsVersion(3), false, "future versions require registered adjacent helpers")
+    migrated, nextVersion = layout.migratePanelStep(panel, 2)
+    assert(migrated)
+    assertions.assertEqual(nextVersion, 3)
+    assertions.assertEqual(layout.supportsVersion(4), false, "future versions require registered adjacent helpers")
 end
 
 local function testUnsupportedFutureVersion()
     local document = {
-        version = 3,
+        version = 4,
         grid = { columns = 4, rows = 4 },
         panels = {},
     }
     local normalized, errors = layout.validate(document, grid)
     assertions.assertEqual(normalized, nil)
     assert(string.match(errors[1], "unsupported layout version"))
+end
+
+local function testNavigationMigration()
+    for _, case in ipairs({
+        { "distance", 4, 4, false, false },
+        { "bearing", 4, 4, false, false },
+        { "compass", 2, 2, true, false },
+        { "detailed", 2, 2, true, true },
+        { "auto", 1, 1, false, false },
+        { "auto", 2, 1, false, false },
+        { "auto", 2, 2, true, false },
+        { "auto", 3, 2, true, true },
+        { nil, 3, 3, true, true },
+    }) do
+        for _, sourceVersion in ipairs({ 1, 2 }) do
+            for _, showBearing in ipairs({ false, true }) do
+                local panel = {
+                    type = "navigation",
+                    colSpan = case[2],
+                    rowSpan = case[3],
+                    config = {
+                        presentation = case[1],
+                        showBearing = showBearing,
+                        source = "GPS2",
+                        label = "HOME",
+                        accent = "amber",
+                        bearingFormat = "quadrant",
+                        warning = 500,
+                        critical = 1000,
+                    },
+                }
+                layout.migratePanel(panel, sourceVersion)
+                assertions.assertEqual(panel.config.showTape, case[4])
+                assertions.assertEqual(panel.config.showCoordinates, case[5])
+                assertions.assertEqual(panel.config.presentation, nil)
+                assertions.assertEqual(panel.config.showBearing, nil)
+                assertions.assertEqual(panel.config.source, "GPS2")
+                assertions.assertEqual(panel.config.bearingFormat, "quadrant")
+                assertions.assertEqual(panel.config.warning, 500)
+                assertions.assertEqual(panel.config.critical, 1000)
+                assertions.assertEqual(panel.config.accent, "amber")
+                assertions.assertEqual(panel.config.label, "HOME")
+            end
+        end
+    end
+    for _, enabled in ipairs({ false, true }) do
+        local panel = { type = "navigation", config = { presentation = "detailed", showCoordinates = enabled } }
+        layout.migratePanel(panel, 2)
+        assertions.assertEqual(panel.config.showCoordinates, enabled)
+    end
+    local panel = { type = "navigation", colSpan = 2, rowSpan = 2 }
+    layout.migratePanel(panel, 2)
+    assertions.assertEqual(panel.config.showTape, true, "omitted legacy config must resolve auto by saved span")
+    panel = { type = "navigation", colSpan = 2, rowSpan = 2, config = {} }
+    layout.migratePanel(panel, 3)
+    assertions.assertEqual(panel.config.showTape, nil, "new widgets must not inherit legacy auto")
 end
 
 local function run()
@@ -211,6 +274,7 @@ local function run()
     testCurrentBatteryThresholdNormalization()
     testAdjacentMigrationSteps()
     testUnsupportedFutureVersion()
+    testNavigationMigration()
 end
 
 run()

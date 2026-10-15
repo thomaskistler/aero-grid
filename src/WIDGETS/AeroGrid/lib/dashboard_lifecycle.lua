@@ -150,7 +150,9 @@ function module.new(dependencies)
                         entry,
                         "update",
                         { x = 0, y = 0, w = rect.w, h = rect.h },
-                        entry.settings
+                        entry.settings,
+                        nil,
+                        entry.placement
                     )
                     if not ok and dispatchError then
                         addError(context, entry.placement.id .. ": update: " .. dispatchError)

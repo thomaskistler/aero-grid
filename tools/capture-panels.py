@@ -106,7 +106,7 @@ view: 0
 """.replace("THEME", str(["modern-dark", "modern-light"].index(recipe["theme"]) + 1))
                      .replace("POSITION", str(position))
                      + suffix.split("\n", 1)[1])
-    layout = "version: 2\ngrid:\n  columns: 4\n  rows: 4\npanels:\n"
+    layout = "version: 3\ngrid:\n  columns: 4\n  rows: 4\npanels:\n"
     for name, (col, row, cols, rows) in placements(recipe).items():
         layout += (f"  - id: subject-{name}\n    type: {panel}\n"
                    f"    col: {col}\n    row: {row}\n    colSpan: {cols}\n    rowSpan: {rows}\n"

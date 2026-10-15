@@ -11,7 +11,7 @@ import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "build/editor-capture"
-SCENES = ("overview", "settings", "state-settings", "metric-entry", "exit", "save-as")
+SCENES = ("overview", "settings", "state-settings", "metric-entry", "exit", "save-as", "navigation-tape")
 THEME_SCENES = ("theme-modern-dark", "theme-modern-light", "theme-custom")
 DASHBOARD_SCENES = ("dashboard",)
 DASHBOARD_INPUTS = """model.setGlobalVariable(8, 0, 42)
@@ -86,7 +86,7 @@ SETUP_SCENES["widget-options"] = SETUP_SCENES["select-widget"] + [
 SETUP_SCENES["select-layout"] = SETUP_SCENES["widget-options"] + [
     (1850, 277, 133, 1), (1870, 277, 133, 0)]
 
-LAYOUT = """version: 2
+LAYOUT = """version: 3
 grid:
   columns: 4
   rows: 4
@@ -226,6 +226,30 @@ screenData:
         layout = (ROOT / "src/WIDGETS/AeroGrid/layouts/Default.yaml").read_text()
     else:
         layout = STATE_LAYOUT if scene == "state-settings" else LAYOUT
+    if scene == "navigation-tape":
+        layout = """version: 3
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: nav
+    type: navigation
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      source: GPS
+"""
+        from capture_recipes import fixture_inputs, load_recipe
+        recipe = load_recipe(ROOT / "tools/capture-recipes/navigation.yaml")
+        widget = sd / "WIDGETS/AeroGrid"
+        (widget / "capture-inputs.lua").write_text(fixture_inputs(recipe))
+        loader = widget / "lib/dashboard_loader.lua"
+        loader.write_text(loader.read_text().replace(
+            "support.environment()",
+            'support.environment(assert(loadScript("/WIDGETS/AeroGrid/capture-inputs.lua"))())',
+        ))
     if scene == "settings":
         layout = layout.replace("        - source: gvar1\n          label: Reading", """        - source: Alt
           label: Altitude
@@ -305,7 +329,7 @@ screenData:
         if not context.captureSceneOpened then
             state.session.selected = 1
             local scene = "SCENE"
-            if scene == "settings" or scene == "state-settings" then
+            if scene == "settings" or scene == "state-settings" or scene == "navigation-tape" then
                 context.editorDrawerModule.open(context, state, "configure")
             elseif scene == "metric-entry" then
                 context.editorDrawerModule.open(context, state, "configure", "metrics", 1)
@@ -317,6 +341,23 @@ screenData:
             end
             context.captureSceneOpened = true
             context.captureSettled = 0
+            return
+        end
+        if "SCENE" == "navigation-tape" and not context.captureToggled then
+            for _, row in ipairs(state.drawerControls) do
+                if row.field.key == "showTape" then
+                    state.drawerPending = { action = "write", field = row.field, value = true, control = row }
+                    break
+                end
+            end
+            lvgl.close(state.nativeDrawer)
+            context.captureToggled = true
+            return
+        end
+        if "SCENE" == "navigation-tape" and not context.captureResized then
+            assert(state.handlers.editor.resize(state.session, 0, -1))
+            assert(state.handlers.preview(state.session.draft))
+            context.captureResized = true
             return
         end
         context.captureSettled = context.captureSettled + 1

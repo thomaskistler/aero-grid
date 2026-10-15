@@ -15,7 +15,7 @@
 
 local layout = { RUNTIME_API = 1 }
 
-layout.VERSION = 2
+layout.VERSION = 3
 
 function layout.normalizePanel(panel)
     if panel.type == "rx-battery" and type(panel.config) == "table" then
@@ -34,6 +34,28 @@ function layout.normalizePanel(panel)
 end
 
 local migrations = {
+    [2] = {
+        header = function() end,
+        panel = function(panel)
+            if panel.type ~= "navigation" then
+                return
+            end
+            local config = type(panel.config) == "table" and panel.config or {}
+            local presentation = config.presentation or "auto"
+            local cells = (panel.colSpan or 1) * (panel.rowSpan or 1)
+            if config.showTape == nil then
+                config.showTape = presentation == "compass"
+                    or presentation == "detailed"
+                    or (presentation == "auto" and cells >= 4)
+            end
+            if config.showCoordinates == nil then
+                config.showCoordinates = presentation == "detailed" or (presentation == "auto" and cells >= 6)
+            end
+            config.presentation = nil
+            config.showBearing = nil
+            panel.config = config
+        end,
+    },
     [1] = {
         header = function() end,
         panel = function(panel)

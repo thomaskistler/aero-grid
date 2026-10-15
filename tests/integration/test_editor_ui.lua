@@ -1654,6 +1654,73 @@ for _, mode in ipairs({ "battery", "bar", "none" }) do
     widget.lvglMock.setFullScreen(false)
 end
 
+write(
+    "edit-navigation",
+    [[
+version: 3
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: nav
+    type: navigation
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      source: GPS
+]]
+)
+widget.lvglMock.setFullScreen(true)
+load("edit-navigation")
+open()
+for _, key in ipairs({ "showTape", "showCoordinates" }) do
+    for _, enabled in ipairs({ true, false, true }) do
+        state = context.editorUi
+        rect = state.controls[1].rect
+        tap(rect.x + rect.w - 12, rect.y + 12)
+        settleDrawer()
+        control(key).properties.set(enabled and 1 or 0)
+        lvgl.close(state.nativeDrawer)
+        widget.lvglMock.settle()
+        settleDrawer()
+        equal(state.previewError, nil, "navigation settings must rebuild without a preview error")
+        local entry = context.panels[1]
+        equal(entry.container.hidden, false, "navigation preview container must be shown")
+        equal(entry.instance.settings[key], enabled, "navigation preview must use changed settings")
+        if key == "showTape" then
+            equal(entry.instance.showTape, enabled, "tape visibility must match drawer setting")
+            equal(entry.instance.detailLabel.hidden, enabled, "bearing and tape must remain exclusive")
+        else
+            equal(entry.instance.showCoordinates, enabled, "coordinate visibility must match drawer setting")
+        end
+        refresh()
+        equal(entry.failed, nil, "navigation preview must survive deferred cleanup")
+    end
+end
+local navEntry = context.panels[1]
+local navEditor = context.editorUi.handlers.editor
+assert(navEditor.resize(context.editorSession, 0, -1))
+assert(context.editorUi.handlers.preview(context.editorSession.draft))
+equal(navEntry.instance.layout.wide, true, "square-to-wide resize must change tape orientation")
+equal(navEntry.instance.showTape, true, "square-to-wide resize must keep tape visible")
+equal(navEntry.instance.tape.root.hidden, false, "resized wide tape must be shown")
+assert(
+    navEntry.instance.area.valueX + navEntry.instance.area.valueWidth < navEntry.instance.area.tapeX,
+    "resized wide tape must sit beside distance"
+)
+assert(navEditor.resize(context.editorSession, 0, 1))
+assert(context.editorUi.handlers.preview(context.editorSession.draft))
+equal(navEntry.instance.layout.square, true, "wide-to-square resize must restore stacked tape")
+assert(
+    navEntry.instance.area.valueY + navEntry.instance.themeBuilder.fontAscent(navEntry.instance.area.value)
+        < navEntry.instance.area.tapeY,
+    "resized square tape must sit below distance"
+)
+exitWith("Discard changes")
+widget.lvglMock.setFullScreen(false)
+
 widget.lvglMock.setAppMode(false)
 for name in pairs(events) do
     rawset(_G, name, previous[name])

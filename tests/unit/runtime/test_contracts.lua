@@ -365,7 +365,7 @@ local FIXED_THRESHOLD_UNITS = {
     ["rx-battery"] = "V/cell",
     ["tx-battery"] = "volts",
     ["flight-timer"] = "seconds",
-    ["navigation"] = "metres",
+    ["navigation"] = "(m)",
 }
 
 local function settingsCatalog()

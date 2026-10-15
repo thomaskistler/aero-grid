@@ -2,10 +2,13 @@
 
 | 1x2 | 2x1 | 2x2 |
 | --- | --- | --- |
-| ![Navigation at 1x2](../assets/panels/navigation/1x2.png) | ![Navigation at 2x1](../assets/panels/navigation/2x1.png) | ![Navigation at 2x2](../assets/panels/navigation/2x2.png) |
+| ![Navigation tape below distance at 1x2](../assets/panels/navigation/1x2.png) | ![Navigation tape beside distance at 2x1](../assets/panels/navigation/2x1.png) | ![Navigation tape below distance at 2x2](../assets/panels/navigation/2x2.png) |
+
+Native EdgeTX simulator captures with `showTape: true`, a synthetic GPS fix,
+and a computed distance of 318 m. Spans above are columns x rows.
 
 Shows the aircraft's GPS location, distance from home, and **north-up bearing
-from home toward the model**. The arrow is not aircraft heading, transmitter
+from home toward the model**. The tape is not aircraft heading, transmitter
 orientation, or a return-home instruction.
 
 The GPS source supplies model coordinates and the pilot/home coordinates
@@ -16,10 +19,9 @@ recorded by EdgeTX. AeroGrid does not set or reset home.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `source` | `GPS` | Exact EdgeTX GPS source name; must return a coordinate table. |
-| `presentation` | `auto` | `distance`, `bearing`, `compass`, `detailed`, or `auto`. |
-| `bearingFormat` | `degrees` | Numeric azimuth or `quadrant` notation. |
-| `showBearing` | presentation default | Independently show or hide the bearing text row. |
-| `showCoordinates` | presentation default | Independently show or hide the latitude/longitude row. |
+| `showTape` | `false` | Show the bearing tape instead of bearing text. |
+| `bearingFormat` | `degrees` | Numeric azimuth or `quadrant` notation when the tape is off. Hidden in the drawer when the tape is on. |
+| `showCoordinates` | `false` | Independently show or hide the latitude/longitude row. |
 | `warning` / `critical` | none | Distance thresholds in metres, counting upward. |
 | `label` | `NAV` | Panel heading. |
 | `accent` | `cyan` | Panel accent: `cyan`, `green`, `amber`, or `orange`. |
@@ -31,14 +33,48 @@ Unknown settings are rejected at load. Source names are case-sensitive.
 Distance from home is always the main reading, using the configured GPS
 source. Home is the position recorded by EdgeTX.
 
-Choose `distance`, `bearing`, `compass`, or `detailed` to add bearing,
-a compass, or coordinates. `auto` adds detail as panel size allows.
-`showBearing` and `showCoordinates` override the text choices.
+Enable **Show tape** to replace bearing text with a scrolling direction tape.
+The tape sits below the distance in square and tall panels, and to its right
+in wide panels. Resizing updates this arrangement immediately. Stacked tapes
+leave at least 10% of the panel width clear on each side; wide tapes leave
+at least 10% clear on the right.
 
-The north-up arrow points from home toward the model and disappears when
-bearing is unavailable. Choose degrees or quadrant notation, such as
-`N29°E`, with `bearingFormat`. Coordinates show the model's latitude and
-longitude. Set distance thresholds in metres if needed.
+The tape spans 210 degrees and scrolls beneath a fixed pointer. Only `N`, `E`,
+`S`, and `W` are labeled: with north centered, west and east are fully visible
+at the sides. Major ticks and aligned dots mark every 30 degrees; shorter
+minor ticks mark every 10 degrees. Cardinal labels replace the dots at those
+positions. Shading and highlighted edges give the tape a recessed appearance.
+
+When bearing is unavailable, the pointer, ticks, labels, and dots disappear,
+and the tape shows the reason instead of implying a due-north bearing.
+Stale data retains its last bearing with the panel's `STALE` indication.
+
+With the tape off, choose degrees or quadrant notation, such as `N29°E`,
+with `bearingFormat`. Bearing text and coordinates are shown only where they
+fit; a tape that cannot fit yields to the distance. Coordinates show the
+model's latitude and longitude. Set distance thresholds in metres if needed.
+
+### Layout schema and migration
+
+Current layout documents use `version: 3`. Versions 1 and 2 are upgraded in
+memory when loaded; an explicit editor Save persists the upgraded document.
+The old `presentation` and `showBearing` settings are removed during migration.
+
+| Old `presentation` | `showTape` | `showCoordinates` if not explicitly set |
+| --- | --- | --- |
+| `distance` or `bearing` | `false` | `false` |
+| `compass` | `true` | `false` |
+| `detailed` | `true` | `true` |
+| `auto` or omitted | `true` for 4+ cells; otherwise `false` | `true` for 6+ cells; otherwise `false` |
+
+An explicit `showCoordinates` value is preserved, as are the source, label,
+bearing format, thresholds, and accent. Legacy automatic choices are resolved
+using the saved grid span; resizing does not change those settings afterward.
+New widgets default to tape off and coordinates off.
+
+There is no longer a distance-only mode: configurations that previously hid
+both compass and bearing text now request bearing text. With the tape on,
+`showBearing` has no replacement because tape and bearing text are exclusive.
 
 ## States
 
@@ -60,7 +96,7 @@ at home, not that GPS is unavailable.
 
 ## Examples
 
-A compass with quadrant bearing and no coordinates:
+A tape with distance thresholds and no coordinates:
 
 ```yaml
 - id: location
@@ -70,13 +106,12 @@ A compass with quadrant bearing and no coordinates:
   colSpan: 2
   rowSpan: 2
   config:
-    presentation: compass
-    bearingFormat: quadrant
+    showTape: true
     warning: 500
     critical: 1000
 ```
 
-Coordinates without bearing text, retaining the compass:
+Tape and coordinates:
 
 ```yaml
 - id: position
@@ -86,12 +121,11 @@ Coordinates without bearing text, retaining the compass:
   colSpan: 2
   rowSpan: 2
   config:
-    presentation: compass
-    showBearing: false
+    showTape: true
     showCoordinates: true
 ```
 
-Both text rows without a compass:
+Quadrant bearing text and coordinates without a tape:
 
 ```yaml
 - id: position-text
@@ -101,6 +135,7 @@ Both text rows without a compass:
   colSpan: 2
   rowSpan: 2
   config:
-    presentation: bearing
+    showTape: false
+    bearingFormat: quadrant
     showCoordinates: true
 ```

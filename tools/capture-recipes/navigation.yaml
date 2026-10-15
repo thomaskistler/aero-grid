@@ -11,7 +11,7 @@ panels:
   2x2: {col: 2, row: 2, colSpan: 2, rowSpan: 2}
 config:
   source: GPS
-  presentation: auto
+  showTape: true
   label: NAV
   accent: cyan
 sample:

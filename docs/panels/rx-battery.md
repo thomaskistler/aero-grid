@@ -48,10 +48,10 @@ fit are dropped quietly (see [Visualization and details](#visualization-and-deta
 
 ### Layout schema and migration
 
-Current layout files use schema version 2. For example:
+Current layout files use schema version 3. For example:
 
 ```yaml
-version: 2
+version: 3
 grid:
   columns: 4
   rows: 4

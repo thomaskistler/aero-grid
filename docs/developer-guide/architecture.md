@@ -70,7 +70,10 @@ for the top-left EdgeTX menu button; fullscreen removes that reservation.
 Use the shared geometry instead of adding panel-specific menu offsets.
 
 `lib/package.lua` records package, runtime API, panel API, and layout versions.
-The current layout schema is version 2. The central layout module keeps an
+The current layout schema is version 3. Version 2-to-3 migrates navigation
+presentations to explicit tape and coordinate settings; see the
+[navigation migration table](../panels/navigation.md#layout-schema-and-migration).
+The central layout module keeps an
 adjacent migration registry: each source version provides a header step and a
 panel step for that version-to-next-version transition. A future version must
 add every intervening step; a layout is rejected if its source version is newer
@@ -142,7 +145,7 @@ Use `panels/flight-mode.lua` as a small working example and
 | `refreshInterval` | Desired foreground interval in 10 ms ticks; work still shares the host budget. |
 | `create(parent, rect, settings, services)` | Build LVGL objects, subscribe to data, and return private instance state. |
 | `refresh(context)` | Optional callback to update existing objects from snapshots. |
-| `update(context, rect, settings)` | Optional geometry/configuration update. |
+| `update(context, rect, settings, detailsOnly, placement)` | Optional geometry/configuration update. Host reflows and editor resizes pass the current grid placement as the fifth argument, leaving the internal `detailsOnly` argument unset. |
 | `background(context)` | Optional work when the dashboard is not visible. |
 | `event(context, event)` | Optional event handling; return true when consumed. |
 | `destroy(context)` | Optional cleanup of panel-owned references. |

@@ -36,7 +36,7 @@ end
 
 local function document()
     return {
-        version = 2,
+        version = 3,
         grid = { columns = 4, rows = 4 },
         panels = {
             {
@@ -141,7 +141,7 @@ local function testAddRemoveAndStrictSettings()
 end
 
 local function testRxBatteryFormAndSourceDrawers()
-    local input = { version = 2, grid = { columns = 4, rows = 4 }, panels = {} }
+    local input = { version = 3, grid = { columns = 4, rows = 4 }, panels = {} }
     local session = newSession(input)
     local added, addError = editor.add(session, "rx-battery")
     assert(added, addError)
@@ -194,7 +194,7 @@ local function testRxBatteryFormAndSourceDrawers()
 end
 
 local function testSinglePrecisionVoltageSteps()
-    local session = newSession({ version = 2, grid = { columns = 4, rows = 4 }, panels = {} })
+    local session = newSession({ version = 3, grid = { columns = 4, rows = 4 }, panels = {} })
     assert(editor.add(session, "rx-battery"))
     local settings = modules["rx-battery"].settings
     local critical
@@ -271,7 +271,7 @@ end
 local function testRestoreDefaultDoesNotApply()
     local session = newSession()
     local default = {
-        version = 2,
+        version = 3,
         grid = { columns = 4, rows = 4 },
         panels = {
             {

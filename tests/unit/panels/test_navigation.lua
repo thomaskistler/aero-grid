@@ -12,13 +12,15 @@ local function testPresentation()
     assertions.assertEqual(navigation.cardinal(270), "W")
     assertions.assertEqual(navigation.cardinal(nil), "")
 
-    assertions.assertEqual(navigation.presentation("auto", 1, 1), "distance")
-    assertions.assertEqual(navigation.presentation("auto", 2, 1), "bearing")
-    assertions.assertEqual(navigation.presentation("auto", 2, 2), "compass")
-    assertions.assertEqual(navigation.presentation("auto", 3, 2), "detailed")
-    assertions.assertEqual(navigation.presentation("distance", 4, 4), "distance")
-    assertions.assertEqual(navigation.presentationFor("detailed").showCoordinates, true)
-    assertions.assertEqual(navigation.presentationFor("distance").showDetail, false)
+    local host = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/panel_host.lua"))()
+    local settings, warnings = host.resolveSettings(navigation, {})
+    assertions.assertEqual(#warnings, 0)
+    assertions.assertEqual(settings.showTape, false)
+    assertions.assertEqual(settings.showCoordinates, false)
+    for _, removed in ipairs({ "presentation", "showBearing" }) do
+        local _, errors = host.resolveSettings(navigation, { [removed] = true })
+        assertions.assertEqual(#errors, 1)
+    end
 end
 
 local function testNavigationStates()

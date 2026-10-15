@@ -12,7 +12,7 @@
 #
 # It states no `theme` block, so it follows the widget's own Theme option and
 # shows the palette the dashboard beside it is using rather than a second one.
-version: 2
+version: 3
 grid:
   columns: 4
   rows: 4

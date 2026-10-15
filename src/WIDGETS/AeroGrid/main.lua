@@ -573,7 +573,7 @@ local function create(zone, widgetOptions, path)
             or package.version == ""
             or package.runtimeApi ~= 1
             or package.panelApi ~= 1
-            or package.layoutVersion ~= 2
+            or package.layoutVersion ~= 3
         )
     then
         package = nil

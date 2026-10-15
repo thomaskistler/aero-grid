@@ -2019,13 +2019,12 @@ local function arcSquare(centreX, centreY, radius)
     }
 end
 
---- A dial that cannot be read is not worth the pixels, so it is dropped
---- before the dominant reading is shrunk.
+--- Tape placement is responsive and yields when the reading cannot fit.
 local function testNavigationRegions()
     local navigation = loadModule("panels/navigation.lua")
     local resolved = theme.build("modern-dark")
     local fonts = theme.typography(2, 2)
-    local layout = navigation.presentationFor("detailed")
+    local layout = { showTape = true, showCoordinates = true }
 
     local large = navigation.regionsFor(
         resolved,
@@ -2035,29 +2034,17 @@ local function testNavigationRegions()
         fonts,
         { digits = "888.88", unit = "km" }
     )
-    -- **The compass is shed at this span, and that is the magnitude rule.**
-    -- The band chooses by ink now, so a 62 px band holds XXLSIZE rather than
-    -- DBLSIZE, and a distance drawn 29 px taller is wide enough that no pair
-    -- of slots separates it from the dial. The reading keeps its size and the
-    -- shape goes, which is the order the specification states and the user
-    -- chose on the radio. `2 x 2` is where it bites: at `3 x 2` and wider
-    -- there is room for both.
-    assertEqual(large.showCompass, false, "a 2 x 2 panel kept its compass beside an XXLSIZE distance")
-    -- **And the coordinates go too, because the quarter will not hold them.**
-    -- This panel draws two supporting rows and they are the only two-row
-    -- footer in the catalogue: 32 px of ink against a tertiary quarter of 31.
-    -- The band used to grow to fit them, which is what the fixed-bands rule
-    -- removed, so the second row is now granted by the band that has to hold
-    -- it rather than by the body band above it. A three-row span keeps both --
-    -- asserted below, so this is a threshold rather than a disappearance.
+    assertEqual(large.showTape, true)
     assertEqual(large.showCoordinates, true, "compact footer must retain coordinates at 2 x 2")
-    assertEqual(large.showDetail, true, "the bearing row went with the coordinates, which is not the rule")
+    assertEqual(large.showDetail, false, "bearing text must not accompany a tape")
+    assert(large.valueY + theme.fontAscent(large.value) <= large.tapeY)
+    assert(large.tapeY + large.tapeHeight <= large.coordinatesY)
 
     local tall = navigation.regionsFor(
         resolved,
         theme,
         { x = 0, y = 0, w = 238, h = 203 },
-        navigation.presentationFor("detailed"),
+        layout,
         theme.typography(2, 3),
         { digits = "888.88", unit = "km" }
     )
@@ -2067,19 +2054,14 @@ local function testNavigationRegions()
         resolved,
         theme,
         { x = 0, y = 0, w = 359, h = 134 },
-        layout,
+        { showTape = true, showCoordinates = true, wide = true },
         fonts,
         { digits = "888.88", unit = "km" }
     )
-    assertEqual(wide.showCompass, true, "a 3 x 2 panel has room for both and drew no compass")
-    -- The dial sits inside its own panel, measured from its centre.
-    local box = arcSquare(wide.centreX, wide.centreY, wide.radius)
-    assert(box.x >= 0 and box.y >= 0, "the dial was placed off the panel")
-    assert(box.x + box.w <= 359, "the dial overflowed the panel")
-    assert(box.y + box.h <= 134, "the dial overflowed the panel")
-    -- And never over the reading beside it. Measured on the panel that draws
-    -- both, which is no longer the one above.
-    assert(wide.pad + wide.valueWidth <= box.x, "the dial overlaps the value")
+    assertEqual(wide.showTape, true)
+    assert(wide.tapeX + wide.tapeWidth <= 359)
+    assert(wide.tapeY + wide.tapeHeight <= wide.coordinatesY)
+    assert(wide.valueX + wide.valueWidth <= wide.tapeX)
 
     -- A panel that cannot afford everything sheds the coordinates first and the
     -- dial next, and never the distance.
@@ -2101,8 +2083,7 @@ local function testNavigationRegions()
         fonts,
         { digits = "888.88", unit = "km" }
     )
-    assertEqual(tiny.showCompass, false, "an unreadable dial was kept")
-    assertEqual(tiny.radius, 0)
+    assertEqual(tiny.showTape, false, "an unreadable tape was kept")
     -- The *room*, not the drawn box. A panel this small cannot hold `888.88km`
     -- at any font on the ladder, so the box it draws in is wider than the
     -- panel and clamping happens downstream; what this pins is that shedding
@@ -2266,8 +2247,12 @@ local function testTelemetryContentFitsPanel()
             assertColumns("link-status", link, link.detailWidth, link.rowRightX, link.rowRightWidth)
         end
 
-        for _, presentation in ipairs({ "distance", "bearing", "compass", "detailed" }) do
-            local navLayout = navigationPanel.presentationFor(presentation)
+        for _, presentation in ipairs({ "bearing", "tape", "coordinates", "tape-coordinates" }) do
+            local navLayout = {
+                showTape = presentation == "tape" or presentation == "tape-coordinates",
+                showCoordinates = presentation == "coordinates" or presentation == "tape-coordinates",
+                wide = case.colSpan > case.rowSpan,
+            }
             local nav =
                 navigationPanel.regionsFor(resolved, theme, rect, navLayout, fonts, { digits = "888.88", unit = "km" })
             local what = "navigation/" .. presentation
@@ -2294,7 +2279,7 @@ local function testTelemetryContentFitsPanel()
             if nav.showCoordinates then
                 -- The coordinates sit below the bearing row, not on top of it.
                 assert(
-                    nav.detailY + theme.fontHeight(nav.rowFont) <= nav.coordinatesY,
+                    not nav.showDetail or nav.detailY + theme.fontHeight(nav.rowFont) <= nav.coordinatesY,
                     what .. " " .. case.name .. ": the coordinates row overlaps the bearing row"
                 )
                 assert(
@@ -2302,33 +2287,23 @@ local function testTelemetryContentFitsPanel()
                     what .. " " .. case.name .. ": the coordinates row overflows the panel"
                 )
             end
-            if nav.showCompass then
-                local box = arcSquare(nav.centreX, nav.centreY, nav.radius)
-                assert(box.x >= 0 and box.y >= 0, what .. " " .. case.name .. ": the dial was placed off the panel")
+            if nav.showTape then
+                local box = { x = nav.tapeX, y = nav.tapeY, w = nav.tapeWidth, h = nav.tapeHeight }
+                assert(box.x >= 0 and box.y >= 0, what .. " " .. case.name .. ": tape was placed off the panel")
                 assert(
                     box.x + box.w <= case.w and box.y + box.h <= case.h,
-                    what .. " " .. case.name .. ": the dial overflows the panel"
+                    what .. " " .. case.name .. ": tape overflows the panel"
                 )
-                assert(nav.pad + nav.valueWidth <= box.x, what .. " " .. case.name .. ": the dial overlaps the reading")
-
-                -- **And the dial clears the rows beneath it.** This is the one the
-                -- catalogue had no check for: a dial is not a label, so the
-                -- integration suite's collision check sees it, but no shipped layout
-                -- draws this panel with two supporting rows *and* a compass, so
-                -- nothing exercised the pair. The dial used to be sized against
-                -- whatever vertical room was left and stand from the content top
-                -- downward, which put it 44 by 2 pixels through the row below at
-                -- `2 x 2` and `4 x 2`.
-                if nav.showDetail then
+                if navLayout.wide then
+                    assert(nav.valueX + nav.valueWidth <= box.x, what .. ": tape overlaps reading horizontally")
+                else
                     assert(
-                        box.y + box.h <= nav.detailY,
-                        what
-                            .. " "
-                            .. case.name
-                            .. ": the dial runs "
-                            .. (box.y + box.h - nav.detailY)
-                            .. " px into the supporting row beneath it"
+                        nav.valueY + theme.fontAscent(nav.value) <= box.y,
+                        what .. ": tape overlaps reading vertically"
                     )
+                end
+                if nav.showCoordinates then
+                    assert(box.y + box.h <= nav.coordinatesY, what .. ": tape overlaps coordinates")
                 end
             end
         end
@@ -2359,7 +2334,7 @@ local function testTelemetryContentFitsPanel()
         resolved,
         theme,
         squeezed,
-        navigationPanel.presentationFor("detailed"),
+        { showTape = false, showCoordinates = true, wide = true },
         wideFonts,
         { digits = navigationPanel.DIGITS, unit = navigationPanel.UNIT }
     )
