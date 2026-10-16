@@ -21,7 +21,10 @@ memory, and font callback references. The `review-output` layout participates.
 A dedicated output-panel test warms all 32 channel rows, then measures 100 cycles
 of changing outputs/trims, loss/recovery, name and trim ambiguity, channel-range
 changes, display toggles, and narrow/wide reflows. It requires retained growth
-below 1 KiB and second-half growth below 0.5 KiB, with no live-object growth.
+below 1 KiB and second-half growth below 0.25 KiB, with no live-object growth.
+Each checkpoint samples a polling window and compares its post-GC low-water
+mark, so temporary metadata-scan tables at different scheduling phases are
+not mistaken for retained growth.
 These mock checks catch regressions; they do not replace native-radio soak tests.
 
 ## Prepare a disposable SD image

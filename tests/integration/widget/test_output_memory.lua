@@ -67,7 +67,19 @@ local function checkpoint()
     if baselineObjects then
         assert(#fixture.lvglMock.objects == baselineObjects, "output panel accumulated live LVGL objects")
     end
-    return collectgarbage("count"), #fixture.lvglMock.objects
+    -- Metadata scans retain temporary tables between round-robin visits.
+    -- Compare low-water marks across a polling window, not arbitrary phases.
+    local minimum = collectgarbage("count")
+    for _ = 1, 2 * #context.serviceRuntime.byId.control.entries do
+        pump(1)
+        collectgarbage("collect")
+        collectgarbage("collect")
+        minimum = math.min(minimum, collectgarbage("count"))
+        if baselineObjects then
+            assert(#fixture.lvglMock.objects == baselineObjects, "output panel accumulated live LVGL objects")
+        end
+    end
+    return minimum, #fixture.lvglMock.objects
 end
 
 local function cycle(number)
@@ -112,7 +124,7 @@ for number = 1, 100 do
     end
 end
 assert(
-    final - midpoint < 0.5,
+    final - midpoint < 0.25,
     string.format("output retained memory grew %.3f KiB during the final 50 cycles", final - midpoint)
 )
 print(
