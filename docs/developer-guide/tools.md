@@ -31,7 +31,7 @@ build/capture-venv/bin/python tools/capture-panels.py --all
 
 Choose **one** of `--panel <type>`, `--recipe <path>`, or `--all`.
 `make capture-setup` installs pinned PyYAML in a separate environment.
-All eleven user-facing panel types have bundled recipes.
+All twelve user-facing panel types have bundled recipes.
 
 Each panel writes to `build/doc-capture/<panel>/`:
 

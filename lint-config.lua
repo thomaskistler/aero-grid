@@ -40,6 +40,7 @@ return {
             "getFieldInfo",
             "getFlightMode",
             "getGeneralSettings",
+            "getOutputValue",
             "getRSSI",
             "getTime",
             "getValue",

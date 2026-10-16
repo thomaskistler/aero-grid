@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
---- Effective trim positions, global variables, and switch conditions.
+--- Effective trims, channel outputs, global variables, and switch conditions.
 ---
 --- Both are resolved by EdgeTX rather than by AeroGrid. A trim is read through
 --- a selectable trim source, so EdgeTX applies flight-mode trim inheritance,
@@ -43,9 +43,9 @@
 local controlService = { RUNTIME_API = 1 }
 controlService.__index = controlService
 
---- Ticks of 10ms between updates. Trims move under the pilot's thumb, so this
---- is the same rate a telemetry readout uses.
+--- Ticks of 10ms between ordinary control subscription updates.
 local INTERVAL = 20
+local OUTPUT_INTERVAL = 10
 
 --- Subscriptions refreshed per update, served round robin.
 local POLL_CAP = 6
@@ -80,15 +80,215 @@ function controlService.new(env, support)
         revision = 0,
         count = 0,
         due = 0,
+        controlsDue = 0,
         env = env,
         support = support,
         entries = {},
         cursor = 1,
         trims = {},
+        outputs = {},
+        outputEntries = {},
         variables = {},
         switches = {},
         variableEntries = {},
     }, controlService)
+end
+
+local AXES = { "rud", "ele", "thr", "ail" }
+
+local function finite(value)
+    return type(value) == "number" and value == value and math.abs(value) < math.huge
+end
+
+local function stickTrim(name)
+    for _, axis in ipairs(AXES) do
+        if name == axis then
+            return "trim-" .. axis
+        end
+    end
+end
+
+local function enabled(env, line)
+    local mask = line.flightModes or 0
+    local mode = env.getFlightMode and env.getFlightMode() or 0
+    if math.floor(mask / 2 ^ mode) % 2 == 1 then
+        return false
+    end
+    local switch = line.switch or 0
+    return switch == 0 or env.getSwitchValue and env.getSwitchValue(switch) == true
+end
+
+local function sourceInfo(env, source)
+    return env.getFieldInfo and env.getFieldInfo(source)
+end
+
+local function acceptTrim(scan, candidate)
+    if candidate then
+        if scan.trim and scan.trim ~= candidate then
+            scan.ambiguous = true
+        end
+        scan.trim = candidate
+    end
+end
+
+local function nonempty(value)
+    return type(value) == "string" and value ~= "" and value or nil
+end
+
+local function acceptOutputName(scan, candidate)
+    if not candidate or scan.name and scan.name ~= candidate then
+        scan.nameAmbiguous = true
+    end
+    scan.name = candidate
+end
+
+--- Resolve one mix/input line per visit so even complex models have bounded cost.
+--- EdgeTX api_model.cpp exposes the disable bit as carryTrim, and negates
+--- ExpoData.trimSource: -1 = off, 0 = source trim, 1..4 = R/E/T/A.
+function controlService:scanOutputMetadata(entry)
+    local env = self.env
+    if not env.getMix then
+        entry.state.trim, entry.trimName, entry.scan, entry.sourceName = nil, nil, nil, nil
+        entry.state.nameReady = true
+        return
+    end
+    local scan = entry.scan
+    if not scan then
+        scan = { mixLine = 0 }
+        entry.scan = scan
+    end
+
+    if scan.input then
+        local line = env.getInput(scan.input - 1, scan.inputLine)
+        scan.inputLine = scan.inputLine + 1
+        if line and scan.inputLine <= 64 then
+            if not enabled(env, line) then
+                return
+            end
+            local origin = sourceInfo(env, line.source)
+            if not scan.inputNamed then
+                acceptOutputName(
+                    scan,
+                    nonempty(line.inputName) or nonempty(line.name) or origin and nonempty(origin.name)
+                )
+            end
+            if not scan.inputCarriesTrim then
+                return
+            end
+            local candidate
+            if line.trimSource == 0 then
+                candidate = origin and stickTrim(origin.name)
+            elseif type(line.trimSource) == "number" and AXES[line.trimSource] then
+                candidate = "trim-" .. AXES[line.trimSource]
+            end
+            if not candidate or scan.inputTrim and scan.inputTrim ~= candidate then
+                scan.inputAmbiguous = true
+            end
+            scan.inputTrim = candidate
+            return
+        end
+        if line then
+            scan.inputAmbiguous = true
+            scan.nameAmbiguous = true
+        end
+        if scan.inputAmbiguous then
+            scan.ambiguous = true
+        else
+            acceptTrim(scan, scan.inputTrim)
+        end
+        scan.input, scan.inputTrim, scan.inputAmbiguous = nil, nil, nil
+        scan.inputNamed, scan.inputCarriesTrim = nil, nil
+        return
+    end
+
+    local line = env.getMix(entry.state.index, scan.mixLine)
+    scan.mixLine = scan.mixLine + 1
+    if not line or scan.mixLine > 64 then
+        local name = not line and not scan.ambiguous and scan.trim or nil
+        if name ~= entry.trimName then
+            entry.trimName = name
+            entry.state.trim = name and self:trim(name) or nil
+        end
+        entry.sourceName = not line and not scan.nameAmbiguous and scan.name or ""
+        entry.state.nameReady = true
+        entry.scan = nil
+        return
+    end
+    if not enabled(env, line) then
+        return
+    end
+    if line.multiplex == 2 then
+        scan.trim, scan.ambiguous = nil, nil
+        scan.name, scan.nameAmbiguous = nil, nil
+    end
+    if line.weight == 0 then
+        return
+    end
+    local info = sourceInfo(env, line.source)
+    local input = info and type(info.name) == "string" and string.match(info.name, "^input(%d+)$")
+    local mixName = nonempty(line.name)
+    if mixName then
+        acceptOutputName(scan, mixName)
+    elseif not input then
+        acceptOutputName(scan, info and nonempty(info.name))
+    end
+    if info and line.carryTrim == false then
+        acceptTrim(scan, stickTrim(info.name))
+    end
+    if input and env.getInput then
+        scan.input, scan.inputLine = tonumber(input), 0
+        scan.inputNamed, scan.inputCarriesTrim = mixName ~= nil, line.carryTrim == false
+    elseif input and not mixName then
+        scan.nameAmbiguous = true
+    end
+end
+
+--- Cheap position read, done for every output on each update so bars track
+--- the sticks; names and trim association are polled round robin instead.
+function controlService:readOutputValue(entry)
+    local state, env = entry.state, self.env
+    local raw = env.getOutputValue and env.getOutputValue(state.index)
+    state.available = finite(raw)
+    state.state = state.available and "normal" or "unavailable"
+    if state.available then
+        state.raw, state.fraction = raw, raw / RESX
+    end
+end
+
+function controlService:readOutput(entry)
+    local state, env = entry.state, self.env
+    local mode = env.getFlightMode and env.getFlightMode() or 0
+    if mode ~= entry.flightMode then
+        entry.flightMode = mode
+        state.trim, entry.trimName, entry.scan, entry.sourceName = nil, nil, nil, nil
+    end
+    local details = env.getOutput and env.getOutput(state.index)
+    self:scanOutputMetadata(entry)
+    state.name = details and nonempty(details.name) or entry.sourceName or ""
+    if details and nonempty(details.name) then
+        state.nameReady = true
+    end
+end
+
+--- Final post-limit/post-reversal servo output, not getValue("chN"), which
+--- reads the mixer channel before output limits (EdgeTX api_general.cpp).
+function controlService:output(index)
+    assert(type(index) == "number" and index >= 0 and index < 32 and index == math.floor(index), "invalid output index")
+    if not self.outputs[index] then
+        local entry = self:add({
+            index = index,
+            name = "",
+            nameReady = false,
+            available = false,
+            raw = 0,
+            fraction = 0,
+            state = "unavailable",
+        }, controlService.readOutput)
+        self.outputs[index] = entry.view
+        self.outputEntries[#self.outputEntries + 1] = entry
+        self.interval = OUTPUT_INTERVAL
+    end
+    return self.outputs[index]
 end
 
 local function firmwareSwitchName(name, env)
@@ -421,7 +621,13 @@ local function readEntry(service, entry, now)
 end
 
 function controlService:update(now)
-    self.cursor = self.support.roundRobin(self.entries, self.cursor, POLL_CAP, readEntry, self, now)
+    for _, entry in ipairs(self.outputEntries) do
+        self:readOutputValue(entry)
+    end
+    if #self.outputEntries == 0 or now >= self.controlsDue then
+        self.controlsDue = now + INTERVAL
+        self.cursor = self.support.roundRobin(self.entries, self.cursor, POLL_CAP, readEntry, self, now)
+    end
 end
 
 --- Round a signed percentage half away from zero.
@@ -446,7 +652,14 @@ function controlService:describe(rows)
 
     for _, entry in ipairs(self.entries) do
         local state = entry.state
-        if state.name and state.fraction ~= nil then
+        if entry.read == controlService.readOutput then
+            index = row(
+                rows,
+                index,
+                "CH" .. tostring(state.index + 1),
+                state.available and (tostring(percentOf(state.fraction)) .. "%") or "N/A"
+            )
+        elseif state.name and state.fraction ~= nil then
             local text = state.available and string.format("%d %d%%", state.value, percentOf(state.fraction)) or "N/A"
             if state.threePosition then
                 text = text .. " 3P"

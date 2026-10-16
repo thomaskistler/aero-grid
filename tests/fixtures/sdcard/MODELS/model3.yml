@@ -736,6 +736,22 @@ screenData:
                         type: Unsigned
                         value:
                            unsignedValue: 1
+   5:
+      LayoutId: Layout1x1AM
+      layoutData:
+         zones:
+            0:
+               widgetName: AeroGrid
+               widgetData:
+                  options:
+                     0:
+                        type: Unsigned
+                        value:
+                           unsignedValue: 22
+                     1:
+                        type: Unsigned
+                        value:
+                           unsignedValue: 1
 topbarData:
    zones:
       3:

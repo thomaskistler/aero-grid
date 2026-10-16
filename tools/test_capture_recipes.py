@@ -99,6 +99,19 @@ class CaptureRecipeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Missing sample"):
             self.load(recipe)
 
+    def test_output_samples(self):
+        recipe = load_recipe(RECIPE_DIR / "output.yaml")
+        self.assertIn("getOutputValue", fixture_inputs(recipe))
+        self.assertIn("carryTrim = false", fixture_inputs(recipe))
+        self.assertIn("feed.trim.available", readiness(recipe))
+        recipe["sample"]["outputs"] = [0]
+        with self.assertRaisesRegex(ValueError, "four raw"):
+            self.load(recipe)
+        recipe = load_recipe(RECIPE_DIR / "output.yaml")
+        recipe["sample"]["trims"][0] = 4097
+        with self.assertRaises(ValueError):
+            self.load(recipe)
+
     def test_rx_numeric_voltage_needs_no_shape_selector(self):
         recipe = load_recipe(RECIPE_DIR / "rx-battery.yaml")
         self.assertNotIn("sourceType", recipe["config"])

@@ -1,0 +1,11 @@
+version: 3
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: outputs
+    type: output
+    col: 0
+    row: 0
+    colSpan: 4
+    rowSpan: 4

@@ -91,6 +91,7 @@ function services.environment(overrides)
 
     return {
         getValue = callable(overrides.getValue) or callable(getValue),
+        getOutputValue = callable(overrides.getOutputValue) or callable(getOutputValue),
         getFieldInfo = callable(overrides.getFieldInfo) or callable(getFieldInfo),
         getRSSI = callable(overrides.getRSSI) or callable(getRSSI),
         getFlightMode = callable(overrides.getFlightMode) or callable(getFlightMode),
@@ -106,6 +107,9 @@ function services.environment(overrides)
         getInfo = callable(modelApi.getInfo),
         getTimer = callable(modelApi.getTimer),
         getSensor = callable(modelApi.getSensor),
+        getOutput = callable(modelApi.getOutput),
+        getMix = callable(modelApi.getMix),
+        getInput = callable(modelApi.getInput),
         getGlobalVariable = callable(modelApi.getGlobalVariable),
         setGlobalVariable = callable(modelApi.setGlobalVariable),
         getGlobalVariableDetails = callable(modelApi.getGlobalVariableDetails),

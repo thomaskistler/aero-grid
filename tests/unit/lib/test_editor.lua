@@ -515,6 +515,33 @@ local function testNestedStateLists()
     modules.state = nil
 end
 
+local function testAllPanelDrawersStartWithLabel()
+    for _, entry in ipairs(editor.CATALOG) do
+        local module = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/" .. entry.type .. ".lua"))()
+        modules[entry.type] = module
+        local input = document()
+        input.panels[1].type = entry.type
+        input.panels[1].config = {}
+        local session = newSession(input)
+        local fields = assert(editor.formFields(session))
+        local hasLabel = false
+        for _, setting in ipairs(module.settings or {}) do
+            hasLabel = hasLabel or setting.key == "label"
+        end
+        if hasLabel then
+            assert(fields[1].key == "label", entry.type .. " drawer must start with Label")
+            local count = 0
+            for _, field in ipairs(fields) do
+                if field.key == "label" then
+                    count = count + 1
+                end
+            end
+            assert(count == 1, entry.type .. " drawer must not duplicate Label")
+        end
+    end
+end
+
+testAllPanelDrawersStartWithLabel()
 testCatalogAlphabeticalOrder()
 testNestedStateLists()
 testReorderingWithEmptySpace()

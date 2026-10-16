@@ -379,13 +379,13 @@ end
 local function testSettingsVocabulary()
     local catalog = settingsCatalog()
     local kinds = panelTypes()
-    -- Fourteen panels ship: eleven instruments, two diagnostics, and the
+    -- Fifteen panels ship: twelve instruments, two diagnostics, and the
     -- fixed theme showcase. `heartbeat` and
     -- `placeholder` were built to prove
     -- the host contract and are fixtures under `tests/fixtures/panels`, so
     -- they are not read here: the vocabulary rules below are about what a
     -- person configures on a radio.
-    assertEqual(#kinds, 14, "the catalogue changed size; expected eleven instruments and three utility panels")
+    assertEqual(#kinds, 15, "the catalogue changed size; expected twelve instruments and three utility panels")
 
     for kind, settings in pairs(catalog) do
         local declared = {}
@@ -778,7 +778,7 @@ local function testPanelDocumentationLoads()
     assertEqual(documented + owed, #kinds, "every panel is either documented or listed as owing a page")
     assertEqual(
         documented,
-        11,
+        12,
         "the number of documented panels changed; update this count as the" .. " review works through the catalogue"
     )
 end

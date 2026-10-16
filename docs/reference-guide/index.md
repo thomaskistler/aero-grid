@@ -4,6 +4,7 @@ Choose a panel below for visual examples, settings, behavior, and configuration 
 
 | Panel | Purpose |
 | --- | --- |
+| [`output`](../panels/output.md) | Channel outputs with automatically matched stick-trim arrows. |
 | [`metric`](../panels/metric.md) | Up to three numeric readings, including telemetry and global variables. |
 | [`state`](../panels/state.md) | Up to three readings selected by ordered switch conditions. |
 | [`flight-timer`](../panels/flight-timer.md) | An EdgeTX model timer. |

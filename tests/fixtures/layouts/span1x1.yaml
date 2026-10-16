@@ -178,8 +178,7 @@ panels:
       section: identity
       label: Host
 
-  # The same panel three times, differing only in its visualization, so the
-  # three can be compared without remembering what the fourth looked like.
+  # Two metric visualizations can be compared directly.
   - id: g-metric-radial
     type: metric
     col: 1
@@ -210,17 +209,11 @@ panels:
           rangeMax: 100
       visual: bar
 
-  - id: g-metric-plain
-    type: metric
+  - id: g-output
+    type: output
     col: 3
     row: 3
     colSpan: 1
     rowSpan: 1
     config:
-      metrics:
-        - source: RQly
-          label: Plain
-          precision: 0
-          rangeMin: 0
-          rangeMax: 100
-      visual: none
+      label: Output

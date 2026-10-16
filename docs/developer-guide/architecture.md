@@ -11,7 +11,7 @@ EdgeTX widgets.
 | --- | --- |
 | `src/WIDGETS/AeroGrid/main.lua` | EdgeTX entry points, native options, event routing, and callback scheduling. |
 | `src/WIDGETS/AeroGrid/lib/` | Layout parsing/storage, grid geometry, panel hosting, shared services, rendering primitives, themes, and editor modules. |
-| `src/WIDGETS/AeroGrid/panels/` | Eleven user-facing panel types plus `host-diagnostics`, `service-probe`, and the fixed-data `theme-showcase`. |
+| `src/WIDGETS/AeroGrid/panels/` | Twelve user-facing panel types plus `host-diagnostics`, `service-probe`, and the fixed-data `theme-showcase`. |
 | `src/WIDGETS/AeroGrid/layouts/` | Shipped layouts. |
 | `tests/fixtures/layouts/development/` | Simulator and review layouts used by tests and disposable SD images. |
 | `src/WIDGETS/AeroGrid/assets/` | Runtime editor icon and its license. |
@@ -102,7 +102,7 @@ does not consume scheduled work.
 | --- | --- |
 | `telemetry_service.lua` | Source resolution, readings, units, precision, freshness, and link status. |
 | `model_service.lua` | Model identity/image, timers, flight mode, TX voltage, and flight history/audio support. |
-| `control_service.lua` | Trims, switch conditions, GV snapshots, and verified GV9 FM0 increments. |
+| `control_service.lua` | Trims, final channel outputs and their trim associations, switch conditions, GV snapshots, and verified GV9 FM0 increments. |
 | `extrema_service.lua` | Sensor extrema and dashboard flight-session tracking. |
 | `navigation_service.lua` | GPS fix, pilot/home position, distance, and north-up bearing. |
 | `services.lua` | Environment/snapshots, subscription registration, and bounded scheduling/update dispatch. |
@@ -189,6 +189,8 @@ present them; `editor_controller.lua` coordinates them with the live dashboard.
 `layout_store.lua` handles saving, backups, and user-versus-shipped
 resolution; `layout_registry.lua` maintains name-to-choice positions.
 Keep these boundaries intact when changing save behavior.
+Panel settings drawers put **Label** first when declared, preserving the
+declaration order of all remaining controls.
 
 Editing does not overwrite bundled layouts. Save writes to `/AEROGRID/layouts/`,
 and Save As creates a named user layout. The layout registry is initialized

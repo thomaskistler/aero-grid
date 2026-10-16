@@ -5,6 +5,7 @@
 local editor = { RUNTIME_API = 1 }
 
 editor.CATALOG = {
+    { type = "output", label = "Channel output" },
     { type = "flight-counter", label = "Flight counter" },
     { type = "flight-mode", label = "Flight mode" },
     { type = "flight-timer", label = "Flight timer" },
@@ -880,6 +881,12 @@ function editor.formFields(session)
                     }
                 end
             end
+        end
+    end
+    for index, field in ipairs(fields) do
+        if field.key == "label" then
+            table.insert(fields, 1, table.remove(fields, index))
+            break
         end
     end
     return fields, config, module

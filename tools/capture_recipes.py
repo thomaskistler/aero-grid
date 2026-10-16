@@ -10,9 +10,9 @@ import yaml
 
 RECIPE_DIR = Path(__file__).with_name("capture-recipes")
 PANELS = ("trim-panel", "flight-timer", "metric", "flight-mode", "tx-battery",
-              "model-identity", "rx-battery", "link-status", "navigation", "state", "flight-counter")
+              "model-identity", "rx-battery", "link-status", "navigation", "state", "flight-counter", "output")
 SYNTHETIC_PANELS = ("metric", "tx-battery", "rx-battery", "link-status", "navigation", "state",
-                    "flight-counter")
+                    "flight-counter", "output")
 
 
 class RecipeLoader(yaml.SafeLoader):
@@ -195,7 +195,14 @@ def load_recipe(path):
     if not isinstance(config, dict):
         raise ValueError("config must be a mapping")
     config_value(config)
-    if recipe["panel"] == "trim-panel":
+    if recipe["panel"] == "output":
+        fields(sample, ("outputs", "trims"))
+        for key, limit in (("outputs", 1536), ("trims", 4096)):
+            if not isinstance(sample[key], list) or len(sample[key]) != 4:
+                raise ValueError(f"sample.{key} must contain four raw channel/trim values")
+            for value in sample[key]:
+                integer(value, -limit, limit, f"sample.{key} value")
+    elif recipe["panel"] == "trim-panel":
         fields(sample, ("aileron", "elevator", "rudder"))
         for key, value in sample.items():
             integer(value, -512, 512, f"sample.{key}")
@@ -322,6 +329,15 @@ def state_sample(sample, switch):
 
 def readiness(recipe):
     sample = recipe["sample"]
+    if recipe["panel"] == "output":
+        return """            if #entry.instance.rows < entry.instance.area.count then return end
+            local expected = """ + lua_value(sample["outputs"]) + """
+            for _, row in ipairs(entry.instance.rows) do
+                local feed = row.feed
+                if not feed or not feed.available or feed.raw ~= (expected[feed.index + 1] or 0) then return end
+                if feed.index < 4 and (not feed.trim or not feed.trim.available) then return end
+            end
+"""
     if recipe["panel"] == "flight-counter":
         return f"""            local feed = entry.instance.feed
             if not feed or not feed.available or feed.raw ~= {sample['count']}
@@ -426,6 +442,32 @@ def fixture_inputs(recipe):
     """Synthetic firmware API inputs, installed only in the isolated service environment."""
     if recipe["panel"] not in SYNTHETIC_PANELS:
         return None
+    if recipe["panel"] == "output":
+        return """local names = { "AIL", "ELE", "THR", "RUD" }
+local axes = { "ail", "ele", "thr", "rud" }
+local sources, trims = {}, {}
+local outputs = """ + lua_value(recipe["sample"]["outputs"]) + """
+local trimValues = """ + lua_value(recipe["sample"]["trims"]) + """
+for index, axis in ipairs(axes) do
+    sources[index] = assert(getFieldInfo(axis)).id
+    trims[assert(getFieldInfo("trim-" .. axis)).id] = trimValues[index]
+end
+return {
+    getOutputValue = function(index) return outputs[index + 1] or 0 end,
+    getValue = function(source)
+        if trims[source] ~= nil then return trims[source] end
+        return getValue(source)
+    end,
+    model = setmetatable({
+        getOutput = function(index) return { name = names[index + 1] or "" } end,
+        getMix = function(index, line)
+            if index < 4 and line == 0 then
+                return { source = sources[index + 1], carryTrim = false, weight = 100 }
+            end
+        end,
+    }, { __index = model }),
+}
+"""
     if recipe["panel"] == "flight-counter":
         # Each gallery instance qualifies once against the isolated real GV9.
         initial = recipe["sample"]["count"] - len(recipe["panels"])
