@@ -58,10 +58,12 @@ jobs:
           luac5.3 -v
           lua-language-server --version
 
-      # `check` depends on `test`, so this runs the firmware-like behaviour
-      # suites and then parses every Lua file with the 5.3 compiler.
-      - name: Test and syntax check
-        run: make check LUA_COMPILER=luac5.3
+      # Run both public targets explicitly. `check` includes the tests too, so
+      # the second invocation also verifies that the combined target works.
+      - name: Run tests and checks
+        run: |
+          make test
+          make check LUA_COMPILER=luac5.3
 
       - name: Test release packaging
         run: python3 -m unittest discover -s tools -p 'test_release_*.py'

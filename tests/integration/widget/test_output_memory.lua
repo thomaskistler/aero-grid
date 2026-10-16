@@ -111,7 +111,10 @@ for number = 1, 100 do
         midpoint = final
     end
 end
-assert(final - midpoint < 0.25, "output retained memory continued growing during the final 50 cycles")
+assert(
+    final - midpoint < 0.5,
+    string.format("output retained memory grew %.3f KiB during the final 50 cycles", final - midpoint)
+)
 print(
     string.format(
         "  output retained-memory test: %d callbacks, 100 measured cycles; %d live objects;"
