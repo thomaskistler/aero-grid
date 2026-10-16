@@ -3,6 +3,9 @@
 local root = assert(..., "repository root argument is required")
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
 local definition = fixture.module("main.lua")
+function getOutputValue(index)
+    return index * 32
+end
 local context = fixture.createLoaded(nil, { Layout = "resource-initial", Theme = "modern-dark" })
 local zone = context.zone
 
@@ -22,12 +25,21 @@ local function finish()
     for _ = 1, 10 do
         refresh()
     end
+    local output = fixture.instanceOf(context, "outputs")
+    if output then
+        for _ = 1, 150 do
+            refresh()
+        end
+        assert(output.showRows == output.area.count, "output rows did not finish mounting")
+        assert(output.rows[1].feed.available, "output service was not exercised")
+    end
     assert(#context.errors == 0, table.concat(context.errors, "\n"))
     fixture.lvglMock.releaseClearedObjects()
     collectgarbage("collect")
 end
 
-local dashboards = { "main", "review-metric", "review-navigation", "Diagnostics", "services", "services2" }
+local dashboards =
+    { "main", "review-metric", "review-navigation", "review-output", "Diagnostics", "services", "services2" }
 local baseline = {}
 local maxGrowth = 0
 local peakObjects = 0
@@ -81,8 +93,9 @@ end
 
 print(
     string.format(
-        "  mock resource stability: 120 reloads after warm-up, peak %d objects, growth %.1f KiB;"
+        "  mock resource stability: %d reloads after warm-up, peak %d objects, growth %.1f KiB;"
             .. " worst average %.3f ms/refresh (%s)",
+        20 * #dashboards,
         peakObjects,
         maxGrowth,
         worstRefreshMs,
