@@ -301,19 +301,21 @@ local function testResizePreservesSpanDependentSettings()
     local session = assert(editor.new(input, grid, layout, panelHost, function()
         return flightMode
     end))
-    local ok, err = editor.resize(session, 0, -1)
-    assert(not ok and string.find(err, "showIndex", 1, true), "incompatible resize reports setting constraint")
-    assert(session.draft.panels[1].rowSpan == 2 and not session.dirty)
-    assert(session.draft.panels[1].config.showIndex == true, "resize must not change user settings")
+    local compactSize, compactPosition = false, false
     for _, size in ipairs(editor.sizes(session)) do
-        assert(not string.match(size, "x1$"), "picker must exclude incompatible spans")
+        compactSize = compactSize or string.match(size, "x1$") ~= nil
     end
     for _, position in ipairs(editor.resizePositions(session, false, false)) do
-        assert(position.rowSpan >= 2, "corner candidates must honor settings")
+        compactPosition = compactPosition or position.rowSpan == 1
     end
-    assert(editor.setValue(session, "showIndex", false))
-    assert(editor.resize(session, 0, -1), "explicitly disabling detail permits single-row resize")
-    assert(session.draft.panels[1].rowSpan == 1)
+    assert(compactSize, "picker must include spans that shed optional detail")
+    assert(compactPosition, "corner candidates must include compact spans")
+    assert(editor.resize(session, 0, -1), "optional detail must not prevent a single-row resize")
+    assert(session.draft.panels[1].rowSpan == 1 and session.dirty)
+    assert(session.draft.panels[1].config.showIndex == true, "resize must preserve optional detail")
+    assert(editor.resize(session, 0, 1), "enlargement must restore room for detail")
+    assert(session.draft.panels[1].rowSpan == 2)
+    assert(session.draft.panels[1].config.showIndex == true)
 
     flightMode.validateSettings = function()
         error("broken validator")

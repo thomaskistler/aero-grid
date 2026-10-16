@@ -134,3 +134,44 @@ for _, panelType in ipairs({
 end
 fixture.lvglMock.setAppMode(false)
 fixture.lvglMock.setFullScreen(false)
+
+for _, subject in ipairs({
+    {
+        dashboard = "review-flight-mode",
+        id = "one-by-one-plain",
+        module = "flight-mode",
+        preference = "showIndex",
+        label = "detailLabel",
+        text = "detail",
+    },
+    {
+        dashboard = "review-model-identity",
+        id = "corner-name",
+        module = "model-identity",
+        preference = "showLabels",
+        label = "labelsLabel",
+        text = "labelsText",
+    },
+}) do
+    fixture.reset()
+    local context = fixture.createLoaded(nil, { Layout = subject.dashboard, Theme = "modern-dark" })
+    fixture.pump(context, 40)
+    equal(#context.errors, 0, table.concat(context.errors, "; "))
+    for _, notice in ipairs(context.notices) do
+        assert(not string.find(notice.text, subject.preference, 1, true), notice.text)
+    end
+    local panel = fixture.instanceOf(context, subject.id)
+    local module = fixture.module("panels/" .. subject.module .. ".lua")
+    equal(panel.settings[subject.preference], true)
+    equal(panel[subject.label].hidden, true, subject.module .. ": compact detail is quietly shed")
+    for _ = 1, 2 do
+        module.update(panel, { x = 0, y = 0, w = 238, h = 134 })
+        module.refresh(panel)
+        equal(panel[subject.label].hidden, false, subject.module .. ": detail returns when space permits")
+        assert(panel[subject.text] ~= "", subject.module .. ": restored detail must be populated")
+        module.update(panel, { x = 0, y = 0, w = 117, h = 65 })
+        module.refresh(panel)
+        equal(panel[subject.label].hidden, true, subject.module .. ": detail is shed again")
+        equal(panel.settings[subject.preference], true, subject.module .. ": preference is preserved")
+    end
+end

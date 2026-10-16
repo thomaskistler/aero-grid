@@ -88,39 +88,6 @@ local function formsFor(widest)
     return { widest }
 end
 
---- Refuse a mode number on a panel that has nowhere to put one.
----
---- The mode number is a supporting row, and the shared ladder grants no
---- supporting row at any single-row span: a 65 pixel panel has no room under
---- the reading whatever its width, so `showIndex` on a `4 x 1` is as inert as
---- on a `1 x 1`. It used to be accepted and ignored, which is the worst of
---- the three options, because a layout author reads the setting back and
---- believes it.
----@param settings AeroGridFlightModeSettings
----@param span? table Placement span, when the host knows it.
----@param config? table What the layout actually stated.
----@return string[] messages
-function flightMode.validateSettings(settings, span, config)
-    local messages = {}
-    -- Only a layout that asked for it is told it cannot have it. The default is
-    -- false, so today these are the same thing; it is written this way because
-    -- the next panel to do this defaults to true and they are not.
-    if not (config and config.showIndex) then
-        return messages
-    end
-    if type(span) ~= "table" or type(span.rowSpan) ~= "number" then
-        return messages
-    end
-
-    if span.rowSpan < 2 then
-        messages[#messages + 1] = "showIndex needs a panel two rows tall;"
-            .. " a single row has no space beneath the reading at any width."
-            .. " Give the panel rowSpan 2, or drop showIndex."
-    end
-
-    return messages
-end
-
 --- Describe how the panel presents itself at a given span.
 ---@param colSpan integer
 ---@param rowSpan integer

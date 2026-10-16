@@ -13,7 +13,7 @@ Shows which model is loaded: its name, the picture you assigned it, or both.
 | `presentation` | string | `auto` | `auto`, `name`, `image`, `both` | Which arrangement to draw. `auto` shows the name alone on a panel smaller than four cells and the picture on anything larger. `image` and `both` show a picture with the name in the heading. |
 | `label` | string | `MODEL` | any text | The panel's heading — **only where no picture is drawn**. With a picture the model name takes the heading. The default `MODEL` is allowed as a fallback; a custom label alongside `presentation: image` or `both` is refused with the panel named. |
 | `accent` | string | `cyan` | `cyan`, `green`, `amber`, `orange` | The stripe down the left edge. |
-| `showLabels` | boolean | `false` | `true`, `false` | Adds a supporting row listing the model's configured labels. **Needs a panel two rows tall**; on a single row it is refused at load with the panel named. |
+| `showLabels` | boolean | `false` | `true`, `false` | Requests a supporting row listing the model's configured labels. Silently hidden when there is no room, including single-row panels; restored when space permits. |
 
 Anything else is rejected at load with the layout, panel and key named.
 

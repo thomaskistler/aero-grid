@@ -2,6 +2,12 @@
 
 Choose a panel below for visual examples, settings, behavior, and configuration examples.
 
+Display preferences are best-effort: panels silently hide optional information
+that does not fit, preserving the settings so it can return when space permits.
+Limited space does not produce a configuration warning. Invalid settings still
+produce errors, and warning, critical, stale and unavailable state indications
+remain active.
+
 | Panel | Purpose |
 | --- | --- |
 | [`output`](../panels/output.md) | Channel outputs with automatically matched stick-trim arrows. |

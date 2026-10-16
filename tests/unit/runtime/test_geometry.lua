@@ -1662,11 +1662,11 @@ local function testTxBatteryComposition()
     -- because the panel's own heading names what is measured. Magnitude is
     -- kept and redundancy spent, which is the trade the rule names.
     local documented = {
-        { "1x1", "DBLSIZE", true, nil, nil, nil, false },
+        { "1x1", "DBLSIZE", true, 16, 32, 2, false },
         { "2x1", "DBLSIZE", true, 16, 32, 2, false },
         { "3x1", "DBLSIZE", true, 16, 32, 2, false },
         { "4x1", "DBLSIZE", true, 16, 32, 2, false },
-        { "1x2", "XXLSIZE", false, nil, nil, nil, false },
+        { "1x2", "XXLSIZE", false, 25, 50, 4, false },
         { "2x2", "XXLSIZE", false, 25, 50, 4, false },
         { "3x2", "XXLSIZE", true, 25, 50, 4, false },
         { "4x2", "XXLSIZE", true, 25, 50, 4, false },
@@ -1701,6 +1701,7 @@ local function testTxBatteryComposition()
         layout.visual = "battery"
         local area = battery.regionsFor(resolved, theme, primitives, rect, layout, fonts)
 
+        assertEqual(area.showValue, cols > 1, span .. " must prioritize the glyph over a crowded reading")
         assertEqual(edgetx.fontName(area.value), font, span .. " does not draw its reading at the documented size")
         assertEqual(area.showUnit, showUnit, span .. " disagrees with the documentation about showing its unit")
         assertEqual(area.glyphWidth, glyphWidth, span .. " draws a glyph of a different width from the documented one")
@@ -1746,7 +1747,15 @@ local function testTxBatteryComposition()
                 area.glyphX + area.glyphWidth <= area.pad + area.content,
                 span .. " draws its battery past the panel edge"
             )
-            assert(area.glyphX >= area.pad + area.valueWidth, span .. " draws its battery over the reading")
+            if area.showValue then
+                assert(area.glyphX >= area.pad + area.valueWidth, span .. " draws its battery over the reading")
+            else
+                assertEqual(
+                    area.glyphX,
+                    area.pad + math.floor(area.content / 2) - math.floor(area.glyphWidth / 2),
+                    span .. " must center a lone battery"
+                )
+            end
             assert(area.glyphHeight > area.glyphWidth, span .. " draws a battery wider than it is tall")
             local floor = area.showDetail and area.detailY or rect.h
             assert(

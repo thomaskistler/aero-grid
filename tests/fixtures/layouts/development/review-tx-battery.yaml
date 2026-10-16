@@ -81,9 +81,7 @@ panels:
       critical: 8.0
       showPercent: true
 
-  # One cell wide and two tall. The narrowest panel that still stands a
-  # battery beside its reading, and the one where the reading pays a size for
-  # it.
+  # One cell wide and two tall: glyph-first, with an optional percentage.
   - id: narrow
     type: tx-battery
     col: 0
@@ -96,8 +94,7 @@ panels:
       packFull: 8.4
       showPercent: true
 
-  # A single cell, which sheds the visual entirely: 105 pixels of content is
-  # the reading and nothing else.
+  # A single cell prioritizes the centered glyph and sheds numeric voltage.
   - id: smallest
     type: tx-battery
     col: 1
@@ -108,6 +105,7 @@ panels:
       label: 1x1
       packEmpty: 6.6
       packFull: 8.4
+      showPercent: true
 
   # A single row, where there is no percentage at any width. The cell is
   # centred on the reading rather than standing above a row that is not there,
@@ -123,7 +121,7 @@ panels:
       packEmpty: 6.6
       packFull: 8.4
 
-  # Warning rather than critical, so the two alarm tints can be told apart.
+  # Explicit voltage-only mode, with a warning tint.
   - id: warned
     type: tx-battery
     col: 1
@@ -135,6 +133,7 @@ panels:
       packEmpty: 6.6
       packFull: 8.4
       warning: 8.0
+      visual: none
 
   # The bar, at the same span as the glyph above it, for comparison.
   - id: barred

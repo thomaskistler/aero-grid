@@ -5720,9 +5720,7 @@ local function testInstructionBudget()
         {
             type = "flight-mode",
             services = { "model" },
-            -- No `showIndex`: this exercise is sixteen single cells, and a single
-            -- row has no space for the mode number at any width, so asking for it
-            -- is refused at load.
+            -- Sixteen single cells with no optional mode-number labels.
             config = function()
                 return { "label: Mode" }
             end,
@@ -5731,8 +5729,7 @@ local function testInstructionBudget()
             type = "tx-battery",
             services = { "model" },
             config = function()
-                -- No `showPercent`: sixteen single cells, and a single row has no
-                -- space for one at any width, so asking is refused at load.
+                -- No optional percentage labels in this resource baseline.
                 return { "packEmpty: 6.6", "packFull: 8.4", "warning: 7.0" }
             end,
         },
@@ -5748,9 +5745,7 @@ local function testInstructionBudget()
         {
             type = "model-identity",
             services = { "model" },
-            -- No `showLabels`: sixteen single cells, which have no row for them,
-            -- so it is refused at load. The worst case for this panel at this
-            -- span genuinely does not include the label list.
+            -- No optional model-label objects in this resource baseline.
             config = function()
                 return { "presentation: both" }
             end,
@@ -6819,7 +6814,11 @@ local function testReadingsSitInTheirSlots()
             variants = { { "visual: battery" }, { "visual: bar" } },
             -- What stands in the right slot when there is one.
             visual = function(panel)
-                return panel.glyphShown and panel.glyph and { x = panel.glyph.x, w = panel.glyph.width } or nil
+                return panel.valueShown
+                        and panel.glyphShown
+                        and panel.glyph
+                        and { x = panel.glyph.x, w = panel.glyph.width }
+                    or nil
             end,
         },
         {
@@ -6947,12 +6946,7 @@ local function testReadingsSitInTheirSlots()
         local byVisual = {}
         for index, extra in ipairs(subject.variants) do
             for _, span in ipairs(module.supportedSpans) do
-                -- **A variant may name the spans it applies to.** Some settings are
-                -- refused at load rather than shed at draw: `flight-mode`'s mode
-                -- number and `model-identity`'s label row both need two rows, and
-                -- asking for them on a single row fails validation rather than
-                -- producing a panel without them. A variant that cannot be built is
-                -- not coverage of anything, so it says where it belongs.
+                -- Restrict supporting-row variants to spans that can show them.
                 local rows = tonumber(string.match(span, "%dx(%d)")) or 1
                 if rows >= (type(extra) == "table" and extra.minRows or 1) then
                     cases[#cases + 1] = { span = span, extra = extra, index = index }
@@ -7978,9 +7972,11 @@ panels:
         assertEqual(part.hidden, false, "the battery was revealed and its " .. name .. " was left hidden")
     end
 
-    -- A single cell has no room for a battery beside its reading, and sheds it
-    -- the way it sheds any other visual rather than drawing an unreadable one.
-    assertEqual(tiny.glyph, nil, "a single cell drew a battery in space it does not have")
+    -- A single cell prioritizes the battery over its numeric reading.
+    assertEqual(tiny.glyphShown, true)
+    assertEqual(tiny.value.hidden, true)
+    assertEqual(tiny.unit.hidden, true)
+    assertEqual(tiny.glyph.fill.properties.h, math.floor(tiny.glyph.interiorHeight * fraction + 0.5))
 
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
     getGeneralSettings = realSettings
@@ -8601,12 +8597,14 @@ panels:
         settle(context, 60)
     end
 
-    -- Down to a zone whose two by two panel is a single cell's worth of width.
-    -- The reading has first claim on it, so the battery goes.
-    -- Narrow enough that even the smallest battery would take width the
-    -- reading cannot give up: its column is already at the bottom of the
-    -- ladder, so there is no step left to pay with.
+    -- A compact panel keeps the battery and sheds the voltage instead.
     reflow(140, 140)
+    assertEqual(pack.glyphShown, true)
+    assertEqual(pack.value.hidden, true)
+    assertEqual(pack.unit.hidden, true)
+
+    -- Only a rectangle too small for the glyph itself sheds it.
+    reflow(60, 60)
     assertEqual(pack.glyphShown, false, "a panel with no room for a battery kept drawing one")
     for name, part in pairs({ shell = glyph.shell, nub = glyph.nub, fill = glyph.fill }) do
         assertEqual(part.hidden, true, "the battery was shed and its " .. name .. " stayed on screen")
@@ -8616,6 +8614,7 @@ panels:
     -- whichever parts happened to be hidden.
     reflow(480, 272)
     assertEqual(pack.glyphShown, true, "the battery never came back")
+    assertEqual(pack.value.hidden, false, "the voltage never came back")
     for name, part in pairs({ shell = glyph.shell, nub = glyph.nub, fill = glyph.fill }) do
         assertEqual(part.hidden, false, "the battery came back and its " .. name .. " stayed hidden")
     end
@@ -8661,18 +8660,12 @@ local function testBatteryGlyphLeavesTheReadingRoom()
         local glyph = panel.glyph
         local span = spans[index][1] .. "x" .. spans[index][2]
 
-        -- **`1 x 2` sheds its cell, and that is the reading winning rather than
-        -- the panel failing.** These panels state no `showPercent`, so there is
-        -- no supporting row and the body band is the panel's full three
-        -- quarters -- which admits XXLSIZE, and an XXLSIZE `88.8` is 102 px of
-        -- this panel's 52 px half. No pair of slots separates a reading that
-        -- wide from a cell, so the visualization goes. The specification's order
-        -- is magnitude before decoration, and a cell is decoration.
+        assert(glyph, "panel " .. index .. " (" .. span .. ") drew no battery")
         if span == "1x2" then
-            assertEqual(glyph, nil, span .. " drew a battery beside a reading that fills the panel")
+            assertEqual(panel.value.hidden, true, span .. " must prioritize the glyph")
+            assertEqual(panel.unit.hidden, true)
         else
-            assert(glyph, "panel " .. index .. " (" .. span .. ") drew no battery")
-
+            assertEqual(panel.value.hidden, false)
             local reading = panel.value.properties
             local right = reading.x + reading.w
             assert(
@@ -9207,19 +9200,13 @@ panels:
         "the heading kept its font and must therefore have overflowed"
     )
 
-    -- And one that does not fit even at the smallest font is cut rather than
-    -- wrapped, and the host says so, because cutting a name the author chose
-    -- is a loss and a silent loss is the thing this project does not do.
+    -- One that does not fit even at the smallest font is quietly cut rather
+    -- than wrapped.
     assert(
         #huge.label.properties.text < #"TRANSMITTER BATTERY PACK",
         "a heading nothing could fit was drawn whole, so it must have wrapped"
     )
 
-    -- Whether a heading was cut is asked of the host's notices rather than of
-    -- the label, because a label on a radio is userdata and answers nothing.
-    -- Only the panel that lost characters is named: a cut reported for a
-    -- heading that fitted would send an author looking for a defect in the one
-    -- place there is not one.
     local function noticedHeading(id)
         for _, notice in ipairs(context.notices) do
             if string.find(notice.text, "heading", 1, true) and string.find(notice.text, id .. ":", 1, true) then
@@ -9232,25 +9219,7 @@ panels:
     assertEqual(noticedHeading("short"), nil, "a heading that fitted was reported as cut")
     assertEqual(noticedHeading("long"), nil, "a heading carried whole by a smaller font was reported as cut")
 
-    local said = false
-    for _, notice in ipairs(context.notices) do
-        if
-            string.find(notice.text, "TRANSMITTER BATTERY PACK", 1, true)
-            and string.find(notice.text, "huge", 1, true)
-        then
-            said = true
-        end
-    end
-    assert(said, "a heading was cut and nobody was told; notices were: " .. table.concat(
-        (function()
-            local out = {}
-            for _, notice in ipairs(context.notices) do
-                out[#out + 1] = notice.text
-            end
-            return out
-        end)(),
-        " | "
-    ))
+    assertEqual(noticedHeading("huge"), nil, "a truncated heading must not produce a fit warning")
 end
 
 --- A heading refits when a reflow changes the column it has.

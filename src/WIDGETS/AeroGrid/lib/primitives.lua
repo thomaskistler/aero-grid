@@ -50,33 +50,6 @@ end
 --- Width reserved for a panel's state badge on its header row.
 primitives.BADGE_WIDTH = 56
 
---- Headings that had to be cut, waiting for the host to collect them.
----
---- This is the host's own bookkeeping and it lives here, beside the objects,
---- because it cannot live on them: an LVGL object is userdata on a radio and
---- holds no fields, so `label.headingDropped = x` raises rather than being
---- stored. Writing it there passed every test in a suite whose stand-in was a
---- plain table, and broke every panel on the first radio that ran it.
----
---- A list rather than a value because a dashboard builds many panels, and a
---- drain rather than a read because what the host wants is exactly the
---- headings this build produced: the report is a by-product of the drawing,
---- not a second opinion assembled alongside it. `header` is the only writer,
---- so it holds at most one entry per panel per build and cannot grow while
---- the dashboard is merely running.
-primitives.headingReports = {}
-
---- Collect and clear the headings cut since the last call.
----@return table[] reports Each carries `requested` and `drawn`.
-function primitives.takeHeadingReports()
-    local reports = primitives.headingReports
-    if #reports == 0 then
-        return reports
-    end
-    primitives.headingReports = {}
-    return reports
-end
-
 --- Apply changes to an arc, always restating its centre.
 ---
 --- An arc is positioned by its centre, but the firmware stores the corner as
@@ -139,12 +112,6 @@ function primitives.header(parent, theme, frame, fonts, text, presentation, them
         color = presentation.label,
         font = font,
     })
-    -- Kept for the host to collect, beside the object rather than on it.
-    if dropped then
-        local reports = primitives.headingReports
-        reports[#reports + 1] = { requested = dropped, drawn = heading }
-    end
-
     local badge = primitives.badge(parent, theme, {
         x = frame.badgeX,
         y = frame.labelY,

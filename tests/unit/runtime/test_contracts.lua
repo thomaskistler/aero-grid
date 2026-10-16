@@ -882,82 +882,8 @@ local function testFlightModeSizing()
     )
 end
 
---- A mode number needs a row, and no single-row span has one.
-local function testFlightModeIndexNeedsARow()
-    local flightMode = loadModule("panels/flight-mode.lua")
-
-    -- The refusal, which is the behaviour being added. Accepting it and then
-    -- ignoring it is the worst of the three options, because a layout author
-    -- reads the setting back and believes it.
-    local refused = flightMode.validateSettings(
-        { showIndex = true },
-        { colSpan = 4, rowSpan = 1 },
-        { showIndex = true }
-    )
-    assertEqual(
-        #refused,
-        1,
-        "showIndex on a single row was accepted; no single row has space beneath" .. " the reading at any width"
-    )
-    assert(string.find(refused[1], "two rows tall", 1, true), refused[1])
-    assert(
-        string.find(refused[1], "drop showIndex", 1, true),
-        "the message must say what to do about it: " .. refused[1]
-    )
-
-    -- Two rows is where it works, and a panel that never asked has nothing to
-    -- be told about.
-    assertEqual(
-        #flightMode.validateSettings({ showIndex = true }, { colSpan = 1, rowSpan = 2 }, { showIndex = true }),
-        0,
-        "showIndex was refused on two rows"
-    )
-    assertEqual(
-        #flightMode.validateSettings({}, { colSpan = 1, rowSpan = 1 }, {}),
-        0,
-        "a panel that never asked for the mode number was told off anyway"
-    )
-    -- Without a span nothing can be said, and saying nothing is correct.
-    assertEqual(#flightMode.validateSettings({ showIndex = true }, nil, { showIndex = true }), 0)
-
-    -- The host fills defaults in before this runs, so `settings` cannot say
-    -- whether the layout asked. A setting that arrives only as a default is
-    -- the panel shedding a row, which is normal and silent.
-    assertEqual(
-        #flightMode.validateSettings({ showIndex = true }, { colSpan = 4, rowSpan = 1 }, {}),
-        0,
-        "a default the layout never stated was reported as an ignored request"
-    )
-
-    -- And the span has to reach it through the host, or the rule above is
-    -- correct and never consulted.
-    local _, warnings = panelHost.resolveSettings(flightMode, { showIndex = true }, { colSpan = 4, rowSpan = 1 })
-    assertEqual(
-        #warnings,
-        1,
-        "the placement's span did not reach validateSettings, so a rule that" .. " depends on it can never fire"
-    )
-    assert(string.find(warnings[1], "two rows tall", 1, true), warnings[1])
-
-    local _, allowed = panelHost.resolveSettings(flightMode, { showIndex = true }, { colSpan = 1, rowSpan = 2 })
-    assertEqual(#allowed, 0)
-end
-
---- A setting that cannot apply at this span says so, and only when asked for.
----
---- No single-row span grants a supporting row: a 65 pixel panel has no space
---- beneath the reading whatever its width. Three settings across three
---- panels drive such a row, and all three were accepted and silently
---- ignored there, which is worse than either refusing or working -- a layout
---- author reads the setting back and believes it.
----
---- The host hands `validateSettings` the layout's own config beside the
---- resolved settings, and only a stated value is refused.
----
---- `rx-battery` is the deliberate exception: its cell count and alternate
---- reading are preferences it draws where they fit, beneath the reading or
---- beside it, and drops quietly where they do not.
-local function testInertSettingsAreRefused()
+--- Optional display preferences are accepted at every supported span.
+local function testDisplayPreferencesAreShedQuietly()
     local single = { colSpan = 4, rowSpan = 1 }
     local tall = { colSpan = 1, rowSpan = 2 }
 
@@ -970,64 +896,24 @@ local function testInertSettingsAreRefused()
     for _, case in ipairs(cases) do
         local kind, key = case[1], case[2]
         local module = loadModule("panels/" .. kind .. ".lua")
-        assert(
-            type(module.validateSettings) == "function",
-            kind .. " states no rule for " .. key .. " at a span that cannot" .. " show it"
-        )
-
         local stated = { [key] = true }
-
-        -- Stated on a single row: refused, by name, with what to do about it.
-        local refused = module.validateSettings(stated, single, stated)
-        assertEqual(
-            #refused,
-            1,
-            kind
-                .. "."
-                .. key
-                .. " was accepted on a single row, where no panel"
-                .. " has space beneath the reading at any width"
-        )
-        assert(string.find(refused[1], key, 1, true), refused[1])
-        assert(string.find(refused[1], "two rows tall", 1, true), refused[1])
-        assert(
-            string.find(refused[1], "drop " .. key, 1, true),
-            "the message must say what to do about it: " .. refused[1]
-        )
-
-        -- Stated on two rows: allowed, because there it works.
-        assertEqual(
-            #module.validateSettings(stated, tall, stated),
-            0,
-            kind .. "." .. key .. " was refused on a panel that can show it"
-        )
-
-        -- Arrived as a default the layout never mentioned: silent, because that
-        -- is the panel shedding a row rather than a request being ignored.
-        assertEqual(
-            #module.validateSettings(stated, single, {}),
-            0,
-            kind
-                .. "."
-                .. key
-                .. " reported a default the layout never stated as"
-                .. " an ignored request, which would fail every existing layout"
-        )
-
-        -- Without a span nothing can be said, and saying nothing is correct.
-        assertEqual(#module.validateSettings(stated, nil, stated), 0)
+        for _, span in ipairs(module.supportedSpans) do
+            local cols, rows = string.match(span, "(%d)x(%d)")
+            local resolved, warnings =
+                panelHost.resolveSettings(module, stated, { colSpan = tonumber(cols), rowSpan = tonumber(rows) })
+            assertEqual(#warnings, 0, kind .. "." .. key .. " must not warn about limited space")
+            assertEqual(resolved[key], true, kind .. "." .. key .. " must preserve the preference")
+        end
     end
 
-    -- The host is what carries the config through, so the rule above is
-    -- correct and never consulted if it does not.
-    local module = loadModule("panels/tx-battery.lua")
-    local _, warnings = panelHost.resolveSettings(module, { showPercent = true }, single)
-    assertEqual(
-        #warnings,
-        1,
-        "the layout's own config did not reach validateSettings, so a rule that"
-            .. " depends on what was stated can never fire"
-    )
+    local txBattery = loadModule("panels/tx-battery.lua")
+    for _, span in ipairs({ single, { colSpan = 1, rowSpan = 1 }, tall }) do
+        for _, visual in ipairs({ "battery", "bar", "none" }) do
+            local resolved, quiet = panelHost.resolveSettings(txBattery, { visual = visual, showPercent = true }, span)
+            assertEqual(#quiet, 0, "tx-battery should silently shed its percentage")
+            assertEqual(resolved.showPercent, true, "shedding must preserve the stored preference")
+        end
+    end
 
     -- RX battery details are shed rather than refused, whether defaulted or
     -- stated, at every span and with every visualization.
@@ -1434,7 +1320,7 @@ testPanelContract()
 testSupportedSpans()
 testSettingsResolution()
 testSettingsVocabulary()
-testInertSettingsAreRefused()
+testDisplayPreferencesAreShedQuietly()
 testHeadingIsNeverWrittenDirectly()
 testBadgeIsNeverWrittenDirectly()
 testLvglObjectsAreNeverReachedByName()
@@ -1445,4 +1331,3 @@ testSpecificationExamplesLoad()
 testPanelDocumentationLoads()
 testLifecycleIsolation()
 testFlightModeSizing()
-testFlightModeIndexNeedsARow()

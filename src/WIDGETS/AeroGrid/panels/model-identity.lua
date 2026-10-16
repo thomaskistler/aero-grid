@@ -133,17 +133,7 @@ function modelIdentity.fileExists(path)
     return ok and type(info) == "table", true
 end
 
---- Refuse a label list on a panel that has nowhere to put one.
----
---- The labels are a supporting row, and no single-row span grants one: a 65
---- pixel panel has no space beneath the name whatever its width. This panel
---- declares taller spans than most, up to `4 x 4`, so the setting works
---- almost everywhere; the four it does not work on are worth saying rather
---- than leaving the author to wonder.
----
---- Only a layout that stated it is told. The default is false, so today the
---- distinction changes nothing here, but `rx-battery` defaults its two to
---- true and there the difference is the whole point.
+--- Reject a custom heading that conflicts with an explicit image presentation.
 ---@param settings AeroGridIdentitySettings
 ---@param span? table Placement span, when the host knows it.
 ---@param config? table What the layout actually stated.
@@ -179,19 +169,6 @@ function modelIdentity.validateSettings(settings, span, config)
         messages[#messages + 1] = "label is not drawn on a panel showing the"
             .. " model picture; the model name takes the heading there. Drop label,"
             .. " or use presentation auto or name if you want your own heading."
-    end
-
-    if not config.showLabels then
-        return messages
-    end
-    if type(span) ~= "table" or type(span.rowSpan) ~= "number" then
-        return messages
-    end
-
-    if span.rowSpan < 2 then
-        messages[#messages + 1] = "showLabels needs a panel two rows tall;"
-            .. " a single row has no space beneath the name at any width."
-            .. " Give the panel rowSpan 2, or drop showLabels."
     end
 
     return messages

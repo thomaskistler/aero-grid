@@ -491,6 +491,12 @@ fitting ladder, so the decision makes it the pattern rather than the exception. 
 the `metric` at `1 x 2`, which trades its dial for two font
 sizes. The user was shown that trade and chose it.
 
+**TX battery exception:** `visual: battery` now prioritizes the requested
+battery over numeric voltage. When the pair cannot fit, center the glyph and
+hide the voltage rather than shrinking it. This includes the compact `1x1`
+use case. `visual: none` explicitly keeps numeric voltage. Missing calibration
+falls back to voltage, not an empty glyph; missing voltage shows `--` and `N/A`.
+
 ### Open: what a unit yields to
 
 **The order between a reading and a decoration is settled. The order between a *unit* and a

@@ -325,10 +325,20 @@ belong to the panel.
 #### Transmitter battery
 
 - Read the EdgeTX transmitter-voltage source.
-- Show voltage as the authoritative value.
+- Use voltage as the authoritative value for estimates and thresholds.
 - Treat any percentage or battery-fill estimate as optional and configurable because battery chemistry and voltage range vary by radio.
-- Current `1x1` presentation is voltage-only; larger panels may add the glyph if it fits without shrinking the voltage.
-- **Proposed, not implemented:** a glyph-only presentation for a compact `1x1` slot, centered without numeric voltage. Its fill would remain a voltage-range estimate, not measured remaining charge. The setting name and unavailable-state presentation still need design before implementation.
+- `visual: battery` prioritizes the glyph at every supported span, including `1x1`. Center it without numeric voltage when the pair cannot fit at the normal reading size; restore voltage when resizing provides room. `visual: none` selects numeric voltage without a glyph; `visual: bar` retains voltage-first behavior.
+- Fill remains a voltage-range estimate, not measured remaining charge. Without a usable range, show voltage instead of a misleading empty glyph. Without voltage, show `--` and `N/A` without a glyph or unit. Preserve stale, warning and critical semantics.
+
+#### Limited display space
+
+- Across all panels, optional display preferences are best-effort. Silently
+  shed details that do not fit, retain their configured values, and restore
+  them when space permits. This includes TX percentage, flight-mode index,
+  and model labels on single-row panels.
+- Fit or truncate headings without producing layout warnings. Invalid
+  configuration and runtime failures still surface normally; warning,
+  critical, stale and unavailable state indications remain active.
 
 #### Trim panel
 
@@ -1295,7 +1305,7 @@ grid placement is:
 | RX battery | 0, 1 | 2x1 | `RxBt`, pack mode, user-confirmed 2S, average headline |
 | Link | 0, 2 | 2x1 | `RQly`, `1RSS`, ELRS 4.x `RFMD`, no bar |
 | Altitude | 0, 3 | 2x1 | `Alt`, with `Alt+` above `VSpd+` on the right |
-| TX battery | 3, 0 | 1x1 | Radio-local transmitter voltage, no glyph at this span |
+| TX battery | 3, 0 | 1x1 | Radio-local transmitter battery, glyph-first by default |
 | Flights | 2, 1 | 1x1 | `gvar9`, integer count |
 | Expo | 3, 1 | 1x1 | `gvar1`, integer percent |
 | Model image | 2, 2 | 2x2 | Model bitmap |
@@ -1327,7 +1337,7 @@ Screenshot automation remains deferred.
 
 Next, verify `NO LINK` and recovery in the simulator and on the bench,
 check the live `RxBt` reading, and continue target-matrix/resource baselining.
-The glyph-only TX presentation remains proposed follow-up work.
+The compact TX battery uses the existing `visual: battery` setting for glyph-first presentation.
 
 The simulator panel review and documentation pass is complete. Continue with
 milestone 9 hardening and the hardware verification below. Simulator acceptance
@@ -1724,8 +1734,8 @@ These are backlog items, not implemented features or Phase 1 acceptance claims.
 - [ ] Design and implement a generic image-only panel for a configured SD-card
   image, including a caption-free presentation, aspect-preserving scaling,
   and an explicit missing-image fallback.
-- [ ] Design and implement a glyph-only TX battery presentation for compact
-  panels, without numeric voltage and with explicit unavailable-range behavior.
+- [x] Implement glyph-first TX battery presentation for compact panels via
+  `visual: battery`, with numeric voltage as the unavailable-range fallback.
 
 ### Aircraft-state telemetry research
 

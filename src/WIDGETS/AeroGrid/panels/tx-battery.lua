@@ -2,11 +2,12 @@
 
 --- Transmitter battery voltage.
 ---
---- Voltage is the authoritative reading and is always shown. Any fill or
+--- Voltage is the authoritative reading. Battery mode prioritizes its glyph
+--- over the numeric reading when the pair cannot fit. Any fill or
 --- percentage is an estimate, because battery chemistry and cell count vary by
---- radio and EdgeTX does not report either to Lua, so the estimate is off by
---- default and only appears once a layout states the voltage range it should
---- be measured against. A dashboard that guessed a range would show a
+--- radio and EdgeTX does not report either to Lua. The estimate needs the
+--- radio's battery meter range or an explicit layout override.
+--- A dashboard that guessed a range would show a
 --- confident percentage derived from nothing.
 ---
 --- The reading comes from `modelService`, which reads the radio's own
@@ -20,7 +21,7 @@
 ---@field packFull? number Voltage treated as full for the optional estimate.
 ---@field warning? number
 ---@field critical? number
----@field visual? "none"|"bar"
+---@field visual? "battery"|"none"|"bar"
 ---@field showPercent? boolean
 
 ---@class AeroGridTxBatteryContext
@@ -183,42 +184,6 @@ function txBattery.resolveState(settings, value, stale)
     return "normal"
 end
 
---- Refuse a supporting row on a panel that has nowhere to put one.
----
---- No single-row span grants a supporting row: a 65 pixel panel has no space
---- beneath the reading whatever its width, so asking for one on a `4 x 1` is
---- as inert as asking on a `1 x 1`. Accepting it and ignoring it is the worst
---- of the three options, because a layout author reads the setting back and
---- believes it.
----
---- Only a layout that **stated** it is told. These settings arrive filled
---- from their defaults, and a default that cannot apply here is the panel
---- shedding a row, which is normal and silent.
----@param settings AeroGridTxBatterySettings
----@param span? table Placement span, when the host knows it.
----@param config? table What the layout actually stated.
----@return string[] messages
-function txBattery.validateSettings(settings, span, config)
-    local messages = {}
-    if type(config) ~= "table" then
-        return messages
-    end
-    if type(span) ~= "table" or type(span.rowSpan) ~= "number" then
-        return messages
-    end
-    if span.rowSpan >= 2 then
-        return messages
-    end
-
-    if config.showPercent then
-        messages[#messages + 1] = "showPercent needs a panel two rows tall;"
-            .. " a single row has no space beneath the reading at any width."
-            .. " Give the panel rowSpan 2, or drop showPercent."
-    end
-
-    return messages
-end
-
 --- Describe how the panel presents itself at a given span.
 ---@param colSpan integer
 ---@param rowSpan integer
@@ -232,7 +197,7 @@ function txBattery.presentationFor(colSpan, rowSpan, showPercent)
     -- the layout actually asked for.
     return {
         showVisual = cells >= 2,
-        showDetail = cells >= 2 and showPercent == true,
+        showDetail = showPercent == true,
     }
 end
 
@@ -291,9 +256,9 @@ function txBattery.regionsFor(theme, themeBuilder, primitives, rect, layout, fon
     -- two-row span; that gain is what the fixed-bands rule gives back, and the
     -- design guide records the user choosing consistency over it.
     local ladder = themeBuilder.ladder(theme, rect, frame)
-    local showVisual = layout.showVisual and ladder.visual
-    local showDetail = layout.showDetail and ladder.rows > 0
     local wantsGlyph = layout.visual == "battery"
+    local showVisual = wantsGlyph or (layout.showVisual and ladder.visual)
+    local showDetail = layout.showDetail and ladder.rows > 0
     local showBar = showVisual and layout.visual == "bar"
 
     -- A bar is exempt from the arrangement and keeps the panel's floor. Its
@@ -328,9 +293,9 @@ function txBattery.regionsFor(theme, themeBuilder, primitives, rect, layout, fon
     local glyphWidth, glyphHeight
     if wantsGlyph and showVisual then
         glyphWidth, glyphHeight = txBattery.glyphFor(primitives, half, ladder.room)
-        -- A panel that cannot hold a glyph sheds it, the way it sheds any other
-        -- visual. It does not fall back to a bar: the layout asked for a
-        -- battery, and a bar in its place is a different answer to the question.
+        if not glyphWidth then
+            glyphWidth, glyphHeight = txBattery.glyphFor(primitives, frame.content, ladder.room)
+        end
         if not glyphWidth then
             showVisual = false
         end
@@ -359,25 +324,20 @@ function txBattery.regionsFor(theme, themeBuilder, primitives, rect, layout, fon
     -- crosses a digit.
     local showUnit, valueWidth = widthOf(reserveSlot and half or frame.content)
     local slots, separated
+    local glyphOnly = false
     if reserveSlot then
         slots, separated = themeBuilder.slotsFor(frame, valueWidth, glyphWidth)
-        if not separated then
-            -- **No pair of slots separates them, so the glyph goes.** A band-derived
-            -- font does not consult the content, so the reading cannot be made
-            -- narrower to accommodate a cell, and `1 x 2` is the span where that
-            -- bites: 105 px of content, a DBLSIZE `88.8` that wants 93 of them, and
-            -- half a panel is 52. Shedding the visualization is what the panel
-            -- already does when it cannot hold one, and it is the answer
-            -- `navigation` reaches at `1 x 1` for the same reason.
-            showVisual, reserveSlot = false, false
-            glyphWidth, glyphHeight, slots = nil, nil, nil
+        if not separated or valueWidth > half then
+            -- Keep the requested battery, not a smaller reading. The full-width
+            -- reading remains available as a fallback when no estimate exists.
+            glyphOnly, reserveSlot, slots = true, false, nil
             showUnit, valueWidth = widthOf(frame.content)
         end
     end
 
     local leftCentre = reserveSlot and select(1, themeBuilder.slotCentres(frame, slots))
         or (frame.pad + math.floor(frame.content / 2))
-    local rightCentre = reserveSlot and select(2, themeBuilder.slotCentres(frame, slots)) or nil
+    local rightCentre = reserveSlot and select(2, themeBuilder.slotCentres(frame, slots)) or leftCentre
 
     -- Two boxes sharing an optical centre stack to the taller of them, so the
     -- block the band centres is simply the deeper of reading and glyph --
@@ -435,14 +395,32 @@ function txBattery.regionsFor(theme, themeBuilder, primitives, rect, layout, fon
         glyphBorder = glyphBorder,
         detailUnderGlyph = false,
         detailX = frame.pad,
+        detailCentre = frame.pad + math.floor(frame.content / 2),
         detailWidth = frame.content,
         detailY = detailY,
         barY = barY,
         showVisual = showVisual,
         showDetail = showDetail,
         showGlyph = glyphWidth ~= nil,
+        showValue = not glyphOnly,
         showBar = showBar,
     }
+end
+
+local function createGlyph(context, area)
+    local presentation = context.state(context.stateName, context.settings.accent)
+    context.glyph = context.primitives.batteryGlyph(context.panel.root, context.theme, {
+        x = area.glyphX,
+        y = area.glyphY,
+        w = area.glyphWidth,
+        h = area.glyphHeight,
+        fraction = 0,
+        color = presentation.accent,
+        border = area.glyphBorder,
+    })
+    lvgl.hide(context.glyph.shell)
+    lvgl.hide(context.glyph.nub)
+    lvgl.hide(context.glyph.fill)
 end
 
 --- Build the panel's LVGL objects.
@@ -529,15 +507,7 @@ function txBattery.create(parent, rect, settings, services)
             color = presentation.accent,
         })
     elseif settings.visual == "battery" and area.showGlyph then
-        context.glyph = primitives.batteryGlyph(panel.root, theme, {
-            x = area.glyphX,
-            y = area.glyphY,
-            w = area.glyphWidth,
-            h = area.glyphHeight,
-            fraction = 0,
-            color = presentation.accent,
-            border = area.glyphBorder,
-        })
+        createGlyph(context, area)
     end
 
     if context.detailLabel and not area.showDetail then
@@ -564,15 +534,6 @@ function txBattery.create(parent, rect, settings, services)
         lvgl.hide(context.bar.track)
         lvgl.hide(context.bar.fill)
     end
-    if context.glyph then
-        -- Built hidden and revealed by `apply`, for the same reason the bar is:
-        -- whether there is a range to measure against is only known once the
-        -- service has run, which is after this.
-        lvgl.hide(context.glyph.shell)
-        lvgl.hide(context.glyph.nub)
-        lvgl.hide(context.glyph.fill)
-    end
-
     local _, drawn = primitives.changed(context, txBattery.render)
     txBattery.apply(context, drawn)
     return context
@@ -633,6 +594,11 @@ function txBattery.apply(context, drawn)
     context.text = drawn.text
     context.detail = drawn.detail or ""
 
+    local glyphShown = context.glyph ~= nil and context.area.showGlyph and drawn.ranged and drawn.state ~= "unavailable"
+    local valueShown = context.area.showValue or not glyphShown
+    context.primitives.reconcile(context.value, valueShown, nil, valueShown == context.valueShown)
+    context.valueShown = valueShown
+    context.showUnit = context.area.showUnit and valueShown
     context.value:set({ text = drawn.text, color = presentation.value })
     -- The reading is centred on its slot, so where it starts depends on what
     -- it says: both the number and the unit beside it move together when the
@@ -652,6 +618,16 @@ function txBattery.apply(context, drawn)
     )
     if context.showDetail then
         context.detailLabel:set({ text = context.detail })
+        context.primitives.centreLabel(
+            context,
+            "detailAnchor",
+            context.themeBuilder,
+            context.detailLabel,
+            context.area.detailCentre,
+            context.area.detailY,
+            context.fonts.label,
+            context.detail
+        )
     end
     context.primitives.stylePanel(context.panel, presentation)
 
@@ -673,9 +649,7 @@ function txBattery.apply(context, drawn)
         context.barShown = barShown
     end
 
-    -- And the glyph, on the same terms: an outline with no fill in it is a
-    -- claim that the pack is empty, which is worse than showing nothing.
-    local glyphShown = context.glyph ~= nil and context.showVisual and drawn.ranged
+    -- No voltage or no range means no level; retain the text fallback.
     if glyphShown then
         context.primitives.setBatteryGlyph(context.glyph, drawn.fraction, presentation.accent)
     end
@@ -727,7 +701,16 @@ function txBattery.update(context, rect)
         w = area.valueWidth,
     })
 
-    context.primitives.reflowReading(context, context.themeBuilder, area, area.value, context.text, area.showUnit)
+    local hasEstimate = context.reading ~= nil and txBattery.hasRange(context.settings, context.range)
+    local showValue = area.showValue or not (area.showGlyph and hasEstimate)
+    context.primitives.reflowReading(
+        context,
+        context.themeBuilder,
+        area,
+        area.value,
+        context.text,
+        area.showUnit and showValue
+    )
     context.primitives.reconcile(
         context.detailLabel,
         area.showDetail,
@@ -735,13 +718,6 @@ function txBattery.update(context, rect)
         area.showDetail == context.showDetail
     )
 
-    -- A row that has just reappeared holds whatever it had when it was shed,
-    -- and `render` stopped declaring its key while it was hidden. The same
-    -- applies when the row merely moved column: the percentage is fitted to its
-    -- width, so a narrower column wants it written again.
-    if area.showDetail ~= context.showDetail or area.detailWidth ~= context.detailWidth then
-        context.rendered = nil
-    end
     context.showDetail = area.showDetail
     context.detailWidth = area.detailWidth
     context.area = area
@@ -762,9 +738,10 @@ function txBattery.update(context, rect)
     )
     context.barShown = barShown
 
-    -- A reflow can take the glyph away entirely: a panel narrowed to one cell
-    -- has nowhere to put it, and the reading has first claim on the width.
-    local glyphShown = context.glyph ~= nil and area.showVisual and area.showGlyph and ranged
+    if area.showGlyph and not context.glyph then
+        createGlyph(context, area)
+    end
+    local glyphShown = context.glyph ~= nil and area.showGlyph and ranged and context.reading ~= nil
     if area.showGlyph then
         context.glyphRect = { x = area.glyphX, y = area.glyphY, w = area.glyphWidth, h = area.glyphHeight }
     end
@@ -781,6 +758,12 @@ function txBattery.update(context, rect)
     )
     context.glyphShown = glyphShown
     context.showVisual = area.showVisual
+    context.detailAnchor = nil
+    -- Reconcile text visibility and refit any restored percentage immediately,
+    -- even when the voltage has not changed since the previous rectangle.
+    context.rendered = nil
+    local _, drawn = context.primitives.changed(context, txBattery.render)
+    txBattery.apply(context, drawn)
 end
 
 return txBattery

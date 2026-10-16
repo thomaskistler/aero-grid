@@ -40,7 +40,7 @@ not prove end-to-end receiver telemetry. The model bitmap is the user-supplied
 Crack Yak image, with redistribution permission confirmed by the contributor.
 
 The same settings are used across all three spans. TX battery percentage is
-disabled because the 2x1 panel rejects it. Readiness checks require the populated
+disabled to keep the same presentation at 2x1, where it is shed. Readiness checks require the populated
 panel presentation as well as expected service values, preventing stable
 loading/unavailable frames from being accepted as screenshots.
 

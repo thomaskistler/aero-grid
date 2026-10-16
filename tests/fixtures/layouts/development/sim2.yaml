@@ -47,11 +47,7 @@ panels:
     config:
       label: MODE
       accent: green
-      # No `showIndex` here. This panel is one row tall and asked for the mode
-      # number anyway, and got nothing: no single-row span has space beneath
-      # the reading at any width. The setting is refused at load now, and this
-      # grid is full, so the panel keeps its row and loses the request rather
-      # than displacing a neighbour.
+      # A mode number requested here would be quietly shed on this single row.
 
   # A transmitter pack only estimates a charge once a layout states the range
   # it should be read against, so the battery and the percentage stay dark

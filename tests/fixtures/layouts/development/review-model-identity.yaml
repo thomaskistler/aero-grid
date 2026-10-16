@@ -67,8 +67,7 @@ grid:
 panels:
   # The corner. A single cell is the narrowest heading this panel can be
   # asked to draw a model name into, so it is where the heading's own
-  # abbreviation shows: a fifteen-character name is cut and what was dropped
-  # is reported to the host. Alone in the corner, so the menu button's
+  # abbreviation shows: a fifteen-character name is quietly cut. Alone in the corner, so the menu button's
   # reserved width spoils no comparison.
   - id: corner
     type: model-identity
@@ -90,6 +89,7 @@ panels:
     config:
       label: NAME 1x1
       presentation: name
+      showLabels: true
 
   # **The panel this screen was missing.** Two cells square: the frame is
   # 226 x 77 and the aircraft is drawn at 129 x 77, letterboxed at the sides.

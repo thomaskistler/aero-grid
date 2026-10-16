@@ -33,10 +33,7 @@ panels:
     config:
       label: 1x1
 
-  # The same span with a longer name to size from. `showIndex` used to be set
-  # here, to show that a single cell ignores it; it is now refused at load
-  # instead, with the panel and the reason named, so the demonstration belongs
-  # in the loader's output rather than on the screen.
+  # The same span requests an index; it is quietly shed in a single cell.
   - id: one-by-one-plain
     type: flight-mode
     col: 1
@@ -46,6 +43,7 @@ panels:
     config:
       label: 1x1
       accent: amber
+      showIndex: true
 
   # Two cells wide is the narrowest span that fits the longest name EdgeTX
   # can report. `3x1` and `4x1` resolve identically, only wider.
