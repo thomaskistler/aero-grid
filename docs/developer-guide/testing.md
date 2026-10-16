@@ -13,7 +13,7 @@ make check
 ```
 
 `make test` executes every `test_*.lua` beneath `tests/`, excluding support
-modules. Each test gets a fresh `lupa.LuaRuntime` and the repository root as
+modules. Each test gets a fresh `lupa.lua53.LuaRuntime` and the repository root as
 its chunk argument. A failed assertion stops the run with a traceback and
 non-zero exit status.
 
@@ -22,8 +22,9 @@ Runtime code should use
 `string.sub(value, ...)`, not assume `value:sub(...)` works on the radio.
 
 `make check` runs those same tests and then parses all source/test Lua with
-the detected compiler. `lupa`'s Lua version is not guaranteed to be EdgeTX's;
-**passing behavior tests does not prove Lua 5.3 compatibility**. Install the
+the detected compiler. The runner explicitly selects Lua 5.3 to match EdgeTX,
+rather than `lupa`'s default runtime, which can change between releases.
+Mock behavior tests still do not replace firmware compiler validation. Install the
 [compiler](build.md#install-the-validation-tools), or specify it:
 
 ```sh
