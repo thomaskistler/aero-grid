@@ -15,6 +15,11 @@ ASSETS = {
     "editor-configure.png",
     "editor-configure.svg",
     "LICENSE.txt",
+    "material-symbols-LICENSE.txt",
+    "satellite.png",
+    "satellite.svg",
+    "satellite-light.png",
+    "satellite-light.svg",
 }
 THEMES = {"modern-dark.yml", "modern-light.yml"}
 

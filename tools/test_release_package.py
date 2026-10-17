@@ -27,6 +27,10 @@ class ReleaseTests(unittest.TestCase):
                 self.assertIn("LICENSE", names)
                 assets = {name.split("/")[-1] for name in names if "/assets/" in name}
                 self.assertEqual(assets, release.ASSETS)
+                self.assertTrue({
+                    "satellite.png", "satellite-light.png", "satellite.svg",
+                    "satellite-light.svg", "material-symbols-LICENSE.txt",
+                }.issubset(assets))
                 self.assertFalse(any(name.endswith(".luac") or "/RADIO/" in name or "/MODELS/" in name
                                      for name in names))
                 for name in names:
