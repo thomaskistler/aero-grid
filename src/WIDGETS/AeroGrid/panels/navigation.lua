@@ -12,23 +12,25 @@
 ---
 --- - No source: the layout names a sensor the radio does not have.
 --- - No fix: the sensor is there and reporting, but has no position yet.
---- - No home: there is a position, but EdgeTX never recorded a pilot
----   position, so distance and bearing would be measured from nowhere. They
----   are withheld rather than computed from a zero that is not a place.
+--- - No home: there is a position, but no EdgeTX or first-arm home is available.
+---   Distance and bearing are withheld rather than measured from nowhere.
 
 ---@class AeroGridNavigationSettings
 ---@field source? string GPS source name.
+---@field armSwitch? string Armed switch position for first-arm home capture.
 ---@field label? string
 ---@field showTape? boolean
 ---@field bearingFormat? "degrees"|"quadrant"
 ---@field showCoordinates? boolean
----@field warning? number Distance in metres that raises a warning.
----@field critical? number Distance in metres that raises a critical state.
+---@field satelliteSource? string Locked satellite count source.
+---@field satelliteWarning? number Warn below this count.
+---@field satelliteCritical? number Critical below this count.
 ---@field accent? string
 
 ---@class AeroGridNavigationContext
 ---@field panel table
 ---@field feed? AeroGridNavigation Navigation subscription.
+---@field satellites? AeroGridReading Optional satellite-count subscription.
 ---@field stateName string
 
 local navigation = {
@@ -55,6 +57,10 @@ local navigation = {
     refreshInterval = 25,
     settings = {
         { key = "source", label = "GPS source", type = "string", default = "GPS" },
+        { key = "armSwitch", label = "Home arm switch (blank: EdgeTX)", type = "string", default = "" },
+        { key = "satelliteSource", label = "Satellite count source", type = "string", default = "" },
+        { key = "satelliteWarning", label = "Warn below satellites", type = "number", default = 8 },
+        { key = "satelliteCritical", label = "Critical below satellites", type = "number", default = 4 },
         { key = "label", label = "Label", type = "string", default = "NAV" },
         { key = "showTape", label = "Show tape", type = "boolean", default = false },
         {
@@ -66,14 +72,6 @@ local navigation = {
             visibleWhen = { key = "showTape", value = true, invert = true },
         },
         { key = "showCoordinates", label = "Show coordinates", type = "boolean", default = false },
-        -- No default thresholds: a safe distance is a property of the field and
-        -- the model, not of the dashboard.
-        { key = "warning", label = "Warning distance (m)", type = "number" },
-        { key = "critical", label = "Critical distance (m)", type = "number" },
-        -- Distance is the one threshold in the catalogue that counts upward:
-        -- further away is worse.
-        -- No `direction`. Distance from home only alarms upward, which is the
-        -- one threshold in the catalogue that counts that way.
         {
             key = "accent",
             label = "Accent",
@@ -83,6 +81,38 @@ local navigation = {
         },
     },
 }
+
+function navigation.validateSettings(settings)
+    local errors = {}
+    local arm = settings.armSwitch
+    if arm ~= nil and arm ~= "" then
+        if type(arm) ~= "string" or not (string.match(arm, "^S[A-Z][%^v%-]$") or string.match(arm, "^L%d%d$")) then
+            errors[#errors + 1] =
+                "armSwitch must be blank, a position such as SF^, SA-, SFv, or a logical switch such as L01"
+        end
+    end
+    for _, key in ipairs({ "satelliteWarning", "satelliteCritical" }) do
+        local value = settings[key]
+        if
+            value ~= nil
+            and (type(value) ~= "number" or value ~= value or value < 0 or value == math.huge or value % 1 ~= 0)
+        then
+            errors[#errors + 1] = key .. " must be a nonnegative integer"
+        end
+    end
+    if #errors == 0 and (settings.satelliteCritical or 4) > (settings.satelliteWarning or 8) then
+        errors[#errors + 1] = "satelliteCritical must not exceed satelliteWarning"
+    end
+    return errors
+end
+
+function navigation.satelliteCount(reading)
+    local value = reading and reading.available and reading.value
+    if type(value) == "number" and value == value and value >= 0 and value < math.huge and value % 1 == 0 then
+        return value
+    end
+    return nil
+end
 
 --- Forms of the distance reading, longest first, and there is only one.
 ---
@@ -118,10 +148,8 @@ end
 
 --- Resolve the panel state from the navigation snapshot.
 ---
---- A missing fix is `unavailable` rather than a distance of zero, because zero
---- metres from home is a real and very different reading. A missing home
---- position leaves the fix itself perfectly good, so the panel stays normal
---- and says which part is missing.
+--- Satellite thresholds apply even before a fix/home is available. Missing or
+--- stale inputs are explicit states, never substituted with a zero count.
 ---@param settings AeroGridNavigationSettings
 --- No source, no fix and no home are three different causes with three
 --- different fixes, and the origin caption below the reading says which in
@@ -136,8 +164,9 @@ end
 --- shortest form of every other, which is what
 --- `testSupportingWordingsStayDistinct` holds this panel to.
 ---@param view any Navigation subscription.
+---@param satellites? AeroGridReading
 ---@return string stateName
-function navigation.resolveState(settings, view)
+function navigation.resolveState(settings, view, satellites)
     if type(view) ~= "table" then
         return "unavailable"
     end
@@ -147,33 +176,25 @@ function navigation.resolveState(settings, view)
     if not view.known then
         return "unavailable"
     end
-    if not view.fix then
-        return "unavailable"
-    end
     if view.state == "stale" then
         return "stale"
     end
-    -- A missing home position leaves the fix perfectly good, so the panel is not
-    -- in a failed state at all; only the two values measured from home are
-    -- withheld, and the caption says so.
-    if not view.home then
-        return "normal"
-    end
-
-    local distance = view.distance
-    if type(distance) == "number" then
-        local critical = settings.critical
-        local warning = settings.warning
-        -- Distance thresholds count upward: further away is worse.
-        if type(critical) == "number" and distance >= critical then
+    if settings.satelliteSource and settings.satelliteSource ~= "" then
+        local count = navigation.satelliteCount(satellites)
+        if not satellites or count == nil then
+            return "unavailable"
+        end
+        if satellites.stale then
+            return "stale"
+        end
+        if count < (settings.satelliteCritical or 4) then
             return "critical"
         end
-        if type(warning) == "number" and distance >= warning then
+        if count < (settings.satelliteWarning or 8) then
             return "warning"
         end
     end
-
-    return "normal"
+    return view.fix and "normal" or "unavailable"
 end
 
 --- Format the dominant distance reading.
@@ -273,6 +294,13 @@ function navigation.originVariants(view)
         return { "NO FIX" }
     end
     if not view.home then
+        if view.homeStatus == "switch-unavailable" then
+            return { "ARM SWITCH UNAVAILABLE", "NO ARM SWITCH", "NO ARM" }
+        elseif view.homeStatus == "waiting" then
+            return { "WAITING FOR ARM", "WAIT ARM", "ARM" }
+        elseif view.homeStatus == "missed" then
+            return { "HOME NOT SET", "NO HOME" }
+        end
         return { "NO HOME POSITION", "NO HOME POS", "NO HOME" }
     end
     if view.state == "stale" then
@@ -645,7 +673,11 @@ function navigation.create(parent, rect, settings, services)
     local service = services.navigation
     if service then
         context.service = service
-        context.feed = service:subscribe(settings.source)
+        context.feed = service:subscribe(settings.source, settings.armSwitch)
+    end
+    if settings.satelliteSource and settings.satelliteSource ~= "" then
+        assert(services.telemetry, "navigation satellite count requires telemetry service")
+        context.satellites = services.telemetry:subscribe(settings.satelliteSource)
     end
 
     -- The widest distance this panel can print, so the font is chosen from
@@ -666,6 +698,28 @@ function navigation.create(parent, rect, settings, services)
         services.themeBuilder
     )
     panel = context.panel
+    if context.satellites then
+        context.satelliteHeader = lvgl.box(panel.root, { x = 0, y = 0, w = 1, h = 1 })
+        local filename = services.host.path .. "assets/" .. (theme.light and "satellite-light.png" or "satellite.png")
+        local handle = io.open(filename, "r")
+        assert(handle, "navigation satellite icon missing: " .. filename)
+        io.close(handle)
+        context.satelliteIcon = primitives.image(context.satelliteHeader, {
+            x = 0,
+            y = 0,
+            w = 16,
+            h = 16,
+            file = filename,
+        })
+        context.satelliteLabel = primitives.label(context.satelliteHeader, theme, {
+            x = 18,
+            y = 0,
+            text = "",
+            font = fonts.label,
+            color = theme.color.textMuted,
+        })
+        lvgl.hide(context.satelliteHeader)
+    end
 
     context.value = primitives.value(panel.root, theme, {
         x = area.pad,
@@ -759,11 +813,40 @@ function navigation.render(context, out)
     local view = context.feed
     local service = context.service
 
-    out.state = navigation.resolveState(context.settings, view)
+    out.state = navigation.resolveState(context.settings, view, context.satellites)
+    if context.satellites then
+        local count = navigation.satelliteCount(context.satellites)
+        out.satellites = count and string.format("%.0f", count) or "--"
+    end
     out.text = "--"
     out.unit = ""
     if service and type(view) == "table" then
         out.text, out.unit = navigation.distanceParts(view, service.describeDistanceParts)
+    end
+
+    --- Satellite telemetry yields to the heading and the state badge, never clips.
+    function navigation.setSatelliteHeader(context, text, presentation)
+        if not context.satelliteHeader then
+            return
+        end
+        local builder, frame, fonts = context.themeBuilder, context.area.frame, context.fonts
+        local heading, font = builder.fitHeading(context.settings.label, frame.labelWidth, fonts.label)
+        local left = frame.labelX + builder.measureText(font, heading) + 6
+        local right = frame.badgeX + frame.badgeWidth
+        if presentation.badge and presentation.badge ~= "" then
+            right = context.primitives.badgeX(builder, frame, fonts.badge, presentation.badge) - 6
+        end
+        local width = 18 + builder.measureText(fonts.label, text)
+        local height = math.max(16, builder.fontHeight(fonts.label))
+        context.showSatellites = right - width >= left and frame.labelY + height <= frame.top
+        if context.showSatellites then
+            context.satelliteHeader:set({ x = right - width, y = frame.labelY, w = width, h = height })
+            context.primitives.setFont(context.satelliteLabel, fonts.label)
+            context.satelliteLabel:set({ text = text, w = width - 18, color = presentation.label })
+            lvgl.show(context.satelliteHeader)
+        else
+            lvgl.hide(context.satelliteHeader)
+        end
     end
     -- Only what this panel draws. Both supporting rows are shed on a small
     -- panel and the coordinate row unless explicitly enabled, and
@@ -822,6 +905,7 @@ function navigation.apply(context, drawn)
         presentation.accent
     )
     context.primitives.stylePanel(context.panel, presentation)
+    navigation.setSatelliteHeader(context, drawn.satellites or "--", presentation)
 
     -- Every row takes the panel's slot centres, keyed on what it says. A
     -- bearing changes every time the aircraft turns, so the helpers measure

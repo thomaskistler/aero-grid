@@ -5,24 +5,28 @@
 | ![Navigation tape below distance at 1x2](../assets/panels/navigation/1x2.png) | ![Navigation tape beside distance at 2x1](../assets/panels/navigation/2x1.png) | ![Navigation tape below distance at 2x2](../assets/panels/navigation/2x2.png) |
 
 Native EdgeTX simulator captures with `showTape: true`, a synthetic GPS fix,
-and a computed distance of 318 m. Spans above are columns x rows.
+12 locked satellites, and a computed distance of 318 m. Spans above are columns x rows.
 
 Shows the aircraft's GPS location, distance from home, and **north-up bearing
 from home toward the model**. The tape is not aircraft heading, transmitter
 orientation, or a return-home instruction.
 
-The GPS source supplies model coordinates and the pilot/home coordinates
-recorded by EdgeTX. AeroGrid does not set or reset home.
+The GPS source supplies model coordinates. By default, home comes from EdgeTX.
+Configure an armed switch position to capture a separate AeroGrid home instead,
+without changing EdgeTX's home or the flight controller's return-home position.
 
 ## Settings
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `source` | `GPS` | Exact EdgeTX GPS source name; must return a coordinate table. |
+| `armSwitch` | blank | Blank uses EdgeTX home. A physical position (`SF^`, `SA-`, `SFv`) or logical switch (`L01`) enables first-arm home capture. |
 | `showTape` | `false` | Show the bearing tape instead of bearing text. |
 | `bearingFormat` | `degrees` | Numeric azimuth or `quadrant` notation when the tape is off. Hidden in the drawer when the tape is on. |
 | `showCoordinates` | `false` | Independently show or hide the latitude/longitude row. |
-| `warning` / `critical` | none | Distance thresholds in metres, counting upward. |
+| `satelliteSource` | blank | Optional telemetry source reporting the number of locked satellites. |
+| `satelliteWarning` | `8` | Warning when the satellite count is strictly below this value. |
+| `satelliteCritical` | `4` | Critical when the satellite count is strictly below this value. |
 | `label` | `NAV` | Panel heading. |
 | `accent` | `cyan` | Panel accent: `cyan`, `green`, `amber`, or `orange`. |
 
@@ -30,8 +34,69 @@ Unknown settings are rejected at load. Source names are case-sensitive.
 
 ## Behavior
 
-Distance from home is always the main reading, using the configured GPS
-source. Home is the position recorded by EdgeTX.
+Distance from home is always the main reading, using the configured GPS source.
+
+### Satellite count and alerts
+
+Set **Satellite count source** to the exact telemetry source name (for example
+`Sats`). Use a source reporting a plain nonnegative integer count, not a packed
+GPS-status value. With no source configured, no satellite indicator or
+satellite-based alerts are shown.
+
+The header shows a satellite icon and count on the right. It is omitted when
+there is not enough room beside the heading and state badge, and returns when
+the panel is enlarged. Alerts remain active even when the count cannot fit.
+The bundled icon is Google Material Symbols' Apache-2.0-licensed filled
+`satellite_alt` artwork, with light and dark theme variants; it does not depend
+on firmware-internal icons.
+Missing or invalid satellite data shows `--` and `N/A`; stale data retains its
+last count with `STALE`.
+
+Defaults are **critical below 4** and **warning below 8**: 4 is warning, 8 is
+normal, and 0 is critical. Thresholds are configurable nonnegative integers;
+critical must not exceed warning. Low-satellite alerts also apply while waiting
+for a GPS fix or home. These thresholds only control panel alerts, not home capture.
+Distance from home no longer triggers warning or critical states.
+
+### First-arm home
+
+Set **Home arm switch (blank: EdgeTX)** to the switch position that means armed,
+for example `SFv`. AeroGrid must observe the switch disarmed, then armed; opening
+the widget with the switch already armed does not capture home.
+
+Only the **first observed disarmed-to-armed transition** attempts capture. GPS must
+have valid, fresh coordinates no more than one second old, including the GPS
+source's reported delay when present. If GPS is not ready, home remains unset
+and the panel shows **HOME NOT SET** once a fix is available. Later GPS updates
+and disarm/rearm cycles never retry capture or move home. There is no automatic
+fallback to EdgeTX home.
+
+Before the first arm, the panel shows **WAITING FOR ARM** when GPS is available.
+An unreadable switch shows **ARM SWITCH UNAVAILABLE**; an unknown switch is not
+treated as disarmed.
+
+Captured home (or a failed capture attempt) survives telemetry loss, panel
+recreation, and layout/theme reloads in this widget instance. Panels using the
+same GPS source and armed switch share it. A different source/switch pair has
+its own capture. Home is not saved to disk: restarting the radio, reloading the
+model, or removing and recreating the widget starts a new session. Separate
+widget instances have independent homes.
+
+Example:
+
+```yaml
+- id: location
+  type: navigation
+  col: 0
+  row: 0
+  colSpan: 2
+  rowSpan: 2
+  config:
+    source: GPS
+    armSwitch: SFv
+```
+
+### Bearing display
 
 Enable **Show tape** to replace bearing text with a scrolling direction tape.
 The tape sits below the distance in square and tall panels, and to its right
@@ -54,7 +119,7 @@ Stale data retains its last bearing with the panel's `STALE` indication.
 With the tape off, choose degrees or quadrant notation, such as `N29°E`,
 with `bearingFormat`. Bearing text and coordinates are shown only where they
 fit; a tape that cannot fit yields to the distance. Coordinates show the
-model's latitude and longitude. Set distance thresholds in metres if needed.
+model's latitude and longitude.
 
 ### Layout schema and migration
 
@@ -70,7 +135,9 @@ The old `presentation` and `showBearing` settings are removed during migration.
 | `auto` or omitted | `true` for 4+ cells; otherwise `false` | `true` for 6+ cells; otherwise `false` |
 
 An explicit `showCoordinates` value is preserved, as are the source, label,
-bearing format, thresholds, and accent. Legacy automatic choices are resolved
+bearing format, and accent. Old distance `warning` / `critical` settings are
+removed during load/save normalization, including version 3 layouts; they are
+never interpreted as satellite thresholds. Legacy automatic choices are resolved
 using the saved grid span; resizing does not change those settings afterward.
 New widgets default to tape off and coordinates off.
 
@@ -95,8 +162,8 @@ without a network connection; opening the link on your phone uses Google Maps.
 
 ## States
 
-Warning and critical thresholds are always metres, including when the
-display uses kilometres. Critical is checked before warning.
+Satellite critical is checked before warning, using strict less-than comparisons.
+Missing/stale telemetry takes priority over satellite threshold alerts.
 
 | Condition | Presentation |
 | --- | --- |
@@ -105,7 +172,9 @@ display uses kilometres. Critical is checked before warning.
 | Source present but no fix | `--`, `N/A` badge, `NO FIX` where a footer fits. |
 | Valid fix but no home | No distance or bearing; coordinates remain available. `NO HOME POSITION` or a shorter form, no failure badge. |
 | Stale position | Last reading retained, `STALE` badge, `LAST KNOWN` or `LAST` where a footer fits. |
-| Distance at or above warning/critical | Amber/red state presentation and `WARN`/`CRIT` badge. |
+| Configured satellite count below warning/critical | Amber/red state presentation and `WARN`/`CRIT` badge. |
+| Configured satellite source missing or invalid | `N/A` badge; satellite count `--` when it fits. GPS readings remain available. |
+| Configured satellite count stale | Last count retained, `STALE` badge. |
 
 Zero latitude and longitude together are treated as no fix, matching
 EdgeTX's uninitialized GPS values. A valid `0m` reading means the model is
@@ -113,7 +182,7 @@ at home, not that GPS is unavailable.
 
 ## Examples
 
-A tape with distance thresholds and no coordinates:
+A tape with satellite-count alerts and no coordinates:
 
 ```yaml
 - id: location
@@ -124,8 +193,9 @@ A tape with distance thresholds and no coordinates:
   rowSpan: 2
   config:
     showTape: true
-    warning: 500
-    critical: 1000
+    satelliteSource: Sats
+    satelliteWarning: 8
+    satelliteCritical: 4
 ```
 
 Tape and coordinates:

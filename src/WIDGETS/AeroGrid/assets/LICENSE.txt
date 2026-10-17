@@ -24,3 +24,13 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+Satellite icon: Google Material Symbols, satellite_alt (filled).
+https://github.com/google/material-design-icons/blob/master/symbols/web/satellite_alt/materialsymbolsoutlined/satellite_alt_fill1_24px.svg
+Copyright Google LLC.
+Licensed under the Apache License, Version 2.0; see material-symbols-LICENSE.txt.
+AeroGrid supplies theme-specific fill colors and renders 16x16 PNG assets.
+This attribution applies to satellite.svg, satellite-light.svg, and their
+rendered PNG assets.

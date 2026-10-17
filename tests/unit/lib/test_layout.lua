@@ -265,6 +265,25 @@ local function testNavigationMigration()
     panel = { type = "navigation", colSpan = 2, rowSpan = 2, config = {} }
     layout.migratePanel(panel, 3)
     assertions.assertEqual(panel.config.showTape, nil, "new widgets must not inherit legacy auto")
+    for _, version in ipairs({ 1, 2, 3 }) do
+        panel = {
+            type = "navigation",
+            config = {
+                warning = 500,
+                critical = 1000,
+                satelliteSource = "Sats",
+                satelliteWarning = 9,
+                satelliteCritical = 5,
+            },
+        }
+        layout.migratePanel(panel, version)
+        layout.normalizePanel(panel)
+        assertions.assertEqual(panel.config.warning, nil)
+        assertions.assertEqual(panel.config.critical, nil)
+        assertions.assertEqual(panel.config.satelliteSource, "Sats")
+        assertions.assertEqual(panel.config.satelliteWarning, 9)
+        assertions.assertEqual(panel.config.satelliteCritical, 5)
+    end
 end
 
 local function run()

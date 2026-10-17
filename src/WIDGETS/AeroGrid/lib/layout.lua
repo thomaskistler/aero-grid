@@ -18,6 +18,11 @@ local layout = { RUNTIME_API = 1 }
 layout.VERSION = 3
 
 function layout.normalizePanel(panel)
+    if panel.type == "navigation" and type(panel.config) == "table" then
+        -- Former distance thresholds must never become satellite-count limits.
+        panel.config.warning = nil
+        panel.config.critical = nil
+    end
     if panel.type == "rx-battery" and type(panel.config) == "table" then
         -- Schema 2 was unreleased: accept its old selector, but never persist it.
         panel.config.sourceType = nil

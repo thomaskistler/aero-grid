@@ -11,12 +11,17 @@ panels:
   2x2: {col: 2, row: 2, colSpan: 2, rowSpan: 2}
 config:
   source: GPS
+  satelliteSource: Sats
   showTape: true
   label: NAV
   accent: cyan
 sample:
   rssi: 85
   sources:
+    Sats:
+      unit: 0
+      precision: 0
+      value: 12
     GPS:
       unit: 40
       precision: 0

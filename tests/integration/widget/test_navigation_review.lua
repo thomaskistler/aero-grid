@@ -92,6 +92,8 @@ local function instance(cols, rows, rect, settings)
         span = { colSpan = cols, rowSpan = rows },
         state = square.state,
         navigation = square.service,
+        telemetry = context.serviceRuntime.byId.telemetry,
+        host = context,
     })
 end
 
@@ -237,4 +239,110 @@ fixture.radio.values[109].lat = 0
 fixture.radio.values[109].lon = 0
 fixture.pump(context, 40)
 assertions.assertEqual(detailed.tape.status.properties.text, "NO FIX")
+
+fixture.radio.values[109] = { lat = 47, lon = 8, delay = 0 }
+fixture.radio.values[305] = -1024
+local custom = instance(2, 2, { w = 238, h = 134 }, { armSwitch = "SFv", showTape = true })
+fixture.pump(context, 20)
+navigation.refresh(custom)
+assertions.assertEqual(custom.feed.homeStatus, "waiting")
+assertions.assertEqual(custom.text, "--")
+fixture.radio.values[305] = 1024
+local definition = fixture.module("main.lua")
+for _ = 1, 20 do
+    fixture.tick(20)
+    definition.background(context)
+end
+navigation.refresh(custom)
+assertions.assertEqual(custom.feed.homeStatus, "captured", "background updates must capture home")
+assertions.assertEqual(custom.text, "0")
+fixture.radio.values[109].lat = 47.001
+fixture.radio.values[305] = -1024
+fixture.pump(context, 20)
+fixture.radio.values[305] = 1024
+fixture.pump(context, 20)
+navigation.refresh(custom)
+assertions.assertEqual(custom.feed.pilotLatitude, 47)
+assert(custom.feed.distance > 100 and custom.feed.distance < 120)
+
+local homes = context.navigationHomes
+definition.update(context, { Layout = "review-navigation", Theme = "modern-light" })
+fixture.pump(context, 120)
+assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+assert(context.navigationHomes == homes, "layout/theme reload must preserve capture state")
+square = fixture.instanceOf(context, "compass")
+custom = instance(2, 2, { w = 238, h = 134 }, { armSwitch = "SFv" })
+fixture.pump(context, 20)
+navigation.refresh(custom)
+assertions.assertEqual(custom.feed.pilotLatitude, 47, "panel recreation must not reset home")
+assert(custom.feed.distance > 100 and custom.feed.distance < 120)
+
+fixture.radio.modelFilename = "another-model.yml"
+definition.update(context, { Layout = "review-navigation", Theme = "modern-dark" })
+fixture.pump(context, 120)
+assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+assert(context.navigationHomes ~= homes, "a different model must not inherit home")
+square = fixture.instanceOf(context, "compass")
+custom = instance(2, 2, { w = 238, h = 134 }, { armSwitch = "SFv" })
+fixture.pump(context, 20)
+assertions.assertEqual(custom.feed.home, false, "starting armed in a new model must not capture")
+assertions.assertEqual(custom.feed.homeStatus, "waiting")
+
+fixture.radio.fields.Sats = { id = 122, name = "Sats", desc = "Satellites", unit = 0 }
+fixture.radio.values[122] = 12
+fixture.radio.values[109] = { lat = 47.002, lon = 8.003, ["pilot-lat"] = 47, ["pilot-lon"] = 8, delay = 0 }
+for _, shape in ipairs({ { 1, 2, 117, 134 }, { 2, 1, 238, 65 }, { 2, 2, 238, 134 } }) do
+    local satellitePanel = instance(
+        shape[1],
+        shape[2],
+        { w = shape[3], h = shape[4] },
+        { satelliteSource = "Sats", showTape = true }
+    )
+    fixture.pump(context, 20)
+    navigation.refresh(satellitePanel)
+    assertions.assertEqual(satellitePanel.stateName, "normal")
+    assert(satellitePanel.showSatellites, "satellite count must fit standard span " .. shape[1] .. "x" .. shape[2])
+    assertions.assertEqual(satellitePanel.satelliteLabel.properties.text, "12")
+    local header = satellitePanel.satelliteHeader.properties
+    assert(header.x + header.w <= shape[3])
+    for _, sample in ipairs({
+        { 3, "critical" },
+        { 4, "warning" },
+        { 7, "warning" },
+        { 8, "normal" },
+        { 0, "critical" },
+        { 12, "normal" },
+    }) do
+        fixture.radio.values[122] = sample[1]
+        fixture.pump(context, 20)
+        navigation.refresh(satellitePanel)
+        assertions.assertEqual(satellitePanel.stateName, sample[2])
+        if satellitePanel.showSatellites then
+            assertions.assertEqual(satellitePanel.satelliteLabel.properties.text, tostring(sample[1]))
+        end
+        if satellitePanel.showSatellites and satellitePanel.badgeText ~= "" then
+            assert(
+                satellitePanel.satelliteHeader.properties.x + satellitePanel.satelliteHeader.properties.w
+                    < satellitePanel.badge.properties.x,
+                "satellites must not overlap the state badge"
+            )
+        end
+    end
+    navigation.update(satellitePanel, { w = 60, h = 40 })
+    assert(not satellitePanel.showSatellites, "drop satellite count rather than clip narrow headers")
+    navigation.update(satellitePanel, { w = shape[3], h = shape[4] })
+    assert(satellitePanel.showSatellites, "restore satellite count after reflow")
+end
+local missing = instance(2, 2, { w = 238, h = 134 }, { satelliteSource = "MissingSats" })
+fixture.pump(context, 20)
+navigation.refresh(missing)
+assertions.assertEqual(missing.stateName, "unavailable")
+assertions.assertEqual(missing.satelliteLabel.properties.text, "--")
+fixture.radio.values[109], fixture.radio.values[122], fixture.radio.rssi = 0, 0, 0
+fixture.pump(context, 20)
+local stale = instance(2, 2, { w = 238, h = 134 }, { satelliteSource = "Sats" })
+navigation.refresh(stale)
+assertions.assertEqual(stale.stateName, "stale")
+assertions.assertEqual(stale.satelliteLabel.properties.text, "12")
+fixture.radio.values[109] = {}
 fixture.reset()

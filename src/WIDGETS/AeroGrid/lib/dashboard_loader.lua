@@ -348,7 +348,11 @@ function module.new(dependencies)
                 context.layoutPath = filename
                 context.layoutOrigin = origin
             end
-            context.modelFilename = modelInfo and modelInfo.filename or nil
+            local modelFilename = modelInfo and modelInfo.filename or nil
+            if context.modelFilename ~= modelFilename then
+                context.navigationHomes = nil
+            end
+            context.modelFilename = modelFilename
             context.loadCandidates = candidates
             context.loadCandidateIndex = recoveryIndex
             if candidates and not recoveryIndex then
@@ -547,6 +551,8 @@ function module.new(dependencies)
 
                 context.servicesModule = support
                 context.serviceRuntime = support.runtime(support.environment())
+                context.navigationHomes = context.navigationHomes or {}
+                context.serviceRuntime.navigationHomes = context.navigationHomes
                 context.serviceIndex = 1
                 return true
             end

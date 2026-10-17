@@ -2,10 +2,8 @@
 
 --- GPS fix, pilot position, distance, and north-up home-to-model bearing.
 ---
---- An EdgeTX GPS source returns a table carrying the model position, the pilot
---- position EdgeTX recorded when the fix was first acquired, and the age of the
---- last update. This service normalizes that into a fix state, a distance, and
---- an absolute bearing measured from the home position toward the model.
+--- Home comes from EdgeTX unless an armed switch is configured. Custom home
+--- is captured once, on the first observed disarmed-to-armed transition.
 ---
 --- The bearing is deliberately north-up. It is not aircraft heading and not
 --- transmitter orientation, neither of which EdgeTX can supply, so nothing here
@@ -16,6 +14,7 @@
 ---@field known boolean The radio recognizes the source.
 ---@field fix boolean Valid model coordinates are available.
 ---@field home boolean Valid pilot coordinates are available.
+---@field homeStatus? "waiting"|"missed"|"captured"|"switch-unavailable" Custom home capture state.
 ---@field state "normal"|"stale"|"unavailable"
 ---@field latitude? number Model latitude in decimal degrees.
 ---@field longitude? number Model longitude in decimal degrees.
@@ -43,12 +42,16 @@ local EARTH_RADIUS = 6371000
 --- EdgeTX reports zero for both axes before a sensor has produced a position.
 local NULL_EPSILON = 0.0000005
 
+local MAX_CAPTURE_AGE = 100
+
 --- Create the service.
 ---@param env table Result of services.environment.
 ---@param support table The loaded lib/services.lua module.
 ---@param runtime table Registry, used to reach the telemetry service.
 ---@return table
 function navigationService.new(env, support, runtime)
+    local homes = runtime.navigationHomes or {}
+    runtime.navigationHomes = homes
     return setmetatable({
         id = "navigation",
         interval = INTERVAL,
@@ -61,7 +64,53 @@ function navigationService.new(env, support, runtime)
         entries = {},
         cursor = 1,
         sources = {},
+        homes = homes,
     }, navigationService)
+end
+
+--- Consume only the first observed disarmed-to-armed transition, even without GPS.
+function navigationService:captureHome(entry, now)
+    local capture = entry.capture
+    if not capture then
+        return
+    end
+    local state = entry.state
+    if not capture.attempted then
+        local arm = entry.arm
+        local live = arm.available
+            and arm.fresh
+            and type(arm.updatedAt) == "number"
+            and now >= arm.updatedAt
+            and now - arm.updatedAt <= MAX_CAPTURE_AGE
+        if not live then
+            entry.wasArmed = nil
+            state.homeStatus = "switch-unavailable"
+            return
+        end
+        local armed = arm.value
+        if entry.wasArmed == false and armed then
+            capture.attempted = true
+            local reading = entry.reading
+            local position = reading and reading.raw
+            local delay = type(position) == "table" and position.delay or nil
+            if
+                reading
+                and reading.available
+                and reading.fresh
+                and not reading.stale
+                and type(reading.updatedAt) == "number"
+                and now >= reading.updatedAt
+                and now - reading.updatedAt <= MAX_CAPTURE_AGE
+                and (delay == nil or (type(delay) == "number" and delay >= 0 and delay * 100 + now - reading.updatedAt <= MAX_CAPTURE_AGE))
+                and type(position) == "table"
+                and navigationService.hasPosition(position.lat, position.lon)
+            then
+                capture.latitude, capture.longitude = position.lat, position.lon
+            end
+        end
+        entry.wasArmed = armed
+    end
+    state.homeStatus = capture.latitude and "captured" or capture.attempted and "missed" or "waiting"
 end
 
 --- Reach the telemetry service, which owns every source poll.
@@ -149,6 +198,12 @@ end
 function navigationService:poll(entry, now)
     local state = entry.state
     local reading = entry.reading
+    self:captureHome(entry, now)
+    if entry.capture then
+        state.pilotLatitude = entry.capture.latitude
+        state.pilotLongitude = entry.capture.longitude
+        state.home = entry.capture.latitude ~= nil
+    end
 
     if type(reading) ~= "table" then
         state.state = "unavailable"
@@ -161,7 +216,7 @@ function navigationService:poll(entry, now)
     local position = reading.raw
     if type(position) ~= "table" or not reading.available then
         state.fix = false
-        state.home = false
+        state.home = entry.capture and entry.capture.latitude ~= nil or false
         state.state = "unavailable"
         state.distance = nil
         state.bearing = nil
@@ -172,6 +227,10 @@ function navigationService:poll(entry, now)
     local longitude = position.lon
     local pilotLatitude = position["pilot-lat"]
     local pilotLongitude = position["pilot-lon"]
+    if entry.capture then
+        pilotLatitude = entry.capture.latitude
+        pilotLongitude = entry.capture.longitude
+    end
 
     state.fix = navigationService.hasPosition(latitude, longitude)
     state.home = navigationService.hasPosition(pilotLatitude, pilotLongitude)
@@ -214,8 +273,9 @@ end
 
 --- Subscribe to a GPS source.
 ---@param name any GPS source name.
+---@param armSwitch? string Empty or omitted uses EdgeTX home.
 ---@return AeroGridNavigation
-function navigationService:subscribe(name)
+function navigationService:subscribe(name, armSwitch)
     if type(name) ~= "string" or name == "" then
         if not self.noneView then
             self.noneView = self.support.snapshot({
@@ -230,7 +290,9 @@ function navigationService:subscribe(name)
         return self.noneView
     end
 
-    local existing = self.sources[name]
+    local customHome = type(armSwitch) == "string" and armSwitch ~= ""
+    local key = customHome and (name .. "\0" .. armSwitch) or name
+    local existing = self.sources[key]
     if existing then
         return existing
     end
@@ -254,9 +316,19 @@ function navigationService:subscribe(name)
         },
         reading = telemetry and telemetry:subscribe(name) or nil,
     }
+    if customHome then
+        local control = self.runtime.byId.control
+        assert(control, "navigation home capture requires control service")
+        entry.arm = control:switch(armSwitch)
+        self.homes[key] = self.homes[key] or {}
+        entry.capture = self.homes[key]
+        entry.state.homeStatus = entry.capture.latitude and "captured"
+            or entry.capture.attempted and "missed"
+            or "waiting"
+    end
 
     self.support.addSubscription(self, self.entries, entry)
-    self.sources[name] = entry.view
+    self.sources[key] = entry.view
     return entry.view
 end
 
