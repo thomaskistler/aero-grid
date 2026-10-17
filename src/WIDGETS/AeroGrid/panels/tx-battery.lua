@@ -47,14 +47,6 @@ local txBattery = {
     settings = {
         -- "TX BATTERY" needs ten characters of a header that has about five.
         { key = "label", label = "Label", type = "string", default = "TX" },
-        -- Cyan is the shared accent for electrical and battery readings.
-        {
-            key = "accent",
-            label = "Accent",
-            type = "string",
-            default = "cyan",
-            choices = { "cyan", "green", "amber", "orange" },
-        },
         -- No default range: the estimate stays off until a layout states one.
         { key = "packEmpty", label = "Empty volts, whole pack", type = "number" },
         { key = "packFull", label = "Full volts, whole pack", type = "number" },
@@ -69,6 +61,14 @@ local txBattery = {
             choices = { "battery", "bar", "none" },
         },
         { key = "showPercent", label = "Show estimate", type = "boolean", default = false },
+        -- Cyan is the shared accent for electrical and battery readings.
+        {
+            key = "accent",
+            label = "Accent",
+            type = "string",
+            default = "cyan",
+            choices = { "cyan", "green", "amber", "orange" },
+        },
     },
 }
 

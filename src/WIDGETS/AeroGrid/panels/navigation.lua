@@ -56,12 +56,12 @@ local navigation = {
     -- is itself rate limited because every update costs trigonometry.
     refreshInterval = 25,
     settings = {
+        { key = "label", label = "Label", type = "string", default = "NAV" },
         { key = "source", label = "GPS source", type = "string", default = "GPS" },
         { key = "armSwitch", label = "Home arm switch (blank: EdgeTX)", type = "string", default = "" },
         { key = "satelliteSource", label = "Satellite count source", type = "string", default = "" },
         { key = "satelliteWarning", label = "Warn below satellites", type = "number", default = 8 },
         { key = "satelliteCritical", label = "Critical below satellites", type = "number", default = 4 },
-        { key = "label", label = "Label", type = "string", default = "NAV" },
         { key = "showTape", label = "Show tape", type = "boolean", default = false },
         {
             key = "bearingFormat",

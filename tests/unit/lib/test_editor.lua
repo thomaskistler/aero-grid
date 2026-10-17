@@ -157,8 +157,28 @@ local function testRxBatteryFormAndSourceDrawers()
 
     local fields = assert(editor.formFields(session))
     assert(fields[1].key == "label", "Label is not the first editor control")
-    for index, key in ipairs({ "label", "source", "cells", "reading", "visual", "showPack", "showCount", "showDelta" }) do
-        assert(fields[index].key == key, "flat RX drawer order: " .. key)
+    local flatOrder = {}
+    for _, field in ipairs(fields) do
+        if field.key then
+            flatOrder[#flatOrder + 1] = field.key
+        end
+    end
+    for index, key in ipairs({
+        "label",
+        "source",
+        "cells",
+        "reading",
+        "cellFull",
+        "cellWarning",
+        "cellCritical",
+        "cellEmpty",
+        "visual",
+        "showPack",
+        "showCount",
+        "showDelta",
+        "accent",
+    }) do
+        assert(flatOrder[index] == key, "flat RX drawer order: " .. key)
     end
     local indices = {}
     for index, field in ipairs(fields) do
@@ -518,6 +538,87 @@ local function testNestedStateLists()
 end
 
 local function testAllPanelDrawersStartWithLabel()
+    local expectedOrder = {
+        output = { "label", "firstChannel", "channelCount", "showNames", "showTrim", "accent" },
+        ["flight-counter"] = {
+            "label",
+            "armSwitch",
+            "motorSource",
+            "motorReversed",
+            "minMotorPercent",
+            "minFlightDuration",
+            "disarmDuration",
+            "announcements",
+            "history",
+        },
+        ["flight-mode"] = { "label", "showIndex", "accent" },
+        ["flight-timer"] = { "label", "timer", "warning", "critical", "accent" },
+        ["host-diagnostics"] = { "label", "section", "accent" },
+        ["link-status"] = {
+            "label",
+            "rssiSource",
+            "qualitySource",
+            "modeSource",
+            "snrSource",
+            "powerSource",
+            "protocol",
+            "reading",
+            "extrema",
+            "extremaSource",
+            "qualityWarning",
+            "qualityCritical",
+            "marginWarning",
+            "marginCritical",
+            "rssiWarning",
+            "rssiCritical",
+            "barMin",
+            "barMax",
+            "visual",
+            "accent",
+        },
+        metric = { "metrics", "visual", "accent" },
+        ["model-identity"] = { "label", "presentation", "showLabels", "accent" },
+        navigation = {
+            "label",
+            "source",
+            "armSwitch",
+            "satelliteSource",
+            "satelliteWarning",
+            "satelliteCritical",
+            "showTape",
+            "bearingFormat",
+            "showCoordinates",
+            "accent",
+        },
+        ["rx-battery"] = {
+            "label",
+            "source",
+            "cells",
+            "reading",
+            "cellFull",
+            "cellWarning",
+            "cellCritical",
+            "cellEmpty",
+            "visual",
+            "showPack",
+            "showCount",
+            "showDelta",
+            "accent",
+        },
+        ["service-probe"] = { "label", "service", "source", "extra", "index", "accent" },
+        state = { "entries", "accent" },
+        ["tx-battery"] = {
+            "label",
+            "packEmpty",
+            "packFull",
+            "warning",
+            "critical",
+            "visual",
+            "showPercent",
+            "accent",
+        },
+        ["trim-panel"] = { "label", "trim1", "trim2", "trim4", "scale", "readout", "accent" },
+    }
     for _, entry in ipairs(editor.CATALOG) do
         local module = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/" .. entry.type .. ".lua"))()
         modules[entry.type] = module
@@ -526,6 +627,17 @@ local function testAllPanelDrawersStartWithLabel()
         input.panels[1].config = {}
         local session = newSession(input)
         local fields = assert(editor.formFields(session))
+        local actualOrder = {}
+        for _, field in ipairs(fields) do
+            if field.key and not field.path then
+                actualOrder[#actualOrder + 1] = field.key
+            end
+        end
+        local expected = assert(expectedOrder[entry.type], entry.type .. " has no drawer order")
+        assert(#actualOrder == #expected, entry.type .. " drawer has an unexpected setting count")
+        for index, key in ipairs(expected) do
+            assert(actualOrder[index] == key, entry.type .. " drawer order at " .. index .. " should be " .. key)
+        end
         local hasLabel = false
         for _, setting in ipairs(module.settings or {}) do
             hasLabel = hasLabel or setting.key == "label"

@@ -6,11 +6,11 @@ local output = {
     supportedSpans = { "any" },
     refreshInterval = 10,
     settings = {
-        { key = "showNames", label = "Show channel names", type = "boolean", default = true },
-        { key = "showTrim", label = "Show trim", type = "boolean", default = true },
+        { key = "label", label = "Label", type = "string", default = "CHANNEL OUTPUT" },
         { key = "firstChannel", label = "First channel", type = "number", default = 1, min = 1, max = 32, step = 1 },
         { key = "channelCount", label = "Channel count", type = "number", min = 1, max = 32, step = 1, empty = "Auto" },
-        { key = "label", label = "Label", type = "string", default = "CHANNEL OUTPUT" },
+        { key = "showNames", label = "Show channel names", type = "boolean", default = true },
+        { key = "showTrim", label = "Show trim", type = "boolean", default = true },
         {
             key = "accent",
             label = "Accent",

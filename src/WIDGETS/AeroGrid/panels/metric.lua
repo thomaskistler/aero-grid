@@ -100,18 +100,18 @@ local metric = {
             },
         },
         {
-            key = "accent",
-            label = "Accent",
-            type = "string",
-            default = "cyan",
-            choices = { "cyan", "green", "amber", "orange" },
-        },
-        {
             key = "visual",
             label = "Visualization",
             type = "string",
             default = "bar",
             choices = { "bar", "radial", "none" },
+        },
+        {
+            key = "accent",
+            label = "Accent",
+            type = "string",
+            default = "cyan",
+            choices = { "cyan", "green", "amber", "orange" },
         },
     },
 }

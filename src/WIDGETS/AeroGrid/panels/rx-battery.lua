@@ -73,37 +73,6 @@ local rxBattery = {
             default = "cell",
             choices = { "cell", "pack" },
         },
-        -- Preferences, not demands: the panel sheds either where it does not
-        -- fit, and the battery visualization never draws them.
-        {
-            key = "visual",
-            label = "Visualization",
-            type = "string",
-            default = "battery",
-            choices = { "battery", "bar", "none" },
-            choiceLabels = { "battery", "bar", "details" },
-        },
-        {
-            key = "showPack",
-            label = "Show alt reading",
-            type = "boolean",
-            default = true,
-            visibleWhen = { key = "visual", value = "battery", invert = true },
-        },
-        {
-            key = "showCount",
-            label = "Show cell count",
-            type = "boolean",
-            default = true,
-            visibleWhen = { key = "visual", value = "battery", invert = true },
-        },
-        {
-            key = "showDelta",
-            label = "Show cell delta",
-            type = "boolean",
-            default = false,
-            visibleWhen = { key = "visual", value = "battery", invert = true },
-        },
         {
             key = "cellFull",
             label = "Full (V/cell)",
@@ -142,6 +111,37 @@ local rxBattery = {
             max = 10,
             step = 0.01,
             visibleWhen = { key = "visual", value = "none", invert = true },
+        },
+        -- Preferences, not demands: the panel sheds either where it does not
+        -- fit, and the battery visualization never draws them.
+        {
+            key = "visual",
+            label = "Visualization",
+            type = "string",
+            default = "battery",
+            choices = { "battery", "bar", "none" },
+            choiceLabels = { "battery", "bar", "details" },
+        },
+        {
+            key = "showPack",
+            label = "Show alt reading",
+            type = "boolean",
+            default = true,
+            visibleWhen = { key = "visual", value = "battery", invert = true },
+        },
+        {
+            key = "showCount",
+            label = "Show cell count",
+            type = "boolean",
+            default = true,
+            visibleWhen = { key = "visual", value = "battery", invert = true },
+        },
+        {
+            key = "showDelta",
+            label = "Show cell delta",
+            type = "boolean",
+            default = false,
+            visibleWhen = { key = "visual", value = "battery", invert = true },
         },
         {
             key = "accent",

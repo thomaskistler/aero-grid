@@ -54,6 +54,9 @@ local diagnostics = {
     -- failing or a source binding, and neither is worth a frame.
     refreshInterval = 50,
     settings = {
+        -- An empty label is not an absent one: it means derive the heading at
+        -- runtime, here from the section being shown.
+        { key = "label", label = "Label", type = "string", default = "" },
         {
             key = "section",
             label = "Section",
@@ -61,9 +64,6 @@ local diagnostics = {
             default = "identity",
             choices = { "identity", "theme", "panels", "sources" },
         },
-        -- An empty label is not an absent one: it means derive the heading at
-        -- runtime, here from the section being shown.
-        { key = "label", label = "Label", type = "string", default = "" },
         {
             key = "accent",
             label = "Accent",

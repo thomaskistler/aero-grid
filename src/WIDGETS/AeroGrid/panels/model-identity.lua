@@ -65,6 +65,7 @@ local modelIdentity = {
             choices = { "auto", "name", "image", "both" },
         },
         { key = "label", label = "Label", type = "string", default = DEFAULT_LABEL },
+        { key = "showLabels", label = "Show model labels", type = "boolean", default = false },
         {
             key = "accent",
             label = "Accent",
@@ -72,7 +73,6 @@ local modelIdentity = {
             default = "cyan",
             choices = { "cyan", "green", "amber", "orange" },
         },
-        { key = "showLabels", label = "Show model labels", type = "boolean", default = false },
     },
 }
 

@@ -218,6 +218,15 @@ to work.
 It took five rounds to arrive at, and the version that worked came from the user rather
 than from the measurements.
 
+### The settings drawer follows a shared order
+
+Panel settings start with **Label** when one is declared. The remaining options follow
+a consistent flow: sources and selections, behavior and limits, display options, then
+**Accent**. Keep related values together, such as a warning/critical pair or a minimum/
+maximum range. A list's entry drawer follows the same flow; its add action follows the
+entries and its remove action comes last. This order is declared by the panel metadata,
+and the editor moves Label to the front automatically.
+
 ### Alert states tint the surface; they do not draw a frame
 
 A warning or critical state tints the panel's fill. It does not colour its border.

@@ -49,6 +49,8 @@ local flightTimer = {
         -- runtime, here from the timer's own name, or its number when it has none. A
         -- panel with a fixed heading states it as its default instead.
         { key = "label", label = "Label", type = "string", default = "" },
+        { key = "warning", label = "Warning seconds", type = "number" },
+        { key = "critical", label = "Critical seconds", type = "number" },
         {
             key = "accent",
             label = "Accent",
@@ -56,8 +58,6 @@ local flightTimer = {
             default = "cyan",
             choices = { "cyan", "green", "amber", "orange" },
         },
-        { key = "warning", label = "Warning seconds", type = "number" },
-        { key = "critical", label = "Critical seconds", type = "number" },
         -- Countdown thresholds count down; count-up thresholds count up.
     },
 }

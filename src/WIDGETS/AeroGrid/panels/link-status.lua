@@ -77,10 +77,14 @@ local linkStatus = {
     -- and costs a tenth as much of the shared instruction budget.
     refreshInterval = 20,
     settings = {
+        { key = "label", label = "Label", type = "string", default = "LINK" },
         { key = "rssiSource", label = "RSSI source", type = "string", default = "RSSI" },
         -- Never defaulted: link quality is not universal, and inferring it from
         -- RSSI would invent a number the radio never reported.
         { key = "qualitySource", label = "Link quality source", type = "string", default = "" },
+        { key = "modeSource", label = "RF mode source", type = "string", default = "" },
+        { key = "snrSource", label = "SNR source", type = "string", default = "" },
+        { key = "powerSource", label = "Transmit power source", type = "string", default = "" },
         {
             key = "protocol",
             label = "Protocol mapping",
@@ -88,15 +92,6 @@ local linkStatus = {
             default = "generic",
             choices = { "generic", "elrs4" },
         },
-        { key = "modeSource", label = "RF mode source", type = "string", default = "" },
-        { key = "snrSource", label = "SNR source", type = "string", default = "" },
-        { key = "powerSource", label = "Transmit power source", type = "string", default = "" },
-        { key = "qualityWarning", label = "Warning link quality percent", type = "number" },
-        { key = "qualityCritical", label = "Critical link quality percent", type = "number" },
-        { key = "marginWarning", label = "Warning RSSI margin dB", type = "number" },
-        { key = "marginCritical", label = "Critical RSSI margin dB", type = "number" },
-        -- Which of the two sources leads the panel. Named `reading` like every
-        -- other panel that chooses between its own values.
         {
             key = "reading",
             label = "Primary reading",
@@ -104,15 +99,8 @@ local linkStatus = {
             default = "auto",
             choices = { "auto", "rssi", "quality" },
         },
-        { key = "label", label = "Label", type = "string", default = "LINK" },
-        -- The bar's range, in the primary reading's own unit. The defaults suit a
-        -- percentage; a dBm source needs its own, which is why they are settings.
-        { key = "barMin", label = "Bar minimum", type = "number", default = 0 },
-        { key = "barMax", label = "Bar maximum", type = "number", default = 100 },
-        { key = "rssiWarning", label = "Warning RSSI", type = "number" },
-        { key = "rssiCritical", label = "Critical RSSI", type = "number" },
-        -- A link only ever gets worse downward.
-        -- No `direction`. RSSI and link quality both only alarm downward.
+        -- A link only ever gets worse downward. RSSI and link quality both
+        -- alarm downward, so there is no configurable direction.
         {
             key = "extrema",
             label = "Minimum tracked",
@@ -121,7 +109,23 @@ local linkStatus = {
             choices = { "none", "source", "flight" },
         },
         { key = "extremaSource", label = "Minimum source", type = "string", default = "" },
-        { key = "visual", label = "Visualization", type = "string", default = "bar", choices = { "bar", "none" } },
+        { key = "qualityWarning", label = "Warning link quality percent", type = "number" },
+        { key = "qualityCritical", label = "Critical link quality percent", type = "number" },
+        { key = "marginWarning", label = "Warning RSSI margin dB", type = "number" },
+        { key = "marginCritical", label = "Critical RSSI margin dB", type = "number" },
+        { key = "rssiWarning", label = "Warning RSSI", type = "number" },
+        { key = "rssiCritical", label = "Critical RSSI", type = "number" },
+        -- The bar's range, in the primary reading's own unit. The defaults suit a
+        -- percentage; a dBm source needs its own, which is why they are settings.
+        { key = "barMin", label = "Bar minimum", type = "number", default = 0 },
+        { key = "barMax", label = "Bar maximum", type = "number", default = 100 },
+        {
+            key = "visual",
+            label = "Visualization",
+            type = "string",
+            default = "bar",
+            choices = { "bar", "none" },
+        },
         {
             key = "accent",
             label = "Accent",
