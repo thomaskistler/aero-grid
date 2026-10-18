@@ -140,6 +140,84 @@ local function testAddRemoveAndStrictSettings()
     assert(not valid and string.find(table.concat(errors, "\n"), "label must not be empty", 1, true))
 end
 
+local function testAddChannelOutput()
+    modules.output = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/output.lua"))()
+    local session = newSession({ version = 3, grid = { columns = 4, rows = 4 }, panels = {} })
+    local added, addError = editor.add(session, "output")
+    assert(added, addError)
+    local panel = session.draft.panels[1]
+    assert(panel.col == 0 and panel.row == 0 and panel.colSpan == 1 and panel.rowSpan == 1)
+    assert(panel.config.label == "CHANNEL OUTPUT" and panel.config.firstChannel == 1)
+    assert(panel.config.channelCount == nil and panel.config.showNames and panel.config.showTrim)
+    assert(editor.resize(session, 1, 1), "an unrestricted panel must remain resizable")
+    local applied, saved = editor.apply(session)
+    assert(applied, table.concat(saved or {}, "; "))
+    local reopened = newSession(saved)
+    assert(reopened.draft.panels[1].type == "output")
+    assert(reopened.draft.panels[1].colSpan == 2 and reopened.draft.panels[1].rowSpan == 2)
+
+    local input = { version = 3, grid = { columns = 4, rows = 4 }, panels = {} }
+    for row = 0, 3 do
+        for col = 0, 3 do
+            if row ~= 3 or col ~= 3 then
+                input.panels[#input.panels + 1] = {
+                    id = "sample-" .. tostring(#input.panels + 1),
+                    type = "sample",
+                    col = col,
+                    row = row,
+                    colSpan = 1,
+                    rowSpan = 1,
+                    config = {},
+                }
+            end
+        end
+    end
+    session = newSession(input)
+    added, addError = editor.add(session, "output")
+    assert(added, addError)
+    panel = session.draft.panels[16]
+    assert(panel.col == 3 and panel.row == 3 and panel.colSpan == 1 and panel.rowSpan == 1)
+    assert(#input.panels == 15, "adding must only change the working copy")
+    applied, saved = editor.apply(session)
+    assert(applied, table.concat(saved or {}, "; "))
+    added, addError = editor.add(session, "output")
+    assert(not added and addError == "no free grid cells support this panel")
+    assert(#session.draft.panels == 16 and not session.dirty, "a full grid must reject addition atomically")
+end
+
+local function testAddSpanDeclarations()
+    for _, case in ipairs({
+        { spans = { "2x2" }, size = 2 },
+        { spans = { "2x2", "any" }, size = 1 },
+        { spans = { "any", "2x2" }, size = 1 },
+        { size = 1 },
+        { spans = {} },
+    }) do
+        local module = editor.clone(modules.sample)
+        module.supportedSpans = case.spans
+        local session = assert(
+            editor.new(
+                { version = 3, grid = { columns = 4, rows = 4 }, panels = {} },
+                grid,
+                layout,
+                panelHost,
+                function()
+                    return module
+                end
+            )
+        )
+        local added, addError = editor.add(session, "sample")
+        if case.size then
+            assert(added, addError)
+            local panel = session.draft.panels[1]
+            assert(panel.colSpan == case.size and panel.rowSpan == case.size)
+        else
+            assert(not added and addError == "no free grid cells support this panel")
+            assert(#session.draft.panels == 0 and not session.dirty)
+        end
+    end
+end
+
 local function testRxBatteryFormAndSourceDrawers()
     local input = { version = 3, grid = { columns = 4, rows = 4 }, panels = {} }
     local session = newSession(input)
@@ -716,6 +794,8 @@ testCompatibleSwaps()
 testWorkingCopyCancelAndApply()
 testPlacementRulesAndResizeAnchor()
 testAddRemoveAndStrictSettings()
+testAddChannelOutput()
+testAddSpanDeclarations()
 testRxBatteryFormAndSourceDrawers()
 testSinglePrecisionVoltageSteps()
 testRestoreDefaultDoesNotApply()
