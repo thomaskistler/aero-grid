@@ -11,6 +11,7 @@ panels:
     colSpan: 2
     rowSpan: 2
     config:
+      visual: bar
       metrics:
         - source: GAlt
           label: ALT BAR 2x2
@@ -99,6 +100,7 @@ panels:
     colSpan: 2
     rowSpan: 1
     config:
+      visual: bar
       metrics:
         - source: GAlt
           label: ALT BAR 2x1

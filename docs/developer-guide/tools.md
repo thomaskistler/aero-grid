@@ -31,7 +31,8 @@ build/capture-venv/bin/python tools/capture-panels.py --all
 
 Choose **one** of `--panel <type>`, `--recipe <path>`, or `--all`.
 `make capture-setup` installs pinned PyYAML in a separate environment.
-All twelve user-facing panel types have bundled recipes.
+All twelve user-facing panel types, plus the Host diagnostics and Service
+probe utility panels, have bundled recipes.
 
 Each panel writes to `build/doc-capture/<panel>/`:
 
@@ -125,8 +126,10 @@ twice before capturing the frozen Google Maps QR code.
 
 This tool uses only Python's standard library plus the same native capture
 runner. It covers setup/widget/layout choices, editor overview, Metric/State
-settings, entry dialogs, exit, and Save As. Use `--help` for supported scene
-names.
+settings, entry dialogs, exit, and Save As. Every other panel has a
+`<panel>-settings` scene (for example `--scene flight-timer-settings`) that
+captures its full settings drawer from the panel's capture recipe config, for
+the panel reference pages. Use `--help` for supported scene names.
 
 It also captures the telemetry-free **Palette** layout with real production
 primitives. These scenes are opt-in and do not open the editor:
@@ -154,6 +157,15 @@ Setup scenes automate native touch input. Editor scenes enter fullscreen
 through a native long-press and automate production editor commands in the
 isolated copy. Check images manually: capture success is not a replacement
 for interactive editor/persistence tests.
+
+The `settings`, `<kind>-settings`, `state-entry`, `state-condition`, and
+`metric-entry` scenes capture the whole
+configuration drawer, cropped to the dialog. When its rows do not fit on the
+screen, the tool captures further pages in `<scene>-page<N>/`, each hiding
+leading rows in the isolated copy so later rows move into view, and stitches
+them into one taller PNG. Hidden rows are used instead of scrolling because the
+native dialog keeps its focused row in view. The scrollbar is painted over,
+since it reflects only one page.
 
 ### Full dashboard screenshot
 

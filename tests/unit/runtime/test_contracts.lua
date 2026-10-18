@@ -644,26 +644,76 @@ local function testLinkThresholdsNeedAStatedReading()
     end
 end
 
---- Every shipped panel has documentation, and its examples load.
+--- Names the editor shows for each panel, read from its catalogue.
 ---
---- Two failures to prevent, and the second is the one that rots quietly. An
---- example that stops loading is caught the same way the specification's are,
---- by running it rather than reading it. A panel with no documentation
---- file at all is caught by reading the panel directory rather than a
---- list, because a list is what lets the eleventh panel be quietly
---- undocumented: nothing would be wrong, there would simply be less.
---- Panels reviewed and documented so far, and the ones still owed.
----
---- The review is one panel per pull request, so this starts as debt and
---- is meant to empty. It is an explicit list rather than a silent gap for one
---- reason: a panel that is not on it and has no page fails immediately,
---- so a panel added to the catalogue tomorrow cannot be quietly
---- undocumented. Removing the last name here should delete this table too.
-local UNDOCUMENTED = {
-    ["host-diagnostics"] = true,
-    ["service-probe"] = true,
-}
+--- Read from the source rather than by loading the editor, which needs a
+--- radio; the catalogue is one literal table, so a pattern is exact.
+---@return table<string, string>
+local function catalogNames()
+    local handle = assert(io.open(root .. "/src/WIDGETS/AeroGrid/lib/editor.lua", "r"))
+    local text = handle:read("a")
+    handle:close()
+    local names = {}
+    for kind, label in string.gmatch(text, '{ type = "([%w%-]+)", label = "([^"]+)" }') do
+        names[kind] = label
+    end
+    return names
+end
 
+--- Every key a panel declares, including the fields of its list entries.
+---@param settings table[]
+---@param out? string[]
+---@return string[]
+local function declaredKeys(settings, out)
+    out = out or {}
+    for _, setting in ipairs(settings or {}) do
+        out[#out + 1] = setting.key
+        if setting.fields then
+            declaredKeys(setting.fields, out)
+        end
+    end
+    return out
+end
+
+--- Check one example from the YAML reference, classified by its first line.
+---@param body string
+---@param label string
+---@return string[] types placed by the example
+local function checkReferenceExample(body, label)
+    assert(#body > 0, label .. " is empty")
+    local normalized
+    if string.match(body, "^version:") then
+        normalized = checkLayoutExample(body, label)
+    elseif string.match(body, "^%- id:") then
+        normalized = checkPanelExample(body, label)
+    else
+        error(
+            label
+                .. " is neither a layout nor a panel entry, so nothing"
+                .. " checks it. Its first line is: "
+                .. tostring(string.match(body, "^([^\n]*)"))
+        )
+    end
+    local types = {}
+    for _, placement in ipairs(normalized.panels) do
+        types[#types + 1] = placement.type
+    end
+    return types
+end
+
+--- Every shipped panel has a settings page, and the YAML reference covers it.
+---
+--- The panel pages describe the configuration drawer, so they carry no YAML:
+--- the drawer is what a pilot sees, and a key name there is a second name for
+--- the same control. The YAML reference carries the keys instead, and is the
+--- page that can drift from the code, so it is checked two ways. Every example
+--- in it is run as the host would run it, and every key every panel declares
+--- has to be named in that panel's section, which is what stops a new setting
+--- from shipping undocumented for the people writing layouts by hand or with
+--- an agent.
+---
+--- The panel list is read from the panel directory rather than a list,
+--- because a list is what lets the next panel be quietly undocumented.
 local function testPanelDocumentationLoads()
     local kinds = panelTypes()
     assert(#kinds > 0, "no panels were found to document")
@@ -680,107 +730,86 @@ local function testPanelDocumentationLoads()
         end
     end
 
-    local known = {}
+    local names = catalogNames()
     for _, kind in ipairs(kinds) do
-        known[kind] = true
-    end
-    -- A name here that is not a panel is a rename nobody finished, and it
-    -- would excuse a real panel from ever being documented.
-    for kind in pairs(UNDOCUMENTED) do
+        local name = names[kind]
+        assert(name, kind .. " is not in the editor catalogue, so its page has no drawer to describe")
+
+        local path = root .. "/docs/panels/" .. kind .. ".md"
+        local page = io.open(path, "r")
+        assert(page, kind .. " ships with no documentation at " .. path)
+        local text = page:read("a")
+        page:close()
+
         assert(
-            known[kind],
-            kind
-                .. " is listed as undocumented but is not a"
-                .. " panel; the list is excusing something that does not exist"
+            string.sub(text, 1, #name + 4) == "# " .. name .. "\n\n",
+            kind .. " must be titled with its drawer name, " .. name
+        )
+        assert(
+            string.match(text, "^# [^\n]+\n\n| 1x2 | 2x1 | 2x2 |"),
+            kind .. " must put its visual examples immediately after the title"
+        )
+        local sections = {}
+        for heading in string.gmatch(text, "\n## ([^\n]+)") do
+            sections[#sections + 1] = heading
+        end
+        assertEqual(table.concat(sections, ","), "Settings,Behavior,States", kind .. " has inconsistent sections")
+        assert(
+            not string.find(text, "```yaml", 1, true),
+            kind .. " carries YAML; the panel pages describe the drawer and the YAML reference carries the keys"
         )
     end
+end
 
-    local documented = 0
+--- The sidebar is written out by hand in the theme override, so a page added
+--- to the navigation is invisible until it is listed there too.
+local function testSidebarListsEveryPage()
+    local function read(path)
+        local handle = assert(io.open(root .. "/" .. path, "r"), "cannot read " .. path)
+        local text = handle:read("a")
+        handle:close()
+        return text
+    end
+    local nav, sidebar = read("mkdocs.yml"), read("docs/overrides/toc.html")
+    local count = 0
+    for page in string.gmatch(nav, ":%s+([%w%-_/]+%.md)\n") do
+        count = count + 1
+        assert(string.find(sidebar, 'sidebar_page("' .. page .. '"', 1, true), "the sidebar does not list " .. page)
+    end
+    assert(count > 0, "no navigation pages were found in mkdocs.yml")
+end
+
+--- The YAML reference names every key of every panel, and its examples load.
+local function testYamlReference()
+    local kinds = panelTypes()
+    local referencePath = root .. "/docs/reference-guide/yaml.md"
+    local handle = assert(io.open(referencePath, "r"), "no YAML reference at " .. referencePath)
+    local reference = handle:read("a")
+    handle:close()
+
+    local placed = {}
+    for index, body in ipairs(yamlBlocksIn(referencePath)) do
+        for _, kind in ipairs(checkReferenceExample(body, "YAML reference example " .. index)) do
+            placed[kind] = true
+        end
+    end
+
     for _, kind in ipairs(kinds) do
-        local path = root .. "/docs/panels/" .. kind .. ".md"
-        local handle = io.open(path, "r")
-        if not handle then
-            assert(
-                UNDOCUMENTED[kind],
-                kind
-                    .. " ships with no documentation at "
-                    .. path
-                    .. ", and is not on the list of panels still owed one"
-            )
-        end
-        if handle then
-            local page = handle:read("*a")
-            handle:close()
-            assert(
-                not UNDOCUMENTED[kind],
-                kind .. " is documented but is still" .. " listed as owing documentation; remove it from UNDOCUMENTED"
-            )
-            documented = documented + 1
-            assert(
-                string.match(page, "^# `[^\n]+`\n\n| 1x2 | 2x1 | 2x2 |"),
-                kind .. " must put its visual examples immediately after the title"
-            )
-            local sections = {}
-            for heading in string.gmatch(page, "\n## ([^\n]+)") do
-                sections[#sections + 1] = heading
+        if kind ~= "theme-showcase" then
+            -- The section runs from its heading to the next heading of any level.
+            local start = string.find(reference, "\n### `" .. kind .. "`\n", 1, true)
+            assert(start, "the YAML reference has no section for " .. kind)
+            local finish = string.find(reference, "\n###? ", start + 1) or #reference
+            local section = string.sub(reference, start, finish)
+            for _, key in ipairs(declaredKeys(loadModule("panels/" .. kind .. ".lua").settings)) do
+                assert(
+                    string.find(section, "`" .. key .. "`", 1, true),
+                    "the YAML reference does not describe " .. kind .. " setting " .. key
+                )
             end
-            assertEqual(
-                table.concat(sections, ","),
-                "Settings,Behavior,States,Examples",
-                kind .. " has inconsistent reference sections"
-            )
-
-            local blocks = yamlBlocksIn(path)
-            assert(
-                #blocks > 0,
-                kind
-                    .. " is documented with no example at all, so"
-                    .. " nothing in its documentation can be checked by running it"
-            )
-
-            for index, body in ipairs(blocks) do
-                local label = kind .. " example " .. index
-                assert(#body > 0, label .. " is empty")
-
-                if string.match(body, "^version:") then
-                    checkLayoutExample(body, label)
-                elseif string.match(body, "^%- id:") then
-                    -- Checked before the example is validated, so the failure names the
-                    -- real problem rather than whichever setting the other panel
-                    -- happens not to declare. A page about one panel whose example
-                    -- places a different one is worse than no example: it is confidently
-                    -- wrong, and it is exactly what copying the previous page produces.
-                    local declared = string.match(body, "\n%s*type:%s*([%w%-]+)")
-                    assertEqual(
-                        declared,
-                        kind,
-                        label .. " places a " .. tostring(declared) .. " on the page documenting " .. kind
-                    )
-                    checkPanelExample(body, label)
-                else
-                    error(
-                        label
-                            .. " is neither a layout nor a panel entry, so"
-                            .. " nothing checks it. Its first line is: "
-                            .. tostring(string.match(body, "^([^\n]*)"))
-                    )
-                end
-            end
+            assert(placed[kind], "no YAML reference example places a " .. kind)
         end
     end
-
-    -- The count is pinned so that a page disappearing is a failure rather than
-    -- a quieter suite.
-    local owed = 0
-    for _ in pairs(UNDOCUMENTED) do
-        owed = owed + 1
-    end
-    assertEqual(documented + owed, #kinds, "every panel is either documented or listed as owing a page")
-    assertEqual(
-        documented,
-        12,
-        "the number of documented panels changed; update this count as the" .. " review works through the catalogue"
-    )
 end
 
 --- The reading is sized from the model's own widest mode name, and fits.
@@ -1328,6 +1357,8 @@ testReflowGoesThroughReconcile()
 testRenderConsultsWhatIsShown()
 testLinkThresholdsNeedAStatedReading()
 testSpecificationExamplesLoad()
+testYamlReference()
+testSidebarListsEveryPage()
 testPanelDocumentationLoads()
 testLifecycleIsolation()
 testFlightModeSizing()

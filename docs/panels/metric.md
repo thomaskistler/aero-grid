@@ -1,38 +1,42 @@
-# `metric`
+# Metric
 
 | 1x2 | 2x1 | 2x2 |
 | --- | --- | --- |
 | ![Metric at 1x2](../assets/panels/metric/1x2.png) | ![Metric at 2x1](../assets/panels/metric/2x1.png) | ![Metric at 2x2](../assets/panels/metric/2x2.png) |
 
-Displays one to three independently configured numeric EdgeTX sources.
+Displays up to three independently configured numeric EdgeTX sources.
 The first reading is the headline; the other two are supporting readings.
 Sensor minimum and maximum readings are ordinary sources, such as `GAlt-`
 and `GAlt+`. The panel does not derive measurements or convert units.
 
 ## Settings
 
-| Key | Default | Meaning |
+![Metric panel settings](../assets/editor/settings.png)
+
+| Setting | Default | What it does |
 | --- | --- | --- |
-| `metrics` | required | Ordered list of one to three numeric readings. |
-| `accent` | `cyan` | Normal accent: `cyan`, `green`, `amber`, or `orange`. |
-| `visual` | `bar` | `bar`, `radial`, or `none`. |
+| **Metrics** | none | Up to three readings. The first is the headline; the others are supporting readings. Each row shows the entry's label (or source) and a summary. Tap **+** to add a reading; the first one starts blank, later ones copy the last entry. |
+| **Visualization** | none | How the headline reading is drawn: **bar**, **radial**, or **none**. |
+| **Accent** | cyan | Color used for the normal state: **cyan**, **green**, **amber**, or **orange**. Alarm and stale states use the shared state colors instead. |
 
-Normal visuals use the configured accent; alarm and stale states use the
-shared state color.
+### Metric entry
 
-### Metrics
+Tap a reading under **Metrics** to open its settings.
 
-Configure an ordered `metrics` list with one to three entries:
+![Metric entry settings with GV1 selected as Source](../assets/editor/metric-entry.png)
 
-| Entry key | Default | Meaning |
+| Setting | Default | What it does |
 | --- | --- | --- |
-| `source` | required | Exact, case-sensitive numeric EdgeTX source name. |
-| `label` | source name | Panel heading for the first entry; caption for supporting entries. |
-| `unit` | sensor unit | Display-unit override. An explicit empty string hides the unit. No numerical conversion is performed. |
-| `precision` | sensor precision | Fixed decimal places, an integer from 0 to 3. |
-| `rangeMin` / `rangeMax` | `0` / `100` | Values corresponding to empty/full visualization. |
-| `warning` / `critical` | none | Thresholds in this source's numerical units. |
-| `direction` | `auto` | `rising`, `falling`, or `auto`. Auto infers falling only when both thresholds are present and critical is below warning. |
+| **Source** | required | The EdgeTX numeric source to show: a telemetry sensor, its minimum or maximum (for example `GAlt-` or `GAlt+`), a global variable, a channel, and so on. |
+| **Label** | source name | Panel heading for the headline reading; caption for supporting readings. Clear it to use the source name. |
+| **Unit** | sensor unit | Unit text shown beside the value. It only changes the label, not the number. Clear it to use the sensor's unit. |
+| **Precision** | Sensor | Decimal places, 0 to 3. Step below 0 to reach **Sensor**, which uses the precision EdgeTX reports for the source. |
+| **Direction** | auto | Whether alarms trigger when the value climbs (**rising**) or drops (**falling**). **auto** treats the reading as falling only when both thresholds are set and **Critical** is below **Warning**. |
+| **Range min** | 0 | Low end of the reading's scale: the bar or radial is empty here, and **Warning** and **Critical** cannot go below it. Steps of 0.1. |
+| **Range max** | 100 | High end of the reading's scale: the bar or radial is full here, and **Warning** and **Critical** cannot go above it. Steps of 0.1. |
+| **Warning** | Off | Value that triggers the warning state, in the source's units, between **Range min** and **Range max**. Steps of 0.1. One step below **Range min** is **Off**. |
+| **Critical** | Off | Value that triggers the critical state, in the source's units, between **Range min** and **Range max**. Steps of 0.1. One step below **Range min** is **Off**. |
+| **Remove entry** | | Deletes this reading. |
 
 ## Behavior
 
@@ -42,14 +46,18 @@ When a headline unit is visible, the number and unit are centered together.
 New Metric panels inherit the selected sensor's unit. Enlarging a compact panel
 reveals the unit when it fits.
 
-Only the primary metric drives the bar or radial and the panel alarm state.
-The bar or radial is empty at `rangeMin` and full at `rangeMax`.
-Values outside that range keep the visual empty or full, but the numerical
-reading still shows the actual value.
+Only the headline reading drives the bar or radial and the panel alarm
+state. The bar or radial is empty at **Range min** and full at **Range max**.
+Values outside that range keep the visual empty or full, but the number
+still shows the actual value.
 
-Set thresholds on the first metric to enable alarms, and use `direction`
-to choose rising or falling comparisons. Thresholds include the boundary,
-with critical taking priority. Supporting metrics do not trigger alarms.
+Set **Warning** or **Critical** on the headline reading to enable alarms.
+Thresholds include the boundary value, and critical takes priority. A
+threshold only counts inside the range, so set **Range min** and **Range max**
+to cover your alarm values even when **Visualization** is **none**. Narrowing
+the range past a threshold turns that threshold **Off**.
+**Direction**, the range, and the thresholds appear on supporting readings
+too, but have no effect there.
 
 ## States
 
@@ -58,90 +66,7 @@ with critical taking priority. Supporting metrics do not trigger alarms.
 | Live primary, no crossed thresholds | Value and normal accent. |
 | Primary crosses warning or critical | `WARN` or `CRIT` badge and state color. |
 | Primary becomes stale | Last value retained, `STALE` badge and muted presentation. |
+| No metric, or no source picked | `METRIC` heading and `--`. |
 | Primary unavailable | `--`, `N/A` badge, no unit beside the sentinel. |
 | Supporting source unavailable | Its caption followed by `--`, without a unit. |
 | Supporting source stale | Last value retained; it does not change the primary state. |
-
-## Examples
-
-Altitude, EdgeTX maximum, and vertical speed:
-
-```yaml
-- id: altitude
-  type: metric
-  col: 0
-  row: 0
-  colSpan: 2
-  rowSpan: 2
-  config:
-    metrics:
-      - source: GAlt
-        label: ALT
-        unit: m
-        precision: 0
-        rangeMin: 0
-        rangeMax: 400
-        direction: rising
-        warning: 300
-        critical: 400
-      - source: GAlt+
-        label: MAX
-        unit: m
-        precision: 0
-      - source: VSpd
-        label: VS
-        unit: m/s
-        precision: 1
-    accent: green
-```
-
-Compact voltage with independently configured current and altitude readings:
-
-```yaml
-- id: power
-  type: metric
-  col: 0
-  row: 1
-  colSpan: 2
-  rowSpan: 1
-  config:
-    metrics:
-      - source: RxBt
-        label: VOLTAGE
-        precision: 1
-        direction: falling
-        warning: 22
-        critical: 20
-      - source: Curr
-        label: CUR
-        precision: 1
-      - source: GAlt
-        label: ALT
-        precision: 0
-    visual: none
-```
-
-Use thresholds appropriate to the actual source. `RxBt` may measure a
-regulated receiver supply rather than the flight pack.
-
-A global variable through the ordinary EdgeTX source interface:
-
-```yaml
-- id: gain
-  type: metric
-  col: 1
-  row: 1
-  colSpan: 1
-  rowSpan: 1
-  config:
-    metrics:
-      - source: gvar1
-        label: GV1
-        unit: ""
-        precision: 1
-    visual: none
-```
-
-Global variable readings follow the active flight mode. Configure their label,
-unit, precision, and visualization range explicitly. `precision: 1` displays
-one decimal place.

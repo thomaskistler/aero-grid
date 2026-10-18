@@ -47,6 +47,7 @@ panels:
     colSpan: 2
     rowSpan: 1
     config:
+      visual: bar
       metrics:
         - source: RxBt
           label: Normal
@@ -62,6 +63,7 @@ panels:
     colSpan: 2
     rowSpan: 1
     config:
+      visual: bar
       metrics:
         - source: RQly
           label: Normal
@@ -79,6 +81,7 @@ panels:
     colSpan: 2
     rowSpan: 1
     config:
+      visual: bar
       metrics:
         - source: RxBt
           label: Warning
@@ -96,6 +99,7 @@ panels:
     colSpan: 2
     rowSpan: 1
     config:
+      visual: bar
       metrics:
         - source: RxBt
           label: Critical
@@ -115,6 +119,7 @@ panels:
     colSpan: 2
     rowSpan: 1
     config:
+      visual: bar
       metrics:
         - source: NotASensor
           label: No source
@@ -142,6 +147,7 @@ panels:
     colSpan: 1
     rowSpan: 1
     config:
+      visual: bar
       metrics:
         - source: RQly
           label: OK
@@ -156,6 +162,7 @@ panels:
     colSpan: 1
     rowSpan: 1
     config:
+      visual: bar
       metrics:
         - source: RQly
           label: Warn
@@ -172,6 +179,7 @@ panels:
     colSpan: 1
     rowSpan: 1
     config:
+      visual: bar
       metrics:
         - source: RQly
           label: Crit
@@ -188,6 +196,7 @@ panels:
     colSpan: 1
     rowSpan: 1
     config:
+      visual: bar
       metrics:
         - source: NotASensor
           label: None

@@ -58,7 +58,7 @@ local navigation = {
     settings = {
         { key = "label", label = "Label", type = "string", default = "NAV" },
         { key = "source", label = "GPS source", type = "string", default = "GPS" },
-        { key = "armSwitch", label = "Home arm switch (blank: EdgeTX)", type = "string", default = "" },
+        { key = "armSwitch", label = "Home arm switch", type = "string", default = "" },
         { key = "satelliteSource", label = "Satellite count source", type = "string", default = "" },
         { key = "satelliteWarning", label = "Warn below satellites", type = "number", default = 8 },
         { key = "satelliteCritical", label = "Critical below satellites", type = "number", default = 4 },

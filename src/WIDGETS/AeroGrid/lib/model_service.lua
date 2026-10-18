@@ -53,7 +53,7 @@ local IDENTITY_INTERVAL = 500
 --- EdgeTX stores model bitmaps in this directory.
 local IMAGE_PATH = "/IMAGES/"
 
---- The source name EdgeTX uses for the transmitter battery.
+--- The source name EdgeTX uses for the TX battery.
 local TX_VOLTAGE_SOURCE = "tx-voltage"
 
 --- Create the service.
@@ -384,7 +384,7 @@ function modelService:logFlight(date, duration, count)
     assert(ok, "flight history could not write " .. filename .. ": " .. tostring(writeError))
 end
 
---- Read the transmitter battery voltage.
+--- Read the TX battery voltage.
 ---@param state table
 ---@param now integer
 function modelService:readTxVoltage(state, now)
@@ -480,7 +480,7 @@ function modelService:batteryRange()
     return self.batteryRangeView
 end
 
---- Subscribe to the transmitter battery voltage.
+--- Subscribe to the TX battery voltage.
 --- Shaped like a telemetry reading so a panel can render either without
 --- special casing, even though this source never depends on the link.
 ---@return AeroGridReading

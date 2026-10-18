@@ -655,6 +655,57 @@ local function testAllPanelDrawersStartWithLabel()
     end
 end
 
+--- Drawer labels share the row with their control. "Critical below
+--- satellites" is the longest that fits at the drawer's label width.
+local function testDrawerLabelsFit()
+    local longest = #"Critical below satellites"
+    local function check(kind, settings)
+        for _, setting in ipairs(settings or {}) do
+            if type(setting.label) == "string" then
+                assert(#setting.label <= longest, kind .. " label is truncated in the drawer: " .. setting.label)
+            end
+            check(kind, setting.fields)
+        end
+    end
+    for _, entry in ipairs(editor.CATALOG) do
+        local module = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/" .. entry.type .. ".lua"))()
+        check(entry.type, module.settings)
+    end
+end
+
+--- A number that may be left unset needs a drawer step that unsets it again;
+--- without one, the drawer shows 0 and a cleared alarm cannot be restored.
+local function testOptionalNumbersCanBeCleared()
+    for _, entry in ipairs(editor.CATALOG) do
+        local module = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/" .. entry.type .. ".lua"))()
+        modules[entry.type] = module
+        local input = document()
+        input.panels[1].type = entry.type
+        input.panels[1].config = {}
+        local fields = assert(editor.formFields(newSession(input)))
+        local byKey = {}
+        for _, field in ipairs(fields) do
+            if field.key and not field.path then
+                byKey[field.key] = field
+            end
+        end
+        for _, setting in ipairs(module.settings) do
+            if setting.type == "number" and setting.default == nil and not setting.drawerField then
+                assert(setting.empty, entry.type .. " " .. setting.key .. " cannot be cleared in the drawer")
+                assert(
+                    type(setting.min) == "number",
+                    entry.type .. " " .. setting.key .. " needs a minimum below which it is unset"
+                )
+                local field = assert(byKey[setting.key], entry.type .. " " .. setting.key .. " is not in the drawer")
+                assert(
+                    field.empty == setting.empty,
+                    entry.type .. " " .. setting.key .. " loses its unset step in the drawer"
+                )
+            end
+        end
+    end
+end
+
 testAllPanelDrawersStartWithLabel()
 testCatalogAlphabeticalOrder()
 testNestedStateLists()
@@ -669,3 +720,5 @@ testSinglePrecisionVoltageSteps()
 testRestoreDefaultDoesNotApply()
 testDeclaredEntryFieldsAreAlwaysOffered()
 testResizePreservesSpanDependentSettings()
+testOptionalNumbersCanBeCleared()
+testDrawerLabelsFit()

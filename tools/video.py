@@ -299,7 +299,8 @@ def frames(raw, directory, times, trim_start=0):
                 raise ValueError(f"No frame at {time:g} seconds")
             file.seek(index * FRAME_BYTES)
             target = directory / f"frame-{time:07.2f}s.png"
-            capture_module().write_png(target, file.read(FRAME_BYTES))
+            capture = capture_module()
+            capture.write_png(target, capture.decode(file.read(FRAME_BYTES)))
             written.append(target)
     return written
 
@@ -329,7 +330,8 @@ def capture(recipe, path, directory, library, architecture):
         raise ValueError("Unexpected recorder frame count")
     with raw.open("rb") as file:
         file.seek(-FRAME_BYTES, 2)
-        capture_module().write_png(directory / "last-frame.png", file.read())
+        capture = capture_module()
+        capture.write_png(directory / "last-frame.png", capture.decode(file.read()))
     actions = read_actions(path.parent / recipe["actions"], recipe["ticks"])
     missing = accepted_touches(recipe, actions, (directory / "simulator.log").read_text(errors="replace"))
     sources = {str(file.relative_to(ROOT)): digest(file)

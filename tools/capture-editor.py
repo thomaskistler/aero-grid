@@ -11,8 +11,20 @@ import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "build/editor-capture"
-SCENES = ("overview", "settings", "state-settings", "metric-entry", "exit", "save-as", "navigation-tape",
+SCENES = ("overview", "settings", "state-settings", "state-entry", "state-condition", "metric-entry", "exit", "save-as", "navigation-tape",
           "navigation-location")
+# Configuration drawers captured as full-height images rather than one screen.
+# Settings drawers of the remaining panels, one per panel page.
+PANEL_DRAWER_CONFIG = {
+    "host-diagnostics": {"label": "Host", "section": "identity"},
+    "service-probe": {"service": "telemetry", "source": "RxBt", "label": "Probe"},
+}
+PANEL_DRAWER_KINDS = ("flight-counter", "flight-mode", "flight-timer", "host-diagnostics", "link-status",
+                      "model-identity", "navigation", "output", "rx-battery", "service-probe", "trim-panel",
+                      "tx-battery")
+PANEL_SETTINGS_SCENES = tuple(f"{kind}-settings" for kind in PANEL_DRAWER_KINDS)
+SCENES = SCENES + PANEL_SETTINGS_SCENES
+STITCHED_SCENES = ("settings", "state-settings", "state-entry", "state-condition", "metric-entry") + PANEL_SETTINGS_SCENES
 THEME_SCENES = ("theme-modern-dark", "theme-modern-light", "theme-custom")
 DASHBOARD_SCENES = ("dashboard",)
 DASHBOARD_INPUTS = """model.setGlobalVariable(8, 0, 42)
@@ -142,7 +154,7 @@ panels:
 """
 
 
-def prepare(sd, scene):
+def prepare(sd, scene, shift=0):
     shutil.copytree(ROOT / "tests/fixtures/sdcard", sd)
     shutil.copytree(ROOT / "src/WIDGETS/AeroGrid", sd / "WIDGETS/AeroGrid")
     shutil.copytree(
@@ -225,8 +237,26 @@ screenData:
             (sd / "AEROGRID/theme-registry.txt").write_text("modern-dark\nmodern-light\ncustom\n")
     elif scene in DASHBOARD_SCENES:
         layout = (ROOT / "src/WIDGETS/AeroGrid/layouts/Default.yaml").read_text()
+    elif scene in PANEL_SETTINGS_SCENES:
+        from capture_recipes import config_yaml, load_recipe
+        kind = scene.removesuffix("-settings")
+        recipe = ROOT / f"tools/capture-recipes/{kind}.yaml"
+        config = PANEL_DRAWER_CONFIG.get(kind) or load_recipe(recipe)["config"]
+        layout = f"""version: 3
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: panel
+    type: {kind}
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+{config_yaml(config)}"""
     else:
-        layout = STATE_LAYOUT if scene == "state-settings" else LAYOUT
+        layout = STATE_LAYOUT if scene.startswith("state-") else LAYOUT
     if scene in ("navigation-tape", "navigation-location"):
         layout = """version: 3
 grid:
@@ -356,15 +386,53 @@ panels:
         if not context.captureSceneOpened then
             state.session.selected = 1
             local scene = "SCENE"
-            if scene == "settings" or scene == "state-settings" or scene == "navigation-tape" then
+            if scene == "settings" or string.sub(scene, -9) == "-settings" or scene == "navigation-tape" then
                 context.editorDrawerModule.open(context, state, "configure")
             elseif scene == "metric-entry" then
                 context.editorDrawerModule.open(context, state, "configure", "metrics", 1)
+            elseif scene == "state-entry" then
+                context.editorDrawerModule.open(context, state, "configure", "entries", 1)
+            elseif scene == "state-condition" then
+                context.editorDrawerModule.open(context, state, "configure", "entries", nil, { 1, "states", 1 })
             elseif scene == "exit" then
                 state.session.dirty = true
                 context.editorDrawerModule.openExit(context, state)
             elseif scene == "save-as" then
                 context.editorDrawerModule.openName(context, state, "Sonic1")
+            end
+            if state.drawerFields then
+                -- Stitched pages hide leading rows, up to DRAWER_SHIFT pixels,
+                -- so rows that would need scrolling move into view. The
+                -- native dialog scrolls to its focused row, so hiding rows
+                -- (which are not focusable) is used instead of offsetting them.
+                local _, config = state.handlers.editor.settings(state.session)
+                local function shown(field)
+                    local condition = field.visibleWhen
+                    if type(condition) == "function" then return condition(config) end
+                    if type(condition) ~= "table" then return true end
+                    local matches = config[condition.key] == condition.value
+                    if condition.invert then return not matches end
+                    return matches
+                end
+                local function height(field)
+                    if not shown(field) then return 0 end
+                    return field.type == "section" and math.floor(state.drawerControlHeight * 0.625)
+                        or state.drawerRowHeight
+                end
+                local shift, total = 0, 0
+                for _, field in ipairs(state.drawerFields) do
+                    total = total + height(field)
+                end
+                for _, field in ipairs(state.drawerFields) do
+                    local rowHeight = height(field)
+                    if rowHeight > 0 then
+                        if shift + rowHeight > DRAWER_SHIFT then break end
+                        shift = shift + rowHeight
+                        field.visibleWhen = function() return false end
+                    end
+                end
+                context.captureDrawer = string.format("drawer shift %d total %d row %d\\n",
+                    shift, total, state.drawerRowHeight)
             end
             context.captureSceneOpened = true
             context.captureSettled = 0
@@ -390,26 +458,127 @@ panels:
         context.captureSettled = context.captureSettled + 1
         if context.captureSettled < 15 or context.captureReady then return end
         local file = assert(io.open("/capture-ready.txt", "w"))
-        io.write(file, "production editor scene ready")
+        io.write(file, "production editor scene ready\\n")
+        if context.captureDrawer then
+            io.write(file, context.captureDrawer)
+        end
         io.close(file)
         context.captureReady = true
     end,
-""".replace("SCENE", scene))
+""".replace("SCENE", scene).replace("DRAWER_SHIFT", str(shift)))
     main.write_text(source)
 
 
-def write_png(path, frame):
+def decode(frame):
     rgb = bytearray()
     for (pixel,) in struct.iter_unpack("<H", frame):
         rgb.extend(((pixel >> 11) * 255 // 31, ((pixel >> 5) & 63) * 255 // 63,
                     (pixel & 31) * 255 // 31))
+    return [bytes(rgb[y * 480 * 3:(y + 1) * 480 * 3]) for y in range(272)]
+
+
+def write_png(path, rows):
     def chunk(kind, data):
         return (struct.pack(">I", len(data)) + kind + data
                 + struct.pack(">I", zlib.crc32(kind + data)))
-    rows = b"".join(b"\0" + rgb[y * 480 * 3:(y + 1) * 480 * 3] for y in range(272))
+    width = len(rows[0]) // 3
     path.write_bytes(b"\x89PNG\r\n\x1a\n"
-                     + chunk(b"IHDR", struct.pack(">IIBBBBB", 480, 272, 8, 2, 0, 0, 0))
-                     + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+                     + chunk(b"IHDR", struct.pack(">IIBBBBB", width, len(rows), 8, 2, 0, 0, 0))
+                     + chunk(b"IDAT", zlib.compress(b"".join(b"\0" + row for row in rows)))
+                     + chunk(b"IEND", b""))
+
+
+def dialog_geometry(rows):
+    """Locate the native dialog's title bar and scrolling body in one frame."""
+    pixel = lambda x, y: rows[y][x * 3:x * 3 + 3]
+    # Title text is short, so its rows still contain mostly title color.
+    title = max((pixel(x, 40) for x in range(480)), key=lambda color: rows[40].count(color))
+    count = lambda y: sum(pixel(x, y) == title for x in range(480))
+    top = 40
+    while top > 0 and count(top - 1) > 240:
+        top -= 1
+    body = 40
+    while count(body) > 240:
+        body += 1
+    edge = [x for x in range(480) if pixel(x, top + 1) == title]
+    left, right = edge[0], edge[-1] + 1
+    background = pixel(left + 2, body + 1)
+    bottom = body
+    while bottom < 272 and pixel(left + 2, bottom) == background:
+        bottom += 1
+    return left, right, top, body, bottom, background
+
+
+def stitch(frames, guard):
+    """Join the title bar and successive body pages into one tall drawer image.
+
+    Each frame is (rows, shift): its body shows drawer content starting
+    ``shift`` pixels down. Content within ``guard`` pixels of a later page's
+    top (blank margin and its focused first row) comes from the page before.
+    """
+    left, right, top, body, bottom, background = dialog_geometry(frames[0][0])
+    height = bottom - body
+    crop = lambda row: row[left * 3:right * 3]
+    # Paint over the native scrollbar, which reflects only the hidden-row page.
+    clear = lambda row: row[:-12 * 3] + background * 12
+    output = [crop(row) for row in frames[0][0][top:body]]
+    blank = background * (right - left)
+    end = frames[-1][1] + height
+    content = []
+    for offset in range(end):
+        for index, (rows, shift) in enumerate(frames):
+            if offset < shift + height and (index == 0 or offset >= shift + guard):
+                content.append(clear(crop(rows[body + offset - shift])))
+                break
+        else:
+            raise RuntimeError(f"Stitched pages do not cover drawer offset {offset}")
+    used = [index for index, row in enumerate(content) if row != blank]
+    if not used:
+        raise RuntimeError("Drawer capture has no content")
+    return output + content[:min(len(content), used[-1] + 1 + used[0])]
+
+
+def capture(executable, library, directory, scene, shift=0):
+    if directory.is_symlink():
+        raise RuntimeError(f"Capture directory must not be a symlink: {directory}")
+    if directory.exists():
+        shutil.rmtree(directory)
+    directory.mkdir()
+    sd = directory / "sdcard"
+    prepare(sd, scene, shift)
+    regions = directory / "regions.txt"
+    regions.write_text("0 0 480 272\n")
+    frame = directory / "frame.rgb565"
+    mode = "fullscreen"
+    if scene == "navigation-location":
+        actions = directory / "actions.txt"
+        actions.write_text(
+            "500 200 140 1\n600 200 140 0\n"
+            "850 100 80 1\n860 100 80 0\n1000 410 245 1\n1010 410 245 0\n"
+            "1150 100 80 1\n1160 100 80 0\n1300 410 245 1\n1310 410 245 0\n"
+            "1450 100 80 1\n1460 100 80 0\n")
+        mode = "actions=" + str(actions)
+    if scene in SETUP_SCENES:
+        actions = directory / "actions.txt"
+        actions.write_text("".join(" ".join(map(str, action)) + "\n"
+                                  for action in SETUP_SCENES[scene]))
+        mode = "actions=" + str(actions)
+    with (directory / "simulator.log").open("w") as log:
+        try:
+            subprocess.run([str(executable), str(library), str(sd), str(frame),
+                            str(regions), mode], stdout=log,
+                           stderr=subprocess.STDOUT, check=True, timeout=45)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+            raise RuntimeError(f"Capture failed; inspect {directory / 'simulator.log'}") from error
+    pixels = frame.read_bytes()
+    if len(pixels) != 480 * 272 * 2:
+        raise RuntimeError("Unexpected framebuffer size")
+    drawer = None
+    for line in (sd / "capture-ready.txt").read_text().splitlines():
+        words = line.split()
+        if words[:1] == ["drawer"]:
+            drawer = dict(zip(words[1::2], map(int, words[2::2])))
+    return decode(pixels), drawer
 
 
 def main():
@@ -431,41 +600,24 @@ def main():
                     "-o", str(executable)], check=True)
     for scene in (args.scene,) if args.scene else SCENES + tuple(SETUP_SCENES):
         directory = OUTPUT / scene
-        if directory.is_symlink():
-            raise RuntimeError(f"Capture directory must not be a symlink: {directory}")
-        if directory.exists():
-            shutil.rmtree(directory)
-        directory.mkdir()
-        sd = directory / "sdcard"
-        prepare(sd, scene)
-        regions = directory / "regions.txt"
-        regions.write_text("0 0 480 272\n")
-        frame = directory / "frame.rgb565"
-        mode = "fullscreen"
-        if scene == "navigation-location":
-            actions = directory / "actions.txt"
-            actions.write_text(
-                "500 200 140 1\n600 200 140 0\n"
-                "850 100 80 1\n860 100 80 0\n1000 410 245 1\n1010 410 245 0\n"
-                "1150 100 80 1\n1160 100 80 0\n1300 410 245 1\n1310 410 245 0\n"
-                "1450 100 80 1\n1460 100 80 0\n")
-            mode = "actions=" + str(actions)
-        if scene in SETUP_SCENES:
-            actions = directory / "actions.txt"
-            actions.write_text("".join(" ".join(map(str, action)) + "\n"
-                                      for action in SETUP_SCENES[scene]))
-            mode = "actions=" + str(actions)
-        with (directory / "simulator.log").open("w") as log:
-            try:
-                subprocess.run([str(executable), str(library), str(sd), str(frame),
-                                str(regions), mode], stdout=log,
-                               stderr=subprocess.STDOUT, check=True, timeout=45)
-            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
-                raise RuntimeError(f"Capture failed; inspect {directory / 'simulator.log'}") from error
-        pixels = frame.read_bytes()
-        if len(pixels) != 480 * 272 * 2:
-            raise RuntimeError("Unexpected framebuffer size")
-        write_png(directory / f"{scene}.png", pixels)
+        rows, drawer = capture(executable, library, directory, scene)
+        if scene in STITCHED_SCENES:
+            if drawer is None:
+                raise RuntimeError(f"{scene} did not report drawer geometry")
+            _, _, _, body, bottom, _ = dialog_geometry(rows)
+            height = bottom - body
+            guard = drawer["row"] + 24
+            frames = [(rows, 0)]
+            # 24 px allows for the dialog's own top padding around the rows.
+            while frames[-1][1] + height < drawer["total"] + 24:
+                page, report = capture(executable, library,
+                                       directory.with_name(f"{scene}-page{len(frames)}"),
+                                       scene, frames[-1][1] + height - guard)
+                if report["shift"] <= frames[-1][1]:
+                    raise RuntimeError(f"{scene} drawer rows do not fit one page")
+                frames.append((page, report["shift"]))
+            rows = stitch(frames, guard)
+        write_png(directory / f"{scene}.png", rows)
         print(directory / f"{scene}.png")
     (OUTPUT / "provenance.json").write_text(json.dumps({
         "revision": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
@@ -494,7 +646,10 @@ def main():
         } if args.scene in DASHBOARD_SCENES else None),
         "method": ("Native TX16S framebuffer; fullscreen production Default dashboard with isolated sample inputs."
                    if args.scene in DASHBOARD_SCENES else
-                   "Native TX16S framebuffer; isolated sample layouts and editor command automation."),
+                   "Native TX16S framebuffer; isolated sample layouts and editor command automation."
+                   + (" Configuration drawers are cropped to the dialog and stitched from pages whose "
+                      "leading rows are hidden in the isolated copy; the native scrollbar is painted over."
+                      if set(STITCHED_SCENES) & set((args.scene,) if args.scene else SCENES) else "")),
         "scenes": (args.scene,) if args.scene else SCENES + tuple(SETUP_SCENES),
     }, indent=2) + "\n")
 

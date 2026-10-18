@@ -23,7 +23,7 @@ EdgeTX widgets.
 | `docs/` | Website sources, reference pages, reviewed images, and hardware evidence. |
 | `.vscode/` | TX16S profile and build/test tasks; local settings are ignored. |
 | `.github/workflows/` | CI, documentation publication, and manual release workflow. |
-| `plans/` | Design specifications and historical planning material, not runtime input. |
+| `plans/` | Design specifications and planning material, not runtime input. |
 | `build/` | Ignored, generated output; never the source of truth. |
 
 The [project specification](https://github.com/thomaskistler/aero-grid/blob/main/plans/aerogrid-spec.md)
@@ -70,10 +70,7 @@ for the top-left EdgeTX menu button; fullscreen removes that reservation.
 Use the shared geometry instead of adding panel-specific menu offsets.
 
 `lib/package.lua` records package, runtime API, panel API, and layout versions.
-The current layout schema is version 3. Version 2-to-3 migrates navigation
-presentations to explicit tape and coordinate settings; see the
-[navigation migration table](../panels/navigation.md#layout-schema-and-migration).
-The central layout module keeps an
+The current layout schema is version 3. The central layout module keeps an
 adjacent migration registry: each source version provides a header step and a
 panel step for that version-to-next-version transition. A future version must
 add every intervening step; a layout is rejected if its source version is newer

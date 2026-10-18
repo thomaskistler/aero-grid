@@ -29,6 +29,7 @@ panels:
     colSpan: 4
     rowSpan: 1
     config:
+      visual: bar
       metrics:
         - source: RxBt
           label: Metric

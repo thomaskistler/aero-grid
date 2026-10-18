@@ -322,7 +322,7 @@ belong to the panel.
 - Resolve the path as `/IMAGES/<bitmap>`, matching the firmware's own model bitmap widget.
 - Support name-only, image-only, and combined presentations subject to panel span. An automatic choice must not spend space on a picture that a single cell cannot show.
 
-#### Transmitter battery
+#### TX battery
 
 - Read the EdgeTX transmitter-voltage source.
 - Use voltage as the authoritative value for estimates and thresholds.
@@ -1305,7 +1305,7 @@ grid placement is:
 | RX battery | 0, 1 | 2x1 | `RxBt`, pack mode, user-confirmed 2S, average headline |
 | Link | 0, 2 | 2x1 | `RQly`, `1RSS`, ELRS 4.x `RFMD`, no bar |
 | Altitude | 0, 3 | 2x1 | `Alt`, with `Alt+` above `VSpd+` on the right |
-| TX battery | 3, 0 | 1x1 | Radio-local transmitter battery, glyph-first by default |
+| TX battery | 3, 0 | 1x1 | Radio-local TX battery, glyph-first by default |
 | Flights | 2, 1 | 1x1 | `gvar9`, integer count |
 | Expo | 3, 1 | 1x1 | `gvar1`, integer percent |
 | Model image | 2, 2 | 2x2 | Model bitmap |

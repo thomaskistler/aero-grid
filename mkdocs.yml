@@ -29,14 +29,17 @@ nav:
           - Flight counter: panels/flight-counter.md
           - Flight mode: panels/flight-mode.md
           - Flight timer: panels/flight-timer.md
+          - Host diagnostics: panels/host-diagnostics.md
           - Link status: panels/link-status.md
           - Metric: panels/metric.md
           - Model identity: panels/model-identity.md
           - Navigation: panels/navigation.md
           - RX battery: panels/rx-battery.md
+          - Service probe: panels/service-probe.md
           - State: panels/state.md
-          - Trim panel: panels/trim-panel.md
+          - Trim: panels/trim-panel.md
           - TX battery: panels/tx-battery.md
+      - YAML reference: reference-guide/yaml.md
   - Developer Guide:
       - Check out and build: developer-guide/build.md
       - Test and debug: developer-guide/testing.md

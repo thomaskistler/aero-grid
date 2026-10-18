@@ -1,101 +1,49 @@
-# `flight-timer`
+# Flight timer
 
 | 1x2 | 2x1 | 2x2 |
 | --- | --- | --- |
 | ![Flight timer at 1x2](../assets/panels/flight-timer/1x2.png) | ![Flight timer at 2x1](../assets/panels/flight-timer/2x1.png) | ![Flight timer at 2x2](../assets/panels/flight-timer/2x2.png) |
 
-Shows one of the radio's own model timers.
+Shows one of the radio's own model timers, following its elapsed or remaining
+time display.
 
 ## Settings
 
-| Key | Type | Default | Values | What it does |
-| --- | --- | --- | --- | --- |
-| `timer` | number | `0` | `0`–`2` | Which model timer, counting from zero. |
-| `label` | string | *(empty)* | any text | The panel's heading. **Empty means derive it**: the timer's own configured name, or `TIMER n` if it has none. |
-| `accent` | string | `cyan` | `cyan`, `green`, `amber`, `orange` | The stripe down the left edge. |
-| `warning` | number | — | seconds | Go amber at this many seconds. |
-| `critical` | number | — | seconds | Go red at this many seconds. |
+![Flight timer panel settings](../assets/editor/flight-timer-settings.png)
 
-There is deliberately no direction setting: EdgeTX already says whether a
-timer counts up or down, and the panel reads that rather than restating it.
-
-**`warning` and `critical` are compared in the direction the timer runs.** A
-countdown becomes critical at or below the threshold — it is running out. A
-count-up timer becomes critical at or above it — it has run long. You give
-the same number either way and the panel applies it the right way round.
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Label** | timer name | Panel heading. Clear it to use the timer's configured name, or `TIMER 0`, `TIMER 1`, or `TIMER 2` when unnamed. |
+| **Model timer** | Timer 1 | The EdgeTX model timer to show: Timer 1, Timer 2, or Timer 3. |
+| **Warning seconds** | Off | Time threshold for the warning state, in whole seconds from 0. Step below 0 to reach **Off**. |
+| **Critical seconds** | Off | Time threshold for the critical state, in whole seconds from 0. Step below 0 to reach **Off**. |
+| **Accent** | cyan | Color used for the normal state: **cyan**, **green**, **amber**, or **orange**. Alarm states use the shared state colors instead. |
 
 ## Behavior
 
-The panel displays an **EdgeTX model timer**. Configure its name, start value,
-activation mode or switch, and elapsed/remaining display in
-**Model Setup → Timers** on the radio.
+Configure the timer's name, start value, activation mode or switch, and
+elapsed or remaining display in **Model Setup → Timers** on the radio.
+**Model timer** chooses which one the panel reads. The timer keeps running
+under EdgeTX's control even when this dashboard is hidden.
 
-Select that timer with the panel's `timer` setting: `0` is Timer 1, `1` is
-Timer 2, and `2` is Timer 3. The panel follows the timer's configured display.
-Set `warning` and `critical` in the panel configuration to color the panel
-at the desired time thresholds.
+**Warning seconds** and **Critical seconds** follow the timer's direction.
+A countdown reaches a threshold at or below it; a count-up timer reaches
+it at or above it. The boundary value counts, and critical takes priority.
+Countdown alarms always use remaining time, even when the clock shows
+elapsed time. A countdown below zero is always critical, regardless of
+thresholds. At exactly zero, only configured thresholds apply.
+
+Larger panels reveal a supporting row: `OF` followed by the countdown's
+start time, `COUNTING UP`, or `EXPIRED`. A countdown also gains a progress
+bar when space permits, filling as time is used. The clock retains its
+minus sign when showing negative time. When elapsed time is selected, the
+expiry badge and supporting row still identify an expired countdown.
 
 ## States
 
-| State | When | What you see |
-| --- | --- | --- |
-| `normal` | anything not below | the clock, no badge |
-| `warning` | past `warning`, in the timer's own direction | amber tint, `WARN` badge |
-| `critical` | past `critical`, or a countdown past zero | red tint, `CRIT` badge |
-| `unavailable` | the timer is not configured | `--:--` and an `N/A` badge |
-
-**A countdown past zero is always critical**, whatever the thresholds say. It
-is the state most easily mistaken for a healthy timer — EdgeTX keeps counting
-into negative numbers — so the panel shows a minus sign, turns red and says
-so in words.
-
-## Examples
-
-A single cell. The clock and nothing else — no supporting row at this span,
-so a countdown past zero shows only its minus sign and badge.
-
-```yaml
-- id: flight
-  type: flight-timer
-  col: 0
-  row: 0
-  colSpan: 1
-  rowSpan: 1
-  config:
-    timer: 0
-    label: FLIGHT
-```
-
-Two cells square, which is where everything appears: the largest clock, the
-supporting row and the progress bar. Amber at a minute left, red at twenty
-seconds.
-
-```yaml
-- id: glide
-  type: flight-timer
-  col: 0
-  row: 0
-  colSpan: 2
-  rowSpan: 2
-  config:
-    timer: 1
-    accent: green
-    warning: 60
-    critical: 20
-```
-
-No `label`, so the heading is the timer's own configured name.
-
-A wide single row following the timer's configured display.
-
-```yaml
-- id: airborne
-  type: flight-timer
-  col: 0
-  row: 0
-  colSpan: 4
-  rowSpan: 1
-  config:
-    timer: 0
-    label: AIRBORNE
-```
+| Condition | Presentation |
+| --- | --- |
+| Timer available, no crossed thresholds | Clock and normal accent, without a badge. |
+| Timer reaches **Warning seconds** in its own direction | `WARN` badge and warning color. |
+| Timer reaches **Critical seconds**, or a countdown runs below zero | `CRIT` badge and critical color; `EXPIRED` supporting row for an expired countdown when space permits. |
+| Timer cannot be read | `--:--`, an `N/A` badge, and `NO TIMER` supporting row when space permits. |

@@ -17,8 +17,8 @@ editor.CATALOG = {
     { type = "rx-battery", label = "RX battery" },
     { type = "service-probe", label = "Service probe" },
     { type = "state", label = "State" },
-    { type = "tx-battery", label = "Transmitter battery" },
-    { type = "trim-panel", label = "Trim panel" },
+    { type = "trim-panel", label = "Trim" },
+    { type = "tx-battery", label = "TX battery" },
 }
 
 local function copy(value, seen)
@@ -610,6 +610,7 @@ local function entryFields(setting, entries, result, rootKey, prefix)
                 step = field.step,
                 required = field.required,
                 empty = field.empty,
+                within = field.within,
                 minItems = field.minItems,
                 maxItems = field.maxItems,
             }
@@ -762,10 +763,9 @@ function editor.appendItem(session, key, path)
     if #value >= (setting.maxItems or 3) then
         return false, key .. " already has the maximum number of entries"
     end
-    local item = setting.itemDefault or value[#value]
-    if not item then
-        return false, "cannot duplicate an entry from an empty list"
-    end
+    -- An empty list has nothing to copy, so it starts from a blank entry
+    -- whose required fields the drawer then asks for.
+    local item = setting.itemDefault or value[#value] or {}
     value[#value + 1] = copy(item)
     session.dirty = true
     return true
@@ -862,6 +862,7 @@ function editor.formFields(session)
                     step = setting.step,
                     min = setting.min,
                     max = setting.max,
+                    empty = setting.empty,
                     tableSetting = setting.type == "table",
                     minItems = setting.minItems,
                     maxItems = setting.maxItems,

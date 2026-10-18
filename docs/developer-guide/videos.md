@@ -76,13 +76,10 @@ To reuse privately retained prototype clips without synthesis:
 build/video-venv/bin/python tools/video.py speech --cache-source /path/to/private/clips
 ```
 
-This explicitly trusts recipe `legacy_cache` filenames as matching the text.
-WAV format/duration are checked, but spoken content and historical synthesis
-rate cannot be inferred from audio: listen before importing. Those prototype
-clips may have been synthesized at an automatically adjusted rate. Import
-provenance records this uncertainty; do not interpret a cache name as proof
-that legacy speech used the recipe's rate. No legacy media is required or
-included. `--cache` selects an alternate cache directory; keep it ignored.
+This trusts recipe `legacy_cache` filenames as matching the text. WAV
+format and duration are checked, but spoken content and synthesis rate cannot
+be inferred from audio: listen before importing. Import provenance records this
+uncertainty. No imported media is required or included. `--cache` selects an alternate cache directory; keep it ignored.
 
 ## Render and inspect
 

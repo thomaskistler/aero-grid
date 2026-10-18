@@ -10,7 +10,8 @@ import yaml
 
 RECIPE_DIR = Path(__file__).with_name("capture-recipes")
 PANELS = ("trim-panel", "flight-timer", "metric", "flight-mode", "tx-battery",
-              "model-identity", "rx-battery", "link-status", "navigation", "state", "flight-counter", "output")
+              "model-identity", "rx-battery", "link-status", "navigation", "state", "flight-counter", "output",
+              "host-diagnostics", "service-probe")
 SYNTHETIC_PANELS = ("metric", "tx-battery", "rx-battery", "link-status", "navigation", "state",
                     "flight-counter", "output")
 
@@ -217,6 +218,8 @@ def load_recipe(path):
         if (not isinstance(sample["name"], str) or len(sample["name"]) > 10
                 or any(ord(c) < 32 or ord(c) > 126 for c in sample["name"])):
             raise ValueError("sample.name must be at most 10 printable ASCII characters")
+    elif recipe["panel"] in ("host-diagnostics", "service-probe"):
+        fields(sample, ())
     elif recipe["panel"] == "flight-mode":
         fields(sample, ("name",))
         short_name(sample["name"], "sample.name")
@@ -383,6 +386,9 @@ def readiness(recipe):
         return f"""            local feed = entry.instance.feed
             if not feed or not feed.available or feed.name ~= {json.dumps(sample['name'])} then return end
 """ + extra
+    if recipe["panel"] in ("host-diagnostics", "service-probe"):
+        return """            if not entry.instance then return end
+"""
     if recipe["panel"] == "tx-battery":
         return f"""            local feed = entry.instance.feed
             if not feed or not feed.available or feed.value ~= {sample['voltage']} then return end

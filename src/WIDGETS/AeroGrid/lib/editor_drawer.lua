@@ -14,6 +14,31 @@ local function current(state, field)
     return value
 end
 
+--- The live value of another field in the same entry, by its key.
+---@param state table
+---@param field table
+---@param leaf string
+---@return any
+local function sibling(state, field, leaf)
+    local path = field.path
+    for _, other in ipairs(state.drawerFields or {}) do
+        local otherPath = other.path
+        if other.key == field.key and otherPath and path and #otherPath == #path and otherPath[#otherPath] == leaf then
+            local same = true
+            for index = 1, #path - 1 do
+                if otherPath[index] ~= path[index] then
+                    same = false
+                    break
+                end
+            end
+            if same then
+                return current(state, other)
+            end
+        end
+    end
+    return nil
+end
+
 local function enqueue(state, action, generation)
     if
         state.nativeDrawer
@@ -141,7 +166,6 @@ local function entrySummary(state, key, index, defaults, path)
     if item.unit and item.unit ~= "" then
         summary[#summary + 1] = item.unit
     end
-    summary[#summary + 1] = config.visual or defaults.visual or "bar"
     return table.concat(summary, "  ")
 end
 
@@ -677,15 +701,44 @@ local function addControl(context, state, field, index)
         if unset then
             options.min = unset
         end
+        -- A field bounded by two others, such as a threshold by its range. The
+        -- native control fixes its limits when built, so the live bounds are
+        -- read on every step instead: one step below the low bound is unset,
+        -- and anything outside the bounds shows and stores as unset.
+        local function bounds()
+            if not field.within then
+                return nil
+            end
+            local low = sibling(state, field, field.within[1])
+            local high = sibling(state, field, field.within[2])
+            if type(low) ~= "number" or type(high) ~= "number" then
+                return nil
+            end
+            if high < low then
+                low, high = high, low
+            end
+            return math.floor(low * scale + 0.5), math.floor(high * scale + 0.5)
+        end
+        local function outside(value)
+            local low, high = bounds()
+            return low ~= nil and (value < low or value > high)
+        end
         options.get = function()
             local value = get()
+            local low = bounds()
+            if value ~= nil then
+                value = math.floor(value * scale + 0.5)
+            end
+            if low and (value == nil or outside(value)) then
+                return low - 1
+            end
             if value == nil then
                 return unset or 0
             end
-            return math.floor(value * scale + 0.5)
+            return value
         end
         options.set = function(value)
-            if unset and value <= unset then
+            if unset and (value <= unset or outside(value)) then
                 set(nil)
                 return
             end
@@ -694,7 +747,7 @@ local function addControl(context, state, field, index)
         end
         if scale ~= 1 or unset then
             options.display = function(value)
-                if unset and value <= unset then
+                if unset and (value <= unset or outside(value)) then
                     return field.empty
                 end
                 return tostring(value / scale)

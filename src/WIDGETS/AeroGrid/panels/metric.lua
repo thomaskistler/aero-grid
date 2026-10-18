@@ -62,7 +62,7 @@ local metric = {
             key = "metrics",
             label = "Metrics",
             type = "table",
-            minItems = 1,
+            minItems = 0,
             maxItems = 3,
             -- Every reading setting, so the editor offers ones an entry omits.
             fields = {
@@ -87,23 +87,34 @@ local metric = {
                 },
                 { key = "rangeMin", label = "Range min", type = "number", step = 0.1, default = 0 },
                 { key = "rangeMax", label = "Range max", type = "number", step = 0.1, default = 100 },
-                { key = "warning", label = "Warning", type = "number", step = 0.1, empty = "Off" },
-                { key = "critical", label = "Critical", type = "number", step = 0.1, empty = "Off" },
-            },
-            default = {
+                -- A threshold only counts inside the range, so the drawer offers
+                -- the range and one step below it for Off.
                 {
-                    source = "RSSI",
-                    label = "RSSI",
-                    precision = 0,
-                    direction = "auto",
+                    key = "warning",
+                    label = "Warning",
+                    type = "number",
+                    step = 0.1,
+                    empty = "Off",
+                    within = { "rangeMin", "rangeMax" },
+                },
+                {
+                    key = "critical",
+                    label = "Critical",
+                    type = "number",
+                    step = 0.1,
+                    empty = "Off",
+                    within = { "rangeMin", "rangeMax" },
                 },
             },
+            -- A new panel names no sensor. Guessing one would show a reading
+            -- the pilot never chose.
+            default = {},
         },
         {
             key = "visual",
             label = "Visualization",
             type = "string",
-            default = "bar",
+            default = "none",
             choices = { "bar", "radial", "none" },
         },
         {
@@ -120,7 +131,7 @@ function metric.validateSettings(settings)
     local warnings = {}
     local entries = settings.metrics
     if type(entries) ~= "table" then
-        return { "metrics must contain a contiguous list of 1 to 3 readings" }
+        return { "metrics must contain a contiguous list of up to 3 readings" }
     end
     local count = 0
     for key, entry in pairs(entries) do
@@ -131,8 +142,10 @@ function metric.validateSettings(settings)
         elseif type(entry) ~= "table" then
             warnings[#warnings + 1] = prefix .. " must be a mapping"
         else
-            if type(entry.source) ~= "string" or entry.source == "" then
-                warnings[#warnings + 1] = prefix .. ".source must be a nonempty string"
+            -- An entry added in the editor has no source until one is picked,
+            -- and shows a dash meanwhile rather than refusing to load.
+            if entry.source ~= nil and type(entry.source) ~= "string" then
+                warnings[#warnings + 1] = prefix .. ".source must be a string"
             end
             for field, value in pairs(entry) do
                 if field == "label" or field == "unit" then
@@ -157,14 +170,31 @@ function metric.validateSettings(settings)
             end
         end
     end
-    if count < 1 or count > 3 or #entries ~= count then
-        warnings[#warnings + 1] = "metrics must contain a contiguous list of 1 to 3 readings"
+    if count > 3 or #entries ~= count then
+        warnings[#warnings + 1] = "metrics must contain a contiguous list of up to 3 readings"
     end
     return warnings
 end
 
+--- Whether an entry names a sensor to read.
+---@param entry? AeroGridMetricEntry
+---@return boolean
+local function hasSource(entry)
+    return entry ~= nil and type(entry.source) == "string" and entry.source ~= ""
+end
+
+--- The caption an entry is shown under.
+---@param entry? AeroGridMetricEntry
+---@return string
+local function captionOf(entry)
+    if entry and entry.label then
+        return entry.label
+    end
+    return hasSource(entry) and entry.source or "Metric"
+end
+
 local function readingText(entry, feed)
-    local caption = entry.label or entry.source
+    local caption = captionOf(entry)
     if not feed or not feed.available or type(feed.value) ~= "number" then
         return caption .. " --"
     end
@@ -258,12 +288,37 @@ function metric.digitsFor(context)
     return 0
 end
 
+--- A threshold that applies, or nil when it is unset or outside the range.
+---
+--- The range is the scale the pilot set for this reading, and the drawer only
+--- offers thresholds inside it. A layout value outside it is treated as Off
+--- the same way, so the file and the drawer cannot disagree about an alarm.
+---@param settings AeroGridResolvedMetricSettings
+---@param key "warning"|"critical"
+---@return number?
+local function threshold(settings, key)
+    local value = settings[key]
+    if type(value) ~= "number" then
+        return nil
+    end
+    local low, high = settings.rangeMin, settings.rangeMax
+    if type(low) == "number" and type(high) == "number" then
+        if high < low then
+            low, high = high, low
+        end
+        if value < low or value > high then
+            return nil
+        end
+    end
+    return value
+end
+
 --- Report whether thresholds count downward for this metric.
 ---@param settings AeroGridResolvedMetricSettings
 ---@return boolean
 local function isFalling(settings)
-    local warning = type(settings.warning) == "number" and settings.warning or nil
-    local critical = type(settings.critical) == "number" and settings.critical or nil
+    local warning = threshold(settings, "warning")
+    local critical = threshold(settings, "critical")
 
     if settings.direction == "falling" then
         return true
@@ -290,8 +345,8 @@ function metric.resolveState(settings, value, stale)
         return "stale"
     end
 
-    local warning = type(settings.warning) == "number" and settings.warning or nil
-    local critical = type(settings.critical) == "number" and settings.critical or nil
+    local warning = threshold(settings, "warning")
+    local critical = threshold(settings, "critical")
     local falling = isFalling(settings)
 
     if critical ~= nil then
@@ -654,12 +709,14 @@ function metric.create(parent, rect, config, services)
     if #warnings > 0 then
         error(table.concat(warnings, "; "))
     end
-    local primary = entries[1]
+    -- With nothing configured the panel is a captioned dash, so it can be
+    -- placed first and pointed at a sensor afterwards.
+    local primary = entries[1] or {}
     ---@type AeroGridResolvedMetricSettings
     local settings = {
         metrics = entries,
         source = primary.source,
-        label = primary.label or primary.source,
+        label = captionOf(primary),
         unit = primary.unit or "",
         precision = primary.precision or -1,
         rangeMin = primary.rangeMin or 0,
@@ -668,15 +725,13 @@ function metric.create(parent, rect, config, services)
         critical = primary.critical,
         direction = primary.direction or "auto",
         accent = config.accent or "cyan",
-        visual = config.visual or "bar",
+        visual = config.visual or "none",
     }
 
     local layout = metric.presentationFor(span.colSpan, span.rowSpan)
     layout.showRange = entries[2] ~= nil
     layout.showSecondary = entries[3] ~= nil
-    layout.supporting = entries[2]
-            and { entries[2].label or entries[2].source, entries[3] and (entries[3].label or entries[3].source) }
-        or nil
+    layout.supporting = entries[2] and { captionOf(entries[2]), entries[3] and captionOf(entries[3]) } or nil
     layout.visual = settings.visual
 
     local presentation = services.state("normal", settings.accent)
@@ -692,7 +747,7 @@ function metric.create(parent, rect, config, services)
         stateName = "normal",
         text = "--",
         metrics = entries,
-        suppressSensorUnit = entries[1].unit == "",
+        suppressSensorUnit = primary.unit == "",
         rect = rect,
     }
 
@@ -701,11 +756,13 @@ function metric.create(parent, rect, config, services)
     -- references is never read.
     local telemetry = services.telemetry
     if telemetry then
-        context.feed = telemetry:subscribe(settings.source)
-        if entries[2] then
+        if hasSource(primary) then
+            context.feed = telemetry:subscribe(primary.source)
+        end
+        if hasSource(entries[2]) then
             context.detailFeed = telemetry:subscribe(entries[2].source)
         end
-        if entries[3] then
+        if hasSource(entries[3]) then
             context.secondaryFeed = telemetry:subscribe(entries[3].source)
         end
     end

@@ -1,7 +1,7 @@
 version: 2
 
 # A radio-local complement to sim.yaml's telemetry dashboard: model identity,
-# flight mode, the model timer, transmitter battery and a global variable.
+# flight mode, the model timer, TX battery and a global variable.
 #
 # This layout also covers less-common panel
 # configurations. Both layouts can be selected from the widget's Layout

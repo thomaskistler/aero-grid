@@ -1,53 +1,39 @@
-# `flight-mode`
+# Flight mode
 
 | 1x2 | 2x1 | 2x2 |
 | --- | --- | --- |
 | ![Flight mode at 1x2](../assets/panels/flight-mode/1x2.png) | ![Flight mode at 2x1](../assets/panels/flight-mode/2x1.png) | ![Flight mode at 2x2](../assets/panels/flight-mode/2x2.png) |
 
-Shows the flight mode **the transmitter** is currently in, by name.
+Shows the transmitter's current EdgeTX flight mode by name.
 
 ## Settings
 
-| Key | Type | Default | Values | What it does |
-| --- | --- | --- | --- | --- |
-| `label` | string | `MODE` | any text | The panel's heading. The default is `MODE`; a single-cell header has room for about five characters, so `FLIGHT MODE` needs a wider panel. |
-| `accent` | string | `green` | `cyan`, `green`, `amber`, `orange` | The stripe down the left edge. Green is the default because a flight mode is a statement of healthy current state, which is what the palette reserves green for. `cyan` is reserved for electrical readings, so prefer one of the other three. |
-| `showIndex` | boolean | `false` | `true`, `false` | Requests a supporting row reading `#<n>`, where `<n>` is EdgeTX's flight mode number. Silently hidden when there is no room, including single-row panels; restored when space permits. |
+![Flight mode panel settings](../assets/editor/flight-mode-settings.png)
 
-Anything else is rejected at load with the layout, panel and key named.
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Label** | MODE | Panel heading. Clear it to restore the default. Longer headings need a wider panel. |
+| **Show mode number** | off | Show the EdgeTX flight mode number beneath the name when space permits. Single-row panels hide it. |
+| **Accent** | green | Color used for the normal state: **cyan**, **green**, **amber**, or **orange**. |
 
 ## Behavior
 
-This is **EdgeTX's own flight mode** — one of the up-to-nine mixer modes
-configured on the radio, each with its own trims and rates, usually selected
-by a switch, and named in Model Setup. An unnamed mode shows as `FM0`, `FM1`,
-and so on.
+This is EdgeTX's own flight mode, one of the up-to-nine mixer modes
+configured on the radio. Each can have its own trims and rates. The panel
+reads the active mode from EdgeTX rather than inferring it from switches.
+An unnamed mode shows as `FM0`, `FM1`, and so on.
+
+**Show mode number** adds a supporting row such as `#1`, using EdgeTX's
+numbering from 0. The row disappears when the panel is too short and returns
+when space permits. The mode name is fitted using the widest mode name in
+the model, so switching modes does not resize the reading.
+
+The reading is radio-local, so telemetry loss does not make it stale.
+There are no alarm thresholds.
 
 ## States
 
-This panel reaches two of the seven states.
-
-| State | When | What you see |
-| --- | --- | --- |
-| `normal` | EdgeTX reports a flight mode, which is whenever the radio is on | The mode name in the reading colour, no badge |
-| `unavailable` | Flight mode information is unavailable | `--` and an `N/A` badge |
-
-It has no thresholds, so it never reaches `warning` or `critical`, and its
-reading is radio-local rather than telemetry, so it never goes `stale`.
-
-## Examples
-
-```yaml
-- id: mode
-  type: flight-mode
-  col: 0
-  row: 0
-  colSpan: 2
-  rowSpan: 2
-  config:
-    label: MODE
-    accent: green
-    showIndex: true
-```
-
-The mode number is shown beneath the name as `#1`.
+| Condition | Presentation |
+| --- | --- |
+| EdgeTX reports a flight mode | Mode name and normal accent, without a badge. |
+| Flight mode information is unavailable | `--` and an `N/A` badge; the supporting row is `#--` when shown. |

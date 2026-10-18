@@ -79,6 +79,40 @@ class CaptureRecipeTests(unittest.TestCase):
                 self.assertEqual(options[1]["value"]["unsignedValue"], 1)
                 self.assertFalse((sd / "MODELS/model4.yml").exists())
 
+    def test_drawer_pages_stitch_into_one_dialog(self):
+        path = Path(__file__).with_name("capture-editor.py")
+        spec = importlib.util.spec_from_file_location("capture_editor", path)
+        capture = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(capture)
+        dark, title, light = b"\x08\x10\x10", b"\x10\x5d\x9c", b"\xe6\xee\xf6"
+        left, right, top, body, bottom = 48, 432, 29, 58, 243
+        content = 400
+
+        def ink(offset):
+            # Rows 10..389 alternate between two content colors every 36 px.
+            if 10 <= offset < content - 10:
+                return bytes((offset // 36 % 2 * 100, 0, 0))
+            return light
+
+        def frame(shift):
+            rows = []
+            for y in range(272):
+                if top <= y < body:
+                    rows.append(dark * left + title * (right - left) + dark * (480 - right))
+                elif body <= y < bottom:
+                    middle = ink(y - body + shift) * (right - left - 22)
+                    rows.append(dark * left + light * 4 + middle + light * 18 + dark * (480 - right))
+                else:
+                    rows.append(dark * 480)
+            return rows
+
+        self.assertEqual(capture.dialog_geometry(frame(0))[:5], (left, right, top, body, bottom))
+        rows = capture.stitch([(frame(0), 0), (frame(120), 120), (frame(240), 240)], 60)
+        self.assertEqual(len(rows), body - top + content)
+        self.assertTrue(all(len(row) == (right - left) * 3 for row in rows))
+        for offset in range(content):
+            self.assertEqual(rows[body - top + offset][4 * 3:7 * 3], ink(offset) * 3, offset)
+
     def load(self, recipe):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "recipe.yaml"
@@ -90,7 +124,8 @@ class CaptureRecipeTests(unittest.TestCase):
         for path in RECIPE_DIR.glob("*.yaml"):
             recipe = load_recipe(path)
             self.assertEqual(len(recipe["panels"]), 3)
-            self.assertIn("feed", readiness(recipe))
+            if recipe["panel"] not in ("host-diagnostics", "service-probe"):
+                self.assertIn("feed", readiness(recipe))
 
     def test_nested_metrics_config(self):
         recipe = load_recipe(RECIPE_DIR / "metric.yaml")

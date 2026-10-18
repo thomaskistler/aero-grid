@@ -18,6 +18,7 @@ local function testMetricStates()
     metric.settings.warning = 300
     metric.settings.critical = 400
     metric.settings.direction = "rising"
+    metric.settings.rangeMin, metric.settings.rangeMax = 0, 500
 
     metricModule.setValue(metric, 240)
     assertions.assertEqual(metric.stateName, "normal")
@@ -206,7 +207,7 @@ local function testDefaultSensorUnitAfterResize()
     local fixture = WidgetFixture.new()
     local dashboard = fixture.createLoaded()
     local metric = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/metric.lua"))()
-    assertions.assertEqual(metric.settings[1].default[1].unit, nil)
+    assertions.assertEqual(#metric.settings[1].default, 0, "a new metric panel names no sensor")
     local feed = { available = true, value = 48, unitText = "km/h", precision = 1 }
     local services = {
         theme = dashboard.theme,
@@ -235,7 +236,61 @@ local function testDefaultSensorUnitAfterResize()
     assert(panel.unitDrawn, "enlargement must reveal the inherited sensor unit")
 end
 
+--- An unconfigured panel is a captioned dash and reads nothing.
+local function testUnconfiguredMetric()
+    local metric = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/metric.lua"))()
+    assertions.assertEqual(#metric.validateSettings({ metrics = {} }), 0, "no metrics is a valid panel")
+    assertions.assertEqual(#metric.validateSettings({ metrics = { {} } }), 0, "a blank entry is a valid panel")
+    assert(#metric.validateSettings({ metrics = { { source = 5 } } }) > 0, "a source must still be a string")
+
+    local fixture = WidgetFixture.new()
+    local dashboard = fixture.createLoaded()
+    for _, metrics in ipairs({ {}, { {} }, { { source = "" } } }) do
+        local subscribed = 0
+        local services = {
+            theme = dashboard.theme,
+            primitives = dashboard.primitives,
+            fonts = dashboard.themeBuilder.typography(2, 2),
+            span = { colSpan = 2, rowSpan = 2 },
+            themeBuilder = dashboard.themeBuilder,
+            telemetry = {
+                subscribe = function()
+                    subscribed = subscribed + 1
+                    return { available = false }
+                end,
+            },
+            state = function(name, accent)
+                return dashboard.themeBuilder.state(dashboard.theme, name, accent)
+            end,
+        }
+        local panel = metric.create(dashboard.page, { x = 0, y = 0, w = 238, h = 134 }, {
+            metrics = metrics,
+            visual = "none",
+        }, services)
+        assertions.assertEqual(subscribed, 0, "nothing to read means nothing subscribed")
+        assertions.assertEqual(panel.settings.label, "Metric")
+        assertions.assertEqual(panel.text, "--")
+    end
+end
+
+--- A threshold outside the range is Off, as the drawer presents it.
+local function testThresholdsOutsideRangeAreOff()
+    local metric = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/metric.lua"))()
+    local settings = { rangeMin = 0, rangeMax = 400, warning = 300, critical = 450, direction = "auto" }
+    assertions.assertEqual(metric.resolveState(settings, 460, false), "warning", "critical past Range max is Off")
+    settings.critical, settings.warning = 380, -10
+    assertions.assertEqual(metric.resolveState(settings, 390, false), "critical")
+    assertions.assertEqual(metric.resolveState(settings, 0, false), "normal", "warning below Range min is Off")
+    -- Off thresholds take no part in inferring direction either.
+    settings = { rangeMin = 0, rangeMax = 100, warning = 30, critical = 120, direction = "auto" }
+    assertions.assertEqual(metric.resolveState(settings, 50, false), "warning", "one live threshold reads as rising")
+    settings = { rangeMin = 100, rangeMax = 0, warning = 30, critical = 10, direction = "auto" }
+    assertions.assertEqual(metric.resolveState(settings, 5, false), "critical", "a reversed range still bounds")
+end
+
 local function run()
+    testThresholdsOutsideRangeAreOff()
+    testUnconfiguredMetric()
     testDefaultSensorUnitAfterResize()
     testSpeedUnitFitsPanel()
     testMetricStates()
@@ -244,9 +299,7 @@ local function run()
     local metric = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/metric.lua"))()
     assertions.assertEqual(#metric.validateSettings({ metrics = { { source = "GAlt" } } }), 0)
     for _, entries in ipairs({
-        {},
         { "GAlt" },
-        { {} },
         { { source = "GAlt", precision = 4 } },
         { { source = "GAlt", unit = 1 } },
         { { source = "GAlt", typo = true } },

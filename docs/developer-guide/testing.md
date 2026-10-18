@@ -42,7 +42,7 @@ make check LUA_COMPILER=/absolute/path/to/edgetx-luac
 | Editor commands and settings dialogs | `tests/unit/lib/test_editor.lua` and `tests/integration/test_editor_ui.lua`. |
 | Shared rendering or reflow | Builder-matrix, panel-reflow, font-callback, and resource-stability integration suites. |
 
-The formerly combined runtime suite is split under `tests/unit/runtime/` into
+The runtime suite under `tests/unit/runtime/` is split into
 contracts/settings/documentation, palette/state, service behavior, and
 typography/geometry suites. `tests/support/runtime_fixture.lua` preserves the
 minimal constants/LCD surface: these tests deliberately do not install LVGL or

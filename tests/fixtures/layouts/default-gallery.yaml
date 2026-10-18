@@ -94,6 +94,7 @@ panels:
     colSpan: 2
     rowSpan: 1
     config:
+      visual: bar
       metrics:
         - source: Alt
           label: ALT

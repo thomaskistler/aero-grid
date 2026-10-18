@@ -1,96 +1,45 @@
-# `model-identity`
+# Model identity
 
 | 1x2 | 2x1 | 2x2 |
 | --- | --- | --- |
 | ![Model identity at 1x2](../assets/panels/model-identity/1x2.png) | ![Model identity at 2x1](../assets/panels/model-identity/2x1.png) | ![Model identity at 2x2](../assets/panels/model-identity/2x2.png) |
 
-Shows which model is loaded: its name, the picture you assigned it, or both.
+Shows the loaded model's name, its assigned picture, and optionally its model
+labels. The information comes from EdgeTX, not telemetry.
 
 ## Settings
 
-| Key | Type | Default | Values | What it does |
-| --- | --- | --- | --- | --- |
-| `presentation` | string | `auto` | `auto`, `name`, `image`, `both` | Which arrangement to draw. `auto` shows the name alone on a panel smaller than four cells and the picture on anything larger. `image` and `both` show a picture with the name in the heading. |
-| `label` | string | `MODEL` | any text | The panel's heading — **only where no picture is drawn**. With a picture the model name takes the heading. The default `MODEL` is allowed as a fallback; a custom label alongside `presentation: image` or `both` is refused with the panel named. |
-| `accent` | string | `cyan` | `cyan`, `green`, `amber`, `orange` | The stripe down the left edge. |
-| `showLabels` | boolean | `false` | `true`, `false` | Requests a supporting row listing the model's configured labels. Silently hidden when there is no room, including single-row panels; restored when space permits. |
+![Model identity panel settings](../assets/editor/model-identity-settings.png)
 
-Anything else is rejected at load with the layout, panel and key named.
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Label** | MODEL | Panel heading when no picture is drawn. With a picture, the model name becomes the heading. A custom label cannot be combined with **Show** set to **image** or **both**; the default MODEL is allowed. |
+| **Show** | auto | **name** requests the model name alone. **image** and **both** request a picture with the name in the heading. **auto** requests the name below four grid cells and a picture with the name at four or more. |
+| **Show model labels** | off | Shows the model's configured labels in a supporting row where space permits. |
+| **Accent** | cyan | Normal accent stripe: **cyan**, **green**, **amber**, or **orange**. |
 
 ## Behavior
 
-Assign the model name and picture in EdgeTX Model Setup. Choose `name`,
-`image`, or `both`; `auto` shows the name on small panels and the picture
-on larger ones.
+Assign the model name and picture in EdgeTX Model Setup. The picture scales
+to fit without cropping. With a picture, the model name moves into the
+heading, where it is fitted and shortened if needed. Without a picture,
+**Label** is the heading and the model name is the main reading. A long name
+may extend beyond a narrow panel.
 
-With a picture, the model name becomes the heading and the whole picture
-fits without cropping. Without a picture, `label` is the heading and the
-model name is the main reading. Long names may extend beyond a narrow panel.
-
-A missing picture falls back to the name. An unreadable picture may leave
-image-only mode empty; use `both` to keep the name visible.
+No assigned picture or a missing file falls back to the model name. A file
+that exists but cannot be decoded may leave the picture area empty; **both**
+does not keep a separate body name visible while a picture is drawn.
+A picture or model-label row that does not fit is hidden. **auto** and
+**both** retain the body name when the picture is hidden for space.
 
 ## States
 
-This panel reaches two of the seven states.
+| Condition | Presentation |
+| --- | --- |
+| Model information available | Model name or picture, normal accent, and no badge. |
+| Model information unavailable | `--` and an `N/A` badge. |
+| Model name empty | `--`, without an unavailable badge if model information is otherwise available. |
+| Picture absent or missing | Model name shown instead, without a failure badge. |
 
-| State | When | What you see |
-| --- | --- | --- |
-| `normal` | The model's identity is readable, which is whenever the radio is on | The name in the reading colour, no badge |
-| `unavailable` | Model information is unavailable | `--` and an `N/A` badge |
-
-It has no thresholds, so it never reaches `warning` or `critical`, and its
-reading comes from the radio rather than from telemetry, so it never goes
-`stale`.
-
-## Examples
-
-A single cell, which is the name by itself. Nothing else fits, and this is the
-span where a long name overhangs furthest relative to the panel.
-
-```yaml
-- id: identity
-  type: model-identity
-  col: 0
-  row: 0
-  colSpan: 1
-  rowSpan: 1
-  config:
-    label: MODEL
-```
-
-A picture with the model name and labels.
-
-```yaml
-- id: identity-tall
-  type: model-identity
-  col: 0
-  row: 0
-  colSpan: 2
-  rowSpan: 3
-  config:
-    accent: green
-    presentation: both
-    showLabels: true
-```
-
-No custom `label` here: a panel showing the picture puts the model name in
-the heading, so a custom label has nowhere to go. The editor's default
-`MODEL` label does not prevent selecting Image or Both. Incompatible custom
-settings are reported in the preview error dialog; open its details to read
-the full explanation.
-
-A wide single row showing the name alone. This is the arrangement that holds
-the longest model name EdgeTX will store without overhanging the panel.
-
-```yaml
-- id: identity-wide
-  type: model-identity
-  col: 0
-  row: 0
-  colSpan: 4
-  rowSpan: 1
-  config:
-    label: MODEL
-    presentation: name
-```
+There are no thresholds or telemetry freshness checks, so this panel does not
+produce warning, critical, or stale states.

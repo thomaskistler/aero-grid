@@ -444,12 +444,10 @@ equal(
     "entry name cannot overlap summary"
 )
 assert(string.find(action("item", "metrics").properties.text(), "Alt", 1, true), "metric summary shows its source")
-assert(string.find(action("item", "metrics").properties.text(), "none", 1, true), "metric summary shows visualization")
-control("visual").properties.set(1)
-settleDrawer()
-assert(
-    string.find(action("item", "metrics").properties.text(), "bar", 1, true),
-    "summary updates when visualization changes"
+equal(
+    string.find(action("item", "metrics").properties.text(), "none", 1, true),
+    nil,
+    "metric summary omits the panel visualization"
 )
 local addMetric = action("append", "metrics")
 equal(addMetric.properties.text, "+", "add entry is a plus row")
@@ -459,6 +457,34 @@ action("item", "metrics").properties.press()
 equal(control("accent").properties.active(), false, "controls disable while a command is pending")
 settleDrawer()
 equal(control("metrics", "source").kind, "source", "metric sources use native source selection")
+do
+    -- Thresholds follow the entry's range, 0 to 100 by default, in tenths.
+    local warning = control("metrics", "warning").properties
+    local draftEntry = function()
+        return context.editorSession.draft.panels[1].config.metrics[1]
+    end
+    equal(warning.display(warning.get()), "Off", "an unset threshold shows Off")
+    equal(warning.get(), -1, "Off sits one step below Range min")
+    warning.set(0)
+    settleDrawer()
+    equal(draftEntry().warning, 0, "one step up from Off is Range min")
+    warning.set(1001)
+    settleDrawer()
+    equal(draftEntry().warning, nil, "stepping past Range max turns the threshold off")
+    equal(warning.display(1001), "Off", "a value past Range max shows Off")
+    warning.set(800)
+    settleDrawer()
+    equal(draftEntry().warning, 80, "an in-range threshold is stored")
+    control("metrics", "rangeMax").properties.set(500)
+    settleDrawer()
+    equal(warning.display(warning.get()), "Off", "a threshold left outside a narrowed range shows Off")
+    warning.set(-1)
+    settleDrawer()
+    equal(draftEntry().warning, nil, "one step below Range min turns the threshold off")
+    control("metrics", "rangeMax").properties.set(1000)
+    settleDrawer()
+    draftEntry().rangeMax = nil
+end
 local staleSource = control("metrics", "source")
 staleSource.properties.set(999)
 settleDrawer()
@@ -553,8 +579,8 @@ equal(control("metrics", "direction").kind, "choice", "direction uses native pic
 equal(control("metrics", "direction").properties.get(), 1, "omitted direction shows its default")
 local warningControl = control("metrics", "warning")
 equal(warningControl.kind, "numberEdit", "thresholds use native number entry")
-equal(warningControl.properties.get(), warningControl.properties.min, "omitted warning shows as unset")
-equal(warningControl.properties.display(warningControl.properties.min), "Off", "unset warning is labelled")
+equal(warningControl.properties.get(), -1, "omitted warning sits one step below Range min")
+equal(warningControl.properties.display(-1), "Off", "unset warning is labelled")
 warningControl.properties.set(225)
 settleDrawer()
 equal(entry.warning, 22.5, "number entry sets an omitted reading setting")
@@ -634,6 +660,10 @@ equal(context.editorSession.selected, 2, "new panel is selected for configuratio
 selection.set(2)
 equal(state.drawerPending, nil, "closed selection callbacks cannot add twice")
 equal(#context.panels, 1, "new panel waits for configuration dismissal")
+equal(#context.editorSession.draft.panels[2].config.metrics, 0, "a new metric panel starts with no metrics")
+action("append", "metrics").properties.press()
+settleDrawer()
+equal(context.editorSession.draft.panels[2].config.metrics[1].source, nil, "the first metric starts blank")
 action("item", "metrics").properties.press()
 settleDrawer()
 control("metrics", "label").properties.set("LIVE")
@@ -1055,8 +1085,8 @@ local rejectedPrecision, precisionError =
     context.editorModule.setPath(context.editorSession, "metrics", { 1, "precision" }, 4)
 equal(rejectedPrecision, false, "declared entry fields are validated when written")
 assert(precisionError, "rejected entry field explains why")
-local previewSource = context.editorSession.draft.panels[1].config.metrics[1].source
-assert(context.editorModule.setPath(context.editorSession, "metrics", { 1, "source" }, ""))
+-- Written past setPath, which would refuse it, as a hand-edited layout can.
+context.editorSession.draft.panels[1].config.metrics[1].direction = "up"
 context.editorUi.previewPending = true
 settleDrawer()
 assert(context.editorUi.previewError, "invalid settings report a preview failure")
@@ -1089,7 +1119,7 @@ equal(
     "the bottom status line does not wrap the full error below the screen"
 )
 equal(#context.panels, 0, "failed preview does not leave a second or stale live instance")
-assert(context.editorModule.setPath(context.editorSession, "metrics", { 1, "source" }, previewSource))
+assert(context.editorModule.setPath(context.editorSession, "metrics", { 1, "direction" }, "auto"))
 context.editorUi.previewPending = true
 settleDrawer()
 equal(context.editorUi.previewError, nil, "corrected settings clear the preview failure")

@@ -49,8 +49,8 @@ local flightTimer = {
         -- runtime, here from the timer's own name, or its number when it has none. A
         -- panel with a fixed heading states it as its default instead.
         { key = "label", label = "Label", type = "string", default = "" },
-        { key = "warning", label = "Warning seconds", type = "number" },
-        { key = "critical", label = "Critical seconds", type = "number" },
+        { key = "warning", label = "Warning seconds", type = "number", min = 0, step = 1, empty = "Off" },
+        { key = "critical", label = "Critical seconds", type = "number", min = 0, step = 1, empty = "Off" },
         {
             key = "accent",
             label = "Accent",

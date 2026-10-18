@@ -61,8 +61,6 @@
   "method": "Native TX16S framebuffer; isolated sample layout and editor command automation.",
   "scenes": [
     "overview",
-    "settings",
-    "metric-entry",
     "exit",
     "save-as",
     "screen-menu",

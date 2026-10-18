@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
---- Transmitter battery voltage.
+--- TX battery voltage.
 ---
 --- Voltage is the authoritative reading. Battery mode prioritizes its glyph
 --- over the numeric reading when the pair cannot fit. Any fill or
@@ -48,10 +48,42 @@ local txBattery = {
         -- "TX BATTERY" needs ten characters of a header that has about five.
         { key = "label", label = "Label", type = "string", default = "TX" },
         -- No default range: the estimate stays off until a layout states one.
-        { key = "packEmpty", label = "Empty volts, whole pack", type = "number" },
-        { key = "packFull", label = "Full volts, whole pack", type = "number" },
-        { key = "warning", label = "Warning volts", type = "number" },
-        { key = "critical", label = "Critical volts", type = "number" },
+        {
+            key = "packEmpty",
+            label = "Empty volts, whole pack",
+            type = "number",
+            min = 3,
+            max = 20,
+            step = 0.01,
+            empty = "Radio",
+        },
+        {
+            key = "packFull",
+            label = "Full volts, whole pack",
+            type = "number",
+            min = 3,
+            max = 20,
+            step = 0.01,
+            empty = "Radio",
+        },
+        {
+            key = "warning",
+            label = "Warning volts",
+            type = "number",
+            min = 3,
+            max = 20,
+            step = 0.01,
+            empty = "Off",
+        },
+        {
+            key = "critical",
+            label = "Critical volts",
+            type = "number",
+            min = 3,
+            max = 20,
+            step = 0.01,
+            empty = "Off",
+        },
         -- Battery glyph is the default; bars suit wider panels.
         {
             key = "visual",
