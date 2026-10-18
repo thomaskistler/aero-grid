@@ -109,6 +109,18 @@ local function assertFont(actual, expected, message)
     end
 end
 
+local function supportedSpans(module)
+    local spans = {}
+    for rows = 1, 4 do
+        for columns = 1, 4 do
+            if panelHost.supportsSpan(module, columns, rows) then
+                spans[#spans + 1] = panelHost.spanName(columns, rows)
+            end
+        end
+    end
+    return spans
+end
+
 --- Build a telemetry environment whose sensors and link state a test controls.
 local function telemetryHarness()
     local harness = {
@@ -171,5 +183,6 @@ return {
     navigationService = navigationService,
     assertEqual = assertEqual,
     assertFont = assertFont,
+    supportedSpans = supportedSpans,
     telemetryHarness = telemetryHarness,
 }

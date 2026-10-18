@@ -36,22 +36,7 @@ local DEFAULT_LABEL = "MODEL"
 local modelIdentity = {
     id = "model-identity",
     apiVersion = 1,
-    supportedSpans = {
-        "1x1",
-        "2x1",
-        "3x1",
-        "4x1",
-        "1x2",
-        "2x2",
-        "3x2",
-        "4x2",
-        "2x3",
-        "3x3",
-        "4x3",
-        "2x4",
-        "3x4",
-        "4x4",
-    },
+    supportedSpans = { "any" },
     -- Model identity changes only when the model changes, which reloads the
     -- widget anyway. Five seconds is already generous.
     refreshInterval = 500,

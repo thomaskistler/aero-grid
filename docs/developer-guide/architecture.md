@@ -149,7 +149,11 @@ Use `panels/flight-mode.lua` as a small working example and
 | `validateSettings(settings, span, config)` | Optional cross-field and span-dependent validation. |
 
 Put the module at `panels/<type>.lua` and reference that type in a layout.
-Declare only spans you actually render correctly. A list setting
+Regular panels declare `supportedSpans = { "any" }` and adapt their contents to
+every in-bounds span of the 4 x 4 grid. Use an explicit span list when there is a
+real rendering constraint: Host diagnostics and Service probe need at least
+2x2, while Theme showcase requires 4x4. Declare only spans you actually render
+correctly. A list setting
 (`type = "table"`) declares entry `fields` with keys or nested paths, labels,
 types, and appropriate defaults/bounds/choices. The editor uses this schema
 to offer even fields omitted from the YAML, and can remove cleared optional

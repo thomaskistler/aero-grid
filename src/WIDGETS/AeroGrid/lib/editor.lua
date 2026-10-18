@@ -217,6 +217,9 @@ local function candidateSpans(module)
     local spans = module.supportedSpans
     if type(spans) == "table" then
         for _, span in ipairs(spans) do
+            if span == "any" then
+                return { { 1, 1 } }
+            end
             local width, height
             if type(span) == "string" then
                 width, height = string.match(span, "^(%d+)x(%d+)$")

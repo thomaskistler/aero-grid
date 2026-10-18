@@ -4,7 +4,7 @@
 local flightCounter = {
     id = "flight-counter",
     apiVersion = 1,
-    supportedSpans = { "1x1", "2x1", "3x1", "4x1", "1x2", "2x2", "3x2", "4x2" },
+    supportedSpans = { "any" },
     refreshInterval = 20,
     settings = {
         { key = "label", label = "Label", type = "string", default = "FLT" },

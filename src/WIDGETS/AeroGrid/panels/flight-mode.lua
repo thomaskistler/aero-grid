@@ -26,16 +26,7 @@
 local flightMode = {
     id = "flight-mode",
     apiVersion = 1,
-    supportedSpans = {
-        "1x1",
-        "2x1",
-        "3x1",
-        "4x1",
-        "1x2",
-        "2x2",
-        "3x2",
-        "4x2",
-    },
+    supportedSpans = { "any" },
     -- A flight mode changes when a switch moves, which is rare, and the reading
     -- is radio-local rather than telemetry. Two hertz is responsive enough and
     -- leaves the instruction budget to panels that actually need it.
