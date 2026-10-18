@@ -83,10 +83,7 @@ Otherwise choose an action:
 ![Unsaved changes menu offering Save, Save as, and Discard changes](../assets/editor/exit.png)
 
 Save As suggests `<model name>-L<number>`, using the first unused number
-starting at 1, such as `Sonic-L1` or `My-Glider-L1`. Spaces and other unsupported
-characters in the model name become `-`. Long model names are shortened so the
-whole name, including `-L` and the number, fits within 24 characters. An empty
-model name uses `Layout-L1`. Existing saved names stay unchanged.
+starting at 1, such as `Sonic-L1` or `My-Glider-L1`.
 You can change the suggestion using letters, digits, `-`, and `_` (at most
 24 characters). An existing name requires overwrite confirmation.
 Press **RTN** in the name dialog to return to the exit menu without losing
