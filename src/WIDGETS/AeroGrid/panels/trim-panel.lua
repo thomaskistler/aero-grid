@@ -47,22 +47,7 @@
 local trimPanel = {
     id = "trim-panel",
     apiVersion = 1,
-    supportedSpans = {
-        "1x1",
-        "2x1",
-        "3x1",
-        "4x1",
-        "1x2",
-        "2x2",
-        "3x2",
-        "4x2",
-        "2x3",
-        "3x3",
-        "4x3",
-        "2x4",
-        "3x4",
-        "4x4",
-    },
+    supportedSpans = { "any" },
     -- A trim moves under the pilot's thumb, so it is refreshed at the same rate
     -- as a telemetry readout rather than at a status-panel rate.
     refreshInterval = 20,

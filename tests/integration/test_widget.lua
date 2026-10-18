@@ -6928,16 +6928,25 @@ local function testReadingsSitInTheirSlots()
     local cellWidth = math.floor((WIDTH - GUTTER * (CELLS - 1)) / CELLS)
     local cellHeight = math.floor((HEIGHT - GUTTER * (CELLS - 1)) / CELLS)
 
+    local panelHost = assert(loadfile(sourcePath .. "lib/panel_host.lua"))()
     for _, subject in ipairs(SLOTTED) do
         local module = assert(loadfile(sourcePath .. "panels/" .. subject.type .. ".lua"))()
         local cases = {}
         local byVisual = {}
         for index, extra in ipairs(subject.variants) do
-            for _, span in ipairs(module.supportedSpans) do
-                -- Restrict supporting-row variants to spans that can show them.
-                local rows = tonumber(string.match(span, "%dx(%d)")) or 1
-                if rows >= (type(extra) == "table" and extra.minRows or 1) then
-                    cases[#cases + 1] = { span = span, extra = extra, index = index }
+            for rows = 1, 4 do
+                for columns = 1, 4 do
+                    -- Restrict supporting-row variants to spans that can show them.
+                    if
+                        panelHost.supportsSpan(module, columns, rows)
+                        and rows >= (type(extra) == "table" and extra.minRows or 1)
+                    then
+                        cases[#cases + 1] = {
+                            span = panelHost.spanName(columns, rows),
+                            extra = extra,
+                            index = index,
+                        }
+                    end
                 end
             end
         end

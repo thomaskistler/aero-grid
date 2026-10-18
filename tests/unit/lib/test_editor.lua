@@ -218,6 +218,51 @@ local function testAddSpanDeclarations()
     end
 end
 
+local function testCatalogPanelSizes()
+    for _, entry in ipairs(editor.CATALOG) do
+        local module = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/" .. entry.type .. ".lua"))()
+        modules[entry.type] = module
+        local restricted = entry.type == "host-diagnostics" or entry.type == "service-probe"
+        if not restricted then
+            assert(#module.supportedSpans == 1 and module.supportedSpans[1] == "any", entry.type)
+        end
+        for rows = 1, 4 do
+            for columns = 1, 4 do
+                local session = newSession({ version = 3, grid = { columns = 4, rows = 4 }, panels = {} })
+                local added, addError = editor.add(session, entry.type)
+                assert(added, entry.type .. ": " .. tostring(addError))
+                local panel = session.draft.panels[1]
+                local minimum = restricted and 2 or 1
+                assert(panel.colSpan == minimum and panel.rowSpan == minimum, entry.type)
+                local allowed = not restricted or (columns >= 2 and rows >= 2)
+                local span = tostring(columns) .. "x" .. tostring(rows)
+                local offered = false
+                for _, size in ipairs(editor.sizes(session)) do
+                    offered = offered or size == span
+                end
+                assert(offered == allowed, entry.type .. ": size picker " .. span)
+                local resized, resizeError = editor.resize(session, columns - minimum, rows - minimum)
+                assert(resized == allowed, entry.type .. ": " .. tostring(resizeError))
+                if allowed then
+                    assert(panel.colSpan == columns and panel.rowSpan == rows)
+                    assert(editor.move(session, 4 - columns, 4 - rows), entry.type .. ": move to grid edge")
+                    local applied, saved = editor.apply(session)
+                    assert(applied, table.concat(saved or {}, "; "))
+                    local reopened = newSession(saved)
+                    assert(reopened.draft.panels[1].colSpan == columns)
+                    assert(reopened.draft.panels[1].rowSpan == rows)
+                end
+            end
+        end
+    end
+    local showcase = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/theme-showcase.lua"))()
+    for rows = 1, 4 do
+        for columns = 1, 4 do
+            assert(panelHost.supportsSpan(showcase, columns, rows) == (columns == 4 and rows == 4))
+        end
+    end
+end
+
 local function testRxBatteryFormAndSourceDrawers()
     local input = { version = 3, grid = { columns = 4, rows = 4 }, panels = {} }
     local session = newSession(input)
@@ -796,6 +841,7 @@ testPlacementRulesAndResizeAnchor()
 testAddRemoveAndStrictSettings()
 testAddChannelOutput()
 testAddSpanDeclarations()
+testCatalogPanelSizes()
 testRxBatteryFormAndSourceDrawers()
 testSinglePrecisionVoltageSteps()
 testRestoreDefaultDoesNotApply()

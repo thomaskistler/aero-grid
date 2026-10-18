@@ -59,19 +59,7 @@
 local linkStatus = {
     id = "link-status",
     apiVersion = 1,
-    supportedSpans = {
-        "1x1",
-        "2x1",
-        "3x1",
-        "4x1",
-        "1x2",
-        "2x2",
-        "3x2",
-        "4x2",
-        "2x3",
-        "3x3",
-        "4x3",
-    },
+    supportedSpans = { "any" },
     -- Link quality is the one reading a pilot glances at during a fade, but it
     -- is still a number on a screen: five hertz is indistinguishable from fifty
     -- and costs a tenth as much of the shared instruction budget.

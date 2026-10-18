@@ -1046,7 +1046,7 @@ local function testReadingsSitInTheirBand()
     local identity = loadModule("panels/model-identity.lua")
     local checked = 0
 
-    for _, span in ipairs(identity.supportedSpans) do
+    for _, span in ipairs(fixture.supportedSpans(identity)) do
         local cols, rows = string.match(span, "(%d)x(%d)")
         cols, rows = tonumber(cols), tonumber(rows)
         local rect = {
@@ -1089,7 +1089,7 @@ local function testReadingsSitInTheirBand()
         )
     end
 
-    assertEqual(checked, #identity.supportedSpans, "not every declared span was measured")
+    assertEqual(checked, 16, "not every grid span was measured")
 end
 
 --- **The supporting row hangs one inset above its floor**, mirroring the
@@ -1666,20 +1666,13 @@ local function testTxBatteryComposition()
     local cellWidth = math.floor((WIDTH - GUTTER * (CELLS - 1)) / CELLS)
     local cellHeight = math.floor((HEIGHT - GUTTER * (CELLS - 1)) / CELLS)
 
-    assertEqual(#documented, #battery.supportedSpans, "the documented table and the declared spans disagree in length")
-
-    for index, row in ipairs(documented) do
+    for _, row in ipairs(documented) do
         local span, font, showUnit = row[1], row[2], row[3]
         local glyphWidth, glyphHeight = row[4], row[5]
         local border, under = row[6], row[7]
-        assertEqual(
-            battery.supportedSpans[index],
-            span,
-            "the documented table is in a different order from supportedSpans"
-        )
-
         local cols, rows = string.match(span, "(%d)x(%d)")
         cols, rows = tonumber(cols), tonumber(rows)
+        assert(panelHost.supportsSpan(battery, cols, rows), "documented span is not supported: " .. span)
         local rect = {
             x = 0,
             y = 0,

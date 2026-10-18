@@ -32,16 +32,7 @@
 local txBattery = {
     id = "tx-battery",
     apiVersion = 1,
-    supportedSpans = {
-        "1x1",
-        "2x1",
-        "3x1",
-        "4x1",
-        "1x2",
-        "2x2",
-        "3x2",
-        "4x2",
-    },
+    supportedSpans = { "any" },
     -- A transmitter pack moves over minutes, not frames.
     refreshInterval = 50,
     settings = {

@@ -862,7 +862,7 @@ local function testFlightModeSizing()
 
     for _, widest in ipairs({ "LongRange7", "Norm" }) do
         local checked = 0
-        for _, span in ipairs(flightMode.supportedSpans) do
+        for _, span in ipairs(fixture.supportedSpans(flightMode)) do
             local cols, rows = string.match(span, "(%d)x(%d)")
             cols, rows = tonumber(cols), tonumber(rows)
             local rect = {
@@ -894,7 +894,7 @@ local function testFlightModeSizing()
             )
             checked = checked + 1
         end
-        assertEqual(checked, 8, "not every declared span was measured")
+        assertEqual(checked, 16, "not every grid span was measured")
     end
 
     -- And the point of reading the model rather than assuming ten characters:
@@ -925,7 +925,7 @@ local function testDisplayPreferencesAreShedQuietly()
         local kind, key = case[1], case[2]
         local module = loadModule("panels/" .. kind .. ".lua")
         local stated = { [key] = true }
-        for _, span in ipairs(module.supportedSpans) do
+        for _, span in ipairs(fixture.supportedSpans(module)) do
             local cols, rows = string.match(span, "(%d)x(%d)")
             local resolved, warnings =
                 panelHost.resolveSettings(module, stated, { colSpan = tonumber(cols), rowSpan = tonumber(rows) })
