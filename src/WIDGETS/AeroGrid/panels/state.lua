@@ -17,6 +17,7 @@ local statePanel = {
                 {
                     key = "states",
                     label = "States",
+                    itemLabel = "State",
                     type = "table",
                     minItems = 1,
                     maxItems = 3,

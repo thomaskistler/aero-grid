@@ -603,6 +603,7 @@ local function entryFields(setting, entries, result, rootKey, prefix)
                 path = path,
                 label = (setting.label or setting.key) .. "[" .. index .. "]." .. table.concat(relative, "."),
                 entryLabel = field.label,
+                itemLabel = field.itemLabel,
                 -- Shown when the entry omits the field; never the live value,
                 -- which the drawer reads from the draft.
                 value = field.default,
@@ -824,6 +825,17 @@ local function flattenFields(value, path, label, result)
     end
 end
 
+function editor.orderFields(fields, entry)
+    for index, field in ipairs(fields) do
+        local key = entry and field.path and field.path[#field.path] or field.key
+        if key == "label" then
+            table.insert(fields, 1, table.remove(fields, index))
+            break
+        end
+    end
+    return fields
+end
+
 function editor.formFields(session)
     local settings, config, module = editor.settings(session)
     if not settings or type(config) ~= "table" or not module then
@@ -845,6 +857,7 @@ function editor.formFields(session)
                     label = (setting.label or setting.key) .. " entries",
                     value = #value,
                     type = "table-list",
+                    itemLabel = setting.itemLabel,
                     minItems = setting.minItems,
                     maxItems = setting.maxItems,
                     visibleWhen = setting.visibleWhen,
@@ -887,13 +900,7 @@ function editor.formFields(session)
             end
         end
     end
-    for index, field in ipairs(fields) do
-        if field.key == "label" then
-            table.insert(fields, 1, table.remove(fields, index))
-            break
-        end
-    end
-    return fields, config, module
+    return editor.orderFields(fields), config, module
 end
 
 --- Build flat-setting controls for one metadata-defined source drawer.

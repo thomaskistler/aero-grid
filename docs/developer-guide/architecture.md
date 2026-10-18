@@ -157,7 +157,11 @@ correctly. A list setting
 (`type = "table"`) declares entry `fields` with keys or nested paths, labels,
 types, and appropriate defaults/bounds/choices. The editor uses this schema
 to offer even fields omitted from the YAML, and can remove cleared optional
-fields. Do not build a separate settings UI for each panel.
+fields. List declarations, including nested lists, can set `itemLabel` to a
+singular name such as `"Metric"` or `"State"`. The editor names rows using the
+first nonempty label or source, then `itemLabel` and the one-based index;
+lists without `itemLabel` use `"Entry"`. Do not build a separate settings UI
+for each panel.
 
 The public `theme.lua` API composes palette/state resolution with
 `typography.lua` (measurement, font fitting, unit metrics) and `panel_layout.lua`
@@ -190,8 +194,8 @@ present them; `editor_controller.lua` coordinates them with the live dashboard.
 `layout_store.lua` handles saving, backups, and user-versus-shipped
 resolution; `layout_registry.lua` maintains name-to-choice positions.
 Keep these boundaries intact when changing save behavior.
-Panel settings drawers put **Label** first when declared, preserving the
-declaration order of all remaining controls.
+Panel settings drawers, including entry subdrawers, put **Label** first when
+declared, preserving the declaration order of all remaining controls.
 
 Editing does not overwrite bundled layouts. Save writes to `/AEROGRID/layouts/`,
 and Save As creates a named user layout. The layout registry is initialized

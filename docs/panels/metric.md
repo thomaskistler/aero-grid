@@ -15,7 +15,7 @@ and `GAlt+`. The panel does not derive measurements or convert units.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| **Metrics** | none | Up to three readings. The first is the headline; the others are supporting readings. Each row shows the entry's label (or source) and a summary. Tap **+** to add a reading; the first one starts blank, later ones copy the last entry. |
+| **Metrics** | none | Up to three readings. The first is the headline; the others are supporting readings. Each row shows the entry's label (or source) and a summary; unnamed readings use **Metric 1**, **Metric 2**, and so on. Tap **+** to add a reading; the first one starts blank, later ones copy the last entry. |
 | **Visualization** | none | How the headline reading is drawn: **bar**, **radial**, or **none**. |
 | **Accent** | cyan | Color used for the normal state: **cyan**, **green**, **amber**, or **orange**. Alarm and stale states use the shared state colors instead. |
 
@@ -27,8 +27,8 @@ Tap a reading under **Metrics** to open its settings.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| **Source** | required | The EdgeTX numeric source to show: a telemetry sensor, its minimum or maximum (for example `GAlt-` or `GAlt+`), a global variable, a channel, and so on. |
 | **Label** | source name | Panel heading for the headline reading; caption for supporting readings. Clear it to use the source name. |
+| **Source** | required | The EdgeTX numeric source to show: a telemetry sensor, its minimum or maximum (for example `GAlt-` or `GAlt+`), a global variable, a channel, and so on. |
 | **Unit** | sensor unit | Unit text shown beside the value. It only changes the label, not the number. Clear it to use the sensor's unit. |
 | **Precision** | Sensor | Decimal places, 0 to 3. Step below 0 to reach **Sensor**, which uses the precision EdgeTX reports for the source. |
 | **Direction** | auto | Whether alarms trigger when the value climbs (**rising**) or drops (**falling**). **auto** treats the reading as falling only when both thresholds are set and **Critical** is below **Warning**. |

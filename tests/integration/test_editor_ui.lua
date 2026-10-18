@@ -454,6 +454,18 @@ equal(addMetric.properties.text, "+", "add entry is a plus row")
 equal(addMetric.properties.x, 0, "plus spans the full row")
 equal(addMetric.properties.w, state.drawerControls[3].row.properties.w - 8, "plus uses full row width")
 action("item", "metrics").properties.press()
+settleDrawer()
+control("metrics", "label").properties.set("")
+settleDrawer()
+back()
+equal(state.drawerControls[2].row.children[1].properties.text, "Alt", "empty metric label falls back to source")
+action("item", "metrics").properties.press()
+settleDrawer()
+control("metrics", "label").properties.set("ALT")
+settleDrawer()
+back()
+equal(state.drawerControls[2].row.children[1].properties.text, "ALT", "custom label takes precedence over source")
+action("item", "metrics").properties.press()
 equal(control("accent").properties.active(), false, "controls disable while a command is pending")
 settleDrawer()
 equal(control("metrics", "source").kind, "source", "metric sources use native source selection")
@@ -570,8 +582,8 @@ for _, row in ipairs(state.drawerControls) do
 end
 equal(
     table.concat(entryLabels, ","),
-    "Source,Label,Unit,Precision,Direction,Range min,Range max,Warning,Critical",
-    "metric entries offer every reading setting"
+    "Label,Source,Unit,Precision,Direction,Range min,Range max,Warning,Critical",
+    "metric entries put Label first and preserve the remaining declaration order"
 )
 local entry = context.editorSession.draft.panels[1].config.metrics[1]
 equal(entry.warning, nil, "fixture entry omits warning")
@@ -664,9 +676,32 @@ equal(#context.editorSession.draft.panels[2].config.metrics, 0, "a new metric pa
 action("append", "metrics").properties.press()
 settleDrawer()
 equal(context.editorSession.draft.panels[2].config.metrics[1].source, nil, "the first metric starts blank")
+equal(
+    state.drawerControls[2].row.children[1].properties.text,
+    "Metric 1",
+    "blank metric uses its singular schema label"
+)
+action("append", "metrics").properties.press()
+settleDrawer()
+equal(state.drawerControls[3].row.children[1].properties.text, "Metric 2", "metric fallback uses its list index")
+action("item", "metrics").properties.press()
+settleDrawer()
+action("remove-item").properties.press()
+settleDrawer()
+equal(state.drawerControls[2].row.children[1].properties.text, "Metric 1", "fallback index follows removal")
 -- The firmware refreshes the summary every frame; an error there disables
 -- the widget with "callRefs error: (null)".
 equal(action("item", "metrics").properties.text(), "--", "a blank metric summarizes as a dash")
+action("item", "metrics").properties.press()
+settleDrawer()
+control("metrics", "label").properties.set("")
+settleDrawer()
+back()
+equal(
+    state.drawerControls[2].row.children[1].properties.text,
+    "Metric 1",
+    "empty label without a source uses metric fallback"
+)
 action("item", "metrics").properties.press()
 settleDrawer()
 control("metrics", "label").properties.set("LIVE")
@@ -1184,6 +1219,41 @@ for _, presentation in ipairs({ "image", "both" }) do
     widget.pump(context, 70)
 end
 
+write(
+    "edit-metric-labels",
+    [[version: 3
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: metrics
+    type: metric
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      metrics:
+        - label: ""
+          source: ""
+        - label: ""
+          source: Alt
+        - label: CUSTOM
+          source: RSSI
+]]
+)
+load("edit-metric-labels")
+open()
+state = context.editorUi
+rect = state.controls[1].rect
+tap(rect.x + rect.w - 12, rect.y + 12)
+settleDrawer()
+for index, label in ipairs({ "Metric 1", "Alt", "CUSTOM" }) do
+    equal(state.drawerControls[index + 1].row.children[1].properties.text, label, "stored metric label precedence")
+end
+back()
+exitWith()
+
 -- State entries drill into ordered conditions, without reorder controls.
 write(
     "edit-state",
@@ -1224,9 +1294,17 @@ equal(
 equal(action("append", "entries").properties.text, "+", "entry list uses plus row")
 action("item", "entries").properties.press()
 settleDrawer()
+control("entries", "label").properties.set("")
+settleDrawer()
+back()
+equal(state.drawerControls[2].row.children[1].properties.text, "Entry 1", "unnamed outer entry uses generic fallback")
+action("item", "entries").properties.press()
+settleDrawer()
 control("entries", "label").properties.set("FLIGHT")
 settleDrawer()
 equal(#state.drawerControls, 6, "entry has label, states, two conditions, add, and remove")
+equal(state.drawerControls[1].field.label, "Label", "state entry puts Label first")
+equal(state.drawerControls[2].field.label, "States", "state entry preserves the following list section")
 equal(
     state.drawerControls[3].row.children[1].properties.text,
     "State 1",
@@ -1241,6 +1319,9 @@ action("item", "entries").properties.press()
 settleDrawer()
 equal(#state.drawerItemPath, 3, "condition adds one drawer level")
 equal(#state.drawerControls, 4, "condition has When, Text, Background, and Remove")
+equal(state.drawerControls[1].field.label, "When", "state condition keeps When first without a Label field")
+equal(state.drawerControls[2].field.label, "Text", "state condition keeps Text second")
+equal(state.drawerControls[3].field.label, "Background", "state condition keeps Background third")
 equal(control("entries", "switch").kind, "switch", "When uses the native switch picker")
 equal(
     control("entries", "switch").properties.get(),

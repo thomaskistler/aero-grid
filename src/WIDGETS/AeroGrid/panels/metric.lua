@@ -49,6 +49,7 @@ local metric = {
         {
             key = "metrics",
             label = "Metrics",
+            itemLabel = "Metric",
             type = "table",
             minItems = 0,
             maxItems = 3,

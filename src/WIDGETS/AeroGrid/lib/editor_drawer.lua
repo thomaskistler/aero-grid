@@ -214,14 +214,20 @@ local function fieldsFor(state, listKey, itemIndex, itemPath, groupKey)
             for index, item in ipairs(items) do
                 local title
                 if type(item) == "table" then
-                    title = item.label or item.source
+                    title = item.label
+                    if title == nil or title == "" then
+                        title = item.source
+                    end
                 else
                     title = item
+                end
+                if title == nil or title == "" then
+                    title = (field.itemLabel or "Entry") .. " " .. index
                 end
                 local path = editor.clone(field.path or {})
                 path[#path + 1] = index
                 result[#result + 1] = {
-                    label = tostring(title or ("State " .. index)),
+                    label = tostring(title),
                     text = function()
                         return entrySummary(state, field.key, index, config, field.path)
                     end,
@@ -256,7 +262,7 @@ local function fieldsFor(state, listKey, itemIndex, itemPath, groupKey)
     else
         result[#result + 1] = { label = "Remove panel", action = "remove" }
     end
-    return result
+    return editor.orderFields(result, listKey ~= nil)
 end
 
 function drawer.open(context, state, mode, listKey, itemIndex, itemPath, groupKey)
