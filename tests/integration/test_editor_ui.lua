@@ -1700,12 +1700,15 @@ panels:
     rowSpan: 2
     config:
       source: GPS
+      satelliteSource: Sats
 ]]
 )
+widget.radio.fields.Sats = { id = 122, name = "Sats", desc = "Satellites", unit = 0 }
+widget.radio.values[122] = 12
 widget.lvglMock.setFullScreen(true)
 load("edit-navigation")
 open()
-for _, key in ipairs({ "showTape", "showCoordinates" }) do
+for _, key in ipairs({ "showTape", "showCoordinates", "showSatellites" }) do
     for _, enabled in ipairs({ true, false, true }) do
         state = context.editorUi
         rect = state.controls[1].rect
@@ -1722,8 +1725,10 @@ for _, key in ipairs({ "showTape", "showCoordinates" }) do
         if key == "showTape" then
             equal(entry.instance.showTape, enabled, "tape visibility must match drawer setting")
             equal(entry.instance.detailLabel.hidden, enabled, "bearing and tape must remain exclusive")
-        else
+        elseif key == "showCoordinates" then
             equal(entry.instance.showCoordinates, enabled, "coordinate visibility must match drawer setting")
+        else
+            equal(entry.instance.satelliteHeader ~= nil, enabled, "satellite indicator must match drawer setting")
         end
         refresh()
         equal(entry.failed, nil, "navigation preview must survive deferred cleanup")

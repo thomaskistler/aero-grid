@@ -23,6 +23,7 @@ heading, transmitter orientation, or a return-home instruction.
 | **Show tape** | off | Replaces bearing text with a scrolling direction tape where space permits. |
 | **Bearing format** | degrees | **degrees** shows numeric azimuth; **quadrant** shows notation such as `N29°E`. Shown only when **Show tape** is off. |
 | **Show coordinates** | off | Shows the model's latitude and longitude where space permits, independently of **Show tape**. |
+| **Show satellites** | on | Shows the satellite icon and locked-satellite count in the header where space permits. Requires **Satellite count source**; turning it off does not disable satellite alerts. |
 | **Accent** | cyan | Color used for the normal state: **cyan**, **green**, **amber**, or **orange**. Alarm and stale states use the shared state colors instead. |
 
 ## Behavior
@@ -34,8 +35,11 @@ model is at home, not that GPS is unavailable.
 
 ### Satellite count and alerts
 
-**Satellite count source** enables a satellite icon and count in the header.
-The indicator is hidden when it cannot fit, but alerts remain active.
+With **Satellite count source** selected, **Show satellites** controls the
+satellite icon and locked-satellite count in the header. It defaults to on,
+including for existing layouts without this setting. Turning it off hides
+both the icon and count, not the warning, critical, missing-source, or stale
+indications. The indicator is also hidden when it cannot fit; alerts remain active.
 With no source selected, neither the indicator nor satellite alerts appear.
 The defaults make 0 critical, 4 warning, and 8 normal. Thresholds do not
 control home capture, and distance never triggers an alarm.
@@ -113,7 +117,7 @@ QR code without a network connection; following it on a phone uses Google Maps.
 | Home arm switch unreadable with a valid fix before capture | No distance or bearing; `ARM SWITCH UNAVAILABLE` or a shorter form. |
 | Stale position | Last reading retained, `STALE` badge, and `LAST KNOWN` or a shorter form where supporting text fits. |
 | Configured satellite count below a threshold | `WARN` or `CRIT` badge and state color, even while waiting for a fix or home. |
-| Configured satellite source missing or invalid | `N/A` badge and satellite count `--` when it fits. GPS readings remain available. |
+| Configured satellite source missing or invalid | `N/A` badge and satellite count `--` when **Show satellites** is on and it fits. GPS readings remain available. |
 | Configured satellite count stale | Last count retained and `STALE` badge. |
 
 Satellite critical is checked before warning, using strict less-than

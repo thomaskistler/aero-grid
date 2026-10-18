@@ -17,6 +17,10 @@ local function testPresentation()
     assertions.assertEqual(#warnings, 0)
     assertions.assertEqual(settings.showTape, false)
     assertions.assertEqual(settings.showCoordinates, false)
+    assertions.assertEqual(settings.showSatellites, true)
+    local hidden, hiddenErrors = host.resolveSettings(navigation, { showSatellites = false })
+    assertions.assertEqual(#hiddenErrors, 0)
+    assertions.assertEqual(hidden.showSatellites, false)
     assertions.assertEqual(settings.armSwitch, "")
     assertions.assertEqual(settings.satelliteSource, "")
     assertions.assertEqual(settings.satelliteWarning, 8)
@@ -78,7 +82,7 @@ local function testNavigationStates()
     assertions.assertEqual(navigation.coordinateText(fix), "47.37690 8.54170")
     assertions.assertEqual(navigation.resolveState({}, fix), "normal")
     assertions.assertEqual(navigation.resolveState({ warning = 500, critical = 700 }, fix), "normal")
-    local settings = { satelliteSource = "Sats" }
+    local settings = { satelliteSource = "Sats", showSatellites = false }
     local satellites = { available = true, value = 12 }
     for _, sample in ipairs({
         { 0, "critical" },

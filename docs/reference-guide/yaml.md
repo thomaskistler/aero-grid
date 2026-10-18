@@ -310,6 +310,7 @@ Drawer title: **Navigation** · [drawer settings and behavior](../panels/navigat
 | `showTape` | boolean | `false` | `true` / `false` | Show tape | When true, the tape is shown instead of the alternate bearing text. |
 | `bearingFormat` | string | `degrees` | `degrees`, `quadrant` | Bearing format | Drawer hides this while `showTape` is true; it remains a valid YAML setting. |
 | `showCoordinates` | boolean | `false` | `true` / `false` | Show coordinates | |
+| `showSatellites` | boolean | `true` | `true` / `false` | Show satellites | Controls the header icon and locked count when `satelliteSource` is set and space permits; satellite alerts remain active when false. Omitted values preserve the enabled default. |
 | `accent` | string | `cyan` | `cyan`, `green`, `amber`, `orange` | Accent | |
 
 Cross-field and format rules:

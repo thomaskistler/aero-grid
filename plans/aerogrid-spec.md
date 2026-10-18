@@ -297,6 +297,10 @@ belong to the panel.
 #### Navigation
 
 - Accept a GPS source.
+- `showSatellites` defaults to true, including when omitted from saved layouts.
+  With a satellite count source selected, it controls the header icon and locked
+  count where space permits. Turning it off does not disable satellite alerts,
+  missing-source indications, or staleness detection.
 - Use current and pilot coordinates returned by an EdgeTX GPS source to calculate distance and the initial bearing from the home/pilot position toward the model.
 - Calculate distance and bearing from the GPS and home positions.
 - Render direction as an absolute north-up bearing or compass arrow from home to model. Aircraft heading and transmitter orientation are not required and must not rotate this arrow.

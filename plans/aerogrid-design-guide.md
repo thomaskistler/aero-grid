@@ -238,6 +238,11 @@ maximum range. A list's entry drawer follows the same flow; its add action follo
 entries and its remove action comes last. This order is declared by the panel metadata,
 and the editor moves Label to the front automatically.
 
+Navigation's **Show satellites** belongs with the display options and defaults
+to on. It controls only the header icon and locked count; a configured satellite
+source continues to drive alerts even when the indicator is disabled or shed
+for space. With no satellite source selected, the toggle has no visual effect.
+
 ### Alert states tint the surface; they do not draw a frame
 
 A warning or critical state tints the panel's fill. It does not colour its border.

@@ -22,6 +22,7 @@
 ---@field showTape? boolean
 ---@field bearingFormat? "degrees"|"quadrant"
 ---@field showCoordinates? boolean
+---@field showSatellites? boolean
 ---@field satelliteSource? string Locked satellite count source.
 ---@field satelliteWarning? number Warn below this count.
 ---@field satelliteCritical? number Critical below this count.
@@ -72,6 +73,7 @@ local navigation = {
             visibleWhen = { key = "showTape", value = true, invert = true },
         },
         { key = "showCoordinates", label = "Show coordinates", type = "boolean", default = false },
+        { key = "showSatellites", label = "Show satellites", type = "boolean", default = true },
         {
             key = "accent",
             label = "Accent",
@@ -699,7 +701,7 @@ function navigation.create(parent, rect, settings, services)
         services.themeBuilder
     )
     panel = context.panel
-    if context.satellites then
+    if context.satellites and settings.showSatellites ~= false then
         context.satelliteHeader = lvgl.box(panel.root, { x = 0, y = 0, w = 1, h = 1 })
         local filename = services.host.path .. "assets/" .. (theme.light and "satellite-light.png" or "satellite.png")
         local handle = io.open(filename, "r")
@@ -815,7 +817,7 @@ function navigation.render(context, out)
     local service = context.service
 
     out.state = navigation.resolveState(context.settings, view, context.satellites)
-    if context.satellites then
+    if context.satelliteHeader then
         local count = navigation.satelliteCount(context.satellites)
         out.satellites = count and string.format("%.0f", count) or "--"
     end

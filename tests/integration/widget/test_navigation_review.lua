@@ -333,6 +333,30 @@ for _, shape in ipairs({ { 1, 2, 117, 134 }, { 2, 1, 238, 65 }, { 2, 2, 238, 134
     navigation.update(satellitePanel, { w = shape[3], h = shape[4] })
     assert(satellitePanel.showSatellites, "restore satellite count after reflow")
 end
+local hidden = instance(2, 2, { w = 238, h = 134 }, { satelliteSource = "Sats", showSatellites = false })
+assert(hidden.satellites, "hiding the indicator must retain the satellite subscription")
+assertions.assertEqual(hidden.satelliteHeader, nil)
+assertions.assertEqual(hidden.satelliteIcon, nil)
+assertions.assertEqual(hidden.satelliteLabel, nil)
+for _, sample in ipairs({
+    { 3, "critical" },
+    { 4, "warning" },
+    { 8, "normal" },
+    { -1, "unavailable" },
+}) do
+    fixture.radio.values[122] = sample[1]
+    fixture.pump(context, 20)
+    navigation.refresh(hidden)
+    assertions.assertEqual(hidden.stateName, sample[2], "satellite alerts must remain active with the indicator off")
+    navigation.update(hidden, { w = 60, h = 40 })
+    navigation.update(hidden, { w = 238, h = 134 })
+    assert(not hidden.showSatellites, "reflow must not reveal a disabled indicator")
+end
+fixture.radio.values[122] = 12
+fixture.pump(context, 20)
+local noSatelliteSource = instance(2, 2, { w = 238, h = 134 }, { showSatellites = true })
+assertions.assertEqual(noSatelliteSource.satelliteHeader, nil)
+assertions.assertEqual(noSatelliteSource.satellites, nil)
 local missing = instance(2, 2, { w = 238, h = 134 }, { satelliteSource = "MissingSats" })
 fixture.pump(context, 20)
 navigation.refresh(missing)
@@ -344,5 +368,7 @@ local stale = instance(2, 2, { w = 238, h = 134 }, { satelliteSource = "Sats" })
 navigation.refresh(stale)
 assertions.assertEqual(stale.stateName, "stale")
 assertions.assertEqual(stale.satelliteLabel.properties.text, "12")
+navigation.refresh(hidden)
+assertions.assertEqual(hidden.stateName, "stale", "hidden satellite telemetry must still report staleness")
 fixture.radio.values[109] = {}
 fixture.reset()

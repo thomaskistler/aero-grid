@@ -588,6 +588,7 @@ local function testAllPanelDrawersStartWithLabel()
             "showTape",
             "bearingFormat",
             "showCoordinates",
+            "showSatellites",
             "accent",
         },
         ["rx-battery"] = {
