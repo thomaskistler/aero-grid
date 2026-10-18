@@ -123,8 +123,10 @@ class CaptureRecipeTests(unittest.TestCase):
         self.assertEqual({path.stem for path in RECIPE_DIR.glob("*.yaml")}, set(PANELS))
         for path in RECIPE_DIR.glob("*.yaml"):
             recipe = load_recipe(path)
-            self.assertEqual(len(recipe["panels"]), 3)
-            if recipe["panel"] not in ("host-diagnostics", "service-probe"):
+            if recipe["panel"] in ("host-diagnostics", "service-probe"):
+                self.assertEqual(list(recipe["panels"]), ["2x2"])
+            else:
+                self.assertEqual(list(recipe["panels"]), ["1x2", "2x1", "2x2"])
                 self.assertIn("feed", readiness(recipe))
 
     def test_nested_metrics_config(self):

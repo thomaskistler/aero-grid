@@ -49,7 +49,7 @@
 local diagnostics = {
     id = "host-diagnostics",
     apiVersion = 1,
-    supportedSpans = { "any" },
+    supportedSpans = { "2x2", "3x2", "4x2", "2x3", "3x3", "4x3", "2x4", "3x4", "4x4" },
     -- Read, not watched. Nothing here changes between frames except a panel
     -- failing or a source binding, and neither is worth a frame.
     refreshInterval = 50,

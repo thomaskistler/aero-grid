@@ -20,7 +20,7 @@ panels:
     col: 0
     row: 0
     colSpan: 2
-    rowSpan: 4
+    rowSpan: 2
     config:
       service: model
       label: Model
@@ -28,10 +28,10 @@ panels:
       accent: amber
   - id: control
     type: service-probe
-    col: 2
-    row: 0
-    colSpan: 1
-    rowSpan: 4
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 2
     config:
       service: control
       label: Control
@@ -40,9 +40,9 @@ panels:
       accent: orange
   - id: extrema
     type: service-probe
-    col: 3
+    col: 2
     row: 0
-    colSpan: 1
+    colSpan: 2
     rowSpan: 4
     config:
       service: extrema

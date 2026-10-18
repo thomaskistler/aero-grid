@@ -23,7 +23,7 @@
 local probe = {
     id = "service-probe",
     apiVersion = 1,
-    supportedSpans = { "any" },
+    supportedSpans = { "2x2", "3x2", "4x2", "2x3", "3x3", "4x3", "2x4", "3x4", "4x4" },
     -- Diagnostics are read, not watched. Two hertz is plenty and leaves the
     -- instruction budget to the services themselves.
     refreshInterval = 50,

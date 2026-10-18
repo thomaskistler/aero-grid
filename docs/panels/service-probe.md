@@ -1,13 +1,13 @@
 # Service probe
 
-| 1x2 | 2x1 | 2x2 |
-| --- | --- | --- |
-| ![Service probe at 1x2](../assets/panels/service-probe/1x2.png) | ![Service probe at 2x1](../assets/panels/service-probe/2x1.png) | ![Service probe at 2x2](../assets/panels/service-probe/2x2.png) |
+![Service probe at 2x2](../assets/panels/service-probe/2x2.png)
 
 Displays label-and-value rows from one shared AeroGrid data service.
 This developer diagnostic panel helps check normalized values, units,
 precision, availability, and navigation calculations independently of the
 flight panels that use them.
+
+The panel needs at least 2x2 cells to fit its rows.
 
 ## Settings
 

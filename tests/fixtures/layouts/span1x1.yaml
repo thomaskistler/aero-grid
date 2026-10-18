@@ -155,29 +155,10 @@ panels:
     config:
       presentation: auto
 
-  - id: g-probe
-    type: service-probe
-    col: 2
-    row: 2
-    colSpan: 1
-    rowSpan: 1
-    config:
-      service: telemetry
-      source: RxBt
-      label: Probe
 
   # The two diagnostic panels sit together, because what they have in common
   # is that they print rows rather than a reading, and a single cell is the
   # hardest case for that.
-  - id: g-host-diagnostics
-    type: host-diagnostics
-    col: 3
-    row: 2
-    colSpan: 1
-    rowSpan: 1
-    config:
-      section: identity
-      label: Host
 
   # Two metric visualizations can be compared directly.
   - id: g-metric-radial

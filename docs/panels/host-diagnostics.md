@@ -1,13 +1,13 @@
 # Host diagnostics
 
-| 1x2 | 2x1 | 2x2 |
-| --- | --- | --- |
-| ![Host diagnostics at 1x2](../assets/panels/host-diagnostics/1x2.png) | ![Host diagnostics at 2x1](../assets/panels/host-diagnostics/2x1.png) | ![Host diagnostics at 2x2](../assets/panels/host-diagnostics/2x2.png) |
+![Host diagnostics at 2x2](../assets/panels/host-diagnostics/2x2.png)
 
 Displays facts read from the running AeroGrid host: loaded files, theme,
 panel failures, or source bindings. This diagnostic panel is for developers
 and users investigating a dashboard that behaves unexpectedly, rather than
 for monitoring a flight.
+
+The panel needs at least 2x2 cells to fit its rows.
 
 ## Settings
 

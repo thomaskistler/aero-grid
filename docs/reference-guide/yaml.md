@@ -163,7 +163,7 @@ Cross-field rules: no threshold ordering or numeric range is enforced by the pan
 
 ### `host-diagnostics`
 
-Drawer title: **Host diagnostics** · [drawer settings and behavior](../panels/host-diagnostics.md) · Supported spans: `any`.
+Drawer title: **Host diagnostics** · [drawer settings and behavior](../panels/host-diagnostics.md) · Supported spans: `2x2`, `3x2`, `4x2`, `2x3`, `3x3`, `4x3`, `2x4`, `3x4`, `4x4`.
 
 | Key | Type | Default | Allowed values | Drawer label | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -178,8 +178,8 @@ No panel-specific cross-field validation is declared.
   type: host-diagnostics
   col: 0
   row: 0
-  colSpan: 1
-  rowSpan: 1
+  colSpan: 2
+  rowSpan: 2
   config:
     section: panels
 ```
@@ -395,7 +395,7 @@ Cross-field rules:
 
 ### `service-probe`
 
-Drawer title: **Service probe** · [drawer settings and behavior](../panels/service-probe.md) · Supported spans: `any`.
+Drawer title: **Service probe** · [drawer settings and behavior](../panels/service-probe.md) · Supported spans: `2x2`, `3x2`, `4x2`, `2x3`, `3x3`, `4x3`, `2x4`, `3x4`, `4x4`.
 
 | Key | Type | Default | Allowed values | Drawer label | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -413,8 +413,8 @@ No panel-specific cross-field validation is declared.
   type: service-probe
   col: 0
   row: 0
-  colSpan: 1
-  rowSpan: 1
+  colSpan: 2
+  rowSpan: 2
   config:
     service: telemetry
     source: RSSI

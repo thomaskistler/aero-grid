@@ -745,10 +745,9 @@ local function testPanelDocumentationLoads()
             string.sub(text, 1, #name + 4) == "# " .. name .. "\n\n",
             kind .. " must be titled with its drawer name, " .. name
         )
-        assert(
-            string.match(text, "^# [^\n]+\n\n| 1x2 | 2x1 | 2x2 |"),
-            kind .. " must put its visual examples immediately after the title"
-        )
+        local examples = string.match(text, "^# [^\n]+\n\n| 1x2 | 2x1 | 2x2 |")
+            or string.match(text, "^# [^\n]+\n\n!%[" .. name .. " at 2x2%]")
+        assert(examples, kind .. " must put its visual examples immediately after the title")
         local sections = {}
         for heading in string.gmatch(text, "\n## ([^\n]+)") do
             sections[#sections + 1] = heading

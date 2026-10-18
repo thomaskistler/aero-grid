@@ -5607,35 +5607,23 @@ local function testInstructionBudget()
     --- panels, each subscribing to something different, so the measurement
     --- covers the whole service layer rather than telemetry alone.
     local PROBE_SPECS = {
-        { service = "telemetry", source = "S1" },
-        { service = "telemetry", source = "S2" },
-        { service = "telemetry", source = "S3" },
-        { service = "telemetry", source = "RxBt" },
         { service = "navigation", source = "GPS", extra = "Dist" },
-        { service = "navigation", source = "GPS2" },
         { service = "model", index = 0 },
-        { service = "model", index = 1 },
-        { service = "model", index = 2 },
         { service = "control", source = "trim-ail", index = 0 },
-        { service = "control", source = "trim-ele", index = 1 },
-        { service = "control", source = "trim-rud", index = 2 },
-        { service = "control", source = "trim-thr", index = 3 },
         { service = "extrema", source = "S4", extra = "sa" },
-        { service = "extrema", source = "S5" },
-        { service = "extrema", source = "S6" },
     }
 
     --- Build a layout that fills the grid with service diagnostic panels.
     local function probeGridLayout()
         local lines = { "version: 1", "grid:", "  columns: 4", "  rows: 4", "panels:" }
         for i, spec in ipairs(PROBE_SPECS) do
-            local col, row = (i - 1) % 4, math.floor((i - 1) / 4)
+            local col, row = (i - 1) % 2 * 2, math.floor((i - 1) / 2) * 2
             lines[#lines + 1] = "  - id: p" .. i
             lines[#lines + 1] = "    type: service-probe"
             lines[#lines + 1] = "    col: " .. col
             lines[#lines + 1] = "    row: " .. row
-            lines[#lines + 1] = "    colSpan: 1"
-            lines[#lines + 1] = "    rowSpan: 1"
+            lines[#lines + 1] = "    colSpan: 2"
+            lines[#lines + 1] = "    rowSpan: 2"
             lines[#lines + 1] = "    config:"
             lines[#lines + 1] = "      service: " .. spec.service
             lines[#lines + 1] = "      label: Probe " .. i
@@ -5949,38 +5937,37 @@ local function testInstructionBudget()
         )
     end
 
-    -- Sixteen diagnostic panels spanning all five services: the worst case the
-    -- schema permits for the service layer itself.
+    -- Four 2x2 diagnostic panels: the most service probes the schema permits.
     exercise(
         "service probes",
         makeWidget("budget-probes", probeGridLayout()),
-        16,
+        4,
         { "telemetry", "model", "control", "extrema", "navigation" }
     )
 
-    -- Sixteen diagnostics panels, which is the worst case for the view that
+    -- Four 2x2 diagnostics panels, which is the worst case for the view that
     -- reports on the host. It must not cost the dashboard anything when it is
     -- not showing, which it cannot, because a panel no layout places is
     -- never loaded; the question this answers is the other half, that it does
     -- not become the most expensive thing on the dashboard when it is.
     local diagnosticsGrid = { "version: 1", "grid:", "  columns: 4", "  rows: 4", "panels:" }
     local sections = { "identity", "theme", "panels", "sources" }
-    for index = 1, 16 do
-        local col, row = (index - 1) % 4, math.floor((index - 1) / 4)
+    for index = 1, 4 do
+        local col, row = (index - 1) % 2 * 2, math.floor((index - 1) / 2) * 2
         for _, line in ipairs({
             "  - id: d" .. index,
             "    type: host-diagnostics",
             "    col: " .. col,
             "    row: " .. row,
-            "    colSpan: 1",
-            "    rowSpan: 1",
+            "    colSpan: 2",
+            "    rowSpan: 2",
             "    config:",
-            "      section: " .. sections[(index - 1) % 4 + 1],
+            "      section: " .. sections[index],
         }) do
             diagnosticsGrid[#diagnosticsGrid + 1] = line
         end
     end
-    exercise("host diagnostics x16", makeWidget("budget-diagnostics", table.concat(diagnosticsGrid, "\n") .. "\n"), 16)
+    exercise("host diagnostics x4", makeWidget("budget-diagnostics", table.concat(diagnosticsGrid, "\n") .. "\n"), 4)
 
     -- A layout whose panels all demand every frame defeats staggering, so
     -- the per-frame cap is the only thing bounding cost. Prove it holds.
@@ -7405,7 +7392,7 @@ panels:
     type: metric
     col: 0
     row: 0
-    colSpan: 2
+    colSpan: 1
     rowSpan: 2
     config:
       metrics:
@@ -7413,9 +7400,9 @@ panels:
           label: Alt
   - id: broken
     type: raiser
-    col: 2
+    col: 1
     row: 0
-    colSpan: 2
+    colSpan: 1
     rowSpan: 2
     config:
       label: Broken
@@ -7431,15 +7418,15 @@ panels:
     type: host-diagnostics
     col: 2
     row: 2
-    colSpan: 1
+    colSpan: 2
     rowSpan: 2
     config:
       section: sources
   - id: later
     type: latebreak
-    col: 3
-    row: 2
-    colSpan: 1
+    col: 2
+    row: 0
+    colSpan: 2
     rowSpan: 2
     config:
       label: Later
@@ -7482,7 +7469,7 @@ return latebreak
     local panels = linesOf("panels")
     assert(string.find(panels, "2 failed", 1, true), "the panel does not count the failure: " .. panels)
     assert(
-        string.find(panels, "broken raiser 2x2 REJECTED", 1, true),
+        string.find(panels, "broken raiser 1x2 REJECTED", 1, true),
         "the panel does not report the failed panel: " .. panels
     )
 
@@ -7505,7 +7492,7 @@ return latebreak
     assert(later and later.failed, "the panel that raises on refresh was not disabled")
     panels = linesOf("panels")
     assert(
-        string.find(panels, "later latebreak 1x2 FAILED", 1, true),
+        string.find(panels, "later latebreak 2x2 FAILED", 1, true),
         "the panel does not report the panel that failed after building: " .. panels
     )
 end
