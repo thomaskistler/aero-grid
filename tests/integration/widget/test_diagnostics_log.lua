@@ -59,7 +59,7 @@ entry.reading = {
     fresh = true,
     stale = false,
     updatedAt = getTime(),
-    raw = { lat = 47, lon = 8, delay = 1.2 },
+    raw = { lat = 47, lon = 8, delay = 63 },
 }
 nav.due = 0
 for _ = 1, 20 do
@@ -70,7 +70,7 @@ local capture = log:read()[1]
 assert(capture.panel == "nav" and capture.host == "review-diagnostics-log#1")
 assert(string.find(capture.text, "missed; now=", 1, true))
 assert(string.find(capture.text, "available=true fresh=true stale=false", 1, true))
-assert(string.find(capture.text, "delay=1.2s validPosition=true", 1, true))
+assert(string.find(capture.text, "delay=63 (160ms units) validPosition=true", 1, true))
 assert(not string.find(capture.text, "47", 1, true))
 assert(entry.capture.attempted and not entry.capture.latitude, "diagnostics must not loosen capture policy")
 

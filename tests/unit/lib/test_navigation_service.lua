@@ -3,8 +3,10 @@
 local root = (... and ... ~= "" and ...) or "."
 
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
+local edgetx = assert(loadfile(root .. "/tests/support/edgetx.lua"))()
 local services = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/services.lua"))()
 local navigationService = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/navigation_service.lua"))()
+local GPS_DELAY_TICKS = edgetx.firmware.GPS_DELAY_TICKS
 
 local function testPositionChecksAndDistance()
     assertions.assertEqual(navigationService.hasPosition(0.1, 0.2), true)
@@ -52,9 +54,9 @@ local function captureFixture(homes)
     }
     local service = navigationService.new(services.environment({}), services, runtime)
     local view = service:subscribe("GPS", "SFv")
-    local function update(now, armed)
+    local function update(now, armed, pollAge)
         arm.value, arm.updatedAt = armed, now
-        reading.updatedAt = now
+        reading.updatedAt = now - (pollAge or 0)
         service:update(now)
     end
     return service, view, reading, arm, update
@@ -100,7 +102,7 @@ local function testFirstArmHome()
     assertions.assertEqual(fresh.home, false, "new sessions must not inherit home")
 end
 
-local function testInvalidFirstArmDoesNotRetry()
+local function testInvalidFirstArmRetriesOnNextTransition()
     for _, invalidate in ipairs({
         function(reading)
             reading.raw.lat, reading.raw.lon = 0, 0
@@ -118,13 +120,16 @@ local function testInvalidFirstArmDoesNotRetry()
             reading.raw = nil
         end,
         function(reading)
-            reading.raw.delay = 2
+            reading.raw.delay = 63
         end,
         function(reading)
             reading.raw.delay = -1
         end,
         function(reading)
             reading.raw.delay = 0 / 0
+        end,
+        function(reading)
+            reading.raw.delay = math.huge
         end,
     }) do
         local service, view, reading, _, update = captureFixture()
@@ -138,13 +143,15 @@ local function testInvalidFirstArmDoesNotRetry()
         update(40, true)
         update(60, false)
         update(80, true)
-        assertions.assertEqual(view.home, false)
-        assertions.assertEqual(view.homeStatus, "missed")
+        assertions.assertEqual(view.home, true)
+        assertions.assertEqual(view.homeStatus, "captured")
+        assertions.assertEqual(view.pilotLatitude, 48)
+        assertions.assertEqual(view.pilotLongitude, 9)
         local _, restored, _, _, restoredUpdate = captureFixture(service.homes)
         restoredUpdate(100, false)
         restoredUpdate(120, true)
-        assertions.assertEqual(restored.homeStatus, "missed")
-        assertions.assertEqual(restored.home, false)
+        assertions.assertEqual(restored.homeStatus, "captured")
+        assertions.assertEqual(restored.home, true)
     end
 end
 
@@ -161,23 +168,31 @@ local function testArmObservationAndFreshness()
     assertions.assertEqual(view.home, false, "unknown must not stand in for disarmed")
     update(80, false)
     arm.value, arm.updatedAt = true, 100
-    reading.updatedAt = -1
+    reading.updatedAt = -1001
     service:update(100)
     assertions.assertEqual(view.homeStatus, "missed", "old cached coordinates cannot be captured")
 
     service, view, reading, arm, update = captureFixture()
     update(0, false)
     arm.value, arm.updatedAt = true, 20
-    reading.updatedAt, reading.raw.delay = 0, 1
+    reading.updatedAt, reading.raw.delay = 5, 28
     service:update(20)
-    assertions.assertEqual(view.homeStatus, "missed", "GPS delay and cache age must be combined")
+    assertions.assertEqual(view.homeStatus, "captured", "GPS delay uses 160 ms timeout units")
+    assert(math.abs(view.age - ((28 * GPS_DELAY_TICKS + 15) / 100)) < 0.0001, "GPS age must include delay and poll age")
 
     service, view, reading, arm, update = captureFixture()
     update(0, false)
     arm.value, arm.updatedAt = true, 20
-    reading.updatedAt, reading.raw.delay = 20, 1
+    reading.updatedAt, reading.raw.delay = 12, 62
     service:update(20)
-    assertions.assertEqual(view.homeStatus, "captured", "one-second boundary is inclusive")
+    assertions.assertEqual(view.homeStatus, "captured", "ten-second boundary is inclusive")
+
+    service, view, reading, arm, update = captureFixture()
+    update(0, false)
+    arm.value, arm.updatedAt = true, 20
+    reading.updatedAt, reading.raw.delay = 12, 63
+    service:update(20)
+    assertions.assertEqual(view.homeStatus, "missed", "GPS older than ten seconds cannot be captured")
 end
 
 local function testCaptureDiagnostics()
@@ -232,27 +247,27 @@ local function testCaptureDiagnostics()
             end,
         },
         {
-            "delay=-1s",
+            "delay=-1 (160ms units)",
             function(reading)
                 reading.raw.delay = -1
             end,
         },
         {
-            "delay=bads",
+            "delay=bad (160ms units)",
             function(reading)
                 reading.raw.delay = "bad"
             end,
         },
         {
-            "updatedAt=0 delay=1s",
+            "updatedAt=0 delay=63 (160ms units)",
             function(reading)
-                reading.updatedAt, reading.raw.delay = 0, 1
+                reading.updatedAt, reading.raw.delay = 0, 63
             end,
         },
         {
-            "updatedAt=-81 delay=0s",
+            "updatedAt=-1001 delay=0 (160ms units)",
             function(reading)
-                reading.updatedAt = -81
+                reading.updatedAt = -1001
             end,
         },
     }
@@ -292,7 +307,16 @@ local function testCaptureDiagnostics()
         assertions.assertEqual(view.homeStatus, case[1] == "captured" and "captured" or "missed")
         update(40, false)
         update(60, true)
-        assert(#events == 2, "capture outcome is event-based and never retries")
+        if case[1] == "captured" then
+            assert(#events == 2, "successful home must not be recaptured or relogged")
+        else
+            assert(#events == 4, "a later arm transition must log its capture retry")
+            local retryOutcome = view.homeStatus == "captured" and "captured" or "missed"
+            for index = 3, 4 do
+                assert(string.find(events[index].text, "Home capture GPS=GPS: " .. retryOutcome, 1, true))
+                assertions.assertEqual(events[index].time, 60)
+            end
+        end
     end
     local service, view, _, arm, update = captureFixture()
     local count = 0
@@ -327,7 +351,7 @@ local function testCaptureDiagnostics()
         assert(
             string.find(
                 text,
-                "available=nil fresh=nil stale=nil value=nil updatedAt=nil delay=nils validPosition=false",
+                "available=nil fresh=nil stale=nil value=nil updatedAt=nil delay=nil (160ms units) validPosition=false",
                 1,
                 true
             )
@@ -343,20 +367,31 @@ local function testCaptureDiagnostics()
     service:logCapture(service.entries[1], "missed", 120)
 end
 
-local function testCapturePolicyUnchanged()
+local function testCapturePolicy()
     local function originalAccepts(reading, now)
-        local position = reading and reading.raw
-        local delay = type(position) == "table" and position.delay or nil
-        return reading
-            and reading.available
-            and reading.fresh
-            and not reading.stale
-            and type(reading.updatedAt) == "number"
-            and now >= reading.updatedAt
-            and now - reading.updatedAt <= 100
-            and (delay == nil or (type(delay) == "number" and delay >= 0 and delay * 100 + now - reading.updatedAt <= 100))
-            and type(position) == "table"
-            and navigationService.hasPosition(position.lat, position.lon)
+        if
+            not reading
+            or not reading.available
+            or not reading.fresh
+            or reading.stale
+            or type(reading.updatedAt) ~= "number"
+            or now < reading.updatedAt
+        then
+            return false
+        end
+        local position = reading.raw
+        if type(position) ~= "table" then
+            return false
+        end
+        local age = now - reading.updatedAt
+        local delay = position.delay
+        if delay ~= nil then
+            if type(delay) ~= "number" or delay ~= delay or delay < 0 or delay == math.huge then
+                return false
+            end
+            age = age + delay * GPS_DELAY_TICKS
+        end
+        return age <= 10 * 100 and navigationService.hasPosition(position.lat, position.lon)
     end
     for _, now in ipairs({ 0, 20, 100, 1000000000 }) do
         for _, pollAge in ipairs({ -1, 0, 1, 20, 100, 101 }) do
@@ -388,7 +423,7 @@ local function testCapturePolicyUnchanged()
                 assertions.assertEqual(
                     view.homeStatus == "captured",
                     originalAccepts(reading, now) == true,
-                    "instrumentation must preserve the original predicate, including arithmetic order"
+                    "capture must use 160 ms delay units and the ten-second age limit"
                 )
             end
         end
@@ -399,10 +434,10 @@ local function run()
     testPositionChecksAndDistance()
     testServiceCreatesRuntime()
     testFirstArmHome()
-    testInvalidFirstArmDoesNotRetry()
+    testInvalidFirstArmRetriesOnNextTransition()
     testArmObservationAndFreshness()
     testCaptureDiagnostics()
-    testCapturePolicyUnchanged()
+    testCapturePolicy()
 end
 
 run()

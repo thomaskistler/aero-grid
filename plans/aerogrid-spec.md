@@ -310,6 +310,7 @@ belong to the panel.
   explicit booleans allow either row, both, or neither without changing the
   compass. Rows are still shed when the available height cannot hold them.
 - Surface missing fix, stale GPS, and unavailable home-position states explicitly. A missing home position is not a broken fix: the coordinates stay visible and only the two values measured from home are withheld.
+- When a home arm switch is configured, capture a valid GPS position only on an observed disarmed-to-armed transition. Accept a combined GPS delay and poll age up to 10 seconds; EdgeTX GPS delay is in 160 ms units, and negative or non-finite delay values are invalid. A failed capture may retry only on a later disarmed-to-armed transition, never later while armed. Keep a successful capture fixed for the widget session, with no automatic fallback to EdgeTX home.
 - Hide the dial's pointer when there is no bearing. A pointer resting at north reads as a real due-north fix.
 - State in words that the direction is north-up and measured from home, because an arrow on a dial is exactly the thing a pilot would otherwise read as aircraft heading.
 

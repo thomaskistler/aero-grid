@@ -52,10 +52,13 @@ changing EdgeTX home or the flight controller's return-home position.
 AeroGrid must observe disarmed, then armed; opening the widget already armed
 does not capture home.
 
-Only the first observed disarmed-to-armed transition attempts capture. GPS
-must have valid, fresh coordinates no more than one second old, including
-the source's reported delay when present. If GPS is not ready, home stays
-unset. Later GPS updates and disarm/rearm cycles never retry or move home,
+Capture is attempted at each observed disarmed-to-armed transition until one
+succeeds; GPS is never captured later while the model remains armed. GPS must
+be available, fresh, non-stale, have valid coordinates, and be no more than
+10 seconds old including the source's reported delay. EdgeTX reports GPS delay
+in 160 ms units, not seconds; a negative or non-finite reported delay is
+rejected. A failed attempt leaves home unset and can be retried on the next
+disarmed-to-armed transition. Once captured, home stays fixed for the session,
 and there is no automatic fallback to EdgeTX home.
 
 A captured home or failed attempt survives telemetry loss, panel recreation,

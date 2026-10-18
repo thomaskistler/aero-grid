@@ -77,6 +77,10 @@ fallbacks for the latter. Footer text uses the primary text color for readabilit
 `showBearing` and `showCoordinates` independently override presentation
 defaults. Either, both, or neither footer row can be requested without
 changing the compass selection. A coordinates-only footer uses one row.
+With a configured home arm switch, a failed first-arm GPS capture can be
+retried on a later disarmed-to-armed transition; a successful capture remains
+fixed for the session. The capture age limit and EdgeTX GPS delay units are
+specified in [the project specification](aerogrid-spec.md#navigation).
 
 **Trim-panel review update:** the panel has one presentation: a three-axis
 square. The configured aileron (`trim1`) spans the top, elevator (`trim2`)

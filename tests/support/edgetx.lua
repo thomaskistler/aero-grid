@@ -364,6 +364,11 @@ claim(
 -- Telemetry units
 --------------------------------------------------------------------------
 
+--- `luaPushLatLon` reports the GPS sensor timeout as delay intervals. The
+--- timeout starts at 125 and is decremented every 160 ms; service time uses
+--- 10 ms ticks, so each interval is 16 ticks.
+claim("GPS_DELAY_TICKS", "radio/src/telemetry/telemetry.cpp", "telemetryInterrupt10ms (160 ms timeout decrement)", 16)
+
 -- getFieldInfo reports a sensor's unit as one of these, and only for telemetry
 -- sources: luaGetFieldInfo pushes `unit` inside a MIXSRC_FIRST_TELEM bound, so
 -- a switch or a trim carries no unit at all.
@@ -1553,7 +1558,7 @@ function support.radio(hostIo)
                 lon = scaffold.MODEL_LONGITUDE,
                 ["pilot-lat"] = scaffold.PILOT_LATITUDE,
                 ["pilot-lon"] = scaffold.PILOT_LONGITUDE,
-                delay = 1,
+                delay = firmware.GPS_DELAY_TICKS,
             },
             [112] = 42,
             [115] = 812,

@@ -240,7 +240,7 @@ fixture.radio.values[109].lon = 0
 fixture.pump(context, 40)
 assertions.assertEqual(detailed.tape.status.properties.text, "NO FIX")
 
-fixture.radio.values[109] = { lat = 47, lon = 8, delay = 0 }
+fixture.radio.values[109] = { lat = 47, lon = 8, delay = 28 }
 fixture.radio.values[305] = -1024
 local custom = instance(2, 2, { w = 238, h = 134 }, { armSwitch = "SFv", showTape = true })
 fixture.pump(context, 20)

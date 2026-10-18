@@ -42,7 +42,35 @@ local EARTH_RADIUS = 6371000
 --- EdgeTX reports zero for both axes before a sensor has produced a position.
 local NULL_EPSILON = 0.0000005
 
-local MAX_CAPTURE_AGE = 100
+local TICKS_PER_SECOND = 100
+local GPS_DELAY_TICKS = 16
+local MAX_ARM_AGE = TICKS_PER_SECOND
+local MAX_CAPTURE_AGE = 10 * TICKS_PER_SECOND
+
+local function gpsAgeTicks(position, updatedAt, now)
+    if
+        type(updatedAt) ~= "number"
+        or updatedAt ~= updatedAt
+        or updatedAt == math.huge
+        or updatedAt == -math.huge
+        or now < updatedAt
+    then
+        return nil
+    end
+
+    local age = now - updatedAt
+    if type(position) == "table" and position.delay ~= nil then
+        local delay = position.delay
+        if type(delay) ~= "number" or delay ~= delay or delay < 0 or delay == math.huge then
+            return nil
+        end
+        age = age + delay * GPS_DELAY_TICKS
+    end
+    if age ~= age or age == math.huge then
+        return nil
+    end
+    return age
+end
 
 --- Create the service.
 ---@param env table Result of services.environment.
@@ -75,7 +103,7 @@ function navigationService:logCapture(entry, outcome, now)
         local reading = (outcome == "switch unavailable" and entry.arm or entry.reading) or {}
         local position = type(reading.raw) == "table" and reading.raw or {}
         local text = string.format(
-            "Home capture GPS=%s: %s; now=%s available=%s fresh=%s stale=%s value=%s updatedAt=%s delay=%ss validPosition=%s",
+            "Home capture GPS=%s: %s; now=%s available=%s fresh=%s stale=%s value=%s updatedAt=%s delay=%s (160ms units) validPosition=%s",
             entry.state.source,
             outcome,
             tostring(now),
@@ -100,54 +128,56 @@ function navigationService:logCapture(entry, outcome, now)
     end
 end
 
---- Consume only the first observed disarmed-to-armed transition, even without GPS.
+--- Capture at an observed disarmed-to-armed transition when GPS is ready.
 function navigationService:captureHome(entry, now)
     local capture = entry.capture
     if not capture then
         return
     end
     local state = entry.state
-    if not capture.attempted then
-        local arm = entry.arm
-        local live = arm.available
-            and arm.fresh
-            and type(arm.updatedAt) == "number"
-            and now >= arm.updatedAt
-            and now - arm.updatedAt <= MAX_CAPTURE_AGE
-        if not live then
-            if not entry.switchUnavailable then
-                self:logCapture(entry, "switch unavailable", now)
-            end
-            entry.switchUnavailable = true
-            entry.wasArmed = nil
-            state.homeStatus = "switch-unavailable"
-            return
-        end
-        entry.switchUnavailable = nil
-        local armed = arm.value
-        if entry.wasArmed == false and armed then
-            capture.attempted = true
-            local reading = entry.reading
-            local position = reading and reading.raw
-            local delay = type(position) == "table" and position.delay or nil
-            if
-                reading
-                and reading.available
-                and reading.fresh
-                and not reading.stale
-                and type(reading.updatedAt) == "number"
-                and now >= reading.updatedAt
-                and now - reading.updatedAt <= MAX_CAPTURE_AGE
-                and (delay == nil or (type(delay) == "number" and delay >= 0 and delay * 100 + now - reading.updatedAt <= MAX_CAPTURE_AGE))
-                and type(position) == "table"
-                and navigationService.hasPosition(position.lat, position.lon)
-            then
-                capture.latitude, capture.longitude = position.lat, position.lon
-            end
-            self:logCapture(entry, capture.latitude and "captured" or "missed", now)
-        end
-        entry.wasArmed = armed
+    if capture.latitude then
+        state.homeStatus = "captured"
+        return
     end
+
+    local arm = entry.arm
+    local live = arm.available
+        and arm.fresh
+        and type(arm.updatedAt) == "number"
+        and now >= arm.updatedAt
+        and now - arm.updatedAt <= MAX_ARM_AGE
+    if not live then
+        if not entry.switchUnavailable then
+            self:logCapture(entry, "switch unavailable", now)
+        end
+        entry.switchUnavailable = true
+        entry.wasArmed = nil
+        state.homeStatus = "switch-unavailable"
+        return
+    end
+    entry.switchUnavailable = nil
+
+    local armed = arm.value
+    if entry.wasArmed == false and armed then
+        local reading = entry.reading
+        local position = reading and reading.raw
+        local age = reading and gpsAgeTicks(position, reading.updatedAt, now)
+        capture.attempted = true
+        if
+            reading
+            and reading.available
+            and reading.fresh
+            and not reading.stale
+            and age ~= nil
+            and age <= MAX_CAPTURE_AGE
+            and type(position) == "table"
+            and navigationService.hasPosition(position.lat, position.lon)
+        then
+            capture.latitude, capture.longitude = position.lat, position.lon
+        end
+        self:logCapture(entry, capture.latitude and "captured" or "missed", now)
+    end
+    entry.wasArmed = armed
     state.homeStatus = capture.latitude and "captured" or capture.attempted and "missed" or "waiting"
 end
 
@@ -279,8 +309,11 @@ function navigationService:poll(entry, now)
 
     -- EdgeTX reports the age of the position itself, which is more precise than
     -- the poll time this service could otherwise infer.
-    if type(position.delay) == "number" then
-        state.age = position.delay
+    if position.delay ~= nil then
+        local age = gpsAgeTicks(position, reading.updatedAt, now)
+        if age ~= nil then
+            state.age = age / TICKS_PER_SECOND
+        end
     end
 
     if not state.fix then
