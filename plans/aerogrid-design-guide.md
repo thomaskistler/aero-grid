@@ -15,6 +15,17 @@ because a decision that drifted is exactly the kind a guide exists to pin down.
 
 ## What is implemented and what is only agreed
 
+**Shared diagnostics log:** Host diagnostics remains a dense, left-aligned
+text panel, exempt from reading/visual slots. Its `log` section shows the
+newest shared messages that fit. A fullscreen tap opens a full-height viewer
+with wrapped text, drag/wheel scrolling, Close and RTN. The viewer freezes
+history while open to avoid moving text beneath the reader. It returns to
+the same dashboard, not another screen. Uptime and layout/host/panel attribution
+precede each event; GPS coordinates are never included. Retention is
+configurable from the panel (64 by default, 1–256); the largest live log
+panel's setting applies radio-wide. Recording is enabled by the existence
+of a log panel on any screen, not by its visibility, and never writes files.
+
 **Metric review complete:** an ordered
 `metrics` list supplies the primary reading and up to two supporting readings,
 each with its own source, label, unit, and precision. The shared panel builder

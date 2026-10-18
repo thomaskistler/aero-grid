@@ -1111,7 +1111,7 @@ The UI should expose enough error information to identify the layout file and in
 - Phase 2 layout migrations operate on an in-memory copy, preserve the original file as a backup, and write only after successful validation.
 - A newer unsupported layout version must not be rewritten by an older dashboard release.
 - The dashboard provides a diagnostics view showing package version, active layout path, loaded panels, unresolved sources, and panel failures. See [The host diagnostics view](#the-host-diagnostics-view).
-- Diagnostics must avoid continuous SD-card logging by default. Optional logs are written only on explicit export or when a bounded diagnostic mode is enabled.
+- Diagnostics use a bounded, in-memory shared event log; no SD-card log files are written.
 - Panel loading and layout filenames must reject path traversal and unsafe filename characters.
 
 ## Possible Native Firmware Follow-Up
@@ -1774,7 +1774,8 @@ numeric arming or gyro mappings.
 
 Initial dashboard acceptance has been reported on TX16S v2 / EdgeTX 2.12.4. When something looks wrong on hardware, inferring from pixels alone can conceal geometry defects or stale bytecode. The `host-diagnostics` panel exists so a hardware session can answer "what is loaded and what did it resolve to" by reading it instead of deducing it.
 
-It ships as four sections, one per panel, on the `host` dashboard:
+Four host-local sections ship on the `Diagnostics` dashboard; an additional
+`log` section can be selected in any Host diagnostics panel:
 
 | Section | Answers |
 | --- | --- |
@@ -1782,6 +1783,28 @@ It ships as four sections, one per panel, on the `host` dashboard:
 | `theme` | The resolved mode, whether the layout or the widget option asked for it, whether a mode that does not exist fell back to Modern, and every notice the theme recorded |
 | `panels` | One line per placement: id, type, span, and whether it built, failed later, or was rejected before it built |
 | `sources` | One line per telemetry source any panel asked for, spelled as the layout spelled it, and whether it bound |
+| `log` | Radio-wide event history with uptime, originating layout/host instance, panel ID and outcome; never GPS coordinates |
+
+The log instance is owned by a top-level local in `main.lua`, shared across
+widget instances of that script, rather than by a per-host loaded module.
+Weak host keys prevent it retaining removed widgets. Recording requires a
+live, non-preview Host diagnostics panel with `section: log` on any screen.
+Hidden-screen Navigation continues through `background`. The buffer defaults
+to 64 entries; `maxEntries` accepts 1–256, and the largest active log panel
+request determines shared retention. Oldest entries are evicted first.
+No panel means no recording, not a replay of events that occurred while off.
+History remains in memory until eviction or script unload/radio restart.
+
+Navigation records first-arm capture success or the first failing gate in
+the existing policy, plus switch-unavailable transitions before the attempt.
+Age rejection messages include reported delay in seconds and poll/combined
+ages in 10 ms ticks. This instrumentation does not change acceptance,
+first-transition timing, retry behavior, or independent per-host home state.
+
+The dashboard shows the newest entries. Fullscreen tap opens a full-height,
+wrapped, drag/wheel-scrollable snapshot with Close and RTN dismissal. Wrapping
+is staged one line per callback; LVGL labels carry no custom Lua fields.
+Leaving fullscreen, resizing, or retiring the page dismisses the viewer.
 
 **It reads the live host context and re-derives nothing.** A diagnostics view that resolved the layout filename a second time, or rebuilt the theme to see what it would say, would be reporting on a world assembled for it rather than the one the dashboard is running, and would be confidently wrong at exactly the moment it is being trusted. That is the same mistake as a fixture that encodes what we assume. Where a fact was not recoverable afterwards, the host now records it where it is decided rather than letting the view guess later, and each of those was a guess the view would otherwise have had to make:
 

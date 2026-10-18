@@ -68,6 +68,68 @@ function navigationService.new(env, support, runtime)
     }, navigationService)
 end
 
+function navigationService:logCapture(entry, text, now)
+    local host = self.runtime.host
+    local log = host and host.diagnosticsLog
+    if log then
+        for _, panel in ipairs(host.panels) do
+            if
+                not panel.failed
+                and panel.placement.type == "navigation"
+                and panel.instance.feed == entry.view
+                and not panel.instance.preview
+            then
+                log:append(host, panel.placement.id, "Home capture GPS=" .. entry.state.source .. ": " .. text, now)
+            end
+        end
+    end
+end
+
+--- Keep the capture gates in their original order; nil means the same fix is accepted.
+function navigationService.captureRejection(reading, now)
+    if not reading or not reading.available then
+        return "reading unavailable"
+    end
+    if not reading.fresh then
+        return "not fresh"
+    end
+    if reading.stale then
+        return "stale"
+    end
+    local position = reading.raw
+    local delay = type(position) == "table" and position.delay or nil
+    local updatedAt = reading.updatedAt
+    if type(updatedAt) ~= "number" or not (now >= updatedAt) then
+        return "invalid or future poll timestamp"
+    end
+    local pollAge = now - updatedAt
+    local combined = type(delay) == "number" and delay * 100 + now - updatedAt or pollAge
+    if pollAge > MAX_CAPTURE_AGE then
+        return string.format(
+            "age exceeded: delay=%ss poll age=%s ticks combined age=%s ticks",
+            tostring(delay),
+            tostring(pollAge),
+            tostring(combined)
+        )
+    end
+    if delay ~= nil then
+        if type(delay) ~= "number" or not (delay >= 0) then
+            return "invalid reported delay: " .. tostring(delay)
+        end
+        if not (combined <= MAX_CAPTURE_AGE) then
+            return string.format(
+                "age exceeded: delay=%ss poll age=%s ticks combined age=%s ticks",
+                tostring(delay),
+                tostring(pollAge),
+                tostring(combined)
+            )
+        end
+    end
+    if type(position) ~= "table" or not navigationService.hasPosition(position.lat, position.lon) then
+        return "invalid coordinates"
+    end
+end
+
 --- Consume only the first observed disarmed-to-armed transition, even without GPS.
 function navigationService:captureHome(entry, now)
     local capture = entry.capture
@@ -83,30 +145,25 @@ function navigationService:captureHome(entry, now)
             and now >= arm.updatedAt
             and now - arm.updatedAt <= MAX_CAPTURE_AGE
         if not live then
+            if not entry.switchUnavailable then
+                self:logCapture(entry, "switch unavailable", now)
+            end
+            entry.switchUnavailable = true
             entry.wasArmed = nil
             state.homeStatus = "switch-unavailable"
             return
         end
+        entry.switchUnavailable = nil
         local armed = arm.value
         if entry.wasArmed == false and armed then
             capture.attempted = true
             local reading = entry.reading
-            local position = reading and reading.raw
-            local delay = type(position) == "table" and position.delay or nil
-            if
-                reading
-                and reading.available
-                and reading.fresh
-                and not reading.stale
-                and type(reading.updatedAt) == "number"
-                and now >= reading.updatedAt
-                and now - reading.updatedAt <= MAX_CAPTURE_AGE
-                and (delay == nil or (type(delay) == "number" and delay >= 0 and delay * 100 + now - reading.updatedAt <= MAX_CAPTURE_AGE))
-                and type(position) == "table"
-                and navigationService.hasPosition(position.lat, position.lon)
-            then
+            local reason = navigationService.captureRejection(reading, now)
+            if not reason then
+                local position = reading.raw
                 capture.latitude, capture.longitude = position.lat, position.lon
             end
+            self:logCapture(entry, reason or "captured", now)
         end
         entry.wasArmed = armed
     end

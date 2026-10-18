@@ -536,6 +536,8 @@ local function dispatchAll(context, event, ...)
     end
 end
 
+local sharedDiagnosticsLog
+
 --- Create one AeroGrid host instance for an EdgeTX custom-screen zone.
 ---@param zone AeroGridZone
 ---@param widgetOptions AeroGridWidgetOptions
@@ -589,6 +591,16 @@ local function create(zone, widgetOptions, path)
                 addError(context, relative .. ": " .. tostring(err))
             end
             return module
+        end
+        if not sharedDiagnosticsLog then
+            local log = runtimeModule("lib/diagnostics_log.lua")
+            if log then
+                sharedDiagnosticsLog = log.new()
+            end
+        end
+        context.diagnosticsLog = sharedDiagnosticsLog
+        if sharedDiagnosticsLog then
+            sharedDiagnosticsLog:register(context)
         end
         context.grid = runtimeModule("lib/grid.lua")
         context.yaml = runtimeModule("lib/yaml.lua")
@@ -709,6 +721,7 @@ local function create(zone, widgetOptions, path)
         or not context.dashboardLoader
         or not context.dashboardLifecycle
         or not context.editorController
+        or not context.diagnosticsLog
     then
         -- Nothing can be loaded without the runtime, and an option change must not
         -- be able to restage a load that would then index a missing module.
@@ -773,6 +786,9 @@ local function event(context, widgetEvent, touchState)
     if context.locationDetails then
         return context.locationDetailsModule.handle(context, widgetEvent)
     end
+    if context.logViewer then
+        return context.logViewerModule.handle(context, widgetEvent, touchState)
+    end
     if context.editorController.editorEntryHit(context, widgetEvent, touchState) then
         context.editorController.openEditor(context)
         return true
@@ -784,7 +800,8 @@ local function event(context, widgetEvent, touchState)
         context.panelTouchSlid = true
     elseif widgetEvent == _G.EVT_TOUCH_TAP and touchState and not context.panelTouchSlid and isFullScreen() then
         for _, entry in ipairs(context.panels) do
-            if not entry.failed and entry.placement.type == "navigation" then
+            local logPanel = entry.placement.type == "host-diagnostics" and entry.settings.section == "log"
+            if not entry.failed and (entry.placement.type == "navigation" or logPanel) then
                 local rect = context.dashboardLoader.panelRect(context, entry.placement)
                 if
                     rect
@@ -793,6 +810,26 @@ local function event(context, widgetEvent, touchState)
                     and touchState.y >= rect.y
                     and touchState.y < rect.y + rect.h
                 then
+                    if logPanel then
+                        local module = context.logViewerModule
+                        local moduleError
+                        if not module then
+                            module, moduleError = loadModule(context.path, "lib/log_viewer.lua", 1)
+                        end
+                        if not module then
+                            addError(context, "diagnostics log: " .. tostring(moduleError))
+                            showErrors(context)
+                        else
+                            context.logViewerModule = module
+                            local ok, openError = pcall(module.open, context)
+                            if not ok then
+                                module.close(context)
+                                addError(context, "diagnostics log: " .. tostring(openError))
+                                showErrors(context)
+                            end
+                        end
+                        return true
+                    end
                     if not entry.instance.feed or not entry.instance.feed.fix then
                         return true
                     end
@@ -931,6 +968,18 @@ local function refresh(context, widgetEvent, touchState)
     if context.locationDetails and (not isFullScreen() or context.reloadState) then
         context.locationDetailsModule.close(context)
     end
+    if
+        context.logViewer
+        and (
+            not isFullScreen()
+            or context.reloadState
+            or context.logViewer.width ~= context.zone.w - 16
+            or context.logViewer.height ~= context.zone.h
+        )
+    then
+        context.logViewerModule.close(context)
+        return
+    end
 
     -- Leaving fullscreen neither saves nor discards. Editor boxes built in
     -- fullscreen would swallow the long press in App mode, so the editor is
@@ -991,7 +1040,7 @@ local function refresh(context, widgetEvent, touchState)
     context.dashboardLifecycle.updateEmptyHint(context)
 
     -- EdgeTX reports FIRST/BREAK but does not forward LVGL's long-press event.
-    if not context.editorUi and not context.locationDetails and isFullScreen() then
+    if not context.editorUi and not context.locationDetails and not context.logViewer and isFullScreen() then
         if
             widgetEvent == _G.EVT_TOUCH_FIRST
             and context.editorController.editorEntryHit(context, widgetEvent, touchState, true)
@@ -1029,6 +1078,7 @@ local function refresh(context, widgetEvent, touchState)
 
     -- EdgeTX delivers fullscreen input through refresh, not an event callback.
     if widgetEvent ~= nil and widgetEvent ~= 0 and isFullScreen() then
+        local wasLogViewer = context.logViewer ~= nil
         if widgetEvent == _G.EVT_TOUCH_FIRST then
             context.touchTapHandled = false
         end
@@ -1043,9 +1093,20 @@ local function refresh(context, widgetEvent, touchState)
             return
         end
         -- Input rendering gets its own callback budget, separate from live panels.
-        if context.editorUi then
+        if context.editorUi or context.logViewer or wasLogViewer then
+            if context.logViewer or wasLogViewer then
+                updateServices(context)
+            end
             return
         end
+    end
+
+    if context.logViewer then
+        updateServices(context)
+        if context.logViewer.prepareIndex then
+            context.logViewerModule.advance(context)
+        end
+        return
     end
 
     if context.editorUi then

@@ -553,7 +553,7 @@ local function testAllPanelDrawersStartWithLabel()
         },
         ["flight-mode"] = { "label", "showIndex", "accent" },
         ["flight-timer"] = { "label", "timer", "warning", "critical", "accent" },
-        ["host-diagnostics"] = { "label", "section", "accent" },
+        ["host-diagnostics"] = { "label", "section", "maxEntries", "accent" },
         ["link-status"] = {
             "label",
             "rssiSource",

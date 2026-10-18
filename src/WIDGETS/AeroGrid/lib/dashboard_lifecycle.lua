@@ -213,6 +213,8 @@ function module.new(dependencies)
     local function retirePage(context)
         context.locationDetails = nil
         context.locationOverlay = nil
+        context.logViewer = nil
+        context.logOverlay = nil
         dispatchAll(context, "destroy")
 
         -- Discard the whole page. EdgeTX collects the clear whenever it next runs

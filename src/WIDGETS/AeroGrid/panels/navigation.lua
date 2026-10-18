@@ -674,6 +674,7 @@ function navigation.create(parent, rect, settings, services)
     if service then
         context.service = service
         context.feed = service:subscribe(settings.source, settings.armSwitch)
+        context.preview = services.preview
     end
     if settings.satelliteSource and settings.satelliteSource ~= "" then
         assert(services.telemetry, "navigation satellite count requires telemetry service")

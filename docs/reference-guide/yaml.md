@@ -168,10 +168,11 @@ Drawer title: **Host diagnostics** · [drawer settings and behavior](../panels/h
 | Key | Type | Default | Allowed values | Drawer label | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `label` | string | `""` | Any string | Label | Blank derives the heading from the selected section. |
-| `section` | string | `identity` | `identity`, `theme`, `panels`, `sources` | Section | Selects which host diagnostics to show. |
+| `section` | string | `identity` | `identity`, `theme`, `panels`, `sources`, `log` | Section | Selects which host diagnostics to show. |
+| `maxEntries` | number | `64` | Integer 1–256 | Maximum log entries | Shown for `log`. Largest live log panel setting determines shared retention. |
 | `accent` | string | `cyan` | `cyan`, `green`, `amber`, `orange` | Accent | |
 
-No panel-specific cross-field validation is declared.
+`maxEntries` must be an integer from 1 to 256.
 
 ```yaml
 - id: diagnostics

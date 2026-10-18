@@ -2,8 +2,7 @@
 
 --- What the host actually loaded, read back from the host itself.
 ---
---- Nothing in this project has ever run on a radio. When it does and
---- something looks wrong, the only evidence available is pixels, and
+--- When something looks wrong on a radio, most available evidence is pixels, and
 --- inferring from pixels is what cost an evening on an arc drifting by its
 --- own radius and another on a radio running bytecode that was no longer on
 --- the card. This exists so a hardware session can answer "what is loaded and
@@ -19,9 +18,9 @@
 --- for that reason, and each replaced a guess this file would otherwise have
 --- had to make.
 ---
---- It costs the dashboard nothing when it is not showing, because a panel
---- no layout places is never loaded. When it is showing it builds a fixed
---- number of line objects and repaints only the lines whose text changed.
+--- A panel no layout places is never loaded. A live log panel also enables
+--- shared event collection on hidden screens. Rendering uses a fixed number
+--- of line objects and repaints only the lines whose text changed.
 ---
 --- **The content-flow rule does not apply here, and this is an exemption
 --- rather than an omission.** That rule arranges a panel around a reading:
@@ -42,7 +41,8 @@
 --- part of the set the arrangement was designed for.
 
 ---@class AeroGridDiagnosticsSettings
----@field section "identity"|"theme"|"panels"|"sources"
+---@field section "identity"|"theme"|"panels"|"sources"|"log"
+---@field maxEntries? integer Shared log retention, 1 to 256.
 ---@field label? string Panel title; defaults to the section name.
 ---@field accent? string
 
@@ -62,7 +62,17 @@ local diagnostics = {
             label = "Section",
             type = "string",
             default = "identity",
-            choices = { "identity", "theme", "panels", "sources" },
+            choices = { "identity", "theme", "panels", "sources", "log" },
+        },
+        {
+            key = "maxEntries",
+            label = "Maximum log entries",
+            type = "number",
+            default = 64,
+            step = 1,
+            min = 1,
+            max = 256,
+            visibleWhen = { key = "section", value = "log" },
         },
         {
             key = "accent",
@@ -76,6 +86,27 @@ local diagnostics = {
 
 --- Most lines any section will draw, whatever its span.
 local MAX_LINES = 12
+
+function diagnostics.validateSettings(settings)
+    local limit = settings.maxEntries
+    if limit ~= nil and (type(limit) ~= "number" or limit ~= limit or limit < 1 or limit > 256 or limit % 1 ~= 0) then
+        return { "maxEntries must be an integer from 1 to 256" }
+    end
+    return {}
+end
+
+function diagnostics.log(host, maxEntries)
+    local log = host.diagnosticsLog
+    if not log then
+        return { "no shared diagnostics log" }
+    end
+    local entries = log:read(maxEntries)
+    local lines = {}
+    for _, entry in ipairs(entries) do
+        lines[#lines + 1] = log.format(entry)
+    end
+    return #lines > 0 and lines or { "No messages recorded" }
+end
 
 --- Describe the script the radio was asked to run.
 ---
@@ -304,6 +335,7 @@ diagnostics.SECTIONS = {
     theme = diagnostics.theme,
     panels = diagnostics.panels,
     sources = diagnostics.sources,
+    log = diagnostics.log,
 }
 
 --- Lines for one section of one host.
@@ -315,8 +347,9 @@ diagnostics.SECTIONS = {
 --- saying so instead.
 ---@param host any
 ---@param section any
+---@param maxEntries? integer Limit work to the visible log rows.
 ---@return string[]
-function diagnostics.lines(host, section)
+function diagnostics.lines(host, section, maxEntries)
     local reporter = diagnostics.SECTIONS[section]
     if not reporter then
         return { "no section " .. tostring(section) }
@@ -325,7 +358,7 @@ function diagnostics.lines(host, section)
         return { "no host" }
     end
 
-    local ok, lines = pcall(reporter, host)
+    local ok, lines = pcall(reporter, host, maxEntries)
     if not ok then
         return { "report failed:", tostring(lines) }
     end
@@ -386,6 +419,7 @@ function diagnostics.create(parent, rect, settings, services)
         fonts = fonts,
         settings = settings,
         section = section,
+        preview = services.preview,
         -- The live context, handed down by the host. Held, not copied.
         host = services.host,
         rows = {},
@@ -408,6 +442,7 @@ function diagnostics.create(parent, rect, settings, services)
             x = area.pad,
             y = area.top + (index - 1) * area.lineHeight,
             w = area.content,
+            h = section == "log" and area.lineHeight - 1 or 0,
             text = "",
             color = theme.color.text,
             font = fonts.label,
@@ -425,13 +460,21 @@ end
 --- Repaint only the lines whose text changed.
 ---@param context table
 function diagnostics.refresh(context)
-    local lines = diagnostics.lines(context.host, context.section)
+    local lines = diagnostics.lines(context.host, context.section, context.visibleLines)
+    local start = context.section == "log" and math.max(1, #lines - context.visibleLines + 1) or 1
+    local changed = 0
 
-    for index = 1, context.visibleLines do
-        local text = lines[index] or ""
+    for position = 1, context.visibleLines do
+        local index = context.section == "log" and context.visibleLines - position + 1 or position
+        local text = lines[start + index - 1] or ""
         if text ~= context.texts[index] then
             context.texts[index] = text
             context.rows[index]:set({ text = text })
+            changed = changed + 1
+            -- A history shift changes every row; keep its repaint within the host budget.
+            if context.section == "log" and changed == 3 then
+                break
+            end
         end
     end
 end
@@ -450,6 +493,7 @@ function diagnostics.update(context, rect)
             x = area.pad,
             y = area.top + (index - 1) * area.lineHeight,
             w = area.content,
+            h = context.section == "log" and area.lineHeight - 1 or 0,
         })
     end
 

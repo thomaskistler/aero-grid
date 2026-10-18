@@ -149,6 +149,27 @@ another dashboard. To inspect a failing dashboard's own panels, add a
 rejected and failed panels first, including their reasons. The other sections
 show package/layout identity, theme notices, and source bindings.
 
+For Navigation first-arm home failures, select **log** on a Host diagnostics
+panel before reproducing the problem. This enables a radio-wide, in-memory
+event buffer, including events from Navigation services on hidden screens.
+It is independent of the per-widget console-error deduplication above.
+Entries identify uptime, layout/host instance, panel, and exact capture
+outcome; age failures report GPS delay, poll age, and combined age without
+coordinates. Capture policy is not relaxed for diagnosis. **Maximum log
+entries** defaults to 64 (1–256); the largest active log panel setting wins.
+In widget fullscreen, tap the log panel and use drag/wheel scrolling to read
+a stable snapshot; Close/RTN dismisses it. Reopen for newer events. Removing
+all log panels stops recording. The buffer is never saved to the SD card
+and is lost when the radio restarts or the widget script unloads.
+
+The unit and widget-integration `test_diagnostics_log.lua` suites,
+`test_host_diagnostics.lua`, and the Navigation service suite cover
+retention, multi-host activation, hidden-screen capture
+logging, viewer interaction, wrapping, and the strict 15,000-instruction
+callback ceiling. These are mocked checks, not evidence of radio timing or
+native LVGL behavior; reproduce the original symptom on hardware with the
+log enabled to obtain that evidence.
+
 The native capture tools already redirect simulator output to
 `build/doc-capture/<panel>/simulator.log` or
 `build/editor-capture/<scene>/simulator.log`; these are separate from an

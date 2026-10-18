@@ -551,6 +551,7 @@ function module.new(dependencies)
 
                 context.servicesModule = support
                 context.serviceRuntime = support.runtime(support.environment())
+                context.serviceRuntime.host = context
                 context.navigationHomes = context.navigationHomes or {}
                 context.serviceRuntime.navigationHomes = context.navigationHomes
                 context.serviceIndex = 1
