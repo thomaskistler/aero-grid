@@ -63,10 +63,13 @@ instances have independent homes.
 
 To investigate `HOME NOT SET`, first add a **Host diagnostics** panel and
 select its **log** section on any AeroGrid screen. The shared in-memory log
-records the capture outcome: captured, switch unavailable, reading unavailable,
-not fresh, stale, invalid poll timestamp/delay, age exceeded, or invalid
-coordinates. Age rejections include reported GPS delay (seconds), poll age
-(10 ms ticks), and combined age (ticks). No coordinates are logged.
+records captured/missed or switch unavailable, together with the inputs used
+for the decision: current time, availability, freshness, stale state, value,
+update time, reported delay, and coordinate validity. These are GPS inputs
+for capture attempts, or switch inputs for switch-unavailable events.
+Times are 10 ms ticks; GPS delay is seconds. Poll age is
+`now - updatedAt`; combined age is `delay * 100 + now - updatedAt`.
+Missing values appear as `nil`. No coordinates are logged.
 The capture gates and first-transition-only timing are unchanged. The log
 cannot recover an attempt made before logging was enabled; reproduce it in a
 new widget session. See [Host diagnostics](host-diagnostics.md#shared-log) for

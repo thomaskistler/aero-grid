@@ -56,8 +56,12 @@ The in-memory buffer is shared by all AeroGrid widget instances. Each entry
 contains uptime (`hh:mm:ss`), originating layout and runtime host number
 (`layout#host`), panel ID, and message. The host number distinguishes two
 instances using the same layout; it is not an EdgeTX screen number.
-Navigation currently records first-arm home-capture outcomes and switch
-availability failures, without logging GPS coordinates. It does not log every
+Navigation currently records first-arm captured/missed outcomes and switch
+availability failures, along with raw decision inputs: current tick,
+availability/freshness/stale state/value/update tick, delay in seconds, and
+coordinate validity (not coordinates). Inputs describe GPS for capture
+attempts, or the arm switch for switch-unavailable events.
+Missing values appear as `nil`. It does not log every
 refresh, retry capture, or change the one-second capture policy.
 
 The dashboard shows the newest messages that fit, clipped to one row each.

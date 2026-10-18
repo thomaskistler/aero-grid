@@ -68,17 +68,14 @@ end
 assert(log.count == 1, "hidden-screen services must record the first-arm outcome")
 local capture = log:read()[1]
 assert(capture.panel == "nav" and capture.host == "review-diagnostics-log#1")
-assert(string.find(capture.text, "age exceeded: delay=1.2s", 1, true))
+assert(string.find(capture.text, "missed; now=", 1, true))
+assert(string.find(capture.text, "available=true fresh=true stale=false", 1, true))
+assert(string.find(capture.text, "delay=1.2s validPosition=true", 1, true))
 assert(not string.find(capture.text, "47", 1, true))
 assert(entry.capture.attempted and not entry.capture.latitude, "diagnostics must not loosen capture policy")
 
 for index = 1, 300 do
-    log:append(
-        flight,
-        "nav",
-        "event " .. index .. " age exceeded: delay=1.2s poll age=20 ticks combined age=140 ticks",
-        index * 100
-    )
+    log:append(flight, "nav", "event " .. index .. " " .. capture.text, index * 100)
 end
 assert(log.count == 256)
 local logEntry = fixture.entryById(diagnostics, "log")

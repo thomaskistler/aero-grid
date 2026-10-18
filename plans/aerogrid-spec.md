@@ -1795,10 +1795,14 @@ request determines shared retention. Oldest entries are evicted first.
 No panel means no recording, not a replay of events that occurred while off.
 History remains in memory until eviction or script unload/radio restart.
 
-Navigation records first-arm capture success or the first failing gate in
-the existing policy, plus switch-unavailable transitions before the attempt.
-Age rejection messages include reported delay in seconds and poll/combined
-ages in 10 ms ticks. This instrumentation does not change acceptance,
+Navigation records first-arm captured/missed outcomes and switch-unavailable
+transitions before the attempt, with the basic inputs used by the unchanged
+decision predicate: current tick, availability/freshness/stale/value/update
+tick, delay in seconds, and coordinate validity, describing GPS for capture
+attempts or the arm switch for switch-unavailable events.
+It does not duplicate the policy in rejection-reason
+logic; poll and combined ages can be calculated from the raw values.
+This instrumentation does not change acceptance,
 first-transition timing, retry behavior, or independent per-host home state.
 
 The dashboard shows the newest entries. Fullscreen tap opens a full-height,

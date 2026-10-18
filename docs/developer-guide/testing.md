@@ -153,9 +153,14 @@ For Navigation first-arm home failures, select **log** on a Host diagnostics
 panel before reproducing the problem. This enables a radio-wide, in-memory
 event buffer, including events from Navigation services on hidden screens.
 It is independent of the per-widget console-error deduplication above.
-Entries identify uptime, layout/host instance, panel, and exact capture
-outcome; age failures report GPS delay, poll age, and combined age without
-coordinates. Capture policy is not relaxed for diagnosis. **Maximum log
+Entries identify uptime, layout/host instance, panel, and captured/missed
+or switch unavailable. Each event records `now`, availability, freshness,
+stale state, value, `updatedAt`, reported delay, and coordinate validity,
+never coordinates. Inputs describe GPS for capture attempts or the arm
+switch for switch-unavailable events; inapplicable fields appear as `nil`.
+Timestamps are 10 ms ticks; delay is seconds.
+Calculate poll age as `now - updatedAt` and combined age as
+`delay * 100 + now - updatedAt`. Capture policy is not relaxed for diagnosis. **Maximum log
 entries** defaults to 64 (1–256); the largest active log panel setting wins.
 In widget fullscreen, tap the log panel and use drag/wheel scrolling to read
 a stable snapshot; Close/RTN dismisses it. Reopen for newer events. Removing

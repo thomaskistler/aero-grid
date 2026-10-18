@@ -184,73 +184,73 @@ local function testCaptureDiagnostics()
     local cases = {
         { "captured", function() end },
         {
-            "reading unavailable",
+            "available=false",
             function(reading)
                 reading.available = false
             end,
         },
         {
-            "not fresh",
+            "available=true fresh=false",
             function(reading)
                 reading.fresh = false
             end,
         },
         {
-            "stale",
+            "stale=true",
             function(reading)
                 reading.stale = true
             end,
         },
         {
-            "invalid coordinates",
+            "validPosition=false",
             function(reading)
                 reading.raw.lat = 91
             end,
         },
         {
-            "invalid coordinates",
+            "validPosition=false",
             function(reading)
                 reading.raw = nil
             end,
         },
         {
-            "invalid or future poll timestamp",
+            "updatedAt=nil",
             function(reading)
                 reading.updatedAt = nil
             end,
         },
         {
-            "invalid or future poll timestamp",
+            "updatedAt=21",
             function(reading)
                 reading.updatedAt = 21
             end,
         },
         {
-            "invalid or future poll timestamp",
+            "updatedAt=" .. tostring(0 / 0),
             function(reading)
                 reading.updatedAt = 0 / 0
             end,
         },
         {
-            "invalid reported delay: -1",
+            "delay=-1s",
             function(reading)
                 reading.raw.delay = -1
             end,
         },
         {
-            "invalid reported delay: bad",
+            "delay=bads",
             function(reading)
                 reading.raw.delay = "bad"
             end,
         },
         {
-            "age exceeded: delay=1s poll age=20 ticks combined age=120 ticks",
+            "updatedAt=0 delay=1s",
             function(reading)
                 reading.updatedAt, reading.raw.delay = 0, 1
             end,
         },
         {
-            "age exceeded: delay=0s poll age=101 ticks combined age=101 ticks",
+            "updatedAt=-81 delay=0s",
             function(reading)
                 reading.updatedAt = -81
             end,
@@ -267,6 +267,9 @@ local function testCaptureDiagnostics()
                 { placement = { id = "failed", type = "navigation" }, instance = { feed = view }, failed = true },
             },
             diagnosticsLog = {
+                limit = function()
+                    return 64
+                end,
                 append = function(_, _, panel, text, time)
                     events[#events + 1] = { panel = panel, text = text, time = time }
                 end,
@@ -278,7 +281,10 @@ local function testCaptureDiagnostics()
         service:update(20)
         assert(#events == 2, "each panel sharing a subscription must be identified")
         for _, event in ipairs(events) do
-            assertions.assertEqual(event.text, "Home capture GPS=GPS: " .. case[1])
+            local outcome = case[1] == "captured" and "captured" or "missed"
+            assert(string.find(event.text, "Home capture GPS=GPS: " .. outcome, 1, true), event.text)
+            assert(string.find(event.text, case[1], 1, true), event.text)
+            assert(string.find(event.text, "now=20", 1, true))
             assertions.assertEqual(event.time, 20)
             assert(not string.find(event.text, "47", 1, true), "GPS coordinates must not enter the log")
         end
@@ -293,8 +299,12 @@ local function testCaptureDiagnostics()
     service.runtime.host = {
         panels = { { placement = { id = "nav", type = "navigation" }, instance = { feed = view } } },
         diagnosticsLog = {
+            limit = function()
+                return 64
+            end,
             append = function(_, _, _, text)
-                assert(text == "Home capture GPS=GPS: switch unavailable")
+                assert(string.find(text, "Home capture GPS=GPS: switch unavailable; now=", 1, true))
+                assert(string.find(text, "available=false fresh=true stale=nil value=", 1, true))
                 count = count + 1
             end,
         },
@@ -308,7 +318,29 @@ local function testCaptureDiagnostics()
     arm.available = false
     update(60, true)
     assert(count == 2, "a new switch outage is a distinct event")
-    assert(navigationService.captureRejection(nil, 0) == "reading unavailable")
+    service.entries[1].reading = nil
+    arm.available = true
+    update(80, false)
+    arm.value, arm.updatedAt = true, 100
+    service.runtime.host.diagnosticsLog.append = function(_, _, _, text)
+        assert(string.find(text, "missed", 1, true))
+        assert(
+            string.find(
+                text,
+                "available=nil fresh=nil stale=nil value=nil updatedAt=nil delay=nils validPosition=false",
+                1,
+                true
+            )
+        )
+    end
+    service:update(100)
+    service.runtime.host.diagnosticsLog.limit = function()
+        return 0
+    end
+    service.runtime.host.diagnosticsLog.append = function()
+        error("logging must be disabled")
+    end
+    service:logCapture(service.entries[1], "missed", 120)
 end
 
 local function testCapturePolicyUnchanged()
@@ -348,8 +380,13 @@ local function testCapturePolicyUnchanged()
                     updatedAt = now - pollAge,
                     raw = { lat = 47, lon = 8, delay = delay[1] },
                 }
+                local service, view, _, arm = captureFixture()
+                service.entries[1].reading = reading
+                service.entries[1].wasArmed = false
+                arm.value, arm.updatedAt = true, now
+                service:update(now)
                 assertions.assertEqual(
-                    navigationService.captureRejection(reading, now) == nil,
+                    view.homeStatus == "captured",
                     originalAccepts(reading, now) == true,
                     "instrumentation must preserve the original predicate, including arithmetic order"
                 )
