@@ -5,7 +5,8 @@
   gap: 1.5rem;
 }
 
-.ag-video-gallery iframe {
+.ag-video-gallery iframe,
+.ag-video iframe {
   width: 100%;
   height: auto;
   aspect-ratio: 16 / 9;

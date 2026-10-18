@@ -565,37 +565,45 @@ function module.install(theme)
     --- chose, and shortening `TRANSMITTER` to `TRANS` is the same loss of
     --- identity as `ACROTRAINER` to `ACRO`.
     ---
-    --- So the font steps down first, which costs nothing. Where even the smallest
+    --- The font may step down, but never below the badge font. Where that
     --- font cannot fit the name, it is cut to what fits **and the caller is told
     --- what was dropped**, so the author can choose a shorter heading. Being told
     --- is what makes it an abbreviation rather than a quiet corruption.
     ---@param text any
     ---@param width? integer Column available; nil or zero fits nothing.
     ---@param font any Preferred font, stepped down from.
+    ---@param minimumFont? any Badge font; defaults to SMLSIZE.
     ---@return string text Text that fits.
     ---@return any font Font it fits at.
     ---@return string? dropped Full text, when it had to be cut.
-    function theme.fitHeading(text, width, font)
+    function theme.fitHeading(text, width, font, minimumFont)
+        minimumFont = minimumFont or SMLSIZE
+        if font ~= minimumFont and theme.fontHeight(font) < theme.fontHeight(minimumFont) then
+            font = minimumFont
+        end
         local wanted = string.upper(tostring(text == nil and "" or text))
         if wanted == "" then
             return wanted, font
         end
         if type(width) ~= "number" or width <= 0 then
-            return wanted, font
+            return "", font, wanted
         end
 
         -- The overwhelmingly common case, and the one every panel pays for at
         -- build: a short heading at the font the panel already chose. Answered
         -- before any ladder is built, because building one to discard it is a cost
         -- every panel pays for the rare heading that needs it.
-        if theme.textWidth(font, wanted) <= width then
+        if theme.measureText(font, wanted) <= width then
             return wanted, font
         end
 
         local ladder = {}
         local height = theme.fontHeight(font)
         for _, candidate in ipairs({ SMLSIZE, TINSIZE }) do
-            if theme.fontHeight(candidate) < height then
+            if
+                theme.fontHeight(candidate) < height
+                and theme.fontHeight(candidate) >= theme.fontHeight(minimumFont)
+            then
                 ladder[#ladder + 1] = candidate
             end
         end
@@ -604,7 +612,7 @@ function module.install(theme)
         end
 
         for _, candidate in ipairs(ladder) do
-            if theme.textWidth(candidate, wanted) <= width then
+            if theme.measureText(candidate, wanted) <= width then
                 return wanted, candidate
             end
         end
@@ -612,9 +620,16 @@ function module.install(theme)
         -- Nothing fits. Cut to the smallest font's capacity rather than wrapping
         -- over the reading, and hand back what was lost so it can be reported.
         local smallest = ladder[#ladder]
-        local advance = math.max(1, theme.textWidth(smallest, "M"))
-        local room = math.max(1, math.floor(width / advance))
-        return string.sub(wanted, 1, room), smallest, wanted
+        local low, high = 0, #wanted - 1
+        while low < high do
+            local room = math.floor((low + high + 1) / 2)
+            if theme.measureText(smallest, string.sub(wanted, 1, room)) <= width then
+                low = room
+            else
+                high = room - 1
+            end
+        end
+        return string.sub(wanted, 1, low), smallest, wanted
     end
 
     --- Choose the longest of several wordings that fits a width.
@@ -653,10 +668,8 @@ function module.install(theme)
 
     --- Every badge the dashboard may print, and the whole of that vocabulary.
     ---
-    --- A closed set, and a short one, because the badge column is reserved on
-    --- every panel whether or not a badge is showing. Its width is whatever the
-    --- longest word needs, so a long word is not paid for by the state that uses
-    --- it; it is paid for by every header on the dashboard.
+    --- A closed set, and a short one, because a visible badge leaves less room
+    --- for its panel's heading. An empty badge takes no heading width.
     ---
     --- The set had grown to thirteen strings, nine of which did not fit the 56 px
     --- the column reserved. `NO SOURCE` is the theme's own default for an

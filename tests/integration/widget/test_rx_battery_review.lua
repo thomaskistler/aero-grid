@@ -341,8 +341,8 @@ fixture.pump(context, 40)
 assertions.assertEqual(pack.bar, nil)
 assertVerticalAlignment()
 -- A short wide alternate reading stacks both details beside the number; a
--- shorter one keeps the count and drops the alternate reading, and a narrow
--- bar that has room for neither drops both without complaint.
+-- shorter one keeps the count and drops the alternate reading. The narrow
+-- panel retains the count beside its header-clearing battery glyph.
 context.zone.w = 480
 context.zone.h = 136
 fixture.pump(context, 40)
@@ -350,8 +350,8 @@ assertions.assertEqual(average.area.supportingPlacement, "side")
 assertions.assertEqual(average.countLabel.hidden, false)
 assertions.assertEqual(average.packLabel.hidden, false)
 assertions.assertEqual(average.packLabel.properties.text, "16.4V")
-assertions.assertEqual(narrowPack.area.countShown, false)
-assertions.assertEqual(narrowPack.countLabel.hidden, true)
+assertions.assertEqual(narrowPack.area.countShown, true)
+assertions.assertEqual(narrowPack.countLabel.hidden, false)
 assertions.assertEqual(narrowPack.packLabel.hidden, true)
 context.zone.h = 120
 fixture.pump(context, 40)

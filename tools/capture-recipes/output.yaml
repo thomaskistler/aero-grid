@@ -9,7 +9,7 @@ panels:
   2x1: {col: 2, row: 0, colSpan: 2, rowSpan: 1}
   2x2: {col: 2, row: 2, colSpan: 2, rowSpan: 2}
 config:
-  label: CHANNEL OUTPUT
+  label: CHANNELS
 sample:
   outputs: [51, -102, 819, 0]
   trims: [256, -512, 512, 0]

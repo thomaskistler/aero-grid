@@ -541,7 +541,7 @@ The primary reference viewport is 480 x 272, matching the TX16S and several othe
   **The reading does not move when the unit goes.** Its x is `valueCentre - measureText(font, text) / 2`, its own width and not the pair's, so the unit only widens the drawn box; taking it away shrinks that box and leaves the digits where they were. Nothing is laid out from that box -- supporting rows and compact visuals take their positions from the panel's own slot centres -- so hiding is the whole of the change and there is no space to reclaim. Had it been false, a sensor dropping and returning would twitch the reading each time and hiding would have been the wrong answer, which is why it is measured by `testUnitNeedsAValueToQualify` rather than assumed.
 - **A unit that carries magnitude is not redundancy and is never dropped.** A distance's unit changes with its range, so `1.23km` and `1.23m` are different readings rather than one abbreviated. `navigation` says so, and for it the pair is what the ladder is walked against: the number steps down until both fit, because a distance with no scale on it is worse than a small one.
 - Stepping down one size is the intent and is what happens almost everywhere, but it is not a cap: the alternative to stepping again is clipping, which is never acceptable. A panel needing two steps is saying its column is genuinely too narrow, which happens where a dial takes half the width.
-- **A badge names the state; the supporting row says why.** The badge vocabulary is a closed set on the theme, and short, because the column is reserved on every panel whether or not a badge is showing: a long word is paid for by every header on the dashboard rather than by the state that uses it. Panels do not override it. A distinction such as a dead link against a protocol with no RSSI sensor belongs in the row, which is fitted to its width and words it at whatever length fits.
+- **A badge names the state; the supporting row says why.** The badge vocabulary is a closed set on the theme, and short, so visible badges leave useful room for the heading. Panels do not override it. A distinction such as a dead link against a protocol with no RSSI sensor belongs in the row, which is fitted to its width and words it at whatever length fits.
 
   **Corrected: the example this sentence was built on is no longer a distinction the row makes.** It read "a cells sensor returning a number against one returning nonsense", and that pair has been merged: `rx-battery` prints `CELLS ERR` for both. Neither width nor vocabulary forced it -- `NOT CELLS` and `BAD CELLS` are 67 and 66 px against budgets of 105 and 86, so both fitted comfortably. **The test is whether the reader can act on the difference, and a pilot cannot.** Both mean something is arriving and is wrong, and both are fixed on the ground; only `NO CELLS`, which means nothing has arrived and may yet, asks for something else, which is to wait.
 
@@ -553,7 +553,12 @@ The primary reference viewport is 480 x 272, matching the TX16S and several othe
   So the property is stated as something a test can hold: **the shortest wording of each state a row reports must differ from the shortest wording of every other state it reports.** The shortest form is what a cramped panel prints, so a row can be as narrow as the layout makes it and still say which failure occurred. `navigation` keeps `NO GPS` against `NO FIX` -- no sensor against a sensor with no fix -- and `link-status` keeps `DOWN` against `NO RSS`. `rx-battery` keeps `NO CELLS` against `CELLS ERR`: wait, against go and fix it. Shortening costs detail and must never cost meaning; `testSupportingWordingsStayDistinct` is what holds a panel to it.
 - The badge column is exactly as wide as its widest word, and is never squeezed. Clamping it to a fraction of a narrow panel protects the label by clipping the badge, which is the wrong way round: `CRIT` and `CRI` are not equally alarming, while a shortened source name is merely less informative. A header label with too little room left is dropped rather than clipped, on any panel, not only one obstructed by the menu button.
 - Horizontal padding is asymmetric. The left clears the accent; the right has nothing to clear, so it is smaller. On a single cell those four pixels are a character of header label.
-- **The badge column is reserved whether or not a badge is showing, and the header label's width never depends on whether one is.** Handing the label the empty column and taking it back when a badge appears would reflow the label at exactly the moment the panel changes state. That is worse than a permanently shorter label, and not by a little: a header that moves draws the eye to itself, at the instant the reading beside it has just gone critical and is the thing that needs looking at. It is also the stable-geometry rule above, which requires that a warning state does not shift neighbouring content. Every panel in the catalogue can reach a badged state, so a column that was conditional would be conditional on nothing in practice.
+- **The heading uses all the space left by the visible badge.** An empty badge costs no width; a visible badge costs its measured width and a four-pixel gap. The heading's position stays fixed and its font never drops below the badge font. Its text may shorten or expand as the badge changes. This intentionally replaces the fixed-column policy: preserving a full title when it fits takes priority over keeping its abbreviation unchanged. Vertical room for a possible heading is reserved independently of state, so the reading does not move or resize when a badge changes.
+
+  Short panels cap the centered reading's height to clear the full-size heading.
+  This replaces accidental clearance from tiny or truncated headings; the cap is
+  independent of the current title and badge. At 480 x 272, single-row readings
+  may step down a font size, and battery glyphs share the smaller height budget.
 
 ### Initial color tokens
 
@@ -1815,13 +1820,14 @@ the text changed, so no assertion about what a label says could see it.
 exposed, so clipping and dots are not available. The only levers are the text,
 the width and the font.
 
-So `theme.fitHeading` steps the font down first, which costs nothing and keeps
-the whole name, and cuts the name only where even the smallest font cannot
-carry it -- reporting what was dropped, because a heading is a name the author
+So `theme.fitHeading` measures the text and may step the font down no further
+than the badge font. It cuts the name only where that font cannot
+carry it -- returning what was dropped, because a heading is a name the author
 chose and losing part of it silently is the `ACRO` against `ACROTRAINER`
 problem. Being told is what makes it an abbreviation rather than a corruption.
-The column is what the badge leaves, so it is refitted on every reflow rather
-than fixed at build.
+The column is what the visible badge leaves, so it is refitted on badge changes
+and every reflow rather than fixed at build. Truncation measures prefixes too,
+retaining the longest prefix that fits rather than estimating by character count.
 
 **Where the string goes decides who can get it wrong.** Every other string in
 the dashboard is already measured: the reading by the shared ladder,

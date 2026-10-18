@@ -830,7 +830,8 @@ function navigation.render(context, out)
             return
         end
         local builder, frame, fonts = context.themeBuilder, context.area.frame, context.fonts
-        local heading, font = builder.fitHeading(context.settings.label, frame.labelWidth, fonts.label)
+        local headingWidth = builder.headingWidth(frame, fonts.badge, presentation.badge)
+        local heading, font = builder.fitHeading(context.settings.label, headingWidth, fonts.label, fonts.badge)
         local left = frame.labelX + builder.measureText(font, heading) + 6
         local right = frame.badgeX + frame.badgeWidth
         if presentation.badge and presentation.badge ~= "" then
@@ -838,7 +839,7 @@ function navigation.render(context, out)
         end
         local width = 18 + builder.measureText(fonts.label, text)
         local height = math.max(16, builder.fontHeight(fonts.label))
-        context.showSatellites = right - width >= left and frame.labelY + height <= frame.top
+        context.showSatellites = not frame.labelHidden and right - width >= left and frame.labelY + height <= frame.top
         if context.showSatellites then
             context.satelliteHeader:set({ x = right - width, y = frame.labelY, w = width, h = height })
             context.primitives.setFont(context.satelliteLabel, fonts.label)

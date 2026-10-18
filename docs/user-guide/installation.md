@@ -1,5 +1,10 @@
 # Install and upgrade
 
+<div class="ag-video">
+  <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/JgGA676uW7E" title="Install AeroGrid on an EdgeTX radio" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+  <p><a href="https://www.youtube.com/watch?v=JgGA676uW7E">Watch the installation walkthrough on YouTube</a>.</p>
+</div>
+
 Back up your SD card and model configuration before making changes. AeroGrid targets EdgeTX color radios with the LVGL widget API.
 
 ## Install on an SD card

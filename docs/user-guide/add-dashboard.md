@@ -1,5 +1,10 @@
 # Add a dashboard
 
+<div class="ag-video">
+  <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/Z-_Z-rtot8U" title="Create an Empty AeroGrid dashboard" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+  <p><a href="https://www.youtube.com/watch?v=Z-_Z-rtot8U">Watch the dashboard setup walkthrough on YouTube</a>.</p>
+</div>
+
 Add AeroGrid to a radio screen and choose a layout.
 Install [AeroGrid](installation.md) first and select the model you want to use.
 

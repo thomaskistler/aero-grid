@@ -26,7 +26,10 @@ local function assertGlyph(panel, shown)
     end
 end
 
-for _, panel in ipairs({ tiny, narrow }) do
+assertGlyph(tiny, true)
+equal(tiny.value.hidden, false, "header clearance leaves room for the compact reading")
+equal(tiny.unit.hidden, false)
+for _, panel in ipairs({ narrow }) do
     assertGlyph(panel, true)
     equal(panel.value.hidden, true)
     equal(panel.unit.hidden, true)
@@ -70,8 +73,8 @@ for _ = 1, 2 do
     assertPercentCentered(tiny)
     battery.update(tiny, original)
     assertGlyph(tiny, true)
-    equal(tiny.value.hidden, true)
-    equal(tiny.unit.hidden, true)
+    equal(tiny.value.hidden, false)
+    equal(tiny.unit.hidden, false)
     equal(tiny.detailLabel.hidden, true)
 end
 
@@ -104,7 +107,7 @@ equal(tiny.unit.hidden, false)
 tiny.range = range
 battery.refresh(tiny)
 assertGlyph(tiny, true)
-equal(tiny.value.hidden, true, "restored calibration must restore glyph-only mode")
+equal(tiny.value.hidden, false, "restored calibration must retain the compact reading")
 
 tiny.feed = { available = false }
 battery.refresh(tiny)
@@ -121,7 +124,7 @@ equal(tiny.unit.hidden, true)
 tiny.feed = { available = true, value = 7.9, stale = true }
 battery.refresh(tiny)
 assertGlyph(tiny, true)
-equal(tiny.value.hidden, true)
+equal(tiny.value.hidden, false)
 equal(tiny.badge.properties.text, "STALE")
 
 tiny.feed = feed
@@ -149,4 +152,4 @@ local grown = fixture.instanceOf(small, "smallest")
 equal(grown.glyph, nil)
 battery.update(grown, original)
 assertGlyph(grown, true)
-equal(grown.value.hidden, true)
+equal(grown.value.hidden, false)

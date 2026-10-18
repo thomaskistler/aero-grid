@@ -10,6 +10,7 @@ assert(type(reading) == "table" and type(reading.install) == "function", "lib/re
 local primitives = { RUNTIME_API = 1 }
 
 local labelFonts = setmetatable({}, { __mode = "k" })
+local headers = setmetatable({}, { __mode = "k" })
 
 --- Convert a value in a numeric range to a clamped 0..1 fraction.
 ---@param value any
@@ -98,8 +99,9 @@ function primitives.header(parent, theme, frame, fonts, text, presentation, them
     -- mode wraps and whose content height then grows over the reading.
     local fit = themeBuilder and themeBuilder.fitHeading
     local heading, font, dropped = text, fonts.label, nil
+    local width, hidden = frame.labelWidth, frame.labelHidden
     if fit then
-        heading, font, dropped = fit(text, frame.labelWidth, fonts.label)
+        heading, font, dropped = fit(text, width, fonts.label, fonts.badge)
     else
         heading = string.upper(tostring(text == nil and "" or text))
     end
@@ -107,7 +109,7 @@ function primitives.header(parent, theme, frame, fonts, text, presentation, them
     local label = primitives.label(parent, theme, {
         x = frame.labelX,
         y = frame.labelY,
-        w = frame.labelWidth,
+        w = width,
         text = heading,
         color = presentation.label,
         font = font,
@@ -121,7 +123,21 @@ function primitives.header(parent, theme, frame, fonts, text, presentation, them
         font = fonts.badge,
     })
 
-    if frame.labelHidden then
+    local header = {
+        label = label,
+        frame = frame,
+        fonts = fonts,
+        text = text,
+        badgeText = "",
+        hidden = hidden,
+        width = width,
+        labelFont = fonts.label,
+        badgeFont = fonts.badge,
+        dropped = dropped,
+    }
+    headers[badge] = header
+    labelFonts[label].header = header
+    if hidden then
         lvgl.hide(label)
     end
 
@@ -140,23 +156,50 @@ end
 ---@param fonts table
 ---@param text any
 ---@param color? any
+---@param changes? table Optional geometry updates applied with the fitted text.
 ---@return string? dropped
-function primitives.setHeading(label, themeBuilder, frame, fonts, text, color)
-    -- Refitted every time rather than guarded on the text being unchanged. The
-    -- guard was written, measured, and removed: `fitHeading` answers a heading
-    -- that already fits in one width comparison, which is cheaper than the two
-    -- the guard itself cost, so skipping the work was four instructions worse
-    -- than doing it on the layout it was meant to help.
-    local heading, font, dropped = themeBuilder.fitHeading(text, frame.labelWidth, fonts.label)
+function primitives.setHeading(label, themeBuilder, frame, fonts, text, color, changes)
+    local state = labelFonts[label]
+    local header = state.header
+    local badgeText = header and header.badgeText or ""
+    local width, hidden = themeBuilder.headingWidth(frame, fonts.badge, badgeText)
+    local heading, font, dropped
+    if
+        header
+        and header.text == text
+        and header.width == width
+        and header.labelFont == fonts.label
+        and header.badgeFont == fonts.badge
+    then
+        dropped = header.dropped
+    else
+        heading, font, dropped = themeBuilder.fitHeading(text, width, fonts.label, fonts.badge)
+        state.value = font
+        if header then
+            header.text, header.width, header.dropped = text, width, dropped
+            header.labelFont, header.badgeFont = fonts.label, fonts.badge
+        end
+    end
+    if header then
+        header.frame, header.fonts = frame, fonts
+    end
 
-    local changes = {
-        text = heading,
-    }
-    primitives.setFont(label, font)
+    changes = changes or {}
+    changes.text, changes.w = heading, width
     if color ~= nil then
         changes.color = color
     end
     label:set(changes)
+    if not header or header.hidden ~= hidden then
+        if hidden then
+            lvgl.hide(label)
+        else
+            lvgl.show(label)
+        end
+        if header then
+            header.hidden = hidden
+        end
+    end
     return dropped
 end
 
@@ -223,6 +266,11 @@ function primitives.setBadge(context, themeBuilder, badge, frame, font, text, co
         changes.x, changes.w = primitives.badgeX(themeBuilder, frame, font, text)
     end
     badge:set(changes)
+    local header = headers[badge]
+    if header and (header.badgeText ~= text or header.frame ~= frame) then
+        header.badgeText = text
+        primitives.setHeading(header.label, themeBuilder, frame, header.fonts, header.text)
+    end
 end
 
 --- Reposition an existing header row after a geometry change.
@@ -235,25 +283,42 @@ end
 ---@param label any
 ---@param badge any
 ---@param frame table
----@param text? any Heading currently shown; omitted leaves the text alone.
+---@param text? any Full heading; omitted reuses the retained heading.
 ---@param badgeText? any Badge currently shown, for the same reason.
 function primitives.placeHeader(label, badge, frame, themeBuilder, fonts, text, badgeText)
+    local header = headers[badge]
+    if
+        header
+        and fonts
+        and header.frame.labelX == frame.labelX
+        and header.frame.labelY == frame.labelY
+        and header.frame.labelWidth == frame.labelWidth
+        and header.frame.badgeX == frame.badgeX
+        and header.frame.badgeWidth == frame.badgeWidth
+        and header.labelFont == fonts.label
+        and header.badgeFont == fonts.badge
+        and (text == nil or text == header.text)
+        and (badgeText == nil or badgeText == header.badgeText)
+    then
+        header.frame, header.fonts = frame, fonts
+        return
+    end
     local changes = { x = frame.labelX, y = frame.labelY, w = frame.labelWidth }
+    if header then
+        header.badgeText = badgeText == nil and header.badgeText or badgeText
+        text = text == nil and header.text or text
+        badgeText = header.badgeText
+    end
 
     -- The column is what the badge leaves, so a reflow can change it and a
     -- heading that fitted before may not now. Refitted here rather than left,
     -- because a heading that only fits at the span it was built at is a
     -- heading that wraps the first time the zone moves.
-    -- Refitted on every reflow, for the same reason: the column is what the
-    -- badge leaves and a reflow can move it, and checking whether it moved
-    -- costs more than refitting does.
     if themeBuilder and fonts and text ~= nil then
-        local heading, font = themeBuilder.fitHeading(text, frame.labelWidth, fonts.label)
-        changes.text = heading
-        primitives.setFont(label, font)
+        primitives.setHeading(label, themeBuilder, frame, fonts, text, nil, changes)
+    else
+        label:set(changes)
     end
-
-    label:set(changes)
 
     -- **The badge's column moved, so its text has to be re-placed against it.**
     -- Its right edge is the panel's own, which every reflow changes, and the
@@ -266,10 +331,12 @@ function primitives.placeHeader(label, badge, frame, themeBuilder, fonts, text, 
         badgeChanges.x, badgeChanges.w = primitives.badgeX(themeBuilder, frame, fonts.badge, badgeText)
     end
     badge:set(badgeChanges)
-    if frame.labelHidden then
-        lvgl.hide(label)
-    else
-        lvgl.show(label)
+    if not (themeBuilder and fonts and text ~= nil) then
+        if frame.labelHidden then
+            lvgl.hide(label)
+        else
+            lvgl.show(label)
+        end
     end
 end
 

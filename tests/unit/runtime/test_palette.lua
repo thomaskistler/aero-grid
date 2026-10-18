@@ -304,14 +304,11 @@ local function testStates()
     local narrow = theme.frame(resolved, { x = 0, y = 0, w = 117, h = 65 }, fonts)
     assertEqual(narrow.badgeWidth, widest, "a single-cell panel squeezed its badge instead of its label")
 
-    -- And the label keeps what is left, which on a single cell is the whole
-    -- argument for the trimmed vocabulary and the asymmetric padding. Pinned as
-    -- a number: a bound like "at least four characters" is satisfied by the
-    -- geometry this replaced.
+    -- An unbadged heading gets the full content width.
     assertEqual(narrow.labelHidden, false, "a single-cell panel cannot show a header label beside its badge")
     assertEqual(
         narrow.labelWidth,
-        117 - resolved.spacing.paddingTight - resolved.spacing.paddingRight - widest - 4,
+        117 - resolved.spacing.paddingTight - resolved.spacing.paddingRight,
         "a single-cell panel's header label is not the width the frame leaves it"
     )
     assert(
@@ -336,8 +333,10 @@ local function testStates()
     -- whether or not the menu button is the reason it ran out of room. This used
     -- to apply only to an obstructed corner, so an ordinary narrow panel clipped.
     local tiny = theme.frame(resolved, { x = 0, y = 0, w = 80, h = 65 }, fonts)
-    assertEqual(tiny.labelHidden, true, "a panel with no room for a label drew a clipped one anyway")
-    assertEqual(tiny.labelWidth, 0, "a hidden label kept a width")
+    assertEqual(tiny.labelHidden, false, "an unbadged narrow panel lost its heading")
+    local width, hidden = theme.headingWidth(tiny, fonts.badge, "STALE")
+    assertEqual(hidden, true, "a panel with no room beside its badge kept its heading")
+    assertEqual(width, 0, "a hidden label kept a width")
 
     -- An unknown accent falls back to the theme default rather than failing.
     assertEqual(theme.state(resolved, "normal", "magenta").accent, lcd.RGB(modern.cyan))

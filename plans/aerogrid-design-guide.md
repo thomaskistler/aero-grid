@@ -248,8 +248,11 @@ The dashboard never calls `lcd.setColor()`.
 
 ### The header
 
-The heading sits left. The badge sits right. **The badge column is reserved on every
-panel whether or not a badge is showing**, so a state change never reflows the heading.
+The heading sits left. The badge sits right. **Only the visible badge takes space
+from the heading.** An empty badge leaves the full header width; a visible one costs
+its measured width and a four-pixel gap. The title's position stays fixed and its
+font never becomes smaller than the badge font. Its text may shorten or expand when
+the badge changes, intentionally replacing the earlier fixed-column policy.
 
 **Corrected: the badge sits right, and for a while only its column did.** The heading
 begins flush at the panel's left inset; the badge now ends flush at its right one. It did
@@ -271,18 +274,16 @@ Two things about it are worth keeping:
   in the wrong place. That is the recorded shape — a check that would pass if everything
   moved together is not a check on position — so the assertion pins the badge's right edge
   against the panel's rather than against its neighbour.
-- **The column still protects the heading, and is unchanged.** The heading's width is
-  `badgeX - labelX - 4` and none of that moved: measured at every span, the heading has the
-  same room whether the badge is empty, `WARN` or `CRIT`. Moving the word rightward only
-  widened the gap between them.
+- **The visible word protects the heading.** The heading ends four pixels before the
+  badge's measured left edge. Shorter words leave more room, and an empty badge leaves
+  no gap to reserve.
 
 **Open: the column is a tenth wider than the word it is sized for.** `theme.badgeWidth`
 measures the vocabulary with `theme.textWidth`, the 0.58-per-character estimate, while the
 badge is drawn at its measured width — so the column reserves 49 px for a `STALE` that
-draws in 38. Every heading on the dashboard pays those 11 px. Closing it is the same
-estimate-versus-measurement correction made everywhere else, and it is left open rather
-than taken here because it would widen every heading in the catalogue, which is a change
-to what panels *say* rather than to where the badge sits.
+draws in 38. This remains the badge's placement capacity, but headings no longer pay
+for its unused width: they fit against the actual badge text. Heading fitting and
+truncation both use measured widths, retaining the longest prefix that fits.
 
 The badge column is exactly as wide as its widest word and is never squeezed. Clamping
 it to a fraction of a narrow panel protects the heading by clipping the badge, which is
@@ -293,8 +294,8 @@ than clipped**, on any panel, not only one obstructed by the App mode menu butto
 **The badge vocabulary is a closed set of five strings on the theme, and panels do
 not override it.** It was cut from thirteen rather than widening the column to fit the
 longest: `NOT CELLS` and `BAD CELLS` were nine characters separating two failure modes
-of one panel, and the column is paid for by every header on the dashboard rather
-than by the state that uses it. **A badge names the state; the supporting row says why.**
+of one panel. A long badge leaves less room for the title while that state is shown.
+**A badge names the state; the supporting row says why.**
 Distinctions such as a dead link against a protocol with no RSSI sensor
 belong in the row, which is fitted to whatever width its panel gives it and words them at
 whatever length fits. **What carries the distinction is the vocabulary, not the room** —

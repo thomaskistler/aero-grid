@@ -595,7 +595,9 @@ local function testTextFitting()
     local resolved = theme.build("modern-dark")
     for _, width in ipairs({ 60, 117, 238, 480 }) do
         local frame = theme.frame(resolved, { x = 0, y = 0, w = width, h = 134 }, theme.typography(1, 1))
-        assert(frame.pad + frame.labelWidth <= frame.badgeX, "badge overlaps the label at width " .. width)
+        local headingWidth = theme.headingWidth(frame, SMLSIZE, "STALE")
+        local badgeX = primitives.badgeX(theme, frame, SMLSIZE, "STALE")
+        assert(frame.labelX + headingWidth <= badgeX, "badge overlaps the label at width " .. width)
         assert(frame.badgeX + frame.badgeWidth <= width, "badge runs past the panel at width " .. width)
     end
 end
@@ -1635,20 +1637,8 @@ local function testTxBatteryComposition()
     -- exactly the same size and outline them differently, because the readings
     -- they stand beside are different sizes. A stroke derived from the span or
     -- from the cell would give those two rows the same number.
-    -- **The one-row spans read at DBLSIZE, and the panel's height is why.**
-    -- A reading is sized against half the panel now rather than against a
-    -- middle band cut out of it: half of 65 px is 32 and DBLSIZE is 31 px of
-    -- ink, so it fits. The glyph follows it, from 13 x 26 to 16 x 32, because
-    -- the cell is sized against the reading it stands beside rather than
-    -- against the span.
-    --
-    -- **Corrected twice, and the pair is the record.** Under the rule that
-    -- gave an absent part's quarter to the body these spans read at DBLSIZE;
-    -- under fixed quarter/half/quarter bands a one-row body was 29 px and they
-    -- stepped down to MIDSIZE, which the user accepted with the figures in
-    -- front of them and then disliked on a radio. Half the panel is 32 rather
-    -- than 29 because a half of the panel is not a half of what the frame's
-    -- insets leave, and those 3 px are the whole of the recovery.
+    -- One-row spans take MIDSIZE to clear a full-size heading. The glyph
+    -- shares that height budget; the smaller pair also fits side by side at 1x1.
     --
     -- **The two-row spans are unaffected in size**, which is not obvious and is
     -- worth the line: half of a 134 px panel is 67 px and XXLSIZE is 54 px of
@@ -1662,10 +1652,10 @@ local function testTxBatteryComposition()
     -- because the panel's own heading names what is measured. Magnitude is
     -- kept and redundancy spent, which is the trade the rule names.
     local documented = {
-        { "1x1", "DBLSIZE", true, 16, 32, 2, false },
-        { "2x1", "DBLSIZE", true, 16, 32, 2, false },
-        { "3x1", "DBLSIZE", true, 16, 32, 2, false },
-        { "4x1", "DBLSIZE", true, 16, 32, 2, false },
+        { "1x1", "MIDSIZE", true, 14, 27, 2, false },
+        { "2x1", "MIDSIZE", true, 14, 27, 2, false },
+        { "3x1", "MIDSIZE", true, 14, 27, 2, false },
+        { "4x1", "MIDSIZE", true, 14, 27, 2, false },
         { "1x2", "XXLSIZE", false, 25, 50, 4, false },
         { "2x2", "XXLSIZE", false, 25, 50, 4, false },
         { "3x2", "XXLSIZE", true, 25, 50, 4, false },
@@ -1701,7 +1691,7 @@ local function testTxBatteryComposition()
         layout.visual = "battery"
         local area = battery.regionsFor(resolved, theme, primitives, rect, layout, fonts)
 
-        assertEqual(area.showValue, cols > 1, span .. " must prioritize the glyph over a crowded reading")
+        assertEqual(area.showValue, cols > 1 or rows == 1, span .. " must prioritize the glyph over a crowded reading")
         assertEqual(edgetx.fontName(area.value), font, span .. " does not draw its reading at the documented size")
         assertEqual(area.showUnit, showUnit, span .. " disagrees with the documentation about showing its unit")
         assertEqual(area.glyphWidth, glyphWidth, span .. " draws a glyph of a different width from the documented one")

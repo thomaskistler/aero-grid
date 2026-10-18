@@ -1515,9 +1515,8 @@ panels:
     assertEqual(badge.x, frame.badgeX, "the probe's badge is not in the shared frame's badge column")
     assertEqual(badge.w, frame.badgeWidth, "the probe's badge is not the width of the shared frame's column")
 
-    -- The title must actually leave the badge column alone, which is the thing
-    -- that was wrong: a title spanning the content reaches into it.
-    assert(title.x + title.w <= badge.x, "the probe's title runs into its own badge column")
+    assertEqual(badge.text, "", "the probe unexpectedly displays a badge")
+    assertEqual(title.x + title.w, frame.badgeX + frame.badgeWidth, "an empty badge still costs heading width")
 
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 end
@@ -2052,7 +2051,7 @@ local function testBadgeGeometry()
     local bounds = boundsOf(entry)
 
     assert(
-        label.x + label.w <= badge.x,
+        badge.text == "" or label.x + label.w <= badge.x,
         "badge overlaps the label: label ends at " .. (label.x + label.w) .. ", badge starts at " .. badge.x
     )
     assert(badge.x + badge.w <= bounds.w, "badge extends past the panel")
@@ -4157,7 +4156,7 @@ panels:
     local barBounds = boundsOf(barEntry)
     assertEqual(barBounds.w, 92, "the bar panel is not the measured size")
     assertEqual(barBounds.h, 76, "the bar panel is not the measured size")
-    assert(barArea.frame.labelHidden, "the bar panel kept a heading")
+    assert(not barArea.frame.labelHidden, "the bar panel lost the heading its empty badge leaves room for")
     assertEqual(barArea.ladder.rows, 0, "the bar panel was granted a row")
     assertEqual(barArea.ladder.visual, true, "the bar panel was granted no bar")
     assertEqual(barEntry.instance.showVisual, true, "the bar was never drawn")
@@ -4785,7 +4784,9 @@ panels:
 
     local tight = entryById(context, "tight").instance
     assertEqual(tight.value.properties.text, "24.0", "the reading was lost rather than moved")
-    assert(tight.label.hidden, "a label with no room left beside the button was drawn anyway")
+    assertEqual(tight.badge.properties.text, "")
+    assertEqual(tight.label.hidden, false, "the empty badge still hides a title that fits beside the button")
+    assertEqual(tight.label.properties.text, "PACK")
 
     -- Every catalogue panel, at every span the grid allows, in the corner.
     -- Eight of the ten pull their reading back up when a panel is too short to
@@ -7959,10 +7960,10 @@ panels:
         assertEqual(part.hidden, false, "the battery was revealed and its " .. name .. " was left hidden")
     end
 
-    -- A single cell prioritizes the battery over its numeric reading.
+    -- The header clearance shortens the glyph enough to retain the reading.
     assertEqual(tiny.glyphShown, true)
-    assertEqual(tiny.value.hidden, true)
-    assertEqual(tiny.unit.hidden, true)
+    assertEqual(tiny.value.hidden, false)
+    assertEqual(tiny.unit.hidden, false)
     assertEqual(tiny.glyph.fill.properties.h, math.floor(tiny.glyph.interiorHeight * fraction + 0.5))
 
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
@@ -9068,6 +9069,76 @@ end
 ---
 --- Driven at the narrowest case there is: a single cell, whose heading column
 --- is what the badge leaves, with the badge showing.
+local function testHeaderUsesVisibleBadgeWidth()
+    resetRadio()
+    local builder, primitives = themeModule, primitivesModule
+    local theme = builder.build("modern-dark")
+    local fonts = builder.typography(1, 1)
+    local frame = builder.frame(theme, { w = 117, h = 65 }, fonts)
+    local parent = lvgl.box({ x = 0, y = 0, w = 238, h = 65 })
+    local label, badge =
+        primitives.header(parent, theme, frame, fonts, "TRANSMITTER", builder.state(theme, "normal"), builder)
+    local context = {}
+    assertEqual(label.properties.text, "TRANSMITTER", "an empty badge shortened a title that fits")
+    assertEqual(label.properties.w, frame.content)
+    local x, y = label.properties.x, label.properties.y
+
+    for _, text in ipairs({ "N/A", "WARN", "CRIT", "STALE", "IN-FLIGHT", "" }) do
+        primitives.setBadge(context, builder, badge, frame, fonts.badge, text, theme.color.amber)
+        assertEqual(label.properties.x, x, "a badge moved the title horizontally")
+        assertEqual(label.properties.y, y, "a badge moved the title vertically")
+        assertEqual(label.properties.font(), fonts.badge, "a title became smaller than its badge")
+        if not label.hidden then
+            assertEqual(label.lines, 1)
+            local right = text == "" and frame.width - frame.padRight or badge.properties.x - 4
+            assertEqual(label.properties.x + label.properties.w, right)
+            local shown = label.properties.text
+            assert(builder.measureText(fonts.label, shown) <= label.properties.w)
+            if shown ~= "TRANSMITTER" then
+                assert(
+                    builder.measureText(fonts.label, string.sub("TRANSMITTER", 1, #shown + 1)) > label.properties.w,
+                    "the title was shortened more than necessary"
+                )
+            end
+        end
+    end
+    assertEqual(label.properties.text, "TRANSMITTER", "clearing the badge did not restore the full title")
+
+    primitives.setBadge(context, builder, badge, frame, fonts.badge, "STALE", theme.color.amber)
+    primitives.setHeading(label, builder, frame, fonts, "BATTERY TIMER")
+    local wide = builder.frame(theme, { w = 238, h = 65 }, fonts)
+    primitives.placeHeader(label, badge, wide, builder, fonts)
+    assertEqual(label.properties.text, "BATTERY TIMER", "a reflow forgot the original runtime title")
+    primitives.placeHeader(label, badge, frame, builder, fonts)
+    assertEqual(label.lines, 1)
+    primitives.setBadge(context, builder, badge, frame, fonts.badge, "", theme.color.amber)
+    assertEqual(label.properties.text, "BATTERY TIMER", "clearing a badge restored an obsolete title")
+
+    local narrow = builder.frame(theme, { w = 80, h = 65 }, fonts)
+    primitives.placeHeader(label, badge, narrow, builder, fonts, "BATTERY", "STALE")
+    assertEqual(label.hidden, true, "a title without room beside its badge was drawn")
+    primitives.setBadge(context, builder, badge, narrow, fonts.badge, "", theme.color.amber)
+    assertEqual(label.hidden, false, "clearing the badge did not reveal the title")
+    assertEqual(label.properties.text, "BATTERY")
+
+    local wanted = "IIIIIIIIIIII"
+    local width = builder.measureText(SMLSIZE, wanted)
+    assert(builder.textWidth(SMLSIZE, wanted) > width, "the proportional-width test does not distinguish the estimate")
+    local fitted, font, dropped = builder.fitHeading(wanted, width, SMLSIZE, SMLSIZE)
+    assertEqual(fitted, wanted, "a title fitting at its measured width was shortened")
+    assertEqual(font, SMLSIZE)
+    assertEqual(dropped, nil)
+    fitted, font = builder.fitHeading("MMMM", 1, SMLSIZE, SMLSIZE)
+    assertEqual(fitted, "", "a glyph wider than the available space was kept")
+    assertEqual(font, SMLSIZE)
+    fitted, font = builder.fitHeading("TITLE", 200, TINSIZE, SMLSIZE)
+    assertEqual(font, SMLSIZE, "a preferred font below the badge size was accepted")
+    fitted, font = builder.fitHeading("TITLE", 0, SMLSIZE, SMLSIZE)
+    assertEqual(fitted, "")
+    assertEqual(font, SMLSIZE)
+    parent:clear()
+end
+
 local function testHeadingNeverWraps()
     resetRadio()
 
@@ -9153,7 +9224,8 @@ panels:
     end
 
     local column = short.label.properties.w
-    assert(column > 0 and column < 60, "a single cell's heading column should be narrow: " .. column)
+    assert(column > 0 and column < 80, "a single cell's heading column should be narrow: " .. column)
+    assertEqual(column, short.badge.properties.x - short.label.properties.x - 4)
 
     -- One line each, which is the whole point. `TRANSMITTER` used to take
     -- three lines and 51 pixels of a 65 pixel panel.
@@ -9175,17 +9247,8 @@ panels:
     assertEqual(short.label.properties.text, "TX")
     assertEqual(short.label.properties.font(), short.fonts.label)
 
-    -- A heading that does not fit steps the font down first, because that
-    -- costs nothing and keeps the whole name.
-    assertEqual(
-        long.label.properties.text,
-        "BATTERY",
-        "a heading was cut when a smaller font would have carried it whole"
-    )
-    assert(
-        themeModule.fontHeight(long.label.properties.font()) < themeModule.fontHeight(long.fonts.label),
-        "the heading kept its font and must therefore have overflowed"
-    )
+    assertEqual(long.label.properties.text, "BATTERY", "a heading that fits beside WARN was shortened")
+    assertEqual(long.label.properties.font(), long.fonts.badge, "a heading became smaller than its badge")
 
     -- One that does not fit even at the smallest font is quietly cut rather
     -- than wrapped.
@@ -9246,7 +9309,7 @@ panels:
     assertEqual(panel.label.properties.font(), panel.fonts.label)
     assertEqual(panel.label.lines, 1)
 
-    zone.w = 160
+    zone.w = 80
     local passes = 0
     repeat
         definition.refresh(context)
@@ -9256,10 +9319,8 @@ panels:
     settle(context, 20)
 
     assertEqual(panel.label.lines, 1, "the heading wrapped after a reflow narrowed its column")
-    assert(
-        themeModule.fontHeight(panel.label.properties.font()) < themeModule.fontHeight(panel.fonts.label),
-        "the heading kept the font it was built with and must have overflowed"
-    )
+    assertEqual(panel.label.properties.font(), panel.fonts.badge, "a reflow shrank the heading below its badge")
+    assert(#panel.label.properties.text < #"TRANSMITTER", "a narrow reflow did not shorten the heading")
 end
 
 --- A row that comes back shows what is true now, not what was true when it
@@ -11163,6 +11224,7 @@ testFlightTimerShedsItsDetail()
 testClockKeepsItsWidth()
 testReconcileBar()
 testUnitNeedsAValueToQualify()
+testHeaderUsesVisibleBadgeWidth()
 testHeadingNeverWraps()
 testHeadingRefitsOnReflow()
 testFlightModeSizesFromTheModel()

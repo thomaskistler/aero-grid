@@ -70,7 +70,8 @@ local function testModernThemeBuilds()
     assert(theme.contrast(resolved.rgb.surface, resolved.alertRgb.active) >= 1.3)
     local frame = theme.frame(resolved, { w = 117, h = 134 }, { label = SMLSIZE, badge = SMLSIZE }, nil, "IN-FLIGHT")
     assert(frame.badgeWidth >= theme.measureText(SMLSIZE, "IN-FLIGHT"))
-    assert(frame.labelHidden or frame.labelX + frame.labelWidth < frame.badgeX)
+    local headingWidth, hidden = theme.headingWidth(frame, SMLSIZE, "IN-FLIGHT")
+    assert(hidden or frame.labelX + headingWidth < frame.badgeX)
     for _, colors in ipairs({
         { surface = 0xFFFFFF },
         { surface = 0x000000 },

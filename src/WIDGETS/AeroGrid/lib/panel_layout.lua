@@ -11,6 +11,20 @@ function module.install(theme)
     --- Minimum useful header width; narrower labels are hidden rather than clipped.
     local MIN_LABEL_WIDTH = 30
 
+    --- Space left for a heading by the badge currently displayed.
+    function theme.headingWidth(frame, font, text)
+        if text == nil or text == "" then
+            return frame.labelWidth, frame.labelHidden
+        end
+        if frame.labelHidden then
+            return 0, true
+        end
+        local right = math.max(frame.badgeX, frame.badgeX + frame.badgeWidth - theme.measureText(font, text)) - 4
+        local width = math.max(0, right - frame.labelX)
+        local hidden = width < MIN_LABEL_WIDTH
+        return hidden and 0 or width, hidden
+    end
+
     --- Resolve the padded content geometry every panel panel shares.
     ---
     --- Panels derive their regions from this rather than repeating the same
@@ -113,18 +127,14 @@ function module.install(theme)
             end
         end
 
-        -- The badge column is reserved whether or not a badge is showing, and the
-        -- label's width does not depend on whether one is.
-        --
-        -- Handing the label the empty column and taking it back when a badge
-        -- appears would reflow the label at exactly the moment a panel changes
-        -- state, which is the text-jumping the specification forbids and is worse
-        -- than a permanently shorter label: a header that moves draws the eye to
-        -- itself rather than to the reading that just went critical. Every
-        -- panel in the catalogue can reach a badged state, so a column that was
-        -- conditional would be conditional on nothing in practice anyway.
-        local labelWidth = badgeX - labelX - 4
+        -- Reserve vertical room whenever an unbadged heading can be shown.
+        -- State changes refit its text, but must not resize the reading below it.
+        local labelWidth = badgeX + badgeWidth - labelX
         local labelHidden = labelWidth < MIN_LABEL_WIDTH
+        if not labelHidden and rect.h < 3 * labelHeight then
+            local readingTop = math.floor(rect.h / 2) - math.ceil(theme.fontAscent(SMLSIZE) / 2)
+            labelHidden = labelY + theme.fontAscent(fonts.label) + 2 > readingTop
+        end
         -- A hidden label has no width rather than a token one, so a panel too narrow
         -- to carry both still has coherent geometry.
         if labelHidden then
@@ -323,6 +333,10 @@ function module.install(theme)
         local reserved = frame.reserved
         local shared = reserved ~= nil or not frame.labelHidden or (rows or 0) > 0 or visual == true
         local room = shared and math.floor(rect.h / 2) or rect.h
+        if not frame.labelHidden and rect.h < 4 * frame.labelHeight then
+            local headerBottom = frame.labelY + frame.labelHeight
+            room = math.min(room, math.max(1, rect.h - 2 * headerBottom))
+        end
         if reserved and not reserved.side then
             room = math.min(room, math.max(1, rect.h - reserved.h))
         end

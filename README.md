@@ -24,6 +24,14 @@ visual language across the whole dashboard.
 Download the latest installation ZIP from [GitHub Releases](https://github.com/thomaskistler/aero-grid/releases). Extract the ZIP file, and copy `WIDGETS/AeroGrid/` into the SD card's
 `/WIDGETS/` directory. 
 
+## Video walkthroughs
+
+Select a thumbnail to watch the walkthrough on YouTube.
+
+| Install AeroGrid | Create an Empty dashboard | Add, move, and resize panels |
+| --- | --- | --- |
+| [![Watch the installation walkthrough](https://img.youtube.com/vi/JgGA676uW7E/hqdefault.jpg)](https://www.youtube.com/watch?v=JgGA676uW7E) | [![Watch the dashboard setup walkthrough](https://img.youtube.com/vi/Z-_Z-rtot8U/hqdefault.jpg)](https://www.youtube.com/watch?v=Z-_Z-rtot8U) | [![Watch the panel editing walkthrough](https://img.youtube.com/vi/hJtvJaOf7YY/hqdefault.jpg)](https://www.youtube.com/watch?v=hJtvJaOf7YY) |
+
 ## Documentation
 
 You can find the full [**documentation**](https://thomaskistler.github.io/aero-grid/) for the User Guide, panel Reference Guide, and Developer Guide [here](https://thomaskistler.github.io/aero-grid/).

@@ -1,5 +1,10 @@
 # Edit a dashboard on the radio
 
+<div class="ag-video">
+  <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/hJtvJaOf7YY" title="Add, move, and resize AeroGrid panels" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+  <p><a href="https://www.youtube.com/watch?v=hJtvJaOf7YY">Watch the panel editing walkthrough on YouTube</a>.</p>
+</div>
+
 [Add a dashboard](add-dashboard.md) first, then customize its panels on the radio.
 
 1. Long-press the dashboard to enter fullscreen. The EdgeTX logo in the
@@ -28,6 +33,12 @@ Moving and resizing require touch.
 
 Use the native choices, toggles, number controls, and text keyboard in the
 settings dialog. Sources, switches, and timers use EdgeTX pickers.
+
+Panel titles use the full header width when no state badge is shown. When a
+badge appears, only its displayed width and a small gap are set aside. Titles
+never use a smaller font than their badges; a title that still does not fit is
+shortened, or hidden if too little room remains. The full title returns when
+space allows, without moving the title or the panel's reading.
 
 ![Metric panel settings with named summary rows and an add-entry button](../assets/editor/settings.png)
 

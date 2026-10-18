@@ -45,8 +45,10 @@ Enlarging the panel restores it when possible.
 
 **battery** keeps the glyph first. If the glyph and normal-size voltage cannot
 fit side by side, only the centered glyph is shown. At the standard 480×272
-grid size, 1x1 and 1x2 panels show the glyph without voltage; wider panels show
-both. Resizing restores voltage when it fits, without shrinking the reading.
+grid size, 1x2 panels show the glyph without voltage; 1x1 and wider panels show
+both. Single-row panels use a smaller reading and glyph to clear the full-size
+heading. Resizing restores voltage when it fits, without shrinking it to buy
+space for the glyph.
 Choose **none** to keep numeric voltage in a compact panel. **bar** prioritizes
 voltage and hides the bar at 1x1.
 
