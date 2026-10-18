@@ -61,20 +61,38 @@ local function testCandidates()
     assertions.assertEqual(empty[1].filename, "/WIDGETS/AeroGrid/layouts/Empty.yaml")
 end
 
---- Save As offers the model name with the first number no layout uses.
+--- Save As offers <model>-L<number> with the first number no layout uses.
 local function testSuggestName()
     local taken = {
-        ["/AEROGRID/layouts/My-Model1.yaml"] = true,
-        ["/WIDGETS/AeroGrid/layouts/My-Model2.yaml"] = true,
+        ["/AEROGRID/layouts/My-Model-L1.yaml"] = true,
+        ["/WIDGETS/AeroGrid/layouts/My-Model-L2.yaml"] = true,
+        ["/AEROGRID/layouts/Legacy1.yaml"] = true,
     }
     _G.fstat = function(filename)
         return taken[filename] and { size = 1 } or nil
     end
-    assertions.assertEqual(layoutStore.suggestName("/WIDGETS/AeroGrid/", "My Model"), "My-Model3")
-    assertions.assertEqual(layoutStore.suggestName("/WIDGETS/AeroGrid/", "  "), "Layout1")
-    local long = layoutStore.suggestName("/WIDGETS/AeroGrid/", string.rep("x", 40))
-    assert(#long <= layoutStore.NAME_LIMIT and layoutStore.validName(long), long)
-    assert(layoutStore.exists("/WIDGETS/AeroGrid/", "My-Model2"), "a shipped name was not reported as taken")
+    assertions.assertEqual(layoutStore.suggestName("/WIDGETS/AeroGrid/", "My Model"), "My-Model-L3")
+    assertions.assertEqual(layoutStore.suggestName("/WIDGETS/AeroGrid/", "Legacy"), "Legacy-L1")
+    assertions.assertEqual(layoutStore.suggestName("/WIDGETS/AeroGrid/", "  "), "Layout-L1")
+    assertions.assertEqual(layoutStore.suggestName("/WIDGETS/AeroGrid/", nil), "Layout-L1")
+    assertions.assertEqual(layoutStore.suggestName("/WIDGETS/AeroGrid/", " /My__ Model!- "), "My__-Model-L1")
+    assert(layoutStore.exists("/WIDGETS/AeroGrid/", "My-Model-L2"), "a shipped name was not reported as taken")
+    assert(layoutStore.exists("/WIDGETS/AeroGrid/", "Legacy1"), "an existing layout name changed")
+
+    taken["/AEROGRID/layouts/My-Model-L1.yaml"] = nil
+    assertions.assertEqual(layoutStore.suggestName("/WIDGETS/AeroGrid/", "My Model"), "My-Model-L1")
+
+    for _, nextNumber in ipairs({ 1, 10, 100, 1000, 1001 }) do
+        _G.fstat = function(filename)
+            local number = tonumber(string.match(filename, "%-L(%d+)%.yaml$"))
+            return number and number < nextNumber and { size = 1 } or nil
+        end
+        local suffix = "-L" .. nextNumber
+        local expected = string.rep("x", layoutStore.NAME_LIMIT - #suffix) .. suffix
+        local name = layoutStore.suggestName("/WIDGETS/AeroGrid/", string.rep("x", 40))
+        assertions.assertEqual(name, expected)
+        assert(#name == layoutStore.NAME_LIMIT and layoutStore.validName(name), name)
+    end
     _G.fstat = nil
 end
 

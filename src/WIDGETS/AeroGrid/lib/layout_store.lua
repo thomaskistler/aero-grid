@@ -140,7 +140,7 @@ function layoutStore.exists(widgetPath, name)
         or stat(directory(widgetPath) .. "layouts/" .. sanitize(name) .. ".yaml") ~= nil
 end
 
---- Suggest `<model><N>` with the first number no layout uses yet.
+--- Suggest `<model>-L<N>` with the first number no layout uses yet.
 ---@param widgetPath string
 ---@param modelName any
 ---@return string
@@ -150,14 +150,15 @@ function layoutStore.suggestName(widgetPath, modelName)
     if base == "" then
         base = "Layout"
     end
-    for number = 1, 999 do
-        local suffix = tostring(number)
+    local number = 1
+    while true do
+        local suffix = "-L" .. number
         local name = string.sub(base, 1, layoutStore.NAME_LIMIT - #suffix) .. suffix
         if not layoutStore.exists(widgetPath, name) then
             return name
         end
+        number = number + 1
     end
-    return string.sub(base, 1, layoutStore.NAME_LIMIT - 4) .. "1000"
 end
 
 --- Return layout paths in recovery order, including the previous committed copy.

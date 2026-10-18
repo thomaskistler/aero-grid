@@ -1359,8 +1359,8 @@ for _, child in ipairs(state.nativeDrawer.children) do
         nameButton = child
     end
 end
-local suggested = string.gsub(model.getInfo().name, "[^%w_-]+", "-") .. "1"
-equal(nameEdit.properties.value, suggested, "Save As suggests the model name and a free number")
+local suggested = string.gsub(model.getInfo().name, "[^%w_-]+", "-") .. "-L1"
+equal(nameEdit.properties.value, suggested, "Save As suggests the model name and a free -L number")
 lvgl.close(state.nativeDrawer)
 refresh()
 equal(widget.lvglMock.menu().title, "Unsaved changes", "RTN on the name returns to the exit menu")

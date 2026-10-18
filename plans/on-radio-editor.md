@@ -147,9 +147,10 @@ User decisions, 2026-10-07 and 2026-10-09:
   under the same name, which is the shipped-template write protection.
 - `Empty` is a shipped blank layout and is never overwritten: Save is not
   offered on it, and the name is reserved.
-- Save As suggests the sanitized model name plus the first unused number
-  (`Sonic1`), validates the name (letters, digits, `-`, `_`; at most 24
-  characters), and asks before overwriting an existing name. Return in the
+- Save As suggests the sanitized model name plus `-L` and the first unused
+  number (`Sonic-L1`), shortening the model name to fit the full suffix within
+  24 characters. It validates the name (letters, digits, `-`, `_`; at most 24
+  characters) and asks before overwriting an existing name. Return in the
   name entry goes back to the menu with the draft intact.
 - Lua cannot write widget options, so Save As cannot switch this dashboard
   to the new layout. The dashboard keeps its current layout, and a message
