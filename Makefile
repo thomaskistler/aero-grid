@@ -78,6 +78,7 @@ $(VENV_STAMP): requirements-dev.txt
 	@touch "$@"
 
 test: $(VENV_STAMP)
+	@"$(VENV_DIR)/bin/python" -m unittest discover -s tests -p 'test_*.py'
 	@"$(VENV_DIR)/bin/python" tests/run.py
 
 check: test
