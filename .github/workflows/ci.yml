@@ -57,12 +57,8 @@ jobs:
           luac5.3 -v
           lua-language-server --version
 
-      # Run both public targets explicitly. `check` includes the tests too, so
-      # the second invocation also verifies that the combined target works.
-      - name: Run tests and checks
-        run: |
-          make test
-          make check LUA_COMPILER=luac5.3
+      - name: Run checks
+        run: make check LUA_COMPILER=luac5.3
 
       - name: Test release packaging
         run: python3 -m unittest discover -s tools -p 'test_release_*.py'
