@@ -190,7 +190,10 @@ local function captionOf(entry)
     if entry and entry.label then
         return entry.label
     end
-    return hasSource(entry) and entry.source or "Metric"
+    if entry and hasSource(entry) then
+        return entry.source
+    end
+    return "Metric"
 end
 
 local function readingText(entry, feed)
