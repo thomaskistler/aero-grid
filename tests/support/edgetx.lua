@@ -1791,6 +1791,10 @@ function support.radio(hostIo)
             end
             return nil
         end
+        -- The firmware reads a name with luaL_checkstring, so nil raises.
+        if type(name) ~= "string" then
+            error("bad argument #1 to 'getFieldInfo' (string expected, got " .. type(name) .. ")", 2)
+        end
         return radio.fields[name]
     end
 

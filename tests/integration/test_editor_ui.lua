@@ -664,6 +664,9 @@ equal(#context.editorSession.draft.panels[2].config.metrics, 0, "a new metric pa
 action("append", "metrics").properties.press()
 settleDrawer()
 equal(context.editorSession.draft.panels[2].config.metrics[1].source, nil, "the first metric starts blank")
+-- The firmware refreshes the summary every frame; an error there disables
+-- the widget with "callRefs error: (null)".
+equal(action("item", "metrics").properties.text(), "--", "a blank metric summarizes as a dash")
 action("item", "metrics").properties.press()
 settleDrawer()
 control("metrics", "label").properties.set("LIVE")
