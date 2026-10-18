@@ -40,6 +40,7 @@ make check LUA_COMPILER=/absolute/path/to/edgetx-luac
 | Panel settings or presentation | `tests/unit/panels/`, then the relevant `tests/integration/widget/test_*_review.lua`. |
 | Host load/reload, failure isolation, scheduling, or callback budgets | `tests/integration/test_widget.lua`. |
 | Editor commands and settings dialogs | `tests/unit/lib/test_editor.lua` and `tests/integration/test_editor_ui.lua`. |
+| Installing panels from the editor | `tests/integration/test_panel_installation.lua`. |
 | Shared rendering or reflow | Builder-matrix, panel-reflow, font-callback, and resource-stability integration suites. |
 
 The runtime suite under `tests/unit/runtime/` is split into
@@ -56,6 +57,16 @@ missing/incompatible coordination and visual dependencies, including error
 visibility after resizing.
 
 Reuse `tests/support/widget_fixture.lua` to load a host with mocked APIs.
+The installation suite iterates the production editor catalog (not a separate
+test registry). Each panel starts on an empty 4x4 grid, allowing the editor to
+choose a supported span, and passes through the native picker, configuration,
+live preview, Save/apply, and a fresh widget load of the persisted layout.
+Metric additionally appends its first blank entry, evaluates its summary, and
+selects a real source before saving. Display-property callbacks are evaluated
+alongside widget refreshes; retained failures and caught `[AeroGrid] ERROR` logs
+fail this positive-path suite without forbidding expected errors in other tests.
+This is desktop mock coverage, not a native LVGL or hardware installation test.
+
 Use `tests/support/edgetx.lua` for firmware behavior and LVGL object inspection
 instead of inventing another mock. That module separates **firmware claims**
 (with source-file/symbol citations) from invented test **scaffold** values.
