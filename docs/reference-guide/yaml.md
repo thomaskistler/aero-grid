@@ -80,7 +80,7 @@ Omitted settings use their listed defaults. “Unset” means the setting has no
 
 ### `flight-counter`
 
-Drawer title: **Flight counter** · [drawer settings and behavior](../panels/flight-counter.md) · Supported spans: `1x1`, `2x1`, `3x1`, `4x1`, `1x2`, `2x2`, `3x2`, `4x2`.
+Drawer title: **Flight counter** · [drawer settings and behavior](../panels/flight-counter.md) · Supported spans: `any`.
 
 | Key | Type | Default | Allowed values | Drawer label | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -113,7 +113,7 @@ Cross-field and format rules:
 
 ### `flight-mode`
 
-Drawer title: **Flight mode** · [drawer settings and behavior](../panels/flight-mode.md) · Supported spans: `1x1`, `2x1`, `3x1`, `4x1`, `1x2`, `2x2`, `3x2`, `4x2`.
+Drawer title: **Flight mode** · [drawer settings and behavior](../panels/flight-mode.md) · Supported spans: `any`.
 
 | Key | Type | Default | Allowed values | Drawer label | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -136,7 +136,7 @@ No panel-specific cross-field validation is declared.
 
 ### `flight-timer`
 
-Drawer title: **Flight timer** · [drawer settings and behavior](../panels/flight-timer.md) · Supported spans: `1x1`, `2x1`, `3x1`, `4x1`, `1x2`, `2x2`, `3x2`, `4x2`.
+Drawer title: **Flight timer** · [drawer settings and behavior](../panels/flight-timer.md) · Supported spans: `any`.
 
 | Key | Type | Default | Allowed values | Drawer label | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -187,7 +187,7 @@ Drawer title: **Host diagnostics** · [drawer settings and behavior](../panels/h
 
 ### `link-status`
 
-Drawer title: **Link status** · [drawer settings and behavior](../panels/link-status.md) · Supported spans: `1x1`, `2x1`, `3x1`, `4x1`, `1x2`, `2x2`, `3x2`, `4x2`, `2x3`, `3x3`, `4x3`.
+Drawer title: **Link status** · [drawer settings and behavior](../panels/link-status.md) · Supported spans: `any`.
 
 | Key | Type | Default | Allowed values | Drawer label | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -233,7 +233,7 @@ Cross-field rules:
 
 ### `metric`
 
-Drawer title: **Metric** · [drawer settings and behavior](../panels/metric.md) · Supported spans: `1x1`, `2x1`, `3x1`, `4x1`, `1x2`, `2x2`, `3x2`, `4x2`.
+Drawer title: **Metric** · [drawer settings and behavior](../panels/metric.md) · Supported spans: `any`.
 
 | Key | Type | Default | Allowed values | Drawer label | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -273,7 +273,7 @@ Cross-field and list rules:
 
 ### `model-identity`
 
-Drawer title: **Model identity** · [drawer settings and behavior](../panels/model-identity.md) · Supported spans: `1x1`, `2x1`, `3x1`, `4x1`, `1x2`, `2x2`, `3x2`, `4x2`, `2x3`, `3x3`, `4x3`, `2x4`, `3x4`, `4x4`.
+Drawer title: **Model identity** · [drawer settings and behavior](../panels/model-identity.md) · Supported spans: `any`.
 
 | Key | Type | Default | Allowed values | Drawer label | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -297,7 +297,7 @@ Cross-field rule: when `presentation` is explicitly `image` or `both`, a custom 
 
 ### `navigation`
 
-Drawer title: **Navigation** · [drawer settings and behavior](../panels/navigation.md) · Supported spans: `1x1`, `2x1`, `3x1`, `4x1`, `1x2`, `2x2`, `3x2`, `4x2`, `2x3`, `3x3`, `4x3`, `2x4`, `3x4`, `4x4`.
+Drawer title: **Navigation** · [drawer settings and behavior](../panels/navigation.md) · Supported spans: `any`.
 
 | Key | Type | Default | Allowed values | Drawer label | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -360,7 +360,7 @@ Panel validation requires supplied channel numbers to be whole values from 1 to 
 
 ### `rx-battery`
 
-Drawer title: **RX battery** · [drawer settings and behavior](../panels/rx-battery.md) · Supported spans: `1x1`, `2x1`, `3x1`, `4x1`, `1x2`, `2x2`, `3x2`, `4x2`.
+Drawer title: **RX battery** · [drawer settings and behavior](../panels/rx-battery.md) · Supported spans: `any`.
 
 | Key | Type | Default | Allowed values | Drawer label | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -424,7 +424,7 @@ No panel-specific cross-field validation is declared.
 
 ### `state`
 
-Drawer title: **State** · [drawer settings and behavior](../panels/state.md) · Supported spans: `1x1`, `2x1`, `3x1`, `4x1`, `1x2`, `2x2`, `3x2`, `4x2`.
+Drawer title: **State** · [drawer settings and behavior](../panels/state.md) · Supported spans: `any`.
 
 | Key | Type | Default | Allowed values | Drawer label | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -462,7 +462,7 @@ Cross-field and list rules:
 
 ### `trim-panel`
 
-Drawer title: **Trim** · [drawer settings and behavior](../panels/trim-panel.md) · Supported spans: `1x1`, `2x1`, `3x1`, `4x1`, `1x2`, `2x2`, `3x2`, `4x2`, `2x3`, `3x3`, `4x3`, `2x4`, `3x4`, `4x4`.
+Drawer title: **Trim** · [drawer settings and behavior](../panels/trim-panel.md) · Supported spans: `any`.
 
 | Key | Type | Default | Allowed values | Drawer label | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -490,7 +490,7 @@ No panel-specific cross-field validation is declared.
 
 ### `tx-battery`
 
-Drawer title: **TX battery** · [drawer settings and behavior](../panels/tx-battery.md) · Supported spans: `1x1`, `2x1`, `3x1`, `4x1`, `1x2`, `2x2`, `3x2`, `4x2`.
+Drawer title: **TX battery** · [drawer settings and behavior](../panels/tx-battery.md) · Supported spans: `any`.
 
 | Key | Type | Default | Allowed values | Drawer label | Notes |
 | --- | --- | --- | --- | --- | --- |

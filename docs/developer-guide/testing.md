@@ -12,10 +12,17 @@ make test
 make check
 ```
 
-`make test` executes every `test_*.lua` beneath `tests/`, excluding support
-modules. Each test gets a fresh `lupa.lua53.LuaRuntime` and the repository root as
-its chunk argument. A failed assertion stops the run with a traceback and
-non-zero exit status.
+`make test` checks the Python test runner, then executes every `test_*.lua`
+beneath `tests/`, excluding support modules. Each Lua suite gets a fresh
+`lupa.lua53.LuaRuntime` and the repository root as its chunk argument.
+
+The runner captures console lines beginning with `[AeroGrid] ERROR ` so expected
+negative cases do not clutter successful runs. Other output, including progress
+and performance measurements, remains visible. If a suite fails, its captured
+logs and file path are printed to stderr before the original traceback, and the
+run stops with a non-zero exit status. Logs from earlier passing suites are
+discarded. This affects only `tests/run.py`; production logging is unchanged.
+Tests that replace `print` themselves still own the output they intercept.
 
 Every suite runs once with the string metatable removed to resemble EdgeTX.
 Runtime code should use

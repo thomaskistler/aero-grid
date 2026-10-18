@@ -22,6 +22,9 @@ No aircraft telemetry is required.
 
 ## Behavior
 
+The panel can be added to any free grid cell, starting at 1x1, and resized to
+any span that fits the grid.
+
 Channels appear consecutively starting at **First channel**. With
 **Channel count** on **Auto**, the panel fills the available rows; a chosen count is capped by the
 available space and CH32. The panel adjusts when resized. Wide panels show

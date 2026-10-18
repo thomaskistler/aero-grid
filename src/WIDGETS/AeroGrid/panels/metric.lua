@@ -41,19 +41,7 @@
 local metric = {
     id = "metric",
     apiVersion = 1,
-    -- Every region is derived from the measured rectangle, so the panel
-    -- adapts to any span it is given; the spans below are the ones whose
-    -- presentations are defined and verified.
-    supportedSpans = {
-        "1x1",
-        "2x1",
-        "3x1",
-        "4x1",
-        "1x2",
-        "2x2",
-        "3x2",
-        "4x2",
-    },
+    supportedSpans = { "any" },
     -- A numeric readout is indistinguishable at 5 Hz and 50 Hz in flight, and
     -- the host pays every panel's refresh inside one instruction budget.
     refreshInterval = 20,
