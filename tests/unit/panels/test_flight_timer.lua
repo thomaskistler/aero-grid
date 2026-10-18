@@ -73,9 +73,33 @@ local function testTimerBounds()
     assertions.assertEqual(timer.formatClock(nil), "--:--")
 end
 
+local function testTimerLabels()
+    for index = 0, 2 do
+        local context = { settings = { timer = index, label = "" } }
+        local expected = "TIMER " .. tostring(index + 1)
+        assertions.assertEqual(timer.labelText(context), expected)
+
+        context.feed = { name = "" }
+        assertions.assertEqual(timer.labelText(context), expected)
+
+        context.feed.name = "Flight"
+        assertions.assertEqual(timer.labelText(context), "Flight")
+
+        context.settings.label = "Custom"
+        assertions.assertEqual(timer.labelText(context), "Custom")
+
+        context.settings.label = nil
+        assertions.assertEqual(timer.labelText(context), "Flight")
+
+        context.feed.name = nil
+        assertions.assertEqual(timer.labelText(context), expected)
+    end
+end
+
 local function run()
     testTimerSemantics()
     testTimerBounds()
+    testTimerLabels()
 end
 
 run()

@@ -505,7 +505,7 @@ function flightTimer.labelText(context)
         return feed.name
     end
 
-    return "TIMER " .. tostring(context.settings.timer)
+    return "TIMER " .. tostring(context.settings.timer + 1)
 end
 
 --- Repaint the panel from its current subscription.

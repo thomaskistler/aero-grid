@@ -158,11 +158,17 @@ local function entrySummary(state, key, index, defaults, path)
         return switchSummary(item.switch) .. ": " .. item.text .. " (" .. (item.background or "normal") .. ")"
     end
     local source = item.source
-    if type(getFieldInfo) == "function" and type(getSourceName) == "function" then
+    -- A newly added entry has no source yet, and the firmware's getFieldInfo
+    -- raises on nil inside this per-frame text callback.
+    if
+        (type(source) == "string" and source ~= "" or type(source) == "number")
+        and type(getFieldInfo) == "function"
+        and type(getSourceName) == "function"
+    then
         local info = getFieldInfo(source)
         source = type(info) == "table" and getSourceName(info.id) or source
     end
-    local summary = { tostring(source or "--") }
+    local summary = { (source == nil or source == "") and "--" or tostring(source) }
     if item.unit and item.unit ~= "" then
         summary[#summary + 1] = item.unit
     end
