@@ -11,6 +11,7 @@ on:
       - requirements-docs.txt
       - tools/installer_assets.py
       - tools/test_installer_assets.py
+      - tools/test_map_planner.js
       - .github/workflows/docs.yml
   pull_request:
     paths:
@@ -19,6 +20,7 @@ on:
       - requirements-docs.txt
       - tools/installer_assets.py
       - tools/test_installer_assets.py
+      - tools/test_map_planner.js
       - .github/workflows/docs.yml
   workflow_dispatch:
   release:
@@ -51,6 +53,11 @@ jobs:
           cache-dependency-path: requirements-docs.txt
       - name: Install documentation dependencies
         run: python -m pip install -r requirements-docs.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test map planner calculations
+        run: node tools/test_map_planner.js
       - name: Build and validate
         run: python -m mkdocs build --strict --site-dir build/docs
       - name: Publish validated browser installer assets
