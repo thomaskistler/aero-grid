@@ -421,6 +421,94 @@ export, georeferencing, or source-interface development. Synthetic tiles around
 known coordinates support those checks; real imagery is useful for visual
 quality, realistic compressed sizes/read behavior, and source integration.
 
+### Task backlog by workstream
+
+Unchecked items below are outstanding, not claims that implementation is
+authorized. **Decision** items require an agreed design before code;
+**validation** items require evidence rather than necessarily new features.
+**Deferred** items are outside the agreed first ZIP-only delivery.
+
+#### Planner (#171)
+
+Core area selection, coverage calculations, radio presets, selection JSON, and
+integer-zoom preview are implemented. No additional planner feature has yet
+been agreed as required for the first slice.
+
+- [ ] **Validation:** Check selection/editing, visible-area selection, zoom
+  controls, preview scaling, and status/error readability across the intended
+  desktop and touch-browser matrix; record that matrix and fix demonstrated
+  usability failures.
+- [ ] **Integration:** Keep selection JSON and both coverage modes compatible
+  with the downloader as the branches evolve; retain date-line, screen-fit,
+  and tile-limit regression coverage.
+- [ ] **Decision:** After runtime radio verification, distinguish supported
+  radios from planning-only presets clearly in the UI and documentation.
+  Do not remove useful planning presets merely because runtime support is pending.
+
+#### Downloader (#176)
+
+ZIP generation, JPEG conversion, synthetic export, experimental Google export,
+progress/cancellation, and browser tile reuse are implemented.
+
+- [ ] **Decision/research:** Resolve offline imagery rights, worldwide
+  availability, source access/rate constraints, and required attribution.
+  Decide whether to retain, restrict, disable, or replace the Google adapter.
+- [ ] **Implementation after source decision:** Implement any required adapter
+  or source-policy changes and carry required source/edition/credit metadata
+  through export. Coordinate visible radio attribution with the panel owner.
+- [ ] **Validation:** Verify actual supported source responses and browser CORS
+  behavior when authorized; existing intercepted/mock-image checks do not prove
+  the live endpoint works.
+- [ ] **Decision:** Specify deliberate imagery refresh, edition identity,
+  browser-library loss/recovery, and handling of old/unreferenced data.
+  The current first-capture cache is not an update manager.
+- [ ] **Integration:** Preserve independent archive/image/contract tests and a
+  combined producer-to-radio-reader check after the PR split.
+- [ ] **Deferred:** Inspect installed maps, calculate missing tiles, write
+  directly to SD, perform recoverable area replacements, and safely remove
+  unreferenced tiles.
+
+#### Radio panel (#172)
+
+Rendering, markers, heading, touch controls, adaptive follow, JPEG loading, and
+automatic area discovery are implemented prototypes.
+
+- [ ] **Decision and implementation:** Define normal editor-catalog availability
+  and configuration, then make adding the panel possible without development
+  fixture YAML.
+- [ ] **Decision and implementation:** Finish user-facing missing-map,
+  selected-area, and off-coverage guidance. Preserve existing explicit
+  no-map/GPS/error states rather than substituting false positions.
+- [ ] **Implementation after source decision:** Provide the required visible
+  imagery attribution; source metadata alone does not establish compliance.
+- [ ] **Validation:** Measure physical-radio cold/warm load, sustained pans,
+  repeated zooms, heading changes, native memory, decoder errors, and control
+  responsiveness. Address demonstrated cache/memory/latency failures before
+  declaring support.
+- [ ] **Validation:** Check moving-GPS follow, abrupt changes, coverage edges,
+  heading lag, GPS loss/recovery, and manual pause/re-follow on native hardware.
+  Tune behavior based on evidence, without making these tests a prerequisite
+  for downloader development.
+- [ ] **Validation and implementation as needed:** Establish the radio/EdgeTX
+  patch support matrix and adapt geometry/resources for additional radios.
+  Currently only TX16S-size runtime geometry is targeted.
+- [ ] **Decision:** Specify whether pan/zoom/follow/home should persist and
+  whether home/settings should be shared model-wide across screens.
+- [ ] **Deferred decision:** Decide whether a historical trail is needed;
+  agree sampling, capacity, and rendering before implementing it.
+
+#### Cross-workstream coordination
+
+- [ ] Complete the agreed three-PR split without losing the combined behavior;
+  keep the radio panel independent of browser implementation.
+- [ ] Reconcile dated handoff documents, installation instructions, old-pack
+  migration guidance, and fixture generation with the final PR organization.
+- [ ] Review and integrate the three PRs, preserving their intended boundaries
+  and the shared contract.
+- [ ] **Deferred decision:** Design the common connect-radio experience for
+  maps and AeroGrid installation/upgrades, including browser/OS support,
+  recoverable writes, and user-data preservation.
+
 ### Acceptance checks for the existing ZIP-only slice
 
 - The chosen area and all selected zooms round-trip from planner through ZIP to
