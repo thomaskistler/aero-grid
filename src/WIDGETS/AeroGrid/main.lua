@@ -890,7 +890,11 @@ local function event(context, widgetEvent, touchState)
 
     for _, entry in ipairs(context.panels) do
         if not entry.failed then
-            local ok, dispatchError, consumed = context.panelHost.dispatch(entry, "event", widgetEvent)
+            local rect = entry.module.event
+                and touchState
+                and context.dashboardLoader.panelRect(context, entry.placement)
+            local ok, dispatchError, consumed =
+                context.panelHost.dispatch(entry, "event", widgetEvent, touchState, rect)
             if not ok and dispatchError then
                 addError(context, entry.placement.id .. ": event: " .. dispatchError)
                 showErrors(context)
@@ -1458,11 +1462,16 @@ local function refresh(context, widgetEvent, touchState)
     if not context.editorUi and not context.locationDetails and not context.logViewer and isFullScreen() then
         if
             widgetEvent == _G.EVT_TOUCH_FIRST
+            and touchState
             and context.editorController.editorEntryHit(context, widgetEvent, touchState, true)
         then
-            context.editorPress = { started = getTime() }
-        -- Ignore SLIDE: dragging has no action before editing, and EdgeTX can
-        -- keep emitting it on stationary touches after a previous drag.
+            context.editorPress = { started = getTime(), x = touchState.x, y = touchState.y }
+        elseif widgetEvent == _G.EVT_TOUCH_SLIDE and touchState and context.editorPress then
+            -- EdgeTX can emit SLIDE without movement after a previous drag.
+            local press = context.editorPress
+            if math.abs(touchState.x - press.x) >= 8 or math.abs(touchState.y - press.y) >= 8 then
+                context.editorPress = nil
+            end
         elseif widgetEvent ~= nil and (widgetEvent == _G.EVT_TOUCH_BREAK or widgetEvent == _G.EVT_TOUCH_TAP) then
             context.editorPress = nil
         end

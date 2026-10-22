@@ -100,6 +100,8 @@ local themeYamlModule = assert(loadfile(sourcePath .. "lib/yaml.lua"))()
 local themeDocument = assert(loadfile(root .. "/tests/support/theme_catalog.lua"))()(root, themeYamlModule)
 assert(themeModule.setCatalog(themeDocument))
 
+local mapPackPrepared = false
+
 --- Build an isolated copy of the widget package so a test can supply its own
 --- layout and panel files without touching the shipped sources.
 ---@param name string Unique scratch directory name under build/.
@@ -116,6 +118,23 @@ local function makeWidget(name, layoutYaml, extraPanels)
     if layoutYaml then
         writeFile(directory .. "/layouts/Default.yaml", layoutYaml)
     end
+    local packPath = root .. "/build/test-map-pack"
+    if not mapPackPrepared then
+        assert(
+            os.execute(
+                "'"
+                    .. root
+                    .. "/build/venv/bin/python' '"
+                    .. root
+                    .. "/tools/generate-map-test-pack.py' --output '"
+                    .. packPath
+                    .. "' > /dev/null"
+            )
+        )
+        mapPackPrepared = true
+    end
+    assert(os.execute("mkdir -p '" .. directory .. "/AEROGRID/maps'"))
+    assert(os.execute("cp -R '" .. packPath .. "/.' '" .. directory .. "/AEROGRID/maps/'"))
     -- `heartbeat` and `placeholder` exist to exercise the host contract, not to
     -- fly, so they are fixtures rather than shipped panels. They are copied
     -- into every scratch package because that is what they are for: a layout
@@ -504,7 +523,8 @@ local function testSpanGalleryIsComplete()
     local compared = 0
     for _, stem in ipairs(stems) do
         local module = assert(loadfile(sourcePath .. "panels/" .. stem .. ".lua"))()
-        if panelHost.supportsSpan(module, 1, 1) then
+        -- The YAML-only map is outside the catalogue; its own suite covers all spans.
+        if stem ~= "map-prototype" and panelHost.supportsSpan(module, 1, 1) then
             compared = compared + 1
             assert(
                 string.find(gallery, "type: " .. stem, 1, true),
@@ -772,7 +792,13 @@ local function testScreensReachEveryShippedLayout()
     local count = 0
     for name in listing:lines() do
         local stem = string.match(name, "^(.+)%.lua$")
-        if stem and stem ~= "host-diagnostics" and stem ~= "service-probe" and stem ~= "theme-showcase" then
+        if
+            stem
+            and stem ~= "host-diagnostics"
+            and stem ~= "service-probe"
+            and stem ~= "theme-showcase"
+            and stem ~= "map-prototype" -- Experimental panel has its own integration suite, not a dedicated model screen.
+        then
             assert(panelReviews[stem], stem .. " has no panel-review screen")
             count = count + 1
         end
@@ -2862,6 +2888,12 @@ local function drawnBoxes(entry)
     local root = entry.instance.panel and entry.instance.panel.root
     local compassFurniture = {}
     local backgrounds = {}
+    if entry.placement.type == "map-prototype" and entry.instance.viewport then
+        -- Map labels intentionally overlay imagery and georeferenced markers.
+        for _, object in ipairs(entry.instance.viewport.children) do
+            backgrounds[object] = true
+        end
+    end
     local tape = entry.instance.tape
     if tape then
         for _, object in ipairs(tape.shading) do

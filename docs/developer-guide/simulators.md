@@ -13,6 +13,9 @@ reporting a result.
 Neither proves receiver behavior, native radio memory stability, or support
 for every color radio.
 
+The normal `make build` also includes the synthetic tile pack and `review-map`
+development layout for the [experimental radio map panel](map-prototype.md).
+
 ## Mock memory regression tests
 
 `python3 tests/run.py` includes repeated layout reload/resize checks for retired
@@ -176,3 +179,6 @@ inspect other spans.
 Rebuild and re-import models/settings into Companion to replace the former
 STD/PANEL1/PANEL2 models. Existing Companion documents retain their old screens
 until refreshed; `make build` replaces the generated simulator image.
+The **review-map** layout exercises the map panel. Long-press the map
+to enter fullscreen and reveal its zoom/pan controls. See the
+[map prototype guide](map-prototype.md) for synthetic GPS coordinates and limitations.

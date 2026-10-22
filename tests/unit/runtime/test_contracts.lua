@@ -379,13 +379,13 @@ end
 local function testSettingsVocabulary()
     local catalog = settingsCatalog()
     local kinds = panelTypes()
-    -- Sixteen panels ship: thirteen instruments, two diagnostics, and the
-    -- fixed theme showcase. `heartbeat` and
+    -- Seventeen panels ship: thirteen instruments, two diagnostics, the
+    -- fixed theme showcase and the opt-in map experiment. `heartbeat` and
     -- `placeholder` were built to prove
     -- the host contract and are fixtures under `tests/fixtures/panels`, so
     -- they are not read here: the vocabulary rules below are about what a
     -- person configures on a radio.
-    assertEqual(#kinds, 16, "the catalogue changed size; expected thirteen instruments and three utility panels")
+    assertEqual(#kinds, 17, "the catalogue changed size; expected thirteen instruments and four utility/prototype panels")
 
     for kind, settings in pairs(catalog) do
         local declared = {}
@@ -728,6 +728,14 @@ local function testPanelDocumentationLoads()
             assert(string.find(page, "# Customize themes", 1, true))
             assert(string.find(page, "/WIDGETS/AeroGrid/themes/", 1, true))
             assert(string.find(page, "/AEROGRID/themes/", 1, true))
+            table.remove(kinds, index)
+        elseif kinds[index] == "map-prototype" then
+            local handle = assert(io.open(root .. "/docs/developer-guide/map-prototype.md", "r"))
+            local page = handle:read("*a")
+            handle:close()
+            assert(string.find(page, "# Radio map rendering prototype", 1, true))
+            assert(string.find(page, "make build", 1, true))
+            assert(string.find(page, "/AEROGRID/maps/areas/synthetic.yaml", 1, true))
             table.remove(kinds, index)
         end
     end
@@ -1274,6 +1282,7 @@ local function testRenderConsultsWhatIsShown()
         ["service-probe"] = true,
         ["flight-counter"] = true,
         ["theme-showcase"] = true,
+        ["map-prototype"] = true,
     }
 
     local checked, exempt = 0, 0

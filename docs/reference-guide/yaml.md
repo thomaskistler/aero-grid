@@ -164,6 +164,41 @@ panels:
           accent: green
 ```
 
+### `map-prototype`
+
+**Experimental and YAML-only; not in the editor catalog.** Supported span:
+`any` (all grid sizes), targeting TX16S 480 x 272. Requires an installed
+[map area](../developer-guide/map-prototype.md#shared-map-area), generated
+as a synthetic test fixture or supplied separately. See the [radio map experiment](../developer-guide/map-prototype.md)
+for setup, controls and hardware limitations.
+
+| Key | Type | Default | Allowed values | Notes |
+| --- | --- | --- | --- | --- |
+| `label` | string | `MAP` | Any string | Standard panel heading. |
+| `source` | string | `GPS` | EdgeTX GPS source name | Subscribes through the shared Navigation service. |
+| `headingSource` | string | `""` | Blank or numeric telemetry source name | Degrees clockwise from true north. Blank derives GPS course after at least 1 m of movement, averaging the last five movement bearings circularly; stationary fixes retain it. Unknown heading shows NO HDG; the plane stays cyan. A configured source is used directly and does not fall back to GPS when unavailable/stale. |
+| `armSwitch` | string | `""` | Blank, switch position such as `SF^`, `SA-`, `SFv`, or logical switch `L01` | Blank uses EdgeTX home; otherwise uses the Navigation service's first-arm GPS home capture. Panel-local, not synchronized with other panels. |
+| `pack` | string | `""` | Blank or 1-32 lowercase letters, digits, `_` or `-` | Blank automatically finds an installed area from live GPS, preferring highest detail then smallest coverage, and holds it until GPS leaves coverage. An explicit ID overrides selection using `/AEROGRID/maps/areas/<id>.yaml`. |
+
+```yaml
+version: 3
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: map
+    type: map-prototype
+    col: 0
+    row: 0
+    colSpan: 4
+    rowSpan: 4
+    config:
+      label: MAP
+      source: GPS
+      headingSource: ""
+      pack: ""
+```
+
 ### `flight-counter`
 
 Drawer title: **Flight counter** · [drawer settings and behavior](../panels/flight-counter.md) · Supported spans: `any`.

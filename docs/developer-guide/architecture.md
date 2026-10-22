@@ -11,7 +11,7 @@ EdgeTX widgets.
 | --- | --- |
 | `src/WIDGETS/AeroGrid/main.lua` | EdgeTX entry points, native options, event routing, and callback scheduling. |
 | `src/WIDGETS/AeroGrid/lib/` | Layout parsing/storage, grid geometry, panel hosting, shared services, rendering primitives, themes, and editor modules. |
-| `src/WIDGETS/AeroGrid/panels/` | Thirteen user-facing panel types plus `host-diagnostics`, `service-probe`, and the fixed-data `theme-showcase`. |
+| `src/WIDGETS/AeroGrid/panels/` | Thirteen user-facing panel types plus `host-diagnostics`, `service-probe`, the fixed-data `theme-showcase`, and the opt-in `map-prototype` experiment. |
 | `src/WIDGETS/AeroGrid/layouts/` | Shipped layouts. |
 | `tests/fixtures/layouts/development/` | Simulator and review layouts used by tests and disposable SD images. |
 | `src/WIDGETS/AeroGrid/assets/` | Runtime editor icon and its license. |
@@ -311,7 +311,7 @@ Use `panels/flight-mode.lua` as a small working example and
 | `refresh(context)` | Optional callback to update existing objects from snapshots. May return a whole-number interval of 1–6000 ticks; nil preserves the current interval. A second result of `true` reserves subsequent turns among panels of the same type until the update completes; other panel types and services continue running. |
 | `update(context, rect, settings, detailsOnly, placement)` | Optional geometry/configuration update. Host reflows and editor resizes pass the current grid placement as the fifth argument, leaving the internal `detailsOnly` argument unset. |
 | `background(context)` | Optional work when the dashboard is not visible. |
-| `event(context, event)` | Optional event handling; return true when consumed. |
+| `event(context, event, touchState, rect)` | Optional event handling; return true when consumed. Fullscreen touch events include EdgeTX's touch table and the panel rectangle in widget coordinates. Existing handlers may ignore the extra arguments. |
 | `destroy(context)` | Optional cleanup of panel-owned references. |
 | `validateSettings(settings, span, config)` | Optional cross-field and span-dependent validation. |
 
@@ -329,6 +329,10 @@ singular name such as `"Metric"` or `"State"`. The editor names rows using the
 first nonempty label or source, then `itemLabel` and the one-based index;
 lists without `itemLabel` use `"Entry"`. Do not build a separate settings UI
 for each panel.
+
+The [map prototype](map-prototype.md) is a YAML-only, 4x4, TX16S-sized
+experiment with a synthetic pack included in the simulator build. It is not a normal editor-catalog
+panel or a finalized map installation format.
 
 The public `theme.lua` API composes palette/state resolution with
 `typography.lua` (measurement, font fitting, unit metrics) and `panel_layout.lua`
