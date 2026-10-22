@@ -1,4 +1,138 @@
 /* Light documentation palette with AeroGrid-inspired accents. */
+.ag-radio {
+  margin: 1.5rem 0;
+  padding: 1.5rem;
+  border: 2px solid var(--ag-border);
+  border-radius: 16px;
+  background: var(--ag-surface);
+}
+
+.ag-radio-connected {
+  border-color: var(--ag-green);
+}
+
+.ag-radio-header,
+.ag-radio-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.ag-radio-header {
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--ag-border);
+}
+
+.ag-radio-header strong {
+  font-size: 1.15rem;
+}
+
+.ag-radio-connected .ag-radio-header strong::before {
+  content: "";
+  display: inline-block;
+  width: 0.65rem;
+  height: 0.65rem;
+  margin-right: 0.5rem;
+  border-radius: 50%;
+  background: var(--ag-green);
+}
+
+.ag-radio-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1.25rem 0;
+}
+
+.ag-radio-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  border: 1px solid var(--ag-border);
+  border-radius: 12px;
+  background: var(--ag-canvas);
+  overflow-wrap: anywhere;
+}
+
+.ag-radio-card strong {
+  font-family: var(--bs-font-monospace, monospace);
+}
+
+.ag-radio-muted,
+.ag-radio-card span,
+.ag-radio-card small {
+  color: var(--ag-muted);
+  font-size: 0.875rem;
+}
+
+.ag-radio-actions {
+  justify-content: flex-start;
+  margin: 1rem 0;
+}
+
+.ag-radio-button {
+  border: 1px solid var(--ag-border);
+  border-radius: 8px;
+  background: var(--ag-canvas);
+  color: var(--ag-text);
+  padding: 0.65rem 1rem;
+  font-weight: 600;
+}
+
+.ag-radio-primary {
+  background: var(--ag-cyan);
+  border-color: var(--ag-cyan);
+  color: #ffffff;
+}
+
+.ag-radio-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ag-radio-button:focus-visible {
+  outline: 3px solid var(--ag-cyan);
+  outline-offset: 3px;
+}
+
+.ag-radio-error {
+  color: var(--ag-critical);
+}
+
+.ag-radio progress {
+  width: 100%;
+  accent-color: var(--ag-cyan);
+}
+
+.ag-radio [data-status] {
+  margin-bottom: 0.5rem;
+}
+
+.ag-radio-confirm {
+  padding: 1rem;
+  margin-bottom: 1rem;
+  border: 2px solid var(--ag-amber);
+  border-radius: 8px;
+}
+
+.ag-radio-confirm p {
+  margin-top: 0.75rem;
+  white-space: pre-line;
+}
+
+@media (max-width: 767px) {
+  .ag-radio {
+    padding: 1rem;
+  }
+
+  .ag-radio-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
 .ag-video-gallery {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

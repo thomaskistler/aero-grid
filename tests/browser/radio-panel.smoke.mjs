@@ -1,0 +1,135 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Optional Chromium acceptance check: the picker returns native, disposable OPFS handles.
+import assert from "node:assert/strict";
+import { RELEASE_API } from "../../docs/javascripts/radio-installer.mjs";
+
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
+const site = new URL(process.argv[2] ?? "http://127.0.0.1:8000/");
+const manifest = await (await fetch(new URL("installer/latest.json", site))).json();
+const browser = await chromium.launch({
+  headless: true,
+  ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}),
+});
+const context = await browser.newContext({ viewport: { width: 1280, height: 1000 } });
+const errors = [];
+context.on("page", (page) => page.on("pageerror", (error) => errors.push(error.message)));
+await context.route("**/*", async (route) => {
+  const url = route.request().url();
+  if (url === RELEASE_API) {
+    await route.fulfill({ json: {
+      tag_name: `v${manifest.version}`, draft: false, prerelease: false,
+      assets: [`AeroGrid-${manifest.version}.zip`, `AeroGrid-${manifest.version}.zip.sha256`].map((name) => ({
+        name,
+        browser_download_url: `https://github.com/thomaskistler/aero-grid/releases/download/v${manifest.version}/${name}`,
+      })),
+    } });
+  } else if (new URL(url).origin === site.origin) await route.continue();
+  else await route.abort();
+});
+
+try {
+  const page = await context.newPage();
+  const activate = (selector) => process.env.INSTALLER_KEYBOARD
+    ? page.locator(selector).press("Enter") : page.locator(selector).click();
+  await page.addInitScript(() => {
+    if (window !== window.top) return;
+    // The docs theme's external syntax highlighter is unrelated to this offline check.
+    window.hljs = { highlightAll() {} };
+    window.__radioReady = (async () => {
+      const privateRoot = await navigator.storage.getDirectory();
+      const root = await privateRoot.getDirectoryHandle("installer-acceptance", { create: true });
+      const put = async (path, text) => {
+        const parts = path.split("/");
+        let directory = root;
+        for (const part of parts.slice(0, -1)) directory = await directory.getDirectoryHandle(part, { create: true });
+        const file = await directory.getFileHandle(parts.at(-1), { create: true });
+        const stream = await file.createWritable();
+        await stream.write(text);
+        await stream.close();
+      };
+      await put("RADIO/radio.yml", "board: tx16s\nsemver: 2.12.4\n");
+      await put("MODELS/model1.yml", "keep model");
+      await put("AEROGRID/layouts/user.yaml", "keep layout");
+      await put("MAPS/tile.png", "keep map");
+      await put("WIDGETS/Other/main.lua", "keep other widget");
+      await put("WIDGETS/AeroGrid/main.luac", "stale bytecode");
+      await put("WIDGETS/AeroGrid/lib/package.lua", 'return {\nversion = "0.0.1",\n}');
+      return root;
+    })();
+    window.showDirectoryPicker = async (options) => {
+      if (options.mode !== "read") throw new Error("Connection must be read-only");
+      return window.__radioReady;
+    };
+  });
+  await page.goto(new URL("user-guide/installation/", site).href);
+  await page.waitForFunction(() => document.querySelector("[data-latest]").textContent !== "Unavailable");
+  await activate("[data-connect]");
+  await page.waitForFunction(() => document.querySelector("[data-connect]").textContent === "Disconnect Radio");
+  assert.equal(await page.locator("[data-edgetx]").textContent(), "2.12.4");
+  assert.match(await page.locator("[data-device]").textContent(), /tx16s/);
+  assert.match(await page.locator("[data-install]").textContent(), /^Update/);
+  const read = (path) => page.evaluate(async (path) => {
+    let directory = await window.__radioReady;
+    const parts = path.split("/");
+    for (const part of parts.slice(0, -1)) directory = await directory.getDirectoryHandle(part);
+    return (await (await directory.getFileHandle(parts.at(-1))).getFile()).text();
+  }, path);
+  assert.equal(await read("WIDGETS/AeroGrid/main.luac"), "stale bytecode");
+  await activate("[data-install]");
+  assert.match(await page.locator("[data-confirm-description]").textContent(), /NO backup or rollback/);
+  await activate("[data-confirm-cancel]");
+  assert.equal(await read("WIDGETS/AeroGrid/main.luac"), "stale bytecode");
+
+  // A failed download must leave even the old bytecode untouched.
+  await page.route("**/installer/releases/**/main.lua", (route) => route.fulfill({ status: 503, body: "Unavailable" }));
+  await activate("[data-install]");
+  await activate("[data-confirm-start]");
+  await page.waitForFunction(() => document.querySelector("[data-status]").textContent.includes("No radio files were changed"));
+  assert.equal(await read("WIDGETS/AeroGrid/main.luac"), "stale bytecode");
+  await page.unroute("**/installer/releases/**/main.lua");
+
+  await activate("[data-install]");
+  await activate("[data-confirm-start]");
+  await page.waitForFunction(() => document.querySelector("[data-status]").textContent.includes("installed and file contents verified"), null, { timeout: 60000 });
+  assert.equal(await page.locator("[data-install]").textContent(), "Up to date");
+  assert.equal(await page.locator("[data-install]").isDisabled(), true);
+  for (const [path, text] of [
+    ["RADIO/radio.yml", "board: tx16s\nsemver: 2.12.4\n"],
+    ["MODELS/model1.yml", "keep model"], ["AEROGRID/layouts/user.yaml", "keep layout"],
+    ["MAPS/tile.png", "keep map"], ["WIDGETS/Other/main.lua", "keep other widget"],
+  ]) assert.equal(await read(path), text);
+  await assert.rejects(read("WIDGETS/AeroGrid/main.luac"), /not.*found/i);
+  await activate("[data-connect]");
+  assert.equal(await page.locator("[data-connect]").textContent(), "Connect Radio");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+  assert.equal(await page.locator("[data-radio-installer] button:visible").count(), 2);
+
+  const unsupported = await context.newPage();
+  await unsupported.addInitScript(() => {
+    if (window !== window.top) return;
+    window.hljs = { highlightAll() {} };
+    window.showDirectoryPicker = undefined;
+  });
+  await unsupported.goto(new URL("user-guide/installation/", site).href);
+  await unsupported.waitForFunction(() => document.querySelector("[data-status]").textContent.includes("requires desktop Chrome"));
+  assert.equal(await unsupported.locator("[data-connect]").isDisabled(), true);
+  assert.equal(await unsupported.locator("[data-install]").isDisabled(), true);
+  assert.deepEqual(errors, []);
+  console.log("Chromium panel acceptance passed: native OPFS update/readback, download failure, preserved data, disconnect, mobile, unsupported browser. OS picker selection is simulated; no radio was accessed.");
+} catch (error) {
+  for (const page of context.pages()) {
+    console.error(await page.locator("[data-radio-installer]").innerText());
+    console.error(await page.evaluate(() => ({
+      disabled: document.querySelector("[data-install]").disabled,
+      confirmationHidden: document.querySelector("[data-confirm]").hidden,
+    })));
+  }
+  console.error("Browser errors:", errors);
+  console.error("Browser:", browser.version());
+  throw error;
+} finally {
+  await context.close();
+  await browser.close();
+}

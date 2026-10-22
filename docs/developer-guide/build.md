@@ -145,6 +145,42 @@ Markdown lives in `docs/`. When adding or renaming a page, update **both**
 Site styling is in `docs/stylesheets/aerogrid.css`. Checked-in screenshots are
 used as-is; building the site never launches a simulator.
 
+### Browser installer assets
+
+The USB installer is composed of ES modules under `docs/javascripts/`.
+`radio-storage.mjs` exports the page-session `radioStorage` connection and
+UI-independent storage/metadata helpers for future map workflows. The installer
+only replaces the AeroGrid widget; no map writer or firmware flasher is included.
+
+Pages builds mirror the latest **published stable release**, not the current
+source tree, into same-origin versioned files plus `installer/latest.json`.
+The build validates the release ZIP's SHA-256, archive paths, size limits, and
+package version before emitting the payload. The browser checks the latest
+GitHub release against this manifest and verifies every downloaded and written
+file. These are content integrity checks, not signed publisher authentication.
+
+To include those assets in a disposable built-site preview:
+
+```sh
+make docs
+python3 tools/installer_assets.py --output build/docs/installer
+python3 -m http.server 8000 --directory build/docs
+```
+
+The mirroring command needs network access to GitHub; an optional `GH_TOKEN`
+is used only for the server-side GitHub API request. No token is sent to the
+browser. Stop the preview with Ctrl-C. Ordinary `make docs-serve` does not mirror
+assets, so its installer reports release assets unavailable while the manual
+instructions remain usable. Do not point the asset output or any development
+build at a radio's SD card.
+
+Documentation deployment runs after successful Release workflow completion
+(GitHub-token-created release events do not start another workflow), on published
+release events, and on documentation changes. Missing newest-release assets fail
+the build rather than quietly mirroring an older release. Between publication
+and deployment, the browser disables automatic installation if the site payload
+is behind the latest stable release.
+
 ## Command reference
 
 | Command | Result |
@@ -152,6 +188,7 @@ used as-is; building the site never launches a simulator.
 | `make help` | List supported targets. |
 | `make setup` | Install development Python dependencies. |
 | `make test` | Run every Lua behavior suite once with firmware-like string behavior. |
+| `make test-installer` | Test the browser installer with Node.js 22 and Python. |
 | `make check` | Run behavior tests, then parse source/test Lua. |
 | `make lint` | Run LuaLS diagnostics. |
 | `make format` | Rewrite source/test Lua using StyLua. |
