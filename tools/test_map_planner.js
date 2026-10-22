@@ -2,6 +2,7 @@
 "use strict";
 
 if (typeof require === "function") {
+    require("../docs/javascripts/map-pack.js");
     require("../docs/javascripts/map-planner.js");
 }
 
@@ -229,29 +230,29 @@ if (typeof require === "function") {
     rejects(() => sampleTiles(bounds, []));
     let calls = 0;
     const signal = {};
-    const measured = await measureSamples(samples, async (url, options) => {
-        equal(url, samples[calls].url);
-        equal(options.mode, "cors");
-        equal(options.signal, signal);
-        calls++;
-        return { ok: true, blob: async () => ({ type: "image/jpeg", size: calls * 1024 }) };
+    const encodedSizes = [];
+    const measured = await measureSamples(samples, {
+        async readTile(zoom, x, y, receivedSignal) {
+            equal([zoom, x, y], [samples[calls].zoom, samples[calls].x, samples[calls].y]);
+            equal(receivedSignal, signal);
+            calls++;
+            const image = new Uint8Array(1000 * calls);
+            encodedSizes.push(image.length);
+            return image;
+        }
     }, signal);
     equal(calls, 3);
-    equal(measured.bytes, 6144);
+    equal(measured.bytes, encodedSizes.reduce((total, size) => total + size, 0));
     equal(measured.estimatedBytes, samples.reduce((total, sample, index) =>
-        total + sample.tiles * (index + 1) * 1024, 0));
-    async function rejectsDownload(fetchTile, message) {
+        total + sample.tiles * encodedSizes[index], 0));
+    async function rejectsDownload(source, message) {
         let failure;
-        try { await measureSamples(samples, fetchTile, signal); }
+        try { await measureSamples(samples, source, signal); }
         catch (error) { failure = error.message; }
         equal(failure, message);
     }
-    await rejectsDownload(async () => ({ ok: false, status: 403 }), "Zoom 1: HTTP 403.");
-    await rejectsDownload(async () => ({ ok: true, blob: async () => ({ type: "text/html", size: 100 }) }),
-        "Zoom 1: the server did not return a readable tile image.");
-    await rejectsDownload(async () => ({ ok: true, blob: async () => ({ type: "image/jpeg", size: 0 }) }),
-        "Zoom 1: the server did not return a readable tile image.");
-    await rejectsDownload(async () => { throw new Error("Network blocked"); }, "Network blocked");
+    await rejectsDownload({ readTile() { throw new Error("Network blocked"); } }, "Network blocked");
+    await rejectsDownload({ readTile() { throw new Error("Download cancelled."); } }, "Download cancelled.");
     if (typeof console !== "undefined") console.log(`${assertions} map planner assertions passed.`);
 })().catch(error => {
     if (typeof process !== "undefined") process.exitCode = 1;

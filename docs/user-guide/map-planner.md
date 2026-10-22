@@ -1,7 +1,9 @@
 # Map planner (prototype)
 
 Select your flying area, choose your radio, and preview its map coverage.
-**Prototype:** exports selection JSON only, not imagery or a radio-ready map pack.
+**Prototype:** prepare an SD-ready ZIP using Google hybrid imagery, or export a
+selection without images. Offline-use permission is not established by this
+tool; review the source terms before downloading imagery.
 
 <noscript>This tool requires JavaScript. Enable it to use the map planner.</noscript>
 
@@ -63,7 +65,50 @@ Select your flying area, choose your radio, and preview its map coverage.
       <label for="ag-map-name">Selection name</label>
       <input id="ag-map-name" type="text" value="my-flying-field" maxlength="80" required>
     </div>
+  <div class="ag-map-controls">
+    <label for="ag-map-area-id">Area ID</label>
+    <input id="ag-map-area-id" type="text" value="my-flying-field" maxlength="32"
+      pattern="[a-z0-9_-]{1,32}" aria-describedby="ag-map-install-help">
+  </div>
   <div class="ag-map-actions">
     <button id="ag-map-export" class="btn btn-primary" type="button" disabled>Download selection JSON</button>
+    <button id="ag-map-satellite-export" class="btn btn-primary" type="button" disabled aria-describedby="ag-map-source-notice">Download Google hybrid ZIP</button>
+    <button id="ag-map-pack-cancel" class="btn btn-outline-secondary" type="button" disabled>Cancel export</button>
   </div>
+  <p id="ag-map-source-notice">Source: Google hybrid. Google's published
+  <a href="https://developers.google.com/maps/documentation/tile/policies" target="_blank" rel="noopener">tile policies</a>
+  exclude offline use under standard terms. This experimental adapter does not
+  grant export rights or establish permission; resolve applicable terms before use.
+  Browser CORS or provider restrictions may prevent downloads; no proxy bypass is used.</p>
+  <p id="ag-map-pack-status" role="status" aria-live="polite">Select an area to export a map ZIP.</p>
+  <p id="ag-map-install-help">Extract the ZIP at the SD-card root. The map panel
+  automatically selects a matching installed area when GPS is live; leave its
+  area override blank. Overlaps prefer highest detail, then smallest coverage,
+  and the selected area is kept while the position remains covered.
+  To update an area, export the same ID and confirm replacement of its metadata
+  when extracting. This browser saves downloaded Google tiles and reuses them
+  for overlapping areas; every ZIP still contains all images its area needs.
+  Saved images are not automatically refreshed. Clearing this site's browser
+  data, using another browser, or browser storage eviction starts a new library
+  and can duplicate images already on the radio. Storage errors stop the export;
+  the saved library is limited to 128 MiB. Old radio images are not automatically
+  removed. ZIP extraction is not transactional. No widget, model
+  or radio configuration files are included. Direct-to-radio saving and AeroGrid
+  installation/update come later. Runtime rendering currently targets TX16S
+  480 x 272 only.</p>
+  <p>Map tiles are JPEG files: compatible source JPEGs are preserved; other images
+  are converted at quality 90. Old PNG prototype packs must be exported again.
+  Existing PNG browser caches and SD files are not automatically removed.</p>
+  <details>
+    <summary>Developer test: synthetic map ZIP</summary>
+    <p>Creates artificial georeferenced test images for the selected coverage.
+    These are not satellite images and must not be used for flight navigation.
+    The radio renderer currently targets TX16S 480 x 272 only; the other radio
+    presets plan coverage but do not establish runtime compatibility.</p>
+    <div class="ag-map-actions">
+      <button id="ag-map-pack-export" class="btn btn-outline-primary" type="button" disabled>Download synthetic test ZIP</button>
+    </div>
+    <p>Synthetic imagery has a fixed edition, so matching shared tile paths are
+    reused across areas. No network imagery is downloaded by this test export.</p>
+  </details>
 </div>

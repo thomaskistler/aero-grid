@@ -192,16 +192,11 @@
         });
     }
 
-    async function measureSamples(samples, fetchTile, signal) {
+    async function measureSamples(samples, source, signal) {
         const results = [];
         for (const sample of samples) {
-            const response = await fetchTile(sample.url, { mode: "cors", signal });
-            if (!response.ok) throw new Error(`Zoom ${sample.zoom}: HTTP ${response.status}.`);
-            const image = await response.blob();
-            if (!/^image\/(jpeg|png|webp)$/i.test(image.type) || !image.size) {
-                throw new Error(`Zoom ${sample.zoom}: the server did not return a readable tile image.`);
-            }
-            results.push({ ...sample, bytes: image.size });
+            const image = await source.readTile(sample.zoom, sample.x, sample.y, signal);
+            results.push({ ...sample, bytes: image.length });
         }
         return {
             samples: results,
@@ -256,6 +251,7 @@
     let measurement;
     let measuring = false;
     let settingExtent = false;
+    let packController;
     const compactCoverage = () => element("compact").checked;
     const selectionKey = () => JSON.stringify([selectedBounds, radioId(), zooms(), compactCoverage()]);
 
@@ -272,8 +268,8 @@
         const { samples, bytes, estimatedBytes } = measurement;
         element("measurement").textContent =
             samples.map(sample => `Zoom ${sample.zoom}: ${(sample.bytes / 1024).toFixed(1)} KiB`).join("; ") +
-            `. ${samples.length} sample tiles, ${(bytes / 1024).toFixed(1)} KiB downloaded. ` +
-            `Estimated selected-area storage: ${(estimatedBytes / (1024 * 1024)).toFixed(1)} MiB. ` +
+            `. ${samples.length} sample tiles, ${(bytes / 1024).toFixed(1)} KiB as radio JPEGs. ` +
+            `Estimated selected-area JPEG storage: ${(estimatedBytes / (1024 * 1024)).toFixed(1)} MiB. ` +
             "Each zoom's sample size is multiplied by its tile count. One tile per zoom is only a rough sample, not a measured pack size.";
     }
 
@@ -327,6 +323,12 @@
     }
 
     function updateSummary() {
+        if (packController) {
+            packController.abort();
+            element("pack-status").textContent = "Selection or export identity changed. Export cancelled.";
+        }
+        element("pack-export").disabled = true;
+        element("satellite-export").disabled = true;
         drawCoverage();
         updateRadioPreview();
         showMeasurement();
@@ -339,10 +341,8 @@
         }
         try {
             const estimate = coverage;
-            const mib = bytes => (bytes / (1024 * 1024)).toFixed(1);
             element("summary").textContent =
-                `${estimate.tileCount.toLocaleString()} planned tiles; illustrative storage ` +
-                `${mib(estimate.estimatedBytes.min)}-${mib(estimate.estimatedBytes.max)} MiB. ` +
+                `${estimate.tileCount.toLocaleString()} planned tiles. Use sample measurement to estimate radio JPEG storage. ` +
                 estimate.levels.map(level => `Zoom ${level.zoom}: ${level.tiles} tiles`).join("; ") +
                 (estimate.tileCount > MAX_TILES ? ". Reduce the area or detail level (2,000-tile limit)." : ".");
             if (compactCoverage()) {
@@ -353,6 +353,9 @@
             }
             specification(element("name").value, bounds, zooms(), radioId(), coverage);
             element("export").disabled = failed;
+            root.AeroGridMapPack.identifier(element("area-id").value);
+            element("pack-export").disabled = !!packController || failed;
+            element("satellite-export").disabled = !!packController || failed;
         } catch (error) {
             element("summary").textContent = error.message;
         }
@@ -518,6 +521,9 @@
         failed = true;
         element("options").disabled = true;
         element("export").disabled = true;
+        element("satellite-export").disabled = true;
+        element("pack-export").disabled = true;
+        if (packController) packController.abort();
         element("zoom-range").disabled = true;
         status(message);
     }
@@ -732,13 +738,15 @@
         const key = selectionKey();
         const controller = new AbortController();
         const timeout = root.setTimeout(() => controller.abort(), 30000);
+        let source;
         measuring = true;
         measurement = undefined;
         showMeasurement();
         element("measurement").textContent = "Downloading one sample tile per selected zoom level...";
         try {
+            source = await root.AeroGridMapSources.googleHybrid();
             const result = await measureSamples(sampleTiles(selectedBounds, zooms(), coverage),
-                root.fetch.bind(root), controller.signal);
+                source, controller.signal);
             measuring = false;
             if (key !== selectionKey()) {
                 showMeasurement();
@@ -752,6 +760,7 @@
                 ? "Sample download timed out after 30 seconds. Try again."
                 : `Unable to measure sample tiles: ${error.message} The provider may block cross-origin downloads, or your connection may be unavailable.`;
         } finally {
+            if (source) source.close();
             root.clearTimeout(timeout);
             measuring = false;
             element("measure").disabled = !bounds || !selectedBounds;
@@ -759,20 +768,74 @@
     });
     element("locate").addEventListener("click", () => locate(true));
     element("name").addEventListener("input", updateSummary);
+    element("area-id").addEventListener("input", updateSummary);
+    function currentSelection() {
+        const selection = specification(element("name").value, bounds, zooms(), radioId(), coverage);
+        selection.selectedBounds = { ...selectedBounds };
+        selection.coverageMode = compactCoverage() ? "per-zoom-clamped" : "full-area-clamped";
+        return selection;
+    }
+    function saveDownload(blob, filename) {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        root.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    element("pack-cancel").addEventListener("click", () => {
+        if (packController) packController.abort();
+    });
+    async function exportPack(synthetic) {
+        if (packController) return;
+        const controller = new AbortController();
+        packController = controller;
+        element("pack-export").disabled = true;
+        element("satellite-export").disabled = true;
+        element("pack-cancel").disabled = false;
+        const label = synthetic ? "Synthetic" : "Google hybrid";
+        let source;
+        element("pack-status").textContent = synthetic ? "Generating synthetic test images..." :
+            "Downloading Google hybrid images...";
+        try {
+            const selection = currentSelection();
+            const id = element("area-id").value;
+            const key = JSON.stringify([selection, id]);
+            source = synthetic ? undefined : await root.AeroGridMapSources.googleHybrid();
+            const bytes = await root.AeroGridMapPack.createArchive(selection, id, {
+                source,
+                signal: controller.signal,
+                onProgress: ({ completed, total, bytes: size }) => {
+                    element("pack-status").textContent =
+                        `${label} tiles: ${completed}/${total}; ${(size / 1048576).toFixed(1)} MiB prepared.`;
+                }
+            });
+            if (controller.signal.aborted || key !== JSON.stringify([currentSelection(), element("area-id").value])) {
+                throw new Error("Selection changed or export cancelled.");
+            }
+            saveDownload(new Blob([bytes], { type: "application/zip" }),
+                `${id}-${synthetic ? "synthetic" : "google-hybrid"}.zip`);
+            element("pack-status").textContent =
+                synthetic ? "Synthetic test ZIP downloaded. Extract at SD-card root; these images are not real terrain." :
+                    "Google hybrid ZIP downloaded. Extract at SD-card root. Source terms and prototype limitations still apply.";
+        } catch (error) {
+            element("pack-status").textContent = `No ZIP downloaded: ${error.message}`;
+        } finally {
+            if (source && source.close) source.close();
+            packController = undefined;
+            element("pack-cancel").disabled = true;
+            updateSummary();
+        }
+    }
+    element("pack-export").addEventListener("click", () => exportPack(true));
+    element("satellite-export").addEventListener("click", () => exportPack(false));
     element("export").addEventListener("click", () => {
         try {
-            const selection = specification(element("name").value, bounds, zooms(), radioId(), coverage);
-            selection.selectedBounds = { ...selectedBounds };
-            selection.coverageMode = compactCoverage() ? "per-zoom-clamped" : "full-area-clamped";
+            const selection = currentSelection();
             const blob = new Blob([JSON.stringify(selection, null, 2) + "\n"], { type: "application/json" });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement("a");
-            link.href = url;
-            link.download = `${selection.name.replace(/[^a-z0-9_-]+/gi, "-") || "map"}-selection.json`;
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            root.setTimeout(() => URL.revokeObjectURL(url), 1000);
+            saveDownload(blob, `${selection.name.replace(/[^a-z0-9_-]+/gi, "-") || "map"}-selection.json`);
             status("Selection JSON downloaded. It contains no imagery and is not a radio-ready map pack.");
         } catch (error) {
             status(`Unable to export selection: ${error.message}`);
