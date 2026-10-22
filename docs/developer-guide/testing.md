@@ -121,6 +121,14 @@ installed Chrome, or `INSTALLER_KEYBOARD=1` to exercise keyboard activation.
 
 ## Python tooling tests
 
+Map fixtures require the pinned Pillow dependency from `make setup`.
+`make build` prepares that environment before generating JPEG fixtures.
+Map tiles are JPEG-only; transparent UI artwork remains PNG.
+
+```sh
+build/venv/bin/python -m unittest discover -s tools -p 'test_map_test_pack.py'
+python3 -m unittest discover -s tools -p 'test_aircraft_icons.py'
+```
 Release packaging uses only Python's standard library:
 
 ```sh

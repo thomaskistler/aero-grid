@@ -20,3 +20,4 @@ states
 review-flight-counter
 Palette
 review-output
+review-map
