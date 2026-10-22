@@ -128,6 +128,14 @@ Set `INSTALLER_KEYBOARD=1` to exercise button activation with Enter instead of
 pointer clicks, or `PLAYWRIGHT_CHANNEL=chrome` to use an installed Google Chrome
 instead of Playwright's matching Chromium.
 
+Map fixtures require the pinned Pillow dependency from `make setup`.
+`make build` prepares that environment before generating JPEG fixtures.
+Map tiles are JPEG-only; transparent UI artwork remains PNG.
+
+```sh
+build/venv/bin/python -m unittest discover -s tools -p 'test_map_test_pack.py'
+python3 -m unittest discover -s tools -p 'test_aircraft_icons.py'
+```
 Release packaging uses only Python's standard library:
 
 ```sh

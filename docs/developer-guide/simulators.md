@@ -13,6 +13,9 @@ reporting a result.
 Neither proves receiver behavior, native radio memory stability, or support
 for every color radio.
 
+The normal `make build` also includes the synthetic tile pack and `review-map`
+development layout for the [experimental radio map panel](map-prototype.md).
+
 ## Mock memory regression tests
 
 `python3 tests/run.py` includes repeated layout reload/resize checks for retired
@@ -133,7 +136,7 @@ radio's model-selection UI, just as on a radio.
 
 | Model | What to exercise |
 | --- | --- |
-| **AEROGRID STD** (`model1.yml`) | Six screens: Default, Empty, Diagnostics, services, services2, and Palette. All four shipped layouts, plus both diagnostic panel types. |
+| **AEROGRID STD** (`model1.yml`) | Seven screens: Default, Empty, Diagnostics, services, services2, Palette, and review-map. All four shipped layouts, both diagnostic panel types, and the synthetic map prototype. |
 | **AEROGRID PANEL1** (`model2.yml`) | Six screens: RX battery, flight counter, flight mode, flight timer, link status, and metric. |
 | **AEROGRID PANEL2** (`model3.yml`) | Six screens: model identity, navigation, state, trim panel, TX battery, and channel output. |
 
@@ -145,7 +148,7 @@ All screens use App mode and the Modern Dark theme. On the State dashboard, SF
 changes MODE, SA changes RATE, and SB changes FLAP; NO MIDDLE deliberately
 leaves SA's middle position unmapped.
 
-The last screen of **AEROGRID STD** is the telemetry-free **Palette** layout. Its
+The sixth screen of **AEROGRID STD** is the telemetry-free **Palette** layout. Its
 fixed samples show token swatches, text levels, accents, a dial, bars, and
 the six dashboard panel states. Change the widget's Theme option to compare
 Modern Dark and Modern Light, or add a `.yml` theme file as described in
@@ -159,6 +162,10 @@ option in UI Setup rather than occupying dedicated fixture screens.
 `sim` and `sim2` are complementary live-data dashboards: the first focuses on
 telemetry, while the second focuses on radio-local values and metric modes.
 Development layouts are not included in the release ZIP.
+
+The seventh screen of **AEROGRID STD** is **review-map**. Long-press the map
+to enter fullscreen and reveal its zoom/pan controls. See the
+[map prototype guide](map-prototype.md) for synthetic GPS coordinates and limitations.
 
 The flight-counter review installs only one tracker. Arm with SF down, raise
 CH3 above 25%, and supply a live telemetry link; qualification and disarm
