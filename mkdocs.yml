@@ -17,6 +17,8 @@ extra_css:
 extra_javascript:
   - path: javascripts/radio-panel.mjs
     type: module
+  - javascripts/map-pack.js
+  - javascripts/map-sources.js
   - javascripts/map-planner.js
 
 nav:
@@ -50,6 +52,7 @@ nav:
       - Check out and build: developer-guide/build.md
       - Test and debug: developer-guide/testing.md
       - Run and test in simulators: developer-guide/simulators.md
+      - Map areas and shared tiles: developer-guide/map-packs.md
       - Repository and architecture: developer-guide/architecture.md
       - Project tools: developer-guide/tools.md
       - Tutorial videos: developer-guide/videos.md

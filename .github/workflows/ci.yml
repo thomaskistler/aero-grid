@@ -57,6 +57,7 @@ jobs:
       - name: Report toolchain
         run: |
           python3 --version
+          node --version
           lua5.3 -v
           luac5.3 -v
           lua-language-server --version
@@ -68,6 +69,12 @@ jobs:
         run: |
           python3 -m unittest discover -s tools -p 'test_release_*.py'
           make test-installer
+
+      - name: Test planner and downloader map contract
+        run: |
+          node tools/test_map_planner.js
+          node tools/test_map_sources.js
+          build/venv/bin/python -m unittest discover -s tools -p 'test_map_pack.py'
 
       - name: Lint Lua sources
         run: make lint

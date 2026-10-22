@@ -23,7 +23,12 @@ remains available for development or a deliberately fixed selection.
 The radio currently supports TX16S 480 x 272 geometry only; planning another
 screen size does not establish runtime compatibility.
 
-The normal simulator build generates a separate `synthetic` area referencing
+The consumer and simulator behavior described here belongs to the independent
+radio-panel workstream; this downloader branch supplies no radio implementation.
+See [testing](testing.md#planner-and-downloader-contract) for standalone archive
+checks and the explicitly pinned combined-source reader check.
+
+The radio-panel workstream's simulator build generates a separate `synthetic` area referencing
 `companion-v1-jpeg-v1` around Companion's known GPS location. The browser's
 `synthetic-v1-jpeg-q90` source generates different, coordinate-derived artificial
 images at any selected location. Both are test patterns, not flight terrain.
@@ -68,7 +73,7 @@ levels:
   must not change in conversion. Full image decoding remains firmware-owned.
 
 Map tiles are JPEG-only, including synthetic fixtures. Old PNG prototype packs
-must be re-exported; regenerate Companion fixtures with `make build`. The JPEG
+must be re-exported; regenerate Companion fixtures with the panel branch's `make build`. The JPEG
 browser library has a new IndexedDB name and does not reuse old PNG namespaces.
 Old PNG site-storage entries and SD files are not automatically deleted.
 Transparent marker/UI artwork remains PNG and is not part of the tile format.
