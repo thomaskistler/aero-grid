@@ -9,13 +9,13 @@ map library, and the AeroGrid radio map panel. It records the implemented
 prototype and the remaining product work; it does not declare the feature
 production-ready or authorize every proposed follow-up.
 
-The implementation currently spans three open, dependent pull requests:
+The implementation currently spans three open pull requests:
 
 | Layer | Implementation | State at review |
 | --- | --- | --- |
 | [#171](https://github.com/thomaskistler/aero-grid/pull/171) | Browser planner and radio-screen coverage simulator | Draft; targets `main` |
-| [#172](https://github.com/thomaskistler/aero-grid/pull/172) | Radio map-panel prototype | Draft; targets #171's branch |
-| [#176](https://github.com/thomaskistler/aero-grid/pull/176) | Shared map library, JPEG ZIP export, imagery adapter, automatic area selection | Ready for review; targets #172's branch |
+| [#172](https://github.com/thomaskistler/aero-grid/pull/172) | Radio map-panel prototype, shared-library reader, automatic area selection | Draft; independently targets `main` |
+| [#176](https://github.com/thomaskistler/aero-grid/pull/176) | Shared map-library producer, JPEG ZIP export, imagery adapter | Ready for review; targets #171's branch |
 
 **This document describes the combined state, including #176, not just the
 files present on the planner branch.** PR states are a dated snapshot, not a
@@ -44,9 +44,10 @@ Detailed implementation references, available on the combined branch:
   | #172: radio panel | `main` | Runtime rendering, telemetry/follow/area discovery, radio manifest reader, synthetic SD fixtures, and their tests |
   | #176: downloader | #171's planner branch | Imagery adapters, browser tile library, JPEG conversion, ZIP production, download controls, and their tests |
 
-  This is the agreed target organization; the status table above records the
-  pre-consolidation stack. Branch restructuring must preserve existing behavior
-  and move the latest radio-side changes out of #176 into #172, not drop them.
+  This organization is now in place. The radio-side changes previously carried
+  in #176 have moved into #172. The old planner/panel native stack was replaced
+  by native stack #177 containing #171 and #176; #172 is standalone. Existing PR
+  numbers and draft/ready states were preserved.
 
   Panel development must not require planner or downloader implementation files.
   Its fixtures exercise the shared contract independently. Downloader development
@@ -499,7 +500,7 @@ automatic area discovery are implemented prototypes.
 
 #### Cross-workstream coordination
 
-- [ ] Complete the agreed three-PR split without losing the combined behavior;
+- [x] Complete the agreed three-PR split without losing the combined behavior;
   keep the radio panel independent of browser implementation.
 - [ ] Reconcile dated handoff documents, installation instructions, old-pack
   migration guidance, and fixture generation with the final PR organization.
