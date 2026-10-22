@@ -81,7 +81,10 @@ The first delivery workflow is **select area -> download ZIP -> extract at
 SD-card root**. Direct-to-radio saving and AeroGrid installation/upgrades are
 deferred. Long term, these should fit a coherent browser companion experience:
 connect the radio, manage maps, and install or update AeroGrid without destroying
-user data. The connection mechanism and shared UX are not yet specified.
+user data. The USB radio functionality developed for AeroGrid installation
+must also support future map updates through the same connection/storage
+capability. The connection mechanism and shared UX are not yet specified;
+map updating remains outside the initial installer scope.
 
 The prototype is not flight-navigation software. Synthetic imagery is test
 data, and this feature must not be represented as a safety-critical navigation
