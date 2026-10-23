@@ -102,14 +102,14 @@ export function radioCompatibility(radio) {
     return { supported: false, message: "Radio type or screen could not be identified. Install at your own risk." };
   }
   if (hardware.screen.startsWith("Monochrome")) {
-    return { supported: false, message: "This radio has a monochrome screen. AeroGrid requires a color-screen radio with the Lua LVGL API. Install at your own risk." };
+    return { supported: false, message: "This radio has a monochrome screen. AeroGrid requires a color-screen radio running EdgeTX 2.11.0 or later. Install at your own risk." };
   }
   const version = parseVersion(radio?.version);
   if (!version) {
-    return { supported: false, message: "The EdgeTX version could not be identified. AeroGrid requires EdgeTX 2.11.0 or later with the Lua LVGL API. Install at your own risk." };
+    return { supported: false, message: "The EdgeTX version could not be identified. AeroGrid requires a color-screen radio running EdgeTX 2.11.0 or later. Install at your own risk." };
   }
   if (compareVersions(radio.version, "2.11.0") < 0) {
-    return { supported: false, message: "This EdgeTX version predates the required Lua LVGL API (2.11.0). Install at your own risk." };
+    return { supported: false, message: "This EdgeTX version is older than the required EdgeTX 2.11.0. Install at your own risk." };
   }
   if (version.prerelease.length) {
     return { supported: false, message: "This radio is running prerelease EdgeTX firmware. Compatibility is unverified. Install at your own risk." };

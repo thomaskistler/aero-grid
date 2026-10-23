@@ -218,7 +218,7 @@ if (panel) {
       + "There is NO backup or rollback. An interruption may leave AeroGrid unusable until you reinstall.\n\n"
       + (!details.widget.version && details.widget.present ? "The existing version is unknown; version comparison is unavailable.\n\n" : "")
       + "User data in /AEROGRID, maps, other widgets, model/radio settings, and firmware will not be changed. "
-      + "Keep USB connected and this page open until completion. Your radio must support EdgeTX's LVGL widget API.";
+      + "Keep USB connected and this page open until completion. AeroGrid requires a color-screen radio running EdgeTX 2.11.0 or later.";
     confirmation = { version, details: structuredClone(details), downgrade: !!downgrade };
     element("confirm-title").textContent = downgrade ? "Confirm downgrade" : "Confirm installation";
     confirmStart.textContent = downgrade ? `Confirm downgrade to ${version}` : `Confirm installation of ${version}`;
