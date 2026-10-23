@@ -360,6 +360,7 @@ test("delete then replace removes stale/custom files, closes streams, verifies a
   assert.deepEqual(root.context.events, []);
   await replaceWidget(root, prepared);
   assert.equal(root.context.events[0], "delete:WIDGETS/AeroGrid");
+  assert.deepEqual(root.context.events.filter((event) => event.startsWith("delete:")), ["delete:WIDGETS/AeroGrid"]);
   assert.equal(root.context.events.filter((event) => event.startsWith("close:")).length, manifest.files.length);
   await verifyInstalled(root, manifest);
   assert.equal((await inspectWidget(root)).version, "0.4.0");
@@ -388,8 +389,65 @@ test("first install and lower-case widget replacement use only the resolved widg
     }
     await replaceWidget(root, await preparePackage(manifest, base, () => {}, fetcher));
     await verifyInstalled(root, manifest);
-    if (!absent) assert.ok(root.context.events.includes("delete:WIDGETS/aerogrid"));
-    else assert.ok(!root.context.events.some((event) => event.startsWith("delete:")));
+    assert.deepEqual(root.context.events.filter((event) => event.startsWith("delete:")),
+      absent ? [] : ["delete:WIDGETS/aerogrid"]);
+  }
+});
+
+test("replacement cannot mutate sibling, root-level, nested lookalike or empty directories", async () => {
+  const { manifest, fetcher } = await releaseFixture();
+  for (const mode of ["install", "update", "downgrade", "failDelete", "failOpen", "failWrite", "failClose", "corrupt"]) {
+    const root = await fixture(mode === "install" ? "absent" : "old");
+    for (const path of [
+      "AeroGrid/keep.lua", "WIDGETS/AeroGrid-backup/main.lua", "WIDGETS/AeroGrid2/main.lua",
+      "WIDGETS/Other/AeroGrid/main.lua", "SOUNDS/keep.wav", "MODELS/AeroGrid/keep.yml",
+    ]) await put(root, path, `preserve ${path}`);
+    await root.getDirectoryHandle("EMPTY", { create: true });
+    const other = root.children.get("WIDGETS").children.get("Other");
+    await other.getDirectoryHandle("EMPTY", { create: true });
+    if (mode === "downgrade") {
+      await put(root, "WIDGETS/AeroGrid/lib/package.lua", 'return {\nversion = "99.0.0",\n}');
+    }
+    const original = await snapshot(root);
+    const rootDirectories = [...root.children.entries()].filter(([, handle]) => handle.kind === "directory");
+    const otherEmpty = other.children.get("EMPTY");
+    root.context.events = [];
+    const prepared = await preparePackage(manifest, base, () => {}, fetcher);
+    if (mode.startsWith("fail") || mode === "corrupt") {
+      root.context[mode] = true;
+      await assert.rejects(replaceWidget(root, prepared), /Installation incomplete/);
+    } else {
+      await replaceWidget(root, prepared, () => {}, { allowDowngrade: mode === "downgrade" });
+    }
+    assert.deepEqual(root.context.events.filter((event) => event.startsWith("delete:")),
+      mode === "install" ? [] : ["delete:WIDGETS/AeroGrid"], mode);
+    for (const event of root.context.events) {
+      const path = event.slice(event.indexOf(":") + 1);
+      assert.ok(path === "WIDGETS/AeroGrid" || path.startsWith("WIDGETS/AeroGrid/"), `${mode}: ${event}`);
+    }
+    const after = await snapshot(root);
+    for (const [path, bytes] of Object.entries(original)) {
+      if (!path.startsWith("WIDGETS/AeroGrid/")) assert.deepEqual(after[path], bytes, `${mode}: ${path}`);
+    }
+    for (const [name, handle] of rootDirectories) assert.equal(root.children.get(name), handle);
+    assert.equal(other.children.get("EMPTY"), otherEmpty);
+  }
+});
+
+test("ambiguous or wrong-kind installation directories fail before any mutation", async () => {
+  const { manifest, fetcher } = await releaseFixture();
+  for (const mode of ["duplicate-widget", "duplicate-widgets", "widget-file", "widgets-file"]) {
+    const root = await fixture();
+    if (mode === "duplicate-widget") await put(root, "WIDGETS/aerogrid/main.lua", "keep");
+    if (mode === "duplicate-widgets") await put(root, "widgets/AeroGrid/main.lua", "keep");
+    if (mode === "widget-file") await put(root, "WIDGETS/AeroGrid", "not a directory");
+    if (mode === "widgets-file") await put(root, "WIDGETS", "not a directory");
+    const before = await snapshot(root);
+    root.context.events = [];
+    await assert.rejects(replaceWidget(root, await preparePackage(manifest, base, () => {}, fetcher)),
+      /Ambiguous|not a directory/);
+    assert.deepEqual(root.context.events, [], mode);
+    assert.deepEqual(await snapshot(root), before, mode);
   }
 });
 
