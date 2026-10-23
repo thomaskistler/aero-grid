@@ -294,6 +294,34 @@ async function logDeletionSnapshot(widgets, phase) {
   }
 }
 
+async function deleteWidgetTree(parent, directory, path, budget = { remaining: 10000 }, depth = 0) {
+  if (depth > 64) throw new Error(`Deletion depth limit reached: ${path}.`);
+  const entries = [];
+  for await (const entry of directory.entries()) {
+    if (--budget.remaining < 0) throw new Error(`Deletion entry limit reached: ${path}.`);
+    entries.push(entry);
+  }
+  // macOS unlinks a file's AppleDouble sidecar automatically; remove sidecars first.
+  entries.sort(([left], [right]) => Number(right.startsWith("._")) - Number(left.startsWith("._")));
+  for (const [name, handle] of entries) {
+    const entryPath = `${path}/${name}`;
+    if (handle.kind === "directory") {
+      await deleteWidgetTree(directory, handle, entryPath, budget, depth + 1);
+    } else {
+      try {
+        await directory.removeEntry(name);
+      } catch (error) {
+        throw new Error(`Could not delete ${entryPath}: ${error.message}`, { cause: error });
+      }
+    }
+  }
+  try {
+    await parent.removeEntry(directory.name);
+  } catch (error) {
+    throw new Error(`Could not delete ${path}: ${error.message}`, { cause: error });
+  }
+}
+
 export async function replaceWidget(root, prepared, progress = () => {}, { allowDowngrade = false } = {}) {
   if (!preparedPackages.has(prepared)) throw new Error("Download and validate a complete installation package first.");
   // Recheck bytes even if another caller retained and modified a prepared buffer.
@@ -326,17 +354,17 @@ export async function replaceWidget(root, prepared, progress = () => {}, { allow
       changed = true;
       await logDeletionSnapshot(widgets, "before deletion");
       const started = performance.now();
-      console.info("[AeroGrid installer] Starting recursive deletion.", {
+      console.info("[AeroGrid installer] Starting sidecar-first deletion.", {
         target: `WIDGETS/${old.name}`, selectedVersion: prepared.version,
-        installedVersion: installed.version, recursive: true,
+        installedVersion: installed.version,
       });
       try {
-        await widgets.removeEntry(old.name, { recursive: true });
-        console.info("[AeroGrid installer] Recursive deletion completed.", {
+        await deleteWidgetTree(widgets, old, `WIDGETS/${old.name}`);
+        console.info("[AeroGrid installer] Sidecar-first deletion completed.", {
           target: `WIDGETS/${old.name}`, elapsedMs: Math.round(performance.now() - started),
         });
       } catch (error) {
-        console.error("[AeroGrid installer] Recursive deletion failed.", {
+        console.error("[AeroGrid installer] Sidecar-first deletion failed.", {
           target: `WIDGETS/${old.name}`, elapsedMs: Math.round(performance.now() - started),
           name: error.name, message: error.message, error,
         });

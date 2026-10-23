@@ -103,9 +103,14 @@ class MemoryDirectory {
     if (result.kind !== "file") throw new DOMException("Wrong kind", "TypeMismatchError");
     return result;
   }
-  async removeEntry(name) {
+  async removeEntry(name, options = {}) {
     this.context.events.push(`delete:${this.path}${name}`);
     if (this.context.failDelete) throw new Error("Delete failed");
+    const entry = this.children.get(name);
+    if (entry?.kind === "directory" && entry.children.size && !options.recursive) {
+      throw new DOMException("Directory not empty", "InvalidModificationError");
+    }
+    if (this.context.appleDouble) this.children.delete(`._${name}`);
     if (!this.children.delete(name)) throw new DOMException("Missing entry", "NotFoundError");
   }
   async requestPermission() {
@@ -418,8 +423,8 @@ test("delete then replace removes stale/custom files, closes streams, verifies a
   const prepared = await preparePackage(manifest, base, () => {}, fetcher);
   assert.deepEqual(root.context.events, []);
   await replaceWidget(root, prepared);
-  assert.equal(root.context.events[0], "delete:WIDGETS/AeroGrid");
-  assert.deepEqual(root.context.events.filter((event) => event.startsWith("delete:")), ["delete:WIDGETS/AeroGrid"]);
+  assert.equal(root.context.events[0], "delete:WIDGETS/AeroGrid/lib/package.lua");
+  assert.equal(root.context.events.filter((event) => event.startsWith("delete:")).at(-1), "delete:WIDGETS/AeroGrid");
   assert.equal(root.context.events.filter((event) => event.startsWith("close:")).length, manifest.files.length);
   await verifyInstalled(root, manifest);
   assert.equal((await inspectWidget(root)).version, "0.4.0");
@@ -511,8 +516,12 @@ test("first install and lower-case widget replacement use only the resolved widg
     }
     await replaceWidget(root, await preparePackage(manifest, base, () => {}, fetcher));
     await verifyInstalled(root, manifest);
-    assert.deepEqual(root.context.events.filter((event) => event.startsWith("delete:")),
-      absent ? [] : ["delete:WIDGETS/aerogrid"]);
+    const deletions = root.context.events.filter((event) => event.startsWith("delete:"));
+    if (absent) assert.deepEqual(deletions, []);
+    else {
+      assert.equal(deletions.at(-1), "delete:WIDGETS/aerogrid");
+      assert.ok(deletions.slice(0, -1).every((event) => event.startsWith("delete:WIDGETS/AeroGrid/")));
+    }
   }
 });
 
@@ -541,8 +550,9 @@ test("replacement cannot mutate sibling, root-level, nested lookalike or empty d
     } else {
       await replaceWidget(root, prepared, () => {}, { allowDowngrade: mode === "downgrade" });
     }
-    assert.deepEqual(root.context.events.filter((event) => event.startsWith("delete:")),
-      mode === "install" ? [] : ["delete:WIDGETS/AeroGrid"], mode);
+    const deletions = root.context.events.filter((event) => event.startsWith("delete:"));
+    if (mode === "install") assert.deepEqual(deletions, []);
+    else assert.ok(deletions.length > 0, mode);
     for (const event of root.context.events) {
       const path = event.slice(event.indexOf(":") + 1);
       assert.ok(path === "WIDGETS/AeroGrid" || path.startsWith("WIDGETS/AeroGrid/"), `${mode}: ${event}`);
@@ -632,9 +642,9 @@ test("deletion logs before/after snapshots and original errors without retrying 
   };
   const { manifest, fetcher } = await releaseFixture();
   await assert.rejects(replaceWidget(root, await preparePackage(manifest, base, () => {}, fetcher)),
-    (error) => error.cause === failure);
+    (error) => error.cause.cause === failure);
   assert.equal(attempts, 1);
-  assert.deepEqual(root.context.events, []);
+  assert.ok(root.context.events.every((event) => event.startsWith("delete:WIDGETS/AeroGrid/")));
   const snapshots = info.mock.calls.filter((call) => call.arguments[0].includes("snapshot"))
     .map((call) => call.arguments[1]);
   assert.equal(snapshots.length, 2);
@@ -644,8 +654,7 @@ test("deletion logs before/after snapshots and original errors without retrying 
   assert.ok(!snapshots[1].files.includes("custom.txt"));
   const details = errors.mock.calls[0].arguments[1];
   assert.equal(details.target, "WIDGETS/AeroGrid");
-  assert.equal(details.name, "NotFoundError");
-  assert.equal(details.error, failure);
+  assert.equal(details.error.cause, failure);
   assert.ok(details.elapsedMs >= 0);
 });
 
@@ -658,15 +667,44 @@ test("snapshot read errors are logged without masking deletion failures", async 
   root.context.failDelete = true;
   const { manifest, fetcher } = await releaseFixture();
   const prepared = await preparePackage(manifest, base, () => {}, fetcher);
+  let scans = 0;
   await assert.rejects(replaceWidget(root, prepared, (stage) => {
     if (stage.startsWith("Deleting")) widget.entries = async function* () {
       yield* entries();
-      throw new Error("Snapshot read failed");
+      if (++scans !== 2) throw new Error("Snapshot read failed");
     };
   }),
-    /Deleting WIDGETS\/AeroGrid: Delete failed/);
+    /Could not delete WIDGETS\/AeroGrid\/lib\/package.lua: Delete failed/);
   assert.equal(errors.mock.calls.filter((call) => call.arguments[0].includes("Could not read")).length, 2);
-  assert.deepEqual(root.context.events, ["delete:WIDGETS/AeroGrid"]);
+  assert.deepEqual(root.context.events, ["delete:WIDGETS/AeroGrid/lib/package.lua"]);
+});
+
+test("sidecar-first removal avoids macOS paired-unlink failures for files and directories", async () => {
+  const probe = new MemoryDirectory();
+  await put(probe, "file.lua", "payload");
+  await put(probe, "._file.lua", "metadata");
+  probe.context.appleDouble = true;
+  const listed = [...probe.children.keys()];
+  await probe.removeEntry(listed[0]);
+  await assert.rejects(probe.removeEntry(listed[1]), { name: "NotFoundError" });
+
+  const root = await fixture();
+  await put(root, "WIDGETS/AeroGrid/._lib", "directory metadata");
+  await put(root, "WIDGETS/AeroGrid/lib/._package.lua", "file metadata");
+  await put(root, "WIDGETS/AeroGrid/._custom.txt", "custom metadata");
+  root.context.appleDouble = true;
+  root.context.events = [];
+  const { manifest, fetcher } = await releaseFixture();
+  await replaceWidget(root, await preparePackage(manifest, base, () => {}, fetcher));
+  const events = root.context.events;
+  for (const path of ["lib", "lib/package.lua", "custom.txt"]) {
+    const parts = path.split("/");
+    parts[parts.length - 1] = `._${parts.at(-1)}`;
+    assert.ok(events.indexOf(`delete:WIDGETS/AeroGrid/${parts.join("/")}`)
+      < events.indexOf(`delete:WIDGETS/AeroGrid/${path}`));
+  }
+  await verifyInstalled(root, manifest);
+  assert.equal(await (await root.children.get("MODELS").children.get("model1.yml").getFile()).text(), "user model");
 });
 
 test("storage serializes operations, blocks disconnect, and clears busy after failure", async () => {

@@ -189,6 +189,13 @@ original browser error. Read-only snapshots list widget-relative files and
 directories before deletion and after failure; they contain no file contents.
 Snapshot failures are logged separately and do not replace the deletion error.
 Deletion errors still stop installation without retrying or falling back.
+Widget removal enumerates each directory and deletes `._` entries before other
+entries. macOS automatically removes associated AppleDouble files on filesystems
+without native extended attributes; sidecar-first ordering avoids Chromium
+attempting to remove those already-deleted entries during bulk recursive removal.
+Directories are removed only after their children. Traversal is limited to
+10,000 entries and 64 levels inside the resolved widget directory; errors include
+the exact path and still stop installation.
 An explicitly selected downgrade requires a downgrade-specific confirmation.
 The storage writer still refuses downgrades unless that confirmation authorizes
 one; it does not convert user data to older layout or settings formats.
