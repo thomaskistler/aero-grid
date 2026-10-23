@@ -146,8 +146,8 @@ try {
   await activate("[data-install]");
   assert.equal(await page.locator("[data-confirm-description]").textContent(),
     `Install AeroGrid ${manifest.version} on installer-acceptance?\n\n`
-    + "This will replace the AeroGrid installation in /WIDGETS/AeroGrid/. No backup or rollback is available.\n\n"
-    + "AeroGrid user data in /AEROGRID, maps, other widgets, model/radio settings, and firmware will not be changed.");
+    + "This will replace the AeroGrid installation on your radio. No backup or rollback is available.\n\n"
+    + "AeroGrid user data, maps, other widgets, model/radio settings, and firmware will not be changed.");
   await activate("[data-confirm-cancel]");
   assert.equal(await read("WIDGETS/AeroGrid/main.luac"), "stale bytecode");
 

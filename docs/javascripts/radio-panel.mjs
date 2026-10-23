@@ -212,9 +212,9 @@ if (panel) {
     const warning = `Install AeroGrid ${version} on ${details.radio.name}?\n\n`
       + (!compatibility.supported ? `${compatibility.message}\n\n` : "")
       + (downgrade ? `DOWNGRADE from ${details.widget.version} to ${version}. Older releases may not support your current layouts or settings. User data will not be converted.\n\n` : "")
-      + "This will replace the AeroGrid installation in /WIDGETS/AeroGrid/. No backup or rollback is available.\n\n"
+      + "This will replace the AeroGrid installation on your radio. No backup or rollback is available.\n\n"
       + (!details.widget.version && details.widget.present ? "The existing version is unknown; version comparison is unavailable.\n\n" : "")
-      + "AeroGrid user data in /AEROGRID, maps, other widgets, model/radio settings, and firmware will not be changed.";
+      + "AeroGrid user data, maps, other widgets, model/radio settings, and firmware will not be changed.";
     confirmation = { version, details: structuredClone(details), downgrade: !!downgrade };
     element("confirm-title").textContent = downgrade ? "Confirm downgrade" : "Confirm installation";
     confirmStart.textContent = downgrade ? `Confirm downgrade to ${version}` : `Confirm installation of ${version}`;
