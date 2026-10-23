@@ -8,7 +8,7 @@ Install the latest stable AeroGrid on your radio, or choose a previous release. 
   <p class="ag-radio-muted">USB installation is supported only in <strong>desktop Google Chrome or Microsoft Edge</strong>. <strong>Safari and Opera are not supported.</strong></p>
   <div class="ag-radio-header">
     <div>
-      <strong><svg class="ag-connection-icon" viewBox="0 0 24 24" aria-hidden="true"><g class="ag-connection-off"><path d="m4 20 3-3m10-10 3-3M5 11l6-6 3 3-6 6zm5 8 6-6 3 3-6 6M12 12l2-2m0 4 2-2"/></g><g class="ag-connection-on"><path d="M9 3v4m6-4v4M7 7h10v4a5 5 0 0 1-10 0zm5 9v5"/></g></svg><span data-connection>Radio disconnected</span></strong>
+      <strong><svg class="ag-connection-icon" viewBox="0 0 24 24" aria-hidden="true"><g class="ag-connection-off"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></g><g class="ag-connection-on"><path d="M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/><path d="m2 22 3-3"/><path d="M7.5 13.5 10 11"/><path d="M10.5 16.5 13 14"/><path d="m18 3-4 4h6l-4 4"/></g></svg><span data-connection>Radio disconnected</span></strong>
     </div>
     <button type="button" class="ag-radio-button ag-radio-primary" data-connect disabled><svg class="ag-usb-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V3m-3 3 3-3 3 3M12 15l-5-5V7m5 10 5-5V9"/><circle cx="7" cy="5" r="2"/><circle cx="12" cy="21" r="2"/><rect x="15" y="5" width="4" height="4"/></svg><span data-connect-label>Connect Radio</span></button>
   </div>
