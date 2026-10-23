@@ -152,6 +152,15 @@
   color: var(--ag-critical);
 }
 
+.ag-radio [data-status].ag-radio-success {
+  padding: 14px 16px;
+  border: 1px solid var(--ag-green);
+  border-radius: 8px;
+  color: var(--ag-green);
+  background: var(--ag-canvas);
+  font-weight: 600;
+}
+
 .ag-radio progress {
   width: 100%;
   accent-color: var(--ag-cyan);

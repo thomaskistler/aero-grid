@@ -156,12 +156,33 @@ try {
   await activate("[data-install]");
   await activate("[data-confirm-start]");
   await page.waitForFunction(() => document.querySelector("[data-status]").textContent.includes("No radio files were changed"));
+  assert.equal(await page.locator("[data-progress]").isVisible(), false);
   assert.equal(await read("WIDGETS/AeroGrid/main.luac"), "stale bytecode");
   await page.unroute("**/installer/releases/**/main.lua");
 
   await activate("[data-install]");
   await activate("[data-confirm-start]");
-  await page.waitForFunction(() => document.querySelector("[data-status]").textContent.includes("installed and file contents verified"), null, { timeout: 60000 });
+  await page.waitForFunction(() => document.querySelector("[data-status]").textContent.includes("installed successfully"), null, { timeout: 60000 });
+  assert.equal(await page.locator("[data-progress]").isVisible(), false);
+  assert.match(await page.locator("[data-status]").getAttribute("class"), /ag-radio-success/);
+  const successMessage = await page.locator("[data-status]").textContent();
+  await page.evaluate(async () => {
+    const root = await window.__radioReady;
+    const radio = await root.getDirectoryHandle("RADIO");
+    const stream = await (await radio.getFileHandle("radio.yml")).createWritable();
+    await stream.write("board: tx16s\nsemver: 2.12.5\n");
+    await stream.close();
+  });
+  await page.waitForFunction(() => document.querySelector("[data-edgetx]").textContent === "2.12.5", null, { timeout: 12000 });
+  assert.equal(await page.locator("[data-status]").textContent(), successMessage);
+  await page.evaluate(async () => {
+    const root = await window.__radioReady;
+    const radio = await root.getDirectoryHandle("RADIO");
+    const stream = await (await radio.getFileHandle("radio.yml")).createWritable();
+    await stream.write("board: tx16s\nsemver: 2.12.4\n");
+    await stream.close();
+  });
+  await page.waitForFunction(() => document.querySelector("[data-edgetx]").textContent === "2.12.4", null, { timeout: 12000 });
   assert.equal(await page.locator("[data-install]").textContent(), "Up to date");
   assert.equal(await page.locator("[data-install]").isDisabled(), true);
   for (const [path, text] of [
@@ -205,8 +226,9 @@ try {
   await activate("[data-install]");
   await activate("[data-confirm-start]");
   await page.waitForFunction((version) =>
-    document.querySelector("[data-status]").textContent.includes(`AeroGrid ${version} installed and file contents verified`),
+    document.querySelector("[data-status]").textContent.includes(`AeroGrid ${version} installed successfully`),
   historical.version, { timeout: 60000 });
+  assert.equal(await page.locator("[data-progress]").isVisible(), false);
   assert.equal(await page.locator("[data-install]").textContent(), "Up to date");
   assert.equal(await page.locator("[data-downgrade]").isVisible(), false);
   assert.match(await read("WIDGETS/AeroGrid/lib/package.lua"), new RegExp(historical.version.replaceAll(".", "\\.")));

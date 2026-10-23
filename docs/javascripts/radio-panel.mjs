@@ -26,9 +26,10 @@ if (panel) {
   let incomplete = false;
   let confirmation = null;
 
-  function message(text, error = false) {
+  function message(text, error = false, success = false) {
     status.textContent = text;
     status.classList.toggle("ag-radio-error", error);
+    status.classList.toggle("ag-radio-success", success);
   }
 
   function render() {
@@ -254,7 +255,7 @@ if (panel) {
         const current = await radioStorage.inspect();
         if (current.radio.board !== expected.radio.board || current.radio.version !== expected.radio.version
             || current.widget.present !== expected.widget.present || current.widget.version !== expected.widget.version) {
-          throw new Error("SD-card metadata changed since connection. Reconnect before installing.");
+          throw new Error("The radio information or installed AeroGrid version changed. Reconnect and confirm installation again.");
         }
         replacing = true;
         await replaceWidget(root, prepared, report, { allowDowngrade: downgrade });
@@ -263,12 +264,13 @@ if (panel) {
         await inspect();
       });
       progress.value = 1;
-      message(`AeroGrid ${version} installed and file contents verified. Disconnect from this page, safely eject through your operating system, then restart the radio.`);
+      message(`AeroGrid ${version} installed successfully. Disconnect Radio, safely eject the drive through your operating system, then restart the radio.`, false, true);
     } catch (error) {
       if (replacing) incomplete = true;
       message(`${error.message}${replacing ? "" : " No radio files were changed."}`, true);
     } finally {
       busy = false;
+      progress.hidden = true;
       render();
     }
   });
@@ -284,13 +286,20 @@ if (panel) {
   setInterval(async () => {
     if (!radioStorage.root || busy || checking || checkingRelease || document.hidden) return;
     checking = true;
+    const previous = details;
+    const root = radioStorage.root;
     try {
       const current = await radioStorage.inspect();
+      if (busy || radioStorage.root !== root || details !== previous) return;
       if (JSON.stringify(current) !== JSON.stringify(details)) {
         details = current;
-        message("SD-card metadata changed. Review the detected versions before installing.");
+        if (confirmation) {
+          confirmation = null;
+          message("The radio information or installed AeroGrid version changed. Review the versions and confirm installation again.");
+        }
       }
     } catch (error) {
+      if (busy || radioStorage.root !== root || details !== previous) return;
       radioStorage.disconnect();
       details = null;
       confirmation = null;
