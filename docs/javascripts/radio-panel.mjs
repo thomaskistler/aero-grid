@@ -13,6 +13,7 @@ if (panel) {
   const status = element("status");
   const releaseStatus = element("release-status");
   const progress = element("progress");
+  const releaseDialog = element("release-dialog");
   const supported = window.isSecureContext && typeof window.showDirectoryPicker === "function";
   let manifest = null;
   let latestManifest = null;
@@ -46,8 +47,12 @@ if (panel) {
       ? "Source: RADIO/radio.yml (saved firmware metadata, not a live query)" : "Detected after connection";
     element("widget").textContent = !details ? "Unknown" : !details.widget.present
       ? "Not installed" : `${details.widget.version ?? "Unknown version"}${incomplete ? " | incomplete / different files" : " | metadata detected"}`;
-    element("latest").textContent = latestManifest?.version ?? "Unavailable";
-    element("release-picker").disabled = busy || checking || checkingRelease || !!confirmation || !catalog;
+    element("latest").textContent = selectedVersion ?? latestManifest?.version ?? "Unavailable";
+    element("release-label").textContent = !selectedVersion || selectedVersion === catalog?.latest
+      ? "Latest stable AeroGrid" : "Selected AeroGrid release";
+    const releaseDisabled = busy || checking || checkingRelease || !!confirmation || !catalog;
+    element("release-picker").disabled = releaseDisabled;
+    element("release-open").disabled = releaseDisabled;
     const downgrade = details?.widget.version && manifest
       && compareVersions(details.widget.version, manifest.version) > 0;
     element("downgrade").hidden = !downgrade;
@@ -132,12 +137,21 @@ if (panel) {
     }
   }
 
+  element("release-open").addEventListener("click", () => {
+    releaseDialog.showModal();
+    const selected = releaseDialog.querySelector("input:checked");
+    selected?.focus();
+  });
+  element("release-close").addEventListener("click", () => releaseDialog.close());
+  releaseDialog.addEventListener("close", () => element("release-open").focus());
+
   element("releases").addEventListener("change", async (event) => {
     const input = event.target;
     if (!(input instanceof HTMLInputElement) || input.type !== "radio"
         || busy || checking || checkingRelease || confirmation
         || !catalog?.releases.some((entry) => entry.version === input.value && entry.available)) return;
     selectedVersion = input.value;
+    releaseDialog.close();
     manifest = null;
     incomplete = false;
     checkingRelease = true;

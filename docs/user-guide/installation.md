@@ -23,17 +23,23 @@ Install the latest stable AeroGrid on your radio, or choose a previous release. 
       <strong data-widget>Unknown</strong>
       <small>Target: /WIDGETS/AeroGrid/</small>
     </div>
-    <div class="ag-radio-card">
-      <span>Latest stable AeroGrid</span>
+    <button type="button" class="ag-radio-card ag-release-card" data-release-open aria-haspopup="dialog" aria-controls="ag-release-dialog" disabled>
+      <span data-release-label>Latest stable AeroGrid</span>
       <strong data-latest>Unavailable</strong>
-      <small>Beta/RC releases excluded</small>
-    </div>
+      <small>Choose a different release <span aria-hidden="true">&#9662;</span></small>
+    </button>
   </div>
+  <dialog id="ag-release-dialog" class="ag-release-dialog" data-release-dialog aria-labelledby="ag-release-title" aria-describedby="ag-release-description">
+    <div class="ag-release-dialog-header">
+      <h2 id="ag-release-title">Choose a release</h2>
+      <button type="button" class="ag-radio-button" data-release-close aria-label="Close release selection">Close</button>
+    </div>
   <fieldset class="ag-release-picker" data-release-picker disabled>
-    <legend>Choose a release</legend>
-    <p class="ag-radio-muted">Latest stable is selected by default. Beta and RC releases are not included.</p>
+    <legend class="visually-hidden">Available AeroGrid releases</legend>
+    <p id="ag-release-description" class="ag-radio-muted">Latest stable is selected by default. Beta and RC releases are not included.</p>
     <div class="ag-release-list" data-releases></div>
   </fieldset>
+  </dialog>
   <div class="ag-install-action">
   <h3>AeroGrid installation</h3>
   <p class="ag-radio-muted">The selected release replaces /WIDGETS/AeroGrid/ completely, including custom files inside it. No backup or rollback is created. Layouts, maps, radio/model settings, and firmware are left untouched.</p>

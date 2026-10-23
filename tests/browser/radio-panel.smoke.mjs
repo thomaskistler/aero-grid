@@ -71,6 +71,15 @@ try {
   assert.equal(await page.locator("[data-connect] .ag-usb-icon").count(), 1);
   assert.equal(await page.locator(`input[name=aerogrid-release][value="${catalog.latest}"]`).isChecked(), true);
   assert.equal(await page.locator("input[name=aerogrid-release]").count(), catalog.releases.length);
+  assert.equal(await page.locator("[data-release-dialog]").isVisible(), false);
+  await activate("[data-release-open]");
+  assert.equal(await page.locator("[data-release-dialog]").isVisible(), true);
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("[data-release-dialog]").isVisible(), false);
+  assert.equal(await page.locator("[data-release-open]").evaluate((node) => node === document.activeElement), true);
+  await activate("[data-release-open]");
+  await activate("[data-release-close]");
+  assert.equal(await page.locator("[data-release-dialog]").isVisible(), false);
   for (const entry of catalog.releases.filter((entry) => !entry.available)) {
     assert.equal(await page.locator(`input[name=aerogrid-release][value="${entry.version}"]`).isDisabled(), true);
   }
@@ -131,19 +140,24 @@ try {
 
   const historicalAPI = RELEASE_API.replace("/latest", `/tags/v${historical.version}`);
   await page.route(historicalAPI, (route) => route.fulfill({ status: 503, body: "Unavailable" }));
+  await activate("[data-release-open]");
   await page.locator(`input[name=aerogrid-release][value="${historical.version}"]`).press("Space");
   await page.waitForFunction(() => document.querySelector("[data-release-status]").textContent.startsWith("Selected release unavailable:"));
   assert.equal(await page.locator("[data-install]").isDisabled(), true);
   assert.match(await read("WIDGETS/AeroGrid/lib/package.lua"), new RegExp(manifest.version.replaceAll(".", "\\.")));
   await page.unroute(historicalAPI);
   const chooseRelease = async (version) => {
+    await activate("[data-release-open]");
     await page.locator(`input[name=aerogrid-release][value="${version}"]`).press("Space");
     await page.waitForFunction((version) =>
       document.querySelector("[data-release-status]").textContent.startsWith(`Selected release: ${version}`), version);
+    assert.equal(await page.locator("[data-release-dialog]").isVisible(), false);
+    assert.equal(await page.locator("[data-latest]").textContent(), version);
   };
   await chooseRelease(catalog.latest);
   await chooseRelease(historical.version);
-  assert.equal(await page.locator("[data-latest]").textContent(), catalog.latest);
+  assert.equal(await page.locator("[data-latest]").textContent(), historical.version);
+  assert.equal(await page.locator("[data-release-label]").textContent(), "Selected AeroGrid release");
   assert.equal(await page.locator("[data-downgrade]").isVisible(), true);
   assert.match(await page.locator("[data-install]").textContent(), /^Downgrade/);
   await activate("[data-install]");
@@ -163,6 +177,7 @@ try {
   assert.equal(await read("AEROGRID/layouts/user.yaml"), "keep layout");
   assert.equal(await read("MAPS/tile.png"), "keep map");
   await chooseRelease(catalog.latest);
+  assert.equal(await page.locator("[data-release-label]").textContent(), "Latest stable AeroGrid");
   assert.match(await page.locator("[data-install]").textContent(), /^Update/);
   assert.equal(await page.locator("[data-downgrade]").isVisible(), false);
   await activate("[data-connect]");
@@ -175,6 +190,13 @@ try {
     await page.setViewportSize({ width, height: 1000 });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
       `Installation layout must not overflow at ${width}px`);
+    await activate("[data-release-open]");
+    assert.ok(await page.locator("[data-release-dialog]").evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      return rect.left >= 0 && rect.right <= innerWidth
+        && rect.top >= 0 && rect.bottom <= innerHeight && node.scrollWidth <= node.clientWidth;
+    }), `Release popup must fit at ${width}px`);
+    await page.keyboard.press("Escape");
   }
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
@@ -183,7 +205,7 @@ try {
     const help = document.querySelector(".ag-install-help").getBoundingClientRect();
     return help.top >= panel.bottom;
   }), "Mobile layout stacks setup below the installer");
-  assert.equal(await page.locator("[data-radio-installer] button:visible").count(), 2);
+  assert.equal(await page.locator("[data-radio-installer] button:visible").count(), 3);
   await activate(".ag-install-details summary >> nth=0");
   assert.equal(await page.locator(".ag-install-details[open]").count(), 1);
 

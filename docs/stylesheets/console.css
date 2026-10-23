@@ -939,6 +939,60 @@ button:focus-visible {
   margin: 20px 0;
 }
 
+.ag-release-card {
+  text-align: left;
+  color: var(--ag-console-text);
+  cursor: pointer;
+}
+
+.ag-release-card:not(:disabled):hover {
+  border-color: var(--ag-console-blue);
+  background: var(--ag-console-blue-wash);
+}
+
+.ag-release-card:focus-visible {
+  outline: 2px solid var(--ag-console-blue);
+  outline-offset: 3px;
+}
+
+.ag-release-card:disabled {
+  cursor: not-allowed;
+}
+
+.ag-release-dialog {
+  width: min(560px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 24px;
+  border: 1px solid var(--ag-console-border);
+  border-radius: 9px;
+  color: var(--ag-console-text);
+  background: var(--ag-console-surface);
+  box-shadow: 0 20px 60px rgb(27 53 74 / 20%);
+}
+
+.ag-release-dialog::backdrop {
+  background: rgb(27 53 74 / 35%);
+}
+
+.ag-release-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ag-release-dialog-header h2 {
+  margin: 0;
+}
+
+.ag-release-dialog .ag-release-picker {
+  margin-bottom: 0;
+}
+
+.ag-release-dialog .ag-release-list {
+  max-height: 50dvh;
+}
+
 .ag-release-picker legend {
   float: none;
   margin-bottom: 8px;
