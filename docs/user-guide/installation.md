@@ -9,7 +9,6 @@ Install the latest stable AeroGrid on your radio, or choose a previous release. 
   <div class="ag-radio-header">
     <div>
       <strong data-connection>Radio disconnected</strong>
-      <div class="ag-radio-muted" data-device>No SD card selected</div>
     </div>
     <button type="button" class="ag-radio-button ag-radio-primary" data-connect disabled><svg class="ag-usb-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V3m-3 3 3-3 3 3M12 15l-5-5V7m5 10 5-5V9"/><circle cx="7" cy="5" r="2"/><circle cx="12" cy="21" r="2"/><rect x="15" y="5" width="4" height="4"/></svg><span data-connect-label>Connect Radio</span></button>
   </div>

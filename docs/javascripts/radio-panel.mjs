@@ -40,9 +40,7 @@ if (panel) {
     connect.disabled = !supported || busy || checking || !!confirmation;
     panel.classList.toggle("ag-radio-connected", connected);
     panel.setAttribute("aria-busy", String(busy || checking));
-    element("connection").textContent = connected ? "SD card connected" : "Radio disconnected";
-    element("device").textContent = details
-      ? `${details.radio.board ?? "Unknown board"} | ${details.radio.name}` : "No SD card selected";
+    element("connection").textContent = connected ? "Radio connected" : "Radio disconnected";
     element("edgetx").textContent = details?.radio.version ?? "Unknown";
     const hardware = radioHardware(details?.radio.board);
     element("radio-type").textContent = hardware.type;

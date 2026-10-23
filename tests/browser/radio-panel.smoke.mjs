@@ -74,6 +74,8 @@ try {
   assert.equal(await page.locator("[data-connect] .ag-usb-icon").count(), 1);
   assert.equal(await page.locator("[data-radio-type]").textContent(), "Unknown");
   assert.equal(await page.locator("[data-radio-screen]").textContent(), "Unknown");
+  assert.equal(await page.locator("[data-connection]").textContent(), "Radio disconnected");
+  assert.equal(await page.locator("[data-device]").count(), 0);
   assert.equal(await page.locator(`input[name=aerogrid-release][value="${catalog.latest}"]`).isChecked(), true);
   assert.equal(await page.locator("input[name=aerogrid-release]").count(), catalog.releases.length);
   assert.equal(await page.locator("[data-release-dialog]").isVisible(), false);
@@ -114,7 +116,7 @@ try {
     const cards = [...node.children].map((card) => card.getBoundingClientRect());
     return cards.every((card) => card.height <= 150 && Math.abs(card.height - cards[0].height) < 1);
   }), "Connected metadata cards stay compact and balanced");
-  assert.match(await page.locator("[data-device]").textContent(), /tx16s/);
+  assert.equal(await page.locator("[data-connection]").textContent(), "Radio connected");
   assert.match(await page.locator("[data-install]").textContent(), /^Update/);
   assert.equal(await page.locator("[data-install]").isDisabled(), false);
   assert.equal(await page.locator("[data-connect] .ag-usb-icon").count(), 1);
@@ -203,6 +205,7 @@ try {
   assert.equal(await page.locator("[data-downgrade]").isVisible(), false);
   await activate("[data-connect]");
   assert.equal(await page.locator("[data-connect]").textContent(), "Connect Radio");
+  assert.equal(await page.locator("[data-connection]").textContent(), "Radio disconnected");
   assert.equal(await page.locator("[data-radio-type]").textContent(), "Unknown");
   assert.equal(await page.locator("[data-radio-screen]").textContent(), "Unknown");
   assert.equal(await page.locator("[data-install]").isDisabled(), true);

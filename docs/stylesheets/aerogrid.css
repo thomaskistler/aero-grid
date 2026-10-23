@@ -32,16 +32,23 @@
 }
 
 .ag-radio-header strong {
-  font-size: var(--ag-font-lg, 18px);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--ag-font-2xl, 24px);
 }
 
-.ag-radio-connected .ag-radio-header strong::before {
+.ag-radio-header strong::before {
   content: "";
   display: inline-block;
   width: 0.65rem;
   height: 0.65rem;
-  margin-right: 0.5rem;
+  flex: 0 0 0.65rem;
   border-radius: 50%;
+  background: var(--ag-muted);
+}
+
+.ag-radio-connected .ag-radio-header strong::before {
   background: var(--ag-green);
 }
 
