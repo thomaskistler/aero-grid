@@ -1,5 +1,11 @@
 /* Light documentation palette with AeroGrid-inspired accents. */
 .ag-radio {
+  --ag-canvas: var(--ag-console-surface, #ffffff);
+  --ag-surface: var(--ag-console-bg, #f5f7f9);
+  --ag-border: var(--ag-console-border, #cbd3da);
+  --ag-text: var(--ag-console-text, #212830);
+  --ag-muted: var(--ag-console-muted, #52616b);
+  --ag-cyan: var(--ag-console-blue-dark, #006b85);
   margin: 1.5rem 0;
   padding: 1.5rem;
   border: 2px solid var(--ag-border);
@@ -26,7 +32,7 @@
 }
 
 .ag-radio-header strong {
-  font-size: 1.15rem;
+  font-size: var(--ag-font-lg, 18px);
 }
 
 .ag-radio-connected .ag-radio-header strong::before {
@@ -65,7 +71,7 @@
 .ag-radio-card span,
 .ag-radio-card small {
   color: var(--ag-muted);
-  font-size: 0.875rem;
+  font-size: var(--ag-font-sm, 14px);
 }
 
 .ag-radio-actions {
