@@ -165,6 +165,12 @@ try {
   await page.waitForFunction(() => document.querySelector("[data-status]").textContent.includes("installed successfully"), null, { timeout: 60000 });
   assert.equal(await page.locator("[data-progress]").isVisible(), false);
   assert.match(await page.locator("[data-status]").getAttribute("class"), /ag-radio-success/);
+  assert.ok(await page.locator("[data-status]").evaluate((node) => {
+    const style = getComputedStyle(node);
+    return style.borderTopWidth === "0px" && style.borderRightWidth === "0px"
+      && style.borderBottomWidth === "0px" && style.borderLeftWidth === "0px"
+      && style.backgroundColor === "rgba(0, 0, 0, 0)";
+  }), "Success is text only, without a frame or background");
   const successMessage = await page.locator("[data-status]").textContent();
   await page.evaluate(async () => {
     const root = await window.__radioReady;
