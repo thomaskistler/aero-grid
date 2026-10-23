@@ -116,7 +116,9 @@ try {
   assert.equal(await page.locator("[data-edgetx]").textContent(), "2.12.4");
   assert.equal(await page.locator("[data-radio-type]").textContent(), "RadioMaster TX16S");
   assert.equal(await page.locator("[data-radio-screen]").textContent(), "Color - 480 x 272");
-  assert.match(await page.locator("[data-compatibility]").textContent(), /Compatibility check passed/);
+  assert.equal(await page.locator("[data-compatibility]").textContent(),
+    "Compatibility check passed: recognized color-screen radio with EdgeTX 2.11.0 or later.");
+  assert.equal(await page.locator("[data-widget]").textContent(), "0.0.1");
   assert.equal(await page.locator("[data-status]").textContent(), "");
   assert.equal(await page.locator("[data-release-status]").textContent(), "");
   assert.ok(await page.locator(".ag-radio-cards").evaluate((node) => {

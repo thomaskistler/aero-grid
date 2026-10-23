@@ -49,7 +49,7 @@ if (panel) {
     element("compatibility").textContent = compatibility?.message ?? "Connect your radio to check compatibility.";
     element("compatibility").classList.toggle("ag-radio-compatibility-warning", !!compatibility && !compatibility.supported);
     element("widget").textContent = !details ? "Unknown" : !details.widget.present
-      ? "Not installed" : `${details.widget.version ?? "Unknown version"}${incomplete ? " | incomplete / different files" : " | metadata detected"}`;
+      ? "Not installed" : details.widget.version ?? "Unknown version";
     const displayedVersion = selectedVersion ?? latestManifest?.version;
     element("latest").textContent = displayedVersion
       ? `${displayedVersion}${displayedVersion === catalog?.latest ? " - latest" : ""}` : "Unavailable";

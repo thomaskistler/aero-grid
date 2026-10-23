@@ -114,7 +114,7 @@ export function radioCompatibility(radio) {
   if (version.prerelease.length) {
     return { supported: false, message: "This radio is running prerelease EdgeTX firmware. Compatibility is unverified. Install at your own risk." };
   }
-  return { supported: true, message: "Compatibility check passed: recognized color-screen radio with EdgeTX 2.11.0 or later. This is not a hardware-tested guarantee for the selected release." };
+  return { supported: true, message: "Compatibility check passed: recognized color-screen radio with EdgeTX 2.11.0 or later." };
 }
 
 export function packageVersion(text) {
