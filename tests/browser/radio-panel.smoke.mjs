@@ -63,6 +63,17 @@ try {
   });
   await page.goto(new URL("user-guide/installation/", site).href);
   await page.waitForFunction(() => document.querySelector("[data-latest]").textContent !== "Unavailable");
+  assert.equal(await page.locator(".ag-guide-sidebar").count(), 0);
+  assert.equal(await page.locator(".ag-icon-link.active").getAttribute("aria-label"), "Install / Upgrade");
+  assert.equal(await page.locator(".ag-install-details[open]").count(), 0);
+  assert.ok(await page.evaluate(() => {
+    const panel = document.querySelector("[data-radio-installer]").getBoundingClientRect();
+    const help = document.querySelector(".ag-install-help").getBoundingClientRect();
+    const connect = document.querySelector("[data-connect]").getBoundingClientRect();
+    const install = document.querySelector("[data-install]").getBoundingClientRect();
+    return panel.right <= help.left && Math.abs(panel.top - help.top) < 1
+      && connect.bottom < window.innerHeight && install.bottom < window.innerHeight;
+  }), "Desktop layout puts setup beside the installer and both actions in the first viewport");
   await activate("[data-connect]");
   await page.waitForFunction(() => document.querySelector("[data-connect]").textContent === "Disconnect Radio");
   assert.equal(await page.locator("[data-edgetx]").textContent(), "2.12.4");
@@ -102,9 +113,26 @@ try {
   await activate("[data-connect]");
   assert.equal(await page.locator("[data-connect]").textContent(), "Connect Radio");
 
+  for (const width of [320, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      `Installation layout must not overflow at ${width}px`);
+  }
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+  assert.ok(await page.evaluate(() => {
+    const panel = document.querySelector("[data-radio-installer]").getBoundingClientRect();
+    const help = document.querySelector(".ag-install-help").getBoundingClientRect();
+    return help.top >= panel.bottom;
+  }), "Mobile layout stacks setup below the installer");
   assert.equal(await page.locator("[data-radio-installer] button:visible").count(), 2);
+  await activate(".ag-install-details summary >> nth=0");
+  assert.equal(await page.locator(".ag-install-details[open]").count(), 1);
+
+  const guide = await context.newPage();
+  await guide.addInitScript(() => { window.hljs = { highlightAll() {} }; });
+  await guide.goto(new URL("user-guide/add-dashboard/", site).href);
+  assert.equal(await guide.locator(".ag-guide-sidebar").count(), 1);
 
   const unsupported = await context.newPage();
   await unsupported.addInitScript(() => {
@@ -120,6 +148,7 @@ try {
   console.log("Chromium panel acceptance passed: native OPFS update/readback, download failure, preserved data, disconnect, mobile, unsupported browser. OS picker selection is simulated; no radio was accessed.");
 } catch (error) {
   for (const page of context.pages()) {
+    if (!await page.locator("[data-radio-installer]").count()) continue;
     console.error(await page.locator("[data-radio-installer]").innerText());
     console.error(await page.evaluate(() => ({
       disabled: document.querySelector("[data-install]").disabled,
