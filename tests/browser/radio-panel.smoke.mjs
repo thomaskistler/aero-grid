@@ -109,6 +109,10 @@ try {
   assert.equal(await page.locator("[data-connect] .ag-usb-icon").count(), 1);
   assert.match(await page.locator("[data-install]").getAttribute("class"), /ag-radio-primary/);
   assert.doesNotMatch(await page.locator("[data-connect]").getAttribute("class"), /ag-radio-primary/);
+  assert.equal(await page.locator("[data-connect]").evaluate((node) => {
+    const style = getComputedStyle(node);
+    return style.backgroundColor === "rgb(181, 38, 38)" && style.color === "rgb(255, 255, 255)";
+  }), true);
   const read = (path) => page.evaluate(async (path) => {
     let directory = await window.__radioReady;
     const parts = path.split("/");
@@ -188,6 +192,7 @@ try {
   assert.equal(await page.locator("[data-connect]").textContent(), "Connect Radio");
   assert.equal(await page.locator("[data-install]").isDisabled(), true);
   assert.match(await page.locator("[data-connect]").getAttribute("class"), /ag-radio-primary/);
+  assert.doesNotMatch(await page.locator("[data-connect]").getAttribute("class"), /ag-radio-danger/);
   assert.doesNotMatch(await page.locator("[data-install]").getAttribute("class"), /ag-radio-primary/);
 
   for (const width of [320, 768, 1024, 1440]) {

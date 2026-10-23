@@ -109,6 +109,12 @@
   color: #ffffff;
 }
 
+.ag-radio-danger {
+  background: var(--ag-critical);
+  border-color: var(--ag-critical);
+  color: #ffffff;
+}
+
 .ag-radio-button:disabled {
   background: var(--ag-surface);
   border-color: var(--ag-border);

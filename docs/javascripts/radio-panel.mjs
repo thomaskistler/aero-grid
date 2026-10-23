@@ -35,6 +35,7 @@ if (panel) {
     const connected = !!radioStorage.root;
     element("connect-label").textContent = connected ? "Disconnect Radio" : "Connect Radio";
     connect.classList.toggle("ag-radio-primary", !connected);
+    connect.classList.toggle("ag-radio-danger", connected);
     install.classList.toggle("ag-radio-primary", connected);
     connect.disabled = !supported || busy || checking || !!confirmation;
     panel.classList.toggle("ag-radio-connected", connected);
