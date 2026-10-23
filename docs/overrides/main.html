@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block styles %}
+  {{ super() }}
+  <link href="{{ 'stylesheets/console.css'|url }}" rel="stylesheet">
+{% endblock %}
+
+{% block site_name %}
+  <a class="navbar-brand ag-brand" href="{{ nav.homepage.url|url }}">
+    <span class="ag-brand-mark" aria-hidden="true">A</span>
+    <span class="ag-brand-name">{{ config.site_name }}</span>
+    <span class="ag-brand-divider" aria-hidden="true">/</span>
+    <span class="ag-current-page">{{ page.title }}</span>
+  </a>
+{% endblock %}
+
+{% block site_nav %}
+  <nav class="ag-icon-rail" aria-label="Main navigation">
+    <a
+      class="ag-icon-link{% if page.file.src_uri == 'user-guide/installation.md' %} active{% endif %}"
+      href="{{ 'user-guide/installation/'|url }}"
+      aria-label="Install / Upgrade"
+      title="Install / Upgrade"
+      {% if page.file.src_uri == 'user-guide/installation.md' %}aria-current="page"{% endif %}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 16v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3M4 7h3l2-3h6l2 3h3" />
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link{% if page.file.src_uri.startswith('user-guide/') and page.file.src_uri != 'user-guide/installation.md' and page.file.src_uri != 'user-guide/map-planner.md' %} active{% endif %}"
+      href="{{ 'user-guide/add-dashboard/'|url }}"
+      aria-label="User Guide"
+      title="User Guide"
+      {% if page.file.src_uri.startswith('user-guide/') and page.file.src_uri != 'user-guide/installation.md' and page.file.src_uri != 'user-guide/map-planner.md' %}aria-current="page"{% endif %}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 4.5h10.5A2.5 2.5 0 0 1 18 7v13H7a2 2 0 0 1-2-2V4.5Z" />
+        <path d="M5 17.5A2.5 2.5 0 0 1 7.5 15H18M9 8h5m-5 3h5" />
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link{% if page.file.src_uri.startswith('reference-guide/') or page.file.src_uri.startswith('panels/') %} active{% endif %}"
+      href="{{ 'reference-guide/'|url }}"
+      aria-label="Reference Guide"
+      title="Reference Guide"
+      {% if page.file.src_uri.startswith('reference-guide/') or page.file.src_uri.startswith('panels/') %}aria-current="page"{% endif %}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="10.8" cy="10.8" r="6.8" />
+        <path d="m16 16 4.5 4.5M8.5 9h5m-5 3h4" />
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link{% if page.file.src_uri.startswith('developer-guide/') %} active{% endif %}"
+      href="{{ 'developer-guide/build/'|url }}"
+      aria-label="Developer Guide"
+      title="Developer Guide"
+      {% if page.file.src_uri.startswith('developer-guide/') %}aria-current="page"{% endif %}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m8 8-4 4 4 4m8-8 4 4-4 4m-3-10-2 12" />
+      </svg>
+    </a>
+    {% if page.file.src_uri == 'user-guide/map-planner.md' %}
+      <a
+        class="ag-icon-link active"
+        href="{{ page.url|url }}"
+        aria-label="Map Manager"
+        title="Map Manager"
+        aria-current="page"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Z" />
+          <path d="M9 3v15m6-12v15" />
+        </svg>
+      </a>
+    {% else %}
+      <span
+        class="ag-icon-link ag-icon-link-disabled"
+        aria-disabled="true"
+        aria-label="Map Manager — available with map tools"
+        title="Map Manager will be added with the map tools"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Z" />
+          <path d="M9 3v15m6-12v15" />
+        </svg>
+      </span>
+    {% endif %}
+  </nav>
+{% endblock %}
+
+{% block search_button %}
+  {% if 'search' in config.plugins %}
+    <li class="nav-item">
+      <a class="nav-link ag-search-link" href="#" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+        <i class="fa fa-search" aria-hidden="true"></i>
+        <span>Search docs</span>
+      </a>
+    </li>
+  {% endif %}
+{% endblock %}
+
+{% block next_prev %}{% endblock %}
+
+{% block repo %}
+  {% if page and page.edit_url %}
+    <li class="nav-item">
+      <a class="nav-link ag-edit-link" href="{{ page.edit_url }}" aria-label="Edit this page on GitHub">
+        <i class="fa-brands fa-github" aria-hidden="true"></i>
+        <span>Edit page</span>
+      </a>
+    </li>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  <div class="ag-console-layout">
+    <aside class="ag-guide-sidebar" aria-label="Documentation navigation">
+      {% include "toc.html" %}
+    </aside>
+    <div class="ag-reading-column">
+      <article class="ag-article" role="main">
+        {% include "content.html" %}
+      </article>
+    </div>
+  </div>
+{% endblock %}

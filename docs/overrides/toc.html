@@ -1,62 +1,78 @@
 {% macro sidebar_page(source, target, title) %}
   {% set current = page.file.src_uri == source %}
-  <li class="nav-item sidebar-page">
-    <a class="sidebar-page-link{% if current %} current{% endif %}" href="{{ target | url }}"{% if current %} aria-current="page"{% endif %}>{{ title }}</a>
-  </li>
+  <a class="ag-guide-link{% if current %} current{% endif %}" href="{{ target|url }}"{% if current %} aria-current="page"{% endif %}>{{ title }}</a>
 {% endmacro %}
 
-<nav class="navbar-expand-md bs-sidebar hidden-print affix" aria-label="Documentation">
-  <div class="navbar-header">
-    <button type="button" class="navbar-toggler collapsed" data-bs-toggle="collapse" data-bs-target="#toc-collapse" aria-controls="toc-collapse" aria-expanded="false" aria-label="Toggle documentation navigation">
-      <span class="fa fa-angle-down" aria-hidden="true"></span>
-    </button>
-  </div>
-  <div id="toc-collapse" class="navbar-collapse collapse card bg-body-tertiary">
-    <ul class="nav flex-column">
-      {{ sidebar_page("index.md", ".", "Home") }}
-      <li class="sidebar-group">
-        <span class="sidebar-group-title">User Guide</span>
-        <ul class="nav flex-column sidebar-pages">
-          {{ sidebar_page("user-guide/installation.md", "user-guide/installation/", "Install and upgrade") }}
-          {{ sidebar_page("user-guide/add-dashboard.md", "user-guide/add-dashboard/", "Add a dashboard") }}
-          {{ sidebar_page("user-guide/edit-dashboard.md", "user-guide/edit-dashboard/", "Edit a dashboard on the radio") }}
-          {{ sidebar_page("user-guide/customize-themes.md", "user-guide/customize-themes/", "Customize themes") }}
-          {{ sidebar_page("user-guide/troubleshooting.md", "user-guide/troubleshooting/", "Troubleshoot and file bugs") }}
-        </ul>
-      </li>
-      <li class="sidebar-group">
-        <span class="sidebar-group-title">Reference Guide</span>
-        <ul class="nav flex-column sidebar-pages">
-          {{ sidebar_page("reference-guide/index.md", "reference-guide/", "Overview") }}
-          {{ sidebar_page("panels/output.md", "panels/output/", "Channel output") }}
-          {{ sidebar_page("panels/flight-counter.md", "panels/flight-counter/", "Flight counter") }}
-          {{ sidebar_page("panels/flight-mode.md", "panels/flight-mode/", "Flight mode") }}
-          {{ sidebar_page("panels/flight-timer.md", "panels/flight-timer/", "Flight timer") }}
-          {{ sidebar_page("panels/host-diagnostics.md", "panels/host-diagnostics/", "Host diagnostics") }}
-          {{ sidebar_page("panels/link-status.md", "panels/link-status/", "Link status") }}
-          {{ sidebar_page("panels/metric.md", "panels/metric/", "Metric") }}
-          {{ sidebar_page("panels/model-identity.md", "panels/model-identity/", "Model identity") }}
-          {{ sidebar_page("panels/navigation.md", "panels/navigation/", "Navigation") }}
-          {{ sidebar_page("panels/rx-battery.md", "panels/rx-battery/", "RX battery") }}
-          {{ sidebar_page("panels/service-probe.md", "panels/service-probe/", "Service probe") }}
-          {{ sidebar_page("panels/state.md", "panels/state/", "State") }}
-          {{ sidebar_page("panels/trim-panel.md", "panels/trim-panel/", "Trim") }}
-          {{ sidebar_page("panels/tx-battery.md", "panels/tx-battery/", "TX battery") }}
-          {{ sidebar_page("reference-guide/yaml.md", "reference-guide/yaml/", "YAML reference") }}
-        </ul>
-      </li>
-      <li class="sidebar-group">
-        <span class="sidebar-group-title">Developer Guide</span>
-        <ul class="nav flex-column sidebar-pages">
-          {{ sidebar_page("developer-guide/build.md", "developer-guide/build/", "Check out and build") }}
-          {{ sidebar_page("developer-guide/testing.md", "developer-guide/testing/", "Test and debug") }}
-          {{ sidebar_page("developer-guide/simulators.md", "developer-guide/simulators/", "Run and test in simulators") }}
-          {{ sidebar_page("developer-guide/architecture.md", "developer-guide/architecture/", "Repository and architecture") }}
-          {{ sidebar_page("developer-guide/tools.md", "developer-guide/tools/", "Project tools") }}
-          {{ sidebar_page("developer-guide/videos.md", "developer-guide/videos/", "Tutorial videos") }}
-          {{ sidebar_page("developer-guide/contributing.md", "developer-guide/contributing/", "Issues, changes, and releases") }}
-        </ul>
-      </li>
-    </ul>
+{% if page.file.src_uri == 'user-guide/map-planner.md' %}
+  {% set guide_title = "Map Manager" %}
+  {% set guide_description = "Map areas and downloads" %}
+  {% set guide_home = "user-guide/map-planner/" %}
+  {% set guide_links %}
+    {{ sidebar_page("user-guide/map-planner.md", "user-guide/map-planner/", "Map Manager") }}
+  {% endset %}
+{% elif page.file.src_uri.startswith('user-guide/') %}
+  {% set guide_title = "User Guide" %}
+  {% set guide_description = "Setup and everyday use" %}
+  {% set guide_home = "user-guide/add-dashboard/" %}
+  {% set guide_links %}
+    {{ sidebar_page("user-guide/installation.md", "user-guide/installation/", "Install and upgrade") }}
+    {{ sidebar_page("user-guide/add-dashboard.md", "user-guide/add-dashboard/", "Add a dashboard") }}
+    {{ sidebar_page("user-guide/edit-dashboard.md", "user-guide/edit-dashboard/", "Edit a dashboard on the radio") }}
+    {{ sidebar_page("user-guide/customize-themes.md", "user-guide/customize-themes/", "Customize themes") }}
+    {{ sidebar_page("user-guide/troubleshooting.md", "user-guide/troubleshooting/", "Troubleshoot and file bugs") }}
+  {% endset %}
+{% elif page.file.src_uri.startswith('reference-guide/') or page.file.src_uri.startswith('panels/') %}
+  {% set guide_title = "Reference Guide" %}
+  {% set guide_description = "Panels, settings, and YAML" %}
+  {% set guide_home = "reference-guide/" %}
+  {% set guide_links %}
+    {{ sidebar_page("reference-guide/index.md", "reference-guide/", "Overview") }}
+    {{ sidebar_page("panels/output.md", "panels/output/", "Channel output") }}
+    {{ sidebar_page("panels/flight-counter.md", "panels/flight-counter/", "Flight counter") }}
+    {{ sidebar_page("panels/flight-mode.md", "panels/flight-mode/", "Flight mode") }}
+    {{ sidebar_page("panels/flight-timer.md", "panels/flight-timer/", "Flight timer") }}
+    {{ sidebar_page("panels/host-diagnostics.md", "panels/host-diagnostics/", "Host diagnostics") }}
+    {{ sidebar_page("panels/link-status.md", "panels/link-status/", "Link status") }}
+    {{ sidebar_page("panels/metric.md", "panels/metric/", "Metric") }}
+    {{ sidebar_page("panels/model-identity.md", "panels/model-identity/", "Model identity") }}
+    {{ sidebar_page("panels/navigation.md", "panels/navigation/", "Navigation") }}
+    {{ sidebar_page("panels/rx-battery.md", "panels/rx-battery/", "RX battery") }}
+    {{ sidebar_page("panels/service-probe.md", "panels/service-probe/", "Service probe") }}
+    {{ sidebar_page("panels/state.md", "panels/state/", "State") }}
+    {{ sidebar_page("panels/trim-panel.md", "panels/trim-panel/", "Trim") }}
+    {{ sidebar_page("panels/tx-battery.md", "panels/tx-battery/", "TX battery") }}
+    {{ sidebar_page("reference-guide/yaml.md", "reference-guide/yaml/", "YAML reference") }}
+  {% endset %}
+{% elif page.file.src_uri.startswith('developer-guide/') %}
+  {% set guide_title = "Developer Guide" %}
+  {% set guide_description = "Build and contribute" %}
+  {% set guide_home = "developer-guide/build/" %}
+  {% set guide_links %}
+    {{ sidebar_page("developer-guide/build.md", "developer-guide/build/", "Check out and build") }}
+    {{ sidebar_page("developer-guide/testing.md", "developer-guide/testing/", "Test and debug") }}
+    {{ sidebar_page("developer-guide/simulators.md", "developer-guide/simulators/", "Run and test in simulators") }}
+    {{ sidebar_page("developer-guide/architecture.md", "developer-guide/architecture/", "Repository and architecture") }}
+    {{ sidebar_page("developer-guide/tools.md", "developer-guide/tools/", "Project tools") }}
+    {{ sidebar_page("developer-guide/videos.md", "developer-guide/videos/", "Tutorial videos") }}
+    {{ sidebar_page("developer-guide/contributing.md", "developer-guide/contributing/", "Issues, changes, and releases") }}
+  {% endset %}
+{% else %}
+  {% set guide_title = "Documentation" %}
+  {% set guide_description = "Choose a guide to get started" %}
+  {% set guide_home = "index.html" %}
+  {% set guide_links %}
+    <a class="ag-guide-link" href="{{ 'user-guide/installation/'|url }}">User Guide</a>
+    <a class="ag-guide-link" href="{{ 'reference-guide/'|url }}">Reference Guide</a>
+    <a class="ag-guide-link" href="{{ 'developer-guide/build/'|url }}">Developer Guide</a>
+  {% endset %}
+{% endif %}
+
+<nav class="ag-guide-nav" aria-label="{{ guide_title }}">
+  <a class="ag-guide-home" href="{{ guide_home|url }}">
+    <span class="ag-guide-heading">{{ guide_title }}</span>
+    <span class="ag-guide-description">{{ guide_description }}</span>
+  </a>
+  <div class="ag-guide-pages">
+    {{ guide_links }}
   </div>
 </nav>
