@@ -617,6 +617,58 @@ test("deletion, full disk, write, close and readback failures never succeed; ret
   }
 });
 
+test("deletion logs before/after snapshots and original errors without retrying or writing", async (t) => {
+  const info = t.mock.method(console, "info", () => {});
+  const errors = t.mock.method(console, "error", () => {});
+  const root = await fixture();
+  const widgets = root.children.get("WIDGETS");
+  const widget = widgets.children.get("AeroGrid");
+  const failure = new DOMException("Missing child during deletion", "NotFoundError");
+  let attempts = 0;
+  widgets.removeEntry = async () => {
+    attempts++;
+    widget.children.delete("custom.txt");
+    throw failure;
+  };
+  const { manifest, fetcher } = await releaseFixture();
+  await assert.rejects(replaceWidget(root, await preparePackage(manifest, base, () => {}, fetcher)),
+    (error) => error.cause === failure);
+  assert.equal(attempts, 1);
+  assert.deepEqual(root.context.events, []);
+  const snapshots = info.mock.calls.filter((call) => call.arguments[0].includes("snapshot"))
+    .map((call) => call.arguments[1]);
+  assert.equal(snapshots.length, 2);
+  assert.equal(snapshots[0].phase, "before deletion");
+  assert.ok(snapshots[0].files.includes("custom.txt"));
+  assert.equal(snapshots[1].phase, "after failed deletion");
+  assert.ok(!snapshots[1].files.includes("custom.txt"));
+  const details = errors.mock.calls[0].arguments[1];
+  assert.equal(details.target, "WIDGETS/AeroGrid");
+  assert.equal(details.name, "NotFoundError");
+  assert.equal(details.error, failure);
+  assert.ok(details.elapsedMs >= 0);
+});
+
+test("snapshot read errors are logged without masking deletion failures", async (t) => {
+  t.mock.method(console, "info", () => {});
+  const errors = t.mock.method(console, "error", () => {});
+  const root = await fixture();
+  const widget = root.children.get("WIDGETS").children.get("AeroGrid");
+  const entries = widget.entries.bind(widget);
+  root.context.failDelete = true;
+  const { manifest, fetcher } = await releaseFixture();
+  const prepared = await preparePackage(manifest, base, () => {}, fetcher);
+  await assert.rejects(replaceWidget(root, prepared, (stage) => {
+    if (stage.startsWith("Deleting")) widget.entries = async function* () {
+      yield* entries();
+      throw new Error("Snapshot read failed");
+    };
+  }),
+    /Deleting WIDGETS\/AeroGrid: Delete failed/);
+  assert.equal(errors.mock.calls.filter((call) => call.arguments[0].includes("Could not read")).length, 2);
+  assert.deepEqual(root.context.events, ["delete:WIDGETS/AeroGrid"]);
+});
+
 test("storage serializes operations, blocks disconnect, and clears busy after failure", async () => {
   const storage = new RadioStorage(async () => fixture());
   await storage.connect();

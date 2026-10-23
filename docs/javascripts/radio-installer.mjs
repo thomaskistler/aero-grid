@@ -279,6 +279,21 @@ export async function verifyInstalled(root, manifest, progress = () => {}, allow
   }
 }
 
+async function logDeletionSnapshot(widgets, phase) {
+  try {
+    const widget = await child(widgets, "AeroGrid", "directory", true);
+    const directories = new Set();
+    const files = widget ? await listFiles(widget, "", directories) : new Map();
+    console.info("[AeroGrid installer] Deletion snapshot.", {
+      phase, target: "WIDGETS/AeroGrid", present: Boolean(widget),
+      directoryCount: directories.size, fileCount: files.size,
+      directories: [...directories].sort(), files: [...files.keys()].sort(),
+    });
+  } catch (error) {
+    console.error("[AeroGrid installer] Could not read deletion snapshot.", { phase, error });
+  }
+}
+
 export async function replaceWidget(root, prepared, progress = () => {}, { allowDowngrade = false } = {}) {
   if (!preparedPackages.has(prepared)) throw new Error("Download and validate a complete installation package first.");
   // Recheck bytes even if another caller retained and modified a prepared buffer.
@@ -309,7 +324,25 @@ export async function replaceWidget(root, prepared, progress = () => {}, { allow
       stage = "Deleting WIDGETS/" + old.name;
       progress(stage, 0, prepared.files.length);
       changed = true;
-      await widgets.removeEntry(old.name, { recursive: true });
+      await logDeletionSnapshot(widgets, "before deletion");
+      const started = performance.now();
+      console.info("[AeroGrid installer] Starting recursive deletion.", {
+        target: `WIDGETS/${old.name}`, selectedVersion: prepared.version,
+        installedVersion: installed.version, recursive: true,
+      });
+      try {
+        await widgets.removeEntry(old.name, { recursive: true });
+        console.info("[AeroGrid installer] Recursive deletion completed.", {
+          target: `WIDGETS/${old.name}`, elapsedMs: Math.round(performance.now() - started),
+        });
+      } catch (error) {
+        console.error("[AeroGrid installer] Recursive deletion failed.", {
+          target: `WIDGETS/${old.name}`, elapsedMs: Math.round(performance.now() - started),
+          name: error.name, message: error.message, error,
+        });
+        await logDeletionSnapshot(widgets, "after failed deletion");
+        throw error;
+      }
     }
     stage = "Creating WIDGETS/AeroGrid";
     changed = true;

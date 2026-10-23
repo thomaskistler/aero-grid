@@ -184,6 +184,11 @@ mutation. Radio writes remain sequential and reuse directory handles within the
 replacement operation. Read-back verification enumerates each widget directory
 once and reuses the discovered file handles, while still checking every release
 file's size and SHA-256. These handles are not cached across installations.
+The JavaScript console logs the deletion target, versions, elapsed time and
+original browser error. Read-only snapshots list widget-relative files and
+directories before deletion and after failure; they contain no file contents.
+Snapshot failures are logged separately and do not replace the deletion error.
+Deletion errors still stop installation without retrying or falling back.
 An explicitly selected downgrade requires a downgrade-specific confirmation.
 The storage writer still refuses downgrades unless that confirmation authorizes
 one; it does not convert user data to older layout or settings formats.
