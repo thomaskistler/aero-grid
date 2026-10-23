@@ -5,14 +5,12 @@
 
 {% if page.file.src_uri == 'user-guide/map-planner.md' %}
   {% set guide_title = "Map Manager" %}
-  {% set guide_description = "Map areas and downloads" %}
   {% set guide_home = "user-guide/map-planner/" %}
   {% set guide_links %}
     {{ sidebar_page("user-guide/map-planner.md", "user-guide/map-planner/", "Map Manager") }}
   {% endset %}
 {% elif page.file.src_uri.startswith('user-guide/') %}
   {% set guide_title = "User Guide" %}
-  {% set guide_description = "Setup and everyday use" %}
   {% set guide_home = "user-guide/add-dashboard/" %}
   {% set guide_links %}
     {{ sidebar_page("user-guide/installation.md", "user-guide/installation/", "Install and upgrade") }}
@@ -23,7 +21,6 @@
   {% endset %}
 {% elif page.file.src_uri.startswith('reference-guide/') or page.file.src_uri.startswith('panels/') %}
   {% set guide_title = "Reference Guide" %}
-  {% set guide_description = "Panels, settings, and YAML" %}
   {% set guide_home = "reference-guide/" %}
   {% set guide_links %}
     {{ sidebar_page("reference-guide/index.md", "reference-guide/", "Overview") }}
@@ -45,7 +42,6 @@
   {% endset %}
 {% elif page.file.src_uri.startswith('developer-guide/') %}
   {% set guide_title = "Developer Guide" %}
-  {% set guide_description = "Build and contribute" %}
   {% set guide_home = "developer-guide/build/" %}
   {% set guide_links %}
     {{ sidebar_page("developer-guide/build.md", "developer-guide/build/", "Check out and build") }}
@@ -58,7 +54,6 @@
   {% endset %}
 {% else %}
   {% set guide_title = "Documentation" %}
-  {% set guide_description = "Choose a guide to get started" %}
   {% set guide_home = "index.html" %}
   {% set guide_links %}
     <a class="ag-guide-link" href="{{ 'user-guide/installation/'|url }}">User Guide</a>
@@ -70,7 +65,6 @@
 <nav class="ag-guide-nav" aria-label="{{ guide_title }}">
   <a class="ag-guide-home" href="{{ guide_home|url }}">
     <span class="ag-guide-heading">{{ guide_title }}</span>
-    <span class="ag-guide-description">{{ guide_description }}</span>
   </a>
   <div class="ag-guide-pages">
     {{ guide_links }}
