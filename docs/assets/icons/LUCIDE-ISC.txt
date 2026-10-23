@@ -1,8 +1,8 @@
 Lucide icons are from https://github.com/lucide-icons/lucide and are licensed
 under the ISC License.
 
-The installation page's connection badges use plug and plug-zap from Lucide
-0.468.0 (icons/plug.svg and icons/plug-zap.svg).
+The installation page's connection badges use link-2 and link-2-off from Lucide
+0.468.0 (icons/link-2.svg and icons/link-2-off.svg).
 
 Copyright (c) 2022 Lucide Contributors
 
