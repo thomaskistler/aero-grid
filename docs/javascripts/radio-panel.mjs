@@ -212,11 +212,9 @@ if (panel) {
     const warning = `Install AeroGrid ${version} on ${details.radio.name}?\n\n`
       + (!compatibility.supported ? `${compatibility.message}\n\n` : "")
       + (downgrade ? `DOWNGRADE from ${details.widget.version} to ${version}. Older releases may not support your current layouts or settings. User data will not be converted.\n\n` : "")
-      + "The entire WIDGETS/AeroGrid folder, including custom files inside it, will be deleted and replaced. "
-      + "There is NO backup or rollback. An interruption may leave AeroGrid unusable until you reinstall.\n\n"
+      + "This will replace the AeroGrid installation in /WIDGETS/AeroGrid/. No backup or rollback is available.\n\n"
       + (!details.widget.version && details.widget.present ? "The existing version is unknown; version comparison is unavailable.\n\n" : "")
-      + "User data in /AEROGRID, maps, other widgets, model/radio settings, and firmware will not be changed. "
-      + "Keep USB connected and this page open until completion. AeroGrid requires a color-screen radio running EdgeTX 2.11.0 or later.";
+      + "AeroGrid user data in /AEROGRID, maps, other widgets, model/radio settings, and firmware will not be changed.";
     confirmation = { version, details: structuredClone(details), downgrade: !!downgrade };
     element("confirm-title").textContent = downgrade ? "Confirm downgrade" : "Confirm installation";
     confirmStart.textContent = downgrade ? `Confirm downgrade to ${version}` : `Confirm installation of ${version}`;
