@@ -937,7 +937,7 @@ button:focus-visible {
   display: grid;
   gap: 4px;
   margin: 0;
-  font-size: var(--ag-font-sm);
+  font-size: var(--ag-font-base);
   line-height: 1.4;
 }
 
@@ -950,7 +950,7 @@ button:focus-visible {
 
 .ag-radio-specs dt {
   color: var(--ag-console-muted);
-  font-size: var(--ag-font-xs);
+  font-size: var(--ag-font-base);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -967,7 +967,7 @@ button:focus-visible {
 }
 
 .ag-install-workspace .ag-radio-compatibility {
-  font-size: var(--ag-font-sm);
+  font-size: var(--ag-font-base);
   color: var(--ag-console-muted);
 }
 
@@ -1089,12 +1089,12 @@ button:focus-visible {
 
 .ag-release-row strong,
 .ag-release-row a {
-  font-size: var(--ag-font-sm);
+  font-size: var(--ag-font-base);
 }
 
 .ag-release-row small {
   color: var(--ag-console-muted);
-  font-size: var(--ag-font-xs);
+  font-size: var(--ag-font-base);
 }
 
 .ag-release-row a {
@@ -1110,7 +1110,7 @@ button:focus-visible {
   padding: 12px;
   border-left: 3px solid var(--ag-amber);
   background: var(--ag-console-bg);
-  font-size: var(--ag-font-sm);
+  font-size: var(--ag-font-base);
 }
 
 .ag-install-workspace .ag-radio-muted,
@@ -1118,7 +1118,7 @@ button:focus-visible {
 .ag-install-help a,
 .ag-install-safety,
 .ag-install-details summary {
-  font-size: var(--ag-font-sm);
+  font-size: var(--ag-font-base);
 }
 
 .ag-install-workspace .ag-radio-muted {
@@ -1126,7 +1126,7 @@ button:focus-visible {
 }
 
 .ag-install-workspace .ag-radio-button {
-  font-size: var(--ag-font-sm);
+  font-size: var(--ag-font-base);
 }
 
 .ag-install-help .ag-install-note {

@@ -75,6 +75,15 @@ try {
     parseFloat(getComputedStyle(document.querySelector("#install-over-usb")).fontSize)
       === parseFloat(getComputedStyle(document.querySelector("#manual-installation")).fontSize)),
   "USB and manual installation headings have the same font size");
+  for (const selector of [
+    ".ag-radio > .ag-radio-muted", ".ag-install-help p", ".ag-install-help a",
+    ".ag-install-safety", "[data-compatibility]", ".ag-radio-specs",
+    ".ag-radio-specs dt", "[data-connect]", "[data-install]",
+  ]) {
+    assert.ok(await page.locator(selector).evaluateAll((nodes) =>
+      nodes.length > 0 && nodes.every((node) => getComputedStyle(node).fontSize === "16px")),
+    `${selector} uses 16px body text`);
+  }
   assert.equal(await page.locator("[data-connect] .ag-usb-icon").count(), 1);
   assert.equal(await page.locator("[data-radio-type]").textContent(), "Unknown");
   assert.equal(await page.locator("[data-radio-screen]").textContent(), "Unknown");
