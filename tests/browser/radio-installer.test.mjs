@@ -6,7 +6,7 @@ import {
   parseRadioMetadata, parseVersion, RadioStorage,
 } from "../../docs/javascripts/radio-storage.mjs";
 import {
-  actionFor, ContentMismatchError, loadLatest, preparePackage, RELEASE_API,
+  actionFor, ContentMismatchError, loadCatalog, loadLatest, loadRelease, preparePackage, RELEASE_API,
   replaceWidget, sha256, validateManifest, verifyInstalled,
 } from "../../docs/javascripts/radio-installer.mjs";
 
@@ -133,8 +133,9 @@ async function releaseFixture() {
   };
   const fetcher = async (url) => {
     const address = String(url);
-    if (address === RELEASE_API) return Response.json(release);
-    if (address === new URL("latest.json", base).href) return Response.json(manifest);
+    if (address === RELEASE_API || address === RELEASE_API.replace("/latest", "/tags/v0.4.0")) return Response.json(release);
+    if (address === new URL("latest.json", base).href
+        || address === new URL("releases/0.4.0/manifest.json", base).href) return Response.json(manifest);
     const path = address.split("/releases/0.4.0/")[1];
     return path in content ? new Response(content[path]) : new Response("missing", { status: 404 });
   };
@@ -232,12 +233,45 @@ test("widget absence, unknown version and ambiguous entries are distinct", async
   await assert.rejects(inspectWidget(root), /Ambiguous/);
 });
 
-test("action selection installs, updates, shows equal and refuses newer versions", () => {
+test("action selection installs, updates, shows equal and labels downgrades explicitly", () => {
   assert.match(actionFor({ present: false }, "0.4.0").label, /^Install/);
   assert.match(actionFor({ present: true, version: null }, "0.4.0").label, /^Update/);
   assert.equal(actionFor({ present: true, version: "0.4.0" }, "0.4.0").enabled, false);
-  assert.equal(actionFor({ present: true, version: "0.5.0" }, "0.4.0").enabled, false);
+  assert.equal(actionFor({ present: true, version: "0.5.0" }, "0.4.0").enabled, true);
+  assert.match(actionFor({ present: true, version: "0.5.0" }, "0.4.0").label, /^Downgrade/);
   assert.equal(actionFor({ present: true, version: "0.4.0-beta.1" }, "0.4.0").enabled, true);
+});
+
+test("selected historical releases are pinned and cross-checked against their GitHub tag", async () => {
+  const fixture = await releaseFixture();
+  assert.deepEqual(await loadRelease(base, "0.4.0", fixture.fetcher), fixture.manifest);
+  await assert.rejects(loadRelease(base, "../RADIO", fixture.fetcher), /Invalid selected/);
+  await assert.rejects(loadRelease(base, "00.4.0", fixture.fetcher), /Invalid selected/);
+  fixture.release.draft = true;
+  await assert.rejects(loadRelease(base, "0.4.0", fixture.fetcher), /selected stable/);
+  fixture.release.draft = false;
+  fixture.manifest.version = "0.3.0";
+  await assert.rejects(loadRelease(base, "0.4.0", fixture.fetcher), /does not match/);
+});
+
+test("release catalog validates entries, unavailable states, latest and numeric ordering", async () => {
+  const entry = (version, available = true) => ({
+    version, name: `AeroGrid ${version}`,
+    release: `https://github.com/thomaskistler/aero-grid/releases/tag/v${version}`,
+    available, reason: available ? null : "Missing installation assets.",
+  });
+  const catalog = { schema: 1, latest: "0.10.0", releases: [entry("0.2.0"), entry("0.10.0"), entry("0.3.0", false)] };
+  const fetcher = async () => Response.json(catalog);
+  assert.deepEqual((await loadCatalog(base, fetcher)).releases.map((item) => item.version), ["0.10.0", "0.3.0", "0.2.0"]);
+  for (const bad of [
+    { ...catalog, latest: "0.3.0" },
+    { ...catalog, releases: [null] },
+    { ...catalog, releases: [...catalog.releases, entry("0.2.0")] },
+    { ...catalog, releases: [entry("1.0.0-beta.1")] },
+    { ...catalog, releases: [{ ...entry("0.10.0"), release: "https://example.com" }] },
+    { ...catalog, releases: [{ ...entry("0.10.0"), available: "yes" }] },
+    { ...catalog, releases: [{ ...entry("0.10.0", false), reason: null }] },
+  ]) await assert.rejects(loadCatalog(base, async () => Response.json(bad)), /catalog|entry/);
 });
 
 test("latest stable is cross-checked with published assets; stale/missing/network states block", async () => {
@@ -332,8 +366,20 @@ test("newer installed version blocks downgrade before deletion", async () => {
   const root = await fixture();
   await put(root, "WIDGETS/AeroGrid/lib/package.lua", 'return {\nversion = "99.0.0",\n}');
   const { manifest, fetcher } = await releaseFixture();
-  await assert.rejects(replaceWidget(root, await preparePackage(manifest, base, () => {}, fetcher)), /Downgrade refused/);
+  const prepared = await preparePackage(manifest, base, () => {}, fetcher);
+  await assert.rejects(replaceWidget(root, prepared), /Downgrade refused/);
+  await assert.rejects(replaceWidget(root, prepared, () => {}, { allowDowngrade: "yes" }), /Downgrade refused/);
   assert.deepEqual(root.context.events, []);
+});
+
+test("explicit downgrade authorization permits replacement and preserves user data", async () => {
+  const root = await fixture();
+  await put(root, "WIDGETS/AeroGrid/lib/package.lua", 'return {\nversion = "99.0.0",\n}');
+  const { manifest, fetcher } = await releaseFixture();
+  await replaceWidget(root, await preparePackage(manifest, base, () => {}, fetcher),
+    () => {}, { allowDowngrade: true });
+  await verifyInstalled(root, manifest);
+  assert.equal(await (await root.children.get("MAPS").children.get("tiles").children.get("tile.png").getFile()).text(), "user map");
 });
 
 test("first install creates only WIDGETS and its widget when WIDGETS is absent", async () => {

@@ -934,6 +934,87 @@ button:focus-visible {
   border-top: 1px solid var(--ag-console-border);
 }
 
+.ag-release-picker {
+  min-width: 0;
+  margin: 20px 0;
+}
+
+.ag-release-picker legend {
+  float: none;
+  margin-bottom: 8px;
+  font-size: var(--ag-font-lg);
+  font-weight: 680;
+}
+
+.ag-release-list {
+  max-height: 190px;
+  overflow-y: auto;
+  border: 1px solid var(--ag-console-border);
+  border-radius: 6px;
+}
+
+.ag-release-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+.ag-release-row + .ag-release-row {
+  border-top: 1px solid var(--ag-console-border);
+}
+
+.ag-release-row:has(input:checked) {
+  background: var(--ag-console-blue-wash);
+}
+
+.ag-release-row label {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.ag-release-row input {
+  flex: 0 0 auto;
+  accent-color: var(--ag-console-blue-dark);
+}
+
+.ag-release-row label span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ag-release-row strong,
+.ag-release-row a {
+  font-size: var(--ag-font-sm);
+}
+
+.ag-release-row small {
+  color: var(--ag-console-muted);
+  font-size: var(--ag-font-xs);
+}
+
+.ag-release-row a {
+  flex: 0 0 auto;
+}
+
+.ag-release-row:has(input:disabled) label {
+  color: var(--ag-console-muted);
+  cursor: not-allowed;
+}
+
+.ag-install-workspace .ag-radio-downgrade {
+  padding: 12px;
+  border-left: 3px solid var(--ag-amber);
+  background: var(--ag-console-bg);
+  font-size: var(--ag-font-sm);
+}
+
 .ag-install-workspace .ag-radio-muted,
 .ag-install-help p,
 .ag-install-help a,
@@ -1004,6 +1085,10 @@ button:focus-visible {
   .ag-install-workspace .ag-radio,
   .ag-install-help {
     padding: 16px;
+  }
+
+  .ag-release-row {
+    flex-wrap: wrap;
   }
 }
 

@@ -80,12 +80,27 @@
 }
 
 .ag-radio-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   border: 1px solid var(--ag-border);
   border-radius: 8px;
   background: var(--ag-canvas);
   color: var(--ag-text);
   padding: 0.65rem 1rem;
   font-weight: 600;
+}
+
+.ag-usb-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .ag-radio-primary {

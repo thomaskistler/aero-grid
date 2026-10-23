@@ -152,12 +152,18 @@ The USB installer is composed of ES modules under `docs/javascripts/`.
 UI-independent storage/metadata helpers for future map workflows. The installer
 only replaces the AeroGrid widget; no map writer or firmware flasher is included.
 
-Pages builds mirror the latest **published stable release**, not the current
-source tree, into same-origin versioned files plus `installer/latest.json`.
+Pages builds mirror **published stable releases**, not the current source tree,
+into same-origin versioned files, individual `releases/<version>/manifest.json`
+manifests, `installer/latest.json`, and an `installer/releases.json` catalog.
+The latest release is selected by default. Historical releases without a compatible
+ZIP/checksum pair are listed as unavailable, not silently substituted.
 The build validates the release ZIP's SHA-256, archive paths, size limits, and
 package version before emitting the payload. The browser checks the latest
-GitHub release against this manifest and verifies every downloaded and written
+GitHub release against its manifest and verifies every downloaded and written
 file. These are content integrity checks, not signed publisher authentication.
+An explicitly selected downgrade requires a downgrade-specific confirmation.
+The storage writer still refuses downgrades unless that confirmation authorizes
+one; it does not convert user data to older layout or settings formats.
 
 To include those assets in a disposable built-site preview:
 

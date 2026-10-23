@@ -1,6 +1,6 @@
 # Install and upgrade
 
-Install the latest stable AeroGrid on your radio, or bring your existing installation up to date. Your layouts, maps, and radio settings stay in place.
+Install the latest stable AeroGrid on your radio, or choose a previous release. Your layouts, maps, and radio settings stay in place.
 
 <div class="ag-install-workspace">
 <div class="ag-radio" data-radio-installer>
@@ -10,7 +10,7 @@ Install the latest stable AeroGrid on your radio, or bring your existing install
       <strong data-connection>Radio disconnected</strong>
       <div class="ag-radio-muted" data-device>No SD card selected</div>
     </div>
-    <button type="button" class="ag-radio-button ag-radio-primary" data-connect disabled>Connect Radio</button>
+    <button type="button" class="ag-radio-button ag-radio-primary" data-connect disabled><svg class="ag-usb-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V3m-3 3 3-3 3 3M12 15l-5-5V7m5 10 5-5V9"/><circle cx="7" cy="5" r="2"/><circle cx="12" cy="21" r="2"/><rect x="15" y="5" width="4" height="4"/></svg><span data-connect-label>Connect Radio</span></button>
   </div>
   <div class="ag-radio-cards">
     <div class="ag-radio-card">
@@ -29,14 +29,20 @@ Install the latest stable AeroGrid on your radio, or bring your existing install
       <small>Beta/RC releases excluded</small>
     </div>
   </div>
+  <fieldset class="ag-release-picker" data-release-picker disabled>
+    <legend>Choose a release</legend>
+    <p class="ag-radio-muted">Latest stable is selected by default. Beta and RC releases are not included.</p>
+    <div class="ag-release-list" data-releases></div>
+  </fieldset>
   <div class="ag-install-action">
   <h3>AeroGrid installation</h3>
-  <p class="ag-radio-muted">The latest stable release replaces /WIDGETS/AeroGrid/ completely, including custom files inside it. No backup or rollback is created. Layouts, maps, radio/model settings, and firmware are left untouched.</p>
+  <p class="ag-radio-muted">The selected release replaces /WIDGETS/AeroGrid/ completely, including custom files inside it. No backup or rollback is created. Layouts, maps, radio/model settings, and firmware are left untouched.</p>
+  <p class="ag-radio-downgrade" data-downgrade hidden></p>
   <div class="ag-radio-actions">
     <button type="button" class="ag-radio-button" data-install disabled>Install latest AeroGrid</button>
   </div>
   <div class="ag-radio-confirm" role="group" aria-labelledby="ag-confirm-title" data-confirm hidden>
-    <strong id="ag-confirm-title">Confirm installation</strong>
+    <strong id="ag-confirm-title" data-confirm-title>Confirm installation</strong>
     <p data-confirm-description></p>
     <div class="ag-radio-actions">
       <button type="button" class="ag-radio-button ag-radio-primary" data-confirm-start>Confirm installation</button>
@@ -74,6 +80,7 @@ Install the latest stable AeroGrid on your radio, or bring your existing install
 <summary>What changes, and what to do if installation is interrupted</summary>
 <p>The installer downloads and checks the complete release <strong>before deleting anything</strong>, then replaces <code>/WIDGETS/AeroGrid/</code> and reads back the new files to verify their contents. This is not an atomic operation. Custom files inside the widget folder are removed, including stale compiled Lua files.</p>
 <p>If replacement fails, AeroGrid may be unusable; reconnect and repeat the full installation before using it. No automatic rollback is available. Your <code>/AEROGRID/</code> user data, maps, other widgets, radio/model settings, and firmware are left untouched.</p>
+<p>You can select a previous stable release if it has compatible installation assets. Older releases may not support settings or layouts written by newer versions. A downgrade requires explicit confirmation; the installer preserves user data but does not convert it to an older format.</p>
 </details>
 
 <h2 id="manual-installation">Manual installation</h2>

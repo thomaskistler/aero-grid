@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 import { radioStorage, compareVersions } from "./radio-storage.mjs";
-import { actionFor, ContentMismatchError, loadLatest, preparePackage, replaceWidget, verifyInstalled } from "./radio-installer.mjs";
+import { actionFor, ContentMismatchError, loadCatalog, loadLatest, loadRelease, preparePackage, replaceWidget, verifyInstalled } from "./radio-installer.mjs";
 
 const panel = document.querySelector("[data-radio-installer]");
 if (panel) {
@@ -15,6 +15,9 @@ if (panel) {
   const progress = element("progress");
   const supported = window.isSecureContext && typeof window.showDirectoryPicker === "function";
   let manifest = null;
+  let latestManifest = null;
+  let catalog = null;
+  let selectedVersion = null;
   let details = null;
   let busy = false;
   let checking = false;
@@ -29,7 +32,7 @@ if (panel) {
 
   function render() {
     const connected = !!radioStorage.root;
-    connect.textContent = connected ? "Disconnect Radio" : "Connect Radio";
+    element("connect-label").textContent = connected ? "Disconnect Radio" : "Connect Radio";
     connect.classList.toggle("ag-radio-primary", !connected);
     install.classList.toggle("ag-radio-primary", connected);
     connect.disabled = !supported || busy || checking || !!confirmation;
@@ -43,14 +46,19 @@ if (panel) {
       ? "Source: RADIO/radio.yml (saved firmware metadata, not a live query)" : "Detected after connection";
     element("widget").textContent = !details ? "Unknown" : !details.widget.present
       ? "Not installed" : `${details.widget.version ?? "Unknown version"}${incomplete ? " | incomplete / different files" : " | metadata detected"}`;
-    element("latest").textContent = manifest?.version ?? "Unavailable";
+    element("latest").textContent = latestManifest?.version ?? "Unavailable";
+    element("release-picker").disabled = busy || checking || checkingRelease || !!confirmation || !catalog;
+    const downgrade = details?.widget.version && manifest
+      && compareVersions(details.widget.version, manifest.version) > 0;
+    element("downgrade").hidden = !downgrade;
+    element("downgrade").textContent = downgrade
+      ? `Downgrade: AeroGrid ${details.widget.version} to ${manifest.version}. Older releases may not support your current layouts or settings. User data is not converted.`
+      : "";
     const action = details && manifest
       ? actionFor(incomplete ? { present: true, version: null } : details.widget, manifest.version) : null;
-    install.textContent = busy ? "Installation in progress..." : action?.label ?? "Install latest AeroGrid";
+    install.textContent = busy ? "Installation in progress..." : action?.label
+      ?? (selectedVersion ? `Install AeroGrid ${selectedVersion}` : "Install latest AeroGrid");
     install.disabled = !supported || busy || checking || checkingRelease || !!confirmation || !connected || !action?.enabled;
-    if (details?.widget.version && manifest && compareVersions(details.widget.version, manifest.version) > 0) {
-      install.disabled = true;
-    }
     confirm.hidden = !confirmation;
   }
 
@@ -68,23 +76,85 @@ if (panel) {
     }
   }
 
+  function renderReleases() {
+    element("releases").replaceChildren();
+    for (const entry of catalog.releases) {
+      const row = document.createElement("div");
+      row.className = "ag-release-row";
+      const label = document.createElement("label");
+      const input = document.createElement("input");
+      input.type = "radio";
+      input.name = "aerogrid-release";
+      input.value = entry.version;
+      input.checked = entry.version === selectedVersion;
+      input.disabled = !entry.available;
+      const text = document.createElement("span");
+      const title = document.createElement("strong");
+      title.textContent = `v${entry.version}${entry.version === catalog.latest ? " - Latest" : ""}`;
+      const description = document.createElement("small");
+      description.textContent = entry.available ? entry.name : entry.reason;
+      text.append(title, description);
+      label.append(input, text);
+      const link = document.createElement("a");
+      link.href = entry.release;
+      link.textContent = "Release notes";
+      link.setAttribute("aria-label", `Release notes for AeroGrid ${entry.version}`);
+      row.append(label, link);
+      element("releases").append(row);
+    }
+  }
+
+  async function selectedRelease(version) {
+    return version === catalog.latest ? loadLatest(base) : loadRelease(base, version);
+  }
+
   async function refreshRelease() {
     checkingRelease = true;
     manifest = null;
     releaseStatus.textContent = "Checking the latest stable release...";
     render();
     try {
-      manifest = await loadLatest(base);
-      releaseStatus.textContent = `Latest stable release: ${manifest.version}.`;
+      [latestManifest, catalog] = await Promise.all([loadLatest(base), loadCatalog(base)]);
+      if (catalog.latest !== latestManifest.version) throw new Error("Release catalog is out of date. Reload after publication.");
+      selectedVersion = catalog.latest;
+      manifest = latestManifest;
+      renderReleases();
+      releaseStatus.textContent = `Selected release: ${manifest.version} (latest stable).`;
       if (radioStorage.root) await inspect();
     } catch (error) {
       manifest = null;
+      latestManifest = null;
+      catalog = null;
       releaseStatus.textContent = `Automatic installation unavailable: ${error.message} Reload the page to check again, or use the manual ZIP instructions below.`;
     } finally {
       checkingRelease = false;
       render();
     }
   }
+
+  element("releases").addEventListener("change", async (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || input.type !== "radio"
+        || busy || checking || checkingRelease || confirmation
+        || !catalog?.releases.some((entry) => entry.version === input.value && entry.available)) return;
+    selectedVersion = input.value;
+    manifest = null;
+    incomplete = false;
+    checkingRelease = true;
+    releaseStatus.textContent = `Checking AeroGrid ${selectedVersion}...`;
+    render();
+    try {
+      manifest = await selectedRelease(selectedVersion);
+      if (radioStorage.root) await inspect();
+      releaseStatus.textContent = `Selected release: ${manifest.version}${manifest.version === catalog.latest ? " (latest stable)" : ""}.`;
+    } catch (error) {
+      manifest = null;
+      releaseStatus.textContent = `Selected release unavailable: ${error.message}`;
+    } finally {
+      checkingRelease = false;
+      render();
+    }
+  });
 
   connect.addEventListener("click", async () => {
     if (radioStorage.root) {
@@ -120,13 +190,17 @@ if (panel) {
   install.addEventListener("click", async () => {
     if (!manifest || !details || busy) return;
     const version = manifest.version;
+    const downgrade = details.widget.version && compareVersions(details.widget.version, version) > 0;
     const warning = `Install AeroGrid ${version} on ${details.radio.name}?\n\n`
+      + (downgrade ? `DOWNGRADE from ${details.widget.version} to ${version}. Older releases may not support your current layouts or settings. User data will not be converted.\n\n` : "")
       + "The entire WIDGETS/AeroGrid folder, including custom files inside it, will be deleted and replaced. "
       + "There is NO backup or rollback. An interruption may leave AeroGrid unusable until you reinstall.\n\n"
       + (!details.widget.version && details.widget.present ? "The existing version is unknown; version comparison is unavailable.\n\n" : "")
       + "User data in /AEROGRID, maps, other widgets, model/radio settings, and firmware will not be changed. "
       + "Keep USB connected and this page open until completion. Your radio must support EdgeTX's LVGL widget API.";
-    confirmation = { version, details: structuredClone(details) };
+    confirmation = { version, details: structuredClone(details), downgrade: !!downgrade };
+    element("confirm-title").textContent = downgrade ? "Confirm downgrade" : "Confirm installation";
+    confirmStart.textContent = downgrade ? `Confirm downgrade to ${version}` : `Confirm installation of ${version}`;
     element("confirm-description").textContent = warning;
     render();
     confirmStart.focus();
@@ -140,7 +214,7 @@ if (panel) {
 
   confirmStart.addEventListener("click", async () => {
     if (!confirmation || busy) return;
-    const { version, details: expected } = confirmation;
+    const { version, details: expected, downgrade } = confirmation;
     confirmation = null;
     busy = true;
     const permission = radioStorage.requestWritePermission();
@@ -155,17 +229,17 @@ if (panel) {
     try {
       await permission;
       await radioStorage.exclusive(async (root) => {
-        const latest = await loadLatest(base);
-        if (latest.version !== version) throw new Error("The latest release changed. Retry to confirm the new version.");
-        const prepared = await preparePackage(latest, base, report);
+        const selected = await selectedRelease(version);
+        if (selected.version !== version) throw new Error("The latest release changed. Reload to confirm the new version.");
+        const prepared = await preparePackage(selected, base, report);
         const current = await radioStorage.inspect();
         if (current.radio.board !== expected.radio.board || current.radio.version !== expected.radio.version
             || current.widget.present !== expected.widget.present || current.widget.version !== expected.widget.version) {
           throw new Error("SD-card metadata changed since connection. Reconnect before installing.");
         }
         replacing = true;
-        await replaceWidget(root, prepared, report);
-        manifest = latest;
+        await replaceWidget(root, prepared, report, { allowDowngrade: downgrade });
+        manifest = selected;
         incomplete = false;
         await inspect();
       });

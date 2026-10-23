@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
 import { child, compareVersions, inspectRoot, inspectWidget, packageVersion, parseVersion } from "./radio-storage.mjs";
 
-export const RELEASE_API = "https://api.github.com/repos/thomaskistler/aero-grid/releases/latest";
+const RELEASES_API = "https://api.github.com/repos/thomaskistler/aero-grid/releases";
+export const RELEASE_API = `${RELEASES_API}/latest`;
 const RELEASE_ROOT = "https://github.com/thomaskistler/aero-grid/releases";
 const MAX_FILES = 1500;
 const MAX_TOTAL = 64 * 1024 * 1024;
@@ -20,7 +21,7 @@ export function actionFor(widget, latest) {
   if (!widget.version) return { enabled: true, label: `Update to AeroGrid ${latest}` };
   const comparison = compareVersions(widget.version, latest);
   if (comparison === 0) return { enabled: false, label: "Up to date" };
-  if (comparison > 0) return { enabled: false, label: "Newer version installed - no downgrade" };
+  if (comparison > 0) return { enabled: true, label: `Downgrade to AeroGrid ${latest}` };
   return { enabled: true, label: `Update to AeroGrid ${latest}` };
 }
 
@@ -101,23 +102,63 @@ async function fetchJSON(url, fetcher) {
   return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(await fetchBytes(url, MAX_FILE, fetcher)));
 }
 
+function validateRelease(manifest, release) {
+  validateManifest(manifest);
+  if (release.draft !== false || release.prerelease !== false
+      || release.tag_name !== `v${manifest.version}`) {
+    throw new Error("The selected stable release is not available on this site yet. Reload after publication.");
+  }
+  for (const name of [`AeroGrid-${manifest.version}.zip`, `AeroGrid-${manifest.version}.zip.sha256`]) {
+    if (!release.assets?.some((asset) => asset.name === name
+        && asset.browser_download_url === `${RELEASE_ROOT}/download/v${manifest.version}/${name}`)) {
+      throw new Error("The selected stable release is missing installation assets.");
+    }
+  }
+  return manifest;
+}
+
 export async function loadLatest(base, fetcher = globalThis.fetch) {
   const [manifest, release] = await Promise.all([
     fetchJSON(new URL("latest.json", base), fetcher),
     fetchJSON(RELEASE_API, fetcher),
   ]);
-  validateManifest(manifest);
-  if (release.draft !== false || release.prerelease !== false
-      || release.tag_name !== `v${manifest.version}`) {
-    throw new Error("The latest stable release is not available on this site yet. Retry after publication.");
+  return validateRelease(manifest, release);
+}
+
+export async function loadRelease(base, version, fetcher = globalThis.fetch) {
+  if (!/^\d+\.\d+\.\d+$/.test(version) || !parseVersion(version)) {
+    throw new Error("Invalid selected release version.");
   }
-  for (const name of [`AeroGrid-${manifest.version}.zip`, `AeroGrid-${manifest.version}.zip.sha256`]) {
-    if (!release.assets?.some((asset) => asset.name === name
-        && asset.browser_download_url === `${RELEASE_ROOT}/download/v${manifest.version}/${name}`)) {
-      throw new Error("The latest stable release is missing installation assets.");
+  const [manifest, release] = await Promise.all([
+    fetchJSON(new URL(`releases/${version}/manifest.json`, base), fetcher),
+    fetchJSON(`${RELEASES_API}/tags/v${version}`, fetcher),
+  ]);
+  if (manifest.version !== version) throw new Error("Selected release version does not match its manifest.");
+  return validateRelease(manifest, release);
+}
+
+export async function loadCatalog(base, fetcher = globalThis.fetch) {
+  const catalog = await fetchJSON(new URL("releases.json", base), fetcher);
+  if (catalog?.schema !== 1 || !Array.isArray(catalog.releases)
+      || !catalog.releases.length || catalog.releases.length > 2000) {
+    throw new Error("Invalid installation release catalog.");
+  }
+  const seen = new Set();
+  for (const entry of catalog.releases) {
+    if (!entry || !parseVersion(entry.version) || !/^\d+\.\d+\.\d+$/.test(entry.version)
+        || seen.has(entry.version) || typeof entry.name !== "string" || entry.name.length > 500
+        || entry.release !== `${RELEASE_ROOT}/tag/v${entry.version}`
+        || typeof entry.available !== "boolean"
+        || (entry.available ? entry.reason !== null : typeof entry.reason !== "string" || !entry.reason.length)) {
+      throw new Error("Invalid installation release entry.");
     }
+    seen.add(entry.version);
   }
-  return manifest;
+  if (!catalog.releases.some((entry) => entry.version === catalog.latest && entry.available)) {
+    throw new Error("The latest stable release is missing from the installation catalog.");
+  }
+  catalog.releases.sort((left, right) => compareVersions(right.version, left.version));
+  return catalog;
 }
 
 export async function preparePackage(manifest, base, progress, fetcher = globalThis.fetch) {
@@ -180,7 +221,7 @@ export async function verifyInstalled(root, manifest, progress = () => {}, allow
   }
 }
 
-export async function replaceWidget(root, prepared, progress = () => {}) {
+export async function replaceWidget(root, prepared, progress = () => {}, { allowDowngrade = false } = {}) {
   if (!preparedPackages.has(prepared)) throw new Error("Download and validate a complete installation package first.");
   // Recheck bytes even if another caller retained and modified a prepared buffer.
   validateManifest({
@@ -194,7 +235,7 @@ export async function replaceWidget(root, prepared, progress = () => {}) {
   }
   await inspectRoot(root);
   const installed = await inspectWidget(root);
-  if (installed.version && compareVersions(installed.version, prepared.version) > 0) {
+  if (installed.version && compareVersions(installed.version, prepared.version) > 0 && allowDowngrade !== true) {
     throw new Error("A newer AeroGrid version is installed. Downgrade refused.");
   }
   let widgets = await child(root, "WIDGETS", "directory", true);

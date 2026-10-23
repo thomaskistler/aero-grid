@@ -44,6 +44,70 @@ def checksum(data):
 
 
 class InstallerAssetsTests(unittest.TestCase):
+    def catalog_fixture(self):
+        latest = release_metadata()
+        older = release_metadata("1.0.0")
+        missing = release_metadata("1.1.0")
+        missing["assets"] = []
+        beta = release_metadata("2.0.0-beta.1")
+        beta["prerelease"] = True
+        draft = release_metadata("3.0.0")
+        draft["draft"] = True
+        responses = {
+            installer.API_URL: json.dumps(latest).encode(),
+            f"{installer.RELEASES_URL}?per_page=100&page=1": json.dumps([older, beta, missing, latest, draft]).encode(),
+        }
+        for version, item in [("1.2.3", latest), ("1.0.0", older)]:
+            data = archive([
+                ("WIDGETS/AeroGrid/main.lua", b"return {}"),
+                ("WIDGETS/AeroGrid/lib/package.lua", f'return {{\nversion = "{version}",\n}}'.encode()),
+            ])
+            _, urls = installer.release_assets(item)
+            responses[urls[0]] = data
+            responses[urls[1]] = (hashlib.sha256(data).hexdigest() + f"  AeroGrid-{version}.zip\n").encode()
+        return responses
+
+    def test_catalog_lists_stable_history_and_publishes_only_available_releases(self):
+        responses = self.catalog_fixture()
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            catalog = installer.publish_catalog(output, lambda url, limit, api=False: responses[url])
+            self.assertEqual(catalog["latest"], "1.2.3")
+            self.assertEqual([entry["version"] for entry in catalog["releases"]], ["1.2.3", "1.1.0", "1.0.0"])
+            self.assertFalse(catalog["releases"][1]["available"])
+            self.assertIn("checksum", catalog["releases"][1]["reason"])
+            self.assertFalse((output / "releases/1.1.0").exists())
+            self.assertEqual(json.loads((output / "latest.json").read_text())["version"], "1.2.3")
+            self.assertEqual(json.loads((output / "releases/1.0.0/manifest.json").read_text())["version"], "1.0.0")
+            self.assertEqual(json.loads((output / "releases.json").read_text()), catalog)
+
+    def test_corrupt_historical_payload_fails_instead_of_becoming_installable(self):
+        responses = self.catalog_fixture()
+        url = installer.release_assets(release_metadata("1.0.0"))[1][0]
+        responses[url] = b"corrupt ZIP"
+        with tempfile.TemporaryDirectory() as directory, self.assertRaisesRegex(ValueError, "checksum"):
+            installer.publish_catalog(Path(directory), lambda url, limit, api=False: responses[url])
+        responses = self.catalog_fixture()
+        latest = json.loads(responses[installer.API_URL])
+        latest["assets"] = []
+        responses[installer.API_URL] = json.dumps(latest).encode()
+        with tempfile.TemporaryDirectory() as directory, self.assertRaisesRegex(ValueError, "missing a valid"):
+            installer.publish_catalog(Path(directory), lambda url, limit, api=False: responses[url])
+
+    def test_catalog_paginates_and_rejects_duplicate_versions(self):
+        responses = self.catalog_fixture()
+        page = f"{installer.RELEASES_URL}?per_page=100&page=1"
+        draft = release_metadata("9.0.0")
+        draft["draft"] = True
+        responses[f"{installer.RELEASES_URL}?per_page=100&page=2"] = responses[page]
+        responses[page] = json.dumps([draft] * 100).encode()
+        with tempfile.TemporaryDirectory() as directory:
+            catalog = installer.publish_catalog(Path(directory), lambda url, limit, api=False: responses[url])
+            self.assertEqual(len(catalog["releases"]), 3)
+        responses[page] = json.dumps([release_metadata(), release_metadata()]).encode()
+        with tempfile.TemporaryDirectory() as directory, self.assertRaisesRegex(ValueError, "Duplicate"):
+            installer.publish_catalog(Path(directory), lambda url, limit, api=False: responses[url])
+
     def test_published_manifest_and_contents_match_real_release_package(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

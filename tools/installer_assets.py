@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
-"""Mirror a validated stable installation release into a built documentation site."""
+"""Mirror validated stable installation releases into a built documentation site."""
 import argparse
 import hashlib
 import io
@@ -13,6 +13,7 @@ import zipfile
 
 REPOSITORY = "thomaskistler/aero-grid"
 API_URL = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
+RELEASES_URL = f"https://api.github.com/repos/{REPOSITORY}/releases"
 STABLE_VERSION = re.compile(r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)")
 PREFIX = "WIDGETS/AeroGrid/"
 MAX_DOWNLOAD = 16 * 1024 * 1024
@@ -113,7 +114,7 @@ def unpack(version, archive, checksum):
     return files, digest
 
 
-def publish(release, archive, checksum, output):
+def publish(release, archive, checksum, output, latest=True):
     version, _ = release_assets(release)
     files, digest = unpack(version, archive, checksum)
     target = output / "releases" / version
@@ -133,8 +134,62 @@ def publish(release, archive, checksum, output):
         destination = target / name
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(data)
-    (output / "latest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    (target / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    if latest:
+        (output / "latest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return manifest
+
+
+def publish_catalog(output, fetcher=fetch):
+    latest = json.loads(fetcher(API_URL, 1024 * 1024, api=True))
+    latest_version, _ = release_assets(latest)
+    releases = []
+    for page in range(1, 21):
+        batch = json.loads(fetcher(f"{RELEASES_URL}?per_page=100&page={page}", 8 * 1024 * 1024, api=True))
+        if not isinstance(batch, list):
+            raise ValueError("Invalid GitHub release list")
+        releases.extend(batch)
+        if len(batch) < 100:
+            break
+    else:
+        raise ValueError("Release history exceeds pagination limit")
+    stable = {}
+    for item in releases:
+        tag = item.get("tag_name", "")
+        version = tag.removeprefix("v")
+        if (item.get("draft") is not False or item.get("prerelease") is not False
+                or tag != f"v{version}" or not STABLE_VERSION.fullmatch(version)):
+            continue
+        if version in stable:
+            raise ValueError(f"Duplicate release version: {version}")
+        stable[version] = item
+    if latest_version not in stable:
+        raise ValueError("Latest stable release is missing from release history")
+    # Use the latest endpoint's validated snapshot for the default selection.
+    stable[latest_version] = latest
+    entries = []
+    for version in sorted(stable, key=lambda value: tuple(map(int, value.split("."))), reverse=True):
+        item = stable[version]
+        entry = {
+            "version": version,
+            "name": item.get("name") or f"AeroGrid {version}",
+            "release": f"https://github.com/{REPOSITORY}/releases/tag/v{version}",
+            "available": True,
+            "reason": None,
+        }
+        try:
+            _, urls = release_assets(item)
+        except ValueError:
+            if version == latest_version:
+                raise
+            entry.update(available=False, reason="No compatible installation ZIP and checksum published.")
+        else:
+            publish(item, fetcher(urls[0], MAX_DOWNLOAD),
+                    fetcher(urls[1], 1024).decode("ascii"), output, latest=version == latest_version)
+        entries.append(entry)
+    catalog = {"schema": 1, "latest": latest_version, "releases": entries}
+    (output / "releases.json").write_text(json.dumps(catalog, indent=2) + "\n")
+    return catalog
 
 
 def main():
@@ -142,11 +197,8 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
-        release = json.loads(fetch(API_URL, 1024 * 1024, api=True))
-        _, urls = release_assets(release)
-        manifest = publish(release, fetch(urls[0], MAX_DOWNLOAD),
-                           fetch(urls[1], 1024).decode("ascii"), args.output)
-        print(f"Published browser installation payload for AeroGrid {manifest['version']}")
+        catalog = publish_catalog(args.output)
+        print(f"Published {sum(item['available'] for item in catalog['releases'])} installation releases; latest AeroGrid {catalog['latest']}")
     except (ValueError, OSError, zipfile.BadZipFile) as error:
         parser.error(str(error))
 
