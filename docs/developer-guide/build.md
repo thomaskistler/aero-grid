@@ -179,6 +179,11 @@ release file or existing directory. Sidecars are not deleted by verification;
 all release files still receive full size/hash checks. Other unexpected files
 remain errors. Verification errors include missing/unexpected paths on-page
 (up to 20 per category) and full structured differences in the JavaScript console.
+Payload downloads run in batches of up to four, all verified before any radio
+mutation. Radio writes remain sequential and reuse directory handles within the
+replacement operation. Read-back verification enumerates each widget directory
+once and reuses the discovered file handles, while still checking every release
+file's size and SHA-256. These handles are not cached across installations.
 An explicitly selected downgrade requires a downgrade-specific confirmation.
 The storage writer still refuses downgrades unless that confirmation authorizes
 one; it does not convert user data to older layout or settings formats.

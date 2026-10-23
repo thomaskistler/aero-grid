@@ -170,14 +170,22 @@ export async function preparePackage(manifest, base, progress, fetcher = globalT
   // Detach from caller-owned metadata before network waits or destructive operations.
   const pinned = validateManifest(structuredClone(manifest));
   const files = [];
-  for (const file of pinned.files) {
-    progress(`Downloading ${file.path}`, files.length, pinned.files.length);
-    const url = new URL(`releases/${pinned.version}/${file.path}`, base);
-    const bytes = await fetchBytes(url, MAX_FILE, fetcher);
-    if (bytes.length !== file.size || await sha256(bytes) !== file.sha256) {
-      throw new Error(`Download content verification failed: ${file.path}. No radio files were changed.`);
+  let completed = 0;
+  for (let start = 0; start < pinned.files.length; start += 4) {
+    const results = await Promise.allSettled(pinned.files.slice(start, start + 4).map(async (file) => {
+      progress(`Downloading ${file.path}`, completed, pinned.files.length);
+      const url = new URL(`releases/${pinned.version}/${file.path}`, base);
+      const bytes = await fetchBytes(url, MAX_FILE, fetcher);
+      if (bytes.length !== file.size || await sha256(bytes) !== file.sha256) {
+        throw new Error(`Download content verification failed: ${file.path}. No radio files were changed.`);
+      }
+      progress(`Downloaded ${file.path}`, ++completed, pinned.files.length);
+      return { ...file, bytes };
+    }));
+    for (const result of results) {
+      if (result.status === "rejected") throw result.reason;
+      files.push(result.value);
     }
-    files.push({ ...file, bytes });
   }
   const metadata = files.find((file) => file.path === "lib/package.lua");
   if (packageVersion(new TextDecoder().decode(metadata.bytes)) !== pinned.version) {
@@ -188,41 +196,38 @@ export async function preparePackage(manifest, base, progress, fetcher = globalT
   return prepared;
 }
 
-async function directoryFor(root, path) {
+async function directoryFor(root, path, cache) {
   let directory = root;
-  for (const part of path) directory = await directory.getDirectoryHandle(part, { create: true });
+  let key = "";
+  for (const part of path) {
+    key += `${part}/`;
+    if (!cache.has(key)) cache.set(key, await directory.getDirectoryHandle(part, { create: true }));
+    directory = cache.get(key);
+  }
   return directory;
 }
 
-async function listFiles(directory, prefix = "", directories = new Set()) {
-  const files = [];
+async function listFiles(directory, prefix = "", directories = new Set(), files = new Map()) {
   for await (const [name, handle] of directory.entries()) {
     const path = prefix + name;
     if (handle.kind === "directory") {
       directories.add(path);
-      files.push(...await listFiles(handle, `${path}/`, directories));
+      await listFiles(handle, `${path}/`, directories, files);
     }
-    else files.push(path);
-    if (files.length > MAX_FILES) throw new Error("Unexpected files in the AeroGrid folder.");
+    else files.set(path, handle);
+    if (files.size > MAX_FILES) throw new Error("Unexpected files in the AeroGrid folder.");
   }
   return files;
 }
 
-async function installedFile(widget, path) {
-  let directory = widget;
-  const parts = path.split("/");
-  for (const part of parts.slice(0, -1)) directory = await child(directory, part, "directory");
-  return (await child(directory, parts.at(-1), "file")).getFile();
-}
-
-async function appleDoubleSidecar(widget, path, expectedPaths, directories) {
+async function appleDoubleSidecar(handle, path, expectedPaths, directories) {
   const parts = path.split("/");
   const name = parts.at(-1);
   if (!name.startsWith("._")) return false;
   parts[parts.length - 1] = name.slice(2);
   const counterpart = parts.join("/");
   if (!expectedPaths.has(counterpart) && !directories.has(counterpart)) return false;
-  const file = await installedFile(widget, path);
+  const file = await handle.getFile();
   if (file.size < 26 || file.size > MAX_FILE) return false;
   const header = new DataView(await file.slice(0, 26).arrayBuffer());
   const count = header.getUint16(24);
@@ -244,10 +249,11 @@ export async function verifyInstalled(root, manifest, progress = () => {}, allow
   const expected = manifest.files.map((file) => file.path).sort();
   const expectedPaths = new Set(expected);
   const directories = new Set();
+  const installedFiles = await listFiles(widget, "", directories);
   const actual = [];
-  for (const path of await listFiles(widget, "", directories)) {
+  for (const [path, handle] of installedFiles) {
     if (allowCompiled && path.endsWith(".luac") && expectedPaths.has(path.slice(0, -1))) continue;
-    if (!expectedPaths.has(path) && await appleDoubleSidecar(widget, path, expectedPaths, directories)) continue;
+    if (!expectedPaths.has(path) && await appleDoubleSidecar(handle, path, expectedPaths, directories)) continue;
     actual.push(path);
   }
   actual.sort();
@@ -265,7 +271,7 @@ export async function verifyInstalled(root, manifest, progress = () => {}, allow
   }
   for (const [index, file] of manifest.files.entries()) {
     progress(`Verifying ${file.path}`, index, manifest.files.length);
-    const installed = await installedFile(widget, file.path);
+    const installed = await installedFiles.get(file.path).getFile();
     if (installed.size !== file.size || await sha256(await installed.arrayBuffer()) !== file.sha256) {
       throw new ContentMismatchError(`Installed content verification failed: ${file.path}.`,
         { path: file.path, expectedSize: file.size, actualSize: installed.size });
@@ -308,11 +314,12 @@ export async function replaceWidget(root, prepared, progress = () => {}, { allow
     stage = "Creating WIDGETS/AeroGrid";
     changed = true;
     const target = await widgets.getDirectoryHandle("AeroGrid", { create: true });
+    const directories = new Map();
     for (const [index, file] of prepared.files.entries()) {
       stage = `Writing WIDGETS/AeroGrid/${file.path}`;
       progress(stage, index, prepared.files.length);
       const parts = file.path.split("/");
-      const directory = await directoryFor(target, parts.slice(0, -1));
+      const directory = await directoryFor(target, parts.slice(0, -1), directories);
       const handle = await directory.getFileHandle(parts.at(-1), { create: true });
       const stream = await handle.createWritable();
       try {

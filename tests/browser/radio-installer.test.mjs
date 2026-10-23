@@ -79,9 +79,11 @@ class MemoryDirectory {
   }
   async *entries() {
     if (this.context.unplugged) throw new DOMException("Drive removed", "NotReadableError");
+    this.context.scans?.push(this.path);
     yield* this.children.entries();
   }
   async getDirectoryHandle(name, options = {}) {
+    this.context.directoryLookups?.push(this.path + name);
     if (!this.children.has(name) && options.create) {
       this.children.set(name, new MemoryDirectory(name, this.context, this.path + name + "/"));
       this.context.events.push(`mkdir:${this.path}${name}`);
@@ -349,6 +351,63 @@ test("corrupt/missing downloads are rejected before any mutation", async () => {
   prepared.files[0].bytes[0] ^= 1;
   await assert.rejects(replaceWidget(root, prepared), /Prepared content changed/);
   await assert.rejects(replaceWidget(root, { version: "0.4.0", files: [] }), /validate a complete/);
+  assert.deepEqual(root.context.events, []);
+});
+
+test("downloads overlap in bounded batches, retain order and drain failures before returning", async () => {
+  const { manifest, fetcher, content } = await releaseFixture();
+  for (let index = 0; index < 8; index++) {
+    const path = `assets/icon${index}.png`;
+    content[path] = new Uint8Array([index]);
+    manifest.files.push({ path, size: 1, sha256: await sha256(content[path]) });
+  }
+  let active = 0;
+  let peak = 0;
+  let requests = 0;
+  const delayed = (fail = false) => async (url) => {
+    requests++;
+    peak = Math.max(peak, ++active);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      if (fail && String(url).endsWith("/main.lua")) throw new Error("Download failed");
+      return await fetcher(url);
+    } finally {
+      active--;
+    }
+  };
+  const progress = [];
+  const prepared = await preparePackage(manifest, base, (_message, done) => progress.push(done), delayed());
+  assert.equal(peak, 4);
+  assert.equal(active, 0);
+  assert.equal(requests, manifest.files.length);
+  assert.deepEqual(prepared.files.map((file) => file.path), manifest.files.map((file) => file.path));
+  assert.ok(progress.every((done, index) => index === 0 || done >= progress[index - 1]));
+  assert.equal(progress.at(-1), manifest.files.length);
+  requests = 0;
+  await assert.rejects(preparePackage(manifest, base, () => {}, delayed(true)), /Download failed/);
+  assert.equal(active, 0);
+  assert.equal(requests, 4);
+});
+
+test("writing reuses directory handles and verification scans each widget directory only once", async () => {
+  const root = await fixture();
+  const { manifest, fetcher, content } = await releaseFixture();
+  for (let index = 0; index < 8; index++) {
+    const path = `assets/nested/icon${index}.png`;
+    content[path] = new Uint8Array([index]);
+    manifest.files.push({ path, size: 1, sha256: await sha256(content[path]) });
+  }
+  root.context.directoryLookups = [];
+  await replaceWidget(root, await preparePackage(manifest, base, () => {}, fetcher));
+  assert.equal(root.context.directoryLookups.filter((path) => path === "WIDGETS/AeroGrid/assets").length, 1);
+  assert.equal(root.context.directoryLookups.filter((path) => path === "WIDGETS/AeroGrid/assets/nested").length, 1);
+  root.context.scans = [];
+  root.context.events = [];
+  await verifyInstalled(root, manifest);
+  assert.deepEqual(root.context.scans.slice().sort(), [
+    "", "WIDGETS/", "WIDGETS/AeroGrid/", "WIDGETS/AeroGrid/assets/",
+    "WIDGETS/AeroGrid/assets/nested/", "WIDGETS/AeroGrid/lib/",
+  ]);
   assert.deepEqual(root.context.events, []);
 });
 
