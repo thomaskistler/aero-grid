@@ -760,8 +760,9 @@ local function testPanelDocumentationLoads()
     end
 end
 
---- The sidebar is written out by hand in the theme override, so a page added
---- to the navigation is invisible until it is listed there too.
+--- Guide pages are written out by hand in the theme override, so a guide page
+--- added to the navigation is invisible until it is listed there too. The
+--- top-level landing page is intentionally not a guide-sidebar entry.
 local function testSidebarListsEveryPage()
     local function read(path)
         local handle = assert(io.open(root .. "/" .. path, "r"), "cannot read " .. path)
@@ -772,8 +773,13 @@ local function testSidebarListsEveryPage()
     local nav, sidebar = read("mkdocs.yml"), read("docs/overrides/toc.html")
     local count = 0
     for page in string.gmatch(nav, ":%s+([%w%-_/]+%.md)\n") do
-        count = count + 1
-        assert(string.find(sidebar, 'sidebar_page("' .. page .. '"', 1, true), "the sidebar does not list " .. page)
+        if page ~= "index.md" then
+            count = count + 1
+            assert(
+                string.find(sidebar, 'sidebar_page("' .. page .. '"', 1, true),
+                "the sidebar does not list " .. page
+            )
+        end
     end
     assert(count > 0, "no navigation pages were found in mkdocs.yml")
 end
