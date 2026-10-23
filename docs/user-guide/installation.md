@@ -58,7 +58,7 @@ Install the latest stable AeroGrid on your radio, or choose a previous release. 
     </div>
   </div>
   <progress data-progress max="1" value="0" aria-label="AeroGrid installation progress" hidden></progress>
-  <p role="status" aria-live="polite" aria-atomic="true" data-status>JavaScript and browser folder access are required for automatic installation. Manual installation remains available below.</p>
+  <p role="status" aria-live="polite" aria-atomic="true" data-status></p>
   <p class="ag-radio-muted" role="status" aria-live="polite" data-release-status></p>
   </div>
 </div>
