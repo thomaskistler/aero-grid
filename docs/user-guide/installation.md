@@ -10,7 +10,7 @@ Install the latest stable AeroGrid on your radio, or bring your existing install
       <strong data-connection>Radio disconnected</strong>
       <div class="ag-radio-muted" data-device>No SD card selected</div>
     </div>
-    <button type="button" class="ag-radio-button" data-connect disabled>Connect Radio</button>
+    <button type="button" class="ag-radio-button ag-radio-primary" data-connect disabled>Connect Radio</button>
   </div>
   <div class="ag-radio-cards">
     <div class="ag-radio-card">
@@ -33,7 +33,7 @@ Install the latest stable AeroGrid on your radio, or bring your existing install
   <h3>AeroGrid installation</h3>
   <p class="ag-radio-muted">The latest stable release replaces /WIDGETS/AeroGrid/ completely, including custom files inside it. No backup or rollback is created. Layouts, maps, radio/model settings, and firmware are left untouched.</p>
   <div class="ag-radio-actions">
-    <button type="button" class="ag-radio-button ag-radio-primary" data-install disabled>Install latest AeroGrid</button>
+    <button type="button" class="ag-radio-button" data-install disabled>Install latest AeroGrid</button>
   </div>
   <div class="ag-radio-confirm" role="group" aria-labelledby="ag-confirm-title" data-confirm hidden>
     <strong id="ag-confirm-title">Confirm installation</strong>

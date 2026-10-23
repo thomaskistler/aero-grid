@@ -63,6 +63,9 @@ try {
   });
   await page.goto(new URL("user-guide/installation/", site).href);
   await page.waitForFunction(() => document.querySelector("[data-latest]").textContent !== "Unavailable");
+  assert.equal(await page.locator("[data-install]").isDisabled(), true);
+  assert.match(await page.locator("[data-connect]").getAttribute("class"), /ag-radio-primary/);
+  assert.doesNotMatch(await page.locator("[data-install]").getAttribute("class"), /ag-radio-primary/);
   assert.equal(await page.locator(".ag-guide-sidebar").count(), 0);
   assert.equal(await page.locator(".ag-icon-link.active").getAttribute("aria-label"), "Install / Upgrade");
   assert.equal(await page.locator(".ag-install-details[open]").count(), 0);
@@ -79,6 +82,9 @@ try {
   assert.equal(await page.locator("[data-edgetx]").textContent(), "2.12.4");
   assert.match(await page.locator("[data-device]").textContent(), /tx16s/);
   assert.match(await page.locator("[data-install]").textContent(), /^Update/);
+  assert.equal(await page.locator("[data-install]").isDisabled(), false);
+  assert.match(await page.locator("[data-install]").getAttribute("class"), /ag-radio-primary/);
+  assert.doesNotMatch(await page.locator("[data-connect]").getAttribute("class"), /ag-radio-primary/);
   const read = (path) => page.evaluate(async (path) => {
     let directory = await window.__radioReady;
     const parts = path.split("/");
@@ -112,6 +118,9 @@ try {
   await assert.rejects(read("WIDGETS/AeroGrid/main.luac"), /not.*found/i);
   await activate("[data-connect]");
   assert.equal(await page.locator("[data-connect]").textContent(), "Connect Radio");
+  assert.equal(await page.locator("[data-install]").isDisabled(), true);
+  assert.match(await page.locator("[data-connect]").getAttribute("class"), /ag-radio-primary/);
+  assert.doesNotMatch(await page.locator("[data-install]").getAttribute("class"), /ag-radio-primary/);
 
   for (const width of [320, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 1000 });

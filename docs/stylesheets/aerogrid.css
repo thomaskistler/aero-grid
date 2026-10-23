@@ -95,7 +95,10 @@
 }
 
 .ag-radio-button:disabled {
-  opacity: 0.6;
+  background: var(--ag-surface);
+  border-color: var(--ag-border);
+  color: var(--ag-muted);
+  opacity: 1;
   cursor: not-allowed;
 }
 

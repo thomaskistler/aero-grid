@@ -30,6 +30,8 @@ if (panel) {
   function render() {
     const connected = !!radioStorage.root;
     connect.textContent = connected ? "Disconnect Radio" : "Connect Radio";
+    connect.classList.toggle("ag-radio-primary", !connected);
+    install.classList.toggle("ag-radio-primary", connected);
     connect.disabled = !supported || busy || checking || !!confirmation;
     panel.classList.toggle("ag-radio-connected", connected);
     panel.setAttribute("aria-busy", String(busy || checking));
