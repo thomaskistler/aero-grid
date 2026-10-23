@@ -305,7 +305,7 @@ if (panel) {
 
   render();
   if (!supported) {
-    message("Automatic USB storage installation requires desktop Chrome or Edge over HTTPS (or localhost). Use the manual ZIP instructions below.");
+    message("USB installation requires desktop Chrome or Edge over HTTPS (or localhost). Safari and Opera are not supported. Use the manual ZIP instructions below.");
   }
   void refreshRelease();
 }
