@@ -71,6 +71,10 @@ try {
   assert.equal(await page.locator("[data-release-label]").textContent(), "Selected AeroGrid release");
   assert.equal(await page.locator("[data-latest]").textContent(), `${catalog.latest} - latest`);
   assert.equal(await page.locator(".ag-radio-card").nth(1).locator("small").count(), 0);
+  assert.ok(await page.evaluate(() =>
+    parseFloat(getComputedStyle(document.querySelector("#install-over-usb")).fontSize)
+      > parseFloat(getComputedStyle(document.querySelector("#manual-installation")).fontSize)),
+  "USB installation heading is larger than manual installation");
   assert.equal(await page.locator("[data-connect] .ag-usb-icon").count(), 1);
   assert.equal(await page.locator("[data-radio-type]").textContent(), "Unknown");
   assert.equal(await page.locator("[data-radio-screen]").textContent(), "Unknown");

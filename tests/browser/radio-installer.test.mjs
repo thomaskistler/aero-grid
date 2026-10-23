@@ -627,7 +627,7 @@ test("deletion, full disk, write, close and readback failures never succeed; ret
   }
 });
 
-test("deletion logs before/after snapshots and original errors without retrying or writing", async (t) => {
+test("deletion logs exact-path errors without routine logs, retrying or writing", async (t) => {
   const info = t.mock.method(console, "info", () => {});
   const errors = t.mock.method(console, "error", () => {});
   const root = await fixture();
@@ -645,38 +645,26 @@ test("deletion logs before/after snapshots and original errors without retrying 
     (error) => error.cause.cause === failure);
   assert.equal(attempts, 1);
   assert.ok(root.context.events.every((event) => event.startsWith("delete:WIDGETS/AeroGrid/")));
-  const snapshots = info.mock.calls.filter((call) => call.arguments[0].includes("snapshot"))
-    .map((call) => call.arguments[1]);
-  assert.equal(snapshots.length, 2);
-  assert.equal(snapshots[0].phase, "before deletion");
-  assert.ok(snapshots[0].files.includes("custom.txt"));
-  assert.equal(snapshots[1].phase, "after failed deletion");
-  assert.ok(!snapshots[1].files.includes("custom.txt"));
+  assert.equal(info.mock.calls.length, 0);
   const details = errors.mock.calls[0].arguments[1];
   assert.equal(details.target, "WIDGETS/AeroGrid");
   assert.equal(details.error.cause, failure);
-  assert.ok(details.elapsedMs >= 0);
+  assert.match(details.message, /Could not delete WIDGETS\/AeroGrid/);
 });
 
-test("snapshot read errors are logged without masking deletion failures", async (t) => {
-  t.mock.method(console, "info", () => {});
+test("successful deletion has no routine logging or diagnostic scans", async (t) => {
+  const info = t.mock.method(console, "info", () => {});
   const errors = t.mock.method(console, "error", () => {});
   const root = await fixture();
   const widget = root.children.get("WIDGETS").children.get("AeroGrid");
-  const entries = widget.entries.bind(widget);
-  root.context.failDelete = true;
   const { manifest, fetcher } = await releaseFixture();
   const prepared = await preparePackage(manifest, base, () => {}, fetcher);
-  let scans = 0;
-  await assert.rejects(replaceWidget(root, prepared, (stage) => {
-    if (stage.startsWith("Deleting")) widget.entries = async function* () {
-      yield* entries();
-      if (++scans !== 2) throw new Error("Snapshot read failed");
-    };
-  }),
-    /Could not delete WIDGETS\/AeroGrid\/lib\/package.lua: Delete failed/);
-  assert.equal(errors.mock.calls.filter((call) => call.arguments[0].includes("Could not read")).length, 2);
-  assert.deepEqual(root.context.events, ["delete:WIDGETS/AeroGrid/lib/package.lua"]);
+  root.context.scans = [];
+  await replaceWidget(root, prepared);
+  // Metadata inspection, deletion and read-back each enumerate the widget once.
+  assert.equal(root.context.scans.filter((path) => path === widget.path).length, 3);
+  assert.equal(info.mock.calls.length, 0);
+  assert.equal(errors.mock.calls.length, 0);
 });
 
 test("sidecar-first removal avoids macOS paired-unlink failures for files and directories", async () => {

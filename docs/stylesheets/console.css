@@ -913,6 +913,10 @@ button:focus-visible {
   font-size: var(--ag-font-xl);
 }
 
+.ag-install-workspace #install-over-usb {
+  font-size: var(--ag-font-3xl);
+}
+
 .ag-install-workspace h3 {
   margin: 0 0 8px;
   font-size: var(--ag-font-lg);

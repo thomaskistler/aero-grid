@@ -184,10 +184,9 @@ mutation. Radio writes remain sequential and reuse directory handles within the
 replacement operation. Read-back verification enumerates each widget directory
 once and reuses the discovered file handles, while still checking every release
 file's size and SHA-256. These handles are not cached across installations.
-The JavaScript console logs the deletion target, versions, elapsed time and
-original browser error. Read-only snapshots list widget-relative files and
-directories before deletion and after failure; they contain no file contents.
-Snapshot failures are logged separately and do not replace the deletion error.
+The JavaScript console logs deletion failures with their target, exact path and
+original browser error. Routine operations do not log directory listings or
+perform extra diagnostic scans.
 Deletion errors still stop installation without retrying or falling back.
 Widget removal enumerates each directory and deletes `._` entries before other
 entries. macOS automatically removes associated AppleDouble files on filesystems

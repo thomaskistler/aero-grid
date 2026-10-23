@@ -279,21 +279,6 @@ export async function verifyInstalled(root, manifest, progress = () => {}, allow
   }
 }
 
-async function logDeletionSnapshot(widgets, phase) {
-  try {
-    const widget = await child(widgets, "AeroGrid", "directory", true);
-    const directories = new Set();
-    const files = widget ? await listFiles(widget, "", directories) : new Map();
-    console.info("[AeroGrid installer] Deletion snapshot.", {
-      phase, target: "WIDGETS/AeroGrid", present: Boolean(widget),
-      directoryCount: directories.size, fileCount: files.size,
-      directories: [...directories].sort(), files: [...files.keys()].sort(),
-    });
-  } catch (error) {
-    console.error("[AeroGrid installer] Could not read deletion snapshot.", { phase, error });
-  }
-}
-
 async function deleteWidgetTree(parent, directory, path, budget = { remaining: 10000 }, depth = 0) {
   if (depth > 64) throw new Error(`Deletion depth limit reached: ${path}.`);
   const entries = [];
@@ -352,23 +337,13 @@ export async function replaceWidget(root, prepared, progress = () => {}, { allow
       stage = "Deleting WIDGETS/" + old.name;
       progress(stage, 0, prepared.files.length);
       changed = true;
-      await logDeletionSnapshot(widgets, "before deletion");
-      const started = performance.now();
-      console.info("[AeroGrid installer] Starting sidecar-first deletion.", {
-        target: `WIDGETS/${old.name}`, selectedVersion: prepared.version,
-        installedVersion: installed.version,
-      });
       try {
         await deleteWidgetTree(widgets, old, `WIDGETS/${old.name}`);
-        console.info("[AeroGrid installer] Sidecar-first deletion completed.", {
-          target: `WIDGETS/${old.name}`, elapsedMs: Math.round(performance.now() - started),
-        });
       } catch (error) {
         console.error("[AeroGrid installer] Sidecar-first deletion failed.", {
-          target: `WIDGETS/${old.name}`, elapsedMs: Math.round(performance.now() - started),
+          target: `WIDGETS/${old.name}`,
           name: error.name, message: error.message, error,
         });
-        await logDeletionSnapshot(widgets, "after failed deletion");
         throw error;
       }
     }
