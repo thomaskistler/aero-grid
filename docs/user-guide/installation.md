@@ -14,8 +14,12 @@ Install the latest stable AeroGrid on your radio, or choose a previous release. 
   </div>
   <div class="ag-radio-cards">
     <div class="ag-radio-card">
-      <span>EdgeTX firmware version</span>
-      <strong data-edgetx>Unknown</strong>
+      <span>Radio</span>
+      <dl class="ag-radio-specs">
+        <div><dt>Type</dt><dd data-radio-type>Unknown</dd></div>
+        <div><dt>Screen</dt><dd data-radio-screen>Unknown</dd></div>
+        <div><dt>EdgeTX</dt><dd data-edgetx>Unknown</dd></div>
+      </dl>
       <small data-edgetx-source>Detected after connection</small>
     </div>
     <div class="ag-radio-card">
@@ -79,6 +83,7 @@ Install the latest stable AeroGrid on your radio, or choose a previous release. 
 <summary>How connection and version detection work</summary>
 <p>Connection grants this page access to the selected folder, using the same USB Storage workflow as EdgeTX Buddy's SD-card editor. It is <strong>not WebSerial, firmware flashing, or a live firmware query</strong>. The board identifier and EdgeTX version come from the saved <code>board</code> and <code>semver</code> fields in <code>RADIO/radio.yml</code>. Missing or invalid fields appear as <strong>Unknown</strong>. Copied or externally edited settings may not describe the attached hardware or currently running firmware.</p>
 <p><code>edgetx.sdcard.version</code> describes the SD contents and is not used as the firmware version. AeroGrid's version is read from <code>lib/package.lua</code>; metadata alone does not prove that every installed file is intact.</p>
+<p>Radio type and screen color/resolution are inferred from the saved board identifier using EdgeTX hardware definitions, not queried from the display. Unrecognized boards retain their identifier and show an Unknown screen type. Screen dimensions use EdgeTX's logical display orientation.</p>
 <p><strong>Disconnect Radio</strong> releases this page's connection, but does not eject the drive or revoke browser permissions. Access loss is detected by filesystem checks, not an immediate USB disconnect event. The browser cannot distinguish a mounted radio card from a local copy of one.</p>
 </details>
 

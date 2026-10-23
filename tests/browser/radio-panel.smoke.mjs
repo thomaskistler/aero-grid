@@ -72,6 +72,8 @@ try {
   assert.equal(await page.locator("[data-latest]").textContent(), `${catalog.latest} - latest`);
   assert.equal(await page.locator(".ag-radio-card").nth(1).locator("small").textContent(), "Detected after connection");
   assert.equal(await page.locator("[data-connect] .ag-usb-icon").count(), 1);
+  assert.equal(await page.locator("[data-radio-type]").textContent(), "Unknown");
+  assert.equal(await page.locator("[data-radio-screen]").textContent(), "Unknown");
   assert.equal(await page.locator(`input[name=aerogrid-release][value="${catalog.latest}"]`).isChecked(), true);
   assert.equal(await page.locator("input[name=aerogrid-release]").count(), catalog.releases.length);
   assert.equal(await page.locator("[data-release-dialog]").isVisible(), false);
@@ -103,6 +105,8 @@ try {
   await activate("[data-connect]");
   await page.waitForFunction(() => document.querySelector("[data-connect]").textContent === "Disconnect Radio");
   assert.equal(await page.locator("[data-edgetx]").textContent(), "2.12.4");
+  assert.equal(await page.locator("[data-radio-type]").textContent(), "RadioMaster TX16S");
+  assert.equal(await page.locator("[data-radio-screen]").textContent(), "Color - 480 x 272");
   assert.match(await page.locator("[data-device]").textContent(), /tx16s/);
   assert.match(await page.locator("[data-install]").textContent(), /^Update/);
   assert.equal(await page.locator("[data-install]").isDisabled(), false);
@@ -190,6 +194,8 @@ try {
   assert.equal(await page.locator("[data-downgrade]").isVisible(), false);
   await activate("[data-connect]");
   assert.equal(await page.locator("[data-connect]").textContent(), "Connect Radio");
+  assert.equal(await page.locator("[data-radio-type]").textContent(), "Unknown");
+  assert.equal(await page.locator("[data-radio-screen]").textContent(), "Unknown");
   assert.equal(await page.locator("[data-install]").isDisabled(), true);
   assert.match(await page.locator("[data-connect]").getAttribute("class"), /ag-radio-primary/);
   assert.doesNotMatch(await page.locator("[data-connect]").getAttribute("class"), /ag-radio-danger/);

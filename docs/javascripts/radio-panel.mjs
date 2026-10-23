@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-import { radioStorage, compareVersions } from "./radio-storage.mjs";
+import { radioStorage, compareVersions, radioHardware } from "./radio-storage.mjs";
 import { actionFor, ContentMismatchError, loadCatalog, loadLatest, loadRelease, preparePackage, replaceWidget, verifyInstalled } from "./radio-installer.mjs";
 
 const panel = document.querySelector("[data-radio-installer]");
@@ -44,6 +44,9 @@ if (panel) {
     element("device").textContent = details
       ? `${details.radio.board ?? "Unknown board"} | ${details.radio.name}` : "No SD card selected";
     element("edgetx").textContent = details?.radio.version ?? "Unknown";
+    const hardware = radioHardware(details?.radio.board);
+    element("radio-type").textContent = hardware.type;
+    element("radio-screen").textContent = hardware.screen;
     element("edgetx-source").textContent = details
       ? "Source: RADIO/radio.yml (saved firmware metadata, not a live query)" : "Detected after connection";
     element("widget").textContent = !details ? "Unknown" : !details.widget.present

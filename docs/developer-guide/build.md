@@ -151,6 +151,12 @@ The USB installer is composed of ES modules under `docs/javascripts/`.
 `radio-storage.mjs` exports the page-session `radioStorage` connection and
 UI-independent storage/metadata helpers for future map workflows. The installer
 only replaces the AeroGrid widget; no map writer or firmware flasher is included.
+`radioHardware()` maps saved board identifiers to radio names and color/monochrome
+logical display dimensions. The lookup is based on EdgeTX
+[v2.12.0 target definitions](https://github.com/EdgeTX/edgetx/tree/v2.12.0/radio/src/targets):
+color dimensions come from each target's `hal.h`, and monochrome sizes from
+`taranis/CMakeLists.txt`. Unknown boards keep their identifier with an Unknown
+screen; do not infer dimensions from SD bitmap-pack sizes or the browser screen.
 
 Pages builds mirror **published stable releases**, not the current source tree,
 into same-origin versioned files, individual `releases/<version>/manifest.json`

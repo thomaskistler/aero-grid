@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   child, compareVersions, inspectRoot, inspectWidget, packageVersion,
-  parseRadioMetadata, parseVersion, RadioStorage,
+  parseRadioMetadata, parseVersion, radioHardware, RadioStorage,
 } from "../../docs/javascripts/radio-storage.mjs";
 import {
   actionFor, ContentMismatchError, loadCatalog, loadLatest, loadRelease, preparePackage, RELEASE_API,
@@ -12,6 +12,21 @@ import {
 
 const encoder = new TextEncoder();
 const base = new URL("https://example.test/aero-grid/installer/");
+
+test("radio hardware inference handles verified display families and unknown boards", () => {
+  assert.deepEqual(radioHardware("tx16s"), { type: "RadioMaster TX16S", screen: "Color - 480 x 272" });
+  assert.equal(radioHardware("TX16S").type, "RadioMaster TX16S");
+  for (const [board, screen] of [
+    ["t15", "Color - 480 x 320"], ["tx15", "Color - 480 x 320"],
+    ["tx16smk3", "Color - 800 x 480"], ["nv14", "Color - 320 x 480"],
+    ["el18", "Color - 320 x 480"], ["pl18", "Color - 480 x 320"],
+    ["x9d+", "Monochrome - 212 x 64"], ["boxer", "Monochrome - 128 x 64"],
+  ]) assert.equal(radioHardware(board).screen, screen);
+  assert.deepEqual(radioHardware("future-radio"), { type: "future-radio", screen: "Unknown" });
+  assert.deepEqual(radioHardware(null), { type: "Unknown", screen: "Unknown" });
+  assert.deepEqual(radioHardware("toString"), { type: "toString", screen: "Unknown" });
+  assert.equal(parseRadioMetadata("board: x9d+2019\nsemver: 2.12.0").board, "x9d+2019");
+});
 
 class MemoryFile {
   kind = "file";

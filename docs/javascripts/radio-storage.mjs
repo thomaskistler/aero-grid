@@ -49,8 +49,50 @@ export function parseRadioMetadata(text) {
   const board = scalar(text, "board");
   const version = scalar(text, "semver");
   return {
-    board: board && /^[A-Za-z0-9_-]{1,48}$/.test(board) ? board : null,
+    board: board && /^[A-Za-z0-9_+-]{1,48}$/.test(board) ? board : null,
     version: parseVersion(version) ? version : null,
+  };
+}
+
+// EdgeTX v2.12.0: targets/{horus,pl18,st16,tx15,tx16smk3,t15pro}/hal.h
+// define color LCD dimensions; targets/taranis/CMakeLists.txt selects mono GUI sizes.
+const SCREEN_GROUPS = [
+  { boards: ["tx16s", "t16", "t18", "x10", "x10express", "x12s", "f16", "v16"], screen: "Color - 480 x 272" },
+  { boards: ["t15", "t15pro", "tx15", "st16", "pl18", "pl18u", "pl18ev"], screen: "Color - 480 x 320" },
+  { boards: ["nv14", "el18", "nb4p"], screen: "Color - 320 x 480" },
+  { boards: ["tx16smk3"], screen: "Color - 800 x 480" },
+  { boards: ["x9d", "x9d+", "x9d+2019", "x9e"], screen: "Monochrome - 212 x 64" },
+  { boards: ["x7", "x7access", "x9lite", "x9lites", "xlite", "xlites", "t12", "t12max",
+    "tpro", "tprov2", "tpros", "bumblebee", "t14", "t20", "t20v2", "tlite", "tlitef4",
+    "lr3pro", "tx12", "tx12mk2", "mt12", "boxer", "gx12", "zorro", "pocket", "t8",
+    "commando8", "v12", "v14"], screen: "Monochrome - 128 x 64" },
+];
+
+const RADIO_NAMES = {
+  tx16s: "RadioMaster TX16S",
+  tx16smk3: "RadioMaster TX16S MK3",
+  tx15: "RadioMaster TX15",
+  tx12: "RadioMaster TX12",
+  tx12mk2: "RadioMaster TX12 MKII",
+  boxer: "RadioMaster Boxer",
+  pocket: "RadioMaster Pocket",
+  zorro: "RadioMaster Zorro",
+  gx12: "RadioMaster GX12",
+  mt12: "RadioMaster MT12",
+  t15: "Jumper T15",
+  t15pro: "Jumper T15 Pro",
+  t16: "Jumper T16",
+  t18: "Jumper T18",
+  x10: "FrSky Horus X10",
+  x10express: "FrSky Horus X10 Express",
+  x12s: "FrSky Horus X12S",
+};
+
+export function radioHardware(board) {
+  const key = typeof board === "string" ? board.toLowerCase() : null;
+  return {
+    type: key && Object.hasOwn(RADIO_NAMES, key) ? RADIO_NAMES[key] : board || "Unknown",
+    screen: SCREEN_GROUPS.find((group) => group.boards.includes(key))?.screen ?? "Unknown",
   };
 }
 

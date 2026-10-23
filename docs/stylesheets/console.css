@@ -929,6 +929,30 @@ button:focus-visible {
   font-size: var(--ag-font-xl);
 }
 
+.ag-radio-specs {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  font-size: var(--ag-font-sm);
+}
+
+.ag-radio-specs > div {
+  display: grid;
+  gap: 2px;
+}
+
+.ag-radio-specs dt {
+  color: var(--ag-console-muted);
+  font-size: var(--ag-font-xs);
+  font-weight: 500;
+}
+
+.ag-radio-specs dd {
+  margin: 0;
+  color: var(--ag-console-text);
+  font-weight: 620;
+}
+
 .ag-install-action {
   padding-top: 20px;
   border-top: 1px solid var(--ag-console-border);
