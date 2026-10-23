@@ -47,8 +47,6 @@ if (panel) {
     const hardware = radioHardware(details?.radio.board);
     element("radio-type").textContent = hardware.type;
     element("radio-screen").textContent = hardware.screen;
-    element("edgetx-source").textContent = details
-      ? "Source: RADIO/radio.yml (saved firmware metadata, not a live query)" : "Detected after connection";
     element("widget").textContent = !details ? "Unknown" : !details.widget.present
       ? "Not installed" : `${details.widget.version ?? "Unknown version"}${incomplete ? " | incomplete / different files" : " | metadata detected"}`;
     const displayedVersion = selectedVersion ?? latestManifest?.version;

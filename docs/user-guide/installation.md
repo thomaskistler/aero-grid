@@ -20,7 +20,6 @@ Install the latest stable AeroGrid on your radio, or choose a previous release. 
         <div><dt>Screen</dt><dd data-radio-screen>Unknown</dd></div>
         <div><dt>EdgeTX</dt><dd data-edgetx>Unknown</dd></div>
       </dl>
-      <small data-edgetx-source>Detected after connection</small>
     </div>
     <div class="ag-radio-card">
       <span>AeroGrid on SD card</span>
