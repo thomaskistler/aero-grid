@@ -265,7 +265,7 @@ if (panel) {
         await inspect();
       });
       progress.value = 1;
-      message(`AeroGrid ${version} installed successfully. Disconnect Radio, safely eject the drive through your operating system, then restart the radio.`, false, true);
+      message(`AeroGrid ${version} installed successfully. Disconnect Radio, safely eject the drive through your operating system, then unplug the USB data cable.`, false, true);
     } catch (error) {
       if (replacing) incomplete = true;
       console.error("[AeroGrid installer] Installation failed.", error, error.cause?.differences);

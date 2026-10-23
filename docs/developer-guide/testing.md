@@ -107,7 +107,8 @@ payload validation, write failures, delete-and-replace ordering, and preservatio
 of non-widget files. They do not prove physical radio behavior. For browser
 acceptance, select a disposable EdgeTX-shaped directory in desktop Chrome/Edge;
 never use a real radio for automated destructive tests. A real-radio test needs
-explicit authorization and a post-install restart/widget check.
+explicit authorization and a post-install widget check after safely ejecting
+the drive and unplugging the USB data cable.
 
 An optional Playwright smoke check exercises the rendered panel with real Chromium
 filesystem handles in a disposable origin-private directory. It simulates the

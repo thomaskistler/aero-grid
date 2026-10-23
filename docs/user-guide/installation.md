@@ -72,7 +72,7 @@ Install the latest stable AeroGrid on your radio, or choose a previous release. 
 
 <div class="ag-install-safety" role="note">
   <strong>Keep the radio connected until installation finishes.</strong>
-  <span>Do not close this page or let another application write to the card. Afterwards, disconnect in the page, safely eject the drive through your operating system, then unplug and restart the radio.</span>
+  <span>Do not close this page or let another application write to the card. Afterwards, disconnect in the page, safely eject the drive through your operating system, then unplug the USB data cable.</span>
 </div>
 
 <h2 id="manual-installation">Manual installation</h2>

@@ -172,6 +172,8 @@ try {
       && style.backgroundColor === "rgba(0, 0, 0, 0)";
   }), "Success is text only, without a frame or background");
   const successMessage = await page.locator("[data-status]").textContent();
+  assert.match(successMessage, /then unplug the USB data cable\./);
+  assert.doesNotMatch(successMessage, /restart/i);
   await page.evaluate(async () => {
     const root = await window.__radioReady;
     const radio = await root.getDirectoryHandle("RADIO");
