@@ -914,7 +914,7 @@ button:focus-visible {
 }
 
 .ag-install-workspace #install-over-usb {
-  font-size: var(--ag-font-3xl);
+  font-size: var(--ag-font-2xl);
 }
 
 .ag-install-workspace h3 {
