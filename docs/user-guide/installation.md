@@ -8,7 +8,7 @@ Install the latest stable AeroGrid on your radio, or choose a previous release. 
   <p class="ag-radio-muted">USB installation is supported only in <strong>desktop Google Chrome or Microsoft Edge</strong>. <strong>Safari and Opera are not supported.</strong></p>
   <div class="ag-radio-header">
     <div>
-      <strong data-connection>Radio disconnected</strong>
+      <strong><svg class="ag-connection-icon" viewBox="0 0 24 24" aria-hidden="true"><g class="ag-connection-off"><path d="m4 20 3-3m10-10 3-3M5 11l6-6 3 3-6 6zm5 8 6-6 3 3-6 6M12 12l2-2m0 4 2-2"/></g><g class="ag-connection-on"><path d="M9 3v4m6-4v4M7 7h10v4a5 5 0 0 1-10 0zm5 9v5"/></g></svg><span data-connection>Radio disconnected</span></strong>
     </div>
     <button type="button" class="ag-radio-button ag-radio-primary" data-connect disabled><svg class="ag-usb-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V3m-3 3 3-3 3 3M12 15l-5-5V7m5 10 5-5V9"/><circle cx="7" cy="5" r="2"/><circle cx="12" cy="21" r="2"/><rect x="15" y="5" width="4" height="4"/></svg><span data-connect-label>Connect Radio</span></button>
   </div>

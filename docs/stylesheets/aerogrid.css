@@ -38,18 +38,31 @@
   font-size: var(--ag-font-2xl, 24px);
 }
 
-.ag-radio-header strong::before {
-  content: "";
-  display: inline-block;
-  width: 0.65rem;
-  height: 0.65rem;
-  flex: 0 0 0.65rem;
+.ag-connection-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  padding: 7px;
   border-radius: 50%;
-  background: var(--ag-muted);
+  background: #6b7280;
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.ag-radio-connected .ag-radio-header strong::before {
+.ag-radio-connected .ag-connection-icon {
   background: var(--ag-green);
+}
+
+.ag-connection-on,
+.ag-radio-connected .ag-connection-off {
+  display: none;
+}
+
+.ag-radio-connected .ag-connection-on {
+  display: inline;
 }
 
 .ag-radio-cards {

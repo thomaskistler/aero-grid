@@ -75,6 +75,13 @@ try {
   assert.equal(await page.locator("[data-radio-type]").textContent(), "Unknown");
   assert.equal(await page.locator("[data-radio-screen]").textContent(), "Unknown");
   assert.equal(await page.locator("[data-connection]").textContent(), "Radio disconnected");
+  const assertConnectionIcon = async (connected) => {
+    assert.equal(await page.locator(".ag-connection-icon").evaluate((node) => getComputedStyle(node).backgroundColor),
+      connected ? "rgb(24, 115, 69)" : "rgb(107, 114, 128)");
+    assert.equal(await page.locator(".ag-connection-on").evaluate((node) => getComputedStyle(node).display !== "none"), connected);
+    assert.equal(await page.locator(".ag-connection-off").evaluate((node) => getComputedStyle(node).display !== "none"), !connected);
+  };
+  await assertConnectionIcon(false);
   assert.equal(await page.locator("[data-device]").count(), 0);
   assert.equal(await page.locator(`input[name=aerogrid-release][value="${catalog.latest}"]`).isChecked(), true);
   assert.equal(await page.locator("input[name=aerogrid-release]").count(), catalog.releases.length);
@@ -117,6 +124,7 @@ try {
     return cards.every((card) => card.height <= 150 && Math.abs(card.height - cards[0].height) < 1);
   }), "Connected metadata cards stay compact and balanced");
   assert.equal(await page.locator("[data-connection]").textContent(), "Radio connected");
+  await assertConnectionIcon(true);
   assert.match(await page.locator("[data-install]").textContent(), /^Update/);
   assert.equal(await page.locator("[data-install]").isDisabled(), false);
   assert.equal(await page.locator("[data-connect] .ag-usb-icon").count(), 1);
@@ -206,6 +214,7 @@ try {
   await activate("[data-connect]");
   assert.equal(await page.locator("[data-connect]").textContent(), "Connect Radio");
   assert.equal(await page.locator("[data-connection]").textContent(), "Radio disconnected");
+  await assertConnectionIcon(false);
   assert.equal(await page.locator("[data-radio-type]").textContent(), "Unknown");
   assert.equal(await page.locator("[data-radio-screen]").textContent(), "Unknown");
   assert.equal(await page.locator("[data-install]").isDisabled(), true);
