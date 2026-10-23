@@ -129,7 +129,7 @@ if (panel) {
       selectedVersion = catalog.latest;
       manifest = latestManifest;
       renderReleases();
-      releaseStatus.textContent = `Selected release: ${manifest.version} (latest stable).`;
+      releaseStatus.textContent = "";
       if (radioStorage.root) await inspect();
     } catch (error) {
       manifest = null;
@@ -165,7 +165,7 @@ if (panel) {
     try {
       manifest = await selectedRelease(selectedVersion);
       if (radioStorage.root) await inspect();
-      releaseStatus.textContent = `Selected release: ${manifest.version}${manifest.version === catalog.latest ? " (latest stable)" : ""}.`;
+      releaseStatus.textContent = "";
     } catch (error) {
       manifest = null;
       releaseStatus.textContent = `Selected release unavailable: ${error.message}`;
@@ -190,7 +190,7 @@ if (panel) {
     try {
       await radioStorage.connect();
       incomplete = false;
-      message("SD card connected via folder access. Close other applications using the card before installing.");
+      message("");
       await inspect();
       if (!details.radio.board || !details.radio.version) {
         message("SD card connected. RADIO/radio.yml has missing or invalid board/semver metadata; the affected fields are Unknown.");

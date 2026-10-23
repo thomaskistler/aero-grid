@@ -141,6 +141,11 @@
   margin-bottom: 0.5rem;
 }
 
+.ag-radio [data-status]:empty,
+.ag-radio [data-release-status]:empty {
+  display: none;
+}
+
 .ag-radio-confirm {
   padding: 1rem;
   margin-bottom: 1rem;

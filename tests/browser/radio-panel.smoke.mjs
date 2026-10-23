@@ -108,6 +108,8 @@ try {
   assert.equal(await page.locator("[data-radio-type]").textContent(), "RadioMaster TX16S");
   assert.equal(await page.locator("[data-radio-screen]").textContent(), "Color - 480 x 272");
   assert.match(await page.locator("[data-compatibility]").textContent(), /Compatibility check passed/);
+  assert.equal(await page.locator("[data-status]").textContent(), "");
+  assert.equal(await page.locator("[data-release-status]").textContent(), "");
   assert.ok(await page.locator(".ag-radio-cards").evaluate((node) => {
     const cards = [...node.children].map((card) => card.getBoundingClientRect());
     return cards.every((card) => card.height <= 150 && Math.abs(card.height - cards[0].height) < 1);
@@ -166,7 +168,9 @@ try {
     await activate("[data-release-open]");
     await page.locator(`input[name=aerogrid-release][value="${version}"]`).press("Space");
     await page.waitForFunction((version) =>
-      document.querySelector("[data-release-status]").textContent.startsWith(`Selected release: ${version}`), version);
+      document.querySelector("[data-latest]").textContent.startsWith(version)
+        && !document.querySelector("[data-release-picker]").disabled
+        && document.querySelector("[data-release-status]").textContent === "", version);
     assert.equal(await page.locator("[data-release-dialog]").isVisible(), false);
     assert.equal(await page.locator("[data-latest]").textContent(),
       `${version}${version === catalog.latest ? " - latest" : ""}`);
