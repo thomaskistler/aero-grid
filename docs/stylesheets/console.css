@@ -962,6 +962,18 @@ button:focus-visible {
   border-top: 1px solid var(--ag-console-border);
 }
 
+.ag-install-workspace .ag-radio-compatibility {
+  font-size: var(--ag-font-sm);
+  color: var(--ag-console-muted);
+}
+
+.ag-install-workspace .ag-radio-compatibility-warning {
+  padding: 12px;
+  border-left: 3px solid var(--ag-amber);
+  color: var(--ag-amber);
+  background: var(--ag-console-bg);
+}
+
 .ag-release-picker {
   min-width: 0;
   margin: 20px 0;

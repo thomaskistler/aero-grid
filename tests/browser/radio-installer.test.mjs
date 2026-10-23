@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   child, compareVersions, inspectRoot, inspectWidget, packageVersion,
-  parseRadioMetadata, parseVersion, radioHardware, RadioStorage,
+  parseRadioMetadata, parseVersion, radioHardware, radioCompatibility, RadioStorage,
 } from "../../docs/javascripts/radio-storage.mjs";
 import {
   actionFor, ContentMismatchError, loadCatalog, loadLatest, loadRelease, preparePackage, RELEASE_API,
@@ -12,6 +12,22 @@ import {
 
 const encoder = new TextEncoder();
 const base = new URL("https://example.test/aero-grid/installer/");
+
+test("compatibility requires known color hardware and stable EdgeTX 2.11.0 or later", () => {
+  for (const version of ["2.11.0", "2.11.9", "2.12.4", "3.0.0"]) {
+    assert.equal(radioCompatibility({ board: "tx16s", version }).supported, true);
+  }
+  for (const radio of [
+    null, { board: null, version: "2.12.4" }, { board: "future", version: "2.12.4" },
+    { board: "boxer", version: "2.12.4" }, { board: "tx16s", version: null },
+    { board: "tx16s", version: "invalid" }, { board: "tx16s", version: "2.10.9" },
+    { board: "tx16s", version: "2.11.0-rc.1" }, { board: "tx16s", version: "2.13.0-rc.1" },
+  ]) {
+    const result = radioCompatibility(radio);
+    assert.equal(result.supported, false);
+    assert.match(result.message, /Install at your own risk/);
+  }
+});
 
 test("radio hardware inference handles verified display families and unknown boards", () => {
   assert.deepEqual(radioHardware("tx16s"), { type: "RadioMaster TX16S", screen: "Color - 480 x 272" });

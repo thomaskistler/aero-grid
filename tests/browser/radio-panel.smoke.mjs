@@ -107,6 +107,7 @@ try {
   assert.equal(await page.locator("[data-edgetx]").textContent(), "2.12.4");
   assert.equal(await page.locator("[data-radio-type]").textContent(), "RadioMaster TX16S");
   assert.equal(await page.locator("[data-radio-screen]").textContent(), "Color - 480 x 272");
+  assert.match(await page.locator("[data-compatibility]").textContent(), /Compatibility check passed/);
   assert.ok(await page.locator(".ag-radio-cards").evaluate((node) => {
     const cards = [...node.children].map((card) => card.getBoundingClientRect());
     return cards.every((card) => card.height <= 150 && Math.abs(card.height - cards[0].height) < 1);
@@ -204,6 +205,30 @@ try {
   assert.match(await page.locator("[data-connect]").getAttribute("class"), /ag-radio-primary/);
   assert.doesNotMatch(await page.locator("[data-connect]").getAttribute("class"), /ag-radio-danger/);
   assert.doesNotMatch(await page.locator("[data-install]").getAttribute("class"), /ag-radio-primary/);
+
+  for (const metadata of [
+    "board: future-radio\nsemver: 2.12.4\n",
+    "board: boxer\nsemver: 2.12.4\n",
+    "board: tx16s\nsemver: 2.10.0\n",
+    "board: tx16s\n",
+  ]) {
+    await page.evaluate(async (text) => {
+      const root = await window.__radioReady;
+      const directory = await root.getDirectoryHandle("RADIO");
+      const stream = await (await directory.getFileHandle("radio.yml")).createWritable();
+      await stream.write(text);
+      await stream.close();
+    }, metadata);
+    await activate("[data-connect]");
+    await page.waitForFunction(() => document.querySelector("[data-connect]").textContent === "Disconnect Radio");
+    assert.match(await page.locator("[data-compatibility]").textContent(), /Install at your own risk/);
+    assert.equal(await page.locator("[data-install]").isDisabled(), false);
+    await activate("[data-install]");
+    assert.match(await page.locator("[data-confirm-description]").textContent(), /Install at your own risk/);
+    await activate("[data-confirm-cancel]");
+    await activate("[data-connect]");
+    assert.equal(await page.locator("[data-compatibility]").textContent(), "Connect your radio to check compatibility.");
+  }
 
   for (const width of [320, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 1000 });

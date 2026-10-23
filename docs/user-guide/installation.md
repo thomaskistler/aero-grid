@@ -44,8 +44,7 @@ Install the latest stable AeroGrid on your radio, or choose a previous release. 
   </fieldset>
   </dialog>
   <div class="ag-install-action">
-  <h3>AeroGrid installation</h3>
-  <p class="ag-radio-muted">The selected release replaces /WIDGETS/AeroGrid/ completely, including custom files inside it. No backup or rollback is created. Layouts, maps, radio/model settings, and firmware are left untouched.</p>
+  <p class="ag-radio-compatibility" data-compatibility role="status" aria-live="polite">Connect your radio to check compatibility.</p>
   <p class="ag-radio-downgrade" data-downgrade hidden></p>
   <div class="ag-radio-actions">
     <button type="button" class="ag-radio-button" data-install disabled>Install latest AeroGrid</button>
@@ -83,6 +82,7 @@ Install the latest stable AeroGrid on your radio, or choose a previous release. 
 <p>Connection grants this page access to the selected folder, using the same USB Storage workflow as EdgeTX Buddy's SD-card editor. It is <strong>not WebSerial, firmware flashing, or a live firmware query</strong>. The board identifier and EdgeTX version come from the saved <code>board</code> and <code>semver</code> fields in <code>RADIO/radio.yml</code>. Missing or invalid fields appear as <strong>Unknown</strong>. Copied or externally edited settings may not describe the attached hardware or currently running firmware.</p>
 <p><code>edgetx.sdcard.version</code> describes the SD contents and is not used as the firmware version. AeroGrid's version is read from <code>lib/package.lua</code>; metadata alone does not prove that every installed file is intact.</p>
 <p>Radio type and screen color/resolution are inferred from the saved board identifier using EdgeTX hardware definitions, not queried from the display. Unrecognized boards retain their identifier and show an Unknown screen type. Screen dimensions use EdgeTX's logical display orientation.</p>
+<p>The compatibility check recognizes color-screen radios running stable EdgeTX 2.11.0 or later, when the Lua LVGL API became available. It is not a hardware test or a guarantee that every selected AeroGrid release works with that configuration. Unknown hardware, unknown firmware, monochrome radios, older firmware, and prerelease firmware show an install-at-your-own-risk warning without blocking installation.</p>
 <p><strong>Disconnect Radio</strong> releases this page's connection, but does not eject the drive or revoke browser permissions. Access loss is detected by filesystem checks, not an immediate USB disconnect event. The browser cannot distinguish a mounted radio card from a local copy of one.</p>
 </details>
 

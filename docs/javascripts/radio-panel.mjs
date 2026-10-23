@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-import { radioStorage, compareVersions, radioHardware } from "./radio-storage.mjs";
+import { radioStorage, compareVersions, radioHardware, radioCompatibility } from "./radio-storage.mjs";
 import { actionFor, ContentMismatchError, loadCatalog, loadLatest, loadRelease, preparePackage, replaceWidget, verifyInstalled } from "./radio-installer.mjs";
 
 const panel = document.querySelector("[data-radio-installer]");
@@ -47,6 +47,9 @@ if (panel) {
     const hardware = radioHardware(details?.radio.board);
     element("radio-type").textContent = hardware.type;
     element("radio-screen").textContent = hardware.screen;
+    const compatibility = details ? radioCompatibility(details.radio) : null;
+    element("compatibility").textContent = compatibility?.message ?? "Connect your radio to check compatibility.";
+    element("compatibility").classList.toggle("ag-radio-compatibility-warning", !!compatibility && !compatibility.supported);
     element("widget").textContent = !details ? "Unknown" : !details.widget.present
       ? "Not installed" : `${details.widget.version ?? "Unknown version"}${incomplete ? " | incomplete / different files" : " | metadata detected"}`;
     const displayedVersion = selectedVersion ?? latestManifest?.version;
@@ -207,7 +210,9 @@ if (panel) {
     if (!manifest || !details || busy) return;
     const version = manifest.version;
     const downgrade = details.widget.version && compareVersions(details.widget.version, version) > 0;
+    const compatibility = radioCompatibility(details.radio);
     const warning = `Install AeroGrid ${version} on ${details.radio.name}?\n\n`
+      + (!compatibility.supported ? `${compatibility.message}\n\n` : "")
       + (downgrade ? `DOWNGRADE from ${details.widget.version} to ${version}. Older releases may not support your current layouts or settings. User data will not be converted.\n\n` : "")
       + "The entire WIDGETS/AeroGrid folder, including custom files inside it, will be deleted and replaced. "
       + "There is NO backup or rollback. An interruption may leave AeroGrid unusable until you reinstall.\n\n"

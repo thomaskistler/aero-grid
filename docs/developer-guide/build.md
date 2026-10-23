@@ -157,6 +157,12 @@ logical display dimensions. The lookup is based on EdgeTX
 color dimensions come from each target's `hal.h`, and monochrome sizes from
 `taranis/CMakeLists.txt`. Unknown boards keep their identifier with an Unknown
 screen; do not infer dimensions from SD bitmap-pack sizes or the browser screen.
+The compatibility check follows the UI policy of recognized color-screen hardware
+and stable EdgeTX 2.11.0 or later. The
+[EdgeTX 2.11.0 release](https://github.com/EdgeTX/edgetx/releases/tag/v2.11.0)
+introduced Lua LVGL controls. This check is not selected-release hardware
+certification; unknown or unsupported configurations show an install-at-your-own-risk
+warning in the page and confirmation, but remain installable.
 
 Pages builds mirror **published stable releases**, not the current source tree,
 into same-origin versioned files, individual `releases/<version>/manifest.json`
