@@ -70,7 +70,7 @@ try {
   await page.waitForFunction(() => document.querySelector("[data-latest]").textContent !== "Unavailable");
   assert.equal(await page.locator("[data-release-label]").textContent(), "Selected AeroGrid release");
   assert.equal(await page.locator("[data-latest]").textContent(), `${catalog.latest} - latest`);
-  assert.equal(await page.locator(".ag-radio-card").nth(1).locator("small").textContent(), "Detected after connection");
+  assert.equal(await page.locator(".ag-radio-card").nth(1).locator("small").count(), 0);
   assert.equal(await page.locator("[data-connect] .ag-usb-icon").count(), 1);
   assert.equal(await page.locator("[data-radio-type]").textContent(), "Unknown");
   assert.equal(await page.locator("[data-radio-screen]").textContent(), "Unknown");
