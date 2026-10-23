@@ -387,6 +387,7 @@ test("verification reports exact missing and unexpected paths without ignoring e
     assert.ok(error instanceof ContentMismatchError);
     assert.match(error.message, /Missing files \(1\): "main\.lua"/);
     assert.match(error.message, /Unexpected files \(1\): "\._main\.lua"/);
+    assert.deepEqual(error.differences, { missing: ["main.lua"], unexpected: ["._main.lua"] });
     return true;
   });
   await put(root, "WIDGETS/AeroGrid/main.lua", "return {}");
@@ -396,7 +397,46 @@ test("verification reports exact missing and unexpected paths without ignoring e
   for (let index = 0; index < 21; index++) {
     await put(root, `WIDGETS/AeroGrid/extra${index}.lua`, "extra");
   }
-  await assert.rejects(verifyInstalled(root, manifest), /Unexpected files \(21\):.*1 more not shown/);
+  await assert.rejects(verifyInstalled(root, manifest), (error) => {
+    assert.match(error.message, /Unexpected files \(21\):.*1 more not shown/);
+    assert.equal(error.differences.unexpected.length, 21);
+    return true;
+  });
+});
+
+test("verification tolerates valid macOS sidecars only for existing release files and directories", async () => {
+  const root = await fixture();
+  const { manifest, fetcher } = await releaseFixture();
+  await replaceWidget(root, await preparePackage(manifest, base, () => {}, fetcher));
+  const header = new Uint8Array(38);
+  const view = new DataView(header.buffer);
+  view.setUint32(0, 0x00051607);
+  view.setUint32(4, 0x00020000);
+  view.setUint16(24, 1);
+  view.setUint32(26, 9);
+  view.setUint32(30, 38);
+  const sidecar = async (path, bytes = header) => {
+    const file = await put(root, `WIDGETS/AeroGrid/${path}`, "");
+    file.data = bytes;
+  };
+  await sidecar("._main.lua");
+  await sidecar("._assets");
+  await sidecar("lib/._package.lua");
+  const before = await snapshot(root);
+  root.context.events = [];
+  await verifyInstalled(root, manifest);
+  assert.deepEqual(await snapshot(root), before);
+  assert.deepEqual(root.context.events, []);
+  await sidecar("._unrelated.lua");
+  await assert.rejects(verifyInstalled(root, manifest), /Unexpected files \(1\): "\._unrelated\.lua"/);
+  root.children.get("WIDGETS").children.get("AeroGrid").children.delete("._unrelated.lua");
+  for (const bytes of [new Uint8Array(38), header.slice(0, 8), header.slice(0, 26)]) {
+    await sidecar("._main.lua", bytes);
+    await assert.rejects(verifyInstalled(root, manifest), /Unexpected files \(1\): "\._main\.lua"/);
+  }
+  await sidecar("._main.lua");
+  await put(root, "WIDGETS/AeroGrid/main.lua", "corrupt release file");
+  await assert.rejects(verifyInstalled(root, manifest), /Installed content verification failed: main.lua/);
 });
 
 test("first install and lower-case widget replacement use only the resolved widget directory", async () => {

@@ -192,6 +192,29 @@ try {
   ]) assert.equal(await read(path), text);
   await assert.rejects(read("WIDGETS/AeroGrid/main.luac"), /not.*found/i);
 
+  await page.evaluate(async () => {
+    const root = await window.__radioReady;
+    const widgets = await root.getDirectoryHandle("WIDGETS");
+    const widget = await widgets.getDirectoryHandle("AeroGrid");
+    const bytes = new Uint8Array(38);
+    const header = new DataView(bytes.buffer);
+    header.setUint32(0, 0x00051607);
+    header.setUint32(4, 0x00020000);
+    header.setUint16(24, 1);
+    header.setUint32(26, 9);
+    header.setUint32(30, 38);
+    for (const name of ["._main.lua", "._lib"]) {
+      const stream = await (await widget.getFileHandle(name, { create: true })).createWritable();
+      await stream.write(bytes);
+      await stream.close();
+    }
+  });
+  await activate("[data-connect]");
+  await activate("[data-connect]");
+  await page.waitForFunction(() => document.querySelector("[data-connect]").textContent === "Disconnect Radio");
+  assert.equal(await page.locator("[data-install]").textContent(), "Up to date");
+  assert.equal(await page.locator("[data-status]").textContent(), "");
+
   const historicalAPI = RELEASE_API.replace("/latest", `/tags/v${historical.version}`);
   await page.route(historicalAPI, (route) => route.fulfill({ status: 503, body: "Unavailable" }));
   await activate("[data-release-open]");

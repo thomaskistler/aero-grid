@@ -173,6 +173,12 @@ The build validates the release ZIP's SHA-256, archive paths, size limits, and
 package version before emitting the payload. The browser checks the latest
 GitHub release against its manifest and verifies every downloaded and written
 file. These are content integrity checks, not signed publisher authentication.
+Verification tolerates macOS AppleDouble (`._`) sidecars only when they have an
+AppleDouble v2 header and a complete descriptor table, and correspond to a
+release file or existing directory. Sidecars are not deleted by verification;
+all release files still receive full size/hash checks. Other unexpected files
+remain errors. Verification errors include missing/unexpected paths on-page
+(up to 20 per category) and full structured differences in the JavaScript console.
 An explicitly selected downgrade requires a downgrade-specific confirmation.
 The storage writer still refuses downgrades unless that confirmation authorizes
 one; it does not convert user data to older layout or settings formats.

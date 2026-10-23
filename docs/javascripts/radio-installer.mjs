@@ -9,7 +9,12 @@ const MAX_TOTAL = 64 * 1024 * 1024;
 const MAX_FILE = 2 * 1024 * 1024;
 const preparedPackages = new WeakSet();
 
-export class ContentMismatchError extends Error {}
+export class ContentMismatchError extends Error {
+  constructor(message, differences = null) {
+    super(message);
+    this.differences = differences;
+  }
+}
 
 export async function sha256(bytes) {
   const digest = await crypto.subtle.digest("SHA-256", bytes);
@@ -189,26 +194,64 @@ async function directoryFor(root, path) {
   return directory;
 }
 
-async function listFiles(directory, prefix = "") {
+async function listFiles(directory, prefix = "", directories = new Set()) {
   const files = [];
   for await (const [name, handle] of directory.entries()) {
     const path = prefix + name;
-    if (handle.kind === "directory") files.push(...await listFiles(handle, `${path}/`));
+    if (handle.kind === "directory") {
+      directories.add(path);
+      files.push(...await listFiles(handle, `${path}/`, directories));
+    }
     else files.push(path);
     if (files.length > MAX_FILES) throw new Error("Unexpected files in the AeroGrid folder.");
   }
   return files;
 }
 
+async function installedFile(widget, path) {
+  let directory = widget;
+  const parts = path.split("/");
+  for (const part of parts.slice(0, -1)) directory = await child(directory, part, "directory");
+  return (await child(directory, parts.at(-1), "file")).getFile();
+}
+
+async function appleDoubleSidecar(widget, path, expectedPaths, directories) {
+  const parts = path.split("/");
+  const name = parts.at(-1);
+  if (!name.startsWith("._")) return false;
+  parts[parts.length - 1] = name.slice(2);
+  const counterpart = parts.join("/");
+  if (!expectedPaths.has(counterpart) && !directories.has(counterpart)) return false;
+  const file = await installedFile(widget, path);
+  if (file.size < 26 || file.size > MAX_FILE) return false;
+  const header = new DataView(await file.slice(0, 26).arrayBuffer());
+  const count = header.getUint16(24);
+  const tableEnd = 26 + count * 12;
+  if (header.getUint32(0) !== 0x00051607 || header.getUint32(4) !== 0x00020000
+      || !count || tableEnd > file.size) return false;
+  const entries = new DataView(await file.slice(26, tableEnd).arrayBuffer());
+  for (let index = 0; index < count; index++) {
+    const offset = entries.getUint32(index * 12 + 4);
+    const size = entries.getUint32(index * 12 + 8);
+    if (offset < tableEnd || offset + size > file.size) return false;
+  }
+  return true;
+}
+
 export async function verifyInstalled(root, manifest, progress = () => {}, allowCompiled = false) {
   const widgets = await child(root, "WIDGETS", "directory");
   const widget = await child(widgets, "AeroGrid", "directory");
   const expected = manifest.files.map((file) => file.path).sort();
-  const actual = (await listFiles(widget)).filter((path) => !(
-    allowCompiled && path.endsWith(".luac") && expected.includes(path.slice(0, -1))
-  )).sort();
+  const expectedPaths = new Set(expected);
+  const directories = new Set();
+  const actual = [];
+  for (const path of await listFiles(widget, "", directories)) {
+    if (allowCompiled && path.endsWith(".luac") && expectedPaths.has(path.slice(0, -1))) continue;
+    if (!expectedPaths.has(path) && await appleDoubleSidecar(widget, path, expectedPaths, directories)) continue;
+    actual.push(path);
+  }
+  actual.sort();
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    const expectedPaths = new Set(expected);
     const actualPaths = new Set(actual);
     const missing = expected.filter((path) => !actualPaths.has(path));
     const unexpected = actual.filter((path) => !expectedPaths.has(path));
@@ -216,18 +259,16 @@ export async function verifyInstalled(root, manifest, progress = () => {}, allow
       ? `${label} (${paths.length}): ${paths.slice(0, 20).map((path) => JSON.stringify(path)).join(", ")}${paths.length > 20 ? `; ${paths.length - 20} more not shown` : ""}.`
       : `${label}: none.`;
     throw new ContentMismatchError(
-      `AeroGrid file list does not match the selected release. Paths are relative to WIDGETS/AeroGrid. ${describe("Missing files", missing)} ${describe("Unexpected files", unexpected)}`
+      `AeroGrid file list does not match the selected release. Paths are relative to WIDGETS/AeroGrid. ${describe("Missing files", missing)} ${describe("Unexpected files", unexpected)}`,
+      { missing, unexpected }
     );
   }
   for (const [index, file] of manifest.files.entries()) {
     progress(`Verifying ${file.path}`, index, manifest.files.length);
-    let directory = widget;
-    const parts = file.path.split("/");
-    for (const part of parts.slice(0, -1)) directory = await child(directory, part, "directory");
-    const handle = await child(directory, parts.at(-1), "file");
-    const installed = await handle.getFile();
+    const installed = await installedFile(widget, file.path);
     if (installed.size !== file.size || await sha256(await installed.arrayBuffer()) !== file.sha256) {
-      throw new ContentMismatchError(`Installed content verification failed: ${file.path}.`);
+      throw new ContentMismatchError(`Installed content verification failed: ${file.path}.`,
+        { path: file.path, expectedSize: file.size, actualSize: installed.size });
     }
   }
 }
@@ -289,6 +330,6 @@ export async function replaceWidget(root, prepared, progress = () => {}, { allow
     stage = "Verifying installed files";
     await verifyInstalled(root, prepared, progress);
   } catch (error) {
-    throw new Error(`${stage}: ${error.message}${changed ? " Installation incomplete. AeroGrid may be unusable; retry the full installation before using it. No backup or rollback is available." : ""}`);
+    throw new Error(`${stage}: ${error.message}${changed ? " Installation incomplete. AeroGrid may be unusable; retry the full installation before using it. No backup or rollback is available." : ""}`, { cause: error });
   }
 }

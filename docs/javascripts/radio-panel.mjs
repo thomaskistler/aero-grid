@@ -79,6 +79,7 @@ if (panel) {
         incomplete = false;
       } catch (error) {
         if (!(error instanceof ContentMismatchError)) throw error;
+        console.error("[AeroGrid installer] Installed file verification failed.", error, error.differences);
         incomplete = true;
         message(`${error.message} A full replacement is available.`, true);
       }
@@ -267,6 +268,7 @@ if (panel) {
       message(`AeroGrid ${version} installed successfully. Disconnect Radio, safely eject the drive through your operating system, then restart the radio.`, false, true);
     } catch (error) {
       if (replacing) incomplete = true;
+      console.error("[AeroGrid installer] Installation failed.", error, error.cause?.differences);
       message(`${error.message}${replacing ? "" : " No radio files were changed."}`, true);
     } finally {
       busy = false;
