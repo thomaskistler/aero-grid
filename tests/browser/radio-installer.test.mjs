@@ -376,6 +376,29 @@ test("delete then replace removes stale/custom files, closes streams, verifies a
   await assert.rejects(verifyInstalled(root, manifest), ContentMismatchError);
 });
 
+test("verification reports exact missing and unexpected paths without ignoring extra files", async () => {
+  const root = await fixture();
+  const { manifest, fetcher } = await releaseFixture();
+  await replaceWidget(root, await preparePackage(manifest, base, () => {}, fetcher));
+  const widget = root.children.get("WIDGETS").children.get("AeroGrid");
+  widget.children.delete("main.lua");
+  await put(root, "WIDGETS/AeroGrid/._main.lua", "unexpected sidecar");
+  await assert.rejects(verifyInstalled(root, manifest), (error) => {
+    assert.ok(error instanceof ContentMismatchError);
+    assert.match(error.message, /Missing files \(1\): "main\.lua"/);
+    assert.match(error.message, /Unexpected files \(1\): "\._main\.lua"/);
+    return true;
+  });
+  await put(root, "WIDGETS/AeroGrid/main.lua", "return {}");
+  await assert.rejects(verifyInstalled(root, manifest), /Missing files: none.*Unexpected files \(1\): "\._main\.lua"/);
+  widget.children.delete("._main.lua");
+  await verifyInstalled(root, manifest);
+  for (let index = 0; index < 21; index++) {
+    await put(root, `WIDGETS/AeroGrid/extra${index}.lua`, "extra");
+  }
+  await assert.rejects(verifyInstalled(root, manifest), /Unexpected files \(21\):.*1 more not shown/);
+});
+
 test("first install and lower-case widget replacement use only the resolved widget directory", async () => {
   const { manifest, fetcher } = await releaseFixture();
   for (const absent of [true, false]) {

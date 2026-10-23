@@ -207,7 +207,18 @@ export async function verifyInstalled(root, manifest, progress = () => {}, allow
   const actual = (await listFiles(widget)).filter((path) => !(
     allowCompiled && path.endsWith(".luac") && expected.includes(path.slice(0, -1))
   )).sort();
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new ContentMismatchError("AeroGrid file list is incomplete or contains different files.");
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    const expectedPaths = new Set(expected);
+    const actualPaths = new Set(actual);
+    const missing = expected.filter((path) => !actualPaths.has(path));
+    const unexpected = actual.filter((path) => !expectedPaths.has(path));
+    const describe = (label, paths) => paths.length
+      ? `${label} (${paths.length}): ${paths.slice(0, 20).map((path) => JSON.stringify(path)).join(", ")}${paths.length > 20 ? `; ${paths.length - 20} more not shown` : ""}.`
+      : `${label}: none.`;
+    throw new ContentMismatchError(
+      `AeroGrid file list does not match the selected release. Paths are relative to WIDGETS/AeroGrid. ${describe("Missing files", missing)} ${describe("Unexpected files", unexpected)}`
+    );
+  }
   for (const [index, file] of manifest.files.entries()) {
     progress(`Verifying ${file.path}`, index, manifest.files.length);
     let directory = widget;
