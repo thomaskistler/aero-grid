@@ -937,7 +937,7 @@ button:focus-visible {
   display: grid;
   gap: 4px;
   margin: 0;
-  font-size: var(--ag-font-base);
+  font-size: var(--ag-font-sm);
   line-height: 1.4;
 }
 
@@ -950,7 +950,7 @@ button:focus-visible {
 
 .ag-radio-specs dt {
   color: var(--ag-console-muted);
-  font-size: var(--ag-font-base);
+  font-size: var(--ag-font-xs);
   font-weight: 500;
   white-space: nowrap;
 }
