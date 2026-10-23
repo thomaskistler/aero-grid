@@ -65,8 +65,7 @@ Install the latest stable AeroGrid on your radio, or choose a previous release. 
 </div>
 <aside class="ag-install-help" aria-labelledby="ag-connect-title">
   <h2 id="ag-connect-title">Connect your radio</h2>
-  <p>Use a USB cable that supports data.</p>
-  <p>Power on the radio, connect its <strong>data USB port</strong>, and choose <strong>USB Storage</strong> on the radio if prompted.</p>
+  <p>Power on the radio, connect its <strong>data USB port</strong> using a USB cable that supports data, and choose <strong>USB Storage</strong> on the radio if prompted.</p>
   <p>Then click <strong>Connect Radio</strong> and select the <strong>SD-card drive</strong>: the folder containing <code>RADIO</code>, <code>MODELS</code>, and <code>WIDGETS</code>, not the <code>WIDGETS</code> folder itself.</p>
   <p class="ag-install-note">Back up your SD card and model configuration before making changes. AeroGrid requires a color-screen radio running EdgeTX 2.11.0 or later.</p>
   <a href="#manual-installation">Prefer to copy the files yourself?</a>
