@@ -47,9 +47,9 @@ if (panel) {
       ? "Source: RADIO/radio.yml (saved firmware metadata, not a live query)" : "Detected after connection";
     element("widget").textContent = !details ? "Unknown" : !details.widget.present
       ? "Not installed" : `${details.widget.version ?? "Unknown version"}${incomplete ? " | incomplete / different files" : " | metadata detected"}`;
-    element("latest").textContent = selectedVersion ?? latestManifest?.version ?? "Unavailable";
-    element("release-label").textContent = !selectedVersion || selectedVersion === catalog?.latest
-      ? "Latest stable AeroGrid" : "Selected AeroGrid release";
+    const displayedVersion = selectedVersion ?? latestManifest?.version;
+    element("latest").textContent = displayedVersion
+      ? `${displayedVersion}${displayedVersion === catalog?.latest ? " - latest" : ""}` : "Unavailable";
     const releaseDisabled = busy || checking || checkingRelease || !!confirmation || !catalog;
     element("release-picker").disabled = releaseDisabled;
     element("release-open").disabled = releaseDisabled;
@@ -95,7 +95,7 @@ if (panel) {
       input.disabled = !entry.available;
       const text = document.createElement("span");
       const title = document.createElement("strong");
-      title.textContent = `v${entry.version}${entry.version === catalog.latest ? " - Latest" : ""}`;
+      title.textContent = `${entry.version}${entry.version === catalog.latest ? " - latest" : ""}`;
       const description = document.createElement("small");
       description.textContent = entry.available ? entry.name : entry.reason;
       text.append(title, description);

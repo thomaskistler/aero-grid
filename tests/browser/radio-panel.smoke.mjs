@@ -68,6 +68,9 @@ try {
   });
   await page.goto(new URL("user-guide/installation/", site).href);
   await page.waitForFunction(() => document.querySelector("[data-latest]").textContent !== "Unavailable");
+  assert.equal(await page.locator("[data-release-label]").textContent(), "Selected AeroGrid release");
+  assert.equal(await page.locator("[data-latest]").textContent(), `${catalog.latest} - latest`);
+  assert.equal(await page.locator(".ag-radio-card").nth(1).locator("small").textContent(), "Detected after connection");
   assert.equal(await page.locator("[data-connect] .ag-usb-icon").count(), 1);
   assert.equal(await page.locator(`input[name=aerogrid-release][value="${catalog.latest}"]`).isChecked(), true);
   assert.equal(await page.locator("input[name=aerogrid-release]").count(), catalog.releases.length);
@@ -152,7 +155,8 @@ try {
     await page.waitForFunction((version) =>
       document.querySelector("[data-release-status]").textContent.startsWith(`Selected release: ${version}`), version);
     assert.equal(await page.locator("[data-release-dialog]").isVisible(), false);
-    assert.equal(await page.locator("[data-latest]").textContent(), version);
+    assert.equal(await page.locator("[data-latest]").textContent(),
+      `${version}${version === catalog.latest ? " - latest" : ""}`);
   };
   await chooseRelease(catalog.latest);
   await chooseRelease(historical.version);
@@ -177,7 +181,7 @@ try {
   assert.equal(await read("AEROGRID/layouts/user.yaml"), "keep layout");
   assert.equal(await read("MAPS/tile.png"), "keep map");
   await chooseRelease(catalog.latest);
-  assert.equal(await page.locator("[data-release-label]").textContent(), "Latest stable AeroGrid");
+  assert.equal(await page.locator("[data-release-label]").textContent(), "Selected AeroGrid release");
   assert.match(await page.locator("[data-install]").textContent(), /^Update/);
   assert.equal(await page.locator("[data-downgrade]").isVisible(), false);
   await activate("[data-connect]");

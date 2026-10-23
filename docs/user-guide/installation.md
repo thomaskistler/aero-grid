@@ -21,10 +21,10 @@ Install the latest stable AeroGrid on your radio, or choose a previous release. 
     <div class="ag-radio-card">
       <span>AeroGrid on SD card</span>
       <strong data-widget>Unknown</strong>
-      <small>Target: /WIDGETS/AeroGrid/</small>
+      <small>Detected after connection</small>
     </div>
     <button type="button" class="ag-radio-card ag-release-card" data-release-open aria-haspopup="dialog" aria-controls="ag-release-dialog" disabled>
-      <span data-release-label>Latest stable AeroGrid</span>
+      <span data-release-label>Selected AeroGrid release</span>
       <strong data-latest>Unavailable</strong>
       <small>Choose a different release <span aria-hidden="true">&#9662;</span></small>
     </button>
