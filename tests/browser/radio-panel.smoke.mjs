@@ -107,6 +107,10 @@ try {
   assert.equal(await page.locator("[data-edgetx]").textContent(), "2.12.4");
   assert.equal(await page.locator("[data-radio-type]").textContent(), "RadioMaster TX16S");
   assert.equal(await page.locator("[data-radio-screen]").textContent(), "Color - 480 x 272");
+  assert.ok(await page.locator(".ag-radio-cards").evaluate((node) => {
+    const cards = [...node.children].map((card) => card.getBoundingClientRect());
+    return cards.every((card) => card.height <= 150 && Math.abs(card.height - cards[0].height) < 1);
+  }), "Connected metadata cards stay compact and balanced");
   assert.match(await page.locator("[data-device]").textContent(), /tx16s/);
   assert.match(await page.locator("[data-install]").textContent(), /^Update/);
   assert.equal(await page.locator("[data-install]").isDisabled(), false);

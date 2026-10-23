@@ -931,20 +931,24 @@ button:focus-visible {
 
 .ag-radio-specs {
   display: grid;
-  gap: 8px;
+  gap: 4px;
   margin: 0;
   font-size: var(--ag-font-sm);
+  line-height: 1.4;
 }
 
 .ag-radio-specs > div {
   display: grid;
-  gap: 2px;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
 }
 
 .ag-radio-specs dt {
   color: var(--ag-console-muted);
   font-size: var(--ag-font-xs);
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .ag-radio-specs dd {
