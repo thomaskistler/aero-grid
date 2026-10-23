@@ -76,22 +76,6 @@ Install the latest stable AeroGrid on your radio, or choose a previous release. 
   <span>Do not close this page or let another application write to the card. Afterwards, disconnect in the page, safely eject the drive through your operating system, then unplug and restart the radio.</span>
 </div>
 
-<details class="ag-install-details">
-<summary>How connection and version detection work</summary>
-<p>Connection grants this page access to the selected folder, using the same USB Storage workflow as EdgeTX Buddy's SD-card editor. It is <strong>not WebSerial, firmware flashing, or a live firmware query</strong>. The board identifier and EdgeTX version come from the saved <code>board</code> and <code>semver</code> fields in <code>RADIO/radio.yml</code>. Missing or invalid fields appear as <strong>Unknown</strong>. Copied or externally edited settings may not describe the attached hardware or currently running firmware.</p>
-<p><code>edgetx.sdcard.version</code> describes the SD contents and is not used as the firmware version. AeroGrid's version is read from <code>lib/package.lua</code>; metadata alone does not prove that every installed file is intact.</p>
-<p>Radio type and screen color/resolution are inferred from the saved board identifier using EdgeTX hardware definitions, not queried from the display. Unrecognized boards retain their identifier and show an Unknown screen type. Screen dimensions use EdgeTX's logical display orientation.</p>
-<p>The compatibility check recognizes color-screen radios running stable EdgeTX 2.11.0 or later, when the Lua LVGL API became available. It is not a hardware test or a guarantee that every selected AeroGrid release works with that configuration. Unknown hardware, unknown firmware, monochrome radios, older firmware, and prerelease firmware show an install-at-your-own-risk warning without blocking installation.</p>
-<p><strong>Disconnect Radio</strong> releases this page's connection, but does not eject the drive or revoke browser permissions. Access loss is detected by filesystem checks, not an immediate USB disconnect event. The browser cannot distinguish a mounted radio card from a local copy of one.</p>
-</details>
-
-<details class="ag-install-details">
-<summary>What changes, and what to do if installation is interrupted</summary>
-<p>The installer downloads and checks the complete release <strong>before deleting anything</strong>, then replaces <code>/WIDGETS/AeroGrid/</code> and reads back the new files to verify their contents. This is not an atomic operation. Custom files inside the widget folder are removed, including stale compiled Lua files.</p>
-<p>If replacement fails, AeroGrid may be unusable; reconnect and repeat the full installation before using it. No automatic rollback is available. Your <code>/AEROGRID/</code> user data, maps, other widgets, radio/model settings, and firmware are left untouched.</p>
-<p>You can select a previous stable release if it has compatible installation assets. Older releases may not support settings or layouts written by newer versions. A downgrade requires explicit confirmation; the installer preserves user data but does not convert it to an older format.</p>
-</details>
-
 <h2 id="manual-installation">Manual installation</h2>
 
 ### Install on an SD card
