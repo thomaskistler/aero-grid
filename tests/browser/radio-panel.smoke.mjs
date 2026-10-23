@@ -227,6 +227,23 @@ try {
   assert.doesNotMatch(await page.locator("[data-connect]").getAttribute("class"), /ag-radio-danger/);
   assert.doesNotMatch(await page.locator("[data-install]").getAttribute("class"), /ag-radio-primary/);
 
+  await page.evaluate(async () => {
+    const root = await window.__radioReady;
+    const widgets = await root.getDirectoryHandle("WIDGETS");
+    await widgets.removeEntry("AeroGrid", { recursive: true });
+  });
+  await activate("[data-connect]");
+  await page.waitForFunction(() => document.querySelector("[data-connect]").textContent === "Disconnect Radio");
+  assert.equal(await page.locator("[data-widget]").textContent(), "Not installed");
+  assert.equal(await page.locator("[data-install]").textContent(), `Install AeroGrid ${manifest.version}`);
+  await activate("[data-install]");
+  assert.equal(await page.locator("[data-confirm-description]").textContent(),
+    `Install AeroGrid ${manifest.version} on installer-acceptance?\n\n`
+    + "This will install AeroGrid on your radio.\n\n"
+    + "AeroGrid user data, maps, other widgets, model/radio settings, and firmware will not be changed.");
+  await activate("[data-confirm-cancel]");
+  await activate("[data-connect]");
+
   for (const metadata of [
     "board: future-radio\nsemver: 2.12.4\n",
     "board: boxer\nsemver: 2.12.4\n",
