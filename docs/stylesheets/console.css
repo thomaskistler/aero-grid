@@ -142,11 +142,7 @@ body::before {
 .ag-icon-link svg {
   width: 25px;
   height: 25px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.8;
+  fill: currentColor;
 }
 
 .ag-icon-link:hover,
