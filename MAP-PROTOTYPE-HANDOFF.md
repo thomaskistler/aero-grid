@@ -98,8 +98,12 @@ without browser code or network access.
   Outside coverage the marker can leave view; no dedicated off-coverage UX yet.
 - Flight-path rendering is bounded and uses native line primitives rather than
   writable image buffers. Trail mode keeps up to 31 points over the last 30
-  seconds, fading and expiring by age; full mode decimates into
-  a maximum of 64 points. Sampling, line appearance and native-radio cost still
+  seconds, fading and expiring by age; full mode retains up to 1,024 timestamped
+  fixes with bounded local shape-aware compaction, independently of 63 rendered
+  segments. Its incremental renderer culls off-screen runs and simplifies to a
+  1.5px target (relaxed when the segment budget is reached), caching geometry
+  until history/view changes. Full-mode updates are batched; initial/redrawn
+  routes can appear progressively. Sampling, line appearance and native-radio cost still
   need hardware validation.
 - No pinch zoom, persistence of pan/follow/home across reboot, or new model-wide
   settings store. Marker colors are generated using modern-dark accents, not
