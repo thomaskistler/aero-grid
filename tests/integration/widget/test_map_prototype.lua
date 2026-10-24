@@ -1254,6 +1254,28 @@ do
     assert(math.abs(status.y + automatic.themeBuilder.fontHeight(SMLSIZE) / 2 - automatic.area.h / 2) <= 1)
     a.assertEqual(#automatic.controls, 0)
     a.assertEqual(map.event(automatic, EVT_TOUCH_TAP, { x = 20, y = 20 }, { x = 0, y = 0 }), false)
+    local originalFrame = automatic.themeBuilder.frame
+    local reserved = { w = 40, h = 40 }
+    automatic.themeBuilder.frame = function(...)
+        local frame = originalFrame(...)
+        frame.reserved = reserved
+        return frame
+    end
+    map.update(automatic, { x = 0, y = 0, w = 120, h = 68 })
+    assert(not automatic.statusLabel.hidden, "small panel should keep status when it fits below the menu")
+    assert(automatic.statusLabel.properties.y >= reserved.h, "status must clear the reserved menu corner")
+    reserved = { w = 40, h = 68 }
+    map.update(automatic, { x = 0, y = 0, w = 240, h = 40 })
+    assert(not automatic.statusLabel.hidden, "wide short panel should use space beside the menu")
+    assert(automatic.statusLabel.properties.x >= reserved.w, "status beside the menu must clear its right edge")
+    map.update(automatic, { x = 0, y = 0, w = 120, h = 40 })
+    assert(automatic.statusLabel.hidden, "status must hide when neither safe region can fit the complete message")
+    reserved = nil
+    map.update(automatic, { x = 0, y = 0, w = 120, h = 68 })
+    assert(not automatic.statusLabel.hidden, "fullscreen must restore an unchanged status")
+    local smallStatus = automatic.statusLabel.properties
+    assert(math.abs(smallStatus.y + automatic.themeBuilder.fontHeight(SMLSIZE) / 2 - 34) <= 1)
+    automatic.themeBuilder.frame = originalFrame
     map.update(automatic, { x = 0, y = 0, w = 480, h = 272 })
     automatic.feed = { known = true, fix = true, state = "stale", latitude = 25.9973, longitude = -97.1572 }
     map.refresh(automatic)

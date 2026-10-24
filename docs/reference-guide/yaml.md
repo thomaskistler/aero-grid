@@ -91,13 +91,14 @@ for setup, controls and hardware limitations.
 | `label` | string | `MAP` | Any string | Standard panel heading. |
 | `source` | string | `GPS` | EdgeTX GPS source name | Subscribes through the shared Navigation service. |
 | `headingSource` | string | `""` | Blank or numeric telemetry source name | Degrees clockwise from true north. Blank derives GPS course after at least 1 m of movement, averaging the last five movement bearings circularly; stationary fixes retain it. The plane stays cyan while heading is unknown. A configured source is used directly and does not fall back to GPS when unavailable/stale. |
+| `positionMarker` | string | `plane` | `plane`, `arrow` | Cyan aircraft or blue navigation arrow inside a translucent white circle. Both use the same heading and GPS position. |
 | `armSwitch` | string | `""` | Blank, switch position such as `SF^`, `SA-`, `SFv`, or logical switch `L01` | Blank uses EdgeTX home; otherwise uses the Navigation service's first-arm GPS home capture. Panel-local, not synchronized with other panels. |
 | `satelliteSource` | string | `""` | Blank or EdgeTX telemetry source name | When set, shows the satellite count in the header and uses the same warning/critical thresholds as Navigation. |
 | `satelliteWarning` | number | `8` | Nonnegative integer | Warn below this satellite count. |
 | `satelliteCritical` | number | `4` | Nonnegative integer, no greater than warning threshold | Critical below this count. |
 | `showSatellites` | boolean | `true` | `true` / `false` | Hide the header count without disabling satellite alerts. |
 | `showCoordinates` | boolean | `false` | `true` / `false` | Show the live latitude and longitude to six decimal places. |
-| `flightPath` | string | `off` | `off`, `trail`, `full` | `trail` keeps the latest 24 sampled fixes; `full` retains a bounded, decimated history of up to 64. GPS outages break the line rather than joining disconnected segments. |
+| `flightPath` | string | `off` | `off`, `trail`, `full` | `trail` retains up to 31 timestamped fixes over 30 seconds and fades by age. `full` stores up to 1,024 fixes with shape-aware compaction, rendering at most 63 zoom-aware simplified segments. GPS outages break the line rather than joining disconnected segments. |
 
 ```yaml
 version: 3
