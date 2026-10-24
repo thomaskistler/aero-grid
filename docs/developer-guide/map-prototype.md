@@ -174,6 +174,10 @@ The development map layout enables the arrow and trail for simulator evaluation.
 Headers use the same shared status component as Navigation: title color,
 standard state badge, panel styling, and satellite indicator layout. Map-specific
 explanations such as `WAITING FOR GPS` appear in the map body, not the badge.
+Body status messages stay centered unless they overlap EdgeTX's reserved menu
+corner. In that case they move below it, or beside it in short wide panels.
+If neither region fits the complete message, the body label is hidden while the
+header status remains; resizing or entering fullscreen restores it when space permits.
 Satellite icon creation and spacing against the heading and displayed badge
 are also shared.
 

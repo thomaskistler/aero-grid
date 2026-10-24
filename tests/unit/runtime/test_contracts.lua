@@ -735,7 +735,7 @@ local function testPanelDocumentationLoads()
             handle:close()
             assert(string.find(page, "# Radio map rendering prototype", 1, true))
             assert(string.find(page, "make build", 1, true))
-            assert(string.find(page, "/AEROGRID/maps/areas/synthetic.yaml", 1, true))
+            assert(string.find(page, "/AEROGRID/maps/areas/companion-naip.yaml", 1, true))
             table.remove(kinds, index)
         end
     end

@@ -381,17 +381,24 @@ end
 
 local function placeStatus(context)
     local area, builder = context.area, context.themeBuilder
+    local text = context.statusText == "GPS" and "" or context.statusText or ""
+    local width, height = builder.measureText(SMLSIZE, text), builder.fontHeight(SMLSIZE)
+    local centre = area.x + math.floor(area.w / 2)
+    local y = area.y + math.floor((area.h - height) / 2)
+    local reserved = area.frame.reserved
+    local fits = width <= area.w and height <= area.h
+    if reserved and centre - math.floor(width / 2) < reserved.w and y < reserved.h then
+        if reserved.h + height <= area.y + area.h then
+            y = reserved.h
+        elseif area.x + area.w - reserved.w - 4 >= width then
+            centre = reserved.w + 4 + math.floor((area.x + area.w - reserved.w - 4) / 2)
+        else
+            fits = false
+        end
+    end
     context.statusAnchor = nil
-    context.primitives.centreLabel(
-        context,
-        "statusAnchor",
-        builder,
-        context.statusLabel,
-        area.x + math.floor(area.w / 2),
-        area.y + math.floor((area.h - builder.fontHeight(SMLSIZE)) / 2),
-        SMLSIZE,
-        context.statusText == "GPS" and "" or context.statusText or ""
-    )
+    context.primitives.centreLabel(context, "statusAnchor", builder, context.statusLabel, centre, y, SMLSIZE, text)
+    context.primitives.reconcile(context.statusLabel, text ~= "" and fits)
 end
 
 local function setStatus(context, text)
@@ -409,7 +416,6 @@ local function setStatus(context, text)
         if context.statusLabel then
             context.statusLabel:set({ text = healthy and "" or text, color = presentation.label })
             placeStatus(context)
-            context.primitives.reconcile(context.statusLabel, not healthy)
         end
     end
 end
