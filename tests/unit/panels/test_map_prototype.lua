@@ -158,6 +158,27 @@ a.assertEqual(#map.validateSettings({}), 0)
 a.assertEqual(#map.validateSettings({ positionMarker = "plane" }), 0)
 a.assertEqual(#map.validateSettings({ positionMarker = "arrow" }), 0)
 a.assertEqual(#map.validateSettings({ positionMarker = "unknown" }), 1)
+do
+    local function clip(x1, y1, x2, y2, part, expected)
+        local actual = { map.clipPathSegment(x1, y1, x2, y2, 0, 0, 10, part) }
+        a.assertEqual(#actual, #expected)
+        for index, value in ipairs(expected) do
+            assert(math.abs(actual[index] - value) < 0.00001, "circle clipping must preserve the outside portion")
+        end
+    end
+    clip(-20, 0, 20, 0, 1, { -20, 0, -10, 0 })
+    clip(-20, 0, 20, 0, 2, { 10, 0, 20, 0 })
+    clip(-20, 0, 0, 0, 1, { -20, 0, -10, 0 })
+    clip(-20, 0, 0, 0, 2, {})
+    clip(0, 0, 20, 0, 1, {})
+    clip(0, 0, 20, 0, 2, { 10, 0, 20, 0 })
+    clip(-5, 0, 5, 0, 1, {})
+    clip(-5, 0, 5, 0, 2, {})
+    clip(0, 20, 20, 20, 1, { 0, 20, 20, 20 })
+    clip(0, 20, 20, 20, 2, {})
+    clip(0, 0, 0, 0, 1, {})
+    clip(20, 0, 20, 0, 1, { 20, 0, 20, 0 })
+end
 a.assertEqual(#map.validateSettings({ pack = "synthetic" }), 1, "area overrides must be rejected")
 for _, settings in ipairs({
     { satelliteSource = false },

@@ -23,17 +23,22 @@ without browser code or network access.
   separate rounded-square re-follow button using the position glyph in white.
   Controls are touch-only, not encoder-focusable. Native local press coordinates
   and screen-space TAP events are handled; duplicate taps are suppressed.
-- Orange home pin/house PNG and approved cyan aircraft PNG: straight wing
+- Red home house with a small rounded doorway in a 44px translucent white
+  circle (67% opacity), centered at home. Selectable blue arrow uses the same
+  circle; the cyan aircraft remains the default position marker.
+  Aircraft PNG: straight wing
   leading edges, tapering fuselage with a continuous dark boundary, swept tail
   fins, no aileron lines. Plane is 38px wide with a subtle one-pixel black shadow.
   Re-follow uses the same shape in white at 22px, fixed north-facing.
-  Home artwork is 15% smaller than its original size, with its pin-tip GPS
-  anchor unchanged; aircraft and re-follow sizes are unchanged.
+  Aircraft and re-follow sizes are unchanged.
   Heading uses 36 pre-rendered PNGs in 10-degree steps via a stable filename
   callback. At most 5 degrees visual error; one image object with a (26,26)
   anchor, no runtime scaling. New orientations can trigger native decoding and
   image-cache eviction; on-radio turning performance is unmeasured.
   No Flaticon asset is included.
+- Paths use a 5px blue stroke with an 8px translucent white underlay, fading
+  by age across 30 seconds in trail mode. Arrow-mode paths are clipped outside
+  the marker circle. The development map layout enables arrow and trail.
 - Optional map-local `headingSource` telemetry setting, in degrees clockwise
   from true north. Blank derives GPS course over ground after at least one
   metre of movement, averaging the last five movement bearings circularly;

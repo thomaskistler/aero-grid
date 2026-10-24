@@ -82,7 +82,7 @@ local function assertFootprint(aircraft)
     a.assertEqual(image.file(), aircraft.file, "source callback must return the selected orientation")
 end
 local function assertAircraftColors(aircraft, fill)
-    a.assertContains(aircraft.file, fill == lcd.RGB(0xFFFFFF) and "map-follow.png" or "map-aircraft-")
+    a.assertContains(aircraft.file, fill == lcd.RGB(0xFFFFFF) and "map-follow.png" or ("map-" .. aircraft.style .. "-"))
 end
 assertFootprint(context.aircraft)
 assertAircraftColors(context.aircraft, lcd.RGB(0x70D6F3))
@@ -386,13 +386,13 @@ for _, delta in ipairs({ -600, -500, 0, -600, 0 }) do
     assert(definition.event(host, EVT_TOUCH_SLIDE, { x = fingerX + delta, y = fingerY }))
     local px, py = map.project(homeLevel, context.feed.pilotLatitude, context.feed.pilotLongitude, context.transform)
     px, py = math.floor(px - context.viewX + 0.5), math.floor(py - context.viewY + 0.5)
-    a.assertEqual(context.homeMarker.properties.x, px - 24, "dragged home image must match its projected position")
-    a.assertEqual(context.homeMarker.properties.y, py - 50, "dragged home pin tip must stay geographically anchored")
+    a.assertEqual(context.homeMarker.properties.x, px - 26, "dragged home image must match its projected position")
+    a.assertEqual(context.homeMarker.properties.y, py - 26, "home circle centre must stay geographically anchored")
     a.assertEqual(context.homeVisible, px >= 0 and py >= 0 and px < context.area.w and py < context.area.h)
     settle()
     map.refresh(context)
-    a.assertEqual(context.homeMarker.properties.x, px - 24, "tile loading must not displace the home pin")
-    a.assertEqual(context.homeMarker.properties.y, py - 50)
+    a.assertEqual(context.homeMarker.properties.x, px - 26, "tile loading must not displace home")
+    a.assertEqual(context.homeMarker.properties.y, py - 26)
 end
 assert(context.homeVisible, "home must reappear at the correct position after reversing a drag")
 assert(definition.event(host, EVT_TOUCH_BREAK, { x = 0, y = 0 }))
@@ -597,7 +597,10 @@ for index = 1, 160 do
     debug.sethook()
     assert(success, failure)
     worst = math.max(worst, instructions)
-    assert(instructions < 15000, "map host callback exceeded reserved Lua instruction budget")
+    assert(
+        instructions < 15000,
+        "map host callback exceeded reserved Lua instruction budget: " .. instructions .. " at " .. index
+    )
 end
 fixture.lcdMock.setTextMeasurement(true)
 fixture.lvglMock.setCallCounting(true)
@@ -634,7 +637,7 @@ selectAutomaticArea(captured, 25.9973, -97.1572)
 local arrow = map.create(
     entry.container,
     { x = 0, y = 0, w = 480, h = 272 },
-    { label = "MAP", source = "GPS", headingSource = "Hdg", positionMarker = "arrow" },
+    { label = "MAP", source = "GPS", headingSource = "Hdg", positionMarker = "arrow", flightPath = "trail" },
     services
 )
 selectAutomaticArea(arrow, 25.9973, -97.1572)
@@ -642,7 +645,7 @@ arrow.headingFeed = { available = true, fresh = true, stale = false, value = 0 }
 repeat
     fixture.tick(25)
     map.refresh(arrow)
-until not arrow.dirty and not arrow.pending
+until not arrow.dirty and not arrow.pending and #arrow.pathLines == arrow.pathCapacity
 local arrowObjects = #fixture.lvglMock.objects
 for _, degrees in ipairs({ 0, 45, 90, 180, 270, 359, 360, -90 }) do
     arrow.headingFeed.value = degrees
@@ -655,6 +658,34 @@ for _, degrees in ipairs({ 0, 45, 90, 180, 270, 359, 360, -90 }) do
 end
 a.assertEqual(#fixture.lvglMock.objects, arrowObjects, "arrow rotation must reuse the same image object")
 a.assertContains(arrow.followAircraft.file, "map-follow.png", "marker selection must not change the follow control")
+a.assertEqual(#arrow.pathLines, 60, "arrow trail must have bounded split-segment capacity")
+arrow.pathPoints = {
+    { latitude = arrow.feed.latitude, longitude = arrow.feed.longitude - 0.003, time = getTime() },
+    { latitude = arrow.feed.latitude, longitude = arrow.feed.longitude + 0.003, time = getTime() },
+}
+map.refresh(arrow)
+assert(not arrow.pathLines[1].hidden and not arrow.pathLines[2].hidden, "crossing must retain both outside portions")
+for index, line in ipairs(arrow.pathLines) do
+    if not line.hidden then
+        local pts = line.properties.pts
+        local dx, dy = pts[2][1] - pts[1][1], pts[2][2] - pts[1][2]
+        local length = dx * dx + dy * dy
+        local t = length > 0
+                and math.max(
+                    0,
+                    math.min(1, ((arrow.markerX - pts[1][1]) * dx + (arrow.markerY - pts[1][2]) * dy) / length)
+                )
+            or 0
+        local distance = math.sqrt((pts[1][1] + t * dx - arrow.markerX) ^ 2 + (pts[1][2] + t * dy - arrow.markerY) ^ 2)
+        assert(distance >= 26, "blue stroke and white edging must stay outside the marker circle")
+        a.assertEqual(arrow.pathOutlines[index].properties.opacity, 170)
+    end
+end
+fixture.tick(3001)
+map.refresh(arrow)
+for index, line in ipairs(arrow.pathLines) do
+    assert(line.hidden and arrow.pathOutlines[index].hidden, "split segments must expire together")
+end
 local headed = map.create(
     entry.container,
     { x = 0, y = 0, w = 480, h = 272 },
@@ -840,11 +871,15 @@ do
     a.assertEqual(#options.pathPoints, 31)
     a.assertEqual(options.pathLines[1].properties.opacity, 0, "30-second-old trail must fade out")
     a.assertEqual(options.pathLines[30].properties.opacity, 247, "recent trail must remain bright")
-    a.assertEqual(options.pathLines[30].properties.thickness, 3)
-    a.assertEqual(options.pathLines[30].properties.color, lcd.RGB(0xFFEB3B))
+    a.assertEqual(options.pathLines[30].properties.thickness, 5)
+    a.assertEqual(options.pathLines[30].properties.color, lcd.RGB(0x328BEE))
     for index, outline in ipairs(options.pathOutlines) do
-        a.assertEqual(outline.properties.thickness, 5)
-        a.assertEqual(outline.properties.opacity, options.pathLines[index].properties.opacity)
+        a.assertEqual(outline.properties.thickness, 8)
+        a.assertEqual(outline.properties.color, lcd.RGB(0xFFFFFF))
+        a.assertEqual(
+            outline.properties.opacity,
+            math.floor(options.pathLines[index].properties.opacity * 170 / 255 + 0.5)
+        )
         a.assertEqual(outline.hidden, options.pathLines[index].hidden)
         local outer, inner = outline.properties.pts, options.pathLines[index].properties.pts
         for endpoint = 1, 2 do

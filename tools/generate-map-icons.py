@@ -1,20 +1,15 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Render original map marker artwork as small, native-size RGBA PNGs."""
 import argparse
-import math
 from pathlib import Path
 import struct
 import zlib
 
 
-INK = (0, 0, 0)
 WHITE = (255, 255, 255)
 HOME_COLOR = (236, 72, 62)
-OUTER_RADIUS = 11
-INNER_RADIUS = 8
-PIN_SIDE = [(7 + 11 * (step / 48) ** 2, 12 + 18 * step / 48)
-            for step in range(49)]
-PIN_TAIL = PIN_SIDE + [(36 - x, y) for x, y in reversed(PIN_SIDE[:-1])]
+HOUSE = [(13, 76 / 3), (26, 43 / 3), (39, 76 / 3),
+         (36, 76 / 3), (36, 37), (16, 37), (16, 76 / 3)]
 
 
 def polygon(x, y, points):
@@ -36,11 +31,11 @@ def render(size, sample):
         for x in range(size):
             samples = [sample(x + (sx + 0.5) / scale, y + (sy + 0.5) / scale)
                        for sy in range(scale) for sx in range(scale)]
-            opaque = [color for color in samples if color]
-            if opaque:
-                pixels.extend(round(sum(color[channel] for color in opaque) / len(opaque))
+            alpha = sum(color[3] for color in samples)
+            if alpha:
+                pixels.extend(round(sum(color[channel] * color[3] for color in samples) / alpha)
                               for channel in range(3))
-                pixels.append(round(255 * len(opaque) / len(samples)))
+                pixels.append(round(alpha / len(samples)))
             else:
                 pixels.extend((0, 0, 0, 0))
     def chunk(kind, data):
@@ -52,51 +47,15 @@ def render(size, sample):
             + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
 
 
-def home(x, y):
-    radius = ((x - 18) ** 2 + (y - 12) ** 2) ** 0.5
-    body = radius <= OUTER_RADIUS or polygon(x, y, PIN_TAIL)
-    if not body:
-        return None
-    if radius >= INNER_RADIUS:
-        return INK
-    if polygon(x, y, [(12.5, 12), (18, 8), (23.5, 12), (22, 12),
-                       (22, 16), (19, 16), (19, 13), (17, 13),
-                       (17, 16), (14, 16), (14, 12)]):
-        return INK
-    return WHITE
-
-
-def sized(sample, center_y):
-    def scaled(x, y):
-        return sample(18 + (x - 24) * 11 / 16,
-                      center_y + (y - 24) * 11 / 16)
-    return scaled
-
-
-def styled(sample, center_y, color):
-    shape = sized(sample, center_y)
-    directions = [(math.cos(step * math.pi / 8), math.sin(step * math.pi / 8))
-                  for step in range(16)]
-    def colored(x, y):
-        value = shape(x, y)
-        neighbors = [shape(x + dx * 1.25, y + dy * 1.25)
-                     for dx, dy in directions]
-        if value is None:
-            return None
-        if any(point is None for point in neighbors):
-            return (34, 39, 39)
-        radius = ((x - 24) ** 2 + (y - 24) ** 2) ** 0.5
-        if radius < INNER_RADIUS * 16 / 11:
-            return color if value == INK else (34, 39, 39)
-        return color
-    return colored
-
-
 def home_marker():
-    shape = styled(home, 12, HOME_COLOR)
-    def scaled(x, y):
-        return shape(24 + (x - 24) / 0.85, 50 + (y - 50) / 0.85)
-    return scaled
+    def pixel(x, y):
+        doorway = (x - 26) ** 2 + (y - 31) ** 2 <= 3 * 3 or (23 <= x <= 29 and y >= 31)
+        if polygon(x, y, HOUSE) and not doorway:
+            return (*HOME_COLOR, 255)
+        if (x - 26) ** 2 + (y - 26) ** 2 <= 22 * 22:
+            return (*WHITE, 170)
+        return (0, 0, 0, 0)
+    return pixel
 
 
 def main():

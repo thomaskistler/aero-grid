@@ -541,6 +541,56 @@ local function recordPath(context)
     end
 end
 
+function map.clipPathSegment(x1, y1, x2, y2, cx, cy, radius, part)
+    local dx, dy = x2 - x1, y2 - y1
+    local ox, oy = x1 - cx, y1 - cy
+    local length = dx * dx + dy * dy
+    if length == 0 then
+        if part == 1 and ox * ox + oy * oy >= radius * radius then
+            return x1, y1, x2, y2
+        end
+        return
+    end
+    local b = 2 * (ox * dx + oy * dy)
+    local c = ox * ox + oy * oy - radius * radius
+    local discriminant = b * b - 4 * length * c
+    if discriminant <= 0 then
+        if part == 1 then
+            return x1, y1, x2, y2
+        end
+        return
+    end
+    local root = math.sqrt(discriminant)
+    local enter, leave = (-b - root) / (2 * length), (-b + root) / (2 * length)
+    if leave <= 0 or enter >= 1 then
+        if part == 1 then
+            return x1, y1, x2, y2
+        end
+    elseif part == 1 and enter > 0 then
+        return x1, y1, x1 + dx * enter, y1 + dy * enter
+    elseif part == 2 and leave < 1 then
+        return x1 + dx * leave, y1 + dy * leave, x2, y2
+    end
+end
+
+local function preparePathLines(context)
+    for index = #context.pathLines + 1, math.min(#context.pathLines + 8, context.pathCapacity or 0) do
+        context.pathOutlines[index] = lvgl.line(context.pathOutlineLayer, {
+            pts = { { 0, 0 }, { 0, 0 } },
+            thickness = 8,
+            color = lcd.RGB(0xFFFFFF),
+        })
+        context.pathLines[index] = lvgl.line(context.pathLayer, {
+            pts = { { 0, 0 }, { 0, 0 } },
+            thickness = 5,
+            color = lcd.RGB(0x328BEE),
+        })
+        lvgl.hide(context.pathOutlines[index])
+        lvgl.hide(context.pathLines[index])
+        context.pathLineStates[index] = { visible = false }
+    end
+end
+
 local function drawPath(context)
     local points = context.pathPoints
     local now = getTime()
@@ -548,19 +598,37 @@ local function drawPath(context)
     for index, line in ipairs(context.pathLines) do
         local outline = context.pathOutlines[index]
         local lineState = context.pathLineStates[index]
-        local first = points[index]
-        local second = points[index + 1]
+        local split = context.settings.positionMarker == "arrow"
+        local pointIndex = split and math.floor((index + 1) / 2) or index
+        local part = split and (index - 1) % 2 + 1 or 1
+        local first = points[pointIndex]
+        local second = points[pointIndex + 1]
         local visible = first ~= nil and second ~= nil and not second.breakBefore
         if visible then
             local x1, y1 = map.project(level, first.latitude, first.longitude, context.transform)
             local x2, y2 = map.project(level, second.latitude, second.longitude, context.transform)
+            if x1 and x2 and split and context.markerVisible then
+                -- Include half the outline width and rounding clearance outside the 22-pixel circle.
+                x1, y1, x2, y2 = map.clipPathSegment(
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    context.markerX + context.viewX,
+                    context.markerY + context.viewY,
+                    27,
+                    part
+                )
+            elseif part == 2 then
+                x1 = nil
+            end
             if x1 and x2 then
                 local opacity = context.settings.flightPath == "trail"
                         and math.floor(255 * clamp(1 - (now - first.time) / TRAIL_TICKS, 0, 1) + 0.5)
                     or 255
                 if lineState.opacity ~= opacity then
                     line:set({ opacity = opacity })
-                    outline:set({ opacity = opacity })
+                    outline:set({ opacity = math.floor(opacity * 170 / 255 + 0.5) })
                     lineState.opacity = opacity
                 end
                 local firstX, firstY = math.floor(x1 - context.viewX + 0.5), math.floor(y1 - context.viewY + 0.5)
@@ -652,7 +720,7 @@ local function updateHome(context)
     x, y = math.floor(x - context.viewX + 0.5), math.floor(y - context.viewY + 0.5)
     local visible = x >= 0 and y >= 0 and x < context.area.w and y < context.area.h
     if x ~= context.homeX or y ~= context.homeY then
-        context.homeMarker:set({ x = x - 24, y = y - 50 })
+        context.homeMarker:set({ x = x - 26, y = y - 26 })
         context.homeX, context.homeY = x, y
     end
     if context.homeVisible ~= visible then
@@ -1243,6 +1311,7 @@ function map.refresh(context)
     if not lvgl.isFullScreen() then
         cancelDrag(context)
     end
+    preparePathLines(context)
     recordPath(context)
     if not context.pack then
         local feed = context.feed
@@ -1255,12 +1324,12 @@ function map.refresh(context)
     if context.dirty then
         prepareView(context)
     end
-    drawPath(context)
     if context.pending and getTime() >= (context.nextTileLoad or 0) then
         loadTile(context)
         context.nextTileLoad = getTime() + 25
     end
     updateMarker(context)
+    drawPath(context)
     updateCoordinates(context)
 end
 
@@ -1319,23 +1388,26 @@ function map.create(parent, rect, settings, services)
     end
     if (settings.flightPath or "off") ~= "off" then
         local lineCount = settings.flightPath == "trail" and TRAIL_POINTS - 1 or FULL_PATH_POINTS - 1
-        for index = 1, lineCount do
-            context.pathOutlines[index] = lvgl.line(context.viewport, {
-                pts = { { 0, 0 }, { 0, 0 } },
-                thickness = 5,
-                color = lcd.RGB(0x101414),
-            })
-            lvgl.hide(context.pathOutlines[index])
+        if settings.positionMarker == "arrow" then
+            lineCount = lineCount * 2
         end
-        for index = 1, lineCount do
-            context.pathLines[index] = lvgl.line(context.viewport, {
-                pts = { { 0, 0 }, { 0, 0 } },
-                thickness = 3,
-                color = lcd.RGB(0xFFEB3B),
-            })
-            lvgl.hide(context.pathLines[index])
-            context.pathLineStates[index] = { visible = false }
-        end
+        context.pathCapacity = lineCount
+        context.pathOutlineLayer = lvgl.box(context.viewport, {
+            x = 0,
+            y = 0,
+            w = area.w,
+            h = area.h,
+            scrollDir = 0,
+            scrollBar = false,
+        })
+        context.pathLayer = lvgl.box(context.viewport, {
+            x = 0,
+            y = 0,
+            w = area.w,
+            h = area.h,
+            scrollDir = 0,
+            scrollBar = false,
+        })
     end
     if settings.showCoordinates then
         context.coordinatesLabel = services.primitives.label(context.panel.root, services.theme, {
@@ -1415,6 +1487,10 @@ function map.update(context, rect)
     context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
     placeStatus(context)
     context.viewport:set({ x = area.x, y = area.y, w = area.w, h = area.h })
+    if context.pathLayer then
+        context.pathOutlineLayer:set({ w = area.w, h = area.h })
+        context.pathLayer:set({ w = area.w, h = area.h })
+    end
     context.controlsRoot:set({ x = area.zoomX, y = area.zoomY, h = CONTROLS_HEIGHT })
     if context.coordinatesLabel then
         context.coordinatesLabel:set({ x = area.x + 4, y = area.h - 28, w = math.max(1, area.w - 56) })
