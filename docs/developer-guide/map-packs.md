@@ -28,9 +28,12 @@ install or update the radio panel. See
 [testing](testing.md#planner-and-map-file-contract) for format 2 file-generation
 and validation checks.
 
-The browser's `synthetic-v1-jpeg-q90` source generates coordinate-derived
-artificial images at any selected location. They are test patterns, not flight
-terrain.
+The simulator build copies a stored USGS/USDA NAIP aerial-imagery area around
+Companion's known GPS location. Automated panel tests generate a separate
+`synthetic` area referencing `companion-v1-jpeg-v1`. The browser's
+`synthetic-v1-jpeg-q90` source generates different, coordinate-derived artificial
+images at any selected location. Both synthetic sources are test patterns, not flight terrain.
+Simulator fixtures remain excluded from release archives.
 
 ## Area metadata v2
 

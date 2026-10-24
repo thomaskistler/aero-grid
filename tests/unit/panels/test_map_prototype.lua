@@ -3,6 +3,14 @@
 local root = assert(...)
 local map = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/map-prototype.lua"))()
 local a = assert(loadfile(root .. "/tests/support/assertions.lua"))()
+do
+    local yaml = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/yaml.lua"))()
+    local handle = assert(io.open(root .. "/tests/fixtures/map-imagery/areas/companion-naip.yaml", "r"))
+    local area = assert(yaml.parse(handle:read("*a")))
+    handle:close()
+    map.validatePack(area)
+    assert(map.covers(area, 25.9973, -97.1572), "stored imagery must cover Companion GPS at every zoom")
+end
 
 local function angleError(a1, a2)
     return math.abs((a1 - a2 + 180) % 360 - 180)

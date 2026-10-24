@@ -1,0 +1,28 @@
+format: aerogrid-map-area
+version: 2
+id: companion-naip
+name: "Companion NAIP aerial imagery"
+imagerySet: companion-naip-20261024
+projection: EPSG:3857
+tileScheme: XYZ
+tileSize: 256
+imageFormat: jpeg
+selection:
+  bounds:
+    west: -97.163085937500
+    south: 25.992612489709
+    east: -97.152099609375
+    north: 26.002487141946
+  radio: tx16s
+  coverageMode: full-area-clamped
+levels:
+  - zoom: 16
+    xMin: 15080
+    xMax: 15081
+    yMin: 27863
+    yMax: 27864
+  - zoom: 17
+    xMin: 30160
+    xMax: 30163
+    yMin: 55726
+    yMax: 55729
