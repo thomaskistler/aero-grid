@@ -5,6 +5,8 @@ map-aircraft-000.png through map-aircraft-350.png (10-degree steps) and
 map-follow.png are AeroGrid aircraft artwork based on the user-supplied shape
 reference, licensed under GPL-2.0-only. Regenerate with
 tools/generate-aircraft-icons.py. Map sprites have a translucent black shadow.
+map-info.png is original AeroGrid artwork, licensed under GPL-2.0-only.
+Regenerate with tools/generate-map-info-icon.py.
 
 ---
 
