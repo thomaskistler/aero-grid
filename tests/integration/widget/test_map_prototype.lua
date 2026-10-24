@@ -89,7 +89,7 @@ assertAircraftColors(context.aircraft, lcd.RGB(0x70D6F3))
 a.assertEqual(context.pending, nil)
 assert(context.tileLoads <= 6)
 a.assertEqual(#context.controls, 0, "App mode must not construct fullscreen-only controls")
-assert(not context.controlsHint.hidden)
+a.assertEqual(context.controlsHint, nil, "map must not create the fullscreen hint")
 fixture.lvglMock.setFullScreen(true)
 map.refresh(context)
 a.assertEqual(#context.controls, 4, "entering fullscreen must create zoom, follow and GPS controls")
@@ -107,7 +107,6 @@ for _, child in ipairs(context.controlsRoot.children) do
 end
 assertFootprint(context.followAircraft)
 assertAircraftColors(context.followAircraft, lcd.RGB(0xFFFFFF))
-assert(context.controlsHint.hidden)
 local mapRect = host.dashboardLoader.panelRect(host, fixture.entryById(host, "map").placement)
 local gpsButton = { x = mapRect.x + context.area.zoomX + 20, y = mapRect.y + context.area.zoomY + 128 }
 assert(definition.event(host, EVT_TOUCH_FIRST, gpsButton), "GPS control press must be consumed by the map")
@@ -123,7 +122,6 @@ a.assertEqual(context.levelIndex, previousLevel, "a queued control press must no
 pressControl(3)
 a.assertEqual(context.following, false, "a queued target press must not resume follow outside fullscreen")
 map.refresh(context)
-assert(not context.controlsHint.hidden)
 a.assertEqual(#context.controls, 0, "fullscreen exit must release controls, not just hide focused buttons")
 fixture.lvglMock.settle()
 for _, control in ipairs(previousControls) do
@@ -1058,6 +1056,9 @@ do
     a.assertEqual(automatic.statusText, "WAITING FOR GPS")
     a.assertEqual(automatic.badgeText, automatic.state("unavailable", "cyan").badge)
     a.assertEqual(automatic.statusLabel.properties.text, "WAITING FOR GPS")
+    local status = automatic.statusLabel.properties
+    assert(math.abs(status.x + status.w / 2 - (automatic.area.x + automatic.area.w / 2)) <= 1)
+    assert(math.abs(status.y + automatic.themeBuilder.fontHeight(SMLSIZE) / 2 - automatic.area.h / 2) <= 1)
     a.assertEqual(#automatic.controls, 0)
     a.assertEqual(map.event(automatic, EVT_TOUCH_TAP, { x = 20, y = 20 }, { x = 0, y = 0 }), false)
     map.update(automatic, { x = 0, y = 0, w = 480, h = 272 })
