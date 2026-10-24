@@ -101,8 +101,7 @@ Set `headingSource: Hdg` in the map's YAML `config` to use a numeric telemetry
 source in **degrees clockwise from true north**. Zero is valid north; negative
 and greater-than-360 values wrap. This is a panel option independent of the GPS
 source and arm switch. With a configured source, unavailable, stale or
-non-numeric heading produces a `NO HDG` badge; it does not
-silently switch to GPS course.
+non-numeric heading does not silently switch to GPS course.
 
 Omit `headingSource` or leave it blank to derive **course over ground** from
 successive valid, fresh GPS positions, using the shared navigation bearing
@@ -115,9 +114,9 @@ This adds up to five movement samples of turn response; it smooths quantized
 GPS fixes but cannot remove GPS drift. The selected heading telemetry source
 is not filtered. Once established, the last course is held while
 stationary. Before sufficient movement there is no known direction: the plane
-remains cyan with `NO HDG`, not presented as a valid north heading. The aircraft
-never changes color when GPS motion first establishes a course. GPS loss, stale
-or invalid coordinates reset the position baseline and course history;
+remains cyan and is not presented as a valid north heading. The aircraft never
+changes color when GPS motion first establishes a course. GPS loss, stale or
+invalid coordinates reset the position baseline and course history;
 recovery needs new movement.
 Zoom, panning and resizing do not change heading.
 

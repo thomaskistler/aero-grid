@@ -395,7 +395,7 @@ local function checkTile(filename)
 end
 
 local function setStatus(context, text)
-    local healthy = string.match(text, "Z%d+$") ~= nil
+    local healthy = text == "GPS"
     local state = healthy and context.satelliteState or nil
     if context.statusText ~= text or context.badgeState ~= state then
         local previousState = context.badgeState
@@ -756,7 +756,7 @@ local function prepareView(context)
     context.pending, context.nextTile, context.dirty = #pending > 0 and pending or nil, 1, false
     context.markerLatitude, context.markerLongitude = nil, nil
     if context.pending then
-        setStatus(context, "LOADING Z" .. level.zoom)
+        setStatus(context, "LOADING")
     else
         context.viewChanges = context.viewChanges + 1
     end
@@ -927,7 +927,7 @@ local function updateMarker(context)
     updateHome(context)
     if x < 6 or y < 6 or x >= context.area.w - 6 or y >= context.area.h - 6 then
         hideMarker(context)
-        setStatus(context, "OFF VIEW Z" .. level.zoom)
+        setStatus(context, "OFF VIEW")
         return
     end
     if x ~= context.markerX or y ~= context.markerY then
@@ -939,7 +939,7 @@ local function updateMarker(context)
         lvgl.show(context.marker)
         context.markerVisible = true
     end
-    setStatus(context, (heading and "GPS Z" or "NO HDG Z") .. level.zoom)
+    setStatus(context, "GPS")
 end
 
 local function previewDrag(context, dx, dy)
