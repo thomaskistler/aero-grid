@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Optional Chromium acceptance check: the picker returns native, disposable OPFS handles.
 import assert from "node:assert/strict";
-import { RELEASE_API } from "../../docs/javascripts/radio-installer.mjs";
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
 const site = new URL(process.argv[2] ?? "http://127.0.0.1:8000/");
-const manifest = await (await fetch(new URL("installer/latest.json", site))).json();
 const catalog = await (await fetch(new URL("installer/releases.json", site))).json();
+const manifest = await (await fetch(new URL(`installer/releases/${catalog.latest}/manifest.json`, site))).json();
 const historical = catalog.releases.find((entry) => entry.available && entry.version !== catalog.latest);
 assert.ok(historical, "Acceptance requires a mirrored historical release");
+const RELEASES_API = "https://api.github.com/repos/thomaskistler/aero-grid/releases";
 const browser = await chromium.launch({
   headless: true,
   ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}),
@@ -18,17 +18,26 @@ const errors = [];
 context.on("page", (page) => page.on("pageerror", (error) => errors.push(error.message)));
 await context.route("**/*", async (route) => {
   const url = route.request().url();
-  const tagPrefix = RELEASE_API.replace("/latest", "/tags/v");
-  if (url === RELEASE_API || url.startsWith(tagPrefix)) {
-    const version = url === RELEASE_API ? manifest.version : url.slice(tagPrefix.length);
-    await route.fulfill({ json: {
-      tag_name: `v${version}`, draft: false, prerelease: false,
-      assets: [`AeroGrid-${version}.zip`, `AeroGrid-${version}.zip.sha256`].map((name) => ({
-        name,
-        browser_download_url: `https://github.com/thomaskistler/aero-grid/releases/download/v${version}/${name}`,
-      })),
-    } });
-  } else if (new URL(url).origin === site.origin) await route.continue();
+const tagPrefix = `${RELEASES_API}/tags/v`;
+if (url.startsWith(tagPrefix)) {
+  const version = url.slice(tagPrefix.length);
+  const entry = catalog.releases.find((release) => release.version === version);
+  await route.fulfill({ json: {
+    tag_name: `v${version}`, draft: false, prerelease: false,
+    assets: entry?.available ? [`AeroGrid-${version}.zip`, `AeroGrid-${version}.zip.sha256`].map((name) => ({
+      name,
+      browser_download_url: `https://github.com/thomaskistler/aero-grid/releases/download/v${version}/${name}`,
+    })) : [],
+  } });
+} else if (url.startsWith(`${RELEASES_API}?`)) {
+  await route.fulfill({ json: catalog.releases.map((entry) => ({
+    tag_name: `v${entry.version}`, name: entry.name, draft: false, prerelease: false,
+    assets: entry.available ? [`AeroGrid-${entry.version}.zip`, `AeroGrid-${entry.version}.zip.sha256`].map((name) => ({
+      name,
+      browser_download_url: `https://github.com/thomaskistler/aero-grid/releases/download/v${entry.version}/${name}`,
+    })) : [],
+  })) });
+} else if (new URL(url).origin === site.origin) await route.continue();
   else await route.abort();
 });
 
@@ -160,26 +169,59 @@ try {
   }, path);
   assert.equal(await read("WIDGETS/AeroGrid/main.luac"), "stale bytecode");
   await activate("[data-install]");
+  assert.equal(await page.locator("[data-confirm-dialog]").isVisible(), true);
   assert.equal(await page.locator("[data-confirm-description]").textContent(),
     `Install AeroGrid ${manifest.version} on installer-acceptance?\n\n`
     + "This will replace the AeroGrid installation on your radio. No backup or rollback is available.\n\n"
     + "AeroGrid user data, maps, other widgets, model/radio settings, and firmware will not be changed.");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("[data-confirm-dialog]").isVisible(), false);
+  assert.equal(await read("WIDGETS/AeroGrid/main.luac"), "stale bytecode");
+  await activate("[data-install]");
   await activate("[data-confirm-cancel]");
+  assert.equal(await page.locator("[data-confirm-dialog]").isVisible(), false);
   assert.equal(await read("WIDGETS/AeroGrid/main.luac"), "stale bytecode");
 
   // A failed download must leave even the old bytecode untouched.
   await page.route("**/installer/releases/**/main.lua", (route) => route.fulfill({ status: 503, body: "Unavailable" }));
   await activate("[data-install]");
   await activate("[data-confirm-start]");
-  await page.waitForFunction(() => document.querySelector("[data-status]").textContent.includes("No radio files were changed"));
-  assert.equal(await page.locator("[data-progress]").isVisible(), false);
+  assert.equal(await page.locator("[data-confirm-dialog]").isVisible(), true);
+  assert.equal(await page.locator("[data-progress]").isVisible(), true);
+  await page.waitForFunction(() => document.querySelector("[data-operation-status]").textContent.includes("No radio files were changed"));
+  assert.equal(await page.locator("[data-progress]").isVisible(), true);
+  assert.equal(await page.locator("[data-confirm-dialog]").isVisible(), true);
+  assert.match(await page.locator("[data-operation-status]").textContent(), /No radio files were changed/);
   assert.equal(await read("WIDGETS/AeroGrid/main.luac"), "stale bytecode");
+  await activate("[data-confirm-close]");
+  assert.equal(await page.locator("[data-confirm-dialog]").isVisible(), false);
   await page.unroute("**/installer/releases/**/main.lua");
 
+  let releaseDownload;
+  let notifyDownloadStarted;
+  const downloadGate = new Promise((resolve) => { releaseDownload = resolve; });
+  const downloadStarted = new Promise((resolve) => { notifyDownloadStarted = resolve; });
+  await page.route("**/installer/releases/**/main.lua", async (route) => {
+    notifyDownloadStarted();
+    await downloadGate;
+    await route.continue();
+  });
   await activate("[data-install]");
   await activate("[data-confirm-start]");
-  await page.waitForFunction(() => document.querySelector("[data-status]").textContent.includes("installed successfully"), null, { timeout: 60000 });
-  assert.equal(await page.locator("[data-progress]").isVisible(), false);
+  assert.equal(await page.locator("[data-confirm-dialog]").isVisible(), true);
+  assert.equal(await page.locator("[data-progress]").isVisible(), true);
+  await downloadStarted;
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("[data-confirm-dialog]").isVisible(), true);
+  releaseDownload();
+  await page.waitForFunction(() => document.querySelector("[data-operation-status]").textContent.includes("installed successfully"), null, { timeout: 60000 });
+  assert.equal(await page.locator("[data-progress]").isVisible(), true);
+  assert.equal(await page.locator("[data-progress]").evaluate((node) => node.value), 1);
+  assert.equal(await page.locator("[data-confirm-close]").textContent(), "Done");
+  assert.equal(await page.locator("[data-confirm-dialog]").isVisible(), true);
+  assert.match(await page.locator("[data-operation-status]").textContent(), /installed successfully/);
+  await activate("[data-confirm-close]");
+  assert.equal(await page.locator("[data-confirm-dialog]").isVisible(), false);
   assert.match(await page.locator("[data-status]").getAttribute("class"), /ag-radio-success/);
   assert.ok(await page.locator("[data-status]").evaluate((node) => {
     const style = getComputedStyle(node);
@@ -239,7 +281,7 @@ try {
   assert.equal(await page.locator("[data-install]").textContent(), "Up to date");
   assert.equal(await page.locator("[data-status]").textContent(), "");
 
-  const historicalAPI = RELEASE_API.replace("/latest", `/tags/v${historical.version}`);
+  const historicalAPI = `${RELEASES_API}/tags/v${historical.version}`;
   await page.route(historicalAPI, (route) => route.fulfill({ status: 503, body: "Unavailable" }));
   await activate("[data-release-open]");
   await page.locator(`input[name=aerogrid-release][value="${historical.version}"]`).press("Space");
@@ -275,7 +317,8 @@ try {
   await page.waitForFunction((version) =>
     document.querySelector("[data-status]").textContent.includes(`AeroGrid ${version} installed successfully`),
   historical.version, { timeout: 60000 });
-  assert.equal(await page.locator("[data-progress]").isVisible(), false);
+  assert.equal(await page.locator("[data-progress]").isVisible(), true);
+  assert.equal(await page.locator("[data-progress]").evaluate((node) => node.value), 1);
   assert.equal(await page.locator("[data-install]").textContent(), "Up to date");
   assert.equal(await page.locator("[data-downgrade]").isVisible(), false);
   assert.match(await read("WIDGETS/AeroGrid/lib/package.lua"), new RegExp(historical.version.replaceAll(".", "\\.")));

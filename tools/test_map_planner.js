@@ -2,11 +2,12 @@
 "use strict";
 
 if (typeof require === "function") {
+    require("../docs/javascripts/map-pack.js");
     require("../docs/javascripts/map-planner.js");
 }
 
 (async function () {
-    const { plan, snapBounds, specification, geographicBounds, sampleTiles, measureSamples,
+    const { plan, snapBounds, specification, geographicBounds,
         radioFootprint, overviewZoom, coveragePlan, RADIO_PRESETS, MAX_TILES } = globalThis.AeroGridMapPlanner;
     let assertions = 0;
     function equal(actual, expected) {
@@ -134,13 +135,11 @@ if (typeof require === "function") {
             equal(compact.tileCount, compact.levels.reduce((total, level) => total + level.tiles, 0));
             equal(compact.estimatedBytes, { min: compact.tileCount * 10240, max: compact.tileCount * 30720 });
             equal(compact.tileCount < full.tileCount, true);
-            const samples = sampleTiles(area, zooms, compact);
             compact.levels.forEach((level, index) => {
                 equal(plan(level.bounds, [level.zoom]).levels[0], {
                     zoom: level.zoom, xRanges: level.xRanges, yMin: level.yMin,
                     yMax: level.yMax, tiles: level.tiles
                 });
-                equal(samples[index].tiles, level.tiles);
                 equal(level.bounds, snapBounds(area, [level.zoom], radio.id));
                 const columns = level.xRanges.reduce((total, range) => total + range.max - range.min + 1, 0);
                 equal(columns * 256 >= radio.width, true);
@@ -182,8 +181,17 @@ if (typeof require === "function") {
             equal(overviewZoom({ ...area, west: area.west / 10, east: area.east / 10 }, radio.id), zoom);
         }
     }
-    equal(RADIO_PRESETS.map(radio => radio.id), ["tx16s", "tx16s-mkii", "tx15", "tx16s-mk3"]);
+    equal(RADIO_PRESETS.map(radio => radio.id), ["tx16s", "tx16s-mkii", "tx15", "nv14", "tx16s-mk3"]);
     rejects(() => radioFootprint("boxer"));
+    equal(radioFootprint("mono-128x64"), {
+        id: "mono-128x64", name: "Monochrome radio", width: 128, height: 64, columns: 1, rows: 1
+    });
+    equal(radioFootprint("mono-212x64"), {
+        id: "mono-212x64", name: "Monochrome radio", width: 212, height: 64, columns: 1, rows: 1
+    });
+    for (const id of ["mono-128x64", "mono-212x64"]) {
+        equal(coveragePlan(tinyField, [17], id).tileCount, 1);
+    }
     rejects(() => snapBounds(tinyField, [16], "unknown"));
     rejects(() => specification("field", tinyField, [16], "unknown"));
     for (const radio of RADIO_PRESETS) {
@@ -210,48 +218,6 @@ if (typeof require === "function") {
         if (tiles <= MAX_TILES) equal(specification("field", result, detail).tileCount, tiles);
         else rejects(() => specification("field", result, detail));
     }
-    const samples = sampleTiles(bounds, [1, 2, 3]);
-    equal(samples.length, 3);
-    equal(samples.map(sample => sample.zoom), [1, 2, 3]);
-    equal(samples.map(sample => sample.x), [1, 2, 4]);
-    equal(samples[0].url, "https://mt1.google.com/vt?lyrs=y&x=1&y=0&z=1");
-    for (const area of [bounds, crossing, limitBounds,
-        { south: 84, north: 85, west: 179, east: 180 },
-        { south: -85, north: -84, west: -180, east: -179 }]) {
-        const levels = plan(area, [0, 16, 18]).levels;
-        sampleTiles(area, [0, 16, 18]).forEach((sample, index) => {
-            const level = levels[index];
-            equal(level.xRanges.some(range => sample.x >= range.min && sample.x <= range.max), true);
-            equal(sample.y >= level.yMin && sample.y <= level.yMax, true);
-            equal(sample.tiles, level.tiles);
-        });
-    }
-    rejects(() => sampleTiles(bounds, []));
-    let calls = 0;
-    const signal = {};
-    const measured = await measureSamples(samples, async (url, options) => {
-        equal(url, samples[calls].url);
-        equal(options.mode, "cors");
-        equal(options.signal, signal);
-        calls++;
-        return { ok: true, blob: async () => ({ type: "image/jpeg", size: calls * 1024 }) };
-    }, signal);
-    equal(calls, 3);
-    equal(measured.bytes, 6144);
-    equal(measured.estimatedBytes, samples.reduce((total, sample, index) =>
-        total + sample.tiles * (index + 1) * 1024, 0));
-    async function rejectsDownload(fetchTile, message) {
-        let failure;
-        try { await measureSamples(samples, fetchTile, signal); }
-        catch (error) { failure = error.message; }
-        equal(failure, message);
-    }
-    await rejectsDownload(async () => ({ ok: false, status: 403 }), "Zoom 1: HTTP 403.");
-    await rejectsDownload(async () => ({ ok: true, blob: async () => ({ type: "text/html", size: 100 }) }),
-        "Zoom 1: the server did not return a readable tile image.");
-    await rejectsDownload(async () => ({ ok: true, blob: async () => ({ type: "image/jpeg", size: 0 }) }),
-        "Zoom 1: the server did not return a readable tile image.");
-    await rejectsDownload(async () => { throw new Error("Network blocked"); }, "Network blocked");
     if (typeof console !== "undefined") console.log(`${assertions} map planner assertions passed.`);
 })().catch(error => {
     if (typeof process !== "undefined") process.exitCode = 1;

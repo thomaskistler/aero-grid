@@ -15,9 +15,15 @@ extra_css:
   - stylesheets/aerogrid.css
 
 extra_javascript:
+  - path: javascripts/radio-connection-help.mjs
+    type: module
+  - javascripts/map-pack.js
+  - javascripts/map-sources.js
+  - javascripts/map-planner.js
   - path: javascripts/radio-panel.mjs
     type: module
-  - javascripts/map-planner.js
+  - path: javascripts/radio-map-manager.mjs
+    type: module
 
 nav:
   - Home: index.md
@@ -26,7 +32,7 @@ nav:
       - Add a dashboard: user-guide/add-dashboard.md
       - Edit a dashboard on the radio: user-guide/edit-dashboard.md
       - Customize themes: user-guide/customize-themes.md
-      - Map planner (prototype): user-guide/map-planner.md
+      - Map Manager: map-manager.md
       - Troubleshoot and file bugs: user-guide/troubleshooting.md
   - Reference Guide:
       - Overview: reference-guide/index.md
@@ -50,6 +56,7 @@ nav:
       - Check out and build: developer-guide/build.md
       - Test and debug: developer-guide/testing.md
       - Run and test in simulators: developer-guide/simulators.md
+      - Map areas and shared tiles: developer-guide/map-packs.md
       - Repository and architecture: developer-guide/architecture.md
       - Project tools: developer-guide/tools.md
       - Tutorial videos: developer-guide/videos.md

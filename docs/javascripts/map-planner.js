@@ -8,12 +8,18 @@
         { id: "tx16s", name: "RadioMaster TX16S / TX16S MAX", width: 480, height: 272 },
         { id: "tx16s-mkii", name: "RadioMaster TX16S MKII / MKII MAX", width: 480, height: 272 },
         { id: "tx15", name: "RadioMaster TX15 / TX15 MAX", width: 480, height: 320 },
+        { id: "nv14", name: "FrSky NV14 / Jumper T20 / RadioMaster GX12", width: 320, height: 480 },
         { id: "tx16s-mk3", name: "RadioMaster TX16S MK3 / MK3 MAX", width: 800, height: 480 }
     ].map(Object.freeze));
 
+    const MONO_PRESETS = Object.freeze([
+        { id: "mono-128x64", name: "Monochrome radio", width: 128, height: 64 },
+        { id: "mono-212x64", name: "Monochrome radio", width: 212, height: 64 }
+    ].map(Object.freeze));
+
     function radioFootprint(id) {
-        const radio = RADIO_PRESETS.find(preset => preset.id === id);
-        if (!radio) throw new Error("Choose a supported color-screen radio.");
+        const radio = [...RADIO_PRESETS, ...MONO_PRESETS].find(preset => preset.id === id);
+        if (!radio) throw new Error("The connected radio's screen size is unknown. Coverage cannot be calculated without its dimensions.");
         return { ...radio, columns: Math.ceil(radio.width / 256), rows: Math.ceil(radio.height / 256) };
     }
 
@@ -112,7 +118,7 @@
             const height = (tileY(bounds.south, count) - tileY(bounds.north, count)) * 256;
             if (width <= radio.width && height <= radio.height) return zoom;
         }
-        throw new Error("This area cannot fit the radio screen at zoom 11. Select a smaller flying area.");
+        throw new Error("Select a smaller flying area.");
     }
 
     function snapBounds(bounds, zooms, radioId = "tx16s-mk3") {
@@ -181,37 +187,8 @@
         return `https://mt1.google.com/vt?lyrs=y&x=${x}&y=${y}&z=${zoom}`;
     }
 
-    function sampleTiles(bounds, zooms, estimate = plan(bounds, zooms)) {
-        const east = bounds.east < bounds.west ? bounds.east + 360 : bounds.east;
-        const longitude = ((bounds.west + east) / 2 + 180) % 360;
-        return estimate.levels.map(level => {
-            const count = 2 ** level.zoom;
-            const x = Math.min(count - 1, Math.floor(longitude / 360 * count));
-            const y = Math.floor((level.yMin + level.yMax) / 2);
-            return { zoom: level.zoom, x, y, tiles: level.tiles, url: tileUrl(level.zoom, x, y) };
-        });
-    }
-
-    async function measureSamples(samples, fetchTile, signal) {
-        const results = [];
-        for (const sample of samples) {
-            const response = await fetchTile(sample.url, { mode: "cors", signal });
-            if (!response.ok) throw new Error(`Zoom ${sample.zoom}: HTTP ${response.status}.`);
-            const image = await response.blob();
-            if (!/^image\/(jpeg|png|webp)$/i.test(image.type) || !image.size) {
-                throw new Error(`Zoom ${sample.zoom}: the server did not return a readable tile image.`);
-            }
-            results.push({ ...sample, bytes: image.size });
-        }
-        return {
-            samples: results,
-            bytes: results.reduce((total, sample) => total + sample.bytes, 0),
-            estimatedBytes: results.reduce((total, sample) => total + sample.bytes * sample.tiles, 0)
-        };
-    }
-
-    root.AeroGridMapPlanner = { plan, snapBounds, specification, geographicBounds, sampleTiles, measureSamples,
-        radioFootprint, overviewZoom, coveragePlan, RADIO_PRESETS, MAX_TILES };
+    root.AeroGridMapPlanner = { plan, snapBounds, specification, geographicBounds,
+        radioFootprint, overviewZoom, coveragePlan, tileUrl, RADIO_PRESETS, MAX_TILES };
     if (typeof document === "undefined" || !document.getElementById("ag-map-planner")) {
         return;
     }
@@ -219,7 +196,7 @@
     const element = name => document.getElementById(`ag-map-${name}`);
     const status = text => { element("status").textContent = text; };
     const radioId = () => element("radio").value;
-    for (const radio of RADIO_PRESETS) {
+    for (const radio of [...RADIO_PRESETS, ...MONO_PRESETS]) {
         const option = document.createElement("option");
         option.value = radio.id;
         option.textContent = `${radio.name} (${radio.width} x ${radio.height})`;
@@ -241,42 +218,26 @@
     };
     let map;
     let extentInteraction;
-    let coverageSource;
-    let radioMap;
-    let radioSelectionSource;
-    let radioPreviewZoom;
-    let radioPreviewKey;
+    let drawAreaInteraction;
+    let areasSource;
+    let areasLayer;
     let bounds;
     let selectedBounds;
     let coverage;
     let minimumZoom = 16;
-    let failed = false;
     let locationRequest = 0;
     let navigationRevision = 0;
-    let measurement;
-    let measuring = false;
     let settingExtent = false;
+    let explicitAddMode = false;
+    let areaEditingEnabled = !element("connect");
+    let areaSelectionHandler = () => {};
+    let areaRenameHandler = () => {};
+    const areaTitles = new Map();
+    let nameEditor;
+    let areaBoundsHandler = () => {};
+    let resolveMapReady;
+    const mapReady = new Promise(resolve => { resolveMapReady = resolve; });
     const compactCoverage = () => element("compact").checked;
-    const selectionKey = () => JSON.stringify([selectedBounds, radioId(), zooms(), compactCoverage()]);
-
-    function showMeasurement() {
-        element("measure").disabled = !bounds || !selectedBounds || measuring;
-        if (measuring) return;
-        if (measurement && measurement.key !== selectionKey()) measurement = undefined;
-        if (!measurement) {
-            element("measurement").textContent = bounds
-                ? "Download one sample tile per selected zoom level into memory to estimate storage."
-                : "Select an area to measure one sample tile per zoom level.";
-            return;
-        }
-        const { samples, bytes, estimatedBytes } = measurement;
-        element("measurement").textContent =
-            samples.map(sample => `Zoom ${sample.zoom}: ${(sample.bytes / 1024).toFixed(1)} KiB`).join("; ") +
-            `. ${samples.length} sample tiles, ${(bytes / 1024).toFixed(1)} KiB downloaded. ` +
-            `Estimated selected-area storage: ${(estimatedBytes / (1024 * 1024)).toFixed(1)} MiB. ` +
-            "Each zoom's sample size is multiplied by its tile count. One tile per zoom is only a rough sample, not a measured pack size.";
-    }
-
     function locate(explicit = false) {
         const message = text => { element("location-status").textContent = text; };
         if (!root.isSecureContext || !root.navigator.geolocation) {
@@ -286,8 +247,15 @@
         const request = ++locationRequest;
         const revision = navigationRevision;
         element("locate").disabled = true;
-        message("Waiting for your browser's location permission...");
+        message("Finding your location... If your browser asks, allow location access.");
+        const waitingTimeout = root.setTimeout(() => {
+            if (request !== locationRequest) return;
+            locationRequest++;
+            element("locate").disabled = false;
+            message("The browser has not returned your location. Check this site's location permission in the address bar, then click the location icon to retry.");
+        }, 12000);
         root.navigator.geolocation.getCurrentPosition(position => {
+            root.clearTimeout(waitingTimeout);
             if (request !== locationRequest) return;
             element("locate").disabled = false;
             const { latitude, longitude } = position.coords;
@@ -302,8 +270,9 @@
             }
             map.getView().setCenter(root.ol.proj.fromLonLat([longitude, latitude]));
             map.getView().setZoom(16);
-            message("Map centered near your browser-reported location. Select your flying area.");
+            message("Select your flying area");
         }, error => {
+            root.clearTimeout(waitingTimeout);
             if (request !== locationRequest) return;
             element("locate").disabled = false;
             const messages = {
@@ -327,10 +296,6 @@
     }
 
     function updateSummary() {
-        drawCoverage();
-        updateRadioPreview();
-        showMeasurement();
-        element("export").disabled = true;
         if (!bounds || !selectedBounds) {
             element("min-zoom-value").textContent = "Select an area";
             element("max-zoom").min = 11;
@@ -339,28 +304,25 @@
         }
         try {
             const estimate = coverage;
-            const mib = bytes => (bytes / (1024 * 1024)).toFixed(1);
             element("summary").textContent =
-                `${estimate.tileCount.toLocaleString()} planned tiles; illustrative storage ` +
-                `${mib(estimate.estimatedBytes.min)}-${mib(estimate.estimatedBytes.max)} MiB. ` +
-                estimate.levels.map(level => `Zoom ${level.zoom}: ${level.tiles} tiles`).join("; ") +
+                `${estimate.tileCount.toLocaleString()} planned tiles · ` +
+                estimate.levels.map(level => `Z${level.zoom}: ${level.tiles}`).join(" · ") +
                 (estimate.tileCount > MAX_TILES ? ". Reduce the area or detail level (2,000-tile limit)." : ".");
             if (compactCoverage()) {
                 const full = coveragePlan(selectedBounds, zooms(), radioId());
                 const difference = full.tileCount - estimate.tileCount;
                 element("summary").textContent +=
-                    ` Per-zoom coverage saves ${difference.toLocaleString()} tiles versus full-area coverage.`;
+                    ` Storage optimization saves ${difference.toLocaleString()} tiles.`;
             }
             specification(element("name").value, bounds, zooms(), radioId(), coverage);
-            element("export").disabled = failed;
         } catch (error) {
             element("summary").textContent = error.message;
         }
     }
 
-    function syncBounds() {
+    function syncBounds(origin = "edit") {
         try {
-            setSelection(readExtent(extentInteraction.getExtent()), false);
+            setSelection(readExtent(extentInteraction.getExtent()), false, origin);
         } catch (error) {
             bounds = undefined;
             selectedBounds = undefined;
@@ -370,123 +332,7 @@
         }
     }
 
-    function updateRadioPreview() {
-        if (!radioMap) return;
-        const frame = element("radio-preview-frame");
-        radioSelectionSource.clear();
-        if (!bounds || !selectedBounds) {
-            frame.hidden = true;
-            radioPreviewKey = undefined;
-            element("preview-out").disabled = true;
-            element("preview-in").disabled = true;
-            element("preview-zoom").textContent = "No area selected";
-            element("radio-preview-status").textContent =
-                "Select a flying area to see how it fits on your radio.";
-            return;
-        }
-        const ol = root.ol;
-        const radio = radioFootprint(radioId());
-        const selected = projectedExtent(selectedBounds);
-        const key = JSON.stringify([selectedBounds, radioId()]);
-        const reset = radioPreviewKey !== key;
-        radioPreviewKey = key;
-        radioPreviewZoom = reset ? minimumZoom :
-            Math.max(minimumZoom, Math.min(Number(element("max-zoom").value), radioPreviewZoom));
-        const level = coverage.levels.find(level => level.zoom === radioPreviewZoom);
-        const availableExtent = projectedExtent(level.bounds || bounds);
-        const worldWidth = ol.proj.get("EPSG:3857").getExtent()[2] * 2;
-        const shift = Math.round(((selected[0] + selected[2]) -
-            (availableExtent[0] + availableExtent[2])) / (2 * worldWidth)) * worldWidth;
-        availableExtent[0] += shift;
-        availableExtent[2] += shift;
-        const resolution = worldWidth / (256 * 2 ** radioPreviewZoom);
-        const halfWidth = radio.width * resolution / 2;
-        const halfHeight = radio.height * resolution / 2;
-        const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-        const previousCenter = reset ? undefined : radioMap.getView().getCenter();
-        const center = [
-            clamp(previousCenter ? previousCenter[0] : (selected[0] + selected[2]) / 2,
-                availableExtent[0] + halfWidth, availableExtent[2] - halfWidth),
-            clamp(previousCenter ? previousCenter[1] : (selected[1] + selected[3]) / 2,
-                availableExtent[1] + halfHeight, availableExtent[3] - halfHeight)
-        ];
-        frame.hidden = false;
-        const scale = Math.min(1, frame.parentElement.clientWidth / radio.width);
-        frame.style.width = `${radio.width * scale}px`;
-        frame.style.height = `${radio.height * scale}px`;
-        element("radio-preview").style.width = `${radio.width}px`;
-        element("radio-preview").style.height = `${radio.height}px`;
-        element("radio-preview").style.transform = `scale(${scale})`;
-        radioMap.setSize([radio.width, radio.height]);
-        radioMap.setView(new ol.View({
-            center, zoom: radioPreviewZoom, minZoom: radioPreviewZoom, maxZoom: radioPreviewZoom,
-            extent: availableExtent, smoothExtentConstraint: false,
-            enableRotation: false
-        }));
-        radioMap.getLayers().item(0).setExtent(availableExtent);
-        element("preview-out").disabled = radioPreviewZoom <= minimumZoom;
-        element("preview-in").disabled = radioPreviewZoom >= Number(element("max-zoom").value);
-        element("preview-zoom").textContent = `Zoom ${radioPreviewZoom} (${minimumZoom}-${element("max-zoom").value})`;
-        radioSelectionSource.addFeature(new ol.Feature(ol.geom.Polygon.fromExtent(selected)));
-        const width = (selected[2] - selected[0]) / resolution;
-        const height = (selected[3] - selected[1]) / resolution;
-        element("radio-preview-status").textContent =
-            `${radio.name}: ${radio.width} x ${radio.height} pixels at zoom ${radioPreviewZoom}. ` +
-            `Your flying area occupies ${Math.ceil(width)} x ${Math.ceil(height)} screen pixels. ` +
-            `Preview displayed at ${Math.round(scale * 100)}% scale.`;
-    }
-
-    function drawCoverage() {
-        if (!coverageSource) return;
-        coverageSource.clear();
-        if (!bounds || !selectedBounds) {
-            element("coverage-legend").textContent =
-                "Solid blue: your flying area. Dashed amber: planned download coverage.";
-            return;
-        }
-        const ol = root.ol;
-        const extent = projectedExtent(bounds);
-        const selectionExtent = extentInteraction.getExtent();
-        if (selectionExtent) {
-            // Keep coverage in the same wrapped world as the editable selection.
-            const worldWidth = ol.proj.get("EPSG:3857").getExtent()[2] * 2;
-            const offset = Math.round(((selectionExtent[0] + selectionExtent[2]) -
-                (extent[0] + extent[2])) / (2 * worldWidth)) * worldWidth;
-            extent[0] += offset;
-            extent[2] += offset;
-        }
-        const [west, south, east, north] = extent;
-        const level = plan(bounds, [minimumZoom]).levels[0];
-        const columns = level.xRanges.reduce((total, range) => total + range.max - range.min + 1, 0);
-        const rows = level.yMax - level.yMin + 1;
-        const lines = [];
-        for (let column = 1; column < columns; column++) {
-            const x = west + (east - west) * column / columns;
-            lines.push([[x, south], [x, north]]);
-        }
-        for (let row = 1; row < rows; row++) {
-            const y = south + (north - south) * row / rows;
-            lines.push([[west, y], [east, y]]);
-        }
-        const outline = new ol.Feature(ol.geom.Polygon.fromExtent(extent));
-        outline.setStyle(new ol.style.Style({
-            stroke: new ol.style.Stroke({ color: "#ffbf47", width: 3, lineDash: [8, 6] }),
-            fill: new ol.style.Fill({ color: "rgba(255, 191, 71, 0.08)" })
-        }));
-        const grid = new ol.Feature(new ol.geom.MultiLineString(lines));
-        grid.setStyle(new ol.style.Style({
-            stroke: new ol.style.Stroke({ color: "rgba(255, 191, 71, 0.8)", width: 1 })
-        }));
-        coverageSource.addFeatures([outline, grid]);
-        element("coverage-legend").textContent =
-            `Solid blue: your flying area. Dashed amber: planned download coverage. ` +
-            `Amber grid: zoom ${minimumZoom} tiles (${columns} columns by ${rows} rows). ` +
-            (compactCoverage()
-                ? "Overview coverage shown; higher zooms independently cover the blue area, with at least one screen of tiles."
-                : "Higher zooms subdivide each grid cell.");
-    }
-
-    function setSelection(value, updateExtent = true) {
+    function setSelection(value, updateExtent = true, origin = "planner") {
         const overview = overviewZoom(value, radioId());
         const maximum = Math.max(overview, Number(element("max-zoom").value));
         const levels = Array.from({ length: maximum - overview + 1 }, (_, index) => overview + index);
@@ -501,7 +347,7 @@
         updateZoomRange();
         if (updateExtent) {
             element("canvas").style.cursor = "";
-            extentInteraction.setActive(true);
+            extentInteraction.setActive(areaEditingEnabled);
             settingExtent = true;
             try {
                 extentInteraction.setExtent(projectedExtent(value));
@@ -511,13 +357,20 @@
         }
         bounds = snapped;
         updateSummary();
-        status("Flying area kept as selected (blue). Planned download coverage and overview tile grid are amber. Shift-drag the blue rectangle to resize.");
+        status("");
+        let selection;
+        try {
+            selection = currentSelection();
+        } catch (error) {
+            areaBoundsHandler({ origin, bounds: { ...selectedBounds }, selection: null, error });
+            return;
+        }
+        areaBoundsHandler({ origin, bounds: { ...selectedBounds }, selection });
     }
 
     function mapFailure(message) {
-        failed = true;
+        resolveMapReady(null);
         element("options").disabled = true;
-        element("export").disabled = true;
         element("zoom-range").disabled = true;
         status(message);
     }
@@ -551,38 +404,35 @@
             });
             source.on("tileloaderror", () => {
                 element("imagery-status").textContent =
-                    "Some Google map tiles could not load. Check your connection; direct tile access may be blocked. Selection and JSON export still work.";
+                    "Map imagery could not load. Check your connection; direct tile access may be blocked.";
             });
             const previewLayer = new ol.layer.Tile({ source });
-            coverageSource = new ol.source.Vector();
-            const coverageLayer = new ol.layer.Vector({ source: coverageSource });
+            areasSource = new ol.source.Vector();
+            areasLayer = new ol.layer.Vector({ source: areasSource });
+            const controlIcon = (path) => {
+                const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+                svg.setAttribute("viewBox", "0 0 24 24");
+                svg.setAttribute("aria-hidden", "true");
+                const shape = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                shape.setAttribute("d", path);
+                svg.append(shape);
+                return svg;
+            };
             map = new ol.Map({
                 target: element("canvas"),
-                layers: [previewLayer, coverageLayer],
+                controls: ol.control.defaults.defaults({
+                    zoomOptions: {
+                        zoomInLabel: controlIcon("M12 5v14M5 12h14"),
+                        zoomOutLabel: controlIcon("M5 12h14"),
+                    },
+                }),
+                layers: [previewLayer, areasLayer],
                 interactions: ol.interaction.defaults.defaults({ shiftDragZoom: false }),
                 view: new ol.View({
                     center: ol.proj.fromLonLat([0, 20]), zoom: 3, maxZoom: 19,
                     enableRotation: false
                 })
             });
-            radioSelectionSource = new ol.source.Vector();
-            radioMap = new ol.Map({
-                target: element("radio-preview"),
-                layers: [
-                    new ol.layer.Tile({ source }),
-                    new ol.layer.Vector({
-                        source: radioSelectionSource,
-                        style: new ol.style.Style({
-                            stroke: new ol.style.Stroke({ color: "#3399ff", width: 2 }),
-                            fill: new ol.style.Fill({ color: "rgba(51, 153, 255, 0.12)" })
-                        })
-                    })
-                ],
-                controls: [new ol.control.Attribution({ collapsible: false })],
-                interactions: [new ol.interaction.DragPan()],
-                view: new ol.View({ center: [0, 0], zoom: 16, maxZoom: 19, enableRotation: false })
-            });
-            new ResizeObserver(updateRadioPreview).observe(element("radio-preview-frame").parentElement);
             const updateZoom = () => {
                 const zoom = map.getView().getZoom();
                 element("zoom").textContent = `Zoom ${Number.isInteger(zoom) ? zoom : zoom.toFixed(1)}`;
@@ -590,15 +440,52 @@
             map.getView().on("change:resolution", updateZoom);
             updateZoom();
             extentInteraction = new ol.interaction.Extent({
-                condition: ol.events.condition.shiftKeyOnly,
+                condition: event => {
+                    if (explicitAddMode || ol.events.condition.shiftKeyOnly(event)) return false;
+                    if (extentInteraction?.handlingDownUpSequence) return true;
+                    const extent = extentInteraction?.getExtent();
+                    if (!extent) return false;
+                    const corners = [[extent[0], extent[1]], [extent[0], extent[3]],
+                        [extent[2], extent[1]], [extent[2], extent[3]]];
+                    return corners.some(corner => {
+                        const pixel = map.getPixelFromCoordinate(corner);
+                        return Math.hypot(pixel[0] - event.pixel[0], pixel[1] - event.pixel[1]) <= 16;
+                    });
+                },
                 boxStyle: new ol.style.Style({
-                    stroke: new ol.style.Stroke({ color: "#3399ff", width: 2 }),
-                    fill: new ol.style.Fill({ color: "rgba(51, 153, 255, 0.08)" })
+                    stroke: new ol.style.Stroke({ color: "#258cc7", width: 3 }),
+                    fill: new ol.style.Fill({ color: "rgba(37, 140, 199, 0.08)" })
                 }),
                 pointerStyle: [],
                 pixelTolerance: 12
             });
             map.addInteraction(extentInteraction);
+            extentInteraction.setActive(areaEditingEnabled);
+            drawAreaInteraction = new ol.interaction.DragBox({
+                className: "ag-map-drawing-area",
+                condition: event => explicitAddMode || ol.events.condition.shiftKeyOnly(event)
+            });
+            drawAreaInteraction.on("boxstart", () => {
+                root.AeroGridMapPlannerView.startAddingArea();
+                areaBoundsHandler({ origin: "drawing-start", selection: null });
+            });
+            drawAreaInteraction.on("boxcancel", () => {
+                root.AeroGridMapPlannerView.cancelAddingArea();
+                areaBoundsHandler({ origin: "drawing-cancel", selection: null });
+            });
+            drawAreaInteraction.on("boxend", () => {
+                try {
+                    const value = readExtent(drawAreaInteraction.getGeometry().getExtent());
+                    explicitAddMode = false;
+                    setSelection(value, true, "new-area");
+                } catch (error) {
+                    status(error.message);
+                    areaBoundsHandler({ origin: "new-area", selection: null, error });
+                }
+            });
+            map.addInteraction(drawAreaInteraction);
+            drawAreaInteraction.setActive(areaEditingEnabled);
+            element("viewport").disabled = !areaEditingEnabled;
             map.on("pointerdrag", () => { navigationRevision++; });
             element("canvas").addEventListener("wheel", () => { navigationRevision++; }, { passive: true });
             element("canvas").addEventListener("keydown", () => { navigationRevision++; });
@@ -606,33 +493,86 @@
             extentInteraction.on("extentchanged", event => {
                 if (settingExtent) return;
                 if (event.extent) {
-                    syncBounds();
+                    syncBounds("edit");
                 }
                 else {
                     bounds = undefined;
                     selectedBounds = undefined;
                     updateSummary();
+                    areaBoundsHandler({ origin: "clear", bounds: null, selection: null });
                 }
+            });
+            map.on("singleclick", event => {
+                if (explicitAddMode) return;
+                if (areaEditingEnabled) {
+                    for (const [id, title] of [...areaTitles].reverse()) {
+                        if (event.pixel[0] < title.left || event.pixel[0] > title.right
+                            || event.pixel[1] < title.top || event.pixel[1] > title.bottom) continue;
+                        nameEditor?.cancel();
+                        const input = document.createElement("input");
+                        input.className = "ag-map-name-editor";
+                        input.dataset.selected = String(title.selected);
+                        input.value = title.name;
+                        input.maxLength = 80;
+                        input.setAttribute("aria-label", "Area name");
+                        const overlay = new ol.Overlay({
+                            element: input, position: title.coordinate, positioning: "bottom-left",
+                            offset: [0, -2], stopEvent: true,
+                        });
+                        let finished = false;
+                        const finish = (save) => {
+                            if (finished) return;
+                            const name = input.value.trim();
+                            if (save && (!name || name.length > 80)) {
+                                input.setCustomValidity("Enter an area name between 1 and 80 characters.");
+                                input.reportValidity();
+                                return;
+                            }
+                            finished = true;
+                            nameEditor = undefined;
+                            map.removeOverlay(overlay);
+                            map.render();
+                            if (save) areaRenameHandler(id, name);
+                            element("canvas").focus({ preventScroll: true });
+                        };
+                        nameEditor = { id, cancel: () => finish(false) };
+                        input.addEventListener("input", () => input.setCustomValidity(""));
+                        input.addEventListener("keydown", event => {
+                            event.stopPropagation();
+                            if (event.key === "Enter" || event.key === "Escape") {
+                                event.preventDefault();
+                                finish(event.key === "Enter");
+                            }
+                        });
+                        input.addEventListener("blur", () => finish(true));
+                        map.addOverlay(overlay);
+                        map.render();
+                        input.focus();
+                        input.select();
+                        return;
+                    }
+                }
+                const areaIds = new Set();
+                map.forEachFeatureAtPixel(event.pixel, candidate => {
+                    const id = candidate.get("areaId");
+                    if (id) areaIds.add(id);
+                }, {
+                    layerFilter: layer => layer === areasLayer
+                });
+                if (areaIds.size) areaSelectionHandler([...areaIds]);
             });
             element("options").disabled = false;
             element("zoom-range").disabled = false;
-            status("Map ready. Go to your field, then select an area. No account or API key required.");
+            status("");
+            resolveMapReady(map);
             locate();
         } catch (error) {
             mapFailure(`Unable to initialize map: ${error.message}`);
         }
     }
 
-    for (const [name, step] of [["preview-out", -1], ["preview-in", 1]]) {
-        element(name).addEventListener("click", () => {
-            if (!selectedBounds || radioPreviewZoom === undefined) return;
-            radioPreviewZoom = Math.max(minimumZoom,
-                Math.min(Number(element("max-zoom").value), radioPreviewZoom + step));
-            updateRadioPreview();
-        });
-    }
-
     element("viewport").addEventListener("click", () => {
+        if (!areaEditingEnabled) return;
         navigationRevision++;
         try {
             setSelection(readExtent(map.getView().calculateExtent(map.getSize())));
@@ -678,6 +618,142 @@
         input.setAttribute("aria-valuetext", `Zoom ${input.value}`);
     }
     updateZoomRange();
+    function renderAreas(areas, selectedId) {
+        if (!map || !areasSource) return;
+        const ol = root.ol;
+        const worldWidth = ol.proj.get("EPSG:3857").getExtent()[2] * 2;
+        const centerX = map.getView().getCenter()?.[0] || 0;
+        areasSource.clear();
+        areaTitles.clear();
+        for (const area of areas) {
+            if (area.deleted) continue;
+            let extent = projectedExtent(area.selection.selectedBounds);
+            const shift = Math.round((centerX - (extent[0] + extent[2]) / 2) / worldWidth) * worldWidth;
+            extent = extent.map((coordinate, index) => coordinate + (index % 2 === 0 ? shift : 0));
+            const feature = new ol.Feature(ol.geom.Polygon.fromExtent(extent));
+            feature.set("areaId", area.id);
+            feature.setStyle([new ol.style.Style({
+                stroke: new ol.style.Stroke({
+                    color: area.id === selectedId ? "#258cc7" : "#f3f7fa",
+                    width: 3,
+                }),
+                fill: new ol.style.Fill({
+                    color: area.id === selectedId ? "rgba(37, 140, 199, 0.08)" : "rgba(255, 255, 255, 0.12)"
+                })
+            }), new ol.style.Style({
+                geometry: new ol.geom.Point([extent[0], extent[3]]),
+                renderer: ([x, y], state) => {
+                    if (nameEditor?.id === area.id) return;
+                    const context = state.context;
+                    const scale = state.pixelRatio;
+                    const padding = 8 * scale;
+                    const height = 26 * scale;
+                    const availableWidth = (extent[2] - extent[0]) / state.resolution * scale + 3 * scale;
+                    const left = x - 1.5 * scale;
+                    context.save();
+                    context.font = `600 ${14 * scale}px sans-serif`;
+                    const titleWidth = context.measureText(area.selection.name).width + padding * 2;
+                    const bubble = titleWidth > availableWidth;
+                    const width = Math.min(titleWidth, bubble ? 240 * scale : availableWidth);
+                    const bottom = y - (bubble ? 9 : 1.5) * scale;
+                    areaTitles.set(area.id, {
+                        name: area.selection.name, selected: area.id === selectedId,
+                        coordinate: [extent[0], extent[3]],
+                        left: left / scale, right: (left + width) / scale,
+                        top: (bottom - height) / scale, bottom: bottom / scale,
+                    });
+                    let title = area.selection.name;
+                    if (context.measureText(title).width > width - padding * 2) {
+                        const characters = Array.from(title);
+                        while (characters.length
+                            && context.measureText(`${characters.join("")}\u2026`).width > width - padding * 2) {
+                            characters.pop();
+                        }
+                        title = `${characters.join("")}\u2026`;
+                    }
+                    context.fillStyle = area.id === selectedId
+                        ? "rgba(22, 119, 174, 0.7)" : "rgba(67, 79, 89, 0.7)";
+                    context.beginPath();
+                    context.roundRect(left, bottom - height, width, height,
+                        bubble ? 5 * scale : [5 * scale, 5 * scale, 0, 0]);
+                    if (bubble) {
+                        context.moveTo(left + 7 * scale, bottom);
+                        context.lineTo(left + 7 * scale, y - 1.5 * scale);
+                        context.lineTo(left + 15 * scale, bottom);
+                        context.closePath();
+                    }
+                    context.fill();
+                    context.fillStyle = "#ffffff";
+                    context.textAlign = "left";
+                    context.textBaseline = "middle";
+                    context.fillText(title, left + padding, bottom - height / 2);
+                    context.restore();
+                },
+            })]);
+            areasSource.addFeature(feature);
+        }
+    }
+    root.AeroGridMapPlannerView = {
+        ready: mapReady,
+        resize() { map?.updateSize(); },
+        renderAreas,
+        onSelectArea(handler) { areaSelectionHandler = handler; },
+        onRenameArea(handler) { areaRenameHandler = handler; },
+        onBoundsChanged(handler) { areaBoundsHandler = handler; },
+        startAddingArea() {
+            if (!areaEditingEnabled) return;
+            explicitAddMode = true;
+            element("canvas").style.cursor = "crosshair";
+            extentInteraction.setActive(false);
+            settingExtent = true;
+            try {
+                extentInteraction.setExtent(undefined);
+            } finally {
+                settingExtent = false;
+            }
+        },
+        cancelAddingArea() {
+            explicitAddMode = false;
+            element("canvas").style.cursor = "";
+            settingExtent = true;
+            try {
+                extentInteraction.setExtent(selectedBounds ? projectedExtent(selectedBounds) : undefined);
+            } finally {
+                settingExtent = false;
+            }
+            extentInteraction.setActive(areaEditingEnabled);
+            updateSummary();
+        },
+        selectBounds(value, radio, maximumZoom) {
+            element("radio").value = radio;
+            element("max-zoom").value = String(maximumZoom);
+            updateRadio();
+            setSelection(value, true, "load");
+            if (map) {
+                const extent = projectedExtent(value);
+                map.getView().fit(extent, { padding: [32, 32, 32, 32], duration: 250, maxZoom: 16 });
+            }
+        },
+        clearBounds() {
+            extentInteraction.setExtent(undefined);
+            bounds = undefined;
+            selectedBounds = undefined;
+            updateSummary();
+            areaBoundsHandler({ origin: "clear", bounds: null, selection: null });
+        },
+        currentSelection,
+        setMaximumZoom(value) {
+            element("max-zoom").value = String(value);
+            element("max-zoom").dispatchEvent(new Event("input", { bubbles: true }));
+        },
+        setAreaEditMode(enabled) {
+            if (!enabled) nameEditor?.cancel();
+            areaEditingEnabled = enabled;
+            extentInteraction?.setActive(enabled && !explicitAddMode);
+            drawAreaInteraction?.setActive(enabled);
+            element("viewport").disabled = !enabled;
+        },
+    };
     let previousRadio = radioId();
     element("compact").addEventListener("change", () => {
         try {
@@ -727,56 +803,13 @@
             if (zoomPreview) previewZoom(input);
         });
     }
-    element("measure").addEventListener("click", async () => {
-        if (measuring || !bounds || !selectedBounds) return;
-        const key = selectionKey();
-        const controller = new AbortController();
-        const timeout = root.setTimeout(() => controller.abort(), 30000);
-        measuring = true;
-        measurement = undefined;
-        showMeasurement();
-        element("measurement").textContent = "Downloading one sample tile per selected zoom level...";
-        try {
-            const result = await measureSamples(sampleTiles(selectedBounds, zooms(), coverage),
-                root.fetch.bind(root), controller.signal);
-            measuring = false;
-            if (key !== selectionKey()) {
-                showMeasurement();
-                element("measurement").textContent = "Selection changed during measurement. Measure again for the current selection.";
-                return;
-            }
-            measurement = { ...result, key };
-            showMeasurement();
-        } catch (error) {
-            element("measurement").textContent = controller.signal.aborted
-                ? "Sample download timed out after 30 seconds. Try again."
-                : `Unable to measure sample tiles: ${error.message} The provider may block cross-origin downloads, or your connection may be unavailable.`;
-        } finally {
-            root.clearTimeout(timeout);
-            measuring = false;
-            element("measure").disabled = !bounds || !selectedBounds;
-        }
-    });
     element("locate").addEventListener("click", () => locate(true));
     element("name").addEventListener("input", updateSummary);
-    element("export").addEventListener("click", () => {
-        try {
-            const selection = specification(element("name").value, bounds, zooms(), radioId(), coverage);
-            selection.selectedBounds = { ...selectedBounds };
-            selection.coverageMode = compactCoverage() ? "per-zoom-clamped" : "full-area-clamped";
-            const blob = new Blob([JSON.stringify(selection, null, 2) + "\n"], { type: "application/json" });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement("a");
-            link.href = url;
-            link.download = `${selection.name.replace(/[^a-z0-9_-]+/gi, "-") || "map"}-selection.json`;
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            root.setTimeout(() => URL.revokeObjectURL(url), 1000);
-            status("Selection JSON downloaded. It contains no imagery and is not a radio-ready map pack.");
-        } catch (error) {
-            status(`Unable to export selection: ${error.message}`);
-        }
-    });
+    function currentSelection() {
+        const selection = specification(element("name").value, bounds, zooms(), radioId(), coverage);
+        selection.selectedBounds = { ...selectedBounds };
+        selection.coverageMode = compactCoverage() ? "per-zoom-clamped" : "full-area-clamped";
+        return selection;
+    }
     initializeMap();
 })(globalThis);

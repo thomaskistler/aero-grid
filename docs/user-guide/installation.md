@@ -1,11 +1,9 @@
-# Install and upgrade
+# Install over USB
 
 Install the latest stable AeroGrid on your radio, or choose a previous release. Your layouts, maps, and radio settings stay in place.
 
 <div class="ag-install-workspace">
 <div class="ag-radio" data-radio-installer>
-  <h2 id="install-over-usb">Install over USB</h2>
-  <p class="ag-radio-muted">USB installation is supported only in <strong>desktop Google Chrome or Microsoft Edge</strong>. <strong>Safari and Opera are not supported.</strong></p>
   <div class="ag-radio-header">
     <div>
       <strong><svg class="ag-connection-icon" viewBox="0 0 24 24" aria-hidden="true"><g class="ag-connection-off"><path d="M9 17H7A5 5 0 0 1 7 7"/><path d="M15 7h2a5 5 0 0 1 4 8"/><line x1="8" x2="12" y1="12" y2="12"/><line x1="2" x2="22" y1="2" y2="22"/></g><g class="ag-connection-on"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></g></svg><span data-connection>Radio disconnected</span></strong>
@@ -28,7 +26,7 @@ Install the latest stable AeroGrid on your radio, or choose a previous release. 
     <button type="button" class="ag-radio-card ag-release-card" data-release-open aria-haspopup="dialog" aria-controls="ag-release-dialog" disabled>
       <span data-release-label>Selected AeroGrid release</span>
       <strong data-latest>Unavailable</strong>
-      <small>Choose a different release <span aria-hidden="true">&#9662;</span></small>
+      <small>Choose a different release</small>
     </button>
   </div>
   <dialog id="ag-release-dialog" class="ag-release-dialog" data-release-dialog aria-labelledby="ag-release-title" aria-describedby="ag-release-description">
@@ -46,28 +44,25 @@ Install the latest stable AeroGrid on your radio, or choose a previous release. 
   <p class="ag-radio-compatibility" data-compatibility role="status" aria-live="polite">Connect your radio to check compatibility.</p>
   <p class="ag-radio-downgrade" data-downgrade hidden></p>
   <div class="ag-radio-actions">
-    <button type="button" class="ag-radio-button" data-install disabled>Install latest AeroGrid</button>
+    <button type="button" class="ag-radio-button" data-install aria-haspopup="dialog" aria-controls="ag-install-confirm-dialog" disabled>Install latest AeroGrid</button>
   </div>
-  <div class="ag-radio-confirm" role="group" aria-labelledby="ag-confirm-title" data-confirm hidden>
-    <strong id="ag-confirm-title" data-confirm-title>Confirm installation</strong>
-    <p data-confirm-description></p>
-    <div class="ag-radio-actions">
-      <button type="button" class="ag-radio-button ag-radio-primary" data-confirm-start>Confirm installation</button>
-      <button type="button" class="ag-radio-button" data-confirm-cancel>Cancel</button>
+  <dialog id="ag-install-confirm-dialog" class="ag-release-dialog" data-confirm-dialog aria-labelledby="ag-confirm-title">
+    <h2 id="ag-confirm-title" data-confirm-title>Confirm installation</h2>
+    <div class="ag-radio-confirm" role="group" aria-labelledby="ag-confirm-title" data-confirm hidden>
+      <p id="ag-confirm-description" data-confirm-description></p>
+      <div class="ag-radio-actions">
+        <button type="button" class="ag-radio-button ag-radio-primary" data-confirm-start>Confirm installation</button>
+        <button type="button" class="ag-radio-button" data-confirm-cancel>Cancel</button>
+      </div>
     </div>
-  </div>
-  <progress data-progress max="1" value="0" aria-label="AeroGrid installation progress" hidden></progress>
+    <progress data-progress max="1" value="0" aria-label="AeroGrid installation progress" hidden></progress>
+    <p id="ag-install-operation-status" role="status" aria-live="polite" aria-atomic="true" data-operation-status></p>
+    <button type="button" class="ag-radio-button" data-confirm-close hidden>Close</button>
+  </dialog>
   <p role="status" aria-live="polite" aria-atomic="true" data-status></p>
   <p class="ag-radio-muted" role="status" aria-live="polite" data-release-status></p>
   </div>
 </div>
-<aside class="ag-install-help" aria-labelledby="ag-connect-title">
-  <h2 id="ag-connect-title">Connect your radio</h2>
-  <p>Power on the radio, connect its <strong>data USB port</strong> using a USB cable that supports data, and choose <strong>USB Storage</strong> on the radio if prompted.</p>
-  <p>Then click <strong>Connect Radio</strong> and select the <strong>SD-card drive</strong>: the folder containing <code>RADIO</code>, <code>MODELS</code>, and <code>WIDGETS</code>, not the <code>WIDGETS</code> folder itself.</p>
-  <p class="ag-install-note">Back up your SD card and model configuration before making changes. AeroGrid requires a color-screen radio running EdgeTX 2.11.0 or later.</p>
-  <a href="#manual-installation">Prefer to copy the files yourself?</a>
-</aside>
 </div>
 
 <div class="ag-install-safety" role="note">
@@ -75,7 +70,7 @@ Install the latest stable AeroGrid on your radio, or choose a previous release. 
   <span>Do not close this page or let another application write to the card. Afterwards, disconnect in the page, safely eject the drive through your operating system, then unplug the USB data cable.</span>
 </div>
 
-<h2 id="manual-installation">Manual installation</h2>
+<h2 id="manual-installation" class="ag-install-section-title">Manual installation</h2>
 
 ### Install on an SD card
 

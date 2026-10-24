@@ -6,7 +6,7 @@ import {
   parseRadioMetadata, parseVersion, radioHardware, radioCompatibility, RadioStorage,
 } from "../../docs/javascripts/radio-storage.mjs";
 import {
-  actionFor, ContentMismatchError, loadCatalog, loadLatest, loadRelease, preparePackage, RELEASE_API,
+  actionFor, ContentMismatchError, loadCatalog, loadRelease, preparePackage,
   replaceWidget, sha256, validateManifest, verifyInstalled,
 } from "../../docs/javascripts/radio-installer.mjs";
 
@@ -171,9 +171,8 @@ async function releaseFixture() {
   };
   const fetcher = async (url) => {
     const address = String(url);
-    if (address === RELEASE_API || address === RELEASE_API.replace("/latest", "/tags/v0.4.0")) return Response.json(release);
-    if (address === new URL("latest.json", base).href
-        || address === new URL("releases/0.4.0/manifest.json", base).href) return Response.json(manifest);
+    if (address === "https://api.github.com/repos/thomaskistler/aero-grid/releases/tags/v0.4.0") return Response.json(release);
+    if (address === new URL("releases/0.4.0/manifest.json", base).href) return Response.json(manifest);
     const path = address.split("/releases/0.4.0/")[1];
     return path in content ? new Response(content[path]) : new Response("missing", { status: 404 });
   };
@@ -272,6 +271,7 @@ test("widget absence, unknown version and ambiguous entries are distinct", async
 });
 
 test("action selection installs, updates, shows equal and labels downgrades explicitly", () => {
+  assert.equal(actionFor({ present: false }, "0.4.0").label, "Install AeroGrid v0.4.0");
   assert.match(actionFor({ present: false }, "0.4.0").label, /^Install/);
   assert.match(actionFor({ present: true, version: null }, "0.4.0").label, /^Update/);
   assert.equal(actionFor({ present: true, version: "0.4.0" }, "0.4.0").enabled, false);
@@ -288,6 +288,14 @@ test("selected historical releases are pinned and cross-checked against their Gi
   fixture.release.draft = true;
   await assert.rejects(loadRelease(base, "0.4.0", fixture.fetcher), /selected stable/);
   fixture.release.draft = false;
+  fixture.release.tag_name = "v0.5.0";
+  await assert.rejects(loadRelease(base, "0.4.0", fixture.fetcher), /selected stable/);
+  fixture.release.tag_name = "v0.4.0";
+  fixture.release.assets = [];
+  await assert.rejects(loadRelease(base, "0.4.0", fixture.fetcher), /missing installation assets/);
+  fixture.release.assets = ["AeroGrid-0.4.0.zip", "AeroGrid-0.4.0.zip.sha256"].map((name) => ({
+    name, browser_download_url: `https://github.com/thomaskistler/aero-grid/releases/download/v0.4.0/${name}`,
+  }));
   fixture.manifest.version = "0.3.0";
   await assert.rejects(loadRelease(base, "0.4.0", fixture.fetcher), /does not match/);
 });
@@ -299,10 +307,15 @@ test("release catalog validates entries, unavailable states, latest and numeric 
     available, reason: available ? null : "Missing installation assets.",
   });
   const catalog = { schema: 1, latest: "0.10.0", releases: [entry("0.2.0"), entry("0.10.0"), entry("0.3.0", false)] };
-  const fetcher = async () => Response.json(catalog);
+  const releases = ["0.2.0", "0.10.0", "0.3.0"].map((version) => ({
+    tag_name: `v${version}`, name: `AeroGrid ${version}`, draft: false, prerelease: false,
+    assets: [`AeroGrid-${version}.zip`, `AeroGrid-${version}.zip.sha256`].map((name) => ({
+      name, browser_download_url: `https://github.com/thomaskistler/aero-grid/releases/download/v${version}/${name}`,
+    })),
+  }));
+  const fetcher = async (url) => Response.json(String(url).includes("api.github.com") ? releases : catalog);
   assert.deepEqual((await loadCatalog(base, fetcher)).releases.map((item) => item.version), ["0.10.0", "0.3.0", "0.2.0"]);
   for (const bad of [
-    { ...catalog, latest: "0.3.0" },
     { ...catalog, releases: [null] },
     { ...catalog, releases: [...catalog.releases, entry("0.2.0")] },
     { ...catalog, releases: [entry("1.0.0-beta.1")] },
@@ -310,20 +323,23 @@ test("release catalog validates entries, unavailable states, latest and numeric 
     { ...catalog, releases: [{ ...entry("0.10.0"), available: "yes" }] },
     { ...catalog, releases: [{ ...entry("0.10.0", false), reason: null }] },
   ]) await assert.rejects(loadCatalog(base, async () => Response.json(bad)), /catalog|entry/);
-});
-
-test("latest stable is cross-checked with published assets; stale/missing/network states block", async () => {
-  const fixture = await releaseFixture();
-  assert.deepEqual(await loadLatest(base, fixture.fetcher), fixture.manifest);
-  for (const mutate of [
-    () => { fixture.release.tag_name = "v0.5.0"; },
-    () => { fixture.release.tag_name = "v0.4.0"; fixture.release.prerelease = true; },
-    () => { fixture.release.prerelease = false; fixture.release.assets = []; },
-  ]) {
-    mutate();
-    await assert.rejects(loadLatest(base, fixture.fetcher));
-  }
-  await assert.rejects(loadLatest(base, async () => new Response("", { status: 403 })), /HTTP 403/);
+  const live = [releases[0], { tag_name: "v0.11.0", name: "New release", draft: false, prerelease: false },
+    { tag_name: "v0.12.0-beta.1", draft: false, prerelease: true }];
+  const updated = await loadCatalog(base, async (url) =>
+    Response.json(String(url).includes("api.github.com") ? live : catalog));
+  assert.deepEqual(updated.releases.map((item) => item.version), ["0.11.0", "0.2.0"]);
+  assert.equal(updated.latest, "0.11.0");
+  assert.equal(updated.releases[0].available, false);
+  const withoutCatalog = await loadCatalog(base, async (url) =>
+    String(url).includes("api.github.com") ? Response.json(releases)
+      : new Response("", { status: 404 }));
+  assert.deepEqual(withoutCatalog.releases.map((item) => item.version), ["0.10.0", "0.3.0", "0.2.0"]);
+  assert.ok(withoutCatalog.releases.every((item) => !item.available
+    && item.reason === "Automatic installation files are not available on this site."));
+  await assert.rejects(loadCatalog(base, async () =>
+    new Response("", { status: 500 })), /HTTP 500/);
+  await assert.rejects(loadCatalog(base, async (url) => String(url).includes("api.github.com")
+    ? new Response("", { status: 403 }) : Response.json(catalog)), /HTTP 403/);
 });
 
 test("manifest rejects traversal, case/file collisions, bad hashes, counts and size limits", async () => {

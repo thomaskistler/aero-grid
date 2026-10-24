@@ -3,13 +3,7 @@
   <a class="ag-guide-link{% if current %} current{% endif %}" href="{{ target|url }}"{% if current %} aria-current="page"{% endif %}>{{ title }}</a>
 {% endmacro %}
 
-{% if page.file.src_uri == 'user-guide/map-planner.md' %}
-  {% set guide_title = "Map Manager" %}
-  {% set guide_home = "user-guide/map-planner/" %}
-  {% set guide_links %}
-    {{ sidebar_page("user-guide/map-planner.md", "user-guide/map-planner/", "Map Manager") }}
-  {% endset %}
-{% elif page.file.src_uri.startswith('user-guide/') %}
+{% if page.file.src_uri.startswith('user-guide/') %}
   {% set guide_title = "User Guide" %}
   {% set guide_home = "user-guide/add-dashboard/" %}
   {% set guide_links %}
@@ -17,7 +11,6 @@
     {{ sidebar_page("user-guide/add-dashboard.md", "user-guide/add-dashboard/", "Add a dashboard") }}
     {{ sidebar_page("user-guide/edit-dashboard.md", "user-guide/edit-dashboard/", "Edit a dashboard on the radio") }}
     {{ sidebar_page("user-guide/customize-themes.md", "user-guide/customize-themes/", "Customize themes") }}
-    {{ sidebar_page("user-guide/map-planner.md", "user-guide/map-planner/", "Map planner (prototype)") }}
     {{ sidebar_page("user-guide/troubleshooting.md", "user-guide/troubleshooting/", "Troubleshoot and file bugs") }}
   {% endset %}
 {% elif page.file.src_uri.startswith('reference-guide/') or page.file.src_uri.startswith('panels/') %}
@@ -48,6 +41,7 @@
     {{ sidebar_page("developer-guide/build.md", "developer-guide/build/", "Check out and build") }}
     {{ sidebar_page("developer-guide/testing.md", "developer-guide/testing/", "Test and debug") }}
     {{ sidebar_page("developer-guide/simulators.md", "developer-guide/simulators/", "Run and test in simulators") }}
+    {{ sidebar_page("developer-guide/map-packs.md", "developer-guide/map-packs/", "Map areas and shared tiles") }}
     {{ sidebar_page("developer-guide/architecture.md", "developer-guide/architecture/", "Repository and architecture") }}
     {{ sidebar_page("developer-guide/tools.md", "developer-guide/tools/", "Project tools") }}
     {{ sidebar_page("developer-guide/videos.md", "developer-guide/videos/", "Tutorial videos") }}

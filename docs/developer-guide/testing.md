@@ -145,6 +145,28 @@ build/capture-venv/bin/python -m unittest discover -s tools -p 'test_capture_*.p
 Neither command is included in `make test`. CI runs the release-packaging
 tests; run capture-recipe tests locally when changing recipes or adapters.
 
+### Planner and map-file contract
+
+With Node.js 22 and the development environment (`make setup`):
+
+```sh
+node tools/test_map_planner.js
+node tools/test_map_files.js
+node tools/test_map_sources.js
+node --test tests/browser/radio-map-library.test.mjs tests/browser/radio-map-manager.test.mjs
+```
+
+The JavaScript suites check planner coverage, format 2 area-file generation,
+JPEG validation, shared tile identity, source fetch and cancellation behavior,
+selection reconstruction (including per-zoom bounds and date-line geometry),
+malformed YAML rejection, shared-tile pruning, and manager review/sync behavior.
+
+The connected manager writes only area format 2. The independent radio-reader
+PR #172 remains unchanged and reads format 1, so its current reader is
+incompatible with format 2. No legacy-area migration or interoperability is
+claimed. The manager reports library bytes and update estimates but cannot
+query SD-card free space; ensure the card has room before confirming a sync.
+
 ## Lint and formatting
 
 ```sh

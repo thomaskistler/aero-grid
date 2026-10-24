@@ -167,10 +167,38 @@ export async function inspectWidget(root) {
   return { present: true, version: text ? packageVersion(text) : null };
 }
 
-// A page-session storage capability, deliberately independent of installer UI and paths.
+const CONNECTION_KEY = "aerogrid-radio-connection";
+
+async function connectionHandle(operation, key, handle) {
+  if (!globalThis.indexedDB || !globalThis.sessionStorage) {
+    throw new Error("Browser storage is unavailable; the radio connection cannot be retained between pages.");
+  }
+  const database = await new Promise((resolve, reject) => {
+    const request = indexedDB.open("aerogrid-radio-connections", 1);
+    request.onupgradeneeded = () => request.result.createObjectStore("handles");
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = database.transaction("handles", operation === "get" ? "readonly" : "readwrite");
+      const store = transaction.objectStore("handles");
+      const request = operation === "get" ? store.get(key)
+        : operation === "put" ? store.put(handle, key) : store.delete(key);
+      transaction.oncomplete = () => resolve(request.result);
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error || new Error("Saving the radio connection was interrupted."));
+    });
+  } finally {
+    database.close();
+  }
+}
+
+// Shared SD-card access, independent of installer UI and paths.
 export class RadioStorage {
-  constructor(picker = (options) => globalThis.showDirectoryPicker(options)) {
+  constructor(picker = (options) => globalThis.showDirectoryPicker(options), persist = false) {
     this.picker = picker;
+    this.persist = persist;
     this.root = null;
     this.busy = false;
   }
@@ -180,13 +208,49 @@ export class RadioStorage {
     const root = await this.picker({ id: "aerogrid-radio", mode: "read" });
     const metadata = await inspectRoot(root);
     await inspectWidget(root);
+    if (this.persist) {
+      try {
+        const key = crypto.randomUUID();
+        await connectionHandle("put", key, root);
+        sessionStorage.setItem(CONNECTION_KEY, key);
+      } catch (error) {
+        console.error("[AeroGrid radio] Connection persistence failed.", error);
+        throw new Error(`Radio access succeeded, but keeping the connection between pages failed: ${error.message}`);
+      }
+    }
     this.root = root;
     return metadata;
+  }
+
+  async restore() {
+    if (!this.persist || this.root) return !!this.root;
+    const key = globalThis.sessionStorage?.getItem(CONNECTION_KEY);
+    if (!key) return false;
+    try {
+      const root = await connectionHandle("get", key);
+      if (!root || await root.queryPermission({ mode: "read" }) !== "granted") {
+        throw new Error("SD-card access needs permission again. Click Connect Radio to reconnect.");
+      }
+      await inspectRoot(root);
+      await inspectWidget(root);
+      this.root = root;
+      return true;
+    } catch (error) {
+      this.disconnect();
+      throw new Error(`Unable to restore the radio connection: ${error.message}`);
+    }
   }
 
   disconnect() {
     if (this.busy) throw new Error("Wait for the radio operation to finish.");
     this.root = null;
+    if (this.persist) {
+      const key = globalThis.sessionStorage?.getItem(CONNECTION_KEY);
+      globalThis.sessionStorage?.removeItem(CONNECTION_KEY);
+      if (key) void connectionHandle("delete", key).catch((error) => {
+        console.error("[AeroGrid radio] Could not remove the saved SD-card handle.", error);
+      });
+    }
   }
 
   async inspect() {
@@ -218,4 +282,4 @@ export class RadioStorage {
   }
 }
 
-export const radioStorage = new RadioStorage();
+export const radioStorage = new RadioStorage(undefined, true);
