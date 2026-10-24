@@ -41,8 +41,8 @@ class AircraftTests(unittest.TestCase):
                          [f"map-arrow-{h:03d}.png" for h in range(0, 360, 10)])
         north = aircraft.arrow_sample()
         self.assertEqual(north(26, 16), (*aircraft.BLUE, 255))
-        self.assertEqual(north(26, 36), (*aircraft.WHITE, 210))
-        self.assertEqual(north(7, 26), (*aircraft.WHITE, 210))
+        self.assertEqual(north(26, 36), (*aircraft.WHITE, 170))
+        self.assertEqual(north(7, 26), (*aircraft.WHITE, 170))
         self.assertEqual(north(0, 0), (0, 0, 0, 0))
         for heading, path in zip(range(0, 360, 10), files):
             sample = aircraft.arrow_sample(heading)
