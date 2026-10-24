@@ -50,7 +50,7 @@ without browser code or network access.
 - Map-area selection is always automatic and GPS-driven; the former per-panel
   area override has been removed. Optional settings show a satellite count,
   six-decimal coordinates, and a bounded `off`/`trail`/`full` flight path.
-  Fullscreen includes a separate GPS control for the location QR overlay,
+  Fullscreen includes a separate circled info control for the location QR overlay,
   keeping the map's pan interactions independent.
 - Aircraft follow starts enabled. Central 60% dead zone; a breach starts a
   fixed-target, coverage-clamped smoothstep pan. Filtered map-pixel velocity

@@ -45,7 +45,7 @@ Fullscreen exit and resize cancel a pending press.
 The full-grid panel provides a compact dark rounded zoom block with white `+`
 and `-` symbols and a subtle divider in the lower-right corner. Above it,
 the follow control reuses the aircraft silhouette in white, facing north,
-inside the same rounded-square button; below it, a separate `GPS` control
+inside the same rounded-square button; below it, a separate circled info control
 opens the location QR overlay.
 The fixture provides zoom levels 16 / 17; installed areas may provide 1-9
 consecutive levels within 11-19. The target button resumes aircraft follow after
@@ -166,7 +166,7 @@ six-decimal latitude/longitude when GPS is valid. `flightPath` accepts `off`,
 `trail` or `full`: samples require at least five metres of movement and one
 second between accepted fixes. The trail retains 24 points; full mode keeps a
 bounded, decimated history of at most 64 points. GPS outages break the displayed path.
-In fullscreen, the separate `GPS` control opens the same location QR overlay
+In fullscreen, the separate circled info control opens the same location QR overlay
 as tapping a Navigation panel, leaving map taps available for panning.
 Distance/scale overlays remain intentionally absent. The home PNG renders at native size without
 rotation; regenerate it with
