@@ -33,6 +33,10 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-dev.txt
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       # EdgeTX and the behaviour tests use Lua 5.3. Also validate every source
       # and test file with the matching compiler.
       - name: Install Lua 5.3
@@ -61,7 +65,9 @@ jobs:
         run: make check LUA_COMPILER=luac5.3
 
       - name: Test release packaging
-        run: python3 -m unittest discover -s tools -p 'test_release_*.py'
+        run: |
+          python3 -m unittest discover -s tools -p 'test_release_*.py'
+          make test-installer
 
       - name: Lint Lua sources
         run: make lint

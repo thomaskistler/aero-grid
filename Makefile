@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
 PYTHON ?= python3
+NODE ?= node
 BUILD_DIR ?= build
 SDCARD_DIR := $(BUILD_DIR)/sdcard
 VENV_DIR := $(BUILD_DIR)/venv
@@ -20,13 +21,14 @@ LUACHECK ?= $(shell command -v luacheck 2>/dev/null)
 LUA_LS ?= $(shell command -v lua-language-server 2>/dev/null)
 STYLUA ?= $(shell command -v stylua 2>/dev/null)
 
-.PHONY: help setup test check build clean lint format docs docs-serve capture-setup video-setup release-package
+.PHONY: help setup test test-installer check build clean lint format docs docs-serve capture-setup video-setup release-package
 
 help:
 	@printf '%s\n' \
 	  'make help    List the supported Make targets' \
 	  'make setup   Install development dependencies into build/venv' \
 	  'make test    Run pure Lua and mocked EdgeTX behavior tests' \
+	  'make test-installer Test browser installer and release mirroring' \
 	  'make check   Run behavior tests and syntax validation' \
 	  'make lint    Lint Lua files with lua-language-server' \
 	  'make format  Format Lua files with stylua' \
@@ -80,6 +82,10 @@ $(VENV_STAMP): requirements-dev.txt
 test: $(VENV_STAMP)
 	@"$(VENV_DIR)/bin/python" -m unittest discover -s tests -p 'test_*.py'
 	@"$(VENV_DIR)/bin/python" tests/run.py
+
+test-installer:
+	@"$(PYTHON)" -m unittest discover -s tools -p 'test_installer_*.py'
+	@"$(NODE)" --test tests/browser/*.test.mjs
 
 check: test
 	@test -n "$(LUA_COMPILER)" || { \

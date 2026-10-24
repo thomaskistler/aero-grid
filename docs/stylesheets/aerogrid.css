@@ -1,4 +1,198 @@
 /* Light documentation palette with AeroGrid-inspired accents. */
+.ag-radio {
+  --ag-canvas: var(--ag-console-surface, #ffffff);
+  --ag-surface: var(--ag-console-bg, #f5f7f9);
+  --ag-border: var(--ag-console-border, #cbd3da);
+  --ag-text: var(--ag-console-text, #212830);
+  --ag-muted: var(--ag-console-muted, #52616b);
+  --ag-cyan: var(--ag-console-blue-dark, #006b85);
+  margin: 1.5rem 0;
+  padding: 1.5rem;
+  border: 2px solid var(--ag-border);
+  border-radius: 16px;
+  background: var(--ag-surface);
+}
+
+.ag-radio-connected {
+  border-color: var(--ag-green);
+}
+
+.ag-radio-header,
+.ag-radio-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.ag-radio-header {
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--ag-border);
+}
+
+.ag-radio-header strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--ag-font-2xl, 24px);
+}
+
+.ag-connection-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  padding: 7px;
+  border-radius: 50%;
+  background: #6b7280;
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ag-radio-connected .ag-connection-icon {
+  background: var(--ag-green);
+}
+
+.ag-connection-on,
+.ag-radio-connected .ag-connection-off {
+  display: none;
+}
+
+.ag-radio-connected .ag-connection-on {
+  display: inline;
+}
+
+.ag-radio-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1.25rem 0;
+}
+
+.ag-radio-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  border: 1px solid var(--ag-border);
+  border-radius: 12px;
+  background: var(--ag-canvas);
+  overflow-wrap: anywhere;
+}
+
+.ag-radio-card strong {
+  font-family: var(--bs-font-monospace, monospace);
+}
+
+.ag-radio-muted,
+.ag-radio-card span,
+.ag-radio-card small {
+  color: var(--ag-muted);
+  font-size: var(--ag-font-sm, 14px);
+}
+
+.ag-radio-actions {
+  justify-content: flex-start;
+  margin: 1rem 0;
+}
+
+.ag-radio-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: 8px;
+  background: var(--ag-canvas);
+  color: var(--ag-text);
+  padding: 0.65rem 1rem;
+  font-weight: 600;
+}
+
+.ag-usb-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ag-radio-primary {
+  background: var(--ag-cyan);
+  border-color: var(--ag-cyan);
+  color: #ffffff;
+}
+
+.ag-radio-danger {
+  background: var(--ag-critical);
+  border-color: var(--ag-critical);
+  color: #ffffff;
+}
+
+.ag-radio-button:disabled {
+  background: var(--ag-surface);
+  border-color: var(--ag-border);
+  color: var(--ag-muted);
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+.ag-radio-button:focus-visible {
+  outline: 3px solid var(--ag-cyan);
+  outline-offset: 3px;
+}
+
+.ag-radio-error {
+  color: var(--ag-critical);
+}
+
+.ag-radio [data-status].ag-radio-success {
+  color: var(--ag-green);
+  font-weight: 600;
+}
+
+.ag-radio progress {
+  width: 100%;
+  accent-color: var(--ag-cyan);
+}
+
+.ag-radio [data-status] {
+  margin-bottom: 0.5rem;
+}
+
+.ag-radio [data-status]:empty,
+.ag-radio [data-release-status]:empty {
+  display: none;
+}
+
+.ag-radio-confirm {
+  padding: 1rem;
+  margin-bottom: 1rem;
+  border: 2px solid var(--ag-amber);
+  border-radius: 8px;
+}
+
+.ag-radio-confirm p {
+  margin-top: 0.75rem;
+  white-space: pre-line;
+}
+
+@media (max-width: 767px) {
+  .ag-radio {
+    padding: 1rem;
+  }
+
+  .ag-radio-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
 .ag-video-gallery {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

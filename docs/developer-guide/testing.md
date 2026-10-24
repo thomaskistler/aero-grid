@@ -95,6 +95,39 @@ evidence of long-term hardware stability.
 
 ## Python tooling tests
 
+The browser USB-storage installer uses Python's standard library and Node.js 22:
+
+```sh
+make test-installer
+```
+
+This runs the release-mirroring tests and `tests/browser/*.test.mjs` using Node's
+built-in test runner. Mock directory handles cover metadata, permission failures,
+payload validation, write failures, delete-and-replace ordering, and preservation
+of non-widget files. They do not prove physical radio behavior. For browser
+acceptance, select a disposable EdgeTX-shaped directory in desktop Chrome/Edge;
+never use a real radio for automated destructive tests. A real-radio test needs
+explicit authorization and a post-install widget check after safely ejecting
+the drive and unplugging the USB data cable.
+
+An optional Playwright smoke check exercises the rendered panel with real Chromium
+filesystem handles in a disposable origin-private directory. It simulates the
+picker selection, **not** radio hardware or the operating system's folder dialog.
+After installing Playwright/Chromium separately, serve the built site with mirrored
+installer assets as described in [Check out and build](build.md#browser-installer-assets):
+
+```sh
+node tests/browser/radio-panel.smoke.mjs http://127.0.0.1:8000/
+```
+
+If Playwright is installed outside normal Node module resolution, set
+`PLAYWRIGHT_MODULE` to its absolute `index.mjs` path. The check covers a full
+update/readback, failed download without mutation, preserved user data, disconnect,
+mobile overflow, and unsupported-browser messaging.
+Set `INSTALLER_KEYBOARD=1` to exercise button activation with Enter instead of
+pointer clicks, or `PLAYWRIGHT_CHANNEL=chrome` to use an installed Google Chrome
+instead of Playwright's matching Chromium.
+
 Release packaging uses only Python's standard library:
 
 ```sh

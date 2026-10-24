@@ -145,6 +145,82 @@ Markdown lives in `docs/`. When adding or renaming a page, update **both**
 Site styling is in `docs/stylesheets/aerogrid.css`. Checked-in screenshots are
 used as-is; building the site never launches a simulator.
 
+### Browser installer assets
+
+The USB installer is composed of ES modules under `docs/javascripts/`.
+`radio-storage.mjs` exports the page-session `radioStorage` connection and
+UI-independent storage/metadata helpers for future map workflows. The installer
+only replaces the AeroGrid widget; no map writer or firmware flasher is included.
+`radioHardware()` maps saved board identifiers to radio names and color/monochrome
+logical display dimensions. The lookup is based on EdgeTX
+[v2.12.0 target definitions](https://github.com/EdgeTX/edgetx/tree/v2.12.0/radio/src/targets):
+color dimensions come from each target's `hal.h`, and monochrome sizes from
+`taranis/CMakeLists.txt`. Unknown boards keep their identifier with an Unknown
+screen; do not infer dimensions from SD bitmap-pack sizes or the browser screen.
+The compatibility check follows the UI policy of recognized color-screen hardware
+and stable EdgeTX 2.11.0 or later. The
+[EdgeTX 2.11.0 release](https://github.com/EdgeTX/edgetx/releases/tag/v2.11.0)
+introduced Lua LVGL controls. This check is not selected-release hardware
+certification; unknown or unsupported configurations show an install-at-your-own-risk
+warning in the page and confirmation, but remain installable.
+
+Pages builds mirror **published stable releases**, not the current source tree,
+into same-origin versioned files, individual `releases/<version>/manifest.json`
+manifests, `installer/latest.json`, and an `installer/releases.json` catalog.
+The latest release is selected by default. Historical releases without a compatible
+ZIP/checksum pair are listed as unavailable, not silently substituted.
+The build validates the release ZIP's SHA-256, archive paths, size limits, and
+package version before emitting the payload. The browser checks the latest
+GitHub release against its manifest and verifies every downloaded and written
+file. These are content integrity checks, not signed publisher authentication.
+Verification tolerates macOS AppleDouble (`._`) sidecars only when they have an
+AppleDouble v2 header and a complete descriptor table, and correspond to a
+release file or existing directory. Sidecars are not deleted by verification;
+all release files still receive full size/hash checks. Other unexpected files
+remain errors. Verification errors include missing/unexpected paths on-page
+(up to 20 per category) and full structured differences in the JavaScript console.
+Payload downloads run in batches of up to four, all verified before any radio
+mutation. Radio writes remain sequential and reuse directory handles within the
+replacement operation. Read-back verification enumerates each widget directory
+once and reuses the discovered file handles, while still checking every release
+file's size and SHA-256. These handles are not cached across installations.
+The JavaScript console logs deletion failures with their target, exact path and
+original browser error. Routine operations do not log directory listings or
+perform extra diagnostic scans.
+Deletion errors still stop installation without retrying or falling back.
+Widget removal enumerates each directory and deletes `._` entries before other
+entries. macOS automatically removes associated AppleDouble files on filesystems
+without native extended attributes; sidecar-first ordering avoids Chromium
+attempting to remove those already-deleted entries during bulk recursive removal.
+Directories are removed only after their children. Traversal is limited to
+10,000 entries and 64 levels inside the resolved widget directory; errors include
+the exact path and still stop installation.
+An explicitly selected downgrade requires a downgrade-specific confirmation.
+The storage writer still refuses downgrades unless that confirmation authorizes
+one; it does not convert user data to older layout or settings formats.
+
+To include those assets in a disposable built-site preview:
+
+```sh
+make docs
+python3 tools/installer_assets.py --output build/docs/installer
+python3 -m http.server 8000 --directory build/docs
+```
+
+The mirroring command needs network access to GitHub; an optional `GH_TOKEN`
+is used only for the server-side GitHub API request. No token is sent to the
+browser. Stop the preview with Ctrl-C. Ordinary `make docs-serve` does not mirror
+assets, so its installer reports release assets unavailable while the manual
+instructions remain usable. Do not point the asset output or any development
+build at a radio's SD card.
+
+Documentation deployment runs after successful Release workflow completion
+(GitHub-token-created release events do not start another workflow), on published
+release events, and on documentation changes. Missing newest-release assets fail
+the build rather than quietly mirroring an older release. Between publication
+and deployment, the browser disables automatic installation if the site payload
+is behind the latest stable release.
+
 ## Command reference
 
 | Command | Result |
@@ -152,6 +228,7 @@ used as-is; building the site never launches a simulator.
 | `make help` | List supported targets. |
 | `make setup` | Install development Python dependencies. |
 | `make test` | Run every Lua behavior suite once with firmware-like string behavior. |
+| `make test-installer` | Test the browser installer with Node.js 22 and Python. |
 | `make check` | Run behavior tests, then parse source/test Lua. |
 | `make lint` | Run LuaLS diagnostics. |
 | `make format` | Rewrite source/test Lua using StyLua. |
