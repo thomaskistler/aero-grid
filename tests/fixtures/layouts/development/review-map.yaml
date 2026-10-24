@@ -12,4 +12,3 @@ panels:
     config:
       label: MAP
       source: GPS
-      pack: synthetic

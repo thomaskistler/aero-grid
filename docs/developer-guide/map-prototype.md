@@ -45,7 +45,8 @@ Fullscreen exit and resize cancel a pending press.
 The full-grid panel provides a compact dark rounded zoom block with white `+`
 and `-` symbols and a subtle divider in the lower-right corner. Above it,
 the follow control reuses the aircraft silhouette in white, facing north,
-inside the same rounded-square button.
+inside the same rounded-square button; below it, a separate `GPS` control
+opens the location QR overlay.
 The fixture provides zoom levels 16 / 17; installed areas may provide 1-9
 consecutive levels within 11-19. The target button resumes aircraft follow after
 manual dragging, applying the same dead-zone policy and smooth transition.
@@ -159,8 +160,16 @@ Separate widget instances do not share captured home.
 The map uses the standard panel builder for its full-size card, accent stripe,
 MAP title and state badge (including NO FIX). The viewport fills the entire panel
 apart from the accent sidebar, with the shared header overlaid on the map.
-SATS and distance/scale overlays are
-intentionally absent. The home PNG renders at native size without
+Area selection is automatic from live GPS; there is no per-panel area override.
+Set `satelliteSource` to show the Navigation-style satellite count and alerts;
+`showSatellites: false` hides only the count. `showCoordinates: true` adds
+six-decimal latitude/longitude when GPS is valid. `flightPath` accepts `off`,
+`trail` or `full`: samples require at least five metres of movement and one
+second between accepted fixes. The trail retains 24 points; full mode keeps a
+bounded, decimated history of at most 64 points. GPS outages break the displayed path.
+In fullscreen, the separate `GPS` control opens the same location QR overlay
+as tapping a Navigation panel, leaving map taps available for panning.
+Distance/scale overlays remain intentionally absent. The home PNG renders at native size without
 rotation; regenerate it with
 `python3 tools/generate-map-icons.py --output src/WIDGETS/AeroGrid/assets`.
 

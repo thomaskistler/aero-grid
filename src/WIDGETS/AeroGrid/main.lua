@@ -798,6 +798,29 @@ local function translate(name)
     return name
 end
 
+local function openLocationDetails(context, feed, accent)
+    if not feed or not feed.fix then
+        return
+    end
+    local module = context.locationDetailsModule
+    local moduleError
+    if not module then
+        module, moduleError = loadModule(context.path, "lib/location_details.lua", 1)
+    end
+    if not module then
+        addError(context, moduleError)
+        showErrors(context)
+        return
+    end
+    context.locationDetailsModule = module
+    local ok, openError = pcall(module.open, context, feed, accent)
+    if not ok then
+        module.close(context)
+        addError(context, "location details: " .. tostring(openError))
+        showErrors(context)
+    end
+end
+
 --- Offer an input event to panels until one consumes it.
 ---@param context AeroGridContext
 ---@param widgetEvent any
@@ -865,23 +888,7 @@ local function event(context, widgetEvent, touchState)
                     if not entry.instance.feed or not entry.instance.feed.fix then
                         return true
                     end
-                    local module = context.locationDetailsModule
-                    local moduleError
-                    if not module then
-                        module, moduleError = loadModule(context.path, "lib/location_details.lua", 1)
-                    end
-                    if not module then
-                        addError(context, moduleError)
-                        showErrors(context)
-                    else
-                        context.locationDetailsModule = module
-                        local ok, openError = pcall(module.open, context, entry.instance.feed, entry.settings.accent)
-                        if not ok then
-                            module.close(context)
-                            addError(context, "location details: " .. tostring(openError))
-                            showErrors(context)
-                        end
-                    end
+                    openLocationDetails(context, entry.instance.feed, entry.settings.accent)
                     return true
                 end
             end
@@ -898,6 +905,10 @@ local function event(context, widgetEvent, touchState)
             if not ok and dispatchError then
                 addError(context, entry.placement.id .. ": event: " .. dispatchError)
                 showErrors(context)
+            elseif entry.instance.locationDetailsRequested then
+                entry.instance.locationDetailsRequested = nil
+                openLocationDetails(context, entry.instance.feed, entry.settings.accent)
+                return true
             elseif consumed then
                 return true
             end

@@ -47,6 +47,11 @@ without browser code or network access.
   home; configured switch captures on observed disarmed-to-armed with fresh GPS.
   Matching GPS/switch subscriptions share within one widget runtime; this is
   not persistent model-wide synchronization across widgets/screens.
+- Map-area selection is always automatic and GPS-driven; the former per-panel
+  area override has been removed. Optional settings show a satellite count,
+  six-decimal coordinates, and a bounded `off`/`trail`/`full` flight path.
+  Fullscreen includes a separate GPS control for the location QR overlay,
+  keeping the map's pan interactions independent.
 - Aircraft follow starts enabled. Central 60% dead zone; a breach starts a
   fixed-target, coverage-clamped smoothstep pan. Filtered map-pixel velocity
   selects 0.5-3 seconds from estimated edge-arrival time; a near-edge safety
@@ -55,7 +60,8 @@ without browser code or network access.
 - Manual dragging cancels animation and pauses follow. Re-follow resumes the
   dead-zone policy; no forced recenter if the aircraft is already in that zone.
   GPS loss/stale/invalid data cancel the transition. Zoom/resize reset animation.
-- Removed the home-to-aircraft dotted connector. No historical trail is drawn.
+- Removed the home-to-aircraft dotted connector; optional flight paths are
+  independent of the home marker.
 
 ## Known limitations and remaining work
 
@@ -67,7 +73,7 @@ without browser code or network access.
   2,000 tiles per area, <=8 KiB YAML, EPSG:3857 XYZ 256px RGB JPEG, including
   antimeridian wrapping. The former per-pack `pack.yaml` layout is replaced;
   regenerate fixtures with `make build`. Selection JSON alone is not loadable.
-  GPS-driven installed-area selection is now the default (blank area override):
+  GPS-driven installed-area selection is automatic:
   live navigation position, highest maximum zoom, then smallest coverage,
   lexical ID ties; keep the selected area until live GPS exits its coverage.
   Scans are incremental, bounded, and read manifests rather than tile folders.
@@ -86,11 +92,10 @@ without browser code or network access.
 - Follow tuning is experimental: filtered speed, safety timing and fixed-target
   behavior need moving-GPS and abrupt-change testing on native firmware/radio.
   Outside coverage the marker can leave view; no dedicated off-coverage UX yet.
-- Historical trail is deferred. Proposed sampling is distance-based (roughly
-  every five pixels at the pack's highest zoom), not time-based. Capacity and
-  rendering strategy are undecided. Burning into a transparent raster layer
-  requires investigation of writable bitmap/canvas APIs; current file-backed
-  images do not expose pixel mutation through the API used here.
+- Flight-path rendering is bounded and uses native line primitives rather than
+  writable image buffers. Trail mode keeps 24 points; full mode decimates into
+  a maximum of 64 points. Sampling, line appearance and native-radio cost still
+  need hardware validation.
 - No pinch zoom, persistence of pan/follow/home across reboot, or new model-wide
   settings store. Marker colors are generated using modern-dark accents, not
   dynamically recolored by the theme.
