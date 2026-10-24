@@ -18,6 +18,7 @@ local map = {
 local TILE = 256
 local LIMIT = 85.05112878
 local MAX_SLOTS = 9
+local MAX_AREA_NAME_BYTES = 240
 
 function map.meanCourse(context, bearing)
     local history = context.courseHistory or {}
@@ -97,13 +98,45 @@ end
 
 function map.validatePack(pack)
     assert(type(pack) == "table", "map pack must be a table")
-    assert(pack.format == "aerogrid-map-area" and pack.version == 1, "unsupported map area")
+    assert(pack.format == "aerogrid-map-area" and pack.version == 2, "unsupported map area")
     assert(identifier(pack.id) and identifier(pack.imagerySet), "invalid map area or imagery-set ID")
     assert(
         pack.projection == "EPSG:3857" and pack.tileScheme == "XYZ" and pack.tileSize == TILE,
         "unsupported map projection"
     )
     assert(pack.imageFormat == "jpeg", "map areas require JPEG tiles; regenerate PNG prototype packs")
+    assert(
+        type(pack.name) == "string"
+            and #pack.name >= 1
+            and #pack.name <= MAX_AREA_NAME_BYTES
+            and string.match(pack.name, "^%s*(.-)%s*$") == pack.name,
+        "invalid map area name"
+    )
+    local selection = pack.selection
+    assert(type(selection) == "table", "map area requires selection metadata")
+    assert(
+        identifier(selection.radio)
+            and (selection.coverageMode == "full-area-clamped" or selection.coverageMode == "per-zoom-clamped"),
+        "invalid map selection metadata"
+    )
+    local bounds = selection.bounds
+    assert(type(bounds) == "table", "invalid map selection bounds")
+    local west, south, east, north = bounds.west, bounds.south, bounds.east, bounds.north
+    assert(
+        type(west) == "number"
+            and type(south) == "number"
+            and type(east) == "number"
+            and type(north) == "number"
+            and west >= -180
+            and west <= 180
+            and east >= -180
+            and east <= 180
+            and west ~= east
+            and south >= -LIMIT
+            and north <= LIMIT
+            and south < north,
+        "invalid map selection bounds"
+    )
     assert(
         type(pack.levels) == "table" and #pack.levels >= 1 and #pack.levels <= 9,
         "map area requires 1-9 zoom levels"

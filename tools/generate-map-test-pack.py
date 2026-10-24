@@ -70,9 +70,25 @@ def generate(output):
     n = 2 ** ZOOM
     west = math.floor((LONGITUDE + 180) / 360 * n + 0.5) - 1
     north = math.floor((1 - math.asinh(math.tan(math.radians(LATITUDE))) / math.pi) / 2 * n + 0.5) - 1
-    manifest = ("format: aerogrid-map-area\nversion: 1\nid: synthetic\n"
+    bounds = {
+        "west": west / n * 360 - 180,
+        "south": math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * (north + 2) / n)))),
+        "east": (west + 2) / n * 360 - 180,
+        "north": math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * north / n)))),
+    }
+    manifest = ("format: aerogrid-map-area\nversion: 2\nid: synthetic\n"
+                'name: "Synthetic test area"\n'
                 f"imagerySet: {IMAGERY_SET}\nprojection: EPSG:3857\n"
-                "tileScheme: XYZ\ntileSize: 256\nimageFormat: jpeg\nlevels:\n")
+                "tileScheme: XYZ\ntileSize: 256\nimageFormat: jpeg\n"
+                "selection:\n"
+                "  bounds:\n"
+                f"    west: {bounds['west']:.12f}\n"
+                f"    south: {bounds['south']:.12f}\n"
+                f"    east: {bounds['east']:.12f}\n"
+                f"    north: {bounds['north']:.12f}\n"
+                "  radio: tx16s\n"
+                "  coverageMode: full-area-clamped\n"
+                "levels:\n")
     for zoom in (ZOOM, ZOOM + 1):
         factor = 2 ** (zoom - ZOOM)
         x_min, y_min = west * factor, north * factor
