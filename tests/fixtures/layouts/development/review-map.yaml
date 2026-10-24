@@ -12,3 +12,5 @@ panels:
     config:
       label: MAP
       source: GPS
+      armSwitch: SFv
+      satelliteSource: Sats
