@@ -373,6 +373,10 @@ local function setStatus(context, text)
     if context.statusText ~= text or context.badgeState ~= state then
         local previousState = context.badgeState
         context.statusText, context.badgeState = text, state
+        context.satelliteHeaderState = nil
+        if context.satelliteHeader and not healthy then
+            lvgl.hide(context.satelliteHeader)
+        end
         local presentation = context.state(state or "warning", "cyan")
         local badge = state and presentation.badge or (healthy and "" or text)
         if state and state ~= "normal" then
@@ -453,7 +457,10 @@ local function updateSatelliteState(context)
         end
         local width = 18 + builder.measureText(fonts.label, text)
         local height = math.max(16, builder.fontHeight(fonts.label))
-        local visible = not frame.labelHidden and right - width >= left and frame.labelY + height <= frame.top
+        local visible = context.statusText == "GPS"
+            and not frame.labelHidden
+            and right - width >= left
+            and frame.labelY + height <= frame.top
         if visible then
             context.satelliteHeader:set({ x = right - width, y = frame.labelY, w = width, h = height })
             context.primitives.setFont(context.satelliteLabel, fonts.label)
