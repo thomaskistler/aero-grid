@@ -816,6 +816,18 @@ do
     a.assertEqual(#options.pathPoints, 31)
     a.assertEqual(options.pathLines[1].properties.opacity, 0, "30-second-old trail must fade out")
     a.assertEqual(options.pathLines[30].properties.opacity, 247, "recent trail must remain bright")
+    a.assertEqual(options.pathLines[30].properties.thickness, 3)
+    a.assertEqual(options.pathLines[30].properties.color, lcd.RGB(0xFFEB3B))
+    for index, outline in ipairs(options.pathOutlines) do
+        a.assertEqual(outline.properties.thickness, 5)
+        a.assertEqual(outline.properties.opacity, options.pathLines[index].properties.opacity)
+        a.assertEqual(outline.hidden, options.pathLines[index].hidden)
+        local outer, inner = outline.properties.pts, options.pathLines[index].properties.pts
+        for endpoint = 1, 2 do
+            a.assertEqual(outer[endpoint][1], inner[endpoint][1])
+            a.assertEqual(outer[endpoint][2], inner[endpoint][2])
+        end
+    end
     for index = 2, 30 do
         assert(options.pathLines[index].properties.opacity > options.pathLines[index - 1].properties.opacity)
     end
@@ -828,6 +840,9 @@ do
     a.assertEqual(#options.pathPoints, 0, "trail must expire during GPS outages")
     for _, line in ipairs(options.pathLines) do
         assert(line.hidden, "expired trail must not remain visible")
+    end
+    for _, outline in ipairs(options.pathOutlines) do
+        assert(outline.hidden, "expired trail outline must not remain visible")
     end
 end
 do
