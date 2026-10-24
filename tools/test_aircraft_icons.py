@@ -35,6 +35,17 @@ def pixels(content, size):
 
 
 class AircraftTests(unittest.TestCase):
+    def test_home_circle_and_small_arched_door(self):
+        sample = aircraft.icons.home_marker()
+        self.assertEqual(sample(26, 20), (236, 72, 62, 255))
+        self.assertEqual(sample(26, 29), (*aircraft.WHITE, 170))
+        self.assertEqual(sample(24, 28), (236, 72, 62, 255))
+        self.assertEqual(sample(22, 34), (236, 72, 62, 255))
+        self.assertEqual(sample(26, 36), (*aircraft.WHITE, 170))
+        self.assertEqual(sample(7, 26), (*aircraft.WHITE, 170))
+        self.assertEqual(sample(0, 0), (0, 0, 0, 0))
+        self.assertEqual((ASSETS / "map-home.png").read_bytes(), aircraft.icons.render(52, sample))
+
     def test_navigation_arrow_headings_color_opacity_and_reproducibility(self):
         files = sorted(ASSETS.glob("map-arrow-*.png"))
         self.assertEqual([p.name for p in files],

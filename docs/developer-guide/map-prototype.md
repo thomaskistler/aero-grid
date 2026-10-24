@@ -141,14 +141,9 @@ entries, adding pressure to the tile cache. A 52 x 52 RGBA payload is about
 10.6 KiB; actual decoded allocation and on-radio turning performance remain
 unmeasured. There are no runtime pixel transforms or image scaling.
 
-Home uses a red (#EC483E) teardrop pin containing a dark disc and red house,
-with a dark outer outline and no light halo. Its circular body is 27.2 pixels
-across (15% smaller than the original 32 pixels) in a native 52 x 52 pixel PNG.
-The reduction preserves the pin-tip GPS anchor at (24, 50) and scales the
-outline with the artwork; no runtime scaling is used. The home generator keeps shape masks
-separate from styling and applies a solid orange fill, leaving the exterior
-transparent. Its color remains a modern-dark accent, not runtime theme tinting:
-EdgeTX 2.12's LVGL image API does not expose image-mask recoloring.
+Home uses an upright red (#EC483E) house with a small rounded doorway inside
+the same 44-pixel white circle at 67% opacity as the arrow marker.
+Its native 52 x 52 PNG is anchored at its centre (26, 26), exactly at home.
 A valid EdgeTX home appears as a standalone marker; no home is
 invented when pilot coordinates are unavailable. No source, no fix, stale GPS, invalid
 coordinates and off-view positions have distinct status text; an off-view
@@ -164,10 +159,17 @@ per panel. Within one widget instance, identical GPS source and arm-switch
 settings share the same home state; different settings capture independently.
 Separate widget instances do not share captured home.
 
-Paths use a bright yellow 3-pixel stroke over a dark 5-pixel outline for contrast
-against aerial imagery. Both layers of trail segments fade together by age to
-zero opacity at 30 seconds.
-Full-path mode retains uniform opacity.
+Paths use a blue (#328BEE) 5-pixel stroke over an 8-pixel white outline at
+67% opacity. Both layers fade together by age to zero opacity at 30 seconds.
+Full-path mode retains uniform opacity (255 for blue, 170 for white).
+With the arrow marker, segments are clipped outside its circle with clearance
+for the outline, so the trail does not show through the translucent marker.
+Each recorded segment has two reusable line pairs in arrow mode to preserve
+both outside portions when a historical segment crosses the marker circle.
+The bounded pool initializes eight line pairs per refresh to keep creation
+within the Lua callback budget. Separate outline and stroke layers preserve
+draw order, with both below the home and position markers.
+The development map layout enables the arrow and trail for simulator evaluation.
 
 Headers use the same shared status component as Navigation: title color,
 standard state badge, panel styling, and satellite indicator layout. Map-specific

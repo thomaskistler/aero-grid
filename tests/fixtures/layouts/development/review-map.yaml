@@ -12,5 +12,7 @@ panels:
     config:
       label: MAP
       source: GPS
+      positionMarker: arrow
+      flightPath: trail
       armSwitch: SFv
       satelliteSource: Sats
