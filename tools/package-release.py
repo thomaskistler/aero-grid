@@ -23,6 +23,7 @@ ASSETS = {
     "LICENSE.txt",
     "map-home.png",
     "map-follow.png",
+    "map-info.png",
     "material-symbols-LICENSE.txt",
     "satellite.png",
     "satellite.svg",
