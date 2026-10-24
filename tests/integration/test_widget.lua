@@ -691,7 +691,7 @@ local function testScreensReachEveryShippedLayout()
         {
             filename = "model4.yml",
             name = "AG Navigation",
-            layouts = { "review-navigation" },
+            layouts = { "review-navigation", "review-map" },
         },
         {
             filename = "model5.yml",
@@ -724,7 +724,7 @@ local function testScreensReachEveryShippedLayout()
             assert(not selected[layout], layout .. " is selected by more than one fixture screen")
             selected[layout] = true
             local panelType = string.match(layout, "^review%-(.+)$")
-            if panelType and panelType ~= "cell-sources" then
+            if panelType and panelType ~= "map" and panelType ~= "cell-sources" then
                 panelReviews[panelType] = true
                 local handle = assert(hostIo.open(developmentLayoutsPath .. layout .. ".yaml", "r"))
                 local yaml = handle:read("a")
@@ -797,7 +797,7 @@ local function testScreensReachEveryShippedLayout()
             and stem ~= "host-diagnostics"
             and stem ~= "service-probe"
             and stem ~= "theme-showcase"
-            and stem ~= "map-prototype" -- Experimental panel has its own integration suite, not a dedicated model screen.
+            and stem ~= "map-prototype" -- Experimental panel has its own integration suite.
         then
             assert(panelReviews[stem], stem .. " has no panel-review screen")
             count = count + 1

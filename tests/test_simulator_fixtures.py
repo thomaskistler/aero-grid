@@ -15,7 +15,7 @@ REGISTRY = (
     "review-link-status", "review-metric", "review-model-identity",
     "review-navigation", "review-state", "review-trim-panel",
     "review-tx-battery", "services", "services2", "sim", "sim2", "states",
-    "review-flight-counter", "Palette", "review-output", "review-chart",
+    "review-flight-counter", "Palette", "review-output", "review-chart", "review-map",
 )
 EXPECTED = (
     ("AG Overview", ("Default", "sim", "sim2")),
@@ -23,7 +23,7 @@ EXPECTED = (
                    "review-flight-timer", "review-flight-counter", "review-chart")),
     ("AG Power-Link", ("review-rx-battery", "review-cell-sources",
                        "review-tx-battery", "review-link-status", "review-metric")),
-    ("AG Navigation", ("review-navigation",)),
+    ("AG Navigation", ("review-navigation", "review-map")),
     ("AG Controls", ("review-output", "review-trim-panel")),
     ("AG System", ("Diagnostics", "services", "services2", "review-state",
                    "states", "Palette", "Empty")),
@@ -162,6 +162,13 @@ class SimulatorFixtureTests(unittest.TestCase):
         for path in layouts.glob("*.yaml"):
             with self.subTest(layout=path.name):
                 self.assertNotRegex(path.read_text(), r"\bsource:\s*Alt(?:\s|$)")
+
+
+    def test_map_sample_preserves_sources_and_arm_switch(self):
+        layout = (ROOT / "tests/fixtures/layouts/development/review-map.yaml").read_text()
+        self.assertIn("      source: GPS\n", layout)
+        self.assertIn("      armSwitch: SFv\n", layout)
+        self.assertIn("      satelliteSource: Sats\n", layout)
 
 
 if __name__ == "__main__":

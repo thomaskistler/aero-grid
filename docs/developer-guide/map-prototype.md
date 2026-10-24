@@ -23,7 +23,7 @@ The imagery has no Google dependency or third-party export requirement.
 Both are simulator fixtures and remain excluded from release packages.
 
 Use the generated SD path with the [TX16S simulator](simulators.md).
-Open the seventh screen of **AEROGRID STD**, which already selects **review-map**.
+Open the second screen of **AG Navigation**, which already selects **review-map**.
 For a physical radio,
 back up your configuration, install the complete widget directory, copy the
 generated `AEROGRID/maps/` library into `/AEROGRID/maps/`, and copy `review-map.yaml` to

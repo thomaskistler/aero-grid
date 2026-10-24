@@ -139,14 +139,14 @@ radio's model-selection UI, just as on a radio.
 | **AG Overview** (`model1.yml`) | Default; sim; sim2. |
 | **AG Flight** (`model2.yml`) | review-model-identity; review-flight-mode; review-flight-timer; review-flight-counter; review-chart. |
 | **AG Power-Link** (`model3.yml`) | review-rx-battery; review-cell-sources; review-tx-battery; review-link-status; review-metric. |
-| **AG Navigation** (`model4.yml`) | review-navigation. |
+| **AG Navigation** (`model4.yml`) | review-navigation; review-map. |
 | **AG Controls** (`model5.yml`) | review-output; review-trim-panel. |
 | **AG System** (`model6.yml`) | Diagnostics; services; services2; review-state; states; Palette; Empty. |
 
 Review and simulator-only layouts live in
 `tests/fixtures/layouts/development/`; `make build` adds them to the disposable
 simulator image without including them in the widget source or release ZIP.
-Together the categories expose all 23 registered layouts exactly once, in the
+Together the categories expose all 24 registered layouts exactly once, in the
 screen order shown above. Layout filenames and registry indices are unchanged.
 All six models share the same sensors, physical switches, mixes, trims, and timer setup.
 EdgeTX stores each model's live timer and trim state separately.
@@ -154,6 +154,7 @@ EdgeTX stores each model's live timer and trim state separately.
 Its Special Functions play three Beep 1 tones when L01 turns on and four when
 it turns off, using the supplied one-shot `agstart` and `agend` audio tracks.
 They do not play at model startup.
+The model list starts in category order rather than alphabetical order.
 All screens use App mode and the Modern Dark theme. On the State dashboard, SF
 changes MODE, SA changes RATE, and SB changes FLAP; NO MIDDLE deliberately
 leaves SA's middle position unmapped.
@@ -179,6 +180,8 @@ inspect other spans.
 Rebuild and re-import models/settings into Companion to replace the former
 STD/PANEL1/PANEL2 models. Existing Companion documents retain their old screens
 until refreshed; `make build` replaces the generated simulator image.
-The **review-map** layout exercises the map panel. Long-press the map
+
+The second screen of **AG Navigation** is **review-map**, using GPS, Sats, and
+SF down (`SFv`) for arming. Long-press the map
 to enter fullscreen and reveal its zoom/pan controls. See the
 [map prototype guide](map-prototype.md) for synthetic GPS coordinates and limitations.
