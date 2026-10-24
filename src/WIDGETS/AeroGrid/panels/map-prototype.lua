@@ -10,6 +10,13 @@ local map = {
         { key = "label", label = "Label", type = "string", default = "MAP" },
         { key = "source", label = "GPS source", type = "string", default = "GPS" },
         { key = "headingSource", label = "Heading source", type = "string", default = "" },
+        {
+            key = "positionMarker",
+            label = "Position marker",
+            type = "string",
+            default = "plane",
+            choices = { "plane", "arrow" },
+        },
         { key = "armSwitch", label = "Home arm switch", type = "string", default = "" },
         { key = "satelliteSource", label = "Satellite count source", type = "string", default = "" },
         { key = "satelliteWarning", label = "Warn below satellites", type = "number", default = 8 },
@@ -61,14 +68,16 @@ local function orientAircraft(aircraft, heading)
         return
     end
     aircraft.heading = heading
-    aircraft.file = aircraft.assets .. string.format("map-aircraft-%03d.png", heading)
+    aircraft.file = aircraft.assets .. string.format("map-%s-%03d.png", aircraft.style, heading)
 end
 
-local function createAircraft(parent, x, y, size, assets, follow)
+local function createAircraft(parent, x, y, size, assets, follow, marker)
+    local style = marker == "arrow" and "arrow" or "aircraft"
     local aircraft = {
         assets = assets,
+        style = style,
         heading = 0,
-        file = assets .. (follow and "map-follow.png" or "map-aircraft-000.png"),
+        file = assets .. (follow and "map-follow.png" or ("map-" .. style .. "-000.png")),
     }
     aircraft.root = lvgl.image(parent, {
         x = x,
@@ -97,6 +106,9 @@ end
 
 function map.validateSettings(settings)
     local errors = {}
+    if settings.positionMarker ~= nil and settings.positionMarker ~= "plane" and settings.positionMarker ~= "arrow" then
+        errors[#errors + 1] = "positionMarker must be plane or arrow"
+    end
     if settings.pack ~= nil then
         errors[#errors + 1] = "pack is no longer supported; installed map areas are selected from GPS"
     end
@@ -1347,7 +1359,7 @@ function map.create(parent, rect, settings, services)
         file = assets .. "map-home.png",
     })
     lvgl.hide(context.homeMarker)
-    context.aircraft = createAircraft(context.viewport, 0, 0, 52, assets, false)
+    context.aircraft = createAircraft(context.viewport, 0, 0, 52, assets, false, settings.positionMarker)
     context.marker = context.aircraft.root
     lvgl.hide(context.marker)
     context.label, context.badge = services.primitives.header(

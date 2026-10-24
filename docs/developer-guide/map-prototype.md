@@ -99,6 +99,12 @@ the shadow extends about one pixel beyond its thin dark outline.
 The re-follow control uses the same shape at 22 pixels wide, in white,
 with a fixed north-facing orientation.
 
+Set `positionMarker: arrow` in the map's YAML `config` (or choose `arrow` in
+Position marker) for a blue (#328BEE) navigation chevron inside a 44-pixel
+white circle at 82% opacity. The arrow uses the same heading, GPS anchoring and
+freshness behavior as the plane. `positionMarker: plane` is the default;
+the re-follow button remains the fixed white aircraft.
+
 Set `headingSource: Hdg` in the map's YAML `config` to use a numeric telemetry
 source in **degrees clockwise from true north**. Zero is valid north; negative
 and greater-than-360 values wrap. This is a panel option independent of the GPS
@@ -135,7 +141,7 @@ entries, adding pressure to the tile cache. A 52 x 52 RGBA payload is about
 10.6 KiB; actual decoded allocation and on-radio turning performance remain
 unmeasured. There are no runtime pixel transforms or image scaling.
 
-Home uses an orange teardrop pin containing a dark disc and orange house,
+Home uses a red (#EC483E) teardrop pin containing a dark disc and red house,
 with a dark outer outline and no light halo. Its circular body is 27.2 pixels
 across (15% smaller than the original 32 pixels) in a native 52 x 52 pixel PNG.
 The reduction preserves the pin-tip GPS anchor at (24, 50) and scales the

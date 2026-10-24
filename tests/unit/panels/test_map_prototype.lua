@@ -140,8 +140,8 @@ for _, mutate in ipairs({
 end
 a.assertEqual(
     #map.settings,
-    10,
-    "panel options should include GPS, satellite, coordinate and path controls without an area override"
+    11,
+    "panel options should include GPS, marker, satellite, coordinate and path controls without an area override"
 )
 a.assertEqual(
     (function()
@@ -155,6 +155,9 @@ a.assertEqual(
     0
 )
 a.assertEqual(#map.validateSettings({}), 0)
+a.assertEqual(#map.validateSettings({ positionMarker = "plane" }), 0)
+a.assertEqual(#map.validateSettings({ positionMarker = "arrow" }), 0)
+a.assertEqual(#map.validateSettings({ positionMarker = "unknown" }), 1)
 a.assertEqual(#map.validateSettings({ pack = "synthetic" }), 1, "area overrides must be rejected")
 for _, settings in ipairs({
     { satelliteSource = false },
