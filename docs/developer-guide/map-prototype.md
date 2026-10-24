@@ -101,7 +101,7 @@ with a fixed north-facing orientation.
 
 Set `positionMarker: arrow` in the map's YAML `config` (or choose `arrow` in
 Position marker) for a blue (#328BEE) navigation chevron inside a 44-pixel
-white circle at 82% opacity. The arrow uses the same heading, GPS anchoring and
+white circle at 67% opacity. The arrow uses the same heading, GPS anchoring and
 freshness behavior as the plane. `positionMarker: plane` is the default;
 the re-follow button remains the fixed white aircraft.
 
