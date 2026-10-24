@@ -35,6 +35,28 @@ def pixels(content, size):
 
 
 class AircraftTests(unittest.TestCase):
+    def test_navigation_arrow_headings_color_opacity_and_reproducibility(self):
+        files = sorted(ASSETS.glob("map-arrow-*.png"))
+        self.assertEqual([p.name for p in files],
+                         [f"map-arrow-{h:03d}.png" for h in range(0, 360, 10)])
+        north = aircraft.arrow_sample()
+        self.assertEqual(north(26, 16), (*aircraft.BLUE, 255))
+        self.assertEqual(north(26, 36), (*aircraft.WHITE, 210))
+        self.assertEqual(north(7, 26), (*aircraft.WHITE, 210))
+        self.assertEqual(north(0, 0), (0, 0, 0, 0))
+        for heading, path in zip(range(0, 360, 10), files):
+            sample = aircraft.arrow_sample(heading)
+            self.assertEqual(path.read_bytes(), aircraft.render(52, sample))
+            image = pixels(path.read_bytes(), 52)
+            self.assertTrue(all(p[3] == 0 for p in image[0] + image[-1]))
+            self.assertTrue(all(row[0][3] == row[-1][3] == 0 for row in image))
+            self.assertTrue(any(p == (*aircraft.BLUE, 255) for row in image for p in row))
+            sine, cosine = math.sin(math.radians(heading)), math.cos(math.radians(heading))
+            for x, y in ((0, -10), (0, 10), (-19, 0), (19, 0)):
+                self.assertEqual(sample(26 + x * cosine - y * sine, 26 + x * sine + y * cosine),
+                                 north(26 + x, 26 + y))
+        self.assertLess(sum(p.stat().st_size for p in files), 64 * 1024)
+
     def test_complete_headings_and_transparent_unclipped_edges(self):
         files = sorted(ASSETS.glob("map-aircraft-*.png"))
         self.assertEqual([p.name for p in files],

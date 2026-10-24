@@ -15,6 +15,8 @@ spec.loader.exec_module(icons)
 CYAN = (112, 214, 243)
 WHITE = (255, 255, 255)
 DARK = (24, 46, 55)
+BLUE = (50, 139, 238)
+ARROW = [(26, 11), (38, 37), (26, 32), (14, 37)]
 WINGS = [(16, 58), (101, 49), (125, 49), (210, 58),
          (210, 82), (126, 97), (100, 97), (16, 82)]
 TAIL = [(74, 141), (104, 133), (122, 133), (152, 141),
@@ -87,9 +89,23 @@ def render(size, pixel):
             + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
 
 
+def arrow_sample(heading=0):
+    sine, cosine = math.sin(math.radians(heading)), math.cos(math.radians(heading))
+    def pixel(x, y):
+        dx, dy = x - 26, y - 26
+        sx, sy = 26 + dx * cosine + dy * sine, 26 - dx * sine + dy * cosine
+        if icons.polygon(sx, sy, ARROW):
+            return (*BLUE, 255)
+        if dx * dx + dy * dy <= 22 * 22:
+            return (*WHITE, 210)
+        return (0, 0, 0, 0)
+    return pixel
+
+
 def write_heading(args):
     output, heading = args
     (output / f"map-aircraft-{heading:03d}.png").write_bytes(render(52, sample(52, 38, CYAN, heading)))
+    (output / f"map-arrow-{heading:03d}.png").write_bytes(render(52, arrow_sample(heading)))
 
 
 def main():
