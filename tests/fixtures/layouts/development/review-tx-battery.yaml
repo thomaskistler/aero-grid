@@ -1,7 +1,6 @@
 # Review harness for `tx-battery`. Not a dashboard.
 #
-# Screen 5 on AEROGRID PANEL2. Panel reviews are split across two models
-# to stay below EdgeTX's ten-screen limit.
+# Screen 3 on AG Power-Link.
 #
 # This pass turns the battery upright, thickens its outline, and gives the
 # outline, the terminal and the level one colour that the state carries. The

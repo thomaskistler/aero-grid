@@ -772,6 +772,29 @@ local function translate(name)
     return name
 end
 
+local function openLocationDetails(context, feed, accent)
+    if not feed or not feed.fix then
+        return
+    end
+    local module = context.locationDetailsModule
+    local moduleError
+    if not module then
+        module, moduleError = loadModule(context.path, "lib/location_details.lua", 1)
+    end
+    if not module then
+        addError(context, moduleError)
+        showErrors(context)
+        return
+    end
+    context.locationDetailsModule = module
+    local ok, openError = pcall(module.open, context, feed, accent)
+    if not ok then
+        module.close(context)
+        addError(context, "location details: " .. tostring(openError))
+        showErrors(context)
+    end
+end
+
 --- Offer an input event to panels until one consumes it.
 ---@param context AeroGridContext
 ---@param widgetEvent any
@@ -833,23 +856,7 @@ local function event(context, widgetEvent, touchState)
                     if not entry.instance.feed or not entry.instance.feed.fix then
                         return true
                     end
-                    local module = context.locationDetailsModule
-                    local moduleError
-                    if not module then
-                        module, moduleError = loadModule(context.path, "lib/location_details.lua", 1)
-                    end
-                    if not module then
-                        addError(context, moduleError)
-                        showErrors(context)
-                    else
-                        context.locationDetailsModule = module
-                        local ok, openError = pcall(module.open, context, entry.instance.feed, entry.settings.accent)
-                        if not ok then
-                            module.close(context)
-                            addError(context, "location details: " .. tostring(openError))
-                            showErrors(context)
-                        end
-                    end
+                    openLocationDetails(context, entry.instance.feed, entry.settings.accent)
                     return true
                 end
             end
@@ -858,10 +865,18 @@ local function event(context, widgetEvent, touchState)
 
     for _, entry in ipairs(context.panels) do
         if not entry.failed then
-            local ok, dispatchError, consumed = context.panelHost.dispatch(entry, "event", widgetEvent)
+            local rect = entry.module.event
+                and touchState
+                and context.dashboardLoader.panelRect(context, entry.placement)
+            local ok, dispatchError, consumed =
+                context.panelHost.dispatch(entry, "event", widgetEvent, touchState, rect)
             if not ok and dispatchError then
                 addError(context, entry.placement.id .. ": event: " .. dispatchError)
                 showErrors(context)
+            elseif entry.instance.locationDetailsRequested then
+                entry.instance.locationDetailsRequested = nil
+                openLocationDetails(context, entry.instance.feed, entry.settings.accent)
+                return true
             elseif consumed then
                 return true
             end
@@ -1043,11 +1058,16 @@ local function refresh(context, widgetEvent, touchState)
     if not context.editorUi and not context.locationDetails and not context.logViewer and isFullScreen() then
         if
             widgetEvent == _G.EVT_TOUCH_FIRST
+            and touchState
             and context.editorController.editorEntryHit(context, widgetEvent, touchState, true)
         then
-            context.editorPress = { started = getTime() }
-        -- Ignore SLIDE: dragging has no action before editing, and EdgeTX can
-        -- keep emitting it on stationary touches after a previous drag.
+            context.editorPress = { started = getTime(), x = touchState.x, y = touchState.y }
+        elseif widgetEvent == _G.EVT_TOUCH_SLIDE and touchState and context.editorPress then
+            -- EdgeTX can emit SLIDE without movement after a previous drag.
+            local press = context.editorPress
+            if math.abs(touchState.x - press.x) >= 8 or math.abs(touchState.y - press.y) >= 8 then
+                context.editorPress = nil
+            end
         elseif widgetEvent ~= nil and (widgetEvent == _G.EVT_TOUCH_BREAK or widgetEvent == _G.EVT_TOUCH_TAP) then
             context.editorPress = nil
         end

@@ -1,0 +1,18 @@
+version: 3
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: map
+    type: map-prototype
+    col: 0
+    row: 0
+    colSpan: 4
+    rowSpan: 4
+    config:
+      label: MAP
+      source: GPS
+      positionMarker: arrow
+      flightPath: trail
+      armSwitch: SFv
+      satelliteSource: Sats

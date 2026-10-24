@@ -3,8 +3,8 @@
 Manage AeroGrid map areas on your radio. Select an area to edit its coverage and map detail.
 
 The connected manager writes [area format 2](developer-guide/map-packs.md):
-one YAML file per area and shared JPEG tiles. The independent format 1 radio
-reader does not accept these files.
+one YAML file per area and shared JPEG tiles. The radio panel consumes these
+manifests; version 1 areas are not supported.
 
 <noscript>This tool requires JavaScript. Enable it to use the map manager.</noscript>
 

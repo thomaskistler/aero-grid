@@ -1,0 +1,19 @@
+{
+  "source": "USGS / USDA NAIP, The National Map",
+  "service": "https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPImagery/ImageServer",
+  "description": "Public-domain natural-color aerial imagery",
+  "retrieved": "2026-10-24",
+  "imagerySet": "companion-naip-20261024",
+  "export": {
+    "f": "image",
+    "bbox": "-10816145.250465581,2998165.997457754,-10814922.258013017,2999388.9899103157",
+    "bboxSR": 3857,
+    "imageSR": 3857,
+    "size": "1024,1024",
+    "format": "png",
+    "pixelType": "U8",
+    "bandIds": "0,1,2",
+    "interpolation": "RSP_BilinearInterpolation"
+  },
+  "conversion": "RGB JPEG quality 90, no chroma subsampling; zoom 16 downsampled from zoom 17"
+}

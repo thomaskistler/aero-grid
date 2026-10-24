@@ -1,6 +1,6 @@
 semver: 3.0.0
 header:
-   name: "AEROGRID PANEL2"
+   name: "AG Power-Link"
    bitmap: "04530_x10.png"
    labels: ""
 telemetryProtocol: 0
@@ -667,7 +667,7 @@ screenData:
                      0:
                         type: Unsigned
                         value:
-                           unsignedValue: 10
+                           unsignedValue: 4
                      1:
                         type: Unsigned
                         value:
@@ -683,7 +683,7 @@ screenData:
                      0:
                         type: Unsigned
                         value:
-                           unsignedValue: 11
+                           unsignedValue: 5
                      1:
                         type: Unsigned
                         value:
@@ -699,7 +699,7 @@ screenData:
                      0:
                         type: Unsigned
                         value:
-                           unsignedValue: 12
+                           unsignedValue: 14
                      1:
                         type: Unsigned
                         value:
@@ -715,7 +715,7 @@ screenData:
                      0:
                         type: Unsigned
                         value:
-                           unsignedValue: 13
+                           unsignedValue: 8
                      1:
                         type: Unsigned
                         value:
@@ -731,23 +731,7 @@ screenData:
                      0:
                         type: Unsigned
                         value:
-                           unsignedValue: 14
-                     1:
-                        type: Unsigned
-                        value:
-                           unsignedValue: 1
-   5:
-      LayoutId: Layout1x1AM
-      layoutData:
-         zones:
-            0:
-               widgetName: AeroGrid
-               widgetData:
-                  options:
-                     0:
-                        type: Unsigned
-                        value:
-                           unsignedValue: 22
+                           unsignedValue: 9
                      1:
                         type: Unsigned
                         value:
