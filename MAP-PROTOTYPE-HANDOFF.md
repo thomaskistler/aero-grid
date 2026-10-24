@@ -40,8 +40,8 @@ without browser code or network access.
   stationary fixes retain the last course. GPS gaps reset baseline and history.
   Opposing ambiguous samples retain the previous mean. Configured heading
   telemetry stays direct. Course is not necessarily aircraft nose heading. Missing/stale
-  configured telemetry does not silently switch sources: unknown heading is
-  shown with a NO HDG badge; the plane stays cyan before and after movement.
+  configured telemetry does not silently switch sources; the plane stays cyan
+  before and after movement. Status badges omit heading availability and zoom level.
 - Shared navigation service supplies GPS freshness/fix state and home capture.
   Map-local `armSwitch` matches navigation-panel semantics: blank reads EdgeTX
   home; configured switch captures on observed disarmed-to-armed with fresh GPS.
