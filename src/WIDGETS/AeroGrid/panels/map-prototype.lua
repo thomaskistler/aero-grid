@@ -30,7 +30,8 @@ local TILE = 256
 local LIMIT = 85.05112878
 local MAX_SLOTS = 9
 local MAX_AREA_NAME_BYTES = 240
-local TRAIL_POINTS = 24
+local TRAIL_POINTS = 31
+local TRAIL_TICKS = 3000
 local FULL_PATH_POINTS = 64
 local COORDINATE_PRECISION = 6
 local CONTROL_TOPS = { 44, 76, 0, 112 }
@@ -458,6 +459,16 @@ end
 local function recordPath(context)
     local feed = context.feed
     local mode = context.settings.flightPath or "off"
+    local now = getTime()
+    local points = context.pathPoints
+    if mode == "trail" then
+        while points[1] and now - points[1].time > TRAIL_TICKS do
+            table.remove(points, 1)
+        end
+        if points[1] then
+            points[1].breakBefore = true
+        end
+    end
     if
         mode == "off"
         or not feed
@@ -472,7 +483,6 @@ local function recordPath(context)
     if not context.pack then
         return
     end
-    local now = getTime()
     if context.pathLastTime and now - context.pathLastTime < 100 then
         return
     end
@@ -480,7 +490,6 @@ local function recordPath(context)
         context.pathBreak = true
         return
     end
-    local points = context.pathPoints
     local previous = points[#points]
     if
         previous
@@ -493,6 +502,7 @@ local function recordPath(context)
     local point = {
         latitude = feed.latitude,
         longitude = feed.longitude,
+        time = now,
         breakBefore = context.pathBreak or previous == nil,
     }
     context.pathBreak, context.pathLastTime = false, now
@@ -521,6 +531,7 @@ end
 
 local function drawPath(context)
     local points = context.pathPoints
+    local now = getTime()
     local level = context.pack.levels[context.levelIndex]
     for index, line in ipairs(context.pathLines) do
         local lineState = context.pathLineStates[index]
@@ -532,11 +543,8 @@ local function drawPath(context)
             local x2, y2 = map.project(level, second.latitude, second.longitude, context.transform)
             if x1 and x2 then
                 local opacity = context.settings.flightPath == "trail"
-                        and math.floor(32 + 223 * (index - 1) / math.max(1, #points - 2) + 0.5)
+                        and math.floor(255 * clamp(1 - (now - first.time) / TRAIL_TICKS, 0, 1) + 0.5)
                     or 255
-                if #points == 2 then
-                    opacity = 255
-                end
                 if lineState.opacity ~= opacity then
                     line:set({ opacity = opacity })
                     lineState.opacity = opacity

@@ -813,11 +813,21 @@ do
         fixture.tick(100)
         map.refresh(options)
     end
-    a.assertEqual(#options.pathPoints, 24)
-    a.assertEqual(options.pathLines[1].properties.opacity, 32, "oldest trail segment must fade")
-    a.assertEqual(options.pathLines[23].properties.opacity, 255, "newest trail segment must remain bright")
-    for index = 2, 23 do
+    a.assertEqual(#options.pathPoints, 31)
+    a.assertEqual(options.pathLines[1].properties.opacity, 0, "30-second-old trail must fade out")
+    a.assertEqual(options.pathLines[30].properties.opacity, 247, "recent trail must remain bright")
+    for index = 2, 30 do
         assert(options.pathLines[index].properties.opacity > options.pathLines[index - 1].properties.opacity)
+    end
+    fixture.tick(1500)
+    map.refresh(options)
+    assert(#options.pathPoints <= 16, "stationary trail must expire by age rather than point count")
+    options.feed.state = "stale"
+    fixture.tick(1501)
+    map.refresh(options)
+    a.assertEqual(#options.pathPoints, 0, "trail must expire during GPS outages")
+    for _, line in ipairs(options.pathLines) do
+        assert(line.hidden, "expired trail must not remain visible")
     end
 end
 do
