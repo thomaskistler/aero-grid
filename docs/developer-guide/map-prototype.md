@@ -217,13 +217,22 @@ A named area references shared canonical XYZ images:
 
 ```yaml
 format: aerogrid-map-area
-version: 1
+version: 2
 id: synthetic
+name: "Synthetic test area"
 imagerySet: companion-v1-jpeg-v1
 projection: EPSG:3857
 tileScheme: XYZ
 tileSize: 256
 imageFormat: jpeg
+selection:
+  bounds:
+    west: -97.163085937500
+    south: 25.992612489709
+    east: -97.152099609375
+    north: 26.002487141946
+  radio: tx16s
+  coverageMode: full-area-clamped
 levels:
   - zoom: 16
     xMin: 15080
@@ -240,6 +249,8 @@ levels:
 The numeric bounds above illustrate structure; use the generated manifest for
 the actual sample. The loader reads `areas/<id>.yaml`, then images at
 `tiles/<imagerySet>/<zoom>/<x>/<y>.jpg` under `/AEROGRID/maps/`.
+It consumes area metadata version 2, including the required display name and
+selection metadata; version 1 manifests are not supported.
 It accepts 1-9 consecutive integer zoom levels within 11-19, at most 2,000
 tiles total, and a manifest no larger than 8 KiB. Date-line areas use continuous
 unwrapped X bounds; filenames reduce X modulo `2^zoom`. Images remain

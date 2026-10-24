@@ -191,6 +191,10 @@ restoration. OpenLayers still loads from its pinned CDN. No hardware or operatin
 system picker is exercised. Run the installer smoke separately to retain its
 full update, downgrade and persisted-handle checks.
 
+The radio panel consumes area format 2; version 1 manifests are not supported.
+Its rendering, GPS selection and hardware compatibility are covered by the
+Lua unit and widget-integration suites above, not by these browser checks.
+
 ## Lint and formatting
 
 ```sh
