@@ -369,30 +369,20 @@ end
 
 local function setStatus(context, text)
     local healthy = text == "GPS"
-    local state = healthy and context.satelliteState or nil
+    local state = healthy and (context.satelliteState or "normal")
+        or text == "GPS STALE" and "stale"
+        or (text == "LOADING" or text == "OFF VIEW" or text == "FINDING MAP") and "warning"
+        or "unavailable"
     if context.statusText ~= text or context.badgeState ~= state then
-        local previousState = context.badgeState
         context.statusText, context.badgeState = text, state
         context.satelliteHeaderState = nil
-        if context.satelliteHeader and not healthy then
-            lvgl.hide(context.satelliteHeader)
+        local presentation = context.state(state, "cyan")
+        local count = context.satelliteHeaderCount
+        context.primitives.setHeaderState(context, presentation, count and string.format("%.0f", count) or "--")
+        if context.statusLabel then
+            context.statusLabel:set({ text = healthy and "" or text, color = presentation.label })
+            context.primitives.reconcile(context.statusLabel, not healthy)
         end
-        local presentation = context.state(state or "warning", "cyan")
-        local badge = state and presentation.badge or (healthy and "" or text)
-        if state and state ~= "normal" then
-            context.primitives.stylePanel(context.panel, presentation)
-        elseif previousState and previousState ~= "normal" then
-            context.primitives.stylePanel(context.panel, context.state("normal", "cyan"))
-        end
-        context.primitives.setBadge(
-            context,
-            context.themeBuilder,
-            context.badge,
-            context.area.frame,
-            context.fonts.badge,
-            badge,
-            state and presentation.accent or context.theme.color.amber
-        )
     end
 end
 
@@ -445,13 +435,9 @@ local function updateSatelliteState(context)
         context.satelliteHeaderState = state
         context.satelliteHeaderCount = count
         context.satelliteHeaderFrame = context.area.frame
-        local presentation = context.state(state, "cyan")
+        local presentation = context.state(context.badgeState or state, "cyan")
         local text = count and string.format("%.0f", count) or "--"
-        if context.statusText == "GPS" then
-            context.primitives.setSatelliteHeader(context, text, presentation)
-        else
-            lvgl.hide(context.satelliteHeader)
-        end
+        context.primitives.setSatelliteHeader(context, text, presentation)
     end
 end
 
@@ -1335,6 +1321,15 @@ function map.create(parent, rect, settings, services)
         font = TINSIZE,
         color = services.theme.color.textMuted,
     })
+    context.statusLabel = services.primitives.label(context.panel.root, services.theme, {
+        x = area.x + 8,
+        y = area.y + 48,
+        w = math.max(1, area.w - 64),
+        text = "",
+        font = SMLSIZE,
+        color = services.theme.color.textMuted,
+    })
+    lvgl.hide(context.statusLabel)
     context.controlsRoot = lvgl.box(context.panel.root, {
         x = area.zoomX,
         y = area.zoomY,
@@ -1368,6 +1363,7 @@ function map.update(context, rect)
     context.area = geometry(context, rect)
     local area = context.area
     context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
+    context.statusLabel:set({ x = area.x + 8, y = area.y + 48, w = math.max(1, area.w - 64) })
     context.viewport:set({ x = area.x, y = area.y, w = area.w, h = area.h })
     context.controlsHint:set({ x = area.x + 16, y = area.controlsY, w = math.max(1, area.w - 32) })
     context.controlsRoot:set({ x = area.zoomX, y = area.zoomY, h = CONTROLS_HEIGHT })

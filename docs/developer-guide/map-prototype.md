@@ -156,8 +156,11 @@ per panel. Within one widget instance, identical GPS source and arm-switch
 settings share the same home state; different settings capture independently.
 Separate widget instances do not share captured home.
 
-Satellite headers use the same shared primitives component as Navigation,
-including icon creation and spacing against the heading and displayed badge.
+Headers use the same shared status component as Navigation: title color,
+standard state badge, panel styling, and satellite indicator layout. Map-specific
+explanations such as `WAITING FOR GPS` appear in the map body, not the badge.
+Satellite icon creation and spacing against the heading and displayed badge
+are also shared.
 
 The map uses the standard panel builder for its full-size card, accent stripe,
 MAP title and state badge (including NO FIX). The viewport fills the entire panel

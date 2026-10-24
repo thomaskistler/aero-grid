@@ -1593,6 +1593,21 @@ function primitives.badge(parent, theme, options)
     }, font)
 end
 
+function primitives.setHeaderState(context, presentation, satellites)
+    context.label:set({ color = presentation.label })
+    primitives.setBadge(
+        context,
+        context.themeBuilder,
+        context.badge,
+        context.area.frame,
+        context.fonts.badge,
+        presentation.badge or "",
+        presentation.accent
+    )
+    primitives.stylePanel(context.panel, presentation)
+    primitives.setSatelliteHeader(context, satellites or "--", presentation)
+end
+
 function primitives.satelliteHeader(context, path)
     local theme, fonts = context.theme, context.fonts
     local filename = path .. "assets/" .. (theme.light and "satellite-light.png" or "satellite.png")

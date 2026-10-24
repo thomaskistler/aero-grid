@@ -849,18 +849,7 @@ function navigation.apply(context, drawn)
         context.unit:set({ text = context.unitText })
     end
     context.primitives.centreReading(context, context.themeBuilder, context.area, context.area.value, drawn.text)
-    context.label:set({ color = presentation.label })
-    context.primitives.setBadge(
-        context,
-        context.themeBuilder,
-        context.badge,
-        context.area.frame,
-        context.fonts.badge,
-        presentation.badge or "",
-        presentation.accent
-    )
-    context.primitives.stylePanel(context.panel, presentation)
-    context.primitives.setSatelliteHeader(context, drawn.satellites or "--", presentation)
+    context.primitives.setHeaderState(context, presentation, drawn.satellites)
 
     -- Every row takes the panel's slot centres, keyed on what it says. A
     -- bearing changes every time the aircraft turns, so the helpers measure
