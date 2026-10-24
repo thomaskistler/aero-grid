@@ -3,7 +3,6 @@
     "use strict";
 
     const encoder = new TextEncoder();
-    const MAX_ARCHIVE_BYTES = 128 * 1024 * 1024;
     const MAX_TILE_BYTES = 256 * 1024;
     const SYNTHETIC = Object.freeze({
         id: "synthetic-v1-jpeg-q90",
@@ -22,29 +21,7 @@
         return value;
     }
     function checkAbort(signal) {
-        if (signal && signal.aborted) throw new Error("Export cancelled.");
-    }
-    function concat(parts) {
-        const result = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
-        let offset = 0;
-        for (const part of parts) { result.set(part, offset); offset += part.length; }
-        return result;
-    }
-    function number(value, bytes, little = false) {
-        const result = new Uint8Array(bytes);
-        const view = new DataView(result.buffer);
-        if (bytes === 2) view.setUint16(0, value, little);
-        else view.setUint32(0, value, little);
-        return result;
-    }
-    const crcTable = Uint32Array.from({ length: 256 }, (_, i) => {
-        for (let bit = 0; bit < 8; bit++) i = (i >>> 1) ^ (i & 1 ? 0xedb88320 : 0);
-        return i >>> 0;
-    });
-    function crc32(bytes) {
-        let crc = 0xffffffff;
-        for (const byte of bytes) crc = crcTable[(crc ^ byte) & 255] ^ (crc >>> 8);
-        return (crc ^ 0xffffffff) >>> 0;
+        if (signal && signal.aborted) throw new Error("Map preparation cancelled.");
     }
 
     function syntheticRgb(zoom, x, y) {
@@ -74,7 +51,8 @@
         if (!selection || selection.format !== "aerogrid-map-selection" || selection.version !== 1 ||
             selection.projection !== "EPSG:3857" || selection.tileScheme !== "XYZ" ||
             selection.tileSize !== 256 || selection.imageryIncluded !== false ||
-            typeof selection.name !== "string" || !selection.name.trim() || selection.name.length > 80 ||
+            typeof selection.name !== "string" || !selection.name.trim() ||
+            selection.name !== selection.name.trim() || selection.name.length > 80 ||
             !selection.radio || typeof selection.radio.id !== "string" ||
             !Array.isArray(selection.levels) || !selection.levels.length || selection.levels.length > 9) {
             throw new Error("Invalid map selection.");
@@ -98,37 +76,24 @@
             const xMax = ranges.length === 1 ? ranges[0].max : n + ranges[0].max;
             return { zoom: level.zoom, xMin, xMax, yMin: level.yMin, yMax: level.yMax };
         });
-        const manifest = { format: "aerogrid-map-area", version: 1, id, imagerySet,
-            projection: "EPSG:3857", tileScheme: "XYZ", tileSize: 256, imageFormat: "jpeg", levels };
-        let yaml = Object.entries(manifest).filter(([key]) => key !== "levels")
+        const manifest = { format: "aerogrid-map-area", version: 2, id, name: selection.name, imagerySet,
+            projection: "EPSG:3857", tileScheme: "XYZ", tileSize: 256, imageFormat: "jpeg",
+            selection: {
+                bounds: Object.fromEntries(["west", "south", "east", "north"]
+                    .map(key => [key, selection.selectedBounds[key]])),
+                radio: selection.radio.id, coverageMode: selection.coverageMode
+            }, levels };
+        let yaml = Object.entries(manifest).filter(([key]) => !["levels", "selection"].includes(key))
             .map(([key, value]) => `${key}: ${typeof value === "string" ? JSON.stringify(value) : value}\n`)
-            .join("") + "levels:\n";
+            .join("") + "selection:\n  bounds:\n";
+        yaml += Object.entries(manifest.selection.bounds).map(([key, value]) => `    ${key}: ${value}\n`).join("");
+        yaml += `  radio: ${JSON.stringify(manifest.selection.radio)}\n`;
+        yaml += `  coverageMode: ${JSON.stringify(manifest.selection.coverageMode)}\nlevels:\n`;
         for (const level of levels) {
             yaml += Object.entries(level).map(([key, value], i) => `  ${i ? "  " : "- "}${key}: ${value}\n`).join("");
         }
         if (encoder.encode(yaml).length > 8192) throw new Error("Area manifest exceeds 8 KiB.");
         return { manifest, yaml };
-    }
-
-    function zip(entries) {
-        const files = [], central = [];
-        let offset = 0;
-        for (const [path, data] of entries) {
-            const name = encoder.encode(path), crc = crc32(data);
-            const header = concat([number(0x04034b50, 4, true), number(20, 2, true),
-                number(0x800, 2, true), number(0, 2), number(0, 2), number(33, 2, true),
-                number(crc, 4, true), number(data.length, 4, true), number(data.length, 4, true),
-                number(name.length, 2, true), number(0, 2), name]);
-            files.push(header, data);
-            central.push(concat([number(0x02014b50, 4, true), number(20, 2, true), header.subarray(4, 28),
-                number(0, 2), number(0, 2), number(0, 2), number(0, 2), number(0, 4),
-                number(offset, 4, true), name]));
-            offset += header.length + data.length;
-        }
-        const directory = concat(central);
-        return concat([...files, directory, number(0x06054b50, 4, true), number(0, 4),
-            number(entries.length, 2, true), number(entries.length, 2, true),
-            number(directory.length, 4, true), number(offset, 4, true), number(0, 2)]);
     }
 
     async function createFiles(selection, id, options = {}) {
@@ -143,21 +108,16 @@
             typeof metadata.synthetic !== "boolean") {
             throw new Error("Source must supply image input and complete provenance metadata.");
         }
-        const sourceMetadata = JSON.stringify(metadata, null, 2) + "\n";
-        if (encoder.encode(sourceMetadata).length > 8192) throw new Error("Source metadata exceeds 8 KiB.");
         const { manifest, yaml } = areaManifest(selection, id, metadata.id);
         const signal = options.signal;
         const entries = [];
         let bytes = 0, completed = 0;
         function add(path, content) {
             bytes += content.length;
-            if (bytes > MAX_ARCHIVE_BYTES) throw new Error("Export exceeds the 128 MiB archive-entry budget.");
             entries.push(["AEROGRID/maps/" + path, content]);
         }
         checkAbort(signal);
         add(`areas/${id}.yaml`, encoder.encode(yaml));
-        add(`selections/${id}.json`, encoder.encode(JSON.stringify(selection, null, 2) + "\n"));
-        add(`sources/${metadata.id}.json`, encoder.encode(sourceMetadata));
         for (const level of manifest.levels) {
             for (let x = level.xMin; x <= level.xMax; x++) {
                 for (let y = level.yMin; y <= level.yMax; y++) {
@@ -184,14 +144,5 @@
         return new Map(entries);
     }
 
-    async function createArchive(selection, id, options = {}) {
-        const files = await createFiles(selection, id, options);
-        checkAbort(options.signal);
-        const data = zip([...files]);
-        checkAbort(options.signal);
-        return data;
-    }
-
-    root.AeroGridMapPack = { identifier, areaManifest, syntheticRgb, createFiles, createArchive,
-        SYNTHETIC, MAX_ARCHIVE_BYTES, MAX_TILE_BYTES };
+    root.AeroGridMapPack = { areaManifest, syntheticRgb, createFiles, SYNTHETIC, MAX_TILE_BYTES };
 })(globalThis);

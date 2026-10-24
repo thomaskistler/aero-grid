@@ -228,38 +228,37 @@ const noDelay = async () => {};
                 return compatible;
             }
         });
-    const archive = await pack.createArchive(selection, "fixture", { source });
+    const generated = await pack.createFiles(selection, "fixture", { source });
     assert.equal(decoded, selection.tileCount);
-    assert(Buffer.from(archive).includes(Buffer.from("tiles/local-test-rgb1/")));
-    assert(Buffer.from(archive).includes(Buffer.from("sources/local-test-rgb1.json")));
-    const jpegArchive = await pack.createArchive(selection, "jpeg-field", { source: {
+    assert([...generated.keys()].some(name => name.startsWith("AEROGRID/maps/tiles/local-test-rgb1/")));
+    assert(Buffer.from(generated.get("AEROGRID/maps/areas/fixture.yaml")).includes(
+        Buffer.from('imagerySet: "local-test-rgb1"')));
+    assert([...generated.keys()].every(name => !name.includes("/sources/") && !name.includes("/selections/")));
+    const jpegFiles = await pack.createFiles(selection, "jpeg-field", { source: {
         metadata: { ...pack.SYNTHETIC, id: "jpeg-test" },
         readTile: async () => compatible
     } });
-    assert(Buffer.from(jpegArchive).includes(Buffer.from('imageFormat: "jpeg"')));
-    assert(Buffer.from(jpegArchive).includes(Buffer.from(".jpg")));
-    await assert.rejects(pack.createArchive(selection, "bad", { source: {
+    const jpegManifest = Buffer.from(jpegFiles.get("AEROGRID/maps/areas/jpeg-field.yaml"));
+    assert(jpegManifest.includes(Buffer.from('imageFormat: "jpeg"')));
+    assert([...jpegFiles.keys()].some(name => name.endsWith(".jpg")));
+    await assert.rejects(pack.createFiles(selection, "bad", { source: {
         metadata: pack.SYNTHETIC, readTile: async () => png
     } }), /compatible.*JPEG/);
-    await assert.rejects(pack.createArchive(selection, "bad", { source: {
+    await assert.rejects(pack.createFiles(selection, "bad", { source: {
         metadata: pack.SYNTHETIC, imageFormat: "jpeg", readRgb: async () => new Uint8Array()
     } }), /provenance/);
     const failed = sources.httpSource({ ...pack.SYNTHETIC, id: "failed" }, () => "https://fixture.invalid", {
         fetchTile: async () => new Response("", { status: 404 })
     });
-    await assert.rejects(pack.createArchive(selection, "fixture", { source: failed }), /Tile 17\/.*HTTP 404/);
+    await assert.rejects(pack.createFiles(selection, "fixture", { source: failed }), /Tile 17\/.*HTTP 404/);
     for (const invalid of [{}, { metadata: pack.SYNTHETIC }, { readRgb() {}, metadata: {} }]) {
-        await assert.rejects(pack.createArchive(selection, "fixture", { source: invalid }), /provenance/);
+        await assert.rejects(pack.createFiles(selection, "fixture", { source: invalid }), /provenance/);
     }
     const invalidTile = { metadata: pack.SYNTHETIC, readTile: async () => new Uint8Array(4) };
-    await assert.rejects(pack.createArchive(selection, "fixture", { source: invalidTile }), /JPEG/);
+    await assert.rejects(pack.createFiles(selection, "fixture", { source: invalidTile }), /JPEG/);
     const decodeFailure = sources.httpSource(pack.SYNTHETIC, () => "https://fixture.invalid", {
         fetchTile: async () => image(), convert: () => { throw new Error("Invalid image stream"); }
     });
-    await assert.rejects(pack.createArchive(selection, "fixture", { source: decodeFailure }), /Tile 17\/.*Invalid image stream/);
-    const largeMetadata = { ...pack.SYNTHETIC, attribution: "x".repeat(8193) };
-    await assert.rejects(pack.createArchive(selection, "fixture", {
-        source: { metadata: largeMetadata, readTile: async () => compatible }
-    }), /metadata exceeds/);
+    await assert.rejects(pack.createFiles(selection, "fixture", { source: decodeFailure }), /Tile 17\/.*Invalid image stream/);
     console.log("Source streaming, retries, timeouts, cancellation, RGB conversion and replaceable-provider checks passed.");
 })().catch(error => { console.error(error); process.exitCode = 1; });

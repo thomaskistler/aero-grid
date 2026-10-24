@@ -10,52 +10,71 @@ are intentionally separate.
 ```text
 AEROGRID/maps/
   areas/my-field.yaml
-  selections/my-field.json
-  sources/synthetic-v1-jpeg-q90.json
-  tiles/synthetic-v1-jpeg-q90/17/30160/55726.jpg
+  tiles/synthetic-v1-jpeg-q90/17/30161/55727.jpg
 ```
 
-Browser ZIPs contain these root-relative paths, not a wrapping ZIP-name folder.
-Extract at the SD-card root. They include no `WIDGETS/`, `MODELS/`, `RADIO/` or
-firmware files. The experimental map panel selects an installed area from live
-GPS by default; leave its area override blank. An explicit `pack: my-field`
-remains available for development or a deliberately fixed selection.
-The radio currently supports TX16S 480 x 272 geometry only; planning another
-screen size does not establish runtime compatibility.
+Directory handles are reused within each map-write batch and inventory scan.
+Writes remain sequential by default; the completed sync inventory is reused for the UI
+refresh instead of scanning the tiles again.
+
+The connected manager reads and writes these paths directly under the SD-card
+root. Each area has exactly one YAML metadata file; JPEGs remain shared. No
+`selections/` or `sources/` sidecars are read or written.
+
+**The independent radio-reader PR #172 implements format 1, not format 2.**
+That PR is unchanged and does not read the format 2 areas written by this
+manager. The two formats are intentionally incompatible; no format 1 area
+compatibility or migration is implemented here.
 
 The consumer and simulator behavior described here belongs to the independent
-radio-panel workstream; this downloader branch supplies no radio implementation.
-See [testing](testing.md#planner-and-downloader-contract) for standalone archive
-checks and the explicitly pinned combined-source reader check.
+radio-panel workstream. See [testing](testing.md#planner-and-map-file-contract)
+for format 2 file-generation and validation checks.
 
 The radio-panel workstream's simulator build generates a separate `synthetic` area referencing
 `companion-v1-jpeg-v1` around Companion's known GPS location. The browser's
 `synthetic-v1-jpeg-q90` source generates different, coordinate-derived artificial
 images at any selected location. Both are test patterns, not flight terrain.
-Simulator fixtures remain excluded from release ZIPs.
+Simulator fixtures remain excluded from release archives.
 
-## Runtime manifest v1
+## Area metadata v2
 
 ```yaml
 format: aerogrid-map-area
-version: 1
+version: 2
 id: my-field
+name: "My field: north #1"
 imagerySet: synthetic-v1-jpeg-q90
 projection: EPSG:3857
 tileScheme: XYZ
 tileSize: 256
 imageFormat: jpeg
+selection:
+  bounds:
+    west: -97.158
+    south: 25.997
+    east: -97.157
+    north: 25.998
+  radio: tx16s
+  coverageMode: per-zoom-clamped
 levels:
   - zoom: 17
-    xMin: 30160
-    xMax: 30163
-    yMin: 55726
-    yMax: 55729
+    xMin: 30161
+    xMax: 30162
+    yMin: 55727
+    yMax: 55728
 ```
 
 - IDs use 1-32 lowercase ASCII letters, digits, underscores or hyphens.
-  The area ID must match its filename. The human display name lives in the
-  saved selection, rather than being interpreted as a filename.
+  The area ID must match its filename. `name` is a trimmed 1-80-character human
+  display name, never a filename. The writer uses JSON double-quoted strings
+  (valid YAML), safely preserving colons, hashes, quotes, backslashes and escaped
+  newlines. The browser reader accepts only this constrained mapping/sequence
+  schema, not general YAML tags, aliases, flow collections or block strings.
+- `selection.bounds` contains the **original selected bounds**, not snapped
+  coverage. `selection.radio` is the planner preset ID, not a radio object.
+  `selection.coverageMode` is `full-area-clamped` or `per-zoom-clamped`.
+  The browser reconstructs the planner selection and exact per-zoom bounds
+  from these fields and rejects runtime rectangles inconsistent with that plan.
 - Manifests are at most 8 KiB and declare 1-9 ascending consecutive zoom levels,
   each within 11-19, with no more than 2,000 tiles in total.
 - Bounds are inclusive integers. `0 <= xMin < 2^zoom`,
@@ -72,15 +91,15 @@ levels:
   the first 4 KiB for bounded radio preflight. Web Mercator/XYZ georeferencing
   must not change in conversion. Full image decoding remains firmware-owned.
 
-Map tiles are JPEG-only, including synthetic fixtures. Old PNG prototype packs
-must be re-exported; regenerate Companion fixtures with the panel branch's `make build`. The JPEG
+Map tiles are JPEG-only, including synthetic fixtures. Old PNG prototype
+libraries must be regenerated; rebuild Companion fixtures with the panel branch's `make build`. The JPEG
 browser library has a new IndexedDB name and does not reuse old PNG namespaces.
 Old PNG site-storage entries and SD files are not automatically deleted.
 Transparent marker/UI artwork remains PNG and is not part of the tile format.
 
 The browser preserves the exact planner coverage: full-area-clamped or
 per-zoom-clamped, all selected levels, and the original blue flying area.
-It verifies the exported selection's coverage by recalculating it rather than
+It verifies the selection's coverage by recalculating it rather than
 trusting a supplied tile count.
 
 ## Shared identity and metadata
@@ -88,15 +107,15 @@ trusting a supplied tile count.
 An imagery-set ID identifies a **source, immutable edition and conversion
 profile**. It must not be reused for changed pixels. Browser JPEG encoders can
 differ across engines; the saved Google library preserves its first encoded
-bytes. Synthetic exports are test data, not a cross-browser reproducibility
+bytes. Synthetic imagery is test data, not a cross-browser reproducibility
 guarantee. A future imagery refresh or conversion change needs
 a new namespace; old areas keep referencing their existing edition.
 
-`selections/<id>.json` preserves the original `aerogrid-map-selection` v1,
-including display name, original bounds, radio preset and coverage mode.
-`sources/<imagerySet>.json` identifies the source, edition, conversion, license,
-attribution and whether imagery is synthetic. The radio need not read either
-file or scan the tile library to display an area.
+Format 2 stores only display/selection information and runtime tile coverage.
+It contains no provider metadata, attribution, terms or license fields. Source
+validation, immutable imagery-set identity, provenance and first-capture caching
+remain internal to the browser source adapter; removing SD metadata does not
+waive offline permission or attribution obligations.
 
 ## Connected map manager
 
@@ -105,9 +124,9 @@ The browser map manager uses the same SD-card-root picker and page-session
 IndexedDB with a per-tab session marker, so navigation and reloads restore the
 connection after rechecking read permission and the SD-card root. Explicit
 disconnect clears it; restoring never prompts for new permission or grants
-write permission. It recognizes the connected radio's
-screen dimensions, lists only AeroGrid areas with the supported area/selection
-pair, and treats compatibility issues as warnings, as the installer does.
+write permission. It recognizes the connected radio's screen dimensions and
+lists only format 2 areas. Compatibility issues are warnings, as the installer
+does.
 All planning uses the connected radio's detected screen dimensions, including
 128 x 64 and 212 x 64 monochrome screens. There is no manual planning-size
 selector or substitute screen size. Unknown dimensions produce an explicit
@@ -133,18 +152,16 @@ Changes are staged per area. Staging reuses radio JPEGs whose imagery-set and
 XYZ path still match, and prepares only missing tile content. Sync writes
 staged files under the map-library root, retains existing shared tile bytes,
 prunes old coverage after updates only when no remaining app area references
-those tiles, removes an area's manifest and selection when deleted, and
+those tiles, removes an area's YAML metadata when deleted, and
 preserves all shared tile references. A mid-write failure may leave some new
 unreferenced tiles or partially updated metadata; retry after reconnecting and
 reviewing the current radio library. Installer writes and map writes share the
 radio storage lock.
 
 The browser File System Access API does not expose free SD-card capacity.
-The manager reports actual referenced map-image bytes, but cannot preflight
-available filesystem space; writing can fail if the card fills. Sync is
-currently disabled pending confirmation that the selected Google imagery may
-be stored offline. Online map previews and preparation do not establish that
-permission.
+The manager reports current image bytes and the planned update size, but does
+not check available filesystem space. Confirm that the SD card has enough room
+before syncing; a write can fail if it fills.
 
 The experimental Google hybrid adapter uses the same keyless XYZ endpoint as
 the online preview. This is a technical implementation, **not verification of
@@ -159,32 +176,54 @@ claimed by this prototype.
 Unlike the synthetic source, that live endpoint has no verified immutable
 edition. The browser instead creates a local, first-capture library: a random
 imagery-set ID is saved in IndexedDB together with each JPEG. Later
-exports reuse the saved pixels and namespace, fetching only tiles not yet saved.
-Overlapping areas exported by the same browser/site therefore share tile paths
-and bytes after extraction. Each ZIP still includes every tile its area needs.
+preparations reuse the saved pixels and namespace, fetching only tiles not yet
+saved. Overlapping areas prepared by the same browser/site therefore share tile
+paths and bytes on the radio.
 
-The source metadata records the library creation time, conversion profile,
+The browser's internal source metadata records the library creation time, conversion profile,
 first-capture policy and unresolved licensing status. This is not an upstream
 Google edition or a guarantee that all tiles were captured on the same date.
 Cached tiles are never automatically refreshed. Concurrent tabs retain the
 first committed tile rather than replacing it.
 
-Browser storage is capped at 128 MiB of JPEG payload, independently of the ZIP
-limit. Storage/quota failures stop the export explicitly. Cancellation may
+Browser storage is capped at 128 MiB of JPEG payload. Storage/quota failures
+stop preparation explicitly. Cancellation may
 leave already captured tiles cached for later reuse. Private browsing, storage
 eviction, another browser/device/site or clearing site data can start a new
 library and therefore duplicate imagery already on the radio. Clearing site
 data is also the current way to deliberately start a fresh capture; it cannot
-change radio files. A connected installed-library reader, targeted refresh and
-cleanup are deferred, not implied by this ZIP-only workflow.
+change radio files. A format 2 area can be refreshed only with the matching
+browser capture-library ID (or the known reproducible synthetic set). The
+manager refuses to mix a new capture into an existing imagery-set namespace.
+There is no provider inference or authorization from a name in the area YAML.
 
-## Browser export and limits
+If format 2 area YAML remains but a JPEG or the entire `tiles/` tree has been
+deleted, connecting marks affected areas **Repair needed** and enables Sync Maps.
+Review lists them as **Repair**. Existing JPEGs are reused first; missing tiles
+come from the same imagery-set browser cache, then its normal source download
+path (or reproducible synthetic generator). Losing the original browser capture
+identity still prevents repair: a new capture is never relabeled as the old set.
+Missing references remain in the inventory's `referencedTiles` for safe pruning.
+`missingTiles`/`missingTileCount` are recorded globally (deduplicated) and per
+area, separately from actual `tileSizes`/occupied bytes. Projected storage
+estimates missing keys until preparation supplies exact sizes.
 
-The planner offers a Google hybrid ZIP and retains selection JSON export. Its
-collapsed developer-test section exports original synthetic imagery through
-the same manifest/image/archive pipeline. The source-specific request and
-conversion code lives in `docs/javascripts/map-sources.js`, separate from area
-geometry and ZIP packaging in `map-pack.js`.
+Only absent entries and `NotFoundError` are repairable. Empty, oversized or
+incompatible JPEG headers/end markers, wrong entry kinds and access failures
+remain explicit errors; inventory checks are bounded preflight, not full pixel
+decoding. Review rescans for deletions since connection. Confirmation tolerates
+later deletions when prepared tile bytes cover every retained missing reference.
+Otherwise it writes nothing and asks for another review; concurrent manifest
+changes or changed sizes of still-present tiles require reconnecting. A final
+inventory must have no missing references before reporting success. Reconnect
+to detect external deletions when no changes are pending.
+
+## Browser imagery preparation and limits
+
+The manager stages missing imagery directly as area YAML and JPEG tile files.
+The source-specific request and conversion code lives in
+`docs/javascripts/map-sources.js`, separate from area geometry and file
+generation in `map-pack.js`.
 
 Sources implement `{ metadata, readTile(zoom, x, y, signal) }`.
 `readTile` supplies a validated 256 x 256 JPEG as a `Uint8Array`; `metadata` supplies an
@@ -195,21 +234,17 @@ format. Network policy failures are explicit: no `no-cors` responses, arbitrary
 URL input, proxy, hidden credential or fallback provider is introduced.
 
 Generation processes one tile at a time, yielding between tiles for progress
-and cancellation. Changing the selection, name or area ID invalidates an
-in-progress export. There is no cross-reload resume. Any failed tile or invalid
-input prevents the final ZIP from being offered.
+and cancellation. A failed tile or invalid input prevents the staged update.
+There is no cross-reload resume.
 
-The sample-size action runs the same saved JPEG source/conversion as export,
+The sample-size action runs the same saved JPEG source/conversion as preparation,
 then weights one encoded sample per zoom by that level's tile count. It measures
 the stored JPEG, not an unrelated input format or assumed bytes-per-tile range. Scene
-complexity still varies; this is a rough JPEG payload estimate, not an exact ZIP
-size. The ZIP also includes small manifest, metadata and entry overheads.
+complexity still varies; this is a rough JPEG payload estimate, not a promise of
+future stored bytes.
 
-Encoded tiles are capped at 256 KiB; accumulated archive-entry data is capped at
-128 MiB independently of the 2,000-tile count. The ZIP uses stored entries because
-JPEG tiles are already compressed. ZIP finalization allocates another
-output buffer plus overhead: 128 MiB is **not** a total browser RAM guarantee.
-Resource limits fail explicitly and never reduce the requested coverage.
+Encoded tiles are capped at 256 KiB, and area coverage is capped at 2,000
+tiles. Resource limits fail explicitly and never reduce requested coverage.
 
 Network image responses are streamed with a 1 MiB cap, even without a
 `Content-Length`. PNG/JPEG/WebP header dimensions are checked before browser
@@ -234,6 +269,9 @@ are provider/browser-dependent; failure does not trigger a proxy workaround.
 
 ## Automatic area selection
 
+The remainder of this section describes the independent **format 1**
+radio-reader PR #172. It does not consume or interpret format 2 areas.
+
 GPS readiness uses the existing navigation service: a known source, a valid fix
 and `state: normal`, not stale/unavailable coordinates. This is readiness for
 geographic map lookup, not proof of a satellite-count or 3D-fix threshold.
@@ -256,21 +294,19 @@ Invalid/unreadable manifests, directory-access failures and exceeded limits
 surface through the panel error path rather than silently skipping files.
 Changes to a currently selected area's files require reloading the panel.
 
-## Updates now and later
+## Updates
 
-For ZIP updates, reuse the area ID and explicitly confirm replacement of that
-area's metadata when extracting. Matching shared tile paths are reused for
-fixed imagery editions and for exports from the same saved Google library.
-Extraction cannot inspect installed coverage, download only missing tiles,
-roll back an interrupted installation or remove obsolete images. Back up
-existing data before replacing it. Unused images can remain without changing
-the declared coverage.
+The connected manager reads area manifests, shows coverage/installed image
+sizes and calculates missing or unreferenced tiles. Cleanup derives references
+from all readable areas and fails if any area's references cannot be understood.
+Tiles are written before area YAML, but SD-card writes are not one atomic
+transaction. The review dialog requires explicit confirmation before writing.
+Widget installation/update must preserve the map library and user data.
 
-A later connected workflow can read area manifests, show coverage/installed
-images and calculate missing or unreferenced tiles. It must verify new images
-before committing a recoverable area-manifest replacement. It must derive
-references from all area manifests before cleanup, refusing unsafe cleanup
-when any area's references cannot be understood. SD-card writes are not one
-atomic transaction. Widget installation/update must preserve the map library
-and user data. Direct SD writing, area browsing/deletion and widget updates
-are not implemented by this ZIP-only layer.
+All paths are validated before work starts. Directory handles are reused within
+the batch, tile writes are deduplicated across areas, and tiles are written one
+at a time before any YAML writes. A tile failure stops the batch and prevents
+every YAML commit in that batch. Progress counts completed files monotonically.
+Cancel finishes the current tile and stops before the next file, leaving area
+metadata unchanged. Completed tiles remain available for retry. Cancellation is
+disabled once area metadata updates and cleanup begin.

@@ -9,10 +9,13 @@ if (panel) {
   const connect = element("connect");
   const install = element("install");
   const confirm = element("confirm");
+  const confirmDialog = element("confirm-dialog");
   const confirmStart = element("confirm-start");
   const status = element("status");
   const releaseStatus = element("release-status");
   const progress = element("progress");
+  const operationStatus = element("operation-status");
+  const confirmClose = element("confirm-close");
   const releaseDialog = element("release-dialog");
   const supported = window.isSecureContext && typeof window.showDirectoryPicker === "function";
   let manifest = null;
@@ -25,11 +28,13 @@ if (panel) {
   let checkingRelease = false;
   let incomplete = false;
   let confirmation = null;
+  let operationFinished = false;
 
   function message(text, error = false, success = false) {
-    status.textContent = text;
-    status.classList.toggle("ag-radio-error", error);
-    status.classList.toggle("ag-radio-success", success);
+    const target = busy && confirmDialog.open ? operationStatus : status;
+    target.textContent = text;
+    target.classList.toggle("ag-radio-error", error);
+    target.classList.toggle("ag-radio-success", success);
   }
 
   function render() {
@@ -69,6 +74,15 @@ if (panel) {
       ?? (selectedVersion ? `Install AeroGrid v${selectedVersion}` : "Install latest AeroGrid");
     install.disabled = !supported || busy || checking || checkingRelease || !!confirmation || !connected || !action?.enabled;
     confirm.hidden = !confirmation;
+    confirmClose.hidden = !operationFinished;
+    element("confirm-cancel").disabled = busy;
+  }
+
+  function closeConfirmation() {
+    confirmation = null;
+    confirmDialog.close();
+    render();
+    install.focus();
   }
 
   async function inspect() {
@@ -229,20 +243,46 @@ if (panel) {
     element("confirm-title").textContent = downgrade ? "Confirm downgrade" : "Confirm installation";
     confirmStart.textContent = downgrade ? `Confirm downgrade to v${version}` : `Confirm installation of v${version}`;
     element("confirm-description").textContent = warning;
+    operationFinished = false;
+    operationStatus.textContent = "";
+    operationStatus.classList.remove("ag-radio-error", "ag-radio-success");
     render();
+    confirmDialog.showModal();
     confirmStart.focus();
   });
 
   element("confirm-cancel").addEventListener("click", () => {
     confirmation = null;
+    confirmDialog.close();
     render();
     install.focus();
   });
+
+  confirmDialog.addEventListener("cancel", (event) => {
+    if (busy) {
+      event.preventDefault();
+      return;
+    }
+    confirmation = null;
+    render();
+    queueMicrotask(() => install.focus());
+  });
+  confirmDialog.addEventListener("close", () => {
+    if (!operationFinished) return;
+    const result = operationStatus.textContent;
+    const failed = operationStatus.classList.contains("ag-radio-error");
+    const succeeded = operationStatus.classList.contains("ag-radio-success");
+    operationFinished = false;
+    render();
+    if (result) message(result, failed, succeeded);
+  });
+  confirmClose.addEventListener("click", closeConfirmation);
 
   confirmStart.addEventListener("click", async () => {
     if (!confirmation || busy) return;
     const { version, details: expected, downgrade } = confirmation;
     confirmation = null;
+    operationFinished = false;
     busy = true;
     const permission = radioStorage.requestWritePermission();
     progress.hidden = false;
@@ -279,6 +319,7 @@ if (panel) {
     } finally {
       busy = false;
       progress.hidden = true;
+      operationFinished = true;
       render();
     }
   });

@@ -160,26 +160,57 @@ try {
   }, path);
   assert.equal(await read("WIDGETS/AeroGrid/main.luac"), "stale bytecode");
   await activate("[data-install]");
+  assert.equal(await page.locator("[data-confirm-dialog]").isVisible(), true);
   assert.equal(await page.locator("[data-confirm-description]").textContent(),
     `Install AeroGrid ${manifest.version} on installer-acceptance?\n\n`
     + "This will replace the AeroGrid installation on your radio. No backup or rollback is available.\n\n"
     + "AeroGrid user data, maps, other widgets, model/radio settings, and firmware will not be changed.");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("[data-confirm-dialog]").isVisible(), false);
+  assert.equal(await read("WIDGETS/AeroGrid/main.luac"), "stale bytecode");
+  await activate("[data-install]");
   await activate("[data-confirm-cancel]");
+  assert.equal(await page.locator("[data-confirm-dialog]").isVisible(), false);
   assert.equal(await read("WIDGETS/AeroGrid/main.luac"), "stale bytecode");
 
   // A failed download must leave even the old bytecode untouched.
   await page.route("**/installer/releases/**/main.lua", (route) => route.fulfill({ status: 503, body: "Unavailable" }));
   await activate("[data-install]");
   await activate("[data-confirm-start]");
-  await page.waitForFunction(() => document.querySelector("[data-status]").textContent.includes("No radio files were changed"));
+  assert.equal(await page.locator("[data-confirm-dialog]").isVisible(), true);
+  assert.equal(await page.locator("[data-progress]").isVisible(), true);
+  await page.waitForFunction(() => document.querySelector("[data-operation-status]").textContent.includes("No radio files were changed"));
   assert.equal(await page.locator("[data-progress]").isVisible(), false);
+  assert.equal(await page.locator("[data-confirm-dialog]").isVisible(), true);
+  assert.match(await page.locator("[data-operation-status]").textContent(), /No radio files were changed/);
   assert.equal(await read("WIDGETS/AeroGrid/main.luac"), "stale bytecode");
+  await activate("[data-confirm-close]");
+  assert.equal(await page.locator("[data-confirm-dialog]").isVisible(), false);
   await page.unroute("**/installer/releases/**/main.lua");
 
+  let releaseDownload;
+  let notifyDownloadStarted;
+  const downloadGate = new Promise((resolve) => { releaseDownload = resolve; });
+  const downloadStarted = new Promise((resolve) => { notifyDownloadStarted = resolve; });
+  await page.route("**/installer/releases/**/main.lua", async (route) => {
+    notifyDownloadStarted();
+    await downloadGate;
+    await route.continue();
+  });
   await activate("[data-install]");
   await activate("[data-confirm-start]");
-  await page.waitForFunction(() => document.querySelector("[data-status]").textContent.includes("installed successfully"), null, { timeout: 60000 });
+  assert.equal(await page.locator("[data-confirm-dialog]").isVisible(), true);
+  assert.equal(await page.locator("[data-progress]").isVisible(), true);
+  await downloadStarted;
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("[data-confirm-dialog]").isVisible(), true);
+  releaseDownload();
+  await page.waitForFunction(() => document.querySelector("[data-operation-status]").textContent.includes("installed successfully"), null, { timeout: 60000 });
   assert.equal(await page.locator("[data-progress]").isVisible(), false);
+  assert.equal(await page.locator("[data-confirm-dialog]").isVisible(), true);
+  assert.match(await page.locator("[data-operation-status]").textContent(), /installed successfully/);
+  await activate("[data-confirm-close]");
+  assert.equal(await page.locator("[data-confirm-dialog]").isVisible(), false);
   assert.match(await page.locator("[data-status]").getAttribute("class"), /ag-radio-success/);
   assert.ok(await page.locator("[data-status]").evaluate((node) => {
     const style = getComputedStyle(node);

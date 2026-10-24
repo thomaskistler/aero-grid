@@ -2,6 +2,10 @@
 
 Manage AeroGrid map areas on your radio. Select an area to edit its coverage and map detail.
 
+The connected manager writes [area format 2](developer-guide/map-packs.md):
+one YAML file per area and shared JPEG tiles. The independent format 1 radio
+reader does not accept these files.
+
 <noscript>This tool requires JavaScript. Enable it to use the map manager.</noscript>
 
 <div id="ag-map-planner">
@@ -95,17 +99,23 @@ Manage AeroGrid map areas on your radio. Select an area to edit its coverage and
           <p><strong>Rename or delete an area.</strong> Click an area's title on the map to rename it, including in expanded view. You can also select it in Map areas and use its pencil or trash icon. When renaming, Enter saves and Escape cancels. Deleting marks the area for removal; it does not immediately erase it from the radio.</p>
           <p><strong>Choose map detail.</strong> Compare Less storage, Balanced, and Most detail beneath the map. More detail uses more SD-card space. The previews show the same location so you can compare them directly.</p>
           <p><strong>Understand storage.</strong> Map imagery on SD card shows current usage. Selected map imagery shows the total for all areas after your pending changes, not just the selected area. The + or - value shows how much that total will change. Shared imagery counts only once. Sizes for new or edited areas, projected totals, and storage changes are approximations until the imagery is prepared; actual sizes may differ.</p>
-          <p><strong>Save your changes.</strong> Click Sync Maps to review additions and removals, then confirm to write them to the radio. Nothing is written before confirmation. Keep the radio connected until syncing finishes, then disconnect and safely eject it before unplugging.</p>
+          <p><strong>Save your changes.</strong> Click Sync Maps to review additions and removals, then confirm to write them to the radio. Nothing is written before confirmation. The dialog shows preparation and write progress and stays open during writes. Keep the radio connected until syncing finishes, then disconnect and safely eject it before unplugging.</p>
+          <p><strong>Repair deleted imagery.</strong> Keep an area's YAML file and reconnect if its JPEG tiles (or the whole tiles folder) were deleted. Areas with missing tiles show Repair needed; Sync Maps prepares their repair. Existing images are reused, then missing images come from the original browser imagery library or its source. Use the same browser and site storage as the original capture: a different capture cannot be mixed into an existing area. Invalid or unreadable files must be resolved separately; they are not silently replaced.</p>
           <button class="ag-radio-button" type="button" popovertarget="ag-map-editing-help" popovertargetaction="hide">Close</button>
         </div>
       </section>
     </div>
-    <dialog id="ag-map-review-panel" class="ag-release-dialog" aria-labelledby="ag-map-review-title">
+    <dialog id="ag-map-review-panel" class="ag-release-dialog ag-map-review-dialog" aria-labelledby="ag-map-review-title">
       <h2 id="ag-map-review-title">Sync Maps</h2>
-      <p>Review changes to the radio's map imagery. Nothing is written until you confirm.</p>
-      <ul id="ag-map-review-list"></ul>
-      <p id="ag-map-update-data" role="status" aria-live="polite"></p>
-      <p id="ag-map-sync-prerequisite"></p>
+      <p>Nothing changes on the radio until you confirm.</p>
+      <ul id="ag-map-review-list" class="ag-map-review-list" aria-label="Areas to sync"></ul>
+      <dl class="ag-map-review-summary" aria-label="Storage summary">
+        <div><dt>To add</dt><dd id="ag-map-review-add"></dd></div>
+        <div><dt>To remove</dt><dd id="ag-map-review-remove"></dd></div>
+        <div><dt>After sync</dt><dd id="ag-map-review-total"></dd></div>
+      </dl>
+      <progress id="ag-map-review-progress" max="1" value="0" aria-label="Map sync progress" hidden></progress>
+      <p id="ag-map-review-status" role="status" aria-live="polite" aria-atomic="true"></p>
       <div class="ag-map-actions">
         <button id="ag-map-update-cancel" class="ag-radio-button" type="button">Cancel</button>
         <button id="ag-map-sync" class="ag-radio-button ag-radio-primary" type="button" disabled>Confirm sync</button>
@@ -138,12 +148,6 @@ Manage AeroGrid map areas on your radio. Select an area to edit its coverage and
     <button id="ag-map-measure" type="button">Measure sample tiles</button>
     <p id="ag-map-measurement"></p>
     <input id="ag-map-name" type="text" value="my-flying-field" maxlength="80">
-    <input id="ag-map-area-id" type="text" value="my-flying-field" maxlength="32">
     <button id="ag-map-export" type="button">Download selection JSON</button>
-    <button id="ag-map-satellite-export" type="button">Download Google hybrid ZIP</button>
-    <button id="ag-map-pack-cancel" type="button">Cancel export</button>
-    <p id="ag-map-source-notice"></p>
-    <p id="ag-map-pack-status"></p>
-    <button id="ag-map-pack-export" type="button">Download synthetic test ZIP</button>
   </div>
 </div>

@@ -44,17 +44,21 @@ Install the latest stable AeroGrid on your radio, or choose a previous release. 
   <p class="ag-radio-compatibility" data-compatibility role="status" aria-live="polite">Connect your radio to check compatibility.</p>
   <p class="ag-radio-downgrade" data-downgrade hidden></p>
   <div class="ag-radio-actions">
-    <button type="button" class="ag-radio-button" data-install disabled>Install latest AeroGrid</button>
+    <button type="button" class="ag-radio-button" data-install aria-haspopup="dialog" aria-controls="ag-install-confirm-dialog" disabled>Install latest AeroGrid</button>
   </div>
-  <div class="ag-radio-confirm" role="group" aria-labelledby="ag-confirm-title" data-confirm hidden>
-    <strong id="ag-confirm-title" data-confirm-title>Confirm installation</strong>
-    <p data-confirm-description></p>
-    <div class="ag-radio-actions">
-      <button type="button" class="ag-radio-button ag-radio-primary" data-confirm-start>Confirm installation</button>
-      <button type="button" class="ag-radio-button" data-confirm-cancel>Cancel</button>
+  <dialog id="ag-install-confirm-dialog" class="ag-release-dialog" data-confirm-dialog aria-labelledby="ag-confirm-title">
+    <h2 id="ag-confirm-title" data-confirm-title>Confirm installation</h2>
+    <div class="ag-radio-confirm" role="group" aria-labelledby="ag-confirm-title" data-confirm hidden>
+      <p id="ag-confirm-description" data-confirm-description></p>
+      <div class="ag-radio-actions">
+        <button type="button" class="ag-radio-button ag-radio-primary" data-confirm-start>Confirm installation</button>
+        <button type="button" class="ag-radio-button" data-confirm-cancel>Cancel</button>
+      </div>
     </div>
-  </div>
-  <progress data-progress max="1" value="0" aria-label="AeroGrid installation progress" hidden></progress>
+    <progress data-progress max="1" value="0" aria-label="AeroGrid installation progress" hidden></progress>
+    <p id="ag-install-operation-status" role="status" aria-live="polite" aria-atomic="true" data-operation-status></p>
+    <button type="button" class="ag-radio-button" data-confirm-close hidden>Close</button>
+  </dialog>
   <p role="status" aria-live="polite" aria-atomic="true" data-status></p>
   <p class="ag-radio-muted" role="status" aria-live="polite" data-release-status></p>
   </div>

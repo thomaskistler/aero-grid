@@ -145,44 +145,27 @@ build/capture-venv/bin/python -m unittest discover -s tools -p 'test_capture_*.p
 Neither command is included in `make test`. CI runs the release-packaging
 tests; run capture-recipe tests locally when changing recipes or adapters.
 
-### Planner and downloader contract
+### Planner and map-file contract
 
 With Node.js 22 and the development environment (`make setup`):
 
 ```sh
 node tools/test_map_planner.js
+node tools/test_map_files.js
 node tools/test_map_sources.js
-build/venv/bin/python -m unittest discover -s tools -p 'test_map_pack.py'
+node --test tests/browser/radio-map-library.test.mjs tests/browser/radio-map-manager.test.mjs
 ```
 
-The Python archive test runs `test_map_pack.js` itself. Pillow decodes every
-exported JPEG; the existing shared YAML parser reads manifests without requiring
-the map panel. Checked `tools/fixtures/map-area-contract-v1.json` rectangles
-freeze the original combined export's ordinary, compact, date-line, polar,
-nine-level and numeric/boolean-looking ID cases. Archive paths, metadata, shared
-bytes, full tile coverage and resource limits are checked independently.
-The JavaScript suites also cover rejection, cancellation and source policies.
+The JavaScript suites check planner coverage, format 2 area-file generation,
+JPEG validation, shared tile identity, source fetch and cancellation behavior,
+selection reconstruction (including per-zoom bounds and date-line geometry),
+malformed YAML rejection, shared-tile pruning, and manager review/sync behavior.
 
-Actual radio-reader interoperability is a separate combined-branches check,
-not a downloader dependency. To reproduce it against the frozen original
-combined source, extract only the reader into a temporary directory outside
-release inputs:
-
-```sh
-integration_dir=$(mktemp -d)
-git show d5cd00fcab91ec373eb489ebeea1e77aeab6443d:src/WIDGETS/AeroGrid/panels/map-prototype.lua > "$integration_dir/map-prototype.lua"
-MAP_RADIO_SOURCE="$integration_dir/map-prototype.lua" \
-  build/venv/bin/python -m unittest discover -s tools -p 'test_map_pack.py'
-rm "$integration_dir/map-prototype.lua"
-rmdir "$integration_dir"
-```
-
-This runs the same archives through the actual reader's manifest validator,
-JPEG preflight and projection code, including date-line centering. Set
-`MAP_RADIO_SOURCE` to an extracted, explicitly pinned panel revision when
-checking newer combined branches. Missing or invalid supplied readers fail;
-normal CI does not imply that it ran this cross-component check. No radio
-implementation or simulator fixture is included in the downloader layer.
+The connected manager writes only area format 2. The independent radio-reader
+PR #172 remains unchanged and reads format 1, so its current reader is
+incompatible with format 2. No legacy-area migration or interoperability is
+claimed. The manager reports library bytes and update estimates but cannot
+query SD-card free space; ensure the card has room before confirming a sync.
 
 ## Lint and formatting
 

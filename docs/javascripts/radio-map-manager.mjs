@@ -2,7 +2,7 @@
 import { radioStorage, radioHardware, radioCompatibility } from "./radio-storage.mjs";
 import {
   inspectMapLibrary, mapLibrarySignatureFromAreas, pruneUnreferencedMapTiles, readMapTile,
-  removeMapArea, writeMapFiles, plannedMapStorage,
+  removeMapArea, writeMapFiles, plannedMapStorage, mapSelectionTiles,
   RADIO_MAP_PRESETS,
 } from "./radio-map-library.mjs";
 
@@ -22,13 +22,14 @@ if (panel) {
   let expectedSignature = "";
   let totalStorageBytes = 0;
   let storedTileSizes = new Map();
-  let sourceMetadataIds = new Set();
   let addRequested = false;
-  const offlineImageryPermissionConfirmed = false;
-  const sdFreeSpaceAvailable = false;
   let stageController = null;
   let renamingId = null;
   let updateReady = false;
+  let syncing = false;
+  let syncController = null;
+  let committingSync = false;
+  let syncComplete = false;
   let expanded = false;
   const setExpanded = (enabled) => {
     if (enabled === expanded) return;
@@ -142,8 +143,8 @@ if (panel) {
       button.append(name, details);
       const marker = document.createElement("span");
       marker.className = record.staged || record.dirty ? "ag-map-pending" : "ag-map-area-state";
-      marker.textContent = record.deleted ? "Marked for removal" : record.staged ? "Ready to update"
-        : record.dirty ? "Unsaved changes" : "On radio";
+      marker.textContent = record.deleted || record.staged || record.dirty || record.missingTileCount
+        ? "Pending changes" : "";
       button.append(marker);
       const rename = () => {
         if (busy || !supported || record.deleted) return;
@@ -215,7 +216,7 @@ if (panel) {
       || ![...records.values()].some((record) => record.dirty || record.staged);
     byId("delete").disabled = !supported || !currentRecord() || busy;
     byId("area-name").disabled = !supported || !currentRecord() || busy;
-    byId("sync").disabled = !updateReady || !offlineImageryPermissionConfirmed || !sdFreeSpaceAvailable || !count || busy;
+    byId("sync").disabled = !updateReady || !count || busy;
     const dirtyCount = [...records.values()].filter((record) => record.dirty && !record.staged).length;
     const changes = count + dirtyCount;
     const summary = changes ? `${changes} ${changes === 1 ? "area has" : "areas have"} pending changes.` : "";
@@ -338,7 +339,6 @@ if (panel) {
   }
   function syncPlannerInputs(record) {
     byId("name").value = record.selection.name;
-    byId("area-id").value = record.id;
     byId("area-name").value = record.selection.name;
     byId("radio").value = radio.preset;
     byId("max-zoom").value = String(record.selection.levels.at(-1).zoom);
@@ -419,7 +419,6 @@ if (panel) {
       records.set(id, added);
       selectedId = id;
       byId("name").value = selection.name;
-      byId("area-id").value = id;
       byId("area-name").value = selection.name;
       addRequested = false;
       byId("canvas").style.cursor = "";
@@ -430,7 +429,6 @@ if (panel) {
       record.staged = null;
       record.dirty = true;
       byId("name").value = record.selection.name;
-      byId("area-id").value = record.id;
       setStatus("");
     }
     updateZoomChoices();
@@ -456,18 +454,17 @@ if (panel) {
         : "");
     byId("compatibility").classList.toggle("ag-map-warning", !compatibility.supported);
   }
-  async function loadRadio() {
+  async function loadRadio(knownLibrary) {
     if (!await plannerView.ready) throw new Error("The map viewer did not load. Reload the page and try again.");
     const details = await radioStorage.inspect();
     updateRadioDetails(details);
-    const library = await inspectMapLibrary(radioStorage.root);
+    const library = knownLibrary ?? await inspectMapLibrary(radioStorage.root);
     totalStorageBytes = library.tileBytes;
     storedTileSizes = library.tileSizes;
-    sourceMetadataIds = new Set(library.areas.map((area) => area.imagerySet));
     records.clear();
     for (const area of library.areas) records.set(area.id, {
       ...area, savedSelection: area.selection, staged: null,
-      deleted: false, dirty: false, onRadio: true,
+      deleted: false, dirty: area.missingTileCount > 0, onRadio: true,
     });
     expectedSignature = mapLibrarySignatureFromAreas(library.areas);
     selectedId = records.keys().next().value ?? null;
@@ -478,7 +475,25 @@ if (panel) {
       plannerView.clearBounds();
       updateZoomChoices();
     }
-    setStatus("");
+    setStatus(library.missingTileCount
+      ? `${library.missingTileCount} shared map tiles are missing. Sync Maps to prepare a repair using the original imagery library.`
+      : "");
+  }
+  function refreshLibraryState(library) {
+    if (mapLibrarySignatureFromAreas(library.areas) !== expectedSignature
+        || [...library.tileSizes].some(([path, size]) =>
+          storedTileSizes.has(path) && storedTileSizes.get(path) !== size)) {
+      throw new Error("The radio map library changed while preparing the update. Reconnect and review your changes again.");
+    }
+    totalStorageBytes = library.tileBytes;
+    storedTileSizes = library.tileSizes;
+    for (const area of library.areas) {
+      const record = records.get(area.id);
+      record.storageBytes = area.storageBytes;
+      record.missingTiles = area.missingTiles;
+      record.missingTileCount = area.missingTileCount;
+      if (area.missingTileCount && !record.deleted && !record.staged) record.dirty = true;
+    }
   }
   connectButton.addEventListener("click", async () => {
     if (busy) return;
@@ -492,7 +507,6 @@ if (panel) {
         supported = false;
         radio = null;
         records.clear();
-        sourceMetadataIds.clear();
         totalStorageBytes = 0;
         selectedId = null;
         addRequested = false;
@@ -531,7 +545,6 @@ if (panel) {
       }
       supported = false;
       radio = null;
-      sourceMetadataIds.clear();
       records.clear();
       selectedId = null;
       totalStorageBytes = 0;
@@ -633,20 +646,20 @@ if (panel) {
     byId("stage-status").textContent = "Preparing missing tiles and map metadata...";
     let source;
     try {
-      if (record.imagerySet && record.sourceMetadata?.synthetic) {
+      if (record.imagerySet === packs.SYNTHETIC.id || record.sourceMetadata?.synthetic) {
         if (record.imagerySet !== packs.SYNTHETIC.id
-            || record.sourceMetadata.source !== packs.SYNTHETIC.source
+            || (record.sourceMetadata && (record.sourceMetadata.source !== packs.SYNTHETIC.source
             || record.sourceMetadata.edition !== packs.SYNTHETIC.edition
-            || record.sourceMetadata.conversion !== packs.SYNTHETIC.conversion) {
+            || record.sourceMetadata.conversion !== packs.SYNTHETIC.conversion))) {
           throw new Error("This synthetic imagery set cannot be reproduced by the browser manager.");
         }
         source = {
-          metadata: record.sourceMetadata,
+          metadata: packs.SYNTHETIC,
           readTile: (zoom, x, y, signal) =>
             sources.encodeJpeg(packs.syntheticRgb(zoom, x, y), signal),
         };
       } else {
-        if (record.imagerySet && record.sourceMetadata?.source !== "Google hybrid") {
+        if (record.sourceMetadata && record.sourceMetadata.source !== "Google hybrid") {
           throw new Error("This imagery source cannot be refreshed by the browser manager.");
         }
         source = await sources.googleHybrid();
@@ -662,6 +675,9 @@ if (panel) {
         signal,
         onProgress: ({ completed, total }) => {
           byId("stage-status").textContent = `Preparing map imagery: ${completed}/${total} tiles.`;
+          byId("review-progress").max = total || 1;
+          byId("review-progress").value = completed;
+          byId("review-status").textContent = `Preparing map imagery: ${completed}/${total} tiles.`;
         },
         readExistingTile: (set, zoom, x, y) => set === imagerySet
           ? readMapTile(radioStorage.root, set, zoom, x, y) : null,
@@ -674,7 +690,6 @@ if (panel) {
           const [, , , set, zoom, x, filename] = path.split("/");
           if (await readMapTile(radioStorage.root, set, Number(zoom), Number(x), Number(filename.slice(0, -4))) !== null) continue;
         }
-        if (path.includes("/sources/") && sourceMetadataIds.has(imagerySet)) continue;
         writeBytes += bytes.length;
       }
       record.selection = selection;
@@ -688,56 +703,94 @@ if (panel) {
       stageController = null;
     }
   }
-  byId("update-cancel").addEventListener("click", () => {
+  function closeReview(closeDialog = true) {
+    if (syncing) {
+      if (!committingSync) {
+        syncController?.abort();
+        byId("update-cancel").disabled = true;
+        byId("review-status").textContent = "Cancelling after the current file finishes...";
+      }
+      return;
+    }
+    const result = syncComplete ? byId("review-status").textContent : "";
+    const failed = byId("review-status").classList.contains("ag-map-error");
+    const succeeded = byId("review-status").classList.contains("ag-map-success");
+    if (stageController) {
+      stageController.abort();
+      setStatus("Map preparation cancelled.");
+    }
     updateReady = false;
-    stageController?.abort();
-    byId("review-panel").close();
-  });
-  byId("review-panel").addEventListener("cancel", () => {
-    updateReady = false;
-    stageController?.abort();
+    syncComplete = false;
+    byId("update-cancel").textContent = "Cancel";
+    byId("update-cancel").disabled = false;
+    byId("sync").hidden = false;
+    if (closeDialog) byId("review-panel").close();
+    if (result) setStatus(result, failed, succeeded);
+  }
+  byId("update-cancel").addEventListener("click", closeReview);
+  byId("review-panel").addEventListener("cancel", (event) => {
+    if (syncing) {
+      event.preventDefault();
+      return;
+    }
+    closeReview(false);
   });
   byId("update").addEventListener("click", async () => {
     if (!radioStorage.root || busy) return;
     updateReady = false;
+    syncComplete = false;
     const dialog = byId("review-panel");
     const list = byId("review-list");
     list.replaceChildren();
-    for (const record of records.values()) {
-      if (!record.staged && !record.dirty) continue;
-      const item = document.createElement("li");
-      item.textContent = `${record.deleted ? "Remove" : record.onRadio ? "Update" : "Add"} "${record.selection.name}"`;
-      list.append(item);
-    }
-    byId("update-data").textContent = "";
+    byId("review-status").textContent = "Preparing map changes...";
+    byId("review-status").classList.remove("ag-map-error", "ag-map-success");
+    byId("review-progress").max = 1;
+    byId("review-progress").value = 0;
+    byId("review-progress").hidden = false;
+    byId("update-cancel").textContent = "Cancel";
+    byId("update-cancel").disabled = false;
+    byId("sync").hidden = false;
     dialog.showModal();
-    const prerequisites = [];
-    if (!offlineImageryPermissionConfirmed) prerequisites.push("offline-use permission for the imagery source is unconfirmed");
-    if (!sdFreeSpaceAvailable) prerequisites.push("this browser cannot query radio SD-card free space to enforce the storage-capacity check");
-    byId("sync-prerequisite").textContent = prerequisites.length
-      ? `Updating maps is unavailable because ${prerequisites.join(" and ")}.`
-      : "";
     byId("sync").disabled = true;
-    if (!offlineImageryPermissionConfirmed) {
-      byId("update-data").textContent = "Exact data changes are unavailable until imagery preparation is permitted. No radio files have been changed.";
-      return;
-    }
     busy = true;
     renderReview();
     byId("sync").disabled = true;
     try {
+      refreshLibraryState(await inspectMapLibrary(radioStorage.root));
+      // Rebuild the review after checking for tiles removed since connection.
+      list.replaceChildren();
+      for (const record of records.values()) {
+        if (!record.staged && !record.dirty) continue;
+        const item = document.createElement("li");
+        const action = document.createElement("span");
+        action.className = "ag-map-review-action";
+        action.textContent = record.deleted ? "Remove" : record.missingTileCount ? "Repair"
+          : record.onRadio ? "Update" : "Add";
+        const name = document.createElement("strong");
+        name.textContent = record.selection.name;
+        item.append(action, name);
+        list.append(item);
+      }
       for (const record of records.values()) {
         if (!dialog.open) return;
         if (record.dirty && !record.deleted) await prepareRecord(record);
       }
       const storage = plannedMapStorage(records.values(), storedTileSizes);
       if (storage.estimated) throw new Error("Some map imagery has not been prepared; exact data changes cannot be confirmed.");
-      byId("update-data").textContent =
-        `Add: ${storage.addedBytes.toLocaleString()} bytes. Remove: ${storage.removedBytes.toLocaleString()} bytes. ` +
-        `Total after update: ${storage.minimumBytes.toLocaleString()} bytes. Shared tiles are counted once.`;
+      byId("review-add").textContent = formatBytes(storage.addedBytes);
+      byId("review-remove").textContent = formatBytes(storage.removedBytes);
+      byId("review-total").textContent = formatBytes(storage.minimumBytes);
+      byId("review-progress").hidden = true;
+      byId("review-status").textContent = "Maps prepared. Review the changes before syncing.";
     } catch (error) {
-      byId("update-data").textContent = `Unable to prepare maps: ${error.message}`;
-      setStatus(error.message, true);
+      byId("review-progress").hidden = true;
+      if (error.name === "AbortError") {
+        byId("review-status").textContent = "Map preparation cancelled.";
+      } else {
+        byId("review-status").textContent = `Unable to prepare maps: ${error.message}`;
+        byId("review-status").classList.add("ag-map-error");
+        setStatus(error.message, true);
+      }
       return;
     } finally {
       busy = false;
@@ -745,48 +798,98 @@ if (panel) {
       byId("sync").disabled = true;
     }
     updateReady = dialog.open;
-    byId("sync").disabled = !sdFreeSpaceAvailable || !updateReady;
+    byId("sync").disabled = !updateReady || !pendingCount();
   });
   byId("sync").addEventListener("click", async () => {
-    if (!updateReady || !byId("review-panel").open || !offlineImageryPermissionConfirmed
-        || !sdFreeSpaceAvailable || !pendingCount() || busy) return;
+    if (!updateReady || !byId("review-panel").open || !pendingCount() || busy) return;
     updateReady = false;
+    syncing = true;
+    syncController = new AbortController();
+    committingSync = false;
     busy = true;
+    byId("review-status").textContent = "Requesting permission to write to the SD card...";
+    byId("review-status").classList.remove("ag-map-error", "ag-map-success");
+    byId("review-progress").max = 1;
+    byId("review-progress").value = 0;
+    byId("review-progress").hidden = false;
+    byId("update-cancel").disabled = false;
     renderReview();
+    let writesStarted = false;
     try {
       await radioStorage.requestWritePermission();
+      let syncedLibrary;
       await radioStorage.exclusive(async (root) => {
         const previousLibrary = await inspectMapLibrary(root);
-        if (mapLibrarySignatureFromAreas(previousLibrary.areas) !== expectedSignature) {
-          throw new Error("The radio map library changed while preparing the update. Reconnect and review your changes again.");
-        }
+        refreshLibraryState(previousLibrary);
         const changes = [...records.values()].filter((record) => record.staged);
-        for (const record of changes.filter((item) => !item.staged.deleted)) {
-          const files = new Map([...record.staged.files].sort(([left], [right]) => {
-            const order = (path) => path.includes("/tiles/") ? 0
-              : path.includes("/sources/") ? 1 : path.includes("/selections/") ? 2 : 3;
-            return order(left) - order(right);
-          }));
-          await writeMapFiles(root, files, (count, total, path) => {
-            byId("stage-status").textContent = `Writing map ${count}/${total}: ${path}`;
-          });
+        const preparedTiles = new Set(changes.flatMap((record) => [...record.staged.files.keys()]
+          .filter((path) => path.startsWith("AEROGRID/maps/tiles/"))
+          .map((path) => path.slice("AEROGRID/maps/tiles/".length))));
+        const retainedTiles = new Set([...records.values()].filter((record) => !record.deleted)
+          .flatMap((record) => [...mapSelectionTiles(record.imagerySet, record.selection)]));
+        if ([...(previousLibrary.missingTiles ?? [])]
+          .some((path) => retainedTiles.has(path) && !preparedTiles.has(path))) {
+          throw new Error("More map tiles went missing after preparation. Close this review and use Sync Maps again to prepare their repair.");
         }
+        const writeChanges = changes.filter((item) => !item.staged.deleted);
+        const files = new Map(writeChanges.flatMap((record) => [...record.staged.files]));
+        const orderedFiles = new Map([...files].sort(([left], [right]) =>
+          Number(left.includes("/areas/")) - Number(right.includes("/areas/"))));
+        writesStarted = files.size > 0;
+        await writeMapFiles(root, orderedFiles, (completed, total) => {
+          byId("review-progress").max = total || 1;
+          byId("review-progress").value = completed;
+          byId("review-status").textContent = syncController.signal.aborted
+            ? "Cancelling after the current file finishes..."
+            : `Writing map files: ${completed}/${total}.`;
+        }, {
+          signal: syncController.signal,
+          onCommit: () => {
+            committingSync = true;
+            byId("update-cancel").disabled = true;
+            byId("review-status").textContent = "Updating map area records...";
+          },
+        });
+        byId("review-status").textContent = "Updating map area records...";
         for (const record of changes.filter((item) => item.staged.deleted)) {
+          writesStarted = true;
           await removeMapArea(root, record.id);
         }
+        byId("review-status").textContent = "Cleaning up unreferenced map tiles...";
         const updatedLibrary = await inspectMapLibrary(root);
+        if (updatedLibrary.missingTileCount) {
+          throw new Error("Map tiles went missing during sync. Reconnect and prepare their repair.");
+        }
         await pruneUnreferencedMapTiles(
           root, previousLibrary.referencedTiles, updatedLibrary.referencedTiles);
+        syncedLibrary = updatedLibrary;
       });
       const old = selectedId;
-      await loadRadio();
+      await loadRadio(syncedLibrary);
       if (old && records.has(old)) selectRecord(old);
-      byId("review-panel").close();
-      setStatus("Maps updated. Safely eject the SD card through your operating system before unplugging.", false, true);
+      byId("review-progress").value = byId("review-progress").max;
+      byId("review-status").textContent = "Maps updated. Safely eject the SD card through your operating system before unplugging.";
+      byId("review-status").classList.add("ag-map-success");
     } catch (error) {
-      setStatus(`Map update failed: ${error.message} Some files may already have been written; reconnect and review the map library before retrying.`, true);
+      if (error.name === "AbortError" && syncController.signal.aborted && !committingSync) {
+        byId("review-status").textContent =
+          "Sync cancelled. Area records were not changed. Completed tile files remain on the SD card and can be reused when you retry.";
+      } else {
+        byId("review-status").textContent =
+          `Map update failed: ${error.message} ` + (writesStarted
+            ? "Some files may already have been written; reconnect and review the map library before retrying."
+            : "No radio files were changed.");
+        byId("review-status").classList.add("ag-map-error");
+      }
     } finally {
       busy = false;
+      syncing = false;
+      syncController = null;
+      committingSync = false;
+      syncComplete = true;
+      byId("update-cancel").disabled = false;
+      byId("update-cancel").textContent = "Done";
+      byId("sync").hidden = true;
       renderReview();
     }
   });
@@ -813,7 +916,6 @@ if (panel) {
         supported = false;
         radio = null;
         records.clear();
-        sourceMetadataIds.clear();
         selectedId = null;
         totalStorageBytes = 0;
         byId("radio-state").textContent = "Radio disconnected";
@@ -829,8 +931,6 @@ if (panel) {
     })();
   }
   byId("overlap-cancel").addEventListener("click", () => byId("overlap-dialog").close());
-  byId("sync-prerequisite").textContent =
-    "Map updates are unavailable until offline-use permission and an SD-card capacity strategy are confirmed.";
   globalThis.addEventListener("beforeunload", (event) => {
     if (busy || pendingCount() || [...records.values()].some((record) => record.dirty) || addRequested) {
       event.preventDefault();
@@ -854,7 +954,6 @@ if (panel) {
       supported = false;
       radio = null;
       records.clear();
-      sourceMetadataIds.clear();
       selectedId = null;
       totalStorageBytes = 0;
       addRequested = false;

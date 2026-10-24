@@ -255,7 +255,6 @@
     let measurement;
     let measuring = false;
     let settingExtent = false;
-    let packController;
     let explicitAddMode = false;
     let areaEditingEnabled = !element("connect");
     let areaSelectionHandler = () => {};
@@ -344,12 +343,6 @@
     }
 
     function updateSummary() {
-        if (packController) {
-            packController.abort();
-            element("pack-status").textContent = "Selection or export identity changed. Export cancelled.";
-        }
-        element("pack-export").disabled = true;
-        element("satellite-export").disabled = true;
         showMeasurement();
         element("export").disabled = true;
         if (!bounds || !selectedBounds) {
@@ -372,9 +365,6 @@
             }
             specification(element("name").value, bounds, zooms(), radioId(), coverage);
             element("export").disabled = failed;
-            root.AeroGridMapPack.identifier(element("area-id").value);
-            element("pack-export").disabled = !!packController || failed;
-            element("satellite-export").disabled = !!packController || failed;
         } catch (error) {
             element("summary").textContent = error.message;
         }
@@ -433,9 +423,6 @@
         failed = true;
         element("options").disabled = true;
         element("export").disabled = true;
-        element("satellite-export").disabled = true;
-        element("pack-export").disabled = true;
-        if (packController) packController.abort();
         element("zoom-range").disabled = true;
         status(message);
     }
@@ -903,7 +890,6 @@
     });
     element("locate").addEventListener("click", () => locate(true));
     element("name").addEventListener("input", updateSummary);
-    element("area-id").addEventListener("input", updateSummary);
     function currentSelection() {
         const selection = specification(element("name").value, bounds, zooms(), radioId(), coverage);
         selection.selectedBounds = { ...selectedBounds };
@@ -920,52 +906,6 @@
         link.remove();
         root.setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
-    element("pack-cancel").addEventListener("click", () => {
-        if (packController) packController.abort();
-    });
-    async function exportPack(synthetic) {
-        if (packController) return;
-        const controller = new AbortController();
-        packController = controller;
-        element("pack-export").disabled = true;
-        element("satellite-export").disabled = true;
-        element("pack-cancel").disabled = false;
-        const label = synthetic ? "Synthetic" : "Google hybrid";
-        let source;
-        element("pack-status").textContent = synthetic ? "Generating synthetic test images..." :
-            "Downloading Google hybrid images...";
-        try {
-            const selection = currentSelection();
-            const id = element("area-id").value;
-            const key = JSON.stringify([selection, id]);
-            source = synthetic ? undefined : await root.AeroGridMapSources.googleHybrid();
-            const bytes = await root.AeroGridMapPack.createArchive(selection, id, {
-                source,
-                signal: controller.signal,
-                onProgress: ({ completed, total, bytes: size }) => {
-                    element("pack-status").textContent =
-                        `${label} tiles: ${completed}/${total}; ${(size / 1048576).toFixed(1)} MiB prepared.`;
-                }
-            });
-            if (controller.signal.aborted || key !== JSON.stringify([currentSelection(), element("area-id").value])) {
-                throw new Error("Selection changed or export cancelled.");
-            }
-            saveDownload(new Blob([bytes], { type: "application/zip" }),
-                `${id}-${synthetic ? "synthetic" : "google-hybrid"}.zip`);
-            element("pack-status").textContent =
-                synthetic ? "Synthetic test ZIP downloaded. Extract at SD-card root; these images are not real terrain." :
-                    "Google hybrid ZIP downloaded. Extract at SD-card root. Source terms and prototype limitations still apply.";
-        } catch (error) {
-            element("pack-status").textContent = `No ZIP downloaded: ${error.message}`;
-        } finally {
-            if (source && source.close) source.close();
-            packController = undefined;
-            element("pack-cancel").disabled = true;
-            updateSummary();
-        }
-    }
-    element("pack-export").addEventListener("click", () => exportPack(true));
-    element("satellite-export").addEventListener("click", () => exportPack(false));
     element("export").addEventListener("click", () => {
         try {
             const selection = currentSelection();
