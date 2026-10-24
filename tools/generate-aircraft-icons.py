@@ -97,7 +97,7 @@ def arrow_sample(heading=0):
         if icons.polygon(sx, sy, ARROW):
             return (*BLUE, 255)
         if dx * dx + dy * dy <= 22 * 22:
-            return (*WHITE, 210)
+            return (*WHITE, 170)
         return (0, 0, 0, 0)
     return pixel
 
