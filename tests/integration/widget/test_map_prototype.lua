@@ -773,6 +773,20 @@ do
     a.assertEqual(options.coordinatesLabel.properties.y, options.area.h - 28)
     a.assertEqual(options.satelliteLabel.properties.text, "5")
     a.assertEqual(options.badgeText, options.state("warning", "cyan").badge)
+    options.primitives.setBadge(
+        options,
+        options.themeBuilder,
+        options.badge,
+        options.area.frame,
+        options.fonts.badge,
+        "WAITING FOR GPS",
+        options.theme.color.amber
+    )
+    options.primitives.setSatelliteHeader(options, "5", options.state("normal", "cyan"))
+    if options.showSatellites then
+        local header = options.satelliteHeader.properties
+        assert(header.x + header.w < options.badge.properties.x, "shared header must reserve the displayed GPS badge")
+    end
     assert(#options.pathPoints >= 1)
     options.satellites.value = 2
     fixture.tick(100)

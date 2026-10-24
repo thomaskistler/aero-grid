@@ -697,26 +697,7 @@ function navigation.create(parent, rect, settings, services)
     )
     panel = context.panel
     if context.satellites and settings.showSatellites ~= false then
-        context.satelliteHeader = lvgl.box(panel.root, { x = 0, y = 0, w = 1, h = 1 })
-        local filename = services.host.path .. "assets/" .. (theme.light and "satellite-light.png" or "satellite.png")
-        local handle = io.open(filename, "r")
-        assert(handle, "navigation satellite icon missing: " .. filename)
-        io.close(handle)
-        context.satelliteIcon = primitives.image(context.satelliteHeader, {
-            x = 0,
-            y = 0,
-            w = 16,
-            h = 16,
-            file = filename,
-        })
-        context.satelliteLabel = primitives.label(context.satelliteHeader, theme, {
-            x = 18,
-            y = 0,
-            text = "",
-            font = fonts.label,
-            color = theme.color.textMuted,
-        })
-        lvgl.hide(context.satelliteHeader)
+        primitives.satelliteHeader(context, services.host.path)
     end
 
     context.value = primitives.value(panel.root, theme, {
@@ -822,31 +803,6 @@ function navigation.render(context, out)
         out.text, out.unit = navigation.distanceParts(view, service.describeDistanceParts)
     end
 
-    --- Satellite telemetry yields to the heading and the state badge, never clips.
-    function navigation.setSatelliteHeader(context, text, presentation)
-        if not context.satelliteHeader then
-            return
-        end
-        local builder, frame, fonts = context.themeBuilder, context.area.frame, context.fonts
-        local headingWidth = builder.headingWidth(frame, fonts.badge, presentation.badge)
-        local heading, font = builder.fitHeading(context.settings.label, headingWidth, fonts.label, fonts.badge)
-        local left = frame.labelX + builder.measureText(font, heading) + 6
-        local right = frame.badgeX + frame.badgeWidth
-        if presentation.badge and presentation.badge ~= "" then
-            right = context.primitives.badgeX(builder, frame, fonts.badge, presentation.badge) - 6
-        end
-        local width = 18 + builder.measureText(fonts.label, text)
-        local height = math.max(16, builder.fontHeight(fonts.label))
-        context.showSatellites = not frame.labelHidden and right - width >= left and frame.labelY + height <= frame.top
-        if context.showSatellites then
-            context.satelliteHeader:set({ x = right - width, y = frame.labelY, w = width, h = height })
-            context.primitives.setFont(context.satelliteLabel, fonts.label)
-            context.satelliteLabel:set({ text = text, w = width - 18, color = presentation.label })
-            lvgl.show(context.satelliteHeader)
-        else
-            lvgl.hide(context.satelliteHeader)
-        end
-    end
     -- Only what this panel draws. Both supporting rows are shed on a small
     -- panel and the coordinate row unless explicitly enabled, and
     -- fitting a caption to a width nobody sees is work with no reader. It also
@@ -904,7 +860,7 @@ function navigation.apply(context, drawn)
         presentation.accent
     )
     context.primitives.stylePanel(context.panel, presentation)
-    navigation.setSatelliteHeader(context, drawn.satellites or "--", presentation)
+    context.primitives.setSatelliteHeader(context, drawn.satellites or "--", presentation)
 
     -- Every row takes the panel's slot centres, keyed on what it says. A
     -- bearing changes every time the aircraft turns, so the helpers measure
