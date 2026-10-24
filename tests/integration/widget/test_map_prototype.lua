@@ -94,6 +94,10 @@ fixture.lvglMock.setFullScreen(true)
 map.refresh(context)
 a.assertEqual(#context.controls, 4, "entering fullscreen must create zoom, follow and GPS controls")
 a.assertEqual(context.followIcon, context.followAircraft.root)
+a.assertEqual(#context.qrIcon, 14, "GPS control must show a QR-code icon")
+for _, child in ipairs(context.controlsRoot.children) do
+    assert(child.properties.text ~= "GPS", "GPS control must not use a text label")
+end
 assertFootprint(context.followAircraft)
 assertAircraftColors(context.followAircraft, lcd.RGB(0xFFFFFF))
 assert(context.controlsHint.hidden)
