@@ -62,7 +62,7 @@ a.assertEqual(context.pack.name, "Synthetic test area")
 context.automatic = false
 local function pressControl(index)
     fixture.tick(20)
-    local top = ({ 44, 76, 0, 108 })[index]
+    local top = ({ 44, 76, 0, 112 })[index]
     local touch = { x = context.area.zoomX + 20, y = context.area.zoomY + top + 20 }
     map.event(context, EVT_TOUCH_FIRST, touch, { x = 0, y = 0 })
     map.event(context, EVT_TOUCH_BREAK, { x = 0, y = 0 }, { x = 0, y = 0 })
@@ -98,7 +98,10 @@ a.assertEqual(context.infoIcon.properties.file, context.assets .. "map-info.png"
 a.assertEqual(context.infoIcon.properties.w, 24)
 a.assertEqual(context.infoIcon.properties.h, 24)
 a.assertEqual(context.infoIcon.properties.x, 8, "info icon must be centered in the control")
-a.assertEqual(context.infoIcon.properties.y, 112)
+local infoButton, infoIcon = context.controls[4].properties, context.infoIcon.properties
+a.assertEqual(infoIcon.x + infoIcon.w / 2, infoButton.x + infoButton.w / 2)
+a.assertEqual(infoIcon.y + infoIcon.h / 2, infoButton.y + infoButton.h / 2)
+assert(infoButton.y >= 112, "info button must have a visible gap below the zoom control")
 for _, child in ipairs(context.controlsRoot.children) do
     assert(child.properties.text ~= "GPS", "GPS control must not use a text label")
 end
@@ -106,7 +109,7 @@ assertFootprint(context.followAircraft)
 assertAircraftColors(context.followAircraft, lcd.RGB(0xFFFFFF))
 assert(context.controlsHint.hidden)
 local mapRect = host.dashboardLoader.panelRect(host, fixture.entryById(host, "map").placement)
-local gpsButton = { x = mapRect.x + context.area.zoomX + 20, y = mapRect.y + context.area.zoomY + 124 }
+local gpsButton = { x = mapRect.x + context.area.zoomX + 20, y = mapRect.y + context.area.zoomY + 128 }
 assert(definition.event(host, EVT_TOUCH_FIRST, gpsButton), "GPS control press must be consumed by the map")
 assert(definition.event(host, EVT_TOUCH_BREAK, { x = 0, y = 0 }), "GPS control release must be consumed by the map")
 assert(host.locationDetails, "dedicated GPS control must open the shared location QR overlay")
@@ -766,6 +769,8 @@ do
     fixture.tick(100)
     map.refresh(options)
     a.assertEqual(options.coordinatesLabel.properties.text, "25.997300, -97.157200")
+    a.assertEqual(options.coordinatesLabel.properties.font(), SMLSIZE, "coordinates must use the larger font")
+    a.assertEqual(options.coordinatesLabel.properties.y, options.area.h - 28)
     a.assertEqual(options.satelliteLabel.properties.text, "5")
     a.assertEqual(options.badgeText, options.state("warning", "cyan").badge)
     assert(#options.pathPoints >= 1)

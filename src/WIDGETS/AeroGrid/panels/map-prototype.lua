@@ -33,6 +33,8 @@ local MAX_AREA_NAME_BYTES = 240
 local TRAIL_POINTS = 24
 local FULL_PATH_POINTS = 64
 local COORDINATE_PRECISION = 6
+local CONTROL_TOPS = { 44, 76, 0, 112 }
+local CONTROLS_HEIGHT = 144
 
 function map.meanCourse(context, bearing)
     local history = context.courseHistory or {}
@@ -255,7 +257,7 @@ local function geometry(context, rect)
         h = height,
         controlsY = height - 22,
         zoomX = x + width - 48,
-        zoomY = height - 148,
+        zoomY = height - CONTROLS_HEIGHT - 8,
         showHint = width >= 240 and height >= 96,
         showZoom = width >= 100 and height >= 164,
     }
@@ -588,7 +590,7 @@ local function updateCoordinates(context)
         context.coordinateText = text
     end
     local width = math.max(1, context.area.w - 56)
-    local visible = valid and width >= context.themeBuilder.measureText(TINSIZE, text)
+    local visible = valid and width >= context.themeBuilder.measureText(SMLSIZE, text)
     context.primitives.reconcile(context.coordinatesLabel, visible)
 end
 
@@ -936,7 +938,7 @@ local function controlAt(context, touch, rect)
     if x < 0 or x >= 40 then
         return nil
     end
-    for index, top in ipairs({ 44, 76, 0, 108 }) do
+    for index, top in ipairs(CONTROL_TOPS) do
         if y >= top and y < top + (index == 3 and 40 or 32) then
             return index
         end
@@ -1015,7 +1017,7 @@ function map.event(context, event, touch, rect)
         end
         local x, y = touch.x - rect.x - context.area.x, touch.y - rect.y - context.area.y
         local zoomX, zoomY = touch.x - rect.x - context.area.zoomX, touch.y - rect.y - context.area.zoomY
-        if context.area.showZoom and zoomX >= 0 and zoomX < 40 and zoomY >= 0 and zoomY < 140 then
+        if context.area.showZoom and zoomX >= 0 and zoomX < 40 and zoomY >= 0 and zoomY < CONTROLS_HEIGHT then
             return true
         end
         if x < 0 or y < 0 or x >= context.area.w or y >= context.area.h then
@@ -1078,7 +1080,12 @@ local function updateControls(context)
         context.infoIcon = nil
     end
     if interactive and #context.controls == 0 then
-        local actions = { { "+", 44, 1 }, { "-", 76, -1 }, { "target", 0 }, { "GPS", 108 } }
+        local actions = {
+            { "+", CONTROL_TOPS[1], 1 },
+            { "-", CONTROL_TOPS[2], -1 },
+            { "target", CONTROL_TOPS[3] },
+            { "info", CONTROL_TOPS[4] },
+        }
         for index, action in ipairs(actions) do
             context.controls[index] = lvgl.rectangle(context.controlsRoot, {
                 x = 4,
@@ -1299,10 +1306,10 @@ function map.create(parent, rect, settings, services)
     if settings.showCoordinates then
         context.coordinatesLabel = services.primitives.label(context.panel.root, services.theme, {
             x = area.x + 4,
-            y = area.h - 20,
+            y = area.h - 28,
             w = math.max(1, area.w - 56),
             text = "",
-            font = TINSIZE,
+            font = SMLSIZE,
             color = services.theme.color.text,
         })
         lvgl.hide(context.coordinatesLabel)
@@ -1342,7 +1349,7 @@ function map.create(parent, rect, settings, services)
         x = area.zoomX,
         y = area.zoomY,
         w = 40,
-        h = 140,
+        h = CONTROLS_HEIGHT,
         scrollDir = 0,
         scrollBar = false,
     })
@@ -1392,9 +1399,9 @@ function map.update(context, rect)
     context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
     context.viewport:set({ x = area.x, y = area.y, w = area.w, h = area.h })
     context.controlsHint:set({ x = area.x + 16, y = area.controlsY, w = math.max(1, area.w - 32) })
-    context.controlsRoot:set({ x = area.zoomX, y = area.zoomY, h = 140 })
+    context.controlsRoot:set({ x = area.zoomX, y = area.zoomY, h = CONTROLS_HEIGHT })
     if context.coordinatesLabel then
-        context.coordinatesLabel:set({ x = area.x + 4, y = area.h - 20, w = math.max(1, area.w - 56) })
+        context.coordinatesLabel:set({ x = area.x + 4, y = area.h - 28, w = math.max(1, area.w - 56) })
     end
     if context.satelliteHeader then
         updateSatelliteState(context)
