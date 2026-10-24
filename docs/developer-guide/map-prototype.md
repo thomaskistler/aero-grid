@@ -187,8 +187,34 @@ six-decimal latitude/longitude when GPS is valid. `flightPath` accepts `off`,
 `trail` or `full`: samples require at least five metres of movement and one
 second between accepted fixes. The trail retains the last 30 seconds, capped at
 31 timestamped points; old points expire even while stationary or GPS is unavailable.
-Full mode keeps a
-bounded, decimated history of at most 64 points. GPS outages break the displayed path.
+Full mode keeps up to 1,024 timestamped fixes independently of a 63-segment drawing
+budget. At capacity, a bounded search compares 32 interior samples by their
+distance from the line between their neighbours, removing the least significant
+candidate instead of dropping every other fix. The flight start and latest fix
+are retained. Gap boundaries are protected when choosing candidates; if no
+eligible interior is found, detail is discarded with a new break, never a false
+connection. This is bounded, approximate history compaction, not lossless logging.
+
+Full-route rendering projects a snapshot and groups visible runs without
+bridging GPS gaps or off-screen excursions. It then splits the run with the
+largest screen-space deviation until the error is at most 1.5 pixels or the
+63-segment budget is exhausted. Complex views may exceed that error tolerance;
+the drawing budget takes precedence. If disjoint visible runs alone exceed the
+budget, the newest 63 runs are prioritized. Segments crossing the viewport are
+kept even when both endpoints are outside it.
+
+Projection and simplification run incrementally, at most 16 point operations per
+refresh. Full-mode line updates are also batched, at most eight line pairs per
+refresh, including arrow-circle clipping. The last completed geometry is reused
+while a new snapshot is prepared; initial routes and changes can appear
+progressively. Pan, zoom, resize and new samples invalidate the cache; stationary
+refreshes reuse it without reprojecting history. Native line allocation remains
+bounded (63 pairs, or 126 in arrow mode); it does not grow with stored history.
+These are Lua work bounds, not measured native-radio rendering or RAM guarantees.
+Trail mode remains a separate, unsimplified 30-second timestamped window, so
+full-history compaction cannot alter its age fade. The modes remain alternatives,
+not a combined full-route-plus-fading-tail display.
+GPS outages break the displayed path.
 In fullscreen, the separate circled info control opens the same location QR overlay
 as tapping a Navigation panel, leaving map taps available for panning.
 Distance/scale overlays remain intentionally absent. The home PNG renders at native size without

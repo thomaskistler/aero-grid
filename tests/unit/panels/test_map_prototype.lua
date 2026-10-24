@@ -155,6 +155,91 @@ a.assertEqual(
     0
 )
 a.assertEqual(#map.validateSettings({}), 0)
+do
+    local bounds = { left = -10, top = -10, right = 110, bottom = 110 }
+    local function simplify(points, view)
+        local projections = 0
+        local job = map.newPathJob(points, function(point)
+            projections = projections + 1
+            return point.x, point.y
+        end, view or bounds)
+        local steps = 0
+        repeat
+            local before = projections
+            map.stepPathJob(job)
+            assert(projections - before <= 16, "projection must be incrementally budgeted")
+            steps = steps + 1
+            assert(steps < 10000, "simplification must terminate")
+        until job.result
+        a.assertEqual(projections, #points, "points must be projected just once per rebuild")
+        return job.result
+    end
+    local straight = {}
+    for index = 0, 100 do
+        straight[#straight + 1] = { x = index, y = 0, time = index * 100 }
+    end
+    local result = simplify(straight)
+    a.assertEqual(#result, 1, "straight sections should need only one line")
+    a.assertEqual(result[1].first.source, straight[1])
+    a.assertEqual(result[1].last.source, straight[#straight])
+    a.assertEqual(straight[50].time, 4900, "render simplification must not alter timestamps")
+    local corner = simplify({ { x = 0, y = 0 }, { x = 50, y = 50 }, { x = 100, y = 0 } })
+    a.assertEqual(#corner, 2, "significant turns must be retained")
+    a.assertEqual(corner[1].last.x, 50)
+    a.assertEqual(corner[1].last.y, 50)
+    local gap = simplify({
+        { x = 0, y = 0 },
+        { x = 10, y = 0 },
+        { x = 20, y = 0, breakBefore = true },
+        { x = 30, y = 0 },
+    })
+    a.assertEqual(#gap, 2, "GPS gaps must never be simplified into a connecting line")
+    a.assertEqual(gap[1].last.x, 10)
+    a.assertEqual(gap[2].first.x, 20)
+    local hidden = simplify({ { x = 200, y = 200 }, { x = 210, y = 210 } })
+    a.assertEqual(#hidden, 0, "off-screen segments must not consume the line budget")
+    local crossing = simplify({ { x = -100, y = 50 }, { x = 200, y = 50 } })
+    a.assertEqual(#crossing, 1, "crossing lines must remain even if both endpoints are off-screen")
+    local jitter = {}
+    for index = 0, 100 do
+        jitter[#jitter + 1] = { x = index, y = index % 2 * 0.5 }
+    end
+    a.assertEqual(#simplify(jitter), 1, "subpixel jitter should disappear at this zoom")
+    for _, point in ipairs(jitter) do
+        point.y = point.y * 10
+    end
+    assert(#simplify(jitter) > 1, "zooming in must restore visible detail")
+    local turns = {}
+    for index = 0, 200 do
+        turns[#turns + 1] = { x = index / 2, y = index % 2 * 100 }
+    end
+    a.assertEqual(#simplify(turns), 63, "complex routes must respect the render budget")
+    local manyGaps = {}
+    for index = 0, 199 do
+        manyGaps[#manyGaps + 1] = { x = index / 2, y = 0, breakBefore = index % 2 == 0 }
+    end
+    local limited = simplify(manyGaps)
+    a.assertEqual(#limited, 63, "many disjoint runs must stay bounded without connecting gaps")
+    for _, segment in ipairs(limited) do
+        a.assertEqual(segment.last.x - segment.first.x, 0.5)
+    end
+    local history = {}
+    for index = 1, 1024 do
+        history[index] = { latitude = 26, longitude = index * 0.0001, time = index * 100 }
+    end
+    history[2].latitude = 26.01
+    local start, turn, finish = history[1], history[2], history[#history]
+    map.compactHistory(history, 0)
+    a.assertEqual(#history, 1023)
+    a.assertEqual(history[1], start)
+    a.assertEqual(history[2], turn, "history compaction should favor straight samples over a sharp turn")
+    a.assertEqual(history[#history], finish)
+    for _, point in ipairs(history) do
+        point.breakBefore = true
+    end
+    map.compactHistory(history, 0)
+    assert(history[2].breakBefore, "compaction must never bridge an outage when no removable interior exists")
+end
 a.assertEqual(#map.validateSettings({ positionMarker = "plane" }), 0)
 a.assertEqual(#map.validateSettings({ positionMarker = "arrow" }), 0)
 a.assertEqual(#map.validateSettings({ positionMarker = "unknown" }), 1)
