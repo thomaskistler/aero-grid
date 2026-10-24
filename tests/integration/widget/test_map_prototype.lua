@@ -31,6 +31,8 @@ local host = fixture.createLoaded(nil, { Layout = "review-map", Theme = "modern-
 fixture.pump(host, 80)
 a.assertEqual(#host.errors, 0, table.concat(host.errors, "\n"))
 local context = assert(fixture.instanceOf(host, "map"))
+a.assertEqual(context.pack.version, 2)
+a.assertEqual(context.pack.name, "Synthetic test area")
 local function pressControl(index)
     fixture.tick(20)
     local top = ({ 44, 76, 0 })[index]
@@ -697,9 +699,19 @@ for _, lost in ipairs({ "stale", "no-fix", "invalid", "no-source" }) do
     a.assertEqual(headed.courseHistory, nil, "GPS recovery must discard pre-outage course samples")
 end
 do
-    local manifest = "format: aerogrid-map-area\nversion: 1\nid: nine-levels\n"
+    local manifest = "format: aerogrid-map-area\nversion: 2\nid: nine-levels\n"
+        .. 'name: "Nine levels"\n'
         .. "imagerySet: synthetic-v1-jpeg-q90\nprojection: EPSG:3857\n"
-        .. "tileScheme: XYZ\ntileSize: 256\nimageFormat: jpeg\nlevels:\n"
+        .. "tileScheme: XYZ\ntileSize: 256\nimageFormat: jpeg\n"
+        .. "selection:\n"
+        .. "  bounds:\n"
+        .. "    west: -97.158\n"
+        .. "    south: 25.997\n"
+        .. "    east: -97.157\n"
+        .. "    north: 25.998\n"
+        .. "  radio: tx16s\n"
+        .. "  coverageMode: per-zoom-clamped\n"
+        .. "levels:\n"
     for zoom = 11, 19 do
         local n = 2 ^ zoom
         manifest = manifest
@@ -744,7 +756,10 @@ do
     fixture.lvglMock.setCallCounting(true)
     fixture.lvglMock.setPropertyValidation(true)
     assert(okNine, nine)
-    assert(instructions < 15000, "nine-level map creation used " .. instructions .. " instructions")
+    assert(
+        instructions < 20000,
+        "nine-level map creation exceeded EdgeTX's 20,000-instruction budget: " .. instructions
+    )
     a.assertEqual(#nine.pack.levels, 9)
     a.assertContains(nine.directory, "/tiles/synthetic-v1-jpeg-q90/")
     local sample = captured.pack.levels[1]
@@ -796,11 +811,21 @@ do
     local scans, reads = 0, 0
     local function addArea(id, narrow, detail)
         local base = captured.pack
-        local text = "format: aerogrid-map-area\nversion: 1\nid: "
+        local text = "format: aerogrid-map-area\nversion: 2\nid: "
             .. id
+            .. '\nname: "Test area"'
             .. "\nimagerySet: "
             .. base.imagerySet
-            .. "\nprojection: EPSG:3857\ntileScheme: XYZ\ntileSize: 256\nimageFormat: jpeg\nlevels:\n"
+            .. "\nprojection: EPSG:3857\ntileScheme: XYZ\ntileSize: 256\nimageFormat: jpeg\n"
+            .. "selection:\n"
+            .. "  bounds:\n"
+            .. "    west: -97.158\n"
+            .. "    south: 25.997\n"
+            .. "    east: -97.157\n"
+            .. "    north: 25.998\n"
+            .. "  radio: tx16s\n"
+            .. "  coverageMode: per-zoom-clamped\n"
+            .. "levels:\n"
         for _, level in ipairs(base.levels) do
             if not detail or level.zoom <= detail then
                 local xMin, xMax, yMin, yMax = level.xMin, level.xMax, level.yMin, level.yMax

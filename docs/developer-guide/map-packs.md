@@ -21,10 +21,9 @@ The connected manager reads and writes these paths directly under the SD-card
 root. Each area has exactly one YAML metadata file; JPEGs remain shared. No
 `selections/` or `sources/` sidecars are read or written.
 
-**The independent radio-reader PR #172 implements format 1, not format 2.**
-That PR is unchanged and does not read the format 2 areas written by this
-manager. The two formats are intentionally incompatible; no format 1 area
-compatibility or migration is implemented here.
+The radio panel in PR #172 consumes these version 2 area manifests and shared
+tile paths. It validates the selection metadata and uses the declared level
+coverage to locate tiles. Version 1 manifests are not supported.
 
 The consumer and simulator behavior described here belongs to the independent
 radio-panel workstream. See [testing](testing.md#planner-and-map-file-contract)
@@ -268,8 +267,9 @@ are provider/browser-dependent; failure does not trigger a proxy workaround.
 
 ## Automatic area selection
 
-The remainder of this section describes the independent **format 1**
-radio-reader PR #172. It does not consume or interpret format 2 areas.
+The radio-panel consumer accepts version 2 manifests only. It does not
+recalculate planner geometry on the radio; the browser validates the saved
+selection against the planner when reading or writing areas.
 
 GPS readiness uses the existing navigation service: a known source, a valid fix
 and `state: normal`, not stale/unavailable coordinates. This is readiness for

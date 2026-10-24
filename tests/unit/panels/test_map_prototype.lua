@@ -33,13 +33,19 @@ a.assertEqual(history.course, 0, "ambiguous opposing directions must retain the 
 local function pack()
     return {
         format = "aerogrid-map-area",
-        version = 1,
+        version = 2,
         id = "synthetic",
+        name = "Synthetic test area",
         imagerySet = "companion-v1-jpeg-v1",
         projection = "EPSG:3857",
         tileScheme = "XYZ",
         tileSize = 256,
         imageFormat = "jpeg",
+        selection = {
+            bounds = { west = -97.158, south = 25.997, east = -97.157, north = 25.998 },
+            radio = "tx16s",
+            coverageMode = "per-zoom-clamped",
+        },
         levels = {
             { zoom = 16, xMin = 15080, xMax = 15081, yMin = 27863, yMax = 27864 },
             { zoom = 17, xMin = 30160, xMax = 30163, yMin = 55726, yMax = 55729 },
@@ -47,7 +53,7 @@ local function pack()
     }
 end
 
-a.assertEqual(map.validatePack(pack()).version, 1)
+a.assertEqual(map.validatePack(pack()).version, 2)
 do
     local value = pack()
     value.imageFormat = "jpeg"
@@ -72,7 +78,22 @@ do
 end
 for _, mutate in ipairs({
     function(p)
-        p.version = 2
+        p.version = 1
+    end,
+    function(p)
+        p.name = " "
+    end,
+    function(p)
+        p.selection = nil
+    end,
+    function(p)
+        p.selection.coverageMode = "unknown"
+    end,
+    function(p)
+        p.selection.bounds.east = p.selection.bounds.west
+    end,
+    function(p)
+        p.selection.bounds.south = math.huge
     end,
     function(p)
         p.tileScheme = "TMS"

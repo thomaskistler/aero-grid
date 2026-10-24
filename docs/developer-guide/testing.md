@@ -169,11 +169,10 @@ JPEG validation, shared tile identity, source fetch and cancellation behavior,
 selection reconstruction (including per-zoom bounds and date-line geometry),
 malformed YAML rejection, shared-tile pruning, and manager review/sync behavior.
 
-The connected manager writes only area format 2. The independent radio-reader
-PR #172 remains unchanged and reads format 1, so its current reader is
-incompatible with format 2. No legacy-area migration or interoperability is
-claimed. The manager reports library bytes and update estimates but cannot
-query SD-card free space; ensure the card has room before confirming a sync.
+The connected manager writes area format 2, which the radio panel consumes;
+version 1 manifests are not supported. The manager reports library bytes and
+update estimates but cannot query SD-card free space; ensure the card has room
+before confirming a sync.
 
 ## Lint and formatting
 
