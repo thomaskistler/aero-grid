@@ -80,6 +80,35 @@ local function createAircraft(parent, x, y, size, assets, follow)
     return aircraft
 end
 
+local function createQrIcon(parent, x, y)
+    local foreground, background = lcd.RGB(0xFFFFFF), lcd.RGB(0x101414)
+    local objects = {}
+    local function square(sx, sy, size, color)
+        objects[#objects + 1] = lvgl.rectangle(parent, {
+            x = sx,
+            y = sy,
+            w = size,
+            h = size,
+            color = color,
+            filled = true,
+        })
+    end
+    local function finder(sx, sy)
+        square(sx, sy, 12, foreground)
+        square(sx + 2, sy + 2, 8, background)
+        square(sx + 4, sy + 4, 4, foreground)
+    end
+    finder(x, y)
+    finder(x + 14, y)
+    finder(x, y + 14)
+    square(x + 16, y + 16, 2, foreground)
+    square(x + 20, y + 16, 2, foreground)
+    square(x + 16, y + 20, 4, foreground)
+    square(x + 22, y + 20, 2, foreground)
+    square(x + 18, y + 24, 2, foreground)
+    return objects
+end
+
 local function integer(value, low, high)
     return type(value) == "number" and value == value and value % 1 == 0 and value >= low and value <= high
 end
@@ -1075,6 +1104,7 @@ local function updateControls(context)
         context.controlsRoot:clear()
         context.controls = {}
         context.followAircraft, context.followIcon = nil, nil
+        context.qrIcon = nil
     end
     if interactive and #context.controls == 0 then
         local actions = { { "+", 44, 1 }, { "-", 76, -1 }, { "target", 0 }, { "GPS", 108 } }
@@ -1091,14 +1121,7 @@ local function updateControls(context)
             local y = action[2]
             local white = lcd.RGB(0xFFFFFF)
             if index == 4 then
-                context.primitives.label(context.controlsRoot, context.theme, {
-                    x = 4,
-                    y = y + 6,
-                    w = 32,
-                    text = "GPS",
-                    font = TINSIZE,
-                    color = white,
-                })
+                context.qrIcon = createQrIcon(context.controlsRoot, 9, y + 3)
             elseif action[3] then
                 lvgl.rectangle(
                     context.controlsRoot,
