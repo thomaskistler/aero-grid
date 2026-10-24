@@ -9,7 +9,7 @@ import zlib
 
 INK = (0, 0, 0)
 WHITE = (255, 255, 255)
-HOME_COLOR = (255, 118, 46)
+HOME_COLOR = (236, 72, 62)
 OUTER_RADIUS = 11
 INNER_RADIUS = 8
 PIN_SIDE = [(7 + 11 * (step / 48) ** 2, 12 + 18 * step / 48)
