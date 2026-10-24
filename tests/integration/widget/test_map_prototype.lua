@@ -808,6 +808,17 @@ do
     fixture.tick(100)
     map.refresh(options)
     a.assertEqual(options.pathLines[2].hidden, false, "continuous trail segments must render")
+    for index = 1, 30 do
+        options.feed.longitude = options.feed.longitude + 0.0001
+        fixture.tick(100)
+        map.refresh(options)
+    end
+    a.assertEqual(#options.pathPoints, 24)
+    a.assertEqual(options.pathLines[1].properties.opacity, 32, "oldest trail segment must fade")
+    a.assertEqual(options.pathLines[23].properties.opacity, 255, "newest trail segment must remain bright")
+    for index = 2, 23 do
+        assert(options.pathLines[index].properties.opacity > options.pathLines[index - 1].properties.opacity)
+    end
 end
 do
     local full = map.create(

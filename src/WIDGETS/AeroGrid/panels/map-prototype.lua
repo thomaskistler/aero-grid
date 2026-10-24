@@ -531,6 +531,16 @@ local function drawPath(context)
             local x1, y1 = map.project(level, first.latitude, first.longitude, context.transform)
             local x2, y2 = map.project(level, second.latitude, second.longitude, context.transform)
             if x1 and x2 then
+                local opacity = context.settings.flightPath == "trail"
+                        and math.floor(32 + 223 * (index - 1) / math.max(1, #points - 2) + 0.5)
+                    or 255
+                if #points == 2 then
+                    opacity = 255
+                end
+                if lineState.opacity ~= opacity then
+                    line:set({ opacity = opacity })
+                    lineState.opacity = opacity
+                end
                 local firstX, firstY = math.floor(x1 - context.viewX + 0.5), math.floor(y1 - context.viewY + 0.5)
                 local secondX, secondY = math.floor(x2 - context.viewX + 0.5), math.floor(y2 - context.viewY + 0.5)
                 if
