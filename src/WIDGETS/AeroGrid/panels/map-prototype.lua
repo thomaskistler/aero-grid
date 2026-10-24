@@ -447,25 +447,8 @@ local function updateSatelliteState(context)
         context.satelliteHeaderFrame = context.area.frame
         local presentation = context.state(state, "cyan")
         local text = count and string.format("%.0f", count) or "--"
-        local builder, frame, fonts = context.themeBuilder, context.area.frame, context.fonts
-        local headingWidth = builder.headingWidth(frame, fonts.badge, presentation.badge)
-        local heading, font = builder.fitHeading(settings.label, headingWidth, fonts.label, fonts.badge)
-        local left = frame.labelX + builder.measureText(font, heading) + 6
-        local right = frame.badgeX + frame.badgeWidth
-        if presentation.badge and presentation.badge ~= "" then
-            right = context.primitives.badgeX(builder, frame, fonts.badge, presentation.badge) - 6
-        end
-        local width = 18 + builder.measureText(fonts.label, text)
-        local height = math.max(16, builder.fontHeight(fonts.label))
-        local visible = context.statusText == "GPS"
-            and not frame.labelHidden
-            and right - width >= left
-            and frame.labelY + height <= frame.top
-        if visible then
-            context.satelliteHeader:set({ x = right - width, y = frame.labelY, w = width, h = height })
-            context.primitives.setFont(context.satelliteLabel, fonts.label)
-            context.satelliteLabel:set({ text = text, w = width - 18, color = presentation.label })
-            lvgl.show(context.satelliteHeader)
+        if context.statusText == "GPS" then
+            context.primitives.setSatelliteHeader(context, text, presentation)
         else
             lvgl.hide(context.satelliteHeader)
         end
@@ -1372,26 +1355,7 @@ function map.create(parent, rect, settings, services)
         assert(services.telemetry, "map satellite count requires telemetry service")
         context.satellites = services.telemetry:subscribe(settings.satelliteSource)
         if settings.showSatellites ~= false then
-            context.satelliteHeader = lvgl.box(context.panel.root, { x = 0, y = 0, w = 1, h = 1 })
-            local filename = assets .. (services.theme.light and "satellite-light.png" or "satellite.png")
-            local handle = io.open(filename, "r")
-            assert(handle, "map satellite icon missing: " .. filename)
-            io.close(handle)
-            services.primitives.image(context.satelliteHeader, {
-                x = 0,
-                y = 0,
-                w = 16,
-                h = 16,
-                file = filename,
-            })
-            context.satelliteLabel = services.primitives.label(context.satelliteHeader, services.theme, {
-                x = 18,
-                y = 0,
-                text = "",
-                font = services.fonts.label,
-                color = services.theme.color.textMuted,
-            })
-            lvgl.hide(context.satelliteHeader)
+            services.primitives.satelliteHeader(context, services.host.path)
         end
     end
     return context
