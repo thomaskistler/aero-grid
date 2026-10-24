@@ -15,12 +15,14 @@ make build
 ```
 
 The normal build recreates the disposable simulator SD image, includes the `review-map` development layout,
-and generates 20 original synthetic RGB JPEG tiles in
-`build/sdcard/AEROGRID/maps/tiles/companion-v1-jpeg-v1/`, with its area manifest
-at `/AEROGRID/maps/areas/synthetic.yaml`. Nothing is downloaded. Rivers, roads,
-tile borders and XYZ labels are procedural test patterns, **not real terrain**.
-The imagery has no Google dependency or third-party export requirement.
-Both are simulator fixtures and remain excluded from release packages.
+and copies 20 stored USGS/USDA NAIP aerial-imagery JPEG tiles at zoom 16/17.
+Their manifest is `/AEROGRID/maps/areas/companion-naip.yaml`; tiles are under
+`/AEROGRID/maps/tiles/companion-naip-20261024/`. Builds require no network access.
+The snapshot covers Companion's GPS at 25.9973, -97.1572. Source and exact export
+parameters are recorded in `tests/fixtures/map-imagery/source.json`; refresh with
+`build/venv/bin/python tools/fetch-map-imagery-fixture.py`.
+Automated panel tests retain the separate procedural fixture generator.
+All map fixtures remain excluded from release packages.
 
 Use the generated SD path with the [TX16S simulator](simulators.md).
 Open the second screen of **AG Navigation**, which already selects **review-map**.

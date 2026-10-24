@@ -12,9 +12,9 @@ without browser code or network access.
 - YAML-only `map-prototype` panel, resizable to all grid spans on the current
   TX16S 480x272 target. Standard panel shell, accent, title and state badge;
   native-size imagery fills the panel except for the accent sidebar.
-- Normal `make build` creates a deterministic, synthetic 20-tile pack at zoom
+- Normal `make build` copies a stored USGS/USDA NAIP 20-tile aerial snapshot at zoom
   16/17 covering Companion's default GPS: 25.9973, -97.1572.
-  AEROGRID STD's seventh screen (`review-map`) selects it.
+  AG Navigation's second screen (`review-map`) selects it.
 - Reusable tile objects, retained overlap during pans, per-level coverage
   clamping and incremental loading: at most one source every 250 ms.
 - Fullscreen single-finger dragging, live loading while dragging and no
@@ -65,9 +65,8 @@ without browser code or network access.
 
 ## Known limitations and remaining work
 
-- Real, offline-authorized satellite imagery for the user's flying location is
-  needed before meaningful on-radio validation. Google preview access is not
-  offline-export authorization. Imagery source/licensing remains undecided.
+- The build includes a stored NAIP aerial snapshot at Companion's GPS.
+  Imagery for the user's own flying location is still needed for field testing.
 - The radio consumes a shared tile library and named area manifests:
   1-9 consecutive zooms within 11-19, max
   2,000 tiles per area, <=8 KiB YAML, EPSG:3857 XYZ 256px RGB JPEG, including
