@@ -534,6 +534,7 @@ local function drawPath(context)
     local now = getTime()
     local level = context.pack.levels[context.levelIndex]
     for index, line in ipairs(context.pathLines) do
+        local outline = context.pathOutlines[index]
         local lineState = context.pathLineStates[index]
         local first = points[index]
         local second = points[index + 1]
@@ -547,6 +548,7 @@ local function drawPath(context)
                     or 255
                 if lineState.opacity ~= opacity then
                     line:set({ opacity = opacity })
+                    outline:set({ opacity = opacity })
                     lineState.opacity = opacity
                 end
                 local firstX, firstY = math.floor(x1 - context.viewX + 0.5), math.floor(y1 - context.viewY + 0.5)
@@ -557,12 +559,15 @@ local function drawPath(context)
                     or lineState.secondX ~= secondX
                     or lineState.secondY ~= secondY
                 then
-                    line:set({ pts = { { firstX, firstY }, { secondX, secondY } } })
+                    local pts = { { firstX, firstY }, { secondX, secondY } }
+                    line:set({ pts = pts })
+                    outline:set({ pts = pts })
                     lineState.firstX, lineState.firstY, lineState.secondX, lineState.secondY =
                         firstX, firstY, secondX, secondY
                 end
                 if not lineState.visible then
                     lvgl.show(line)
+                    lvgl.show(outline)
                     lineState.visible = true
                 end
             else
@@ -571,6 +576,7 @@ local function drawPath(context)
         end
         if not visible and lineState.visible then
             lvgl.hide(line)
+            lvgl.hide(outline)
             lineState.visible = false
         end
     end
@@ -1263,6 +1269,7 @@ function map.create(parent, rect, settings, services)
         controls = {},
         pathPoints = {},
         pathLines = {},
+        pathOutlines = {},
         pathLineStates = {},
         tileLoads = 0,
         viewChanges = 0,
@@ -1301,10 +1308,18 @@ function map.create(parent, rect, settings, services)
     if (settings.flightPath or "off") ~= "off" then
         local lineCount = settings.flightPath == "trail" and TRAIL_POINTS - 1 or FULL_PATH_POINTS - 1
         for index = 1, lineCount do
+            context.pathOutlines[index] = lvgl.line(context.viewport, {
+                pts = { { 0, 0 }, { 0, 0 } },
+                thickness = 5,
+                color = lcd.RGB(0x101414),
+            })
+            lvgl.hide(context.pathOutlines[index])
+        end
+        for index = 1, lineCount do
             context.pathLines[index] = lvgl.line(context.viewport, {
                 pts = { { 0, 0 }, { 0, 0 } },
-                thickness = 2,
-                color = services.theme.color.green,
+                thickness = 3,
+                color = lcd.RGB(0xFFEB3B),
             })
             lvgl.hide(context.pathLines[index])
             context.pathLineStates[index] = { visible = false }

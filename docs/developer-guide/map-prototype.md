@@ -158,7 +158,9 @@ per panel. Within one widget instance, identical GPS source and arm-switch
 settings share the same home state; different settings capture independently.
 Separate widget instances do not share captured home.
 
-Trail segments fade by age to zero opacity at 30 seconds.
+Paths use a bright yellow 3-pixel stroke over a dark 5-pixel outline for contrast
+against aerial imagery. Both layers of trail segments fade together by age to
+zero opacity at 30 seconds.
 Full-path mode retains uniform opacity.
 
 Headers use the same shared status component as Navigation: title color,
