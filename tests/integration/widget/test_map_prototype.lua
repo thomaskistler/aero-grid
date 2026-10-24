@@ -794,7 +794,12 @@ do
     a.assertEqual(options.badgeText, options.state("critical", "cyan").badge)
     options.feed.state = "stale"
     map.refresh(options)
-    assert(options.satelliteHeader.hidden, "satellite indicator must not overlap GPS status messages")
+    if options.showSatellites then
+        local header = options.satelliteHeader.properties
+        assert(header.x + header.w < options.badge.properties.x, "satellites must not overlap GPS status badges")
+    end
+    a.assertEqual(options.badgeText, options.state("stale", "cyan").badge)
+    a.assertEqual(options.statusLabel.properties.text, "GPS STALE")
     options.feed.state = "normal"
     options.feed.longitude = options.feed.longitude + 0.0001
     fixture.tick(100)
@@ -1051,6 +1056,8 @@ do
     map.refresh(automatic)
     a.assertEqual(scans, 0, "GPS wait must not scan the SD card")
     a.assertEqual(automatic.statusText, "WAITING FOR GPS")
+    a.assertEqual(automatic.badgeText, automatic.state("unavailable", "cyan").badge)
+    a.assertEqual(automatic.statusLabel.properties.text, "WAITING FOR GPS")
     a.assertEqual(#automatic.controls, 0)
     a.assertEqual(map.event(automatic, EVT_TOUCH_TAP, { x = 20, y = 20 }, { x = 0, y = 0 }), false)
     map.update(automatic, { x = 0, y = 0, w = 480, h = 272 })
