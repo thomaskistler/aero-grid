@@ -272,6 +272,7 @@ test("widget absence, unknown version and ambiguous entries are distinct", async
 });
 
 test("action selection installs, updates, shows equal and labels downgrades explicitly", () => {
+  assert.equal(actionFor({ present: false }, "0.4.0").label, "Install AeroGrid v0.4.0");
   assert.match(actionFor({ present: false }, "0.4.0").label, /^Install/);
   assert.match(actionFor({ present: true, version: null }, "0.4.0").label, /^Update/);
   assert.equal(actionFor({ present: true, version: "0.4.0" }, "0.4.0").enabled, false);
@@ -299,10 +300,15 @@ test("release catalog validates entries, unavailable states, latest and numeric 
     available, reason: available ? null : "Missing installation assets.",
   });
   const catalog = { schema: 1, latest: "0.10.0", releases: [entry("0.2.0"), entry("0.10.0"), entry("0.3.0", false)] };
-  const fetcher = async () => Response.json(catalog);
+  const releases = ["0.2.0", "0.10.0", "0.3.0"].map((version) => ({
+    tag_name: `v${version}`, name: `AeroGrid ${version}`, draft: false, prerelease: false,
+    assets: [`AeroGrid-${version}.zip`, `AeroGrid-${version}.zip.sha256`].map((name) => ({
+      name, browser_download_url: `https://github.com/thomaskistler/aero-grid/releases/download/v${version}/${name}`,
+    })),
+  }));
+  const fetcher = async (url) => Response.json(String(url).includes("api.github.com") ? releases : catalog);
   assert.deepEqual((await loadCatalog(base, fetcher)).releases.map((item) => item.version), ["0.10.0", "0.3.0", "0.2.0"]);
   for (const bad of [
-    { ...catalog, latest: "0.3.0" },
     { ...catalog, releases: [null] },
     { ...catalog, releases: [...catalog.releases, entry("0.2.0")] },
     { ...catalog, releases: [entry("1.0.0-beta.1")] },
@@ -310,6 +316,23 @@ test("release catalog validates entries, unavailable states, latest and numeric 
     { ...catalog, releases: [{ ...entry("0.10.0"), available: "yes" }] },
     { ...catalog, releases: [{ ...entry("0.10.0", false), reason: null }] },
   ]) await assert.rejects(loadCatalog(base, async () => Response.json(bad)), /catalog|entry/);
+  const live = [releases[0], { tag_name: "v0.11.0", name: "New release", draft: false, prerelease: false },
+    { tag_name: "v0.12.0-beta.1", draft: false, prerelease: true }];
+  const updated = await loadCatalog(base, async (url) =>
+    Response.json(String(url).includes("api.github.com") ? live : catalog));
+  assert.deepEqual(updated.releases.map((item) => item.version), ["0.11.0", "0.2.0"]);
+  assert.equal(updated.latest, "0.11.0");
+  assert.equal(updated.releases[0].available, false);
+  const withoutCatalog = await loadCatalog(base, async (url) =>
+    String(url).includes("api.github.com") ? Response.json(releases)
+      : new Response("", { status: 404 }));
+  assert.deepEqual(withoutCatalog.releases.map((item) => item.version), ["0.10.0", "0.3.0", "0.2.0"]);
+  assert.ok(withoutCatalog.releases.every((item) => !item.available
+    && item.reason === "Automatic installation files are not available on this site."));
+  await assert.rejects(loadCatalog(base, async () =>
+    new Response("", { status: 500 })), /HTTP 500/);
+  await assert.rejects(loadCatalog(base, async (url) => String(url).includes("api.github.com")
+    ? new Response("", { status: 403 }) : Response.json(catalog)), /HTTP 403/);
 });
 
 test("latest stable is cross-checked with published assets; stale/missing/network states block", async () => {

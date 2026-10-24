@@ -131,7 +131,7 @@
             number(directory.length, 4, true), number(offset, 4, true), number(0, 2)]);
     }
 
-    async function createArchive(selection, id, options = {}) {
+    async function createFiles(selection, id, options = {}) {
         const source = options.source || {
             metadata: SYNTHETIC,
             readTile: (zoom, x, y, signal) => root.AeroGridMapSources.encodeJpeg(syntheticRgb(zoom, x, y), signal)
@@ -163,12 +163,15 @@
                 for (let y = level.yMin; y <= level.yMax; y++) {
                     checkAbort(signal);
                     const canonicalX = x % 2 ** level.zoom;
-                    const image = await source.readTile(level.zoom, canonicalX, y, signal);
+                    const image = options.readExistingTile
+                        ? await options.readExistingTile(metadata.id, level.zoom, canonicalX, y)
+                        : null;
+                    const tile = image || await source.readTile(level.zoom, canonicalX, y, signal);
                     checkAbort(signal);
-                    if (!(image instanceof Uint8Array) || !image.length) throw new Error("Invalid encoded tile.");
-                    if (!root.AeroGridMapSources.compatibleJpeg(image)) throw new Error("Tile must be a compatible 256x256 JPEG.");
-                    if (image.length > MAX_TILE_BYTES) throw new Error("Encoded tile exceeds 256 KiB.");
-                    add(`tiles/${metadata.id}/${level.zoom}/${canonicalX}/${y}.jpg`, image);
+                    if (!(tile instanceof Uint8Array) || !tile.length) throw new Error("Invalid encoded tile.");
+                    if (!root.AeroGridMapSources.compatibleJpeg(tile)) throw new Error("Tile must be a compatible 256x256 JPEG.");
+                    if (tile.length > MAX_TILE_BYTES) throw new Error("Encoded tile exceeds 256 KiB.");
+                    add(`tiles/${metadata.id}/${level.zoom}/${canonicalX}/${y}.jpg`, tile);
                     completed++;
                     if (options.onProgress) options.onProgress({ completed, total: selection.tileCount, bytes });
                     // Yield between tiles so cancellation and selection changes
@@ -178,11 +181,17 @@
             }
         }
         checkAbort(signal);
-        const data = zip(entries);
-        checkAbort(signal);
+        return new Map(entries);
+    }
+
+    async function createArchive(selection, id, options = {}) {
+        const files = await createFiles(selection, id, options);
+        checkAbort(options.signal);
+        const data = zip([...files]);
+        checkAbort(options.signal);
         return data;
     }
 
-    root.AeroGridMapPack = { identifier, areaManifest, syntheticRgb, createArchive,
+    root.AeroGridMapPack = { identifier, areaManifest, syntheticRgb, createFiles, createArchive,
         SYNTHETIC, MAX_ARCHIVE_BYTES, MAX_TILE_BYTES };
 })(globalThis);

@@ -183,8 +183,17 @@ if (typeof require === "function") {
             equal(overviewZoom({ ...area, west: area.west / 10, east: area.east / 10 }, radio.id), zoom);
         }
     }
-    equal(RADIO_PRESETS.map(radio => radio.id), ["tx16s", "tx16s-mkii", "tx15", "tx16s-mk3"]);
+    equal(RADIO_PRESETS.map(radio => radio.id), ["tx16s", "tx16s-mkii", "tx15", "nv14", "tx16s-mk3"]);
     rejects(() => radioFootprint("boxer"));
+    equal(radioFootprint("mono-128x64"), {
+        id: "mono-128x64", name: "Monochrome radio", width: 128, height: 64, columns: 1, rows: 1
+    });
+    equal(radioFootprint("mono-212x64"), {
+        id: "mono-212x64", name: "Monochrome radio", width: 212, height: 64, columns: 1, rows: 1
+    });
+    for (const id of ["mono-128x64", "mono-212x64"]) {
+        equal(coveragePlan(tinyField, [17], id).tileCount, 1);
+    }
     rejects(() => snapBounds(tinyField, [16], "unknown"));
     rejects(() => specification("field", tinyField, [16], "unknown"));
     for (const radio of RADIO_PRESETS) {

@@ -98,6 +98,54 @@ including display name, original bounds, radio preset and coverage mode.
 attribution and whether imagery is synthetic. The radio need not read either
 file or scan the tile library to display an area.
 
+## Connected map manager
+
+The browser map manager uses the same SD-card-root picker and page-session
+`RadioStorage` connection as the installer. The SD-card handle is retained in
+IndexedDB with a per-tab session marker, so navigation and reloads restore the
+connection after rechecking read permission and the SD-card root. Explicit
+disconnect clears it; restoring never prompts for new permission or grants
+write permission. It recognizes the connected radio's
+screen dimensions, lists only AeroGrid areas with the supported area/selection
+pair, and treats compatibility issues as warnings, as the installer does.
+All planning uses the connected radio's detected screen dimensions, including
+128 x 64 and 212 x 64 monochrome screens. There is no manual planning-size
+selector or substitute screen size. Unknown dimensions produce an explicit
+coverage-calculation error rather than assuming another radio's dimensions.
+Compatibility warnings do not block map controls. It does not write
+outside `AEROGRID/maps/`.
+
+Saved areas remain visible on the map; the selected area is highlighted and
+only it can be edited. Selecting an area from the list centers the map on its
+bounds. Clicking map coverage selects the area; when areas overlap, a chooser
+asks which one to select. Panning does not change selection. Dragging a selected
+rectangle's corner edits that area's bounds; **Add map area** followed by an
+ordinary drag, or Shift-drag directly, can
+create a new area, and the Add button can cancel draw mode. The 17/18/19 detail
+cards preview the same location and select the maximum zoom, with all
+intermediate levels retained.
+
+Storage optimization is always enabled in the manager: new and updated
+coverage uses `per-zoom-clamped`, without a visible toggle. Existing saved
+full-area coverage remains unchanged on the radio until an update is synced.
+
+Changes are staged per area. Staging reuses radio JPEGs whose imagery-set and
+XYZ path still match, and prepares only missing tile content. Sync writes
+staged files under the map-library root, retains existing shared tile bytes,
+prunes old coverage after updates only when no remaining app area references
+those tiles, removes an area's manifest and selection when deleted, and
+preserves all shared tile references. A mid-write failure may leave some new
+unreferenced tiles or partially updated metadata; retry after reconnecting and
+reviewing the current radio library. Installer writes and map writes share the
+radio storage lock.
+
+The browser File System Access API does not expose free SD-card capacity.
+The manager reports actual referenced map-image bytes, but cannot preflight
+available filesystem space; writing can fail if the card fills. Sync is
+currently disabled pending confirmation that the selected Google imagery may
+be stored offline. Online map previews and preparation do not establish that
+permission.
+
 The experimental Google hybrid adapter uses the same keyless XYZ endpoint as
 the online preview. This is a technical implementation, **not verification of
 offline-use permission**. Google's published

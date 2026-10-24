@@ -94,6 +94,19 @@ function files(archive) {
         }
     }
     const spec = selection(ordinary);
+    const generated = await pack.createFiles(spec, "files-api", {
+        source: {
+            metadata: pack.SYNTHETIC,
+            readTile: async () => { throw new Error("Existing tiles should be reused."); }
+        },
+        readExistingTile: async (imagerySet, zoom, x, y) => {
+            assert.equal(imagerySet, pack.SYNTHETIC.id);
+            return images.jpeg(pack.syntheticRgb(zoom, x, y));
+        }
+    });
+    const archived = files(await pack.createArchive(spec, "files-api"));
+    assert.deepEqual([...generated.keys()].sort(), [...archived.keys()].sort());
+    for (const [name, content] of generated) assert.deepEqual(Buffer.from(content), archived.get(name));
     for (const mutate of [
         s => { s.version = 2; }, s => { s.projection = "EPSG:4326"; },
         s => { s.coverageMode = "unknown"; }, s => { s.tileCount++; },

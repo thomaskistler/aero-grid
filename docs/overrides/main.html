@@ -28,11 +28,11 @@
       </svg>
     </a>
     <a
-      class="ag-icon-link{% if page.file.src_uri.startswith('user-guide/') and page.file.src_uri != 'user-guide/installation.md' and page.file.src_uri != 'user-guide/map-planner.md' %} active{% endif %}"
+      class="ag-icon-link{% if page.file.src_uri.startswith('user-guide/') and page.file.src_uri != 'user-guide/installation.md' %} active{% endif %}"
       href="{{ 'user-guide/add-dashboard/'|url }}"
       aria-label="User Guide"
       title="User Guide"
-      {% if page.file.src_uri.startswith('user-guide/') and page.file.src_uri != 'user-guide/installation.md' and page.file.src_uri != 'user-guide/map-planner.md' %}aria-current="page"{% endif %}
+      {% if page.file.src_uri.startswith('user-guide/') and page.file.src_uri != 'user-guide/installation.md' %}aria-current="page"{% endif %}
     >
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M12 5v16"/>
@@ -65,34 +65,19 @@
         <path d="m14.5 4-5 16"/>
       </svg>
     </a>
-    {% if page.file.src_uri == 'user-guide/map-planner.md' %}
-      <a
-        class="ag-icon-link active"
-        href="{{ page.url|url }}"
-        aria-label="Map Manager"
-        title="Map Manager"
-        aria-current="page"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/>
-          <path d="M15 5.764v15"/>
-          <path d="M9 3.236v15"/>
-        </svg>
-      </a>
-    {% else %}
-      <span
-        class="ag-icon-link ag-icon-link-disabled"
-        aria-disabled="true"
-        aria-label="Map Manager — available with map tools"
-        title="Map Manager will be added with the map tools"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/>
-          <path d="M15 5.764v15"/>
-          <path d="M9 3.236v15"/>
-        </svg>
-      </span>
-    {% endif %}
+    <a
+      class="ag-icon-link{% if page.file.src_uri == 'map-manager.md' %} active{% endif %}"
+      href="{{ 'map-manager/'|url }}"
+      aria-label="Map Manager"
+      title="Map Manager"
+      {% if page.file.src_uri == 'map-manager.md' %}aria-current="page"{% endif %}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/>
+        <path d="M15 5.764v15"/>
+        <path d="M9 3.236v15"/>
+      </svg>
+    </a>
   </nav>
 {% endblock %}
 
@@ -120,8 +105,8 @@
 {% endblock %}
 
 {% block content %}
-  <div class="ag-console-layout{% if page.file.src_uri == 'user-guide/installation.md' %} ag-install-layout{% endif %}">
-    {% if page.file.src_uri != 'user-guide/installation.md' %}
+  <div class="ag-console-layout{% if page.file.src_uri in ['user-guide/installation.md', 'map-manager.md'] %} ag-install-layout{% endif %}">
+    {% if page.file.src_uri not in ['user-guide/installation.md', 'map-manager.md'] %}
     <aside class="ag-guide-sidebar" aria-label="Documentation navigation">
       {% include "toc.html" %}
     </aside>

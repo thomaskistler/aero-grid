@@ -9,6 +9,13 @@ const MAX_TOTAL = 64 * 1024 * 1024;
 const MAX_FILE = 2 * 1024 * 1024;
 const preparedPackages = new WeakSet();
 
+class HttpError extends Error {
+  constructor(status, url) {
+    super(`HTTP ${status} loading ${url}.`);
+    this.status = status;
+  }
+}
+
 export class ContentMismatchError extends Error {
   constructor(message, differences = null) {
     super(message);
@@ -22,12 +29,12 @@ export async function sha256(bytes) {
 }
 
 export function actionFor(widget, latest) {
-  if (!widget.present) return { enabled: true, label: `Install AeroGrid ${latest}` };
-  if (!widget.version) return { enabled: true, label: `Update to AeroGrid ${latest}` };
+  if (!widget.present) return { enabled: true, label: `Install AeroGrid v${latest}` };
+  if (!widget.version) return { enabled: true, label: `Update to AeroGrid v${latest}` };
   const comparison = compareVersions(widget.version, latest);
   if (comparison === 0) return { enabled: false, label: "Up to date" };
-  if (comparison > 0) return { enabled: true, label: `Downgrade to AeroGrid ${latest}` };
-  return { enabled: true, label: `Update to AeroGrid ${latest}` };
+  if (comparison > 0) return { enabled: true, label: `Downgrade to AeroGrid v${latest}` };
+  return { enabled: true, label: `Update to AeroGrid v${latest}` };
 }
 
 export function validateManifest(manifest) {
@@ -74,7 +81,7 @@ async function fetchBytes(url, limit, fetcher) {
   const timeout = setTimeout(() => controller.abort(), 30000);
   try {
     const response = await fetcher(url, { signal: controller.signal, cache: "no-store", credentials: "omit" });
-    if (!response.ok) throw new Error(`HTTP ${response.status} loading ${url}.`);
+    if (!response.ok) throw new HttpError(response.status, url);
     if (Number(response.headers.get("content-length")) > limit) throw new Error(`Download is too large: ${url}.`);
     if (!response.body) throw new Error(`Empty download: ${url}.`);
     const reader = response.body.getReader();
@@ -123,10 +130,12 @@ function validateRelease(manifest, release) {
 }
 
 export async function loadLatest(base, fetcher = globalThis.fetch) {
-  const [manifest, release] = await Promise.all([
-    fetchJSON(new URL("latest.json", base), fetcher),
-    fetchJSON(RELEASE_API, fetcher),
-  ]);
+  const release = await fetchJSON(RELEASE_API, fetcher);
+  const version = release?.tag_name?.replace(/^v/, "");
+  if (!/^\d+\.\d+\.\d+$/.test(version) || !parseVersion(version)) {
+    throw new Error("Invalid latest GitHub release version.");
+  }
+  const manifest = await fetchJSON(new URL(`releases/${version}/manifest.json`, base), fetcher);
   return validateRelease(manifest, release);
 }
 
@@ -143,9 +152,17 @@ export async function loadRelease(base, version, fetcher = globalThis.fetch) {
 }
 
 export async function loadCatalog(base, fetcher = globalThis.fetch) {
-  const catalog = await fetchJSON(new URL("releases.json", base), fetcher);
+  let catalog;
+  let missingCatalog = false;
+  try {
+    catalog = await fetchJSON(new URL("releases.json", base), fetcher);
+  } catch (error) {
+    if (!(error instanceof HttpError) || error.status !== 404) throw error;
+    missingCatalog = true;
+    catalog = { schema: 1, releases: [] };
+  }
   if (catalog?.schema !== 1 || !Array.isArray(catalog.releases)
-      || !catalog.releases.length || catalog.releases.length > 2000) {
+      || (!missingCatalog && !catalog.releases.length) || catalog.releases.length > 2000) {
     throw new Error("Invalid installation release catalog.");
   }
   const seen = new Set();
@@ -159,11 +176,37 @@ export async function loadCatalog(base, fetcher = globalThis.fetch) {
     }
     seen.add(entry.version);
   }
-  if (!catalog.releases.some((entry) => entry.version === catalog.latest && entry.available)) {
-    throw new Error("The latest stable release is missing from the installation catalog.");
+  const published = [];
+  const versions = new Set();
+  for (let page = 1; page <= 20; page++) {
+    const batch = await fetchJSON(`${RELEASES_API}?per_page=100&page=${page}`, fetcher);
+    if (!Array.isArray(batch) || batch.length > 100) throw new Error("Invalid GitHub release list.");
+    for (const release of batch) {
+      if (release?.draft !== false || release.prerelease !== false) continue;
+      const version = release.tag_name?.replace(/^v/, "");
+      if (!/^\d+\.\d+\.\d+$/.test(version) || !parseVersion(version)) continue;
+      if (versions.has(version)) throw new Error("Duplicate GitHub release version.");
+      versions.add(version);
+      const prepared = catalog.releases.find((entry) => entry.version === version);
+      const hasAssets = [`AeroGrid-${version}.zip`, `AeroGrid-${version}.zip.sha256`].every((name) =>
+        release.assets?.some((asset) => asset.name === name
+          && asset.browser_download_url === `${RELEASE_ROOT}/download/v${version}/${name}`));
+      const available = prepared?.available === true && hasAssets;
+      published.push({
+        version, name: typeof release.name === "string" ? release.name.slice(0, 500) : `AeroGrid ${version}`,
+        release: `${RELEASE_ROOT}/tag/v${version}`,
+        available,
+        reason: available ? null : missingCatalog ? "Automatic installation files are not available on this site."
+          : !hasAssets ? "The GitHub release is missing installation assets."
+          : prepared?.reason ?? "Installation assets have not been published on this site yet.",
+      });
+    }
+    if (batch.length < 100) break;
+    if (page === 20) throw new Error("GitHub release list exceeds the supported limit.");
   }
-  catalog.releases.sort((left, right) => compareVersions(right.version, left.version));
-  return catalog;
+  if (!published.length) throw new Error("No published stable GitHub releases are available.");
+  published.sort((left, right) => compareVersions(right.version, left.version));
+  return { schema: 1, latest: published[0].version, releases: published };
 }
 
 export async function preparePackage(manifest, base, progress, fetcher = globalThis.fetch) {

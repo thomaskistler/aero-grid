@@ -4,6 +4,43 @@
 
 Status reviewed: 2026-10-21.
 
+## Map-manager decisions (2026-10-23)
+
+The user approved a connected map-manager iteration. This section supersedes
+the earlier ZIP-only workflow statements below where they conflict:
+
+- Manage only map areas created by AeroGrid; leave all other SD-card files
+  untouched.
+- Use the installer's radio connection and SD-root picker. Compatibility issues
+  show warnings, not blocked map controls. Select recognized screen dimensions
+  automatically, including monochrome screens. Never substitute another
+  radio's dimensions or show a planning-size selector. Unknown dimensions
+  prevent coverage calculation, with an explicit explanation.
+- Show every app-created area on the map and in a list. Selecting an area from
+  either selects and centers it. Panning does not change selection; edits apply
+  only to the highlighted area. Dragging its corner edits its bounds.
+- **Add map area** followed by a plain drag, or Shift-drag directly, creates
+  and selects a new rectangle. Users can
+  rename or delete an area.
+- Clicking overlapping coverage presents a chooser rather than silently
+  changing the selected area. Add mode is cancelable.
+- Replace the radio-screen preview and zoom slider with visual zoom choices for
+  17, 18, and 19. The selected maximum includes every level from the automatic
+  overview through that maximum. Show planned/download coverage separately
+  from the selected flying area.
+- Stage imagery and metadata, then review changes before sync. Keep matching
+  radio tiles and prepare only missing coverage/zoom tiles. Preserve shared
+  tiles still referenced by another app-created area.
+- Google remains the current imagery source, but radio sync stays disabled
+  until the user confirms offline-use permission. The browser cannot query
+  available SD-card capacity; communicate that limit and do not invent free
+  space values.
+
+The current connected manager is an implementation in progress, not a
+production-ready or hardware-verified feature. Staged in-memory changes warn
+before disconnect or page navigation; staged work is not persisted across
+reloads.
+
 This is the consolidated specification for browser map preparation, the SD-card
 map library, and the AeroGrid radio map panel. It records the implemented
 prototype and the remaining product work; it does not declare the feature
@@ -29,7 +66,7 @@ Detailed implementation references, available on the combined branch:
   migration, and automatic area selection.
 - `docs/developer-guide/map-prototype.md`: radio interaction, rendering,
   resource constraints, and hardware checks.
-- `docs/user-guide/map-planner.md`: browser workflow.
+- `docs/map-manager.md`: browser workflow.
 - `MAP-PROTOTYPE-HANDOFF.md`: temporary historical handoff, not the canonical
   product specification.
 
@@ -77,14 +114,10 @@ The intended experience should require minimal setup, no locally installed
 downloader, and no user-supplied API key. Worldwide availability is a requirement,
 not evidence that a suitable imagery license has already been found.
 
-The first delivery workflow is **select area -> download ZIP -> extract at
-SD-card root**. Direct-to-radio saving and AeroGrid installation/upgrades are
-deferred. Long term, these should fit a coherent browser companion experience:
-connect the radio, manage maps, and install or update AeroGrid without destroying
-user data. The USB radio functionality developed for AeroGrid installation
-must also support future map updates through the same connection/storage
-capability. The connection mechanism and shared UX are not yet specified;
-map updating remains outside the initial installer scope.
+The current delivery includes the existing **select area -> download ZIP ->
+extract at SD-card root** workflow and the newly approved connected manager.
+Direct map writes use the installer’s browser SD-card connection capability;
+the installer and map manager continue to preserve unrelated user data.
 
 The prototype is not flight-navigation software. Synthetic imagery is test
 data, and this feature must not be represented as a safety-critical navigation
@@ -94,13 +127,13 @@ aid.
 
 | Capability | Present in the combined implementation | Missing or unverified |
 | --- | --- | --- |
-| Area planning | Editable flying area, radio presets, automatic overview, detail range, two coverage policies | Broader usability and browser/device verification |
+| Area planning | Editable multi-area map, radio-derived screen size, automatic overview, 17/18/19 maximum detail choices, two coverage policies | Broader usability and browser/device verification |
 | Screen simulation | Integer zoom and coverage-clamped dragging at preset dimensions | Actual AeroGrid layout and rendering-performance simulation |
 | Pack preparation | Complete SD-ready ZIP, source abstraction, synthetic export, experimental Google hybrid export | Verified offline-authorized worldwide satellite source |
 | Shared tile library | Named areas reference shared XYZ JPEG tiles; persistent first-capture browser library | Installed-SD inspection, targeted refresh, cleanup, cross-browser library reconciliation |
 | Radio loading | Shared manifest validation, bounded loading, automatic GPS area selection | Physical-radio performance and native-memory evidence |
 | Radio interaction | Aircraft/home markers, heading, touch pan/zoom, adaptive follow | Normal editor-catalog integration, broader radio support, final off-coverage UX |
-| Installation | Manual ZIP extraction; map-only files | Transactional/recoverable installation, direct SD access, AeroGrid install/update |
+| Connected map manager | Radio connection, app-area inventory, map editing, staging and area deletion | Google offline-use permission, actual free-space query, recoverable-write guarantees, physical-radio validation |
 | Flight trail | None | Sampling, capacity, rendering strategy, and implementation |
 
 ## Browser planning requirements
@@ -108,26 +141,32 @@ aid.
 ### Flying area and coverage
 
 The blue rectangle is the user's exact flying area. It must not jump to tile
-boundaries when edited. The separate dashed amber outline and overview grid
-describe download coverage, not a second editable selection.
+boundaries when edited. The map shows area outlines only, without saved-coverage,
+download-tile, or pending-removal overlays. Areas pending deletion disappear from
+the map but remain pending until sync is confirmed.
 
-Selection uses Shift-drag. Use visible area supports alternatives to that
-gesture; Use my location and Clear selection are retained. Coordinate-entry,
-two-corner, and explicit Apply bounds workflows are intentionally absent.
+Saved areas remain visible. The selected area is highlighted; selecting it in
+the list or on the map centers the view, while panning leaves selection alone.
+Drag a selected area's corner to update its bounds. **Add map area** followed
+by a plain drag, or Shift-drag directly, creates a new area without changing
+the previous one; Use my location remains available.
+Coordinate-entry and explicit Apply bounds workflows are absent.
 
 Tiles use EPSG:3857 Web Mercator, XYZ addressing, and native 256 x 256 pixels.
 Latitude is limited to Web Mercator coverage; date-line crossing is supported.
 
 Overview zoom is the highest integer from 11 through 19 at which the original
-flying area fits the chosen full radio screen. Reject an area that cannot fit
-at zoom 11. Maximum detail is user-selected through 19; include every integer
-level from overview through maximum, with no silent omission.
+flying area fits the connected radio's supported screen. Reject an area that
+cannot fit at zoom 11. The user selects maximum detail 17, 18, or 19 using
+visual choices; include every integer level from overview through maximum,
+with no silent omission.
 
 | Planner preset | Screen pixels | Minimum screen-filling tile footprint |
 | --- | --- | --- |
 | Original TX16S/MAX | 480 x 272 | 2 x 2 |
 | TX16S MKII/MAX | 480 x 272 | 2 x 2 |
 | TX15/MAX | 480 x 320 | 2 x 2 |
+| NV14 / T20 / GX12 | 320 x 480 | 2 x 2 |
 | TX16S MK3/MAX | 800 x 480 | 4 x 2 |
 
 These are planning dimensions, not a claim that all four radios are supported
@@ -147,13 +186,12 @@ Two coverage policies are implemented:
 Neither policy adds a plane-centering buffer. Both have the same overview
 coverage. Space-saving assumes the aircraft stays in the blue flying area.
 
-### Preview and output
+### Zoom choices and output
 
-The radio-screen preview has native internal preset dimensions and scales
-visually to fit the browser page. Dedicated buttons move one integer zoom
-level at a time; dragging is clamped to the active level's actual coverage.
-It is an online, full-screen coverage approximation, not a simulation of
-radio decoding, telemetry, or the final panel chrome.
+The former "how it looks on the radio" viewport preview is removed. The zoom
+selector shows previews of the same location at levels 17, 18, and 19; choosing
+one sets the area's maximum detail. The main map remains the editing surface
+and shows the selected flying area and separate planned download coverage.
 
 Retain selection JSON export independently of imagery export. A named selection
 preserves original bounds, expanded/per-level coverage, radio preset, zoom
@@ -387,9 +425,11 @@ or a guarantee that the firmware has enough memory to draw it.
 
 ## Installation and library lifecycle
 
-Users extract a complete map ZIP at SD root. It includes only map-library
-files, not widget, model, radio configuration, or firmware files. Install the
-widget separately and select a layout containing the experimental panel.
+Users can extract a complete map ZIP at SD root or connect a recognized radio
+to manage only AeroGrid-created map areas. Both workflows are limited to map
+library paths and do not alter widget, model, radio configuration, or firmware
+files. Install the widget separately and select a layout containing the
+experimental panel.
 
 Reusing an area ID replaces its manifest and saved selection after extraction
 confirmation. Matching immutable tile paths can be reused by overlapping areas.
@@ -397,12 +437,11 @@ Extraction is not transactional, cannot inspect installed state, and cannot
 roll back partial installation. Backups remain necessary. Removed coverage can
 leave unreferenced images; no automatic deletion is performed.
 
-A future connected installer must validate images before committing recoverable
-manifest updates. Cleanup must derive references from every area and refuse
-unsafe deletion when any manifest is unreadable or unsupported. AeroGrid updates
-must preserve map libraries and user data. Browser access to mounted SD storage
-must be investigated separately from firmware flashing; EdgeTX Buddy-like UX
-does not itself establish a usable filesystem API.
+Connected deletion derives references from readable area manifests, preserves
+shared tiles, and refuses cleanup when another manifest is unreadable or
+unsupported. Browser writes are not transactional; failures can leave partial
+metadata or unreferenced tile files. The browser cannot query free SD-card
+capacity. AeroGrid updates must preserve map libraries and user data.
 
 ## Remaining work and decision register
 
@@ -413,7 +452,7 @@ does not itself establish a usable filesystem API.
 | Radio support | Verify actual viewport geometry and behavior for each advertised radio and EdgeTX patch | Planner preset alone is insufficient |
 | Hardware rendering | Measure cold/warm loading, repeated pan/zoom/turns, native memory, cache churn, errors, and control responsiveness | Record exact radio, firmware, SD card, and package |
 | Library refresh | Define source editions, refresh granularity, namespace retention, and browser-storage-loss behavior | No changed pixels silently overwrite a shared identity |
-| Connected map management | Installed-area inspection, missing-tile calculation, recoverable writes, deletion, and reference-safe cleanup | Requires explicit browser/OS compatibility and failure-recovery design |
+| Connected map management | Installed-area inspection, missing-tile calculation, staging, deletion, and reference-safe cleanup are being implemented | Google offline-use permission, SD free-space visibility, failure recovery, and browser/OS validation remain |
 | Companion install/update UX | Shared connection flow, version handling, backups, and preservation of maps/settings | Future scope, not part of ZIP-only delivery |
 | Historical trail | Decide whether needed, distance-based sampling, capacity, and rendering strategy | No trail or writable-raster implementation currently exists |
 | Persistence | Decide pan/zoom/follow/home persistence and any model-wide setting ownership | Current instance/subscription behavior must not be mistaken for model-wide storage |
@@ -434,9 +473,8 @@ authorized. **Decision** items require an agreed design before code;
 
 #### Planner (#171)
 
-Core area selection, coverage calculations, radio presets, selection JSON, and
-integer-zoom preview are implemented. No additional planner feature has yet
-been agreed as required for the first slice.
+Core coverage calculations and selection JSON are implemented; connected
+multi-area map management and visual maximum-zoom selection are in progress.
 
 - [ ] **Validation:** Check selection/editing, visible-area selection, zoom
   controls, preview scaling, and status/error readability across the intended
