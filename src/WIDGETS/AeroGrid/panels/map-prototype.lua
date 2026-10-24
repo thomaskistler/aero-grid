@@ -39,7 +39,8 @@ local MAX_SLOTS = 9
 local MAX_AREA_NAME_BYTES = 240
 local TRAIL_POINTS = 31
 local TRAIL_TICKS = 3000
-local FULL_PATH_POINTS = 64
+local FULL_RENDER_SEGMENTS = 63
+local FULL_HISTORY_POINTS = 1024
 local COORDINATE_PRECISION = 6
 local CONTROL_TOPS = { 44, 76, 0, 112 }
 local CONTROLS_HEIGHT = 144
@@ -468,6 +469,36 @@ local function updateSatelliteState(context)
     end
 end
 
+function map.compactHistory(points, cursor)
+    local selected, smallest
+    local count = #points - 2
+    for offset = 0, math.min(31, count - 1) do
+        local index = 2 + (cursor + offset * 31) % count
+        local previous, point, following = points[index - 1], points[index], points[index + 1]
+        if not point.breakBefore and not following.breakBefore then
+            local scale = math.cos(math.rad(point.latitude))
+            local dx = (following.longitude - previous.longitude + 180) % 360 - 180
+            dx = dx * scale
+            local dy = following.latitude - previous.latitude
+            local x = ((point.longitude - previous.longitude + 180) % 360 - 180) * scale
+            local y = point.latitude - previous.latitude
+            local length = dx * dx + dy * dy
+            local t = length > 0 and clamp((x * dx + y * dy) / length, 0, 1) or 0
+            local error = (x - t * dx) ^ 2 + (y - t * dy) ^ 2
+            if not smallest or error < smallest then
+                smallest, selected = error, index
+            end
+        end
+    end
+    if not selected then
+        -- If only outage boundaries remain in this sample, discard detail without joining across a gap.
+        selected = 2
+        points[3].breakBefore = true
+    end
+    table.remove(points, selected)
+    return (cursor + 1) % (#points - 2)
+end
+
 local function recordPath(context)
     local feed = context.feed
     local mode = context.settings.flightPath or "off"
@@ -527,18 +558,165 @@ local function recordPath(context)
             end
         end
     else
-        if #points == FULL_PATH_POINTS then
-            local compacted = {}
-            for index = 1, #points, 2 do
-                local retained = points[index]
-                retained.breakBefore = retained.breakBefore or index > 1 and points[index - 1].breakBefore
-                compacted[#compacted + 1] = retained
-            end
-            context.pathPoints = compacted
-            points = compacted
+        if #points == FULL_HISTORY_POINTS then
+            context.pathCompactCursor = map.compactHistory(points, context.pathCompactCursor or 0)
         end
         points[#points + 1] = point
     end
+    context.pathRevision = (context.pathRevision or 0) + 1
+end
+
+local function segmentInView(a, b, bounds)
+    local low, high = 0, 1
+    local dx, dy = b.x - a.x, b.y - a.y
+    for axis = 1, 2 do
+        local origin = axis == 1 and a.x or a.y
+        local delta = axis == 1 and dx or dy
+        local minimum = axis == 1 and bounds.left or bounds.top
+        local maximum = axis == 1 and bounds.right or bounds.bottom
+        if delta == 0 then
+            if origin < minimum or origin > maximum then
+                return false
+            end
+        else
+            local enter, leave = (minimum - origin) / delta, (maximum - origin) / delta
+            if enter > leave then
+                enter, leave = leave, enter
+            end
+            low, high = math.max(low, enter), math.min(high, leave)
+            if low > high then
+                return false
+            end
+        end
+    end
+    return true
+end
+
+function map.newPathJob(points, project, bounds)
+    local snapshot = {}
+    for index, point in ipairs(points) do
+        snapshot[index] = point
+    end
+    return {
+        source = snapshot,
+        project = project,
+        bounds = bounds,
+        points = {},
+        runs = {},
+        index = 1,
+        phase = "project",
+    }
+end
+
+local function pathNode(first, last)
+    return { first = first, last = last, cursor = first + 1, error = 0 }
+end
+
+-- Each call handles at most 16 point operations, including expensive projection.
+function map.stepPathJob(job)
+    if job.result then
+        return true
+    end
+    for _ = 1, 16 do
+        if job.phase == "project" then
+            local source = job.source[job.index]
+            if source then
+                local x, y = job.project(source)
+                local point = x and { x = x, y = y, source = source } or false
+                job.points[job.index] = point
+                local previous = job.points[job.index - 1]
+                if point and previous and not source.breakBefore and segmentInView(previous, point, job.bounds) then
+                    if job.run and job.run.last == job.index - 1 then
+                        job.run.last = job.index
+                    else
+                        job.run = pathNode(job.index - 1, job.index)
+                        job.runs[#job.runs + 1] = job.run
+                    end
+                else
+                    job.run = nil
+                end
+                job.index = job.index + 1
+            else
+                job.nodes = {}
+                -- If outages/viewport crossings alone exceed the budget, favor recent runs.
+                for index = math.max(1, #job.runs - FULL_RENDER_SEGMENTS + 1), #job.runs do
+                    job.nodes[#job.nodes + 1] = job.runs[index]
+                end
+                job.phase, job.nodeIndex = "evaluate", 1
+            end
+        elseif job.phase == "evaluate" then
+            local node = job.nodes[job.nodeIndex]
+            if not node then
+                job.phase = "split"
+            elseif node.cursor >= node.last then
+                job.nodeIndex = job.nodeIndex + 1
+            else
+                local first, last, point = job.points[node.first], job.points[node.last], job.points[node.cursor]
+                local dx, dy = last.x - first.x, last.y - first.y
+                local length = dx * dx + dy * dy
+                local t = length > 0 and clamp(((point.x - first.x) * dx + (point.y - first.y) * dy) / length, 0, 1)
+                    or 0
+                local error = (point.x - first.x - t * dx) ^ 2 + (point.y - first.y - t * dy) ^ 2
+                if error > node.error then
+                    node.error, node.split = error, node.cursor
+                end
+                node.cursor = node.cursor + 1
+            end
+        else
+            local largest, selected = 1.5 ^ 2, nil
+            for index, node in ipairs(job.nodes) do
+                if node.error > largest then
+                    largest, selected = node.error, index
+                end
+            end
+            if selected and #job.nodes < FULL_RENDER_SEGMENTS then
+                local node = job.nodes[selected]
+                job.nodes[selected] = pathNode(node.first, node.split)
+                table.insert(job.nodes, selected + 1, pathNode(node.split, node.last))
+                job.phase, job.nodeIndex = "evaluate", selected
+            else
+                local result = {}
+                for _, node in ipairs(job.nodes) do
+                    local first, last = job.points[node.first], job.points[node.last]
+                    if segmentInView(first, last, job.bounds) then
+                        result[#result + 1] = { first = first, last = last }
+                    end
+                end
+                job.result = result
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function fullPathSegments(context)
+    local key = table.concat({
+        context.pathRevision or 0,
+        context.levelIndex,
+        context.viewX,
+        context.viewY,
+        context.area.w,
+        context.area.h,
+    }, ":")
+    if not context.pathJob and (context.pathCacheKey ~= key or context.pathCacheTransform ~= context.transform) then
+        local level, transform = context.pack.levels[context.levelIndex], context.transform
+        context.pathJob = map.newPathJob(context.pathPoints, function(point)
+            return map.project(level, point.latitude, point.longitude, transform)
+        end, {
+            left = context.viewX - 4,
+            top = context.viewY - 4,
+            right = context.viewX + context.area.w + 4,
+            bottom = context.viewY + context.area.h + 4,
+        })
+        context.pathJob.key, context.pathJob.transform = key, transform
+    end
+    if context.pathJob and map.stepPathJob(context.pathJob) then
+        local job = context.pathJob
+        context.pathCache, context.pathCacheKey, context.pathCacheTransform = job.result, job.key, job.transform
+        context.pathJob = nil
+    end
+    return context.pathCacheTransform == context.transform and context.pathCache or {}
 end
 
 function map.clipPathSegment(x1, y1, x2, y2, cx, cy, radius, part)
@@ -593,20 +771,36 @@ end
 
 local function drawPath(context)
     local points = context.pathPoints
+    local segments = context.settings.flightPath == "full" and fullPathSegments(context)
     local now = getTime()
     local level = context.pack.levels[context.levelIndex]
-    for index, line in ipairs(context.pathLines) do
+    local split = context.settings.positionMarker == "arrow"
+    local activeCount = (segments and #segments or math.max(0, #points - 1)) * (split and 2 or 1)
+    local limit = math.min(activeCount, #context.pathLines)
+    local start = segments and (context.pathDrawCursor or 1) or 1
+    if start > limit then
+        start = 1
+    end
+    local finish = segments and math.min(start + 7, limit) or limit
+    context.pathDrawCursor = finish >= limit and 1 or finish + 1
+    for index = start, finish do
+        local line = context.pathLines[index]
         local outline = context.pathOutlines[index]
         local lineState = context.pathLineStates[index]
-        local split = context.settings.positionMarker == "arrow"
         local pointIndex = split and math.floor((index + 1) / 2) or index
         local part = split and (index - 1) % 2 + 1 or 1
-        local first = points[pointIndex]
-        local second = points[pointIndex + 1]
-        local visible = first ~= nil and second ~= nil and not second.breakBefore
+        local segment = segments and segments[pointIndex]
+        local first = segments and segment and segment.first.source or not segments and points[pointIndex]
+        local second = segments and segment and segment.last.source or not segments and points[pointIndex + 1]
+        local visible = first and second and not second.breakBefore
         if visible then
-            local x1, y1 = map.project(level, first.latitude, first.longitude, context.transform)
-            local x2, y2 = map.project(level, second.latitude, second.longitude, context.transform)
+            local x1, y1, x2, y2
+            if segment then
+                x1, y1, x2, y2 = segment.first.x, segment.first.y, segment.last.x, segment.last.y
+            else
+                x1, y1 = map.project(level, first.latitude, first.longitude, context.transform)
+                x2, y2 = map.project(level, second.latitude, second.longitude, context.transform)
+            end
             if x1 and x2 and split and context.markerVisible then
                 -- Include half the outline width and rounding clearance outside the 22-pixel circle.
                 x1, y1, x2, y2 = map.clipPathSegment(
@@ -658,6 +852,14 @@ local function drawPath(context)
             lvgl.hide(line)
             lvgl.hide(outline)
             lineState.visible = false
+        end
+    end
+    for index = activeCount + 1, #context.pathLines do
+        local state = context.pathLineStates[index]
+        if state.visible then
+            lvgl.hide(context.pathLines[index])
+            lvgl.hide(context.pathOutlines[index])
+            state.visible = false
         end
     end
 end
@@ -1387,7 +1589,7 @@ function map.create(parent, rect, settings, services)
         slot.visible = false
     end
     if (settings.flightPath or "off") ~= "off" then
-        local lineCount = settings.flightPath == "trail" and TRAIL_POINTS - 1 or FULL_PATH_POINTS - 1
+        local lineCount = settings.flightPath == "trail" and TRAIL_POINTS - 1 or FULL_RENDER_SEGMENTS
         if settings.positionMarker == "arrow" then
             lineCount = lineCount * 2
         end

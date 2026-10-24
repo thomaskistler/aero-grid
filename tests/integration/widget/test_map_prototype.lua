@@ -908,20 +908,118 @@ do
     local full = map.create(
         entry.container,
         { x = 0, y = 0, w = 480, h = 272 },
-        { label = "MAP", source = "GPS", flightPath = "full" },
+        { label = "MAP", source = "GPS", flightPath = "full", positionMarker = "arrow" },
         services
     )
     selectAutomaticArea(full, 25.9973, -97.1572)
     full.automatic = false
     local maximum = #full.pathPoints
-    for index = 1, 300 do
+    local start = full.pathPoints[1]
+    local worstFull = 0
+    fixture.lvglMock.setPropertyValidation(false)
+    fixture.lvglMock.setCallCounting(false)
+    fixture.lcdMock.setTextMeasurement(false)
+    local function refreshFull()
+        local instructions = 0
+        debug.sethook(function()
+            instructions = instructions + 200
+        end, "", 200)
+        local ok, failure = pcall(map.refresh, full)
+        debug.sethook()
+        assert(ok, failure)
+        worstFull = math.max(worstFull, instructions)
+        assert(instructions < 15000, "full history refresh exceeded instruction budget: " .. instructions)
+    end
+    for index = 1, 1100 do
         full.feed.longitude = -97.1572 + index * 0.0005
         fixture.tick(200)
-        map.refresh(full)
+        refreshFull()
         maximum = math.max(maximum, #full.pathPoints)
     end
-    a.assertEqual(maximum, 64, "full path history must reach but never exceed its capacity")
-    assert(#full.pathPoints <= 64)
+    a.assertEqual(maximum, 1024, "full history must be independent of the 63-segment drawing budget")
+    a.assertEqual(#full.pathPoints, 1024)
+    a.assertEqual(#full.pathLines, 126)
+    a.assertEqual(full.pathPoints[1], start, "history compaction must preserve the flight start")
+    a.assertEqual(full.pathPoints[#full.pathPoints].longitude, full.feed.longitude)
+    for index = 2, #full.pathPoints do
+        assert(full.pathPoints[index].time > full.pathPoints[index - 1].time, "retained timestamps must stay ordered")
+    end
+    for _ = 1, 250 do
+        refreshFull()
+        if not full.pathJob then
+            break
+        end
+    end
+    assert(not full.pathJob, "bounded simplification must finish without further GPS movement")
+    assert(#full.pathCache <= 63)
+    local cached = full.pathCache
+    refreshFull()
+    a.assertEqual(full.pathCache, cached, "unchanged route/view must reuse simplified geometry")
+    full.feed.latitude, full.feed.longitude = 25.9973, -97.1572
+    full.following = false
+    local cx, cy =
+        map.project(full.pack.levels[full.levelIndex], full.feed.latitude, full.feed.longitude, full.transform)
+    full.viewX, full.viewY = map.clampView(
+        full.pack.levels[full.levelIndex],
+        full.area.w,
+        full.area.h,
+        cx - full.area.w / 2,
+        cy - full.area.h / 2
+    )
+    full.pathPoints = {}
+    for index = 1, 1024 do
+        full.pathPoints[index] = {
+            latitude = full.feed.latitude + math.cos(index * 0.2) * 0.0006,
+            longitude = full.feed.longitude + math.sin(index * 0.2) * 0.001,
+            time = getTime() - 1024 + index,
+            breakBefore = index == 1,
+        }
+    end
+    full.pathLastTime = getTime()
+    full.pathRevision = full.pathRevision + 1
+    full.pathJob = nil
+    for _ = 1, 5000 do
+        refreshFull()
+        if not full.pathJob then
+            break
+        end
+    end
+    assert(not full.pathJob, "complex visible routes must finish incremental simplification")
+    assert(#full.pathCache > 0 and #full.pathCache <= 63)
+    local visible = 0
+    for index, line in ipairs(full.pathLines) do
+        if not line.hidden then
+            visible = visible + 1
+            a.assertEqual(line.properties.opacity, 255, "full mode must not acquire the tail's age fade")
+            a.assertEqual(full.pathOutlines[index].properties.opacity, 170)
+        end
+    end
+    assert(visible > 0, "simplified full route must actually render")
+    local oldCache = full.pathCache
+    full.viewX = full.viewX + 1
+    for _ = 1, 5000 do
+        refreshFull()
+        if not full.pathJob then
+            break
+        end
+    end
+    assert(full.pathCache ~= oldCache, "panning must recull and rebuild geometry")
+    local oldTransform = full.transform
+    local savedHistory = full.pathPoints
+    map.move(full, 0, 0, full.levelIndex == 1 and 1 or -1)
+    for _ = 1, 5000 do
+        refreshFull()
+        if not full.pathJob and full.pathCacheTransform == full.transform then
+            break
+        end
+    end
+    assert(full.transform ~= oldTransform, "zoom must change projection")
+    a.assertEqual(full.pathCacheTransform, full.transform, "zoom must rebuild using the new projection")
+    a.assertEqual(full.pathPoints, savedHistory, "pan and zoom must not simplify or replace stored history")
+    fixture.lcdMock.setTextMeasurement(true)
+    fixture.lvglMock.setCallCounting(true)
+    fixture.lvglMock.setPropertyValidation(true)
+    print("Full history worst panel callback: " .. worstFull .. " instructions (mock)")
 end
 do
     local manifest = "format: aerogrid-map-area\nversion: 2\nid: nine-levels\n"
