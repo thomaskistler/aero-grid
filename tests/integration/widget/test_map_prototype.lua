@@ -780,6 +780,7 @@ do
     a.assertEqual(options.badgeText, options.state("critical", "cyan").badge)
     options.feed.state = "stale"
     map.refresh(options)
+    assert(options.satelliteHeader.hidden, "satellite indicator must not overlap GPS status messages")
     options.feed.state = "normal"
     options.feed.longitude = options.feed.longitude + 0.0001
     fixture.tick(100)
