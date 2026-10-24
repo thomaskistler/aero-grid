@@ -775,10 +775,7 @@ local function testSidebarListsEveryPage()
     for page in string.gmatch(nav, ":%s+([%w%-_/]+%.md)\n") do
         if page ~= "index.md" then
             count = count + 1
-            assert(
-                string.find(sidebar, 'sidebar_page("' .. page .. '"', 1, true),
-                "the sidebar does not list " .. page
-            )
+            assert(string.find(sidebar, 'sidebar_page("' .. page .. '"', 1, true), "the sidebar does not list " .. page)
         end
     end
     assert(count > 0, "no navigation pages were found in mkdocs.yml")
