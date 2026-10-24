@@ -156,6 +156,9 @@ per panel. Within one widget instance, identical GPS source and arm-switch
 settings share the same home state; different settings capture independently.
 Separate widget instances do not share captured home.
 
+Trail segments fade from full opacity at the newest end to low opacity at the
+oldest end. Full-path mode retains uniform opacity.
+
 Headers use the same shared status component as Navigation: title color,
 standard state badge, panel styling, and satellite indicator layout. Map-specific
 explanations such as `WAITING FOR GPS` appear in the map body, not the badge.
