@@ -130,12 +130,34 @@ for _, mutate in ipairs({
     mutate(value)
     a.assertEqual(pcall(map.validatePack, value), false)
 end
-for _, name in ipairs({ "../escape", "a/b", string.rep("x", 33) }) do
-    a.assertEqual(#map.validateSettings({ pack = name }), 1)
-end
-a.assertEqual(#map.validateSettings({ pack = "synthetic" }), 0)
-a.assertEqual(#map.validateSettings({ pack = "" }), 0)
+a.assertEqual(
+    #map.settings,
+    10,
+    "panel options should include GPS, satellite, coordinate and path controls without an area override"
+)
+a.assertEqual(
+    (function()
+        for _, setting in ipairs(map.settings) do
+            if setting.key == "pack" then
+                return 1
+            end
+        end
+        return 0
+    end)(),
+    0
+)
 a.assertEqual(#map.validateSettings({}), 0)
+a.assertEqual(#map.validateSettings({ pack = "synthetic" }), 1, "area overrides must be rejected")
+for _, settings in ipairs({
+    { satelliteSource = false },
+    { satelliteCritical = 9, satelliteWarning = 8 },
+    { satelliteWarning = -1 },
+    { showSatellites = 1 },
+    { showCoordinates = 1 },
+    { flightPath = "historic" },
+}) do
+    a.assertEqual(#map.validateSettings(settings), 1)
+end
 do
     local broad = pack()
     local narrow = pack()
@@ -171,16 +193,16 @@ do
     a.assertEqual(pcall(map.validatePack, value), false)
 end
 for _, source in ipairs({ "", "Hdg", "Yaw" }) do
-    a.assertEqual(#map.validateSettings({ pack = "synthetic", headingSource = source }), 0)
+    a.assertEqual(#map.validateSettings({ headingSource = source }), 0)
 end
 for _, source in ipairs({ false, 42 }) do
-    a.assertEqual(#map.validateSettings({ pack = "synthetic", headingSource = source }), 1)
+    a.assertEqual(#map.validateSettings({ headingSource = source }), 1)
 end
 for _, arm in ipairs({ "", "SF^", "SA-", "SFv", "L01" }) do
-    a.assertEqual(#map.validateSettings({ pack = "synthetic", armSwitch = arm }), 0)
+    a.assertEqual(#map.validateSettings({ armSwitch = arm }), 0)
 end
 for _, arm in ipairs({ "SF", "SFx", "L1", 42, false }) do
-    a.assertEqual(#map.validateSettings({ pack = "synthetic", armSwitch = arm }), 1)
+    a.assertEqual(#map.validateSettings({ armSwitch = arm }), 1)
 end
 
 local level = { zoom = 1, xMin = 1, xMax = 1, yMin = 1, yMax = 1 }

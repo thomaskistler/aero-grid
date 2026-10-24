@@ -11,7 +11,18 @@ local map = {
         { key = "source", label = "GPS source", type = "string", default = "GPS" },
         { key = "headingSource", label = "Heading source", type = "string", default = "" },
         { key = "armSwitch", label = "Home arm switch", type = "string", default = "" },
-        { key = "pack", label = "Area override (blank = GPS)", type = "string", default = "" },
+        { key = "satelliteSource", label = "Satellite count source", type = "string", default = "" },
+        { key = "satelliteWarning", label = "Warn below satellites", type = "number", default = 8 },
+        { key = "satelliteCritical", label = "Critical below satellites", type = "number", default = 4 },
+        { key = "showSatellites", label = "Show satellites", type = "boolean", default = true },
+        { key = "showCoordinates", label = "Show coordinates", type = "boolean", default = false },
+        {
+            key = "flightPath",
+            label = "Flight path",
+            type = "string",
+            default = "off",
+            choices = { "off", "trail", "full" },
+        },
     },
 }
 
@@ -19,6 +30,9 @@ local TILE = 256
 local LIMIT = 85.05112878
 local MAX_SLOTS = 9
 local MAX_AREA_NAME_BYTES = 240
+local TRAIL_POINTS = 24
+local FULL_PATH_POINTS = 64
+local COORDINATE_PRECISION = 6
 
 function map.meanCourse(context, bearing)
     local history = context.courseHistory or {}
@@ -80,11 +94,40 @@ end
 
 function map.validateSettings(settings)
     local errors = {}
+    if settings.pack ~= nil then
+        errors[#errors + 1] = "pack is no longer supported; installed map areas are selected from GPS"
+    end
     if settings.headingSource ~= nil and type(settings.headingSource) ~= "string" then
         errors[#errors + 1] = "headingSource must be a source name or blank for GPS course"
     end
-    if settings.pack ~= nil and settings.pack ~= "" and not identifier(settings.pack) then
-        errors[#errors + 1] = "pack must be blank for GPS selection or a lowercase area ID of 1-32 characters"
+    if settings.satelliteSource ~= nil and type(settings.satelliteSource) ~= "string" then
+        errors[#errors + 1] = "satelliteSource must be a source name or blank"
+    end
+    for _, key in ipairs({ "satelliteWarning", "satelliteCritical" }) do
+        local value = settings[key]
+        if
+            value ~= nil
+            and (type(value) ~= "number" or value ~= value or value < 0 or value == math.huge or value % 1 ~= 0)
+        then
+            errors[#errors + 1] = key .. " must be a nonnegative integer"
+        end
+    end
+    if #errors == 0 and (settings.satelliteCritical or 4) > (settings.satelliteWarning or 8) then
+        errors[#errors + 1] = "satelliteCritical must not exceed satelliteWarning"
+    end
+    if settings.showSatellites ~= nil and type(settings.showSatellites) ~= "boolean" then
+        errors[#errors + 1] = "showSatellites must be a boolean"
+    end
+    if settings.showCoordinates ~= nil and type(settings.showCoordinates) ~= "boolean" then
+        errors[#errors + 1] = "showCoordinates must be a boolean"
+    end
+    if
+        settings.flightPath ~= nil
+        and settings.flightPath ~= "off"
+        and settings.flightPath ~= "trail"
+        and settings.flightPath ~= "full"
+    then
+        errors[#errors + 1] = "flightPath must be off, trail, or full"
     end
     local arm = settings.armSwitch
     if arm ~= nil and arm ~= "" then
@@ -212,9 +255,9 @@ local function geometry(context, rect)
         h = height,
         controlsY = height - 22,
         zoomX = x + width - 48,
-        zoomY = height - 116,
+        zoomY = height - 148,
         showHint = width >= 240 and height >= 96,
-        showZoom = width >= 100 and height >= 132,
+        showZoom = width >= 100 and height >= 164,
     }
 end
 
@@ -323,9 +366,18 @@ local function checkTile(filename)
 end
 
 local function setStatus(context, text)
-    if context.statusText ~= text then
-        context.statusText = text
-        local badge = string.sub(text, 1, 5) == "GPS Z" and "" or text
+    local healthy = string.match(text, "Z%d+$") ~= nil
+    local state = healthy and context.satelliteState or nil
+    if context.statusText ~= text or context.badgeState ~= state then
+        local previousState = context.badgeState
+        context.statusText, context.badgeState = text, state
+        local presentation = context.state(state or "warning", "cyan")
+        local badge = state and presentation.badge or (healthy and "" or text)
+        if state and state ~= "normal" then
+            context.primitives.stylePanel(context.panel, presentation)
+        elseif previousState and previousState ~= "normal" then
+            context.primitives.stylePanel(context.panel, context.state("normal", "cyan"))
+        end
         context.primitives.setBadge(
             context,
             context.themeBuilder,
@@ -333,9 +385,211 @@ local function setStatus(context, text)
             context.area.frame,
             context.fonts.badge,
             badge,
-            context.theme.color.amber
+            state and presentation.accent or context.theme.color.amber
         )
     end
+end
+
+local function satelliteCount(reading)
+    local value = reading and reading.available and reading.value
+    if type(value) == "number" and value == value and value >= 0 and value < math.huge and value % 1 == 0 then
+        return value
+    end
+end
+
+local function validCoordinates(latitude, longitude)
+    return type(latitude) == "number"
+        and type(longitude) == "number"
+        and latitude == latitude
+        and longitude == longitude
+        and math.abs(latitude) <= LIMIT
+        and math.abs(longitude) <= 180
+        and math.abs(latitude) < math.huge
+        and math.abs(longitude) < math.huge
+end
+
+local function updateSatelliteState(context)
+    local settings = context.settings
+    if not context.satellites then
+        context.satelliteState = nil
+        return
+    end
+    local count = satelliteCount(context.satellites)
+    local state
+    if count == nil then
+        state = "unavailable"
+    elseif context.satellites.stale then
+        state = "stale"
+    elseif count < (settings.satelliteCritical or 4) then
+        state = "critical"
+    elseif count < (settings.satelliteWarning or 8) then
+        state = "warning"
+    else
+        state = "normal"
+    end
+    context.satelliteState = state
+    if
+        context.satelliteHeader
+        and (
+            context.satelliteHeaderState ~= state
+            or context.satelliteHeaderCount ~= count
+            or context.satelliteHeaderFrame ~= context.area.frame
+        )
+    then
+        context.satelliteHeaderState = state
+        context.satelliteHeaderCount = count
+        context.satelliteHeaderFrame = context.area.frame
+        local presentation = context.state(state, "cyan")
+        local text = count and string.format("%.0f", count) or "--"
+        local builder, frame, fonts = context.themeBuilder, context.area.frame, context.fonts
+        local headingWidth = builder.headingWidth(frame, fonts.badge, presentation.badge)
+        local heading, font = builder.fitHeading(settings.label, headingWidth, fonts.label, fonts.badge)
+        local left = frame.labelX + builder.measureText(font, heading) + 6
+        local right = frame.badgeX + frame.badgeWidth
+        if presentation.badge and presentation.badge ~= "" then
+            right = context.primitives.badgeX(builder, frame, fonts.badge, presentation.badge) - 6
+        end
+        local width = 18 + builder.measureText(fonts.label, text)
+        local height = math.max(16, builder.fontHeight(fonts.label))
+        local visible = not frame.labelHidden and right - width >= left and frame.labelY + height <= frame.top
+        if visible then
+            context.satelliteHeader:set({ x = right - width, y = frame.labelY, w = width, h = height })
+            context.primitives.setFont(context.satelliteLabel, fonts.label)
+            context.satelliteLabel:set({ text = text, w = width - 18, color = presentation.label })
+            lvgl.show(context.satelliteHeader)
+        else
+            lvgl.hide(context.satelliteHeader)
+        end
+    end
+end
+
+local function recordPath(context)
+    local feed = context.feed
+    local mode = context.settings.flightPath or "off"
+    if
+        mode == "off"
+        or not feed
+        or not feed.known
+        or not feed.fix
+        or feed.state ~= "normal"
+        or not validCoordinates(feed.latitude, feed.longitude)
+    then
+        context.pathBreak = true
+        return
+    end
+    if not context.pack then
+        return
+    end
+    local now = getTime()
+    if context.pathLastTime and now - context.pathLastTime < 100 then
+        return
+    end
+    if not context.navigation then
+        context.pathBreak = true
+        return
+    end
+    local points = context.pathPoints
+    local previous = points[#points]
+    if
+        previous
+        and not context.pathBreak
+        and context.navigation.distanceBetween(previous.latitude, previous.longitude, feed.latitude, feed.longitude)
+            < 5
+    then
+        return
+    end
+    local point = {
+        latitude = feed.latitude,
+        longitude = feed.longitude,
+        breakBefore = context.pathBreak or previous == nil,
+    }
+    context.pathBreak, context.pathLastTime = false, now
+    if mode == "trail" then
+        points[#points + 1] = point
+        if #points > TRAIL_POINTS then
+            table.remove(points, 1)
+            if points[1] then
+                points[1].breakBefore = true
+            end
+        end
+    else
+        if #points == FULL_PATH_POINTS then
+            local compacted = {}
+            for index = 1, #points, 2 do
+                local retained = points[index]
+                retained.breakBefore = retained.breakBefore or index > 1 and points[index - 1].breakBefore
+                compacted[#compacted + 1] = retained
+            end
+            context.pathPoints = compacted
+            points = compacted
+        end
+        points[#points + 1] = point
+    end
+end
+
+local function drawPath(context)
+    local points = context.pathPoints
+    local level = context.pack.levels[context.levelIndex]
+    for index, line in ipairs(context.pathLines) do
+        local lineState = context.pathLineStates[index]
+        local first = points[index]
+        local second = points[index + 1]
+        local visible = first ~= nil and second ~= nil and not second.breakBefore
+        if visible then
+            local x1, y1 = map.project(level, first.latitude, first.longitude, context.transform)
+            local x2, y2 = map.project(level, second.latitude, second.longitude, context.transform)
+            if x1 and x2 then
+                local firstX, firstY = math.floor(x1 - context.viewX + 0.5), math.floor(y1 - context.viewY + 0.5)
+                local secondX, secondY = math.floor(x2 - context.viewX + 0.5), math.floor(y2 - context.viewY + 0.5)
+                if
+                    lineState.firstX ~= firstX
+                    or lineState.firstY ~= firstY
+                    or lineState.secondX ~= secondX
+                    or lineState.secondY ~= secondY
+                then
+                    line:set({ pts = { { firstX, firstY }, { secondX, secondY } } })
+                    lineState.firstX, lineState.firstY, lineState.secondX, lineState.secondY =
+                        firstX, firstY, secondX, secondY
+                end
+                if not lineState.visible then
+                    lvgl.show(line)
+                    lineState.visible = true
+                end
+            else
+                visible = false
+            end
+        end
+        if not visible and lineState.visible then
+            lvgl.hide(line)
+            lineState.visible = false
+        end
+    end
+end
+
+local function updateCoordinates(context)
+    if not context.coordinatesLabel then
+        return
+    end
+    local feed = context.feed
+    local valid = feed
+        and feed.known
+        and feed.fix
+        and feed.state == "normal"
+        and validCoordinates(feed.latitude, feed.longitude)
+    local text = valid
+            and string.format(
+                "%." .. COORDINATE_PRECISION .. "f, %." .. COORDINATE_PRECISION .. "f",
+                feed.latitude,
+                feed.longitude
+            )
+        or "--"
+    if context.coordinateText ~= text then
+        context.coordinatesLabel:set({ text = text })
+        context.coordinateText = text
+    end
+    local width = math.max(1, context.area.w - 56)
+    local visible = valid and width >= context.themeBuilder.measureText(TINSIZE, text)
+    context.primitives.reconcile(context.coordinatesLabel, visible)
 end
 
 local function hideMarker(context)
@@ -682,7 +936,7 @@ local function controlAt(context, touch, rect)
     if x < 0 or x >= 40 then
         return nil
     end
-    for index, top in ipairs({ 44, 76, 0 }) do
+    for index, top in ipairs({ 44, 76, 0, 108 }) do
         if y >= top and y < top + (index == 3 and 40 or 32) then
             return index
         end
@@ -695,7 +949,10 @@ local function activateControl(context, index)
         return
     end
     context.lastControl, context.lastControlTime = index, now
-    if index == 3 then
+    if index == 4 then
+        local feed = context.feed
+        context.locationDetailsRequested = feed and feed.known and feed.fix and feed.state == "normal" or false
+    elseif index == 3 then
         context.following = true
         context.followPan, context.followSample = nil, nil
     else
@@ -758,7 +1015,7 @@ function map.event(context, event, touch, rect)
         end
         local x, y = touch.x - rect.x - context.area.x, touch.y - rect.y - context.area.y
         local zoomX, zoomY = touch.x - rect.x - context.area.zoomX, touch.y - rect.y - context.area.zoomY
-        if context.area.showZoom and zoomX >= 0 and zoomX < 40 and zoomY >= 0 and zoomY < 108 then
+        if context.area.showZoom and zoomX >= 0 and zoomX < 40 and zoomY >= 0 and zoomY < 140 then
             return true
         end
         if x < 0 or y < 0 or x >= context.area.w or y >= context.area.h then
@@ -820,11 +1077,7 @@ local function updateControls(context)
         context.followAircraft, context.followIcon = nil, nil
     end
     if interactive and #context.controls == 0 then
-        local actions = {
-            { "+", 44, 1 },
-            { "-", 76, -1 },
-            { "target", 0 },
-        }
+        local actions = { { "+", 44, 1 }, { "-", 76, -1 }, { "target", 0 }, { "GPS", 108 } }
         for index, action in ipairs(actions) do
             context.controls[index] = lvgl.rectangle(context.controlsRoot, {
                 x = 4,
@@ -837,7 +1090,16 @@ local function updateControls(context)
             })
             local y = action[2]
             local white = lcd.RGB(0xFFFFFF)
-            if action[3] then
+            if index == 4 then
+                context.primitives.label(context.controlsRoot, context.theme, {
+                    x = 4,
+                    y = y + 6,
+                    w = 32,
+                    text = "GPS",
+                    font = TINSIZE,
+                    color = white,
+                })
+            elseif action[3] then
                 lvgl.rectangle(
                     context.controlsRoot,
                     { x = 13, y = y + 15, w = 14, h = 2, filled = true, color = white }
@@ -863,8 +1125,13 @@ local function selectArea(context)
     if not feed or not feed.known or not feed.fix or feed.state ~= "normal" then
         return
     end
-    if context.pack and map.covers(context.pack, feed.latitude, feed.longitude) then
-        return
+    if context.pack then
+        if not map.project(context.pack.levels[context.levelIndex], feed.latitude, feed.longitude) then
+            return
+        end
+        if map.covers(context.pack, feed.latitude, feed.longitude) then
+            return
+        end
     end
     if context.pack then
         cancelDrag(context)
@@ -935,6 +1202,7 @@ local function selectArea(context)
 end
 
 function map.refresh(context)
+    updateSatelliteState(context)
     if context.automatic then
         selectArea(context)
     end
@@ -942,46 +1210,49 @@ function map.refresh(context)
     if not lvgl.isFullScreen() then
         cancelDrag(context)
     end
+    recordPath(context)
     if not context.pack then
         local feed = context.feed
         local live = feed and feed.known and feed.fix and feed.state == "normal"
         setStatus(context, live and (context.discoveryStatus or "FINDING MAP") or "WAITING FOR GPS")
+        updateCoordinates(context)
         return
     end
     followAircraft(context)
     if context.dirty then
         prepareView(context)
     end
+    drawPath(context)
     if context.pending and getTime() >= (context.nextTileLoad or 0) then
         loadTile(context)
         context.nextTileLoad = getTime() + 25
     end
     updateMarker(context)
+    updateCoordinates(context)
 end
 
 function map.create(parent, rect, settings, services)
-    local automatic = settings.pack == nil or settings.pack == ""
-    local pack, directory
-    if not automatic then
-        pack, directory = readPack(services.host, settings.pack)
-    end
     local context = {
-        automatic = automatic,
+        automatic = true,
         host = services.host,
-        pack = pack,
-        directory = directory,
+        pack = nil,
+        directory = nil,
         settings = settings,
         theme = services.theme,
         themeBuilder = services.themeBuilder,
         primitives = services.primitives,
+        state = services.state,
         fonts = services.fonts,
         levelIndex = 1,
         tiles = {},
         controls = {},
+        pathPoints = {},
+        pathLines = {},
+        pathLineStates = {},
         tileLoads = 0,
         viewChanges = 0,
         markerMoves = 0,
-        dirty = pack ~= nil,
+        dirty = false,
         following = true,
     }
     context.area = geometry(context, rect)
@@ -1009,10 +1280,31 @@ function map.create(parent, rect, settings, services)
             end,
         })
         context.tiles[index] = slot
-        if automatic then
-            lvgl.hide(slot.image)
-            slot.visible = false
+        lvgl.hide(slot.image)
+        slot.visible = false
+    end
+    if (settings.flightPath or "off") ~= "off" then
+        local lineCount = settings.flightPath == "trail" and TRAIL_POINTS - 1 or FULL_PATH_POINTS - 1
+        for index = 1, lineCount do
+            context.pathLines[index] = lvgl.line(context.viewport, {
+                pts = { { 0, 0 }, { 0, 0 } },
+                thickness = 2,
+                color = services.theme.color.green,
+            })
+            lvgl.hide(context.pathLines[index])
+            context.pathLineStates[index] = { visible = false }
         end
+    end
+    if settings.showCoordinates then
+        context.coordinatesLabel = services.primitives.label(context.panel.root, services.theme, {
+            x = area.x + 4,
+            y = area.h - 20,
+            w = math.max(1, area.w - 56),
+            text = "",
+            font = TINSIZE,
+            color = services.theme.color.text,
+        })
+        lvgl.hide(context.coordinatesLabel)
     end
     local assets = services.host.path .. "assets/"
     context.assets = assets
@@ -1049,7 +1341,7 @@ function map.create(parent, rect, settings, services)
         x = area.zoomX,
         y = area.zoomY,
         w = 40,
-        h = 108,
+        h = 140,
         scrollDir = 0,
         scrollBar = false,
     })
@@ -1061,15 +1353,31 @@ function map.create(parent, rect, settings, services)
     if settings.headingSource and settings.headingSource ~= "" and services.telemetry then
         context.headingFeed = services.telemetry:subscribe(settings.headingSource)
     end
-    if pack then
-        local level = pack.levels[1]
-        context.viewX, context.viewY = map.clampView(
-            level,
-            area.w,
-            area.h,
-            ((level.xMax - level.xMin + 1) * TILE - area.w) / 2,
-            ((level.yMax - level.yMin + 1) * TILE - area.h) / 2
-        )
+    if settings.satelliteSource and settings.satelliteSource ~= "" then
+        assert(services.telemetry, "map satellite count requires telemetry service")
+        context.satellites = services.telemetry:subscribe(settings.satelliteSource)
+        if settings.showSatellites ~= false then
+            context.satelliteHeader = lvgl.box(context.panel.root, { x = 0, y = 0, w = 1, h = 1 })
+            local filename = assets .. (services.theme.light and "satellite-light.png" or "satellite.png")
+            local handle = io.open(filename, "r")
+            assert(handle, "map satellite icon missing: " .. filename)
+            io.close(handle)
+            services.primitives.image(context.satelliteHeader, {
+                x = 0,
+                y = 0,
+                w = 16,
+                h = 16,
+                file = filename,
+            })
+            context.satelliteLabel = services.primitives.label(context.satelliteHeader, services.theme, {
+                x = 18,
+                y = 0,
+                text = "",
+                font = services.fonts.label,
+                color = services.theme.color.textMuted,
+            })
+            lvgl.hide(context.satelliteHeader)
+        end
     end
     return context
 end
@@ -1083,14 +1391,19 @@ function map.update(context, rect)
     context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
     context.viewport:set({ x = area.x, y = area.y, w = area.w, h = area.h })
     context.controlsHint:set({ x = area.x + 16, y = area.controlsY, w = math.max(1, area.w - 32) })
-    context.controlsRoot:set({ x = area.zoomX, y = area.zoomY })
-    updateControls(context)
-    if not context.pack then
-        return
+    context.controlsRoot:set({ x = area.zoomX, y = area.zoomY, h = 140 })
+    if context.coordinatesLabel then
+        context.coordinatesLabel:set({ x = area.x + 4, y = area.h - 20, w = math.max(1, area.w - 56) })
     end
-    context.viewX, context.viewY =
-        map.clampView(context.pack.levels[context.levelIndex], area.w, area.h, context.viewX, context.viewY)
-    context.pending, context.dirty = nil, true
+    if context.satelliteHeader then
+        updateSatelliteState(context)
+    end
+    updateControls(context)
+    if context.pack then
+        context.viewX, context.viewY =
+            map.clampView(context.pack.levels[context.levelIndex], area.w, area.h, context.viewX, context.viewY)
+        context.pending, context.dirty = nil, true
+    end
 end
 
 return map

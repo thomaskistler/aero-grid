@@ -92,7 +92,12 @@ for setup, controls and hardware limitations.
 | `source` | string | `GPS` | EdgeTX GPS source name | Subscribes through the shared Navigation service. |
 | `headingSource` | string | `""` | Blank or numeric telemetry source name | Degrees clockwise from true north. Blank derives GPS course after at least 1 m of movement, averaging the last five movement bearings circularly; stationary fixes retain it. Unknown heading shows NO HDG; the plane stays cyan. A configured source is used directly and does not fall back to GPS when unavailable/stale. |
 | `armSwitch` | string | `""` | Blank, switch position such as `SF^`, `SA-`, `SFv`, or logical switch `L01` | Blank uses EdgeTX home; otherwise uses the Navigation service's first-arm GPS home capture. Panel-local, not synchronized with other panels. |
-| `pack` | string | `""` | Blank or 1-32 lowercase letters, digits, `_` or `-` | Blank automatically finds an installed area from live GPS, preferring highest detail then smallest coverage, and holds it until GPS leaves coverage. An explicit ID overrides selection using `/AEROGRID/maps/areas/<id>.yaml`. |
+| `satelliteSource` | string | `""` | Blank or EdgeTX telemetry source name | When set, shows the satellite count in the header and uses the same warning/critical thresholds as Navigation. |
+| `satelliteWarning` | number | `8` | Nonnegative integer | Warn below this satellite count. |
+| `satelliteCritical` | number | `4` | Nonnegative integer, no greater than warning threshold | Critical below this count. |
+| `showSatellites` | boolean | `true` | `true` / `false` | Hide the header count without disabling satellite alerts. |
+| `showCoordinates` | boolean | `false` | `true` / `false` | Show the live latitude and longitude to six decimal places. |
+| `flightPath` | string | `off` | `off`, `trail`, `full` | `trail` keeps the latest 24 sampled fixes; `full` retains a bounded, decimated history of up to 64. GPS outages break the line rather than joining disconnected segments. |
 
 ```yaml
 version: 3
@@ -110,7 +115,10 @@ panels:
       label: MAP
       source: GPS
       headingSource: ""
-      pack: ""
+      satelliteSource: ""
+      showSatellites: true
+      showCoordinates: false
+      flightPath: off
 ```
 
 ### `flight-counter`
