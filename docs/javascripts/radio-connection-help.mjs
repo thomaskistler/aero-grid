@@ -8,8 +8,8 @@ for (const connect of document.querySelectorAll("[data-connect], #ag-map-connect
   const help = document.createElement("button");
   help.type = "button";
   help.className = "ag-radio-help-button";
-  help.setAttribute("aria-label", "Radio connection help");
-  help.title = "Radio connection help";
+  help.setAttribute("aria-label", "Install over USB help");
+  help.title = "Install over USB help";
   help.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3m.08 4h.01"/></svg>';
 
   const popover = document.createElement("div");
@@ -19,7 +19,7 @@ for (const connect of document.querySelectorAll("[data-connect], #ag-map-connect
   popover.setAttribute("role", "region");
   popover.setAttribute("aria-label", "Radio connection help");
   popover.innerHTML = `
-    <h3>Connect your radio</h3>
+    <h3>Install over USB</h3>
     <p>Use <strong>desktop Google Chrome or Microsoft Edge</strong>. Safari and Opera do not support USB access.</p>
     <p>Power on the radio, connect its <strong>data USB port</strong> using a USB cable that supports data, and choose <strong>USB Storage</strong> if prompted.</p>
     <p>Click <strong>Connect Radio</strong> and select the <strong>SD-card root</strong>: the folder containing <code>RADIO</code>, <code>MODELS</code>, and <code>WIDGETS</code>, not the <code>WIDGETS</code> folder itself.</p>

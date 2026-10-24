@@ -401,9 +401,12 @@ test("tile reads are optional for missing paths and writes preserve existing sha
 
 test("deleting an app-created area prunes only its unshared tiles", async () => {
   const root = await fixture();
+  const before = await inspectMapLibrary(root);
   const shared = plannedSelection(ordinary, [17]).levels[0];
   const old = plannedSelection(ordinary, [16]).levels[0];
   await removeMapArea(root, "field-a");
+  const afterRemoval = await inspectMapLibrary(root);
+  await pruneUnreferencedMapTiles(root, before.referencedTiles, afterRemoval.referencedTiles);
   const result = await inspectMapLibrary(root);
   assert.deepEqual(result.areas.map((area) => area.id), ["field-b"]);
   assert.equal(result.tileBytes, result.areas[0].selection.tileCount * tileImage.length);
@@ -490,9 +493,15 @@ test("exported format 2 files can be written, reloaded, renamed and deleted with
   assert.deepEqual(updated.areas[0].selection, renamed);
   await pruneUnreferencedMapTiles(root, before.referencedTiles, updated.referencedTiles);
   assert.equal((await inspectMapLibrary(root)).tileBytes, before.tileBytes);
+  const beforeDelete = await inspectMapLibrary(root);
   await removeMapArea(root, "first");
+  const afterFirstDelete = await inspectMapLibrary(root);
+  await pruneUnreferencedMapTiles(root, beforeDelete.referencedTiles, afterFirstDelete.referencedTiles);
   assert.equal((await inspectMapLibrary(root)).tileBytes, before.tileBytes);
+  const beforeLastDelete = await inspectMapLibrary(root);
   await removeMapArea(root, "second");
+  const afterLastDelete = await inspectMapLibrary(root);
+  await pruneUnreferencedMapTiles(root, beforeLastDelete.referencedTiles, afterLastDelete.referencedTiles);
   const after = await inspectMapLibrary(root);
   assert.equal(after.areas.length, 0);
   assert.equal(after.tileBytes, 0);

@@ -187,31 +187,7 @@
         return `https://mt1.google.com/vt?lyrs=y&x=${x}&y=${y}&z=${zoom}`;
     }
 
-    function sampleTiles(bounds, zooms, estimate = plan(bounds, zooms)) {
-        const east = bounds.east < bounds.west ? bounds.east + 360 : bounds.east;
-        const longitude = ((bounds.west + east) / 2 + 180) % 360;
-        return estimate.levels.map(level => {
-            const count = 2 ** level.zoom;
-            const x = Math.min(count - 1, Math.floor(longitude / 360 * count));
-            const y = Math.floor((level.yMin + level.yMax) / 2);
-            return { zoom: level.zoom, x, y, tiles: level.tiles, url: tileUrl(level.zoom, x, y) };
-        });
-    }
-
-    async function measureSamples(samples, source, signal) {
-        const results = [];
-        for (const sample of samples) {
-            const image = await source.readTile(sample.zoom, sample.x, sample.y, signal);
-            results.push({ ...sample, bytes: image.length });
-        }
-        return {
-            samples: results,
-            bytes: results.reduce((total, sample) => total + sample.bytes, 0),
-            estimatedBytes: results.reduce((total, sample) => total + sample.bytes * sample.tiles, 0)
-        };
-    }
-
-    root.AeroGridMapPlanner = { plan, snapBounds, specification, geographicBounds, sampleTiles, measureSamples,
+    root.AeroGridMapPlanner = { plan, snapBounds, specification, geographicBounds,
         radioFootprint, overviewZoom, coveragePlan, tileUrl, RADIO_PRESETS, MAX_TILES };
     if (typeof document === "undefined" || !document.getElementById("ag-map-planner")) {
         return;
@@ -249,11 +225,8 @@
     let selectedBounds;
     let coverage;
     let minimumZoom = 16;
-    let failed = false;
     let locationRequest = 0;
     let navigationRevision = 0;
-    let measurement;
-    let measuring = false;
     let settingExtent = false;
     let explicitAddMode = false;
     let areaEditingEnabled = !element("connect");
@@ -265,26 +238,6 @@
     let resolveMapReady;
     const mapReady = new Promise(resolve => { resolveMapReady = resolve; });
     const compactCoverage = () => element("compact").checked;
-    const selectionKey = () => JSON.stringify([selectedBounds, radioId(), zooms(), compactCoverage()]);
-
-    function showMeasurement() {
-        element("measure").disabled = !bounds || !selectedBounds || measuring;
-        if (measuring) return;
-        if (measurement && measurement.key !== selectionKey()) measurement = undefined;
-        if (!measurement) {
-            element("measurement").textContent = bounds
-                ? "Download one sample tile per selected zoom level into memory to estimate storage."
-                : "Select an area to measure one sample tile per zoom level.";
-            return;
-        }
-        const { samples, bytes, estimatedBytes } = measurement;
-        element("measurement").textContent =
-            samples.map(sample => `Zoom ${sample.zoom}: ${(sample.bytes / 1024).toFixed(1)} KiB`).join("; ") +
-            `. ${samples.length} sample tiles, ${(bytes / 1024).toFixed(1)} KiB as radio JPEGs. ` +
-            `Estimated selected-area JPEG storage: ${(estimatedBytes / (1024 * 1024)).toFixed(1)} MiB. ` +
-            "Each zoom's sample size is multiplied by its tile count. One tile per zoom is only a rough sample, not a measured pack size.";
-    }
-
     function locate(explicit = false) {
         const message = text => { element("location-status").textContent = text; };
         if (!root.isSecureContext || !root.navigator.geolocation) {
@@ -343,8 +296,6 @@
     }
 
     function updateSummary() {
-        showMeasurement();
-        element("export").disabled = true;
         if (!bounds || !selectedBounds) {
             element("min-zoom-value").textContent = "Select an area";
             element("max-zoom").min = 11;
@@ -364,7 +315,6 @@
                     ` Storage optimization saves ${difference.toLocaleString()} tiles.`;
             }
             specification(element("name").value, bounds, zooms(), radioId(), coverage);
-            element("export").disabled = failed;
         } catch (error) {
             element("summary").textContent = error.message;
         }
@@ -420,9 +370,7 @@
 
     function mapFailure(message) {
         resolveMapReady(null);
-        failed = true;
         element("options").disabled = true;
-        element("export").disabled = true;
         element("zoom-range").disabled = true;
         status(message);
     }
@@ -855,39 +803,6 @@
             if (zoomPreview) previewZoom(input);
         });
     }
-    element("measure").addEventListener("click", async () => {
-        if (measuring || !bounds || !selectedBounds) return;
-        const key = selectionKey();
-        const controller = new AbortController();
-        const timeout = root.setTimeout(() => controller.abort(), 30000);
-        let source;
-        measuring = true;
-        measurement = undefined;
-        showMeasurement();
-        element("measurement").textContent = "Downloading one sample tile per selected zoom level...";
-        try {
-            source = await root.AeroGridMapSources.googleHybrid();
-            const result = await measureSamples(sampleTiles(selectedBounds, zooms(), coverage),
-                source, controller.signal);
-            measuring = false;
-            if (key !== selectionKey()) {
-                showMeasurement();
-                element("measurement").textContent = "Selection changed during measurement. Measure again for the current selection.";
-                return;
-            }
-            measurement = { ...result, key };
-            showMeasurement();
-        } catch (error) {
-            element("measurement").textContent = controller.signal.aborted
-                ? "Sample download timed out after 30 seconds. Try again."
-                : `Unable to measure sample tiles: ${error.message} The provider may block cross-origin downloads, or your connection may be unavailable.`;
-        } finally {
-            if (source) source.close();
-            root.clearTimeout(timeout);
-            measuring = false;
-            element("measure").disabled = !bounds || !selectedBounds;
-        }
-    });
     element("locate").addEventListener("click", () => locate(true));
     element("name").addEventListener("input", updateSummary);
     function currentSelection() {
@@ -896,25 +811,5 @@
         selection.coverageMode = compactCoverage() ? "per-zoom-clamped" : "full-area-clamped";
         return selection;
     }
-    function saveDownload(blob, filename) {
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        root.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    }
-    element("export").addEventListener("click", () => {
-        try {
-            const selection = currentSelection();
-            const blob = new Blob([JSON.stringify(selection, null, 2) + "\n"], { type: "application/json" });
-            saveDownload(blob, `${selection.name.replace(/[^a-z0-9_-]+/gi, "-") || "map"}-selection.json`);
-            status("Selection JSON downloaded. It contains no imagery and is not a radio-ready map pack.");
-        } catch (error) {
-            status(`Unable to export selection: ${error.message}`);
-        }
-    });
     initializeMap();
 })(globalThis);

@@ -18,18 +18,17 @@ if (panel) {
   let selectedId = null;
   let radio = null;
   let supported = false;
-  let busy = false;
+  let phase = "idle";
   let expectedSignature = "";
+  let storedMissingTiles = new Set();
   let totalStorageBytes = 0;
   let storedTileSizes = new Map();
   let addRequested = false;
   let stageController = null;
   let renamingId = null;
   let updateReady = false;
-  let syncing = false;
   let syncController = null;
-  let committingSync = false;
-  let syncComplete = false;
+  let reviewSignature = "";
   let expanded = false;
   const setExpanded = (enabled) => {
     if (enabled === expanded) return;
@@ -54,6 +53,13 @@ if (panel) {
     const unit = bytes < 1024 ** 2 ? 1024 : 1024 ** 2;
     return `${(bytes / unit).toFixed(1)} ${unit === 1024 ? "KiB" : "MiB"}`;
   };
+  const sameCoverage = (left, right) => !!left && !!right
+    && left.levels.length === right.levels.length
+    && left.levels.every((level, index) => {
+      const other = right.levels[index];
+      return level.zoom === other.zoom && level.yMin === other.yMin && level.yMax === other.yMax
+        && JSON.stringify(level.xRanges) === JSON.stringify(other.xRanges);
+    });
   const formatEstimate = (bytes) => {
     const unit = bytes < 1024 ? 1 : bytes < 1024 ** 2 ? 1024 : 1024 ** 2;
     return `${Math.round(bytes / unit)} ${unit === 1 ? "B" : unit === 1024 ? "KiB" : "MiB"}`;
@@ -66,17 +72,41 @@ if (panel) {
   };
   const currentRecord = () => selectedId ? records.get(selectedId) : null;
   const pendingCount = () => [...records.values()].filter((record) => record.staged).length;
+  const busy = () => ["preparing", "writing", "committing"].includes(phase);
+  const hasDraft = () => pendingCount() > 0
+    || [...records.values()].some((record) => record.dirty) || addRequested;
+  const draftSignature = () => JSON.stringify([...records.values()].map((record) => [
+    record.id, record.imagerySet, record.selection, record.deleted, record.dirty,
+    record.staged ? [...record.staged.files.keys()].sort() : null,
+  ]));
+  const invalidateReview = () => {
+    updateReady = false;
+    reviewSignature = "";
+    if (phase === "reviewing" && byId("review-panel").open) {
+      byId("review-status").textContent = "Map changes changed after review. Prepare them again before syncing.";
+    }
+  };
   function cancelDeletion(record) {
     record.deleted = false;
     record.staged = record.stagedBeforeDelete ?? null;
     record.dirty = record.dirtyBeforeDelete ?? false;
     delete record.stagedBeforeDelete;
     delete record.dirtyBeforeDelete;
+    invalidateReview();
     setStatus("");
   }
+  const actionIcon = (pathData) => {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", pathData);
+    svg.append(path);
+    return svg;
+  };
   const renderNames = () => {
     const list = byId("area-list");
-    if (renamingId && records.has(renamingId) && supported && !busy) {
+    if (renamingId && records.has(renamingId) && supported && !busy()) {
       if (list.querySelector(".ag-map-area-rename")) return;
     } else renamingId = null;
     list.replaceChildren();
@@ -124,7 +154,7 @@ if (panel) {
       button.type = "button";
       button.className = "ag-map-area-option";
       button.setAttribute("aria-pressed", String(record.id === selectedId));
-      button.disabled = !supported || busy;
+      button.disabled = !supported || busy();
       const name = document.createElement("strong");
       name.textContent = record.selection.name;
       const details = document.createElement("small");
@@ -132,9 +162,9 @@ if (panel) {
       const savedCoverageMatches = record.onRadio && record.savedSelection
         && JSON.stringify(record.selection.levels) === JSON.stringify(record.savedSelection.levels);
       const storage = record.staged && !record.staged.deleted
-        ? `${formatBytes(record.staged.areaBytes)} prepared`
+        ? formatBytes(record.staged.areaBytes)
         : savedCoverageMatches
-          ? `${formatBytes(record.storageBytes)} occupied`
+          ? formatBytes(record.storageBytes)
           : formatEstimate(tileCount * 20 * 1024);
       details.textContent = `${tileCount.toLocaleString()} ${tileCount === 1 ? "tile" : "tiles"} · ${storage}`;
       if (!savedCoverageMatches && !record.staged) {
@@ -147,7 +177,7 @@ if (panel) {
         ? "Pending changes" : "";
       button.append(marker);
       const rename = () => {
-        if (busy || !supported || record.deleted) return;
+        if (busy() || !supported || record.deleted) return;
         selectRecord(record.id);
         renamingId = record.id;
         renderNames();
@@ -167,31 +197,19 @@ if (panel) {
         const edit = document.createElement("button");
         edit.type = "button";
         edit.className = "ag-map-area-edit";
-        edit.disabled = !supported || busy;
+        edit.disabled = !supported || busy();
         edit.setAttribute("aria-label", `Rename ${record.selection.name}`);
         edit.title = `Rename ${record.selection.name}`;
-        const pencil = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        pencil.setAttribute("viewBox", "0 0 24 24");
-        pencil.setAttribute("aria-hidden", "true");
-        const pencilPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        pencilPath.setAttribute("d", "M21.174 6.812a1 1 0 0 0-3.986-3.986L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497zM15 5l4 4");
-        pencil.append(pencilPath);
-        edit.append(pencil);
+        edit.append(actionIcon("M21.174 6.812a1 1 0 0 0-3.986-3.986L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497zM15 5l4 4"));
         edit.addEventListener("click", rename);
         row.append(edit);
         const remove = document.createElement("button");
         remove.type = "button";
         remove.className = "ag-map-area-remove";
-        remove.disabled = !supported || busy;
+        remove.disabled = !supported || busy();
         remove.setAttribute("aria-label", `Delete ${record.selection.name}`);
         remove.title = `Delete ${record.selection.name}`;
-        const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        icon.setAttribute("viewBox", "0 0 24 24");
-        icon.setAttribute("aria-hidden", "true");
-        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        path.setAttribute("d", "M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6");
-        icon.append(path);
-        remove.append(icon);
+        remove.append(actionIcon("M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6"));
         remove.addEventListener("click", () => byId("delete").click());
         row.append(remove);
       }
@@ -199,7 +217,7 @@ if (panel) {
     }
   };
   const renderReview = () => {
-    const canEdit = !!radioStorage.root && supported && !!radio?.preset && !busy;
+    const canEdit = !!radioStorage.root && supported && !!radio?.preset && !busy();
     plannerView?.setAreaEditMode(canEdit);
     byId("create-help").textContent = radioStorage.root
       ? "Hold Shift and drag on the map to create a new area."
@@ -208,19 +226,19 @@ if (panel) {
     connectButton.classList.toggle("ag-radio-primary", !radioStorage.root);
     connectButton.classList.toggle("ag-radio-danger", !!radioStorage.root);
     byId("compatibility").hidden = !radioStorage.root;
-    connectButton.disabled = busy || !globalThis.isSecureContext
+    connectButton.disabled = busy() || !globalThis.isSecureContext
       || typeof globalThis.showDirectoryPicker !== "function";
-    if (!busy) byId("connect-label").textContent = radioStorage.root ? "Disconnect Radio" : "Connect Radio";
+    if (!busy()) byId("connect-label").textContent = radioStorage.root ? "Disconnect Radio" : "Connect Radio";
     const count = pendingCount();
-    byId("update").disabled = !radioStorage.root || busy
+    byId("update").disabled = !radioStorage.root || busy()
       || ![...records.values()].some((record) => record.dirty || record.staged);
-    byId("delete").disabled = !supported || !currentRecord() || busy;
-    byId("area-name").disabled = !supported || !currentRecord() || busy;
-    byId("sync").disabled = !updateReady || !count || busy;
+    byId("delete").disabled = !supported || !currentRecord() || busy();
+    byId("area-name").disabled = !supported || !currentRecord() || busy();
+    byId("sync").disabled = !updateReady || !count || busy();
     const dirtyCount = [...records.values()].filter((record) => record.dirty && !record.staged).length;
     const changes = count + dirtyCount;
     const summary = changes ? `${changes} ${changes === 1 ? "area has" : "areas have"} pending changes.` : "";
-    byId("stage-status").textContent = busy ? "Map operation in progress..." : summary;
+    byId("stage-status").textContent = busy() ? "Map operation in progress..." : summary;
     renderNames();
     renderMapAreas();
     refreshStorageSummary();
@@ -287,7 +305,7 @@ if (panel) {
       button.type = "button";
       button.className = "ag-map-zoom-choice";
       button.setAttribute("aria-pressed", String(record.selection.levels.at(-1).zoom === zoom));
-      button.disabled = busy || zoom < record.selection.levels[0].zoom;
+      button.disabled = busy() || zoom < record.selection.levels[0].zoom;
       const preview = document.createElement("div");
       preview.className = "ag-map-zoom-preview";
       const tiles = document.createElement("div");
@@ -331,11 +349,11 @@ if (panel) {
       container.append(button);
     }
     const actualMaximum = record.selection.levels.at(-1).zoom;
-    const stagedSize = record.staged && !record.staged.deleted
-      ? ` Staged area size: approximately ${formatBytes(record.staged.areaBytes)}.`
-      : "";
+    const areaSize = record.staged && !record.staged.deleted
+      ? record.staged.areaBytes
+      : record.storageBytes;
     byId("selected-summary").textContent =
-      `${record.selection.name} · Zoom ${record.selection.levels[0].zoom}–${actualMaximum}${stagedSize}`;
+      `${record.selection.name} · Zoom ${record.selection.levels[0].zoom}–${actualMaximum} · ${formatBytes(areaSize)}`;
   }
   function syncPlannerInputs(record) {
     byId("name").value = record.selection.name;
@@ -367,7 +385,7 @@ if (panel) {
   function selectMapAreas(ids) {
     const available = [...new Set(ids)].filter((id) => {
       const record = records.get(id);
-      return record && !record.deleted && supported && !busy;
+      return record && !record.deleted && supported && !busy();
     });
     if (available.length === 1) {
       selectRecord(available[0]);
@@ -392,9 +410,10 @@ if (panel) {
     dialog.showModal();
   }
   function selectionChanged(event) {
-    if (!radioStorage.root || !supported || !radio?.preset || busy) return;
+    if (!radioStorage.root || !supported || !radio?.preset || busy()) return;
     if (event.origin === "drawing-start" || event.origin === "drawing-cancel") {
       addRequested = event.origin === "drawing-start";
+      invalidateReview();
       renderReview();
       return;
     }
@@ -421,6 +440,7 @@ if (panel) {
       byId("name").value = selection.name;
       byId("area-name").value = selection.name;
       addRequested = false;
+      invalidateReview();
       byId("canvas").style.cursor = "";
       setStatus("");
     } else {
@@ -428,6 +448,7 @@ if (panel) {
       record.selection = { ...event.selection, name: byId("area-name").value.trim() || record.selection.name };
       record.staged = null;
       record.dirty = true;
+      invalidateReview();
       byId("name").value = record.selection.name;
       setStatus("");
     }
@@ -456,6 +477,7 @@ if (panel) {
   }
   async function loadRadio(knownLibrary) {
     if (!await plannerView.ready) throw new Error("The map viewer did not load. Reload the page and try again.");
+    invalidateReview();
     const details = await radioStorage.inspect();
     updateRadioDetails(details);
     const library = knownLibrary ?? await inspectMapLibrary(radioStorage.root);
@@ -467,6 +489,7 @@ if (panel) {
       deleted: false, dirty: area.missingTileCount > 0, onRadio: true,
     });
     expectedSignature = mapLibrarySignatureFromAreas(library.areas);
+    storedMissingTiles = new Set(library.missingTiles ?? []);
     selectedId = records.keys().next().value ?? null;
     refreshStorageSummary();
     renderReview();
@@ -476,27 +499,38 @@ if (panel) {
       updateZoomChoices();
     }
     setStatus(library.missingTileCount
-      ? `${library.missingTileCount} shared map tiles are missing. Sync Maps to prepare a repair using the original imagery library.`
+      ? `${library.missingTileCount} map tiles are missing. Choose Sync Maps to repair them.`
       : "");
   }
-  function refreshLibraryState(library) {
+  function refreshLibraryState(library, acceptTileChanges = false) {
     if (mapLibrarySignatureFromAreas(library.areas) !== expectedSignature
         || [...library.tileSizes].some(([path, size]) =>
-          storedTileSizes.has(path) && storedTileSizes.get(path) !== size)) {
-      throw new Error("The radio map library changed while preparing the update. Reconnect and review your changes again.");
+          (storedTileSizes.has(path) && storedTileSizes.get(path) !== size)
+          || (!acceptTileChanges && storedMissingTiles.has(path)))) {
+      throw new Error("Map areas or images changed while preparing. Review the current card before syncing.");
     }
     totalStorageBytes = library.tileBytes;
     storedTileSizes = library.tileSizes;
+    storedMissingTiles = new Set(library.missingTiles ?? []);
     for (const area of library.areas) {
       const record = records.get(area.id);
       record.storageBytes = area.storageBytes;
       record.missingTiles = area.missingTiles;
       record.missingTileCount = area.missingTileCount;
-      if (area.missingTileCount && !record.deleted && !record.staged) record.dirty = true;
+      if (area.missingTileCount && !record.deleted) {
+        const stagedTiles = new Set([...(record.staged?.files?.keys() ?? [])]
+          .filter((path) => path.startsWith("AEROGRID/maps/tiles/"))
+          .map((path) => path.slice("AEROGRID/maps/tiles/".length)));
+        if (![...area.missingTiles].every((path) => stagedTiles.has(path))) {
+          record.staged = null;
+          record.dirty = true;
+          invalidateReview();
+        }
+      }
     }
   }
   connectButton.addEventListener("click", async () => {
-    if (busy) return;
+    if (busy()) return;
     if (radioStorage.root) {
       const dirtyCount = [...records.values()].filter((record) => record.dirty).length;
       if ((pendingCount() || dirtyCount || addRequested) && !globalThis.confirm(
@@ -530,28 +564,70 @@ if (panel) {
       setStatus("Radio access requires desktop Chrome or Edge over HTTPS (or localhost).", true);
       return;
     }
-    busy = true;
+    phase = "preparing";
+    const pendingBeforeConnect = hasDraft();
     byId("connect-label").textContent = "Connecting...";
     setStatus("Select the mounted radio SD-card root. Connecting does not change files.");
     renderReview();
     try {
       await radioStorage.connect();
-      await loadRadio();
+      const library = await inspectMapLibrary(radioStorage.root);
+      if (pendingBeforeConnect) {
+        const sameAreas = mapLibrarySignatureFromAreas(library.areas) === expectedSignature;
+        if (sameAreas) {
+          const keepDraft = globalThis.confirm(
+            "The connected card has the same saved map areas as before. Keep this page's pending edits for this card? Choose Cancel to discard them and reload the card."
+          );
+          if (keepDraft) {
+            invalidateReview();
+            updateRadioDetails(await radioStorage.inspect());
+            refreshLibraryState(library, true);
+            for (const area of library.areas) {
+              const record = records.get(area.id);
+              if (area.missingTileCount) {
+                record.staged = null;
+                record.dirty = true;
+              }
+            }
+            renderReview();
+          } else {
+            await loadRadio(library);
+          }
+        } else if (globalThis.confirm(
+          "The connected card has different saved map areas. Discard this page's pending edits and reload from the connected card?"
+        )) {
+          await loadRadio(library);
+        } else {
+          radioStorage.disconnect();
+          supported = false;
+          radio = null;
+          byId("radio-state").textContent = "Radio disconnected";
+          setStatus("Pending edits were kept. Reconnect the card they were made for, or choose to discard and reload.");
+        }
+      } else {
+        await loadRadio(library);
+      }
     } catch (error) {
       try {
         radioStorage.disconnect();
       } catch (disconnectError) {
-        setStatus(`Connection failed: ${error.message}. Disconnect cleanup failed: ${disconnectError.message}`, true);
+      console.error("[AeroGrid maps] Connection cleanup failed.", disconnectError);
+      setStatus("Connection failed. Safely eject the card, then reconnect and review its map areas.", true);
       }
-      supported = false;
-      radio = null;
-      records.clear();
-      selectedId = null;
-      totalStorageBytes = 0;
-      addRequested = false;
-      plannerView.cancelAddingArea();
-      plannerView.clearBounds();
-      updateZoomChoices();
+      if (!pendingBeforeConnect) {
+        supported = false;
+        radio = null;
+        records.clear();
+        selectedId = null;
+        totalStorageBytes = 0;
+        addRequested = false;
+        plannerView.cancelAddingArea();
+        plannerView.clearBounds();
+        updateZoomChoices();
+      } else {
+        supported = false;
+        radio = null;
+      }
       byId("radio-state").textContent = "Radio disconnected";
       byId("radio-type").textContent = "Unknown";
       byId("radio-screen").textContent = "Unknown";
@@ -562,7 +638,7 @@ if (panel) {
           : `Unable to connect: ${error.message}`, error.name !== "AbortError");
       }
     } finally {
-      busy = false;
+      phase = "idle";
       byId("connect-label").textContent = radioStorage.root ? "Disconnect Radio" : "Connect Radio";
       renderReview();
       refreshStorageSummary();
@@ -570,13 +646,14 @@ if (panel) {
   });
   byId("delete").addEventListener("click", () => {
     const record = currentRecord();
-    if (!record || busy) return;
+    if (!record || busy()) return;
     if (record.deleted) {
       cancelDeletion(record);
       selectRecord(record.id);
       return;
     }
     if (!record.onRadio) {
+      invalidateReview();
       records.delete(record.id);
       selectedId = [...records.values()].find((candidate) => !candidate.deleted)?.id ?? null;
       if (selectedId) selectRecord(selectedId);
@@ -593,6 +670,7 @@ if (panel) {
     record.deleted = true;
     record.staged = { deleted: true, files: new Map(), bytes: 0 };
     record.dirty = false;
+    invalidateReview();
     selectedId = [...records.values()].find((candidate) => !candidate.deleted)?.id ?? null;
     if (selectedId) selectRecord(selectedId);
     else {
@@ -604,7 +682,7 @@ if (panel) {
   });
   const renameArea = (id, value) => {
     const record = records.get(id);
-    if (!record || record.deleted || busy || !supported || !radioStorage.root) return;
+    if (!record || record.deleted || busy() || !supported || !radioStorage.root) return;
     const name = value.trim();
     if (name && name.length <= 80) {
       record.selection = { ...record.selection, name };
@@ -614,6 +692,7 @@ if (panel) {
       }
       record.staged = null;
       record.dirty = true;
+      invalidateReview();
       updateZoomChoices();
       renderReview();
       setStatus("");
@@ -646,55 +725,74 @@ if (panel) {
     byId("stage-status").textContent = "Preparing missing tiles and map metadata...";
     let source;
     try {
-      if (record.imagerySet === packs.SYNTHETIC.id || record.sourceMetadata?.synthetic) {
-        if (record.imagerySet !== packs.SYNTHETIC.id
-            || (record.sourceMetadata && (record.sourceMetadata.source !== packs.SYNTHETIC.source
-            || record.sourceMetadata.edition !== packs.SYNTHETIC.edition
-            || record.sourceMetadata.conversion !== packs.SYNTHETIC.conversion))) {
-          throw new Error("This synthetic imagery set cannot be reproduced by the browser manager.");
-        }
-        source = {
-          metadata: packs.SYNTHETIC,
-          readTile: (zoom, x, y, signal) =>
-            sources.encodeJpeg(packs.syntheticRgb(zoom, x, y), signal),
-        };
-      } else {
-        if (record.sourceMetadata && record.sourceMetadata.source !== "Google hybrid") {
-          throw new Error("This imagery source cannot be refreshed by the browser manager.");
-        }
-        source = await sources.googleHybrid();
-      }
-      const imagerySet = record.imagerySet || source.metadata.id;
-      if (imagerySet !== source.metadata.id) {
-        throw new Error("This browser does not have the original first-capture imagery library for this area. " +
-          "A new capture cannot be mixed into its existing imagery-set ID.");
-      }
-      const selectedSource = source;
-      const files = await packs.createFiles(selection, record.id, {
-        source: selectedSource,
-        signal,
-        onProgress: ({ completed, total }) => {
-          byId("stage-status").textContent = `Preparing map imagery: ${completed}/${total} tiles.`;
-          byId("review-progress").max = total || 1;
-          byId("review-progress").value = completed;
-          byId("review-status").textContent = `Preparing map imagery: ${completed}/${total} tiles.`;
-        },
-        readExistingTile: (set, zoom, x, y) => set === imagerySet
-          ? readMapTile(radioStorage.root, set, zoom, x, y) : null,
-      });
-      let writeBytes = 0;
+      const imagerySet = record.imagerySet;
+      const savedTilePaths = imagerySet ? [...mapSelectionTiles(imagerySet, selection)] : [];
+      const coveredBySavedTiles = record.onRadio && sameCoverage(record.savedSelection, selection)
+        && imagerySet && !record.missingTileCount
+        && savedTilePaths.every((path) => storedTileSizes.has(path))
+        && typeof packs.areaManifest === "function";
+      let files;
       let areaBytes = 0;
+      if (coveredBySavedTiles) {
+        areaBytes = savedTilePaths.reduce((total, path) => total + storedTileSizes.get(path), 0);
+        const { yaml } = packs.areaManifest(selection, record.id, imagerySet);
+        files = new Map([[`AEROGRID/maps/areas/${record.id}.yaml`, new TextEncoder().encode(yaml)]]);
+      } else {
+        const getSource = async () => {
+          if (record.imagerySet === packs.SYNTHETIC.id || record.sourceMetadata?.synthetic) {
+            if (record.imagerySet !== packs.SYNTHETIC.id
+                || (record.sourceMetadata && (record.sourceMetadata.source !== packs.SYNTHETIC.source
+                || record.sourceMetadata.edition !== packs.SYNTHETIC.edition
+                || record.sourceMetadata.conversion !== packs.SYNTHETIC.conversion))) {
+              throw new Error("Saved map images are unavailable. Choose another area or reconnect the original card.");
+            }
+            source = {
+              metadata: packs.SYNTHETIC,
+              readTile: (zoom, x, y, signal) =>
+                sources.encodeJpeg(packs.syntheticRgb(zoom, x, y), signal),
+            };
+            if (record.imagerySet && record.imagerySet !== source.metadata.id) {
+              throw new Error("Saved map images are unavailable. Choose another area or reconnect the original card.");
+            }
+            return source;
+          }
+          if (record.sourceMetadata && record.sourceMetadata.source !== "Google hybrid") {
+            throw new Error("Saved map images are unavailable. Reconnect using the browser and site storage where this area was created.");
+          }
+          source = await sources.googleHybrid();
+          if (record.imagerySet && source.metadata.id !== record.imagerySet) {
+            source.close?.();
+            source = null;
+            throw new Error("Some map images are missing. Reconnect using the browser and site storage where this area was created.");
+          }
+          return source;
+        };
+        files = await packs.createFiles(selection, record.id, {
+          imagerySet,
+          getSource,
+          signal,
+          onProgress: ({ completed, total }) => {
+            byId("stage-status").textContent = `Preparing map imagery: ${completed}/${total} tiles.`;
+            byId("review-progress").max = total || 1;
+            byId("review-progress").value = completed;
+            byId("review-status").textContent = `Preparing map imagery: ${completed}/${total} tiles.`;
+          },
+          readExistingTile: (set, zoom, x, y) => set === imagerySet
+            ? readMapTile(radioStorage.root, set, zoom, x, y) : null,
+        });
+      }
+      let writeBytes = 0;
       for (const [path, bytes] of files) {
         if (path.includes("/tiles/")) {
-          areaBytes += bytes.length;
-          const [, , , set, zoom, x, filename] = path.split("/");
-          if (await readMapTile(radioStorage.root, set, Number(zoom), Number(x), Number(filename.slice(0, -4))) !== null) continue;
+          if (!coveredBySavedTiles) areaBytes += bytes.length;
+          const tilePath = path.slice("AEROGRID/maps/tiles/".length);
+          if (files.existingTiles?.has(tilePath)) continue;
         }
         writeBytes += bytes.length;
       }
       record.selection = selection;
-      record.imagerySet = imagerySet;
-      record.sourceMetadata = selectedSource.metadata;
+      record.imagerySet = imagerySet || source?.metadata.id;
+      record.sourceMetadata = source?.metadata ?? record.sourceMetadata;
       record.staged = { deleted: false, files, bytes: writeBytes, areaBytes };
       record.deleted = false;
       record.dirty = false;
@@ -704,23 +802,23 @@ if (panel) {
     }
   }
   function closeReview(closeDialog = true) {
-    if (syncing) {
-      if (!committingSync) {
+    if (phase === "writing" || phase === "committing") {
+      if (phase === "writing") {
         syncController?.abort();
         byId("update-cancel").disabled = true;
         byId("review-status").textContent = "Cancelling after the current file finishes...";
       }
       return;
     }
-    const result = syncComplete ? byId("review-status").textContent : "";
+    const result = phase === "finished" ? byId("review-status").textContent : "";
     const failed = byId("review-status").classList.contains("ag-map-error");
     const succeeded = byId("review-status").classList.contains("ag-map-success");
     if (stageController) {
       stageController.abort();
       setStatus("Map preparation cancelled.");
     }
+    phase = "idle";
     updateReady = false;
-    syncComplete = false;
     byId("update-cancel").textContent = "Cancel";
     byId("update-cancel").disabled = false;
     byId("sync").hidden = false;
@@ -729,16 +827,16 @@ if (panel) {
   }
   byId("update-cancel").addEventListener("click", closeReview);
   byId("review-panel").addEventListener("cancel", (event) => {
-    if (syncing) {
+    if (phase === "writing" || phase === "committing") {
       event.preventDefault();
       return;
     }
     closeReview(false);
   });
   byId("update").addEventListener("click", async () => {
-    if (!radioStorage.root || busy) return;
+    if (!radioStorage.root || busy()) return;
     updateReady = false;
-    syncComplete = false;
+    reviewSignature = "";
     const dialog = byId("review-panel");
     const list = byId("review-list");
     list.replaceChildren();
@@ -752,11 +850,11 @@ if (panel) {
     byId("sync").hidden = false;
     dialog.showModal();
     byId("sync").disabled = true;
-    busy = true;
+    phase = "preparing";
     renderReview();
     byId("sync").disabled = true;
     try {
-      refreshLibraryState(await inspectMapLibrary(radioStorage.root));
+      refreshLibraryState(await inspectMapLibrary(radioStorage.root), true);
       // Rebuild the review after checking for tiles removed since connection.
       list.replaceChildren();
       for (const record of records.values()) {
@@ -783,6 +881,7 @@ if (panel) {
       byId("review-progress").hidden = true;
       byId("review-status").textContent = "Maps prepared. Review the changes before syncing.";
     } catch (error) {
+      if (error.name !== "AbortError") console.error("[AeroGrid maps] Preparation failed.", error);
       byId("review-progress").hidden = true;
       if (error.name === "AbortError") {
         byId("review-status").textContent = "Map preparation cancelled.";
@@ -793,20 +892,26 @@ if (panel) {
       }
       return;
     } finally {
-      busy = false;
+      phase = dialog.open ? "reviewing" : "idle";
       renderReview();
       byId("sync").disabled = true;
     }
     updateReady = dialog.open;
+    reviewSignature = updateReady ? draftSignature() : "";
     byId("sync").disabled = !updateReady || !pendingCount();
   });
   byId("sync").addEventListener("click", async () => {
-    if (!updateReady || !byId("review-panel").open || !pendingCount() || busy) return;
+    if (!updateReady || !byId("review-panel").open || !pendingCount() || busy()) return;
+    if (reviewSignature !== draftSignature() || [...records.values()].some((record) => record.dirty)) {
+      invalidateReview();
+      byId("review-status").textContent = "Map changes were edited after review. Review them again before syncing.";
+      byId("review-status").classList.add("ag-map-error");
+      renderReview();
+      return;
+    }
     updateReady = false;
-    syncing = true;
     syncController = new AbortController();
-    committingSync = false;
-    busy = true;
+    phase = "writing";
     byId("review-status").textContent = "Requesting permission to write to the SD card...";
     byId("review-status").classList.remove("ag-map-error", "ag-map-success");
     byId("review-progress").max = 1;
@@ -835,7 +940,7 @@ if (panel) {
         const files = new Map(writeChanges.flatMap((record) => [...record.staged.files]));
         const orderedFiles = new Map([...files].sort(([left], [right]) =>
           Number(left.includes("/areas/")) - Number(right.includes("/areas/"))));
-        writesStarted = files.size > 0;
+        writesStarted = changes.length > 0;
         await writeMapFiles(root, orderedFiles, (completed, total) => {
           byId("review-progress").max = total || 1;
           byId("review-progress").value = completed;
@@ -845,7 +950,7 @@ if (panel) {
         }, {
           signal: syncController.signal,
           onCommit: () => {
-            committingSync = true;
+            phase = "committing";
             byId("update-cancel").disabled = true;
             byId("review-status").textContent = "Updating map area records...";
           },
@@ -868,10 +973,11 @@ if (panel) {
       await loadRadio(syncedLibrary);
       if (old && records.has(old)) selectRecord(old);
       byId("review-progress").value = byId("review-progress").max;
-      byId("review-status").textContent = "Maps updated. Safely eject the SD card through your operating system before unplugging.";
+      byId("review-status").textContent = "Done. Maps updated. Safely eject the SD card through your operating system before unplugging.";
       byId("review-status").classList.add("ag-map-success");
     } catch (error) {
-      if (error.name === "AbortError" && syncController.signal.aborted && !committingSync) {
+      console.error("[AeroGrid maps] Sync failed.", error);
+      if (error.name === "AbortError" && syncController.signal.aborted && phase === "writing") {
         byId("review-status").textContent =
           "Sync cancelled. Area records were not changed. Completed tile files remain on the SD card and can be reused when you retry.";
       } else {
@@ -882,11 +988,8 @@ if (panel) {
         byId("review-status").classList.add("ag-map-error");
       }
     } finally {
-      busy = false;
-      syncing = false;
+      phase = "finished";
       syncController = null;
-      committingSync = false;
-      syncComplete = true;
       byId("update-cancel").disabled = false;
       byId("update-cancel").textContent = "Done";
       byId("sync").hidden = true;
@@ -906,7 +1009,7 @@ if (panel) {
   if (connectButton.disabled) {
     setStatus("Radio access requires desktop Chrome or Edge over HTTPS (or localhost).", true);
   } else {
-    busy = true;
+    phase = "preparing";
     renderReview();
     void (async () => {
       try {
@@ -924,7 +1027,7 @@ if (panel) {
         byId("edgetx").textContent = "Unknown";
         setStatus(error.message, true);
       } finally {
-        busy = false;
+        phase = "idle";
         renderReview();
         refreshStorageSummary();
       }
@@ -932,13 +1035,13 @@ if (panel) {
   }
   byId("overlap-cancel").addEventListener("click", () => byId("overlap-dialog").close());
   globalThis.addEventListener("beforeunload", (event) => {
-    if (busy || pendingCount() || [...records.values()].some((record) => record.dirty) || addRequested) {
+    if (busy() || hasDraft()) {
       event.preventDefault();
       event.returnValue = "";
     }
   });
   setInterval(async () => {
-    if (!radioStorage.root || busy || document.hidden || !supported) return;
+    if (!radioStorage.root || busy() || document.hidden || !supported) return;
     try {
       const current = await radioStorage.inspect();
       if (current.radio.board !== radio?.board || current.radio.version !== radio?.version) {
@@ -946,24 +1049,23 @@ if (panel) {
         byId("radio").dispatchEvent(new Event("change", { bubbles: true }));
       }
     } catch (error) {
+      console.error("[AeroGrid maps] SD-card access lost.", error);
       try {
         radioStorage.disconnect();
       } catch (disconnectError) {
-        setStatus(`SD-card access was lost: ${error.message}. Disconnect cleanup failed: ${disconnectError.message}`, true);
+        console.error("[AeroGrid maps] Could not clear the saved SD-card connection.", disconnectError);
       }
       supported = false;
       radio = null;
-      records.clear();
-      selectedId = null;
-      totalStorageBytes = 0;
-      addRequested = false;
-      plannerView.cancelAddingArea();
-      plannerView.clearBounds();
-      updateZoomChoices();
-      if (!radioStorage.root) setStatus(`SD-card access lost: ${error.message} Reconnect the radio and select its SD card again.`, true);
+      invalidateReview();
+      setStatus(hasDraft()
+        ? "Radio access was lost. Pending edits are still on this page. Reconnect the same card to keep them, or choose to discard and reload."
+        : "Radio access was lost. Reconnect the card to continue.", true);
       byId("radio-state").textContent = "Radio disconnected";
+      byId("radio-type").textContent = "Unknown";
+      byId("radio-screen").textContent = "Unknown";
+      byId("edgetx").textContent = "Unknown";
       refreshStorageSummary();
-      renderNames();
     } finally {
       byId("connect-label").textContent = radioStorage.root ? "Disconnect Radio" : "Connect Radio";
       renderReview();

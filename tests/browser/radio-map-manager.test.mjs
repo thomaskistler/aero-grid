@@ -53,7 +53,10 @@ async function manager(board, restoreConnection = false, areas = [], tileSizes =
       if (restoreConnection) this.root = {};
       return restoreConnection;
     },
-    async inspect() { return { radio: metadata }; },
+    async inspect() {
+      if (options.failInspect) throw new DOMException("Drive removed", "NotReadableError");
+      return { radio: metadata };
+    },
     async requestWritePermission() {
       writePermissionRequests++;
       await options.requestWritePermission?.();
@@ -69,13 +72,14 @@ async function manager(board, restoreConnection = false, areas = [], tileSizes =
     })),
     plannedMapStorage, mapSelectionTiles,
     readMapTile: options.readMapTile ?? (async () => null),
+    removeMapArea: options.removeMapArea ?? (async () => {}),
     writeMapFiles: async (root, files, progress, settings) => {
       writes.push(files);
       await options.writeMapFiles?.(root, files);
       if (settings.signal.aborted) throw Object.assign(new Error("Cancelled"), { name: "AbortError" });
       settings.onCommit();
     },
-    pruneUnreferencedMapTiles: async () => {},
+    pruneUnreferencedMapTiles: options.pruneUnreferencedMapTiles ?? (async () => {}),
     AeroGridMapPack: options.packs,
     AeroGridMapSources: options.sources,
     mapLibrarySignatureFromAreas,
@@ -90,12 +94,14 @@ async function manager(board, restoreConnection = false, areas = [], tileSizes =
       onSelectArea() {}, onRenameArea() {}, cancelAddingArea() {}, selectBounds() {},
     },
     isSecureContext: true, showDirectoryPicker() {},
+    confirm: options.confirm ?? (() => true),
     scrollY: 120, scrollTo() {},
     addEventListener(name, handler) { if (name === "keydown") keydown = handler; },
     setInterval(handler) { poll = handler; },
     Event: class { constructor(type) { this.type = type; } },
     queueMicrotask,
     AbortController,
+    TextEncoder,
   };
   vm.runInNewContext(source, context);
   await new Promise((resolve) => setImmediate(resolve));
@@ -193,7 +199,7 @@ test("zoom levels stay visible without an area and after disconnecting", async (
   assert.match(view.get("create-help").textContent, /Connect a radio/);
 });
 
-test("area entries show tile counts and occupied size, switching to estimates when coverage changes", async () => {
+test("area entries show consistent sizes, switching to estimates when coverage changes", async () => {
   const level = (tiles) => ({
     zoom: 17, tiles, xRanges: [{ min: 1, max: tiles }], yMin: 2, yMax: 2,
   });
@@ -206,7 +212,7 @@ test("area entries show tile counts and occupied size, switching to estimates wh
     id: "field", imagerySet: "test-set", selection, storageBytes: 40960,
   }], new Map([1, 2, 3, 4].map((x) => [`test-set/17/${x}/2.jpg`, 10240])));
   const detail = () => view.get("area-list").children[0].children[0].children[1];
-  assert.equal(detail().textContent, "4 tiles · 40.0 KiB occupied");
+  assert.equal(detail().textContent, "4 tiles · 40.0 KiB");
   const row = view.get("area-list").children[0];
   assert.equal(row.attributes["data-selected"], "true");
   assert.equal(row.children[1].attributes["aria-label"], "Rename Field");
@@ -234,7 +240,7 @@ test("area entries show tile counts and occupied size, switching to estimates wh
   assert.equal(view.get("storage-selected").textContent, "20.0 KiB");
   assert.equal(view.get("storage-delta").textContent, "-20.0 KiB vs SD card");
   view.changeBounds({ origin: "edit", selection: { ...selection, name: "Renamed" } });
-  assert.equal(detail().textContent, "4 tiles · 40.0 KiB occupied");
+  assert.equal(detail().textContent, "4 tiles · 40.0 KiB");
   assert.equal(view.get("storage-delta").textContent, "No storage change");
   view.get("area-list").children[0].children[1].click();
   const input = view.get("area-list").children[0].children[0];
@@ -265,7 +271,7 @@ test("detail choices keep zoom ranges and report unavailable previews without br
   assert.equal(tiles.hidden, true);
   assert.equal(message.hidden, false);
   assert.equal(message.textContent, "Preview unavailable");
-  assert.equal(view.get("selected-summary").textContent, "Field · Zoom 16–17");
+  assert.equal(view.get("selected-summary").textContent, "Field · Zoom 16–17 · 40.0 KiB");
   for (const [index, choice] of choices.entries()) {
     const zoom = 17 + index;
     const count = 2 ** zoom;
@@ -280,6 +286,94 @@ test("detail choices keep zoom ranges and report unavailable previews without br
   }
 });
 
+test("renaming an area with complete saved coverage needs no source cache or JPEG reads", async () => {
+  const captureId = "google-original";
+  const area = savedArea(captureId);
+  const path = `${captureId}/17/1/2.jpg`;
+  let tileReads = 0;
+  let sourceRequests = 0;
+  const manifestNames = [];
+  const view = await manager("tx16s", false, [area], new Map([[path, 4]]), {
+    readMapTile: async () => { tileReads++; return null; },
+    sources: { googleHybrid: async () => { sourceRequests++; throw new Error("Unexpected source request"); } },
+    packs: {
+      areaManifest(selection, id, imagerySet) {
+        manifestNames.push(selection.name);
+        assert.equal(id, "field");
+        assert.equal(imagerySet, captureId);
+        return { yaml: "renamed metadata" };
+      },
+      async createFiles() { throw new Error("Complete saved coverage should not be regenerated."); },
+      SYNTHETIC: { id: "synthetic-v1-jpeg-q90" },
+    },
+  });
+  view.get("area-name").value = "Renamed without cache";
+  view.get("area-name").dispatchEvent({ type: "input" });
+  await view.get("update").click();
+  assert.equal(view.get("sync").disabled, false, view.get("review-status").textContent);
+  assert.equal(view.get("review-add").textContent, "0 B");
+  assert.equal(view.get("review-total").textContent, "4 B");
+  assert.equal(tileReads, 0);
+  assert.equal(sourceRequests, 0);
+  view.get("area-name").value = "Changed after review";
+  view.get("area-name").dispatchEvent({ type: "input" });
+  assert.equal(view.get("sync").disabled, true);
+  await view.get("sync").click();
+  assert.equal(view.writePermissionRequests(), 0);
+  assert.equal(view.writes.length, 0);
+  assert.match(view.get("review-status").textContent, /changed after review/);
+  await view.get("update").click();
+  assert.equal(view.get("sync").disabled, false);
+  await view.get("sync").click();
+  assert.deepEqual([...view.writes[0].keys()], ["AEROGRID/maps/areas/field.yaml"]);
+  assert.deepEqual(manifestNames, ["Renamed without cache", "Changed after review"]);
+  assert.equal(tileReads, 0);
+  assert.equal(sourceRequests, 0);
+});
+
+test("preparation reuses its existing-tile read metadata instead of reading saved JPEGs twice", async () => {
+  const capture = { id: "google-original", source: "Google hybrid" };
+  const area = savedArea(capture.id);
+  const image = new Uint8Array([1, 2, 3, 4]);
+  let reads = 0;
+  let sourceReads = 0;
+  const view = await manager("tx16s", false, [area],
+    new Map([[`${capture.id}/17/1/2.jpg`, image.length]]), {
+      readMapTile: async (root, set, zoom, x, y) => {
+        reads++;
+        return x === 1 ? image : null;
+      },
+      sources: { googleHybrid: async () => ({
+        metadata: capture,
+        async readTile() { sourceReads++; return image; },
+      }) },
+      packs: {
+        SYNTHETIC: { id: "synthetic-v1-jpeg-q90" },
+        async createFiles(selection, id, options) {
+          const existingTiles = new Set();
+          const files = new Map([[`AEROGRID/maps/areas/${id}.yaml`, new Uint8Array([1])]]);
+          for (const x of [1, 2]) {
+            const saved = await options.readExistingTile(capture.id, 17, x, 2);
+            const bytes = saved ?? await (await options.getSource()).readTile(17, x, 2);
+            if (saved) existingTiles.add(`${capture.id}/17/${x}/2.jpg`);
+            files.set(`AEROGRID/maps/tiles/${capture.id}/17/${x}/2.jpg`, bytes);
+          }
+          files.existingTiles = existingTiles;
+          return files;
+        },
+      },
+    });
+  view.changeBounds({ origin: "edit", selection: {
+    ...area.selection, tileCount: 2,
+    levels: [{ ...area.selection.levels[0], tiles: 2, xRanges: [{ min: 1, max: 2 }] }],
+  } });
+  await view.get("update").click();
+  assert.equal(reads, 2);
+  assert.equal(sourceReads, 1);
+  assert.equal(view.get("review-add").textContent, "4 B");
+  assert.equal(view.get("sync").disabled, false);
+});
+
 function savedArea(imagerySet) {
   return {
     id: "field", imagerySet, version: 2, storageBytes: 4,
@@ -292,6 +386,88 @@ function savedArea(imagerySet) {
     },
   };
 }
+
+test("batched deletions remove metadata together and prune shared imagery from one final inventory", async () => {
+  const first = savedArea("test-set");
+  const second = { ...first, id: "second", selection: { ...first.selection, name: "Second" } };
+  let areas = [first, second];
+  let inspections = 0;
+  let removals = 0;
+  let prunes = 0;
+  const sharedPath = "test-set/17/1/2.jpg";
+  const view = await manager("tx16s", false, [], new Map(), {
+    inspectMapLibrary: async () => {
+      inspections++;
+      return {
+        areas, tileBytes: areas.length ? 4 : 0,
+        tileSizes: areas.length ? new Map([[sharedPath, 4]]) : new Map(),
+        referencedTiles: areas.length ? new Set([sharedPath]) : new Set(),
+        missingTiles: new Set(), missingTileCount: 0,
+      };
+    },
+    removeMapArea: async (root, id) => {
+      removals++;
+      areas = areas.filter((area) => area.id !== id);
+    },
+    pruneUnreferencedMapTiles: async (root, before, after) => {
+      prunes++;
+      assert.deepEqual(before, new Set([sharedPath]));
+      assert.deepEqual(after, new Set());
+    },
+  });
+  view.get("delete").click();
+  view.get("delete").click();
+  await view.get("update").click();
+  assert.equal(inspections, 2);
+  await view.get("sync").click();
+  assert.equal(removals, 2);
+  assert.equal(inspections, 4);
+  assert.equal(prunes, 1);
+  assert.match(view.get("review-status").textContent, /Done\. Maps updated/);
+});
+
+test("SD-card access loss preserves pending edits and reconnect explicitly keeps or reloads them", async () => {
+  const original = savedArea("test-set");
+  let failInspect = false;
+  let connectedAreas = [original];
+  const options = {
+    confirm: () => true,
+    inspectMapLibrary: async () => ({
+      areas: connectedAreas, tileBytes: 4,
+      tileSizes: new Map([["test-set/17/1/2.jpg", 4]]),
+      missingTiles: new Set(), referencedTiles: new Set(["test-set/17/1/2.jpg"]),
+      missingTileCount: 0,
+    }),
+  };
+  Object.defineProperty(options, "failInspect", {
+    get: () => failInspect,
+  });
+  const view = await manager("tx16s", false, [], new Map(), options);
+  view.get("area-name").value = "Pending rename";
+  view.get("area-name").dispatchEvent({ type: "input" });
+  failInspect = true;
+  await view.poll();
+  assert.equal(view.storage.root, null);
+  assert.match(view.get("connect-status").textContent, /Pending edits are still on this page/);
+  assert.equal(view.get("area-list").children[0].children[0].children[0].textContent, "Pending rename");
+
+  failInspect = false;
+  await view.get("connect").click();
+  assert.equal(view.storage.root !== null, true);
+  assert.equal(view.get("area-list").children[0].children[0].children[0].textContent, "Pending rename");
+  assert.equal(view.get("update").disabled, false);
+
+  view.get("area-name").value = "Second pending edit";
+  view.get("area-name").dispatchEvent({ type: "input" });
+  failInspect = true;
+  await view.poll();
+  assert.match(view.get("connect-status").textContent, /Pending edits are still on this page/);
+  connectedAreas = [{ ...original, id: "other", selection: { ...original.selection, name: "Other radio area" } }];
+  failInspect = false;
+  await view.get("connect").click();
+  assert.equal(view.get("area-list").children[0].children[0].children[0].textContent, "Other radio area");
+  assert.equal(view.get("update").disabled, true);
+});
 
 async function repairManager({ allMissing = false, originalAvailable = true, overlap = true } = {}) {
   const capture = { id: "google-original", source: "Google hybrid" };
@@ -334,10 +510,11 @@ async function repairManager({ allMissing = false, originalAvailable = true, ove
     packs: {
       SYNTHETIC: { id: "synthetic-v1-jpeg-q90" },
       async createFiles(selection, id, options) {
+        const source = await options.getSource();
         const files = new Map([[`AEROGRID/maps/areas/${id}.yaml`, new Uint8Array([1])]]);
         for (const x of [1, 2]) {
           const existing = await options.readExistingTile(capture.id, 17, x, 2);
-          const bytes = existing ?? await options.source.readTile(17, x, 2);
+          const bytes = existing ?? await source.readTile(17, x, 2);
           files.set(`AEROGRID/maps/tiles/${tilePath(x)}`, bytes);
         }
         return files;
@@ -357,7 +534,7 @@ test("missing shared tiles enable Repair, reuse original cache/network and clear
     await view.get("update").click();
     assert.equal(view.get("review-list").children.length, 2);
     assert.ok(view.get("review-list").children.every((item) => item.children[0].textContent === "Repair"));
-    assert.equal(view.get("sync").disabled, false);
+    assert.equal(view.get("sync").disabled, false, view.get("review-status").textContent);
     assert.equal(view.get("review-add").textContent, allMissing ? "8 B" : "4 B");
     assert.equal(view.get("review-total").textContent, "8 B");
     assert.equal(downloads(), allMissing ? 1 : 0);
@@ -378,7 +555,7 @@ test("missing shared tiles enable Repair, reuse original cache/network and clear
 test("repair refuses an unavailable original capture without writing or changing identity", async () => {
   const { view, downloads } = await repairManager({ originalAvailable: false });
   await view.get("update").click();
-  assert.match(view.get("review-status").textContent, /new capture cannot be mixed/);
+  assert.match(view.get("review-status").textContent, /Some map images are missing/);
   assert.equal(view.get("sync").disabled, true);
   assert.equal(downloads(), 0);
   assert.equal(view.writes.length, 0);
@@ -459,8 +636,9 @@ test("format 2 preparation uses only the original browser capture identity and w
     packs: {
       SYNTHETIC: { id: "synthetic-v1-jpeg-q90" },
       async createFiles(selection, id, options) {
+        const source = await options.getSource();
         preparations++;
-        assert.equal(options.source.metadata, capture);
+        assert.equal(source.metadata, capture);
         assert.equal(selection.name, "Renamed");
         return new Map([
           [`AEROGRID/maps/areas/${id}.yaml`, new Uint8Array([1])],
@@ -560,7 +738,7 @@ test("cancel during sync keeps the review open and reports unchanged area record
   assert.equal(view.get("update-cancel").textContent, "Done");
 });
 
-test("missing original format 2 capture is refused rather than mixing browser libraries", async () => {
+test("missing original format 2 capture is refused without exposing storage jargon", async () => {
   let prepared = false;
   let closed = false;
   const view = await manager("tx16s", false, [savedArea("google-original")], new Map(), {
@@ -570,13 +748,17 @@ test("missing original format 2 capture is refused rather than mixing browser li
     }) },
     packs: {
       SYNTHETIC: { id: "synthetic-v1-jpeg-q90" },
-      async createFiles() { prepared = true; },
+      async createFiles(selection, id, options) {
+        await options.getSource();
+        prepared = true;
+        return new Map();
+      },
     },
   });
   view.get("area-name").value = "Renamed";
   view.get("area-name").dispatchEvent({ type: "input" });
   await view.get("update").click();
-  assert.match(view.get("review-status").textContent, /new capture cannot be mixed/);
+  assert.match(view.get("review-status").textContent, /Some map images are missing/);
   assert.equal(prepared, false);
   assert.equal(closed, true);
   assert.equal(view.get("sync").disabled, true);
@@ -590,8 +772,9 @@ test("format 2 synthetic preparation and sync need no SD source sidecar", async 
     packs: {
       SYNTHETIC: synthetic,
       async createFiles(selection, id, options) {
+        const source = await options.getSource();
         preparations++;
-        assert.equal(options.source.metadata, synthetic);
+        assert.equal(source.metadata, synthetic);
         return new Map([
           [`AEROGRID/maps/areas/${id}.yaml`, new Uint8Array([1])],
           [`AEROGRID/maps/tiles/${synthetic.id}/17/1/2.jpg`, new Uint8Array([1, 2, 3, 4])],

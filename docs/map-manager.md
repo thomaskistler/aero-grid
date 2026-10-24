@@ -100,7 +100,7 @@ reader does not accept these files.
           <p><strong>Choose map detail.</strong> Compare Less storage, Balanced, and Most detail beneath the map. More detail uses more SD-card space. The previews show the same location so you can compare them directly.</p>
           <p><strong>Understand storage.</strong> Map imagery on SD card shows current usage. Selected map imagery shows the total for all areas after your pending changes, not just the selected area. The + or - value shows how much that total will change. Shared imagery counts only once. Sizes for new or edited areas, projected totals, and storage changes are approximations until the imagery is prepared; actual sizes may differ.</p>
           <p><strong>Save your changes.</strong> Click Sync Maps to review additions and removals, then confirm to write them to the radio. Nothing is written before confirmation. The dialog shows preparation and write progress and stays open during writes. Keep the radio connected until syncing finishes, then disconnect and safely eject it before unplugging.</p>
-          <p><strong>Repair deleted imagery.</strong> Keep an area's YAML file and reconnect if its JPEG tiles (or the whole tiles folder) were deleted. Areas with missing tiles show Repair needed; Sync Maps prepares their repair. Existing images are reused, then missing images come from the original browser imagery library or its source. Use the same browser and site storage as the original capture: a different capture cannot be mixed into an existing area. Invalid or unreadable files must be resolved separately; they are not silently replaced.</p>
+          <p><strong>Repair missing images.</strong> Keep an area's map record and choose Sync Maps if its JPEG tiles were deleted. Existing images are reused. If any are missing, reconnect using the browser and site storage where the area was created. Invalid or unreadable files must be resolved separately; they are not silently replaced.</p>
           <button class="ag-radio-button" type="button" popovertarget="ag-map-editing-help" popovertargetaction="hide">Close</button>
         </div>
       </section>
@@ -145,9 +145,6 @@ reader does not accept these files.
       <div id="ag-map-range-slider"><input id="ag-map-max-zoom" type="range" min="11" max="19" step="1" value="18"></div>
     </fieldset>
     <button id="ag-map-clear" type="button">Clear selection</button>
-    <button id="ag-map-measure" type="button">Measure sample tiles</button>
-    <p id="ag-map-measurement"></p>
     <input id="ag-map-name" type="text" value="my-flying-field" maxlength="80">
-    <button id="ag-map-export" type="button">Download selection JSON</button>
   </div>
 </div>

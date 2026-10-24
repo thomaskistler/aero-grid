@@ -97,20 +97,30 @@
     }
 
     async function createFiles(selection, id, options = {}) {
-        const source = options.source || {
-            metadata: SYNTHETIC,
-            readTile: (zoom, x, y, signal) => root.AeroGridMapSources.encodeJpeg(syntheticRgb(zoom, x, y), signal)
+        let source = options.source || (!options.getSource
+            && (!options.imagerySet || options.imagerySet === SYNTHETIC.id) ? {
+                metadata: SYNTHETIC,
+                readTile: (zoom, x, y, signal) =>
+                    root.AeroGridMapSources.encodeJpeg(syntheticRgb(zoom, x, y), signal)
+            } : null);
+        const ensureSource = async () => {
+            source ||= await options.getSource?.();
+            if (!source) throw new Error("Some map images are missing. Reconnect using the browser and site storage where this area was created.");
+            const metadata = source.metadata;
+            if (!metadata || typeof source.readTile !== "function" ||
+                !["source", "edition", "conversion", "license", "attribution"].every(
+                    key => typeof metadata[key] === "string" && metadata[key].length > 0) ||
+                typeof metadata.synthetic !== "boolean") {
+                throw new Error("Source must supply image input and complete provenance metadata.");
+            }
+            return source;
         };
-        const metadata = source.metadata;
-        if (!metadata || typeof source.readTile !== "function" ||
-            !["source", "edition", "conversion", "license", "attribution"].every(
-                key => typeof metadata[key] === "string" && metadata[key].length > 0) ||
-            typeof metadata.synthetic !== "boolean") {
-            throw new Error("Source must supply image input and complete provenance metadata.");
-        }
-        const { manifest, yaml } = areaManifest(selection, id, metadata.id);
+        let imagerySet = options.imagerySet;
+        if (!imagerySet) imagerySet = (await ensureSource()).metadata.id;
+        const { manifest, yaml } = areaManifest(selection, id, imagerySet);
         const signal = options.signal;
         const entries = [];
+        const existingTiles = new Set();
         let bytes = 0, completed = 0;
         function add(path, content) {
             bytes += content.length;
@@ -124,14 +134,22 @@
                     checkAbort(signal);
                     const canonicalX = x % 2 ** level.zoom;
                     const image = options.readExistingTile
-                        ? await options.readExistingTile(metadata.id, level.zoom, canonicalX, y)
+                        ? await options.readExistingTile(imagerySet, level.zoom, canonicalX, y)
                         : null;
-                    const tile = image || await source.readTile(level.zoom, canonicalX, y, signal);
+                    let tile = image;
+                    if (image) existingTiles.add(`${imagerySet}/${level.zoom}/${canonicalX}/${y}.jpg`);
+                    else {
+                        const selectedSource = await ensureSource();
+                        if (selectedSource.metadata.id !== imagerySet) {
+                            throw new Error("Some map images are missing. Reconnect using the browser and site storage where this area was created.");
+                        }
+                        tile = await selectedSource.readTile(level.zoom, canonicalX, y, signal);
+                    }
                     checkAbort(signal);
                     if (!(tile instanceof Uint8Array) || !tile.length) throw new Error("Invalid encoded tile.");
                     if (!root.AeroGridMapSources.compatibleJpeg(tile)) throw new Error("Tile must be a compatible 256x256 JPEG.");
                     if (tile.length > MAX_TILE_BYTES) throw new Error("Encoded tile exceeds 256 KiB.");
-                    add(`tiles/${metadata.id}/${level.zoom}/${canonicalX}/${y}.jpg`, tile);
+                    add(`tiles/${imagerySet}/${level.zoom}/${canonicalX}/${y}.jpg`, tile);
                     completed++;
                     if (options.onProgress) options.onProgress({ completed, total: selection.tileCount, bytes });
                     // Yield between tiles so cancellation and selection changes
@@ -141,7 +159,9 @@
             }
         }
         checkAbort(signal);
-        return new Map(entries);
+        const files = new Map(entries);
+        files.existingTiles = existingTiles;
+        return files;
     }
 
     root.AeroGridMapPack = { areaManifest, syntheticRgb, createFiles, SYNTHETIC, MAX_TILE_BYTES };

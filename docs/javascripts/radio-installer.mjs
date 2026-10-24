@@ -2,7 +2,6 @@
 import { child, compareVersions, inspectRoot, inspectWidget, packageVersion, parseVersion } from "./radio-storage.mjs";
 
 const RELEASES_API = "https://api.github.com/repos/thomaskistler/aero-grid/releases";
-export const RELEASE_API = `${RELEASES_API}/latest`;
 const RELEASE_ROOT = "https://github.com/thomaskistler/aero-grid/releases";
 const MAX_FILES = 1500;
 const MAX_TOTAL = 64 * 1024 * 1024;
@@ -127,16 +126,6 @@ function validateRelease(manifest, release) {
     }
   }
   return manifest;
-}
-
-export async function loadLatest(base, fetcher = globalThis.fetch) {
-  const release = await fetchJSON(RELEASE_API, fetcher);
-  const version = release?.tag_name?.replace(/^v/, "");
-  if (!/^\d+\.\d+\.\d+$/.test(version) || !parseVersion(version)) {
-    throw new Error("Invalid latest GitHub release version.");
-  }
-  const manifest = await fetchJSON(new URL(`releases/${version}/manifest.json`, base), fetcher);
-  return validateRelease(manifest, release);
 }
 
 export async function loadRelease(base, version, fetcher = globalThis.fetch) {

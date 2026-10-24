@@ -126,7 +126,10 @@ connection after rechecking read permission and the SD-card root. Explicit
 disconnect clears it; restoring never prompts for new permission or grants
 write permission. It recognizes the connected radio's screen dimensions and
 lists only format 2 areas. Compatibility issues are warnings, as the installer
-does.
+does. The installer and map manager intentionally keep separate dialogs,
+progress indicators and completion states because package replacement and map
+sync have different cancellation and commit rules. They share radio storage,
+connection help and small local rendering helpers only.
 All planning uses the connected radio's detected screen dimensions, including
 128 x 64 and 212 x 64 monochrome screens. There is no manual planning-size
 selector or substitute screen size. Unknown dimensions produce an explicit
@@ -192,13 +195,15 @@ leave already captured tiles cached for later reuse. Private browsing, storage
 eviction, another browser/device/site or clearing site data can start a new
 library and therefore duplicate imagery already on the radio. Clearing site
 data is also the current way to deliberately start a fresh capture; it cannot
-change radio files. A format 2 area can be refreshed only with the matching
-browser capture-library ID (or the known reproducible synthetic set). The
-manager refuses to mix a new capture into an existing imagery-set namespace.
-There is no provider inference or authorization from a name in the area YAML.
+change radio files. Metadata-only edits such as renaming do not need the
+browser capture library when the area's saved tiles are present. Missing images
+can be restored only with the matching browser capture-library ID (or the known
+reproducible synthetic set); the manager never mixes a new capture into an
+existing imagery-set namespace. There is no provider inference or authorization
+from a name in the area YAML.
 
 If format 2 area YAML remains but a JPEG or the entire `tiles/` tree has been
-deleted, connecting marks affected areas **Repair needed** and enables Sync Maps.
+deleted, connecting marks affected areas **Pending changes** and enables Sync Maps.
 Review lists them as **Repair**. Existing JPEGs are reused first; missing tiles
 come from the same imagery-set browser cache, then its normal source download
 path (or reproducible synthetic generator). Losing the original browser capture
@@ -236,12 +241,6 @@ URL input, proxy, hidden credential or fallback provider is introduced.
 Generation processes one tile at a time, yielding between tiles for progress
 and cancellation. A failed tile or invalid input prevents the staged update.
 There is no cross-reload resume.
-
-The sample-size action runs the same saved JPEG source/conversion as preparation,
-then weights one encoded sample per zoom by that level's tile count. It measures
-the stored JPEG, not an unrelated input format or assumed bytes-per-tile range. Scene
-complexity still varies; this is a rough JPEG payload estimate, not a promise of
-future stored bytes.
 
 Encoded tiles are capped at 256 KiB, and area coverage is capped at 2,000
 tiles. Resource limits fail explicitly and never reduce requested coverage.

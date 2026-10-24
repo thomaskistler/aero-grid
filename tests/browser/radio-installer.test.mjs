@@ -6,7 +6,7 @@ import {
   parseRadioMetadata, parseVersion, radioHardware, radioCompatibility, RadioStorage,
 } from "../../docs/javascripts/radio-storage.mjs";
 import {
-  actionFor, ContentMismatchError, loadCatalog, loadLatest, loadRelease, preparePackage, RELEASE_API,
+  actionFor, ContentMismatchError, loadCatalog, loadRelease, preparePackage,
   replaceWidget, sha256, validateManifest, verifyInstalled,
 } from "../../docs/javascripts/radio-installer.mjs";
 
@@ -171,9 +171,8 @@ async function releaseFixture() {
   };
   const fetcher = async (url) => {
     const address = String(url);
-    if (address === RELEASE_API || address === RELEASE_API.replace("/latest", "/tags/v0.4.0")) return Response.json(release);
-    if (address === new URL("latest.json", base).href
-        || address === new URL("releases/0.4.0/manifest.json", base).href) return Response.json(manifest);
+    if (address === "https://api.github.com/repos/thomaskistler/aero-grid/releases/tags/v0.4.0") return Response.json(release);
+    if (address === new URL("releases/0.4.0/manifest.json", base).href) return Response.json(manifest);
     const path = address.split("/releases/0.4.0/")[1];
     return path in content ? new Response(content[path]) : new Response("missing", { status: 404 });
   };
@@ -289,6 +288,14 @@ test("selected historical releases are pinned and cross-checked against their Gi
   fixture.release.draft = true;
   await assert.rejects(loadRelease(base, "0.4.0", fixture.fetcher), /selected stable/);
   fixture.release.draft = false;
+  fixture.release.tag_name = "v0.5.0";
+  await assert.rejects(loadRelease(base, "0.4.0", fixture.fetcher), /selected stable/);
+  fixture.release.tag_name = "v0.4.0";
+  fixture.release.assets = [];
+  await assert.rejects(loadRelease(base, "0.4.0", fixture.fetcher), /missing installation assets/);
+  fixture.release.assets = ["AeroGrid-0.4.0.zip", "AeroGrid-0.4.0.zip.sha256"].map((name) => ({
+    name, browser_download_url: `https://github.com/thomaskistler/aero-grid/releases/download/v0.4.0/${name}`,
+  }));
   fixture.manifest.version = "0.3.0";
   await assert.rejects(loadRelease(base, "0.4.0", fixture.fetcher), /does not match/);
 });
@@ -333,20 +340,6 @@ test("release catalog validates entries, unavailable states, latest and numeric 
     new Response("", { status: 500 })), /HTTP 500/);
   await assert.rejects(loadCatalog(base, async (url) => String(url).includes("api.github.com")
     ? new Response("", { status: 403 }) : Response.json(catalog)), /HTTP 403/);
-});
-
-test("latest stable is cross-checked with published assets; stale/missing/network states block", async () => {
-  const fixture = await releaseFixture();
-  assert.deepEqual(await loadLatest(base, fixture.fetcher), fixture.manifest);
-  for (const mutate of [
-    () => { fixture.release.tag_name = "v0.5.0"; },
-    () => { fixture.release.tag_name = "v0.4.0"; fixture.release.prerelease = true; },
-    () => { fixture.release.prerelease = false; fixture.release.assets = []; },
-  ]) {
-    mutate();
-    await assert.rejects(loadLatest(base, fixture.fetcher));
-  }
-  await assert.rejects(loadLatest(base, async () => new Response("", { status: 403 })), /HTTP 403/);
 });
 
 test("manifest rejects traversal, case/file collisions, bad hashes, counts and size limits", async () => {

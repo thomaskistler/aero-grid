@@ -7,7 +7,7 @@ if (typeof require === "function") {
 }
 
 (async function () {
-    const { plan, snapBounds, specification, geographicBounds, sampleTiles, measureSamples,
+    const { plan, snapBounds, specification, geographicBounds,
         radioFootprint, overviewZoom, coveragePlan, RADIO_PRESETS, MAX_TILES } = globalThis.AeroGridMapPlanner;
     let assertions = 0;
     function equal(actual, expected) {
@@ -135,13 +135,11 @@ if (typeof require === "function") {
             equal(compact.tileCount, compact.levels.reduce((total, level) => total + level.tiles, 0));
             equal(compact.estimatedBytes, { min: compact.tileCount * 10240, max: compact.tileCount * 30720 });
             equal(compact.tileCount < full.tileCount, true);
-            const samples = sampleTiles(area, zooms, compact);
             compact.levels.forEach((level, index) => {
                 equal(plan(level.bounds, [level.zoom]).levels[0], {
                     zoom: level.zoom, xRanges: level.xRanges, yMin: level.yMin,
                     yMax: level.yMax, tiles: level.tiles
                 });
-                equal(samples[index].tiles, level.tiles);
                 equal(level.bounds, snapBounds(area, [level.zoom], radio.id));
                 const columns = level.xRanges.reduce((total, range) => total + range.max - range.min + 1, 0);
                 equal(columns * 256 >= radio.width, true);
@@ -220,48 +218,6 @@ if (typeof require === "function") {
         if (tiles <= MAX_TILES) equal(specification("field", result, detail).tileCount, tiles);
         else rejects(() => specification("field", result, detail));
     }
-    const samples = sampleTiles(bounds, [1, 2, 3]);
-    equal(samples.length, 3);
-    equal(samples.map(sample => sample.zoom), [1, 2, 3]);
-    equal(samples.map(sample => sample.x), [1, 2, 4]);
-    equal(samples[0].url, "https://mt1.google.com/vt?lyrs=y&x=1&y=0&z=1");
-    for (const area of [bounds, crossing, limitBounds,
-        { south: 84, north: 85, west: 179, east: 180 },
-        { south: -85, north: -84, west: -180, east: -179 }]) {
-        const levels = plan(area, [0, 16, 18]).levels;
-        sampleTiles(area, [0, 16, 18]).forEach((sample, index) => {
-            const level = levels[index];
-            equal(level.xRanges.some(range => sample.x >= range.min && sample.x <= range.max), true);
-            equal(sample.y >= level.yMin && sample.y <= level.yMax, true);
-            equal(sample.tiles, level.tiles);
-        });
-    }
-    rejects(() => sampleTiles(bounds, []));
-    let calls = 0;
-    const signal = {};
-    const encodedSizes = [];
-    const measured = await measureSamples(samples, {
-        async readTile(zoom, x, y, receivedSignal) {
-            equal([zoom, x, y], [samples[calls].zoom, samples[calls].x, samples[calls].y]);
-            equal(receivedSignal, signal);
-            calls++;
-            const image = new Uint8Array(1000 * calls);
-            encodedSizes.push(image.length);
-            return image;
-        }
-    }, signal);
-    equal(calls, 3);
-    equal(measured.bytes, encodedSizes.reduce((total, size) => total + size, 0));
-    equal(measured.estimatedBytes, samples.reduce((total, sample, index) =>
-        total + sample.tiles * encodedSizes[index], 0));
-    async function rejectsDownload(source, message) {
-        let failure;
-        try { await measureSamples(samples, source, signal); }
-        catch (error) { failure = error.message; }
-        equal(failure, message);
-    }
-    await rejectsDownload({ readTile() { throw new Error("Network blocked"); } }, "Network blocked");
-    await rejectsDownload({ readTile() { throw new Error("Download cancelled."); } }, "Download cancelled.");
     if (typeof console !== "undefined") console.log(`${assertions} map planner assertions passed.`);
 })().catch(error => {
     if (typeof process !== "undefined") process.exitCode = 1;

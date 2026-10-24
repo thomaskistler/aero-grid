@@ -352,11 +352,6 @@ export function mapLibrarySignatureFromAreas(areas) {
   ]));
 }
 
-export async function mapLibrarySignature(root) {
-  const { areas } = await inspectMapLibrary(root);
-  return mapLibrarySignatureFromAreas(areas);
-}
-
 async function directoryFor(root, path, cache) {
   let directory = root;
   let key = "";
@@ -438,32 +433,11 @@ export async function writeMapFiles(root, files, onProgress = () => {}, options 
 export async function removeMapArea(root, id) {
   if (!ID.test(id)) throw new Error("Invalid AeroGrid map area ID.");
   const maps = await child(root, "AEROGRID", "directory").then((directory) => child(directory, "maps", "directory"));
-  const before = await inspectMapLibrary(root);
-  const removed = before.areas.find((area) => area.id === id);
-  if (!removed) return;
   const areas = await child(maps, "areas", "directory");
   try {
     await areas.removeEntry(`${id}.yaml`);
   } catch (error) {
     if (error.name !== "NotFoundError") throw new Error(`Could not remove areas/${id}.yaml: ${error.message}`);
-  }
-  const remaining = await inspectMapLibrary(root);
-  const tiles = await optionalDirectory(maps, "tiles");
-  const set = await optionalDirectory(tiles, removed.imagerySet);
-  if (!set) return;
-  for (const level of removed.levels) {
-    const zoomDirectory = await optionalDirectory(set, String(level.zoom));
-    for (let x = level.xMin; x <= level.xMax; x++) {
-      const canonicalX = x % (2 ** level.zoom);
-      const xDirectory = await optionalDirectory(zoomDirectory, String(canonicalX));
-      if (!xDirectory) continue;
-      for (let y = level.yMin; y <= level.yMax; y++) {
-        const tilePath = `${removed.imagerySet}/${level.zoom}/${canonicalX}/${y}.jpg`;
-        if (remaining.referencedTiles.has(tilePath)) continue;
-        const tile = await child(xDirectory, `${y}.jpg`, "file", true);
-        if (tile) await xDirectory.removeEntry(`${y}.jpg`);
-      }
-    }
   }
 }
 

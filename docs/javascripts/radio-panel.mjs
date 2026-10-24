@@ -75,6 +75,7 @@ if (panel) {
     install.disabled = !supported || busy || checking || checkingRelease || !!confirmation || !connected || !action?.enabled;
     confirm.hidden = !confirmation;
     confirmClose.hidden = !operationFinished;
+    confirmClose.textContent = "Done";
     element("confirm-cancel").disabled = busy;
   }
 
@@ -128,10 +129,6 @@ if (panel) {
     }
   }
 
-  async function selectedRelease(version) {
-    return loadRelease(base, version);
-  }
-
   async function refreshRelease() {
     checkingRelease = true;
     manifest = null;
@@ -183,7 +180,7 @@ if (panel) {
     releaseStatus.textContent = `Checking AeroGrid v${selectedVersion}...`;
     render();
     try {
-      manifest = await selectedRelease(selectedVersion);
+      manifest = await loadRelease(base, selectedVersion);
       if (radioStorage.root) await inspect();
       releaseStatus.textContent = "";
     } catch (error) {
@@ -213,7 +210,7 @@ if (panel) {
       message("");
       await inspect();
       if (!details.radio.board || !details.radio.version) {
-        message("SD card connected. RADIO/radio.yml has missing or invalid board/semver metadata; the affected fields are Unknown.");
+        message("Radio details are incomplete. Check the radio's system information, then reconnect.", true);
       }
     } catch (error) {
       radioStorage.disconnect();
@@ -244,6 +241,7 @@ if (panel) {
     confirmStart.textContent = downgrade ? `Confirm downgrade to v${version}` : `Confirm installation of v${version}`;
     element("confirm-description").textContent = warning;
     operationFinished = false;
+    progress.hidden = true;
     operationStatus.textContent = "";
     operationStatus.classList.remove("ag-radio-error", "ag-radio-success");
     render();
@@ -296,8 +294,8 @@ if (panel) {
     try {
       await permission;
       await radioStorage.exclusive(async (root) => {
-        const selected = await selectedRelease(version);
-        if (selected.version !== version) throw new Error("The latest release changed. Reload to confirm the new version.");
+        const selected = await loadRelease(base, version);
+        if (selected.version !== version) throw new Error("This release is no longer available. Reload and choose it again.");
         const prepared = await preparePackage(selected, base, report);
         const current = await radioStorage.inspect();
         if (current.radio.board !== expected.radio.board || current.radio.version !== expected.radio.version
@@ -311,14 +309,13 @@ if (panel) {
         await inspect();
       });
       progress.value = 1;
-      message(`AeroGrid v${version} installed successfully. Disconnect Radio, safely eject the drive through your operating system, then unplug the USB data cable.`, false, true);
+      message(`Done. AeroGrid v${version} installed successfully. Disconnect Radio, safely eject the drive through your operating system, then unplug the USB data cable.`, false, true);
     } catch (error) {
       if (replacing) incomplete = true;
       console.error("[AeroGrid installer] Installation failed.", error, error.cause?.differences);
       message(`${error.message}${replacing ? "" : " No radio files were changed."}`, true);
     } finally {
       busy = false;
-      progress.hidden = true;
       operationFinished = true;
       render();
     }
