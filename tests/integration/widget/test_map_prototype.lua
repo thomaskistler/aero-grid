@@ -631,6 +631,30 @@ a.assertEqual(
 assert(captured.feed ~= services.navigation:subscribe("GPS"), "custom capture must not use the default EdgeTX home")
 assert(captured.feed ~= services.navigation:subscribe("GPS", "SAv"), "different switches must keep separate homes")
 selectAutomaticArea(captured, 25.9973, -97.1572)
+local arrow = map.create(
+    entry.container,
+    { x = 0, y = 0, w = 480, h = 272 },
+    { label = "MAP", source = "GPS", headingSource = "Hdg", positionMarker = "arrow" },
+    services
+)
+selectAutomaticArea(arrow, 25.9973, -97.1572)
+arrow.headingFeed = { available = true, fresh = true, stale = false, value = 0 }
+repeat
+    fixture.tick(25)
+    map.refresh(arrow)
+until not arrow.dirty and not arrow.pending
+local arrowObjects = #fixture.lvglMock.objects
+for _, degrees in ipairs({ 0, 45, 90, 180, 270, 359, 360, -90 }) do
+    arrow.headingFeed.value = degrees
+    map.refresh(arrow)
+    local orientation = math.floor(degrees / 10 + 0.5) * 10 % 360
+    a.assertContains(arrow.aircraft.root.properties.file(), string.format("map-arrow-%03d.png", orientation))
+    a.assertEqual(arrow.marker.properties.x, arrow.markerX - 26)
+    a.assertEqual(arrow.marker.properties.y, arrow.markerY - 26)
+    assertFootprint(arrow.aircraft)
+end
+a.assertEqual(#fixture.lvglMock.objects, arrowObjects, "arrow rotation must reuse the same image object")
+a.assertContains(arrow.followAircraft.file, "map-follow.png", "marker selection must not change the follow control")
 local headed = map.create(
     entry.container,
     { x = 0, y = 0, w = 480, h = 272 },

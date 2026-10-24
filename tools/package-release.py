@@ -25,6 +25,7 @@ ASSETS = {
     "satellite-light.svg",
 }
 ASSETS.update(f"map-aircraft-{heading:03d}.png" for heading in range(0, 360, 10))
+ASSETS.update(f"map-arrow-{heading:03d}.png" for heading in range(0, 360, 10))
 THEMES = {"modern-dark.yml", "modern-light.yml"}
 
 
