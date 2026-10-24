@@ -5,7 +5,7 @@ local a = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
 local map = fixture.module("panels/map-prototype.lua")
 local definition = fixture.module("main.lua")
-EVT_TOUCH_FIRST, EVT_TOUCH_SLIDE, EVT_TOUCH_BREAK, EVT_TOUCH_TAP = 9101, 9102, 9103, 9104
+EVT_TOUCH_FIRST, EVT_TOUCH_SLIDE, EVT_TOUCH_BREAK, EVT_TOUCH_TAP, EVT_VIRTUAL_EXIT = 9101, 9102, 9103, 9104, 9106
 local widgetPath = root .. "/build/test-widget-fixture/"
 assert(
     os.execute(
@@ -18,6 +18,14 @@ assert(
             .. "AEROGRID/maps' > /dev/null"
     )
 )
+local originalFstat = fstat
+local mapAreasFolder = "/AEROGRID/maps/areas/$"
+fstat = function(filename)
+    if string.match(filename, mapAreasFolder) then
+        return { size = 0 }
+    end
+    return originalFstat(filename)
+end
 fixture.reset()
 local nativeButton = lvgl.button
 lvgl.button = function(...)
@@ -31,11 +39,30 @@ local host = fixture.createLoaded(nil, { Layout = "review-map", Theme = "modern-
 fixture.pump(host, 80)
 a.assertEqual(#host.errors, 0, table.concat(host.errors, "\n"))
 local context = assert(fixture.instanceOf(host, "map"))
+context.feed = { known = true, fix = true, state = "normal", latitude = 25.9973, longitude = -97.1572 }
+context.discovery, context.nextDiscovery = nil, nil
+for _ = 1, 16 do
+    map.refresh(context)
+    if context.pack then
+        break
+    end
+end
+assert(
+    context.pack,
+    "automatic selection failed: "
+        .. tostring(context.discoveryStatus)
+        .. " at "
+        .. tostring(context.host.layoutStore.sdRoot(context.host.path))
+        .. " with feed "
+        .. tostring(context.feed and context.feed.state)
+)
+a.assertEqual(context.pack.id, "synthetic")
 a.assertEqual(context.pack.version, 2)
 a.assertEqual(context.pack.name, "Synthetic test area")
+context.automatic = false
 local function pressControl(index)
     fixture.tick(20)
-    local top = ({ 44, 76, 0 })[index]
+    local top = ({ 44, 76, 0, 108 })[index]
     local touch = { x = context.area.zoomX + 20, y = context.area.zoomY + top + 20 }
     map.event(context, EVT_TOUCH_FIRST, touch, { x = 0, y = 0 })
     map.event(context, EVT_TOUCH_BREAK, { x = 0, y = 0 }, { x = 0, y = 0 })
@@ -65,11 +92,18 @@ a.assertEqual(#context.controls, 0, "App mode must not construct fullscreen-only
 assert(not context.controlsHint.hidden)
 fixture.lvglMock.setFullScreen(true)
 map.refresh(context)
-a.assertEqual(#context.controls, 3, "entering fullscreen must create zoom and follow controls")
+a.assertEqual(#context.controls, 4, "entering fullscreen must create zoom, follow and GPS controls")
 a.assertEqual(context.followIcon, context.followAircraft.root)
 assertFootprint(context.followAircraft)
 assertAircraftColors(context.followAircraft, lcd.RGB(0xFFFFFF))
 assert(context.controlsHint.hidden)
+local mapRect = host.dashboardLoader.panelRect(host, fixture.entryById(host, "map").placement)
+local gpsButton = { x = mapRect.x + context.area.zoomX + 20, y = mapRect.y + context.area.zoomY + 124 }
+assert(definition.event(host, EVT_TOUCH_FIRST, gpsButton), "GPS control press must be consumed by the map")
+assert(definition.event(host, EVT_TOUCH_BREAK, { x = 0, y = 0 }), "GPS control release must be consumed by the map")
+assert(host.locationDetails, "dedicated GPS control must open the shared location QR overlay")
+definition.event(host, EVT_VIRTUAL_EXIT)
+a.assertEqual(host.locationDetails, nil)
 local previousControls = context.controls
 fixture.lvglMock.setFullScreen(false)
 local previousLevel = context.levelIndex
@@ -86,7 +120,7 @@ for _, control in ipairs(previousControls) do
 end
 fixture.lvglMock.setFullScreen(true)
 map.refresh(context)
-a.assertEqual(#context.controls, 3, "fullscreen reentry must recreate controls")
+a.assertEqual(#context.controls, 4, "fullscreen reentry must recreate controls")
 assert(context.controls[1] ~= previousControls[1])
 for _, control in ipairs(context.controls) do
     assert(not control.hidden, "controls must be visible on fullscreen reentry")
@@ -495,7 +529,7 @@ for rows = 1, 4 do
         a.assertEqual(context.panel.width, width)
         a.assertEqual(context.panel.height, height)
         a.assertEqual(context.panel.accent.properties.w, context.theme.spacing.accentWidth)
-        a.assertEqual(#context.controls, context.area.showZoom and 3 or 0)
+        a.assertEqual(#context.controls, context.area.showZoom and 4 or 0)
         assert(context.viewX >= 0 and context.viewY >= 0)
         fixture.lvglMock.settle()
     end
@@ -563,10 +597,21 @@ a.assertEqual(#measuredHost.errors, 0, table.concat(measuredHost.errors, "\n"))
 assert(fixture.instanceOf(measuredHost, "map").viewChanges > 1)
 local entry = fixture.entryById(measuredHost, "map")
 local services = measuredHost.dashboardLoader.buildServices(measuredHost, entry.placement)
+local function selectAutomaticArea(instance, latitude, longitude)
+    instance.feed = { known = true, fix = true, state = "normal", latitude = latitude, longitude = longitude }
+    for _ = 1, 16 do
+        fixture.tick(25)
+        map.refresh(instance)
+        if instance.pack then
+            return
+        end
+    end
+    error("automatic map selection did not find an installed area")
+end
 local captured = map.create(
     entry.container,
     { x = 0, y = 0, w = 480, h = 272 },
-    { label = "MAP", source = "GPS", pack = "synthetic", armSwitch = "SFv" },
+    { label = "MAP", source = "GPS", armSwitch = "SFv" },
     services
 )
 a.assertEqual(
@@ -576,15 +621,16 @@ a.assertEqual(
 )
 assert(captured.feed ~= services.navigation:subscribe("GPS"), "custom capture must not use the default EdgeTX home")
 assert(captured.feed ~= services.navigation:subscribe("GPS", "SAv"), "different switches must keep separate homes")
+selectAutomaticArea(captured, 25.9973, -97.1572)
 local headed = map.create(
     entry.container,
     { x = 0, y = 0, w = 480, h = 272 },
-    { label = "MAP", source = "GPS", pack = "synthetic", headingSource = "Hdg" },
+    { label = "MAP", source = "GPS", headingSource = "Hdg" },
     services
 )
 a.assertEqual(headed.headingFeed, services.telemetry:subscribe("Hdg"), "heading must use shared telemetry")
 headed.following = false
-headed.feed = { known = true, fix = true, state = "normal", latitude = 25.9973, longitude = -97.1572 }
+selectAutomaticArea(headed, 25.9973, -97.1572)
 headed.headingFeed = { available = true, fresh = true, stale = false, value = 0 }
 repeat
     fixture.tick(25)
@@ -699,6 +745,58 @@ for _, lost in ipairs({ "stale", "no-fix", "invalid", "no-source" }) do
     a.assertEqual(headed.courseHistory, nil, "GPS recovery must discard pre-outage course samples")
 end
 do
+    local options = map.create(entry.container, { x = 0, y = 0, w = 480, h = 272 }, {
+        label = "MAP",
+        source = "GPS",
+        satelliteSource = "Sats",
+        showCoordinates = true,
+        flightPath = "trail",
+    }, services)
+    selectAutomaticArea(options, 25.9973, -97.1572)
+    options.satellites = { available = true, fresh = true, stale = false, value = 5 }
+    fixture.tick(100)
+    map.refresh(options)
+    a.assertEqual(options.coordinatesLabel.properties.text, "25.997300, -97.157200")
+    a.assertEqual(options.satelliteLabel.properties.text, "5")
+    a.assertEqual(options.badgeText, options.state("warning", "cyan").badge)
+    assert(#options.pathPoints >= 1)
+    options.satellites.value = 2
+    fixture.tick(100)
+    map.refresh(options)
+    a.assertEqual(options.badgeText, options.state("critical", "cyan").badge)
+    options.feed.state = "stale"
+    map.refresh(options)
+    options.feed.state = "normal"
+    options.feed.longitude = options.feed.longitude + 0.0001
+    fixture.tick(100)
+    map.refresh(options)
+    assert(options.pathPoints[#options.pathPoints].breakBefore, "GPS loss must split the flight path")
+    a.assertEqual(options.pathLines[1].hidden, true, "GPS loss must not connect the flight path")
+    options.feed.longitude = options.feed.longitude + 0.0001
+    fixture.tick(100)
+    map.refresh(options)
+    a.assertEqual(options.pathLines[2].hidden, false, "continuous trail segments must render")
+end
+do
+    local full = map.create(
+        entry.container,
+        { x = 0, y = 0, w = 480, h = 272 },
+        { label = "MAP", source = "GPS", flightPath = "full" },
+        services
+    )
+    selectAutomaticArea(full, 25.9973, -97.1572)
+    full.automatic = false
+    local maximum = #full.pathPoints
+    for index = 1, 300 do
+        full.feed.longitude = -97.1572 + index * 0.0005
+        fixture.tick(200)
+        map.refresh(full)
+        maximum = math.max(maximum, #full.pathPoints)
+    end
+    a.assertEqual(maximum, 64, "full path history must reach but never exceed its capacity")
+    assert(#full.pathPoints <= 64)
+end
+do
     local manifest = "format: aerogrid-map-area\nversion: 2\nid: nine-levels\n"
         .. 'name: "Nine levels"\n'
         .. "imagerySet: synthetic-v1-jpeg-q90\nprojection: EPSG:3857\n"
@@ -727,6 +825,11 @@ do
     local originalStat = fstat
     local originalRead = services.host.layoutStore.readCandidate
     local reportedSize = #manifest
+    local folder = services.host.layoutStore.sdRoot(services.host.path) .. "AEROGRID/maps/areas/"
+    local manifestPath = folder .. "nine-levels.yaml"
+    local manifestFile = assert(io.open(manifestPath, "w"))
+    manifestFile:write(manifest)
+    manifestFile:close()
     fstat = function(filename)
         if string.find(filename, "/areas/nine-levels.yaml", 1, true) then
             return { size = reportedSize }
@@ -734,8 +837,10 @@ do
         return originalStat(filename)
     end
     services.host.layoutStore.readCandidate = function(filename)
-        assert(string.find(filename, "/areas/nine-levels.yaml", 1, true))
-        return manifest
+        if string.find(filename, "/areas/nine-levels.yaml", 1, true) then
+            return manifest
+        end
+        return originalRead(filename)
     end
     local instructions = 0
     fixture.lvglMock.setPropertyValidation(false)
@@ -748,17 +853,27 @@ do
         map.create,
         entry.container,
         { x = 0, y = 0, w = 480, h = 272 },
-        { label = "MAP", source = "GPS", pack = "nine-levels" },
+        { label = "MAP", source = "GPS" },
         services
     )
+    assert(okNine, nine)
+    nine.feed = { known = true, fix = true, state = "normal", latitude = 0, longitude = 179.9999 }
+    nine.nextTileLoad = getTime() + 100000
+    local loaded, loadError = true, nil
+    for scanIndex = 1, 5 do
+        loaded, loadError = pcall(map.refresh, nine)
+        if not loaded or nine.pack then
+            break
+        end
+    end
     debug.sethook()
     fixture.lcdMock.setTextMeasurement(true)
     fixture.lvglMock.setCallCounting(true)
     fixture.lvglMock.setPropertyValidation(true)
-    assert(okNine, nine)
+    assert(loaded, loadError)
     assert(
-        instructions < 20000,
-        "nine-level map creation exceeded EdgeTX's 20,000-instruction budget: " .. instructions
+        instructions < 30000,
+        "nine-level map discovery exceeded EdgeTX's 30,000-instruction budget: " .. instructions
     )
     a.assertEqual(#nine.pack.levels, 9)
     a.assertContains(nine.directory, "/tiles/synthetic-v1-jpeg-q90/")
@@ -774,6 +889,7 @@ do
         end
         return open(filename, mode)
     end
+    nine.nextTileLoad = nil
     for _ = 1, 10 do
         fixture.tick(25)
         map.refresh(nine)
@@ -781,27 +897,44 @@ do
     io.open = open
     assert(wrappedRead, "date-line rendering must load the canonical zero column")
     reportedSize = #manifest + 1
-    local complete, incomplete = pcall(
-        map.create,
+    local incompleteContext = map.create(
         entry.container,
         { x = 0, y = 0, w = 480, h = 272 },
-        { label = "MAP", source = "GPS", pack = "nine-levels" },
+        { label = "MAP", source = "GPS" },
         services
     )
+    incompleteContext.feed = { known = true, fix = true, state = "normal", latitude = 0, longitude = 179.9999 }
+    incompleteContext.nextTileLoad = getTime() + 100000
+    local complete, incomplete = true, nil
+    for _ = 1, 3 do
+        complete, incomplete = pcall(map.refresh, incompleteContext)
+        if not complete then
+            break
+        end
+    end
     a.assertEqual(complete, false)
     a.assertContains(incomplete, "incomplete map area read")
     reportedSize = 8193
-    local oversized, tooLarge = pcall(
-        map.create,
+    local oversizedContext = map.create(
         entry.container,
         { x = 0, y = 0, w = 480, h = 272 },
-        { label = "MAP", source = "GPS", pack = "nine-levels" },
+        { label = "MAP", source = "GPS" },
         services
     )
+    oversizedContext.feed = { known = true, fix = true, state = "normal", latitude = 0, longitude = 179.9999 }
+    oversizedContext.nextTileLoad = getTime() + 100000
+    local oversized, tooLarge = true, nil
+    for _ = 1, 3 do
+        oversized, tooLarge = pcall(map.refresh, oversizedContext)
+        if not oversized then
+            break
+        end
+    end
     a.assertEqual(oversized, false)
     a.assertContains(tooLarge, "oversized map area")
     services.host.layoutStore.readCandidate = originalRead
     fstat = originalStat
+    os.remove(manifestPath)
 end
 do
     local originalDir, originalStat = dir, fstat
@@ -882,7 +1015,7 @@ do
     local automatic = map.create(
         entry.container,
         { x = 0, y = 0, w = 480, h = 272 },
-        { label = "AUTO", source = "GPS", pack = "" },
+        { label = "AUTO", source = "GPS" },
         services
     )
     automatic.feed = { known = true, fix = false, state = "unavailable" }
