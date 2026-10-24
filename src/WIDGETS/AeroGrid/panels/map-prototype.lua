@@ -255,10 +255,8 @@ local function geometry(context, rect)
         y = 0,
         w = width,
         h = height,
-        controlsY = height - 22,
         zoomX = x + width - 48,
         zoomY = height - CONTROLS_HEIGHT - 8,
-        showHint = width >= 240 and height >= 96,
         showZoom = width >= 100 and height >= 164,
     }
 end
@@ -367,6 +365,21 @@ local function checkTile(filename)
     assert(map.jpegHeader(header), "map tile must be a 256x256 8-bit RGB JPEG without EXIF: " .. filename)
 end
 
+local function placeStatus(context)
+    local area, builder = context.area, context.themeBuilder
+    context.statusAnchor = nil
+    context.primitives.centreLabel(
+        context,
+        "statusAnchor",
+        builder,
+        context.statusLabel,
+        area.x + math.floor(area.w / 2),
+        area.y + math.floor((area.h - builder.fontHeight(SMLSIZE)) / 2),
+        SMLSIZE,
+        context.statusText == "GPS" and "" or context.statusText or ""
+    )
+end
+
 local function setStatus(context, text)
     local healthy = text == "GPS"
     local state = healthy and (context.satelliteState or "normal")
@@ -381,6 +394,7 @@ local function setStatus(context, text)
         context.primitives.setHeaderState(context, presentation, count and string.format("%.0f", count) or "--")
         if context.statusLabel then
             context.statusLabel:set({ text = healthy and "" or text, color = presentation.label })
+            placeStatus(context)
             context.primitives.reconcile(context.statusLabel, not healthy)
         end
     end
@@ -1101,7 +1115,6 @@ local function updateControls(context)
         end
         lvgl.rectangle(context.controlsRoot, { x = 9, y = 76, w = 22, h = 1, filled = true, color = lcd.RGB(0x333737) })
     end
-    context.primitives.reconcile(context.controlsHint, not lvgl.isFullScreen() and context.area.showHint)
 end
 
 local function selectArea(context)
@@ -1313,14 +1326,6 @@ function map.create(parent, rect, settings, services)
         presentation,
         services.themeBuilder
     )
-    context.controlsHint = services.primitives.label(context.panel.root, services.theme, {
-        x = area.x + 16,
-        y = area.controlsY,
-        w = math.max(1, area.w - 32),
-        text = "Hold for fullscreen",
-        font = TINSIZE,
-        color = services.theme.color.textMuted,
-    })
     context.statusLabel = services.primitives.label(context.panel.root, services.theme, {
         x = area.x + 8,
         y = area.y + 48,
@@ -1363,9 +1368,8 @@ function map.update(context, rect)
     context.area = geometry(context, rect)
     local area = context.area
     context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
-    context.statusLabel:set({ x = area.x + 8, y = area.y + 48, w = math.max(1, area.w - 64) })
+    placeStatus(context)
     context.viewport:set({ x = area.x, y = area.y, w = area.w, h = area.h })
-    context.controlsHint:set({ x = area.x + 16, y = area.controlsY, w = math.max(1, area.w - 32) })
     context.controlsRoot:set({ x = area.zoomX, y = area.zoomY, h = CONTROLS_HEIGHT })
     if context.coordinatesLabel then
         context.coordinatesLabel:set({ x = area.x + 4, y = area.h - 28, w = math.max(1, area.w - 56) })
