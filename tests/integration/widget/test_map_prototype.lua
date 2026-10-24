@@ -684,7 +684,8 @@ for _, invalid in ipairs({ 0 / 0, math.huge, -math.huge, "90", false }) do
     headed.headingFeed.value = invalid
     map.refresh(headed)
     a.assertEqual(headed.heading, nil)
-    a.assertContains(headed.statusText, "NO HDG")
+    a.assertEqual(headed.statusText, "GPS")
+    assert(not string.find(headed.statusText, "Z", 1, true), "status must omit zoom level")
     assertAircraftColors(headed.aircraft, lcd.RGB(0x70D6F3))
 end
 headed.headingFeed.value, headed.headingFeed.stale = 90, true
