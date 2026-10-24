@@ -77,6 +77,15 @@ and update the first line to the calculated value reported by a failing check.
 The checksum includes the exact bytes after the first line, including line
 endings. Check a fresh `make build` afterwards.
 
+The six categorized simulator models use `MODELS/model1.yml` as their common
+setup source. Edit shared sensors, mixes, timers, or other model setup there,
+then run `python3 tools/generate-simulator-models.py` to refresh all six models
+and `labels.yml`. Category names and screen assignments live in that generator;
+keep the layout registry order stable because widget options store its indices.
+`python3 tools/generate-simulator-models.py --check` checks reproducibility, and
+`make test` checks the exact category mapping and shared setup. The generator
+does not change radio settings or their checksum.
+
 Do not commit `.luac`, virtual environments, logs, framebuffer dumps,
 `build/sdcard/`, or incidental captures. Reviewed website screenshots belong
 in `docs/assets/` with the relevant provenance and disclosure.

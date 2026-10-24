@@ -77,7 +77,11 @@ class CaptureRecipeTests(unittest.TestCase):
                 names = (sd / "AEROGRID/layout-registry.txt").read_text().splitlines()
                 self.assertEqual(names[options[0]["value"]["unsignedValue"] - 1], "Default")
                 self.assertEqual(options[1]["value"]["unsignedValue"], 1)
-                self.assertFalse((sd / "MODELS/model4.yml").exists())
+                for number in range(2, 7):
+                    self.assertEqual(
+                        (sd / f"MODELS/model{number}.yml").read_bytes(),
+                        (capture.ROOT / f"tests/fixtures/sdcard/MODELS/model{number}.yml").read_bytes(),
+                    )
 
     def test_drawer_pages_stitch_into_one_dialog(self):
         path = Path(__file__).with_name("capture-editor.py")
