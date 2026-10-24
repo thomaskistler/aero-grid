@@ -156,8 +156,8 @@ per panel. Within one widget instance, identical GPS source and arm-switch
 settings share the same home state; different settings capture independently.
 Separate widget instances do not share captured home.
 
-Trail segments fade from full opacity at the newest end to low opacity at the
-oldest end. Full-path mode retains uniform opacity.
+Trail segments fade by age to zero opacity at 30 seconds.
+Full-path mode retains uniform opacity.
 
 Headers use the same shared status component as Navigation: title color,
 standard state badge, panel styling, and satellite indicator layout. Map-specific
@@ -173,7 +173,9 @@ Set `satelliteSource` to show the Navigation-style satellite count and alerts;
 `showSatellites: false` hides only the count. `showCoordinates: true` adds
 six-decimal latitude/longitude when GPS is valid. `flightPath` accepts `off`,
 `trail` or `full`: samples require at least five metres of movement and one
-second between accepted fixes. The trail retains 24 points; full mode keeps a
+second between accepted fixes. The trail retains the last 30 seconds, capped at
+31 timestamped points; old points expire even while stationary or GPS is unavailable.
+Full mode keeps a
 bounded, decimated history of at most 64 points. GPS outages break the displayed path.
 In fullscreen, the separate circled info control opens the same location QR overlay
 as tapping a Navigation panel, leaving map taps available for panning.

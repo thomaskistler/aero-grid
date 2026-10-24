@@ -93,7 +93,8 @@ without browser code or network access.
   behavior need moving-GPS and abrupt-change testing on native firmware/radio.
   Outside coverage the marker can leave view; no dedicated off-coverage UX yet.
 - Flight-path rendering is bounded and uses native line primitives rather than
-  writable image buffers. Trail mode keeps 24 points; full mode decimates into
+  writable image buffers. Trail mode keeps up to 31 points over the last 30
+  seconds, fading and expiring by age; full mode decimates into
   a maximum of 64 points. Sampling, line appearance and native-radio cost still
   need hardware validation.
 - No pinch zoom, persistence of pan/follow/home across reboot, or new model-wide
