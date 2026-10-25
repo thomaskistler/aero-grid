@@ -7,6 +7,13 @@ local yaml = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/yaml.lua"))()
 local grid = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/grid.lua"))()
 local layout = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/layout.lua"))()
 
+do
+    local panel = { type = "map-prototype", config = { initialZoom = "most detailed" } }
+    layout.normalizePanel(panel)
+    assertions.assertEqual(panel.type, "map")
+    assertions.assertEqual(panel.config.initialZoom, "most detailed")
+end
+
 local function testValidation()
     local document = assert(yaml.parse([[
 version: 1

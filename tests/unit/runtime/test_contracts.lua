@@ -385,7 +385,7 @@ local function testSettingsVocabulary()
     -- the host contract and are fixtures under `tests/fixtures/panels`, so
     -- they are not read here: the vocabulary rules below are about what a
     -- person configures on a radio.
-    assertEqual(#kinds, 16, "the catalogue changed size; expected twelve instruments and four utility/prototype panels")
+    assertEqual(#kinds, 16, "the catalogue changed size; expected twelve instruments and four utility panels")
 
     for kind, settings in pairs(catalog) do
         local declared = {}
@@ -727,11 +727,11 @@ local function testPanelDocumentationLoads()
             assert(string.find(page, "/WIDGETS/AeroGrid/themes/", 1, true))
             assert(string.find(page, "/AEROGRID/themes/", 1, true))
             table.remove(kinds, index)
-        elseif kinds[index] == "map-prototype" then
-            local handle = assert(io.open(root .. "/docs/developer-guide/map-prototype.md", "r"))
+        elseif kinds[index] == "map" then
+            local handle = assert(io.open(root .. "/docs/developer-guide/map.md", "r"))
             local page = handle:read("*a")
             handle:close()
-            assert(string.find(page, "# Radio map rendering prototype", 1, true))
+            assert(string.find(page, "# Radio map", 1, true))
             assert(string.find(page, "make build", 1, true))
             assert(string.find(page, "/AEROGRID/maps/areas/companion-naip.yaml", 1, true))
             table.remove(kinds, index)
@@ -1279,7 +1279,7 @@ local function testRenderConsultsWhatIsShown()
         ["service-probe"] = true,
         ["flight-counter"] = true,
         ["theme-showcase"] = true,
-        ["map-prototype"] = true,
+        ["map"] = true,
     }
 
     local checked, exempt = 0, 0

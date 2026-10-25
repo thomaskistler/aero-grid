@@ -1,19 +1,15 @@
-# Radio map prototype handoff (temporary)
+# Radio map handoff (temporary)
 
 Status: experimental, not flight-navigation software. This document captures the
 2026-10-20 session and subsequent shared-area migration, and can be removed
 after the outstanding work is tracked. The panel is independent of the planner
 and downloader branches. Its consumer contract is documented in
-`docs/developer-guide/map-prototype.md`; original local fixtures validate it
+`docs/developer-guide/map.md`; original local fixtures validate it
 without browser code or network access.
 
 ## Implemented
 
-- Temporary absent-source test fallback: panel-local 37.436736, -122.1258128,
-  visibly marked DEMO. It requires installed coverage there and never records
-  history or home. Detected/no-fix/stale/invalid GPS never substitutes it, and
-  loss after detection does not reactivate it. Shared navigation is unchanged.
-- Radio-selectable **Map** (`map-prototype`) panel, resizable to all grid spans on the current
+- Radio-selectable **Map** (`map`) panel, resizable to all grid spans on the current
   TX16S 480x272 target. Standard panel shell, accent, title and state badge;
   native-size imagery fills the panel except for the accent sidebar.
 - Normal `make build` copies a stored USGS/USDA NAIP 20-tile aerial snapshot at zoom
@@ -21,8 +17,15 @@ without browser code or network access.
   AG Navigation's second screen (`review-map`) selects it.
 - Reusable tile objects, retained overlap during pans, per-level coverage
   clamping and incremental loading: at most one source every 250 ms.
-- Fullscreen single-finger dragging, live loading while dragging and no
-  separate release redraw. Moving eight pixels cancels the host's editor hold.
+- Fullscreen single-finger dragging with new tile sources/header preflights
+  deferred while touch is held, even during a stationary pause. Retained tiles
+  move immediately, but exposed edges may stay blank until release. The latest
+  viewport then fills at the existing one-source-per-250-ms cadence, with no
+  separate release redraw or burst. Resize/fullscreen exit also cancel the gate.
+  Marker movement and path sampling continue; expensive path rendering waits
+  until release. Moving eight pixels cancels the host's editor hold.
+- Configurable initial zoom: widest (default), middle (wider central level for
+  even counts), or most detailed installed level. Normal zoom/pan stays enabled.
 - Borderless custom touch controls: combined dark rounded +/- block and a
   separate rounded-square re-follow button using the position glyph in white.
   Controls are touch-only, not encoder-focusable. Native local press coordinates
@@ -94,6 +97,11 @@ without browser code or network access.
 - Nine visible tiles are possible, exceeding EdgeTX's eight-entry native cache
   even before marker assets. Re-decoding/cache churn and synchronous decoder
   pauses may still interrupt dragging or follow animation. No prefetch added.
+- Drag-load deferral removes new Lua-requested sources during touch, not native
+  redraw decoding of retained tiles. The baseline mock boundary gesture opened
+  two JPEG headers and loaded two new sources while held; regressions require
+  zero until release. Physical responsiveness gains/cache thrashing remain
+  unmeasured. Hardware-dependent performance is not inferred from Lua mocks.
 - Lua mock budgets do not measure decoding/drawing/native RAM. Physical radio
   free/minimum/largest-block memory, SD latency and endurance remain unmeasured.
   JPEG header preflight does not prove the compressed stream can decode.
@@ -115,8 +123,8 @@ without browser code or network access.
 
 ## Validation and reproduction
 
-`docs/developer-guide/map-prototype.md` is the maintained technical guide.
-Key sources: `panels/map-prototype.lua`, `lib/navigation_service.lua`,
+`docs/developer-guide/map.md` is the maintained technical guide.
+Key sources: `panels/map.lua`, `lib/navigation_service.lua`,
 `tools/generate-map-test-pack.py`, `tools/generate-map-icons.py`.
 
 Focused coverage includes projection, pack validation, all spans, home anchoring

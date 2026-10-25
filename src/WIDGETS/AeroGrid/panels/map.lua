@@ -1,14 +1,21 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
--- Experimental rendering panel consuming the shared map-area contract.
+-- Map panel consuming the shared map-area contract.
 local map = {
-    id = "map-prototype",
+    id = "map",
     apiVersion = 1,
     supportedSpans = { "any" },
     refreshInterval = 2,
     settings = {
         { key = "label", label = "Label", type = "string", default = "MAP" },
         { key = "source", label = "GPS source", type = "string", default = "GPS" },
+        {
+            key = "initialZoom",
+            label = "Initial zoom",
+            type = "string",
+            default = "widest",
+            choices = { "widest", "middle", "most detailed" },
+        },
         { key = "headingSource", label = "Heading source", type = "string", default = "" },
         {
             key = "positionMarker",
@@ -43,18 +50,6 @@ local FULL_HISTORY_POINTS = 1024
 local COORDINATE_PRECISION = 6
 local CONTROL_TOPS = { 44, 76, 0, 112 }
 local CONTROLS_HEIGHT = 144
-local DEMO_POSITION = {
-    known = true,
-    fix = true,
-    state = "normal",
-    latitude = 37.436736,
-    longitude = -122.1258128,
-}
-
-local function positionFeed(context)
-    return context.demoActive and DEMO_POSITION or context.feed
-end
-
 function map.meanCourse(context, bearing)
     local history = context.courseHistory or {}
     context.courseHistory = history
@@ -117,6 +112,14 @@ end
 
 function map.validateSettings(settings)
     local errors = {}
+    if
+        settings.initialZoom ~= nil
+        and settings.initialZoom ~= "widest"
+        and settings.initialZoom ~= "middle"
+        and settings.initialZoom ~= "most detailed"
+    then
+        errors[#errors + 1] = "initialZoom must be widest, middle, or most detailed"
+    end
     if settings.positionMarker ~= nil and settings.positionMarker ~= "plane" and settings.positionMarker ~= "arrow" then
         errors[#errors + 1] = "positionMarker must be plane or arrow"
     end
@@ -173,7 +176,7 @@ function map.validatePack(pack)
         pack.projection == "EPSG:3857" and pack.tileScheme == "XYZ" and pack.tileSize == TILE,
         "unsupported map projection"
     )
-    assert(pack.imageFormat == "jpeg", "map areas require JPEG tiles; regenerate PNG prototype packs")
+    assert(pack.imageFormat == "jpeg", "map areas require JPEG tiles; regenerate legacy PNG packs")
     assert(
         type(pack.name) == "string"
             and #pack.name >= 1
@@ -269,6 +272,9 @@ end
 
 local function geometry(context, rect)
     local frame = context.themeBuilder.frame(context.theme, rect, context.fonts, nil, context.badgeText)
+    frame.labelX = frame.labelX + 5
+    frame.badgeX = frame.badgeX - 5
+    frame.labelWidth = math.max(0, frame.labelWidth - 10)
     local x = context.theme.spacing.accentWidth
     local width = math.max(1, rect.w - x)
     local height = math.max(1, rect.h)
@@ -408,6 +414,63 @@ local function checkTile(filename)
     assert(map.jpegHeader(header), "map tile must be a 256x256 8-bit RGB JPEG without EXIF: " .. filename)
 end
 
+local function placeHeaderBackplates(context)
+    local builder, frame, fonts = context.themeBuilder, context.area.frame, context.fonts
+    local badge = context.badgeText or ""
+    local plates = context.headerBackplates
+    if
+        plates.frame == frame
+        and plates.badgeText == badge
+        and plates.count == context.satelliteHeaderCount
+        and plates.satellitesVisible == context.showSatellites
+    then
+        return
+    end
+    plates.frame, plates.badgeText = frame, badge
+    plates.count, plates.satellitesVisible = context.satelliteHeaderCount, context.showSatellites
+    local heading, font = builder.fitHeading(
+        context.settings.label,
+        builder.headingWidth(frame, fonts.badge, badge),
+        fonts.label,
+        fonts.badge
+    )
+    local function place(plate, x, width, height, visible)
+        if visible then
+            plate.object:set({ x = x - 3, y = frame.labelY - 1, w = width + 6, h = height + 2 })
+        end
+        context.primitives.reconcile(plate.object, visible)
+    end
+    place(
+        context.headerBackplates.title,
+        frame.labelX,
+        builder.measureText(font, heading),
+        builder.fontHeight(font),
+        not frame.labelHidden and heading ~= ""
+    )
+    local badgeX = frame.badgeX + frame.badgeWidth
+    if badge ~= "" then
+        local badgeWidth
+        badgeX, badgeWidth = context.primitives.badgeX(builder, frame, fonts.badge, badge)
+        place(plates.badge, badgeX, badgeWidth, builder.fontHeight(fonts.badge), true)
+    else
+        context.primitives.reconcile(plates.badge.object, false)
+    end
+    if not context.showSatellites then
+        context.primitives.reconcile(plates.satellites.object, false)
+        return
+    end
+    local satelliteText = context.satelliteHeaderCount and string.format("%.0f", context.satelliteHeaderCount) or "--"
+    local satelliteWidth = 18 + builder.measureText(fonts.label, satelliteText)
+    local right = badge ~= "" and badgeX - 6 or frame.badgeX + frame.badgeWidth
+    place(
+        context.headerBackplates.satellites,
+        right - satelliteWidth,
+        satelliteWidth,
+        math.max(16, builder.fontHeight(fonts.label)),
+        context.showSatellites == true
+    )
+end
+
 local function placeStatus(context)
     local area, builder = context.area, context.themeBuilder
     local text = context.statusText == "GPS" and "" or context.statusText or ""
@@ -427,13 +490,17 @@ local function placeStatus(context)
     end
     context.statusAnchor = nil
     context.primitives.centreLabel(context, "statusAnchor", builder, context.statusLabel, centre, y, SMLSIZE, text)
+    context.statusBackground:set({
+        x = centre - math.floor(width / 2) - 4,
+        y = y - 2,
+        w = width + 8,
+        h = height + 4,
+    })
+    context.primitives.reconcile(context.statusBackground, text ~= "" and fits)
     context.primitives.reconcile(context.statusLabel, text ~= "" and fits)
 end
 
 local function setStatus(context, text)
-    if context.demoActive then
-        text = text == "GPS" and "DEMO POSITION" or "DEMO: " .. text
-    end
     local healthy = text == "GPS"
     local state = healthy and (context.satelliteState or "normal")
         or text == "GPS STALE" and "stale"
@@ -445,8 +512,12 @@ local function setStatus(context, text)
         local presentation = context.state(state, "cyan")
         local count = context.satelliteHeaderCount
         context.primitives.setHeaderState(context, presentation, count and string.format("%.0f", count) or "--")
+        context.label:set({ color = lcd.RGB(0xFFFFFF) })
+        if context.satelliteLabel then
+            context.satelliteLabel:set({ color = lcd.RGB(0xFFFFFF) })
+        end
         if context.statusLabel then
-            context.statusLabel:set({ text = healthy and "" or text, color = presentation.label })
+            context.statusLabel:set({ text = healthy and "" or text, color = lcd.RGB(0xFFFFFF) })
             placeStatus(context)
         end
     end
@@ -504,6 +575,7 @@ local function updateSatelliteState(context)
         local presentation = context.state(context.badgeState or state, "cyan")
         local text = count and string.format("%.0f", count) or "--"
         context.primitives.setSatelliteHeader(context, text, presentation)
+        context.satelliteLabel:set({ color = lcd.RGB(0xFFFFFF) })
     end
 end
 
@@ -906,7 +978,7 @@ local function updateCoordinates(context)
     if not context.coordinatesLabel then
         return
     end
-    local feed = positionFeed(context)
+    local feed = context.feed
     local valid = feed
         and feed.known
         and feed.fix
@@ -923,8 +995,15 @@ local function updateCoordinates(context)
         context.coordinatesLabel:set({ text = text })
         context.coordinateText = text
     end
-    local width = math.max(1, context.area.w - 56)
+    local width = math.max(1, context.area.w - 60)
     local visible = valid and width >= context.themeBuilder.measureText(SMLSIZE, text)
+    local backgroundWidth =
+        math.max(1, math.min(context.area.w - 8, context.themeBuilder.measureText(SMLSIZE, text) + 8))
+    if context.coordinateBackgroundWidth ~= backgroundWidth then
+        context.coordinatesBackground:set({ w = backgroundWidth })
+        context.coordinateBackgroundWidth = backgroundWidth
+    end
+    context.primitives.reconcile(context.coordinatesBackground, visible)
     context.primitives.reconcile(context.coordinatesLabel, visible)
 end
 
@@ -945,7 +1024,7 @@ end
 local function updateHome(context)
     local feed = context.feed
     local x, y
-    if not context.demoActive and feed and feed.home then
+    if feed and feed.home then
         x, y = map.project(
             context.pack.levels[context.levelIndex],
             feed.pilotLatitude,
@@ -1091,7 +1170,7 @@ local function loadTile(context)
 end
 
 local function followAircraft(context)
-    local feed = positionFeed(context)
+    local feed = context.feed
     if not context.following or context.drag or not feed or not feed.known or not feed.fix or feed.state == "stale" then
         context.followPan, context.followSample = nil, nil
         return
@@ -1158,7 +1237,7 @@ local function followAircraft(context)
 end
 
 local function updateMarker(context)
-    local feed = positionFeed(context)
+    local feed = context.feed
     local state = not feed and "NO GPS"
         or not feed.known and "NO GPS"
         or feed.state == "stale" and "GPS STALE"
@@ -1462,7 +1541,7 @@ local function updateControls(context)
 end
 
 local function selectArea(context)
-    local feed = positionFeed(context)
+    local feed = context.feed
     if not feed or not feed.known or not feed.fix or feed.state ~= "normal" then
         return
     end
@@ -1533,28 +1612,19 @@ local function selectArea(context)
         return
     end
     context.pack, context.directory = scan.best, scan.directory
-    context.levelIndex, context.viewX, context.viewY = 1, 0, 0
+    local initialZoom = context.settings.initialZoom
+    local count = #context.pack.levels
+    local index = initialZoom == "most detailed" and count or initialZoom == "middle" and math.ceil(count / 2) or 1
+    context.levelIndex, context.viewX, context.viewY = index, 0, 0
     context.following, context.dirty = true, true
     context.markerLatitude, context.markerLongitude = nil, nil
-    local level = context.pack.levels[1]
+    local level = context.pack.levels[context.levelIndex]
     local x, y = map.project(level, feed.latitude, feed.longitude)
     context.viewX, context.viewY =
         map.clampView(level, context.area.w, context.area.h, x - context.area.w / 2, y - context.area.h / 2)
 end
 
 function map.refresh(context)
-    local feed = context.feed
-    if feed and feed.known then
-        context.gpsDetected = true
-    end
-    local demo = feed ~= nil and feed.known == false and feed.state ~= "stale" and not context.gpsDetected
-    if demo ~= context.demoActive then
-        context.demoActive = demo
-        context.discovery, context.nextDiscovery = nil, nil
-        context.followPan, context.followSample = nil, nil
-        context.courseLatitude, context.courseLongitude, context.course = nil, nil, nil
-        context.courseHistory, context.courseIndex = nil, nil
-    end
     updateSatelliteState(context)
     if context.automatic then
         selectArea(context)
@@ -1563,26 +1633,32 @@ function map.refresh(context)
     if not lvgl.isFullScreen() then
         cancelDrag(context)
     end
-    preparePathLines(context)
+    if not context.drag then
+        preparePathLines(context)
+    end
     recordPath(context)
     if not context.pack then
-        local feed = positionFeed(context)
+        local feed = context.feed
         local live = feed and feed.known and feed.fix and feed.state == "normal"
         setStatus(context, live and (context.discoveryStatus or "FINDING MAP") or "WAITING FOR GPS")
         updateCoordinates(context)
+        placeHeaderBackplates(context)
         return
     end
     followAircraft(context)
     if context.dirty then
         prepareView(context)
     end
-    if context.pending and getTime() >= (context.nextTileLoad or 0) then
+    if context.pending and not context.drag and getTime() >= (context.nextTileLoad or 0) then
         loadTile(context)
         context.nextTileLoad = getTime() + 25
     end
     updateMarker(context)
-    drawPath(context)
+    if not context.drag then
+        drawPath(context)
+    end
     updateCoordinates(context)
+    placeHeaderBackplates(context)
 end
 
 function map.create(parent, rect, settings, services)
@@ -1655,13 +1731,24 @@ function map.create(parent, rect, settings, services)
         })
     end
     if settings.showCoordinates then
-        context.coordinatesLabel = services.primitives.label(context.panel.root, services.theme, {
+        context.coordinatesBackground = lvgl.rectangle(context.panel.root, {
             x = area.x + 4,
-            y = area.h - 28,
+            y = area.h - 30,
             w = math.max(1, area.w - 56),
+            h = services.themeBuilder.fontHeight(SMLSIZE) + 4,
+            rounded = 5,
+            filled = true,
+            color = lcd.RGB(0x101414),
+            opacity = 190,
+        })
+        lvgl.hide(context.coordinatesBackground)
+        context.coordinatesLabel = services.primitives.label(context.panel.root, services.theme, {
+            x = area.x + 8,
+            y = area.h - 28,
+            w = math.max(1, area.w - 60),
             text = "",
             font = SMLSIZE,
-            color = services.theme.color.text,
+            color = lcd.RGB(0xFFFFFF),
         })
         lvgl.hide(context.coordinatesLabel)
     end
@@ -1679,6 +1766,21 @@ function map.create(parent, rect, settings, services)
     context.aircraft = createAircraft(context.viewport, 0, 0, 52, assets, false, settings.positionMarker)
     context.marker = context.aircraft.root
     lvgl.hide(context.marker)
+    context.headerBackplates = {}
+    for _, key in ipairs({ "title", "badge", "satellites" }) do
+        local object = lvgl.rectangle(context.panel.root, {
+            x = 0,
+            y = 0,
+            w = 1,
+            h = 1,
+            rounded = 5,
+            filled = true,
+            color = lcd.RGB(0x101414),
+            opacity = 190,
+        })
+        lvgl.hide(object)
+        context.headerBackplates[key] = { object = object }
+    end
     context.label, context.badge = services.primitives.header(
         context.panel.root,
         services.theme,
@@ -1688,13 +1790,25 @@ function map.create(parent, rect, settings, services)
         presentation,
         services.themeBuilder
     )
+    context.label:set({ color = lcd.RGB(0xFFFFFF) })
+    context.statusBackground = lvgl.rectangle(context.panel.root, {
+        x = 0,
+        y = 0,
+        w = 1,
+        h = 1,
+        rounded = 5,
+        filled = true,
+        color = lcd.RGB(0x101414),
+        opacity = 190,
+    })
+    lvgl.hide(context.statusBackground)
     context.statusLabel = services.primitives.label(context.panel.root, services.theme, {
         x = area.x + 8,
         y = area.y + 48,
         w = math.max(1, area.w - 64),
         text = "",
         font = SMLSIZE,
-        color = services.theme.color.textMuted,
+        color = lcd.RGB(0xFFFFFF),
     })
     lvgl.hide(context.statusLabel)
     context.controlsRoot = lvgl.box(context.panel.root, {
@@ -1740,11 +1854,13 @@ function map.update(context, rect)
     end
     context.controlsRoot:set({ x = area.zoomX, y = area.zoomY, h = CONTROLS_HEIGHT })
     if context.coordinatesLabel then
-        context.coordinatesLabel:set({ x = area.x + 4, y = area.h - 28, w = math.max(1, area.w - 56) })
+        context.coordinatesBackground:set({ x = area.x + 4, y = area.h - 30 })
+        context.coordinatesLabel:set({ x = area.x + 8, y = area.h - 28, w = math.max(1, area.w - 60) })
     end
     if context.satelliteHeader then
         updateSatelliteState(context)
     end
+    placeHeaderBackplates(context)
     updateControls(context)
     if context.pack then
         context.viewX, context.viewY =
