@@ -91,7 +91,7 @@ class DocumentationLayoutTests(unittest.TestCase):
                     )
                     self.assertTrue(
                         rail.get_by_role("link", name="Map Manager", exact=True)
-                        .get_attribute("href").endswith("map-manager/")
+                        .evaluate("link => link.href").endswith("/map-manager/")
                     )
                     self.assertEqual(rail.locator(".active").count(), 1)
                     self.assertEqual(
