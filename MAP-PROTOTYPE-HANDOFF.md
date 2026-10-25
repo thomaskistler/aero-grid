@@ -9,7 +9,7 @@ without browser code or network access.
 
 ## Implemented
 
-- YAML-only `map-prototype` panel, resizable to all grid spans on the current
+- Radio-selectable **Map** (`map-prototype`) panel, resizable to all grid spans on the current
   TX16S 480x272 target. Standard panel shell, accent, title and state badge;
   native-size imagery fills the panel except for the accent sidebar.
 - Normal `make build` copies a stored USGS/USDA NAIP 20-tile aerial snapshot at zoom

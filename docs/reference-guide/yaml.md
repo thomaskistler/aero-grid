@@ -80,7 +80,7 @@ Omitted settings use their listed defaults. “Unset” means the setting has no
 
 ### `map-prototype`
 
-**Experimental and YAML-only; not in the editor catalog.** Supported span:
+**Experimental; available as Map in the radio's Add Panel picker.** Supported span:
 `any` (all grid sizes), targeting TX16S 480 x 272. Requires an installed
 [map area](../developer-guide/map-prototype.md#shared-map-area), generated
 as a synthetic test fixture or supplied separately. See the [radio map experiment](../developer-guide/map-prototype.md)

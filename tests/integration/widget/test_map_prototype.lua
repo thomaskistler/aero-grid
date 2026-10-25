@@ -1020,6 +1020,15 @@ do
     fixture.lvglMock.setCallCounting(true)
     fixture.lvglMock.setPropertyValidation(true)
     print("Full history worst panel callback: " .. worstFull .. " instructions (mock)")
+    map.update(full, { x = 0, y = 0, w = 800, h = 480 })
+    a.assertEqual(#full.tiles, 15, "editor maps must allocate enough native tile slots on larger radios")
+    for _, slot in ipairs(full.tiles) do
+        a.assertEqual(slot.image.parent, full.tileLayer, "resized tile slots must stay below paths and markers")
+    end
+    map.refresh(full)
+    map.update(full, { x = 0, y = 0, w = 480, h = 272 })
+    a.assertEqual(#full.tiles, 15, "shrinking must reuse rather than recreate the existing tile pool")
+    map.refresh(full)
 end
 do
     local manifest = "format: aerogrid-map-area\nversion: 2\nid: nine-levels\n"
