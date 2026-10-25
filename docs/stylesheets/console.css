@@ -1040,3 +1040,228 @@ button:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+
+.ag-console-layout.ag-install-layout {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 1280px;
+}
+
+.ag-install-layout .ag-article {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.ag-install-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 20px;
+  margin: 24px 0 18px;
+}
+
+.ag-install-workspace .ag-radio-cards {
+  max-width: calc(100% - 310px);
+}
+
+.ag-install-workspace h2 {
+  margin: 0 0 20px;
+  font-size: var(--ag-font-xl);
+}
+
+.ag-install-workspace h3 {
+  margin: 0 0 8px;
+  font-size: var(--ag-font-lg);
+}
+
+.ag-install-workspace .ag-radio-card {
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--ag-console-border);
+  border-radius: 6px;
+  background: var(--ag-console-bg);
+}
+
+.ag-install-workspace .ag-radio-card strong {
+  font-size: var(--ag-font-xl);
+}
+
+.ag-radio-specs {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  font-size: var(--ag-font-sm);
+  line-height: 1.4;
+}
+
+.ag-radio-specs > div {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+}
+
+.ag-radio-specs dt {
+  color: var(--ag-console-muted);
+  font-size: var(--ag-font-xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.ag-radio-specs dd {
+  margin: 0;
+  color: var(--ag-console-text);
+  font-weight: 620;
+}
+
+.ag-install-action {
+  padding-top: 0;
+}
+
+.ag-install-workspace .ag-radio-compatibility {
+  font-size: var(--ag-font-base);
+  color: var(--ag-console-muted);
+}
+
+.ag-install-workspace .ag-radio-compatibility-warning {
+  padding: 12px;
+  border-left: 3px solid var(--ag-amber);
+  color: var(--ag-amber);
+  background: var(--ag-console-bg);
+}
+
+.ag-release-picker {
+  min-width: 0;
+  margin: 20px 0;
+}
+
+.ag-release-card {
+  text-align: left;
+  color: var(--ag-console-text);
+  cursor: pointer;
+}
+
+.ag-release-card:not(:disabled):hover {
+  border-color: var(--ag-console-blue);
+  background: var(--ag-console-blue-wash);
+}
+
+.ag-release-card:focus-visible {
+  outline: 2px solid var(--ag-console-blue);
+  outline-offset: 3px;
+}
+
+.ag-release-card:disabled {
+  cursor: not-allowed;
+}
+
+.ag-release-dialog .ag-release-picker {
+  margin-bottom: 0;
+}
+
+.ag-release-dialog .ag-release-list {
+  max-height: 50dvh;
+}
+
+.ag-release-picker legend {
+  float: none;
+  margin-bottom: 8px;
+  font-size: var(--ag-font-lg);
+  font-weight: 680;
+}
+
+.ag-release-list {
+  max-height: 190px;
+  overflow-y: auto;
+  border: 1px solid var(--ag-console-border);
+  border-radius: 6px;
+}
+
+.ag-release-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+.ag-release-row + .ag-release-row {
+  border-top: 1px solid var(--ag-console-border);
+}
+
+.ag-release-row:has(input:checked) {
+  background: var(--ag-console-blue-wash);
+}
+
+.ag-release-row label {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.ag-release-row input {
+  flex: 0 0 auto;
+  accent-color: var(--ag-console-blue-dark);
+}
+
+.ag-release-row label span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ag-release-row strong,
+.ag-release-row a {
+  font-size: var(--ag-font-base);
+}
+
+.ag-release-row small {
+  color: var(--ag-console-muted);
+  font-size: var(--ag-font-base);
+}
+
+.ag-release-row a {
+  flex: 0 0 auto;
+}
+
+.ag-release-row:has(input:disabled) label {
+  color: var(--ag-console-muted);
+  cursor: not-allowed;
+}
+
+.ag-install-workspace .ag-radio-downgrade {
+  padding: 12px;
+  border-left: 3px solid var(--ag-amber);
+  background: var(--ag-console-bg);
+  font-size: var(--ag-font-base);
+}
+
+.ag-install-workspace .ag-radio-muted {
+  font-size: var(--ag-font-base);
+  color: var(--ag-console-muted);
+}
+
+.ag-install-workspace .ag-radio-button {
+  font-size: var(--ag-font-base);
+}
+
+@media (max-width: 1100px) {
+  .ag-install-workspace .ag-radio-cards {
+    max-width: none;
+  }
+
+  .ag-install-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .ag-release-row {
+    flex-wrap: wrap;
+  }
+}

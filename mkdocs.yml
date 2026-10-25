@@ -14,6 +14,12 @@ theme:
 extra_css:
   - stylesheets/aerogrid.css
 
+extra_javascript:
+  - path: javascripts/radio-connection-help.mjs
+    type: module
+  - path: javascripts/radio-panel.mjs
+    type: module
+
 nav:
   - Home: index.md
   - User Guide:
