@@ -14,7 +14,7 @@ Neither proves receiver behavior, native radio memory stability, or support
 for every color radio.
 
 The normal `make build` also includes the synthetic tile pack and `review-map`
-development layout for the [experimental radio map panel](map-prototype.md).
+development layout for the [experimental radio map panel](map.md).
 
 ## Mock memory regression tests
 
@@ -173,7 +173,7 @@ Development layouts are not included in the release ZIP.
 The second screen of **AG Navigation** is **review-map**, using GPS, Sats, and
 SF down (`SFv`) for arming. Long-press the map
 to enter fullscreen and reveal its zoom/pan controls. See the
-[map prototype guide](map-prototype.md) for synthetic GPS coordinates and limitations.
+[map guide](map.md) for synthetic GPS coordinates and limitations.
 
 The flight-counter review installs only one tracker. Arm with SF down, raise
 CH3 above 25%, and supply a live telemetry link; qualification and disarm

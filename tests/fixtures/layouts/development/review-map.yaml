@@ -4,7 +4,7 @@ grid:
   rows: 4
 panels:
   - id: map
-    type: map-prototype
+    type: map
     col: 0
     row: 0
     colSpan: 4

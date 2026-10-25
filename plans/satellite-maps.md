@@ -64,10 +64,10 @@ Detailed implementation references, available on the combined branch:
 
 - `docs/developer-guide/map-packs.md`: manifest, shared identity, export limits,
   migration, and automatic area selection.
-- `docs/developer-guide/map-prototype.md`: radio interaction, rendering,
+- `docs/developer-guide/map.md`: radio interaction, rendering,
   resource constraints, and hardware checks.
 - `docs/map-manager.md`: browser workflow.
-- `MAP-PROTOTYPE-HANDOFF.md`: temporary historical handoff, not the canonical
+- `MAP-HANDOFF.md`: temporary historical handoff, not the canonical
   product specification.
 
   ## PR ownership and parallel iteration
@@ -353,7 +353,7 @@ adapter. This is separate from implementing or testing the pack contract.
 
 ### Supported prototype and interaction
 
-`panels/map-prototype.lua` currently targets TX16S-size 480 x 272 geometry and
+`panels/map.lua` currently targets TX16S-size 480 x 272 geometry and
 the EdgeTX 2.12 LVGL API. No exact minimum patch release or broader radio support
 matrix is established. The panel is YAML-configured and intentionally absent
 from the normal editor add-panel catalog.
