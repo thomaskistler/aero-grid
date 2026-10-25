@@ -65,8 +65,10 @@ All series occupy **one plot**, not separate mini-charts. Use multiple panels fo
 separate charts. Supported spans are 2x1, 3x1, 4x1, 2x2, 3x2, 4x2, 3x3, 4x3,
 and 4x4; additional height goes to the plot rather than stretching the legend.
 The panel respects the App menu exclusion area.
-In unusually short widget zones, extrema rows are hidden rather than overlapping
-the recorded values; they return when sufficient height is available.
+Metric names, values, and extrema use the same larger legend font at every span.
+When the panel is too short to fit all extrema rows (for example, three sources
+in a 2x1 panel), those rows are hidden rather than shrinking the text or
+overlapping the recorded values. Use a taller panel to show all readouts.
 
 History lives in RAM and continues while the dashboard receives background
 callbacks. Geometry-only reflow preserves it. Reloading/restarting the dashboard,

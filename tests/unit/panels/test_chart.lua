@@ -126,6 +126,8 @@ equal(power.series[1].runs[1].line.properties.thickness, 2)
 equal(power.series[2].runs[1].line.properties.thickness, 2)
 assert(power.series[1].name.properties.x > power.area.x + power.area.w)
 assert(power.series[1].extrema.properties.y > power.series[1].value.properties.y)
+assert(power.showExtrema, "two sources must retain their extrema in a standard short panel")
+assert(fixture.instanceOf(context, "recording").showExtrema, "a tall panel must fit three enlarged legend entries")
 equal(power.series[1].runs[1].line.kind, power.series[2].runs[1].line.kind)
 local fixed = fixture.instanceOf(context, "fixed")
 equal(fixed.series[1].low, 0)
@@ -155,6 +157,13 @@ for _, size in ipairs({ { 320, 240 }, { 800, 480 }, { 480, 272 } }) do
         assert(panel.area.w > 0 and panel.area.h > 0)
         assert(panel.area.legendX >= panel.area.x + panel.area.w)
         for _, item in ipairs(panel.series) do
+            equal(item.name.properties.font(), SMLSIZE, "metric names must use the larger legend font")
+            equal(item.value.properties.font(), SMLSIZE, "recorded values must use the larger legend font")
+            equal(item.extrema.properties.font(), SMLSIZE, "recorded extrema must use the larger legend font")
+            if panel.showExtrema then
+                assert(item.extrema.properties.y >= item.value.properties.y + panel.themeBuilder.fontHeight(SMLSIZE))
+                assert(item.extrema.properties.y + panel.themeBuilder.fontAscent(SMLSIZE) <= panel.rect.h)
+            end
             for _, run in ipairs(item.runs) do
                 if run.line and not run.line.hidden then
                     for _, point in ipairs(run.pts) do

@@ -173,14 +173,14 @@ local function text(object, value, color)
     end
 end
 
-local function label(context, color)
+local function label(context, color, font)
     return context.primitives.label(context.panel.root, context.theme, {
         x = 0,
         y = 0,
         w = 1,
         text = "",
         color = color,
-        font = TINSIZE,
+        font = font or TINSIZE,
     })
 end
 
@@ -225,8 +225,8 @@ function chart.geometry(context, rect)
     context.baseline:set({ x = area.x, y = area.y + area.h, w = area.w, h = 1 })
     context.status:set({ x = area.x, y = area.y, w = area.w })
     local count = #context.series
-    local lineHeight = builder.fontHeight(TINSIZE)
-    local pairHeight = lineHeight + builder.fontAscent(TINSIZE)
+    local lineHeight = builder.fontHeight(SMLSIZE)
+    local pairHeight = lineHeight + builder.fontAscent(SMLSIZE)
     local showExtrema = rect.h >= count * pairHeight + 2
     context.showExtrema = showExtrema
     local step = math.min(
@@ -238,7 +238,7 @@ function chart.geometry(context, rect)
         local y = first + (index - 1) * step
         local valueWidth = math.min(legend, math.max(24, item.readoutWidth or 0))
         local nameWidth = math.max(0, legend - valueWidth - 3)
-        local name = builder.fitHeading(caption(item.settings), nameWidth, TINSIZE, TINSIZE)
+        local name = builder.fitHeading(caption(item.settings), nameWidth, SMLSIZE, SMLSIZE)
         item.name:set({ x = area.legendX, y = y, w = nameWidth, text = name })
         item.value:set({ x = area.legendX + legend - valueWidth, y = y, w = valueWidth })
         item.extrema:set({ x = area.legendX, y = y + lineHeight, w = legend })
@@ -447,7 +447,7 @@ function chart.render(context)
         end
         local value = chart.format(feed and feed.value, precision)
         item.readout = value .. (value ~= "--" and unit ~= "" and (" " .. unit) or "")
-        local measured = builder.measureText(TINSIZE, item.readout)
+        local measured = builder.measureText(SMLSIZE, item.readout)
         if measured > (item.readoutWidth or 0) then
             item.readoutWidth, reflow = measured, true
         end
@@ -458,9 +458,9 @@ function chart.render(context)
             or ""
         width = math.max(
             width,
-            builder.measureText(TINSIZE, extrema),
-            builder.measureText(TINSIZE, item.readout)
-                + math.min(30, builder.measureText(TINSIZE, caption(item.settings)))
+            builder.measureText(SMLSIZE, extrema),
+            builder.measureText(SMLSIZE, item.readout)
+                + math.min(42, builder.measureText(SMLSIZE, caption(item.settings)))
                 + 3
         )
         local color = feed and feed.stale and context.theme.color.textFaint or context.theme.color.text
@@ -582,9 +582,9 @@ function chart.create(parent, rect, settings, services)
             })
         end
         item.name, item.value, item.extrema =
-            label(context, color),
-            label(context, context.theme.color.text),
-            label(context, context.theme.color.textFaint)
+            label(context, color, SMLSIZE),
+            label(context, context.theme.color.text, SMLSIZE),
+            label(context, context.theme.color.textFaint, SMLSIZE)
         context.series[index] = item
     end
     context.title, context.axisStart, context.axisEnd, context.status =
