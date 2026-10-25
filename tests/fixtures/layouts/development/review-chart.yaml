@@ -58,7 +58,6 @@ panels:
     rowSpan: 2
     config:
       label: Fixed scale
-      range: fixed
       metrics:
         - source: Alt
           rangeMin: 0

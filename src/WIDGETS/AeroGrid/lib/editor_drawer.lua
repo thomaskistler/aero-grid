@@ -581,7 +581,8 @@ local function addControl(context, state, field, index)
     local function set(value)
         queue({ action = "write", field = field, value = value, control = state.drawerControls[index] })
     end
-    local kind, control
+    local kind, control, reset
+    local auto = field.type == "number" and field.empty == "Auto"
     local leaf = field.path and field.path[#field.path] or field.key
     if field.type == "section" then
         kind = "label"
@@ -707,9 +708,9 @@ local function addControl(context, state, field, index)
         end
         options.min = math.floor((field.min or -100000) * scale)
         options.max = math.floor((field.max or 100000) * scale)
-        -- An optional field without a default is shown below its minimum as
-        -- "unset", and choosing that entry removes the field again.
-        local unset = field.empty and options.min - 1
+        -- Auto fields have a reset button; other optional fields use an
+        -- extra step below their minimum to clear the setting.
+        local unset = not auto and field.empty and options.min - 1
         if unset then
             options.min = unset
         end
@@ -757,8 +758,11 @@ local function addControl(context, state, field, index)
             local step = field.step or (1 / scale)
             set(math.floor(value / scale / step + 0.5) * step)
         end
-        if scale ~= 1 or unset then
+        if scale ~= 1 or unset or auto then
             options.display = function(value)
+                if auto and get() == nil then
+                    return field.empty
+                end
                 if unset and (value <= unset or outside(value)) then
                     return field.empty
                 end
@@ -775,6 +779,27 @@ local function addControl(context, state, field, index)
             end
             set(value)
         end
+    end
+    if auto then
+        local width = state.drawerControlHeight + 12
+        options.w = options.w - width - 4
+        local active = options.active
+        reset = assert(
+            lvgl.button(row, {
+                x = options.x + options.w + 4,
+                y = options.y,
+                w = width,
+                h = options.h,
+                text = field.empty,
+                active = function()
+                    return active() and get() ~= nil
+                end,
+                press = function()
+                    set(nil)
+                end,
+            }),
+            "cannot create native Auto reset"
+        )
     end
     control = assert(lvgl[kind](row, options), "cannot create native " .. kind)
     local errorLabel = lvgl.label(state.nativeDrawer, {
@@ -794,6 +819,7 @@ local function addControl(context, state, field, index)
         errorLabel = errorLabel,
         field = field,
         kind = kind,
+        reset = reset,
     }
     field.control = state.drawerControls[index]
     relayout(state)

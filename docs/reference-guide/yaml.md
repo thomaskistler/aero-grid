@@ -89,15 +89,18 @@ It supports 2x1, 3x1, 4x1, 2x2, 3x2, 4x2, 3x3, 4x3, and 4x4.
 | `metrics` | Contiguous list of zero to three numeric sources. Empty is valid for editor setup. |
 | `source`, `unit`, `precision` | Per-metric source name, optional unit override, and integer precision 0–3 (default sensor precision). |
 | `accent` | Per-metric trace color or panel stripe: cyan, green, orange, amber. Traces default to cyan, green, orange in order. |
-| `rangeMin`, `rangeMax` | Per-metric finite fixed bounds, default 0 and 100; maximum must exceed minimum. Shared fixed mode uses the first metric's bounds. |
+| `rangeMin`, `rangeMax` | Optional per-metric finite bounds. Omit either key for Auto on that side; zero is an explicit bound. If both are set, maximum must exceed minimum. Shared scales use the lowest configured minimum and highest configured maximum; a side with no configured bound follows all recorded series automatically. |
 | `timeRange` | `growing` (default) or `rolling`. |
 | `duration` | `30s` (default), `1m`, `2m`, `5m`, `10m`. Initial growing range or rolling window. |
 | `scaling` | `shared` (default) or `independent`. Select independent explicitly for unlike units. |
-| `range` | `auto` (default) or `fixed`. Auto uses raw lifetime recorded extrema with padded, rounded bounds. |
+| `range` | Obsolete preview setting (`auto` / `fixed`), accepted for compatibility but ignored. Only the presence of `rangeMin` / `rangeMax` determines fixed versus automatic bounds. |
 | `smoothing` | `off` (default), `light`, `medium`, `strong`; line-only EMA with approximately 0.5/1/2-second response. |
 
 Each metric also accepts `label`. The title is above the shared plot, with each
 metric's name/value and raw min/max grouped in a right-hand legend.
+Automatic bounds use raw lifetime recorded extrema with padding and rounding.
+For example, `rangeMin: 0` with no `rangeMax` anchors the bottom at zero and
+automatically adjusts the top; omit both keys for a fully automatic range.
 
 Set dashboard-level `session.armSource` to a readable numeric source (positive
 means armed). Recording pauses on disarm, freezes the readouts, and resumes the
@@ -126,7 +129,6 @@ panels:
       timeRange: growing
       duration: 30s
       scaling: independent
-      range: auto
       smoothing: light
       metrics:
         - source: RxBt

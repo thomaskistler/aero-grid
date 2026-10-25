@@ -14,11 +14,10 @@ with its recorded minimum and maximum on the next line.
 | --- | --- |
 | **Label** | Title above the plot. Empty uses the source name for one series, or CHART for multiple series. |
 | **Metrics** | Zero to three sources. Tap **+**, then choose each entry's **Source**, optional **Label**, **Unit**, **Precision** (0–3, or Sensor), and **Color**. |
-| **Range min**, **Range max** | Per-entry fixed vertical bounds, defaulting to 0 and 100. Maximum must exceed minimum. In shared fixed mode, the first entry supplies the bounds for all traces. |
+| **Range min**, **Range max** | Optional per-entry vertical bounds. Both default to **Auto**. Enter a number to fix that bound, or tap its **Auto** button to clear it. If both are entered, maximum must exceed minimum. |
 | **Time range** | Growing keeps the recording visible by doubling its time scale; rolling shows the latest fixed window. |
 | **Initial / window duration** | 30 seconds, 1 minute, 2 minutes, 5 minutes, or 10 minutes. This is the initial growing range or the rolling window. |
 | **Series scales** | Shared uses one vertical scale. Independent gives each trace its own scale, suitable for voltage/current or RSSI/link quality. Independent heights are not directly comparable. |
-| **Value range** | Auto follows recorded extrema with padding and rounded bounds. Fixed uses the configured bounds and clips the plot, not the recorded values. |
 | **Line smoothing** | Off, light, medium, or strong. The exponential filter has approximately 0.5, 1, or 2 seconds of response time; only the line is filtered. |
 | **Accent** | Panel stripe color, independent of trace colors. |
 
@@ -26,6 +25,21 @@ Configure the dashboard's shared `session.armSource` in its layout YAML before
 recording. It is a numeric EdgeTX source, such as `sa` or `ch5`; positive means
 armed. This dashboard setting is currently YAML-only. See the
 [YAML reference](../reference-guide/yaml.md#chart).
+
+### Vertical bounds
+
+Each bound is independent: set only **Range min** to anchor the bottom while the
+top grows automatically, set only **Range max** to fix the top, or enter both for
+a fixed range. **Auto** follows raw recorded extrema with padding and rounded
+bounds. Explicit bounds clip the plot, not the recorded values or legend extrema.
+An automatic bound always leaves a nonzero span, even if all readings fall
+outside the configured opposite bound.
+
+With **Shared** series scales, the lowest entered minimum and highest entered
+maximum define the common bounds. If nobody specifies one side, that side follows
+all series' recorded extrema automatically. With **Independent**, each metric's
+bounds apply only to its own trace. The former panel-wide **Value range** selector
+is no longer needed.
 
 ## Behavior
 

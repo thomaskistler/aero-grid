@@ -152,6 +152,18 @@ local function control(key, leaf)
     error(panelType .. ": missing control " .. key .. "/" .. tostring(leaf))
 end
 
+local function resetBound(leaf)
+    for _, row in ipairs(context.editorUi.drawerControls) do
+        if row.field.key == "metrics" and row.field.path and row.field.path[#row.field.path] == leaf then
+            assert(row.reset and row.reset.properties.active(), "configured chart bounds must offer Auto")
+            row.reset.properties.press()
+            drawerReady()
+            return
+        end
+    end
+    error("missing chart bound " .. leaf)
+end
+
 local function back()
     lvgl.close(context.editorUi.nativeDrawer)
     drawerReady()
@@ -221,6 +233,13 @@ for catalogIndex, item in ipairs(editor.CATALOG) do
     end
     assert(supported, panelType .. ": added at an unsupported size")
 
+    if panelType == "chart" then
+        for _, row in ipairs(context.editorUi.drawerControls) do
+            if row.field.key == "range" then
+                assert(row.row.hidden, "the obsolete panel-wide range selector must stay hidden")
+            end
+        end
+    end
     if panelType == "metric" or panelType == "chart" then
         assert(#placement.config.metrics == 0, panelType .. " must start with an empty list")
         action("append", "metrics").press()
@@ -233,6 +252,32 @@ for catalogIndex, item in ipairs(editor.CATALOG) do
         drawerReady()
         control("metrics", "label").set("Installed altitude")
         drawerReady()
+        if panelType == "chart" then
+            local entry = placement.config.metrics[1]
+            local minimum, maximum = control("metrics", "rangeMin"), control("metrics", "rangeMax")
+            assert(minimum.display(minimum.get()) == "Auto" and maximum.display(maximum.get()) == "Auto")
+            minimum.set(0)
+            drawerReady()
+            maximum.set(2000)
+            drawerReady()
+            assert(entry.rangeMin == 0 and entry.rangeMax == 200, "entered bounds must be retained")
+            resetBound("rangeMax")
+            assert(entry.rangeMin == 0 and entry.rangeMax == nil, "Auto must clear only the selected bound")
+            resetBound("rangeMin")
+            assert(entry.rangeMin == nil and entry.rangeMax == nil, "both bounds can be automatic")
+            minimum.set(-100)
+            drawerReady()
+            maximum.set(2000)
+            drawerReady()
+            assert(entry.rangeMin == -10 and entry.rangeMax == 200, "negative bounds must remain editable")
+            resetBound("rangeMin")
+            assert(entry.rangeMin == nil and entry.rangeMax == 200, "one-sided bounds must survive saving")
+            for _, row in ipairs(context.editorUi.drawerControls) do
+                if row.field.path and row.field.path[#row.field.path] == "rangeMin" then
+                    assert(not row.reset.properties.active(), "Auto is disabled when the bound is already automatic")
+                end
+            end
+        end
         back()
     end
     back()
@@ -266,6 +311,10 @@ for catalogIndex, item in ipairs(editor.CATALOG) do
     running()
     if panelType == "metric" or panelType == "chart" then
         assert(context.panels[1].settings.metrics[1].source == "Alt", "configured metric source did not reload")
+    end
+    if panelType == "chart" then
+        local entry = context.panels[1].settings.metrics[1]
+        assert(entry.rangeMin == nil and entry.rangeMax == 200, "Auto and explicit bounds did not reload")
     end
 end
 

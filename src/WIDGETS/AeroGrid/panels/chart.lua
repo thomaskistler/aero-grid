@@ -30,8 +30,8 @@ local chart = {
                     empty = "Sensor",
                 },
                 { key = "accent", label = "Color", type = "string", choices = { "cyan", "green", "orange", "amber" } },
-                { key = "rangeMin", label = "Range min", type = "number", step = 0.1, default = 0 },
-                { key = "rangeMax", label = "Range max", type = "number", step = 0.1, default = 100 },
+                { key = "rangeMin", label = "Range min", type = "number", step = 0.1, empty = "Auto" },
+                { key = "rangeMax", label = "Range max", type = "number", step = 0.1, empty = "Auto" },
             },
         },
         {
@@ -56,7 +56,17 @@ local chart = {
             default = "shared",
             choices = { "shared", "independent" },
         },
-        { key = "range", label = "Value range", type = "string", default = "auto", choices = { "auto", "fixed" } },
+        {
+            -- Accept earlier preview layouts without keeping the obsolete selector.
+            key = "range",
+            label = "Value range",
+            type = "string",
+            default = "auto",
+            choices = { "auto", "fixed" },
+            visibleWhen = function()
+                return false
+            end,
+        },
         {
             key = "smoothing",
             label = "Line smoothing",
@@ -87,7 +97,7 @@ function chart.validateSettings(settings)
     if type(settings.metrics) ~= "table" then
         return { "metrics must contain a contiguous list of up to 3 sources" }
     end
-    local count = 0
+    local count, sharedMin, sharedMax = 0, nil, nil
     for key, entry in pairs(settings.metrics) do
         count = count + 1
         local prefix = "metrics[" .. tostring(key) .. "]"
@@ -109,17 +119,22 @@ function chart.validateSettings(settings)
                     warnings[#warnings + 1] = prefix .. "." .. tostring(field) .. " is invalid"
                 end
             end
-            if
-                finite(entry.rangeMin or 0)
-                and finite(entry.rangeMax or 100)
-                and (entry.rangeMin or 0) >= (entry.rangeMax or 100)
-            then
+            if finite(entry.rangeMin) and finite(entry.rangeMax) and entry.rangeMin >= entry.rangeMax then
                 warnings[#warnings + 1] = prefix .. ".rangeMax must be greater than rangeMin"
+            end
+            if finite(entry.rangeMin) then
+                sharedMin = sharedMin and math.min(sharedMin, entry.rangeMin) or entry.rangeMin
+            end
+            if finite(entry.rangeMax) then
+                sharedMax = sharedMax and math.max(sharedMax, entry.rangeMax) or entry.rangeMax
             end
         end
     end
     if count > 3 or #settings.metrics ~= count then
         warnings[#warnings + 1] = "metrics must contain a contiguous list of up to 3 sources"
+    end
+    if settings.scaling ~= "independent" and sharedMin and sharedMax and sharedMin >= sharedMax then
+        warnings[#warnings + 1] = "shared rangeMax must be greater than shared rangeMin"
     end
     return warnings
 end
@@ -246,31 +261,47 @@ local function normalRange(low, high)
         return 0, 1
     end
     local span = math.max(high - low, math.abs(high) * 0.02, 0.1)
-    local step = 10 ^ math.floor(math.log(span) / math.log(10))
+    local step = 10 ^ math.floor(math.log(span) / math.log(10) - 1)
     return math.floor((low - span * 0.08) / step) * step, math.ceil((high + span * 0.08) / step) * step
 end
 
-function chart.ranges(context)
-    local sharedLow, sharedHigh
-    for _, item in ipairs(context.series) do
-        local low, high
-        if context.settings.range == "fixed" then
-            low, high = item.settings.rangeMin or 0, item.settings.rangeMax or 100
-        else
-            low, high = normalRange(item.feed and item.feed.min, item.feed and item.feed.max)
-        end
-        item.low, item.high = low, high
-        if context.settings.range == "fixed" or item.feed and item.feed.available then
-            sharedLow = sharedLow and math.min(sharedLow, low) or low
-            sharedHigh = sharedHigh and math.max(sharedHigh, high) or high
+local function valueRange(low, high, minimum, maximum)
+    local autoLow, autoHigh = normalRange(low, high)
+    low, high = minimum or autoLow, maximum or autoHigh
+    if high <= low then
+        if minimum ~= nil and maximum == nil then
+            high = low + math.max(math.abs(low) * 0.02, 0.1)
+        elseif maximum ~= nil and minimum == nil then
+            low = high - math.max(math.abs(high) * 0.02, 0.1)
         end
     end
-    if context.settings.scaling ~= "independent" then
-        if context.settings.range == "fixed" and context.series[1] then
-            sharedLow, sharedHigh = context.series[1].low, context.series[1].high
+    return low, high
+end
+
+function chart.ranges(context)
+    local sharedLow, sharedHigh, minimum, maximum
+    local independent = context.settings.scaling == "independent"
+    for _, item in ipairs(context.series) do
+        local feed, settings = item.feed, item.settings
+        if independent then
+            item.low, item.high = valueRange(feed and feed.min, feed and feed.max, settings.rangeMin, settings.rangeMax)
+        else
+            if feed and feed.available then
+                sharedLow = sharedLow and math.min(sharedLow, feed.min) or feed.min
+                sharedHigh = sharedHigh and math.max(sharedHigh, feed.max) or feed.max
+            end
+            if settings.rangeMin ~= nil then
+                minimum = minimum and math.min(minimum, settings.rangeMin) or settings.rangeMin
+            end
+            if settings.rangeMax ~= nil then
+                maximum = maximum and math.max(maximum, settings.rangeMax) or settings.rangeMax
+            end
         end
+    end
+    if not independent then
+        local low, high = valueRange(sharedLow, sharedHigh, minimum, maximum)
         for _, item in ipairs(context.series) do
-            item.low, item.high = sharedLow or 0, sharedHigh or 1
+            item.low, item.high = low, high
         end
     end
 end

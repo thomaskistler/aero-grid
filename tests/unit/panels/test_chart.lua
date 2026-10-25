@@ -20,6 +20,13 @@ for _, value in ipairs({ "invalid", false, math.huge, 0 / 0 }) do
 end
 assert(#chart.validateSettings({ metrics = { { precision = 4 } } }) > 0)
 assert(#chart.validateSettings({ metrics = { { rangeMin = 10, rangeMax = 10 } } }) > 0)
+equal(#chart.validateSettings({ metrics = { { rangeMin = 200 } } }), 0)
+equal(#chart.validateSettings({ metrics = { { rangeMax = -200 } } }), 0)
+assert(#chart.validateSettings({ metrics = { { rangeMin = 100 }, { rangeMax = 0 } } }) > 0)
+equal(#chart.validateSettings({
+    scaling = "independent",
+    metrics = { { rangeMin = 100 }, { rangeMax = 0 } },
+}), 0)
 assert(#chart.validateSettings({ metrics = { { unknown = 1 } } }) > 0)
 assert(#chart.validateSettings({ metrics = { {}, {}, {}, {} } }) > 0)
 assert(#chart.validateSettings({ metrics = { [2] = {} } }) > 0)
@@ -28,6 +35,10 @@ equal(#warnings, 0)
 equal(settings.duration, "30s")
 equal(settings.smoothing, "off")
 equal(#settings.metrics, 0)
+settings, warnings = host.resolveSettings(chart, { range = "fixed", metrics = { { rangeMin = 200 } } })
+equal(#warnings, 0, "earlier preview layouts must remain loadable")
+equal(settings.metrics[1].rangeMin, 200)
+equal(settings.metrics[1].rangeMax, nil)
 assert(chart.intervalFor(12000, 200, 1) > chart.intervalFor(3000, 200, 1))
 assert(chart.intervalFor(12000, 100, 1) > chart.intervalFor(12000, 200, 1))
 local scales = {
@@ -48,6 +59,49 @@ scales.series[1].settings.rangeMin, scales.series[1].settings.rangeMax = -10, 50
 chart.ranges(scales)
 equal(scales.series[2].low, -10)
 equal(scales.series[2].high, 50)
+scales.settings.range = "auto"
+chart.ranges(scales)
+equal(scales.series[2].low, -10, "explicit bounds take precedence over the legacy range selector")
+equal(scales.series[2].high, 50)
+
+local function expectBounds(config, rawLow, rawHigh, low, high)
+    local item = { settings = config, feed = { available = rawLow ~= nil, min = rawLow, max = rawHigh } }
+    chart.ranges({ settings = { scaling = "independent" }, series = { item } })
+    assert(math.abs(item.low - low) < 1e-8, string.format("expected lower bound %g, got %g", low, item.low))
+    assert(math.abs(item.high - high) < 1e-8, string.format("expected upper bound %g, got %g", high, item.high))
+    assert(item.high > item.low, "one-sided bounds must always leave a usable range")
+end
+
+expectBounds({}, 100, 300, 80, 320)
+expectBounds({}, 0, 100, -10, 110)
+expectBounds({ rangeMin = 0 }, 100, 300, 0, 320)
+expectBounds({ rangeMax = 400 }, 100, 300, 80, 400)
+expectBounds({ rangeMin = 0, rangeMax = 200 }, 100, 300, 0, 200)
+expectBounds({ rangeMin = -50, rangeMax = -10 }, 100, 300, -50, -10)
+expectBounds({ rangeMin = 500 }, 100, 300, 500, 510)
+expectBounds({ rangeMax = 0 }, 100, 300, -0.1, 0)
+expectBounds({ rangeMin = 100 }, nil, nil, 100, 102)
+expectBounds({ rangeMax = -100 }, nil, nil, -102, -100)
+expectBounds({}, 0, 0, -0.01, 0.01)
+
+scales.settings.scaling = "shared"
+scales.series[1].settings = { rangeMin = 0 }
+scales.series[2].settings = { rangeMax = 30 }
+chart.ranges(scales)
+equal(scales.series[1].low, 0)
+equal(scales.series[1].high, 30, "shared ranges use explicit bounds from any metric")
+equal(scales.series[2].high, 30)
+scales.series[1].settings = { rangeMin = 10, rangeMax = 20 }
+scales.series[2].settings = { rangeMin = 0, rangeMax = 30 }
+chart.ranges(scales)
+equal(scales.series[1].low, 0, "shared ranges use the outermost configured bounds")
+equal(scales.series[1].high, 30)
+scales.settings.scaling = "independent"
+chart.ranges(scales)
+equal(scales.series[1].low, 10)
+equal(scales.series[1].high, 20)
+equal(scales.series[2].low, 0)
+equal(scales.series[2].high, 30)
 
 fixture.reset()
 fixture.radio.values[300] = 0
@@ -63,6 +117,7 @@ fixture.radio.values[300] = 1024
 fixture.pump(context, 40)
 equal(power.status.properties.text, "")
 assert(power.session.recording)
+assert(power.series[1].low < 24 and power.series[1].high > 24)
 equal(power.series[1].feed.value, 24)
 equal(power.series[2].feed.value, 10)
 assert(power.series[1].runs[1].line)
