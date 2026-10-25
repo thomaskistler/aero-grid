@@ -523,7 +523,7 @@ local function testSpanGalleryIsComplete()
     local compared = 0
     for _, stem in ipairs(stems) do
         local module = assert(loadfile(sourcePath .. "panels/" .. stem .. ".lua"))()
-        -- The YAML-only map is outside the catalogue; its own suite covers all spans.
+        -- Map has its own imagery-backed fixture and all-span integration suite.
         if stem ~= "map-prototype" and panelHost.supportsSpan(module, 1, 1) then
             compared = compared + 1
             assert(

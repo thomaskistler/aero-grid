@@ -163,9 +163,10 @@ first nonempty label or source, then `itemLabel` and the one-based index;
 lists without `itemLabel` use `"Entry"`. Do not build a separate settings UI
 for each panel.
 
-The [map prototype](map-prototype.md) is a YAML-only, 4x4, TX16S-sized
-experiment with a synthetic pack included in the simulator build. It is not a normal editor-catalog
-panel or a finalized map installation format.
+The [map prototype](map-prototype.md) is available as **Map** in the radio editor
+and supports all grid spans on the TX16S-sized target. The simulator build includes
+a real aerial-imagery fixture. On the radio it requires an installed v2 map area
+and live GPS; coverage is selected automatically.
 
 The public `theme.lua` API composes palette/state resolution with
 `typography.lua` (measurement, font fitting, unit metrics) and `panel_layout.lua`

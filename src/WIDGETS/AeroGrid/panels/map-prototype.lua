@@ -35,7 +35,6 @@ local map = {
 
 local TILE = 256
 local LIMIT = 85.05112878
-local MAX_SLOTS = 9
 local MAX_AREA_NAME_BYTES = 240
 local TRAIL_POINTS = 31
 local TRAIL_TICKS = 3000
@@ -258,7 +257,6 @@ function map.clampView(level, width, height, x, y)
 end
 
 local function geometry(context, rect)
-    assert(rect.w <= 480 and rect.h <= 272, "map prototype currently targets TX16S 480x272 only")
     local frame = context.themeBuilder.frame(context.theme, rect, context.fonts, nil, context.badgeText)
     local x = context.theme.spacing.accentWidth
     local width = math.max(1, rect.w - x)
@@ -273,6 +271,26 @@ local function geometry(context, rect)
         zoomY = height - CONTROLS_HEIGHT - 8,
         showZoom = width >= 100 and height >= 164,
     }
+end
+
+local function prepareTileSlots(context)
+    local area = context.area
+    local count = (math.ceil(area.w / TILE) + 1) * (math.ceil(area.h / TILE) + 1)
+    for index = #context.tiles + 1, count do
+        local slot = { file = "", visible = false }
+        slot.image = lvgl.image(context.tileLayer, {
+            x = 0,
+            y = 0,
+            w = TILE,
+            h = TILE,
+            floating = true,
+            file = function()
+                return slot.file
+            end,
+        })
+        context.tiles[index] = slot
+        lvgl.hide(slot.image)
+    end
 end
 
 local function readPack(host, name)
@@ -983,7 +1001,7 @@ local function prepareView(context)
             }
         end
     end
-    assert(#wanted <= MAX_SLOTS, "map tile pool exhausted")
+    assert(#wanted <= #context.tiles, "map tile pool exhausted")
     for _, tile in ipairs(wanted) do
         for index, slot in ipairs(context.tiles) do
             if slot.file == tile.file then
@@ -1578,22 +1596,15 @@ function map.create(parent, rect, settings, services)
         scrollDir = 0,
         scrollBar = false,
     })
-    for index = 1, MAX_SLOTS do
-        local slot = { file = "" }
-        slot.image = lvgl.image(context.viewport, {
-            x = 0,
-            y = 0,
-            w = TILE,
-            h = TILE,
-            floating = true,
-            file = function()
-                return slot.file
-            end,
-        })
-        context.tiles[index] = slot
-        lvgl.hide(slot.image)
-        slot.visible = false
-    end
+    context.tileLayer = lvgl.box(context.viewport, {
+        x = 0,
+        y = 0,
+        w = area.w,
+        h = area.h,
+        scrollDir = 0,
+        scrollBar = false,
+    })
+    prepareTileSlots(context)
     if (settings.flightPath or "off") ~= "off" then
         local lineCount = settings.flightPath == "trail" and TRAIL_POINTS - 1 or FULL_RENDER_SEGMENTS
         if settings.positionMarker == "arrow" then
@@ -1695,6 +1706,8 @@ function map.update(context, rect)
     context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
     placeStatus(context)
     context.viewport:set({ x = area.x, y = area.y, w = area.w, h = area.h })
+    context.tileLayer:set({ w = area.w, h = area.h })
+    prepareTileSlots(context)
     if context.pathLayer then
         context.pathOutlineLayer:set({ w = area.w, h = area.h })
         context.pathLayer:set({ w = area.w, h = area.h })
