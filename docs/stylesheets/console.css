@@ -219,21 +219,6 @@ body::before {
   transform: translateY(-50%) translateX(0);
 }
 
-.ag-icon-link-disabled {
-  cursor: not-allowed;
-  opacity: 0.42;
-}
-
-.ag-icon-link-disabled:hover,
-.ag-icon-link-disabled:focus-visible {
-  color: #64798d;
-  background: transparent;
-}
-
-.ag-icon-link-disabled::after {
-  content: "Map Manager · in a follow-up";
-}
-
 .navbar .nav.navbar-nav {
   flex-direction: row;
   align-items: center;

@@ -41,6 +41,35 @@ class DocumentationLayoutTests(unittest.TestCase):
         cls.browser = cls.playwright.chromium.launch()
         cls.addClassCleanup(cls.browser.close)
 
+    def test_rail_contains_only_available_guides(self):
+        labels = ["Install / Upgrade", "User Guide", "Reference Guide", "Developer Guide"]
+        for path, active in (
+            ("user-guide/installation/", "Install / Upgrade"),
+            ("user-guide/add-dashboard/", "User Guide"),
+            ("reference-guide/", "Reference Guide"),
+            ("panels/metric/", "Reference Guide"),
+            ("developer-guide/build/", "Developer Guide"),
+        ):
+            with self.subTest(path=path):
+                page = self.browser.new_page()
+                try:
+                    page.goto(f"{self.url}/{path}")
+                    rail = page.get_by_role("navigation", name="Main navigation", exact=True)
+                    self.assertEqual(rail.locator(":scope > *").count(), 4)
+                    self.assertEqual(
+                        rail.get_by_role("link").evaluate_all(
+                            "links => links.map(link => link.getAttribute('aria-label'))"
+                        ),
+                        labels,
+                    )
+                    self.assertEqual(rail.locator(".active").count(), 1)
+                    self.assertEqual(
+                        rail.locator(".active[aria-current='page']").get_attribute("aria-label"),
+                        active,
+                    )
+                finally:
+                    page.close()
+
     def test_tables_stay_inside_page(self):
         for width in (320, 375, 768, 1024, 1440):
             for path in PAGES:
