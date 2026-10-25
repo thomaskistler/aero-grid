@@ -56,6 +56,7 @@ fixture.pump(context, 40)
 equal(#context.errors, 0, table.concat(context.errors, "\n"))
 equal(#context.panels, 4)
 local power = fixture.instanceOf(context, "power")
+equal(power.indicator, nil, "charts must not create a recording dot")
 equal(power.series[1].feed.available, false)
 equal(power.status.properties.text, "WAITING FOR ARM")
 fixture.radio.values[300] = 1024

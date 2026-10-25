@@ -193,7 +193,7 @@ function chart.geometry(context, rect)
         axisY = math.max(0, rect.h - builder.fontHeight(TINSIZE)),
     }
     context.area = area
-    local titleWidth = math.max(0, area.x + area.w - frame.labelX - 7)
+    local titleWidth = math.max(0, area.x + area.w - frame.labelX)
     frame.labelWidth = titleWidth
     context.primitives.setHeading(
         context.title,
@@ -209,7 +209,6 @@ function chart.geometry(context, rect)
     context.endLabel = nil
     context.baseline:set({ x = area.x, y = area.y + area.h, w = area.w, h = 1 })
     context.status:set({ x = area.x, y = area.y, w = area.w })
-    context.indicator:set({ x = area.x + area.w - 3, y = frame.labelY + 3, w = 3, h = 3 })
     local count = #context.series
     local lineHeight = builder.fontHeight(TINSIZE)
     local pairHeight = lineHeight + builder.fontAscent(TINSIZE)
@@ -491,11 +490,6 @@ function chart.refresh(context)
         end
     end
     text(context.status, status, context.theme.color.textFaint)
-    if session and session.recording then
-        context.indicator:set({ color = context.theme.color.green })
-    else
-        context.indicator:set({ color = context.theme.color.track })
-    end
     if status ~= "" then
         return 20
     end
@@ -566,10 +560,6 @@ function chart.create(parent, rect, settings, services)
         label(context), label(context), label(context), label(context)
     context.baseline =
         lvgl.hline(context.panel.root, { x = 0, y = 0, w = 1, h = 1, color = context.theme.color.border })
-    context.indicator = lvgl.rectangle(
-        context.panel.root,
-        { x = 0, y = 0, w = 3, h = 3, color = context.theme.color.track, filled = true }
-    )
     chart.geometry(context, rect)
     chart.refresh(context)
     return context

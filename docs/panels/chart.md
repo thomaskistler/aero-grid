@@ -61,8 +61,7 @@ separate reset control or persistent recording.
 
 ## States
 
-The green dot means recording; the muted dot means paused. Missing telemetry
-creates a gap and dims the last recorded value, without recording a false zero.
+Missing telemetry creates a gap and dims the last recorded value, without recording a false zero.
 An actual fresh numeric zero remains valid.
 
 | Message | Meaning |
