@@ -110,13 +110,17 @@ end
 
 for _, catalog in ipairs(editor.CATALOG) do
     if catalog.type ~= "host-diagnostics" and catalog.type ~= "service-probe" then
+        local module = fixture.module("panels/" .. catalog.type .. ".lua")
+        local panelHost = fixture.module("lib/panel_host.lua")
         for _, config in ipairs(variants[catalog.type] or { {} }) do
             for rows = 1, 4 do
                 for columns = 1, 4 do
-                    for _, fullscreen in ipairs({ false, true }) do
-                        exercise(catalog.type, config, columns, rows, fullscreen, 4 - columns, 4 - rows)
-                        if rows >= 3 and (columns < 4 or rows < 4) then
-                            exercise(catalog.type, config, columns, rows, fullscreen, 0, 0)
+                    if panelHost.supportsSpan(module, columns, rows) then
+                        for _, fullscreen in ipairs({ false, true }) do
+                            exercise(catalog.type, config, columns, rows, fullscreen, 4 - columns, 4 - rows)
+                            if rows >= 3 and (columns < 4 or rows < 4) then
+                                exercise(catalog.type, config, columns, rows, fullscreen, 0, 0)
+                            end
                         end
                     end
                 end

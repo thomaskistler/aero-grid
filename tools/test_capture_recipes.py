@@ -125,9 +125,23 @@ class CaptureRecipeTests(unittest.TestCase):
             recipe = load_recipe(path)
             if recipe["panel"] in ("host-diagnostics", "service-probe"):
                 self.assertEqual(list(recipe["panels"]), ["2x2"])
+            elif recipe["panel"] == "chart":
+                self.assertEqual(list(recipe["panels"]), ["2x1", "2x2"])
+                self.assertIn("instance.session.elapsed", readiness(recipe))
             else:
                 self.assertEqual(list(recipe["panels"]), ["1x2", "2x1", "2x2"])
                 self.assertIn("feed", readiness(recipe))
+
+    def test_chart_recording_capture(self):
+        recipe = load_recipe(RECIPE_DIR / "chart.yaml")
+        self.assertEqual(yaml.safe_load(config_yaml(recipe["config"])), recipe["config"])
+        inputs = fixture_inputs(recipe)
+        self.assertIn('name == "capture-arm"', inputs)
+        self.assertIn("elapsed >= 1100 and elapsed < 2200", inputs)
+        self.assertIn("math.sin", inputs)
+        recipe["config"]["metrics"][0]["source"] = "Missing"
+        with self.assertRaisesRegex(ValueError, "Missing sample"):
+            self.load(recipe)
 
     def test_nested_metrics_config(self):
         recipe = load_recipe(RECIPE_DIR / "metric.yaml")

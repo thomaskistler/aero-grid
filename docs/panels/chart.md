@@ -1,0 +1,75 @@
+# Chart
+
+![Chart at 2x2](../assets/panels/chart/2x2.png)
+
+![Chart at 2x1](../assets/panels/chart/2x1.png)
+
+One chart overlays up to three numeric telemetry sources. Its title sits above
+the plot; the compact right legend groups each source's name and recorded value
+with its recorded minimum and maximum on the next line.
+
+## Settings
+
+| Setting | Purpose |
+| --- | --- |
+| **Label** | Title above the plot. Empty uses the source name for one series, or CHART for multiple series. |
+| **Metrics** | Zero to three sources. Tap **+**, then choose each entry's **Source**, optional **Label**, **Unit**, **Precision** (0–3, or Sensor), and **Color**. |
+| **Range min**, **Range max** | Per-entry fixed vertical bounds, defaulting to 0 and 100. Maximum must exceed minimum. In shared fixed mode, the first entry supplies the bounds for all traces. |
+| **Time range** | Growing keeps the recording visible by doubling its time scale; rolling shows the latest fixed window. |
+| **Initial / window duration** | 30 seconds, 1 minute, 2 minutes, 5 minutes, or 10 minutes. This is the initial growing range or the rolling window. |
+| **Series scales** | Shared uses one vertical scale. Independent gives each trace its own scale, suitable for voltage/current or RSSI/link quality. Independent heights are not directly comparable. |
+| **Value range** | Auto follows recorded extrema with padding and rounded bounds. Fixed uses the configured bounds and clips the plot, not the recorded values. |
+| **Line smoothing** | Off, light, medium, or strong. The exponential filter has approximately 0.5, 1, or 2 seconds of response time; only the line is filtered. |
+| **Accent** | Panel stripe color, independent of trace colors. |
+
+Configure the dashboard's shared `session.armSource` in its layout YAML before
+recording. It is a numeric EdgeTX source, such as `sa` or `ch5`; positive means
+armed. This dashboard setting is currently YAML-only. See the
+[YAML reference](../reference-guide/yaml.md#chart).
+
+## Behavior
+
+Recording starts when armed, pauses when disarmed, and **continues the existing
+recording on rearm**. Disarmed time does not occupy horizontal space. A dashed
+marker and a broken trace distinguish resumed recordings or gaps in telemetry.
+The right-hand value freezes when disarmed; the down/up arrows show raw minimum
+and maximum across all recorded armed periods, including in rolling mode.
+
+Growing mode starts at the selected duration. Exceeding 30 seconds, for example,
+changes the range to 60 seconds, shrinking existing history into the left half.
+Rolling mode discards old plot detail while preserving lifetime recorded extrema.
+The axis labels show cumulative armed time.
+
+Sources share firmware polling with other panels. Raw extrema are collected at
+each successful poll, even when the chart redraws less often. Drawing frequency
+adapts to the horizontal time resolution. Bounded display buckets retain first,
+last, minimum, and maximum points; long recordings are progressively coarsened,
+not stored as a full-resolution log. Old interruptions may lose plot detail
+during compaction, but the service never joins across a known gap.
+
+All series occupy **one plot**, not separate mini-charts. Use multiple panels for
+separate charts. Supported spans are 2x1, 3x1, 4x1, 2x2, 3x2, 4x2, 3x3, 4x3,
+and 4x4; additional height goes to the plot rather than stretching the legend.
+The panel respects the App menu exclusion area.
+In unusually short widget zones, extrema rows are hidden rather than overlapping
+the recorded values; they return when sufficient height is available.
+
+History lives in RAM and continues while the dashboard receives background
+callbacks. Geometry-only reflow preserves it. Reloading/restarting the dashboard,
+including applying editor changes that rebuild it, clears history. There is no
+separate reset control or persistent recording.
+
+## States
+
+The green dot means recording; the muted dot means paused. Missing telemetry
+creates a gap and dims the last recorded value, without recording a false zero.
+An actual fresh numeric zero remains valid.
+
+| Message | Meaning |
+| --- | --- |
+| **SET ARM SOURCE** | Configure `session.armSource`; recording is disabled without it. |
+| **ARM N/A** | The configured arm source is unavailable; recording is paused. |
+| **ADD METRICS** | Add a source in the panel settings. |
+| **WAITING FOR ARM** | No samples have been recorded yet. |
+| **NO DATA** | Armed, but no configured source has supplied a valid numeric sample. |
+| **HISTORY N/A** | The history service is missing or has failed; consult diagnostics. |

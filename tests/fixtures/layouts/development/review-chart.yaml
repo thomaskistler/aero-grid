@@ -1,0 +1,65 @@
+version: 3
+grid:
+  columns: 4
+  rows: 4
+session:
+  armSource: sa
+panels:
+  - id: power
+    type: chart
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: Power
+      scaling: independent
+      duration: 30s
+      metrics:
+        - source: RxBt
+          label: RX
+          precision: 1
+        - source: Curr
+          label: A
+          precision: 1
+  - id: recording
+    type: chart
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: Recorded
+      scaling: independent
+      smoothing: light
+      metrics:
+        - source: Alt
+          label: ALT
+        - source: Curr
+          label: A
+        - source: RxBt
+          label: RX
+  - id: rolling
+    type: chart
+    col: 0
+    row: 1
+    colSpan: 2
+    rowSpan: 1
+    config:
+      timeRange: rolling
+      duration: 30s
+      metrics:
+        - source: Alt
+  - id: fixed
+    type: chart
+    col: 0
+    row: 2
+    colSpan: 4
+    rowSpan: 2
+    config:
+      label: Fixed scale
+      range: fixed
+      metrics:
+        - source: Alt
+          rangeMin: 0
+          rangeMax: 200

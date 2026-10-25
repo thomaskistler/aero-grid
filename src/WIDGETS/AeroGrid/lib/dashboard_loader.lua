@@ -141,6 +141,7 @@ function module.new(dependencies)
             control = byId.control,
             extrema = byId.extrema,
             navigation = byId.navigation,
+            history = byId.history,
         }
     end
 

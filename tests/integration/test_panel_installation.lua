@@ -221,8 +221,8 @@ for catalogIndex, item in ipairs(editor.CATALOG) do
     end
     assert(supported, panelType .. ": added at an unsupported size")
 
-    if panelType == "metric" then
-        assert(#placement.config.metrics == 0, "Metric must start with an empty list")
+    if panelType == "metric" or panelType == "chart" then
+        assert(#placement.config.metrics == 0, panelType .. " must start with an empty list")
         action("append", "metrics").press()
         drawerReady()
         assert(#placement.config.metrics == 1 and placement.config.metrics[1].source == nil, "first metric is blank")
@@ -264,7 +264,7 @@ for catalogIndex, item in ipairs(editor.CATALOG) do
     context = fixture.createLoaded(nil, { Layout = name, Theme = "modern-dark" }, path)
     same(context.document, expected)
     running()
-    if panelType == "metric" then
+    if panelType == "metric" or panelType == "chart" then
         assert(context.panels[1].settings.metrics[1].source == "Alt", "configured metric source did not reload")
     end
 end

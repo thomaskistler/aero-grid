@@ -232,6 +232,12 @@ function telemetryService:reading(name)
     return entry and entry.view or nil
 end
 
+--- Observe completed polls without adding firmware reads.
+function telemetryService:observe(observer)
+    self.observers = self.observers or {}
+    self.observers[#self.observers + 1] = observer
+end
+
 --- Resolve a source name to its EdgeTX id, unit, and value shape.
 ---@param entry table
 ---@param now integer
@@ -403,6 +409,17 @@ end
 ---@param now integer
 local function pollEntry(service, entry, now)
     service:poll(entry, now)
+    if not service.observers then
+        return
+    end
+    for _, observer in ipairs(service.observers) do
+        if not observer.failed and not observer.failure then
+            local ok, message = pcall(observer.sample, observer, entry.view, now)
+            if not ok then
+                observer.failure = tostring(message)
+            end
+        end
+    end
 end
 
 function telemetryService:update(now)

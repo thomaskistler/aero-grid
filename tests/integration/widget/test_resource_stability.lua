@@ -33,13 +33,31 @@ local function finish()
         assert(output.showRows == output.area.count, "output rows did not finish mounting")
         assert(output.rows[1].feed.available, "output service was not exercised")
     end
+    if fixture.instanceOf(context, "power") then
+        for _ = 1, 100 do
+            refresh()
+        end
+        for _, entry in ipairs(context.panels) do
+            for _, item in ipairs(entry.instance.series or {}) do
+                assert(item.runs[1] and item.runs[1].line, "chart traces did not finish mounting")
+            end
+        end
+    end
     assert(#context.errors == 0, table.concat(context.errors, "\n"))
     fixture.lvglMock.releaseClearedObjects()
     collectgarbage("collect")
 end
 
-local dashboards =
-    { "main", "review-metric", "review-navigation", "review-output", "Diagnostics", "services", "services2" }
+local dashboards = {
+    "main",
+    "review-metric",
+    "review-navigation",
+    "review-output",
+    "review-chart",
+    "Diagnostics",
+    "services",
+    "services2",
+}
 local baseline = {}
 local maxGrowth = 0
 local peakObjects = 0

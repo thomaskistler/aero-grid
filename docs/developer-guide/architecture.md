@@ -102,6 +102,7 @@ does not consume scheduled work.
 | `control_service.lua` | Trims, final channel outputs and their trim associations, switch conditions, GV snapshots, and verified GV9 FM0 increments. |
 | `extrema_service.lua` | Sensor extrema and dashboard flight-session tracking. |
 | `navigation_service.lua` | GPS fix, pilot/home position, distance, and north-up bearing. |
+| `history_service.lua` | Bounded chart recordings, cumulative armed time, raw extrema, line-only smoothing, and deferred compaction. |
 | `services.lua` | Environment/snapshots, subscription registration, and bounded scheduling/update dispatch. |
 
 Snapshots are read-only views over service-owned state, mutated in place by
@@ -122,6 +123,16 @@ link-wide, not per sensor, and a configured but never-received sensor can
 appear as valid zero on a live link. Local switch values remain usable
 without a receiver.
 
+Chart history observes completed telemetry polls rather than reading changed
+revisions during redraw: unchanged numeric samples still occupy armed time,
+and raw spikes must not be lost between frames. Observer failures are isolated
+from telemetry polling and reported through normal service failure handling.
+History uses `session.armSource`, but deliberately does not use extrema's
+reset-on-arm lifecycle. It pauses on disarm and resumes the same recording;
+geometry reflow keeps it, while rebuilding the service runtime clears it.
+Each source/options subscription retains at most 32 first/min/max/last buckets.
+Compaction/pruning processes one subscription per scheduled update.
+
 The `flight-counter` panel is deliberately stateful: it owns qualification
 and disarm-timeout transitions, requests verified count updates, and asks
 the model service for history/audio side effects. Its `armSwitch` is distinct
@@ -140,8 +151,9 @@ Use `panels/flight-mode.lua` as a small working example and
 | `id`, `apiVersion`, `supportedSpans` | Identify the module, check compatibility, and advertise valid grid sizes. |
 | `settings` | Typed fields, defaults, bounds, and choices used by validation and the editor. |
 | `refreshInterval` | Desired foreground interval in 10 ms ticks; work still shares the host budget. |
+| `refreshCost` | Whole-number share of the six host refresh slots (default 1). Chart uses all six so dense layouts cannot batch expensive redraws into one callback. |
 | `create(parent, rect, settings, services)` | Build LVGL objects, subscribe to data, and return private instance state. |
-| `refresh(context)` | Optional callback to update existing objects from snapshots. |
+| `refresh(context)` | Optional callback to update existing objects from snapshots. May return a whole-number interval of 1–6000 ticks to adapt subsequent scheduling; nil preserves the current interval. |
 | `update(context, rect, settings, detailsOnly, placement)` | Optional geometry/configuration update. Host reflows and editor resizes pass the current grid placement as the fifth argument, leaving the internal `detailsOnly` argument unset. |
 | `background(context)` | Optional work when the dashboard is not visible. |
 | `event(context, event)` | Optional event handling; return true when consumed. |
@@ -152,7 +164,7 @@ Put the module at `panels/<type>.lua` and reference that type in a layout.
 Regular panels declare `supportedSpans = { "any" }` and adapt their contents to
 every in-bounds span of the 4 x 4 grid. Use an explicit span list when there is a
 real rendering constraint: Host diagnostics and Service probe need at least
-2x2, while Theme showcase requires 4x4. Declare only spans you actually render
+2x2, Chart needs a wide or square placement at least 2x1, while Theme showcase requires 4x4. Declare only spans you actually render
 correctly. A list setting
 (`type = "table"`) declares entry `fields` with keys or nested paths, labels,
 types, and appropriate defaults/bounds/choices. The editor uses this schema

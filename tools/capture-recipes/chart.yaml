@@ -1,0 +1,26 @@
+version: 1
+panel: chart
+theme: modern-dark
+border:
+  pixels: 10
+  rgb: [0, 0, 0]
+panels:
+  2x1: {col: 0, row: 0, colSpan: 2, rowSpan: 1}
+  2x2: {col: 0, row: 1, colSpan: 2, rowSpan: 2}
+config:
+  label: TEMPERATURE
+  duration: 30s
+  metrics:
+    - source: ESC
+      precision: 0
+    - source: Motor
+      precision: 0
+    - source: Battery
+      label: Batt
+      precision: 0
+sample:
+  rssi: 85
+  sources:
+    ESC: {value: 64, unit: 11, precision: 0}
+    Motor: {value: 52, unit: 11, precision: 0}
+    Battery: {value: 38, unit: 11, precision: 0}

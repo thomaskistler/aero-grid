@@ -22,6 +22,9 @@ local function testPanelContract()
     rejects({ id = "demo", apiVersion = 1 }, "demo", "no create function")
     rejects({ id = "demo", apiVersion = 1, create = function() end, refresh = 5 }, "demo", "refresh must be a function")
     rejects({ id = "demo", apiVersion = 1, create = function() end, supportedSpans = 5 }, "demo", "supportedSpans")
+    for _, cost in ipairs({ 0, 7, 1.5, "6", 0 / 0 }) do
+        rejects({ id = "demo", apiVersion = 1, create = function() end, refreshCost = cost }, "demo", "refreshCost")
+    end
 end
 
 local function testSupportedSpans()
@@ -37,6 +40,25 @@ end
 local function run()
     testPanelContract()
     testSupportedSpans()
+    local result
+    local entry = { module = {
+        refresh = function()
+            return result
+        end,
+    }, instance = {}, interval = 20 }
+    assert(panelHost.dispatch(entry, "refresh"))
+    assertions.assertEqual(entry.interval, 20)
+    for _, interval in ipairs({ 1, 5, 100, 6000 }) do
+        result = interval
+        assert(panelHost.dispatch(entry, "refresh"))
+        assertions.assertEqual(entry.interval, interval)
+    end
+    for _, interval in ipairs({ 0, -1, 1.5, 6001, math.huge, 0 / 0 }) do
+        result = interval
+        entry.failed = false
+        local ok, message = panelHost.dispatch(entry, "refresh")
+        assert(not ok and entry.failed and string.find(message, "refresh interval", 1, true))
+    end
 end
 
 run()

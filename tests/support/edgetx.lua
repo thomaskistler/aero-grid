@@ -481,6 +481,9 @@ claim("PROPERTY_KEYS", LVGL_H, "LvglWidget* parseParam overrides", {
     image = keysOf(OBJECT, "file", "fill"),
     triangle = keysOf(OBJECT_BASE, "pts"),
     line = keysOf(OBJECT_BASE, "pts", "thickness", "rounded"),
+    -- EdgeTX 2.12.4 LvglWidgetLineBase parses dashed hline/vline styles.
+    hline = keysOf(OBJECT, "rounded", "dashGap", "dashWidth"),
+    vline = keysOf(OBJECT, "rounded", "dashGap", "dashWidth"),
     dialog = keysOf(OBJECT, "title", "close"),
     setting = keysOf(OBJECT, "title"),
     button = keysOf(OBJECT, "text", "press", "longpress", "textColor", "cornerRadius"),
@@ -882,6 +885,9 @@ function support.lcd(options)
         palette = palette,
         sizeText = sizeText,
         setTextMeasurement = setTextMeasurement,
+        clearTextMeasurements = function()
+            measured = {}
+        end,
     }
 end
 
@@ -1308,6 +1314,8 @@ function support.lvgl()
         arc = constructor("arc"),
         triangle = constructor("triangle"),
         line = constructor("line"),
+        hline = constructor("hline"),
+        vline = constructor("vline"),
         image = constructor("image"),
         -- radio/src/lua/api_colorlcd_lvgl.cpp: qrcode creates LvglWidgetQRCode;
         -- lua_lvgl_widget.cpp parses data and bgColor in addition to geometry.

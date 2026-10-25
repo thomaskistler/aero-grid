@@ -45,7 +45,7 @@ Panel IDs and types are case-sensitive. Unknown top-level keys and extra placeme
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `armSource` | string | unset | EdgeTX switch or source name that marks the model armed for AeroGrid flight-session extrema, used when a panel selects **Minimum tracked: flight**. A positive source value starts a flight; a non-positive value ends it. If omitted or blank, the service has no arm boundary and maintains an open-ended session. |
+| `armSource` | string | unset | Readable numeric EdgeTX source, such as `sa` or `ch5`, marking the model armed. Positive means armed; non-positive means disarmed. Flight-session extrema use this when a panel selects **Minimum tracked: flight**. Chart uses the same source but resumes its recording instead of resetting on arm. If omitted or blank, extrema maintain an open-ended session, but Chart does not record. |
 
 The first panel that requests the shared flight-session service configures its source; later requests do not replace it. Keep the arm source in this one layout-level location rather than attempting to set different sources on individual panels. `session.armSource` is separate from panel settings such as a flight counter's armed switch or Navigation's home arm switch.
 
@@ -77,6 +77,67 @@ Do **not** use anchors or aliases, tags, block scalars (`|` or `>`), flow-style 
 ## Panels
 
 Omitted settings use their listed defaults. “Unset” means the setting has no schema default and stays unset unless specified. Numeric constraints in the tables are the drawer's declared bounds/steps or, when explicitly noted, the panel's runtime validation. All choice values are the YAML values, even if the drawer displays a friendlier choice label.
+
+### `chart`
+
+Use a separate Chart panel for armed-time recording, not a live Metric sparkline.
+It supports 2x1, 3x1, 4x1, 2x2, 3x2, 4x2, 3x3, 4x3, and 4x4.
+
+| Key | Values and defaults |
+| --- | --- |
+| `label` | Optional title; defaults to the single source name or CHART. |
+| `metrics` | Contiguous list of zero to three numeric sources. Empty is valid for editor setup. |
+| `source`, `unit`, `precision` | Per-metric source name, optional unit override, and integer precision 0–3 (default sensor precision). |
+| `accent` | Per-metric trace color or panel stripe: cyan, green, orange, amber. Traces default to cyan, green, orange in order. |
+| `rangeMin`, `rangeMax` | Per-metric finite fixed bounds, default 0 and 100; maximum must exceed minimum. Shared fixed mode uses the first metric's bounds. |
+| `timeRange` | `growing` (default) or `rolling`. |
+| `duration` | `30s` (default), `1m`, `2m`, `5m`, `10m`. Initial growing range or rolling window. |
+| `scaling` | `shared` (default) or `independent`. Select independent explicitly for unlike units. |
+| `range` | `auto` (default) or `fixed`. Auto uses raw lifetime recorded extrema with padded, rounded bounds. |
+| `smoothing` | `off` (default), `light`, `medium`, `strong`; line-only EMA with approximately 0.5/1/2-second response. |
+
+Each metric also accepts `label`. The title is above the shared plot, with each
+metric's name/value and raw min/max grouped in a right-hand legend.
+
+Set dashboard-level `session.armSource` to a readable numeric source (positive
+means armed). Recording pauses on disarm, freezes the readouts, and resumes the
+same history on rearm. The horizontal axis counts cumulative armed time; resumed
+segments are broken and marked. Growing duration doubles when exceeded. Rolling
+keeps only the latest plot window but retains raw lifetime min/max. History is
+bounded, progressively coarsened, RAM-only, and clears on dashboard reload.
+The shared arm setting is currently edited in YAML, not the on-radio drawer.
+
+```yaml
+version: 3
+grid:
+  columns: 4
+  rows: 4
+session:
+  armSource: sa
+panels:
+  - id: power-chart
+    type: chart
+    col: 0
+    row: 0
+    colSpan: 4
+    rowSpan: 2
+    config:
+      label: Power
+      timeRange: growing
+      duration: 30s
+      scaling: independent
+      range: auto
+      smoothing: light
+      metrics:
+        - source: RxBt
+          label: RX
+          precision: 1
+          accent: cyan
+        - source: Curr
+          label: A
+          precision: 1
+          accent: green
+```
 
 ### `flight-counter`
 

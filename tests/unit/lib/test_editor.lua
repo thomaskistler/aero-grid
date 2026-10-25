@@ -222,7 +222,8 @@ local function testCatalogPanelSizes()
     for _, entry in ipairs(editor.CATALOG) do
         local module = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/" .. entry.type .. ".lua"))()
         modules[entry.type] = module
-        local restricted = entry.type == "host-diagnostics" or entry.type == "service-probe"
+        local isChart = entry.type == "chart"
+        local restricted = isChart or entry.type == "host-diagnostics" or entry.type == "service-probe"
         if not restricted then
             assert(#module.supportedSpans == 1 and module.supportedSpans[1] == "any", entry.type)
         end
@@ -232,16 +233,17 @@ local function testCatalogPanelSizes()
                 local added, addError = editor.add(session, entry.type)
                 assert(added, entry.type .. ": " .. tostring(addError))
                 local panel = session.draft.panels[1]
-                local minimum = restricted and 2 or 1
-                assert(panel.colSpan == minimum and panel.rowSpan == minimum, entry.type)
-                local allowed = not restricted or (columns >= 2 and rows >= 2)
+                local minimumColumns, minimumRows = restricted and 2 or 1, restricted and not isChart and 2 or 1
+                assert(panel.colSpan == minimumColumns and panel.rowSpan == minimumRows, entry.type)
+                local allowed = isChart and columns >= 2 and rows <= columns
+                    or not isChart and (not restricted or (columns >= 2 and rows >= 2))
                 local span = tostring(columns) .. "x" .. tostring(rows)
                 local offered = false
                 for _, size in ipairs(editor.sizes(session)) do
                     offered = offered or size == span
                 end
                 assert(offered == allowed, entry.type .. ": size picker " .. span)
-                local resized, resizeError = editor.resize(session, columns - minimum, rows - minimum)
+                local resized, resizeError = editor.resize(session, columns - minimumColumns, rows - minimumRows)
                 assert(resized == allowed, entry.type .. ": " .. tostring(resizeError))
                 if allowed then
                     assert(panel.colSpan == columns and panel.rowSpan == rows)
@@ -663,6 +665,7 @@ end
 local function testAllPanelDrawersStartWithLabel()
     local expectedOrder = {
         output = { "label", "firstChannel", "channelCount", "showNames", "showTrim", "accent" },
+        chart = { "label", "metrics", "timeRange", "duration", "scaling", "range", "smoothing", "accent" },
         ["flight-counter"] = {
             "label",
             "armSwitch",

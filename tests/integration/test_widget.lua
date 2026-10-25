@@ -670,6 +670,7 @@ local function testScreensReachEveryShippedLayout()
                 "review-trim-panel",
                 "review-tx-battery",
                 "review-output",
+                "review-chart",
             },
         },
     }
@@ -774,7 +775,7 @@ local function testScreensReachEveryShippedLayout()
     end
     listing:close()
     os.remove(listingPath)
-    assertEqual(count, 12, "fixture user-facing panel coverage")
+    assertEqual(count, 13, "fixture user-facing panel coverage")
 
     os.execute("ls '" .. root .. "/tests/fixtures/sdcard/MODELS' > '" .. listingPath .. "'")
     listing = assert(hostIo.open(listingPath, "r"))

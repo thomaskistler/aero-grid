@@ -871,7 +871,7 @@ local function event(context, widgetEvent, touchState)
     return false
 end
 
---- Panels refreshed per frame at most, regardless of how many fall due.
+--- Refresh slots per frame; expensive panels may consume multiple slots.
 --- Phase staggering normally keeps the number well below this; the cap is a
 --- guarantee for layouts that defeat staggering, such as many panels all
 --- asking to refresh every frame.
@@ -894,19 +894,23 @@ local function dispatchDue(context)
         cursor = 1
     end
 
-    local dispatched, failures, examined = 0, false, 0
+    local dispatched, failures, examined, work = 0, false, 0, 0
 
-    while examined < count and dispatched < REFRESH_CAP do
+    while examined < count and work < REFRESH_CAP do
         local entry = panels[cursor]
         examined = examined + 1
 
         if entry and not entry.failed and now >= (entry.nextRefresh or 0) then
-            -- Advance from now, so a panel starved by the cap does not
-            -- accumulate a backlog of missed deadlines.
-            entry.nextRefresh = now + entry.interval
+            local cost = rawget(entry.module, "refreshCost") or 1
+            if work + cost > REFRESH_CAP then
+                break
+            end
+            work = work + cost
             dispatched = dispatched + 1
 
             local ok, dispatchError = context.panelHost.dispatch(entry, "refresh")
+            -- Advance from now, without accumulating missed deadlines.
+            entry.nextRefresh = now + entry.interval
             if not ok and dispatchError then
                 addError(context, entry.placement.id .. ": refresh: " .. dispatchError)
                 failures = true

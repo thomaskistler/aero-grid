@@ -31,7 +31,7 @@ build/capture-venv/bin/python tools/capture-panels.py --all
 
 Choose **one** of `--panel <type>`, `--recipe <path>`, or `--all`.
 `make capture-setup` installs pinned PyYAML in a separate environment.
-All twelve user-facing panel types, plus the Host diagnostics and Service
+All thirteen user-facing panel types, plus the Host diagnostics and Service
 probe utility panels, have bundled recipes.
 
 Each panel writes to `build/doc-capture/<panel>/`:
@@ -52,6 +52,10 @@ Default panel captures use a 480 x 272 Modern Dark/App-mode dashboard with
 placements outside the menu overlay. Crops are unscaled; a 10-pixel border
 gives output dimensions of 137 x 154, 258 x 85, and 258 x 154 respectively.
 Recipes can override the border.
+Chart omits the unsupported 1x2 placement. Its adapter generates varying
+synthetic readings through the real telemetry/history services, records for
+approximately 20 seconds with a brief disarm/rearm gap, and disarms before
+capturing a stable frame.
 
 The runner waits for recipe-specific readiness, not just a fixed delay.
 Timer, trim, flight-mode, and model-image samples use isolated firmware model

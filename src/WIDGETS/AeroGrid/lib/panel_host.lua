@@ -17,10 +17,12 @@
 ---@field refreshInterval? integer Ticks of 10ms between refreshes. 0 or absent
 ---  means every frame. Telemetry rarely needs more than a few hertz, and the
 ---  host pays every panel's cost inside one instruction budget.
+---@field refreshCost? integer Host refresh slots consumed, 1 to 6; defaults to 1.
 ---@field settings? AeroGridPanelSetting[]
 ---@field create fun(parent: any, rect: table, settings: table, services: table): any
 ---@field update? fun(instance: any, rect: table, settings: table)
 ---@field refresh? fun(instance: any)
+--- A numeric refresh result selects the next interval in 10ms ticks.
 ---@field background? fun(instance: any)
 ---@field event? fun(instance: any, event: any): boolean
 ---@field destroy? fun(instance: any)
@@ -111,6 +113,10 @@ function panelHost.validateModule(module, typeName)
     local interval = field(module, "refreshInterval")
     if interval ~= nil and (type(interval) ~= "number" or interval < 0 or interval ~= math.floor(interval)) then
         return false, "refreshInterval must be a non-negative whole number of ticks"
+    end
+    local cost = field(module, "refreshCost")
+    if cost ~= nil and (type(cost) ~= "number" or cost < 1 or cost > 6 or cost ~= math.floor(cost)) then
+        return false, "refreshCost must be a whole number from 1 to 6"
     end
 
     return true
@@ -280,6 +286,13 @@ function panelHost.dispatch(entry, event, ...)
     end
 
     local ok, resultOrError = pcall(callback, entry.instance, ...)
+    if ok and event == "refresh" and type(resultOrError) == "number" then
+        if resultOrError < 1 or resultOrError > 6000 or resultOrError ~= math.floor(resultOrError) then
+            ok, resultOrError = false, "refresh interval must be a whole number from 1 to 6000 ticks"
+        else
+            entry.interval = resultOrError
+        end
+    end
     if ok then
         return true, nil, resultOrError
     end
