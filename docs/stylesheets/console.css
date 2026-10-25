@@ -468,8 +468,20 @@ body > .container > .row {
   font-size: var(--ag-font-sm);
 }
 
+.ag-table-scroll {
+  max-width: 100%;
+  margin-bottom: 1rem;
+  overflow-x: auto;
+}
+
+.ag-table-scroll:focus-visible {
+  outline: 2px solid var(--ag-console-blue);
+  outline-offset: 2px;
+}
+
 .ag-article table {
   width: 100%;
+  margin-bottom: 0;
   border-color: var(--ag-console-border);
   font-size: var(--ag-font-sm);
 }
