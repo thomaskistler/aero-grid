@@ -126,6 +126,32 @@ class DocumentationLayoutTests(unittest.TestCase):
                 finally:
                     page.close()
 
+    def test_homepage_radio_examples_fit_desktop_and_wrap_on_mobile(self):
+        for width in (320, 375, 768, 1024, 1280, 1440, 1920):
+            with self.subTest(width=width):
+                page = self.browser.new_page(viewport={"width": width, "height": 900})
+                try:
+                    page.goto(f"{self.url}/")
+                    page.evaluate("document.fonts.ready")
+                    self.assertLessEqual(
+                        page.evaluate("document.documentElement.scrollWidth"), width
+                    )
+                    item = page.locator(".ag-home-start aside span").first
+                    lines = item.evaluate("""node => {
+                        const range = document.createRange();
+                        range.selectNodeContents(node);
+                        return range.getClientRects().length;
+                    }""")
+                    if width >= 1280:
+                        self.assertEqual(lines, 1, "Radio examples should fit one desktop line")
+                    elif width <= 375:
+                        self.assertGreater(lines, 1, "Radio examples should wrap on mobile")
+                    self.assertLessEqual(
+                        item.evaluate("node => node.scrollWidth"), item.evaluate("node => node.clientWidth")
+                    )
+                finally:
+                    page.close()
+
 
 if __name__ == "__main__":
     unittest.main()

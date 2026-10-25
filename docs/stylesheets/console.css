@@ -517,7 +517,7 @@ body > .container > .row {
 
 .ag-home-start {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(180px, 0.8fr);
+  grid-template-columns: minmax(0, 1fr) fit-content(60%);
   align-items: center;
   gap: 18px;
   margin: 19px 0 23px;
