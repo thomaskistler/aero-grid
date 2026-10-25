@@ -709,9 +709,10 @@ local function testAllPanelDrawersStartWithLabel()
             "showSatellites",
             "accent",
         },
-        ["map-prototype"] = {
+        ["map"] = {
             "label",
             "source",
+            "initialZoom",
             "headingSource",
             "positionMarker",
             "armSwitch",

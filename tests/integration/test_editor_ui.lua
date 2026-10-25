@@ -1552,7 +1552,7 @@ do
     local picker = widget.lvglMock.menu()
     local mapIndex
     for index, item in ipairs(context.editorUi.handlers.editor.CATALOG) do
-        if item.type == "map-prototype" then
+        if item.type == "map" then
             equal(picker.values[index], "Map", "radio picker must expose the map's display name")
             mapIndex = index
         end
@@ -1562,7 +1562,7 @@ do
     settleDrawer()
     equal(context.editorUi.mode, "configure", "adding Map must open its normal configuration drawer")
     local placement = context.editorSession.draft.panels[1]
-    equal(placement.type, "map-prototype", "Map picker must install the real radio panel")
+    equal(placement.type, "map", "Map picker must install the real radio panel")
     equal(placement.config.source, "GPS", "new maps default to the normal GPS source")
     equal(placement.config.pack, nil, "map editor must not introduce an area override")
     for _, key in ipairs({ "source", "headingSource", "armSwitch", "satelliteSource" }) do
@@ -1616,7 +1616,7 @@ do
     )
     widget.pump(context, 30)
     equal(#context.errors, 0, "installed map layout must reload without errors")
-    equal(context.document.panels[1].type, "map-prototype", "saved map must reload from the installed layout")
+    equal(context.document.panels[1].type, "map", "saved map must reload from the installed layout")
     equal(context.panels[1].instance.settings.positionMarker, "arrow", "saved marker choice must persist")
     equal(context.panels[1].instance.settings.flightPath, "full", "saved path choice must persist")
 end

@@ -1,4 +1,4 @@
-# Radio map rendering prototype
+# Radio map
 
 This is an experimental **radio-side** panel, independent of the browser
 planner. It consumes the [shared map-area contract](#shared-map-area); it is not
@@ -6,7 +6,7 @@ a satellite downloader.
 The first performance target is a **RadioMaster TX16S MKII, 480 x 272**,
 using the existing **EdgeTX 2.12 LVGL API** baseline. The repository does not
 currently declare a precise minimum supported patch release; API inspection
-for this prototype uses 2.12.0, not proof that every 2.12 build works on hardware.
+for this panel uses 2.12.0, not proof that every 2.12 build works on hardware.
 
 ## Run the experiment
 
@@ -34,18 +34,16 @@ Do not copy the fixture's `MODELS/` or `RADIO/` onto your radio.
 On the radio, open the layout editor, tap **+**, and choose **Map** in
 **Select panel**. Configure its GPS source and optional heading, home switch,
 satellite, marker and path settings in the normal drawer, then save the layout.
+**Initial zoom** selects the widest, middle or most detailed installed level
+whenever a map area is selected. The default remains widest; for an even number
+of levels, middle selects the wider of the two central levels. Normal zoom
+controls remain available afterward.
+The title, satellite count, badges, optional coordinates and status messages use
+compact, rounded, translucent dark backings with light text and edge insets,
+leaving imagery visible between and through them.
 No YAML editing is required. The panel still needs an installed v2 map area and
 live GPS inside its coverage; adding the panel does not download or install maps.
 Area selection remains automatic from GPS, with no area-picker setting.
-Temporary radio test fallback: if the configured GPS source has never been
-detected, Map uses **37.436736, -122.1258128** locally and displays **DEMO POSITION**
-(or a `DEMO:` map status). An installed area covering that location is still
-required; the bundled Companion imagery covers a different location.
-Detected no-fix, invalid or stale readings never use this fallback, and it
-does not reactivate after a detected source is lost. Detection switches back to
-the real subscription without changing shared navigation or capturing a home.
-The demo position is never recorded in the flight path or offered as a real
-GPS location-details request. This is a temporary test aid, not GPS telemetry.
 macOS `._` metadata sidecars are ignored when scanning installed area manifests.
 An invalid actual area filename is reported by name; area IDs must contain
 1-32 lowercase letters, digits, hyphens or underscores.
@@ -95,13 +93,19 @@ pause it. Follow stays paused across zoom changes, resizing and fullscreen exit;
 the target button resumes it. Recreating the panel also starts follow again.
 
 In fullscreen, a single-finger drag also pans the map. Loaded tiles follow the
-finger immediately. Newly exposed tiles load during the gesture, at most one
-source per panel callback; moving again replaces the pending queue with the
-current viewport's needs. Overlapping tiles stay visible. Release only ends
-the gesture, with no separate redraw phase. A drag within the same tile
-coverage needs no tile loading or hide/reveal cycle. Unloaded edges may be blank
-until loading catches up, and synchronous firmware decoding may interrupt
-movement.
+finger immediately. New tile sources and their JPEG header preflights are
+deferred until the finger releases, including while it pauses without releasing.
+Moving again replaces the pending queue with the current viewport's needs;
+overlapping tiles stay visible. Newly exposed edges may remain blank throughout
+the gesture. Release only ends the gesture, with no separate redraw phase or
+loading burst: the latest viewport fills on eligible refreshes at the existing
+one-source-per-250-ms cadence. Fullscreen exit or resize cancels the gesture and
+also permits loading to resume. A drag within the same tile coverage needs no
+tile loading or hide/reveal cycle. Markers and flight-history sampling continue
+during touch, but flight-path rendering waits until release; the existing path
+may temporarily lag behind the map. This only defers Lua-requested source changes:
+the firmware may still re-decode retained tiles during redraw, so synchronous
+decoding can still interrupt movement.
 EdgeTX 2.12 supplies single-contact touch events, not a pinch gesture API.
 Yellow lines mark each tile's top/left edges and all four outer coverage edges.
 
@@ -386,4 +390,4 @@ the exact radio and EdgeTX patch version, SD card, package, and observations:
 
 Actual TX16S MKII performance, decoded memory headroom and image compatibility
 remain unverified until this runs on native firmware and the physical radio.
-Do not use synthetic terrain or this prototype for flight navigation.
+Do not use synthetic terrain or this panel for flight navigation.

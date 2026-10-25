@@ -22,6 +22,9 @@ function layout.normalizePanel(panel)
         panel.config.announcements = nil
         panel.config.history = nil
     end
+    if panel.type == "map-prototype" then
+        panel.type = "map"
+    end
     if panel.type == "navigation" and type(panel.config) == "table" then
         -- Former distance thresholds must never become satellite-count limits.
         panel.config.warning = nil

@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 local root = assert(...)
-local map = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/map-prototype.lua"))()
+local map = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/map.lua"))()
 local a = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 do
     local yaml = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/yaml.lua"))()
@@ -140,8 +140,8 @@ for _, mutate in ipairs({
 end
 a.assertEqual(
     #map.settings,
-    11,
-    "panel options should include GPS, marker, satellite, coordinate and path controls without an area override"
+    12,
+    "panel options should include initial zoom, GPS, marker, satellite, coordinate and path controls"
 )
 a.assertEqual(
     (function()

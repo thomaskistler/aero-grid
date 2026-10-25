@@ -3,7 +3,7 @@
 local root = assert(...)
 local a = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
-local map = fixture.module("panels/map-prototype.lua")
+local map = fixture.module("panels/map.lua")
 local definition = fixture.module("main.lua")
 EVT_TOUCH_FIRST, EVT_TOUCH_SLIDE, EVT_TOUCH_BREAK, EVT_TOUCH_TAP, EVT_VIRTUAL_EXIT = 9101, 9102, 9103, 9104, 9106
 local widgetPath = root .. "/build/test-widget-fixture/"
@@ -87,6 +87,17 @@ end
 assertFootprint(context.aircraft)
 assertAircraftColors(context.aircraft, lcd.RGB(0x70D6F3))
 a.assertEqual(context.pending, nil)
+local titlePlate = context.headerBackplates.title.object
+assert(titlePlate.properties.filled, "map title needs an opaque backing")
+a.assertEqual(titlePlate.properties.rounded, 5, "backplates must match the map controls' corner radius")
+a.assertEqual(titlePlate.properties.color, lcd.RGB(0x101414))
+a.assertEqual(titlePlate.properties.opacity, 190)
+assert(titlePlate.properties.x >= context.area.x + 4, "title plate needs a map-edge inset")
+assert(titlePlate.properties.w < context.area.w / 2, "title backing must not cover the full header")
+assert(
+    titlePlate.properties.h <= context.themeBuilder.fontHeight(context.fonts.label) + 2,
+    "title backing must hug the text height"
+)
 assert(context.tileLoads <= 6)
 a.assertEqual(#context.controls, 0, "App mode must not construct fullscreen-only controls")
 a.assertEqual(context.controlsHint, nil, "map must not create the fullscreen hint")
@@ -312,23 +323,44 @@ assert(not definition.event(host, EVT_TOUCH_SLIDE, { x = fingerX, y = fingerY })
 definition.refresh(host, EVT_TOUCH_FIRST, { x = fingerX, y = fingerY })
 assert(context.drag)
 local dragReads = 0
-io.open = function(...)
-    dragReads = dragReads + 1
-    return open(...)
+io.open = function(filename, ...)
+    if string.match(filename, "%.jpg$") then
+        dragReads = dragReads + 1
+    end
+    return open(filename, ...)
 end
 for delta = 1, 80 do
-    local loads = context.tileLoads
     fixture.tick(2)
     definition.refresh(host, EVT_TOUCH_SLIDE, { x = fingerX + delta, y = fingerY })
-    assert(context.tileLoads - loads <= 1, "live dragging must load at most one source per callback")
+    a.assertEqual(context.tileLoads, loadsBeforeDrag, "dragging must defer new tile sources until release")
     assert(not host.editorUi, "a moving finger must not trigger the hold-to-edit gesture")
 end
+assert(context.pending, "boundary crossing must queue exposed tiles")
+for _ = 1, 3 do
+    fixture.tick(25)
+    map.refresh(context)
+end
 io.open = open
-assert(dragReads > 0, "newly exposed tiles must load while the finger is still down")
-assert(context.tileLoads > loadsBeforeDrag, "dragging must not defer loading until release")
+a.assertEqual(dragReads, 0, "moving and stationary touches must not preflight tiles")
+a.assertEqual(context.tileLoads, loadsBeforeDrag, "a pause without release must not resume loading")
 a.assertEqual(context.viewX, startX - 80, "dragging must commit the viewport continuously")
 assert(definition.event(host, EVT_TOUCH_BREAK, { x = fingerX + 80, y = fingerY }))
-settle()
+a.assertEqual(context.tileLoads, loadsBeforeDrag, "release must not synchronously load tiles")
+local lastLoadTime
+for _ = 1, 100 do
+    local loads = context.tileLoads
+    fixture.tick(1)
+    map.refresh(context)
+    assert(context.tileLoads - loads <= 1, "release must not burst pending tile loads")
+    if context.tileLoads ~= loads then
+        assert(not lastLoadTime or getTime() - lastLoadTime >= 25, "tile loads must remain 250 ms apart")
+        lastLoadTime = getTime()
+    end
+    if not context.pending then
+        break
+    end
+end
+a.assertEqual(context.pending, nil, "released viewport must finish loading")
 for index, tile in ipairs(context.tiles) do
     if tile.file ~= "" and tile.file == filesBefore[index] then
         a.assertEqual(tile.image.visibilityCalls, visibilityBefore[index], "overlapping tiles must remain visible")
@@ -343,7 +375,7 @@ a.assertEqual(context.viewX, 0, "drag must clamp to coverage")
 a.assertEqual(context.viewY, 0)
 map.refresh(context)
 assert(definition.event(host, EVT_TOUCH_SLIDE, { x = fingerX - 10000, y = fingerY - 10000 }))
-settle()
+map.refresh(context)
 for _, tile in ipairs(context.tiles) do
     if tile.visible then
         assert(tile.file ~= "", "reversed drag must not reveal obsolete sources")
@@ -389,13 +421,14 @@ for _, delta in ipairs({ -600, -500, 0, -600, 0 }) do
     a.assertEqual(context.homeMarker.properties.x, px - 26, "dragged home image must match its projected position")
     a.assertEqual(context.homeMarker.properties.y, py - 26, "home circle centre must stay geographically anchored")
     a.assertEqual(context.homeVisible, px >= 0 and py >= 0 and px < context.area.w and py < context.area.h)
-    settle()
+    fixture.tick(25)
     map.refresh(context)
     a.assertEqual(context.homeMarker.properties.x, px - 26, "tile loading must not displace home")
     a.assertEqual(context.homeMarker.properties.y, py - 26)
 end
 assert(context.homeVisible, "home must reappear at the correct position after reversing a drag")
 assert(definition.event(host, EVT_TOUCH_BREAK, { x = 0, y = 0 }))
+settle()
 context.following = true
 local function positionAt(x, y)
     local level = context.pack.levels[context.levelIndex]
@@ -620,6 +653,141 @@ local function selectAutomaticArea(instance, latitude, longitude)
     end
     error("automatic map selection did not find an installed area")
 end
+do
+    for _, zoom in ipairs({ "widest", "middle", "most detailed" }) do
+        a.assertEqual(#map.validateSettings({ initialZoom = zoom }), 0)
+        local instance = map.create(
+            entry.container,
+            { x = 0, y = 0, w = 480, h = 272 },
+            { label = "MAP", source = "GPS", initialZoom = zoom },
+            services
+        )
+        instance.nextTileLoad = getTime() + 100000
+        selectAutomaticArea(instance, 25.9973, -97.1572)
+        local count = #instance.pack.levels
+        local expected = zoom == "most detailed" and count or zoom == "middle" and math.ceil(count / 2) or 1
+        a.assertEqual(instance.levelIndex, expected, "initial zoom must select the requested installed level")
+        a.assertEqual(instance.following, true)
+    end
+    assert(#map.validateSettings({ initialZoom = "invalid" }) > 0)
+    local bounds = { x = 0, y = 0 }
+    local function drain(instance)
+        for _ = 1, 24 do
+            local loads = instance.tileLoads
+            fixture.tick(25)
+            map.refresh(instance)
+            assert(instance.tileLoads - loads <= 1, "resumed loading must remain incremental")
+            if not instance.pending and not instance.dirty then
+                return
+            end
+        end
+        error("released or cancelled drag did not finish loading")
+    end
+    for _, size in ipairs({ { w = 232, h = 120 }, { w = 480, h = 272 } }) do
+        for _, mode in ipairs({ "off", "trail", "full" }) do
+            fixture.lvglMock.setFullScreen(true)
+            local instance = map.create(
+                entry.container,
+                { x = 0, y = 0, w = size.w, h = size.h },
+                { label = "MAP", source = "GPS", flightPath = mode },
+                services
+            )
+            selectAutomaticArea(instance, 25.9973, -97.1572)
+            instance.automatic, instance.following = false, false
+            drain(instance)
+            map.move(instance, 0, 0, 1)
+            drain(instance)
+            for _, finish in ipairs({ "break", "tap", "resize", "fullscreen" }) do
+                fixture.lvglMock.setFullScreen(true)
+                map.move(instance, 256 - instance.viewX, 256 - instance.viewY)
+                drain(instance)
+                local level = instance.pack.levels[instance.levelIndex]
+                local n = 2 ^ level.zoom
+                local y = 256 + instance.area.h / 2
+                local mercator = math.pi * (1 - 2 * (level.yMin + y / 256) / n)
+                instance.feed.latitude = math.deg(math.atan((math.exp(mercator) - math.exp(-mercator)) / 2))
+                instance.feed.longitude = (level.xMin + (256 + instance.area.w / 2) / 256) / n * 360 - 180
+                instance.pathPoints, instance.pathLastTime = {}, nil
+                instance.pathRevision = (instance.pathRevision or 0) + 1
+                fixture.tick(100)
+                map.refresh(instance)
+                local loads = instance.tileLoads
+                assert(map.event(instance, EVT_TOUCH_FIRST, { x = 100, y = 60 }, bounds))
+                fixture.tick(100)
+                map.refresh(instance)
+                a.assertEqual(instance.tileLoads, loads, "a stationary press must not load tiles")
+                assert(map.event(instance, EVT_TOUCH_SLIDE, { x = 180, y = 60 }, bounds))
+                map.refresh(instance)
+                assert(instance.pending, "crossing left must queue exposed tiles")
+                local reads = 0
+                io.open = function(filename, ...)
+                    if string.match(filename, "%.jpg$") then
+                        reads = reads + 1
+                    end
+                    return open(filename, ...)
+                end
+                instance.feed.longitude = instance.feed.longitude + 0.0001
+                fixture.tick(100)
+                map.refresh(instance)
+                if mode ~= "off" then
+                    a.assertEqual(#instance.pathPoints, 2, "tile deferral must not pause flight-history sampling")
+                    assert(instance.pathLines[1].hidden, "new path segments must wait until release")
+                end
+                assert(map.event(instance, EVT_TOUCH_SLIDE, { x = 20, y = 60 }, bounds))
+                fixture.tick(100)
+                map.refresh(instance)
+                io.open = open
+                a.assertEqual(reads, 0, "boundary crossings and reversals must not preflight tiles during touch")
+                a.assertEqual(instance.tileLoads, loads)
+                a.assertEqual(instance.viewX, 336, "reversal must commit the latest viewport during touch")
+                assert(instance.pending)
+                local wanted = {}
+                for _, tile in ipairs(instance.pending) do
+                    wanted[tile.file] = true
+                end
+                if finish == "resize" then
+                    map.update(instance, { x = 0, y = 0, w = size.w, h = size.h - 10 })
+                elseif finish == "fullscreen" then
+                    fixture.lvglMock.setFullScreen(false)
+                    map.refresh(instance)
+                else
+                    local event = finish == "break" and EVT_TOUCH_BREAK or EVT_TOUCH_TAP
+                    assert(map.event(instance, event, { x = 0, y = 0 }, bounds))
+                    a.assertEqual(instance.tileLoads, loads, "release events must not load synchronously")
+                end
+                a.assertEqual(instance.drag, nil, "release and cancellation must clear the load gate")
+                io.open = function(filename, ...)
+                    if string.match(filename, "%.jpg$") then
+                        assert(wanted[filename], "reversals must discard obsolete tile requests")
+                    end
+                    return open(filename, ...)
+                end
+                drain(instance)
+                io.open = open
+                if mode ~= "off" then
+                    assert(not instance.pathLines[1].hidden, "path rendering must resume after release")
+                end
+                assert(instance.tileLoads > loads, "release or cancellation must resume queued tile loads")
+                for _, tile in ipairs(instance.tiles) do
+                    if tile.visible then
+                        a.assertEqual(
+                            tile.file,
+                            instance.directory
+                                .. string.format(
+                                    "%d/%d/%d.jpg",
+                                    level.zoom,
+                                    level.xMin + (tile.x + instance.viewX) / 256,
+                                    level.yMin + (tile.y + instance.viewY) / 256
+                                ),
+                            "settled tiles must match the final viewport"
+                        )
+                    end
+                end
+            end
+        end
+    end
+    fixture.lvglMock.setFullScreen(true)
+end
 local captured = map.create(
     entry.container,
     { x = 0, y = 0, w = 480, h = 272 },
@@ -824,6 +992,16 @@ do
     a.assertEqual(options.coordinatesLabel.properties.text, "25.997300, -97.157200")
     a.assertEqual(options.coordinatesLabel.properties.font(), SMLSIZE, "coordinates must use the larger font")
     a.assertEqual(options.coordinatesLabel.properties.y, options.area.h - 28)
+    assert(not options.coordinatesBackground.hidden, "visible coordinates need a backing")
+    a.assertEqual(options.coordinatesBackground.properties.rounded, 5)
+    a.assertEqual(options.coordinatesBackground.properties.color, lcd.RGB(0x101414))
+    a.assertEqual(options.coordinatesBackground.properties.opacity, 190)
+    a.assertEqual(options.coordinatesBackground.properties.x, options.area.x + 4)
+    assert(
+        options.coordinatesBackground.properties.w
+            >= options.themeBuilder.measureText(SMLSIZE, options.coordinatesLabel.properties.text) + 8,
+        "coordinate backing must cover the text and padding"
+    )
     a.assertEqual(options.satelliteLabel.properties.text, "5")
     a.assertEqual(options.badgeText, options.state("warning", "cyan").badge)
     options.primitives.setBadge(
@@ -1255,38 +1433,22 @@ do
         end
         return originalRead(path)
     end
-    addArea("demo", false, nil, 37.436736, -122.1258128)
-    local demo = map.create(
+    local missingGPS = map.create(
         entry.container,
         { x = 0, y = 0, w = 480, h = 272 },
-        { label = "DEMO", source = "GPS", flightPath = "trail", showCoordinates = true },
+        { label = "MAP", source = "GPS", flightPath = "trail", showCoordinates = true },
         services
     )
-    demo.feed = { known = false, fix = false, state = "unavailable", home = true }
-    demo.nextTileLoad = math.huge
-    local sharedFeed = demo.feed
+    missingGPS.feed = { known = false, fix = false, state = "unavailable" }
+    missingGPS.nextTileLoad = math.huge
     for _ = 1, #names + 1 do
-        map.refresh(demo)
+        map.refresh(missingGPS)
     end
-    a.assertEqual(demo.pack.id, "demo", "absent GPS must select coverage for the exact demo coordinates")
-    a.assertEqual(demo.feed, sharedFeed, "demo must not replace the shared navigation subscription")
-    a.assertEqual(sharedFeed.latitude, nil, "demo must not mutate shared navigation state")
-    a.assertEqual(demo.statusText, "DEMO POSITION")
-    a.assertEqual(demo.coordinatesLabel.properties.text, "37.436736, -122.125813")
-    assert(demo.markerVisible, "demo must render its marker on installed coverage")
-    assert(not demo.homeVisible, "demo must not display a fabricated or captured home")
-    a.assertEqual(#demo.pathPoints, 0, "demo must not record fabricated flight history")
-    demo.pending = nil
-    local expectedX, expectedY = map.project(demo.pack.levels[demo.levelIndex], 37.436736, -122.1258128, demo.transform)
-    a.assertEqual(demo.markerX, math.floor(expectedX - demo.viewX + 0.5))
-    a.assertEqual(demo.markerY, math.floor(expectedY - demo.viewY + 0.5))
-    demo.feed = { known = true, fix = false, state = "unavailable" }
-    map.refresh(demo)
-    assert(not demo.demoActive and not demo.markerVisible, "detected no-fix GPS must disable the test marker")
-    a.assertEqual(demo.statusText, "NO FIX")
-    demo.feed = { known = false, fix = false, state = "unavailable" }
-    map.refresh(demo)
-    assert(not demo.demoActive, "lost previously detected GPS must never activate the fallback")
+    a.assertEqual(missingGPS.pack, nil, "absent GPS must not select a fabricated position")
+    a.assertEqual(missingGPS.statusText, "WAITING FOR GPS")
+    assert(not missingGPS.markerVisible)
+    assert(missingGPS.coordinatesLabel.hidden)
+    a.assertEqual(#missingGPS.pathPoints, 0)
     for _, reading in ipairs({
         { known = true, fix = false, state = "unavailable" },
         { known = true, fix = true, state = "stale", latitude = 25.9973, longitude = -97.1572 },
@@ -1296,19 +1458,17 @@ do
         local absent = map.create(entry.container, { x = 0, y = 0, w = 480, h = 272 }, { source = "GPS" }, services)
         absent.feed = reading
         map.refresh(absent)
-        assert(not absent.demoActive, "detected, stale, no-fix and invalid readings must not use the fallback")
+        a.assertEqual(absent.pack, nil, "unusable GPS must not select a map")
     end
-    demo.feed = { known = true, fix = true, state = "normal", latitude = 25.9973, longitude = -97.1572 }
+    missingGPS.feed = { known = true, fix = true, state = "normal", latitude = 25.9973, longitude = -97.1572 }
     for _ = 1, #names + 1 do
-        map.refresh(demo)
+        map.refresh(missingGPS)
     end
-    a.assertEqual(demo.pack.id, "alpha", "real GPS recovery must select real coverage")
-    assert(not demo.demoActive and demo.markerVisible)
-    a.assertEqual(demo.statusText, "GPS")
-    a.assertEqual(#demo.pathPoints, 1, "real GPS must start history without connecting to the demo")
-    assert(demo.pathPoints[1].breakBefore)
-    manifests["demo.yaml"] = nil
-    table.remove(names)
+    a.assertEqual(missingGPS.pack.id, "alpha", "GPS recovery must select real coverage")
+    assert(missingGPS.markerVisible)
+    a.assertEqual(missingGPS.statusText, "GPS")
+    a.assertEqual(#missingGPS.pathPoints, 1)
+    assert(missingGPS.pathPoints[1].breakBefore)
     scans, reads = 0, 0
     local automatic = map.create(
         entry.container,
@@ -1454,4 +1614,4 @@ do
     services.host.layoutStore.readCandidate = originalRead
     dir = originalDir
 end
-print("Map prototype worst host callback: " .. worst .. " instructions (mock; not native draw/decode time)")
+print("Map worst host callback: " .. worst .. " instructions (mock; not native draw/decode time)")

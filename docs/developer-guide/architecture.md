@@ -11,7 +11,7 @@ EdgeTX widgets.
 | --- | --- |
 | `src/WIDGETS/AeroGrid/main.lua` | EdgeTX entry points, native options, event routing, and callback scheduling. |
 | `src/WIDGETS/AeroGrid/lib/` | Layout parsing/storage, grid geometry, panel hosting, shared services, rendering primitives, themes, and editor modules. |
-| `src/WIDGETS/AeroGrid/panels/` | Thirteen user-facing panel types plus `host-diagnostics`, `service-probe`, the fixed-data `theme-showcase`, and the opt-in `map-prototype` experiment. |
+| `src/WIDGETS/AeroGrid/panels/` | Thirteen user-facing panel types plus `host-diagnostics`, `service-probe`, the fixed-data `theme-showcase`, and the opt-in `map` experiment. |
 | `src/WIDGETS/AeroGrid/layouts/` | Shipped layouts. |
 | `tests/fixtures/layouts/development/` | Simulator and review layouts used by tests and disposable SD images. |
 | `src/WIDGETS/AeroGrid/assets/` | Runtime editor icon and its license. |
@@ -330,7 +330,7 @@ first nonempty label or source, then `itemLabel` and the one-based index;
 lists without `itemLabel` use `"Entry"`. Do not build a separate settings UI
 for each panel.
 
-The [map prototype](map-prototype.md) is available as **Map** in the radio editor
+The [map panel](map.md) is available as **Map** in the radio editor
 and supports all grid spans on the TX16S-sized target. The simulator build includes
 a real aerial-imagery fixture. On the radio it requires an installed v2 map area
 and live GPS; coverage is selected automatically.

@@ -524,7 +524,7 @@ local function testSpanGalleryIsComplete()
     for _, stem in ipairs(stems) do
         local module = assert(loadfile(sourcePath .. "panels/" .. stem .. ".lua"))()
         -- Map has its own imagery-backed fixture and all-span integration suite.
-        if stem ~= "map-prototype" and panelHost.supportsSpan(module, 1, 1) then
+        if stem ~= "map" and panelHost.supportsSpan(module, 1, 1) then
             compared = compared + 1
             assert(
                 string.find(gallery, "type: " .. stem, 1, true),
@@ -797,7 +797,7 @@ local function testScreensReachEveryShippedLayout()
             and stem ~= "host-diagnostics"
             and stem ~= "service-probe"
             and stem ~= "theme-showcase"
-            and stem ~= "map-prototype" -- Experimental panel has its own integration suite.
+            and stem ~= "map" -- Experimental panel has its own integration suite.
         then
             assert(panelReviews[stem], stem .. " has no panel-review screen")
             count = count + 1
@@ -2888,10 +2888,19 @@ local function drawnBoxes(entry)
     local root = entry.instance.panel and entry.instance.panel.root
     local compassFurniture = {}
     local backgrounds = {}
-    if entry.placement.type == "map-prototype" and entry.instance.viewport then
+    if entry.placement.type == "map" and entry.instance.viewport then
         -- Map labels intentionally overlay imagery and georeferenced markers.
         for _, object in ipairs(entry.instance.viewport.children) do
             backgrounds[object] = true
+        end
+        for _, plate in pairs(entry.instance.headerBackplates) do
+            if type(plate) == "table" and plate.object then
+                tapeBackground[plate.object] = true
+            end
+        end
+        tapeBackground[entry.instance.statusBackground] = true
+        if entry.instance.coordinatesBackground then
+            tapeBackground[entry.instance.coordinatesBackground] = true
         end
     end
     local tape = entry.instance.tape

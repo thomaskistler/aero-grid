@@ -164,18 +164,19 @@ panels:
           accent: green
 ```
 
-### `map-prototype`
+### `map`
 
 **Experimental; available as Map in the radio's Add Panel picker.** Supported span:
 `any` (all grid sizes), targeting TX16S 480 x 272. Requires an installed
-[map area](../developer-guide/map-prototype.md#shared-map-area), generated
-as a synthetic test fixture or supplied separately. See the [radio map experiment](../developer-guide/map-prototype.md)
+[map area](../developer-guide/map.md#shared-map-area), generated
+as a synthetic test fixture or supplied separately. See the [radio map experiment](../developer-guide/map.md)
 for setup, controls and hardware limitations.
 
 | Key | Type | Default | Allowed values | Notes |
 | --- | --- | --- | --- | --- |
 | `label` | string | `MAP` | Any string | Standard panel heading. |
 | `source` | string | `GPS` | EdgeTX GPS source name | Subscribes through the shared Navigation service. |
+| `initialZoom` | string | `widest` | `widest`, `middle`, `most detailed` | Initial installed level when selecting an area. For even level counts, middle uses the wider central level. |
 | `headingSource` | string | `""` | Blank or numeric telemetry source name | Degrees clockwise from true north. Blank derives GPS course after at least 1 m of movement, averaging the last five movement bearings circularly; stationary fixes retain it. The plane stays cyan while heading is unknown. A configured source is used directly and does not fall back to GPS when unavailable/stale. |
 | `positionMarker` | string | `plane` | `plane`, `arrow` | Cyan aircraft or blue navigation arrow inside a translucent white circle. Both use the same heading and GPS position. |
 | `armSwitch` | string | `""` | Blank, switch position such as `SF^`, `SA-`, `SFv`, or logical switch `L01` | Blank uses EdgeTX home; otherwise uses the Navigation service's first-arm GPS home capture. Panel-local, not synchronized with other panels. |
@@ -193,7 +194,7 @@ grid:
   rows: 4
 panels:
   - id: map
-    type: map-prototype
+    type: map
     col: 0
     row: 0
     colSpan: 4
