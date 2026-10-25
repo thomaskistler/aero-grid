@@ -153,15 +153,11 @@ local function control(key, leaf)
 end
 
 local function resetBound(leaf)
-    for _, row in ipairs(context.editorUi.drawerControls) do
-        if row.field.key == "metrics" and row.field.path and row.field.path[#row.field.path] == leaf then
-            assert(row.reset and row.reset.properties.active(), "configured chart bounds must offer Auto")
-            row.reset.properties.press()
-            drawerReady()
-            return
-        end
-    end
-    error("missing chart bound " .. leaf)
+    local bound = control("metrics", leaf)
+    assert(bound.display(bound.min) == "Auto", "one step below the numeric minimum must offer Auto")
+    assert(bound.display(bound.min + 1) ~= "Auto", "the next step must be a numeric bound")
+    bound.set(bound.min)
+    drawerReady()
 end
 
 local function back()
@@ -256,6 +252,11 @@ for catalogIndex, item in ipairs(editor.CATALOG) do
             local entry = placement.config.metrics[1]
             local minimum, maximum = control("metrics", "rangeMin"), control("metrics", "rangeMax")
             assert(minimum.display(minimum.get()) == "Auto" and maximum.display(maximum.get()) == "Auto")
+            assert(minimum.get() == minimum.min and maximum.get() == maximum.min, "bounds must default to Auto")
+            assert(entry.rangeMin == nil and entry.rangeMax == nil, "Auto must not store a numeric bound")
+            minimum.set(minimum.get() + 1)
+            drawerReady()
+            assert(entry.rangeMin == -100000, "one step above Auto must select the lowest numeric bound")
             minimum.set(0)
             drawerReady()
             maximum.set(2000)
@@ -272,11 +273,7 @@ for catalogIndex, item in ipairs(editor.CATALOG) do
             assert(entry.rangeMin == -10 and entry.rangeMax == 200, "negative bounds must remain editable")
             resetBound("rangeMin")
             assert(entry.rangeMin == nil and entry.rangeMax == 200, "one-sided bounds must survive saving")
-            for _, row in ipairs(context.editorUi.drawerControls) do
-                if row.field.path and row.field.path[#row.field.path] == "rangeMin" then
-                    assert(not row.reset.properties.active(), "Auto is disabled when the bound is already automatic")
-                end
-            end
+            assert(minimum.get() == minimum.min and minimum.display(minimum.get()) == "Auto")
         end
         back()
     end

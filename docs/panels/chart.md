@@ -14,7 +14,7 @@ with its recorded minimum and maximum on the next line.
 | --- | --- |
 | **Label** | Title above the plot. Empty uses the source name for one series, or CHART for multiple series. |
 | **Metrics** | Zero to three sources. Tap **+**, then choose each entry's **Source**, optional **Label**, **Unit**, **Precision** (0–3, or Sensor), and **Color**. |
-| **Range min**, **Range max** | Optional per-entry vertical bounds. Both default to **Auto**. Enter a number to fix that bound, or tap its **Auto** button to clear it. If both are entered, maximum must exceed minimum. |
+| **Range min**, **Range max** | Optional per-entry vertical bounds. Both default to **Auto**, one step below the lowest allowed numeric value. Select a number to fix that bound, or return to **Auto** to clear it. If both are entered, maximum must exceed minimum. |
 | **Time range** | Growing keeps the recording visible by doubling its time scale; rolling shows the latest fixed window. |
 | **Initial / window duration** | 30 seconds, 1 minute, 2 minutes, 5 minutes, or 10 minutes. This is the initial growing range or the rolling window. |
 | **Series scales** | Shared uses one vertical scale. Independent gives each trace its own scale, suitable for voltage/current or RSSI/link quality. Independent heights are not directly comparable. |
