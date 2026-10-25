@@ -31,7 +31,12 @@ back up your configuration, install the complete widget directory, copy the
 generated `AEROGRID/maps/` library into `/AEROGRID/maps/`, and copy `review-map.yaml` to
 `/WIDGETS/AeroGrid/layouts/`. Restart before selecting the layout.
 Do not copy the fixture's `MODELS/` or `RADIO/` onto your radio.
-The experimental panel is intentionally absent from the normal editor catalog.
+On the radio, open the layout editor, tap **+**, and choose **Map** in
+**Select panel**. Configure its GPS source and optional heading, home switch,
+satellite, marker and path settings in the normal drawer, then save the layout.
+No YAML editing is required. The panel still needs an installed v2 map area and
+live GPS inside its coverage; adding the panel does not download or install maps.
+Area selection remains automatic from GPS, with no area-picker setting.
 Existing map panels can be resized to any in-bounds grid span. Tiles remain
 native size and the viewport clips to the panel. Small panels hide zoom
 controls and the fullscreen hint when space is insufficient; the
@@ -227,8 +232,12 @@ rotation; regenerate it with
 
 ## Rendering and memory boundaries
 
-- Nine persistent 256 x 256 image objects cover the maximum 480 x 272 viewport,
-  including partially visible tiles. Tiles render at native size, without
+- The tile pool is sized to the viewport, including partially visible tiles:
+  nine persistent 256 x 256 image objects at 480 x 272, up to fifteen at
+  800 x 480. It grows only when a larger viewport requires it and reuses slots
+  when shrinking; a separate tile layer keeps new slots below markers and paths.
+  The TX16S remains the first performance target; larger-radio native costs are
+  unmeasured. Tiles render at native size, without
   scaling, rotation or alpha. Parent clipping supplies the viewport.
 - GPS-only updates change marker position only when its rounded pixel position
   changes, its image source only when the 10-degree heading bucket changes, and status text
