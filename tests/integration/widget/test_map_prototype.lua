@@ -1176,7 +1176,7 @@ do
     local folder = services.host.layoutStore.sdRoot(services.host.path) .. "AEROGRID/maps/areas/"
     local manifests, names = {}, {}
     local scans, reads = 0, 0
-    local function addArea(id, narrow, detail)
+    local function addArea(id, narrow, detail, latitude, longitude)
         local base = captured.pack
         local text = "format: aerogrid-map-area\nversion: 2\nid: "
             .. id
@@ -1196,6 +1196,13 @@ do
         for _, level in ipairs(base.levels) do
             if not detail or level.zoom <= detail then
                 local xMin, xMax, yMin, yMax = level.xMin, level.xMax, level.yMin, level.yMax
+                if latitude then
+                    local n = 2 ^ level.zoom
+                    xMin = math.floor((longitude + 180) / 360 * n) - 1
+                    yMin = math.floor((1 - math.log(math.tan(math.pi / 4 + math.rad(latitude) / 2)) / math.pi) / 2 * n)
+                        - 1
+                    xMax, yMax = xMin + 2, yMin + 2
+                end
                 if narrow and level == base.levels[#base.levels] then
                     local x, y = map.project(level, 25.9973, -97.1572)
                     xMin, yMin = level.xMin + math.floor(x / 256), level.yMin + math.floor(y / 256)
@@ -1248,6 +1255,61 @@ do
         end
         return originalRead(path)
     end
+    addArea("demo", false, nil, 37.436736, -122.1258128)
+    local demo = map.create(
+        entry.container,
+        { x = 0, y = 0, w = 480, h = 272 },
+        { label = "DEMO", source = "GPS", flightPath = "trail", showCoordinates = true },
+        services
+    )
+    demo.feed = { known = false, fix = false, state = "unavailable", home = true }
+    demo.nextTileLoad = math.huge
+    local sharedFeed = demo.feed
+    for _ = 1, #names + 1 do
+        map.refresh(demo)
+    end
+    a.assertEqual(demo.pack.id, "demo", "absent GPS must select coverage for the exact demo coordinates")
+    a.assertEqual(demo.feed, sharedFeed, "demo must not replace the shared navigation subscription")
+    a.assertEqual(sharedFeed.latitude, nil, "demo must not mutate shared navigation state")
+    a.assertEqual(demo.statusText, "DEMO POSITION")
+    a.assertEqual(demo.coordinatesLabel.properties.text, "37.436736, -122.125813")
+    assert(demo.markerVisible, "demo must render its marker on installed coverage")
+    assert(not demo.homeVisible, "demo must not display a fabricated or captured home")
+    a.assertEqual(#demo.pathPoints, 0, "demo must not record fabricated flight history")
+    demo.pending = nil
+    local expectedX, expectedY = map.project(demo.pack.levels[demo.levelIndex], 37.436736, -122.1258128, demo.transform)
+    a.assertEqual(demo.markerX, math.floor(expectedX - demo.viewX + 0.5))
+    a.assertEqual(demo.markerY, math.floor(expectedY - demo.viewY + 0.5))
+    demo.feed = { known = true, fix = false, state = "unavailable" }
+    map.refresh(demo)
+    assert(not demo.demoActive and not demo.markerVisible, "detected no-fix GPS must disable the test marker")
+    a.assertEqual(demo.statusText, "NO FIX")
+    demo.feed = { known = false, fix = false, state = "unavailable" }
+    map.refresh(demo)
+    assert(not demo.demoActive, "lost previously detected GPS must never activate the fallback")
+    for _, reading in ipairs({
+        { known = true, fix = false, state = "unavailable" },
+        { known = true, fix = true, state = "stale", latitude = 25.9973, longitude = -97.1572 },
+        { known = true, fix = true, state = "normal", latitude = 91, longitude = 0 },
+        { known = false, fix = false, state = "stale" },
+    }) do
+        local absent = map.create(entry.container, { x = 0, y = 0, w = 480, h = 272 }, { source = "GPS" }, services)
+        absent.feed = reading
+        map.refresh(absent)
+        assert(not absent.demoActive, "detected, stale, no-fix and invalid readings must not use the fallback")
+    end
+    demo.feed = { known = true, fix = true, state = "normal", latitude = 25.9973, longitude = -97.1572 }
+    for _ = 1, #names + 1 do
+        map.refresh(demo)
+    end
+    a.assertEqual(demo.pack.id, "alpha", "real GPS recovery must select real coverage")
+    assert(not demo.demoActive and demo.markerVisible)
+    a.assertEqual(demo.statusText, "GPS")
+    a.assertEqual(#demo.pathPoints, 1, "real GPS must start history without connecting to the demo")
+    assert(demo.pathPoints[1].breakBefore)
+    manifests["demo.yaml"] = nil
+    table.remove(names)
+    scans, reads = 0, 0
     local automatic = map.create(
         entry.container,
         { x = 0, y = 0, w = 480, h = 272 },

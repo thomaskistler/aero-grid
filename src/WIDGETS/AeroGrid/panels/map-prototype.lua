@@ -43,6 +43,17 @@ local FULL_HISTORY_POINTS = 1024
 local COORDINATE_PRECISION = 6
 local CONTROL_TOPS = { 44, 76, 0, 112 }
 local CONTROLS_HEIGHT = 144
+local DEMO_POSITION = {
+    known = true,
+    fix = true,
+    state = "normal",
+    latitude = 37.436736,
+    longitude = -122.1258128,
+}
+
+local function positionFeed(context)
+    return context.demoActive and DEMO_POSITION or context.feed
+end
 
 function map.meanCourse(context, bearing)
     local history = context.courseHistory or {}
@@ -420,6 +431,9 @@ local function placeStatus(context)
 end
 
 local function setStatus(context, text)
+    if context.demoActive then
+        text = text == "GPS" and "DEMO POSITION" or "DEMO: " .. text
+    end
     local healthy = text == "GPS"
     local state = healthy and (context.satelliteState or "normal")
         or text == "GPS STALE" and "stale"
@@ -892,7 +906,7 @@ local function updateCoordinates(context)
     if not context.coordinatesLabel then
         return
     end
-    local feed = context.feed
+    local feed = positionFeed(context)
     local valid = feed
         and feed.known
         and feed.fix
@@ -931,7 +945,7 @@ end
 local function updateHome(context)
     local feed = context.feed
     local x, y
-    if feed and feed.home then
+    if not context.demoActive and feed and feed.home then
         x, y = map.project(
             context.pack.levels[context.levelIndex],
             feed.pilotLatitude,
@@ -1077,7 +1091,7 @@ local function loadTile(context)
 end
 
 local function followAircraft(context)
-    local feed = context.feed
+    local feed = positionFeed(context)
     if not context.following or context.drag or not feed or not feed.known or not feed.fix or feed.state == "stale" then
         context.followPan, context.followSample = nil, nil
         return
@@ -1144,7 +1158,7 @@ local function followAircraft(context)
 end
 
 local function updateMarker(context)
-    local feed = context.feed
+    local feed = positionFeed(context)
     local state = not feed and "NO GPS"
         or not feed.known and "NO GPS"
         or feed.state == "stale" and "GPS STALE"
@@ -1448,7 +1462,7 @@ local function updateControls(context)
 end
 
 local function selectArea(context)
-    local feed = context.feed
+    local feed = positionFeed(context)
     if not feed or not feed.known or not feed.fix or feed.state ~= "normal" then
         return
     end
@@ -1529,6 +1543,18 @@ local function selectArea(context)
 end
 
 function map.refresh(context)
+    local feed = context.feed
+    if feed and feed.known then
+        context.gpsDetected = true
+    end
+    local demo = feed ~= nil and feed.known == false and feed.state ~= "stale" and not context.gpsDetected
+    if demo ~= context.demoActive then
+        context.demoActive = demo
+        context.discovery, context.nextDiscovery = nil, nil
+        context.followPan, context.followSample = nil, nil
+        context.courseLatitude, context.courseLongitude, context.course = nil, nil, nil
+        context.courseHistory, context.courseIndex = nil, nil
+    end
     updateSatelliteState(context)
     if context.automatic then
         selectArea(context)
@@ -1540,7 +1566,7 @@ function map.refresh(context)
     preparePathLines(context)
     recordPath(context)
     if not context.pack then
-        local feed = context.feed
+        local feed = positionFeed(context)
         local live = feed and feed.known and feed.fix and feed.state == "normal"
         setStatus(context, live and (context.discoveryStatus or "FINDING MAP") or "WAITING FOR GPS")
         updateCoordinates(context)
