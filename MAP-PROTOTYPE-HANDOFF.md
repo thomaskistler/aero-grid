@@ -9,6 +9,10 @@ without browser code or network access.
 
 ## Implemented
 
+- Temporary absent-source test fallback: panel-local 37.436736, -122.1258128,
+  visibly marked DEMO. It requires installed coverage there and never records
+  history or home. Detected/no-fix/stale/invalid GPS never substitutes it, and
+  loss after detection does not reactivate it. Shared navigation is unchanged.
 - Radio-selectable **Map** (`map-prototype`) panel, resizable to all grid spans on the current
   TX16S 480x272 target. Standard panel shell, accent, title and state badge;
   native-size imagery fills the panel except for the accent sidebar.
