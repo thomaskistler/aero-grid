@@ -1,20 +1,28 @@
 Labels:
   "Favorites":
-Sort: 1
+Sort: 0
 Models:
   model1.yml:
-    hash: "72110000285d081d"
-    name: "AEROGRID STD"
+    name: "AG Overview"
     labels: ""
     bitmap: "04530_x10.png"
-    lastopen: 1788838257
   model2.yml:
-    hash: "72110000285d081e"
-    name: "AEROGRID PANEL1"
+    name: "AG Flight"
     labels: ""
     bitmap: "04530_x10.png"
-    lastopen: 1788838257
   model3.yml:
-    name: "AEROGRID PANEL2"
+    name: "AG Power-Link"
+    labels: ""
+    bitmap: "04530_x10.png"
+  model4.yml:
+    name: "AG Navigation"
+    labels: ""
+    bitmap: "04530_x10.png"
+  model5.yml:
+    name: "AG Controls"
+    labels: ""
+    bitmap: "04530_x10.png"
+  model6.yml:
+    name: "AG System"
     labels: ""
     bitmap: "04530_x10.png"

@@ -13,6 +13,9 @@ reporting a result.
 Neither proves receiver behavior, native radio memory stability, or support
 for every color radio.
 
+The normal `make build` also includes the synthetic tile pack and `review-map`
+development layout for the [experimental radio map panel](map.md).
+
 ## Mock memory regression tests
 
 `python3 tests/run.py` includes repeated layout reload/resize checks for retired
@@ -127,25 +130,35 @@ before modifying the fixture.
 
 ## Use the fixture models
 
-A clean build selects **AEROGRID STD**, with Default on its first screen.
+A clean build selects **AG Overview**, with Default on its first screen.
 Change models with the simulated
 radio's model-selection UI, just as on a radio.
 
 | Model | What to exercise |
 | --- | --- |
-| **AEROGRID STD** (`model1.yml`) | Six screens: Default, Empty, Diagnostics, services, services2, and Palette. All four shipped layouts, plus both diagnostic panel types. |
-| **AEROGRID PANEL1** (`model2.yml`) | Six screens: RX battery, flight counter, flight mode, flight timer, link status, and metric. |
-| **AEROGRID PANEL2** (`model3.yml`) | Six screens: model identity, navigation, state, trim panel, TX battery, and channel output. |
+| **AG Overview** (`model1.yml`) | Default; sim; sim2. |
+| **AG Flight** (`model2.yml`) | review-model-identity; review-flight-mode; review-flight-timer; review-flight-counter. |
+| **AG Power-Link** (`model3.yml`) | review-rx-battery; review-cell-sources; review-tx-battery; review-link-status; review-metric. |
+| **AG Navigation** (`model4.yml`) | review-navigation; review-map. |
+| **AG Controls** (`model5.yml`) | review-output; review-trim-panel. |
+| **AG System** (`model6.yml`) | Diagnostics; services; services2; review-state; states; Palette; Empty. |
 
 Review and simulator-only layouts live in
 `tests/fixtures/layouts/development/`; `make build` adds them to the disposable
 simulator image without including them in the widget source or release ZIP.
-The two panel models contain exactly one dashboard per user-facing panel type.
+Together the categories expose all 23 registered layouts exactly once, in the
+screen order shown above. Layout filenames and registry indices are unchanged.
+The model list starts in category order rather than alphabetical order.
+All six models share the same sensors, inputs, channel mixes, switches, trims,
+and timer setup, including the Glide and Up timer samples from the former panel
+models. Changing category changes dashboards and model identity, not source
+meanings. EdgeTX still stores each model's live timer/GV/trim state separately;
+category changes do not synchronize that state.
 All screens use App mode and the Modern Dark theme. On the State dashboard, SF
 changes MODE, SA changes RATE, and SB changes FLAP; NO MIDDLE deliberately
 leaves SA's middle position unmapped.
 
-The last screen of **AEROGRID STD** is the telemetry-free **Palette** layout. Its
+The sixth screen of **AG System** is the telemetry-free **Palette** layout. Its
 fixed samples show token swatches, text levels, accents, a dial, bars, and
 the six dashboard panel states. Change the widget's Theme option to compare
 Modern Dark and Modern Light, or add a `.yml` theme file as described in
@@ -153,15 +166,22 @@ Modern Dark and Modern Light, or add a `.yml` theme file as described in
 
 **Diagnostics** reports loading, package identity, and service errors; `services`
 and `services2` exercise the service-probe panel across all five services.
-Auxiliary layouts (`sim`, `sim2`, `states`, and `review-cell-sources`) are
-available in the development simulator image through the widget's **Layout**
-option in UI Setup rather than occupying dedicated fixture screens.
 `sim` and `sim2` are complementary live-data dashboards: the first focuses on
 telemetry, while the second focuses on radio-local values and metric modes.
 Development layouts are not included in the release ZIP.
+
+The second screen of **AG Navigation** is **review-map**, using GPS, Sats, and
+SF down (`SFv`) for arming. Long-press the map
+to enter fullscreen and reveal its zoom/pan controls. See the
+[map guide](map.md) for synthetic GPS coordinates and limitations.
 
 The flight-counter review installs only one tracker. Arm with SF down, raise
 CH3 above 25%, and supply a live telemetry link; qualification and disarm
 timeouts are shortened to three seconds for review. History and announcements
 are disabled. Resize the single panel in the editor to inspect other spans
 without installing multiple trackers.
+
+Rebuild and re-import models/settings into Companion to replace the former
+STD/PANEL1/PANEL2 models. Existing Companion documents and writable simulator
+images retain their old model screens until refreshed; `make build` replaces
+the generated image, including any saved experiments.

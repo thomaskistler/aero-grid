@@ -57,6 +57,7 @@ nav:
       - Test and debug: developer-guide/testing.md
       - Run and test in simulators: developer-guide/simulators.md
       - Map areas and shared tiles: developer-guide/map-packs.md
+      - Radio map: developer-guide/map.md
       - Repository and architecture: developer-guide/architecture.md
       - Project tools: developer-guide/tools.md
       - Tutorial videos: developer-guide/videos.md

@@ -1965,6 +1965,31 @@ function support.radio(hostIo)
             return stat(size)
         end
 
+        -- EdgeTX luaDir returns a closure over the directory and no value on open failure.
+        function dir(directory)
+            local listing = os.tmpname()
+            local function quote(value)
+                return "'" .. string.gsub(value, "'", "'\\''") .. "'"
+            end
+            local ok = os.execute("ls -1A " .. quote(directory) .. " > " .. quote(listing) .. " 2>/dev/null")
+            if not ok then
+                os.remove(listing)
+                return nil
+            end
+            local file = assert(hostIo.open(listing, "r"))
+            local names = {}
+            for name in file:lines() do
+                names[#names + 1] = name
+            end
+            file:close()
+            os.remove(listing)
+            local index = 0
+            return function()
+                index = index + 1
+                return names[index]
+            end
+        end
+
         local handle = hostIo.open(filename, "rb")
         if not handle then
             return

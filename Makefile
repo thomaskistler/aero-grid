@@ -116,12 +116,14 @@ format:
 	}
 	@stylua --indent-type Spaces $(LUA_FILES)
 
-build:
+build: $(VENV_STAMP)
 	@mkdir -p "$(SDCARD_DIR)"
 	@rsync -a --delete "$(SIMULATOR_FIXTURE)/" "$(SDCARD_DIR)/"
 	@mkdir -p "$(dir $(WIDGET_DESTINATION))"
 	@rsync -a --delete "$(WIDGET_SOURCE)/" "$(WIDGET_DESTINATION)/"
 	@rsync -a "tests/fixtures/layouts/development/" "$(WIDGET_DESTINATION)/layouts/"
+	@mkdir -p "$(SDCARD_DIR)/AEROGRID/maps"
+	@rsync -a --exclude source.json "tests/fixtures/map-imagery/" "$(SDCARD_DIR)/AEROGRID/maps/"
 # EdgeTX compiles each script to .luac beside it and prefers the bytecode.
 # rsync preserves source timestamps, so a freshly copied .lua can look older
 # than bytecode the radio compiled from the previous build, and the radio then

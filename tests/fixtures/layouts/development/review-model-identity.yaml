@@ -1,7 +1,6 @@
 # Review harness for `model-identity`. Not a dashboard.
 #
-# Screen 1 on AEROGRID PANEL2. Panel reviews are split across two models
-# to stay below EdgeTX's ten-screen limit.
+# Screen 1 on AG Flight.
 #
 # **Read this screen against the model name you have set.** Every panel draws
 # the same model and the same picture, because there is only one model

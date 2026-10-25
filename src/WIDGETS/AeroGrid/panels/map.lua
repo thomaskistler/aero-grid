@@ -1,0 +1,1872 @@
+-- SPDX-License-Identifier: GPL-2.0-only
+
+-- Map panel consuming the shared map-area contract.
+local map = {
+    id = "map",
+    apiVersion = 1,
+    supportedSpans = { "any" },
+    refreshInterval = 2,
+    settings = {
+        { key = "label", label = "Label", type = "string", default = "MAP" },
+        { key = "source", label = "GPS source", type = "string", default = "GPS" },
+        {
+            key = "initialZoom",
+            label = "Initial zoom",
+            type = "string",
+            default = "widest",
+            choices = { "widest", "middle", "most detailed" },
+        },
+        { key = "headingSource", label = "Heading source", type = "string", default = "" },
+        {
+            key = "positionMarker",
+            label = "Position marker",
+            type = "string",
+            default = "plane",
+            choices = { "plane", "arrow" },
+        },
+        { key = "armSwitch", label = "Home arm switch", type = "string", default = "" },
+        { key = "satelliteSource", label = "Satellite count source", type = "string", default = "" },
+        { key = "satelliteWarning", label = "Warn below satellites", type = "number", default = 8 },
+        { key = "satelliteCritical", label = "Critical below satellites", type = "number", default = 4 },
+        { key = "showSatellites", label = "Show satellites", type = "boolean", default = true },
+        { key = "showCoordinates", label = "Show coordinates", type = "boolean", default = false },
+        {
+            key = "flightPath",
+            label = "Flight path",
+            type = "string",
+            default = "off",
+            choices = { "off", "trail", "full" },
+        },
+    },
+}
+
+local TILE = 256
+local LIMIT = 85.05112878
+local MAX_AREA_NAME_BYTES = 240
+local TRAIL_POINTS = 31
+local TRAIL_TICKS = 3000
+local FULL_RENDER_SEGMENTS = 63
+local FULL_HISTORY_POINTS = 1024
+local COORDINATE_PRECISION = 6
+local CONTROL_TOPS = { 44, 76, 0, 112 }
+local CONTROLS_HEIGHT = 144
+function map.meanCourse(context, bearing)
+    local history = context.courseHistory or {}
+    context.courseHistory = history
+    local index = context.courseIndex or 1
+    history[index] = bearing
+    context.courseIndex = index % 5 + 1
+    local east, north = 0, 0
+    for _, sample in ipairs(history) do
+        east = east + math.sin(math.rad(sample))
+        north = north + math.cos(math.rad(sample))
+    end
+    -- Opposing directions have no meaningful mean; hold until it settles.
+    if east * east + north * north > (#history * 0.2) ^ 2 then
+        context.course = math.deg(math.atan(east, north)) % 360
+    end
+    return context.course
+end
+
+local function orientAircraft(aircraft, heading)
+    heading = math.floor((heading or 0) / 10 + 0.5) * 10 % 360
+    if aircraft.heading == heading then
+        return
+    end
+    aircraft.heading = heading
+    aircraft.file = aircraft.assets .. string.format("map-%s-%03d.png", aircraft.style, heading)
+end
+
+local function createAircraft(parent, x, y, size, assets, follow, marker)
+    local style = marker == "arrow" and "arrow" or "aircraft"
+    local aircraft = {
+        assets = assets,
+        style = style,
+        heading = 0,
+        file = assets .. (follow and "map-follow.png" or ("map-" .. style .. "-000.png")),
+    }
+    aircraft.root = lvgl.image(parent, {
+        x = x,
+        y = y,
+        w = size,
+        h = size,
+        floating = true,
+        file = function()
+            return aircraft.file
+        end,
+    })
+    return aircraft
+end
+
+local function integer(value, low, high)
+    return type(value) == "number" and value == value and value % 1 == 0 and value >= low and value <= high
+end
+
+local function identifier(value)
+    return type(value) == "string" and #value >= 1 and #value <= 32 and string.match(value, "^[a-z0-9_-]+$")
+end
+
+local function clamp(value, low, high)
+    return math.max(low, math.min(value, high))
+end
+
+function map.validateSettings(settings)
+    local errors = {}
+    if
+        settings.initialZoom ~= nil
+        and settings.initialZoom ~= "widest"
+        and settings.initialZoom ~= "middle"
+        and settings.initialZoom ~= "most detailed"
+    then
+        errors[#errors + 1] = "initialZoom must be widest, middle, or most detailed"
+    end
+    if settings.positionMarker ~= nil and settings.positionMarker ~= "plane" and settings.positionMarker ~= "arrow" then
+        errors[#errors + 1] = "positionMarker must be plane or arrow"
+    end
+    if settings.pack ~= nil then
+        errors[#errors + 1] = "pack is no longer supported; installed map areas are selected from GPS"
+    end
+    if settings.headingSource ~= nil and type(settings.headingSource) ~= "string" then
+        errors[#errors + 1] = "headingSource must be a source name or blank for GPS course"
+    end
+    if settings.satelliteSource ~= nil and type(settings.satelliteSource) ~= "string" then
+        errors[#errors + 1] = "satelliteSource must be a source name or blank"
+    end
+    for _, key in ipairs({ "satelliteWarning", "satelliteCritical" }) do
+        local value = settings[key]
+        if
+            value ~= nil
+            and (type(value) ~= "number" or value ~= value or value < 0 or value == math.huge or value % 1 ~= 0)
+        then
+            errors[#errors + 1] = key .. " must be a nonnegative integer"
+        end
+    end
+    if #errors == 0 and (settings.satelliteCritical or 4) > (settings.satelliteWarning or 8) then
+        errors[#errors + 1] = "satelliteCritical must not exceed satelliteWarning"
+    end
+    if settings.showSatellites ~= nil and type(settings.showSatellites) ~= "boolean" then
+        errors[#errors + 1] = "showSatellites must be a boolean"
+    end
+    if settings.showCoordinates ~= nil and type(settings.showCoordinates) ~= "boolean" then
+        errors[#errors + 1] = "showCoordinates must be a boolean"
+    end
+    if
+        settings.flightPath ~= nil
+        and settings.flightPath ~= "off"
+        and settings.flightPath ~= "trail"
+        and settings.flightPath ~= "full"
+    then
+        errors[#errors + 1] = "flightPath must be off, trail, or full"
+    end
+    local arm = settings.armSwitch
+    if arm ~= nil and arm ~= "" then
+        if type(arm) ~= "string" or not (string.match(arm, "^S[A-Z][%^v%-]$") or string.match(arm, "^L%d%d$")) then
+            errors[#errors + 1] =
+                "armSwitch must be blank, a position such as SF^, SA-, SFv, or a logical switch such as L01"
+        end
+    end
+    return errors
+end
+
+function map.validatePack(pack)
+    assert(type(pack) == "table", "map pack must be a table")
+    assert(pack.format == "aerogrid-map-area" and pack.version == 2, "unsupported map area")
+    assert(identifier(pack.id) and identifier(pack.imagerySet), "invalid map area or imagery-set ID")
+    assert(
+        pack.projection == "EPSG:3857" and pack.tileScheme == "XYZ" and pack.tileSize == TILE,
+        "unsupported map projection"
+    )
+    assert(pack.imageFormat == "jpeg", "map areas require JPEG tiles; regenerate legacy PNG packs")
+    assert(
+        type(pack.name) == "string"
+            and #pack.name >= 1
+            and #pack.name <= MAX_AREA_NAME_BYTES
+            and string.match(pack.name, "^%s*(.-)%s*$") == pack.name,
+        "invalid map area name"
+    )
+    local selection = pack.selection
+    assert(type(selection) == "table", "map area requires selection metadata")
+    assert(
+        identifier(selection.radio)
+            and (selection.coverageMode == "full-area-clamped" or selection.coverageMode == "per-zoom-clamped"),
+        "invalid map selection metadata"
+    )
+    local bounds = selection.bounds
+    assert(type(bounds) == "table", "invalid map selection bounds")
+    local west, south, east, north = bounds.west, bounds.south, bounds.east, bounds.north
+    assert(
+        type(west) == "number"
+            and type(south) == "number"
+            and type(east) == "number"
+            and type(north) == "number"
+            and west >= -180
+            and west <= 180
+            and east >= -180
+            and east <= 180
+            and west ~= east
+            and south >= -LIMIT
+            and north <= LIMIT
+            and south < north,
+        "invalid map selection bounds"
+    )
+    assert(
+        type(pack.levels) == "table" and #pack.levels >= 1 and #pack.levels <= 9,
+        "map area requires 1-9 zoom levels"
+    )
+    local previous, total = nil, 0
+    for _, level in ipairs(pack.levels) do
+        assert(type(level) == "table" and integer(level.zoom, 11, 19), "invalid map zoom")
+        local last = 2 ^ level.zoom - 1
+        assert(
+            integer(level.xMin, 0, last) and integer(level.xMax, level.xMin, level.xMin + last - 1),
+            "invalid map x bounds"
+        )
+        assert(integer(level.yMin, 0, last) and integer(level.yMax, level.yMin, last), "invalid map y bounds")
+        total = total + (level.xMax - level.xMin + 1) * (level.yMax - level.yMin + 1)
+        assert(total <= 2000, "map area exceeds 2000 tiles")
+        if previous then
+            assert(level.zoom == previous.zoom + 1, "map zoom levels must be consecutive")
+        end
+        previous = level
+    end
+    return pack
+end
+
+function map.transform(level)
+    local n = 2 ^ level.zoom
+    return {
+        west = level.xMin / n * 360 - 180,
+        longitudeCenter = (level.xMin + level.xMax + 1) / 2 / n * 360 - 180,
+        north = math.pi * (1 - 2 * level.yMin / n),
+        xScale = n * TILE / 360,
+        yScale = n * TILE / (2 * math.pi),
+    }
+end
+
+-- Keep coordinates tile-local instead of rounding very large world-pixel values.
+function map.project(level, latitude, longitude, transform)
+    if
+        type(latitude) ~= "number"
+        or type(longitude) ~= "number"
+        or latitude ~= latitude
+        or longitude ~= longitude
+        or math.abs(latitude) > LIMIT
+        or math.abs(longitude) > 180
+    then
+        return nil
+    end
+    transform = transform or map.transform(level)
+    longitude = longitude + math.floor((transform.longitudeCenter - longitude + 180) / 360) * 360
+    local radians = latitude * math.pi / 180
+    local mercator = math.log(math.tan(math.pi / 4 + radians / 2))
+    return (longitude - transform.west) * transform.xScale, (transform.north - mercator) * transform.yScale
+end
+
+function map.clampView(level, width, height, x, y)
+    local mapWidth = (level.xMax - level.xMin + 1) * TILE
+    local mapHeight = (level.yMax - level.yMin + 1) * TILE
+    -- Centre undersized coverage; never stretch tiles or invent extra coverage.
+    return math.floor(mapWidth < width and (mapWidth - width) / 2 or clamp(x, 0, mapWidth - width)),
+        math.floor(mapHeight < height and (mapHeight - height) / 2 or clamp(y, 0, mapHeight - height))
+end
+
+local function geometry(context, rect)
+    local frame = context.themeBuilder.frame(context.theme, rect, context.fonts, nil, context.badgeText)
+    frame.labelX = frame.labelX + 5
+    frame.badgeX = frame.badgeX - 5
+    frame.labelWidth = math.max(0, frame.labelWidth - 10)
+    local x = context.theme.spacing.accentWidth
+    local width = math.max(1, rect.w - x)
+    local height = math.max(1, rect.h)
+    return {
+        frame = frame,
+        x = x,
+        y = 0,
+        w = width,
+        h = height,
+        zoomX = x + width - 48,
+        zoomY = height - CONTROLS_HEIGHT - 8,
+        showZoom = width >= 100 and height >= 164,
+    }
+end
+
+local function prepareTileSlots(context)
+    local area = context.area
+    local count = (math.ceil(area.w / TILE) + 1) * (math.ceil(area.h / TILE) + 1)
+    for index = #context.tiles + 1, count do
+        local slot = { file = "", visible = false }
+        slot.image = lvgl.image(context.tileLayer, {
+            x = 0,
+            y = 0,
+            w = TILE,
+            h = TILE,
+            floating = true,
+            file = function()
+                return slot.file
+            end,
+        })
+        context.tiles[index] = slot
+        lvgl.hide(slot.image)
+    end
+end
+
+local function readPack(host, name)
+    assert(identifier(name), "invalid map area ID in filename: " .. tostring(name) .. ".yaml")
+    local directory = host.layoutStore.sdRoot(host.path) .. "AEROGRID/maps/"
+    local filename = directory .. "areas/" .. name .. ".yaml"
+    local info = fstat(filename)
+    assert(info and integer(info.size, 1, 8192), "missing or oversized map area: " .. filename)
+    local content, readError = host.layoutStore.readCandidate(filename)
+    assert(content, readError)
+    assert(type(content) == "string" and #content == info.size, "incomplete map area read: " .. filename)
+    local pack, parseError = host.yaml.parse(content)
+    assert(pack, parseError)
+    map.validatePack(pack)
+    assert(pack.id == name, "map area ID does not match its filename")
+    return pack, directory .. "tiles/" .. pack.imagerySet .. "/"
+end
+
+function map.covers(pack, latitude, longitude)
+    for _, level in ipairs(pack.levels) do
+        local x, y = map.project(level, latitude, longitude)
+        if
+            not x
+            or x < 0
+            or y < 0
+            or x >= (level.xMax - level.xMin + 1) * TILE
+            or y >= (level.yMax - level.yMin + 1) * TILE
+        then
+            return false
+        end
+    end
+    return true
+end
+
+function map.prefer(candidate, current)
+    if not current then
+        return true
+    end
+    local a, b = candidate.levels[#candidate.levels], current.levels[#current.levels]
+    if a.zoom ~= b.zoom then
+        return a.zoom > b.zoom
+    end
+    local areaA = (a.xMax - a.xMin + 1) * (a.yMax - a.yMin + 1)
+    local areaB = (b.xMax - b.xMin + 1) * (b.yMax - b.yMin + 1)
+    return areaA < areaB or (areaA == areaB and candidate.id < current.id)
+end
+
+local function tileFile(context, level, x, y)
+    return context.directory .. string.format("%d/%d/%d.jpg", level.zoom, x % 2 ^ level.zoom, y)
+end
+
+function map.jpegHeader(header)
+    if type(header) ~= "string" or string.sub(header, 1, 2) ~= "\255\216" then
+        return false
+    end
+    local function word(offset)
+        return string.byte(header, offset) * 256 + string.byte(header, offset + 1)
+    end
+    local offset, frame = 3, false
+    while offset + 3 <= #header and string.byte(header, offset) == 255 do
+        repeat
+            offset = offset + 1
+        until offset > #header or string.byte(header, offset) ~= 255
+        if offset + 2 > #header then
+            return false
+        end
+        local marker = string.byte(header, offset)
+        offset = offset + 1
+        if marker == 218 then
+            return frame
+        end
+        if marker == 225 or marker == 217 then
+            return false
+        end
+        local length = word(offset)
+        if length < 2 or offset + length - 1 > #header then
+            return false
+        end
+        if marker >= 192 and marker <= 207 and marker ~= 196 and marker ~= 200 and marker ~= 204 then
+            if
+                (marker ~= 192 and marker ~= 194)
+                or length ~= 17
+                or string.byte(header, offset + 2) ~= 8
+                or word(offset + 3) ~= TILE
+                or word(offset + 5) ~= TILE
+                or string.byte(header, offset + 7) ~= 3
+            then
+                return false
+            end
+            frame = true
+        end
+        offset = offset + length
+    end
+    return false
+end
+
+local function checkTile(filename)
+    local handle, openError = io.open(filename, "r")
+    assert(handle, openError or ("missing map tile: " .. filename))
+    -- Header preflight is bounded. Actual decode failures remain a firmware limitation.
+    ---@diagnostic disable-next-line: param-type-mismatch
+    local header = io.read(handle, 4096)
+    io.close(handle)
+    assert(map.jpegHeader(header), "map tile must be a 256x256 8-bit RGB JPEG without EXIF: " .. filename)
+end
+
+local function placeHeaderBackplates(context)
+    local builder, frame, fonts = context.themeBuilder, context.area.frame, context.fonts
+    local badge = context.badgeText or ""
+    local plates = context.headerBackplates
+    if
+        plates.frame == frame
+        and plates.badgeText == badge
+        and plates.count == context.satelliteHeaderCount
+        and plates.satellitesVisible == context.showSatellites
+    then
+        return
+    end
+    plates.frame, plates.badgeText = frame, badge
+    plates.count, plates.satellitesVisible = context.satelliteHeaderCount, context.showSatellites
+    local heading, font = builder.fitHeading(
+        context.settings.label,
+        builder.headingWidth(frame, fonts.badge, badge),
+        fonts.label,
+        fonts.badge
+    )
+    local function place(plate, x, width, height, visible)
+        if visible then
+            plate.object:set({ x = x - 3, y = frame.labelY - 1, w = width + 6, h = height + 2 })
+        end
+        context.primitives.reconcile(plate.object, visible)
+    end
+    place(
+        context.headerBackplates.title,
+        frame.labelX,
+        builder.measureText(font, heading),
+        builder.fontHeight(font),
+        not frame.labelHidden and heading ~= ""
+    )
+    local badgeX = frame.badgeX + frame.badgeWidth
+    if badge ~= "" then
+        local badgeWidth
+        badgeX, badgeWidth = context.primitives.badgeX(builder, frame, fonts.badge, badge)
+        place(plates.badge, badgeX, badgeWidth, builder.fontHeight(fonts.badge), true)
+    else
+        context.primitives.reconcile(plates.badge.object, false)
+    end
+    if not context.showSatellites then
+        context.primitives.reconcile(plates.satellites.object, false)
+        return
+    end
+    local satelliteText = context.satelliteHeaderCount and string.format("%.0f", context.satelliteHeaderCount) or "--"
+    local satelliteWidth = 18 + builder.measureText(fonts.label, satelliteText)
+    local right = badge ~= "" and badgeX - 6 or frame.badgeX + frame.badgeWidth
+    place(
+        context.headerBackplates.satellites,
+        right - satelliteWidth,
+        satelliteWidth,
+        math.max(16, builder.fontHeight(fonts.label)),
+        context.showSatellites == true
+    )
+end
+
+local function placeStatus(context)
+    local area, builder = context.area, context.themeBuilder
+    local text = context.statusText == "GPS" and "" or context.statusText or ""
+    local width, height = builder.measureText(SMLSIZE, text), builder.fontHeight(SMLSIZE)
+    local centre = area.x + math.floor(area.w / 2)
+    local y = area.y + math.floor((area.h - height) / 2)
+    local reserved = area.frame.reserved
+    local fits = width <= area.w and height <= area.h
+    if reserved and centre - math.floor(width / 2) < reserved.w and y < reserved.h then
+        if reserved.h + height <= area.y + area.h then
+            y = reserved.h
+        elseif area.x + area.w - reserved.w - 4 >= width then
+            centre = reserved.w + 4 + math.floor((area.x + area.w - reserved.w - 4) / 2)
+        else
+            fits = false
+        end
+    end
+    context.statusAnchor = nil
+    context.primitives.centreLabel(context, "statusAnchor", builder, context.statusLabel, centre, y, SMLSIZE, text)
+    context.statusBackground:set({
+        x = centre - math.floor(width / 2) - 4,
+        y = y - 2,
+        w = width + 8,
+        h = height + 4,
+    })
+    context.primitives.reconcile(context.statusBackground, text ~= "" and fits)
+    context.primitives.reconcile(context.statusLabel, text ~= "" and fits)
+end
+
+local function setStatus(context, text)
+    local healthy = text == "GPS"
+    local state = healthy and (context.satelliteState or "normal")
+        or text == "GPS STALE" and "stale"
+        or (text == "LOADING" or text == "OFF VIEW" or text == "FINDING MAP") and "warning"
+        or "unavailable"
+    if context.statusText ~= text or context.badgeState ~= state then
+        context.statusText, context.badgeState = text, state
+        context.satelliteHeaderState = nil
+        local presentation = context.state(state, "cyan")
+        local count = context.satelliteHeaderCount
+        context.primitives.setHeaderState(context, presentation, count and string.format("%.0f", count) or "--")
+        context.label:set({ color = lcd.RGB(0xFFFFFF) })
+        if context.satelliteLabel then
+            context.satelliteLabel:set({ color = lcd.RGB(0xFFFFFF) })
+        end
+        if context.statusLabel then
+            context.statusLabel:set({ text = healthy and "" or text, color = lcd.RGB(0xFFFFFF) })
+            placeStatus(context)
+        end
+    end
+end
+
+local function satelliteCount(reading)
+    local value = reading and reading.available and reading.value
+    if type(value) == "number" and value == value and value >= 0 and value < math.huge and value % 1 == 0 then
+        return value
+    end
+end
+
+local function validCoordinates(latitude, longitude)
+    return type(latitude) == "number"
+        and type(longitude) == "number"
+        and latitude == latitude
+        and longitude == longitude
+        and math.abs(latitude) <= LIMIT
+        and math.abs(longitude) <= 180
+        and math.abs(latitude) < math.huge
+        and math.abs(longitude) < math.huge
+end
+
+local function updateSatelliteState(context)
+    local settings = context.settings
+    if not context.satellites then
+        context.satelliteState = nil
+        return
+    end
+    local count = satelliteCount(context.satellites)
+    local state
+    if count == nil then
+        state = "unavailable"
+    elseif context.satellites.stale then
+        state = "stale"
+    elseif count < (settings.satelliteCritical or 4) then
+        state = "critical"
+    elseif count < (settings.satelliteWarning or 8) then
+        state = "warning"
+    else
+        state = "normal"
+    end
+    context.satelliteState = state
+    if
+        context.satelliteHeader
+        and (
+            context.satelliteHeaderState ~= state
+            or context.satelliteHeaderCount ~= count
+            or context.satelliteHeaderFrame ~= context.area.frame
+        )
+    then
+        context.satelliteHeaderState = state
+        context.satelliteHeaderCount = count
+        context.satelliteHeaderFrame = context.area.frame
+        local presentation = context.state(context.badgeState or state, "cyan")
+        local text = count and string.format("%.0f", count) or "--"
+        context.primitives.setSatelliteHeader(context, text, presentation)
+        context.satelliteLabel:set({ color = lcd.RGB(0xFFFFFF) })
+    end
+end
+
+function map.compactHistory(points, cursor)
+    local selected, smallest
+    local count = #points - 2
+    for offset = 0, math.min(31, count - 1) do
+        local index = 2 + (cursor + offset * 31) % count
+        local previous, point, following = points[index - 1], points[index], points[index + 1]
+        if not point.breakBefore and not following.breakBefore then
+            local scale = math.cos(math.rad(point.latitude))
+            local dx = (following.longitude - previous.longitude + 180) % 360 - 180
+            dx = dx * scale
+            local dy = following.latitude - previous.latitude
+            local x = ((point.longitude - previous.longitude + 180) % 360 - 180) * scale
+            local y = point.latitude - previous.latitude
+            local length = dx * dx + dy * dy
+            local t = length > 0 and clamp((x * dx + y * dy) / length, 0, 1) or 0
+            local error = (x - t * dx) ^ 2 + (y - t * dy) ^ 2
+            if not smallest or error < smallest then
+                smallest, selected = error, index
+            end
+        end
+    end
+    if not selected then
+        -- If only outage boundaries remain in this sample, discard detail without joining across a gap.
+        selected = 2
+        points[3].breakBefore = true
+    end
+    table.remove(points, selected)
+    return (cursor + 1) % (#points - 2)
+end
+
+local function recordPath(context)
+    local feed = context.feed
+    local mode = context.settings.flightPath or "off"
+    local now = getTime()
+    local points = context.pathPoints
+    if mode == "trail" then
+        while points[1] and now - points[1].time > TRAIL_TICKS do
+            table.remove(points, 1)
+        end
+        if points[1] then
+            points[1].breakBefore = true
+        end
+    end
+    if
+        mode == "off"
+        or not feed
+        or not feed.known
+        or not feed.fix
+        or feed.state ~= "normal"
+        or not validCoordinates(feed.latitude, feed.longitude)
+    then
+        context.pathBreak = true
+        return
+    end
+    if not context.pack then
+        return
+    end
+    if context.pathLastTime and now - context.pathLastTime < 100 then
+        return
+    end
+    if not context.navigation then
+        context.pathBreak = true
+        return
+    end
+    local previous = points[#points]
+    if
+        previous
+        and not context.pathBreak
+        and context.navigation.distanceBetween(previous.latitude, previous.longitude, feed.latitude, feed.longitude)
+            < 5
+    then
+        return
+    end
+    local point = {
+        latitude = feed.latitude,
+        longitude = feed.longitude,
+        time = now,
+        breakBefore = context.pathBreak or previous == nil,
+    }
+    context.pathBreak, context.pathLastTime = false, now
+    if mode == "trail" then
+        points[#points + 1] = point
+        if #points > TRAIL_POINTS then
+            table.remove(points, 1)
+            if points[1] then
+                points[1].breakBefore = true
+            end
+        end
+    else
+        if #points == FULL_HISTORY_POINTS then
+            context.pathCompactCursor = map.compactHistory(points, context.pathCompactCursor or 0)
+        end
+        points[#points + 1] = point
+    end
+    context.pathRevision = (context.pathRevision or 0) + 1
+end
+
+local function segmentInView(a, b, bounds)
+    local low, high = 0, 1
+    local dx, dy = b.x - a.x, b.y - a.y
+    for axis = 1, 2 do
+        local origin = axis == 1 and a.x or a.y
+        local delta = axis == 1 and dx or dy
+        local minimum = axis == 1 and bounds.left or bounds.top
+        local maximum = axis == 1 and bounds.right or bounds.bottom
+        if delta == 0 then
+            if origin < minimum or origin > maximum then
+                return false
+            end
+        else
+            local enter, leave = (minimum - origin) / delta, (maximum - origin) / delta
+            if enter > leave then
+                enter, leave = leave, enter
+            end
+            low, high = math.max(low, enter), math.min(high, leave)
+            if low > high then
+                return false
+            end
+        end
+    end
+    return true
+end
+
+function map.newPathJob(points, project, bounds)
+    local snapshot = {}
+    for index, point in ipairs(points) do
+        snapshot[index] = point
+    end
+    return {
+        source = snapshot,
+        project = project,
+        bounds = bounds,
+        points = {},
+        runs = {},
+        index = 1,
+        phase = "project",
+    }
+end
+
+local function pathNode(first, last)
+    return { first = first, last = last, cursor = first + 1, error = 0 }
+end
+
+-- Each call handles at most 16 point operations, including expensive projection.
+function map.stepPathJob(job)
+    if job.result then
+        return true
+    end
+    for _ = 1, 16 do
+        if job.phase == "project" then
+            local source = job.source[job.index]
+            if source then
+                local x, y = job.project(source)
+                local point = x and { x = x, y = y, source = source } or false
+                job.points[job.index] = point
+                local previous = job.points[job.index - 1]
+                if point and previous and not source.breakBefore and segmentInView(previous, point, job.bounds) then
+                    if job.run and job.run.last == job.index - 1 then
+                        job.run.last = job.index
+                    else
+                        job.run = pathNode(job.index - 1, job.index)
+                        job.runs[#job.runs + 1] = job.run
+                    end
+                else
+                    job.run = nil
+                end
+                job.index = job.index + 1
+            else
+                job.nodes = {}
+                -- If outages/viewport crossings alone exceed the budget, favor recent runs.
+                for index = math.max(1, #job.runs - FULL_RENDER_SEGMENTS + 1), #job.runs do
+                    job.nodes[#job.nodes + 1] = job.runs[index]
+                end
+                job.phase, job.nodeIndex = "evaluate", 1
+            end
+        elseif job.phase == "evaluate" then
+            local node = job.nodes[job.nodeIndex]
+            if not node then
+                job.phase = "split"
+            elseif node.cursor >= node.last then
+                job.nodeIndex = job.nodeIndex + 1
+            else
+                local first, last, point = job.points[node.first], job.points[node.last], job.points[node.cursor]
+                local dx, dy = last.x - first.x, last.y - first.y
+                local length = dx * dx + dy * dy
+                local t = length > 0 and clamp(((point.x - first.x) * dx + (point.y - first.y) * dy) / length, 0, 1)
+                    or 0
+                local error = (point.x - first.x - t * dx) ^ 2 + (point.y - first.y - t * dy) ^ 2
+                if error > node.error then
+                    node.error, node.split = error, node.cursor
+                end
+                node.cursor = node.cursor + 1
+            end
+        else
+            local largest, selected = 1.5 ^ 2, nil
+            for index, node in ipairs(job.nodes) do
+                if node.error > largest then
+                    largest, selected = node.error, index
+                end
+            end
+            if selected and #job.nodes < FULL_RENDER_SEGMENTS then
+                local node = job.nodes[selected]
+                job.nodes[selected] = pathNode(node.first, node.split)
+                table.insert(job.nodes, selected + 1, pathNode(node.split, node.last))
+                job.phase, job.nodeIndex = "evaluate", selected
+            else
+                local result = {}
+                for _, node in ipairs(job.nodes) do
+                    local first, last = job.points[node.first], job.points[node.last]
+                    if segmentInView(first, last, job.bounds) then
+                        result[#result + 1] = { first = first, last = last }
+                    end
+                end
+                job.result = result
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function fullPathSegments(context)
+    local key = table.concat({
+        context.pathRevision or 0,
+        context.levelIndex,
+        context.viewX,
+        context.viewY,
+        context.area.w,
+        context.area.h,
+    }, ":")
+    if not context.pathJob and (context.pathCacheKey ~= key or context.pathCacheTransform ~= context.transform) then
+        local level, transform = context.pack.levels[context.levelIndex], context.transform
+        context.pathJob = map.newPathJob(context.pathPoints, function(point)
+            return map.project(level, point.latitude, point.longitude, transform)
+        end, {
+            left = context.viewX - 4,
+            top = context.viewY - 4,
+            right = context.viewX + context.area.w + 4,
+            bottom = context.viewY + context.area.h + 4,
+        })
+        context.pathJob.key, context.pathJob.transform = key, transform
+    end
+    if context.pathJob and map.stepPathJob(context.pathJob) then
+        local job = context.pathJob
+        context.pathCache, context.pathCacheKey, context.pathCacheTransform = job.result, job.key, job.transform
+        context.pathJob = nil
+    end
+    return context.pathCacheTransform == context.transform and context.pathCache or {}
+end
+
+function map.clipPathSegment(x1, y1, x2, y2, cx, cy, radius, part)
+    local dx, dy = x2 - x1, y2 - y1
+    local ox, oy = x1 - cx, y1 - cy
+    local length = dx * dx + dy * dy
+    if length == 0 then
+        if part == 1 and ox * ox + oy * oy >= radius * radius then
+            return x1, y1, x2, y2
+        end
+        return
+    end
+    local b = 2 * (ox * dx + oy * dy)
+    local c = ox * ox + oy * oy - radius * radius
+    local discriminant = b * b - 4 * length * c
+    if discriminant <= 0 then
+        if part == 1 then
+            return x1, y1, x2, y2
+        end
+        return
+    end
+    local root = math.sqrt(discriminant)
+    local enter, leave = (-b - root) / (2 * length), (-b + root) / (2 * length)
+    if leave <= 0 or enter >= 1 then
+        if part == 1 then
+            return x1, y1, x2, y2
+        end
+    elseif part == 1 and enter > 0 then
+        return x1, y1, x1 + dx * enter, y1 + dy * enter
+    elseif part == 2 and leave < 1 then
+        return x1 + dx * leave, y1 + dy * leave, x2, y2
+    end
+end
+
+local function preparePathLines(context)
+    for index = #context.pathLines + 1, math.min(#context.pathLines + 8, context.pathCapacity or 0) do
+        context.pathOutlines[index] = lvgl.line(context.pathOutlineLayer, {
+            pts = { { 0, 0 }, { 0, 0 } },
+            thickness = 8,
+            color = lcd.RGB(0xFFFFFF),
+        })
+        context.pathLines[index] = lvgl.line(context.pathLayer, {
+            pts = { { 0, 0 }, { 0, 0 } },
+            thickness = 5,
+            color = lcd.RGB(0x328BEE),
+        })
+        lvgl.hide(context.pathOutlines[index])
+        lvgl.hide(context.pathLines[index])
+        context.pathLineStates[index] = { visible = false }
+    end
+end
+
+local function drawPath(context)
+    local points = context.pathPoints
+    local segments = context.settings.flightPath == "full" and fullPathSegments(context)
+    local now = getTime()
+    local level = context.pack.levels[context.levelIndex]
+    local split = context.settings.positionMarker == "arrow"
+    local activeCount = (segments and #segments or math.max(0, #points - 1)) * (split and 2 or 1)
+    local limit = math.min(activeCount, #context.pathLines)
+    local start = segments and (context.pathDrawCursor or 1) or 1
+    if start > limit then
+        start = 1
+    end
+    local finish = segments and math.min(start + 7, limit) or limit
+    context.pathDrawCursor = finish >= limit and 1 or finish + 1
+    for index = start, finish do
+        local line = context.pathLines[index]
+        local outline = context.pathOutlines[index]
+        local lineState = context.pathLineStates[index]
+        local pointIndex = split and math.floor((index + 1) / 2) or index
+        local part = split and (index - 1) % 2 + 1 or 1
+        local segment = segments and segments[pointIndex]
+        local first = segments and segment and segment.first.source or not segments and points[pointIndex]
+        local second = segments and segment and segment.last.source or not segments and points[pointIndex + 1]
+        local visible = first and second and not second.breakBefore
+        if first and second and visible then
+            local x1, y1, x2, y2
+            if segment then
+                x1, y1, x2, y2 = segment.first.x, segment.first.y, segment.last.x, segment.last.y
+            else
+                x1, y1 = map.project(level, first.latitude, first.longitude, context.transform)
+                x2, y2 = map.project(level, second.latitude, second.longitude, context.transform)
+            end
+            if x1 and x2 and split and context.markerVisible then
+                -- Include half the outline width and rounding clearance outside the 22-pixel circle.
+                x1, y1, x2, y2 = map.clipPathSegment(
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    context.markerX + context.viewX,
+                    context.markerY + context.viewY,
+                    27,
+                    part
+                )
+            elseif part == 2 then
+                x1 = nil
+            end
+            if x1 and x2 then
+                local opacity = context.settings.flightPath == "trail"
+                        and math.floor(255 * clamp(1 - (now - first.time) / TRAIL_TICKS, 0, 1) + 0.5)
+                    or 255
+                if lineState.opacity ~= opacity then
+                    line:set({ opacity = opacity })
+                    outline:set({ opacity = math.floor(opacity * 170 / 255 + 0.5) })
+                    lineState.opacity = opacity
+                end
+                local firstX, firstY = math.floor(x1 - context.viewX + 0.5), math.floor(y1 - context.viewY + 0.5)
+                local secondX, secondY = math.floor(x2 - context.viewX + 0.5), math.floor(y2 - context.viewY + 0.5)
+                if
+                    lineState.firstX ~= firstX
+                    or lineState.firstY ~= firstY
+                    or lineState.secondX ~= secondX
+                    or lineState.secondY ~= secondY
+                then
+                    local pts = { { firstX, firstY }, { secondX, secondY } }
+                    line:set({ pts = pts })
+                    outline:set({ pts = pts })
+                    lineState.firstX, lineState.firstY, lineState.secondX, lineState.secondY =
+                        firstX, firstY, secondX, secondY
+                end
+                if not lineState.visible then
+                    lvgl.show(line)
+                    lvgl.show(outline)
+                    lineState.visible = true
+                end
+            else
+                visible = false
+            end
+        end
+        if not visible and lineState.visible then
+            lvgl.hide(line)
+            lvgl.hide(outline)
+            lineState.visible = false
+        end
+    end
+    for index = activeCount + 1, #context.pathLines do
+        local state = context.pathLineStates[index]
+        if state.visible then
+            lvgl.hide(context.pathLines[index])
+            lvgl.hide(context.pathOutlines[index])
+            state.visible = false
+        end
+    end
+end
+
+local function updateCoordinates(context)
+    if not context.coordinatesLabel then
+        return
+    end
+    local feed = context.feed
+    local valid = feed
+        and feed.known
+        and feed.fix
+        and feed.state == "normal"
+        and validCoordinates(feed.latitude, feed.longitude)
+    local text = valid
+            and string.format(
+                "%." .. COORDINATE_PRECISION .. "f, %." .. COORDINATE_PRECISION .. "f",
+                feed.latitude,
+                feed.longitude
+            )
+        or "--"
+    if context.coordinateText ~= text then
+        context.coordinatesLabel:set({ text = text })
+        context.coordinateText = text
+    end
+    local width = math.max(1, context.area.w - 60)
+    local visible = valid and width >= context.themeBuilder.measureText(SMLSIZE, text)
+    local backgroundWidth =
+        math.max(1, math.min(context.area.w - 8, context.themeBuilder.measureText(SMLSIZE, text) + 8))
+    if context.coordinateBackgroundWidth ~= backgroundWidth then
+        context.coordinatesBackground:set({ w = backgroundWidth })
+        context.coordinateBackgroundWidth = backgroundWidth
+    end
+    context.primitives.reconcile(context.coordinatesBackground, visible)
+    context.primitives.reconcile(context.coordinatesLabel, visible)
+end
+
+local function hideMarker(context)
+    if context.markerVisible then
+        lvgl.hide(context.marker)
+        context.markerVisible = false
+    end
+end
+
+local function hideHome(context)
+    if context.homeVisible then
+        lvgl.hide(context.homeMarker)
+        context.homeVisible = false
+    end
+end
+
+local function updateHome(context)
+    local feed = context.feed
+    local x, y
+    if feed and feed.home then
+        x, y = map.project(
+            context.pack.levels[context.levelIndex],
+            feed.pilotLatitude,
+            feed.pilotLongitude,
+            context.transform
+        )
+    end
+    if not x then
+        hideHome(context)
+        return
+    end
+    x, y = math.floor(x - context.viewX + 0.5), math.floor(y - context.viewY + 0.5)
+    local visible = x >= 0 and y >= 0 and x < context.area.w and y < context.area.h
+    if x ~= context.homeX or y ~= context.homeY then
+        context.homeMarker:set({ x = x - 26, y = y - 26 })
+        context.homeX, context.homeY = x, y
+    end
+    if context.homeVisible ~= visible then
+        context.primitives.reconcile(context.homeMarker, visible)
+        context.homeVisible = visible
+    end
+end
+
+function map.move(context, dx, dy, zoom)
+    if not context.pack then
+        return
+    end
+    if context.pending and zoom then
+        return
+    end
+    local old = context.pack.levels[context.levelIndex]
+    local index = clamp(context.levelIndex + (zoom or 0), 1, #context.pack.levels)
+    local level = context.pack.levels[index]
+    local x, y = context.viewX + dx, context.viewY + dy
+    if index ~= context.levelIndex then
+        context.followPan, context.followSample = nil, nil
+        local factor = 2 ^ (level.zoom - old.zoom)
+        x = (context.viewX + context.area.w / 2) * factor + (old.xMin * factor - level.xMin) * TILE - context.area.w / 2
+        local worldWidth = 2 ^ level.zoom * TILE
+        local coverageCenter = (level.xMax - level.xMin + 1) * TILE / 2
+        x = x + math.floor((coverageCenter - x - context.area.w / 2) / worldWidth + 0.5) * worldWidth
+        y = (context.viewY + context.area.h / 2) * factor + (old.yMin * factor - level.yMin) * TILE - context.area.h / 2
+    end
+    x, y = map.clampView(level, context.area.w, context.area.h, x, y)
+    if x ~= context.viewX or y ~= context.viewY or index ~= context.levelIndex then
+        context.levelIndex, context.viewX, context.viewY = index, x, y
+        context.pending = nil
+        context.dirty = true
+    end
+end
+
+local function prepareView(context)
+    local level = context.pack.levels[context.levelIndex]
+    context.transform = map.transform(level)
+    local area = context.area
+    local wanted, used = {}, {}
+    local firstX = math.max(level.xMin, level.xMin + math.floor(context.viewX / TILE))
+    local firstY = math.max(level.yMin, level.yMin + math.floor(context.viewY / TILE))
+    local lastX = math.min(level.xMax, level.xMin + math.floor((context.viewX + area.w - 1) / TILE))
+    local lastY = math.min(level.yMax, level.yMin + math.floor((context.viewY + area.h - 1) / TILE))
+    for y = firstY, lastY do
+        for x = firstX, lastX do
+            wanted[#wanted + 1] = {
+                file = tileFile(context, level, x, y),
+                x = (x - level.xMin) * TILE - context.viewX,
+                y = (y - level.yMin) * TILE - context.viewY,
+            }
+        end
+    end
+    assert(#wanted <= #context.tiles, "map tile pool exhausted")
+    for _, tile in ipairs(wanted) do
+        for index, slot in ipairs(context.tiles) do
+            if slot.file == tile.file then
+                tile.slot = slot
+                tile.retained = slot.visible
+                used[index] = true
+                break
+            end
+        end
+    end
+    local cursor = 1
+    for _, tile in ipairs(wanted) do
+        if not tile.slot then
+            while used[cursor] do
+                cursor = cursor + 1
+            end
+            tile.slot = context.tiles[cursor]
+            used[cursor] = true
+        end
+    end
+    local pending = {}
+    for _, tile in ipairs(wanted) do
+        local slot = tile.slot
+        if tile.retained then
+            if slot.x ~= tile.x or slot.y ~= tile.y then
+                slot.image:set({ x = tile.x, y = tile.y })
+                slot.x, slot.y = tile.x, tile.y
+            end
+        else
+            lvgl.hide(slot.image)
+            slot.visible = false
+            pending[#pending + 1] = tile
+        end
+    end
+    for index, slot in ipairs(context.tiles) do
+        if not used[index] then
+            if slot.visible ~= false then
+                lvgl.hide(slot.image)
+            end
+            slot.visible = false
+            slot.file = ""
+            slot.x, slot.y = nil, nil
+        end
+    end
+    context.pending, context.nextTile, context.dirty = #pending > 0 and pending or nil, 1, false
+    context.markerLatitude, context.markerLongitude = nil, nil
+    if context.pending then
+        setStatus(context, "LOADING")
+    else
+        context.viewChanges = context.viewChanges + 1
+    end
+end
+
+local function loadTile(context)
+    local tile = context.pending[context.nextTile]
+    if tile then
+        local slot = tile.slot
+        if slot.file ~= tile.file then
+            checkTile(tile.file)
+            slot.file = tile.file
+            context.tileLoads = context.tileLoads + 1
+        end
+        slot.image:set({ x = tile.x, y = tile.y })
+        slot.x, slot.y = tile.x, tile.y
+        lvgl.show(slot.image)
+        slot.visible = true
+        context.nextTile = context.nextTile + 1
+    end
+    if context.nextTile > #context.pending then
+        context.pending = nil
+        context.viewChanges = context.viewChanges + 1
+    end
+end
+
+local function followAircraft(context)
+    local feed = context.feed
+    if not context.following or context.drag or not feed or not feed.known or not feed.fix or feed.state == "stale" then
+        context.followPan, context.followSample = nil, nil
+        return
+    end
+    local level = context.pack.levels[context.levelIndex]
+    local x, y = map.project(level, feed.latitude, feed.longitude)
+    if not x then
+        context.followPan, context.followSample = nil, nil
+        return
+    end
+    local now = getTime()
+    local sample = context.followSample
+    if not sample then
+        sample = { x = x, y = y, time = now, vx = 0, vy = 0 }
+        context.followSample = sample
+    elseif now - sample.time >= 20 then
+        local elapsed = (now - sample.time) / 100
+        local weight = math.min(1, elapsed)
+        sample.vx = sample.vx + ((x - sample.x) / elapsed - sample.vx) * weight
+        sample.vy = sample.vy + ((y - sample.y) / elapsed - sample.vy) * weight
+        sample.x, sample.y, sample.time = x, y, now
+    end
+    local area = context.area
+    local screenX, screenY = x - context.viewX, y - context.viewY
+    local edgeTime = math.huge
+    if math.abs(sample.vx) > 0.5 then
+        edgeTime = math.min(edgeTime, math.max(0, sample.vx > 0 and area.w - screenX or screenX) / math.abs(sample.vx))
+    end
+    if math.abs(sample.vy) > 0.5 then
+        edgeTime = math.min(edgeTime, math.max(0, sample.vy > 0 and area.h - screenY or screenY) / math.abs(sample.vy))
+    end
+    local pan = context.followPan
+    if
+        not pan
+        and (screenX < area.w * 0.2 or screenX > area.w * 0.8 or screenY < area.h * 0.2 or screenY > area.h * 0.8)
+    then
+        local targetX, targetY = map.clampView(level, area.w, area.h, x - area.w / 2, y - area.h / 2)
+        if targetX == context.viewX and targetY == context.viewY then
+            return
+        end
+        pan = {
+            x = context.viewX,
+            y = context.viewY,
+            targetX = targetX,
+            targetY = targetY,
+            started = now,
+            duration = clamp(edgeTime / 3, 0.5, 3) * 100,
+        }
+        context.followPan = pan
+    end
+    if pan then
+        if edgeTime < 0.75 and pan.started + pan.duration - now > 50 then
+            pan.x, pan.y, pan.started, pan.duration = context.viewX, context.viewY, now, 50
+        end
+        local progress = clamp((now - pan.started) / pan.duration, 0, 1)
+        local eased = progress * progress * (3 - 2 * progress)
+        local nextX = math.floor(pan.x + (pan.targetX - pan.x) * eased + 0.5)
+        local nextY = math.floor(pan.y + (pan.targetY - pan.y) * eased + 0.5)
+        map.move(context, nextX - context.viewX, nextY - context.viewY)
+        if progress == 1 then
+            context.followPan = nil
+        end
+    end
+end
+
+local function updateMarker(context)
+    local feed = context.feed
+    local state = not feed and "NO GPS"
+        or not feed.known and "NO GPS"
+        or feed.state == "stale" and "GPS STALE"
+        or not feed.fix and "NO FIX"
+    if state then
+        hideMarker(context)
+        hideHome(context)
+        setStatus(context, state)
+        context.markerLatitude, context.markerLongitude = nil, nil
+        context.courseLatitude, context.courseLongitude = nil, nil
+        context.courseHistory, context.courseIndex = nil, nil
+        return
+    end
+    local positionChanged = feed.latitude ~= context.markerLatitude or feed.longitude ~= context.markerLongitude
+    context.markerLatitude, context.markerLongitude = feed.latitude, feed.longitude
+    local level = context.pack.levels[context.levelIndex]
+    local x, y = map.project(level, feed.latitude, feed.longitude, context.transform)
+    if not x then
+        hideMarker(context)
+        hideHome(context)
+        setStatus(context, "INVALID GPS")
+        context.courseLatitude, context.courseLongitude = nil, nil
+        context.courseHistory, context.courseIndex = nil, nil
+        return
+    end
+    local heading
+    if context.settings.headingSource and context.settings.headingSource ~= "" then
+        local reading = context.headingFeed
+        if
+            reading
+            and reading.available
+            and reading.fresh
+            and not reading.stale
+            and type(reading.value) == "number"
+            and reading.value == reading.value
+            and math.abs(reading.value) < math.huge
+        then
+            heading = reading.value % 360
+        end
+    else
+        if
+            context.courseLatitude
+            and positionChanged
+            and (feed.latitude ~= context.courseLatitude or feed.longitude ~= context.courseLongitude)
+        then
+            local distance = context.navigation.distanceBetween(
+                context.courseLatitude,
+                context.courseLongitude,
+                feed.latitude,
+                feed.longitude
+            )
+            -- Accumulate sub-metre changes instead of turning on stationary GPS noise.
+            if distance >= 1 then
+                local bearing = context.navigation.bearingBetween(
+                    context.courseLatitude,
+                    context.courseLongitude,
+                    feed.latitude,
+                    feed.longitude
+                )
+                map.meanCourse(context, bearing)
+                context.courseLatitude, context.courseLongitude = feed.latitude, feed.longitude
+            end
+        elseif not context.courseLatitude then
+            context.courseLatitude, context.courseLongitude = feed.latitude, feed.longitude
+            context.course = nil
+            context.courseHistory, context.courseIndex = nil, nil
+        end
+        heading = context.course
+    end
+    context.heading = heading
+    orientAircraft(context.aircraft, heading or context.aircraft.heading)
+    x, y = math.floor(x - context.viewX + 0.5), math.floor(y - context.viewY + 0.5)
+    updateHome(context)
+    if x < 6 or y < 6 or x >= context.area.w - 6 or y >= context.area.h - 6 then
+        hideMarker(context)
+        setStatus(context, "OFF VIEW")
+        return
+    end
+    if x ~= context.markerX or y ~= context.markerY then
+        context.marker:set({ x = x - 26, y = y - 26 })
+        context.markerX, context.markerY = x, y
+        context.markerMoves = context.markerMoves + 1
+    end
+    if not context.markerVisible then
+        lvgl.show(context.marker)
+        context.markerVisible = true
+    end
+    setStatus(context, "GPS")
+end
+
+local function previewDrag(context, dx, dy)
+    for _, slot in ipairs(context.tiles) do
+        if slot.x then
+            slot.image:set({ x = slot.x + dx, y = slot.y + dy })
+        end
+    end
+end
+
+local function cancelDrag(context)
+    if context.drag then
+        previewDrag(context, 0, 0)
+        context.drag = nil
+    end
+end
+
+local function controlAt(context, touch, rect)
+    if not context.area.showZoom or not touch or not rect then
+        return nil
+    end
+    local x, y = touch.x - rect.x - context.area.zoomX, touch.y - rect.y - context.area.zoomY
+    if x < 0 or x >= 40 then
+        return nil
+    end
+    for index, top in ipairs(CONTROL_TOPS) do
+        if y >= top and y < top + (index == 3 and 40 or 32) then
+            return index
+        end
+    end
+end
+
+local function activateControl(context, index)
+    local now = getTime()
+    if context.lastControl == index and now - (context.lastControlTime or 0) < 15 then
+        return
+    end
+    context.lastControl, context.lastControlTime = index, now
+    if index == 4 then
+        local feed = context.feed
+        context.locationDetailsRequested = feed and feed.known and feed.fix and feed.state == "normal" or false
+    elseif index == 3 then
+        context.following = true
+        context.followPan, context.followSample = nil, nil
+    else
+        map.move(context, 0, 0, index == 1 and 1 or -1)
+    end
+end
+
+function map.event(context, event, touch, rect)
+    if not context.pack or not lvgl.isFullScreen() then
+        cancelDrag(context)
+        context.controlPress = nil
+        return false
+    end
+    if event == _G.EVT_TOUCH_TAP then
+        local control = controlAt(context, touch, rect)
+        if control then
+            local cancelled = context.controlPress and context.controlPress.cancelled
+            context.controlPress, context.drag = nil, nil
+            if not cancelled and getTime() >= (context.cancelledControlUntil or 0) then
+                activateControl(context, control)
+            end
+            return true
+        end
+    end
+    if context.controlPress then
+        local press = context.controlPress
+        if event == _G.EVT_TOUCH_SLIDE and touch then
+            if
+                math.abs(touch.x - press.x) >= 8
+                or math.abs(touch.y - press.y) >= 8
+                or controlAt(context, touch, rect) ~= press.index
+            then
+                press.cancelled = true
+            end
+        elseif event == _G.EVT_TOUCH_BREAK or event == _G.EVT_TOUCH_TAP then
+            context.controlPress = nil
+            -- Native BREAK can report (0, 0); use the last slide in that case.
+            if touch and (touch.x ~= 0 or touch.y ~= 0) and controlAt(context, touch, rect) ~= press.index then
+                press.cancelled = true
+            end
+            if not press.cancelled then
+                activateControl(context, press.index)
+            else
+                context.cancelledControlUntil = getTime() + 15
+            end
+        end
+        return true
+    end
+    if event == _G.EVT_TOUCH_FIRST then
+        if context.drag then
+            return true
+        end
+        local control = controlAt(context, touch, rect)
+        if control then
+            context.controlPress = { index = control, x = touch.x, y = touch.y }
+            return true
+        end
+        if context.pending or context.dirty or not touch or not rect then
+            return false
+        end
+        local x, y = touch.x - rect.x - context.area.x, touch.y - rect.y - context.area.y
+        local zoomX, zoomY = touch.x - rect.x - context.area.zoomX, touch.y - rect.y - context.area.zoomY
+        if context.area.showZoom and zoomX >= 0 and zoomX < 40 and zoomY >= 0 and zoomY < CONTROLS_HEIGHT then
+            return true
+        end
+        if x < 0 or y < 0 or x >= context.area.w or y >= context.area.h then
+            return false
+        end
+        context.drag = {
+            x = touch.x,
+            y = touch.y,
+            startViewX = context.viewX,
+            startViewY = context.viewY,
+        }
+        return true
+    end
+    local drag = context.drag
+    if not drag then
+        return false
+    end
+    if event == _G.EVT_TOUCH_SLIDE and touch then
+        if math.abs(touch.x - drag.x) >= 8 or math.abs(touch.y - drag.y) >= 8 then
+            context.following = false
+            context.followPan, context.followSample = nil, nil
+        end
+        local x, y = map.clampView(
+            context.pack.levels[context.levelIndex],
+            context.area.w,
+            context.area.h,
+            drag.startViewX + drag.x - touch.x,
+            drag.startViewY + drag.y - touch.y
+        )
+        if x ~= context.viewX or y ~= context.viewY then
+            previewDrag(context, context.viewX - x, context.viewY - y)
+            local dx, dy = x - context.viewX, y - context.viewY
+            for _, slot in ipairs(context.tiles) do
+                if slot.x then
+                    slot.x, slot.y = slot.x - dx, slot.y - dy
+                end
+            end
+            map.move(context, dx, dy)
+            updateMarker(context)
+        end
+        return true
+    elseif event == _G.EVT_TOUCH_BREAK or event == _G.EVT_TOUCH_TAP then
+        context.drag = nil
+        return true
+    end
+    return false
+end
+
+local function updateControls(context)
+    local interactive = context.pack ~= nil and lvgl.isFullScreen() and context.area.showZoom
+    if context.interactive == interactive then
+        return
+    end
+    context.interactive = interactive
+    if not interactive and #context.controls > 0 then
+        context.controlPress = nil
+        context.controlsRoot:clear()
+        context.controls = {}
+        context.followAircraft, context.followIcon = nil, nil
+        context.infoIcon = nil
+    end
+    if interactive and #context.controls == 0 then
+        local actions = {
+            { "+", CONTROL_TOPS[1], 1 },
+            { "-", CONTROL_TOPS[2], -1 },
+            { "target", CONTROL_TOPS[3] },
+            { "info", CONTROL_TOPS[4] },
+        }
+        for index, action in ipairs(actions) do
+            context.controls[index] = lvgl.rectangle(context.controlsRoot, {
+                x = 4,
+                y = action[2] + (index == 3 and 4 or 0),
+                w = 32,
+                h = index == 1 and 64 or 32,
+                color = lcd.RGB(0x101414),
+                rounded = 5,
+                filled = true,
+            })
+            local y = action[2]
+            local white = lcd.RGB(0xFFFFFF)
+            if index == 4 then
+                context.infoIcon = lvgl.image(context.controlsRoot, {
+                    x = 8,
+                    y = y + 4,
+                    w = 24,
+                    h = 24,
+                    floating = true,
+                    file = context.assets .. "map-info.png",
+                })
+            elseif action[3] then
+                lvgl.rectangle(
+                    context.controlsRoot,
+                    { x = 13, y = y + 15, w = 14, h = 2, filled = true, color = white }
+                )
+                if action[3] == 1 then
+                    lvgl.rectangle(
+                        context.controlsRoot,
+                        { x = 19, y = y + 9, w = 2, h = 14, filled = true, color = white }
+                    )
+                end
+            else
+                context.followAircraft = createAircraft(context.controlsRoot, 8, y + 8, 24, context.assets, true)
+                context.followIcon = context.followAircraft.root
+            end
+        end
+        lvgl.rectangle(context.controlsRoot, { x = 9, y = 76, w = 22, h = 1, filled = true, color = lcd.RGB(0x333737) })
+    end
+end
+
+local function selectArea(context)
+    local feed = context.feed
+    if not feed or not feed.known or not feed.fix or feed.state ~= "normal" then
+        return
+    end
+    if context.pack then
+        if not map.project(context.pack.levels[context.levelIndex], feed.latitude, feed.longitude) then
+            return
+        end
+        if map.covers(context.pack, feed.latitude, feed.longitude) then
+            return
+        end
+    end
+    if context.pack then
+        cancelDrag(context)
+        hideMarker(context)
+        hideHome(context)
+        for _, slot in ipairs(context.tiles) do
+            lvgl.hide(slot.image)
+            slot.visible = false
+        end
+        context.pack, context.directory, context.pending = nil, nil, nil
+        context.followPan, context.followSample, context.controlPress = nil, nil, nil
+        context.courseHistory, context.courseIndex, context.courseLatitude, context.courseLongitude = nil, nil, nil, nil
+        context.dirty = false
+        context.nextDiscovery = nil
+    end
+    if not context.discovery then
+        if getTime() < (context.nextDiscovery or 0) then
+            return
+        end
+        local folder = context.host.layoutStore.sdRoot(context.host.path) .. "AEROGRID/maps/areas/"
+        context.nextDiscovery = getTime() + 1000
+        if not fstat(folder) then
+            context.discoveryStatus = "NO INSTALLED MAP"
+            return
+        end
+        assert(type(dir) == "function", "map discovery requires EdgeTX directory access")
+        local iterator = dir(folder)
+        assert(type(iterator) == "function", "unable to list installed map areas: " .. folder)
+        context.discovery = {
+            iterator = iterator,
+            entries = 0,
+            areas = 0,
+            latitude = feed.latitude,
+            longitude = feed.longitude,
+        }
+    end
+    local scan = context.discovery
+    context.discoveryStatus = "FINDING MAP"
+    local filename = scan.iterator()
+    if filename then
+        scan.entries = scan.entries + 1
+        assert(scan.entries <= 256, "map areas directory exceeds 256 entries")
+        local name = string.match(filename, "^(.*)%.yaml$")
+        if name and string.sub(filename, 1, 2) ~= "._" then
+            scan.areas = scan.areas + 1
+            assert(scan.areas <= 64, "automatic map selection supports at most 64 installed areas")
+            local pack, directory = readPack(context.host, name)
+            if map.covers(pack, scan.latitude, scan.longitude) and map.prefer(pack, scan.best) then
+                scan.best, scan.directory = pack, directory
+            end
+        end
+        return
+    end
+    context.discovery = nil
+    if not scan.best or not map.covers(scan.best, feed.latitude, feed.longitude) then
+        context.discoveryStatus = "NO MAP AT GPS"
+        context.nextDiscovery = getTime() + 1000
+        return
+    end
+    context.pack, context.directory = scan.best, scan.directory
+    local initialZoom = context.settings.initialZoom
+    local count = #context.pack.levels
+    local index = initialZoom == "most detailed" and count or initialZoom == "middle" and math.ceil(count / 2) or 1
+    context.levelIndex, context.viewX, context.viewY = index, 0, 0
+    context.following, context.dirty = true, true
+    context.markerLatitude, context.markerLongitude = nil, nil
+    local level = context.pack.levels[context.levelIndex]
+    local x, y = map.project(level, feed.latitude, feed.longitude)
+    context.viewX, context.viewY =
+        map.clampView(level, context.area.w, context.area.h, x - context.area.w / 2, y - context.area.h / 2)
+end
+
+function map.refresh(context)
+    updateSatelliteState(context)
+    if context.automatic then
+        selectArea(context)
+    end
+    updateControls(context)
+    if not lvgl.isFullScreen() then
+        cancelDrag(context)
+    end
+    if not context.drag then
+        preparePathLines(context)
+    end
+    recordPath(context)
+    if not context.pack then
+        local feed = context.feed
+        local live = feed and feed.known and feed.fix and feed.state == "normal"
+        setStatus(context, live and (context.discoveryStatus or "FINDING MAP") or "WAITING FOR GPS")
+        updateCoordinates(context)
+        placeHeaderBackplates(context)
+        return
+    end
+    followAircraft(context)
+    if context.dirty then
+        prepareView(context)
+    end
+    if context.pending and not context.drag and getTime() >= (context.nextTileLoad or 0) then
+        loadTile(context)
+        context.nextTileLoad = getTime() + 25
+    end
+    updateMarker(context)
+    if not context.drag then
+        drawPath(context)
+    end
+    updateCoordinates(context)
+    placeHeaderBackplates(context)
+end
+
+function map.create(parent, rect, settings, services)
+    local context = {
+        automatic = true,
+        host = services.host,
+        pack = nil,
+        directory = nil,
+        settings = settings,
+        theme = services.theme,
+        themeBuilder = services.themeBuilder,
+        primitives = services.primitives,
+        state = services.state,
+        fonts = services.fonts,
+        levelIndex = 1,
+        tiles = {},
+        controls = {},
+        pathPoints = {},
+        pathLines = {},
+        pathOutlines = {},
+        pathLineStates = {},
+        tileLoads = 0,
+        viewChanges = 0,
+        markerMoves = 0,
+        dirty = false,
+        following = true,
+    }
+    context.area = geometry(context, rect)
+    local area = context.area
+    local presentation = services.state("normal", "cyan")
+    context.panel = services.primitives.panel(parent, rect, services.theme, presentation)
+    context.viewport = lvgl.box(context.panel.root, {
+        x = area.x,
+        y = area.y,
+        w = area.w,
+        h = area.h,
+        scrollDir = 0,
+        scrollBar = false,
+    })
+    context.tileLayer = lvgl.box(context.viewport, {
+        x = 0,
+        y = 0,
+        w = area.w,
+        h = area.h,
+        scrollDir = 0,
+        scrollBar = false,
+    })
+    prepareTileSlots(context)
+    if (settings.flightPath or "off") ~= "off" then
+        local lineCount = settings.flightPath == "trail" and TRAIL_POINTS - 1 or FULL_RENDER_SEGMENTS
+        if settings.positionMarker == "arrow" then
+            lineCount = lineCount * 2
+        end
+        context.pathCapacity = lineCount
+        context.pathOutlineLayer = lvgl.box(context.viewport, {
+            x = 0,
+            y = 0,
+            w = area.w,
+            h = area.h,
+            scrollDir = 0,
+            scrollBar = false,
+        })
+        context.pathLayer = lvgl.box(context.viewport, {
+            x = 0,
+            y = 0,
+            w = area.w,
+            h = area.h,
+            scrollDir = 0,
+            scrollBar = false,
+        })
+    end
+    if settings.showCoordinates then
+        context.coordinatesBackground = lvgl.rectangle(context.panel.root, {
+            x = area.x + 4,
+            y = area.h - 30,
+            w = math.max(1, area.w - 56),
+            h = services.themeBuilder.fontHeight(SMLSIZE) + 4,
+            rounded = 5,
+            filled = true,
+            color = lcd.RGB(0x101414),
+            opacity = 190,
+        })
+        lvgl.hide(context.coordinatesBackground)
+        context.coordinatesLabel = services.primitives.label(context.panel.root, services.theme, {
+            x = area.x + 8,
+            y = area.h - 28,
+            w = math.max(1, area.w - 60),
+            text = "",
+            font = SMLSIZE,
+            color = lcd.RGB(0xFFFFFF),
+        })
+        lvgl.hide(context.coordinatesLabel)
+    end
+    local assets = services.host.path .. "assets/"
+    context.assets = assets
+    context.homeMarker = lvgl.image(context.viewport, {
+        x = 0,
+        y = 0,
+        w = 52,
+        h = 52,
+        floating = true,
+        file = assets .. "map-home.png",
+    })
+    lvgl.hide(context.homeMarker)
+    context.aircraft = createAircraft(context.viewport, 0, 0, 52, assets, false, settings.positionMarker)
+    context.marker = context.aircraft.root
+    lvgl.hide(context.marker)
+    context.headerBackplates = {}
+    for _, key in ipairs({ "title", "badge", "satellites" }) do
+        local object = lvgl.rectangle(context.panel.root, {
+            x = 0,
+            y = 0,
+            w = 1,
+            h = 1,
+            rounded = 5,
+            filled = true,
+            color = lcd.RGB(0x101414),
+            opacity = 190,
+        })
+        lvgl.hide(object)
+        context.headerBackplates[key] = { object = object }
+    end
+    context.label, context.badge = services.primitives.header(
+        context.panel.root,
+        services.theme,
+        area.frame,
+        services.fonts,
+        settings.label,
+        presentation,
+        services.themeBuilder
+    )
+    context.label:set({ color = lcd.RGB(0xFFFFFF) })
+    context.statusBackground = lvgl.rectangle(context.panel.root, {
+        x = 0,
+        y = 0,
+        w = 1,
+        h = 1,
+        rounded = 5,
+        filled = true,
+        color = lcd.RGB(0x101414),
+        opacity = 190,
+    })
+    lvgl.hide(context.statusBackground)
+    context.statusLabel = services.primitives.label(context.panel.root, services.theme, {
+        x = area.x + 8,
+        y = area.y + 48,
+        w = math.max(1, area.w - 64),
+        text = "",
+        font = SMLSIZE,
+        color = lcd.RGB(0xFFFFFF),
+    })
+    lvgl.hide(context.statusLabel)
+    context.controlsRoot = lvgl.box(context.panel.root, {
+        x = area.zoomX,
+        y = area.zoomY,
+        w = 40,
+        h = CONTROLS_HEIGHT,
+        scrollDir = 0,
+        scrollBar = false,
+    })
+    updateControls(context)
+    if services.navigation then
+        context.navigation = services.navigation
+        context.feed = services.navigation:subscribe(settings.source, settings.armSwitch)
+    end
+    if settings.headingSource and settings.headingSource ~= "" and services.telemetry then
+        context.headingFeed = services.telemetry:subscribe(settings.headingSource)
+    end
+    if settings.satelliteSource and settings.satelliteSource ~= "" then
+        assert(services.telemetry, "map satellite count requires telemetry service")
+        context.satellites = services.telemetry:subscribe(settings.satelliteSource)
+        if settings.showSatellites ~= false then
+            services.primitives.satelliteHeader(context, services.host.path)
+        end
+    end
+    return context
+end
+
+function map.update(context, rect)
+    cancelDrag(context)
+    context.controlPress = nil
+    context.followPan, context.followSample = nil, nil
+    context.area = geometry(context, rect)
+    local area = context.area
+    context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
+    placeStatus(context)
+    context.viewport:set({ x = area.x, y = area.y, w = area.w, h = area.h })
+    context.tileLayer:set({ w = area.w, h = area.h })
+    prepareTileSlots(context)
+    if context.pathLayer then
+        context.pathOutlineLayer:set({ w = area.w, h = area.h })
+        context.pathLayer:set({ w = area.w, h = area.h })
+    end
+    context.controlsRoot:set({ x = area.zoomX, y = area.zoomY, h = CONTROLS_HEIGHT })
+    if context.coordinatesLabel then
+        context.coordinatesBackground:set({ x = area.x + 4, y = area.h - 30 })
+        context.coordinatesLabel:set({ x = area.x + 8, y = area.h - 28, w = math.max(1, area.w - 60) })
+    end
+    if context.satelliteHeader then
+        updateSatelliteState(context)
+    end
+    placeHeaderBackplates(context)
+    updateControls(context)
+    if context.pack then
+        context.viewX, context.viewY =
+            map.clampView(context.pack.levels[context.levelIndex], area.w, area.h, context.viewX, context.viewY)
+        context.pending, context.dirty = nil, true
+    end
+end
+
+return map

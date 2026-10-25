@@ -121,6 +121,14 @@ installed Chrome, or `INSTALLER_KEYBOARD=1` to exercise keyboard activation.
 
 ## Python tooling tests
 
+Map fixtures require the pinned Pillow dependency from `make setup`.
+`make build` prepares that environment before generating JPEG fixtures.
+Map tiles are JPEG-only; transparent UI artwork remains PNG.
+
+```sh
+build/venv/bin/python -m unittest discover -s tools -p 'test_map_test_pack.py'
+python3 -m unittest discover -s tools -p 'test_aircraft_icons.py'
+```
 Release packaging uses only Python's standard library:
 
 ```sh
@@ -182,6 +190,10 @@ metadata edits, shared-tile preservation and map-to-installer connection
 restoration. OpenLayers still loads from its pinned CDN. No hardware or operating
 system picker is exercised. Run the installer smoke separately to retain its
 full update, downgrade and persisted-handle checks.
+
+The radio panel consumes area format 2; version 1 manifests are not supported.
+Its rendering, GPS selection and hardware compatibility are covered by the
+Lua unit and widget-integration suites above, not by these browser checks.
 
 ## Lint and formatting
 

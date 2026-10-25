@@ -78,6 +78,51 @@ Do **not** use anchors or aliases, tags, block scalars (`|` or `>`), flow-style 
 
 Omitted settings use their listed defaults. “Unset” means the setting has no schema default and stays unset unless specified. Numeric constraints in the tables are the drawer's declared bounds/steps or, when explicitly noted, the panel's runtime validation. All choice values are the YAML values, even if the drawer displays a friendlier choice label.
 
+### `map`
+
+**Experimental; available as Map in the radio's Add Panel picker.** Supported span:
+`any` (all grid sizes), targeting TX16S 480 x 272. Requires an installed
+[map area](../developer-guide/map.md#shared-map-area), generated
+as a synthetic test fixture or supplied separately. See the [radio map experiment](../developer-guide/map.md)
+for setup, controls and hardware limitations.
+
+| Key | Type | Default | Allowed values | Notes |
+| --- | --- | --- | --- | --- |
+| `label` | string | `MAP` | Any string | Standard panel heading. |
+| `source` | string | `GPS` | EdgeTX GPS source name | Subscribes through the shared Navigation service. |
+| `initialZoom` | string | `widest` | `widest`, `middle`, `most detailed` | Initial installed level when selecting an area. For even level counts, middle uses the wider central level. |
+| `headingSource` | string | `""` | Blank or numeric telemetry source name | Degrees clockwise from true north. Blank derives GPS course after at least 1 m of movement, averaging the last five movement bearings circularly; stationary fixes retain it. The plane stays cyan while heading is unknown. A configured source is used directly and does not fall back to GPS when unavailable/stale. |
+| `positionMarker` | string | `plane` | `plane`, `arrow` | Cyan aircraft or blue navigation arrow inside a translucent white circle. Both use the same heading and GPS position. |
+| `armSwitch` | string | `""` | Blank, switch position such as `SF^`, `SA-`, `SFv`, or logical switch `L01` | Blank uses EdgeTX home; otherwise uses the Navigation service's first-arm GPS home capture. Panel-local, not synchronized with other panels. |
+| `satelliteSource` | string | `""` | Blank or EdgeTX telemetry source name | When set, shows the satellite count in the header and uses the same warning/critical thresholds as Navigation. |
+| `satelliteWarning` | number | `8` | Nonnegative integer | Warn below this satellite count. |
+| `satelliteCritical` | number | `4` | Nonnegative integer, no greater than warning threshold | Critical below this count. |
+| `showSatellites` | boolean | `true` | `true` / `false` | Hide the header count without disabling satellite alerts. |
+| `showCoordinates` | boolean | `false` | `true` / `false` | Show the live latitude and longitude to six decimal places. |
+| `flightPath` | string | `off` | `off`, `trail`, `full` | `trail` retains up to 31 timestamped fixes over 30 seconds and fades by age. `full` stores up to 1,024 fixes with shape-aware compaction, rendering at most 63 zoom-aware simplified segments. GPS outages break the line rather than joining disconnected segments. |
+
+```yaml
+version: 3
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: map
+    type: map
+    col: 0
+    row: 0
+    colSpan: 4
+    rowSpan: 4
+    config:
+      label: MAP
+      source: GPS
+      headingSource: ""
+      satelliteSource: ""
+      showSatellites: true
+      showCoordinates: false
+      flightPath: off
+```
+
 ### `flight-counter`
 
 Drawer title: **Flight counter** · [drawer settings and behavior](../panels/flight-counter.md) · Supported spans: `any`.

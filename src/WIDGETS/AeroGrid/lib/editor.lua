@@ -11,6 +11,7 @@ editor.CATALOG = {
     { type = "flight-timer", label = "Flight timer" },
     { type = "host-diagnostics", label = "Host diagnostics" },
     { type = "link-status", label = "Link status" },
+    { type = "map", label = "Map" },
     { type = "metric", label = "Metric" },
     { type = "model-identity", label = "Model identity" },
     { type = "navigation", label = "Navigation" },

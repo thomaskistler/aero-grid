@@ -1593,6 +1593,72 @@ function primitives.badge(parent, theme, options)
     }, font)
 end
 
+function primitives.setHeaderState(context, presentation, satellites)
+    context.label:set({ color = presentation.label })
+    primitives.setBadge(
+        context,
+        context.themeBuilder,
+        context.badge,
+        context.area.frame,
+        context.fonts.badge,
+        presentation.badge or "",
+        presentation.accent
+    )
+    primitives.stylePanel(context.panel, presentation)
+    primitives.setSatelliteHeader(context, satellites or "--", presentation)
+end
+
+function primitives.satelliteHeader(context, path)
+    local theme, fonts = context.theme, context.fonts
+    local filename = path .. "assets/" .. (theme.light and "satellite-light.png" or "satellite.png")
+    local handle = io.open(filename, "r")
+    assert(handle, "satellite icon missing: " .. filename)
+    io.close(handle)
+    context.satelliteHeader = lvgl.box(context.panel.root, { x = 0, y = 0, w = 1, h = 1 })
+    context.satelliteIcon = primitives.image(context.satelliteHeader, {
+        x = 0,
+        y = 0,
+        w = 16,
+        h = 16,
+        file = filename,
+    })
+    context.satelliteLabel = primitives.label(context.satelliteHeader, theme, {
+        x = 18,
+        y = 0,
+        text = "",
+        font = fonts.label,
+        color = theme.color.textMuted,
+    })
+    lvgl.hide(context.satelliteHeader)
+end
+
+--- Satellite telemetry yields to the heading and the displayed badge.
+function primitives.setSatelliteHeader(context, text, presentation)
+    if not context.satelliteHeader then
+        return
+    end
+    local builder, frame, fonts = context.themeBuilder, context.area.frame, context.fonts
+    local badge = context.badgeText or presentation.badge or ""
+    local headingWidth = builder.headingWidth(frame, fonts.badge, badge)
+    local heading, font = builder.fitHeading(context.settings.label, headingWidth, fonts.label, fonts.badge)
+    local left = frame.labelX + builder.measureText(font, heading) + 6
+    local right = frame.badgeX + frame.badgeWidth
+    if badge ~= "" then
+        right = primitives.badgeX(builder, frame, fonts.badge, badge) - 6
+    end
+    local width = 18 + builder.measureText(fonts.label, text)
+    local height = math.max(16, builder.fontHeight(fonts.label))
+    context.showSatellites = not frame.labelHidden and right - width >= left and frame.labelY + height <= frame.top
+    if context.showSatellites then
+        context.satelliteHeader:set({ x = right - width, y = frame.labelY, w = width, h = height })
+        primitives.setFont(context.satelliteLabel, fonts.label)
+        context.satelliteLabel:set({ text = text, w = width - 18, color = presentation.label })
+        lvgl.show(context.satelliteHeader)
+    else
+        lvgl.hide(context.satelliteHeader)
+    end
+end
+
 --- Create an image loaded from an SD-card path.
 ---
 --- EdgeTX's `lvgl.image` wraps `StaticImage`, which clears its source when the

@@ -379,13 +379,13 @@ end
 local function testSettingsVocabulary()
     local catalog = settingsCatalog()
     local kinds = panelTypes()
-    -- Fifteen panels ship: twelve instruments, two diagnostics, and the
-    -- fixed theme showcase. `heartbeat` and
+    -- Sixteen panels ship: twelve instruments, two diagnostics, the
+    -- fixed theme showcase and the opt-in map experiment. `heartbeat` and
     -- `placeholder` were built to prove
     -- the host contract and are fixtures under `tests/fixtures/panels`, so
     -- they are not read here: the vocabulary rules below are about what a
     -- person configures on a radio.
-    assertEqual(#kinds, 15, "the catalogue changed size; expected twelve instruments and three utility panels")
+    assertEqual(#kinds, 16, "the catalogue changed size; expected twelve instruments and four utility panels")
 
     for kind, settings in pairs(catalog) do
         local declared = {}
@@ -726,6 +726,14 @@ local function testPanelDocumentationLoads()
             assert(string.find(page, "# Customize themes", 1, true))
             assert(string.find(page, "/WIDGETS/AeroGrid/themes/", 1, true))
             assert(string.find(page, "/AEROGRID/themes/", 1, true))
+            table.remove(kinds, index)
+        elseif kinds[index] == "map" then
+            local handle = assert(io.open(root .. "/docs/developer-guide/map.md", "r"))
+            local page = handle:read("*a")
+            handle:close()
+            assert(string.find(page, "# Radio map", 1, true))
+            assert(string.find(page, "make build", 1, true))
+            assert(string.find(page, "/AEROGRID/maps/areas/companion-naip.yaml", 1, true))
             table.remove(kinds, index)
         end
     end
@@ -1271,6 +1279,7 @@ local function testRenderConsultsWhatIsShown()
         ["service-probe"] = true,
         ["flight-counter"] = true,
         ["theme-showcase"] = true,
+        ["map"] = true,
     }
 
     local checked, exempt = 0, 0

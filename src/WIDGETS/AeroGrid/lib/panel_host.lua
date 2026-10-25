@@ -22,7 +22,7 @@
 ---@field update? fun(instance: any, rect: table, settings: table)
 ---@field refresh? fun(instance: any)
 ---@field background? fun(instance: any)
----@field event? fun(instance: any, event: any): boolean
+---@field event? fun(instance: any, event: any, touchState: table?, rect: table?): boolean
 ---@field destroy? fun(instance: any)
 
 ---@class AeroGridPanelEntry
