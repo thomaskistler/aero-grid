@@ -9,12 +9,16 @@ on:
       - docs/**
       - mkdocs.yml
       - requirements-docs.txt
+      - requirements-docs-test.txt
+      - tools/test_docs_layout.py
       - .github/workflows/docs.yml
   pull_request:
     paths:
       - docs/**
       - mkdocs.yml
       - requirements-docs.txt
+      - requirements-docs-test.txt
+      - tools/test_docs_layout.py
       - .github/workflows/docs.yml
   workflow_dispatch:
 
@@ -28,18 +32,24 @@ concurrency:
 jobs:
   build:
     name: Build documentation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
-          cache-dependency-path: requirements-docs.txt
+          cache-dependency-path: |
+            requirements-docs.txt
+            requirements-docs-test.txt
       - name: Install documentation dependencies
-        run: python -m pip install -r requirements-docs.txt
+        run: |
+          python -m pip install -r requirements-docs-test.txt
+          python -m playwright install --with-deps chromium
       - name: Build and validate
         run: python -m mkdocs build --strict --site-dir build/docs
+      - name: Check responsive documentation tables
+        run: python -m unittest discover -s tools -p 'test_docs_layout.py'
       - name: Upload Pages artifact
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3

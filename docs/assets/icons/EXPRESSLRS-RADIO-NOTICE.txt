@@ -1,0 +1,9 @@
+The install/upgrade radio artwork is the user-provided modified
+"ExpressLRS square logo" from https://github.com/ExpressLRS/Branding.
+
+The ExpressLRS Branding assets are dual-licensed under CC BY-SA 4.0 or GPL-3.0.
+This supplied adaptation is distributed under CC BY-SA 4.0:
+https://creativecommons.org/licenses/by-sa/4.0/
+
+ExpressLRS is a separate trademark. This artwork does not imply endorsement
+or affiliation with the ExpressLRS project.

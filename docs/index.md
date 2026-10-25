@@ -4,6 +4,44 @@ AeroGrid is a configurable 4 x 4 glass-cockpit dashboard for EdgeTX color radios
 YAML layouts combine telemetry, model timers, flight tracking, switch states,
 trim positions, and model images in responsive panels.
 
+<section class="ag-home-start" aria-label="Get started with AeroGrid">
+  <div>
+    <span class="ag-start-eyebrow">START HERE</span>
+    <h2>Install or upgrade AeroGrid</h2>
+    <p>Connect your radio and follow the guide to put AeroGrid on its SD card.</p>
+    <a class="ag-start-button" href="user-guide/installation/">Open Install / Upgrade <span aria-hidden="true">→</span></a>
+  </div>
+  <aside>
+    <strong>Before you start</strong>
+    <span>Color-screen radio (e.g., TX16S, TX15, GX15, T16/T18)</span>
+    <span>EdgeTX 2.11 or later</span>
+    <span>USB data cable</span>
+  </aside>
+</section>
+
+## Choose a guide
+
+<div class="ag-guide-cards" aria-label="AeroGrid documentation">
+  <a class="ag-guide-card ag-guide-card-primary" href="user-guide/add-dashboard/">
+    <span class="ag-guide-card-label">For pilots and radio owners</span>
+    <strong>User Guide</strong>
+    <span>Install AeroGrid, create a dashboard, customize it, and troubleshoot common issues.</span>
+    <em>Start with the User Guide →</em>
+  </a>
+  <a class="ag-guide-card" href="reference-guide/">
+    <span class="ag-guide-card-label">For specific answers</span>
+    <strong>Reference Guide</strong>
+    <span>Look up panel behavior, settings, and the layout YAML format.</span>
+    <em>Browse the reference →</em>
+  </a>
+  <a class="ag-guide-card" href="developer-guide/build/">
+    <span class="ag-guide-card-label">For developers</span>
+    <strong>Developer Guide</strong>
+    <span>Build and test AeroGrid, learn the architecture, and contribute.</span>
+    <em>Explore development →</em>
+  </a>
+</div>
+
 ![Full AeroGrid Default dashboard in Modern Dark, showing telemetry, flight timer, flight count, switch state, and a model image](assets/dashboard/dashboard.png)
 
 The complete Default layout at native 480 x 272 resolution, captured in the
