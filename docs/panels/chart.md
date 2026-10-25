@@ -63,12 +63,20 @@ during compaction, but the service never joins across a known gap.
 
 All series occupy **one plot**, not separate mini-charts. Use multiple panels for
 separate charts. Supported spans are 2x1, 3x1, 4x1, 2x2, 3x2, 4x2, 3x3, 4x3,
-and 4x4; additional height goes to the plot rather than stretching the legend.
+and 4x4; additional height enlarges the plot and can allow larger legend text.
 The panel respects the App menu exclusion area.
-Metric names, values, and extrema use the same larger legend font at every span.
-When the panel is too short to fit all extrema rows (for example, three sources
-in a 2x1 panel), those rows are hidden rather than shrinking the text or
-overlapping the recorded values. Use a taller panel to show all readouts.
+Metric names, values, and extrema scale together with the widget's actual pixel
+dimensions, number of metrics, and readout widths. Larger fonts use at most half
+the available content width for the legend, leaving room for the plot. Text never
+shrinks below the small readable font; longer readouts can reduce the chosen size,
+and resizing recalculates it.
+The larger native fonts omit the arrow glyphs, so their min/max indicators use
+`v` / `^` instead.
+
+Larger text does not hide extrema that would fit at the minimum font. When the
+panel is too short even at that minimum (for example, three sources in a 2x1
+panel), extrema rows are hidden rather than shrinking the text or overlapping
+the recorded values. Use a taller panel to show all readouts.
 
 History lives in RAM and continues while the dashboard receives background
 callbacks. Geometry-only reflow preserves it. Reloading/restarting the dashboard,

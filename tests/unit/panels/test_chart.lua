@@ -157,12 +157,16 @@ for _, size in ipairs({ { 320, 240 }, { 800, 480 }, { 480, 272 } }) do
         assert(panel.area.w > 0 and panel.area.h > 0)
         assert(panel.area.legendX >= panel.area.x + panel.area.w)
         for _, item in ipairs(panel.series) do
-            equal(item.name.properties.font(), SMLSIZE, "metric names must use the larger legend font")
-            equal(item.value.properties.font(), SMLSIZE, "recorded values must use the larger legend font")
-            equal(item.extrema.properties.font(), SMLSIZE, "recorded extrema must use the larger legend font")
+            equal(item.name.properties.font(), panel.legendFont, "metric names must follow the legend font")
+            equal(item.value.properties.font(), panel.legendFont, "recorded values must follow the legend font")
+            equal(item.extrema.properties.font(), panel.legendFont, "recorded extrema must follow the legend font")
+            assert(panel.themeBuilder.fontHeight(panel.legendFont) >= panel.themeBuilder.fontHeight(SMLSIZE))
             if panel.showExtrema then
-                assert(item.extrema.properties.y >= item.value.properties.y + panel.themeBuilder.fontHeight(SMLSIZE))
-                assert(item.extrema.properties.y + panel.themeBuilder.fontAscent(SMLSIZE) <= panel.rect.h)
+                assert(
+                    item.extrema.properties.y
+                        >= item.value.properties.y + panel.themeBuilder.fontHeight(panel.legendFont)
+                )
+                assert(item.extrema.properties.y + panel.themeBuilder.fontAscent(panel.legendFont) <= panel.rect.h)
             end
             for _, run in ipairs(item.runs) do
                 if run.line and not run.line.hidden then
@@ -176,6 +180,84 @@ for _, size in ipairs({ { 320, 240 }, { 800, 480 }, { 480, 272 } }) do
     end
 end
 assert(fixture.lvglMock.replacedFontRefCount() == 0, "chart reflow must reuse font callbacks")
+
+local function typographyPanel(count)
+    local metrics = {}
+    for index = 1, count do
+        metrics[index] = { source = "Alt", label = "A", precision = 0, unit = "" }
+    end
+    local entry, message = context.dashboardLoader.buildPanel(context, {
+        id = "typography-" .. count,
+        type = "chart",
+        col = 0,
+        row = 0,
+        colSpan = 2,
+        rowSpan = 2,
+        config = { metrics = metrics },
+    })
+    assert(entry, message)
+    return entry.instance
+end
+
+local single, multiple = typographyPanel(1), typographyPanel(3)
+local feed = single.series[1].feed
+local previousHeight = 0
+local heights = {}
+for _, size in ipairs({ { 232, 64 }, { 232, 132 }, { 472, 132 }, { 472, 264 } }) do
+    chart.update(single, { x = 0, y = 0, w = size[1], h = size[2] })
+    local builder = single.themeBuilder
+    local height = builder.fontHeight(single.legendFont)
+    assert(height >= previousHeight, "adding space must not make identical readouts smaller")
+    if height > builder.fontHeight(SMLSIZE) then
+        assert(single.area.w >= math.floor(single.area.frame.content / 2) - 6, "larger fonts must preserve plot space")
+    end
+    if height > builder.fontHeight(0) then
+        local extrema = single.series[1].extrema.properties.text
+        assert(
+            string.sub(extrema, 1, 1) == "v" and string.find(extrema, "  ^", 1, true),
+            "large fonts need supported min/max markers"
+        )
+    end
+    assert(single.showExtrema, "larger fonts must not hide extrema that fit at the readability floor")
+    equal(single.series[1].feed, feed, "typography reflow must retain history subscriptions")
+    previousHeight = height
+    heights[#heights + 1] = height
+end
+assert(previousHeight > single.themeBuilder.fontHeight(SMLSIZE), "large widgets must use a larger font")
+assert(heights[3] > heights[2], "additional width must allow a larger font for the same readings and height")
+chart.update(single, { x = 0, y = 0, w = 472, h = 132 })
+chart.update(multiple, { x = 0, y = 0, w = 472, h = 132 })
+assert(
+    single.themeBuilder.fontHeight(single.legendFont) > multiple.themeBuilder.fontHeight(multiple.legendFont),
+    "fewer metrics must allow larger text when height is the limiting factor"
+)
+chart.update(multiple, { x = 0, y = 0, w = 472, h = 100 })
+equal(multiple.legendFont, SMLSIZE, "keep all extrema instead of increasing the font and hiding them")
+assert(multiple.showExtrema)
+chart.update(single, { x = 0, y = 0, w = 232, h = 64 })
+chart.update(multiple, { x = 0, y = 0, w = 232, h = 64 })
+equal(multiple.legendFont, SMLSIZE, "crowded short panels must keep the readable minimum")
+assert(not multiple.showExtrema, "extrema may hide only when they cannot fit at the minimum font")
+chart.update(single, { x = 0, y = 0, w = 472, h = 132 })
+local initialFontHeight = single.themeBuilder.fontHeight(single.legendFont)
+local altitudeId = getFieldInfo("Alt").id
+local altitude = fixture.radio.values[altitudeId]
+fixture.radio.values[altitudeId] = 12345678
+fixture.pump(context, 60)
+chart.refresh(single)
+assert(
+    single.themeBuilder.fontHeight(single.legendFont) < initialFontHeight,
+    "longer readouts must reduce the font to fit"
+)
+assert(
+    single.area.legendW >= single.themeBuilder.measureText(single.legendFont, single.series[1].readout),
+    "the resized legend must fit the full recorded value"
+)
+equal(single.series[1].name.properties.font(), single.legendFont)
+equal(single.series[1].value.properties.font(), single.legendFont)
+equal(single.series[1].extrema.properties.font(), single.legendFont)
+fixture.radio.values[altitudeId] = altitude
+assert(fixture.lvglMock.replacedFontRefCount() == 0, "font resizing must reuse native callbacks")
 
 local empty = fixture.createLoaded(nil, { Layout = "Empty", Theme = "modern-dark" })
 local built, message = empty.dashboardLoader.buildPanel(empty, {

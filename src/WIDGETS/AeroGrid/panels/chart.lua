@@ -86,6 +86,7 @@ local chart = {
 
 local DURATIONS = { ["30s"] = 30, ["1m"] = 60, ["2m"] = 120, ["5m"] = 300, ["10m"] = 600 }
 local COLORS = { "cyan", "green", "orange" }
+local LEGEND_FONTS = { XXLSIZE, DBLSIZE, MIDSIZE, 0, SMLSIZE }
 local textCache = setmetatable({}, { __mode = "k" })
 
 local function finite(value)
@@ -184,12 +185,57 @@ local function label(context, color, font)
     })
 end
 
+local function extremaText(item, font)
+    local down, up = "v", "^"
+    if font == SMLSIZE or font == 0 then
+        down, up = CHAR_DOWN or string.char(193), CHAR_UP or string.char(192)
+    end
+    return down .. (item.minimumText or "--") .. "  " .. up .. (item.maximumText or "--")
+end
+
+local function legendWidth(context, font, showExtrema)
+    local builder = context.themeBuilder
+    local nameLimit = math.floor(builder.fontHeight(font) * 2.5)
+    local width = 64
+    for _, item in ipairs(context.series) do
+        width = math.max(
+            width,
+            showExtrema and builder.measureText(font, extremaText(item, font)) or 0,
+            builder.measureText(font, item.readout or "--")
+                + math.min(nameLimit, builder.measureText(font, item.caption))
+                + 3
+        )
+    end
+    return width
+end
+
 function chart.geometry(context, rect)
     local builder = context.themeBuilder
     local fonts = { label = SMLSIZE, badge = TINSIZE }
     local frame = builder.frame(context.theme, rect, fonts)
     local content = frame.content
-    local legend = math.min(context.legendWidth or 68, math.max(24, content - 28))
+    local count = #context.series
+    -- Preserve extrema whenever they fit at the readability floor.
+    local showExtrema = rect.h >= count * (builder.fontHeight(SMLSIZE) + builder.fontAscent(SMLSIZE)) + 2
+    local font, required
+    -- Readout growth can step down the font; resizing restarts the ladder.
+    for index = count == 0 and #LEGEND_FONTS or context.legendIndex or 1, #LEGEND_FONTS do
+        local candidate = LEGEND_FONTS[index]
+        local rowHeight = builder.fontHeight(candidate) + (showExtrema and builder.fontAscent(candidate) or 0)
+        if count * rowHeight + 2 <= rect.h or candidate == SMLSIZE then
+            local width = legendWidth(context, candidate, showExtrema)
+            if candidate == context.legendFont then
+                width = math.max(width, context.legendWidth or 0)
+            end
+            if width <= math.floor(content / 2) or candidate == SMLSIZE then
+                font, required, context.legendIndex = candidate, width, index
+                break
+            end
+        end
+    end
+    local changed = context.legendFont ~= font
+    context.legendFont, context.legendWidth = font, required
+    local legend = math.min(required, math.max(24, content - 28))
     local gap = 6
     local width = math.max(1, content - legend - gap)
     local top = frame.labelY + builder.fontHeight(SMLSIZE) + 2
@@ -224,10 +270,8 @@ function chart.geometry(context, rect)
     context.endLabel = nil
     context.baseline:set({ x = area.x, y = area.y + area.h, w = area.w, h = 1 })
     context.status:set({ x = area.x, y = area.y, w = area.w })
-    local count = #context.series
-    local lineHeight = builder.fontHeight(SMLSIZE)
-    local pairHeight = lineHeight + builder.fontAscent(SMLSIZE)
-    local showExtrema = rect.h >= count * pairHeight + 2
+    local lineHeight = builder.fontHeight(font)
+    local pairHeight = lineHeight + builder.fontAscent(font)
     context.showExtrema = showExtrema
     local step = math.min(
         showExtrema and pairHeight + 1 or lineHeight + 1,
@@ -236,9 +280,14 @@ function chart.geometry(context, rect)
     local first = math.max(0, math.floor((rect.h - count * step) / 2))
     for index, item in ipairs(context.series) do
         local y = first + (index - 1) * step
+        local measured = builder.measureText(font, item.readout or "--")
+        item.readoutWidth = changed and measured or math.max(measured, item.readoutWidth or 0)
         local valueWidth = math.min(legend, math.max(24, item.readoutWidth or 0))
         local nameWidth = math.max(0, legend - valueWidth - 3)
-        local name = builder.fitHeading(caption(item.settings), nameWidth, SMLSIZE, SMLSIZE)
+        local name = builder.fitHeading(item.caption, nameWidth, font, font)
+        context.primitives.setFont(item.name, font)
+        context.primitives.setFont(item.value, font)
+        context.primitives.setFont(item.extrema, font)
         item.name:set({ x = area.legendX, y = y, w = nameWidth, text = name })
         item.value:set({ x = area.legendX + legend - valueWidth, y = y, w = valueWidth })
         item.extrema:set({ x = area.legendX, y = y + lineHeight, w = legend })
@@ -436,6 +485,8 @@ end
 
 function chart.render(context)
     local builder = context.themeBuilder
+    local font = context.legendFont
+    local nameLimit = math.floor(builder.fontHeight(font) * 2.5)
     local width = 64
     local reflow = false
     for _, item in ipairs(context.series) do
@@ -447,21 +498,17 @@ function chart.render(context)
         end
         local value = chart.format(feed and feed.value, precision)
         item.readout = value .. (value ~= "--" and unit ~= "" and (" " .. unit) or "")
-        local measured = builder.measureText(SMLSIZE, item.readout)
+        local measured = builder.measureText(font, item.readout)
         if measured > (item.readoutWidth or 0) then
             item.readoutWidth, reflow = measured, true
         end
-        local extrema = context.showExtrema
-                and ((CHAR_DOWN or string.char(193)) .. chart.format(feed and feed.min, precision) .. "  " .. (CHAR_UP or string.char(
-                    192
-                )) .. chart.format(feed and feed.max, precision))
-            or ""
+        item.minimumText = chart.format(feed and feed.min, precision)
+        item.maximumText = chart.format(feed and feed.max, precision)
+        local extrema = extremaText(item, font)
         width = math.max(
             width,
-            builder.measureText(SMLSIZE, extrema),
-            builder.measureText(SMLSIZE, item.readout)
-                + math.min(42, builder.measureText(SMLSIZE, caption(item.settings)))
-                + 3
+            context.showExtrema and builder.measureText(font, extrema) or 0,
+            measured + math.min(nameLimit, builder.measureText(font, item.caption)) + 3
         )
         local color = feed and feed.stale and context.theme.color.textFaint or context.theme.color.text
         text(item.value, item.readout, color)
@@ -573,7 +620,7 @@ function chart.create(parent, rect, settings, services)
     context.session = context.history and context.history:session(services.session and services.session.armSource)
     for index, entry in ipairs(settings.metrics) do
         local color = context.theme.color[entry.accent or COLORS[index]]
-        local item = { settings = entry, color = color, runs = {} }
+        local item = { settings = entry, color = color, runs = {}, caption = string.upper(caption(entry)) }
         if context.history then
             item.feed = context.history:subscribe(entry.source, {
                 windowSeconds = DURATIONS[settings.duration] or 30,
@@ -598,6 +645,7 @@ end
 
 function chart.update(context, rect)
     context.rect = rect
+    context.legendFont, context.legendIndex, context.legendWidth = nil, nil, nil
     context.primitives.resizePanel(context.panel, rect)
     chart.geometry(context, rect)
     chart.refresh(context)
