@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+/** Adds connection-help popovers to radio connection buttons in the page. */
 for (const connect of document.querySelectorAll("[data-connect]")) {
   const actions = document.createElement("div");
   actions.className = "ag-radio-connect-actions";

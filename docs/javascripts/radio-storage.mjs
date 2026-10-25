@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only
+/** Shared SD-card connections and read-only EdgeTX/widget metadata inspection. */
 
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 
+/** Returns { numbers: [major, minor, patch], prerelease: string[] }, or null. */
 export function parseVersion(value) {
   if (typeof value !== "string" || value.length > 100) return null;
   const match = VERSION.exec(value);
@@ -45,6 +47,7 @@ function scalar(text, key) {
   return match ? (match[1] ?? match[2] ?? match[3]).trim() : null;
 }
 
+/** Reads board/semver fields; missing, ambiguous, or invalid fields become null. */
 export function parseRadioMetadata(text) {
   const board = scalar(text, "board");
   const version = scalar(text, "semver");
@@ -88,6 +91,7 @@ const RADIO_NAMES = {
   x12s: "FrSky Horus X12S",
 };
 
+/** Returns { type, screen } with logical LCD dimensions, or "Unknown" values. */
 export function radioHardware(board) {
   const key = typeof board === "string" ? board.toLowerCase() : null;
   return {
@@ -96,6 +100,7 @@ export function radioHardware(board) {
   };
 }
 
+/** Returns { supported, message } for the UI policy, not release certification. */
 export function radioCompatibility(radio) {
   const hardware = radioHardware(radio?.board);
   if (hardware.screen === "Unknown") {
@@ -117,12 +122,14 @@ export function radioCompatibility(radio) {
   return { supported: true, message: "Compatibility check passed: recognized color-screen radio with EdgeTX 2.11.0 or later." };
 }
 
+/** Reads a unique version assignment from package.lua without executing Lua; otherwise null. */
 export function packageVersion(text) {
   const source = text.replace(/--\[(=*)\[[\s\S]*?\]\1\]/g, "").replace(/--[^\r\n]*/g, "");
   const matches = [...source.matchAll(/^\s*version\s*=\s*["']([^"']+)["']\s*,?\s*$/gm)];
   return matches.length === 1 && parseVersion(matches[0][1]) ? matches[0][1] : null;
 }
 
+/** Case-insensitive, read-only lookup; optional missing entries return null, ambiguity throws. */
 export async function child(directory, name, kind, optional = false) {
   const matches = [];
   for await (const [entryName, handle] of directory.entries()) {
@@ -137,6 +144,7 @@ export async function child(directory, name, kind, optional = false) {
   return matches[0];
 }
 
+/** Returns text or null if absent; limit is the maximum file size in bytes. */
 export async function readText(directory, name, limit) {
   const handle = await child(directory, name, "file", true);
   if (!handle) return null;
@@ -145,6 +153,7 @@ export async function readText(directory, name, limit) {
   return file.text();
 }
 
+/** Requires read access to an EdgeTX SD-card root; returns { board, version, name }. */
 export async function inspectRoot(root) {
   const radio = await child(root, "RADIO", "directory");
   await child(root, "MODELS", "directory");
@@ -158,6 +167,7 @@ export async function inspectRoot(root) {
   return { ...metadata, name: root.name };
 }
 
+/** Returns { present, version }; an absent or unrecognized version is null. Read errors throw. */
 export async function inspectWidget(root) {
   const widgets = await child(root, "WIDGETS", "directory", true);
   const widget = widgets && await child(widgets, "AeroGrid", "directory", true);
@@ -194,8 +204,9 @@ async function connectionHandle(operation, key, handle) {
   }
 }
 
-// Shared SD-card access, independent of installer UI and paths.
+/** Owns a selected SD-card handle; connections and inspection never request write access. */
 export class RadioStorage {
+  /** persist retains the handle between pages in this tab until disconnect. */
   constructor(picker = (options) => globalThis.showDirectoryPicker(options), persist = false) {
     this.picker = picker;
     this.persist = persist;
@@ -203,6 +214,7 @@ export class RadioStorage {
     this.busy = false;
   }
 
+  /** Call from a user gesture to pick/validate an SD-card root; returns its radio metadata. */
   async connect() {
     if (this.busy) throw new Error("A radio operation is already running.");
     const root = await this.picker({ id: "aerogrid-radio", mode: "read" });
@@ -222,6 +234,7 @@ export class RadioStorage {
     return metadata;
   }
 
+  /** Restores only previously granted read access; returns false if no saved connection exists. */
   async restore() {
     if (!this.persist || this.root) return !!this.root;
     const key = globalThis.sessionStorage?.getItem(CONNECTION_KEY);
@@ -241,6 +254,7 @@ export class RadioStorage {
     }
   }
 
+  /** Clears the connection and saved handle, not files; does not eject the drive. */
   disconnect() {
     if (this.busy) throw new Error("Wait for the radio operation to finish.");
     this.root = null;
@@ -253,17 +267,20 @@ export class RadioStorage {
     }
   }
 
+  /** Returns { radio: { board, version, name }, widget: { present, version } }. */
   async inspect() {
     if (!this.root) throw new Error("Connect the radio's SD card first.");
     return { radio: await inspectRoot(this.root), widget: await inspectWidget(this.root) };
   }
 
+  /** Call from a user gesture before writes; rejects unless read/write access is granted. */
   async requestWritePermission() {
     if (!this.root) throw new Error("Connect the radio's SD card first.");
     const permission = await this.root.requestPermission({ mode: "readwrite" });
     if (permission !== "granted") throw new Error("SD-card write permission was denied. No installation started.");
   }
 
+  /** Runs operation(root), using a cross-page lock when available; does not grant write permission. */
   async exclusive(operation) {
     if (this.busy) throw new Error("A radio operation is already running.");
     if (!this.root) throw new Error("Connect the radio's SD card first.");
@@ -282,4 +299,5 @@ export class RadioStorage {
   }
 }
 
+/** Shared tab-persistent connection for browser radio tools. */
 export const radioStorage = new RadioStorage(undefined, true);

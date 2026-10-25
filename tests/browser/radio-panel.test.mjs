@@ -1,0 +1,126 @@
+// SPDX-License-Identifier: GPL-2.0-only
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { test } from "node:test";
+import vm from "node:vm";
+import { actionFor } from "../../docs/javascripts/radio-installer.mjs";
+import { compareVersions, radioCompatibility, radioHardware } from "../../docs/javascripts/radio-storage.mjs";
+
+const source = (await readFile(new URL("../../docs/javascripts/radio-panel.mjs", import.meta.url), "utf8"))
+  .replace(/^import .*;\n/gm, "")
+  .replaceAll("import.meta.url", JSON.stringify(new URL("../../docs/javascripts/radio-panel.mjs", import.meta.url).href));
+
+async function panel() {
+  const elements = new Map();
+  const document = { hidden: false, activeElement: null };
+  function element(name) {
+    if (elements.has(name)) return elements.get(name);
+    const listeners = new Map();
+    const classes = new Set();
+    const node = {
+      textContent: "", hidden: false, disabled: false, open: false,
+      classList: {
+        toggle(name, enabled) { if (enabled) classes.add(name); else classes.delete(name); },
+        remove(...names) { for (const name of names) classes.delete(name); },
+        contains(name) { return classes.has(name); },
+      },
+      setAttribute() {}, append() {}, replaceChildren() {},
+      addEventListener(event, listener) {
+        if (!listeners.has(event)) listeners.set(event, []);
+        listeners.get(event).push(listener);
+      },
+      async dispatch(event) {
+        for (const listener of listeners.get(event) ?? []) await listener({});
+      },
+      focus() { if (!this.disabled) document.activeElement = this; },
+      showModal() { this.open = true; },
+      close() {
+        this.open = false;
+        void this.dispatch("close");
+      },
+    };
+    elements.set(name, node);
+    return node;
+  }
+  const host = element("panel");
+  host.querySelector = (selector) => element(selector.slice(6, -1));
+  document.querySelector = () => host;
+  document.createElement = () => element(Symbol());
+  let details = {
+    radio: { name: "Test SD", board: "tx16s", version: "2.12.4" },
+    widget: { present: true, version: "0.0.1" },
+  };
+  let failure = null;
+  const radioStorage = {
+    root: {},
+    restore: async () => true,
+    inspect: async () => {
+      if (failure) throw failure;
+      return structuredClone(details);
+    },
+    disconnect() { this.root = null; },
+    requestWritePermission() { assert.fail("Invalidated confirmation must not request write access"); },
+  };
+  let poll;
+  vm.runInNewContext(source, {
+    document, window: { isSecureContext: true, showDirectoryPicker() {}, addEventListener() {} },
+    radioStorage, actionFor, compareVersions, radioCompatibility, radioHardware,
+    structuredClone, URL, console, queueMicrotask,
+    loadCatalog: async () => ({
+      latest: "1.0.0", releases: [{ version: "1.0.0", available: true, name: "Test release" }],
+    }),
+    loadRelease: async () => ({ version: "1.0.0" }),
+    setInterval(callback, interval) { assert.equal(interval, 5000); poll = callback; },
+  }, { filename: "radio-panel.mjs" });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(element("install").disabled, false);
+  await element("install").dispatch("click");
+  assert.equal(element("confirm-dialog").open, true);
+  assert.equal(element("confirm").hidden, false);
+  return {
+    element, document, radioStorage, poll,
+    change(update) { details = update(structuredClone(details)); },
+    loseAccess(name) { failure = new DOMException("Drive unavailable", name); },
+  };
+}
+
+for (const changed of ["radio", "widget"]) {
+  test(`${changed} metadata change dismisses confirmation and permits a fresh confirmation`, async () => {
+    const ui = await panel();
+    ui.change((details) => {
+      if (changed === "radio") details.radio.version = "2.12.5";
+      else details.widget.version = "0.0.2";
+      return details;
+    });
+    await ui.poll();
+    assert.equal(ui.element("confirm-dialog").open, false);
+    assert.equal(ui.element("confirm").hidden, true);
+    assert.match(ui.element("status").textContent, /changed.*confirm installation again/);
+    assert.equal(ui.element(changed === "radio" ? "edgetx" : "widget").textContent,
+      changed === "radio" ? "2.12.5" : "v0.0.2");
+    assert.equal(ui.element("install").disabled, false);
+    assert.equal(ui.document.activeElement, ui.element("install"));
+    await ui.element("confirm-start").dispatch("click");
+    await ui.element("install").dispatch("click");
+    assert.equal(ui.element("confirm-dialog").open, true);
+    assert.equal(ui.element("confirm").hidden, false);
+  });
+}
+
+for (const error of ["NotAllowedError", "NotFoundError"]) {
+  test(`${error} dismisses confirmation, explains lost access, and enables reconnect`, async () => {
+    const ui = await panel();
+    ui.loseAccess(error);
+    await ui.poll();
+    assert.equal(ui.element("confirm-dialog").open, false);
+    assert.equal(ui.element("confirm").hidden, true);
+    assert.match(ui.element("status").textContent, /SD-card access lost:.*Reconnect/);
+    assert.equal(ui.element("status").classList.contains("ag-radio-error"), true);
+    assert.equal(ui.radioStorage.root, null);
+    assert.equal(ui.element("connection").textContent, "Radio disconnected");
+    assert.equal(ui.element("install").disabled, true);
+    assert.equal(ui.element("connect").disabled, false);
+    assert.equal(ui.document.activeElement, ui.element("connect"));
+    await ui.element("confirm-start").dispatch("click");
+  });
+}

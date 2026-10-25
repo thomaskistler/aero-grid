@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+/** Installation-page UI: connection, release selection, confirmation, and progress. */
 import { radioStorage, compareVersions, radioHardware, radioCompatibility } from "./radio-storage.mjs";
 import { actionFor, ContentMismatchError, loadCatalog, loadRelease, preparePackage, replaceWidget, verifyInstalled } from "./radio-installer.mjs";
 
@@ -334,6 +335,7 @@ if (panel) {
     checking = true;
     const previous = details;
     const root = radioStorage.root;
+    let invalidated = false;
     try {
       const current = await radioStorage.inspect();
       if (busy || radioStorage.root !== root || details !== previous) return;
@@ -341,6 +343,8 @@ if (panel) {
         details = current;
         if (confirmation) {
           confirmation = null;
+          confirmDialog.close();
+          invalidated = true;
           message("The radio information or installed AeroGrid version changed. Review the versions and confirm installation again.");
         }
       }
@@ -348,11 +352,16 @@ if (panel) {
       if (busy || radioStorage.root !== root || details !== previous) return;
       radioStorage.disconnect();
       details = null;
-      confirmation = null;
+      if (confirmation) {
+        confirmation = null;
+        confirmDialog.close();
+        invalidated = true;
+      }
       message(`SD-card access lost: ${error.message} Reconnect the radio and select its SD card again.`, true);
     } finally {
       checking = false;
       render();
+      if (invalidated) (radioStorage.root ? install : connect).focus();
     }
   }, 5000);
 

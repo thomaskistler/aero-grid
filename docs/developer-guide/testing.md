@@ -93,7 +93,7 @@ updates, and font callback retention. They cannot measure native LVGL/bitmap
 memory, firmware GC cadence, or radio timing. A short green mock run is not
 evidence of long-term hardware stability.
 
-## Python tooling tests
+## Browser installer tests
 
 The browser USB-storage installer uses Python's standard library and Node.js 22:
 
@@ -101,38 +101,25 @@ The browser USB-storage installer uses Python's standard library and Node.js 22:
 make test-installer
 ```
 
-This runs the release-mirroring tests and `tests/browser/*.test.mjs` using Node's
-test runner, including tab-persistent connection restoration, lost permissions,
-cross-page write-lock contention, release catalog availability, and installer
-integrity/preservation boundaries. The rendered smoke also checks help popovers,
-native handle restoration after reload, v-prefixed release choices, and the
-confirmation/progress/completion dialog lifecycle.
+This runs release-mirroring and Node tests for connections, confirmation,
+release availability, content integrity, and preservation of non-widget files.
+Mocks do not prove physical radio behavior; never use a real radio for automated
+destructive tests.
 
-Mock directory handles cover metadata, permission failures,
-payload validation, write failures, delete-and-replace ordering, and preservation
-of non-widget files. They do not prove physical radio behavior. For browser
-acceptance, select a disposable EdgeTX-shaped directory in desktop Chrome/Edge;
-never use a real radio for automated destructive tests. A real-radio test needs
-explicit authorization and a post-install widget check after safely ejecting
-the drive and unplugging the USB data cable.
-
-An optional Playwright smoke check exercises the rendered panel with real Chromium
-filesystem handles in a disposable origin-private directory. It simulates the
-picker selection, **not** radio hardware or the operating system's folder dialog.
-After installing Playwright/Chromium separately, serve the built site with mirrored
-installer assets as described in [Check out and build](build.md#browser-installer-assets):
+For an optional rendered-panel check, install Playwright and Chromium separately,
+then serve a built site with mirrored assets as described in
+[Check out and build](build.md#browser-installer-assets):
 
 ```sh
 node tests/browser/radio-panel.smoke.mjs http://127.0.0.1:8000/
 ```
 
-If Playwright is installed outside normal Node module resolution, set
-`PLAYWRIGHT_MODULE` to its absolute `index.mjs` path. The check covers a full
-update/readback, failed download without mutation, preserved user data, disconnect,
-mobile overflow, and unsupported-browser messaging.
-Set `INSTALLER_KEYBOARD=1` to exercise button activation with Enter instead of
-pointer clicks, or `PLAYWRIGHT_CHANNEL=chrome` to use an installed Google Chrome
-instead of Playwright's matching Chromium.
+The smoke check uses disposable browser storage, not a radio or the OS folder
+picker, and requires at least two mirrored releases. Set `PLAYWRIGHT_MODULE` to an
+external Playwright `index.mjs` path if needed, `PLAYWRIGHT_CHANNEL=chrome` to use
+installed Chrome, or `INSTALLER_KEYBOARD=1` to exercise keyboard activation.
+
+## Python tooling tests
 
 Release packaging uses only Python's standard library:
 

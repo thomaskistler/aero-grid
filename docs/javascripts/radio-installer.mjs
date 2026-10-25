@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+/** Release discovery, verified downloads, and AeroGrid-only SD-card replacement. */
 import { child, compareVersions, inspectRoot, inspectWidget, packageVersion, parseVersion } from "./radio-storage.mjs";
 
 const RELEASES_API = "https://api.github.com/repos/thomaskistler/aero-grid/releases";
@@ -15,6 +16,7 @@ class HttpError extends Error {
   }
 }
 
+/** Verification failure; differences holds path lists or per-file size details when available. */
 export class ContentMismatchError extends Error {
   constructor(message, differences = null) {
     super(message);
@@ -27,6 +29,7 @@ export async function sha256(bytes) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/** Maps { present, version } and a target version to { enabled, label }. */
 export function actionFor(widget, latest) {
   if (!widget.present) return { enabled: true, label: `Install AeroGrid v${latest}` };
   if (!widget.version) return { enabled: true, label: `Update to AeroGrid v${latest}` };
@@ -36,6 +39,7 @@ export function actionFor(widget, latest) {
   return { enabled: true, label: `Update to AeroGrid v${latest}` };
 }
 
+/** Validates a schema-1 { version, release, archiveSha256, files: [{ path, size, sha256 }] } or throws. */
 export function validateManifest(manifest) {
   const version = parseVersion(manifest?.version);
   if (manifest?.schema !== 1 || !version || version.prerelease.length
@@ -128,6 +132,7 @@ function validateRelease(manifest, release) {
   return manifest;
 }
 
+/** Loads a validated manifest from the installer base URL and checks its published GitHub release. */
 export async function loadRelease(base, version, fetcher = globalThis.fetch) {
   if (!/^\d+\.\d+\.\d+$/.test(version) || !parseVersion(version)) {
     throw new Error("Invalid selected release version.");
@@ -140,6 +145,7 @@ export async function loadRelease(base, version, fetcher = globalThis.fetch) {
   return validateRelease(manifest, release);
 }
 
+/** Returns { schema, latest, releases: [{ version, name, release, available, reason }] }. */
 export async function loadCatalog(base, fetcher = globalThis.fetch) {
   let catalog;
   let missingCatalog = false;
@@ -198,6 +204,10 @@ export async function loadCatalog(base, fetcher = globalThis.fetch) {
   return { schema: 1, latest: published[0].version, releases: published };
 }
 
+/**
+ * Downloads and verifies all files without touching the radio; returns { version, files }.
+ * Each file adds bytes to its manifest entry. progress receives (text, completed, total).
+ */
 export async function preparePackage(manifest, base, progress, fetcher = globalThis.fetch) {
   // Detach from caller-owned metadata before network waits or destructive operations.
   const pinned = validateManifest(structuredClone(manifest));
@@ -275,6 +285,10 @@ async function appleDoubleSidecar(handle, path, expectedPaths, directories) {
   return true;
 }
 
+/**
+ * Read-only content check against manifest.files; throws ContentMismatchError on differences.
+ * allowCompiled permits matching Lua bytecode companions. progress receives (text, completed, total).
+ */
 export async function verifyInstalled(root, manifest, progress = () => {}, allowCompiled = false) {
   const widgets = await child(root, "WIDGETS", "directory");
   const widget = await child(widgets, "AeroGrid", "directory");
@@ -339,6 +353,12 @@ async function deleteWidgetTree(parent, directory, path, budget = { remaining: 1
   }
 }
 
+/**
+ * Requires SD-root write permission and a package from preparePackage; rechecks bytes before deletion.
+ * Replaces only WIDGETS/AeroGrid (creating WIDGETS if absent), then verifies written content.
+ * Failure can leave an incomplete installation; no backup or rollback. Downgrades require opt-in.
+ * Caller must serialize writes; progress receives (text, completed, total).
+ */
 export async function replaceWidget(root, prepared, progress = () => {}, { allowDowngrade = false } = {}) {
   if (!preparedPackages.has(prepared)) throw new Error("Download and validate a complete installation package first.");
   // Recheck bytes even if another caller retained and modified a prepared buffer.

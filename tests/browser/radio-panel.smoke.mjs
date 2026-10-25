@@ -192,6 +192,41 @@ try {
   assert.equal(await page.locator("[data-confirm-dialog]").isVisible(), false);
   assert.equal(await read("WIDGETS/AeroGrid/main.luac"), "stale bytecode");
 
+  await activate("[data-install]");
+  await page.evaluate(async () => {
+    const radio = await (await window.__radioReady).getDirectoryHandle("RADIO");
+    const stream = await (await radio.getFileHandle("radio.yml")).createWritable();
+    await stream.write("board: tx16s\nsemver: 2.12.5\n");
+    await stream.close();
+  });
+  await page.waitForFunction(() => document.querySelector("[data-edgetx]").textContent === "2.12.5", null, { timeout: 12000 });
+  assert.equal(await page.locator("[data-confirm-dialog]").isVisible(), false);
+  assert.match(await page.locator("[data-status]").textContent(), /changed.*confirm installation again/);
+  assert.equal(await page.locator("[data-install]").isEnabled(), true);
+  assert.equal(await page.locator("[data-install]").evaluate((node) => node === document.activeElement), true);
+  assert.equal(await read("WIDGETS/AeroGrid/main.luac"), "stale bytecode");
+
+  await activate("[data-install]");
+  await page.evaluate(async () => {
+    const root = await window.__radioReady;
+    await root.removeEntry("RADIO", { recursive: true });
+  });
+  await page.waitForFunction(() => document.querySelector("[data-status]").textContent.startsWith("SD-card access lost:"), null, { timeout: 12000 });
+  assert.equal(await page.locator("[data-confirm-dialog]").isVisible(), false);
+  assert.match(await page.locator("[data-status]").textContent(), /Reconnect/);
+  assert.equal(await page.locator("[data-connect]").isEnabled(), true);
+  assert.equal(await page.locator("[data-connect]").evaluate((node) => node === document.activeElement), true);
+  assert.equal(await page.locator("[data-install]").isDisabled(), true);
+  assert.equal(await read("WIDGETS/AeroGrid/main.luac"), "stale bytecode");
+  await page.evaluate(async () => {
+    const radio = await (await window.__radioReady).getDirectoryHandle("RADIO", { create: true });
+    const stream = await (await radio.getFileHandle("radio.yml", { create: true })).createWritable();
+    await stream.write("board: tx16s\nsemver: 2.12.4\n");
+    await stream.close();
+  });
+  await activate("[data-connect]");
+  await page.waitForFunction(() => !document.querySelector("[data-install]").disabled);
+
   // A failed download must leave even the old bytecode untouched.
   await page.route("**/installer/releases/**/main.lua", (route) => route.fulfill({ status: 503, body: "Unavailable" }));
   await activate("[data-install]");
