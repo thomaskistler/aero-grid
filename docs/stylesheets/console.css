@@ -873,6 +873,168 @@ button:focus-visible {
   }
 }
 
+.ag-radio-connect-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ag-radio-help-button {
+  display: grid;
+  place-items: center;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  padding: 7px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--ag-console-muted);
+  background: transparent;
+}
+
+.ag-radio-help-button svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ag-radio-help-button:hover {
+  color: var(--ag-console-blue);
+  background: var(--ag-console-blue-wash);
+}
+
+.ag-radio-help-button:focus-visible {
+  outline: 2px solid var(--ag-console-blue);
+  outline-offset: 2px;
+}
+
+.ag-radio-help-popover {
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: 24px;
+  border: 1px solid var(--ag-console-border);
+  border-radius: 9px;
+  color: var(--ag-console-text);
+  background: var(--ag-console-surface);
+  box-shadow: 0 12px 40px rgb(27 53 74 / 20%);
+  font-size: var(--ag-font-base);
+}
+
+.ag-radio-help-popover h3 {
+  margin-top: 0;
+}
+
+.ag-install-workspace .ag-radio,
+.ag-install-help,
+.ag-map-connection-panel,
+.ag-map-areas-panel,
+.ag-map-viewer {
+  min-width: 0;
+  margin: 0;
+  padding: 24px;
+  border: 1px solid var(--ag-console-border);
+  border-radius: 9px;
+  background: var(--ag-console-surface);
+  box-shadow: 0 8px 24px rgb(27 53 74 / 5%);
+}
+
+.ag-article .ag-install-section-title {
+  font-size: clamp(28px, 3vw, var(--ag-font-3xl));
+  letter-spacing: -0.8px;
+}
+
+.ag-release-dialog {
+  width: min(560px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 24px;
+  border: 1px solid var(--ag-console-border);
+  border-radius: 9px;
+  color: var(--ag-console-text);
+  background: var(--ag-console-surface);
+  box-shadow: 0 20px 60px rgb(27 53 74 / 20%);
+}
+
+.ag-release-dialog::backdrop {
+  background: rgb(27 53 74 / 35%);
+}
+
+.ag-release-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ag-release-dialog-header h2 {
+  margin: 0;
+}
+
+.ag-install-help p,
+.ag-install-help a,
+.ag-install-safety,
+.ag-install-details summary {
+  font-size: var(--ag-font-base);
+}
+
+.ag-install-help .ag-install-note {
+  padding-top: 16px;
+  border-top: 1px solid var(--ag-console-border);
+}
+
+.ag-install-safety {
+  display: grid;
+  gap: 4px;
+  padding: 16px 20px;
+  margin-bottom: 18px;
+  border: 1px solid var(--ag-console-border);
+  border-left: 3px solid var(--ag-console-blue);
+  border-radius: 6px;
+  color: var(--ag-console-text);
+  background: var(--ag-console-blue-wash);
+}
+
+.ag-install-details {
+  padding: 16px 20px;
+  margin: 10px 0;
+  border: 1px solid var(--ag-console-border);
+  border-radius: 6px;
+  background: var(--ag-console-surface);
+}
+
+.ag-install-details summary {
+  color: var(--ag-console-text);
+  cursor: pointer;
+  font-weight: 620;
+}
+
+.ag-install-details summary:focus-visible {
+  outline: 2px solid var(--ag-console-blue);
+  outline-offset: 4px;
+}
+
+.ag-install-details[open] summary {
+  margin-bottom: 16px;
+}
+
+.ag-install-details > :last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 767px) {
+  .ag-install-workspace .ag-radio,
+  .ag-install-help,
+  .ag-map-connection-panel,
+  .ag-map-areas-panel,
+  .ag-map-viewer {
+    padding: 16px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

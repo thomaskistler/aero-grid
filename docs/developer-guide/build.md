@@ -142,8 +142,12 @@ stop it with Ctrl-C.
 
 Markdown lives in `docs/`. When adding or renaming a page, update **both**
 `mkdocs.yml` and the explicit sidebar in `docs/overrides/toc.html`.
-Site styling is in `docs/stylesheets/aerogrid.css`. Checked-in screenshots are
-used as-is; building the site never launches a simulator.
+Base site styling is in `docs/stylesheets/aerogrid.css`; the shared Radio Console
+shell, typography, cards, dialogs, help popovers, notices, and disclosures are in
+`docs/stylesheets/console.css`. Their existing `ag-radio`, `ag-release`, and
+`ag-install` class names are also reused by the browser tools; these styles do not
+load or require those tools. Checked-in screenshots are used as-is; building the
+site never launches a simulator.
 
 ## Command reference
 
