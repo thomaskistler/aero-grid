@@ -97,10 +97,12 @@
 {% endblock %}
 
 {% block content %}
-  <div class="ag-console-layout">
+  <div class="ag-console-layout{% if page.file.src_uri == 'user-guide/installation.md' %} ag-install-layout{% endif %}">
+    {% if page.file.src_uri != 'user-guide/installation.md' %}
     <aside class="ag-guide-sidebar" aria-label="Documentation navigation">
       {% include "toc.html" %}
     </aside>
+    {% endif %}
     <div class="ag-reading-column">
       <article class="ag-article" role="main">
         {% include "content.html" %}

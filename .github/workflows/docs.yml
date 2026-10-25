@@ -9,6 +9,8 @@ on:
       - docs/**
       - mkdocs.yml
       - requirements-docs.txt
+      - tools/installer_assets.py
+      - tools/test_installer_assets.py
       - requirements-docs-test.txt
       - tools/test_docs_layout.py
       - .github/workflows/docs.yml
@@ -17,24 +19,35 @@ on:
       - docs/**
       - mkdocs.yml
       - requirements-docs.txt
+      - tools/installer_assets.py
+      - tools/test_installer_assets.py
       - requirements-docs-test.txt
       - tools/test_docs_layout.py
       - .github/workflows/docs.yml
   workflow_dispatch:
+  release:
+    types: [published]
+  workflow_run:
+    workflows: [Release]
+    branches: [main]
+    types: [completed]
 
 permissions:
   contents: read
 
 concurrency:
-  group: docs-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: docs-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
     name: Build documentation
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'release' && 'main' || github.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -48,17 +61,23 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Build and validate
         run: python -m mkdocs build --strict --site-dir build/docs
+      - name: Publish validated browser installer assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python -m unittest discover -s tools -p 'test_installer_*.py'
+          python tools/installer_assets.py --output build/docs/installer
       - name: Check responsive documentation tables
         run: python -m unittest discover -s tools -p 'test_docs_layout.py'
       - name: Upload Pages artifact
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: github.event_name == 'release' || (github.ref == 'refs/heads/main' && github.event_name != 'pull_request')
         uses: actions/upload-pages-artifact@v3
         with:
           path: build/docs
 
   deploy:
     name: Publish documentation
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: github.event_name == 'release' || (github.ref == 'refs/heads/main' && github.event_name != 'pull_request')
     needs: build
     runs-on: ubuntu-latest
     permissions:

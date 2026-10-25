@@ -149,6 +149,33 @@ shell, typography, cards, dialogs, help popovers, notices, and disclosures are i
 load or require those tools. Checked-in screenshots are used as-is; building the
 site never launches a simulator.
 
+### Browser installer assets
+
+The USB installer modules live in `docs/javascripts/`: `radio-storage.mjs` owns
+connections and metadata, `radio-installer.mjs` handles releases and verified
+widget replacement, `radio-panel.mjs` drives the installation UI, and
+`radio-connection-help.mjs` adds connection help.
+
+The site mirrors **published stable releases**, not the current source tree.
+Downloads are verified before replacement and installed files are checked afterward.
+Only `WIDGETS/AeroGrid` is replaced; user data, maps, other widgets, settings, and
+firmware are preserved. There is no backup or rollback.
+
+To include those assets in a disposable built-site preview:
+
+```sh
+make docs
+python3 tools/installer_assets.py --output build/docs/installer
+python3 -m http.server 8000 --directory build/docs
+```
+
+Mirroring needs network access to GitHub; optional `GH_TOKEN` authentication stays
+server-side. Test in desktop Chrome or Edge over HTTPS or localhost.
+Ordinary `make docs-serve` does not mirror installation assets. Releases without
+mirrored assets remain unavailable for automatic installation.
+Stop the preview with Ctrl-C. Never direct asset output or a development build at
+a radio's SD card.
+
 ## Command reference
 
 | Command | Result |
@@ -156,6 +183,7 @@ site never launches a simulator.
 | `make help` | List supported targets. |
 | `make setup` | Install development Python dependencies. |
 | `make test` | Run every Lua behavior suite once with firmware-like string behavior. |
+| `make test-installer` | Test the browser installer with Node.js 22 and Python. |
 | `make check` | Run behavior tests, then parse source/test Lua. |
 | `make lint` | Run LuaLS diagnostics. |
 | `make format` | Rewrite source/test Lua using StyLua. |

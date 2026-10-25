@@ -93,6 +93,32 @@ updates, and font callback retention. They cannot measure native LVGL/bitmap
 memory, firmware GC cadence, or radio timing. A short green mock run is not
 evidence of long-term hardware stability.
 
+## Browser installer tests
+
+The browser USB-storage installer uses Python's standard library and Node.js 22:
+
+```sh
+make test-installer
+```
+
+This runs release-mirroring and Node tests for connections, confirmation,
+release availability, content integrity, and preservation of non-widget files.
+Mocks do not prove physical radio behavior; never use a real radio for automated
+destructive tests.
+
+For an optional rendered-panel check, install Playwright and Chromium separately,
+then serve a built site with mirrored assets as described in
+[Check out and build](build.md#browser-installer-assets):
+
+```sh
+node tests/browser/radio-panel.smoke.mjs http://127.0.0.1:8000/
+```
+
+The smoke check uses disposable browser storage, not a radio or the OS folder
+picker, and requires at least two mirrored releases. Set `PLAYWRIGHT_MODULE` to an
+external Playwright `index.mjs` path if needed, `PLAYWRIGHT_CHANNEL=chrome` to use
+installed Chrome, or `INSTALLER_KEYBOARD=1` to exercise keyboard activation.
+
 ## Python tooling tests
 
 Release packaging uses only Python's standard library:
