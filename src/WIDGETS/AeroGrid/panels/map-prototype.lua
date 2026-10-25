@@ -294,7 +294,7 @@ local function prepareTileSlots(context)
 end
 
 local function readPack(host, name)
-    assert(identifier(name), "invalid map area ID")
+    assert(identifier(name), "invalid map area ID in filename: " .. tostring(name) .. ".yaml")
     local directory = host.layoutStore.sdRoot(host.path) .. "AEROGRID/maps/"
     local filename = directory .. "areas/" .. name .. ".yaml"
     local info = fstat(filename)
@@ -1502,7 +1502,7 @@ local function selectArea(context)
         scan.entries = scan.entries + 1
         assert(scan.entries <= 256, "map areas directory exceeds 256 entries")
         local name = string.match(filename, "^(.*)%.yaml$")
-        if name then
+        if name and string.sub(filename, 1, 2) ~= "._" then
             scan.areas = scan.areas + 1
             assert(scan.areas <= 64, "automatic map selection supports at most 64 installed areas")
             local pack, directory = readPack(context.host, name)

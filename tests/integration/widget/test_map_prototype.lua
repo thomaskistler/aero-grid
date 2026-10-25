@@ -1219,6 +1219,8 @@ do
     addArea("small", true)
     addArea("alpha", true)
     addArea("low-detail", false, 16)
+    table.insert(names, 1, "._alpha.yaml")
+    table.insert(names, 2, ".DS_Store")
     dir = function(path)
         a.assertEqual(path, folder)
         scans = scans + 1
@@ -1363,6 +1365,12 @@ do
     local success, failure = pcall(map.refresh, invalid)
     a.assertEqual(success, false, "invalid installed areas must fail explicitly")
     a.assertContains(failure, "unsupported map area")
+    invalid.discovery = nil
+    invalid.nextDiscovery = nil
+    names = { "Invalid Area.yaml" }
+    success, failure = pcall(map.refresh, invalid)
+    a.assertEqual(success, false, "invalid actual area filenames must still fail explicitly")
+    a.assertContains(failure, "invalid map area ID in filename: Invalid Area.yaml")
     local limited = map.create(
         entry.container,
         { x = 0, y = 0, w = 480, h = 272 },
