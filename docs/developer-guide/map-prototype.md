@@ -37,6 +37,9 @@ satellite, marker and path settings in the normal drawer, then save the layout.
 No YAML editing is required. The panel still needs an installed v2 map area and
 live GPS inside its coverage; adding the panel does not download or install maps.
 Area selection remains automatic from GPS, with no area-picker setting.
+macOS `._` metadata sidecars are ignored when scanning installed area manifests.
+An invalid actual area filename is reported by name; area IDs must contain
+1-32 lowercase letters, digits, hyphens or underscores.
 Existing map panels can be resized to any in-bounds grid span. Tiles remain
 native size and the viewport clips to the panel. Small panels hide zoom
 controls and the fullscreen hint when space is insufficient; the
