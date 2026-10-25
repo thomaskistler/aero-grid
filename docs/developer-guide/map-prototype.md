@@ -37,6 +37,15 @@ satellite, marker and path settings in the normal drawer, then save the layout.
 No YAML editing is required. The panel still needs an installed v2 map area and
 live GPS inside its coverage; adding the panel does not download or install maps.
 Area selection remains automatic from GPS, with no area-picker setting.
+Temporary radio test fallback: if the configured GPS source has never been
+detected, Map uses **37.436736, -122.1258128** locally and displays **DEMO POSITION**
+(or a `DEMO:` map status). An installed area covering that location is still
+required; the bundled Companion imagery covers a different location.
+Detected no-fix, invalid or stale readings never use this fallback, and it
+does not reactivate after a detected source is lost. Detection switches back to
+the real subscription without changing shared navigation or capturing a home.
+The demo position is never recorded in the flight path or offered as a real
+GPS location-details request. This is a temporary test aid, not GPS telemetry.
 macOS `._` metadata sidecars are ignored when scanning installed area manifests.
 An invalid actual area filename is reported by name; area IDs must contain
 1-32 lowercase letters, digits, hyphens or underscores.
