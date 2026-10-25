@@ -903,7 +903,7 @@ local function drawPath(context)
         local first = segments and segment and segment.first.source or not segments and points[pointIndex]
         local second = segments and segment and segment.last.source or not segments and points[pointIndex + 1]
         local visible = first and second and not second.breakBefore
-        if visible then
+        if first and second and visible then
             local x1, y1, x2, y2
             if segment then
                 x1, y1, x2, y2 = segment.first.x, segment.first.y, segment.last.x, segment.last.y

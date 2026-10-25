@@ -20,50 +20,32 @@ icon_spec.loader.exec_module(icons)
 
 class MapPackTests(unittest.TestCase):
     def test_home_visible_width(self):
+        image = Image.open(BytesIO(icons.render(52, icons.home_marker())))
+        self.assertEqual(image.getchannel("A").getbbox(), (4, 4, 48, 48))
+
+    def test_home_circle_matches_runtime_centre_anchor(self):
         sample = icons.home_marker()
-        columns = [x for x in range(52) if any(
-            sample(x + (sx + 0.5) / 3, y + (sy + 0.5) / 3)
-            for y in range(52) for sy in range(3) for sx in range(3))]
-        self.assertEqual(max(columns) - min(columns) + 1, 28)
+        for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            self.assertEqual(sample(26 + dx * 22, 26 + dy * 22),
+                             (*icons.WHITE, 170))
+            self.assertEqual(sample(26 + dx * 22.1, 26 + dy * 22.1),
+                             (0, 0, 0, 0))
 
-    def test_home_reduction_preserves_pin_anchor_and_scales_styling(self):
-        original = icons.styled(icons.home, 12, icons.HOME_COLOR)
-        reduced = icons.home_marker()
-        for y in range(52):
-            for x in range(52):
-                self.assertEqual(reduced(x, y),
-                                 original(24 + (x - 24) / 0.85,
-                                          50 + (y - 50) / 0.85))
-        self.assertIsNotNone(reduced(24, 49.5))
-        self.assertIsNone(reduced(24, 50.5))
+    def test_home_has_red_house_and_translucent_white_disc(self):
+        sample = icons.home_marker()
+        self.assertEqual(sample(26, 20), (*icons.HOME_COLOR, 255))
+        self.assertEqual(sample(22, 34), (*icons.HOME_COLOR, 255))
+        self.assertEqual(sample(7, 26), (*icons.WHITE, 170))
+        colors = {sample(x + 0.5, y + 0.5) for x in range(52) for y in range(52)}
+        self.assertEqual(colors, {(0, 0, 0, 0), (*icons.WHITE, 170),
+                                  (*icons.HOME_COLOR, 255)})
 
-    def test_home_pin_tip_matches_runtime_anchor(self):
-        self.assertIsNotNone(icons.home(18, 29.8))
-        self.assertIsNone(icons.home(16, 30))
-        self.assertIsNone(icons.home(20, 30))
-        self.assertIsNone(icons.home(18, 31))
-        self.assertEqual(icons.home(18, 10), (0, 0, 0))
-        self.assertEqual(icons.home(18, 17), (255, 255, 255))
-        self.assertEqual(icons.home(18, 25), (0, 0, 0))
-        self.assertEqual(icons.home(18, 7), (255, 255, 255))
-        self.assertEqual(icons.home(15, 16.5), (255, 255, 255))
-
-    def test_home_sides_curve_toward_a_sharp_tip(self):
-        self.assertEqual(icons.home(11, 22), (0, 0, 0))
-        self.assertEqual(icons.home(25, 22), (0, 0, 0))
-        self.assertIsNone(icons.home(9, 22))
-        self.assertIsNone(icons.home(27, 22))
-        self.assertIsNone(icons.home(17.5, 29.8))
-        self.assertIsNone(icons.home(18.5, 29.8))
-
-    def test_home_mask_has_outline_and_inner_disc(self):
-        for offset in (-10, 10):
-            self.assertEqual(icons.home(18 + offset, 12), (0, 0, 0))
-        for offset in (-7, 7):
-            self.assertEqual(icons.home(18 + offset, 12), (255, 255, 255))
-        self.assertIsNone(icons.home(18, 0))
-        colors = {icons.home(x + 0.5, y + 0.5) for x in range(36) for y in range(36)}
-        self.assertEqual(colors, {None, (0, 0, 0), (255, 255, 255)})
+    def test_home_arched_door_reveals_disc(self):
+        sample = icons.home_marker()
+        for x, y in ((26, 29), (26, 31), (26, 36)):
+            self.assertEqual(sample(x, y), (*icons.WHITE, 170))
+        for x, y in ((24, 28), (22, 34), (30, 34)):
+            self.assertEqual(sample(x, y), (*icons.HOME_COLOR, 255))
 
     def test_original_home_artwork_is_native_size_rgba(self):
         assets = Path(__file__).resolve().parents[1] / "src/WIDGETS/AeroGrid/assets"
@@ -71,19 +53,6 @@ class MapPackTests(unittest.TestCase):
         self.assertEqual(content, icons.render(52, icons.home_marker()))
         self.assertEqual(struct.unpack(">IIBBBBB", content[16:29]),
                          (52, 52, 8, 6, 0, 0, 0))
-
-    def test_home_has_colored_symbol_inside_dark_disc(self):
-        styled = icons.styled(icons.home, 12, icons.HOME_COLOR)
-        self.assertEqual(styled(24, 24), icons.HOME_COLOR)
-        self.assertEqual(styled(33, 24), (34, 39, 39))
-        self.assertEqual(styled(37, 24), icons.HOME_COLOR)
-        self.assertEqual(styled(39.5, 24), (34, 39, 39))
-        self.assertIsNone(styled(40.5, 24))
-        self.assertIsNone(styled(43, 24))
-        for y in range(52):
-            for x in range(52):
-                if icons.sized(icons.home, 12)(x + 0.5, y + 0.5) is not None:
-                    self.assertIsNotNone(styled(x + 0.5, y + 0.5))
 
     def test_tiles_are_deterministic_rgb_and_share_coverage(self):
         with tempfile.TemporaryDirectory() as directory:
