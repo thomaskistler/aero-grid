@@ -13,9 +13,9 @@ trim positions, and model images in responsive panels.
   </div>
   <aside>
     <strong>Before you start</strong>
-    <span>Supported EdgeTX radio</span>
+    <span>Color-screen radio (e.g. RadioMaster TX16S or Jumper T18)</span>
+    <span>EdgeTX 2.11 or later</span>
     <span>USB data cable</span>
-    <span>USB Storage mode</span>
   </aside>
 </section>
 
