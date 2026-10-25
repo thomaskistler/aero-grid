@@ -394,7 +394,7 @@ local function applyRuns(context, item)
                 run.line:set(run.changes)
                 lvgl.show(run.line)
             else
-                run.line = lvgl.line(context.panel.root, { pts = run.pts, color = item.color, thickness = 1 })
+                run.line = lvgl.line(context.panel.root, { pts = run.pts, color = item.color, thickness = 2 })
             end
             if run.boundary and run.boundary >= context.start then
                 local x = context.area.x + math.floor((run.boundary - context.start) / context.window * context.area.w)
