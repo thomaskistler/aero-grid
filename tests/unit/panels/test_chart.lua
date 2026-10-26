@@ -572,7 +572,7 @@ local function checkGrid(panel)
             equal(line.object.properties.y, panel.area.y)
             equal(line.object.properties.h, panel.area.h)
             equal(line.object.properties.w, 1)
-            equal(line.object.properties.color, panel.theme.color.border)
+            equal(line.object.properties.color, panel.theme.color.chartGrid)
             equal(line.object.properties.dashGap, nil, "minute grid must be solid, unlike gap markers")
             if previous then
                 assert(x - previous >= 24, "long views must thin their grid instead of crowding it")
@@ -697,3 +697,32 @@ local built, message = empty.dashboardLoader.buildPanel(empty, {
 })
 assert(built, message)
 equal(built.instance.status.properties.text, "SET ARM SOURCE")
+
+fixture.reset()
+fixture.radio.values[300] = 1024
+local light = fixture.createLoaded(nil, { Layout = "review-chart", Theme = "modern-light" })
+fixture.pump(light, 80)
+equal(#light.errors, 0, table.concat(light.errors, "\n"))
+for _, entry in ipairs(light.panels) do
+    local panel = entry.instance
+    for _, item in ipairs(panel.series) do
+        assert(item.color ~= panel.theme.color[item.settings.accent or "cyan"], "light traces need dedicated chart ink")
+        equal(item.name.properties.color, item.color, "legend names must match their trace")
+        for _, run in ipairs(item.runs) do
+            if run.line then
+                equal(run.line.properties.color, item.color)
+                equal(run.line.properties.thickness, 1, "stronger colors must preserve one-pixel traces")
+            end
+        end
+    end
+end
+local lightPower = fixture.instanceOf(light, "power")
+equal(lightPower.series[1].color, lightPower.theme.color.chartCyan)
+equal(lightPower.series[2].color, lightPower.theme.color.chartGreen)
+lightPower.settings.timeRange, lightPower.settings.duration = "rolling", "2m"
+chart.update(lightPower, lightPower.rect)
+for _ = 1, 24 do
+    chart.refresh(lightPower)
+end
+checkGrid(lightPower)
+equal(lightPower.baseline.properties.color, lightPower.theme.color.chartGrid, "baseline and minute grid must agree")

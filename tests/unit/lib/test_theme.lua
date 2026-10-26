@@ -60,6 +60,16 @@ local function testModernThemeBuilds()
     assertions.assertEqual(resolved.rgb.textFaint, 0xC4CDD3)
     assertions.assertEqual(resolved.rgb.surface, 0x212830)
     assertions.assertEqual(resolved.rgb.canvas, 0x0A0C0E)
+    for key, fallback in pairs({
+        chartCyan = "cyan",
+        chartGreen = "green",
+        chartAmber = "amber",
+        chartOrange = "orange",
+        chartGrid = "border",
+    }) do
+        assertions.assertEqual(resolved.rgb[key], resolved.rgb[fallback], "dark charts retain their existing palette")
+        assertions.assertEqual(resolved.color[key], resolved.color[fallback])
+    end
     local active = theme.state(resolved, "active")
     assertions.assertEqual(active.accent, resolved.color.blue)
     assertions.assertEqual(active.badge, "IN-FLIGHT")
@@ -134,6 +144,27 @@ local function testModernLightTheme()
         local b = rgb % 256
         return theme.fromRgb565(math.floor(r / 8) * 2048 + math.floor(g / 4) * 32 + math.floor(b / 8))
     end
+    for key, accent in pairs({
+        chartCyan = "cyan",
+        chartGreen = "green",
+        chartAmber = "amber",
+        chartOrange = "orange",
+    }) do
+        local ink = quantized(tokens[key])
+        assert(theme.contrast(quantized(tokens.surface), ink) >= 4.5, key .. " needs readable one-pixel ink")
+        assert(
+            theme.contrast(tokens.surface, tokens[key]) > theme.contrast(tokens.surface, tokens[accent]),
+            key .. " must be stronger than the ordinary light accent"
+        )
+    end
+    local grid = quantized(tokens.chartGrid)
+    local r, g, b = math.floor(grid / 65536) % 256, math.floor(grid / 256) % 256, grid % 256
+    assert(math.max(r, g, b) - math.min(r, g, b) <= 8, "quantized chart grid must remain neutral gray")
+    assert(theme.contrast(quantized(tokens.surface), grid) >= 1.35, "the grid must remain visible")
+    assert(
+        theme.contrast(tokens.surface, tokens.chartGrid) < theme.contrast(tokens.surface, tokens.border),
+        "light chart grid must be quieter than panel borders"
+    )
     for name, accent in pairs({ warning = "amber", critical = "critical", active = "blue" }) do
         local tint = assert(resolved.alertRgb[name], name .. " needs a distinct light tint")
         for _, convert in ipairs({
@@ -156,10 +187,22 @@ local function testModernLightTheme()
     end
 end
 
+local function testOptionalChartColors()
+    local resolved = buildCustomTheme({ chartCyan = 0xFFFFFF, chartGrid = 0xABCDEF })
+    assert(theme.contrast(resolved.rgb.surface, resolved.rgb.chartCyan) >= 4.5)
+    assertions.assertEqual(resolved.rgb.chartGrid, 0xABCDEF, "custom chart grids are explicit palette choices")
+    assertions.assertEqual(resolved.rgb.chartGreen, resolved.rgb.green, "omitted chart inks inherit the accent")
+    local document = assert(yaml.parse(assert(yaml.serialize(themes))))
+    document.themes[1].colors.chartCyan = "invalid"
+    local validated, err = theme.validateCatalog(document)
+    assert(not validated and string.find(err, "chartCyan must be a 24-bit color", 1, true))
+end
+
 local function run()
     testThemeVersionIsRequiredAndSupported()
     testModernThemeBuilds()
     testModernLightTheme()
+    testOptionalChartColors()
     testContrastIsCalculated()
     local resolved = theme.build("modern-dark")
     local fonts = { label = SMLSIZE, badge = SMLSIZE }

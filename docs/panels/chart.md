@@ -16,6 +16,9 @@ maximum together with a small fixed gap, aligned to the same right edge as the
 main reading.
 Metric groups prefer a gap equal to two-thirds of a min/max text-line height. The gap
 shrinks to fit the remaining panel height without moving the first metric.
+Modern Light uses stronger chart-specific blue, green, gold, and orange inks
+for traces and their matching legend names. Its minute grid and time baseline
+use a quieter neutral gray. Other panels' accents and alarm colors are unchanged.
 
 ## Settings
 

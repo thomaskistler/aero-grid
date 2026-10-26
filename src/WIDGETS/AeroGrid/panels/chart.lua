@@ -229,7 +229,7 @@ local function updateGrid(context)
                     y = 0,
                     w = 1,
                     h = 1,
-                    color = context.theme.color.border,
+                    color = context.theme.chartColor.grid,
                 }),
                 visible = false,
             }
@@ -1053,7 +1053,7 @@ function chart.create(parent, rect, settings, services)
     context.gridRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
     context.session = context.history and context.history:session(services.session and services.session.armSource)
     for index, entry in ipairs(settings.metrics) do
-        local color = context.theme.color[entry.accent or COLORS[index]]
+        local color = context.theme.chartColor[entry.accent or COLORS[index]]
         local item = {
             settings = entry,
             color = color,
@@ -1095,7 +1095,7 @@ function chart.create(parent, rect, settings, services)
         filled = true,
     })
     context.title, context.duration, context.status = label(context), label(context), label(context)
-    context.baseline = lvgl.hline(context.plotRoot, { x = 0, y = 0, w = 1, h = 1, color = context.theme.color.border })
+    context.baseline = lvgl.hline(context.plotRoot, { x = 0, y = 0, w = 1, h = 1, color = context.theme.chartColor.grid })
     chart.geometry(context, rect)
     chart.refresh(context)
     return context

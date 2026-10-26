@@ -53,3 +53,15 @@ With contrast correction enabled, safeguards may adjust a color to preserve
 legibility. Review the palette on the **Palette** layout and on the radio as
 well as in the simulator. Restart the radio or simulator after adding a theme
 so the picker reloads.
+
+### Chart colors
+
+Optional `colors.chartCyan`, `chartGreen`, `chartAmber`, and `chartOrange` override
+Chart trace and legend-name colors without changing other panels or alarm
+accents. `colors.chartGrid` sets the minute grid and time baseline. When omitted,
+the chart inks use their corresponding semantic accents and the grid uses
+`border`, preserving existing custom themes.
+
+Modern Light supplies stronger chart inks and a quiet neutral-gray grid.
+With contrast correction enabled, explicit chart inks are adjusted to at least
+4.5:1 contrast against the panel surface; the grid remains the configured color.
