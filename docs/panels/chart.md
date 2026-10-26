@@ -94,6 +94,9 @@ and resizing recalculates it.
 Minimum and maximum use one font step smaller than the metric name/value.
 Small filled downward/upward triangles identify them independently of the font.
 Units appear only beside the main value, not the minimum and maximum.
+Metric groups have up to six pixels of vertical separation when space permits;
+the gap shrinks in crowded panels without changing the text sizes or hiding
+extrema that otherwise fit.
 
 Larger text does not hide extrema that would fit at the minimum font. When the
 panel is too short even at that minimum (for example, three sources in a 2x1

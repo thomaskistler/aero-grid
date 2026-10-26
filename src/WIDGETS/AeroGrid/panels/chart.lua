@@ -343,11 +343,16 @@ function chart.geometry(context, rect)
     local lineHeight = builder.fontHeight(font)
     local pairHeight = lineHeight + builder.fontAscent(context.extremaFont)
     context.showExtrema = showExtrema
-    local step = math.min(
-        showExtrema and pairHeight + 1 or lineHeight + 1,
-        math.floor(math.max(1, rect.h - 2) / math.max(1, count))
-    )
-    local first = math.max(0, math.floor((rect.h - count * step) / 2))
+    local rowHeight = showExtrema and pairHeight or lineHeight
+    local available = math.max(1, rect.h - 2)
+    local groupGap = count > 1 and math.max(0, math.min(6, math.floor((available - count * rowHeight) / (count - 1))))
+        or 0
+    local step = rowHeight + groupGap
+    if count * rowHeight > available then
+        step = math.floor(available / math.max(1, count))
+    end
+    local used = count > 0 and (count - 1) * step + rowHeight or 0
+    local first = math.max(0, math.floor((rect.h - used) / 2))
     for index, item in ipairs(context.series) do
         local y = first + (index - 1) * step
         local name = builder.fitHeading(item.caption, nameWidth, font, font)

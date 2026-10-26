@@ -140,7 +140,30 @@ local function alignedReadouts(panel)
         equal(item.unit.properties.text, item.unitText)
     end
 end
+local function separatedReadouts(panel)
+    local count = #panel.series
+    if count < 2 then
+        return
+    end
+    local builder = panel.themeBuilder
+    local height = builder.fontHeight(panel.legendFont)
+        + (panel.showExtrema and builder.fontAscent(panel.extremaFont) or 0)
+    local spare = panel.rect.h - 2 - count * height
+    if spare < 0 then
+        return
+    end
+    local expected = math.min(6, math.floor(spare / (count - 1)))
+    for index = 2, count do
+        equal(
+            panel.series[index].name.properties.y - panel.series[index - 1].name.properties.y - height,
+            expected,
+            "metric groups must use spare height for a bounded gap"
+        )
+    end
+    assert(panel.series[count].name.properties.y + height <= panel.rect.h)
+end
 alignedReadouts(power)
+separatedReadouts(power)
 assert(power.series[1].name.properties.x > power.area.x + power.area.w)
 assert(power.series[1].extrema.properties.y > power.series[1].value.properties.y)
 assert(power.showExtrema, "two sources must retain their extrema in a standard short panel")
@@ -196,6 +219,7 @@ for _, size in ipairs({ { 320, 240 }, { 800, 480 }, { 480, 272 } }) do
                 assert(item.maximum.properties.x + item.maximum.properties.w <= panel.area.legendX + panel.area.legendW)
             end
             alignedReadouts(panel)
+            separatedReadouts(panel)
             for _, run in ipairs(item.runs) do
                 if run.line and not run.line.hidden then
                     for _, point in ipairs(run.pts) do
@@ -274,10 +298,20 @@ assert(
 chart.update(multiple, { x = 0, y = 0, w = 472, h = 100 })
 equal(multiple.legendFont, SMLSIZE, "keep all extrema instead of increasing the font and hiding them")
 assert(multiple.showExtrema)
+separatedReadouts(multiple)
+chart.update(multiple, { x = 0, y = 0, w = 232, h = 84 })
+assert(multiple.showExtrema, "extra group spacing must yield before hiding extrema")
+separatedReadouts(multiple)
+equal(
+    multiple.series[2].name.properties.y - multiple.series[1].name.properties.y,
+    28,
+    "tight layouts must shrink the gap instead of dropping information"
+)
 chart.update(single, { x = 0, y = 0, w = 232, h = 64 })
 chart.update(multiple, { x = 0, y = 0, w = 232, h = 64 })
 equal(multiple.legendFont, SMLSIZE, "crowded short panels must keep the readable minimum")
 assert(not multiple.showExtrema, "extrema may hide only when they cannot fit at the minimum font")
+separatedReadouts(multiple)
 chart.update(single, { x = 0, y = 0, w = 472, h = 132 })
 local initialFontHeight = single.themeBuilder.fontHeight(single.legendFont)
 local altitudeId = getFieldInfo("Alt").id
