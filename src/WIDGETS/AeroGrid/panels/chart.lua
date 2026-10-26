@@ -260,12 +260,8 @@ local function updateHeader(context)
     end
     local frame = area.frame
     local title = heading(context)
-    local width = math.min(builder.measureText(TINSIZE, duration), math.max(0, area.x + area.w - frame.labelX))
-    local x = area.x + area.w - width
-    local y
     if title ~= "" then
-        frame.labelWidth = math.max(0, x - frame.labelX - 4)
-        local _, titleFont = builder.fitHeading(title, frame.labelWidth, SMLSIZE, TINSIZE)
+        frame.labelWidth = math.max(0, area.x + area.w - frame.labelX)
         context.primitives.setHeading(
             context.title,
             builder,
@@ -275,23 +271,22 @@ local function updateHeader(context)
             context.theme.color.text,
             { x = frame.labelX, y = frame.labelY }
         )
-        y = frame.labelY + builder.fontAscent(titleFont) - builder.fontAscent(TINSIZE)
-        lvgl.hide(context.durationBackground)
     else
         lvgl.hide(context.title)
-        width = math.min(builder.measureText(TINSIZE, duration), area.w)
-        x, y = area.x + area.w - width, area.y + 1
-        local left = math.max(area.x, x - 2)
-        context.durationBackground:set({
-            x = left,
-            y = area.y,
-            w = area.x + area.w - left,
-            h = builder.fontHeight(TINSIZE) + 2,
-        })
-        lvgl.show(context.durationBackground)
     end
+    local width = math.min(builder.measureText(TINSIZE, duration), area.w)
+    local x = area.x + area.w - width
+    local y = math.max(area.y, area.y + area.h - builder.fontHeight(TINSIZE) - 1)
+    local left, top = math.max(area.x, x - 2), math.max(area.y, y - 1)
+    context.durationBackground:set({
+        x = left,
+        y = top,
+        w = area.x + area.w - left,
+        h = area.y + area.h - top,
+    })
+    lvgl.show(context.durationBackground)
     context.duration:set({ x = x, y = y, w = width })
-    context.status:set({ w = math.max(0, area.w - (title == "" and width + 4 or 0)) })
+    context.status:set({ w = area.w })
     text(context.duration, duration, context.theme.color.textFaint)
     context.headerGeometry, context.durationText = context.geometryVersion, duration
 end

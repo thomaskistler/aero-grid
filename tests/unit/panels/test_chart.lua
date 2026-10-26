@@ -121,7 +121,17 @@ local power = fixture.instanceOf(context, "power")
 equal(power.axisStart, nil, "bottom axis labels must not be created")
 equal(power.axisEnd, nil, "bottom axis labels must not be created")
 equal(power.duration.properties.text, "30s")
-assert(power.duration.properties.y + power.themeBuilder.fontHeight(TINSIZE) <= power.area.y)
+local function checkDurationCorner(panel)
+    local properties, area = panel.duration.properties, panel.area
+    equal(properties.x + properties.w, area.x + area.w, "duration must align with the plot's right edge")
+    equal(
+        properties.y + panel.themeBuilder.fontHeight(TINSIZE),
+        area.y + area.h - 1,
+        "duration must sit inside the plot's bottom edge"
+    )
+    assert(not panel.durationBackground.hidden, "duration needs a readable plot-corner background")
+end
+checkDurationCorner(power)
 equal(power.indicator, nil, "charts must not create a recording dot")
 equal(power.series[1].feed.available, false)
 equal(power.status.properties.text, "WAITING FOR ARM")
@@ -390,6 +400,7 @@ end
 assert(gridPanel.title.hidden, "empty labels must hide the title instead of deriving one")
 assert(not gridPanel.durationBackground.hidden, "titleless charts need a readable duration annotation")
 equal(gridPanel.duration.properties.text, "10m")
+checkDurationCorner(gridPanel)
 equal(gridPanel.area.y, gridPanel.area.frame.labelY, "titleless charts must reclaim the header")
 equal(gridPanel.area.y + gridPanel.area.h, gridPanel.rect.h - 3, "bottom labels must not reserve plot height")
 equal(#gridPanel.grid, 12, "grid objects must use a bounded reusable pool")
@@ -418,6 +429,7 @@ local function checkGrid(panel)
     end
     assert(visible > 0 and visible <= 12)
     equal(panel.gridVersion, panel.version)
+    checkDurationCorner(panel)
 end
 checkGrid(gridPanel)
 gridPanel.session.elapsed = 67500
@@ -433,7 +445,7 @@ checkGrid(gridPanel)
 gridPanel.settings.label = "Flight"
 chart.update(gridPanel, gridPanel.rect)
 assert(not gridPanel.title.hidden)
-assert(gridPanel.durationBackground.hidden)
+checkDurationCorner(gridPanel)
 assert(gridPanel.area.y > gridPanel.area.frame.labelY, "explicit titles must retain a header")
 gridPanel.settings.duration = "30s"
 gridPanel.settings.timeRange = "growing"
@@ -447,6 +459,7 @@ for _ = 1, 12 do
     chart.refresh(gridPanel)
 end
 equal(gridPanel.duration.properties.text, "2m")
+checkDurationCorner(gridPanel)
 gridPanel.session.elapsed = 0
 for _ = 1, 12 do
     chart.refresh(gridPanel)

@@ -58,8 +58,8 @@ Faint solid vertical lines mark whole minutes of cumulative armed time. Longer
 or narrower views use 2/5/10-minute steps and larger equivalents to avoid
 crowding. These gridlines are distinct from the brighter dashed interruption
 markers. A small indicator such as **30s** or **2m** shows the visible duration
-beside the title, replacing the bottom axis labels. Without a title, the
-indicator occupies a small plot corner rather than reserving a header row.
+inside the plot's bottom-right corner, replacing the bottom axis labels without
+reserving a separate row.
 
 Sources share firmware polling with other panels. Raw extrema are collected at
 each successful poll, even when the chart redraws less often. Drawing frequency
