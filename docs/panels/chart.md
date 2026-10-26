@@ -8,11 +8,6 @@ Records up to three numeric EdgeTX sources on one chart while armed.
 The legend shows each recorded value and its minimum and maximum.
 Use separate panels for separate charts.
 
-Supported sizes are **2x1**, **3x1**, **4x1**, **2x2**, **3x2**, **4x2**,
-**3x3**, **4x3**, and **4x4**. With three metrics, choose a taller panel
-(such as **2x2**) to show the minimum and maximum rows; short panels hide
-them when they cannot fit.
-
 ## Settings
 
 ![Chart panel settings with rolling time range selected](../assets/editor/chart-settings.png)
