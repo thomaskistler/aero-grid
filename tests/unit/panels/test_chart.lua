@@ -157,27 +157,41 @@ local function alignedReadouts(panel)
         equal(item.unit.properties.x, first.unit.properties.x, "units must share their own column")
         equal(item.name.properties.w, first.name.properties.w, "captions must share their own column")
         equal(item.unit.properties.y, item.value.properties.y, "numbers and units must share a baseline")
-        equal(item.extrema.properties.x, first.extrema.properties.x, "minima must share a left edge")
-        equal(item.minSymbol.properties.pts[1][1], panel.area.legendX, "minimum groups must be left-aligned")
-        equal(
-            item.maximum.properties.x + item.maximum.properties.w,
-            panel.area.legendX + panel.area.legendW,
-            "maxima must align with the legend's right edge"
-        )
         local size = math.max(4, math.floor(panel.themeBuilder.fontHeight(panel.extremaFont) / 3))
         local available = math.max(0, panel.area.legendW - 2 * size - 14)
+        equal(
+            item.extrema.properties.w,
+            math.min(
+                math.floor(available / 2),
+                panel.themeBuilder.measureText(panel.extremaFont, item.minimumText or "--")
+            ),
+            "minimum labels must hug their text"
+        )
         equal(
             item.maximum.properties.w,
             math.min(
                 available - math.floor(available / 2),
                 panel.themeBuilder.measureText(panel.extremaFont, item.maximumText or "--")
             ),
-            "maximum labels must hug their text rather than left-align within a wide box"
+            "maximum labels must hug their text"
+        )
+        local left = item.minSymbol.properties.pts[1][1]
+        local right = item.maximum.properties.x + item.maximum.properties.w
+        equal(
+            left,
+            panel.area.legendX + math.floor((panel.area.legendW - (right - left)) / 2),
+            "the complete extrema pair must be centered beneath the label and value"
+        )
+        equal(item.extrema.properties.x, left + size + 3, "minimum arrow must stay beside its value")
+        equal(
+            item.maxSymbol.properties.pts[1][1] - (item.extrema.properties.x + item.extrema.properties.w),
+            8,
+            "minimum and maximum groups must retain a small fixed gap"
         )
         equal(
             item.maxSymbol.properties.pts[1][1] + size + 3,
             item.maximum.properties.x,
-            "maximum arrows must move with the right-aligned value"
+            "maximum arrow must stay beside its value"
         )
         equal(item.value.properties.text, item.valueText)
         equal(item.unit.properties.text, item.unitText)

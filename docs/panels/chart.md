@@ -10,8 +10,8 @@ with its recorded minimum and maximum on the next line.
 Traces use a one-pixel line. Numeric readings and units occupy separate shared
 columns, so different unit widths do not shift the values out of alignment.
 The legend starts just below the plot's top when space permits; short panels
-keep the groups within the panel. Each extrema row aligns its minimum group
-to the left and its maximum group to the right.
+keep the groups within the panel. Each extrema row centers the minimum and
+maximum together beneath the label and value, with a small fixed gap between them.
 
 ## Settings
 

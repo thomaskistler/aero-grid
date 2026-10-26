@@ -317,19 +317,22 @@ local function positionExtrema(context, item, y)
     local builder, area, font = context.themeBuilder, context.area, context.extremaFont
     local size = symbolSize(builder, font)
     local available = math.max(0, area.legendW - 2 * size - 14)
-    local width = math.floor(available / 2)
-    local minimumX = area.legendX + size + 3
-    local maximumWidth = math.min(available - width, builder.measureText(font, item.maximumText or "--"))
-    local maximumX = area.legendX + area.legendW - maximumWidth
+    local budget = math.floor(available / 2)
+    local minimumWidth = math.min(budget, builder.measureText(font, item.minimumText or "--"))
+    local maximumWidth = math.min(available - budget, builder.measureText(font, item.maximumText or "--"))
+    local groupWidth = minimumWidth + maximumWidth + 2 * size + 14
+    local left = area.legendX + math.floor((area.legendW - groupWidth) / 2)
+    local minimumX = left + size + 3
+    local maximumX = minimumX + minimumWidth + 8 + size + 3
     local height = math.max(3, math.floor(size * 2 / 3))
     local top = y + math.floor((builder.fontAscent(font) - height) / 2)
-    item.extrema:set({ x = minimumX, y = y, w = width })
+    item.extrema:set({ x = minimumX, y = y, w = minimumWidth })
     item.maximum:set({ x = maximumX, y = y, w = maximumWidth })
     item.minSymbol:set({
         pts = {
-            { area.legendX, top },
-            { area.legendX + size, top },
-            { area.legendX + math.floor(size / 2), top + height },
+            { left, top },
+            { left + size, top },
+            { left + math.floor(size / 2), top + height },
         },
     })
     local x = maximumX - size - 3
