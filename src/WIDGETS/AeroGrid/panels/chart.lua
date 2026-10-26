@@ -319,11 +319,12 @@ local function positionExtrema(context, item, y)
     local available = math.max(0, area.legendW - 2 * size - 14)
     local width = math.floor(available / 2)
     local minimumX = area.legendX + size + 3
-    local maximumX = minimumX + width + 8 + size + 3
+    local maximumWidth = math.min(available - width, builder.measureText(font, item.maximumText or "--"))
+    local maximumX = area.legendX + area.legendW - maximumWidth
     local height = math.max(3, math.floor(size * 2 / 3))
     local top = y + math.floor((builder.fontAscent(font) - height) / 2)
     item.extrema:set({ x = minimumX, y = y, w = width })
-    item.maximum:set({ x = maximumX, y = y, w = available - width })
+    item.maximum:set({ x = maximumX, y = y, w = maximumWidth })
     item.minSymbol:set({
         pts = {
             { area.legendX, top },
@@ -444,7 +445,7 @@ function chart.geometry(context, rect)
         step = math.floor(available / math.max(1, count))
     end
     local used = count > 0 and (count - 1) * step + rowHeight or 0
-    local first = math.max(0, math.floor((rect.h - used) / 2))
+    local first = math.max(0, math.min(area.y + 2, rect.h - used - 2))
     for index, item in ipairs(context.series) do
         local y = first + (index - 1) * step
         local name = builder.fitHeading(item.caption, nameWidth, font, font)

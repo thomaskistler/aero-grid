@@ -157,19 +157,50 @@ local function alignedReadouts(panel)
         equal(item.unit.properties.x, first.unit.properties.x, "units must share their own column")
         equal(item.name.properties.w, first.name.properties.w, "captions must share their own column")
         equal(item.unit.properties.y, item.value.properties.y, "numbers and units must share a baseline")
-        equal(item.maximum.properties.x, first.maximum.properties.x, "maxima must share their own column")
+        equal(item.extrema.properties.x, first.extrema.properties.x, "minima must share a left edge")
+        equal(item.minSymbol.properties.pts[1][1], panel.area.legendX, "minimum groups must be left-aligned")
+        equal(
+            item.maximum.properties.x + item.maximum.properties.w,
+            panel.area.legendX + panel.area.legendW,
+            "maxima must align with the legend's right edge"
+        )
+        local size = math.max(4, math.floor(panel.themeBuilder.fontHeight(panel.extremaFont) / 3))
+        local available = math.max(0, panel.area.legendW - 2 * size - 14)
+        equal(
+            item.maximum.properties.w,
+            math.min(
+                available - math.floor(available / 2),
+                panel.themeBuilder.measureText(panel.extremaFont, item.maximumText or "--")
+            ),
+            "maximum labels must hug their text rather than left-align within a wide box"
+        )
+        equal(
+            item.maxSymbol.properties.pts[1][1] + size + 3,
+            item.maximum.properties.x,
+            "maximum arrows must move with the right-aligned value"
+        )
         equal(item.value.properties.text, item.valueText)
         equal(item.unit.properties.text, item.unitText)
     end
 end
 local function separatedReadouts(panel)
     local count = #panel.series
-    if count < 2 then
+    if count == 0 then
         return
     end
     local builder = panel.themeBuilder
     local height = builder.fontHeight(panel.legendFont)
         + (panel.showExtrema and builder.fontAscent(panel.extremaFont) or 0)
+    local first = panel.series[1].name.properties.y
+    local used = panel.series[count].name.properties.y - first + height
+    equal(
+        first,
+        math.max(0, math.min(panel.area.y + 2, panel.rect.h - used - 2)),
+        "legend must follow the plot top while keeping tight groups inside the panel"
+    )
+    if count < 2 then
+        return
+    end
     local spare = panel.rect.h - 2 - count * height
     if spare < 0 then
         return
@@ -303,6 +334,8 @@ for _, size in ipairs({ { 232, 64 }, { 232, 132 }, { 472, 132 }, { 472, 264 } })
     equal(single.extremaFont, expectedExtrema, "extrema must be exactly one font step smaller")
     assert(single.showExtrema, "larger fonts must not hide extrema that fit at the readability floor")
     equal(single.series[1].feed, feed, "typography reflow must retain history subscriptions")
+    alignedReadouts(single)
+    separatedReadouts(single)
     previousHeight = height
     heights[#heights + 1] = height
 end
