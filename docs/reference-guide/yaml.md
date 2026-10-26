@@ -45,9 +45,9 @@ Panel IDs and types are case-sensitive. Unknown top-level keys and extra placeme
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `armSource` | string | unset | EdgeTX switch or source name that marks the model armed for AeroGrid flight-session extrema, used when a panel selects **Minimum tracked: flight**. A positive source value starts a flight; a non-positive value ends it. If omitted or blank, the service has no arm boundary and maintains an open-ended session. |
+| `armSource` | string | unset | Readable numeric EdgeTX source, such as `sa` or `ch5`, marking the model armed. Positive means armed; non-positive means disarmed. Flight-session extrema use this when a panel selects **Minimum tracked: flight**. If omitted or blank, extrema maintain an open-ended session. |
 
-The first panel that requests the shared flight-session service configures its source; later requests do not replace it. Keep the arm source in this one layout-level location rather than attempting to set different sources on individual panels. `session.armSource` is separate from panel settings such as a flight counter's armed switch or Navigation's home arm switch.
+The first panel that requests the shared flight-session service configures its source; later requests do not replace it. Keep the extrema arm source in this one layout-level location. `session.armSource` is separate from panel settings such as Chart's or Flight counter's armed switch and Navigation's home arm switch.
 
 ## Validation and errors
 
@@ -77,6 +77,77 @@ Do **not** use anchors or aliases, tags, block scalars (`|` or `>`), flow-style 
 ## Panels
 
 Omitted settings use their listed defaults. “Unset” means the setting has no schema default and stays unset unless specified. Numeric constraints in the tables are the drawer's declared bounds/steps or, when explicitly noted, the panel's runtime validation. All choice values are the YAML values, even if the drawer displays a friendlier choice label.
+
+### `chart`
+
+Use a separate Chart panel for armed-time recording, not a live Metric sparkline.
+It supports 2x1, 3x1, 4x1, 2x2, 3x2, 4x2, 3x3, 4x3, and 4x4.
+
+| Key | Values and defaults |
+| --- | --- |
+| `label` | Optional title; omitted or empty hides the title and reclaims header space for the plot. |
+| `armSwitch` | Blank by default, disabling recording. Physical switch position such as `SA^`, `SA-`, or `SFv`, or logical switch such as `L01`. The **Armed switch position** picker sets this on the radio. |
+| `metrics` | Contiguous list of zero to three numeric sources. Empty is valid for editor setup. |
+| `source`, `unit`, `precision` | Per-metric source name, optional unit override, and integer precision 0–3 (default sensor precision). |
+| `accent` | Per-metric trace color or panel stripe: cyan, green, orange, amber. Traces default to cyan, orange, green in order. Modern Light renders the cyan trace with blue ink. |
+| `rangeMin`, `rangeMax` | Optional per-metric finite bounds. Omit either key for Auto on that side; zero is an explicit bound. If both are set, maximum must exceed minimum. Shared scales use the lowest configured minimum and highest configured maximum; a side with no configured bound follows all recorded series automatically. |
+| `timeRange` | `growing` (default) or `rolling`. |
+| `duration` | `30s`, `1m` (default), `2m`, `5m`, `10m`. Fixed Rolling window; ignored in Growing mode. |
+| `scaling` | `shared` (default) or `independent`. Select independent explicitly for unlike units. |
+| `range` | Obsolete preview setting (`auto` / `fixed`), accepted for compatibility but ignored. Only the presence of `rangeMin` / `rangeMax` determines fixed versus automatic bounds. |
+| `smoothing` | `off` (default), `light`, `medium`, `strong`; line-only EMA with approximately 0.5/1/2-second response. |
+
+Each metric also accepts `label`. The title is above the shared plot, with each
+metric's name/value and raw min/max grouped in a right-hand legend.
+Automatic bounds use raw lifetime recorded extrema with padding and rounding.
+For example, `rangeMin: 0` with no `rangeMax` anchors the bottom at zero and
+automatically adjusts the top; omit both keys for a fully automatic range.
+
+Set the panel's `armSwitch` to the physical or logical condition that means
+armed. It is independent of layout-level `session.armSource`. Recording pauses
+when that condition becomes inactive, freezes the readouts, and resumes the
+same history on rearm. The horizontal axis counts cumulative armed time; resumed
+segments are broken and marked. Growing starts at one minute and expands to
+the next whole minute when exceeded; its duration is not configurable. Rolling
+keeps only the latest plot window but retains raw lifetime min/max. History is
+RAM-only and clears on dashboard reload. Connected linear compression bounds
+error to half a step of each metric's `precision` (sensor precision when omitted);
+with smoothing, this bound applies to the filtered signal. Each distinct
+source/options recording holds 6,144 knots, covering at least 10 minutes at 10 Hz
+even without compression savings. At capacity, **HISTORY FULL** preserves existing
+plot history and stops new plot samples, but raw readouts/extrema keep updating.
+Rolling mode reuses expired storage. No older data is recompressed more loosely.
+Recordings share history only when their armed switch, source, and recording
+options match.
+
+```yaml
+version: 3
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: power-chart
+    type: chart
+    col: 0
+    row: 0
+    colSpan: 4
+    rowSpan: 2
+    config:
+      label: Power
+      armSwitch: SFv
+      timeRange: growing
+      scaling: independent
+      smoothing: light
+      metrics:
+        - source: RxBt
+          label: RX
+          precision: 1
+          accent: cyan
+        - source: Curr
+          label: A
+          precision: 1
+          accent: green
+```
 
 ### `flight-counter`
 

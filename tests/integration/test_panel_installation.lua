@@ -152,6 +152,14 @@ local function control(key, leaf)
     error(panelType .. ": missing control " .. key .. "/" .. tostring(leaf))
 end
 
+local function resetBound(leaf)
+    local bound = control("metrics", leaf)
+    assert(bound.display(bound.min) == "Auto", "one step below the numeric minimum must offer Auto")
+    assert(bound.display(bound.min + 1) ~= "Auto", "the next step must be a numeric bound")
+    bound.set(bound.min)
+    drawerReady()
+end
+
 local function back()
     lvgl.close(context.editorUi.nativeDrawer)
     drawerReady()
@@ -221,8 +229,15 @@ for catalogIndex, item in ipairs(editor.CATALOG) do
     end
     assert(supported, panelType .. ": added at an unsupported size")
 
-    if panelType == "metric" then
-        assert(#placement.config.metrics == 0, "Metric must start with an empty list")
+    if panelType == "chart" then
+        for _, row in ipairs(context.editorUi.drawerControls) do
+            if row.field.key == "range" then
+                assert(row.row.hidden, "the obsolete panel-wide range selector must stay hidden")
+            end
+        end
+    end
+    if panelType == "metric" or panelType == "chart" then
+        assert(#placement.config.metrics == 0, panelType .. " must start with an empty list")
         action("append", "metrics").press()
         drawerReady()
         assert(#placement.config.metrics == 1 and placement.config.metrics[1].source == nil, "first metric is blank")
@@ -233,6 +248,33 @@ for catalogIndex, item in ipairs(editor.CATALOG) do
         drawerReady()
         control("metrics", "label").set("Installed altitude")
         drawerReady()
+        if panelType == "chart" then
+            local entry = placement.config.metrics[1]
+            local minimum, maximum = control("metrics", "rangeMin"), control("metrics", "rangeMax")
+            assert(minimum.display(minimum.get()) == "Auto" and maximum.display(maximum.get()) == "Auto")
+            assert(minimum.get() == minimum.min and maximum.get() == maximum.min, "bounds must default to Auto")
+            assert(entry.rangeMin == nil and entry.rangeMax == nil, "Auto must not store a numeric bound")
+            minimum.set(minimum.get() + 1)
+            drawerReady()
+            assert(entry.rangeMin == -100000, "one step above Auto must select the lowest numeric bound")
+            minimum.set(0)
+            drawerReady()
+            maximum.set(2000)
+            drawerReady()
+            assert(entry.rangeMin == 0 and entry.rangeMax == 200, "entered bounds must be retained")
+            resetBound("rangeMax")
+            assert(entry.rangeMin == 0 and entry.rangeMax == nil, "Auto must clear only the selected bound")
+            resetBound("rangeMin")
+            assert(entry.rangeMin == nil and entry.rangeMax == nil, "both bounds can be automatic")
+            minimum.set(-100)
+            drawerReady()
+            maximum.set(2000)
+            drawerReady()
+            assert(entry.rangeMin == -10 and entry.rangeMax == 200, "negative bounds must remain editable")
+            resetBound("rangeMin")
+            assert(entry.rangeMin == nil and entry.rangeMax == 200, "one-sided bounds must survive saving")
+            assert(minimum.get() == minimum.min and minimum.display(minimum.get()) == "Auto")
+        end
         back()
     end
     back()
@@ -264,8 +306,12 @@ for catalogIndex, item in ipairs(editor.CATALOG) do
     context = fixture.createLoaded(nil, { Layout = name, Theme = "modern-dark" }, path)
     same(context.document, expected)
     running()
-    if panelType == "metric" then
+    if panelType == "metric" or panelType == "chart" then
         assert(context.panels[1].settings.metrics[1].source == "Alt", "configured metric source did not reload")
+    end
+    if panelType == "chart" then
+        local entry = context.panels[1].settings.metrics[1]
+        assert(entry.rangeMin == nil and entry.rangeMax == 200, "Auto and explicit bounds did not reload")
     end
 end
 

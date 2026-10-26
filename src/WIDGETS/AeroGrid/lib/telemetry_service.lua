@@ -163,6 +163,7 @@ local function newEntry(name)
         unit = 0,
         unitText = "",
         precision = 0,
+        precisionKnown = false,
         updatedAt = nil,
         age = nil,
         revision = 0,
@@ -232,6 +233,12 @@ function telemetryService:reading(name)
     return entry and entry.view or nil
 end
 
+--- Observe completed polls without adding firmware reads.
+function telemetryService:observe(observer)
+    self.observers = self.observers or {}
+    self.observers[#self.observers + 1] = observer
+end
+
 --- Resolve a source name to its EdgeTX id, unit, and value shape.
 ---@param entry table
 ---@param now integer
@@ -273,6 +280,7 @@ function telemetryService:resolve(entry, now)
         state.unit = 0
         state.unitText = ""
         state.kind = "number"
+        state.precisionKnown = true
     end
 
     return true
@@ -287,6 +295,7 @@ function telemetryService:scanPrecision(entry)
     local getSensor = self.env.getSensor
     if not getSensor then
         entry.scanIndex = nil
+        entry.state.precisionKnown = true
         return
     end
 
@@ -301,6 +310,7 @@ function telemetryService:scanPrecision(entry)
         if type(sensor) == "table" and sensor.name == entry.base then
             entry.state.precision = type(sensor.prec) == "number" and sensor.prec or 0
             entry.state.sensorIndex = index
+            entry.state.precisionKnown = true
             entry.scanIndex = nil
             return
         end
@@ -309,6 +319,7 @@ function telemetryService:scanPrecision(entry)
 
     -- Give up at the end of the table; precision stays at zero.
     entry.scanIndex = index < telemetryService.SENSOR_LIMIT and index or nil
+    entry.state.precisionKnown = entry.scanIndex == nil
 end
 
 --- Apply one poll result to a subscription.
@@ -403,6 +414,17 @@ end
 ---@param now integer
 local function pollEntry(service, entry, now)
     service:poll(entry, now)
+    if not service.observers then
+        return
+    end
+    for _, observer in ipairs(service.observers) do
+        if not observer.failed and not observer.failure then
+            local ok, message = pcall(observer.sample, observer, entry.view, now)
+            if not ok then
+                observer.failure = tostring(message)
+            end
+        end
+    end
 end
 
 function telemetryService:update(now)

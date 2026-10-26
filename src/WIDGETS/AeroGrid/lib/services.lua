@@ -40,6 +40,7 @@ services.DEFINITIONS = {
     { id = "control", file = "lib/control_service.lua" },
     { id = "extrema", file = "lib/extrema_service.lua" },
     { id = "navigation", file = "lib/navigation_service.lua" },
+    { id = "history", file = "lib/history_service.lua" },
 }
 
 --- Refuse writes to a published snapshot.

@@ -32,6 +32,7 @@ nav:
       - Overview: reference-guide/index.md
       - Panels:
           - Channel output: panels/output.md
+          - Chart: panels/chart.md
           - Flight counter: panels/flight-counter.md
           - Flight mode: panels/flight-mode.md
           - Flight timer: panels/flight-timer.md

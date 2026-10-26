@@ -19,11 +19,17 @@
 ---@field amber integer
 ---@field orange integer
 ---@field critical integer
+---@field chartCyan integer
+---@field chartGreen integer
+---@field chartAmber integer
+---@field chartOrange integer
+---@field chartGrid integer
 
 ---@class AeroGridTheme
 ---@field mode string
 ---@field rgb AeroGridThemeTokens 24-bit values, kept for contrast math and tests.
 ---@field color table<string, integer> Display values produced by lcd.RGB.
+---@field chartColor table<string, integer> Chart inks by accent name, plus the time grid.
 ---@field spacing table
 ---@field accent string Default semantic accent token name.
 ---@field light boolean Whether the theme uses a light palette.
@@ -74,6 +80,23 @@ local COLOR_KEYS = {
     "amber",
     "orange",
     "critical",
+}
+local CHART_COLORS = {
+    chartCyan = "cyan",
+    chartGreen = "green",
+    chartAmber = "amber",
+    chartOrange = "orange",
+    chartGrid = "border",
+}
+local OPTIONAL_COLOR_KEYS = {
+    "warningBg",
+    "criticalBg",
+    "activeBg",
+    "chartCyan",
+    "chartGreen",
+    "chartAmber",
+    "chartOrange",
+    "chartGrid",
 }
 local SPACING_KEYS = {
     "outerMargin",
@@ -501,7 +524,7 @@ function theme.validateCatalog(document)
     for _, key in ipairs(COLOR_KEYS) do
         colorFields[key] = true
     end
-    for _, key in ipairs({ "warningBg", "criticalBg", "activeBg" }) do
+    for _, key in ipairs(OPTIONAL_COLOR_KEYS) do
         colorFields[key] = true
     end
     for _, key in ipairs(SPACING_KEYS) do
@@ -554,7 +577,7 @@ function theme.validateCatalog(document)
             end
             colors[key] = definition.colors[key]
         end
-        for _, key in ipairs({ "warningBg", "criticalBg", "activeBg" }) do
+        for _, key in ipairs(OPTIONAL_COLOR_KEYS) do
             if definition.colors[key] ~= nil and not isColor(definition.colors[key]) then
                 return nil, "theme " .. name .. " color " .. key .. " must be a 24-bit color"
             end
@@ -690,6 +713,12 @@ function theme.build(mode)
     if definition.correctForContrast then
         enforceLegibility(tokens, notices)
     end
+    for key, fallback in pairs(CHART_COLORS) do
+        if tokens[key] and key ~= "chartGrid" and definition.correctForContrast then
+            correctAccent(tokens, key, tokens.surface, MIN_TEXT_CONTRAST, notices)
+        end
+        tokens[key] = tokens[key] or tokens[fallback]
+    end
 
     -- Alert tints come last, after the legibility pass has finished moving the
     -- surface about. That ordering is load bearing: the pass shifts the surface
@@ -718,13 +747,21 @@ function theme.build(mode)
         end
     end
 
+    local colors = toDisplay(tokens)
     return {
         mode = mode,
         label = definition.label,
         light = definition.light == true,
         requested = requested,
         rgb = tokens,
-        color = toDisplay(tokens),
+        color = colors,
+        chartColor = {
+            cyan = colors.chartCyan,
+            green = colors.chartGreen,
+            amber = colors.chartAmber,
+            orange = colors.chartOrange,
+            grid = colors.chartGrid,
+        },
         -- Kept apart from `color` because these are per state rather than per
         -- token, and mirrored in 24-bit so contrast arithmetic has values it can
         -- actually work on.

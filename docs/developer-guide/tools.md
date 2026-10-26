@@ -31,7 +31,7 @@ build/capture-venv/bin/python tools/capture-panels.py --all
 
 Choose **one** of `--panel <type>`, `--recipe <path>`, or `--all`.
 `make capture-setup` installs pinned PyYAML in a separate environment.
-All twelve user-facing panel types, plus the Host diagnostics and Service
+All thirteen user-facing panel types, plus the Host diagnostics and Service
 probe utility panels, have bundled recipes.
 
 Each panel writes to `build/doc-capture/<panel>/`:
@@ -52,6 +52,11 @@ Default panel captures use a 480 x 272 Modern Dark/App-mode dashboard with
 placements outside the menu overlay. Crops are unscaled; a 10-pixel border
 gives output dimensions of 137 x 154, 258 x 85, and 258 x 154 respectively.
 Recipes can override the border.
+Chart omits the unsupported 1x2 placement. Its adapter generates varying
+synthetic readings through the real telemetry/history services, records for
+approximately 20 seconds with a brief disarm/rearm gap, and disarms before
+capturing a stable frame. Its recipe requires `armSwitch: SFv`; the adapter
+supplies that condition through the real control service.
 
 The runner waits for recipe-specific readiness, not just a fixed delay.
 Timer, trim, flight-mode, and model-image samples use isolated firmware model
@@ -118,6 +123,8 @@ recipes/adapters, then inspect the resulting frame and provenance.
 python3 tools/capture-editor.py
 python3 tools/capture-editor.py --scene select-layout
 python3 tools/capture-editor.py --scene navigation-location
+python3 tools/capture-editor.py --scene chart-settings
+python3 tools/capture-editor.py --scene chart-metric-entry
 ```
 
 The `navigation-location` scene enters fullscreen and taps the navigation
@@ -130,6 +137,10 @@ settings, entry dialogs, exit, and Save As. Every other panel has a
 `<panel>-settings` scene (for example `--scene flight-timer-settings`) that
 captures its full settings drawer from the panel's capture recipe config, for
 the panel reference pages. Use `--help` for supported scene names.
+The Chart scenes use a native GV1 source labeled **Reading** and **SFv**
+as the panel's armed switch position.
+`chart-settings` selects **rolling** to include **Window duration**;
+`chart-metric-entry` opens Chart's own entry drawer, not Metric's.
 
 It also captures the telemetry-free **Palette** layout with real production
 primitives. These scenes are opt-in and do not open the editor:
@@ -158,8 +169,8 @@ through a native long-press and automate production editor commands in the
 isolated copy. Check images manually: capture success is not a replacement
 for interactive editor/persistence tests.
 
-The `settings`, `<kind>-settings`, `state-entry`, `state-condition`, and
-`metric-entry` scenes capture the whole
+The `settings`, `<kind>-settings`, `state-entry`, `state-condition`,
+`metric-entry`, and `chart-metric-entry` scenes capture the whole
 configuration drawer, cropped to the dialog. When its rows do not fit on the
 screen, the tool captures further pages in `<scene>-page<N>/`, each hiding
 leading rows in the isolated copy so later rows move into view, and stitches

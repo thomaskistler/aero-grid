@@ -657,7 +657,7 @@ local function addControl(context, state, field, index)
         end
         options.set = function(value)
             local name = nameOf(value)
-            if kind == "source" and value == 0 and not field.required then
+            if value == 0 and not field.required then
                 set("")
             elseif type(name) ~= "string" or name == "" then
                 queue({ action = "error", message = "Cannot resolve selected " .. leaf, control = field.control })

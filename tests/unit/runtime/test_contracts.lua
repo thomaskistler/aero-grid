@@ -379,13 +379,13 @@ end
 local function testSettingsVocabulary()
     local catalog = settingsCatalog()
     local kinds = panelTypes()
-    -- Fifteen panels ship: twelve instruments, two diagnostics, and the
+    -- Sixteen panels ship: thirteen instruments, two diagnostics, and the
     -- fixed theme showcase. `heartbeat` and
     -- `placeholder` were built to prove
     -- the host contract and are fixtures under `tests/fixtures/panels`, so
     -- they are not read here: the vocabulary rules below are about what a
     -- person configures on a radio.
-    assertEqual(#kinds, 15, "the catalogue changed size; expected twelve instruments and three utility panels")
+    assertEqual(#kinds, 16, "the catalogue changed size; expected thirteen instruments and three utility panels")
 
     for kind, settings in pairs(catalog) do
         local declared = {}
@@ -746,6 +746,7 @@ local function testPanelDocumentationLoads()
             kind .. " must be titled with its drawer name, " .. name
         )
         local examples = string.match(text, "^# [^\n]+\n\n| 1x2 | 2x1 | 2x2 |")
+            or string.match(text, "^# [^\n]+\n\n| 2x1 | 2x2 |")
             or string.match(text, "^# [^\n]+\n\n!%[" .. name .. " at 2x2%]")
         assert(examples, kind .. " must put its visual examples immediately after the title")
         local sections = {}

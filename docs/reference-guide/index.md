@@ -11,6 +11,7 @@ remain active.
 | Panel | Purpose |
 | --- | --- |
 | [Channel output](../panels/output.md) | Channel outputs with automatically matched stick-trim arrows. |
+| [Chart](../panels/chart.md) | Armed-time history with up to three overlaid traces and raw recorded extrema. |
 | [Flight counter](../panels/flight-counter.md) | Panel-owned flight detection, GV9 count, and completed-flight history. |
 | [Flight mode](../panels/flight-mode.md) | The active EdgeTX flight mode. |
 | [Flight timer](../panels/flight-timer.md) | An EdgeTX model timer. |
@@ -37,7 +38,7 @@ The controls behave the same way in every panel:
 | Control | How it works |
 | --- | --- |
 | Choice | Opens a list of the allowed values. |
-| Number | Steps by the increment listed on the panel page. Optional numbers have one extra step below their lowest value, shown as a word such as **Off** or **Sensor** instead of a number. Stepping down to it clears the setting so the panel's fallback applies. |
+| Number | Steps by the increment listed on the panel page. Optional numbers have one extra step below their lowest value, shown as a word such as **Off**, **Sensor**, or **Auto** instead of a number. Stepping down to it clears the setting so the panel's fallback applies. |
 | Text | Opens the keyboard. Clearing an optional text restores its default, such as the source name. |
 | Source, Switch, Timer | Opens the standard EdgeTX picker. Sources that Lua cannot read are rejected with a message. |
 | Entry rows | Panels with lists, such as Metric, show one row per entry with a short summary. Tap a row to open that entry's settings. |

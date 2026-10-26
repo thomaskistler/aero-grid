@@ -41,6 +41,13 @@ colors:
   amber: 0xFFB700
   # Orange semantic accent.
   orange: 0xC65B12
+  # Saturated chart inks stay distinct as one-pixel traces on white.
+  chartCyan: 0x0066CC
+  chartGreen: 0x00702A
+  chartAmber: 0x9D6A00
+  chartOrange: 0xC04A00
+  # Neutral, quieter chart gridlines and time baseline.
+  chartGrid: 0xD4D4D4
   # Critical-state foreground accent.
   critical: 0xC92D2D
   # Warning-state panel background; otherwise derived from amber.

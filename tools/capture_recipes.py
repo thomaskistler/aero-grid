@@ -9,10 +9,10 @@ import yaml
 
 
 RECIPE_DIR = Path(__file__).with_name("capture-recipes")
-PANELS = ("trim-panel", "flight-timer", "metric", "flight-mode", "tx-battery",
+PANELS = ("trim-panel", "flight-timer", "metric", "chart", "flight-mode", "tx-battery",
               "model-identity", "rx-battery", "link-status", "navigation", "state", "flight-counter", "output",
               "host-diagnostics", "service-probe")
-SYNTHETIC_PANELS = ("metric", "tx-battery", "rx-battery", "link-status", "navigation", "state",
+SYNTHETIC_PANELS = ("metric", "chart", "tx-battery", "rx-battery", "link-status", "navigation", "state",
                     "flight-counter", "output")
 
 
@@ -75,7 +75,7 @@ def config_value(value):
 
 def source_names(recipe):
     config, panel = recipe["config"], recipe["panel"]
-    if panel == "metric":
+    if panel in ("metric", "chart"):
         if "metrics" in config:
             entries = config["metrics"]
             if not isinstance(entries, list) or not 1 <= len(entries) <= 3:
@@ -135,7 +135,7 @@ def validate_sources(recipe):
         if not isinstance(name, str) or name not in sources:
             raise ValueError(f"Missing sample for configured source: {name}")
     panel, config = recipe["panel"], recipe["config"]
-    if panel in ("metric", "link-status"):
+    if panel in ("metric", "chart", "link-status"):
         if any(not isinstance(sources[name]["value"], (int, float)) for name in source_names(recipe)):
             raise ValueError(f"{panel} requires numeric source samples")
     elif panel == "rx-battery":
@@ -281,6 +281,8 @@ def load_recipe(path):
         number(config["packFull"], config["packEmpty"] + 0.1, 16, "config.packFull")
     else:
         validate_sources(recipe)
+        if recipe["panel"] == "chart" and config.get("armSwitch") != "SFv":
+            raise ValueError("Chart capture requires SFv armSwitch")
     return recipe
 
 
@@ -332,6 +334,16 @@ def state_sample(sample, switch):
 
 def readiness(recipe):
     sample = recipe["sample"]
+    if recipe["panel"] == "chart":
+        return """            local instance = entry.instance
+            if not instance.session or instance.session.elapsed < 1500 or instance.session.recording
+                or instance.pending or instance.gridVersion ~= instance.version then return end
+            for _, item in ipairs(instance.series) do
+                if not item.feed.available or not item.runs[1] or not item.runs[1].line
+                    or item.drawnRevision ~= item.feed.plotRevision
+                    or item.drawnVersion ~= instance.version then return end
+            end
+"""
     if recipe["panel"] == "output":
         return """            if #entry.instance.rows < entry.instance.area.count then return end
             local expected = """ + lua_value(sample["outputs"]) + """
@@ -448,6 +460,47 @@ def fixture_inputs(recipe):
     """Synthetic firmware API inputs, installed only in the isolated service environment."""
     if recipe["panel"] not in SYNTHETIC_PANELS:
         return None
+    if recipe["panel"] == "chart":
+        # Synthetic telemetry flows through production polling/history, then disarms.
+        rows = []
+        for index, (name, source) in enumerate(recipe["sample"]["sources"].items(), 1):
+            rows.append(f"    {{name = {json.dumps(name)}, id = {30000 + index}, "
+                        f"unit = {source['unit']}, prec = {source['precision']}, "
+                        f"value = {lua_value(source['value'])}}}")
+        return """local started = getTime()
+local armIndex = assert(getSwitchIndex("SF" .. CHAR_DOWN))
+local function clock() return math.min(getTime() - started, 2200) end
+local sources = {
+""" + ",\n".join(rows) + """
+}
+return {
+    getFieldInfo = function(name)
+        for _, source in ipairs(sources) do
+            if source.name == name then return source end
+        end
+        return getFieldInfo(name)
+    end,
+    getValue = function(id)
+        for index, source in ipairs(sources) do
+            if source.id == id or source.name == id then
+                return source.value * (1 + 0.2 * math.sin(clock() / (180 + index * 70) + index))
+            end
+        end
+        return getValue(id)
+    end,
+    getSwitchValue = function(index)
+        if index == armIndex then
+            local elapsed = getTime() - started
+            return elapsed < 1000 or elapsed >= 1100 and elapsed < 2200
+        end
+        return getSwitchValue(index)
+    end,
+    getRSSI = function() return """ + str(recipe["sample"]["rssi"]) + """ end,
+    model = setmetatable({
+        getSensor = function(index) return sources[index + 1] end,
+    }, { __index = model }),
+}
+"""
     if recipe["panel"] == "output":
         return """local names = { "AIL", "ELE", "THR", "RUD" }
 local axes = { "ail", "ele", "thr", "rud" }

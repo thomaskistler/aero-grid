@@ -47,6 +47,9 @@ class CaptureRecipeTests(unittest.TestCase):
                 layout = yaml.safe_load((widget / "layouts/capture-panels.yaml").read_text())
                 self.assertEqual(len(layout["panels"]), len(recipe["panels"]))
                 self.assertTrue(all(entry["type"] == recipe["panel"] for entry in layout["panels"]))
+                if recipe["panel"] == "chart":
+                    self.assertNotIn("session", layout)
+                    self.assertTrue(all(entry["config"]["armSwitch"] == "SFv" for entry in layout["panels"]))
                 self.assertTrue((widget / "panels" / f"{recipe['panel']}.lua").is_file())
                 self.assertTrue((widget / "lib/panel_host.lua").is_file())
                 self.assertIn("ipairs(context.panels)", (widget / "main.lua").read_text())
@@ -78,6 +81,34 @@ class CaptureRecipeTests(unittest.TestCase):
                 self.assertEqual(names[options[0]["value"]["unsignedValue"] - 1], "Default")
                 self.assertEqual(options[1]["value"]["unsignedValue"], 1)
                 self.assertFalse((sd / "MODELS/model4.yml").exists())
+
+    def test_chart_drawers_use_chart_settings_and_native_source(self):
+        path = Path(__file__).with_name("capture-editor.py")
+        spec = importlib.util.spec_from_file_location("capture_editor", path)
+        capture = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(capture)
+        for scene in ("chart-settings", "chart-metric-entry"):
+            with self.subTest(scene=scene), tempfile.TemporaryDirectory() as directory:
+                self.assertIn(scene, capture.SCENES)
+                self.assertIn(scene, capture.STITCHED_SCENES)
+                sd = Path(directory) / "sdcard"
+                capture.prepare(sd, scene, shift=120)
+                widget = sd / "WIDGETS/AeroGrid"
+                layout = yaml.safe_load((widget / "layouts/Default.yaml").read_text())
+                self.assertEqual(len(layout["panels"]), 1)
+                panel = layout["panels"][0]
+                self.assertEqual(panel["type"], "chart")
+                self.assertEqual(panel["config"], capture.PANEL_DRAWER_CONFIG["chart"])
+                self.assertEqual(panel["config"]["timeRange"], "rolling")
+                self.assertEqual(panel["config"]["armSwitch"], "SFv")
+                self.assertNotIn("session", layout)
+                self.assertEqual(panel["config"]["metrics"][0]["source"], "gvar1")
+                main = (widget / "main.lua").read_text()
+                self.assertIn(f'local scene = "{scene}"', main)
+                self.assertIn('context.editorDrawerModule.open(context, state, "configure", "metrics", 1)', main)
+                self.assertIn("shift + rowHeight > 120", main)
+                self.assertEqual((widget / "panels/chart.lua").read_bytes(),
+                                 (capture.ROOT / "src/WIDGETS/AeroGrid/panels/chart.lua").read_bytes())
 
     def test_drawer_pages_stitch_into_one_dialog(self):
         path = Path(__file__).with_name("capture-editor.py")
@@ -125,9 +156,32 @@ class CaptureRecipeTests(unittest.TestCase):
             recipe = load_recipe(path)
             if recipe["panel"] in ("host-diagnostics", "service-probe"):
                 self.assertEqual(list(recipe["panels"]), ["2x2"])
+            elif recipe["panel"] == "chart":
+                self.assertEqual(list(recipe["panels"]), ["2x1", "2x2"])
+                self.assertIn("instance.session.elapsed", readiness(recipe))
             else:
                 self.assertEqual(list(recipe["panels"]), ["1x2", "2x1", "2x2"])
                 self.assertIn("feed", readiness(recipe))
+
+    def test_chart_recording_capture(self):
+        recipe = load_recipe(RECIPE_DIR / "chart.yaml")
+        self.assertEqual(yaml.safe_load(config_yaml(recipe["config"])), recipe["config"])
+        inputs = fixture_inputs(recipe)
+        self.assertEqual(recipe["config"]["armSwitch"], "SFv")
+        self.assertIn('getSwitchIndex("SF" .. CHAR_DOWN)', inputs)
+        self.assertIn("getSwitchValue = function(index)", inputs)
+        self.assertNotIn("capture-arm", inputs)
+        self.assertIn("elapsed >= 1100 and elapsed < 2200", inputs)
+        self.assertIn("math.sin", inputs)
+        for arm_switch in ("", "SA^", "L01"):
+            with self.subTest(armSwitch=arm_switch):
+                invalid = copy.deepcopy(recipe)
+                invalid["config"]["armSwitch"] = arm_switch
+                with self.assertRaisesRegex(ValueError, "requires SFv armSwitch"):
+                    self.load(invalid)
+        recipe["config"]["metrics"][0]["source"] = "Missing"
+        with self.assertRaisesRegex(ValueError, "Missing sample"):
+            self.load(recipe)
 
     def test_nested_metrics_config(self):
         recipe = load_recipe(RECIPE_DIR / "metric.yaml")

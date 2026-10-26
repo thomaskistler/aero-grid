@@ -1840,6 +1840,118 @@ assert(
 exitWith("Discard changes")
 widget.lvglMock.setFullScreen(false)
 
+write(
+    "edit-chart-time",
+    [[
+version: 3
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: chart
+    type: chart
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      duration: 5m
+      metrics:
+        - source: Alt
+]]
+)
+widget.lvglMock.setFullScreen(true)
+load("edit-chart-time")
+open()
+rect = context.editorUi.controls[1].rect
+tap(rect.x + rect.w - 12, rect.y + 12)
+settleDrawer()
+state = context.editorUi
+local function chartDrawerOrder()
+    local labels = {}
+    for _, row in ipairs(state.drawerControls) do
+        if not row.row.hidden then
+            labels[#labels + 1] = row.field.label
+        end
+    end
+    return table.concat(labels, ",")
+end
+equal(
+    chartDrawerOrder(),
+    "Label,Armed switch position,Metrics,Alt,+,Time range,Series scales,Line smoothing,Accent,Remove panel",
+    "Growing chart drawer follows the guide, with add after entries and remove last"
+)
+equal(control("armSwitch").kind, "switch", "Chart must use the native switch-position picker")
+equal(control("armSwitch").properties.get(), 0, "new Chart panels must not guess an arm condition")
+control("armSwitch").properties.set(getSwitchIndex("SA" .. CHAR_DOWN))
+settleDrawer()
+equal(context.editorSession.draft.panels[1].config.armSwitch, "SAv", "physical positions must be stored on the panel")
+control("armSwitch").properties.set(getSwitchIndex("L01"))
+settleDrawer()
+equal(context.editorSession.draft.panels[1].config.armSwitch, "L01", "logical arm conditions must also be selectable")
+control("armSwitch").properties.set(0)
+settleDrawer()
+equal(context.editorSession.draft.panels[1].config.armSwitch, "", "clearing the switch must disable recording")
+control("armSwitch").properties.set(getSwitchIndex("SA" .. CHAR_DOWN))
+settleDrawer()
+action("item", "metrics").properties.press()
+settleDrawer()
+equal(
+    chartDrawerOrder(),
+    "Label,Source,Range min,Range max,Unit,Precision,Color,Remove entry",
+    "chart metric drawer puts limits before display options and color, with remove last"
+)
+back()
+equal(drawerRow("duration").row.hidden, true, "Growing must hide the rolling duration control")
+equal(drawerRow("duration").field.label, "Window duration", "duration must describe only the rolling window")
+equal(
+    drawerRow("scaling").row.properties.y - drawerRow("timeRange").row.properties.y,
+    36,
+    "hidden duration must reclaim its drawer row"
+)
+control("timeRange").properties.set(2)
+settleDrawer()
+equal(
+    chartDrawerOrder(),
+    "Label,Armed switch position,Metrics,Alt,+,Time range,Window duration,Series scales,Line smoothing,Accent,Remove panel",
+    "Rolling keeps its window duration beside the time-range selector"
+)
+equal(drawerRow("duration").row.hidden, false, "Rolling must reveal its fixed window control")
+equal(
+    context.editorSession.draft.panels[1].config.duration,
+    "5m",
+    "switching modes must preserve saved rolling choices"
+)
+control("duration").properties.set(3)
+settleDrawer()
+equal(context.editorSession.draft.panels[1].config.duration, "2m", "rolling window must remain editable")
+control("timeRange").properties.set(1)
+settleDrawer()
+equal(drawerRow("duration").row.hidden, true, "returning to Growing must hide duration again")
+equal(
+    context.editorSession.draft.panels[1].config.duration,
+    "2m",
+    "Growing must preserve the hidden rolling preference"
+)
+back()
+equal(context.panels[1].instance.window, 6000, "Growing preview must ignore the saved rolling duration")
+equal(context.panels[1].settings.armSwitch, "SAv", "preview rebuilds must preserve the panel's arm switch")
+rect = state.controls[1].rect
+tap(rect.x + rect.w - 12, rect.y + 12)
+settleDrawer()
+control("timeRange").properties.set(2)
+settleDrawer()
+equal(drawerRow("duration").row.hidden, false, "reopening Rolling must restore the duration control")
+equal(
+    control("armSwitch").properties.get(),
+    getSwitchIndex("SA" .. CHAR_DOWN),
+    "reopening the drawer must restore the selected physical switch position"
+)
+back()
+equal(context.panels[1].instance.window, 12000, "Rolling preview must use its saved fixed window")
+exitWith("Discard changes")
+widget.lvglMock.setFullScreen(false)
+
 widget.lvglMock.setAppMode(false)
 for name in pairs(events) do
     rawset(_G, name, previous[name])
