@@ -144,6 +144,7 @@ checkDurationCorner(power)
 equal(power.indicator, nil, "charts must not create a recording dot")
 equal(power.series[1].feed.available, false)
 equal(power.status.properties.text, "WAITING FOR ARM")
+equal(power.pauseMarker, nil, "no disarm boundary may be created before the first recording")
 fixture.radio.values[300] = 1024
 fixture.pump(context, 40)
 equal(power.status.properties.text, "")
@@ -243,7 +244,8 @@ local function separatedReadouts(panel)
         return
     end
     local spare = panel.rect.h - first - 2 - count * height
-    local expected = math.max(0, math.min(builder.fontHeight(panel.extremaFont), math.floor(spare / (count - 1))))
+    local preferred = math.floor(builder.fontHeight(panel.extremaFont) * 2 / 3)
+    local expected = math.max(0, math.min(preferred, math.floor(spare / (count - 1))))
     for index = 2, count do
         equal(
             panel.series[index].name.properties.y - panel.series[index - 1].name.properties.y - height,
@@ -268,10 +270,24 @@ fixture.radio.values[300] = 0
 fixture.pump(context, 40)
 local paused = power.session.elapsed
 assert(paused >= elapsed)
+assert(not power.pauseMarker.hidden, "disarming must mark the boundary before any rearmed sample exists")
+equal(
+    power.pauseMarker.properties.x,
+    power.area.x + math.floor((paused - power.start) / power.window * power.area.w + 0.5),
+    "the disarm marker must use the exact stopped armed time"
+)
+equal(power.pauseMarker.properties.y, power.area.y)
+equal(power.pauseMarker.properties.h, power.area.h)
+equal(power.pauseMarker.properties.dashGap, 3)
+local pauseMarker, pausedRevision = power.pauseMarker, power.series[1].feed.plotRevision
+chart.update(power, power.rect)
+equal(power.pauseMarker, pauseMarker, "reflow must reuse the disarm marker")
+assert(not power.pauseMarker.hidden)
 fixture.radio.values[100] = 3
 fixture.pump(context, 40)
 equal(power.session.elapsed, paused)
 equal(power.series[1].feed.value, 24, "the legend must freeze while disarmed")
+equal(power.series[1].feed.plotRevision, pausedRevision, "showing a disarm marker must not add fake telemetry samples")
 fixture.radio.values[300] = 1024
 fixture.pump(context, 40)
 equal(power.series[1].feed.value, 3)
@@ -279,6 +295,7 @@ equal(power.series[1].feed.min, 3)
 equal(power.series[1].feed.max, 24)
 assert(power.series[1].runCount >= 2, "rearm must not connect separate recording segments")
 assert(#power.series[1].markerKeys > 0, "rearm boundary must be marked")
+assert(power.pauseMarker.hidden, "rearming must hand the boundary back to the recorded gap markers without an overlay")
 for _, size in ipairs({ { 320, 240 }, { 800, 480 }, { 480, 272 } }) do
     context.zone.w, context.zone.h = size[1], size[2]
     fixture.pump(context, 60)
@@ -420,11 +437,11 @@ local function metricGap(panel)
         - panel.themeBuilder.fontHeight(panel.legendFont)
         - panel.themeBuilder.fontAscent(panel.extremaFont)
 end
-equal(metricGap(multiple), 12, "roomy small-font legends must allow a full extrema line between metrics")
+equal(metricGap(multiple), 8, "roomy small-font legends must prefer two-thirds of an extrema line")
 multiple.settings.label = "Recorded"
 chart.update(multiple, multiple.rect)
 separatedReadouts(multiple)
-equal(metricGap(multiple), 12, "standard titled charts must retain the preferred gap when it fits")
+equal(metricGap(multiple), 8, "standard titled charts must retain the preferred gap when it fits")
 equal(
     multiple.series[1].name.properties.y,
     multiple.area.frame.labelY,
@@ -446,7 +463,7 @@ chart.update(multiple, { x = 0, y = 0, w = 472, h = 264 })
 separatedReadouts(multiple)
 equal(
     metricGap(multiple),
-    multiple.themeBuilder.fontHeight(multiple.extremaFont),
+    math.floor(multiple.themeBuilder.fontHeight(multiple.extremaFont) * 2 / 3),
     "preferred spacing must follow the extrema font instead of stretching to fill tall panels"
 )
 multiple.settings.label = nil

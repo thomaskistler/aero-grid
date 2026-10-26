@@ -300,6 +300,47 @@ local function updateHeader(context)
     context.headerGeometry, context.durationText = context.geometryVersion, duration
 end
 
+local function updatePauseMarker(context)
+    local session = context.session
+    local paused = session and session.available and not session.recording and (session.segment or 0) > 0
+    if not paused then
+        if context.pauseVisible then
+            lvgl.hide(context.pauseMarker)
+            context.pauseVisible = false
+        end
+        return
+    end
+    if context.pauseVisible and context.pauseVersion == context.version and context.pauseAt == session.elapsed then
+        return
+    end
+    local available = false
+    for _, item in ipairs(context.series) do
+        available = available or item.feed and item.feed.available
+    end
+    if not available then
+        return
+    end
+    if not context.pauseMarker then
+        context.pauseMarker = lvgl.vline(context.plotRoot, {
+            x = 0,
+            y = 0,
+            w = 1,
+            h = 1,
+            color = context.theme.color.textFaint,
+            dashGap = 3,
+            dashWidth = 2,
+        })
+    end
+    local area = context.area
+    context.pauseMarker:set({
+        x = area.x + math.floor((session.elapsed - context.start) / context.window * area.w + 0.5),
+        y = area.y,
+        h = area.h,
+    })
+    lvgl.show(context.pauseMarker)
+    context.pauseVisible, context.pauseVersion, context.pauseAt = true, context.version, session.elapsed
+end
+
 local function extremaFont(font)
     if font == MIDSIZE then
         return 0
@@ -460,8 +501,9 @@ function chart.geometry(context, rect)
     context.showExtrema = showExtrema
     local rowHeight = showExtrema and pairHeight or lineHeight
     local spare = available - 2 - count * rowHeight
+    local preferredGap = builder.fontHeight(context.extremaFont) * 2 // 3
     local groupGap = count > 1
-            and math.max(0, math.min(builder.fontHeight(context.extremaFont), math.floor(spare / (count - 1))))
+            and math.max(0, math.min(preferredGap, math.floor(spare / (count - 1))))
         or 0
     local step = rowHeight + groupGap
     if count * rowHeight > available then
@@ -921,6 +963,9 @@ function chart.refresh(context)
     chart.ranges(context)
     updateHeader(context)
     updateGrid(context)
+    if session and session.available and not session.recording or context.pauseVisible then
+        updatePauseMarker(context)
+    end
     local status = ""
     local full = false
     for _, item in ipairs(context.series) do

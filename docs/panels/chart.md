@@ -14,7 +14,7 @@ The legend starts at the title's top inset, even when the title is blank,
 independently of the plot's top. Each extrema row keeps the minimum and
 maximum together with a small fixed gap, aligned to the same right edge as the
 main reading.
-Metric groups prefer a gap equal to one min/max text-line height. The gap
+Metric groups prefer a gap equal to two-thirds of a min/max text-line height. The gap
 shrinks to fit the remaining panel height without moving the first metric.
 
 ## Settings
@@ -54,7 +54,9 @@ is no longer needed.
 
 Recording starts when armed, pauses when disarmed, and **continues the existing
 recording on rearm**. Disarmed time does not occupy horizontal space. A dashed
-marker and a broken trace distinguish resumed recordings or gaps in telemetry.
+boundary appears immediately on disarm, without adding a telemetry sample.
+On rearm, recorded gap markers take over and the trace remains broken.
+Dashed markers also distinguish gaps in telemetry.
 The right-hand value freezes when disarmed; the down/up triangles show raw minimum
 and maximum across all recorded armed periods, including in rolling mode.
 
