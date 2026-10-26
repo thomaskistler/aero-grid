@@ -48,8 +48,8 @@ is no longer needed.
 Recording starts when armed, pauses when disarmed, and **continues the existing
 recording on rearm**. Disarmed time does not occupy horizontal space. A dashed
 marker and a broken trace distinguish resumed recordings or gaps in telemetry.
-The right-hand value freezes when disarmed; the range below it shows raw
-`minimum .. maximum` across all recorded armed periods, including in rolling mode.
+The right-hand value freezes when disarmed; the down/up triangles show raw minimum
+and maximum across all recorded armed periods, including in rolling mode.
 
 Growing mode starts at the selected duration. Exceeding 30 seconds, for example,
 changes the range to 60 seconds, shrinking existing history into the left half.
@@ -92,7 +92,7 @@ the available content width for the legend, leaving room for the plot. Text neve
 shrinks below the small readable font; longer readouts can reduce the chosen size,
 and resizing recalculates it.
 Minimum and maximum use one font step smaller than the metric name/value.
-They appear as a compact range, for example `1.6 .. 2.4`.
+Small filled downward/upward triangles identify them independently of the font.
 Units appear only beside the main value, not the minimum and maximum.
 
 Larger text does not hide extrema that would fit at the minimum font. When the

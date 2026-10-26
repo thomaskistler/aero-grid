@@ -135,7 +135,7 @@ local function alignedReadouts(panel)
         equal(item.unit.properties.x, first.unit.properties.x, "units must share their own column")
         equal(item.name.properties.w, first.name.properties.w, "captions must share their own column")
         equal(item.unit.properties.y, item.value.properties.y, "numbers and units must share a baseline")
-        equal(item.extrema.properties.x, first.extrema.properties.x, "ranges must share their own column")
+        equal(item.maximum.properties.x, first.maximum.properties.x, "maxima must share their own column")
         equal(item.value.properties.text, item.valueText)
         equal(item.unit.properties.text, item.unitText)
     end
@@ -178,10 +178,14 @@ for _, size in ipairs({ { 320, 240 }, { 800, 480 }, { 480, 272 } }) do
             equal(item.value.properties.font(), panel.legendFont, "recorded values must follow the legend font")
             equal(item.unit.properties.font(), panel.legendFont, "units must follow the reading font")
             equal(item.extrema.properties.font(), panel.extremaFont, "minimum must use the smaller extrema font")
+            equal(item.maximum.properties.font(), panel.extremaFont, "maximum must use the smaller extrema font")
             assert(panel.themeBuilder.fontHeight(panel.extremaFont) < panel.themeBuilder.fontHeight(panel.legendFont))
-            equal(item.extrema.properties.text, item.minimumText .. " .. " .. item.maximumText)
-            equal(item.minSymbol, nil, "ranges must not create triangle markers")
-            equal(item.maxSymbol, nil, "ranges must not create triangle markers")
+            equal(item.extrema.properties.text, item.minimumText)
+            equal(item.maximum.properties.text, item.maximumText)
+            equal(item.minSymbol.kind, "triangle")
+            equal(item.maxSymbol.kind, "triangle")
+            assert(item.minSymbol.properties.pts[1][2] < item.minSymbol.properties.pts[3][2])
+            assert(item.maxSymbol.properties.pts[1][2] > item.maxSymbol.properties.pts[3][2])
             assert(panel.themeBuilder.fontHeight(panel.legendFont) >= panel.themeBuilder.fontHeight(SMLSIZE))
             if panel.showExtrema then
                 assert(
@@ -189,7 +193,7 @@ for _, size in ipairs({ { 320, 240 }, { 800, 480 }, { 480, 272 } }) do
                         >= item.value.properties.y + panel.themeBuilder.fontHeight(panel.legendFont)
                 )
                 assert(item.extrema.properties.y + panel.themeBuilder.fontAscent(panel.extremaFont) <= panel.rect.h)
-                assert(item.extrema.properties.x + item.extrema.properties.w <= panel.area.legendX + panel.area.legendW)
+                assert(item.maximum.properties.x + item.maximum.properties.w <= panel.area.legendX + panel.area.legendW)
             end
             alignedReadouts(panel)
             for _, run in ipairs(item.runs) do
@@ -293,6 +297,7 @@ equal(single.series[1].name.properties.font(), single.legendFont)
 equal(single.series[1].value.properties.font(), single.legendFont)
 equal(single.series[1].unit.properties.font(), single.legendFont)
 equal(single.series[1].extrema.properties.font(), single.extremaFont)
+equal(single.series[1].maximum.properties.font(), single.extremaFont)
 fixture.radio.values[altitudeId] = altitude
 assert(fixture.lvglMock.replacedFontRefCount() == 0, "font resizing must reuse native callbacks")
 
