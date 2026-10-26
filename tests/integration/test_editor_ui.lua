@@ -1840,6 +1840,62 @@ assert(
 exitWith("Discard changes")
 widget.lvglMock.setFullScreen(false)
 
+write(
+    "edit-chart-time",
+    [[
+version: 3
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: chart
+    type: chart
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      duration: 5m
+]]
+)
+widget.lvglMock.setFullScreen(true)
+load("edit-chart-time")
+open()
+rect = context.editorUi.controls[1].rect
+tap(rect.x + rect.w - 12, rect.y + 12)
+settleDrawer()
+state = context.editorUi
+equal(drawerRow("duration").row.hidden, true, "Growing must hide the rolling duration control")
+equal(drawerRow("duration").field.label, "Window duration", "duration must describe only the rolling window")
+equal(
+    drawerRow("scaling").row.properties.y - drawerRow("timeRange").row.properties.y,
+    36,
+    "hidden duration must reclaim its drawer row"
+)
+control("timeRange").properties.set(2)
+settleDrawer()
+equal(drawerRow("duration").row.hidden, false, "Rolling must reveal its fixed window control")
+equal(context.editorSession.draft.panels[1].config.duration, "5m", "switching modes must preserve saved rolling choices")
+control("duration").properties.set(3)
+settleDrawer()
+equal(context.editorSession.draft.panels[1].config.duration, "2m", "rolling window must remain editable")
+control("timeRange").properties.set(1)
+settleDrawer()
+equal(drawerRow("duration").row.hidden, true, "returning to Growing must hide duration again")
+equal(context.editorSession.draft.panels[1].config.duration, "2m", "Growing must preserve the hidden rolling preference")
+back()
+equal(context.panels[1].instance.window, 6000, "Growing preview must ignore the saved rolling duration")
+rect = state.controls[1].rect
+tap(rect.x + rect.w - 12, rect.y + 12)
+settleDrawer()
+control("timeRange").properties.set(2)
+settleDrawer()
+equal(drawerRow("duration").row.hidden, false, "reopening Rolling must restore the duration control")
+back()
+equal(context.panels[1].instance.window, 12000, "Rolling preview must use its saved fixed window")
+exitWith("Discard changes")
+widget.lvglMock.setFullScreen(false)
+
 widget.lvglMock.setAppMode(false)
 for name in pairs(events) do
     rawset(_G, name, previous[name])

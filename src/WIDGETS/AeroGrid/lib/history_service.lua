@@ -154,6 +154,9 @@ function history:subscribe(source, options)
         precision == nil or finite(precision) and precision >= 0 and precision <= 3 and precision % 1 == 0,
         "invalid history precision"
     )
+    if mode == "growing" then
+        window = 60
+    end
     source = type(source) == "string" and source or ""
     local key = source .. "\0" .. mode .. "\0" .. window .. "\0" .. smoothing .. "\0" .. tostring(precision or "sensor")
     if self.names[key] then
@@ -339,9 +342,7 @@ end
 local function updateEntry(service, entry)
     local state = entry.state
     if entry.mode == "growing" then
-        while service.state.elapsed > state.window do
-            state.window = state.window * 2
-        end
+        state.window = math.max(6000, math.ceil(service.state.elapsed / 6000) * 6000)
     elseif not state.full then
         local first = state.first
         expire(entry, service.state.elapsed - state.window, 16)

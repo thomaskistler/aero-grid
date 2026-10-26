@@ -40,7 +40,7 @@ assert(#chart.validateSettings({ metrics = { {}, {}, {}, {} } }) > 0)
 assert(#chart.validateSettings({ metrics = { [2] = {} } }) > 0)
 local settings, warnings = host.resolveSettings(chart, {})
 equal(#warnings, 0)
-equal(settings.duration, "30s")
+equal(settings.duration, "1m")
 equal(settings.smoothing, "off")
 equal(#settings.metrics, 0)
 settings, warnings = host.resolveSettings(chart, { range = "fixed", metrics = { { rangeMin = 200 } } })
@@ -120,7 +120,7 @@ equal(#context.panels, 4)
 local power = fixture.instanceOf(context, "power")
 equal(power.axisStart, nil, "bottom axis labels must not be created")
 equal(power.axisEnd, nil, "bottom axis labels must not be created")
-equal(power.duration.properties.text, "30s")
+equal(power.duration.properties.text, "1m")
 local function checkDurationCorner(panel)
     local properties, area = panel.duration.properties, panel.area
     equal(properties.x + properties.w, area.x + area.w, "duration must align with the plot's right edge")
@@ -335,6 +335,12 @@ alignedReadouts(power)
 
 local reading = power.series[1]
 local originalUnit, originalFeed = reading.settings.unit, reading.feed
+chart.render(power)
+equal(chart.render(power), false, "unchanged readouts must leave the callback budget available for projection")
+reading.settings.unit = "mAh"
+equal(chart.render(power), true, "unit overrides must invalidate cached readouts even without a telemetry revision")
+alignedReadouts(power)
+equal(chart.render(power), false, "the updated unit must be cached after rendering")
 reading.feed = {
     value = originalFeed.value,
     min = originalFeed.min,
@@ -581,16 +587,23 @@ checkDurationCorner(gridPanel)
 assert(gridPanel.area.y > gridPanel.area.frame.labelY, "explicit titles must retain a header")
 gridPanel.settings.duration = "30s"
 gridPanel.settings.timeRange = "growing"
-gridPanel.session.elapsed = 3001
-for _ = 1, 12 do
-    chart.refresh(gridPanel)
+for _, case in ipairs({
+    { 0, 6000 }, { 5999, 6000 }, { 6000, 6000 }, { 6001, 12000 },
+    { 12000, 12000 }, { 12001, 18000 }, { 18000, 18000 }, { 18001, 24000 },
+    { 600000, 600000 }, { 600001, 606000 },
+}) do
+    gridPanel.session.elapsed = case[1]
+    for _ = 1, 12 do
+        chart.refresh(gridPanel)
+    end
+    equal(gridPanel.window, case[2], "growing windows must advance by whole minutes only after a boundary is exceeded")
+    equal(gridPanel.duration.properties.text, chart.durationText(case[2]))
+    equal(gridPanel.start, 0, "growing mode must retain the full recording")
 end
-equal(gridPanel.duration.properties.text, "1m", "growing duration must update at the doubling threshold")
-gridPanel.session.elapsed = 6001
-for _ = 1, 12 do
-    chart.refresh(gridPanel)
-end
-equal(gridPanel.duration.properties.text, "2m")
+gridPanel.settings.duration = "10m"
+gridPanel.session.elapsed = 0
+chart.refresh(gridPanel)
+equal(gridPanel.window, 6000, "legacy growing durations must not override the fixed one-minute start")
 checkDurationCorner(gridPanel)
 gridPanel.session.elapsed = 0
 for _ = 1, 12 do
@@ -601,6 +614,7 @@ for _, line in ipairs(gridPanel.grid) do
 end
 
 local dense = recordingPanel("dense-chart", "growing")
+equal(dense.series[1].feed.window, 6000, "growing subscriptions must start at one minute despite saved duration choices")
 local history = dense.history
 local now = getTime()
 local reading = { name = "dense-chart", fresh = true, kind = "number", precision = 3, unitText = "" }

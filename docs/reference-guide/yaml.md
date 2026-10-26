@@ -91,7 +91,7 @@ It supports 2x1, 3x1, 4x1, 2x2, 3x2, 4x2, 3x3, 4x3, and 4x4.
 | `accent` | Per-metric trace color or panel stripe: cyan, green, orange, amber. Traces default to cyan, green, orange in order. |
 | `rangeMin`, `rangeMax` | Optional per-metric finite bounds. Omit either key for Auto on that side; zero is an explicit bound. If both are set, maximum must exceed minimum. Shared scales use the lowest configured minimum and highest configured maximum; a side with no configured bound follows all recorded series automatically. |
 | `timeRange` | `growing` (default) or `rolling`. |
-| `duration` | `30s` (default), `1m`, `2m`, `5m`, `10m`. Initial growing range or rolling window. |
+| `duration` | `30s`, `1m` (default), `2m`, `5m`, `10m`. Fixed Rolling window; ignored in Growing mode. |
 | `scaling` | `shared` (default) or `independent`. Select independent explicitly for unlike units. |
 | `range` | Obsolete preview setting (`auto` / `fixed`), accepted for compatibility but ignored. Only the presence of `rangeMin` / `rangeMax` determines fixed versus automatic bounds. |
 | `smoothing` | `off` (default), `light`, `medium`, `strong`; line-only EMA with approximately 0.5/1/2-second response. |
@@ -105,7 +105,8 @@ automatically adjusts the top; omit both keys for a fully automatic range.
 Set dashboard-level `session.armSource` to a readable numeric source (positive
 means armed). Recording pauses on disarm, freezes the readouts, and resumes the
 same history on rearm. The horizontal axis counts cumulative armed time; resumed
-segments are broken and marked. Growing duration doubles when exceeded. Rolling
+segments are broken and marked. Growing starts at one minute and expands to
+the next whole minute when exceeded; its duration is not configurable. Rolling
 keeps only the latest plot window but retains raw lifetime min/max. History is
 RAM-only and clears on dashboard reload. Connected linear compression bounds
 error to half a step of each metric's `precision` (sensor precision when omitted);
@@ -133,7 +134,6 @@ panels:
     config:
       label: Power
       timeRange: growing
-      duration: 30s
       scaling: independent
       smoothing: light
       metrics:

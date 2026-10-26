@@ -104,6 +104,17 @@ equal(at, paused)
 equal(value, 11)
 equal(broken, true)
 equal(history:subscribe("V"), feed, "matching histories share storage")
+equal(history:subscribe("V", { windowSeconds = 30 }), feed, "growing durations no longer distinguish recordings")
+equal(history:subscribe("V", { windowSeconds = 600 }), feed, "legacy growing windows must share the canonical recording")
+local minuteHistory, minuteFeed, minuteSample = recorder({ windowSeconds = 30 })
+for _, case in ipairs({
+    { 0, 6000 }, { 6000, 6000 }, { 6001, 12000 }, { 12000, 12000 },
+    { 12001, 18000 }, { 18001, 24000 }, { 600000, 600000 }, { 600001, 606000 },
+}) do
+    minuteSample(case[1], 12)
+    equal(minuteFeed.window, case[2], "history windows must grow by whole minutes without doubling")
+end
+equal(minuteHistory:point(minuteFeed, 1), 0, "minute growth must retain the beginning of the recording")
 assert(history:subscribe("V", { precision = 0 }) ~= feed, "Sensor and explicit precision subscriptions differ")
 equal(history:subscribe("V", { precision = 1 }), history:subscribe("V", { precision = 1 }))
 assert(history:subscribe("V", { precision = 2 }) ~= history:subscribe("V", { precision = 1 }))
@@ -190,7 +201,7 @@ end
 equal(growingFeed.min, -100)
 equal(growingFeed.max, 5000)
 equal(growing:point(growingFeed, 1), 0, "growing history retains the start")
-equal(growingFeed.window, 768000)
+equal(growingFeed.window, 504000)
 equal(growingSession.elapsed, 500000)
 accuracy(growing, growingFeed, growingOriginals, 0.0005)
 assert(growingFeed.count < 20, "straight spans must not grow with flight duration")

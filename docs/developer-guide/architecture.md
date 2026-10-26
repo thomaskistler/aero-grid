@@ -151,6 +151,8 @@ column; they never replace stored knots. Projection, native trace updates and
 gap-marker updates are staged with bounded work per callback. Geometry changes
 restart pending projection. Recorded gaps stay separate except when their
 endpoints coincide on screen; marker objects are pooled by pixel column.
+Unchanged readouts are cached so their callback budget can process a larger
+bounded projection batch; same-pixel extrema do not add redundant geometry.
 
 The `flight-counter` panel is deliberately stateful: it owns qualification
 and disarm-timeout transitions, requests verified count updates, and asks

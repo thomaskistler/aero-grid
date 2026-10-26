@@ -43,11 +43,12 @@ local chart = {
         },
         {
             key = "duration",
-            label = "Initial / window duration",
+            label = "Window duration",
             type = "string",
-            default = "30s",
+            default = "1m",
             choices = { "30s", "1m", "2m", "5m", "10m" },
             choiceLabels = { "30 seconds", "1 minute", "2 minutes", "5 minutes", "10 minutes" },
+            visibleWhen = { key = "timeRange", value = "rolling" },
         },
         {
             key = "scaling",
@@ -89,6 +90,13 @@ local COLORS = { "cyan", "green", "orange" }
 local LEGEND_FONTS = { MIDSIZE, 0, SMLSIZE }
 local PROJECTION_CAP = 8
 local textCache = setmetatable({}, { __mode = "k" })
+
+local function timeWindow(settings, elapsed)
+    if settings.timeRange == "rolling" then
+        return (DURATIONS[settings.duration] or 60) * 100
+    end
+    return math.max(6000, math.ceil(elapsed / 6000) * 6000)
+end
 
 local function finite(value)
     return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
@@ -254,7 +262,7 @@ end
 
 local function updateHeader(context)
     local builder, area = context.themeBuilder, context.area
-    local duration = chart.durationText(context.window or (DURATIONS[context.settings.duration] or 30) * 100)
+    local duration = chart.durationText(context.window or timeWindow(context.settings, 0))
     if context.headerGeometry == context.geometryVersion and context.durationText == duration then
         return
     end
@@ -681,12 +689,12 @@ local function projectPoint(job, item, at, value, broken)
     job.previousAt, job.previousValue = at, value
 end
 
-local function project(context, item)
+local function project(context, item, limit)
     local job, feed = item.job, item.feed
     if job.geometryVersion ~= context.geometryVersion or job.index < feed.first then
         prepare(context, item)
     end
-    for _ = 1, PROJECTION_CAP do
+    for _ = 1, limit do
         if job.index > job.last then
             finishRun(item.runs[job.runIndex])
             item.runCount, item.applyIndex = job.runIndex, 1
@@ -713,8 +721,11 @@ local function project(context, item)
             local _, firstY = pixel(job, firstAt, firstValue)
             local _, lastY = pixel(job, lastAt, lastValue)
             if not interrupted or firstY == lastY then
-                projectPoint(job, item, firstAt, firstValue, false)
-                projectPoint(job, item, lastAt, lastValue, false)
+                local _, previousY = pixel(job, at, value)
+                if firstY ~= lastY or interrupted and previousY ~= firstY then
+                    projectPoint(job, item, firstAt, firstValue, false)
+                    projectPoint(job, item, lastAt, lastValue, false)
+                end
                 local endAt, endValue = context.history:point(feed, last)
                 projectPoint(job, item, endAt, endValue, interrupted)
                 job.index = last + 1
@@ -826,11 +837,30 @@ function chart.intervalFor(window, pixels, sources)
 end
 
 function chart.render(context)
+    local changed = context.readingGeometry ~= context.geometryVersion
+    for _, item in ipairs(context.series) do
+        local feed = item.feed
+        if
+            not feed
+            or feed.revision == nil
+            or item.readingRevision ~= feed.revision
+            or item.readingUnit ~= item.settings.unit
+            or item.readingPrecision ~= item.settings.precision
+        then
+            changed = true
+            break
+        end
+    end
+    if not changed then
+        return false
+    end
     local builder = context.themeBuilder
     local font = context.legendFont
     local width = 64
     for _, item in ipairs(context.series) do
         local feed = item.feed
+        item.readingRevision = feed and feed.revision
+        item.readingUnit, item.readingPrecision = item.settings.unit, item.settings.precision
         local precision = item.settings.precision or feed and feed.precision or 0
         local unit = item.settings.unit
         if unit == nil then
@@ -870,17 +900,14 @@ function chart.render(context)
             positionExtrema(context, item, item.extremaY)
         end
     end
+    context.readingGeometry = context.geometryVersion
+    return true
 end
 
 function chart.refresh(context)
     local session = context.session
     local elapsed = session and session.elapsed or 0
-    local window = (DURATIONS[context.settings.duration] or 30) * 100
-    if context.settings.timeRange ~= "rolling" then
-        while elapsed > window do
-            window = window * 2
-        end
-    end
+    local window = timeWindow(context.settings, elapsed)
     local start = context.settings.timeRange == "rolling" and math.max(0, elapsed - window) or 0
     local pixelStart = math.floor(start / window * context.area.w)
     if context.window ~= window or context.pixelStart ~= pixelStart then
@@ -888,7 +915,8 @@ function chart.refresh(context)
         context.version = context.version + 1
     end
     local version = context.version
-    chart.render(context)
+    -- Stable readouts leave room for a larger projection batch.
+    local projectionCap = chart.render(context) and PROJECTION_CAP or 12
     local reflowed = version ~= context.version
     chart.ranges(context)
     updateHeader(context)
@@ -929,7 +957,7 @@ function chart.refresh(context)
         if item.job.geometryVersion ~= context.geometryVersion then
             prepare(context, item)
         end
-        if item.job.projecting and not project(context, item) then
+        if item.job.projecting and not project(context, item, projectionCap) then
             return 5
         end
         if applyRuns(context, item) then
@@ -947,7 +975,7 @@ function chart.refresh(context)
             or item.drawnHigh ~= item.high
         then
             prepare(context, item)
-            if not project(context, item) or not applyRuns(context, item) then
+            if not project(context, item, projectionCap) or not applyRuns(context, item) then
                 context.pending = item
             end
             context.cursor = index % #context.series + 1
@@ -991,7 +1019,7 @@ function chart.create(parent, rect, settings, services)
         }
         if context.history then
             item.feed = context.history:subscribe(entry.source, {
-                windowSeconds = DURATIONS[settings.duration] or 30,
+                windowSeconds = timeWindow(settings, 0) / 100,
                 timeRange = settings.timeRange or "growing",
                 smoothing = settings.smoothing or "off",
                 precision = entry.precision,

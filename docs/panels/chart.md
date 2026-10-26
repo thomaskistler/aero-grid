@@ -24,8 +24,8 @@ shrinks to fit the remaining panel height without moving the first metric.
 | **Label** | Optional title above the plot. Empty hides the title and lets the chart reclaim its header space. |
 | **Metrics** | Zero to three sources. Tap **+**, then choose each entry's **Source**, optional **Label**, **Unit**, **Precision** (0–3, or Sensor), and **Color**. |
 | **Range min**, **Range max** | Optional per-entry vertical bounds. Both default to **Auto**, one step below the lowest allowed numeric value. Select a number to fix that bound, or return to **Auto** to clear it. If both are entered, maximum must exceed minimum. |
-| **Time range** | Growing keeps the recording visible by doubling its time scale; rolling shows the latest fixed window. |
-| **Initial / window duration** | 30 seconds, 1 minute, 2 minutes, 5 minutes, or 10 minutes. This is the initial growing range or the rolling window. |
+| **Time range** | Growing starts at one minute and expands in one-minute steps; rolling shows the latest fixed window. |
+| **Window duration** | Only shown for Rolling: 30 seconds, 1 minute (default), 2 minutes, 5 minutes, or 10 minutes. |
 | **Series scales** | Shared uses one vertical scale. Independent gives each trace its own scale, suitable for voltage/current or RSSI/link quality. Independent heights are not directly comparable. |
 | **Line smoothing** | Off, light, medium, or strong. The exponential filter has approximately 0.5, 1, or 2 seconds of response time; only the line is filtered. |
 | **Accent** | Panel stripe color, independent of trace colors. |
@@ -58,8 +58,9 @@ marker and a broken trace distinguish resumed recordings or gaps in telemetry.
 The right-hand value freezes when disarmed; the down/up triangles show raw minimum
 and maximum across all recorded armed periods, including in rolling mode.
 
-Growing mode starts at the selected duration. Exceeding 30 seconds, for example,
-changes the range to 60 seconds, shrinking existing history into the left half.
+Growing mode always starts at one minute. When cumulative armed time exceeds
+the visible duration, the range expands to the next whole minute: 1m, 2m, 3m,
+and so on. An existing `duration` setting does not affect Growing mode.
 Rolling mode discards old plot detail while preserving lifetime recorded extrema.
 Faint solid vertical lines mark whole minutes of cumulative armed time. Longer
 or narrower views use 2/5/10-minute steps and larger equivalents to avoid
