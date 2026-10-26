@@ -107,7 +107,13 @@ means armed). Recording pauses on disarm, freezes the readouts, and resumes the
 same history on rearm. The horizontal axis counts cumulative armed time; resumed
 segments are broken and marked. Growing duration doubles when exceeded. Rolling
 keeps only the latest plot window but retains raw lifetime min/max. History is
-bounded, progressively coarsened, RAM-only, and clears on dashboard reload.
+RAM-only and clears on dashboard reload. Connected linear compression bounds
+error to half a step of each metric's `precision` (sensor precision when omitted);
+with smoothing, this bound applies to the filtered signal. Each distinct
+source/options recording holds 6,144 knots, covering at least 10 minutes at 10 Hz
+even without compression savings. At capacity, **HISTORY FULL** preserves existing
+plot history and stops new plot samples, but raw readouts/extrema keep updating.
+Rolling mode reuses expired storage. No older data is recompressed more loosely.
 The shared arm setting is currently edited in YAML, not the on-radio drawer.
 
 ```yaml

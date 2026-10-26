@@ -35,6 +35,50 @@ local function harness(options, configured)
     return history, session, feed, poll, telemetry
 end
 
+local function recorder(options)
+    local history, session, feed, _, telemetry = harness(options)
+    local arm = telemetry.names.arm.state
+    arm.fresh, arm.value = true, 1
+    local reading = { name = "V", fresh = true, kind = "number", precision = 1, unitText = "V" }
+    local function sample(at, value)
+        reading.value, reading.updatedAt = value, at
+        history:sample(reading, at)
+        history:update(at)
+    end
+    return history, feed, sample, reading, session
+end
+
+local function knots(history, feed)
+    local result = {}
+    for index = feed.first, feed.last do
+        local at, value, broken = history:point(feed, index)
+        result[#result + 1] = { at, value, broken }
+    end
+    equal(#result, feed.count)
+    return result
+end
+
+local function accuracy(history, feed, samples, epsilon)
+    local points = knots(history, feed)
+    local cursor, worst = 1, 0
+    for _, sample in ipairs(samples) do
+        while cursor < #points and points[cursor + 1][1] <= sample[1] do
+            cursor = cursor + 1
+        end
+        local first, second = points[cursor], points[cursor + 1]
+        local value = first[2]
+        if first[1] ~= sample[1] then
+            assert(second and not second[3], "sample has no connected reconstruction")
+            local fraction = (sample[1] - first[1]) / (second[1] - first[1])
+            value = first[2] * (1 - fraction) + second[2] * fraction
+        end
+        local difference = math.abs(value - sample[2])
+        worst = math.max(worst, difference)
+        assert(difference <= epsilon, string.format("at %d: error %.12g exceeds %.12g", sample[1], difference, epsilon))
+    end
+    return worst
+end
+
 local history, session, feed, poll = harness()
 poll(0, 0, 12)
 equal(feed.available, false, "disarmed readings must not enter the recording")
@@ -55,16 +99,17 @@ equal(feed.min, 10, "rearming must retain extrema")
 equal(feed.max, 13)
 equal(session.elapsed, paused)
 equal(session.segment, 2)
-local point = history:point(feed, feed.count)
-equal(point.breakBefore, true)
-equal(point.segment, 2)
+local at, value, broken = history:point(feed, feed.last)
+equal(at, paused)
+equal(value, 11)
+equal(broken, true)
 equal(history:subscribe("V"), feed, "matching histories share storage")
+assert(history:subscribe("V", { precision = 0 }) ~= feed, "Sensor and explicit precision subscriptions differ")
+equal(history:subscribe("V", { precision = 1 }), history:subscribe("V", { precision = 1 }))
+assert(history:subscribe("V", { precision = 2 }) ~= history:subscribe("V", { precision = 1 }))
 assert(not pcall(function()
     feed.value = 42
 end), "history views must be immutable")
-assert(not pcall(function()
-    point.last = 42
-end), "point views must be immutable")
 
 poll(11100, 1, nil)
 equal(feed.stale, true)
@@ -72,7 +117,8 @@ equal(feed.value, 11)
 poll(11200, 1, 0)
 equal(feed.value, 0, "live zero is a valid sample")
 equal(feed.min, 0)
-equal(history:point(feed, feed.count).breakBefore, true, "dropouts break the trace")
+at, value, broken = history:point(feed, feed.last)
+equal(broken, true, "dropouts break the trace")
 poll(11300, 1, 0 / 0)
 equal(feed.value, 0, "non-finite samples must not enter history")
 
@@ -89,39 +135,170 @@ smoothPoll(100, 1, 10)
 equal(smoothFeed.value, 10)
 equal(smoothFeed.min, 0)
 equal(smoothFeed.max, 10)
-local filtered = smoothed:point(smoothFeed, smoothFeed.count).last
+local _, filtered = smoothed:point(smoothFeed, smoothFeed.last)
 assert(filtered > 6.3 and filtered < 6.4, "smoothing must use elapsed time rather than redraw count")
 smoothPoll(200, 0, 10)
 smoothPoll(10000, 1, 20)
-equal(smoothed:point(smoothFeed, smoothFeed.count).last, 20, "filters restart at rearm boundaries")
+_, filtered = smoothed:point(smoothFeed, smoothFeed.last)
+equal(filtered, 20, "filters restart at rearm boundaries")
 
-local growing, growingSession, growingFeed, growingPoll = harness({ windowSeconds = 30 })
+for precision = 0, 3 do
+    local compressor, output, sample = recorder({ precision = precision })
+    local originals = {}
+    local epsilon = 0.5 * 10 ^ -precision
+    for index = 0, 800 do
+        local number = math.sin(index * 0.17) * 10 + index * 0.002
+        if index % 29 == 0 then
+            number = number + 20
+        end
+        sample(index * 10, number)
+        originals[#originals + 1] = { index * 10, number }
+        if index < 40 or index % 80 == 0 then
+            accuracy(compressor, output, originals, epsilon)
+        end
+    end
+    equal(output.epsilon, epsilon)
+    accuracy(compressor, output, originals, epsilon)
+    assert(output.count < #originals)
+end
+
+-- A last raw sample need not lie on ANY line feasible for the whole corridor.
+local corridor, corridorFeed, corridorSample = recorder({ precision = 0 })
+local corridorOriginals = {}
+for index, number in ipairs({ 0, 1.4, 1.1, 2.4, -2, 3, -3, 1 }) do
+    corridorSample((index - 1) * 10, number)
+    corridorOriginals[#corridorOriginals + 1] = { (index - 1) * 10, number }
+    accuracy(corridor, corridorFeed, corridorOriginals, 0.5)
+end
+local synthesized = false
+for _, point in ipairs(knots(corridor, corridorFeed)) do
+    for _, original in ipairs(corridorOriginals) do
+        if point[1] == original[1] and point[2] ~= original[2] then
+            synthesized = true
+        end
+    end
+end
+assert(synthesized, "corridor failures must commit a synthesized shared endpoint")
+
+local growing, growingFeed, growingSample, _, growingSession = recorder({ windowSeconds = 30, precision = 3 })
+local growingOriginals = {}
 for tick = 0, 500000, 100 do
-    growingPoll(tick, 1, tick == 10000 and -100 or tick / 100)
+    local number = tick == 10000 and -100 or tick / 100
+    growingSample(tick, number)
+    growingOriginals[#growingOriginals + 1] = { tick, number }
 end
-assert(growingFeed.count <= historyModule.CAPACITY, "growing recordings must have bounded storage")
-equal(growingFeed.min, -100, "compaction must preserve lifetime raw extrema")
+equal(growingFeed.min, -100)
 equal(growingFeed.max, 5000)
-equal(growing:point(growingFeed, 1).firstAt, 0, "growing history retains the start")
-equal(growingFeed.window, 768000, "duration repeatedly doubles to cover the full recording")
+equal(growing:point(growingFeed, 1), 0, "growing history retains the start")
+equal(growingFeed.window, 768000)
 equal(growingSession.elapsed, 500000)
-local maximum = -math.huge
-for index = 1, growingFeed.count do
-    local value = growing:point(growingFeed, index)
-    maximum = math.max(maximum, value.high)
-    assert(value.firstAt <= value.lastAt)
-end
-equal(maximum, 5000)
+accuracy(growing, growingFeed, growingOriginals, 0.0005)
+assert(growingFeed.count < 20, "straight spans must not grow with flight duration")
 
-local rolling, _, rollingFeed, rollingPoll = harness({ timeRange = "rolling", windowSeconds = 30 })
-for tick = 0, 10000, 100 do
-    rollingPoll(tick, 1, tick / 100)
+local rolling, rollingFeed, rollingSample = recorder({ timeRange = "rolling", windowSeconds = 30 })
+for tick = 0, 10000, 10 do
+    rollingSample(tick, tick / 100)
 end
 equal(rollingFeed.window, 3000)
-assert(rolling:point(rollingFeed, 1).lastAt >= 7000, "rolling history must evict expired buckets")
-equal(rollingFeed.min, 0, "rolling extrema describe all armed recording periods")
+equal(rollingFeed.count, 2, "rolling ramps retain a bracketing anchor and the live endpoint")
+equal(rollingFeed.min, 0)
 equal(rollingFeed.max, 100)
-assert(rollingFeed.count <= historyModule.CAPACITY)
+accuracy(rolling, rollingFeed, { { 7000, 70 }, { 8000, 80 }, { 10000, 100 } }, 0.05)
+
+local dense, denseFeed, denseSample = recorder({ precision = 3 })
+local denseOriginals = {}
+for index = 0, 6000 do
+    local number = index % 2 == 0 and -100 or 100
+    denseSample(index * 10, number)
+    denseOriginals[#denseOriginals + 1] = { index * 10, number }
+end
+equal(denseFeed.count, 6001, "ten minutes at 10 Hz must fit even without compression savings")
+equal(denseFeed.full, false)
+accuracy(dense, denseFeed, denseOriginals, 0.0005)
+for index = 6001, historyModule.CAPACITY do
+    denseSample(index * 10, index % 2 == 0 and -100 or 100)
+end
+equal(denseFeed.count, historyModule.CAPACITY)
+equal(denseFeed.full, true)
+local retained = knots(dense, denseFeed)
+local revision = denseFeed.plotRevision
+denseSample(100000, 1000)
+equal(denseFeed.value, 1000)
+equal(denseFeed.max, 1000)
+equal(denseFeed.min, -100)
+equal(denseFeed.plotRevision, revision, "full histories must not trigger redraws for raw-only updates")
+local frozen = knots(dense, denseFeed)
+for index, point in ipairs(retained) do
+    for field = 1, 3 do
+        equal(frozen[index][field], point[field], "capacity exhaustion must preserve every existing knot")
+    end
+end
+local entry = dense.views[denseFeed]
+local packedBytes = 0
+for _, chunk in pairs(entry.chunks) do
+    packedBytes = packedBytes + #chunk
+end
+equal(packedBytes, historyModule.CAPACITY * historyModule.BYTES_PER_POINT)
+collectgarbage("collect")
+local fullMemory = collectgarbage("count")
+for index = 1, 2000 do
+    denseSample(100000 + index * 10, index)
+end
+collectgarbage("collect")
+assert(collectgarbage("count") - fullMemory < 2, "full history must not retain more storage for live readouts")
+equal(denseFeed.count, historyModule.CAPACITY)
+equal(denseFeed.plotRevision, revision)
+
+local ring, ringFeed, ringSample = recorder({ precision = 3, timeRange = "rolling", windowSeconds = 600 })
+for index = 0, historyModule.CAPACITY * 3 do
+    ringSample(index * 10, index % 2 == 0 and -100 or 100)
+end
+equal(ringFeed.full, false, "rolling storage must reuse expired space instead of declaring history full")
+assert(ringFeed.first > historyModule.CAPACITY * 2 - 6000)
+assert(ringFeed.count <= 6002)
+local ringOriginals = {}
+for index = historyModule.CAPACITY * 3 - 6000, historyModule.CAPACITY * 3 do
+    ringOriginals[#ringOriginals + 1] = { index * 10, index % 2 == 0 and -100 or 100 }
+end
+accuracy(ring, ringFeed, ringOriginals, 0.0005)
+local lastBlock = ring:block(ringFeed, (math.floor((ringFeed.first - 1) / 256) + 1) * 256 + 1, ringFeed.last, math.huge)
+assert(lastBlock, "projection summaries must remain valid after ring wrap")
+local lastAt, lastValue = ring:point(ringFeed, lastBlock)
+assert(lastAt and lastValue)
+
+local pending, pendingFeed, pendingSample, pendingReading = recorder()
+pendingReading.precision, pendingReading.precisionKnown = 0, false
+pendingSample(0, 0)
+pendingSample(10, 0.009)
+equal(pendingFeed.epsilon, 0.0005, "unknown sensor precision must not irreversibly compress too loosely")
+pendingReading.precision, pendingReading.precisionKnown = 2, true
+pendingSample(20, 0.013)
+equal(pendingFeed.epsilon, 0.005)
+accuracy(pending, pendingFeed, { { 0, 0 }, { 10, 0.009 }, { 20, 0.013 } }, 0.005)
+
+local huge, hugeFeed, hugeSample = recorder({ precision = 3 })
+local hugeOriginals = {}
+for index = 0, 30 do
+    local number = index % 2 == 0 and 1e16 or -1e16
+    hugeSample(index * 10, number)
+    hugeOriginals[#hugeOriginals + 1] = { index * 10, number }
+end
+accuracy(huge, hugeFeed, hugeOriginals, 0.0005)
+equal(hugeFeed.count, 31, "when numerical margin consumes tolerance, retain exact native values")
+
+local integers, integerFeed, integerSample = recorder({ precision = 3 })
+integerSample(0, math.maxinteger)
+integerSample(10, math.maxinteger - 1)
+local _, integerValue = integers:point(integerFeed, integerFeed.first)
+equal(integerValue, math.maxinteger, "native integers must not be truncated through floating-point packing")
+_, integerValue = integers:point(integerFeed, integerFeed.last)
+equal(integerValue, math.maxinteger - 1)
+
+local extremes, extremesFeed, extremesSample = recorder({ precision = 3, smoothing = "medium" })
+extremesSample(0, 1e308)
+extremesSample(100, -1e308)
+local _, extremeValue = extremes:point(extremesFeed, extremesFeed.last)
+assert(extremeValue == extremeValue and math.abs(extremeValue) < math.huge, "EMA must not overflow finite endpoints")
 
 local failures, _, _, failurePoll, failureTelemetry = harness()
 failureTelemetry:observe({
@@ -134,3 +311,9 @@ equal(failureTelemetry.failed, nil, "an observer failure must not retire telemet
 failures.failure = "history observer failed"
 local ok, message = pcall(failures.update, failures, 10)
 assert(not ok and string.find(message, "history observer failed", 1, true))
+print(
+    string.format(
+        "  chart history: 6001 worst-case samples fit; %d bytes/knot on this runtime",
+        historyModule.BYTES_PER_POINT
+    )
+)

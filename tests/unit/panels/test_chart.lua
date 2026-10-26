@@ -147,7 +147,7 @@ equal(power.series[1].feed.value, 3)
 equal(power.series[1].feed.min, 3)
 equal(power.series[1].feed.max, 24)
 assert(power.series[1].runCount >= 2, "rearm must not connect separate recording segments")
-assert(power.series[1].runs[2].marker, "rearm boundary must be marked")
+assert(#power.series[1].markerKeys > 0, "rearm boundary must be marked")
 for _, size in ipairs({ { 320, 240 }, { 800, 480 }, { 480, 272 } }) do
     context.zone.w, context.zone.h = size[1], size[2]
     fixture.pump(context, 60)
@@ -258,6 +258,93 @@ equal(single.series[1].value.properties.font(), single.legendFont)
 equal(single.series[1].extrema.properties.font(), single.legendFont)
 fixture.radio.values[altitudeId] = altitude
 assert(fixture.lvglMock.replacedFontRefCount() == 0, "font resizing must reuse native callbacks")
+
+local function recordingPanel(id, range)
+    local entry, errorMessage = context.dashboardLoader.buildPanel(context, {
+        id = id,
+        type = "chart",
+        col = 0,
+        row = 0,
+        colSpan = 2,
+        rowSpan = 2,
+        config = {
+            timeRange = range,
+            duration = range == "rolling" and "30s" or "10m",
+            metrics = { { source = id, precision = 3, rangeMin = -100, rangeMax = 100 } },
+        },
+    })
+    assert(entry, errorMessage)
+    return entry.instance
+end
+
+local function finishDrawing(panel)
+    for _ = 1, 2000 do
+        chart.refresh(panel)
+        local item = panel.series[1]
+        if
+            not panel.pending
+            and item.drawnRevision == item.feed.plotRevision
+            and item.drawnVersion == panel.version
+        then
+            return
+        end
+    end
+    error("staged projection did not converge")
+end
+
+local dense = recordingPanel("dense-chart", "growing")
+local history = dense.history
+local now = getTime()
+local reading = { name = "dense-chart", fresh = true, kind = "number", precision = 3, unitText = "" }
+for index = 0, 6000 do
+    reading.value, reading.updatedAt = index % 2 == 0 and -100 or 100, now + index * 10
+    history:sample(reading, reading.updatedAt)
+end
+local denseItem = dense.series[1]
+equal(denseItem.feed.count, 6001)
+equal(denseItem.feed.full, false)
+equal(denseItem.feed.epsilon, 0.0005, "metric precision must reach the compressor")
+finishDrawing(dense)
+local run = denseItem.runs[1]
+assert(run.size <= 4 * (dense.area.w + 1), "dense histories must project to bounded screen-column points")
+local top, bottom = false, false
+for _, point in ipairs(run.pts) do
+    top, bottom = top or point[2] == dense.area.y, bottom or point[2] == dense.area.y + dense.area.h
+end
+assert(top and bottom, "display reduction must retain spikes in both directions")
+for index = 6001, 6144 do
+    reading.value, reading.updatedAt = index % 2 == 0 and -100 or 100, now + index * 10
+    history:sample(reading, reading.updatedAt)
+end
+equal(denseItem.feed.full, true)
+local frozenRevision = denseItem.feed.plotRevision
+reading.value, reading.updatedAt = 1000, reading.updatedAt + 10
+history:sample(reading, reading.updatedAt)
+equal(denseItem.feed.value, 1000)
+equal(denseItem.feed.max, 1000)
+equal(denseItem.feed.plotRevision, frozenRevision)
+chart.refresh(dense)
+chart.update(dense, { x = 0, y = 0, w = 472, h = 264 })
+finishDrawing(dense)
+equal(dense.status.properties.text, "HISTORY FULL")
+assert(denseItem.runs[1].line and not denseItem.runs[1].line.hidden, "full history must remain drawable after resize")
+history.failed = true
+chart.refresh(dense)
+equal(dense.status.properties.text, "HISTORY N/A", "full status must not mask service failure")
+history.failed = nil
+
+local clipped = recordingPanel("clipped-chart", "rolling")
+reading.name, now = "clipped-chart", reading.updatedAt + 10
+for index = 0, 60 do
+    reading.value, reading.updatedAt = index, now + index * 100
+    history:sample(reading, reading.updatedAt)
+end
+finishDrawing(clipped)
+local clippedRun = clipped.series[1].runs[1]
+local first = clippedRun.pts[1]
+equal(first[1], clipped.area.x, "rolling ramps must interpolate at the left boundary")
+local expectedY = clipped.area.y + math.floor((1 - (30 + 100) / 200) * clipped.area.h + 0.5)
+equal(first[2], expectedY, "window clipping must interpolate the retained bracketing segment")
 
 local empty = fixture.createLoaded(nil, { Layout = "Empty", Theme = "modern-dark" })
 local built, message = empty.dashboardLoader.buildPanel(empty, {

@@ -74,7 +74,7 @@ local history = context.serviceRuntime.byId.history
 assert(history.count == 24)
 for _, entry in ipairs(context.panels) do
     for _, series in ipairs(entry.instance.series) do
-        assert(series.feed.available and series.feed.count <= 32)
+        assert(series.feed.available and series.feed.count <= 6144)
         assert(series.runs[1] and series.runs[1].line)
     end
 end
@@ -98,8 +98,6 @@ for cycle = 1, 20 do
     collectgarbage("collect")
     assert(fixture.lvglMock.replacedFontRefCount() == 0)
 end
-local objects = #fixture.lvglMock.objects
-local memory = collectgarbage("count")
 for cycle = 1, 5 do
     for _ = 1, 60 do
         fixture.radio.values[300] = 1024
@@ -110,13 +108,58 @@ for cycle = 1, 5 do
     pump(150)
     fixture.lcdMock.clearTextMeasurements()
     collectgarbage("collect")
-    assert(#fixture.lvglMock.objects == objects, "chart line pools must be bounded")
-    assert(collectgarbage("count") - memory < 8, "chart retained memory grew after warmup")
+    for _, entry in ipairs(context.panels) do
+        for _, item in ipairs(entry.instance.series) do
+            assert(#item.runs <= 6144, "native trace fragments must be bounded by history capacity")
+            assert(#item.markerKeys <= entry.instance.rect.w + 1, "gap markers must be pooled by screen column")
+            for _, run in ipairs(item.runs) do
+                assert(#run.pool <= 4 * (entry.instance.rect.w + 1), "point pools must use screen-column reduction")
+            end
+        end
+    end
 end
-pump(1000)
+local settled = false
+local drain = 0
+for step = 1, 3000 do
+    settled = true
+    for _, entry in ipairs(context.panels) do
+        if entry.instance.pending then
+            settled = false
+        end
+        for _, item in ipairs(entry.instance.series) do
+            if item.drawnRevision ~= item.feed.plotRevision then
+                settled = false
+            end
+        end
+    end
+    if settled then
+        break
+    end
+    pump(1)
+    drain = step
+end
+assert(settled, "retained multi-flight histories must finish their staged redraws")
 for _, entry in ipairs(context.panels) do
     for _, item in ipairs(entry.instance.series) do
-        assert(item.drawnRevision == item.feed.revision and not entry.instance.pending, "a chart was starved")
+        assert(
+            item.drawnRevision == item.feed.plotRevision and not entry.instance.pending,
+            string.format(
+                "a chart was starved: revision %s/%s, pending %s, projected %s/%s, versions %s/%s, runs %d/%d, apply %s, markers %s/%s (%d)",
+                tostring(item.drawnRevision),
+                tostring(item.feed.plotRevision),
+                tostring(entry.instance.pending ~= nil),
+                tostring(item.job and item.job.index),
+                tostring(item.job and item.job.last),
+                tostring(item.drawnVersion),
+                tostring(entry.instance.version),
+                item.runCount or 0,
+                #item.runs,
+                tostring(item.applyIndex),
+                tostring(item.markerPhase),
+                tostring(item.markerIndex),
+                #item.markerKeys
+            )
+        )
     end
     entry.nextRefresh = math.huge
 end
@@ -132,4 +175,11 @@ assert(
     "dynamic intervals must schedule from this refresh"
 )
 first.module.refresh = refresh
-print(string.format("  chart recording: %d callbacks, 24 sources, worst %d instructions", callbacks, worst))
+print(
+    string.format(
+        "  chart recording: %d callbacks, 24 sources, worst %d instructions, drain %d callbacks",
+        callbacks,
+        worst,
+        drain
+    )
+)

@@ -338,7 +338,8 @@ def readiness(recipe):
                 or instance.pending then return end
             for _, item in ipairs(instance.series) do
                 if not item.feed.available or not item.runs[1] or not item.runs[1].line
-                    or item.drawnRevision == nil then return end
+                    or item.drawnRevision ~= item.feed.plotRevision
+                    or item.drawnVersion ~= instance.version then return end
             end
 """
     if recipe["panel"] == "output":

@@ -163,6 +163,7 @@ local function newEntry(name)
         unit = 0,
         unitText = "",
         precision = 0,
+        precisionKnown = false,
         updatedAt = nil,
         age = nil,
         revision = 0,
@@ -279,6 +280,7 @@ function telemetryService:resolve(entry, now)
         state.unit = 0
         state.unitText = ""
         state.kind = "number"
+        state.precisionKnown = true
     end
 
     return true
@@ -293,6 +295,7 @@ function telemetryService:scanPrecision(entry)
     local getSensor = self.env.getSensor
     if not getSensor then
         entry.scanIndex = nil
+        entry.state.precisionKnown = true
         return
     end
 
@@ -307,6 +310,7 @@ function telemetryService:scanPrecision(entry)
         if type(sensor) == "table" and sensor.name == entry.base then
             entry.state.precision = type(sensor.prec) == "number" and sensor.prec or 0
             entry.state.sensorIndex = index
+            entry.state.precisionKnown = true
             entry.scanIndex = nil
             return
         end
@@ -315,6 +319,7 @@ function telemetryService:scanPrecision(entry)
 
     -- Give up at the end of the table; precision stays at zero.
     entry.scanIndex = index < telemetryService.SENSOR_LIMIT and index or nil
+    entry.state.precisionKnown = entry.scanIndex == nil
 end
 
 --- Apply one poll result to a subscription.

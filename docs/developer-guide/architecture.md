@@ -102,7 +102,7 @@ does not consume scheduled work.
 | `control_service.lua` | Trims, final channel outputs and their trim associations, switch conditions, GV snapshots, and verified GV9 FM0 increments. |
 | `extrema_service.lua` | Sensor extrema and dashboard flight-session tracking. |
 | `navigation_service.lua` | GPS fix, pilot/home position, distance, and north-up bearing. |
-| `history_service.lua` | Bounded chart recordings, cumulative armed time, raw extrema, line-only smoothing, and deferred compaction. |
+| `history_service.lua` | Error-bounded chart recordings, cumulative armed time, raw extrema, line-only smoothing, and bounded rolling expiration. |
 | `services.lua` | Environment/snapshots, subscription registration, and bounded scheduling/update dispatch. |
 
 Snapshots are read-only views over service-owned state, mutated in place by
@@ -130,8 +130,27 @@ from telemetry polling and reported through normal service failure handling.
 History uses `session.armSource`, but deliberately does not use extrema's
 reset-on-arm lifecycle. It pauses on disarm and resumes the same recording;
 geometry reflow keeps it, while rebuilding the service runtime clears it.
-Each source/options subscription retains at most 32 first/min/max/last buckets.
-Compaction/pruning processes one subscription per scheduled update.
+Each source/options subscription stores at most 6,144 connected linear knots.
+A fixed-anchor slope corridor chooses synthesized shared endpoints within half
+a displayed precision step of every observed value (filtered values if EMA is
+enabled). Numerical margin is reserved before accepting a segment; when that
+margin consumes the tolerance, exact native values are retained. Unknown sensor
+precision uses the strictest supported tolerance until discovery completes.
+
+Knots use chunked `<I4n` / `<I4j` packing: cumulative armed ticks with gap/type
+bits and a lossless native Lua float or integer. Payload is 48 KiB per full recording on float32
+firmware, or 72 KiB on double-precision hosts, excluding string/table/index and
+rendering overhead. Matching source/options subscriptions share storage.
+Absolute `first`/`last` sequence IDs and scalar `history:point` reads avoid
+per-knot snapshot tables. Growing history freezes at capacity without relaxing
+accuracy; rolling expiration reuses ring slots while retaining an interpolation
+anchor. Raw readouts/extrema continue even when plot storage is full.
+
+Multilevel extrema/gap indexes accelerate projection only inside one pixel
+column; they never replace stored knots. Projection, native trace updates and
+gap-marker updates are staged with bounded work per callback. Geometry changes
+restart pending projection. Recorded gaps stay separate except when their
+endpoints coincide on screen; marker objects are pooled by pixel column.
 
 The `flight-counter` panel is deliberately stateful: it owns qualification
 and disarm-timeout transitions, requests verified count updates, and asks

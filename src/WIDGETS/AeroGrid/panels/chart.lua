@@ -87,6 +87,7 @@ local chart = {
 local DURATIONS = { ["30s"] = 30, ["1m"] = 60, ["2m"] = 120, ["5m"] = 300, ["10m"] = 600 }
 local COLORS = { "cyan", "green", "orange" }
 local LEGEND_FONTS = { XXLSIZE, DBLSIZE, MIDSIZE, 0, SMLSIZE }
+local PROJECTION_CAP = 8
 local textCache = setmetatable({}, { __mode = "k" })
 
 local function finite(value)
@@ -303,6 +304,7 @@ function chart.geometry(context, rect)
         end
     end
     context.version = context.version + 1
+    context.geometryVersion = (context.geometryVersion or 0) + 1
 end
 
 local function normalRange(low, high)
@@ -361,23 +363,19 @@ local function runFor(item, index)
         run = { pts = {}, pool = {}, size = 0, changes = {} }
         item.runs[index] = run
     end
-    run.size, run.rawAt, run.rawValue = 0, nil, nil
+    run.size, run.column = 0, nil
     return run
 end
 
-local function addPoint(context, item, run, at, value)
-    if run.rawAt == at and run.rawValue == value then
-        return
-    end
-    run.rawAt, run.rawValue = at, value
-    local area = context.area
-    local finish = context.start + context.window
-    if at < context.start or at > finish then
-        return
-    end
-    local x = area.x + math.floor((at - context.start) / context.window * area.w + 0.5)
-    local fraction = math.max(0, math.min(1, (value - item.low) / (item.high - item.low)))
+local function pixel(job, at, value)
+    local area = job.area
+    local x = area.x + math.floor((at - job.start) / job.window * area.w + 0.5)
+    local fraction = math.max(0, math.min(1, (value - job.low) / (job.high - job.low)))
     local y = area.y + math.floor((1 - fraction) * area.h + 0.5)
+    return x, y
+end
+
+local function appendPixel(run, x, y)
     local last = run.pts[run.size]
     if last and last[1] == x and last[2] == y then
         return
@@ -388,7 +386,47 @@ local function addPoint(context, item, run, at, value)
     point[1], point[2] = x, y
 end
 
+local function flushColumn(run)
+    local column = run.column
+    if column then
+        appendPixel(run, column.x, column.first)
+        if column.lowAt < column.highAt then
+            appendPixel(run, column.x, column.low)
+            appendPixel(run, column.x, column.high)
+        else
+            appendPixel(run, column.x, column.high)
+            appendPixel(run, column.x, column.low)
+        end
+        appendPixel(run, column.x, column.last)
+        run.column = nil
+    end
+end
+
+local function addPoint(job, run, at, value)
+    if at < job.start or at > job.start + job.window then
+        return
+    end
+    local x, y = pixel(job, at, value)
+    local column = run.column
+    if not column or column.x ~= x then
+        flushColumn(run)
+        column = run.columnPool or {}
+        run.columnPool, run.column = column, column
+        column.x, column.first, column.last = x, y, y
+        column.low, column.high, column.lowAt, column.highAt = y, y, at, at
+    else
+        if y < column.low then
+            column.low, column.lowAt = y, at
+        end
+        if y > column.high then
+            column.high, column.highAt = y, at
+        end
+        column.last = y
+    end
+end
+
 local function finishRun(run)
+    flushColumn(run)
     if run.size == 1 then
         local first = run.pts[1]
         local second = run.pool[2] or {}
@@ -401,81 +439,194 @@ local function finishRun(run)
 end
 
 local function prepare(context, item)
-    local runIndex = 1
-    local run = runFor(item, runIndex)
+    local run = runFor(item, 1)
     run.boundary = nil
-    local segment
     local feed = item.feed
-    for index = 1, feed and feed.count or 0 do
-        local point = context.history:point(feed, index)
-        if point and point.lastAt >= context.start then
-            if run.size > 0 and (point.breakBefore or point.segment ~= segment) then
-                finishRun(run)
-                runIndex = runIndex + 1
-                run = runFor(item, runIndex)
-                run.boundary = point.firstAt
+    local job = item.job or {}
+    item.job = job
+    job.index, job.last = feed.first, feed.last
+    job.tailAt, job.tailValue, job.tailBroken = context.history:point(feed, feed.last)
+    job.runIndex, job.previousAt, job.previousValue = 1, nil, nil
+    job.start, job.window, job.area = context.start, context.window, context.area
+    job.version, job.geometryVersion = context.version, context.geometryVersion
+    job.low, job.high, job.revision = item.low, item.high, feed.plotRevision
+    job.marked, job.markerColumns = {}, {}
+    job.projecting = true
+end
+
+local function projectPoint(job, item, at, value, broken)
+    local run = item.runs[job.runIndex]
+    if broken and job.previousAt then
+        local x, y = pixel(job, at, value)
+        local previousX, previousY = pixel(job, job.previousAt, job.previousValue)
+        local coincident = x == previousX and y == previousY and job.previousAt >= job.start
+        if at >= job.start and at <= job.start + job.window then
+            local column = x - job.area.x + 1
+            if not job.marked[column] then
+                job.marked[column] = true
+                job.markerColumns[#job.markerColumns + 1] = column
             end
-            segment = point.segment
-            addPoint(context, item, run, point.firstAt, point.first)
-            if point.lowAt <= point.highAt then
-                addPoint(context, item, run, point.lowAt, point.low)
-                addPoint(context, item, run, point.highAt, point.high)
+        end
+        -- Coincident endpoints add no connector pixels. Sharing their native
+        -- line avoids an object per arm cycle, while retaining every gap marker.
+        if not coincident and (run.size > 0 or run.column) then
+            finishRun(run)
+            job.runIndex = job.runIndex + 1
+            run = runFor(item, job.runIndex)
+        end
+        run.boundary = at
+        job.previousAt, job.previousValue = nil, nil
+    end
+    if job.previousAt and job.previousAt < job.start and at >= job.start then
+        local fraction = (job.start - job.previousAt) / (at - job.previousAt)
+        addPoint(job, run, job.start, job.previousValue * (1 - fraction) + value * fraction)
+    end
+    local finish = job.start + job.window
+    if job.previousAt and job.previousAt <= finish and at > finish then
+        local fraction = (finish - job.previousAt) / (at - job.previousAt)
+        addPoint(job, run, finish, job.previousValue * (1 - fraction) + value * fraction)
+    end
+    addPoint(job, run, at, value)
+    job.previousAt, job.previousValue = at, value
+end
+
+local function project(context, item)
+    local job, feed = item.job, item.feed
+    if job.geometryVersion ~= context.geometryVersion or job.index < feed.first then
+        prepare(context, item)
+    end
+    for _ = 1, PROJECTION_CAP do
+        if job.index > job.last then
+            finishRun(item.runs[job.runIndex])
+            item.runCount, item.applyIndex = job.runIndex, 1
+            item.markerIndex, item.markerPhase = 1, "hide"
+            item.drawnRevision, item.drawnVersion = job.revision, job.version
+            item.drawnLow, item.drawnHigh = job.low, job.high
+            job.projecting = false
+            return true
+        end
+        local index = job.index
+        local at, value, broken
+        if index == job.last then
+            at, value, broken = job.tailAt, job.tailValue, job.tailBroken
+        else
+            at, value, broken = context.history:point(feed, index)
+        end
+        local column = math.floor((at - job.start) / job.window * job.area.w + 0.5)
+        local before = job.start + (column + 0.5) * job.window / job.area.w
+        local last, firstExtreme, lastExtreme, interrupted = context.history:block(feed, index, job.last - 1, before)
+        projectPoint(job, item, at, value, broken)
+        if last and at >= job.start then
+            local firstAt, firstValue = context.history:point(feed, firstExtreme)
+            local lastAt, lastValue = context.history:point(feed, lastExtreme)
+            local _, firstY = pixel(job, firstAt, firstValue)
+            local _, lastY = pixel(job, lastAt, lastValue)
+            if not interrupted or firstY == lastY then
+                projectPoint(job, item, firstAt, firstValue, false)
+                projectPoint(job, item, lastAt, lastValue, false)
+                local endAt, endValue = context.history:point(feed, last)
+                projectPoint(job, item, endAt, endValue, interrupted)
+                job.index = last + 1
             else
-                addPoint(context, item, run, point.highAt, point.high)
-                addPoint(context, item, run, point.lowAt, point.low)
+                job.index = index + 1
             end
-            addPoint(context, item, run, point.lastAt, point.last)
+        else
+            job.index = index + 1
         end
     end
-    finishRun(run)
-    item.runCount, item.applyIndex = runIndex, 1
-    item.drawnRevision = feed and feed.revision or 0
-    item.drawnVersion, item.drawnLow, item.drawnHigh = context.version, item.low, item.high
+    return false
+end
+
+local function applyMarkers(context, item)
+    local job = item.job
+    local changes = 0
+    for _ = 1, 16 do
+        local keys = item.markerPhase == "hide" and item.markerKeys or job.markerColumns
+        local column = keys[item.markerIndex]
+        if not column then
+            if item.markerPhase == "show" then
+                return true
+            end
+            item.markerPhase, item.markerIndex = "show", 1
+        else
+            local marker = item.markers[column]
+            if item.markerPhase == "hide" then
+                if marker.active and not job.marked[column] then
+                    lvgl.hide(marker.object)
+                    marker.active = false
+                    changes = changes + 1
+                end
+            elseif not marker or marker.geometryVersion ~= job.geometryVersion then
+                local options = {
+                    x = job.area.x + column - 1,
+                    y = job.area.y,
+                    w = 1,
+                    h = job.area.h,
+                    color = context.theme.color.textFaint,
+                    dashGap = 3,
+                    dashWidth = 2,
+                }
+                if marker then
+                    marker.object:set(options)
+                    lvgl.show(marker.object)
+                else
+                    marker = { object = lvgl.vline(context.panel.root, options) }
+                    item.markers[column] = marker
+                    item.markerKeys[#item.markerKeys + 1] = column
+                end
+                marker.active, marker.geometryVersion = true, job.geometryVersion
+                changes = changes + 1
+            elseif not marker.active then
+                lvgl.show(marker.object)
+                marker.active = true
+                changes = changes + 1
+            end
+            item.markerIndex = item.markerIndex + 1
+        end
+        if changes == 4 then
+            break
+        end
+    end
+    return false
 end
 
 local function applyRuns(context, item)
-    local limit = math.min(math.max(item.runCount, #item.runs), item.applyIndex + 1)
-    for index = item.applyIndex, limit do
+    local limit = math.max(item.runCount, #item.runs)
+    local changes = 0
+    for _ = 1, 16 do
+        local index = item.applyIndex
+        if index > limit then
+            return applyMarkers(context, item)
+        end
         local run = item.runs[index]
         if index <= item.runCount and run.size >= 2 then
             if run.line then
                 run.changes.pts, run.changes.color = run.pts, item.color
                 run.line:set(run.changes)
-                lvgl.show(run.line)
+                if not run.visible then
+                    lvgl.show(run.line)
+                end
             else
                 run.line = lvgl.line(context.panel.root, { pts = run.pts, color = item.color, thickness = 2 })
             end
-            if run.boundary and run.boundary >= context.start then
-                local x = context.area.x + math.floor((run.boundary - context.start) / context.window * context.area.w)
-                local options = {
-                    x = x,
-                    y = context.area.y,
-                    w = 1,
-                    h = context.area.h,
-                    color = context.theme.color.textFaint,
-                    dashGap = 3,
-                    dashWidth = 2,
-                }
-                if run.marker then
-                    run.marker:set(options)
-                else
-                    run.marker = lvgl.vline(context.panel.root, options)
-                end
-                lvgl.show(run.marker)
-            elseif run.marker then
-                lvgl.hide(run.marker)
-            end
+            run.visible = true
+            changes = changes + 1
         else
-            if run.line then
+            if run.line and run.visible then
                 lvgl.hide(run.line)
-            end
-            if run.marker then
-                lvgl.hide(run.marker)
+                run.visible = false
+                changes = changes + 1
             end
         end
+        item.applyIndex = index + 1
+        if changes == 4 then
+            break
+        end
     end
-    item.applyIndex = limit + 1
-    return item.applyIndex > math.max(item.runCount, #item.runs)
+    if item.applyIndex > limit then
+        return applyMarkers(context, item)
+    end
+    return false
 end
 
 function chart.intervalFor(window, pixels, sources)
@@ -550,12 +701,18 @@ function chart.refresh(context)
     end
     text(context.axisEnd, endLabel, context.theme.color.textFaint)
     local status = ""
+    local full = false
+    for _, item in ipairs(context.series) do
+        full = full or item.feed and item.feed.full
+    end
     if not context.history or context.history.failed then
         status = "HISTORY N/A"
     elseif not session.configured then
         status = "SET ARM SOURCE"
     elseif #context.series == 0 then
         status = "ADD METRICS"
+    elseif full then
+        status = "HISTORY FULL"
     elseif not session.available then
         status = "ARM N/A"
     else
@@ -568,14 +725,21 @@ function chart.refresh(context)
         end
     end
     text(context.status, status, context.theme.color.textFaint)
-    if status ~= "" then
+    if status ~= "" and status ~= "HISTORY FULL" then
         return 20
     end
     if reflowed then
         return 5
     end
     if context.pending then
-        if applyRuns(context, context.pending) then
+        local item = context.pending
+        if item.job.geometryVersion ~= context.geometryVersion then
+            prepare(context, item)
+        end
+        if item.job.projecting and not project(context, item) then
+            return 5
+        end
+        if applyRuns(context, item) then
             context.pending = nil
         end
         return 5
@@ -585,12 +749,12 @@ function chart.refresh(context)
         local item = context.series[index]
         if
             item.drawnVersion ~= context.version
-            or item.drawnRevision ~= item.feed.revision
+            or item.drawnRevision ~= item.feed.plotRevision
             or item.drawnLow ~= item.low
             or item.drawnHigh ~= item.high
         then
             prepare(context, item)
-            if not applyRuns(context, item) then
+            if not project(context, item) or not applyRuns(context, item) then
                 context.pending = item
             end
             context.cursor = index % #context.series + 1
@@ -620,12 +784,20 @@ function chart.create(parent, rect, settings, services)
     context.session = context.history and context.history:session(services.session and services.session.armSource)
     for index, entry in ipairs(settings.metrics) do
         local color = context.theme.color[entry.accent or COLORS[index]]
-        local item = { settings = entry, color = color, runs = {}, caption = string.upper(caption(entry)) }
+        local item = {
+            settings = entry,
+            color = color,
+            runs = {},
+            markers = {},
+            markerKeys = {},
+            caption = string.upper(caption(entry)),
+        }
         if context.history then
             item.feed = context.history:subscribe(entry.source, {
                 windowSeconds = DURATIONS[settings.duration] or 30,
                 timeRange = settings.timeRange or "growing",
                 smoothing = settings.smoothing or "off",
+                precision = entry.precision,
             })
         end
         item.name, item.value, item.extrema =

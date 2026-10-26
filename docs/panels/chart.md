@@ -56,10 +56,28 @@ The axis labels show cumulative armed time.
 
 Sources share firmware polling with other panels. Raw extrema are collected at
 each successful poll, even when the chart redraws less often. Drawing frequency
-adapts to the horizontal time resolution. Bounded display buckets retain first,
-last, minimum, and maximum points; long recordings are progressively coarsened,
-not stored as a full-resolution log. Old interruptions may lose plot detail
-during compaction, but the service never joins across a known gap.
+adapts to the horizontal time resolution. Connected linear segments compress
+every observed sample with a maximum vertical error of **half a displayed step**:
+for example, precision 1 allows ±0.05 in the source's native units. The metric's
+**Precision** override determines this tolerance; **Sensor** uses sensor precision.
+When smoothing is enabled, the bound applies to the filtered line, not raw
+readings. Raw readouts and extrema remain uncompressed. This is a streaming
+bounded-error approximation, not a globally minimum-size encoding.
+
+Each distinct source/options recording holds up to **6,144 knots**, enough for
+at least **10 minutes at 10 samples/second** without compression savings.
+Smoother signals can fit much longer. Growing mode never recompresses older data
+at a looser tolerance. If storage fills, **HISTORY FULL** appears: existing plot
+history is preserved and new plot samples stop, while armed readouts and raw
+extrema continue updating. Other non-full series keep recording. Rolling mode
+reuses storage after old knots leave its window; it retains a boundary knot for
+interpolation.
+
+Redraws are staged across callbacks. Within a single screen pixel column the
+renderer retains endpoints and extrema, so multiple recorded samples can
+contribute even when they share a horizontal pixel. Stored history is unchanged
+by this display-only reduction. Gaps remain broken and marked; pixel-coincident
+gaps share a marker.
 
 All series occupy **one plot**, not separate mini-charts. Use multiple panels for
 separate charts. Supported spans are 2x1, 3x1, 4x1, 2x2, 3x2, 4x2, 3x3, 4x3,
@@ -96,3 +114,4 @@ An actual fresh numeric zero remains valid.
 | **WAITING FOR ARM** | No samples have been recorded yet. |
 | **NO DATA** | Armed, but no configured source has supplied a valid numeric sample. |
 | **HISTORY N/A** | The history service is missing or has failed; consult diagnostics. |
+| **HISTORY FULL** | At least one series has stopped adding plot samples to preserve its existing recording. Raw readouts and extrema still update while armed. |
