@@ -10,12 +10,12 @@ with its recorded minimum and maximum on the next line.
 Traces use a one-pixel line. Each label, value, and unit forms a compact,
 right-aligned row, with a small gap after the label and the unit directly beside
 the value.
-The legend starts just below the plot's top when space permits; short panels
-keep the groups within the panel. Each extrema row keeps the minimum and
+The legend starts at the title's top inset, even when the title is blank,
+independently of the plot's top. Each extrema row keeps the minimum and
 maximum together with a small fixed gap, aligned to the same right edge as the
 main reading.
 Metric groups prefer a gap equal to one min/max text-line height. The gap
-shrinks to fit below the plot top before moving the legend upward in tight panels.
+shrinks to fit the remaining panel height without moving the first metric.
 
 ## Settings
 
@@ -65,8 +65,9 @@ Faint solid vertical lines mark whole minutes of cumulative armed time. Longer
 or narrower views use 2/5/10-minute steps and larger equivalents to avoid
 crowding. These gridlines are distinct from the brighter dashed interruption
 markers. A small indicator such as **30s** or **2m** shows the visible duration
-inside the plot's bottom-right corner, replacing the bottom axis labels without
-reserving a separate row.
+at the plot's bottom-right edge, replacing the bottom axis labels without
+reserving a separate row. Its text baseline sits at the panel bottom, never
+above the final legend row.
 
 Sources share firmware polling with other panels. Raw extrema are collected at
 each successful poll, even when the chart redraws less often. Drawing frequency

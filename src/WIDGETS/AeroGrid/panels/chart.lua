@@ -276,13 +276,14 @@ local function updateHeader(context)
     end
     local width = math.min(builder.measureText(TINSIZE, duration), area.w)
     local x = area.x + area.w - width
-    local y = math.max(area.y, area.y + area.h - builder.fontHeight(TINSIZE) - 1)
-    local left, top = math.max(area.x, x - 2), math.max(area.y, y - 1)
+    local baseline = math.max(context.rect.h - 2, context.legendBaseline or 0)
+    local y = math.max(0, baseline - builder.fontAscent(TINSIZE))
+    local left, top = math.max(area.x, x - 2), math.max(0, y - 1)
     context.durationBackground:set({
         x = left,
         y = top,
         w = area.x + area.w - left,
-        h = area.y + area.h - top,
+        h = context.rect.h - top,
     })
     lvgl.show(context.durationBackground)
     context.duration:set({ x = x, y = y, w = width })
@@ -395,8 +396,10 @@ function chart.geometry(context, rect)
     local frame = builder.frame(context.theme, rect, fonts)
     local content = frame.content
     local count = #context.series
+    local first = frame.labelY
+    local available = math.max(1, rect.h - first)
     -- Preserve extrema whenever they fit at the readability floor.
-    local showExtrema = rect.h >= count * (builder.fontHeight(SMLSIZE) + builder.fontAscent(TINSIZE)) + 2
+    local showExtrema = available >= count * (builder.fontHeight(SMLSIZE) + builder.fontAscent(TINSIZE))
     local fontLimit = math.max(builder.fontHeight(SMLSIZE), math.floor(rect.h / math.max(6, count * 3)))
     local font, required
     -- Readout growth can step down the font; resizing restarts the ladder.
@@ -404,7 +407,7 @@ function chart.geometry(context, rect)
         local candidate = LEGEND_FONTS[index]
         local rowHeight = builder.fontHeight(candidate)
             + (showExtrema and builder.fontAscent(extremaFont(candidate)) or 0)
-        if builder.fontHeight(candidate) <= fontLimit and count * rowHeight + 2 <= rect.h or candidate == SMLSIZE then
+        if builder.fontHeight(candidate) <= fontLimit and count * rowHeight <= available or candidate == SMLSIZE then
             local width = legendWidth(context, candidate, showExtrema)
             if candidate == context.legendFont then
                 width = math.max(width, context.legendWidth or 0)
@@ -448,8 +451,7 @@ function chart.geometry(context, rect)
     local pairHeight = lineHeight + builder.fontAscent(context.extremaFont)
     context.showExtrema = showExtrema
     local rowHeight = showExtrema and pairHeight or lineHeight
-    local available = math.max(1, rect.h - 2)
-    local spare = available - (area.y + 2) - count * rowHeight
+    local spare = available - 2 - count * rowHeight
     local groupGap = count > 1
             and math.max(0, math.min(builder.fontHeight(context.extremaFont), math.floor(spare / (count - 1))))
         or 0
@@ -457,8 +459,11 @@ function chart.geometry(context, rect)
     if count * rowHeight > available then
         step = math.floor(available / math.max(1, count))
     end
-    local used = count > 0 and (count - 1) * step + rowHeight or 0
-    local first = math.max(0, math.min(area.y + 2, rect.h - used - 2))
+    context.legendBaseline = count > 0
+            and first
+                + (count - 1) * step
+                + (showExtrema and lineHeight + builder.fontAscent(context.extremaFont) or builder.fontAscent(font))
+        or 0
     for index, item in ipairs(context.series) do
         local y = first + (index - 1) * step
         local name = builder.fitHeading(item.caption, nameWidth, font, font)

@@ -125,10 +125,19 @@ local function checkDurationCorner(panel)
     local properties, area = panel.duration.properties, panel.area
     equal(properties.x + properties.w, area.x + area.w, "duration must align with the plot's right edge")
     equal(
-        properties.y + panel.themeBuilder.fontHeight(TINSIZE),
-        area.y + area.h - 1,
-        "duration must sit inside the plot's bottom edge"
+        properties.y + panel.themeBuilder.fontAscent(TINSIZE),
+        math.max(panel.rect.h - 2, panel.legendBaseline),
+        "duration must use the panel's bottom text baseline or the last legend row, whichever is lower"
     )
+    for _, item in ipairs(panel.series) do
+        local y = panel.showExtrema and item.extrema.properties.y or item.value.properties.y
+        local font = panel.showExtrema and panel.extremaFont or panel.legendFont
+        assert(
+            properties.y + panel.themeBuilder.fontAscent(TINSIZE) >= y + panel.themeBuilder.fontAscent(font),
+            "duration must never sit higher than a legend row"
+        )
+    end
+    assert(panel.durationBackground.properties.h > 0, "duration background must cover its lowered position")
     assert(not panel.durationBackground.hidden, "duration needs a readable plot-corner background")
 end
 checkDurationCorner(power)
@@ -213,6 +222,7 @@ local function alignedReadouts(panel)
     end
 end
 local function separatedReadouts(panel)
+    checkDurationCorner(panel)
     local count = #panel.series
     if count == 0 then
         return
@@ -221,19 +231,18 @@ local function separatedReadouts(panel)
     local height = builder.fontHeight(panel.legendFont)
         + (panel.showExtrema and builder.fontAscent(panel.extremaFont) or 0)
     local first = panel.series[1].name.properties.y
-    local used = panel.series[count].name.properties.y - first + height
     equal(
         first,
-        math.max(0, math.min(panel.area.y + 2, panel.rect.h - used - 2)),
-        "legend must follow the plot top while keeping tight groups inside the panel"
+        panel.area.frame.labelY,
+        "legend must stay at the title's top inset independently of the plot"
     )
     if count < 2 then
         return
     end
-    if count * height > panel.rect.h - 2 then
+    if count * height > panel.rect.h - first then
         return
     end
-    local spare = panel.rect.h - 2 - (panel.area.y + 2) - count * height
+    local spare = panel.rect.h - first - 2 - count * height
     local expected = math.max(0, math.min(builder.fontHeight(panel.extremaFont), math.floor(spare / (count - 1))))
     for index = 2, count do
         equal(
@@ -410,7 +419,23 @@ multiple.settings.label = "Recorded"
 chart.update(multiple, multiple.rect)
 separatedReadouts(multiple)
 equal(metricGap(multiple), 12, "standard titled charts must retain the preferred gap when it fits")
-equal(multiple.series[1].name.properties.y, multiple.area.y + 2, "larger gaps must not push the legend above the plot")
+equal(
+    multiple.series[1].name.properties.y,
+    multiple.area.frame.labelY,
+    "explicit titles must share their top inset with the first metric"
+)
+local compact = typographyPanel(2)
+compact.settings.label = "Power"
+chart.update(compact, { x = 0, y = 0, w = 232, h = 64 })
+separatedReadouts(compact)
+assert(compact.showExtrema, "short two-metric charts must retain their extrema")
+equal(compact.series[1].name.properties.y, 2, "short legends must start at the title inset")
+equal(metricGap(compact), 8, "using the title row must free space between compact metric groups")
+local compactTop, compactPlotTop = compact.series[1].name.properties.y, compact.area.y
+compact.settings.label = ""
+chart.update(compact, compact.rect)
+equal(compact.series[1].name.properties.y, compactTop, "hiding the title must not move the legend")
+assert(compact.area.y < compactPlotTop, "only the plot must reclaim the title row")
 chart.update(multiple, { x = 0, y = 0, w = 472, h = 264 })
 separatedReadouts(multiple)
 equal(
