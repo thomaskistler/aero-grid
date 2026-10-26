@@ -321,7 +321,7 @@ local function positionExtrema(context, item, y)
     local minimumWidth = math.min(budget, builder.measureText(font, item.minimumText or "--"))
     local maximumWidth = math.min(available - budget, builder.measureText(font, item.maximumText or "--"))
     local groupWidth = minimumWidth + maximumWidth + 2 * size + 14
-    local left = area.legendX + math.floor((area.legendW - groupWidth) / 2)
+    local left = area.legendX + area.legendW - groupWidth
     local minimumX = left + size + 3
     local maximumX = minimumX + minimumWidth + 8 + size + 3
     local height = math.max(3, math.floor(size * 2 / 3))
@@ -359,20 +359,30 @@ local function readingWidths(context, font)
 end
 
 local function positionReading(context, item, y)
-    local area = context.area
-    local finish = area.legendX + area.legendW - context.unitWidth - (context.unitWidth > 0 and 3 or 0)
-    local width =
-        math.min(context.valueWidth, context.themeBuilder.measureText(context.legendFont, item.valueText or "--"))
+    local area, builder, font = context.area, context.themeBuilder, context.legendFont
+    local unitWidth = math.min(context.unitWidth, builder.measureText(font, item.unitText or ""))
+    local finish = area.legendX + area.legendW - unitWidth
+    local width = math.min(context.valueWidth, builder.measureText(font, item.valueText or "--"))
     local x = finish - width
+    local nameWidth = math.min(math.max(0, x - area.legendX - 4), builder.measureText(font, item.nameText or ""))
+    local nameX = x - 4 - nameWidth
     if item.valueX ~= x or item.valueY ~= y or item.valueWidth ~= width then
         item.value:set({ x = x, y = y, w = width })
         item.valueX, item.valueY, item.valueWidth = x, y, width
+    end
+    if item.unitX ~= finish or item.unitY ~= y or item.unitWidth ~= unitWidth then
+        item.unit:set({ x = finish, y = y, w = unitWidth })
+        item.unitX, item.unitY, item.unitWidth = finish, y, unitWidth
+    end
+    if item.nameX ~= nameX or item.nameY ~= y or item.nameWidth ~= nameWidth then
+        item.name:set({ x = nameX, y = y, w = nameWidth })
+        item.nameX, item.nameY, item.nameWidth = nameX, y, nameWidth
     end
 end
 
 local function legendWidth(context, font, showExtrema)
     local value, unit, name = readingWidths(context, font)
-    local width = math.max(64, value + unit + (unit > 0 and 3 or 0) + name + 3)
+    local width = math.max(64, value + unit + name + 4)
     for _, item in ipairs(context.series) do
         width = math.max(width, showExtrema and extremaWidth(context, item, extremaFont(font)) or 0)
     end
@@ -411,10 +421,8 @@ function chart.geometry(context, rect)
     local valueWidth, unitWidth = readingWidths(context, font)
     context.requiredValueWidth, context.requiredUnitWidth = valueWidth, unitWidth
     context.unitWidth = math.min(unitWidth, math.max(0, legend - 27))
-    context.valueWidth =
-        math.min(valueWidth, math.max(0, legend - context.unitWidth - (context.unitWidth > 0 and 3 or 0) - 3))
-    local nameWidth =
-        math.max(0, legend - context.valueWidth - context.unitWidth - (context.unitWidth > 0 and 3 or 0) - 3)
+    context.valueWidth = math.min(valueWidth, math.max(0, legend - context.unitWidth - 4))
+    local nameWidth = math.max(0, legend - context.valueWidth - context.unitWidth - 4)
     local gap = 6
     local width = math.max(1, content - legend - gap)
     local top = frame.labelY + (heading(context) ~= "" and builder.fontHeight(SMLSIZE) + 2 or 0)
@@ -457,9 +465,9 @@ function chart.geometry(context, rect)
         context.primitives.setFont(item.unit, font)
         context.primitives.setFont(item.extrema, context.extremaFont)
         context.primitives.setFont(item.maximum, context.extremaFont)
-        item.name:set({ x = area.legendX, y = y, w = nameWidth, text = name })
+        item.nameText = name
+        item.name:set({ text = name })
         positionReading(context, item, y)
-        item.unit:set({ x = area.legendX + legend - context.unitWidth, y = y, w = context.unitWidth })
         positionExtrema(context, item, y + lineHeight)
         if showExtrema then
             lvgl.show(item.extrema)
@@ -823,7 +831,7 @@ function chart.render(context)
         end
         local value = chart.format(feed and feed.value, precision)
         item.valueText, item.unitText = value, value ~= "--" and unit or ""
-        item.readout = value .. (item.unitText ~= "" and (" " .. item.unitText) or "")
+        item.readout = value .. item.unitText
         local minimumText = chart.format(feed and feed.min, precision)
         local maximumText = chart.format(feed and feed.max, precision)
         if item.minimumText ~= minimumText or item.maximumText ~= maximumText then
@@ -840,7 +848,7 @@ function chart.render(context)
         end
     end
     local valueWidth, unitWidth, nameWidth = readingWidths(context, font)
-    width = math.max(width, valueWidth + unitWidth + (unitWidth > 0 and 3 or 0) + nameWidth + 3)
+    width = math.max(width, valueWidth + unitWidth + nameWidth + 4)
     if
         width > (context.legendWidth or 0)
         or valueWidth > context.requiredValueWidth

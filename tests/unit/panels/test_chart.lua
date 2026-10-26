@@ -147,15 +147,30 @@ assert(power.series[2].runs[1].line)
 equal(power.series[1].runs[1].line.properties.thickness, 1)
 equal(power.series[2].runs[1].line.properties.thickness, 1)
 local function alignedReadouts(panel)
-    local first = panel.series[1]
     for _, item in ipairs(panel.series) do
         equal(
             item.value.properties.x + item.value.properties.w,
-            first.value.properties.x + first.value.properties.w,
-            "numeric readings must share a right edge independently of units"
+            item.unit.properties.x,
+            "units must sit directly beside their value"
         )
-        equal(item.unit.properties.x, first.unit.properties.x, "units must share their own column")
-        equal(item.name.properties.w, first.name.properties.w, "captions must share their own column")
+        equal(
+            item.unit.properties.x + item.unit.properties.w,
+            panel.area.legendX + panel.area.legendW,
+            "each complete main reading must end at the legend's right edge"
+        )
+        equal(
+            item.name.properties.x + item.name.properties.w + 4,
+            item.value.properties.x,
+            "captions must sit a fixed distance before their value"
+        )
+        equal(
+            item.name.properties.w,
+            math.min(
+                math.max(0, item.value.properties.x - panel.area.legendX - 4),
+                panel.themeBuilder.measureText(panel.legendFont, item.nameText)
+            ),
+            "captions must hug their text instead of stretching across the legend"
+        )
         equal(item.unit.properties.y, item.value.properties.y, "numbers and units must share a baseline")
         local size = math.max(4, math.floor(panel.themeBuilder.fontHeight(panel.extremaFont) / 3))
         local available = math.max(0, panel.area.legendW - 2 * size - 14)
@@ -178,9 +193,9 @@ local function alignedReadouts(panel)
         local left = item.minSymbol.properties.pts[1][1]
         local right = item.maximum.properties.x + item.maximum.properties.w
         equal(
-            left,
-            panel.area.legendX + math.floor((panel.area.legendW - (right - left)) / 2),
-            "the complete extrema pair must be centered beneath the label and value"
+            right,
+            panel.area.legendX + panel.area.legendW,
+            "the compact extrema pair must share the main reading's right edge"
         )
         equal(item.extrema.properties.x, left + size + 3, "minimum arrow must stay beside its value")
         equal(
@@ -307,6 +322,29 @@ equal(power.series[1].value.properties.text, "6.1")
 equal(power.series[2].value.properties.text, "2.0")
 equal(power.series[1].unit.properties.text, "V")
 equal(power.series[2].unit.properties.text, "A")
+alignedReadouts(power)
+
+local reading = power.series[1]
+local originalUnit, originalFeed = reading.settings.unit, reading.feed
+reading.feed = {
+    value = originalFeed.value,
+    min = originalFeed.min,
+    max = originalFeed.max,
+    precision = originalFeed.precision,
+    unitText = originalFeed.unitText,
+}
+reading.settings.unit = "mAh"
+for _, value in ipairs({ -1234.5, 9.9, 10, 1 }) do
+    reading.feed.value = value
+    chart.render(power)
+    alignedReadouts(power)
+end
+reading.feed.value = nil
+chart.render(power)
+equal(reading.unit.properties.w, 0, "missing readings must not leave an empty unit column")
+alignedReadouts(power)
+reading.settings.unit, reading.feed = originalUnit, originalFeed
+chart.render(power)
 alignedReadouts(power)
 
 local function typographyPanel(count)
