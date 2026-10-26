@@ -15,6 +15,7 @@ Use separate panels for separate charts.
 | Setting | Default | What it does |
 | --- | --- | --- |
 | **Label** | empty | Optional chart heading. Clear it to hide the heading. |
+| **Armed switch position** | none | Physical switch position such as **SA^** or **SFv**, or logical switch **L01**, that means armed. Recording is disabled until selected. |
 | **Metrics** | none | Up to three readings. Tap **+** to add one, or tap an entry to edit it. |
 | **Time range** | growing | **growing** keeps the recording from the start; **rolling** shows the latest fixed window. |
 | **Window duration** | 1 minute | **30 seconds**, **1 minute**, **2 minutes**, **5 minutes**, or **10 minutes**. Shown only when **Time range** is **rolling**. |
@@ -40,9 +41,10 @@ Tap a reading under **Metrics** to open its settings.
 
 ## Behavior
 
-Recording starts when armed, pauses when disarmed, and resumes the same
-recording on rearm. Disarmed time takes no horizontal space. Dashed markers
-and breaks in the line mark disarm/rearm boundaries and missing telemetry.
+Recording starts when **Armed switch position** is active, pauses when it is
+inactive, and resumes the same recording on rearm. Disarmed time takes no
+horizontal space. Dashed markers and breaks in the line mark disarm/rearm
+boundaries and missing telemetry.
 Readouts freeze while disarmed. Minimum and maximum cover all recorded armed
 periods, even in rolling mode.
 
@@ -78,8 +80,8 @@ There is no separate reset control.
 
 | Message | Meaning |
 | --- | --- |
-| **SET ARM SOURCE** | Set `session.armSource` in YAML; recording is disabled without it. |
-| **ARM N/A** | The configured arm source is unavailable; recording is paused. |
+| **SET ARM SOURCE** | Select **Armed switch position** in the panel settings; recording is disabled without it. |
+| **ARM N/A** | The selected armed switch condition is unavailable; recording is paused. |
 | **ADD METRICS** | Add a source in the panel settings. |
 | **WAITING FOR ARM** | No samples have been recorded yet. |
 | **NO DATA** | Armed, but no configured source has supplied a valid numeric sample. |

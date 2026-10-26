@@ -127,8 +127,10 @@ Chart history observes completed telemetry polls rather than reading changed
 revisions during redraw: unchanged numeric samples still occupy armed time,
 and raw spikes must not be lost between frames. Observer failures are isolated
 from telemetry polling and reported through normal service failure handling.
-History uses `session.armSource`, but deliberately does not use extrema's
-reset-on-arm lifecycle. It pauses on disarm and resumes the same recording;
+History tracks each Chart panel's `armSwitch` through the control service,
+independently of extrema's `session.armSource` and reset-on-arm lifecycle.
+Each armed-switch configuration has its own cumulative session.
+It pauses on disarm and resumes the same recording;
 geometry reflow keeps it, while rebuilding the service runtime clears it.
 Each source/options subscription stores at most 6,144 connected linear knots.
 A fixed-anchor slope corridor chooses synthesized shared endpoints within half
@@ -140,7 +142,7 @@ precision uses the strictest supported tolerance until discovery completes.
 Knots use chunked `<I4n` / `<I4j` packing: cumulative armed ticks with gap/type
 bits and a lossless native Lua float or integer. Payload is 48 KiB per full recording on float32
 firmware, or 72 KiB on double-precision hosts, excluding string/table/index and
-rendering overhead. Matching source/options subscriptions share storage.
+rendering overhead. Matching armed-switch/source/options subscriptions share storage.
 Absolute `first`/`last` sequence IDs and scalar `history:point` reads avoid
 per-knot snapshot tables. Growing history freezes at capacity without relaxing
 accuracy; rolling expiration reuses ring slots while retaining an interpolation

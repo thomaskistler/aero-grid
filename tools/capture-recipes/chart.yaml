@@ -9,6 +9,7 @@ panels:
   2x2: {col: 0, row: 1, colSpan: 2, rowSpan: 2}
 config:
   label: TEMPERATURE
+  armSwitch: SFv
   duration: 30s
   metrics:
     - source: ESC

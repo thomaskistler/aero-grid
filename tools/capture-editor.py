@@ -16,7 +16,7 @@ SCENES = ("overview", "settings", "state-settings", "state-entry", "state-condit
 # Configuration drawers captured as full-height images rather than one screen.
 # Settings drawers of the remaining panels, one per panel page.
 PANEL_DRAWER_CONFIG = {
-    "chart": {"label": "CHART", "timeRange": "rolling",
+    "chart": {"label": "CHART", "armSwitch": "SFv", "timeRange": "rolling",
               "metrics": [{"source": "gvar1", "label": "Reading"}]},
     "host-diagnostics": {"label": "Host", "section": "identity"},
     "service-probe": {"service": "telemetry", "source": "RxBt", "label": "Probe"},

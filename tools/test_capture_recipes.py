@@ -47,6 +47,9 @@ class CaptureRecipeTests(unittest.TestCase):
                 layout = yaml.safe_load((widget / "layouts/capture-panels.yaml").read_text())
                 self.assertEqual(len(layout["panels"]), len(recipe["panels"]))
                 self.assertTrue(all(entry["type"] == recipe["panel"] for entry in layout["panels"]))
+                if recipe["panel"] == "chart":
+                    self.assertNotIn("session", layout)
+                    self.assertTrue(all(entry["config"]["armSwitch"] == "SFv" for entry in layout["panels"]))
                 self.assertTrue((widget / "panels" / f"{recipe['panel']}.lua").is_file())
                 self.assertTrue((widget / "lib/panel_host.lua").is_file())
                 self.assertIn("ipairs(context.panels)", (widget / "main.lua").read_text())
@@ -97,6 +100,8 @@ class CaptureRecipeTests(unittest.TestCase):
                 self.assertEqual(panel["type"], "chart")
                 self.assertEqual(panel["config"], capture.PANEL_DRAWER_CONFIG["chart"])
                 self.assertEqual(panel["config"]["timeRange"], "rolling")
+                self.assertEqual(panel["config"]["armSwitch"], "SFv")
+                self.assertNotIn("session", layout)
                 self.assertEqual(panel["config"]["metrics"][0]["source"], "gvar1")
                 main = (widget / "main.lua").read_text()
                 self.assertIn(f'local scene = "{scene}"', main)
@@ -162,9 +167,18 @@ class CaptureRecipeTests(unittest.TestCase):
         recipe = load_recipe(RECIPE_DIR / "chart.yaml")
         self.assertEqual(yaml.safe_load(config_yaml(recipe["config"])), recipe["config"])
         inputs = fixture_inputs(recipe)
-        self.assertIn('name == "capture-arm"', inputs)
+        self.assertEqual(recipe["config"]["armSwitch"], "SFv")
+        self.assertIn('getSwitchIndex("SF" .. CHAR_DOWN)', inputs)
+        self.assertIn("getSwitchValue = function(index)", inputs)
+        self.assertNotIn("capture-arm", inputs)
         self.assertIn("elapsed >= 1100 and elapsed < 2200", inputs)
         self.assertIn("math.sin", inputs)
+        for arm_switch in ("", "SA^", "L01"):
+            with self.subTest(armSwitch=arm_switch):
+                invalid = copy.deepcopy(recipe)
+                invalid["config"]["armSwitch"] = arm_switch
+                with self.assertRaisesRegex(ValueError, "requires SFv armSwitch"):
+                    self.load(invalid)
         recipe["config"]["metrics"][0]["source"] = "Missing"
         with self.assertRaisesRegex(ValueError, "Missing sample"):
             self.load(recipe)

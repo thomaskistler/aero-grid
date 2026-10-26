@@ -45,9 +45,9 @@ Panel IDs and types are case-sensitive. Unknown top-level keys and extra placeme
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `armSource` | string | unset | Readable numeric EdgeTX source, such as `sa` or `ch5`, marking the model armed. Positive means armed; non-positive means disarmed. Flight-session extrema use this when a panel selects **Minimum tracked: flight**. Chart uses the same source but resumes its recording instead of resetting on arm. If omitted or blank, extrema maintain an open-ended session, but Chart does not record. |
+| `armSource` | string | unset | Readable numeric EdgeTX source, such as `sa` or `ch5`, marking the model armed. Positive means armed; non-positive means disarmed. Flight-session extrema use this when a panel selects **Minimum tracked: flight**. If omitted or blank, extrema maintain an open-ended session. |
 
-The first panel that requests the shared flight-session service configures its source; later requests do not replace it. Keep the arm source in this one layout-level location rather than attempting to set different sources on individual panels. `session.armSource` is separate from panel settings such as a flight counter's armed switch or Navigation's home arm switch.
+The first panel that requests the shared flight-session service configures its source; later requests do not replace it. Keep the extrema arm source in this one layout-level location. `session.armSource` is separate from panel settings such as Chart's or Flight counter's armed switch and Navigation's home arm switch.
 
 ## Validation and errors
 
@@ -86,6 +86,7 @@ It supports 2x1, 3x1, 4x1, 2x2, 3x2, 4x2, 3x3, 4x3, and 4x4.
 | Key | Values and defaults |
 | --- | --- |
 | `label` | Optional title; omitted or empty hides the title and reclaims header space for the plot. |
+| `armSwitch` | Blank by default, disabling recording. Physical switch position such as `SA^`, `SA-`, or `SFv`, or logical switch such as `L01`. The **Armed switch position** picker sets this on the radio. |
 | `metrics` | Contiguous list of zero to three numeric sources. Empty is valid for editor setup. |
 | `source`, `unit`, `precision` | Per-metric source name, optional unit override, and integer precision 0–3 (default sensor precision). |
 | `accent` | Per-metric trace color or panel stripe: cyan, green, orange, amber. Traces default to cyan, orange, green in order. Modern Light renders the cyan trace with blue ink. |
@@ -102,8 +103,9 @@ Automatic bounds use raw lifetime recorded extrema with padding and rounding.
 For example, `rangeMin: 0` with no `rangeMax` anchors the bottom at zero and
 automatically adjusts the top; omit both keys for a fully automatic range.
 
-Set dashboard-level `session.armSource` to a readable numeric source (positive
-means armed). Recording pauses on disarm, freezes the readouts, and resumes the
+Set the panel's `armSwitch` to the physical or logical condition that means
+armed. It is independent of layout-level `session.armSource`. Recording pauses
+when that condition becomes inactive, freezes the readouts, and resumes the
 same history on rearm. The horizontal axis counts cumulative armed time; resumed
 segments are broken and marked. Growing starts at one minute and expands to
 the next whole minute when exceeded; its duration is not configurable. Rolling
@@ -115,15 +117,14 @@ source/options recording holds 6,144 knots, covering at least 10 minutes at 10 H
 even without compression savings. At capacity, **HISTORY FULL** preserves existing
 plot history and stops new plot samples, but raw readouts/extrema keep updating.
 Rolling mode reuses expired storage. No older data is recompressed more loosely.
-The shared arm setting is currently edited in YAML, not the on-radio drawer.
+Recordings share history only when their armed switch, source, and recording
+options match.
 
 ```yaml
 version: 3
 grid:
   columns: 4
   rows: 4
-session:
-  armSource: sa
 panels:
   - id: power-chart
     type: chart
@@ -133,6 +134,7 @@ panels:
     rowSpan: 2
     config:
       label: Power
+      armSwitch: SFv
       timeRange: growing
       scaling: independent
       smoothing: light

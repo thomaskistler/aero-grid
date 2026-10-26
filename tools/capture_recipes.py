@@ -281,6 +281,8 @@ def load_recipe(path):
         number(config["packFull"], config["packEmpty"] + 0.1, 16, "config.packFull")
     else:
         validate_sources(recipe)
+        if recipe["panel"] == "chart" and config.get("armSwitch") != "SFv":
+            raise ValueError("Chart capture requires SFv armSwitch")
     return recipe
 
 
@@ -466,29 +468,32 @@ def fixture_inputs(recipe):
                         f"unit = {source['unit']}, prec = {source['precision']}, "
                         f"value = {lua_value(source['value'])}}}")
         return """local started = getTime()
+local armIndex = assert(getSwitchIndex("SF" .. CHAR_DOWN))
 local function clock() return math.min(getTime() - started, 2200) end
 local sources = {
 """ + ",\n".join(rows) + """
 }
 return {
     getFieldInfo = function(name)
-        if name == "capture-arm" then return { id = 29999, name = name } end
         for _, source in ipairs(sources) do
             if source.name == name then return source end
         end
         return getFieldInfo(name)
     end,
     getValue = function(id)
-        if id == 29999 then
-            local elapsed = getTime() - started
-            return (elapsed < 1000 or elapsed >= 1100 and elapsed < 2200) and 1024 or -1024
-        end
         for index, source in ipairs(sources) do
             if source.id == id or source.name == id then
                 return source.value * (1 + 0.2 * math.sin(clock() / (180 + index * 70) + index))
             end
         end
         return getValue(id)
+    end,
+    getSwitchValue = function(index)
+        if index == armIndex then
+            local elapsed = getTime() - started
+            return elapsed < 1000 or elapsed >= 1100 and elapsed < 2200
+        end
+        return getSwitchValue(index)
     end,
     getRSSI = function() return """ + str(recipe["sample"]["rssi"]) + """ end,
     model = setmetatable({

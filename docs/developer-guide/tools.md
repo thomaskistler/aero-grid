@@ -55,7 +55,8 @@ Recipes can override the border.
 Chart omits the unsupported 1x2 placement. Its adapter generates varying
 synthetic readings through the real telemetry/history services, records for
 approximately 20 seconds with a brief disarm/rearm gap, and disarms before
-capturing a stable frame.
+capturing a stable frame. Its recipe requires `armSwitch: SFv`; the adapter
+supplies that condition through the real control service.
 
 The runner waits for recipe-specific readiness, not just a fixed delay.
 Timer, trim, flight-mode, and model-image samples use isolated firmware model
@@ -136,7 +137,8 @@ settings, entry dialogs, exit, and Save As. Every other panel has a
 `<panel>-settings` scene (for example `--scene flight-timer-settings`) that
 captures its full settings drawer from the panel's capture recipe config, for
 the panel reference pages. Use `--help` for supported scene names.
-The Chart scenes use a native GV1 source labeled **Reading**.
+The Chart scenes use a native GV1 source labeled **Reading** and **SFv**
+as the panel's armed switch position.
 `chart-settings` selects **rolling** to include **Window duration**;
 `chart-metric-entry` opens Chart's own entry drawer, not Metric's.
 
