@@ -22,12 +22,6 @@ Use separate panels for separate charts.
 | **Line smoothing** | off | **off**, **light**, **medium**, or **strong**. Smooths the line only, not the recorded value or extrema. |
 | **Accent** | cyan | Panel stripe color: **cyan**, **green**, **amber**, or **orange**. Does not change trace colors. |
 
-Before recording, set the dashboard's
-[`session.armSource`](../reference-guide/yaml.md#session) in its layout YAML.
-This setting is YAML-only. Choose a numeric EdgeTX source such as `sa` or
-`ch5`; positive means armed, zero or negative means disarmed.
-See the [Chart YAML example](../reference-guide/yaml.md#chart).
-
 ### Metric entry
 
 Tap a reading under **Metrics** to open its settings.
