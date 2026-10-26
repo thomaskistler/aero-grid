@@ -14,6 +14,8 @@ The legend starts just below the plot's top when space permits; short panels
 keep the groups within the panel. Each extrema row keeps the minimum and
 maximum together with a small fixed gap, aligned to the same right edge as the
 main reading.
+Metric groups prefer a gap equal to one min/max text-line height. The gap
+shrinks to fit below the plot top before moving the legend upward in tight panels.
 
 ## Settings
 

@@ -230,11 +230,11 @@ local function separatedReadouts(panel)
     if count < 2 then
         return
     end
-    local spare = panel.rect.h - 2 - count * height
-    if spare < 0 then
+    if count * height > panel.rect.h - 2 then
         return
     end
-    local expected = math.min(6, math.floor(spare / (count - 1)))
+    local spare = panel.rect.h - 2 - (panel.area.y + 2) - count * height
+    local expected = math.max(0, math.min(builder.fontHeight(panel.extremaFont), math.floor(spare / (count - 1))))
     for index = 2, count do
         equal(
             panel.series[index].name.properties.y - panel.series[index - 1].name.properties.y - height,
@@ -398,6 +398,28 @@ equal(heights[3], heights[2], "spare width alone must not enlarge the legend")
 equal(heights[4], single.themeBuilder.fontHeight(MIDSIZE), "tall panels may use medium text")
 chart.update(single, { x = 0, y = 0, w = 472, h = 132 })
 chart.update(multiple, { x = 0, y = 0, w = 472, h = 132 })
+separatedReadouts(multiple)
+local function metricGap(panel)
+    return panel.series[2].name.properties.y
+        - panel.series[1].name.properties.y
+        - panel.themeBuilder.fontHeight(panel.legendFont)
+        - panel.themeBuilder.fontAscent(panel.extremaFont)
+end
+equal(metricGap(multiple), 12, "roomy small-font legends must allow a full extrema line between metrics")
+multiple.settings.label = "Recorded"
+chart.update(multiple, multiple.rect)
+separatedReadouts(multiple)
+equal(metricGap(multiple), 12, "standard titled charts must retain the preferred gap when it fits")
+equal(multiple.series[1].name.properties.y, multiple.area.y + 2, "larger gaps must not push the legend above the plot")
+chart.update(multiple, { x = 0, y = 0, w = 472, h = 264 })
+separatedReadouts(multiple)
+equal(
+    metricGap(multiple),
+    multiple.themeBuilder.fontHeight(multiple.extremaFont),
+    "preferred spacing must follow the extrema font instead of stretching to fill tall panels"
+)
+multiple.settings.label = nil
+chart.update(multiple, { x = 0, y = 0, w = 472, h = 132 })
 assert(
     single.themeBuilder.fontHeight(single.legendFont) > multiple.themeBuilder.fontHeight(multiple.legendFont),
     "fewer metrics must allow larger text when height is the limiting factor"
@@ -411,7 +433,7 @@ assert(multiple.showExtrema, "extra group spacing must yield before hiding extre
 separatedReadouts(multiple)
 equal(
     multiple.series[2].name.properties.y - multiple.series[1].name.properties.y,
-    28,
+    26,
     "tight layouts must shrink the gap instead of dropping information"
 )
 chart.update(single, { x = 0, y = 0, w = 232, h = 64 })

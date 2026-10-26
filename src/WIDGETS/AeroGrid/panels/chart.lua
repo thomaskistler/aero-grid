@@ -449,7 +449,9 @@ function chart.geometry(context, rect)
     context.showExtrema = showExtrema
     local rowHeight = showExtrema and pairHeight or lineHeight
     local available = math.max(1, rect.h - 2)
-    local groupGap = count > 1 and math.max(0, math.min(6, math.floor((available - count * rowHeight) / (count - 1))))
+    local spare = available - (area.y + 2) - count * rowHeight
+    local groupGap = count > 1
+            and math.max(0, math.min(builder.fontHeight(context.extremaFont), math.floor(spare / (count - 1))))
         or 0
     local step = rowHeight + groupGap
     if count * rowHeight > available then
