@@ -19,6 +19,8 @@ local chart = {
             fields = {
                 { key = "source", label = "Source", type = "string", required = true },
                 { key = "label", label = "Label", type = "string" },
+                { key = "rangeMin", label = "Range min", type = "number", step = 0.1, empty = "Auto" },
+                { key = "rangeMax", label = "Range max", type = "number", step = 0.1, empty = "Auto" },
                 { key = "unit", label = "Unit", type = "string" },
                 {
                     key = "precision",
@@ -30,8 +32,6 @@ local chart = {
                     empty = "Sensor",
                 },
                 { key = "accent", label = "Color", type = "string", choices = { "cyan", "green", "orange", "amber" } },
-                { key = "rangeMin", label = "Range min", type = "number", step = 0.1, empty = "Auto" },
-                { key = "rangeMax", label = "Range max", type = "number", step = 0.1, empty = "Auto" },
             },
         },
         {

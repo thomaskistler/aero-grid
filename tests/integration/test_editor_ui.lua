@@ -1856,6 +1856,8 @@ panels:
     rowSpan: 2
     config:
       duration: 5m
+      metrics:
+        - source: Alt
 ]]
 )
 widget.lvglMock.setFullScreen(true)
@@ -1865,6 +1867,28 @@ rect = context.editorUi.controls[1].rect
 tap(rect.x + rect.w - 12, rect.y + 12)
 settleDrawer()
 state = context.editorUi
+local function chartDrawerOrder()
+    local labels = {}
+    for _, row in ipairs(state.drawerControls) do
+        if not row.row.hidden then
+            labels[#labels + 1] = row.field.label
+        end
+    end
+    return table.concat(labels, ",")
+end
+equal(
+    chartDrawerOrder(),
+    "Label,Metrics,Alt,+,Time range,Series scales,Line smoothing,Accent,Remove panel",
+    "Growing chart drawer follows the guide, with add after entries and remove last"
+)
+action("item", "metrics").properties.press()
+settleDrawer()
+equal(
+    chartDrawerOrder(),
+    "Label,Source,Range min,Range max,Unit,Precision,Color,Remove entry",
+    "chart metric drawer puts limits before display options and color, with remove last"
+)
+back()
 equal(drawerRow("duration").row.hidden, true, "Growing must hide the rolling duration control")
 equal(drawerRow("duration").field.label, "Window duration", "duration must describe only the rolling window")
 equal(
@@ -1874,6 +1898,11 @@ equal(
 )
 control("timeRange").properties.set(2)
 settleDrawer()
+equal(
+    chartDrawerOrder(),
+    "Label,Metrics,Alt,+,Time range,Window duration,Series scales,Line smoothing,Accent,Remove panel",
+    "Rolling keeps its window duration beside the time-range selector"
+)
 equal(drawerRow("duration").row.hidden, false, "Rolling must reveal its fixed window control")
 equal(context.editorSession.draft.panels[1].config.duration, "5m", "switching modes must preserve saved rolling choices")
 control("duration").properties.set(3)

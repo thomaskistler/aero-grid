@@ -22,8 +22,7 @@ shrinks to fit the remaining panel height without moving the first metric.
 | Setting | Purpose |
 | --- | --- |
 | **Label** | Optional title above the plot. Empty hides the title and lets the chart reclaim its header space. |
-| **Metrics** | Zero to three sources. Tap **+**, then choose each entry's **Source**, optional **Label**, **Unit**, **Precision** (0–3, or Sensor), and **Color**. |
-| **Range min**, **Range max** | Optional per-entry vertical bounds. Both default to **Auto**, one step below the lowest allowed numeric value. Select a number to fix that bound, or return to **Auto** to clear it. If both are entered, maximum must exceed minimum. |
+| **Metrics** | Zero to three sources. Tap an entry to edit it, or **+** after the entries to add one. |
 | **Time range** | Growing starts at one minute and expands in one-minute steps; rolling shows the latest fixed window. |
 | **Window duration** | Only shown for Rolling: 30 seconds, 1 minute (default), 2 minutes, 5 minutes, or 10 minutes. |
 | **Series scales** | Shared uses one vertical scale. Independent gives each trace its own scale, suitable for voltage/current or RSSI/link quality. Independent heights are not directly comparable. |
@@ -34,6 +33,20 @@ Configure the dashboard's shared `session.armSource` in its layout YAML before
 recording. It is a numeric EdgeTX source, such as `sa` or `ch5`; positive means
 armed. This dashboard setting is currently YAML-only. See the
 [YAML reference](../reference-guide/yaml.md#chart).
+
+### Metric settings
+
+Each entry drawer follows the shared order: label, source, limits, then display
+options. **Remove entry** comes last.
+
+| Setting | Purpose |
+| --- | --- |
+| **Label** | Optional name for the metric. |
+| **Source** | Numeric telemetry source to record. |
+| **Range min**, **Range max** | Optional vertical bounds. Both default to **Auto**, one step below the lowest allowed numeric value. Select a number to fix that bound, or return to **Auto** to clear it. If both are entered, maximum must exceed minimum. |
+| **Unit** | Optional override for the sensor's unit. |
+| **Precision** | 0–3 decimal places, or **Sensor** to use sensor precision. |
+| **Color** | Optional trace color. |
 
 ### Vertical bounds
 
