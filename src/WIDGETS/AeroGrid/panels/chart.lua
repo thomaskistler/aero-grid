@@ -193,48 +193,12 @@ local function extremaFont(font)
     return font == 0 and SMLSIZE or TINSIZE
 end
 
-local function symbolSize(builder, font)
-    return math.max(4, math.floor(builder.fontHeight(font) / 3))
+local function extremaText(item)
+    return (item.minimumText or "--") .. " .. " .. (item.maximumText or "--")
 end
 
 local function extremaWidth(context, item, font)
-    local builder = context.themeBuilder
-    return 2
-            * math.max(
-                builder.measureText(font, item.minimumText or "--"),
-                builder.measureText(font, item.maximumText or "--")
-            )
-        + 2 * symbolSize(builder, font)
-        + 14
-end
-
-local function positionExtrema(context, item, y)
-    local builder, area, font = context.themeBuilder, context.area, context.extremaFont
-    local size = symbolSize(builder, font)
-    local available = math.max(0, area.legendW - 2 * size - 14)
-    local width = math.floor(available / 2)
-    local minimumX = area.legendX + size + 3
-    local maximumX = minimumX + width + 8 + size + 3
-    local height = math.max(3, math.floor(size * 2 / 3))
-    local top = y + math.floor((builder.fontAscent(font) - height) / 2)
-    item.extrema:set({ x = minimumX, y = y, w = width })
-    item.maximum:set({ x = maximumX, y = y, w = available - width })
-    item.minSymbol:set({
-        pts = {
-            { area.legendX, top },
-            { area.legendX + size, top },
-            { area.legendX + math.floor(size / 2), top + height },
-        },
-    })
-    local x = maximumX - size - 3
-    item.maxSymbol:set({
-        pts = {
-            { x, top + height },
-            { x + size, top + height },
-            { x + math.floor(size / 2), top },
-        },
-    })
-    item.extremaY, item.extremaDirty = y, false
+    return context.themeBuilder.measureText(font, extremaText(item))
 end
 
 local function readingWidths(context, font)
@@ -355,21 +319,14 @@ function chart.geometry(context, rect)
         context.primitives.setFont(item.value, font)
         context.primitives.setFont(item.unit, font)
         context.primitives.setFont(item.extrema, context.extremaFont)
-        context.primitives.setFont(item.maximum, context.extremaFont)
         item.name:set({ x = area.legendX, y = y, w = nameWidth, text = name })
         positionReading(context, item, y)
         item.unit:set({ x = area.legendX + legend - context.unitWidth, y = y, w = context.unitWidth })
-        positionExtrema(context, item, y + lineHeight)
+        item.extrema:set({ x = area.legendX, y = y + lineHeight, w = legend })
         if showExtrema then
             lvgl.show(item.extrema)
-            lvgl.show(item.maximum)
-            lvgl.show(item.minSymbol)
-            lvgl.show(item.maxSymbol)
         else
             lvgl.hide(item.extrema)
-            lvgl.hide(item.maximum)
-            lvgl.hide(item.minSymbol)
-            lvgl.hide(item.maxSymbol)
         end
         if nameWidth < 8 then
             lvgl.hide(item.name)
@@ -724,17 +681,13 @@ function chart.render(context)
         item.readout = value .. (item.unitText ~= "" and (" " .. item.unitText) or "")
         local minimumText = chart.format(feed and feed.min, precision)
         local maximumText = chart.format(feed and feed.max, precision)
-        if item.minimumText ~= minimumText or item.maximumText ~= maximumText then
-            item.extremaDirty = true
-        end
         item.minimumText, item.maximumText = minimumText, maximumText
         width = math.max(width, context.showExtrema and extremaWidth(context, item, context.extremaFont) or 0)
         local color = feed and feed.stale and context.theme.color.textFaint or context.theme.color.text
         text(item.value, value, color)
         text(item.unit, item.unitText, color)
         if context.showExtrema then
-            text(item.extrema, minimumText, context.theme.color.textFaint)
-            text(item.maximum, maximumText, context.theme.color.textFaint)
+            text(item.extrema, extremaText(item), context.theme.color.textFaint)
         end
     end
     local valueWidth, unitWidth, nameWidth = readingWidths(context, font)
@@ -749,9 +702,6 @@ function chart.render(context)
     end
     for _, item in ipairs(context.series) do
         positionReading(context, item, item.valueY)
-        if context.showExtrema and item.extremaDirty then
-            positionExtrema(context, item, item.extremaY)
-        end
     end
 end
 
@@ -882,20 +832,11 @@ function chart.create(parent, rect, settings, services)
                 precision = entry.precision,
             })
         end
-        item.name, item.value, item.unit, item.extrema, item.maximum =
+        item.name, item.value, item.unit, item.extrema =
             label(context, color, SMLSIZE),
             label(context, context.theme.color.text, SMLSIZE),
             label(context, context.theme.color.text, SMLSIZE),
-            label(context, context.theme.color.textFaint, TINSIZE),
             label(context, context.theme.color.textFaint, TINSIZE)
-        item.minSymbol = lvgl.triangle(context.panel.root, {
-            pts = { { 0, 0 }, { 1, 0 }, { 0, 1 } },
-            color = context.theme.color.textFaint,
-        })
-        item.maxSymbol = lvgl.triangle(context.panel.root, {
-            pts = { { 0, 0 }, { 1, 0 }, { 0, 1 } },
-            color = context.theme.color.textFaint,
-        })
         context.series[index] = item
     end
     context.title, context.axisStart, context.axisEnd, context.status =
