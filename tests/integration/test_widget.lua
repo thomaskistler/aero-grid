@@ -2859,12 +2859,15 @@ local function drawnBoxes(entry)
     local found = {}
     local root = entry.instance.panel and entry.instance.panel.root
     local compassFurniture = {}
-    local tapeBackground = {}
+    local backgrounds = {}
     local tape = entry.instance.tape
     if tape then
         for _, object in ipairs(tape.shading) do
-            tapeBackground[object] = true
+            backgrounds[object] = true
         end
+    end
+    if entry.instance.durationBackground then
+        backgrounds[entry.instance.durationBackground] = true
     end
     local compass = entry.instance.compass
     if compass then
@@ -2956,7 +2959,7 @@ local function drawnBoxes(entry)
                 elseif child.kind == "rectangle" or child.kind == "image" then
                     found[#found + 1] = clipTo({
                         what = "a " .. child.kind,
-                        background = tapeBackground[child],
+                        background = backgrounds[child],
                         x = x,
                         y = y,
                         w = child.properties.w or 0,

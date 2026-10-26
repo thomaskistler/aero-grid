@@ -2,8 +2,6 @@ version: 3
 grid:
   columns: 4
   rows: 4
-session:
-  armSource: sa
 panels:
   - id: power
     type: chart
@@ -13,6 +11,7 @@ panels:
     rowSpan: 1
     config:
       label: Power
+      armSwitch: SAv
       scaling: independent
       duration: 30s
       metrics:
@@ -30,6 +29,7 @@ panels:
     rowSpan: 2
     config:
       label: Recorded
+      armSwitch: SAv
       scaling: independent
       smoothing: light
       metrics:
@@ -46,6 +46,7 @@ panels:
     colSpan: 2
     rowSpan: 1
     config:
+      armSwitch: SAv
       timeRange: rolling
       duration: 30s
       metrics:
@@ -58,6 +59,7 @@ panels:
     rowSpan: 2
     config:
       label: Fixed scale
+      armSwitch: SAv
       metrics:
         - source: Alt
           rangeMin: 0

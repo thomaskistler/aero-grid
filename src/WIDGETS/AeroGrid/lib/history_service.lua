@@ -95,7 +95,6 @@ local function expire(entry, cutoff, limit)
 end
 
 function history.new(env, support, runtime)
-    local state = { configured = false, available = false, recording = false, elapsed = 0, segment = 0, revision = 0 }
     return setmetatable({
         id = "history",
         revision = 0,
@@ -109,36 +108,62 @@ function history.new(env, support, runtime)
         names = {},
         views = {},
         cursor = 1,
-        state = state,
-        view = support.snapshot(state),
+        sessions = {},
+        sessionNames = {},
     }, history)
 end
 
-function history:session(armSource)
-    if type(armSource) == "string" and armSource ~= "" and not self.armSource then
-        self.armSource = armSource
-        self.state.configured = true
-        local telemetry = self.runtime.byId.telemetry
-        self.arm = telemetry and telemetry:subscribe(armSource) or nil
+local function sessionFor(service, armSwitch)
+    armSwitch = armSwitch or ""
+    local session = service.sessionNames[armSwitch]
+    if not session then
+        local state = {
+            configured = armSwitch ~= "",
+            available = false,
+            recording = false,
+            elapsed = 0,
+            segment = 0,
+            revision = 0,
+        }
+        local control = service.runtime.byId.control
+        session = {
+            name = armSwitch,
+            state = state,
+            view = service.support.snapshot(state),
+            arm = armSwitch ~= "" and control and control:switch(armSwitch) or nil,
+        }
+        service.sessions[#service.sessions + 1] = session
+        service.sessionNames[armSwitch] = session
     end
-    return self.view
+    return session
 end
 
-function history:advance(now)
-    local state = self.state
-    if self.lastTime and state.recording then
-        state.elapsed = state.elapsed + math.max(0, now - self.lastTime)
+function history:session(armSwitch)
+    return sessionFor(self, armSwitch).view
+end
+
+local function advance(session, now)
+    local state = session.state
+    local lastTime = session.lastTime
+    if lastTime and state.recording and now > lastTime then
+        state.elapsed = state.elapsed + now - lastTime
     end
-    self.lastTime = now
-    local arm = self.arm
-    local available = arm ~= nil and arm.fresh == true and finite(arm.value)
-    local recording = arm ~= nil and available and arm.value > 0 or false
+    session.lastTime = now
+    local arm = session.arm
+    local available = arm ~= nil and arm.fresh == true and type(arm.value) == "boolean"
+    local recording = available and arm.value == true or false
     if state.recording ~= recording or state.available ~= available then
         if recording and not state.recording then
             state.segment = state.segment + 1
         end
         state.recording, state.available = recording, available == true
         state.revision = state.revision + 1
+    end
+end
+
+function history:advance(now)
+    for _, session in ipairs(self.sessions) do
+        advance(session, now)
     end
 end
 
@@ -157,8 +182,19 @@ function history:subscribe(source, options)
     if mode == "growing" then
         window = 60
     end
+    local session = sessionFor(self, options.armSwitch)
     source = type(source) == "string" and source or ""
-    local key = source .. "\0" .. mode .. "\0" .. window .. "\0" .. smoothing .. "\0" .. tostring(precision or "sensor")
+    local key = session.name
+        .. "\0"
+        .. source
+        .. "\0"
+        .. mode
+        .. "\0"
+        .. window
+        .. "\0"
+        .. smoothing
+        .. "\0"
+        .. tostring(precision or "sensor")
     if self.names[key] then
         return self.names[key].view
     end
@@ -191,6 +227,7 @@ function history:subscribe(source, options)
         precision = precision,
         tau = TAU[smoothing],
         gap = true,
+        session = session,
     }
     self.entries[#self.entries + 1] = entry
     self.names[key], self.views[entry.view] = entry, entry
@@ -297,55 +334,59 @@ local function record(entry, value, at, epsilon, segment)
 end
 
 function history:sample(reading, now)
-    self:advance(now)
-    if not self.state.recording then
-        return
-    end
-    local entries = self.sources[reading.name]
+    local entries = self.sources and self.sources[reading.name]
     if not entries then
         return
     end
     for _, entry in ipairs(entries) do
-        local state = entry.state
-        local valid = reading.fresh and reading.updatedAt == now and finite(reading.value) and reading.kind == "number"
-        if valid then
-            local value = reading.value
-            if entry.segment ~= self.state.segment or entry.gap or not entry.filtered then
-                entry.filtered = value
-                entry.gap = true
-            elseif entry.tau > 0 then
-                local alpha = 1 - math.exp(-math.max(0, now - entry.sampledAt) / entry.tau)
-                entry.filtered = entry.filtered * (1 - alpha) + value * alpha
-            else
-                entry.filtered = value
-            end
-            entry.sampledAt = now
-            state.value = value
-            state.min = state.min and math.min(state.min, value) or value
-            state.max = state.max and math.max(state.max, value) or value
-            state.unitText, state.precision = reading.unitText, reading.precision
-            state.available, state.stale = true, false
-            local precision = entry.precision or (reading.precisionKnown == false and 3 or reading.precision or 0)
-            precision = math.min(3, math.max(0, precision))
-            record(entry, entry.filtered, self.state.elapsed, 0.5 * 10 ^ -precision, self.state.segment)
-            state.revision = state.revision + 1
-        else
-            entry.gap = true
-            if not state.stale then
-                state.stale = state.available
+        advance(entry.session, now)
+        local session = entry.session.state
+        if session.recording then
+            local state = entry.state
+            local valid = reading.fresh
+                and reading.updatedAt == now
+                and finite(reading.value)
+                and reading.kind == "number"
+            if valid then
+                local value = reading.value
+                if entry.segment ~= session.segment or entry.gap or not entry.filtered then
+                    entry.filtered = value
+                    entry.gap = true
+                elseif entry.tau > 0 then
+                    local alpha = 1 - math.exp(-math.max(0, now - entry.sampledAt) / entry.tau)
+                    entry.filtered = entry.filtered * (1 - alpha) + value * alpha
+                else
+                    entry.filtered = value
+                end
+                entry.sampledAt = now
+                state.value = value
+                state.min = state.min and math.min(state.min, value) or value
+                state.max = state.max and math.max(state.max, value) or value
+                state.unitText, state.precision = reading.unitText, reading.precision
+                state.available, state.stale = true, false
+                local precision = entry.precision or (reading.precisionKnown == false and 3 or reading.precision or 0)
+                precision = math.min(3, math.max(0, precision))
+                record(entry, entry.filtered, session.elapsed, 0.5 * 10 ^ -precision, session.segment)
                 state.revision = state.revision + 1
+            else
+                entry.gap = true
+                if not state.stale then
+                    state.stale = state.available
+                    state.revision = state.revision + 1
+                end
             end
         end
     end
 end
 
-local function updateEntry(service, entry)
+local function updateEntry(_, entry)
     local state = entry.state
+    local elapsed = entry.session.state.elapsed
     if entry.mode == "growing" then
-        state.window = math.max(6000, math.ceil(service.state.elapsed / 6000) * 6000)
+        state.window = math.max(6000, math.ceil(elapsed / 6000) * 6000)
     elseif not state.full then
         local first = state.first
-        expire(entry, service.state.elapsed - state.window, 16)
+        expire(entry, elapsed - state.window, 16)
         if state.first ~= first then
             publish(entry)
         end

@@ -12,6 +12,12 @@ assert(host.supportsSpan(chart, 2, 2))
 assert(not host.supportsSpan(chart, 1, 2))
 assert(not host.supportsSpan(chart, 2, 3))
 assert(not host.supportsSpan(chart, 1, 1))
+for _, armSwitch in ipairs({ "", "SA^", "SA-", "SAv", "L01" }) do
+    equal(#chart.validateSettings({ metrics = {}, armSwitch = armSwitch }), 0)
+end
+for _, armSwitch in ipairs({ "sa", "ch5", "invalid", 1, true }) do
+    assert(#chart.validateSettings({ metrics = {}, armSwitch = armSwitch }) > 0)
+end
 equal(chart.format(12.345, 2), "12.35")
 equal(chart.format(nil), "--")
 equal(chart.durationText(3000), "30s")
@@ -232,11 +238,7 @@ local function separatedReadouts(panel)
     local height = builder.fontHeight(panel.legendFont)
         + (panel.showExtrema and builder.fontAscent(panel.extremaFont) or 0)
     local first = panel.series[1].name.properties.y
-    equal(
-        first,
-        panel.area.frame.labelY,
-        "legend must stay at the title's top inset independently of the plot"
-    )
+    equal(first, panel.area.frame.labelY, "legend must stay at the title's top inset independently of the plot")
     if count < 2 then
         return
     end
@@ -391,7 +393,7 @@ local function typographyPanel(count)
         row = 0,
         colSpan = 2,
         rowSpan = 2,
-        config = { metrics = metrics },
+        config = { metrics = metrics, armSwitch = "SAv" },
     })
     assert(entry, message)
     return entry.instance
@@ -521,6 +523,7 @@ local function recordingPanel(id, range)
         colSpan = 2,
         rowSpan = 2,
         config = {
+            armSwitch = "SAv",
             timeRange = range,
             duration = range == "rolling" and "30s" or "10m",
             metrics = { { source = id, precision = 3, rangeMin = -100, rangeMax = 100 } },
@@ -605,9 +608,16 @@ assert(gridPanel.area.y > gridPanel.area.frame.labelY, "explicit titles must ret
 gridPanel.settings.duration = "30s"
 gridPanel.settings.timeRange = "growing"
 for _, case in ipairs({
-    { 0, 6000 }, { 5999, 6000 }, { 6000, 6000 }, { 6001, 12000 },
-    { 12000, 12000 }, { 12001, 18000 }, { 18000, 18000 }, { 18001, 24000 },
-    { 600000, 600000 }, { 600001, 606000 },
+    { 0, 6000 },
+    { 5999, 6000 },
+    { 6000, 6000 },
+    { 6001, 12000 },
+    { 12000, 12000 },
+    { 12001, 18000 },
+    { 18000, 18000 },
+    { 18001, 24000 },
+    { 600000, 600000 },
+    { 600001, 606000 },
 }) do
     gridPanel.session.elapsed = case[1]
     for _ = 1, 12 do
@@ -631,7 +641,11 @@ for _, line in ipairs(gridPanel.grid) do
 end
 
 local dense = recordingPanel("dense-chart", "growing")
-equal(dense.series[1].feed.window, 6000, "growing subscriptions must start at one minute despite saved duration choices")
+equal(
+    dense.series[1].feed.window,
+    6000,
+    "growing subscriptions must start at one minute despite saved duration choices"
+)
 local history = dense.history
 local now = getTime()
 local reading = { name = "dense-chart", fresh = true, kind = "number", precision = 3, unitText = "" }
@@ -720,7 +734,11 @@ local lightPower = fixture.instanceOf(light, "power")
 for _, target in ipairs({ context, light }) do
     local recording = fixture.instanceOf(target, "recording")
     for index, accent in ipairs({ "cyan", "orange", "green" }) do
-        equal(recording.series[index].color, recording.theme.chartColor[accent], "default traces use distinct first colors")
+        equal(
+            recording.series[index].color,
+            recording.theme.chartColor[accent],
+            "default traces use distinct first colors"
+        )
     end
     local explicit, failure = target.dashboardLoader.buildPanel(target, {
         id = "explicit-colors",
@@ -753,3 +771,17 @@ for _ = 1, 24 do
 end
 checkGrid(lightPower)
 equal(lightPower.baseline.properties.color, lightPower.theme.color.chartGrid, "baseline and minute grid must agree")
+
+finishDrawing(dense)
+local originalRanges, rangeUpdates = chart.ranges, 0
+chart.ranges = function(panel)
+    rangeUpdates = rangeUpdates + 1
+    originalRanges(panel)
+end
+chart.refresh(dense)
+chart.refresh(dense)
+equal(rangeUpdates, 0, "unchanged recordings must reuse their vertical ranges")
+denseItem.readingRevision = nil
+chart.refresh(dense)
+equal(rangeUpdates, 1, "a changed reading revision must recompute vertical ranges")
+chart.ranges = originalRanges

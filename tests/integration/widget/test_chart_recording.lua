@@ -5,11 +5,11 @@ local hostIo = io
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
 local definition = fixture.module("main.lua")
 fixture.reset()
-local lines = { "version: 3", "grid:", "  columns: 4", "  rows: 4", "session:", "  armSource: sa", "panels:" }
+local lines = { "version: 3", "grid:", "  columns: 4", "  rows: 4", "panels:" }
 for index = 1, 8 do
     lines[#lines + 1] = string.format(
         "  - id: chart%d\n    type: chart\n    col: %d\n    row: %d\n    colSpan: 2\n    rowSpan: 1\n"
-            .. "    config:\n      scaling: independent\n      timeRange: %s\n      smoothing: medium\n      metrics:",
+            .. "    config:\n      armSwitch: SAv\n      scaling: independent\n      timeRange: %s\n      smoothing: medium\n      metrics:",
         index,
         (index - 1) % 2 * 2,
         math.floor((index - 1) / 2),

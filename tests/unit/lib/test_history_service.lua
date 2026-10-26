@@ -3,12 +3,13 @@
 local root = assert(...)
 local support = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/services.lua"))()
 local telemetryModule = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/telemetry_service.lua"))()
+local controlModule = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/control_service.lua"))()
 local historyModule = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/history_service.lua"))()
 local equal = assert(loadfile(root .. "/tests/support/assertions.lua"))().assertEqual
 
 local function harness(options, configured)
-    local values = { [1] = 0, [100] = 12 }
-    local fields = { arm = { id = 1 }, V = { id = 100, unit = 1 } }
+    local values = { [1] = 0, [2] = 0, [100] = 12 }
+    local fields = { V = { id = 100, unit = 1 } }
     local env = support.environment({
         getFieldInfo = function(name)
             return fields[name]
@@ -19,26 +20,43 @@ local function harness(options, configured)
         getRSSI = function()
             return 80
         end,
+        getSwitchIndex = function(name)
+            return name == "L01" and 1 or name == "L02" and 2 or 0
+        end,
+        getSwitchValue = function(id)
+            if values[id] ~= nil then
+                return values[id] > 0
+            end
+        end,
         model = {},
     })
     local runtime = support.runtime(env)
     local telemetry = telemetryModule.new(env, support)
+    local control = controlModule.new(env, support)
     runtime.byId.telemetry = telemetry
+    runtime.byId.control = control
     local history = historyModule.new(env, support, runtime)
-    local session = history:session(configured ~= false and "arm" or nil)
+    local armSwitch = configured ~= false and "L01" or ""
+    local session = history:session(armSwitch)
+    options = options or {}
+    options.armSwitch = armSwitch
     local feed = history:subscribe("V", options)
-    local function poll(now, arm, value)
+    local function poll(now, arm, value, otherArm)
         values[1], values[100] = arm, value
+        if otherArm ~= nil then
+            values[2] = otherArm
+        end
+        control:update(now)
         telemetry:update(now)
         history:update(now)
     end
-    return history, session, feed, poll, telemetry
+    return history, session, feed, poll, telemetry, control
 end
 
 local function recorder(options)
-    local history, session, feed, _, telemetry = harness(options)
-    local arm = telemetry.names.arm.state
-    arm.fresh, arm.value = true, 1
+    local history, session, feed, _, _, control = harness(options)
+    local arm = control.entries[1].state
+    arm.fresh, arm.value = true, true
     local reading = { name = "V", fresh = true, kind = "number", precision = 1, unitText = "V" }
     local function sample(at, value)
         reading.value, reading.updatedAt = value, at
@@ -103,21 +121,44 @@ local at, value, broken = history:point(feed, feed.last)
 equal(at, paused)
 equal(value, 11)
 equal(broken, true)
-equal(history:subscribe("V"), feed, "matching histories share storage")
-equal(history:subscribe("V", { windowSeconds = 30 }), feed, "growing durations no longer distinguish recordings")
-equal(history:subscribe("V", { windowSeconds = 600 }), feed, "legacy growing windows must share the canonical recording")
+equal(history:subscribe("V", { armSwitch = "L01" }), feed, "matching histories share storage")
+equal(
+    history:subscribe("V", { armSwitch = "L01", windowSeconds = 30 }),
+    feed,
+    "growing durations no longer distinguish recordings"
+)
+equal(
+    history:subscribe("V", { armSwitch = "L01", windowSeconds = 600 }),
+    feed,
+    "legacy growing windows must share the canonical recording"
+)
 local minuteHistory, minuteFeed, minuteSample = recorder({ windowSeconds = 30 })
 for _, case in ipairs({
-    { 0, 6000 }, { 6000, 6000 }, { 6001, 12000 }, { 12000, 12000 },
-    { 12001, 18000 }, { 18001, 24000 }, { 600000, 600000 }, { 600001, 606000 },
+    { 0, 6000 },
+    { 6000, 6000 },
+    { 6001, 12000 },
+    { 12000, 12000 },
+    { 12001, 18000 },
+    { 18001, 24000 },
+    { 600000, 600000 },
+    { 600001, 606000 },
 }) do
     minuteSample(case[1], 12)
     equal(minuteFeed.window, case[2], "history windows must grow by whole minutes without doubling")
 end
 equal(minuteHistory:point(minuteFeed, 1), 0, "minute growth must retain the beginning of the recording")
-assert(history:subscribe("V", { precision = 0 }) ~= feed, "Sensor and explicit precision subscriptions differ")
-equal(history:subscribe("V", { precision = 1 }), history:subscribe("V", { precision = 1 }))
-assert(history:subscribe("V", { precision = 2 }) ~= history:subscribe("V", { precision = 1 }))
+assert(
+    history:subscribe("V", { armSwitch = "L01", precision = 0 }) ~= feed,
+    "Sensor and explicit precision subscriptions differ"
+)
+equal(
+    history:subscribe("V", { armSwitch = "L01", precision = 1 }),
+    history:subscribe("V", { armSwitch = "L01", precision = 1 })
+)
+assert(
+    history:subscribe("V", { armSwitch = "L01", precision = 2 })
+        ~= history:subscribe("V", { armSwitch = "L01", precision = 1 })
+)
 assert(not pcall(function()
     feed.value = 42
 end), "history views must be immutable")
@@ -139,6 +180,54 @@ equal(missingSession.configured, false)
 equal(missingSession.recording, false)
 equal(missingFeed.available, false)
 equal(missing:point(missingFeed, 1), nil)
+
+local independent, firstSession, firstFeed, independentPoll = harness()
+local secondSession = independent:session("L02")
+local secondFeed = independent:subscribe("V", { armSwitch = "L02" })
+assert(firstSession ~= secondSession and firstFeed ~= secondFeed, "different panel switches must isolate recordings")
+equal(independent:session("L01"), firstSession, "matching switch configurations share their clock")
+equal(independent:subscribe("V", { armSwitch = "L02" }), secondFeed)
+independentPoll(0, 1, 12, 0)
+independentPoll(100, 1, 15, 0)
+equal(firstFeed.max, 15)
+equal(secondFeed.available, false, "another panel's switch must not arm this history")
+independentPoll(200, 0, 20, 1)
+local firstElapsed = firstSession.elapsed
+independentPoll(300, 0, 25, 1)
+equal(firstSession.elapsed, firstElapsed, "only the second panel's clock may advance")
+equal(firstFeed.max, 15)
+equal(secondFeed.min, 20)
+equal(secondFeed.max, 25)
+local secondElapsed = secondSession.elapsed
+independentPoll(400, 1, 30, 1)
+independentPoll(500, 1, 35, 0)
+equal(firstFeed.max, 35)
+equal(secondFeed.max, 30, "the second recording must freeze when its own switch is off")
+assert(secondSession.elapsed > secondElapsed)
+local unconfigured = independent:session()
+local unconfiguredFeed = independent:subscribe("V")
+independentPoll(600, 1, 40, 1)
+equal(unconfigured.configured, false, "a blank panel must not inherit another panel's arm switch")
+equal(unconfiguredFeed.available, false)
+local unknownSession = independent:session("L03")
+local unknownFeed = independent:subscribe("V", { armSwitch = "L03" })
+independentPoll(700, nil, 45, 1)
+equal(firstSession.available, false, "an unavailable switch must not be treated as a known disarm condition")
+equal(firstSession.recording, false)
+equal(firstFeed.value, 40, "switch loss must freeze the last recorded reading")
+local unavailableElapsed = firstSession.elapsed
+local previousSegment = firstSession.segment
+independentPoll(800, nil, 55, 1)
+equal(firstSession.elapsed, unavailableElapsed)
+equal(secondFeed.max, 55, "another panel must continue recording during switch loss")
+equal(unknownSession.configured, true)
+equal(unknownSession.available, false)
+equal(unknownFeed.available, false, "unresolved switches must not start a recording")
+independentPoll(900, 1, 50, 0)
+equal(firstSession.available, true)
+equal(firstSession.segment, previousSegment + 1, "switch recovery must start a disconnected segment")
+equal(firstFeed.value, 50)
+equal(firstSession.elapsed, unavailableElapsed, "unavailable time must not consume the chart")
 
 local smoothed, _, smoothFeed, smoothPoll = harness({ smoothing = "medium", windowSeconds = 30 })
 smoothPoll(0, 1, 0)

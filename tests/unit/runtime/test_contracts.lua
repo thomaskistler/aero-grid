@@ -746,6 +746,7 @@ local function testPanelDocumentationLoads()
             kind .. " must be titled with its drawer name, " .. name
         )
         local examples = string.match(text, "^# [^\n]+\n\n| 1x2 | 2x1 | 2x2 |")
+            or string.match(text, "^# [^\n]+\n\n| 2x1 | 2x2 |")
             or string.match(text, "^# [^\n]+\n\n!%[" .. name .. " at 2x2%]")
         assert(examples, kind .. " must put its visual examples immediately after the title")
         local sections = {}

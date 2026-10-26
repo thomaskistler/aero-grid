@@ -8,6 +8,7 @@ local chart = {
     refreshCost = 6,
     settings = {
         { key = "label", label = "Label", type = "string", default = "" },
+        { key = "armSwitch", label = "Armed switch position", type = "string", default = "" },
         {
             key = "metrics",
             label = "Metrics",
@@ -88,7 +89,7 @@ local chart = {
 local DURATIONS = { ["30s"] = 30, ["1m"] = 60, ["2m"] = 120, ["5m"] = 300, ["10m"] = 600 }
 local COLORS = { "cyan", "orange", "green" }
 local LEGEND_FONTS = { MIDSIZE, 0, SMLSIZE }
-local PROJECTION_CAP = 8
+local PROJECTION_CAP = 7
 local textCache = setmetatable({}, { __mode = "k" })
 
 local function timeWindow(settings, elapsed)
@@ -104,6 +105,13 @@ end
 
 function chart.validateSettings(settings)
     local warnings = {}
+    local arm = settings.armSwitch
+    if arm ~= nil and arm ~= "" then
+        if type(arm) ~= "string" or not (string.match(arm, "^S[A-Z][%^v%-]$") or string.match(arm, "^L%d%d$")) then
+            warnings[#warnings + 1] =
+                "armSwitch must be blank, a position such as SF^, SA-, SFv, or a logical switch such as L01"
+        end
+    end
     if type(settings.metrics) ~= "table" then
         return { "metrics must contain a contiguous list of up to 3 sources" }
     end
@@ -502,17 +510,15 @@ function chart.geometry(context, rect)
     local rowHeight = showExtrema and pairHeight or lineHeight
     local spare = available - 2 - count * rowHeight
     local preferredGap = builder.fontHeight(context.extremaFont) * 2 // 3
-    local groupGap = count > 1
-            and math.max(0, math.min(preferredGap, math.floor(spare / (count - 1))))
-        or 0
+    local groupGap = count > 1 and math.max(0, math.min(preferredGap, math.floor(spare / (count - 1)))) or 0
     local step = rowHeight + groupGap
     if count * rowHeight > available then
         step = math.floor(available / math.max(1, count))
     end
     context.legendBaseline = count > 0
-            and first
-                + (count - 1) * step
-                + (showExtrema and lineHeight + builder.fontAscent(context.extremaFont) or builder.fontAscent(font))
+            and first + (count - 1) * step + (showExtrema and lineHeight + builder.fontAscent(context.extremaFont) or builder.fontAscent(
+                font
+            ))
         or 0
     for index, item in ipairs(context.series) do
         local y = first + (index - 1) * step
@@ -608,9 +614,9 @@ local function runFor(item, index)
     return run
 end
 
-local function pixel(job, at, value)
+local function pixel(job, at, value, x)
     local area = job.area
-    local x = area.x + math.floor((at - job.start) / job.window * area.w + 0.5)
+    x = x or area.x + math.floor((at - job.start) / job.window * area.w + 0.5)
     local fraction = math.max(0, math.min(1, (value - job.low) / (job.high - job.low)))
     local y = area.y + math.floor((1 - fraction) * area.h + 0.5)
     return x, y
@@ -643,11 +649,13 @@ local function flushColumn(run)
     end
 end
 
-local function addPoint(job, run, at, value)
-    if at < job.start or at > job.start + job.window then
+local function addPoint(job, run, at, value, x, y)
+    if at < job.start or at > job.finish then
         return
     end
-    local x, y = pixel(job, at, value)
+    if not x then
+        x, y = pixel(job, at, value)
+    end
     local column = run.column
     if not column or column.x ~= x then
         flushColumn(run)
@@ -689,19 +697,21 @@ local function prepare(context, item)
     job.tailAt, job.tailValue, job.tailBroken = context.history:point(feed, feed.last)
     job.runIndex, job.previousAt, job.previousValue = 1, nil, nil
     job.start, job.window, job.area = context.start, context.window, context.area
+    job.finish = job.start + job.window
     job.version, job.geometryVersion = context.version, context.geometryVersion
     job.low, job.high, job.revision = item.low, item.high, feed.plotRevision
     job.marked, job.markerColumns = {}, {}
     job.projecting = true
 end
 
-local function projectPoint(job, item, at, value, broken)
+local function projectPoint(job, item, at, value, broken, x, y)
+    if not y then
+        x, y = pixel(job, at, value, x)
+    end
     local run = item.runs[job.runIndex]
     if broken and job.previousAt then
-        local x, y = pixel(job, at, value)
-        local previousX, previousY = pixel(job, job.previousAt, job.previousValue)
-        local coincident = x == previousX and y == previousY and job.previousAt >= job.start
-        if at >= job.start and at <= job.start + job.window then
+        local coincident = x == job.previousX and y == job.previousY and job.previousAt >= job.start
+        if at >= job.start and at <= job.finish then
             local column = x - job.area.x + 1
             if not job.marked[column] then
                 job.marked[column] = true
@@ -722,13 +732,14 @@ local function projectPoint(job, item, at, value, broken)
         local fraction = (job.start - job.previousAt) / (at - job.previousAt)
         addPoint(job, run, job.start, job.previousValue * (1 - fraction) + value * fraction)
     end
-    local finish = job.start + job.window
+    local finish = job.finish
     if job.previousAt and job.previousAt <= finish and at > finish then
         local fraction = (finish - job.previousAt) / (at - job.previousAt)
         addPoint(job, run, finish, job.previousValue * (1 - fraction) + value * fraction)
     end
-    addPoint(job, run, at, value)
+    addPoint(job, run, at, value, x, y)
     job.previousAt, job.previousValue = at, value
+    job.previousX, job.previousY = x, y
 end
 
 local function project(context, item, limit)
@@ -756,17 +767,16 @@ local function project(context, item, limit)
         local column = math.floor((at - job.start) / job.window * job.area.w + 0.5)
         local before = job.start + (column + 0.5) * job.window / job.area.w
         local last, firstExtreme, lastExtreme, interrupted = context.history:block(feed, index, job.last - 1, before)
-        projectPoint(job, item, at, value, broken)
+        projectPoint(job, item, at, value, broken, job.area.x + column)
         if last and at >= job.start then
             local firstAt, firstValue = context.history:point(feed, firstExtreme)
             local lastAt, lastValue = context.history:point(feed, lastExtreme)
-            local _, firstY = pixel(job, firstAt, firstValue)
-            local _, lastY = pixel(job, lastAt, lastValue)
+            local firstX, firstY = pixel(job, firstAt, firstValue)
+            local lastX, lastY = pixel(job, lastAt, lastValue)
             if not interrupted or firstY == lastY then
-                local _, previousY = pixel(job, at, value)
-                if firstY ~= lastY or interrupted and previousY ~= firstY then
-                    projectPoint(job, item, firstAt, firstValue, false)
-                    projectPoint(job, item, lastAt, lastValue, false)
+                if firstY ~= lastY or interrupted and job.previousY ~= firstY then
+                    projectPoint(job, item, firstAt, firstValue, false, firstX, firstY)
+                    projectPoint(job, item, lastAt, lastValue, false, lastX, lastY)
                 end
                 local endAt, endValue = context.history:point(feed, last)
                 projectPoint(job, item, endAt, endValue, interrupted)
@@ -946,7 +956,7 @@ function chart.render(context)
     return true
 end
 
-function chart.refresh(context)
+function chart.refresh(context, creating)
     local session = context.session
     local elapsed = session and session.elapsed or 0
     local window = timeWindow(context.settings, elapsed)
@@ -957,12 +967,17 @@ function chart.refresh(context)
         context.version = context.version + 1
     end
     local version = context.version
-    -- Stable readouts leave room for a larger projection batch.
-    local projectionCap = chart.render(context) and PROJECTION_CAP or 12
+    -- Stable readings also keep their ranges, leaving room for more projection.
+    local readingsChanged = chart.render(context)
+    local projectionCap = readingsChanged and PROJECTION_CAP or 13
     local reflowed = version ~= context.version
-    chart.ranges(context)
+    if readingsChanged then
+        chart.ranges(context)
+    end
     updateHeader(context)
-    updateGrid(context)
+    if not creating then
+        updateGrid(context)
+    end
     if session and session.available and not session.recording or context.pauseVisible then
         updatePauseMarker(context)
     end
@@ -1051,7 +1066,7 @@ function chart.create(parent, rect, settings, services)
     context.panel = context.primitives.panel(parent, rect, context.theme, presentation)
     context.plotRoot = lvgl.box(context.panel.root, { x = 0, y = 0, w = rect.w, h = rect.h })
     context.gridRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
-    context.session = context.history and context.history:session(services.session and services.session.armSource)
+    context.session = context.history and context.history:session(settings.armSwitch)
     for index, entry in ipairs(settings.metrics) do
         local color = context.theme.chartColor[entry.accent or COLORS[index]]
         local item = {
@@ -1064,6 +1079,7 @@ function chart.create(parent, rect, settings, services)
         }
         if context.history then
             item.feed = context.history:subscribe(entry.source, {
+                armSwitch = settings.armSwitch,
                 windowSeconds = timeWindow(settings, 0) / 100,
                 timeRange = settings.timeRange or "growing",
                 smoothing = settings.smoothing or "off",
@@ -1095,9 +1111,10 @@ function chart.create(parent, rect, settings, services)
         filled = true,
     })
     context.title, context.duration, context.status = label(context), label(context), label(context)
-    context.baseline = lvgl.hline(context.plotRoot, { x = 0, y = 0, w = 1, h = 1, color = context.theme.chartColor.grid })
+    context.baseline =
+        lvgl.hline(context.plotRoot, { x = 0, y = 0, w = 1, h = 1, color = context.theme.chartColor.grid })
     chart.geometry(context, rect)
-    chart.refresh(context)
+    chart.refresh(context, true)
     return context
 end
 
