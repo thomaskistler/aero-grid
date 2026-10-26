@@ -41,11 +41,15 @@ local function run()
     testPanelContract()
     testSupportedSpans()
     local result
-    local entry = { module = {
-        refresh = function()
-            return result
-        end,
-    }, instance = {}, interval = 20 }
+    local entry = {
+        module = {
+            refresh = function()
+                return result
+            end,
+        },
+        instance = {},
+        interval = 20,
+    }
     assert(panelHost.dispatch(entry, "refresh"))
     assertions.assertEqual(entry.interval, 20)
     for _, interval in ipairs({ 1, 5, 100, 6000 }) do
