@@ -7,6 +7,8 @@
 One chart overlays up to three numeric telemetry sources. Its title sits above
 the plot; the compact right legend groups each source's name and recorded value
 with its recorded minimum and maximum on the next line.
+Traces use a one-pixel line. Numeric readings and units occupy separate shared
+columns, so different unit widths do not shift the values out of alignment.
 
 ## Settings
 
@@ -46,7 +48,7 @@ is no longer needed.
 Recording starts when armed, pauses when disarmed, and **continues the existing
 recording on rearm**. Disarmed time does not occupy horizontal space. A dashed
 marker and a broken trace distinguish resumed recordings or gaps in telemetry.
-The right-hand value freezes when disarmed; the down/up arrows show raw minimum
+The right-hand value freezes when disarmed; the down/up triangles show raw minimum
 and maximum across all recorded armed periods, including in rolling mode.
 
 Growing mode starts at the selected duration. Exceeding 30 seconds, for example,
@@ -83,14 +85,15 @@ All series occupy **one plot**, not separate mini-charts. Use multiple panels fo
 separate charts. Supported spans are 2x1, 3x1, 4x1, 2x2, 3x2, 4x2, 3x3, 4x3,
 and 4x4; additional height enlarges the plot and can allow larger legend text.
 The panel respects the App menu exclusion area.
-Metric names, values, and extrema scale together with the widget's actual pixel
+Metric names and values scale with the widget's actual pixel
 height, number of metrics, and readout widths. Legend text is capped at medium
 size and cannot grow just because a short value leaves spare width. Larger fonts use at most half
 the available content width for the legend, leaving room for the plot. Text never
 shrinks below the small readable font; longer readouts can reduce the chosen size,
 and resizing recalculates it.
-The larger native fonts omit the arrow glyphs, so their min/max indicators use
-`v` / `^` instead.
+Minimum and maximum use one font step smaller than the metric name/value.
+Small filled downward/upward triangles identify them independently of the font.
+Units appear only beside the main value, not the minimum and maximum.
 
 Larger text does not hide extrema that would fit at the minimum font. When the
 panel is too short even at that minimum (for example, three sources in a 2x1

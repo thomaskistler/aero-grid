@@ -122,8 +122,25 @@ equal(power.series[1].feed.value, 24)
 equal(power.series[2].feed.value, 10)
 assert(power.series[1].runs[1].line)
 assert(power.series[2].runs[1].line)
-equal(power.series[1].runs[1].line.properties.thickness, 2)
-equal(power.series[2].runs[1].line.properties.thickness, 2)
+equal(power.series[1].runs[1].line.properties.thickness, 1)
+equal(power.series[2].runs[1].line.properties.thickness, 1)
+local function alignedReadouts(panel)
+    local first = panel.series[1]
+    for _, item in ipairs(panel.series) do
+        equal(
+            item.value.properties.x + item.value.properties.w,
+            first.value.properties.x + first.value.properties.w,
+            "numeric readings must share a right edge independently of units"
+        )
+        equal(item.unit.properties.x, first.unit.properties.x, "units must share their own column")
+        equal(item.name.properties.w, first.name.properties.w, "captions must share their own column")
+        equal(item.unit.properties.y, item.value.properties.y, "numbers and units must share a baseline")
+        equal(item.maximum.properties.x, first.maximum.properties.x, "maxima must share their own column")
+        equal(item.value.properties.text, item.valueText)
+        equal(item.unit.properties.text, item.unitText)
+    end
+end
+alignedReadouts(power)
 assert(power.series[1].name.properties.x > power.area.x + power.area.w)
 assert(power.series[1].extrema.properties.y > power.series[1].value.properties.y)
 assert(power.showExtrema, "two sources must retain their extrema in a standard short panel")
@@ -159,15 +176,26 @@ for _, size in ipairs({ { 320, 240 }, { 800, 480 }, { 480, 272 } }) do
         for _, item in ipairs(panel.series) do
             equal(item.name.properties.font(), panel.legendFont, "metric names must follow the legend font")
             equal(item.value.properties.font(), panel.legendFont, "recorded values must follow the legend font")
-            equal(item.extrema.properties.font(), panel.legendFont, "recorded extrema must follow the legend font")
+            equal(item.unit.properties.font(), panel.legendFont, "units must follow the reading font")
+            equal(item.extrema.properties.font(), panel.extremaFont, "minimum must use the smaller extrema font")
+            equal(item.maximum.properties.font(), panel.extremaFont, "maximum must use the smaller extrema font")
+            assert(panel.themeBuilder.fontHeight(panel.extremaFont) < panel.themeBuilder.fontHeight(panel.legendFont))
+            equal(item.extrema.properties.text, item.minimumText)
+            equal(item.maximum.properties.text, item.maximumText)
+            equal(item.minSymbol.kind, "triangle")
+            equal(item.maxSymbol.kind, "triangle")
+            assert(item.minSymbol.properties.pts[1][2] < item.minSymbol.properties.pts[3][2])
+            assert(item.maxSymbol.properties.pts[1][2] > item.maxSymbol.properties.pts[3][2])
             assert(panel.themeBuilder.fontHeight(panel.legendFont) >= panel.themeBuilder.fontHeight(SMLSIZE))
             if panel.showExtrema then
                 assert(
                     item.extrema.properties.y
                         >= item.value.properties.y + panel.themeBuilder.fontHeight(panel.legendFont)
                 )
-                assert(item.extrema.properties.y + panel.themeBuilder.fontAscent(panel.legendFont) <= panel.rect.h)
+                assert(item.extrema.properties.y + panel.themeBuilder.fontAscent(panel.extremaFont) <= panel.rect.h)
+                assert(item.maximum.properties.x + item.maximum.properties.w <= panel.area.legendX + panel.area.legendW)
             end
+            alignedReadouts(panel)
             for _, run in ipairs(item.runs) do
                 if run.line and not run.line.hidden then
                     for _, point in ipairs(run.pts) do
@@ -180,6 +208,15 @@ for _, size in ipairs({ { 320, 240 }, { 800, 480 }, { 480, 272 } }) do
     end
 end
 assert(fixture.lvglMock.replacedFontRefCount() == 0, "chart reflow must reuse font callbacks")
+
+fixture.radio.values[getFieldInfo("RxBt").id] = 6.1
+fixture.radio.values[getFieldInfo("Curr").id] = 2.0
+fixture.pump(context, 60)
+equal(power.series[1].value.properties.text, "6.1")
+equal(power.series[2].value.properties.text, "2.0")
+equal(power.series[1].unit.properties.text, "V")
+equal(power.series[2].unit.properties.text, "A")
+alignedReadouts(power)
 
 local function typographyPanel(count)
     local metrics = {}
@@ -216,13 +253,8 @@ for _, size in ipairs({ { 232, 64 }, { 232, 132 }, { 472, 132 }, { 472, 264 } })
     if height > builder.fontHeight(SMLSIZE) then
         assert(single.area.w >= math.floor(single.area.frame.content / 2) - 6, "larger fonts must preserve plot space")
     end
-    if height > builder.fontHeight(0) then
-        local extrema = single.series[1].extrema.properties.text
-        assert(
-            string.sub(extrema, 1, 1) == "v" and string.find(extrema, "  ^", 1, true),
-            "large fonts need supported min/max markers"
-        )
-    end
+    local expectedExtrema = single.legendFont == MIDSIZE and 0 or single.legendFont == 0 and SMLSIZE or TINSIZE
+    equal(single.extremaFont, expectedExtrema, "extrema must be exactly one font step smaller")
     assert(single.showExtrema, "larger fonts must not hide extrema that fit at the readability floor")
     equal(single.series[1].feed, feed, "typography reflow must retain history subscriptions")
     previousHeight = height
@@ -263,7 +295,9 @@ assert(
 )
 equal(single.series[1].name.properties.font(), single.legendFont)
 equal(single.series[1].value.properties.font(), single.legendFont)
-equal(single.series[1].extrema.properties.font(), single.legendFont)
+equal(single.series[1].unit.properties.font(), single.legendFont)
+equal(single.series[1].extrema.properties.font(), single.extremaFont)
+equal(single.series[1].maximum.properties.font(), single.extremaFont)
 fixture.radio.values[altitudeId] = altitude
 assert(fixture.lvglMock.replacedFontRefCount() == 0, "font resizing must reuse native callbacks")
 
