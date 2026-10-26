@@ -1265,3 +1265,87 @@ button:focus-visible {
     flex-wrap: wrap;
   }
 }
+
+.ag-map-manager {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.ag-map-connection-panel > .ag-map-warning {
+  margin: 0;
+  border-bottom: 1px solid var(--ag-console-border);
+}
+
+.ag-map-viewer {
+  min-width: 0;
+}
+
+.ag-map-manager h2 {
+  margin: 0 0 20px;
+  font-size: var(--ag-font-xl);
+}
+
+.ag-map-manager #ag-map-manager-title {
+  font-size: var(--ag-font-2xl);
+}
+
+.ag-map-manager h3 {
+  margin: 0 0 8px;
+  font-size: var(--ag-font-lg);
+}
+
+.ag-map-manager .ag-radio-card {
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--ag-console-border);
+  border-radius: 6px;
+  background: var(--ag-console-bg);
+}
+
+.ag-map-manager .ag-radio-card strong {
+  font-size: var(--ag-font-xl);
+}
+
+.ag-map-manager .ag-radio-muted {
+  font-size: var(--ag-font-base);
+  color: var(--ag-console-muted);
+}
+
+#ag-map-planner .ag-radio-button {
+  font-size: var(--ag-font-base);
+}
+
+.ag-map-connect-help {
+  margin-top: 16px;
+}
+
+#ag-map-planner .ag-radio-button:not(:disabled):hover {
+  border-color: var(--ag-console-blue);
+  background: var(--ag-console-blue-wash);
+}
+
+#ag-map-planner .ag-radio-primary:not(:disabled):hover {
+  border-color: var(--ag-console-blue-dark);
+  background: var(--ag-console-blue);
+}
+
+#ag-map-planner .ag-radio-danger:not(:disabled):hover {
+  border-color: var(--ag-critical);
+  background: var(--ag-critical);
+}
+
+.ag-map-area-option:not(:disabled):hover,
+.ag-map-zoom-choice:not(:disabled):hover {
+  border-color: var(--ag-console-blue);
+  background: var(--ag-console-blue-wash);
+}
+
+.ag-map-area-option:disabled,
+.ag-map-zoom-choice:disabled {
+  color: var(--ag-console-muted);
+  cursor: not-allowed;
+}

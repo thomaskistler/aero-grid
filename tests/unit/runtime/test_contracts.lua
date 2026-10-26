@@ -763,7 +763,7 @@ end
 
 --- Guide pages are written out by hand in the theme override, so a guide page
 --- added to the navigation is invisible until it is listed there too. The
---- top-level landing page is intentionally not a guide-sidebar entry.
+--- landing page and Map Manager use the main navigation instead.
 local function testSidebarListsEveryPage()
     local function read(path)
         local handle = assert(io.open(root .. "/" .. path, "r"), "cannot read " .. path)
@@ -774,12 +774,14 @@ local function testSidebarListsEveryPage()
     local nav, sidebar = read("mkdocs.yml"), read("docs/overrides/toc.html")
     local count = 0
     for page in string.gmatch(nav, ":%s+([%w%-_/]+%.md)\n") do
-        if page ~= "index.md" then
+        if page ~= "index.md" and page ~= "map-manager.md" then
             count = count + 1
             assert(string.find(sidebar, 'sidebar_page("' .. page .. '"', 1, true), "the sidebar does not list " .. page)
         end
     end
     assert(count > 0, "no navigation pages were found in mkdocs.yml")
+    local shell = read("docs/overrides/main.html")
+    assert(string.find(shell, "'map-manager/'|url", 1, true), "the main navigation does not link to Map Manager")
 end
 
 --- The YAML reference names every key of every panel, and its examples load.

@@ -41,26 +41,31 @@ class DocumentationLayoutTests(unittest.TestCase):
         cls.browser = cls.playwright.chromium.launch()
         cls.addClassCleanup(cls.browser.close)
 
-    def test_rail_contains_only_available_guides(self):
-        labels = ["Install / Upgrade", "User Guide", "Reference Guide", "Developer Guide"]
+    def test_rail_contains_only_available_pages(self):
+        labels = ["Install / Upgrade", "User Guide", "Reference Guide", "Developer Guide", "Map Manager"]
         for path, active in (
             ("user-guide/installation/", "Install / Upgrade"),
             ("user-guide/add-dashboard/", "User Guide"),
             ("reference-guide/", "Reference Guide"),
             ("panels/metric/", "Reference Guide"),
             ("developer-guide/build/", "Developer Guide"),
+            ("map-manager/", "Map Manager"),
         ):
             with self.subTest(path=path):
                 page = self.browser.new_page()
                 try:
                     page.goto(f"{self.url}/{path}")
                     rail = page.get_by_role("navigation", name="Main navigation", exact=True)
-                    self.assertEqual(rail.locator(":scope > *").count(), 4)
+                    self.assertEqual(rail.locator(":scope > *").count(), len(labels))
                     self.assertEqual(
                         rail.get_by_role("link").evaluate_all(
                             "links => links.map(link => link.getAttribute('aria-label'))"
                         ),
                         labels,
+                    )
+                    self.assertTrue(
+                        rail.get_by_role("link", name="Map Manager", exact=True)
+                        .evaluate("link => link.href").endswith("/map-manager/")
                     )
                     self.assertEqual(rail.locator(".active").count(), 1)
                     self.assertEqual(
