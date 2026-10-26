@@ -19,6 +19,8 @@ shrinks to fit the remaining panel height without moving the first metric.
 Modern Light uses stronger chart-specific blue, green, gold, and orange inks
 for traces and their matching legend names. Its minute grid and time baseline
 use a quieter neutral gray. Other panels' accents and alarm colors are unchanged.
+Default traces use cyan (blue in Modern Light), orange, then green, keeping the
+first two metrics visually distinct. Explicit metric colors override this order.
 
 ## Settings
 

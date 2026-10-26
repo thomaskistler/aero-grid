@@ -86,7 +86,7 @@ local chart = {
 }
 
 local DURATIONS = { ["30s"] = 30, ["1m"] = 60, ["2m"] = 120, ["5m"] = 300, ["10m"] = 600 }
-local COLORS = { "cyan", "green", "orange" }
+local COLORS = { "cyan", "orange", "green" }
 local LEGEND_FONTS = { MIDSIZE, 0, SMLSIZE }
 local PROJECTION_CAP = 8
 local textCache = setmetatable({}, { __mode = "k" })

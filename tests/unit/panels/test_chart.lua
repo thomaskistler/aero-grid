@@ -717,8 +717,35 @@ for _, entry in ipairs(light.panels) do
     end
 end
 local lightPower = fixture.instanceOf(light, "power")
+for _, target in ipairs({ context, light }) do
+    local recording = fixture.instanceOf(target, "recording")
+    for index, accent in ipairs({ "cyan", "orange", "green" }) do
+        equal(recording.series[index].color, recording.theme.chartColor[accent], "default traces use distinct first colors")
+    end
+    local explicit, failure = target.dashboardLoader.buildPanel(target, {
+        id = "explicit-colors",
+        type = "chart",
+        col = 0,
+        row = 0,
+        colSpan = 2,
+        rowSpan = 2,
+        config = {
+            metrics = {
+                { source = "Alt", accent = "green" },
+                { source = "Curr", accent = "cyan" },
+                { source = "RxBt", accent = "amber" },
+            },
+        },
+    })
+    assert(explicit, failure)
+    for index, accent in ipairs({ "green", "cyan", "amber" }) do
+        local item = explicit.instance.series[index]
+        equal(item.color, explicit.instance.theme.chartColor[accent], "explicit colors must override the default order")
+        equal(item.name.properties.color, item.color, "explicit trace colors must also identify their legend names")
+    end
+end
 equal(lightPower.series[1].color, lightPower.theme.color.chartCyan)
-equal(lightPower.series[2].color, lightPower.theme.color.chartGreen)
+equal(lightPower.series[2].color, lightPower.theme.color.chartOrange)
 lightPower.settings.timeRange, lightPower.settings.duration = "rolling", "2m"
 chart.update(lightPower, lightPower.rect)
 for _ = 1, 24 do

@@ -88,7 +88,7 @@ It supports 2x1, 3x1, 4x1, 2x2, 3x2, 4x2, 3x3, 4x3, and 4x4.
 | `label` | Optional title; omitted or empty hides the title and reclaims header space for the plot. |
 | `metrics` | Contiguous list of zero to three numeric sources. Empty is valid for editor setup. |
 | `source`, `unit`, `precision` | Per-metric source name, optional unit override, and integer precision 0–3 (default sensor precision). |
-| `accent` | Per-metric trace color or panel stripe: cyan, green, orange, amber. Traces default to cyan, green, orange in order. |
+| `accent` | Per-metric trace color or panel stripe: cyan, green, orange, amber. Traces default to cyan, orange, green in order. Modern Light renders the cyan trace with blue ink. |
 | `rangeMin`, `rangeMax` | Optional per-metric finite bounds. Omit either key for Auto on that side; zero is an explicit bound. If both are set, maximum must exceed minimum. Shared scales use the lowest configured minimum and highest configured maximum; a side with no configured bound follows all recorded series automatically. |
 | `timeRange` | `growing` (default) or `rolling`. |
 | `duration` | `30s`, `1m` (default), `2m`, `5m`, `10m`. Fixed Rolling window; ignored in Growing mode. |
