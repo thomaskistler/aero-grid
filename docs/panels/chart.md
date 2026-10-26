@@ -84,7 +84,8 @@ separate charts. Supported spans are 2x1, 3x1, 4x1, 2x2, 3x2, 4x2, 3x3, 4x3,
 and 4x4; additional height enlarges the plot and can allow larger legend text.
 The panel respects the App menu exclusion area.
 Metric names, values, and extrema scale together with the widget's actual pixel
-dimensions, number of metrics, and readout widths. Larger fonts use at most half
+height, number of metrics, and readout widths. Legend text is capped at medium
+size and cannot grow just because a short value leaves spare width. Larger fonts use at most half
 the available content width for the legend, leaving room for the plot. Text never
 shrinks below the small readable font; longer readouts can reduce the chosen size,
 and resizing recalculates it.

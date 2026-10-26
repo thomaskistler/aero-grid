@@ -208,6 +208,11 @@ for _, size in ipairs({ { 232, 64 }, { 232, 132 }, { 472, 132 }, { 472, 264 } })
     local builder = single.themeBuilder
     local height = builder.fontHeight(single.legendFont)
     assert(height >= previousHeight, "adding space must not make identical readouts smaller")
+    assert(
+        height <= math.max(builder.fontHeight(SMLSIZE), math.floor(size[2] / 6)),
+        "legend must not dominate the plot"
+    )
+    assert(height <= builder.fontHeight(MIDSIZE), "chart legends must not use primary-reading fonts")
     if height > builder.fontHeight(SMLSIZE) then
         assert(single.area.w >= math.floor(single.area.frame.content / 2) - 6, "larger fonts must preserve plot space")
     end
@@ -224,7 +229,10 @@ for _, size in ipairs({ { 232, 64 }, { 232, 132 }, { 472, 132 }, { 472, 264 } })
     heights[#heights + 1] = height
 end
 assert(previousHeight > single.themeBuilder.fontHeight(SMLSIZE), "large widgets must use a larger font")
-assert(heights[3] > heights[2], "additional width must allow a larger font for the same readings and height")
+equal(heights[1], single.themeBuilder.fontHeight(SMLSIZE), "short panels must keep compact legends")
+equal(heights[2], single.themeBuilder.fontHeight(0), "standard panels must not inflate single-metric legends")
+equal(heights[3], heights[2], "spare width alone must not enlarge the legend")
+equal(heights[4], single.themeBuilder.fontHeight(MIDSIZE), "tall panels may use medium text")
 chart.update(single, { x = 0, y = 0, w = 472, h = 132 })
 chart.update(multiple, { x = 0, y = 0, w = 472, h = 132 })
 assert(
@@ -242,7 +250,7 @@ chart.update(single, { x = 0, y = 0, w = 472, h = 132 })
 local initialFontHeight = single.themeBuilder.fontHeight(single.legendFont)
 local altitudeId = getFieldInfo("Alt").id
 local altitude = fixture.radio.values[altitudeId]
-fixture.radio.values[altitudeId] = 12345678
+fixture.radio.values[altitudeId] = 123456789012345678901234
 fixture.pump(context, 60)
 chart.refresh(single)
 assert(

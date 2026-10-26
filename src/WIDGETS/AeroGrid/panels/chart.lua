@@ -86,7 +86,7 @@ local chart = {
 
 local DURATIONS = { ["30s"] = 30, ["1m"] = 60, ["2m"] = 120, ["5m"] = 300, ["10m"] = 600 }
 local COLORS = { "cyan", "green", "orange" }
-local LEGEND_FONTS = { XXLSIZE, DBLSIZE, MIDSIZE, 0, SMLSIZE }
+local LEGEND_FONTS = { MIDSIZE, 0, SMLSIZE }
 local PROJECTION_CAP = 8
 local textCache = setmetatable({}, { __mode = "k" })
 
@@ -218,12 +218,13 @@ function chart.geometry(context, rect)
     local count = #context.series
     -- Preserve extrema whenever they fit at the readability floor.
     local showExtrema = rect.h >= count * (builder.fontHeight(SMLSIZE) + builder.fontAscent(SMLSIZE)) + 2
+    local fontLimit = math.max(builder.fontHeight(SMLSIZE), math.floor(rect.h / math.max(6, count * 3)))
     local font, required
     -- Readout growth can step down the font; resizing restarts the ladder.
     for index = count == 0 and #LEGEND_FONTS or context.legendIndex or 1, #LEGEND_FONTS do
         local candidate = LEGEND_FONTS[index]
         local rowHeight = builder.fontHeight(candidate) + (showExtrema and builder.fontAscent(candidate) or 0)
-        if count * rowHeight + 2 <= rect.h or candidate == SMLSIZE then
+        if builder.fontHeight(candidate) <= fontLimit and count * rowHeight + 2 <= rect.h or candidate == SMLSIZE then
             local width = legendWidth(context, candidate, showExtrema)
             if candidate == context.legendFont then
                 width = math.max(width, context.legendWidth or 0)
