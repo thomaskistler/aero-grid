@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local root = assert(...)
+local root, independent = ...
+assert(root)
 local hostIo = io
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
 local definition = fixture.module("main.lua")
@@ -9,10 +10,11 @@ local lines = { "version: 3", "grid:", "  columns: 4", "  rows: 4", "panels:" }
 for index = 1, 8 do
     lines[#lines + 1] = string.format(
         "  - id: chart%d\n    type: chart\n    col: %d\n    row: %d\n    colSpan: 2\n    rowSpan: 1\n"
-            .. "    config:\n      armSwitch: SAv\n      scaling: independent\n      timeRange: %s\n      smoothing: medium\n      metrics:",
+            .. "    config:\n      armSwitch: %s\n      scaling: independent\n      timeRange: %s\n      smoothing: medium\n      metrics:",
         index,
         (index - 1) % 2 * 2,
         math.floor((index - 1) / 2),
+        independent and string.format("L%02d", index) or "SAv",
         index % 2 == 0 and "rolling" or "growing"
     )
     for source = 1, 3 do
@@ -62,6 +64,15 @@ local function pump(count, background)
     end
     assert(#context.errors == 0, table.concat(context.errors, "\n"))
 end
+local function setArmed(value)
+    fixture.radio.values[300] = value
+    if independent then
+        for index = 1, 8 do
+            fixture.radio.logicalSwitches[index] = value > 0
+        end
+    end
+end
+setArmed(1024)
 pump(200)
 assert(#context.panels == 8)
 for step = 1, 1000 do
@@ -79,7 +90,7 @@ for _, entry in ipairs(context.panels) do
     end
 end
 local elapsed = context.panels[1].instance.session.elapsed
-fixture.radio.values[300] = 0
+setArmed(0)
 pump(30)
 local paused = context.panels[1].instance.session.elapsed
 assert(paused >= elapsed)
@@ -88,9 +99,9 @@ assert(context.panels[1].instance.session.elapsed == paused)
 
 for cycle = 1, 20 do
     for _ = 1, 60 do
-        fixture.radio.values[300] = 1024
+        setArmed(1024)
         pump(6)
-        fixture.radio.values[300] = 0
+        setArmed(0)
         pump(6)
     end
     pump(150)
@@ -100,9 +111,9 @@ for cycle = 1, 20 do
 end
 for cycle = 1, 5 do
     for _ = 1, 60 do
-        fixture.radio.values[300] = 1024
+        setArmed(1024)
         pump(6)
-        fixture.radio.values[300] = 0
+        setArmed(0)
         pump(6)
     end
     pump(150)
