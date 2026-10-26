@@ -335,7 +335,7 @@ def readiness(recipe):
     if recipe["panel"] == "chart":
         return """            local instance = entry.instance
             if not instance.session or instance.session.elapsed < 1500 or instance.session.recording
-                or instance.pending then return end
+                or instance.pending or instance.gridVersion ~= instance.version then return end
             for _, item in ipairs(instance.series) do
                 if not item.feed.available or not item.runs[1] or not item.runs[1].line
                     or item.drawnRevision ~= item.feed.plotRevision

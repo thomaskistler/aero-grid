@@ -14,6 +14,14 @@ assert(not host.supportsSpan(chart, 2, 3))
 assert(not host.supportsSpan(chart, 1, 1))
 equal(chart.format(12.345, 2), "12.35")
 equal(chart.format(nil), "--")
+equal(chart.durationText(3000), "30s")
+equal(chart.durationText(6000), "1m")
+equal(chart.durationText(12000), "2m")
+equal(chart.gridInterval(12000, 240), 6000)
+equal(chart.gridInterval(60000, 240), 6000)
+equal(chart.gridInterval(120000, 240), 12000)
+equal(chart.gridInterval(300000, 240), 30000)
+equal(chart.gridInterval(60000, 100), 30000)
 equal(#chart.validateSettings({ metrics = { { source = "RxBt" }, {} } }), 0)
 for _, value in ipairs({ "invalid", false, math.huge, 0 / 0 }) do
     assert(#chart.validateSettings({ metrics = { { rangeMin = value } } }) > 0)
@@ -110,6 +118,10 @@ fixture.pump(context, 40)
 equal(#context.errors, 0, table.concat(context.errors, "\n"))
 equal(#context.panels, 4)
 local power = fixture.instanceOf(context, "power")
+equal(power.axisStart, nil, "bottom axis labels must not be created")
+equal(power.axisEnd, nil, "bottom axis labels must not be created")
+equal(power.duration.properties.text, "30s")
+assert(power.duration.properties.y + power.themeBuilder.fontHeight(TINSIZE) <= power.area.y)
 equal(power.indicator, nil, "charts must not create a recording dot")
 equal(power.series[1].feed.available, false)
 equal(power.status.properties.text, "WAITING FOR ARM")
@@ -361,11 +373,86 @@ local function finishDrawing(panel)
             not panel.pending
             and item.drawnRevision == item.feed.plotRevision
             and item.drawnVersion == panel.version
+            and panel.gridVersion == panel.version
         then
             return
         end
     end
     error("staged projection did not converge")
+end
+
+local gridPanel = recordingPanel("minute-grid", "rolling")
+gridPanel.settings.duration = "10m"
+gridPanel.session = { configured = true, available = true, recording = false, elapsed = 65000 }
+for _ = 1, 24 do
+    chart.refresh(gridPanel)
+end
+assert(gridPanel.title.hidden, "empty labels must hide the title instead of deriving one")
+assert(not gridPanel.durationBackground.hidden, "titleless charts need a readable duration annotation")
+equal(gridPanel.duration.properties.text, "10m")
+equal(gridPanel.area.y, gridPanel.area.frame.labelY, "titleless charts must reclaim the header")
+equal(gridPanel.area.y + gridPanel.area.h, gridPanel.rect.h - 3, "bottom labels must not reserve plot height")
+equal(#gridPanel.grid, 12, "grid objects must use a bounded reusable pool")
+local function checkGrid(panel)
+    local visible = 0
+    local previous
+    for _, line in ipairs(panel.grid) do
+        if line.visible then
+            visible = visible + 1
+            equal(line.at % panel.gridStep, 0, "grid positions must use whole armed-time intervals")
+            assert(line.at > panel.start and line.at < panel.start + panel.window)
+            local x = panel.area.x + math.floor((line.at - panel.start) / panel.window * panel.area.w + 0.5)
+            equal(line.object.properties.x, x)
+            equal(line.object.properties.y, panel.area.y)
+            equal(line.object.properties.h, panel.area.h)
+            equal(line.object.properties.w, 1)
+            equal(line.object.properties.color, panel.theme.color.border)
+            equal(line.object.properties.dashGap, nil, "minute grid must be solid, unlike gap markers")
+            if previous then
+                assert(x - previous >= 24, "long views must thin their grid instead of crowding it")
+            end
+            previous = x
+        else
+            assert(line.object.hidden)
+        end
+    end
+    assert(visible > 0 and visible <= 12)
+    equal(panel.gridVersion, panel.version)
+end
+checkGrid(gridPanel)
+gridPanel.session.elapsed = 67500
+for _ = 1, 12 do
+    chart.refresh(gridPanel)
+end
+checkGrid(gridPanel)
+chart.update(gridPanel, { x = 0, y = 0, w = 472, h = 264 })
+for _ = 1, 12 do
+    chart.refresh(gridPanel)
+end
+checkGrid(gridPanel)
+gridPanel.settings.label = "Flight"
+chart.update(gridPanel, gridPanel.rect)
+assert(not gridPanel.title.hidden)
+assert(gridPanel.durationBackground.hidden)
+assert(gridPanel.area.y > gridPanel.area.frame.labelY, "explicit titles must retain a header")
+gridPanel.settings.duration = "30s"
+gridPanel.settings.timeRange = "growing"
+gridPanel.session.elapsed = 3001
+for _ = 1, 12 do
+    chart.refresh(gridPanel)
+end
+equal(gridPanel.duration.properties.text, "1m", "growing duration must update at the doubling threshold")
+gridPanel.session.elapsed = 6001
+for _ = 1, 12 do
+    chart.refresh(gridPanel)
+end
+equal(gridPanel.duration.properties.text, "2m")
+gridPanel.session.elapsed = 0
+for _ = 1, 12 do
+    chart.refresh(gridPanel)
+end
+for _, line in ipairs(gridPanel.grid) do
+    assert(not line.visible and line.object.hidden, "short views must hide obsolete minute lines")
 end
 
 local dense = recordingPanel("dense-chart", "growing")

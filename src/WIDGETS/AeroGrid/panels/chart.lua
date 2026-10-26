@@ -149,20 +149,22 @@ local function caption(entry)
 end
 
 local function heading(context)
-    local label = context.settings.label
-    if label and label ~= "" then
-        return label
-    end
-    return #context.series == 1 and caption(context.series[1].settings) or "CHART"
+    return context.settings.label or ""
 end
 
 function chart.format(value, precision)
     return finite(value) and string.format("%." .. math.min(3, math.max(0, precision or 0)) .. "f", value) or "--"
 end
 
-local function timeText(ticks)
+function chart.durationText(ticks)
     local seconds = math.floor(ticks / 100)
-    return string.format("%d:%02d", math.floor(seconds / 60), seconds % 60)
+    if seconds < 60 then
+        return string.format("%ds", seconds)
+    end
+    if seconds % 60 == 0 then
+        return string.format("%dm", seconds / 60)
+    end
+    return string.format("%dm%ds", math.floor(seconds / 60), seconds % 60)
 end
 
 local function text(object, value, color)
@@ -184,6 +186,114 @@ local function label(context, color, font)
         color = color,
         font = font or TINSIZE,
     })
+end
+
+local GRID_CAP = 12
+
+function chart.gridInterval(window, pixels)
+    local target = math.max(6000, window / math.max(1, math.min(GRID_CAP, math.floor(pixels / 24))))
+    local scale = 6000
+    while target > scale * 5 do
+        scale = scale * 10
+    end
+    for _, multiple in ipairs({ 1, 2, 5 }) do
+        if scale * multiple >= target then
+            return scale * multiple
+        end
+    end
+end
+
+local function updateGrid(context)
+    local area, start, window = context.area, context.start, context.window
+    if context.gridLayoutVersion ~= context.version then
+        context.gridStep = chart.gridInterval(window, area.w)
+        context.gridFirst = (math.floor(start / context.gridStep) + 1) * context.gridStep
+        context.gridLayoutVersion = context.version
+    end
+    -- Fill a fixed pool gradually, behind the traces, and limit native changes.
+    for _ = 1, #context.grid < GRID_CAP and 1 or 3 do
+        local index = context.gridCursor
+        local line = context.grid[index]
+        if not line then
+            line = {
+                object = lvgl.vline(context.gridRoot, {
+                    x = 0,
+                    y = 0,
+                    w = 1,
+                    h = 1,
+                    color = context.theme.color.border,
+                }),
+                visible = false,
+            }
+            lvgl.hide(line.object)
+            context.grid[index] = line
+        end
+        if line.version ~= context.version then
+            local at = context.gridFirst + (index - 1) * context.gridStep
+            local x = area.x + math.floor((at - start) / window * area.w + 0.5)
+            local visible = at < start + window and x > area.x and x < area.x + area.w
+            if visible then
+                if line.x ~= x or line.geometryVersion ~= context.geometryVersion then
+                    line.object:set({ x = x, y = area.y, w = 1, h = area.h })
+                end
+                if not line.visible then
+                    lvgl.show(line.object)
+                end
+            elseif line.visible then
+                lvgl.hide(line.object)
+            end
+            line.at, line.x, line.visible = at, x, visible
+            line.version, line.geometryVersion = context.version, context.geometryVersion
+        end
+        if index == GRID_CAP and context.grid[1].version == context.version then
+            context.gridVersion = context.version
+        end
+        context.gridCursor = index % GRID_CAP + 1
+    end
+end
+
+local function updateHeader(context)
+    local builder, area = context.themeBuilder, context.area
+    local duration = chart.durationText(context.window or (DURATIONS[context.settings.duration] or 30) * 100)
+    if context.headerGeometry == context.geometryVersion and context.durationText == duration then
+        return
+    end
+    local frame = area.frame
+    local title = heading(context)
+    local width = math.min(builder.measureText(TINSIZE, duration), math.max(0, area.x + area.w - frame.labelX))
+    local x = area.x + area.w - width
+    local y
+    if title ~= "" then
+        frame.labelWidth = math.max(0, x - frame.labelX - 4)
+        local _, titleFont = builder.fitHeading(title, frame.labelWidth, SMLSIZE, TINSIZE)
+        context.primitives.setHeading(
+            context.title,
+            builder,
+            frame,
+            { label = SMLSIZE, badge = TINSIZE },
+            title,
+            context.theme.color.text,
+            { x = frame.labelX, y = frame.labelY }
+        )
+        y = frame.labelY + builder.fontAscent(titleFont) - builder.fontAscent(TINSIZE)
+        lvgl.hide(context.durationBackground)
+    else
+        lvgl.hide(context.title)
+        width = math.min(builder.measureText(TINSIZE, duration), area.w)
+        x, y = area.x + area.w - width, area.y + 1
+        local left = math.max(area.x, x - 2)
+        context.durationBackground:set({
+            x = left,
+            y = area.y,
+            w = area.x + area.w - left,
+            h = builder.fontHeight(TINSIZE) + 2,
+        })
+        lvgl.show(context.durationBackground)
+    end
+    context.duration:set({ x = x, y = y, w = width })
+    context.status:set({ w = math.max(0, area.w - (title == "" and width + 4 or 0)) })
+    text(context.duration, duration, context.theme.color.textFaint)
+    context.headerGeometry, context.durationText = context.geometryVersion, duration
 end
 
 local function extremaFont(font)
@@ -308,11 +418,11 @@ function chart.geometry(context, rect)
         math.max(0, legend - context.valueWidth - context.unitWidth - (context.unitWidth > 0 and 3 or 0) - 3)
     local gap = 6
     local width = math.max(1, content - legend - gap)
-    local top = frame.labelY + builder.fontHeight(SMLSIZE) + 2
+    local top = frame.labelY + (heading(context) ~= "" and builder.fontHeight(SMLSIZE) + 2 or 0)
     if frame.reserved and not frame.reserved.side then
         top = math.max(top, frame.reserved.h)
     end
-    local bottom = math.max(top + 1, rect.h - builder.fontHeight(TINSIZE) - 3)
+    local bottom = math.max(top + 1, rect.h - 3)
     local area = {
         frame = frame,
         x = frame.pad,
@@ -321,23 +431,10 @@ function chart.geometry(context, rect)
         h = math.max(1, bottom - top),
         legendX = frame.pad + width + gap,
         legendW = legend,
-        axisY = math.max(0, rect.h - builder.fontHeight(TINSIZE)),
     }
     context.area = area
-    local titleWidth = math.max(0, area.x + area.w - frame.labelX)
-    frame.labelWidth = titleWidth
-    context.primitives.setHeading(
-        context.title,
-        builder,
-        frame,
-        fonts,
-        heading(context),
-        context.theme.color.text,
-        { x = frame.labelX, y = frame.labelY }
-    )
-    context.axisStart:set({ x = area.x, y = area.axisY, w = math.floor(area.w / 2) })
-    context.axisEnd:set({ x = area.x + math.floor(area.w / 2), y = area.axisY, w = math.ceil(area.w / 2) })
-    context.endLabel = nil
+    context.plotRoot:set({ w = rect.w, h = rect.h })
+    context.gridRoot:set({ w = rect.w, h = rect.h })
     context.baseline:set({ x = area.x, y = area.y + area.h, w = area.w, h = 1 })
     context.status:set({ x = area.x, y = area.y, w = area.w })
     local lineHeight = builder.fontHeight(font)
@@ -384,6 +481,7 @@ function chart.geometry(context, rect)
     end
     context.version = context.version + 1
     context.geometryVersion = (context.geometryVersion or 0) + 1
+    updateHeader(context)
 end
 
 local function normalRange(low, high)
@@ -649,7 +747,7 @@ local function applyMarkers(context, item)
                     marker.object:set(options)
                     lvgl.show(marker.object)
                 else
-                    marker = { object = lvgl.vline(context.panel.root, options) }
+                    marker = { object = lvgl.vline(context.plotRoot, options) }
                     item.markers[column] = marker
                     item.markerKeys[#item.markerKeys + 1] = column
                 end
@@ -686,7 +784,7 @@ local function applyRuns(context, item)
                     lvgl.show(run.line)
                 end
             else
-                run.line = lvgl.line(context.panel.root, { pts = run.pts, color = item.color, thickness = 1 })
+                run.line = lvgl.line(context.plotRoot, { pts = run.pts, color = item.color, thickness = 1 })
             end
             run.visible = true
             changes = changes + 1
@@ -779,14 +877,8 @@ function chart.refresh(context)
     chart.render(context)
     local reflowed = version ~= context.version
     chart.ranges(context)
-    text(context.axisStart, timeText(context.start), context.theme.color.textFaint)
-    local endLabel = timeText(context.start + window)
-    if context.endLabel ~= endLabel then
-        local width = math.min(context.area.w, context.themeBuilder.measureText(TINSIZE, endLabel))
-        context.axisEnd:set({ x = context.area.x + context.area.w - width, w = width })
-        context.endLabel = endLabel
-    end
-    text(context.axisEnd, endLabel, context.theme.color.textFaint)
+    updateHeader(context)
+    updateGrid(context)
     local status = ""
     local full = false
     for _, item in ipairs(context.series) do
@@ -865,9 +957,13 @@ function chart.create(parent, rect, settings, services)
         cursor = 1,
         rect = rect,
         area = {},
+        grid = {},
+        gridCursor = 1,
     }
     local presentation = services.state("normal", settings.accent or "cyan")
     context.panel = context.primitives.panel(parent, rect, context.theme, presentation)
+    context.plotRoot = lvgl.box(context.panel.root, { x = 0, y = 0, w = rect.w, h = rect.h })
+    context.gridRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
     context.session = context.history and context.history:session(services.session and services.session.armSource)
     for index, entry in ipairs(settings.metrics) do
         local color = context.theme.color[entry.accent or COLORS[index]]
@@ -903,10 +999,16 @@ function chart.create(parent, rect, settings, services)
         })
         context.series[index] = item
     end
-    context.title, context.axisStart, context.axisEnd, context.status =
-        label(context), label(context), label(context), label(context)
-    context.baseline =
-        lvgl.hline(context.panel.root, { x = 0, y = 0, w = 1, h = 1, color = context.theme.color.border })
+    context.durationBackground = lvgl.rectangle(context.panel.root, {
+        x = 0,
+        y = 0,
+        w = 1,
+        h = 1,
+        color = context.theme.color.surface,
+        filled = true,
+    })
+    context.title, context.duration, context.status = label(context), label(context), label(context)
+    context.baseline = lvgl.hline(context.plotRoot, { x = 0, y = 0, w = 1, h = 1, color = context.theme.color.border })
     chart.geometry(context, rect)
     chart.refresh(context)
     return context

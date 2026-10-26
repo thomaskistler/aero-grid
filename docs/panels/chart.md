@@ -4,7 +4,7 @@
 
 ![Chart at 2x1](../assets/panels/chart/2x1.png)
 
-One chart overlays up to three numeric telemetry sources. Its title sits above
+One chart overlays up to three numeric telemetry sources. An optional title sits above
 the plot; the compact right legend groups each source's name and recorded value
 with its recorded minimum and maximum on the next line.
 Traces use a one-pixel line. Numeric readings and units occupy separate shared
@@ -14,7 +14,7 @@ columns, so different unit widths do not shift the values out of alignment.
 
 | Setting | Purpose |
 | --- | --- |
-| **Label** | Title above the plot. Empty uses the source name for one series, or CHART for multiple series. |
+| **Label** | Optional title above the plot. Empty hides the title and lets the chart reclaim its header space. |
 | **Metrics** | Zero to three sources. Tap **+**, then choose each entry's **Source**, optional **Label**, **Unit**, **Precision** (0–3, or Sensor), and **Color**. |
 | **Range min**, **Range max** | Optional per-entry vertical bounds. Both default to **Auto**, one step below the lowest allowed numeric value. Select a number to fix that bound, or return to **Auto** to clear it. If both are entered, maximum must exceed minimum. |
 | **Time range** | Growing keeps the recording visible by doubling its time scale; rolling shows the latest fixed window. |
@@ -54,7 +54,12 @@ and maximum across all recorded armed periods, including in rolling mode.
 Growing mode starts at the selected duration. Exceeding 30 seconds, for example,
 changes the range to 60 seconds, shrinking existing history into the left half.
 Rolling mode discards old plot detail while preserving lifetime recorded extrema.
-The axis labels show cumulative armed time.
+Faint solid vertical lines mark whole minutes of cumulative armed time. Longer
+or narrower views use 2/5/10-minute steps and larger equivalents to avoid
+crowding. These gridlines are distinct from the brighter dashed interruption
+markers. A small indicator such as **30s** or **2m** shows the visible duration
+beside the title, replacing the bottom axis labels. Without a title, the
+indicator occupies a small plot corner rather than reserving a header row.
 
 Sources share firmware polling with other panels. Raw extrema are collected at
 each successful poll, even when the chart redraws less often. Drawing frequency
