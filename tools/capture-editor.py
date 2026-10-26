@@ -11,20 +11,22 @@ import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "build/editor-capture"
-SCENES = ("overview", "settings", "state-settings", "state-entry", "state-condition", "metric-entry", "exit", "save-as", "navigation-tape",
+SCENES = ("overview", "settings", "state-settings", "state-entry", "state-condition", "metric-entry", "chart-metric-entry", "exit", "save-as", "navigation-tape",
           "navigation-location")
 # Configuration drawers captured as full-height images rather than one screen.
 # Settings drawers of the remaining panels, one per panel page.
 PANEL_DRAWER_CONFIG = {
+    "chart": {"label": "CHART", "timeRange": "rolling",
+              "metrics": [{"source": "gvar1", "label": "Reading"}]},
     "host-diagnostics": {"label": "Host", "section": "identity"},
     "service-probe": {"service": "telemetry", "source": "RxBt", "label": "Probe"},
 }
-PANEL_DRAWER_KINDS = ("flight-counter", "flight-mode", "flight-timer", "host-diagnostics", "link-status",
+PANEL_DRAWER_KINDS = ("chart", "flight-counter", "flight-mode", "flight-timer", "host-diagnostics", "link-status",
                       "model-identity", "navigation", "output", "rx-battery", "service-probe", "trim-panel",
                       "tx-battery")
 PANEL_SETTINGS_SCENES = tuple(f"{kind}-settings" for kind in PANEL_DRAWER_KINDS)
 SCENES = SCENES + PANEL_SETTINGS_SCENES
-STITCHED_SCENES = ("settings", "state-settings", "state-entry", "state-condition", "metric-entry") + PANEL_SETTINGS_SCENES
+STITCHED_SCENES = ("settings", "state-settings", "state-entry", "state-condition", "metric-entry", "chart-metric-entry") + PANEL_SETTINGS_SCENES
 THEME_SCENES = ("theme-modern-dark", "theme-modern-light", "theme-custom")
 DASHBOARD_SCENES = ("dashboard",)
 DASHBOARD_INPUTS = """model.setGlobalVariable(8, 0, 42)
@@ -237,9 +239,9 @@ screenData:
             (sd / "AEROGRID/theme-registry.txt").write_text("modern-dark\nmodern-light\ncustom\n")
     elif scene in DASHBOARD_SCENES:
         layout = (ROOT / "src/WIDGETS/AeroGrid/layouts/Default.yaml").read_text()
-    elif scene in PANEL_SETTINGS_SCENES:
+    elif scene in PANEL_SETTINGS_SCENES or scene == "chart-metric-entry":
         from capture_recipes import config_yaml, load_recipe
-        kind = scene.removesuffix("-settings")
+        kind = "chart" if scene == "chart-metric-entry" else scene.removesuffix("-settings")
         recipe = ROOT / f"tools/capture-recipes/{kind}.yaml"
         config = PANEL_DRAWER_CONFIG.get(kind) or load_recipe(recipe)["config"]
         layout = f"""version: 3
@@ -388,7 +390,7 @@ panels:
             local scene = "SCENE"
             if scene == "settings" or string.sub(scene, -9) == "-settings" or scene == "navigation-tape" then
                 context.editorDrawerModule.open(context, state, "configure")
-            elseif scene == "metric-entry" then
+            elseif scene == "metric-entry" or scene == "chart-metric-entry" then
                 context.editorDrawerModule.open(context, state, "configure", "metrics", 1)
             elseif scene == "state-entry" then
                 context.editorDrawerModule.open(context, state, "configure", "entries", 1)

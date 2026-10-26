@@ -122,6 +122,8 @@ recipes/adapters, then inspect the resulting frame and provenance.
 python3 tools/capture-editor.py
 python3 tools/capture-editor.py --scene select-layout
 python3 tools/capture-editor.py --scene navigation-location
+python3 tools/capture-editor.py --scene chart-settings
+python3 tools/capture-editor.py --scene chart-metric-entry
 ```
 
 The `navigation-location` scene enters fullscreen and taps the navigation
@@ -134,6 +136,9 @@ settings, entry dialogs, exit, and Save As. Every other panel has a
 `<panel>-settings` scene (for example `--scene flight-timer-settings`) that
 captures its full settings drawer from the panel's capture recipe config, for
 the panel reference pages. Use `--help` for supported scene names.
+The Chart scenes use a native GV1 source labeled **Reading**.
+`chart-settings` selects **rolling** to include **Window duration**;
+`chart-metric-entry` opens Chart's own entry drawer, not Metric's.
 
 It also captures the telemetry-free **Palette** layout with real production
 primitives. These scenes are opt-in and do not open the editor:
@@ -162,8 +167,8 @@ through a native long-press and automate production editor commands in the
 isolated copy. Check images manually: capture success is not a replacement
 for interactive editor/persistence tests.
 
-The `settings`, `<kind>-settings`, `state-entry`, `state-condition`, and
-`metric-entry` scenes capture the whole
+The `settings`, `<kind>-settings`, `state-entry`, `state-condition`,
+`metric-entry`, and `chart-metric-entry` scenes capture the whole
 configuration drawer, cropped to the dialog. When its rows do not fit on the
 screen, the tool captures further pages in `<scene>-page<N>/`, each hiding
 leading rows in the isolated copy so later rows move into view, and stitches

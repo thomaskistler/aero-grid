@@ -79,6 +79,32 @@ class CaptureRecipeTests(unittest.TestCase):
                 self.assertEqual(options[1]["value"]["unsignedValue"], 1)
                 self.assertFalse((sd / "MODELS/model4.yml").exists())
 
+    def test_chart_drawers_use_chart_settings_and_native_source(self):
+        path = Path(__file__).with_name("capture-editor.py")
+        spec = importlib.util.spec_from_file_location("capture_editor", path)
+        capture = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(capture)
+        for scene in ("chart-settings", "chart-metric-entry"):
+            with self.subTest(scene=scene), tempfile.TemporaryDirectory() as directory:
+                self.assertIn(scene, capture.SCENES)
+                self.assertIn(scene, capture.STITCHED_SCENES)
+                sd = Path(directory) / "sdcard"
+                capture.prepare(sd, scene, shift=120)
+                widget = sd / "WIDGETS/AeroGrid"
+                layout = yaml.safe_load((widget / "layouts/Default.yaml").read_text())
+                self.assertEqual(len(layout["panels"]), 1)
+                panel = layout["panels"][0]
+                self.assertEqual(panel["type"], "chart")
+                self.assertEqual(panel["config"], capture.PANEL_DRAWER_CONFIG["chart"])
+                self.assertEqual(panel["config"]["timeRange"], "rolling")
+                self.assertEqual(panel["config"]["metrics"][0]["source"], "gvar1")
+                main = (widget / "main.lua").read_text()
+                self.assertIn(f'local scene = "{scene}"', main)
+                self.assertIn('context.editorDrawerModule.open(context, state, "configure", "metrics", 1)', main)
+                self.assertIn("shift + rowHeight > 120", main)
+                self.assertEqual((widget / "panels/chart.lua").read_bytes(),
+                                 (capture.ROOT / "src/WIDGETS/AeroGrid/panels/chart.lua").read_bytes())
+
     def test_drawer_pages_stitch_into_one_dialog(self):
         path = Path(__file__).with_name("capture-editor.py")
         spec = importlib.util.spec_from_file_location("capture_editor", path)
