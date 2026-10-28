@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
---- Connected, error-bounded recordings of cumulative armed time.
-local history = { RUNTIME_API = 1, CAPACITY = 6144 }
+--- Connected, error-bounded recordings of cumulative recording time.
+local history = { RUNTIME_API = 1, CAPACITY = 6144, FLIGHT_CAPACITY = 64 }
 history.__index = history
 
 local TAU = { off = 0, light = 50, medium = 100, strong = 200 }
@@ -110,6 +110,7 @@ function history.new(env, support, runtime)
         cursor = 1,
         sessions = {},
         sessionNames = {},
+        sessionViews = {},
     }, history)
 end
 
@@ -124,15 +125,22 @@ local function sessionFor(service, armSwitch)
             elapsed = 0,
             segment = 0,
             revision = 0,
+            flightFirst = 1,
+            flightLast = 0,
+            flightRevision = 0,
         }
         session = {
             name = armed.key,
             state = state,
             view = service.support.snapshot(state),
             arm = armed,
+            spans = {},
+            spanLast = 0,
+            flights = {},
         }
         service.sessions[#service.sessions + 1] = session
         service.sessionNames[armed.key] = session
+        service.sessionViews[session.view] = session
     end
     return session
 end
@@ -141,8 +149,19 @@ function history:session(armSwitch)
     return sessionFor(self, armSwitch).view
 end
 
-local function advance(session, now)
+local function advance(session, now, flight)
+    if session.lastTime == now and (not flight or not flight.epoch or session.epoch == flight.epoch) then
+        return
+    end
     local state = session.state
+    session.attachedAt = session.attachedAt or now
+    if flight and flight.epoch and flight.epoch ~= session.epoch then
+        session.epoch = flight.epoch
+        session.spans, session.spanLast, session.span = {}, 0, nil
+        session.flights, session.openFlight = {}, nil
+        state.flightFirst, state.flightLast, state.flightLost, state.flightActive = 1, 0, false, false
+        state.flightRevision = state.flightRevision + 1
+    end
     local lastTime = session.lastTime
     if lastTime and state.recording and now > lastTime then
         state.elapsed = state.elapsed + now - lastTime
@@ -155,7 +174,24 @@ local function advance(session, now)
         and type(updatedAt) == "number"
         and now >= updatedAt
         and now - updatedAt <= 100
-    local recording = available and value == true or false
+    local associated = flight and flight.armKey == session.name
+    local recording = associated and flight.active or available and value == true or false
+    if associated then
+        -- Wall-clock spans map delayed boundaries to the cumulative recording
+        -- axis, including pauses. The ring also bounds pathological arm chatter.
+        if state.recording and session.span then
+            session.span.to = now
+        end
+        if recording and not session.span then
+            session.spanLast = session.spanLast + 1
+            session.span = { from = now, to = now, at = state.elapsed }
+            session.spans[(session.spanLast - 1) % 128 + 1] = session.span
+        elseif not recording then
+            session.span = nil
+        end
+    elseif session.span then
+        session.span.to, session.span = now, nil
+    end
     if state.recording ~= recording or state.available ~= available then
         if recording and not state.recording then
             state.segment = state.segment + 1
@@ -165,14 +201,112 @@ local function advance(session, now)
     end
 end
 
-function history:advance(now)
-    for _, session in ipairs(self.sessions) do
-        advance(session, now)
+local function mapped(session, stamp, clipStart)
+    if type(stamp) ~= "number" then
+        return nil
+    end
+    local clipped
+    for index = session.spanLast, math.max(1, session.spanLast - 127), -1 do
+        local span = session.spans[(index - 1) % 128 + 1]
+        if stamp >= span.from and stamp <= span.to then
+            return span.at + stamp - span.from, true
+        elseif clipStart and stamp < span.from then
+            clipped = span.at
+        end
+    end
+    return clipped, false
+end
+
+local function addFlight(session, id, at, known)
+    local state = session.state
+    local index = state.flightLast + 1
+    local interval = { id = id, start = at, startKnown = known }
+    session.flights[(index - 1) % history.FLIGHT_CAPACITY + 1] = interval
+    state.flightLast = index
+    state.flightFirst = math.max(state.flightFirst, index - history.FLIGHT_CAPACITY + 1)
+    state.flightRevision = state.flightRevision + 1
+    state.flightActive = true
+    session.openFlight = interval
+end
+
+--- Scalar reads keep the bounded flight ring separate from telemetry series.
+function history:flight(view, index)
+    local session = self.sessionViews and self.sessionViews[view]
+    if not session or index < session.state.flightFirst or index > session.state.flightLast then
+        return nil
+    end
+    local interval = session.flights[(index - 1) % history.FLIGHT_CAPACITY + 1]
+    if interval.empty then
+        return nil
+    end
+    return interval.start, interval.finish, interval.startKnown, interval.endKnown
+end
+
+function history:boundaries()
+    local service, flight = self.runtime.byId.flight, self.flightState
+    if not flight or not service.boundaries or not flight.epoch or #self.sessions == 0 then
+        return
+    end
+    local records, _, lost = service:boundaries(self.flightSequence or 0, self.flightEpoch)
+    if lost then
+        for _, session in ipairs(self.sessions) do
+            -- An unobserved end must not turn a previous flight into a band
+            -- stretching across later flights.
+            if session.openFlight then
+                session.openFlight.finish = session.openFlight.observed or session.state.elapsed
+                session.openFlight = nil
+                session.state.flightActive = false
+            end
+            session.state.flightLost = true
+            session.state.flightRevision = session.state.flightRevision + 1
+        end
+    end
+    self.flightEpoch = flight.epoch
+    -- Drain one record per service turn, even after journal loss.
+    local event = records[1]
+    if event then
+        self.boundaryAt = self.now
+        self.flightSequence = event.sequence
+        local session = self.sessionNames[event.armKey]
+        if session and session.epoch == event.epoch then
+            local at, known = mapped(session, event.at, event.kind == "start")
+            if event.kind == "start" and at and event.observedAt >= session.attachedAt then
+                addFlight(session, event.flightId, at, known)
+            elseif event.kind == "end" then
+                local interval = session.openFlight
+                if interval and interval.id == event.flightId then
+                    interval.finish, interval.endKnown = at or interval.observed or session.state.elapsed, at ~= nil
+                    local earliest = session.spans[(math.max(1, session.spanLast - 127) - 1) % 128 + 1]
+                    interval.empty = not at and earliest and event.at < earliest.from
+                    session.openFlight = nil
+                    session.state.flightActive = false
+                    session.state.flightRevision = session.state.flightRevision + 1
+                end
+            end
+        end
+    end
+    local session = #records <= 1 and flight.active and self.sessionNames[flight.armKey]
+    if session then
+        if not session.openFlight or session.openFlight.id ~= flight.flightId then
+            local at, known = mapped(session, flight.startedAt, true)
+            -- Late attachment shows only the portion this runtime recorded,
+            -- never a fabricated start marker or pre-attachment samples.
+            addFlight(session, flight.flightId, at or session.state.elapsed, known)
+        end
+        session.openFlight.observed = session.state.elapsed
     end
 end
 
-function history:subscribe(source, options)
-    options = options or {}
+function history:advance(now)
+    self.now = now
+    local flight = self.runtime.byId.flight
+    self.flightState = flight and flight:state()
+    for _, session in ipairs(self.sessions) do
+        advance(session, now, self.flightState)
+    end
+end
+
+local function recordingOptions(options)
     local window = options.windowSeconds or 60
     local mode = options.timeRange or "growing"
     local smoothing, precision = options.smoothing or "off", options.precision
@@ -186,9 +320,11 @@ function history:subscribe(source, options)
     if mode == "growing" then
         window = 60
     end
-    local session = sessionFor(self, options.armSwitch)
-    source = type(source) == "string" and source or ""
-    local key = session.name
+    return window, mode, smoothing, precision
+end
+
+local function recordingKey(name, source, window, mode, smoothing, precision)
+    return name
         .. "\0"
         .. source
         .. "\0"
@@ -199,6 +335,66 @@ function history:subscribe(source, options)
         .. smoothing
         .. "\0"
         .. tostring(precision or "sensor")
+end
+
+--- Drafts can read compatible live recordings, but cannot create pollers,
+--- sessions, subscriptions, or journal cursors.
+function history:preview()
+    local owner = self
+    local facade = { FLIGHT_CAPACITY = history.FLIGHT_CAPACITY }
+    local empty = self.support.snapshot({
+        previewMissing = true,
+        available = false,
+        revision = 0,
+        plotRevision = 0,
+        count = 0,
+        first = 1,
+        last = 0,
+    })
+    local function condition(legacy)
+        local native = owner.runtime.byId.armed.condition
+        return native ~= "" and native or legacy or ""
+    end
+    function facade:session(legacy)
+        local key = condition(legacy)
+        local session = owner.sessionNames[key]
+        return session and session.view
+            or owner.support.snapshot({
+                previewMissing = true,
+                configured = key ~= "",
+                available = false,
+                recording = false,
+                elapsed = 0,
+                segment = 0,
+                flightFirst = 1,
+                flightLast = 0,
+            })
+    end
+    function facade:subscribe(source, options)
+        options = options or {}
+        local window, mode, smoothing, precision = recordingOptions(options)
+        source = type(source) == "string" and source or ""
+        local key = recordingKey(condition(options.armSwitch), source, window, mode, smoothing, precision)
+        return owner.names[key] and owner.names[key].view or empty
+    end
+    function facade:point(view, index)
+        return owner:point(view, index)
+    end
+    function facade:block(view, index, finish, before)
+        return owner:block(view, index, finish, before)
+    end
+    function facade:flight(view, index)
+        return owner:flight(view, index)
+    end
+    return facade
+end
+
+function history:subscribe(source, options)
+    options = options or {}
+    local window, mode, smoothing, precision = recordingOptions(options)
+    local session = sessionFor(self, options.armSwitch)
+    source = type(source) == "string" and source or ""
+    local key = recordingKey(session.name, source, window, mode, smoothing, precision)
     if self.names[key] then
         return self.names[key].view
     end
@@ -266,6 +462,9 @@ end
 --- Skip sealed blocks only when they fit in one screen column. These summaries
 --- accelerate projection; they never replace or recompress the stored knots.
 function history:block(view, index, finish, before)
+    if (index - 1) % 4 ~= 0 then
+        return nil
+    end
     local entry = self.views[view]
     if not entry or index < entry.state.first then
         return nil
@@ -343,7 +542,7 @@ function history:sample(reading, now)
         return
     end
     for _, entry in ipairs(entries) do
-        advance(entry.session, now)
+        advance(entry.session, now, self.flightState)
         local session = entry.session.state
         if session.recording then
             local state = entry.state
@@ -352,6 +551,7 @@ function history:sample(reading, now)
                 and finite(reading.value)
                 and reading.kind == "number"
             if valid then
+                self.sampledAt = now
                 local value = reading.value
                 if entry.segment ~= session.segment or entry.gap or not entry.filtered then
                     entry.filtered = value
@@ -402,6 +602,7 @@ function history:update(now)
         error(self.failure)
     end
     self:advance(now)
+    self:boundaries()
     self.cursor = self.support.roundRobin(self.entries, self.cursor, 1, updateEntry, self, now)
 end
 

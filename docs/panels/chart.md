@@ -4,7 +4,7 @@
 | --- | --- |
 | ![Chart at 2x1](../assets/panels/chart/2x1.png) | ![Chart at 2x2](../assets/panels/chart/2x2.png) |
 
-Records up to three numeric EdgeTX sources on one chart while armed.
+Records up to three numeric EdgeTX sources on one chart while armed or in flight.
 The legend shows each recorded value and its minimum and maximum.
 Use separate panels for separate charts.
 Select **Armed switch** beside Layout and Theme in the widget settings.
@@ -44,17 +44,28 @@ Tap a reading under **Metrics** to open its settings.
 
 ## Behavior
 
-Recording starts when the effective armed condition is active, pauses when it is
-inactive, and resumes the same recording on rearm. Disarmed time takes no
-horizontal space. Dashed markers and breaks in the line mark disarm/rearm
-boundaries and missing telemetry.
-Readouts freeze while disarmed. Minimum and maximum cover all recorded armed
+Recording starts when the effective armed condition is active. When shared
+flight detection uses that same condition, recording continues through the
+disarm grace until flight end is confirmed, even while the chart is hidden.
+Rearming during grace keeps one uninterrupted flight. Without a qualified,
+matching flight, disarming pauses recording immediately.
+
+A thin green line across the top of the plot identifies each flight, with
+short ticks at its detected start and confirmed end. These use the actual
+flight times, not the later qualification or confirmation times. Grace-period
+samples remain on the chart beyond the end tick. No Flight counter panel or
+logical-switch output is required. A chart opened mid-flight shows only the
+recorded portion, without inventing a start tick.
+
+Rearming resumes the same history; paused time takes no horizontal space.
+Dashed markers and trace breaks mark recording pauses and missing telemetry.
+Readouts freeze when recording pauses. Minimum and maximum cover all recorded
 periods, even in rolling mode.
 
 **Growing** starts at one minute and expands in whole-minute steps as
-cumulative armed time increases. **Rolling** drops plot history outside
+cumulative recording time increases. **Rolling** drops plot history outside
 **Window duration**, but keeps the recorded minimum and maximum.
-Faint solid lines mark armed-time intervals; the bottom-right label shows
+Faint solid grid lines mark recording-time intervals; the bottom-right label shows
 the visible duration.
 
 Each vertical bound can be fixed independently: set only **Range min** to
@@ -71,12 +82,16 @@ Missing or stale readings leave gaps and dim the last value rather than
 recording a false zero; a fresh numeric zero is valid.
 
 If **HISTORY FULL** appears, existing plot history is preserved and new plot
-samples stop for the full series. Armed readouts and extrema continue
+samples stop for the full series. Readouts and extrema continue
 updating. Rolling mode frees space as old history leaves the window.
 
 History is held in RAM, not saved to the SD card. It continues while the
 dashboard receives background updates. Reloading or restarting the dashboard,
 including applying editor changes that rebuild it, clears history.
+Editor previews reuse compatible recorded history without starting new recordings.
+New sources show an explicit no-data preview until saved.
+Flight overlays retain the latest 64 intervals; missing earlier boundaries are
+not guessed.
 There is no separate reset control.
 
 ## States
@@ -84,9 +99,11 @@ There is no separate reset control.
 | Message | Meaning |
 | --- | --- |
 | **SET ARM SOURCE** | Select **Armed switch** in the widget settings; recording is disabled without an effective switch. |
-| **ARM N/A** | The selected armed switch condition is unavailable; recording is paused. |
+| **ARM N/A** | The selected armed switch condition is unavailable and no matching active flight is keeping recording running. |
 | **ADD METRICS** | Add a source in the panel settings. |
 | **WAITING FOR ARM** | No samples have been recorded yet. |
-| **NO DATA** | Armed, but no configured source has supplied a valid numeric sample. |
+| **NO DATA** | Recording, but no configured source has supplied a valid numeric sample. |
 | **HISTORY N/A** | History is unavailable; consult [Host diagnostics](host-diagnostics.md). |
-| **HISTORY FULL** | A series has stopped adding plot samples to preserve its recording; armed readouts and extrema still update. |
+| **HISTORY FULL** | A series has stopped adding plot samples to preserve its recording; readouts and extrema still update. |
+| **PREVIEW** | An edited chart displaying compatible existing history without changing recording. |
+| **PREVIEW: NO DATA** | A new or incompatible recording configuration; sampling starts after saving. |

@@ -104,7 +104,7 @@ does not consume scheduled work.
 | `flight_service.lua` | Shared model-flight detection, once-only count/history/audio, optional Sticky output, and timestamped boundaries. |
 | `extrema_service.lua` | Sensor extrema and dashboard flight-session tracking. |
 | `navigation_service.lua` | GPS fix, pilot/home position, distance, and north-up bearing. |
-| `history_service.lua` | Error-bounded chart recordings, cumulative armed time, raw extrema, line-only smoothing, and bounded rolling expiration. |
+| `history_service.lua` | Error-bounded chart recordings, cumulative recording time, flight boundaries, raw extrema, line-only smoothing, and bounded rolling expiration. |
 | `services.lua` | Environment/snapshots, subscription registration, and bounded scheduling/update dispatch. |
 
 Snapshots are read-only views over service-owned state, mutated in place by
@@ -126,7 +126,7 @@ appear as valid zero on a live link. Local switch values remain usable
 without a receiver.
 
 Chart history observes completed telemetry polls rather than reading changed
-revisions during redraw: unchanged numeric samples still occupy armed time,
+revisions during redraw: unchanged numeric samples still occupy recording time,
 and raw spikes must not be lost between frames. Observer failures are isolated
 from telemetry polling and reported through normal service failure handling.
 `services.armed:state()` describes the native widget condition;
@@ -145,7 +145,8 @@ once. Native configuration and state are per widget, not model-wide.
 History and extrema key sessions by the effective condition. A configured
 native Armed unifies their arm inputs; unset Armed retains independent legacy
 switches. Each chart arm configuration has its own cumulative session.
-It pauses on disarm and resumes the same recording;
+It pauses on disarm unless a matching shared flight is still active, including
+its disarm grace, and resumes the same recording;
 geometry reflow keeps it, while rebuilding the service runtime clears it.
 Each source/options subscription stores at most 6,144 connected linear knots.
 A fixed-anchor slope corridor chooses synthesized shared endpoints within half
@@ -154,7 +155,7 @@ enabled). Numerical margin is reserved before accepting a segment; when that
 margin consumes the tolerance, exact native values are retained. Unknown sensor
 precision uses the strictest supported tolerance until discovery completes.
 
-Knots use chunked `<I4n` / `<I4j` packing: cumulative armed ticks with gap/type
+Knots use chunked `<I4n` / `<I4j` packing: cumulative recording ticks with gap/type
 bits and a lossless native Lua float or integer. Payload is 48 KiB per full recording on float32
 firmware, or 72 KiB on double-precision hosts, excluding string/table/index and
 rendering overhead. Matching armed-switch/source/options subscriptions share storage.
@@ -170,6 +171,26 @@ restart pending projection. Recorded gaps stay separate except when their
 endpoints coincide on screen; marker objects are pooled by pixel column.
 Unchanged readouts are cached so their callback budget can process a larger
 bounded projection batch; same-pixel extrema do not add redundant geometry.
+
+History consumes at most one flight journal record per service turn, keyed by
+the event's pinned `armKey`, never by the optional Sticky output or the current
+broker arm. Per effective arm, 128 recording spans map wall-clock `at` timestamps
+to the cumulative recording axis; qualification/confirmation receipt times do
+not place boundaries. Grace samples remain after the mapped end. A 64-interval
+ring supplies scalar `history:flight(sessionView, index)` reads, independent of
+metric subscriptions. Overlays are staged in a bounded native-object pool.
+Telemetry-sampling turns reserve projection headroom without lowering the
+existing callback or staged-drain limits.
+
+Journal loss sets the session's `flightLost` flag and closes an unmatched open
+band at its last observed recording time without inventing an end tick.
+Missing ends/starts outside retained spans have no fabricated boundary tick.
+Late attachment can recover the current active interval only from its recorded
+portion; old completed flights do not create new history. Model epochs clear
+intervals and mapping spans. Draft chart previews read compatible live views
+through a read-only facade and make no live subscriptions. Compatible previews
+can become live panels after saving without losing history; new or incompatible
+subscriptions require a post-save rebuild.
 
 ## Shared flight tracking
 
@@ -189,12 +210,12 @@ validity. Unknown/stale arm observations never confirm disarm.
 
 `services.flight:boundaries(afterSequence, epoch)` returns immutable records,
 the oldest retained sequence, and a gap flag. The journal retains 64 start/end
-records with epoch, sequence, flight ID/count, `kind`, `at`, `observedAt`, and
+records with epoch, sequence, flight ID/count, pinned `armKey`, `kind`, `at`, `observedAt`, and
 qualification `reason` (`standard` currently). Start `at` is the motor candidate
 start; end `at` is the final disarm start. `observedAt` is qualification or
 completion, so duration excludes the disarm grace. Consumers must reconcile a
 gap or changed epoch; they must never read Sticky output as their event bus.
-Smart qualification and Chart recording/markers are separate later changes.
+Qualification methods share this same boundary contract.
 
 Model settings use their own schema/revision and losslessly encoded model
 filename under `/AEROGRID/models/`. Saves verify model identity and revision

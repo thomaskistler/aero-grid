@@ -792,3 +792,46 @@ denseItem.readingRevision = nil
 chart.refresh(dense)
 equal(rangeUpdates, 1, "a changed reading revision must recompute vertical ranges")
 chart.ranges = originalRanges
+
+local historyService = light.serviceRuntime.byId.history
+local telemetryService = light.serviceRuntime.byId.telemetry
+local controlService = light.serviceRuntime.byId.control
+local subscriptions, telemetryCount, controlCount = historyService.count, telemetryService.count, controlService.count
+local livePlacement = fixture.entryById(light, "power").placement
+local previewConfig = {}
+for key, value in pairs(livePlacement.config) do
+    previewConfig[key] = value
+end
+previewConfig.label = "Preview label"
+local compatible, previewError = light.dashboardLoader.buildPanel(light, {
+    id = "chart-preview-compatible",
+    type = "chart",
+    col = 0,
+    row = 0,
+    colSpan = 2,
+    rowSpan = 2,
+    config = previewConfig,
+}, nil, true)
+assert(compatible, previewError)
+equal(compatible.instance.series[1].feed, lightPower.series[1].feed, "visual edits must reuse compatible history views")
+finishDrawing(compatible.instance)
+equal(compatible.instance.status.properties.text, "PREVIEW")
+assert(compatible.instance.series[1].runs[1].line, "a compatible chart preview must still draw recorded history")
+chart.update(compatible.instance, { x = 0, y = 0, w = 472, h = 196 })
+finishDrawing(compatible.instance)
+assert(not compatible.instance.series[1].runs[1].line.hidden, "resizing a read-only preview preserves its traces")
+local incompatible, incompatibleError = light.dashboardLoader.buildPanel(light, {
+    id = "chart-preview-new",
+    type = "chart",
+    col = 0,
+    row = 0,
+    colSpan = 2,
+    rowSpan = 1,
+    config = { armSwitch = "L64", metrics = { { source = "draft-only-source" } } },
+}, nil, true)
+assert(incompatible, incompatibleError)
+finishDrawing(incompatible.instance)
+equal(incompatible.instance.status.properties.text, "PREVIEW: NO DATA")
+equal(historyService.count, subscriptions)
+equal(telemetryService.count, telemetryCount)
+equal(controlService.count, controlCount, "draft-only arm changes must not subscribe to live control")

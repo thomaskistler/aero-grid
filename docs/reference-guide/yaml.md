@@ -86,7 +86,7 @@ Omitted settings use their listed defaults. “Unset” means the setting has no
 
 ### `chart`
 
-Use a separate Chart panel for armed-time recording, not a live Metric sparkline.
+Use a separate Chart panel for recorded telemetry, not a live Metric sparkline.
 It supports 2x1, 3x1, 4x1, 2x2, 3x2, 4x2, 3x3, 4x3, and 4x4.
 
 | Key | Values and defaults |
@@ -110,10 +110,14 @@ For example, `rangeMin: 0` with no `rangeMax` anchors the bottom at zero and
 automatically adjusts the top; omit both keys for a fully automatic range.
 
 Set **Armed switch** in native widget settings. A retained panel `armSwitch`
-is used only when the widget setting is unset. Recording pauses
-when that condition becomes inactive, freezes the readouts, and resumes the
-same history on rearm. The horizontal axis counts cumulative armed time; resumed
-segments are broken and marked. Growing starts at one minute and expands to
+is used only when the widget setting is unset. A qualified shared flight with
+the same effective arm condition keeps recording through disarm grace until
+confirmed flight end. Otherwise disarming pauses immediately. Rearming during
+grace does not break or duplicate a flight; rearming after a pause resumes the
+same history with a marked break. The horizontal axis counts cumulative
+recording time, including retained grace samples. A thin green top-of-plot
+line and boundary ticks show actual flight start/end times; no logical-switch
+output or Flight counter panel is needed. Growing starts at one minute and expands to
 the next whole minute when exceeded; its duration is not configurable. Rolling
 keeps only the latest plot window but retains raw lifetime min/max. History is
 RAM-only and clears on dashboard reload. Connected linear compression bounds

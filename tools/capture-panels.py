@@ -106,7 +106,16 @@ view: 0
 """.replace("THEME", str(["modern-dark", "modern-light"].index(recipe["theme"]) + 1))
                      .replace("POSITION", str(position))
                      + suffix.split("\n", 1)[1])
-    layout = "version: 3\ngrid:\n  columns: 4\n  rows: 4\npanels:\n"
+    layout = "version: " + ("4" if panel == "chart" else "3") + "\n"
+    if panel == "chart":
+        layout += "legacyFlightArms:\n  capture: SFv\n"
+        settings = sd / "AEROGRID/models"
+        settings.mkdir(parents=True, exist_ok=True)
+        (settings / ("model1.yml".encode().hex() + ".yaml")).write_text(
+            "version: 1\nmodelFilename: model1.yml\nrevision: 1\nflight:\n"
+            "  minFlightDuration: 1\n  disarmDuration: 3\n"
+            "  history: false\n  announcements: false\n")
+    layout += "grid:\n  columns: 4\n  rows: 4\npanels:\n"
     for name, (col, row, cols, rows) in placements(recipe).items():
         layout += (f"  - id: subject-{name}\n    type: {panel}\n"
                    f"    col: {col}\n    row: {row}\n    colSpan: {cols}\n    rowSpan: {rows}\n"

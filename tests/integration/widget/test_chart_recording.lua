@@ -1,11 +1,17 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local root, independent = ...
+local root, independent, withFlights = ...
 assert(root)
 local hostIo = io
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
 local definition = fixture.module("main.lua")
 fixture.reset()
+if withFlights then
+    fixture.radio.fields.ch3 = { id = 306, name = "ch3" }
+    fixture.radio.values[306] = 1024
+    fixture.radio.rssi = 80
+    model.setGlobalVariable(8, 0, 0)
+end
 local lines = { "version: 3", "grid:", "  columns: 4", "  rows: 4", "panels:" }
 for index = 1, 8 do
     lines[#lines + 1] = string.format(
@@ -55,6 +61,7 @@ end
 context = definition.create({ x = 0, y = 0, w = 480, h = 272 }, {
     Layout = "chart-stress",
     Theme = "modern-dark",
+    Armed = withFlights and getSwitchIndex("SA" .. CHAR_DOWN) or 0,
 }, root .. "/build/test-widget-fixture/")
 local function pump(count, background)
     for _ = 1, count do
@@ -74,6 +81,18 @@ local function setArmed(value)
 end
 setArmed(1024)
 pump(200)
+if withFlights then
+    context.flightBroker:setDocument({
+        modelFilename = context.flightBroker.filename,
+        revision = 1,
+        flight = context.flightConfig.resolve({ minFlightDuration = 1, disarmDuration = 1, history = false }),
+    })
+    setArmed(0)
+    pump(20)
+    setArmed(1024)
+    pump(150)
+    assert(context.flightBroker.state.active, "charts must receive flight state without a counter panel")
+end
 assert(#context.panels == 8)
 for step = 1, 1000 do
     for id = 1, 24 do
@@ -90,12 +109,46 @@ for _, entry in ipairs(context.panels) do
     end
 end
 local elapsed = context.panels[1].instance.session.elapsed
+if withFlights then
+    local session = context.panels[1].instance.session
+    local segment, revision = session.segment, 0
+    for _, entry in ipairs(history.entries) do
+        revision = revision + entry.state.revision
+    end
+    setArmed(0)
+    pump(6, true)
+    assert(session.recording and context.flightBroker.state.active, "hidden charts must record during grace")
+    local after = 0
+    for _, entry in ipairs(history.entries) do
+        after = after + entry.state.revision
+    end
+    assert(after > revision, "hidden grace must contain fresh samples")
+    setArmed(1024)
+    pump(6, true)
+    assert(session.segment == segment and session.flightLast == 1, "grace rearm must not pause or duplicate flights")
+end
 setArmed(0)
 pump(30)
 local paused = context.panels[1].instance.session.elapsed
 assert(paused >= elapsed)
 pump(100, true)
 assert(context.panels[1].instance.session.elapsed == paused)
+if withFlights then
+    local panel = context.panels[1].instance
+    local start, finish, startKnown, endKnown = history:flight(panel.session, 1)
+    assert(
+        start and finish and start < finish and endKnown,
+        string.format(
+            "flight interval %s..%s known=%s/%s last=%s",
+            tostring(start),
+            tostring(finish),
+            tostring(startKnown),
+            tostring(endKnown),
+            tostring(panel.session.flightLast)
+        )
+    )
+    assert(panel.flightLines and panel.flightLines[1], "completed flights must have interval overlays")
+end
 
 for cycle = 1, 20 do
     for _ = 1, 60 do

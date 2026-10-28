@@ -351,6 +351,72 @@ local function updatePauseMarker(context)
     context.pauseVisible, context.pauseVersion, context.pauseAt = true, context.version, session.elapsed
 end
 
+local function updateFlights(context)
+    if context.flightYield then
+        context.flightYield = false
+        return false
+    end
+    local session, historyService = context.session, context.history
+    if
+        not session
+        or not historyService
+        or not historyService.flight
+        or (session.flightLast or 0) == 0 and not context.flightLines
+    then
+        return false
+    end
+    local elapsed = session.flightActive and session.elapsed or 0
+    if
+        context.flightDrawnRevision == session.flightRevision
+        and context.flightDrawnVersion == context.version
+        and context.flightDrawnElapsed == elapsed
+    then
+        return false
+    end
+    context.flightLines = context.flightLines or {}
+    local first, last = session.flightFirst, session.flightLast
+    if context.flightPassRevision ~= session.flightRevision or context.flightPassVersion ~= context.version then
+        context.flightCursor = 1
+        context.flightPassRevision, context.flightPassVersion = session.flightRevision, context.version
+    end
+    local slot = context.flightCursor or 1
+    local index = first + (slot - 1 - (first - 1) % historyService.FLIGHT_CAPACITY) % historyService.FLIGHT_CAPACITY
+    local line = context.flightLines[slot]
+    local at, finish, startKnown, endKnown = historyService:flight(session, index)
+    finish = finish or session.elapsed
+    local area, start, window = context.area, context.start, context.window
+    local visible = at and finish >= start and at <= start + window
+    if visible then
+        local left = area.x + math.floor(math.max(0, (at - start) / window) * area.w + 0.5)
+        local right = area.x + math.floor(math.min(1, (finish - start) / window) * area.w + 0.5)
+        local y = area.y + 2
+        local startY = startKnown and at >= start and y + 5 or y
+        local endY = endKnown and finish <= start + window and y + 5 or y
+        if not line then
+            line = lvgl.line(context.gridRoot, { pts = { { 0, 0 }, { 0, 0 } }, color = context.theme.chartColor.green })
+            context.flightLines[slot] = line
+            context.flightSlots = math.max(context.flightSlots or 0, slot)
+        end
+        local key = table.concat({ left, right, y, startY, endY }, ":")
+        if context.flightKeys[slot] ~= key then
+            line:set({ pts = { { left, startY }, { left, y }, { right, y }, { right, endY } } })
+            context.flightKeys[slot] = key
+        end
+        lvgl.show(line)
+    elseif line then
+        lvgl.hide(line)
+    end
+    local slots = math.max(context.flightSlots or 0, math.min(historyService.FLIGHT_CAPACITY, last))
+    context.flightCursor = slot < slots and slot + 1 or 1
+    if context.flightCursor == 1 then
+        context.flightDrawnRevision = session.flightRevision
+        context.flightDrawnVersion = context.version
+        context.flightDrawnElapsed = elapsed
+    end
+    context.flightYield = true
+    return true
+end
+
 local function extremaFont(font)
     if font == MIDSIZE then
         return 0
@@ -960,6 +1026,7 @@ end
 
 function chart.refresh(context, creating)
     local session = context.session
+    local hasFlights = not creating and (session.flightLast or 0) > 0
     local elapsed = session and session.elapsed or 0
     local window = timeWindow(context.settings, elapsed)
     local start = context.settings.timeRange == "rolling" and math.max(0, elapsed - window) or 0
@@ -968,14 +1035,20 @@ function chart.refresh(context, creating)
         context.window, context.start, context.pixelStart = window, start, pixelStart
         context.version = context.version + 1
     end
+    if not creating and updateFlights(context) then
+        return 5
+    end
     local version = context.version
     -- Stable readings also keep their ranges, leaving room for more projection.
     local readingsChanged = chart.render(context)
     local projectionCap = readingsChanged and PROJECTION_CAP or 13
-    local reflowed = version ~= context.version
-    if readingsChanged then
-        chart.ranges(context)
+    if
+        hasFlights
+        and (context.history.sampledAt == context.clock() or context.history.boundaryAt == context.clock())
+    then
+        projectionCap = math.min(projectionCap, 9)
     end
+    local reflowed = version ~= context.version
     updateHeader(context)
     if not creating then
         updateGrid(context)
@@ -990,13 +1063,15 @@ function chart.refresh(context, creating)
     end
     if not context.history or context.history.failed then
         status = "HISTORY N/A"
+    elseif context.preview then
+        status = context.previewMissing and "PREVIEW: NO DATA" or "PREVIEW"
     elseif not session.configured then
         status = "SET ARM SOURCE"
     elseif #context.series == 0 then
         status = "ADD METRICS"
     elseif full then
         status = "HISTORY FULL"
-    elseif not session.available then
+    elseif not session.available and not session.recording then
         status = "ARM N/A"
     else
         local available = false
@@ -1008,10 +1083,17 @@ function chart.refresh(context, creating)
         end
     end
     text(context.status, status, context.theme.color.textFaint)
-    if status ~= "" and status ~= "HISTORY FULL" then
+    if status ~= "" and status ~= "HISTORY FULL" and status ~= "PREVIEW" and status ~= "PREVIEW: NO DATA" then
+        if readingsChanged then
+            context.rangesReady = false
+        end
         return 20
     end
-    if reflowed then
+    if readingsChanged or not context.rangesReady then
+        chart.ranges(context)
+        context.rangesReady = true
+    end
+    if reflowed or readingsChanged and hasFlights then
         return 5
     end
     if context.pending then
@@ -1019,8 +1101,10 @@ function chart.refresh(context, creating)
         if item.job.geometryVersion ~= context.geometryVersion then
             prepare(context, item)
         end
-        if item.job.projecting and not project(context, item, projectionCap) then
-            return 5
+        if item.job.projecting then
+            if not project(context, item, projectionCap) or hasFlights then
+                return 5
+            end
         end
         if applyRuns(context, item) then
             context.pending = nil
@@ -1037,7 +1121,7 @@ function chart.refresh(context, creating)
             or item.drawnHigh ~= item.high
         then
             prepare(context, item)
-            if not project(context, item, projectionCap) or not applyRuns(context, item) then
+            if not project(context, item, projectionCap) or hasFlights or not applyRuns(context, item) then
                 context.pending = item
             end
             context.cursor = index % #context.series + 1
@@ -1055,7 +1139,9 @@ function chart.create(parent, rect, settings, services)
         themeBuilder = services.themeBuilder,
         primitives = services.primitives,
         settings = settings,
-        history = services.history,
+        history = services.history and (services.preview and services.history:preview() or services.history),
+        preview = services.preview == true,
+        clock = services.clock or getTime,
         series = {},
         version = 0,
         cursor = 1,
@@ -1063,12 +1149,17 @@ function chart.create(parent, rect, settings, services)
         area = {},
         grid = {},
         gridCursor = 1,
+        flightKeys = {},
     }
     local presentation = services.state("normal", settings.accent or "cyan")
     context.panel = context.primitives.panel(parent, rect, context.theme, presentation)
     context.plotRoot = lvgl.box(context.panel.root, { x = 0, y = 0, w = rect.w, h = rect.h })
     context.gridRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
     context.session = context.history and context.history:session(settings.armSwitch)
+        or { elapsed = 0, configured = false, available = false, recording = false }
+    if context.preview then
+        context.previewMissing = context.session.previewMissing
+    end
     for index, entry in ipairs(settings.metrics) do
         local color = context.theme.chartColor[entry.accent or COLORS[index]]
         local item = {
@@ -1087,6 +1178,9 @@ function chart.create(parent, rect, settings, services)
                 smoothing = settings.smoothing or "off",
                 precision = entry.precision,
             })
+            if context.preview then
+                context.previewMissing = context.previewMissing or item.feed.previewMissing
+            end
         end
         item.name, item.value, item.unit, item.extrema, item.maximum =
             label(context, color, SMLSIZE),

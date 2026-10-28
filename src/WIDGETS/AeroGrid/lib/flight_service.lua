@@ -165,6 +165,7 @@ function broker:boundary(kind, at, observedAt)
         epoch = self.epoch,
         sequence = self.sequence,
         flightId = self.session.flightId,
+        armKey = self.session.armKey,
         count = self.session.flightCount,
         kind = kind,
         at = at,

@@ -338,6 +338,11 @@ def readiness(recipe):
         return """            local instance = entry.instance
             if not instance.session or instance.session.elapsed < 1500 or instance.session.recording
                 or instance.pending or instance.gridVersion ~= instance.version then return end
+            if instance.session.flightLast ~= 1 or not instance.flightLines
+                or not instance.flightLines[1]
+                or instance.flightDrawnRevision ~= instance.session.flightRevision then return end
+            local _, finish, _, confirmed = instance.history:flight(instance.session, 1)
+            if not finish or not confirmed then return end
             for _, item in ipairs(instance.series) do
                 if not item.feed.available or not item.runs[1] or not item.runs[1].line
                     or item.drawnRevision ~= item.feed.plotRevision
@@ -461,13 +466,14 @@ def fixture_inputs(recipe):
     if recipe["panel"] not in SYNTHETIC_PANELS:
         return None
     if recipe["panel"] == "chart":
-        # Synthetic telemetry flows through production polling/history, then disarms.
+        # One real shared flight: the brief disarm is shorter than its grace.
         rows = []
         for index, (name, source) in enumerate(recipe["sample"]["sources"].items(), 1):
             rows.append(f"    {{name = {json.dumps(name)}, id = {30000 + index}, "
                         f"unit = {source['unit']}, prec = {source['precision']}, "
                         f"value = {lua_value(source['value'])}}}")
-        return """local started = getTime()
+        return """model.setGlobalVariable(8, 0, 0)
+local started = getTime()
 local armIndex = assert(getSwitchIndex("SF" .. CHAR_DOWN))
 local function clock() return math.min(getTime() - started, 2200) end
 local sources = {
@@ -475,12 +481,14 @@ local sources = {
 }
 return {
     getFieldInfo = function(name)
+        if name == "ch3" then return { id = 30010, name = "ch3" } end
         for _, source in ipairs(sources) do
             if source.name == name then return source end
         end
         return getFieldInfo(name)
     end,
     getValue = function(id)
+        if id == 30010 then return 1024 end
         for index, source in ipairs(sources) do
             if source.id == id or source.name == id then
                 return source.value * (1 + 0.2 * math.sin(clock() / (180 + index * 70) + index))

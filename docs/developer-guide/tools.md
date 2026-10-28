@@ -54,9 +54,10 @@ gives output dimensions of 137 x 154, 258 x 85, and 258 x 154 respectively.
 Recipes can override the border.
 Chart omits the unsupported 1x2 placement. Its adapter generates varying
 synthetic readings through the real telemetry/history services, records for
-approximately 20 seconds with a brief disarm/rearm gap, and disarms before
-capturing a stable frame. Its recipe requires `armSwitch: SFv`; the adapter
-supplies that condition through the real control service.
+approximately 20 seconds with a brief disarm/rearm inside flight-end grace,
+and waits for confirmed completion and its chart boundary before capturing.
+Its recipe requires `armSwitch: SFv`; the adapter supplies that condition and
+a motor channel through the real services, with isolated model flight settings.
 
 The runner waits for recipe-specific readiness, not just a fixed delay.
 Timer, trim, flight-mode, and model-image samples use isolated firmware model

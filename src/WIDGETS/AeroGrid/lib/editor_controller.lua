@@ -119,7 +119,11 @@ function module.new(dependencies)
         end
         local entries = {}
         for _, entry in ipairs(context.panels) do
-            if entry.failed or entry.editorVisible == false then
+            if
+                entry.failed
+                or entry.editorVisible == false
+                or entry.module.id == "chart" and entry.instance.preview and entry.instance.previewMissing
+            then
                 return false
             end
             entries[entry.placement.id] = entry
@@ -173,6 +177,10 @@ function module.new(dependencies)
             document.panels[index] = placement
             entry.editorPlacement = nil
             entry.editorVisible = nil
+            if entry.module.id == "chart" and entry.instance.preview then
+                entry.instance.history = context.serviceRuntime.byId.history
+                entry.instance.preview = false
+            end
         end
         context.panels = ordered
         context.document = document
