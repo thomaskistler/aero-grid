@@ -5,6 +5,7 @@ local support = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/services.lua"
 local telemetryModule = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/telemetry_service.lua"))()
 local controlModule = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/control_service.lua"))()
 local historyModule = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/history_service.lua"))()
+local armedModule = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/armed_service.lua"))()
 local equal = assert(loadfile(root .. "/tests/support/assertions.lua"))().assertEqual
 
 local function harness(options, configured)
@@ -35,6 +36,7 @@ local function harness(options, configured)
     local control = controlModule.new(env, support)
     runtime.byId.telemetry = telemetry
     runtime.byId.control = control
+    runtime.byId.armed = armedModule.new(env, support, runtime)
     local history = historyModule.new(env, support, runtime)
     local armSwitch = configured ~= false and "L01" or ""
     local session = history:session(armSwitch)
@@ -56,9 +58,10 @@ end
 local function recorder(options)
     local history, session, feed, _, _, control = harness(options)
     local arm = control.entries[1].state
-    arm.fresh, arm.value = true, true
+    arm.available, arm.fresh, arm.value = true, true, true
     local reading = { name = "V", fresh = true, kind = "number", precision = 1, unitText = "V" }
     local function sample(at, value)
+        arm.updatedAt = at
         reading.value, reading.updatedAt = value, at
         history:sample(reading, at)
         history:update(at)

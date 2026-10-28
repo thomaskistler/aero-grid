@@ -5,6 +5,8 @@
 | ![Flight counter at 1x2](../assets/panels/flight-counter/1x2.png) | ![Flight counter at 2x1](../assets/panels/flight-counter/2x1.png) | ![Flight counter at 2x2](../assets/panels/flight-counter/2x2.png) |
 
 Counts qualifying flights, stores the total in GV9, and highlights an active flight.
+Select **Armed switch** beside Layout and Theme in the widget settings.
+If it is unset, an existing panel arm switch remains in use and visible.
 
 ## Settings
 
@@ -13,7 +15,7 @@ Counts qualifying flights, stores the total in GV9, and highlights an active fli
 | Setting | Default | What it does |
 | --- | --- | --- |
 | **Label** | FLT | Panel heading. Clear it to restore the default. |
-| **Armed switch position** | SF↑ | Switch position that means armed. Choose a physical switch position or a logical switch that is true while armed. |
+| **Armed switch position** | none for new panels | Legacy panel switch, shown only when nonblank and widget **Armed switch** is unset. Older layouts retain their previous switch, including the former SF↑ default. |
 | **Motor channel** | CH3 | Motor channel used to check whether the motor is running. Select your model's actual throttle channel. The picker is restricted to channels. |
 | **Reversed motor channel** | off | Reverse the channel reading before calculating motor percentage. Enable it if the selected channel runs from high at idle to low at full power. |
 | **Minimum motor percent** | 25 | Motor percentage must be strictly above this value to qualify. Valid values are 0 up to, but not including, 100. Whole-number values change in steps of 1. |
@@ -24,14 +26,15 @@ Counts qualifying flights, stores the total in GV9, and highlights an active fli
 
 ## Behavior
 
-A flight qualifies when **Armed switch position**, **Minimum motor percent**,
+A flight qualifies when the effective armed condition, **Minimum motor percent**,
 and live telemetry hold continuously for **Qualification seconds**. Any
 interruption before qualification resets the attempt. Qualification increments
 the total once. Motor percentage maps the channel's normal low-to-high travel
 to 0–100%, after applying **Reversed motor channel**.
 
-**Armed switch position** belongs to this panel only. If using session extrema
-or a separate State panel, configure their armed conditions to agree with it.
+The widget's **Armed switch** overrides panel arm switches and also drives
+Chart, first-arm Navigation, and flight-session minima in this widget.
+Custom State-panel conditions remain independent.
 An unavailable arm reading cannot confirm disarming.
 
 After qualification, telemetry or motor changes do not end the flight.

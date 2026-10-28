@@ -14,6 +14,7 @@
 ---@class AeroGridWidgetOptions
 ---@field Layout integer|string Position in the layout registry, or a layout name.
 ---@field Theme integer|string Position in the theme catalog; or a theme name.
+---@field Armed? integer Physical-position or logical-switch ID; zero is unset.
 
 ---@class AeroGridContext
 ---@field zone AeroGridZone Live zone table maintained by EdgeTX.
@@ -46,7 +47,7 @@
 ---@field errorLabel? any
 ---@field page any Container holding one generation of the dashboard.
 ---@field reloadState? "clear"|"rebuild"
----@field stage? "theme-read"|"theme-validate"|"read"|"tokenize"|"header"|"header-migrate"|"header-finalize"|"services"|"panels"|"panel-migrate"|"panel-validate" Staged loader position.
+---@field stage? "theme-read"|"theme-validate"|"read"|"tokenize"|"header"|"header-migrate"|"header-finalize"|"services"|"panels"|"panel-migrate"|"panel-validate"|"panel-build" Staged loader position.
 ---@field servicesModule? table Loaded lib/services.lua registry module.
 ---@field packageInfo? table Package identity and compatibility versions.
 ---@field serviceRuntime? table Registry holding every constructed service.
@@ -229,6 +230,7 @@ end
 local options = {
     { "Layout", CHOICE, 1, layoutNames },
     { "Theme", CHOICE, 1, themeLabels },
+    { "Armed", SWITCH, 0 },
 }
 
 --- Resolve the Layout option to a name. A stale position selects Empty.
@@ -549,6 +551,7 @@ local function create(zone, widgetOptions, path)
         path = path,
         layoutName = layoutName(widgetOptions.Layout),
         themeMode = themeModeOf(widgetOptions.Theme),
+        nativeArmed = widgetOptions.Armed or 0,
         panels = {},
         rejected = {},
         errors = {},
@@ -575,7 +578,7 @@ local function create(zone, widgetOptions, path)
             or package.version == ""
             or package.runtimeApi ~= 1
             or package.panelApi ~= 1
-            or package.layoutVersion ~= 3
+            or package.layoutVersion ~= 4
         )
     then
         package = nil
@@ -741,13 +744,14 @@ end
 local function update(context, widgetOptions)
     local name = layoutName(widgetOptions.Layout)
     local themeMode = themeModeOf(widgetOptions.Theme)
+    local nativeArmed = widgetOptions.Armed or 0
 
     -- Without a runtime there is nothing to rebuild, and restaging would fail.
     if context.runtimeFailed then
         return
     end
 
-    if name ~= context.layoutName or themeMode ~= context.themeMode then
+    if name ~= context.layoutName or themeMode ~= context.themeMode or nativeArmed ~= context.nativeArmed then
         context.editorStash = nil
         if context.editorUi then
             context.editorUiModule.close(context, true)
@@ -756,6 +760,10 @@ local function update(context, widgetOptions)
         end
         context.layoutName = name
         context.themeMode = themeMode
+        if nativeArmed ~= context.nativeArmed then
+            context.navigationHomes = {}
+        end
+        context.nativeArmed = nativeArmed
         context.reloadState = "clear"
     end
 end
@@ -768,6 +776,9 @@ local function translate(name)
     end
     if name == "Theme" then
         return "Theme"
+    end
+    if name == "Armed" then
+        return "Armed switch"
     end
     return name
 end

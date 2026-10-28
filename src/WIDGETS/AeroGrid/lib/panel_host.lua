@@ -183,7 +183,7 @@ end
 ---@param config any Raw config mapping from the layout file.
 ---@return table settings
 ---@return string[] warnings
-function panelHost.resolveSettings(module, config, span)
+function panelHost.resolveSettings(module, config, span, nativeArmed)
     local settings = {}
     local warnings = {}
     local declared = {}
@@ -253,7 +253,7 @@ function panelHost.resolveSettings(module, config, span)
     -- Limited display space is not a settings error: panels shed optional
     -- content at render time without changing the stored preferences.
     if type(rawget(module, "validateSettings")) == "function" then
-        local ok, reported = pcall(module.validateSettings, settings, span, config)
+        local ok, reported = pcall(module.validateSettings, settings, span, config, nativeArmed)
         if not ok then
             warnings[#warnings + 1] = "validateSettings raised: " .. tostring(reported)
         elseif type(reported) == "table" then

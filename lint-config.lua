@@ -33,6 +33,7 @@ return {
             "MENU_HEADER_HEIGHT",
             "SMLSIZE",
             "STRING",
+            "SWITCH",
             "TINSIZE",
             "XXLSIZE",
             "fstat",

@@ -6,6 +6,7 @@ local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local edgetx = assert(loadfile(root .. "/tests/support/edgetx.lua"))()
 local services = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/services.lua"))()
 local navigationService = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/navigation_service.lua"))()
+local armedService = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/armed_service.lua"))()
 local GPS_DELAY_TICKS = edgetx.firmware.GPS_DELAY_TICKS
 
 local function testPositionChecksAndDistance()
@@ -52,7 +53,9 @@ local function captureFixture(homes)
             },
         },
     }
-    local service = navigationService.new(services.environment({}), services, runtime)
+    local env = services.environment({})
+    runtime.byId.armed = armedService.new(env, services, runtime)
+    local service = navigationService.new(env, services, runtime)
     local view = service:subscribe("GPS", "SFv")
     local function update(now, armed, pollAge)
         arm.value, arm.updatedAt = armed, now
@@ -328,7 +331,7 @@ local function testCaptureDiagnostics()
             end,
             append = function(_, _, _, text)
                 assert(string.find(text, "Home capture GPS=GPS: switch unavailable; now=", 1, true))
-                assert(string.find(text, "available=false fresh=true stale=nil value=", 1, true))
+                assert(string.find(text, "available=false fresh=false stale=nil value=", 1, true))
                 count = count + 1
             end,
         },

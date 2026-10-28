@@ -301,6 +301,10 @@ local function firmwareSwitchName(name, env)
     return physical .. suffix
 end
 
+function controlService:switchIndex(name)
+    return self.env.getSwitchIndex(firmwareSwitchName(name, self.env))
+end
+
 function controlService:readSwitch(entry, now)
     local state, env = entry.state, self.env
     if not state.known then
@@ -308,7 +312,7 @@ function controlService:readSwitch(entry, now)
             return
         end
         entry.nextResolve = now + RESOLVE_RETRY
-        local index = env.getSwitchIndex(firmwareSwitchName(state.name, env))
+        local index = self:switchIndex(state.name)
         if type(index) ~= "number" or index == 0 then
             state.available, state.fresh = false, false
             return
@@ -323,7 +327,8 @@ function controlService:readSwitch(entry, now)
 end
 
 --- Shared physical-position and logical-switch conditions; unknown is not false.
-function controlService:switch(name)
+---@param index? integer Validated native SWITCH option ID.
+function controlService:switch(name, index)
     assert(self.env.getSwitchIndex and self.env.getSwitchValue, "state panel requires switch APIs")
     if self.switches[name] then
         return self.switches[name]
@@ -336,27 +341,11 @@ function controlService:switch(name)
         value = false,
         updatedAt = 0,
     }, controlService.readSwitch)
+    if index then
+        entry.id, entry.state.known = index, true
+    end
     self.switches[name] = entry.view
     return entry.view
-end
-
---- Resolve a physical position or logical switch through the firmware.
-function controlService:armSwitch(name)
-    local env = self.env
-    assert(env.getSwitchIndex and env.getSwitchValue, "flight counter requires switch APIs")
-    local index = env.getSwitchIndex(firmwareSwitchName(name, env))
-    assert(type(index) == "number" and index > 0, "flight counter armSwitch does not exist: " .. name)
-    return self:add({
-        fresh = false,
-        value = 0,
-        updatedAt = 0,
-    }, function(_, entry, now)
-        local value = env.getSwitchValue(index)
-        assert(type(value) == "boolean", "flight counter could not read armSwitch " .. name)
-        entry.state.value = value and 1 or 0
-        entry.state.fresh = true
-        entry.state.updatedAt = now
-    end).view
 end
 
 --- Register a subscription and publish its immutable view.

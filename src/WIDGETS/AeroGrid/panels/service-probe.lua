@@ -93,7 +93,7 @@ local function subscribe(service, name, settings)
     if name == "extrema" then
         service:flight(extra)
         if source ~= "" then
-            service:sessionExtrema(source)
+            service:sessionExtrema(source, extra)
         end
         return nil
     end

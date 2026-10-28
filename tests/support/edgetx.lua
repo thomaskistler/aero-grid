@@ -125,6 +125,7 @@ claim("FONT_MASK", FONTS_H, "FONT_MASK", 0x0F00)
 -- A widget option type, sharing no numbering with the fonts above.
 claim("STRING", LUA_CONSTANTS, "LROT_NUMENTRY(STRING, WidgetOption::String)", 3)
 claim("CHOICE", LUA_CONSTANTS, "LROT_NUMENTRY(CHOICE, WidgetOption::Choice)", 10)
+claim("SWITCH", LUA_CONSTANTS, "LROT_NUMENTRY(SWITCH, WidgetOption::Switch)", 6)
 
 --- Line heights of the font set a 480 x 272 radio is built with.
 ---
@@ -599,6 +600,7 @@ function support.constants()
     BOLD = firmware.BOLD
     STRING = firmware.STRING
     CHOICE = firmware.CHOICE
+    SWITCH = firmware.SWITCH
 end
 
 --- Publish `lcd`, and the theme role constants it answers for.
@@ -1828,6 +1830,13 @@ function support.radio(hostIo)
         return index
     end
     function getSwitchValue(index)
+        if index < 0 then
+            local value = getSwitchValue(-index)
+            if value == nil then
+                return nil
+            end
+            return not value
+        end
         if index > 2000 and index <= 2064 then
             return radio.logicalSwitches[index - 2000] == true
         end

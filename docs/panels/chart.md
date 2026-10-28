@@ -7,6 +7,9 @@
 Records up to three numeric EdgeTX sources on one chart while armed.
 The legend shows each recorded value and its minimum and maximum.
 Use separate panels for separate charts.
+Select **Armed switch** beside Layout and Theme in the widget settings.
+With that option unset, an existing panel arm switch remains in use and
+visible; otherwise the widget switch overrides it.
 
 ## Settings
 
@@ -15,7 +18,7 @@ Use separate panels for separate charts.
 | Setting | Default | What it does |
 | --- | --- | --- |
 | **Label** | empty | Optional chart heading. Clear it to hide the heading. |
-| **Armed switch position** | none | Physical switch position such as **SA^** or **SFv**, or logical switch **L01**, that means armed. Recording is disabled until selected. |
+| **Armed switch position** | none | Legacy panel switch, shown only when nonblank and the widget's **Armed switch** is unset. |
 | **Metrics** | none | Up to three readings. Tap **+** to add one, or tap an entry to edit it. |
 | **Time range** | growing | **growing** keeps the recording from the start; **rolling** shows the latest fixed window. |
 | **Window duration** | 1 minute | **30 seconds**, **1 minute**, **2 minutes**, **5 minutes**, or **10 minutes**. Shown only when **Time range** is **rolling**. |
@@ -41,7 +44,7 @@ Tap a reading under **Metrics** to open its settings.
 
 ## Behavior
 
-Recording starts when **Armed switch position** is active, pauses when it is
+Recording starts when the effective armed condition is active, pauses when it is
 inactive, and resumes the same recording on rearm. Disarmed time takes no
 horizontal space. Dashed markers and breaks in the line mark disarm/rearm
 boundaries and missing telemetry.
@@ -80,7 +83,7 @@ There is no separate reset control.
 
 | Message | Meaning |
 | --- | --- |
-| **SET ARM SOURCE** | Select **Armed switch position** in the panel settings; recording is disabled without it. |
+| **SET ARM SOURCE** | Select **Armed switch** in the widget settings; recording is disabled without an effective switch. |
 | **ARM N/A** | The selected armed switch condition is unavailable; recording is paused. |
 | **ADD METRICS** | Add a source in the panel settings. |
 | **WAITING FOR ARM** | No samples have been recorded yet. |

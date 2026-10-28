@@ -127,11 +127,11 @@ local function settingsFor(module, config)
     return values, knownConfig, errors
 end
 
-local function validatePanelSettings(module, settings, knownConfig, span)
+local function validatePanelSettings(module, settings, knownConfig, span, nativeArmed)
     if type(module.validateSettings) ~= "function" then
         return true
     end
-    local ok, reported = pcall(module.validateSettings, settings, span, knownConfig)
+    local ok, reported = pcall(module.validateSettings, settings, span, knownConfig, nativeArmed)
     if not ok then
         return false, "validateSettings raised: " .. tostring(reported)
     end
@@ -285,7 +285,7 @@ function editor.sizes(session)
                 and placement.col + colSpan <= 4
                 and placement.row + rowSpan <= 4
                 and not overlapsAny(session.grid, session.draft.panels, candidate, session.selected)
-                and validatePanelSettings(module, settings, knownConfig, candidate)
+                and validatePanelSettings(module, settings, knownConfig, candidate, session.nativeArmed)
             then
                 sizes[#sizes + 1] = tostring(colSpan) .. "x" .. tostring(rowSpan)
             end
@@ -508,7 +508,7 @@ function editor.resize(session, colDelta, rowDelta, col, row)
         return false, "panel does not support span " .. tostring(resized.colSpan) .. "x" .. tostring(resized.rowSpan)
     end
     local settings, knownConfig = settingsFor(module, placement.config or {})
-    local compatible, settingError = validatePanelSettings(module, settings, knownConfig, resized)
+    local compatible, settingError = validatePanelSettings(module, settings, knownConfig, resized, session.nativeArmed)
     if not compatible then
         return false, settingError
     end
@@ -545,7 +545,7 @@ function editor.resizePositions(session, left, top)
                 session.grid.validatePlacement(candidate, 4, 4)
                 and supportsSpan(module, width, height)
                 and not overlapsAny(session.grid, session.draft.panels, candidate, index)
-                and validatePanelSettings(module, settings, knownConfig, candidate)
+                and validatePanelSettings(module, settings, knownConfig, candidate, session.nativeArmed)
             then
                 positions[#positions + 1] = candidate
             end
@@ -979,7 +979,13 @@ function editor.settings(session)
             config[setting.key] = copy(setting.default)
         end
     end
-    return module.settings or {}, config, module
+    local fields = {}
+    for _, setting in ipairs(module.settings or {}) do
+        if not setting.legacyArm or ((session.nativeArmed or 0) == 0 and config[setting.key] ~= "") then
+            fields[#fields + 1] = setting
+        end
+    end
+    return fields, config, module
 end
 
 function editor.restoreDefault(session, document)
@@ -1043,7 +1049,8 @@ function editor.validate(session)
                         module.validateSettings,
                         settings,
                         { colSpan = placement.colSpan, rowSpan = placement.rowSpan },
-                        knownConfig
+                        knownConfig,
+                        session.nativeArmed
                     )
                     if not ok then
                         errors[#errors + 1] = "panel "

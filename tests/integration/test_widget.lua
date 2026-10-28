@@ -452,12 +452,12 @@ local function testSessionArmsTheFlight()
         local registry = context.serviceRuntime
         local extrema = registry and registry.byId and registry.byId.extrema
         assert(extrema, "the dashboard built no extrema service")
-        return extrema:flight()
+        return extrema:flight(context.session.armSource)
     end
 
     -- Configured is the service's own word for "an arm source was supplied",
     -- so it is the value the contract names rather than a proxy for it.
-    local armed = flightOf(dashboard("session:\n  armSource: sf"))
+    local armed = flightOf(dashboard("session:\n  armSource: SFv"))
     assertEqual(armed.configured, true, "the layout named an arm switch and the flight session did not see it")
 
     local unarmed = flightOf(dashboard("# no session block"))
@@ -5401,7 +5401,7 @@ local function testPackageCompatibility()
         {
             name = "future-layout-contract",
             file = "lib/package.lua",
-            text = 'return {version="next",runtimeApi=1,panelApi=1,layoutVersion=4}',
+            text = 'return {version="next",runtimeApi=1,panelApi=1,layoutVersion=5}',
             error = "incompatible package contract",
         },
         { name = "missing-core", file = "lib/yaml.lua", error = "lib/yaml.lua:" },
@@ -5475,9 +5475,9 @@ panels:
         assert(steps < 200, "legacy migration load did not finish")
     end
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-    assertEqual(stageCounts["header-migrate"], 2, "each adjacent header step runs in its own loader callback")
-    assertEqual(stageCounts["panel-migrate"], 2, "each adjacent panel step runs in its own loader callback")
-    assertEqual(context.document.version, 3)
+    assertEqual(stageCounts["header-migrate"], 3, "each adjacent header step runs in its own loader callback")
+    assertEqual(stageCounts["panel-migrate"], 3, "each adjacent panel step runs in its own loader callback")
+    assertEqual(context.document.version, 4)
     local placement = context.document.panels[1]
     assertEqual(placement.type, "rx-battery")
     assertEqual(placement.config.reading, "cell")
@@ -5615,7 +5615,7 @@ local function testInstructionBudget()
         { service = "navigation", source = "GPS", extra = "Dist" },
         { service = "model", index = 0 },
         { service = "control", source = "trim-ail", index = 0 },
-        { service = "extrema", source = "S4", extra = "sa" },
+        { service = "extrema", source = "S4", extra = "SAv" },
     }
 
     --- Build a layout that fills the grid with service diagnostic panels.

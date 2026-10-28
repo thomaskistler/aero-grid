@@ -648,10 +648,17 @@ equal(
 )
 local history = dense.history
 local now = getTime()
+local arm = { fresh = true, value = true, updatedAt = now }
+history.sessions[1].arm = arm
 local reading = { name = "dense-chart", fresh = true, kind = "number", precision = 3, unitText = "" }
+local function syntheticSample()
+    arm.updatedAt = reading.updatedAt
+    fixture.tick(reading.updatedAt - getTime())
+    history:sample(reading, reading.updatedAt)
+end
 for index = 0, 6000 do
     reading.value, reading.updatedAt = index % 2 == 0 and -100 or 100, now + index * 10
-    history:sample(reading, reading.updatedAt)
+    syntheticSample()
 end
 local denseItem = dense.series[1]
 equal(denseItem.feed.count, 6001)
@@ -667,12 +674,12 @@ end
 assert(top and bottom, "display reduction must retain spikes in both directions")
 for index = 6001, 6144 do
     reading.value, reading.updatedAt = index % 2 == 0 and -100 or 100, now + index * 10
-    history:sample(reading, reading.updatedAt)
+    syntheticSample()
 end
 equal(denseItem.feed.full, true)
 local frozenRevision = denseItem.feed.plotRevision
 reading.value, reading.updatedAt = 1000, reading.updatedAt + 10
-history:sample(reading, reading.updatedAt)
+syntheticSample()
 equal(denseItem.feed.value, 1000)
 equal(denseItem.feed.max, 1000)
 equal(denseItem.feed.plotRevision, frozenRevision)
@@ -690,7 +697,7 @@ local clipped = recordingPanel("clipped-chart", "rolling")
 reading.name, now = "clipped-chart", reading.updatedAt + 10
 for index = 0, 60 do
     reading.value, reading.updatedAt = index, now + index * 100
-    history:sample(reading, reading.updatedAt)
+    syntheticSample()
 end
 finishDrawing(clipped)
 local clippedRun = clipped.series[1].runs[1]

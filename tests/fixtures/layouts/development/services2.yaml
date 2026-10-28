@@ -48,5 +48,5 @@ panels:
       service: extrema
       label: Extrema
       source: Alt
-      extra: sa
+      extra: SAv
       accent: cyan

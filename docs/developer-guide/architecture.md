@@ -70,7 +70,7 @@ for the top-left EdgeTX menu button; fullscreen removes that reservation.
 Use the shared geometry instead of adding panel-specific menu offsets.
 
 `lib/package.lua` records package, runtime API, panel API, and layout versions.
-The current layout schema is version 3. The central layout module keeps an
+The current layout schema is version 4. The central layout module keeps an
 adjacent migration registry: each source version provides a header step and a
 panel step for that version-to-next-version transition. A future version must
 add every intervening step; a layout is rejected if its source version is newer
@@ -100,6 +100,7 @@ does not consume scheduled work.
 | `telemetry_service.lua` | Source resolution, readings, units, precision, freshness, and link status. |
 | `model_service.lua` | Model identity/image, timers, flight mode, TX voltage, and flight history/audio support. |
 | `control_service.lua` | Trims, final channel outputs and their trim associations, switch conditions, GV snapshots, and verified GV9 FM0 increments. |
+| `armed_service.lua` | Native widget Armed precedence, legacy switch fallback, and immutable effective arm views over shared Control polls. |
 | `extrema_service.lua` | Sensor extrema and dashboard flight-session tracking. |
 | `navigation_service.lua` | GPS fix, pilot/home position, distance, and north-up bearing. |
 | `history_service.lua` | Error-bounded chart recordings, cumulative armed time, raw extrema, line-only smoothing, and bounded rolling expiration. |
@@ -127,9 +128,22 @@ Chart history observes completed telemetry polls rather than reading changed
 revisions during redraw: unchanged numeric samples still occupy armed time,
 and raw spikes must not be lost between frames. Observer failures are isolated
 from telemetry polling and reported through normal service failure handling.
-History tracks each Chart panel's `armSwitch` through the control service,
-independently of extrema's `session.armSource` and reset-on-arm lifecycle.
-Each armed-switch configuration has its own cumulative session.
+`services.armed:state()` describes the native widget condition;
+`:state(legacySwitch)` resolves native-over-legacy precedence for a consumer.
+Snapshots expose `condition`, `key`, `origin`, `generation`, `configured`,
+`available`, `fresh`, `updatedAt`, Boolean `value`, `revision`, and `status`.
+An unavailable/stale reading is not disarmed. Reliability is evaluated on
+access with a one-second maximum sample age, so a failed poller cannot leave a
+permanently fresh reading. `revision` changes on observed sample/reliability
+changes; `generation` changes when the widget runtime is rebuilt.
+`status` is `unconfigured`, `ready`, or `unavailable`; invalid configuration
+is reported through normal host error isolation.
+The resolver owns no separate polling work: Control still reads each switch
+once. Native configuration and state are per widget, not model-wide.
+
+History and extrema key sessions by the effective condition. A configured
+native Armed unifies their arm inputs; unset Armed retains independent legacy
+switches. Each chart arm configuration has its own cumulative session.
 It pauses on disarm and resumes the same recording;
 geometry reflow keeps it, while rebuilding the service runtime clears it.
 Each source/options subscription stores at most 6,144 connected linear knots.
@@ -158,8 +172,8 @@ bounded projection batch; same-pixel extrema do not add redundant geometry.
 
 The `flight-counter` panel is deliberately stateful: it owns qualification
 and disarm-timeout transitions, requests verified count updates, and asks
-the model service for history/audio side effects. Its `armSwitch` is distinct
-from the extrema session's `armSource`. Each dashboard has independent
+the model service for history/audio side effects. It consumes the effective
+Armed view, without changing its qualification/disarm policy. Each dashboard has independent
 services, so install **only one flight tracker per model**; other dashboards
 can display GV9 through `metric`. Detection state resets on dashboard reload;
 the persisted GV count does not.

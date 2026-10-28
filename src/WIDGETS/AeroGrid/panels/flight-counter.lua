@@ -12,7 +12,8 @@ local flightCounter = {
             key = "armSwitch",
             label = "Armed switch position",
             type = "string",
-            default = "SF^",
+            default = "",
+            legacyArm = true,
         },
         { key = "motorSource", label = "Motor channel", type = "string", default = "ch3" },
         { key = "motorReversed", label = "Reversed motor channel", type = "boolean", default = false },
@@ -24,11 +25,16 @@ local flightCounter = {
     },
 }
 
-function flightCounter.validateSettings(settings)
+function flightCounter.validateSettings(settings, _, _, nativeArmed)
     local errors = {}
     local arm = settings.armSwitch
-    if type(arm) ~= "string" or not (string.match(arm, "^S[A-Z][%^v%-]$") or string.match(arm, "^L%d%d$")) then
-        errors[#errors + 1] = "armSwitch must be a position such as SF^, SA-, SFv, or a logical switch such as L01"
+    if
+        (nativeArmed or 0) == 0
+        and arm ~= nil
+        and arm ~= ""
+        and (type(arm) ~= "string" or not (string.match(arm, "^S[A-Z][%^v%-]$") or string.match(arm, "^L%d%d$")))
+    then
+        errors[#errors + 1] = "armSwitch must be blank, a physical switch position, or a logical switch"
     end
     if type(settings.motorSource) ~= "string" or settings.motorSource == "" then
         errors[#errors + 1] = "motorSource must name a radio source"
@@ -66,9 +72,13 @@ function flightCounter.advance(context, now)
         count.precision == 0 and count.raw >= 0 and count.raw <= 999 and count.raw == math.floor(count.raw),
         "flight counter requires integer GV9 FM0 in the range 0..999, with precision 0"
     )
-    local armLive = isLive(context.arm, now)
+    local armLive = context.arm.fresh
+        and type(context.arm.value) == "boolean"
+        and type(context.arm.updatedAt) == "number"
+        and now >= context.arm.updatedAt
+        and now - context.arm.updatedAt <= 100
     assert(not context.motor.telemetry, "flight counter motorSource must be a radio-local motor channel")
-    local armed = armLive and context.arm.value > 0
+    local armed = armLive and context.arm.value
 
     if context.phase == "active" or context.phase == "ending" then
         if not armLive then
@@ -164,10 +174,10 @@ function flightCounter.apply(context, drawn)
 end
 
 function flightCounter.create(parent, rect, settings, services)
-    local errors = flightCounter.validateSettings(settings)
+    local errors = flightCounter.validateSettings(settings, nil, nil, services.host and services.host.nativeArmed)
     assert(#errors == 0, table.concat(errors, "; "))
     assert(
-        services.telemetry and services.control and services.model and services.clock,
+        services.telemetry and services.control and services.model and services.clock and services.armed,
         "flight counter services unavailable"
     )
     assert(services.control.env.setGlobalVariable, "flight counter requires model.setGlobalVariable")
@@ -185,7 +195,7 @@ function flightCounter.create(parent, rect, settings, services)
         control = services.control,
         model = services.model,
         feed = services.control:globalVariable(8, 0),
-        arm = services.control:armSwitch(settings.armSwitch),
+        arm = services.armed:state(settings.armSwitch),
         motor = services.telemetry:subscribe(settings.motorSource, false),
         link = services.telemetry:link(),
         area = area,

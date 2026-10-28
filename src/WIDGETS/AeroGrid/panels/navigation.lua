@@ -18,6 +18,7 @@
 ---@class AeroGridNavigationSettings
 ---@field source? string GPS source name.
 ---@field armSwitch? string Armed switch position for first-arm home capture.
+---@field homeMode? "edgetx"|"first-arm"
 ---@field label? string
 ---@field showTape? boolean
 ---@field bearingFormat? "degrees"|"quadrant"
@@ -44,7 +45,14 @@ local navigation = {
     settings = {
         { key = "label", label = "Label", type = "string", default = "NAV" },
         { key = "source", label = "GPS source", type = "string", default = "GPS" },
-        { key = "armSwitch", label = "Home arm switch", type = "string", default = "" },
+        {
+            key = "homeMode",
+            label = "Home position",
+            type = "string",
+            default = "edgetx",
+            choices = { "edgetx", "first-arm" },
+        },
+        { key = "armSwitch", label = "Home arm switch", type = "string", default = "", legacyArm = true },
         { key = "satelliteSource", label = "Satellite count source", type = "string", default = "" },
         { key = "satelliteWarning", label = "Warn below satellites", type = "number", default = 8 },
         { key = "satelliteCritical", label = "Critical below satellites", type = "number", default = 4 },
@@ -69,14 +77,16 @@ local navigation = {
     },
 }
 
-function navigation.validateSettings(settings)
+function navigation.validateSettings(settings, _, _, nativeArmed)
     local errors = {}
     local arm = settings.armSwitch
-    if arm ~= nil and arm ~= "" then
-        if type(arm) ~= "string" or not (string.match(arm, "^S[A-Z][%^v%-]$") or string.match(arm, "^L%d%d$")) then
-            errors[#errors + 1] =
-                "armSwitch must be blank, a position such as SF^, SA-, SFv, or a logical switch such as L01"
-        end
+    if
+        (nativeArmed or 0) == 0
+        and arm ~= nil
+        and arm ~= ""
+        and (type(arm) ~= "string" or not (string.match(arm, "^S[A-Z][%^v%-]$") or string.match(arm, "^L%d%d$")))
+    then
+        errors[#errors + 1] = "armSwitch must be blank, a physical switch position, or a logical switch"
     end
     for _, key in ipairs({ "satelliteWarning", "satelliteCritical" }) do
         local value = settings[key]
@@ -660,7 +670,7 @@ function navigation.create(parent, rect, settings, services)
     local service = services.navigation
     if service then
         context.service = service
-        context.feed = service:subscribe(settings.source, settings.armSwitch)
+        context.feed = service:subscribe(settings.source, settings.armSwitch, settings.homeMode)
         context.preview = services.preview
     end
     if settings.satelliteSource and settings.satelliteSource ~= "" then

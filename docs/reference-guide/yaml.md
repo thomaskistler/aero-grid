@@ -13,11 +13,11 @@ A user layout with the selected name takes precedence over a bundled layout of t
 
 ## Document structure
 
-A new layout should use version 3 and exactly a 4 × 4 grid. `col` and `row` are zero-based; spans count grid cells. The cell at the upper left is `(0, 0)`.
+A new layout should use version 4 and exactly a 4 × 4 grid. `col` and `row` are zero-based; spans count grid cells. The cell at the upper left is `(0, 0)`.
 
 | Top-level key | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `version` | integer | yes | Layout schema version. Write `3`. |
+| `version` | integer | yes | Layout schema version. Write `4`. |
 | `grid` | mapping | yes | Must contain `columns: 4` and `rows: 4`. Other grid dimensions are rejected. |
 | `panels` | sequence of mappings | yes | Ordered panel placements. Use `[]` for an empty layout. |
 | `session` | mapping | no | Dashboard-wide flight-session options; see [Session](#session). |
@@ -45,13 +45,19 @@ Panel IDs and types are case-sensitive. Unknown top-level keys and extra placeme
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `armSource` | string | unset | Readable numeric EdgeTX source, such as `sa` or `ch5`, marking the model armed. Positive means armed; non-positive means disarmed. Flight-session extrema use this when a panel selects **Minimum tracked: flight**. If omitted or blank, extrema maintain an open-ended session. |
+| `armSource` | string | unset | Legacy physical-position or logical-switch fallback for flight-session extrema when widget **Armed switch** is unset. Numeric sources such as `sa` or `ch5` are no longer supported: select a widget switch instead. Without either condition, extrema maintain an open-ended session. |
 
-The first panel that requests the shared flight-session service configures its source; later requests do not replace it. Keep the extrema arm source in this one layout-level location. `session.armSource` is separate from panel settings such as Chart's or Flight counter's armed switch and Navigation's home arm switch.
+Configure **Armed switch** beside Layout and Theme in native widget settings,
+not in YAML. It is saved separately for each widget instance and overrides
+`session.armSource` and panel `armSwitch` values. When unset (`--`), each
+consumer retains its own nonblank legacy switch; different legacy settings
+are allowed. Existing panel arm fields are shown only while their fallback
+is active. Overridden values survive Save and become effective again if
+widget Armed is cleared. Custom State conditions remain independent.
 
 ## Validation and errors
 
-The loader parses and validates a candidate before building panels. Unsupported YAML syntax, an unsupported schema version, a missing or non-4×4 grid, a non-sequence `panels` value, or the unsupported layout-level `theme` key makes the candidate invalid; AeroGrid reports the load problem and may recover using the next backup or bundled candidate. Versions 1 and 2 are migrated to version 3 in memory. Version 1 migrates the former `cell-battery` panel to `rx-battery` and normalizes its retired fields. Version 2 migrates the old Navigation presentation options; legacy RX-battery warning thresholds and source selectors are also normalized to the current keys. Write version 3 for new files.
+The loader parses and validates a candidate before building panels. Unsupported YAML syntax, an unsupported schema version, a missing or non-4×4 grid, a non-sequence `panels` value, or the unsupported layout-level `theme` key makes the candidate invalid; AeroGrid reports the load problem and may recover using the next backup or bundled candidate. Versions 1–3 are migrated to version 4 in memory. Version 1 migrates the former `cell-battery` panel to `rx-battery` and normalizes its retired fields. Version 2 migrates the old Navigation presentation options; legacy RX-battery warning thresholds and source selectors are also normalized to the current keys. Version 3 preserves the old implicit Flight counter switch (`SF^`) and derives Navigation's `homeMode` from its old arm setting. Save writes version 4 without deleting legacy arm values. Write version 4 for new files.
 
 An invalid panel entry is rejected without preventing other valid entries from loading. This includes a non-mapping entry, an unsafe or duplicate ID, an unknown panel type, invalid placement values, a placement outside the grid, an overlap, or a span the panel does not support. The failed panel is dropped and its reason is reported. When overlaps occur, the earlier accepted entry remains.
 
@@ -86,7 +92,7 @@ It supports 2x1, 3x1, 4x1, 2x2, 3x2, 4x2, 3x3, 4x3, and 4x4.
 | Key | Values and defaults |
 | --- | --- |
 | `label` | Optional title; omitted or empty hides the title and reclaims header space for the plot. |
-| `armSwitch` | Blank by default, disabling recording. Physical switch position such as `SA^`, `SA-`, or `SFv`, or logical switch such as `L01`. The **Armed switch position** picker sets this on the radio. |
+| `armSwitch` | Legacy physical-position or logical-switch fallback, blank by default. Used and shown only while widget **Armed switch** is unset. With neither condition, recording is disabled. |
 | `metrics` | Contiguous list of zero to three numeric sources. Empty is valid for editor setup. |
 | `source`, `unit`, `precision` | Per-metric source name, optional unit override, and integer precision 0–3 (default sensor precision). |
 | `accent` | Per-metric trace color or panel stripe: cyan, green, orange, amber. Traces default to cyan, orange, green in order. Modern Light renders the cyan trace with blue ink. |
@@ -103,8 +109,8 @@ Automatic bounds use raw lifetime recorded extrema with padding and rounding.
 For example, `rangeMin: 0` with no `rangeMax` anchors the bottom at zero and
 automatically adjusts the top; omit both keys for a fully automatic range.
 
-Set the panel's `armSwitch` to the physical or logical condition that means
-armed. It is independent of layout-level `session.armSource`. Recording pauses
+Set **Armed switch** in native widget settings. A retained panel `armSwitch`
+is used only when the widget setting is unset. Recording pauses
 when that condition becomes inactive, freezes the readouts, and resumes the
 same history on rearm. The horizontal axis counts cumulative armed time; resumed
 segments are broken and marked. Growing starts at one minute and expands to
@@ -121,7 +127,7 @@ Recordings share history only when their armed switch, source, and recording
 options match.
 
 ```yaml
-version: 3
+version: 4
 grid:
   columns: 4
   rows: 4
@@ -156,7 +162,7 @@ Drawer title: **Flight counter** · [drawer settings and behavior](../panels/fli
 | Key | Type | Default | Allowed values | Drawer label | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `label` | string | `FLT` | Any string | Label | Heading. |
-| `armSwitch` | string | `SF^` | Switch position such as `SF^`, `SA-`, `SFv`, or logical switch `L01` | Armed switch position | Required by panel validation; must match the switch-position pattern. |
+| `armSwitch` | string | `""` | Blank, physical switch position, or logical switch such as `L01` | Armed switch position | Legacy fallback only; new panels use widget Armed. Version-1–3 layouts retain the former `SF^` default when omitted. |
 | `motorSource` | string | `ch3` | Non-empty EdgeTX source name | Motor channel | Must name a source; the drawer filters to channels. |
 | `motorReversed` | boolean | `false` | `true` / `false` | Reversed motor channel | Invert the motor channel direction. |
 | `minMotorPercent` | number | `25` | `0 <= value < 100` | Minimum motor percent | Runtime validation enforces this range; not restricted to integer values by validation. |
@@ -167,7 +173,7 @@ Drawer title: **Flight counter** · [drawer settings and behavior](../panels/fli
 
 Cross-field and format rules:
 
-- `armSwitch` must be a physical switch position (`S` + switch letter + `^`, `-` or `v`) or a logical switch such as `L01`; `motorSource` must not be blank.
+- An effective `armSwitch` must be a physical switch position (`S` + switch letter + `^`, `-` or `v`) or a logical switch such as `L01`; blank waits for widget Armed. `motorSource` must not be blank.
 - `minFlightDuration` and `disarmDuration` must each be in `(0, 3600]`; `minMotorPercent` must be in `[0, 100)`.
 
 ```yaml
@@ -374,7 +380,8 @@ Drawer title: **Navigation** · [drawer settings and behavior](../panels/navigat
 | --- | --- | --- | --- | --- | --- |
 | `label` | string | `NAV` | Any string | Label | |
 | `source` | string | `GPS` | EdgeTX GPS source name | GPS source | |
-| `armSwitch` | string | `""` | Blank, switch position such as `SF^`, `SA-`, `SFv`, or logical switch `L01` | Home arm switch | Separate from layout-level `session.armSource`; blank uses EdgeTX's home behavior. |
+| `homeMode` | string | `edgetx` | `edgetx`, `first-arm` | Home position | Choose EdgeTX home or capture using the effective Armed condition. |
+| `armSwitch` | string | `""` | Blank, physical switch position, or logical switch such as `L01` | Home arm switch | Legacy fallback when widget Armed is unset. Older layouts with a nonblank switch migrate to `first-arm`; other older layouts keep EdgeTX home. |
 | `satelliteSource` | string | `""` | Any EdgeTX source name or blank | Satellite count source | |
 | `satelliteWarning` | number | `8` | Nonnegative integer | Warn below satellites | |
 | `satelliteCritical` | number | `4` | Nonnegative integer | Critical below satellites | |
@@ -590,10 +597,10 @@ No panel-specific `validateSettings` function is declared, so the schema layer e
 
 ## Complete example
 
-This version-3 layout places six panels without overlap on the 4 × 4 grid. It shows the shared session source, nested list syntax and panel-specific settings together. Replace source names with exact names available on the target radio/model.
+This version-4 layout places six panels without overlap on the 4 × 4 grid. It shows a legacy session fallback, nested list syntax and panel-specific settings together. Prefer configuring Armed in native widget settings. Replace source names with exact names available on the target radio/model.
 
 ```yaml
-version: 3
+version: 4
 session:
   armSource: SF^
 grid:
@@ -671,7 +678,7 @@ panels:
 
 ## Tips for AI agents
 
-- Emit `version: 3`, the exact 4 × 4 grid, and a `panels` sequence. Use the schema and keys on this page; cross-reference drawer descriptions via the linked panel page.
+- Emit `version: 4`, the exact 4 × 4 grid, and a `panels` sequence. Use the schema and keys on this page; cross-reference drawer descriptions via the linked panel page.
 - Place panels only at supported spans, within bounds, and without overlap. Give every panel a unique safe `id`.
 - Use the exact `type` and `config` key spellings. Omit optional keys to take defaults; don't invent aliases or include unknown keys.
 - Honor nested sequence constraints and all cross-field rules, especially source requirements and threshold ordering.

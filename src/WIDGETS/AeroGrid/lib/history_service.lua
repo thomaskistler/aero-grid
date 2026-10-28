@@ -114,26 +114,25 @@ function history.new(env, support, runtime)
 end
 
 local function sessionFor(service, armSwitch)
-    armSwitch = armSwitch or ""
-    local session = service.sessionNames[armSwitch]
+    local armed = assert(service.runtime.byId.armed, "history requires Armed service"):state(armSwitch)
+    local session = service.sessionNames[armed.key]
     if not session then
         local state = {
-            configured = armSwitch ~= "",
+            configured = armed.configured,
             available = false,
             recording = false,
             elapsed = 0,
             segment = 0,
             revision = 0,
         }
-        local control = service.runtime.byId.control
         session = {
-            name = armSwitch,
+            name = armed.key,
             state = state,
             view = service.support.snapshot(state),
-            arm = armSwitch ~= "" and control and control:switch(armSwitch) or nil,
+            arm = armed,
         }
         service.sessions[#service.sessions + 1] = session
-        service.sessionNames[armSwitch] = session
+        service.sessionNames[armed.key] = session
     end
     return session
 end
@@ -150,8 +149,13 @@ local function advance(session, now)
     end
     session.lastTime = now
     local arm = session.arm
-    local available = arm ~= nil and arm.fresh == true and type(arm.value) == "boolean"
-    local recording = available and arm.value == true or false
+    local value, updatedAt = arm.value, arm.updatedAt
+    local available = arm.fresh == true
+        and type(value) == "boolean"
+        and type(updatedAt) == "number"
+        and now >= updatedAt
+        and now - updatedAt <= 100
+    local recording = available and value == true or false
     if state.recording ~= recording or state.available ~= available then
         if recording and not state.recording then
             state.segment = state.segment + 1

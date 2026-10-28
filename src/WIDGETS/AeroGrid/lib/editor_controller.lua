@@ -149,7 +149,8 @@ function module.new(dependencies)
                 local resolved, warnings = context.panelHost.resolveSettings(
                     entry.module,
                     placement.config,
-                    { colSpan = placement.colSpan, rowSpan = placement.rowSpan }
+                    { colSpan = placement.colSpan, rowSpan = placement.rowSpan },
+                    context.nativeArmed
                 )
                 if #warnings > 0 or not sameConfig(resolved, entry.settings) then
                     return false
@@ -320,6 +321,7 @@ function module.new(dependencies)
         end
 
         context.editorSession = session
+        session.nativeArmed = context.nativeArmed
         local handlers = {
             editor = context.editorModule,
             logError = function(operation, message)

@@ -56,7 +56,8 @@ for _, pair in ipairs({
     { "SBv", "SB" .. string.char(193) },
     { "L01", "L01" },
 }) do
-    local arm = switches:armSwitch(pair[1])
+    local arm = switches:switch(pair[1])
+    switches:update(100)
     equal(selected, pair[2])
     enabled = true
     switches:update(100)
@@ -64,16 +65,18 @@ for _, pair in ipairs({
     for _, entry in ipairs(switches.entries) do
         entry.read(switches, entry, 100)
     end
-    equal(arm.value, 1)
+    equal(arm.value, true)
     equal(arm.updatedAt, 100)
     enabled = false
     for _, entry in ipairs(switches.entries) do
         entry.read(switches, entry, 120)
     end
-    equal(arm.value, 0)
+    equal(arm.value, false)
     equal(arm.fresh, true)
 end
-assert(not pcall(switches.armSwitch, switches, "MISSING"))
+local missing = switches:switch("MISSING")
+switches:update(140)
+assert(not missing.available and not missing.fresh, "unknown switch is unavailable, not disarmed")
 
 local content, tones, numbers = nil, {}, {}
 env = {

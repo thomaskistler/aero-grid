@@ -1855,6 +1855,7 @@ panels:
     colSpan: 2
     rowSpan: 2
     config:
+      armSwitch: SAv
       duration: 5m
       metrics:
         - source: Alt
@@ -1882,16 +1883,13 @@ equal(
     "Growing chart drawer follows the guide, with add after entries and remove last"
 )
 equal(control("armSwitch").kind, "switch", "Chart must use the native switch-position picker")
-equal(control("armSwitch").properties.get(), 0, "new Chart panels must not guess an arm condition")
+equal(control("armSwitch").properties.get(), getSwitchIndex("SA" .. CHAR_DOWN), "legacy Chart switch remains visible")
 control("armSwitch").properties.set(getSwitchIndex("SA" .. CHAR_DOWN))
 settleDrawer()
 equal(context.editorSession.draft.panels[1].config.armSwitch, "SAv", "physical positions must be stored on the panel")
 control("armSwitch").properties.set(getSwitchIndex("L01"))
 settleDrawer()
 equal(context.editorSession.draft.panels[1].config.armSwitch, "L01", "logical arm conditions must also be selectable")
-control("armSwitch").properties.set(0)
-settleDrawer()
-equal(context.editorSession.draft.panels[1].config.armSwitch, "", "clearing the switch must disable recording")
 control("armSwitch").properties.set(getSwitchIndex("SA" .. CHAR_DOWN))
 settleDrawer()
 action("item", "metrics").properties.press()

@@ -5,12 +5,19 @@ local root = (... and ... ~= "" and ...) or "."
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local services = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/services.lua"))()
 local extremaService = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/extrema_service.lua"))()
+local armedService = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/armed_service.lua"))()
 
 local function testExtremaServiceCreatesFlightState()
     local env = services.environment({})
     local runtime = services.runtime(env)
+    runtime.byId.control = {
+        switch = function()
+            return { available = false }
+        end,
+    }
+    runtime.byId.armed = armedService.new(env, services, runtime)
     local service = extremaService.new(env, services, runtime)
-    local flight = service:flight("arm")
+    local flight = service:flight("L01")
     assertions.assertEqual(type(flight), "table")
     assertions.assertEqual(flight.configured, true)
 end
@@ -18,6 +25,7 @@ end
 local function testSessionExtremaCreatesTrack()
     local env = services.environment({})
     local runtime = services.runtime(env)
+    runtime.byId.armed = armedService.new(env, services, runtime)
     local service = extremaService.new(env, services, runtime)
     local track = service:sessionExtrema("RxBt")
     assertions.assertEqual(type(track), "table")

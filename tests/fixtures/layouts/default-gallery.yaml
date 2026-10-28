@@ -175,4 +175,4 @@ panels:
 # every panel that tracks a flight extreme observes the same session,
 # which is why the switch is named here rather than in each of them.
 session:
-  armSource: sf
+  armSource: SFv

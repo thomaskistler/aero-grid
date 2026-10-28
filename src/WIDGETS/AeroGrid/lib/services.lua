@@ -38,6 +38,7 @@ services.DEFINITIONS = {
     { id = "telemetry", file = "lib/telemetry_service.lua" },
     { id = "model", file = "lib/model_service.lua" },
     { id = "control", file = "lib/control_service.lua" },
+    { id = "armed", file = "lib/armed_service.lua" },
     { id = "extrema", file = "lib/extrema_service.lua" },
     { id = "navigation", file = "lib/navigation_service.lua" },
     { id = "history", file = "lib/history_service.lua" },

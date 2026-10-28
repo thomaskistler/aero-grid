@@ -114,8 +114,7 @@ function module.new(dependencies)
 
         return {
             theme = theme,
-            -- The flight session belongs to the dashboard, not to a panel, so it
-            -- is handed down rather than configured per panel.
+            -- Retained layout-level fallback for flight-session extrema.
             session = context.session or {},
             primitives = context.primitives,
             themeBuilder = builder,
@@ -139,6 +138,7 @@ function module.new(dependencies)
             telemetry = byId.telemetry,
             model = byId.model,
             control = byId.control,
+            armed = byId.armed,
             extrema = byId.extrema,
             navigation = byId.navigation,
             history = byId.history,
@@ -192,8 +192,12 @@ function module.new(dependencies)
             return reject(rectError)
         end
 
-        local settings, warnings =
-            host.resolveSettings(panel, placement.config, { colSpan = placement.colSpan, rowSpan = placement.rowSpan })
+        local settings, warnings = host.resolveSettings(
+            panel,
+            placement.config,
+            { colSpan = placement.colSpan, rowSpan = placement.rowSpan },
+            context.nativeArmed
+        )
         if preview and #warnings > 0 then
             return reject(table.concat(warnings, "; "))
         end
@@ -553,6 +557,9 @@ function module.new(dependencies)
                 context.servicesModule = support
                 context.serviceRuntime = support.runtime(support.environment())
                 context.serviceRuntime.host = context
+                context.armGeneration = (context.armGeneration or 0) + 1
+                context.serviceRuntime.nativeArmed = context.nativeArmed
+                context.serviceRuntime.armGeneration = context.armGeneration
                 context.navigationHomes = context.navigationHomes or {}
                 context.serviceRuntime.navigationHomes = context.navigationHomes
                 context.serviceIndex = 1
@@ -651,10 +658,19 @@ function module.new(dependencies)
             if valid then
                 context.identifiers[placement.id] = true
                 context.document.panels[#context.document.panels + 1] = placement
-                buildPanel(context, placement)
+                context.stage = "panel-build"
+                return true
             else
                 addError(context, panelError)
             end
+            context.pendingPlacement = nil
+            context.panelMigrationVersion = nil
+            context.stage = "panels"
+            return true
+        end
+
+        if stage == "panel-build" then
+            buildPanel(context, context.pendingPlacement)
             context.pendingPlacement = nil
             context.panelMigrationVersion = nil
             context.stage = "panels"

@@ -15,7 +15,7 @@
 
 local layout = { RUNTIME_API = 1 }
 
-layout.VERSION = 3
+layout.VERSION = 4
 
 function layout.normalizePanel(panel)
     if panel.type == "navigation" and type(panel.config) == "table" then
@@ -39,6 +39,20 @@ function layout.normalizePanel(panel)
 end
 
 local migrations = {
+    [3] = {
+        header = function() end,
+        panel = function(panel)
+            if panel.type == "flight-counter" or panel.type == "navigation" then
+                local config = type(panel.config) == "table" and panel.config or {}
+                if panel.type == "flight-counter" and config.armSwitch == nil then
+                    config.armSwitch = "SF^"
+                elseif panel.type == "navigation" and config.homeMode == nil then
+                    config.homeMode = config.armSwitch and config.armSwitch ~= "" and "first-arm" or "edgetx"
+                end
+                panel.config = config
+            end
+        end,
+    },
     [2] = {
         header = function() end,
         panel = function(panel)

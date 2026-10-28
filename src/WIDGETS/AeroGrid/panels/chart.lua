@@ -8,7 +8,7 @@ local chart = {
     refreshCost = 6,
     settings = {
         { key = "label", label = "Label", type = "string", default = "" },
-        { key = "armSwitch", label = "Armed switch position", type = "string", default = "" },
+        { key = "armSwitch", label = "Armed switch position", type = "string", default = "", legacyArm = true },
         {
             key = "metrics",
             label = "Metrics",
@@ -103,14 +103,16 @@ local function finite(value)
     return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
 end
 
-function chart.validateSettings(settings)
+function chart.validateSettings(settings, _, _, nativeArmed)
     local warnings = {}
     local arm = settings.armSwitch
-    if arm ~= nil and arm ~= "" then
-        if type(arm) ~= "string" or not (string.match(arm, "^S[A-Z][%^v%-]$") or string.match(arm, "^L%d%d$")) then
-            warnings[#warnings + 1] =
-                "armSwitch must be blank, a position such as SF^, SA-, SFv, or a logical switch such as L01"
-        end
+    if
+        (nativeArmed or 0) == 0
+        and arm ~= nil
+        and arm ~= ""
+        and (type(arm) ~= "string" or not (string.match(arm, "^S[A-Z][%^v%-]$") or string.match(arm, "^L%d%d$")))
+    then
+        warnings[#warnings + 1] = "armSwitch must be blank, a physical switch position, or a logical switch"
     end
     if type(settings.metrics) ~= "table" then
         return { "metrics must contain a contiguous list of up to 3 sources" }
@@ -1046,7 +1048,7 @@ function chart.refresh(context, creating)
 end
 
 function chart.create(parent, rect, settings, services)
-    local warnings = chart.validateSettings(settings)
+    local warnings = chart.validateSettings(settings, nil, nil, services.host and services.host.nativeArmed)
     assert(#warnings == 0, table.concat(warnings, "; "))
     local context = {
         theme = services.theme,
