@@ -984,6 +984,7 @@ local function updateServices(context)
         return nil
     end
 
+    registry.byId.telemetry.pollCap = context.flightPolled and 4 or nil
     local id, serviceError = context.servicesModule.update(registry, getTime())
     if serviceError then
         addError(context, id .. ": " .. serviceError)
@@ -993,7 +994,8 @@ local function updateServices(context)
     return id
 end
 
-pumpFlight = function(context)
+pumpFlight = function(context, inputPending)
+    context.flightPolled = nil
     local owner = context.flightFactory and context.flightFactory.broker
     if not owner then
         return false
@@ -1043,16 +1045,43 @@ pumpFlight = function(context)
     if not owner.session and owner.dormantRevision == context.flightFactory.revision then
         return false
     end
-    local ok, message = pcall(owner.tick, owner, getTime(), filename)
+    local now = getTime()
+    if owner.smartRuntime then
+        if inputPending or context.flightDashboardDue then
+            context.flightDashboardDue = nil
+            return false
+        end
+        if owner.lastTick and now >= owner.lastTick and now < (owner.nextPumpAt or 0) then
+            return false
+        end
+    end
+    local ok, message = pcall(owner.tick, owner, now, filename)
     if not ok then
         owner:error("detection", message)
+    end
+    -- Share ordinary polling capacity, not whole chart callbacks. Construction
+    -- still needs its own slice, with a fair turn for each widget's UI work.
+    local reserved = false
+    if owner.smartRuntime then
+        context.flightPolled = true
+        owner.nextPumpAt = now + 10
+        reserved = not not (
+            context.stage
+            or context.reloadState
+            or context.editorUi
+            or context.modelSettingsUi
+            or context.logViewer
+            or context.appRebuild
+            or context.reflowIndex
+        )
+        context.flightDashboardDue = reserved or nil
     end
     local state = owner.view
     if
         context.flightReportedRevision == (state.diagnosticRevision or 0)
         and context.flightReportedEpoch == state.epoch
     then
-        return false
+        return reserved
     end
     context.flightReportedRevision, context.flightReportedEpoch = state.diagnosticRevision or 0, state.epoch
     local messages = {}
@@ -1077,7 +1106,7 @@ pumpFlight = function(context)
         end
         showErrors(context)
     end
-    return false
+    return reserved
 end
 
 local function openModelSettings(context)
@@ -1138,6 +1167,9 @@ local function openModelSettings(context)
         end,
         fullscreen = isFullScreen,
         flightConfig = context.flightConfig,
+        smartStatus = function()
+            return owner.view.smartStatus
+        end,
         save = function(values, revision, modelFilename)
             local ok, message = pcall(function()
                 for _, member in pairs(owner.members) do
@@ -1250,7 +1282,7 @@ end
 ---@param widgetEvent? number Fullscreen input supplied by EdgeTX.
 ---@param touchState? table
 local function refresh(context, widgetEvent, touchState)
-    if pumpFlight(context) then
+    if pumpFlight(context, widgetEvent ~= nil and widgetEvent ~= 0) then
         return
     end
     if prepareAeroMenu(context) then

@@ -61,9 +61,15 @@ do
     assert(state.status.properties.text == "Armed: SF up")
     assert(state.controls.armSwitch == nil and state.controls.ownership == nil)
     assert(state.controls.motorSource.kind == "source")
+    assert(state.controls.smartDetection.kind == "toggle" and not state.draft.smartDetection)
     assert(state.controls.flightSwitch.kind == "numberEdit", "output uses a positive numeric picker, not SWITCH input")
     state.controls.motorSource.properties.set(105)
     state.controls.motorReversed.properties.set(1)
+    state.controls.smartDetection.properties.set(1)
+    assert(
+        state.draft.smartDetection and not document.flight.smartDetection,
+        "Smart toggles only the independent draft"
+    )
     state.controls.flightSwitch.properties.set(64)
     assert(state.draft.motorSource == "ch5" and state.draft.motorReversed and state.draft.flightSwitch == "L64")
     assert(document.flight.motorSource == "ch3" and document.flight.flightSwitch == "")
@@ -82,7 +88,7 @@ do
     local state = ui.open(c, { modelFilename = "plane.yml", revision = 7 }, {
         save = function(draft, revision, filename)
             attempts = attempts + 1
-            assert(revision == 7 and filename == "plane.yml" and draft.motorSource == "ch7")
+            assert(revision == 7 and filename == "plane.yml" and draft.motorSource == "ch7" and draft.smartDetection)
             draft.motorSource = "ch1"
             if attempts == 1 then
                 return false, "SD card unavailable"
@@ -96,6 +102,7 @@ do
     })
     finish(c)
     state.controls.motorSource.properties.set(107)
+    state.controls.smartDetection.properties.set(1)
     state.save.properties.press()
     assert(attempts == 0)
     ui.advance(c)

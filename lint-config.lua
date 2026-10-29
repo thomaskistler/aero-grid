@@ -44,6 +44,7 @@ return {
             "getGeneralSettings",
             "getOutputValue",
             "getRSSI",
+            "getSourceValue",
             "getTime",
             "getValue",
             "lcd",

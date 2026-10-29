@@ -43,6 +43,7 @@ services.DEFINITIONS = {
     { id = "navigation", file = "lib/navigation_service.lua" },
     { id = "history", file = "lib/history_service.lua" },
     { id = "flight", file = "lib/flight_service.lua" },
+    { id = "smart", file = "lib/smart_flight.lua" },
 }
 
 --- Refuse writes to a published snapshot.
@@ -94,6 +95,7 @@ function services.environment(overrides)
 
     return {
         getValue = callable(overrides.getValue) or callable(getValue),
+        getSourceValue = callable(overrides.getSourceValue) or callable(getSourceValue),
         getOutputValue = callable(overrides.getOutputValue) or callable(getOutputValue),
         getFieldInfo = callable(overrides.getFieldInfo) or callable(getFieldInfo),
         getRSSI = callable(overrides.getRSSI) or callable(getRSSI),
@@ -112,6 +114,7 @@ function services.environment(overrides)
         getInfo = callable(modelApi.getInfo),
         getTimer = callable(modelApi.getTimer),
         getSensor = callable(modelApi.getSensor),
+        getModule = callable(modelApi.getModule),
         getOutput = callable(modelApi.getOutput),
         getMix = callable(modelApi.getMix),
         getInput = callable(modelApi.getInput),

@@ -4,6 +4,14 @@ local flight = { RUNTIME_API = 1 }
 local broker = {}
 broker.__index = broker
 
+local ROUNDING = string.packsize("n") == 4 and 0.0000005 or 0.000000000000001
+
+local function above(value, threshold)
+    -- Unit conversion must not turn equality into "above", including on the
+    -- firmware's float32 Lua build and at nonzero altitude references.
+    return value - threshold > ROUNDING * math.max(1, math.abs(value), math.abs(threshold))
+end
+
 local function reliable(reading, now)
     return reading
         and reading.available ~= false
@@ -13,7 +21,90 @@ local function reliable(reading, now)
         and now - reading.updatedAt <= 100
 end
 
---- Pure standard detector. The broker supplies once-only side-effect adapters.
+local function smartReference(context, now, armLive, armed)
+    if not context.settings.smartDetection then
+        return
+    end
+    local sensors = context.smart
+    if sensors and context.sensorGeneration ~= sensors.generation then
+        context.altitudeReference = nil
+        context.referenceCandidate, context.referenceCandidateAt = nil, nil
+        context.referencePending, context.referencePendingAt = nil, nil
+        context.altitudeSince, context.speedSince = nil, nil
+        context.sensorGeneration = sensors.generation
+    end
+    if not armLive then
+        context.wasArmed = nil
+        context.referenceCandidate, context.referenceCandidateAt = nil, nil
+        context.referencePending, context.referencePendingAt = nil, nil
+        context.altitudeSince, context.speedSince = nil, nil
+    elseif not armed then
+        context.wasArmed, context.altitudeReference = false, nil
+        context.altitudeSince, context.speedSince = nil, nil
+        local altitude = sensors and sensors.altitude
+        if context.smartAvailable ~= false and reliable(altitude, now) then
+            -- The arm and sensor pollers are independent. Confirm the sample
+            -- against a false-arm observation at or after its receipt evidence.
+            if context.referencePendingAt and context.referencePendingAt <= context.arm.updatedAt then
+                context.referenceCandidate, context.referenceCandidateAt =
+                    context.referencePending, context.referencePendingAt
+            end
+            if altitude.evidenceAt and altitude.evidenceAt <= context.arm.updatedAt then
+                context.referenceCandidate, context.referenceCandidateAt = altitude.value, altitude.evidenceAt
+            end
+            context.referencePending, context.referencePendingAt = altitude.value, altitude.evidenceAt
+        else
+            context.referenceCandidate, context.referenceCandidateAt = nil, nil
+            context.referencePending, context.referencePendingAt = nil, nil
+        end
+    elseif context.wasArmed == false then
+        local altitude = sensors and sensors.altitude
+        if context.smartAvailable ~= false and reliable(altitude, now) then
+            if
+                context.referenceCandidateAt
+                and now >= context.referenceCandidateAt
+                and now - context.referenceCandidateAt <= 120
+            then
+                context.altitudeReference = context.referenceCandidate
+            elseif altitude.sampleFresh then
+                context.altitudeReference = altitude.value
+            end
+        end
+        context.referenceCandidate, context.referenceCandidateAt = nil, nil
+        context.referencePending, context.referencePendingAt = nil, nil
+        context.wasArmed = true
+    else
+        context.wasArmed = true
+    end
+end
+
+local function smartReason(context, now)
+    if not context.settings.smartDetection then
+        return nil
+    end
+    local sensors = context.smart
+    local altitude, speed = sensors and sensors.altitude, sensors and sensors.speed
+    if altitude and altitude.continuity ~= context.altitudeContinuity then
+        context.altitudeSince, context.altitudeContinuity = nil, altitude.continuity
+    end
+    if speed and speed.continuity ~= context.speedContinuity then
+        context.speedSince, context.speedContinuity = nil, speed.continuity
+    end
+    local baro = context.smartAvailable ~= false
+        and context.altitudeReference ~= nil
+        and reliable(altitude, now)
+        and above(altitude.value, context.altitudeReference + 3)
+    local moving = context.smartAvailable ~= false and reliable(speed, now) and above(speed.value, 4.4704)
+    context.altitudeSince = baro and (context.altitudeSince or now) or nil
+    context.speedSince = moving and (context.speedSince or now) or nil
+    if context.altitudeSince and altitude.confirmedAt and altitude.confirmedAt - context.altitudeSince >= 200 then
+        return "smart-altitude"
+    elseif context.speedSince and speed.confirmedAt and speed.confirmedAt - context.speedSince >= 200 then
+        return "smart-speed"
+    end
+end
+
+--- The broker supplies once-only side-effect adapters for every qualification.
 function flight.advance(context, now)
     local armLive = context.controlAvailable ~= false
         and reliable(context.arm, now)
@@ -32,6 +123,9 @@ function flight.advance(context, now)
                 end
                 context.phase = "ground"
                 context.startedAt, context.disarmedAt = nil, nil
+                context.wasArmed, context.altitudeReference = false, nil
+                context.altitudeSince, context.speedSince = nil, nil
+                smartReference(context, now, true, false)
                 if context.settings.history then
                     context.model:logFlight(context.date, duration, context.flightCount)
                 end
@@ -42,8 +136,10 @@ function flight.advance(context, now)
         end
         return
     end
+    smartReference(context, now, armLive, armed)
     if context.detectionAvailable == false or not context.feed.available then
         context.phase, context.startedAt = "ground", nil
+        context.altitudeSince, context.speedSince = nil, nil
         return
     end
     assert(
@@ -66,6 +162,7 @@ function flight.advance(context, now)
     local live = link.updatedAt and now >= link.updatedAt and now - link.updatedAt <= 100 and link.live
     if not (armed and motorLive and (motor + 1024) * 100 / 2048 > context.settings.minMotorPercent and live) then
         context.phase, context.startedAt = "ground", nil
+        context.altitudeSince, context.speedSince = nil, nil
         return
     end
     if not context.startedAt then
@@ -74,7 +171,12 @@ function flight.advance(context, now)
             context.date = context.model:flightDate()
         end
     end
+    local reason = smartReason(context, now)
     if now - context.startedAt >= context.settings.minFlightDuration * 100 then
+        reason = "standard"
+    end
+    if reason then
+        context.reason = reason
         context.flightCount = context.control:incrementFlightCount()
         context.phase = "active"
         if context.qualified then
@@ -124,10 +226,11 @@ end
 
 function broker:reset(filename)
     self.filename, self.epoch = filename, self.epoch + 1
-    self.session, self.runtime, self.signature, self.output = nil, nil, nil, nil
+    self.session, self.runtime, self.smartRuntime, self.signature, self.output = nil, nil, nil, nil, nil
     self.document, self.loadError = nil, nil
     self.events, self.errors = {}, {}
     self.lastTick, self.readyAfterDisarm = nil, nil
+    self.nextPumpAt = nil
     for key in pairs(self.state) do
         self.state[key] = nil
     end
@@ -291,6 +394,13 @@ function broker:attach(proposal, signature, now)
         self.support.register(runtime, instance, now)
     end
     local control, telemetry, modelService = runtime.byId.control, runtime.byId.telemetry, runtime.byId.model
+    local smartSensors, smartRuntime
+    if settings.smartDetection then
+        smartRuntime = self.support.runtime(self.env)
+        local instance = self.modules.smart.new(self.env, self.support, smartRuntime)
+        self.support.register(smartRuntime, instance, now)
+        smartSensors = instance:enable()
+    end
     local session = {
         settings = settings,
         phase = "ground",
@@ -299,6 +409,7 @@ function broker:attach(proposal, signature, now)
         motor = telemetry:subscribe(settings.motorSource, false),
         link = telemetry:link(),
         armKey = proposal.armKey,
+        smart = smartSensors,
     }
     local owner = self
     session.control = {
@@ -340,13 +451,14 @@ function broker:attach(proposal, signature, now)
     if self.signature and self.signature ~= signature then
         self.readyAfterDisarm = true
     end
-    self.runtime, self.session, self.signature = runtime, session, signature
+    self.runtime, self.smartRuntime, self.session, self.signature = runtime, smartRuntime, session, signature
     if self.errors.detection then
         self.errors.detection, self.state.detectionError = nil, nil
         self.state.diagnosticRevision = (self.state.diagnosticRevision or 0) + 1
     end
     self.state.armKey = proposal.armKey
     self.state.startedAt, self.state.qualifiedAt, self.state.endedAt, self.state.completedAt = nil, nil, nil, nil
+    self.state.reason, self.state.smartStatus = nil, nil
 end
 
 function broker:flushOutput(now)
@@ -433,16 +545,25 @@ function broker:tick(now, filename)
     if message then
         self:error("detection", tostring(id) .. ": " .. message)
     end
+    if self.smartRuntime then
+        id, message = self.support.update(self.smartRuntime, now)
+        if message then
+            self:error("detection", tostring(id) .. ": " .. message)
+        end
+    end
     session.controlAvailable = not self.runtime.byId.control.failed
+    session.smartAvailable = not (self.smartRuntime and self.smartRuntime.byId.smart.failed)
     session.detectionAvailable = session.controlAvailable
         and not self.runtime.byId.telemetry.failed
         and not self.runtime.byId.model.failed
-    if self.lastTick and now - self.lastTick < 20 then
+    if self.lastTick and now >= self.lastTick and now - self.lastTick < 20 then
         self:flushOutput(now)
         return
     end
     if self.lastTick and (now < self.lastTick or now - self.lastTick > 100) then
         session.groundAt = nil
+        session.altitudeSince, session.speedSince, session.wasArmed = nil, nil, nil
+        session.altitudeReference = nil
         if session.phase == "starting" then
             session.phase, session.startedAt = "ground", nil
         elseif session.phase == "ending" then
@@ -472,6 +593,8 @@ function broker:tick(now, filename)
         end
     elseif not active then
         session.phase, session.startedAt = "ground", nil
+        session.altitudeSince, session.speedSince, session.wasArmed = nil, nil, nil
+        session.altitudeReference = nil
     end
     if
         not self.output
@@ -495,6 +618,14 @@ function broker:tick(now, filename)
     self:flushOutput(now)
     self.state.phase, self.state.active = session.phase, session.phase == "active" or session.phase == "ending"
     self.state.startedAt, self.state.disarmedAt = session.startedAt, session.disarmedAt
+    self.state.reason = session.reason
+    if session.smart then
+        self.state.smartStatus = session.smartAvailable and session.smart.status
+            or "Smart unavailable: sensor reader failed; standard only."
+        if session.smartAvailable and session.altitudeReference == nil then
+            self.state.smartStatus = self.state.smartStatus .. " Baro needs a live arming reference."
+        end
+    end
     self.state.flightId, self.state.count = session.flightId, session.feed.raw
     self.state.revision = self.state.revision + 1
 end

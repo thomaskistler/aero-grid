@@ -36,12 +36,16 @@ do
     assert(saved, result)
     assert(result.revision == 1 and result.modelFilename == "plane.yml")
     assert(result.flight.motorSource == "ch3" and result.flight.history)
+    assert(result.flight.smartDetection == false)
     result.flight.motorSource = "ch1"
     assert(store:load("plane.yml").flight.motorSource == "ch3", "published tables must not mutate disk state")
     local draft = config.defaults()
     draft.flightSwitch = "L64"
+    draft.smartDetection = true
     saved, result = store:save("plane.yml", 1, draft)
     assert(saved and result.revision == 2, result)
+    assert(store:load("plane.yml").flight.smartDetection == true, "Smart survives verified save/reload")
+    assert(yaml.parse(files[path() .. ".bak"]).flight.smartDetection == false)
     assert(yaml.parse(files[path() .. ".bak"]).revision == 1)
     saved, result = store:save("plane.yml", 1, draft)
     assert(not saved and string.find(result, "reload", 1, true))
@@ -60,6 +64,14 @@ do
         assert(not seen[encoded] and string.match(encoded, "/models/%x+%.yaml$"))
         seen[encoded] = true
     end
+end
+
+do
+    local store, files = fixture()
+    local legacy = config.defaults()
+    legacy.smartDetection = nil
+    files[path()] = assert(yaml.serialize({ version = 1, modelFilename = "plane.yml", revision = 3, flight = legacy }))
+    assert(store:load("plane.yml").flight.smartDetection == false, "existing model files keep standard detection")
 end
 
 do
@@ -134,6 +146,7 @@ do
         { "armSwitch", "SF^" },
         { "ownership", true },
         { "motorReversed", 1 },
+        { "smartDetection", 1 },
         { "motorSource", "ch33" },
         { "flightSwitch", "!L01" },
         { "flightSwitch", "L00" },

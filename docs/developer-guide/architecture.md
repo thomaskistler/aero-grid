@@ -102,6 +102,7 @@ does not consume scheduled work.
 | `control_service.lua` | Trims, final channel outputs and their trim associations, switch conditions, GV snapshots, and verified GV9 FM0 increments. |
 | `armed_service.lua` | Native widget Armed precedence, legacy switch fallback, and immutable effective arm views over shared Control polls. |
 | `flight_service.lua` | Shared model-flight detection, once-only count/history/audio, optional Sticky output, and timestamped boundaries. |
+| `smart_flight.lua` | Optional protocol-identified flight sensors with per-sensor receipt/freshness and SI units. |
 | `extrema_service.lua` | Sensor extrema and dashboard flight-session tracking. |
 | `navigation_service.lua` | GPS fix, pilot/home position, distance, and north-up bearing. |
 | `history_service.lua` | Error-bounded chart recordings, cumulative recording time, flight boundaries, raw extrema, line-only smoothing, and bounded rolling expiration. |
@@ -195,7 +196,7 @@ subscriptions require a post-save rebuild.
 ## Shared flight tracking
 
 The factory-scoped broker in `flight_service.lua` owns a separate non-UI
-Control/Telemetry/Model runtime. Any live widget callback can pump it. Dashboard
+Control/Telemetry/Model runtime and optional Smart sensor poller. Any live widget callback can pump it. Dashboard
 registrations are weakly held; rebuilds mark proposals pending before replacing
 them. Unanimous effective arm/configuration proposals are required, not the
 first caller's settings. Native Armed remains per widget. A qualified session
@@ -205,17 +206,65 @@ cleanup when proposals change or conflict. Counter panels only render state.
 `services.flight:state()` is an immutable live view. It exposes model/epoch,
 configuration revision/status, phase (`ground`, `starting`, `active`, `ending`),
 `active`, flight ID/count, candidate/qualification/disarm/completion timestamps,
-and actionable diagnostics. `ready` describes configuration, not telemetry
+qualification `reason` and `smartStatus`, and actionable diagnostics. `ready` describes configuration, not telemetry
 validity. Unknown/stale arm observations never confirm disarm.
 
 `services.flight:boundaries(afterSequence, epoch)` returns immutable records,
 the oldest retained sequence, and a gap flag. The journal retains 64 start/end
 records with epoch, sequence, flight ID/count, pinned `armKey`, `kind`, `at`, `observedAt`, and
-qualification `reason` (`standard` currently). Start `at` is the motor candidate
-start; end `at` is the final disarm start. `observedAt` is qualification or
+qualification `reason` (`standard`, `smart-altitude`, or `smart-speed`).
+Start `at` is the motor candidate start; end `at` is the final disarm start.
+`observedAt` is qualification or
 completion, so duration excludes the disarm grace. Consumers must reconcile a
 gap or changed epoch; they must never read Sticky output as their event bus.
-Qualification methods share this same boundary contract.
+Smart shortcuts use the same qualification/effect path; they do not move the
+candidate timestamp. The standard timer remains an independent OR path.
+
+Model `flight.smartDetection` defaults false. Smart requires EdgeTX
+[`getSourceValue`](https://github.com/EdgeTX/edgetx/blob/2.11/radio/src/lua/api_general.cpp)
+receipt/current/fresh flags, not `getValue` zeros or link-wide freshness.
+Firmware `isFresh` spans roughly 160-320 ms; `isCurrent` only means the sensor
+is not marked old and may remain true for seconds after updates stop.
+Numeric receipt timestamps are not exposed. Smart bridges current finite
+readings for at most 1.2 seconds after positive per-sensor `isFresh` evidence;
+polling a cached value never renews that evidence. Never-received, old,
+unavailable, invalid, or expired data invalidate immediately. A shortcut can
+finish only once renewed evidence from every required source spans the full
+two-second hold; a cached value alone cannot finish it. Continuity counters
+preserve invalidations between detector ticks. This supports healthy 500ms/1s
+streams without treating the short fresh flag as a minimum update rate.
+Receipt age remains bounded evidence, not an exact timestamp or instant
+stopped-stream detector. Callbacks too infrequent to observe fresh flags
+conservatively fall back to standard detection.
+
+The Smart poller is due every 100ms. Ordinary chart callbacks continue on
+Smart polling callbacks: the host reduces that callback's dashboard telemetry
+batch from eight sources to four, reserving room for Smart's four sensor
+categories. Both pollers retain round-robin progress; Smart does not skip
+whole chart callbacks. Selected metadata is compared directly rather than
+rebuilding identity strings on every poll. Expensive loading/editor work
+still gets separate, per-widget fair slices, and pending input takes priority.
+Discovery uses numeric `telemN` sources and custom
+sensor metadata from `model.getSensor`, never names or units alone. Supported
+single-module families are CRSF (including ELRS) and native FrSky S.Port;
+unknown/MULTI or multiple active modules fall back rather than guessing.
+CRSF barometric altitude is ID `0x09`/instance 0; GPS position, groundspeed,
+and satellite count are ID `0x02`/instances 0, 2, and 5. S.Port uses the firmware
+barometric/GPS position/groundspeed ID ranges, with matching GPS/speed instances.
+Calculated sensors and GPS altitude are excluded. Ambiguous categories are
+disabled independently. GPS requires fresh valid coordinates/delay and, on CRSF,
+at least four fresh satellites. Numeric inputs reject nonfinite values and
+normalize metres/feet and knots/m/s/ft/s/km/h/mph.
+
+Altitude references require an observed disarmed-to-armed transition using
+a recent sample explicitly witnessed while disarmed, or fresh evidence at
+that transition. Merely current late readings never rebase an armed session.
+Motor interruptions preserve the reference but reset holds; unknown arm resets
+holds without inventing disarm. Metadata changes and scheduling gaps invalidate
+the reference conservatively. Fixed shortcuts are strictly above +3 m or
+10 mph for at least 200 ticks, allowing only precision-scaled conversion
+roundoff (including float32 firmware). `smartStatus` explains fallback in the native Model settings dialog;
+drafts do not enable readers or change live detection.
 
 Model settings use their own schema/revision and losslessly encoded model
 filename under `/AEROGRID/models/`. Saves verify model identity and revision

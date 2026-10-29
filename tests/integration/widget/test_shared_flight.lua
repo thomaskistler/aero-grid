@@ -55,6 +55,32 @@ end
 playNumber = function() end
 model.setGlobalVariable(8, 0, 0)
 
+local smartSamples = {}
+getSourceValue = function(id)
+    local sample = smartSamples[id]
+    if sample then
+        return sample.value, sample.current ~= false, sample.fresh ~= false
+    end
+end
+model.getModule = function(index)
+    return { Type = index == 0 and 5 or 0 }
+end
+local getSensor = model.getSensor
+local smartSensors = {}
+model.getSensor = function(index)
+    return smartSensors[index] or getSensor(index)
+end
+local function measured(callback, context)
+    local instructions = 0
+    debug.sethook(function()
+        instructions = instructions + 200
+    end, "", 200)
+    local ok, message = pcall(callback, context)
+    debug.sethook()
+    assert(ok, message)
+    assert(instructions <= 15000, "shared/Smart flight callback exceeded regression budget: " .. instructions)
+end
+
 local function create(layout, arm)
     return definition.create(
         { x = 0, y = 0, w = 480, h = 272 },
@@ -66,9 +92,9 @@ local first, second = create("shared-flight", 0), create("shared-flight", armed)
 local function pump(context, count, other)
     for _ = 1, count or 1 do
         fixture.tick(10)
-        definition.refresh(context)
+        measured(definition.refresh, context)
         if other then
-            definition.background(other)
+            measured(definition.background, other)
         end
     end
 end
@@ -253,6 +279,8 @@ untilState(second, function()
     return second.modelSettingsUi and not second.modelSettingsUi.build
 end)
 second.modelSettingsUi.draft.minMotorPercent = 99
+second.modelSettingsUi.controls.smartDetection.properties.set(1)
+assert(not owner.document.flight.smartDetection, "unsaved Smart toggle has no live effects")
 definition.refresh(second, EVT_VIRTUAL_EXIT)
 untilState(second, function()
     return second.editorUi and not second.editorUi.buildStage
@@ -260,6 +288,7 @@ end)
 assert(second.editorSession == layoutDraft and layoutDraft.dirty, "Cancel must preserve the layout draft")
 persisted = assert(owner.store:load(owner.filename))
 assert(persisted.revision == 1 and persisted.flight.minMotorPercent == 25, "Cancel must not persist the model draft")
+assert(not persisted.flight.smartDetection and not owner.smartRuntime)
 assert(second.document.panels[1] == nil, "model Cancel must not save the layout draft")
 second.editorUiModule.close(second, false)
 second.editorSession = nil
@@ -279,3 +308,74 @@ assert(
     second.aeroMenuHandlers.modelSettings and second.aeroMenuHandlers.uiSetup,
     "Empty dashboards must expose both menu routes"
 )
+
+-- Smart remains model-specific and counts once even with two Empty dashboards
+-- calling the broker through foreground/background callbacks.
+smartSensors[31] = { type = 0, id = 9, instance = 0, unit = 10, prec = 2, name = "EDIT" }
+fixture.radio.fields.telem32 = { id = 900, unit = 10 }
+smartSamples[900] = { value = 10 }
+second.aeroMenuHandlers.modelSettings()
+untilState(second, function()
+    return second.modelSettingsUi and not second.modelSettingsUi.build
+end)
+local modelUi = second.modelSettingsUi
+modelUi.controls.smartDetection.properties.set(1)
+modelUi.controls.minFlightDuration.properties.set(3000)
+assert(not owner.document.flight.smartDetection and not owner.smartRuntime)
+modelUi.save.properties.press()
+untilState(second, function()
+    return not second.modelSettingsUi and owner.session.smart and owner.session.smart.altitude.fresh
+end)
+persisted = assert(owner.store:load(owner.filename))
+assert(persisted.revision == 2 and persisted.flight.smartDetection)
+assert(owner.view.smartStatus and string.find(owner.view.smartStatus, "baro ready", 1, true))
+local third = create("Empty", armed)
+untilState(second, function()
+    return not third.stage
+        and third.flightBroker == owner
+        and owner.state.status == "ready"
+        and owner.cachedRevision == factory.revision
+        and owner.session.wasArmed == false
+        and owner.session.referenceCandidateAt ~= nil
+end, third)
+fixture.radio.values[305] = 1024
+pump(second, 20, third)
+assert(
+    owner.session.altitudeReference == 3.048 and not owner.view.active,
+    "arming reference="
+        .. tostring(owner.session.altitudeReference)
+        .. " phase="
+        .. tostring(owner.view.phase)
+        .. " sample="
+        .. tostring(owner.session.smart.altitude.sampleFresh)
+        .. " evidence="
+        .. tostring(owner.session.smart.altitude.evidenceAt)
+        .. " generation="
+        .. tostring(owner.session.smart.generation)
+)
+local startedAt = owner.session.startedAt
+smartSamples[900].value = 23
+untilState(second, function()
+    return owner.view.active
+end, third)
+assert(owner.view.reason == "smart-altitude" and owner.view.qualifiedAt - startedAt < 3000)
+assert(model.getGlobalVariable(8, 0) == 3 and #tones == 5)
+journal = owner:boundaries(0, owner.epoch)
+assert(#journal == 5 and journal[5].reason == "smart-altitude" and journal[5].at == startedAt)
+second.aeroMenuHandlers.modelSettings()
+untilState(second, function()
+    return second.modelSettingsUi and not second.modelSettingsUi.build
+end, third)
+second.modelSettingsUi.controls.smartDetection.properties.set(0)
+fixture.tick(10)
+definition.refresh(second, EVT_VIRTUAL_EXIT)
+assert(not second.modelSettingsUi, "pending input must not be dropped on a due Smart work slice")
+assert(owner.document.flight.smartDetection and owner.session.settings.smartDetection and owner.view.active)
+assert(owner.view.reason == "smart-altitude" and model.getGlobalVariable(8, 0) == 3)
+pump(second, 350, third)
+assert(model.getGlobalVariable(8, 0) == 3 and #tones == 5, "standard timeout must not requalify Smart flight")
+fixture.radio.values[305] = -1024
+untilState(second, function()
+    return not owner.view.active and not owner.output
+end, third)
+assert(model.getGlobalVariable(8, 0) == 3 and #tones == 6 and writes[#writes] == false)

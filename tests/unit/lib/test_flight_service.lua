@@ -9,9 +9,10 @@ local modules = {
     telemetry = load("lib/telemetry_service.lua"),
     control = load("lib/control_service.lua"),
     model = load("lib/model_service.lua"),
+    smart = load("lib/smart_flight.lua"),
 }
 
-local function fixture()
+local function fixture(cadence)
     local radio = {
         now = 0,
         count = 39,
@@ -34,7 +35,40 @@ local function fixture()
             return { filename = radio.filename, name = "Test" }
         end,
         getFieldInfo = function(name)
+            local index = tonumber(string.match(name, "^telem(%d+)$"))
+            if index and radio.sensors and radio.sensors[index - 1] then
+                return { id = 100 + index, unit = radio.sensors[index - 1].unit }
+            end
             return name == "ch3" and { id = 1, name = name }
+        end,
+        getModule = function(index)
+            return { Type = index == 0 and 5 or 0 }
+        end,
+        getSensor = function(index)
+            assert(not radio.failSmart, "Smart sensor reader failed")
+            return radio.sensors and radio.sensors[index]
+        end,
+        getSourceValue = function(id)
+            local sample = radio.samples and radio.samples[id]
+            if sample then
+                if sample.period then
+                    local packetAt = math.floor(math.min(radio.now, sample.stoppedAt or radio.now) / sample.period)
+                        * sample.period
+                    if packetAt < (sample.firstAt or 0) then
+                        return nil
+                    end
+                    local age = radio.now - packetAt
+                    local value = type(sample.value) == "function" and sample.value(packetAt) or sample.value
+                    if radio.now == sample.unavailableAt then
+                        return value, false, false
+                    end
+                    if type(value) == "table" then
+                        value = { lat = value.lat, lon = value.lon, delay = math.floor(age / 16) }
+                    end
+                    return value, age < 1000, age < sample.freshTicks
+                end
+                return sample.value, sample.current ~= false, sample.fresh ~= false
+            end
         end,
         getValue = function()
             assert(not radio.failTelemetry, "telemetry reader failed")
@@ -107,7 +141,7 @@ local function fixture()
     owner.members[first], owner.members[second] = participant("L01"), participant("L01")
     local function step(count)
         for _ = 1, count or 1 do
-            radio.now = radio.now + 20
+            radio.now = radio.now + (cadence or 20)
             owner:tick(radio.now)
             owner:tick(radio.now)
         end
@@ -302,3 +336,217 @@ equal(
     config.key(config.resolve({ motorSource = "ch3", minFlightDuration = 1 })),
     "equivalent channel spelling and numeric representations must reach consensus"
 )
+
+-- A real Smart input service feeds the same shared count/audio/history/output
+-- path and preserves the documented candidate/observation timestamp contract.
+owner, radio, step = fixture()
+radio.sensors = { [12] = { type = 0, id = 9, instance = 0, unit = 9, prec = 2, name = "High" } }
+radio.samples = { [113] = { value = 0 } }
+local settings = config.resolve({
+    smartDetection = true,
+    minFlightDuration = 30,
+    disarmDuration = 1,
+    announcements = true,
+    flightSwitch = "L20",
+})
+owner:setDocument({ revision = 2, flight = settings })
+step(45)
+equal(owner.session.smart.altitude.value, 0, "received zero is a trustworthy altitude, not missing data")
+radio.arms[1] = true
+step(4)
+equal(owner.session.altitudeReference, 0)
+local candidateAt = owner.session.startedAt
+radio.samples[113].value = 4
+step(20)
+equal(radio.writes, 1)
+equal(radio.sounds, 1)
+equal(radio.commands[#radio.commands], true)
+equal(owner.view.reason, "smart-altitude")
+local events = owner:boundaries(0)
+equal(#events, 1)
+equal(events[1].reason, "smart-altitude")
+equal(events[1].at, candidateAt)
+equal(events[1].observedAt, owner.view.qualifiedAt)
+assert(events[1].observedAt - events[1].at < 3000)
+step(180)
+equal(radio.writes, 1, "the later standard deadline cannot produce a second transition")
+radio.arms[1] = false
+step(15)
+events = owner:boundaries(0)
+equal(#events, 2)
+equal(events[2].reason, "smart-altitude")
+equal(radio.sounds, 2)
+equal(#radio.lines, 2)
+equal(radio.commands[#radio.commands], false)
+
+owner, radio, step = fixture()
+owner:setDocument({ revision = 2, flight = settings })
+step(45)
+radio.arms[1] = true
+step(160)
+equal(radio.writes, 1, "absent Smart sensors never block the standard OR path")
+equal(owner.view.reason, "standard")
+
+local function timedStream(path, period, freshTicks, stopped, firstAt)
+    local broker, state, advance = fixture(5)
+    state.sensors, state.samples = {}, {}
+    local function sensor(index, id, instance, unit, value, stop)
+        state.sensors[index] = { type = 0, id = id, instance = instance, unit = unit, prec = 2 }
+        state.samples[101 + index] = {
+            value = value,
+            period = period,
+            freshTicks = freshTicks,
+            stoppedAt = stop,
+            firstAt = firstAt,
+        }
+    end
+    if path == "altitude" then
+        sensor(12, 9, 0, 9, function(at)
+            return at >= 600 and 4 or 0
+        end, stopped and 700)
+    else
+        sensor(37, 2, 0, 40, { lat = 1, lon = 2 }, stopped == "gps" and 700)
+        sensor(49, 2, 2, 8, function(at)
+            return at >= 600 and 11 or 0
+        end, stopped == "speed" and 700)
+        sensor(59, 2, 5, 0, 8, stopped == "satellites" and 700)
+    end
+    broker:setDocument({ revision = 2, flight = settings })
+    advance(100)
+    state.arms[1] = true
+    return broker, state, advance
+end
+
+for _, path in ipairs({ "altitude", "speed" }) do
+    for _, period in ipairs({ 50, 100 }) do
+        for _, freshTicks in ipairs({ 16, 32 }) do
+            local broker, state, advance = timedStream(path, period, freshTicks)
+            for _ = 1, 100 do
+                advance()
+                if state.writes > 0 then
+                    break
+                end
+            end
+            equal(state.writes, 1, path .. " must qualify with a healthy " .. period * 10 .. "ms stream")
+            equal(broker.view.reason, "smart-" .. path)
+            assert(broker.view.qualifiedAt >= 800 and broker.view.qualifiedAt <= 1000)
+            if path == "altitude" then
+                equal(broker.session.altitudeReference, 0, "a recent witnessed disarmed sample is a valid reference")
+            end
+            advance(100)
+            equal(state.writes, 1)
+            equal(state.sounds, 1)
+            state.arms[1] = false
+            advance(50)
+            equal(#broker:boundaries(0), 2)
+            equal(state.sounds, 2)
+            equal(#state.lines, 2)
+            equal(state.commands[#state.commands], false)
+        end
+    end
+end
+
+for _, stopped in ipairs({ "altitude", "speed", "gps", "satellites" }) do
+    local path = stopped == "altitude" and "altitude" or "speed"
+    local broker, state, advance = timedStream(path, 100, 32, stopped)
+    advance(62)
+    equal(state.now, 810)
+    equal(state.writes, 0, "a current cached " .. stopped .. " value cannot finish the two-second hold")
+    advance(38)
+    equal(state.now, 1000)
+    equal(state.writes, 0)
+    equal(broker.session.smart[path].fresh, false, "stopped data must expire before the firmware's old flag")
+    advance(550)
+    equal(state.writes, 1, "stopped Smart inputs cannot block independent standard qualification")
+    equal(broker.view.reason, "standard")
+end
+
+do
+    local broker, state, advance = timedStream("altitude", 100, 16)
+    state.samples[113].value = function(at)
+        return at >= 500 and 4 or 0
+    end
+    advance(8)
+    equal(broker.session.altitudeReference, 0, "prefer the witnessed pre-arm sample over a later new reading")
+    assert(broker.session.smart.altitude.sampleFresh == false, "arming need not align with the firmware fresh window")
+end
+
+do
+    local broker, state, advance = timedStream("altitude", 50, 32)
+    state.samples[113].unavailableAt = 715
+    advance(60)
+    equal(state.now, 800)
+    equal(state.writes, 0)
+    advance(40)
+    equal(state.writes, 1)
+    assert(broker.view.qualifiedAt >= 925, "an invalid poll between detector ticks must restart the hold")
+end
+
+do
+    local broker, state, advance = timedStream("altitude", 100, 32, "altitude")
+    advance(100)
+    state.samples[113].stoppedAt = nil
+    advance(39)
+    equal(state.writes, 0, "recovery must start a new full two-second hold")
+    advance(4)
+    equal(state.writes, 1)
+    equal(broker.view.reason, "smart-altitude")
+end
+
+do
+    local broker, state, advance = timedStream("altitude", 100, 32, nil, 600)
+    advance(100)
+    equal(state.writes, 0)
+    equal(broker.session.altitudeReference, nil, "first receipt after arming cannot retroactively create a reference")
+end
+assert(string.find(owner.view.smartStatus, "absent/unsupported", 1, true))
+
+owner, radio, step = fixture()
+radio.sensors = {
+    [42] = { type = 0, id = 2, instance = 0, unit = 40, prec = 0 },
+    [49] = { type = 0, id = 2, instance = 2, unit = 8, prec = 1 },
+    [59] = { type = 0, id = 2, instance = 5, unit = 0, prec = 0 },
+}
+radio.samples = {
+    [143] = { value = { lat = 37, lon = -122, delay = 0 } },
+    [150] = { value = 11 },
+    [160] = { value = 8 },
+}
+owner:setDocument({ revision = 2, flight = settings })
+step(45)
+radio.arms[1] = true
+step(20)
+equal(radio.writes, 1)
+equal(owner.view.reason, "smart-speed", "GPS without barometric altitude can qualify independently")
+equal(#owner:boundaries(0), 1)
+equal(radio.sounds, 1)
+equal(radio.commands[#radio.commands], true)
+
+owner, radio, step = fixture()
+owner:setDocument({ revision = 2, flight = settings })
+radio.failSmart = true
+step(45)
+radio.arms[1] = true
+step(160)
+equal(radio.writes, 1, "failed Smart polling cannot retire the standard detector")
+equal(owner.view.reason, "standard")
+assert(owner.view.detectionError and string.find(owner.view.smartStatus, "reader failed", 1, true))
+
+owner, radio, step = fixture()
+radio.sensors = { [12] = { type = 0, id = 9, instance = 0, unit = 9, prec = 2 } }
+radio.samples = { [113] = { value = 0 } }
+owner:setDocument({ revision = 2, flight = settings })
+step(45)
+radio.arms[1] = true
+step(4)
+radio.samples[113].value = 4
+step(6)
+radio.now = radio.now + 101
+owner:tick(radio.now)
+equal(owner.session.altitudeSince, nil, "scheduling gaps reset the Smart hold")
+equal(owner.session.altitudeReference, nil, "unobserved arm cycles cannot inherit an old reference")
+step(20)
+equal(radio.writes, 0)
+step(150)
+equal(radio.writes, 1)
+equal(owner.view.reason, "standard")

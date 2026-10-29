@@ -169,7 +169,7 @@ Drawer title: **Flight counter** · [drawer settings and behavior](../panels/fli
 | `armSwitch` | string | `""` | Blank, physical switch position, or logical switch such as `L01` | Armed switch position | Legacy fallback only; new panels use widget Armed. Version-1–3 layouts retain the former `SF^` default when omitted. |
 
 Configure detection, announcements, CSV history, and the optional logical-switch
-output in **AeroGrid → Model settings**, not in new panel YAML. The old
+output and optional **Smart detection** in **AeroGrid → Model settings**, not in new panel YAML. The old
 `motorSource`, `motorReversed`, `minMotorPercent`, `minFlightDuration`,
 `disarmDuration`, `announcements`, and `history` fields remain readable for
 legacy migration. Do not remove the last legacy counter before saving Model

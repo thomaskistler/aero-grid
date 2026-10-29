@@ -7,6 +7,7 @@ local fields = {
     { key = "motorReversed", label = "Reverse motor", kind = "toggle" },
     { key = "minMotorPercent", label = "Motor threshold (%)", kind = "numberEdit", min = 0, max = 99.99 },
     { key = "minFlightDuration", label = "Qualification (s)", kind = "numberEdit", min = 0.01, max = 3600 },
+    { key = "smartDetection", label = "Smart detection", kind = "toggle" },
     { key = "disarmDuration", label = "Disarm grace (s)", kind = "numberEdit", min = 0.01, max = 3600 },
     { key = "announcements", label = "Announce flights", kind = "toggle" },
     { key = "history", label = "CSV history", kind = "toggle" },
@@ -123,7 +124,22 @@ function ui.open(context, document, handlers)
             return SMLSIZE
         end,
     })
-    state.nextY = state.height * 2 + 8
+    state.smartStatus = lvgl.label(state.dialog, {
+        x = 4,
+        y = state.height * 2 + 8,
+        w = state.width,
+        h = state.height * 3,
+        text = function()
+            if not state.draft.smartDetection then
+                return "Smart off: standard motor detection."
+            end
+            return (handlers.smartStatus and handlers.smartStatus()) or "Save to enable Smart sensor detection."
+        end,
+        font = function()
+            return SMLSIZE
+        end,
+    })
+    state.nextY = state.height * 5 + 16
     return state
 end
 

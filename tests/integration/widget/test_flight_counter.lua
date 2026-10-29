@@ -211,3 +211,63 @@ local history, sounds = recorded()
 assert(history, "the committed tracker completes while its presentation is previewed")
 equal(#sounds, 4, "previewing must neither suppress nor duplicate committed announcements")
 equal(panel.value.properties.text, "40", "preview displays the shared count")
+
+-- Exercise the unchanged callback ceiling with all Smart sensor categories
+-- present, including discovery, GPS validation, qualification and completion.
+context, panel, recorded = create({ 2, 2 })
+local owner = context.flightBroker
+local env, lookup = owner.env, owner.env.getFieldInfo
+local sensors = {
+    [12] = { type = 0, id = 9, instance = 0, unit = 9, prec = 2 },
+    [37] = { type = 0, id = 2, instance = 0, unit = 40, prec = 0 },
+    [49] = { type = 0, id = 2, instance = 2, unit = 8, prec = 1 },
+    [59] = { type = 0, id = 2, instance = 5, unit = 0, prec = 0 },
+}
+local values = { [12] = 0, [37] = { lat = 1, lon = 2, delay = 0 }, [49] = 0, [59] = 8 }
+env.getSensor = function(index)
+    return sensors[index]
+end
+env.getModule = function(index)
+    return { Type = index == 0 and 5 or 0 }
+end
+env.getFieldInfo = function(name)
+    local index = tonumber(string.match(name, "^telem(%d+)$"))
+    if index and sensors[index - 1] then
+        return { id = 1000 + (index - 1) * 3, unit = sensors[index - 1].unit }
+    end
+    return lookup(name)
+end
+env.getSourceValue = function(id)
+    return values[(id - 1000) / 3], true, true
+end
+owner:setDocument({
+    revision = 1,
+    flight = context.flightConfig.resolve({
+        smartDetection = true,
+        minFlightDuration = 30,
+        disarmDuration = 2,
+        announcements = true,
+    }),
+})
+backgroundUntil(context, function()
+    return owner.session.smart and owner.session.smart.altitude.fresh and owner.session.smart.speed.fresh
+end)
+fixture.radio.values[305], fixture.radio.values[306] = 1024, 0
+backgroundUntil(context, function()
+    return panel.phase == "starting"
+end)
+values[12], values[49] = 4, 11
+backgroundUntil(context, function()
+    return panel.phase == "active"
+end)
+equal(owner.view.reason, "smart-altitude")
+equal(panel.value.properties.text, "40")
+fixture.radio.values[305] = -1024
+backgroundUntil(context, function()
+    return panel.phase == "ground"
+end)
+history, sounds = recorded()
+assert(history)
+equal(#sounds, 4)
+equal(model.getGlobalVariable(8, 0), 40)
+print(string.format("Flight counter standard/Smart integration passed; worst callback: %d instructions", worstCallback))

@@ -32,6 +32,7 @@ them separately from layout changes; **Cancel** leaves them unchanged.
 | **Reversed motor channel** | off | Reverse the channel reading before calculating motor percentage. Enable it if the selected channel runs from high at idle to low at full power. |
 | **Minimum motor percent** | 25 | Motor percentage must be strictly above this value to qualify. Valid values are 0 up to, but not including, 100. Whole-number values change in steps of 1. |
 | **Qualification seconds** | 30 | How long armed, sufficient motor output, and live telemetry must hold continuously before a flight counts. Must be greater than 0 and at most 3600 seconds. Whole-number values change in steps of 1. |
+| **Smart detection** | off | Allow supported altitude or GPS groundspeed sensors to qualify a flight earlier. Standard motor qualification remains available. |
 | **Disarm seconds** | 10 | Continuous disarming needed to confirm the end of a counted flight. Must be greater than 0 and at most 3600 seconds. Whole-number values change in steps of 1. |
 | **Announce flights** | off | Play a tone and speak the total when a flight qualifies and when its end is confirmed. No external sound files are needed. |
 | **Write CSV history** | on | Append confirmed completed flights to `/flights-history.csv` on the SD card. |
@@ -48,6 +49,24 @@ and live telemetry hold continuously for **Qualification seconds**. Any
 interruption before qualification resets the attempt. Qualification increments
 the total once. Motor percentage maps the channel's normal low-to-high travel
 to 0–100%, after applying **Reversed motor channel**.
+
+With **Smart detection** on, a flight can also qualify when trustworthy
+barometric altitude is **more than 3 metres above its arming reference for
+2 continuous seconds**, **or** valid GPS groundspeed is **more than 10 mph for
+2 continuous seconds**. Both shortcuts still require armed state, motor above
+the configured threshold, and live telemetry. The fixed speed rule is a
+provisional heuristic, not a guaranteed taxi/flight discriminator.
+
+Smart discovers supported CRSF/ELRS and FrSky S.Port sensors automatically.
+Open **Model settings** to see sensor readiness or why standard detection is
+being used. Missing, ambiguous, stale, or unsupported sensors never block
+standard qualification. Altitude needs a trustworthy recent reading seen while
+disarmed or freshly received at the observed arm transition; starting AeroGrid
+already armed or receiving altitude late does not establish that reference.
+Healthy half-second and one-second updates are supported. `Current` means Smart
+is bridging a normal interval between updates; stopped or unverifiable streams
+fall back to standard detection. Low flights and short hops are not guaranteed
+to qualify early.
 
 The widget's **Armed switch** overrides panel arm switches and also drives
 Chart, first-arm Navigation, and flight-session minima in this widget.

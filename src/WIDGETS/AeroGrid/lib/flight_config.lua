@@ -4,6 +4,7 @@ local config = { RUNTIME_API = 1 }
 local defaults = {
     motorSource = "ch3",
     motorReversed = false,
+    smartDetection = false,
     minMotorPercent = 25,
     minFlightDuration = 30,
     disarmDuration = 10,
@@ -43,7 +44,7 @@ function config.validate(values)
     if not channel or tonumber(channel) < 1 or tonumber(channel) > 32 then
         errors[#errors + 1] = "Motor channel must be CH1-CH32"
     end
-    for _, key in ipairs({ "motorReversed", "announcements", "history" }) do
+    for _, key in ipairs({ "motorReversed", "smartDetection", "announcements", "history" }) do
         if type(values[key]) ~= "boolean" then
             errors[#errors + 1] = key .. " must be a boolean"
         end
@@ -71,6 +72,7 @@ function config.key(values)
     for _, key in ipairs({
         "motorSource",
         "motorReversed",
+        "smartDetection",
         "minMotorPercent",
         "minFlightDuration",
         "disarmDuration",
