@@ -42,6 +42,7 @@ services.DEFINITIONS = {
     { id = "extrema", file = "lib/extrema_service.lua" },
     { id = "navigation", file = "lib/navigation_service.lua" },
     { id = "history", file = "lib/history_service.lua" },
+    { id = "flight", file = "lib/flight_service.lua" },
 }
 
 --- Refuse writes to a published snapshot.
@@ -100,6 +101,8 @@ function services.environment(overrides)
         getTime = callable(overrides.getTime) or callable(getTime),
         getSwitchIndex = callable(overrides.getSwitchIndex) or callable(getSwitchIndex),
         getSwitchValue = callable(overrides.getSwitchValue) or callable(getSwitchValue),
+        setStickySwitch = callable(overrides.setStickySwitch) or callable(setStickySwitch),
+        getLogicalSwitch = callable(modelApi.getLogicalSwitch),
         charUp = CHAR_UP,
         charDown = CHAR_DOWN,
         -- A global like `getValue`, not part of the model API: `etxlib` is in

@@ -51,7 +51,7 @@ function module.new(dependencies)
         local fullscreen = isFullScreen()
         if hint.w ~= w or hint.h ~= h or hint.fullscreen ~= fullscreen then
             hint.w, hint.h, hint.fullscreen = w, h, fullscreen
-            local instruction = fullscreen and "Long-press to start editing" or "Long-press for fullscreen"
+            local instruction = fullscreen and "AeroGrid menu > UI setup" or "Long-press for fullscreen"
             local texts = { "Empty dashboard", instruction }
             local keys = { "title", "instruction" }
             if not fullscreen then
@@ -227,6 +227,11 @@ function module.new(dependencies)
         -- keeps those wrappers registered after deleting their windows, and
         -- only a host-wide clear unregisters them.
         if context.nativeDialogsCreated and not isFullScreen() then
+            if context.aeroMenuModule then
+                context.aeroMenuModule.close(context)
+                context.aerogridMenu = nil
+            end
+            context.chromeRoot, context.aeroMenuParent = nil, nil
             lvgl.clear()
             context.root = nil
             context.nativeDialogsCreated = nil

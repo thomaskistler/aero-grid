@@ -1,0 +1,16 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
+<svg xmlns="http://www.w3.org/2000/svg" width="45" height="45" viewBox="0 0 45 45">
+  <!-- The generated PNGs use the exact EdgeTX 2.12 mask and one of several backgrounds. -->
+  <path d="M0 0H36.2L45 22.5 36.2 45H0Z" fill="#b94c14"/>
+  <g fill="#ffffff">
+    <g opacity="0.38">
+      <rect x="6" y="10" width="11" height="11"/>
+      <rect x="21" y="10" width="11" height="11"/>
+      <rect x="6" y="25" width="11" height="11"/>
+      <rect x="21" y="25" width="11" height="11"/>
+    </g>
+    <circle cx="20" cy="22.5" r="5.5"/>
+    <path d="M14 18 2 15l1 3.5 11 3ZM14 22 4 20.5l1.2 3.3 8.8 1.4ZM14.5 26 7 26l1.3 3 6.5-.6Z"/>
+    <path transform="matrix(-1 0 0 1 40 0)" d="M14 18 2 15l1 3.5 11 3ZM14 22 4 20.5l1.2 3.3 8.8 1.4ZM14.5 26 7 26l1.3 3 6.5-.6Z"/>
+  </g>
+</svg>

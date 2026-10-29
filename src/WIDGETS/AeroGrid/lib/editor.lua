@@ -249,12 +249,32 @@ local function candidateSpans(module)
 end
 
 function editor.availablePositions(session, colSpan, rowSpan, excluded)
-    local positions = {}
+    local positions, occupied = {}, {}
+    for index, panel in ipairs(session.draft.panels) do
+        if index ~= excluded then
+            for row = panel.row, panel.row + panel.rowSpan - 1 do
+                for col = panel.col, panel.col + panel.colSpan - 1 do
+                    occupied[row * 4 + col] = true
+                end
+            end
+        end
+    end
     for row = 0, 4 - rowSpan do
         for col = 0, 4 - colSpan do
-            local placement = { col = col, row = row, colSpan = colSpan, rowSpan = rowSpan }
-            if not overlapsAny(session.grid, session.draft.panels, placement, excluded) then
-                positions[#positions + 1] = placement
+            local clear = true
+            for y = row, row + rowSpan - 1 do
+                for x = col, col + colSpan - 1 do
+                    if occupied[y * 4 + x] then
+                        clear = false
+                        break
+                    end
+                end
+                if not clear then
+                    break
+                end
+            end
+            if clear then
+                positions[#positions + 1] = { col = col, row = row, colSpan = colSpan, rowSpan = rowSpan }
             end
         end
     end
@@ -329,6 +349,7 @@ function editor.add(session, typeName)
             and type(setting.key) == "string"
             and setting.default ~= nil
             and not setting.drawerField
+            and not setting.legacyFlight
         then
             config[setting.key] = copy(setting.default)
         end
@@ -366,15 +387,25 @@ local function findSelected(session)
     return placement, index
 end
 
-local function moveTarget(session, placement, index, col, row)
+local function moveTarget(session, placement, index, col, row, bounded)
     local moved = { col = col, row = row, colSpan = placement.colSpan, rowSpan = placement.rowSpan }
-    local valid, placementError = session.grid.validatePlacement(moved, 4, 4)
-    if not valid then
-        return nil, placementError
+    if not bounded then
+        local valid, placementError = session.grid.validatePlacement(moved, 4, 4)
+        if not valid then
+            return nil, placementError
+        end
     end
     local conflict, conflictIndex
     for otherIndex, other in ipairs(session.draft.panels) do
         if otherIndex ~= index and session.grid.overlaps(other, moved) then
+            if
+                other.col == col
+                and other.row == row
+                and other.colSpan == placement.colSpan
+                and other.rowSpan == placement.rowSpan
+            then
+                return moved, nil, other, placement
+            end
             if conflict then
                 return nil, "overlaps panel " .. other.id
             end
@@ -382,14 +413,6 @@ local function moveTarget(session, placement, index, col, row)
         end
     end
     if conflict then
-        if
-            conflict.col == col
-            and conflict.row == row
-            and conflict.colSpan == placement.colSpan
-            and conflict.rowSpan == placement.rowSpan
-        then
-            return moved, nil, conflict, placement
-        end
         local displaced = {
             col = placement.col,
             row = placement.row,
@@ -452,7 +475,7 @@ function editor.movePositions(session)
     local positions, seen = {}, {}
     for row = 0, 4 - placement.rowSpan do
         for col = 0, 4 - placement.colSpan do
-            local moved = moveTarget(session, placement, index, col, row)
+            local moved = moveTarget(session, placement, index, col, row, true)
             if moved then
                 local key = moved.row * 4 + moved.col
                 if not seen[key] then
@@ -981,7 +1004,10 @@ function editor.settings(session)
     end
     local fields = {}
     for _, setting in ipairs(module.settings or {}) do
-        if not setting.legacyArm or ((session.nativeArmed or 0) == 0 and config[setting.key] ~= "") then
+        if
+            not setting.legacyFlight
+            and (not setting.legacyArm or ((session.nativeArmed or 0) == 0 and config[setting.key] ~= ""))
+        then
             fields[#fields + 1] = setting
         end
     end

@@ -4262,20 +4262,9 @@ panels:
     -- the firmware does -- so the only thing that changes is the flag.
     lvglMock.setFullScreen(true)
 
-    -- **One callback, and the reservation is gone.** `context.reserved` is
-    -- rewritten only by `beginReflow`, so this is the trigger firing rather
-    -- than a side effect of anything else -- and it fires on the very next
-    -- refresh, which is one MENU_TASK_PERIOD of 50 ms
-    -- (radio/src/tasks.cpp:50). It is a poll because there is no event to
-    -- have: entering fullscreen calls the widget's `update`
-    -- (widget.cpp:265) and leaving it does not, that call being guarded by
-    -- `if (fullscreen)`.
+    -- Fullscreen replaces the native button with the same-sized AeroGrid button.
     definition.refresh(context)
-    assertEqual(
-        context.reserved,
-        nil,
-        "one refresh after going fullscreen, a corner was still reserved for a" .. " button that is not drawn"
-    )
+    assert(context.reserved, "fullscreen must reserve the AeroGrid button footprint")
 
     local passes = 0
     while context.reflowIndex do
@@ -4284,17 +4273,8 @@ panels:
         assert(passes < 100, "reflow never finished")
     end
     pump(context, 10)
-    assertEqual(
-        corner.area.ladder.room,
-        clear.area.ladder.room,
-        "the corner panel did not follow every other panel once the button went"
-    )
-    assertEqual(
-        corner.area.valueY,
-        clear.area.valueY,
-        "the corner panel's reading did not come back to the panel's centre"
-    )
-    assert(corner.area.valueCentre < buttoned, "the reading did not move left when the button stopped taking room")
+    assert(corner.area.content < clear.area.content, "fullscreen must retain the corner reservation")
+    assertEqual(corner.area.valueCentre, buttoned, "fullscreen and native buttons must reserve the same width")
 
     -- And back, because a pilot leaves fullscreen as often as they enter it
     -- and the firmware raises nothing at all on the way out.
@@ -5401,7 +5381,7 @@ local function testPackageCompatibility()
         {
             name = "future-layout-contract",
             file = "lib/package.lua",
-            text = 'return {version="next",runtimeApi=1,panelApi=1,layoutVersion=5}',
+            text = 'return {version="next",runtimeApi=1,panelApi=1,layoutVersion=6}',
             error = "incompatible package contract",
         },
         { name = "missing-core", file = "lib/yaml.lua", error = "lib/yaml.lua:" },
@@ -5475,9 +5455,9 @@ panels:
         assert(steps < 200, "legacy migration load did not finish")
     end
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-    assertEqual(stageCounts["header-migrate"], 3, "each adjacent header step runs in its own loader callback")
-    assertEqual(stageCounts["panel-migrate"], 3, "each adjacent panel step runs in its own loader callback")
-    assertEqual(context.document.version, 4)
+    assertEqual(stageCounts["header-migrate"], 4, "each adjacent header step runs in its own loader callback")
+    assertEqual(stageCounts["panel-migrate"], 4, "each adjacent panel step runs in its own loader callback")
+    assertEqual(context.document.version, 5)
     local placement = context.document.panels[1]
     assertEqual(placement.type, "rx-battery")
     assertEqual(placement.config.reading, "cell")

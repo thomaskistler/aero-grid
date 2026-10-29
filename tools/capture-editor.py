@@ -29,6 +29,9 @@ SCENES = SCENES + PANEL_SETTINGS_SCENES
 STITCHED_SCENES = ("settings", "state-settings", "state-entry", "state-condition", "metric-entry", "chart-metric-entry") + PANEL_SETTINGS_SCENES
 THEME_SCENES = ("theme-modern-dark", "theme-modern-light", "theme-custom")
 DASHBOARD_SCENES = ("dashboard",)
+FLIGHT_SETTINGS_SCENES = ("aero-menu", "aero-ui-setup", "model-settings", "model-settings-bottom",
+                         "model-settings-save", "model-settings-cancel",
+                         "native-app-icon", "aero-fullscreen-icon")
 DASHBOARD_INPUTS = """model.setGlobalVariable(8, 0, 42)
 model.setGlobalVariable(0, 0, 30)
 assert(model.getGlobalVariable(8, 0) == 42, "capture could not initialize GV9")
@@ -237,6 +240,8 @@ screenData:
             user_themes.mkdir(parents=True, exist_ok=True)
             (user_themes / "custom.yml").write_text(custom)
             (sd / "AEROGRID/theme-registry.txt").write_text("modern-dark\nmodern-light\ncustom\n")
+    elif scene in FLIGHT_SETTINGS_SCENES:
+        layout = "version: 5\ngrid:\n  columns: 4\n  rows: 4\npanels: []\n"
     elif scene in DASHBOARD_SCENES:
         layout = (ROOT / "src/WIDGETS/AeroGrid/layouts/Default.yaml").read_text()
     elif scene in PANEL_SETTINGS_SCENES or scene == "chart-metric-entry":
@@ -369,6 +374,34 @@ panels:
 """.replace("EXPECTED", mode))
         main.write_text(source)
         return
+    if scene in FLIGHT_SETTINGS_SCENES:
+        source = source.replace(needle, """
+    refresh = function(context, widgetEvent, touchState)
+        refresh(context, widgetEvent, touchState)
+        if #context.errors > 0 then error(table.concat(context.errors, "\\n")) end
+        local scene = "SCENE"
+        local expectedFullscreen = scene ~= "native-app-icon"
+        if isFullScreen() ~= expectedFullscreen or context.stage or context.reloadState or context.captureReady then return end
+        if scene == "aero-fullscreen-icon" and not context.aerogridMenu then return end
+        if scene == "model-settings-save" or scene == "model-settings-cancel" then
+            if context.modelSettingsUi then context.captureDialogOpened = true; return end
+            if not context.captureDialogOpened then return end
+            local saved = context.flightBroker.document.flight ~= nil
+            assert(saved == (scene == "model-settings-save"), "unexpected Model settings persistence")
+        elseif string.sub(scene, 1, 14) == "model-settings" and not context.modelSettingsUi then
+            return
+        end
+        if context.modelSettingsUi and context.modelSettingsUi.build then return end
+        if "SCENE" == "aero-ui-setup" and (not context.editorUi or context.editorUi.buildStage) then return end
+        assert(#context.panels == 0, "flight settings capture must use an Empty dashboard")
+        local file = assert(io.open("/capture-ready.txt", "w"))
+        io.write(file, "production Empty dashboard and AeroGrid menu ready")
+        io.close(file)
+        context.captureReady = true
+    end,
+""".replace("SCENE", scene))
+        main.write_text(source)
+        return
     # Only the isolated copy is instrumented. Fullscreen is entered with a real
     # simulator long-press; these commands open the production editor/dialogs.
     source = source.replace(needle, """
@@ -490,6 +523,24 @@ def write_png(path, rows):
                      + chunk(b"IEND", b""))
 
 
+def verify_menu_icon_pair(native, fullscreen):
+    """Compare visible silhouette pixels, not merely the reserved hitboxes."""
+    masks = []
+    for rows in (native, fullscreen):
+        background = rows[50][150:153]
+        masks.append([[rows[y][x * 3:x * 3 + 3] != background for x in range(64)]
+                      for y in range(64)])
+    if masks[0] != masks[1]:
+        raise RuntimeError("Native App and fullscreen AeroGrid icon silhouettes differ")
+    points = [(x, y) for y, row in enumerate(masks[0]) for x, visible in enumerate(row) if visible]
+    bounds = (min(x for x, _ in points), min(y for _, y in points),
+              max(x for x, _ in points) + 1, max(y for _, y in points) + 1)
+    if bounds != (0, 0, 45, 45):
+        raise RuntimeError(f"Unexpected native TX16S icon bounds: {bounds}")
+    return {"display": [480, 272], "bounds": list(bounds), "visible_pixels": len(points),
+            "matching_rows": 45, "reserved_footprint": [47, 45]}
+
+
 def dialog_geometry(rows):
     """Locate the native dialog's title bar and scrolling body in one frame."""
     pixel = lambda x, y: rows[y][x * 3:x * 3 + 3]
@@ -552,6 +603,28 @@ def capture(executable, library, directory, scene, shift=0):
     regions.write_text("0 0 480 272\n")
     frame = directory / "frame.rgb565"
     mode = "fullscreen"
+    if scene in FLIGHT_SETTINGS_SCENES:
+        actions = directory / "actions.txt"
+        script = "500 200 140 1\n600 200 140 0\n850 18 18 1\n860 18 18 0\n"
+        if scene == "native-app-icon":
+            script = "500 479 271 0\n"
+        elif scene == "aero-fullscreen-icon":
+            script = "500 200 140 1\n600 200 140 0\n"
+        if scene.startswith("model-settings"):
+            script += "1100 210 135 1\n1110 210 135 0\n"
+        elif scene == "aero-ui-setup":
+            script += "1100 210 170 1\n1110 210 170 0\n"
+        if scene in ("model-settings-bottom", "model-settings-save", "model-settings-cancel"):
+            for tick in (1450, 1750, 2050):
+                script += (f"{tick} 390 220 1\n{tick + 20} 390 170 1\n"
+                           f"{tick + 40} 390 110 1\n{tick + 60} 390 65 1\n"
+                           f"{tick + 80} 390 65 0\n")
+        if scene in ("model-settings-save", "model-settings-cancel"):
+            script += "2250 270 150 1\n2260 270 150 0\n"
+            x = 140 if scene == "model-settings-save" else 330
+            script += f"2400 {x} 225 1\n2410 {x} 225 0\n"
+        actions.write_text(script)
+        mode = "actions=" + str(actions)
     if scene == "navigation-location":
         actions = directory / "actions.txt"
         actions.write_text(
@@ -573,6 +646,13 @@ def capture(executable, library, directory, scene, shift=0):
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
             raise RuntimeError(f"Capture failed; inspect {directory / 'simulator.log'}") from error
     pixels = frame.read_bytes()
+    if scene in ("model-settings-save", "model-settings-cancel"):
+        settings = list((sd / "AEROGRID/models").glob("*.yaml"))
+        if scene == "model-settings-save":
+            if len(settings) != 1 or "history: false" not in settings[0].read_text():
+                raise RuntimeError("Native Save did not persist the edited model draft")
+        elif settings:
+            raise RuntimeError("Native Cancel unexpectedly persisted a model draft")
     if len(pixels) != 480 * 272 * 2:
         raise RuntimeError("Unexpected framebuffer size")
     drawer = None
@@ -586,7 +666,7 @@ def capture(executable, library, directory, scene, shift=0):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--companion", type=Path, default=Path("/Applications/EdgeTX Companion 2.12.app"))
-    parser.add_argument("--scene", choices=SCENES + tuple(SETUP_SCENES) + THEME_SCENES + DASHBOARD_SCENES)
+    parser.add_argument("--scene", choices=SCENES + tuple(SETUP_SCENES) + THEME_SCENES + DASHBOARD_SCENES + FLIGHT_SETTINGS_SCENES)
     args = parser.parse_args()
     library = args.companion / "Contents/Resources/libedgetx-tx16s-simulator.dylib"
     if not library.is_file():
@@ -621,6 +701,11 @@ def main():
             rows = stitch(frames, guard)
         write_png(directory / f"{scene}.png", rows)
         print(directory / f"{scene}.png")
+        if scene in ("native-app-icon", "aero-fullscreen-icon"):
+            pair = [OUTPUT / name / "frame.rgb565" for name in ("native-app-icon", "aero-fullscreen-icon")]
+            if all(path.is_file() for path in pair):
+                report = verify_menu_icon_pair(*(decode(path.read_bytes()) for path in pair))
+                (OUTPUT / "icon-parity.json").write_text(json.dumps(report, indent=2) + "\n")
     (OUTPUT / "provenance.json").write_text(json.dumps({
         "revision": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
         "simulator": str(library),

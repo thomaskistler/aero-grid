@@ -65,12 +65,12 @@ Page retirement and replacement run in separate callbacks so deferred cleanup
 cannot invalidate objects belonging to the replacement page.
 
 Panels use container-local coordinates. They must not draw at absolute screen
-coordinates or assume the TX16S's dimensions. In App mode the host accounts
-for the top-left EdgeTX menu button; fullscreen removes that reservation.
+coordinates or assume the TX16S's dimensions. The host reserves the same
+top-left footprint for the native App-mode menu and fullscreen AeroGrid menu.
 Use the shared geometry instead of adding panel-specific menu offsets.
 
 `lib/package.lua` records package, runtime API, panel API, and layout versions.
-The current layout schema is version 4. The central layout module keeps an
+The current layout schema is version 5. The central layout module keeps an
 adjacent migration registry: each source version provides a header step and a
 panel step for that version-to-next-version transition. A future version must
 add every intervening step; a layout is rejected if its source version is newer
@@ -101,6 +101,7 @@ does not consume scheduled work.
 | `model_service.lua` | Model identity/image, timers, flight mode, TX voltage, and flight history/audio support. |
 | `control_service.lua` | Trims, final channel outputs and their trim associations, switch conditions, GV snapshots, and verified GV9 FM0 increments. |
 | `armed_service.lua` | Native widget Armed precedence, legacy switch fallback, and immutable effective arm views over shared Control polls. |
+| `flight_service.lua` | Shared model-flight detection, once-only count/history/audio, optional Sticky output, and timestamped boundaries. |
 | `extrema_service.lua` | Sensor extrema and dashboard flight-session tracking. |
 | `navigation_service.lua` | GPS fix, pilot/home position, distance, and north-up bearing. |
 | `history_service.lua` | Error-bounded chart recordings, cumulative armed time, raw extrema, line-only smoothing, and bounded rolling expiration. |
@@ -170,13 +171,37 @@ endpoints coincide on screen; marker objects are pooled by pixel column.
 Unchanged readouts are cached so their callback budget can process a larger
 bounded projection batch; same-pixel extrema do not add redundant geometry.
 
-The `flight-counter` panel is deliberately stateful: it owns qualification
-and disarm-timeout transitions, requests verified count updates, and asks
-the model service for history/audio side effects. It consumes the effective
-Armed view, without changing its qualification/disarm policy. Each dashboard has independent
-services, so install **only one flight tracker per model**; other dashboards
-can display GV9 through `metric`. Detection state resets on dashboard reload;
-the persisted GV count does not.
+## Shared flight tracking
+
+The factory-scoped broker in `flight_service.lua` owns a separate non-UI
+Control/Telemetry/Model runtime. Any live widget callback can pump it. Dashboard
+registrations are weakly held; rebuilds mark proposals pending before replacing
+them. Unanimous effective arm/configuration proposals are required, not the
+first caller's settings. Native Armed remains per widget. A qualified session
+pins its arm, detector settings, and output until completion, including output
+cleanup when proposals change or conflict. Counter panels only render state.
+
+`services.flight:state()` is an immutable live view. It exposes model/epoch,
+configuration revision/status, phase (`ground`, `starting`, `active`, `ending`),
+`active`, flight ID/count, candidate/qualification/disarm/completion timestamps,
+and actionable diagnostics. `ready` describes configuration, not telemetry
+validity. Unknown/stale arm observations never confirm disarm.
+
+`services.flight:boundaries(afterSequence, epoch)` returns immutable records,
+the oldest retained sequence, and a gap flag. The journal retains 64 start/end
+records with epoch, sequence, flight ID/count, `kind`, `at`, `observedAt`, and
+qualification `reason` (`standard` currently). Start `at` is the motor candidate
+start; end `at` is the final disarm start. `observedAt` is qualification or
+completion, so duration excludes the disarm grace. Consumers must reconcile a
+gap or changed epoch; they must never read Sticky output as their event bus.
+Smart qualification and Chart recording/markers are separate later changes.
+
+Model settings use their own schema/revision and losslessly encoded model
+filename under `/AEROGRID/models/`. Saves verify model identity and revision
+before verified file replacement. Layout saves and previews never write this
+document. Legacy detector declarations remain compatible until explicit model
+Save; retained arm metadata stays with its layout rather than becoming
+model-wide Armed. Model changes reset the flight epoch; dashboard rebuilds do not.
 
 ## Add or change a panel
 

@@ -113,7 +113,7 @@ panels:
 ]]))
     local normalized, errors = layout.validate(document, grid)
     assertions.assertEqual(#errors, 0)
-    assertions.assertEqual(normalized.version, 4)
+    assertions.assertEqual(normalized.version, 5)
     local cells = normalized.panels[1]
     assertions.assertEqual(cells.type, "rx-battery")
     assertions.assertEqual(cells.config.reading, "cell")
@@ -184,9 +184,13 @@ local function testAdjacentMigrationSteps()
     migrated, nextVersion = layout.migrateHeaderStep(validated)
     assert(migrated)
     assertions.assertEqual(nextVersion, 4)
+    assertions.assertEqual(layout.finalizeHeader(validated), nil, "the version-5 step is required")
+    migrated, nextVersion = layout.migrateHeaderStep(validated)
+    assert(migrated)
+    assertions.assertEqual(nextVersion, 5)
     local finalized, finalizeErrors = layout.finalizeHeader(validated)
     assertions.assertEqual(#finalizeErrors, 0)
-    assertions.assertEqual(finalized.version, 4)
+    assertions.assertEqual(finalized.version, 5)
 
     local panel = {
         type = "cell-battery",
@@ -201,12 +205,12 @@ local function testAdjacentMigrationSteps()
     migrated, nextVersion = layout.migratePanelStep(panel, 2)
     assert(migrated)
     assertions.assertEqual(nextVersion, 3)
-    assertions.assertEqual(layout.supportsVersion(5), false, "future versions require registered adjacent helpers")
+    assertions.assertEqual(layout.supportsVersion(6), false, "future versions require registered adjacent helpers")
 end
 
 local function testUnsupportedFutureVersion()
     local document = {
-        version = 5,
+        version = layout.VERSION + 1,
         grid = { columns = 4, rows = 4 },
         panels = {},
     }

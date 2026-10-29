@@ -3,6 +3,7 @@
 local root = assert(..., "repository root argument is required")
 local equal = assert(loadfile(root .. "/tests/support/assertions.lua"))().assertEqual
 local panel = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/flight-counter.lua"))()
+local detector = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/flight_service.lua"))()
 local host = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/panel_host.lua"))()
 
 local function new()
@@ -36,7 +37,7 @@ local function new()
     }
     local function step(now)
         context.arm.updatedAt, context.motor.updatedAt, context.link.updatedAt = now, now, now
-        panel.advance(context, now)
+        detector.advance(context, now)
     end
     return context, step
 end
@@ -130,7 +131,7 @@ equal(context.sounds[2][2], true)
 context, step = new()
 context.arm.value, context.motor.value = true, 0
 step(0)
-panel.advance(context, 3000)
+detector.advance(context, 3000)
 equal(context.phase, "ground", "old samples must not qualify a flight")
 context.feed.raw = -1
 local ok, err = pcall(step, 4000)

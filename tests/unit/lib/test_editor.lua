@@ -36,7 +36,7 @@ end
 
 local function document()
     return {
-        version = 4,
+        version = layout.VERSION,
         grid = { columns = 4, rows = 4 },
         panels = {
             {
@@ -142,7 +142,7 @@ end
 
 local function testAddChannelOutput()
     modules.output = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/output.lua"))()
-    local session = newSession({ version = 4, grid = { columns = 4, rows = 4 }, panels = {} })
+    local session = newSession({ version = layout.VERSION, grid = { columns = 4, rows = 4 }, panels = {} })
     local added, addError = editor.add(session, "output")
     assert(added, addError)
     local panel = session.draft.panels[1]
@@ -156,7 +156,7 @@ local function testAddChannelOutput()
     assert(reopened.draft.panels[1].type == "output")
     assert(reopened.draft.panels[1].colSpan == 2 and reopened.draft.panels[1].rowSpan == 2)
 
-    local input = { version = 4, grid = { columns = 4, rows = 4 }, panels = {} }
+    local input = { version = layout.VERSION, grid = { columns = 4, rows = 4 }, panels = {} }
     for row = 0, 3 do
         for col = 0, 3 do
             if row ~= 3 or col ~= 3 then
@@ -197,7 +197,7 @@ local function testAddSpanDeclarations()
         module.supportedSpans = case.spans
         local session = assert(
             editor.new(
-                { version = 4, grid = { columns = 4, rows = 4 }, panels = {} },
+                { version = layout.VERSION, grid = { columns = 4, rows = 4 }, panels = {} },
                 grid,
                 layout,
                 panelHost,
@@ -229,7 +229,7 @@ local function testCatalogPanelSizes()
         end
         for rows = 1, 4 do
             for columns = 1, 4 do
-                local session = newSession({ version = 4, grid = { columns = 4, rows = 4 }, panels = {} })
+                local session = newSession({ version = layout.VERSION, grid = { columns = 4, rows = 4 }, panels = {} })
                 local added, addError = editor.add(session, entry.type)
                 assert(added, entry.type .. ": " .. tostring(addError))
                 local panel = session.draft.panels[1]
@@ -266,7 +266,7 @@ local function testCatalogPanelSizes()
 end
 
 local function testRxBatteryFormAndSourceDrawers()
-    local input = { version = 4, grid = { columns = 4, rows = 4 }, panels = {} }
+    local input = { version = layout.VERSION, grid = { columns = 4, rows = 4 }, panels = {} }
     local session = newSession(input)
     local added, addError = editor.add(session, "rx-battery")
     assert(added, addError)
@@ -339,7 +339,7 @@ local function testRxBatteryFormAndSourceDrawers()
 end
 
 local function testSinglePrecisionVoltageSteps()
-    local session = newSession({ version = 4, grid = { columns = 4, rows = 4 }, panels = {} })
+    local session = newSession({ version = layout.VERSION, grid = { columns = 4, rows = 4 }, panels = {} })
     assert(editor.add(session, "rx-battery"))
     local settings = modules["rx-battery"].settings
     local critical
@@ -416,7 +416,7 @@ end
 local function testRestoreDefaultDoesNotApply()
     local session = newSession()
     local default = {
-        version = 4,
+        version = layout.VERSION,
         grid = { columns = 4, rows = 4 },
         panels = {
             {
@@ -668,13 +668,6 @@ local function testAllPanelDrawersStartWithLabel()
         chart = { "label", "metrics", "timeRange", "duration", "scaling", "range", "smoothing", "accent" },
         ["flight-counter"] = {
             "label",
-            "motorSource",
-            "motorReversed",
-            "minMotorPercent",
-            "minFlightDuration",
-            "disarmDuration",
-            "announcements",
-            "history",
         },
         ["flight-mode"] = { "label", "showIndex", "accent" },
         ["flight-timer"] = { "label", "timer", "warning", "critical", "accent" },

@@ -20,6 +20,7 @@ end
 
 local function create(span, failWrite)
     fixture.reset()
+    definition = fixture.module("main.lua")
     local radio = fixture.radio
     radio.fields.ch3 = { id = 306, name = "ch3" }
     radio.values[306] = -1024
@@ -96,7 +97,17 @@ local function backgroundUntil(context, predicate, limit)
             return
         end
     end
-    error("flight tracking did not reach the expected state")
+    local owner = context.flightBroker
+    error(
+        "flight tracking did not reach the expected state: "
+            .. tostring(fixture.instanceOf(context, "flights").phase)
+            .. " status="
+            .. tostring(owner and owner.state.status)
+            .. " error="
+            .. tostring(context.flightErrorText)
+            .. " phase="
+            .. tostring(owner and owner.session and owner.session.phase)
+    )
 end
 
 for _, span in ipairs({ { 1, 1 }, { 2, 1 }, { 2, 2 }, { 4, 2 } }) do
@@ -153,13 +164,13 @@ backgroundUntil(context, function()
 end)
 fixture.radio.values[305] = -1024
 backgroundUntil(context, function()
-    return #context.errors > 0
+    return context.flightBroker.state.historyError ~= nil
 end)
-assert(string.find(context.errors[1], "SD card full", 1, true), context.errors[1])
-assert(fixture.entryById(context, "flights").failed, "failed history must be reported through panel isolation")
+assert(string.find(context.flightErrorText, "SD card full", 1, true), context.flightErrorText)
+assert(not fixture.entryById(context, "flights").failed, "history errors must not retire a counter presentation")
 equal(model.getGlobalVariable(8, 0), 40, "a history failure must not discard the persistent count")
 fixture.pump(context, 10)
-equal(#context.errors, 1, "report a failed panel only once")
+equal(#context.errors, 0, "flight failures use recoverable service diagnostics")
 
 context, panel = create({ 2, 2 })
 fixture.radio.values[305], fixture.radio.values[306] = 1024, 0
@@ -192,11 +203,11 @@ for _ = 1, 100 do
     fixture.tick(20)
     measured(definition.background, context)
 end
-equal(model.getGlobalVariable(8, 0), 39, "unsaved preview cannot increment the persistent counter")
-equal(panel.phase, "ground", "unsaved preview cannot start a flight tracker")
+equal(model.getGlobalVariable(8, 0), 40, "a presentation preview cannot stop the committed flight tracker")
+equal(panel.phase, "active", "the shared tracker is independent of presentation flags")
 fixture.radio.values[305] = -1024
 fixture.pump(context, 30)
 local history, sounds = recorded()
-equal(history, nil, "unsaved preview cannot write flight history")
-equal(#sounds, 0, "unsaved preview cannot announce flights")
-equal(panel.value.properties.text, "39", "unsaved preview still displays the current count")
+assert(history, "the committed tracker completes while its presentation is previewed")
+equal(#sounds, 4, "previewing must neither suppress nor duplicate committed announcements")
+equal(panel.value.properties.text, "40", "preview displays the shared count")

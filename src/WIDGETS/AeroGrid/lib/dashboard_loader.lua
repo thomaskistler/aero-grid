@@ -142,6 +142,7 @@ function module.new(dependencies)
             extrema = byId.extrema,
             navigation = byId.navigation,
             history = byId.history,
+            flight = byId.flight,
         }
     end
 
@@ -283,6 +284,12 @@ function module.new(dependencies)
                 return true
             end
             addError(context, context.recoveryReason or message)
+            local member = context.flightFactory and context.flightFactory.members[context]
+            if member then
+                member.pending, member.error =
+                    false, "Flight configuration unavailable: repair layout " .. context.layoutName
+                context.flightFactory.revision = (context.flightFactory.revision or 0) + 1
+            end
             context.stage = nil
             context.tokens = nil
             context.source = nil
@@ -557,6 +564,7 @@ function module.new(dependencies)
                 context.servicesModule = support
                 context.serviceRuntime = support.runtime(support.environment())
                 context.serviceRuntime.host = context
+                context.serviceRuntime.modules = {}
                 context.armGeneration = (context.armGeneration or 0) + 1
                 context.serviceRuntime.nativeArmed = context.nativeArmed
                 context.serviceRuntime.armGeneration = context.armGeneration
@@ -582,6 +590,7 @@ function module.new(dependencies)
                 if not runtime then
                     return fail("service runtime is missing")
                 end
+                runtime.modules[definition.id] = module
                 local ok, instance = pcall(constructor, runtime.env, context.servicesModule, runtime)
                 if ok and type(instance) == "table" then
                     context.servicesModule.register(runtime, instance, getTime())
@@ -608,6 +617,9 @@ function module.new(dependencies)
                 context.stage = nil
                 context.loadCandidates = nil
                 context.loadCandidateIndex = nil
+                if context.configureFlight then
+                    context.configureFlight(context)
+                end
                 if context.recoveryReason then
                     addNotice(context, "warning", "layout recovered after: " .. context.recoveryReason)
                     context.recoveryReason = nil
@@ -648,6 +660,9 @@ function module.new(dependencies)
             if type(placement) ~= "table" then
                 return fail("pending panel migration is missing")
             end
+            if placement.type == "flight-counter" then
+                context.flightSources[#context.flightSources + 1] = placement
+            end
             local valid, panelError = context.layoutValidator.validatePanel(
                 placement,
                 context.itemNumber,
@@ -683,6 +698,13 @@ function module.new(dependencies)
     --- Begin a staged load, discarding anything already on screen.
     ---@param context AeroGridContext
     local function beginLoad(context)
+        if context.flightFactory then
+            local member = context.flightFactory.members[context]
+            if member then
+                member.pending = true
+                context.flightFactory.revision = (context.flightFactory.revision or 0) + 1
+            end
+        end
         context.panels = {}
         context.rejected = {}
         context.errors = {}
@@ -700,6 +722,7 @@ function module.new(dependencies)
         context.loadCandidates = nil
         context.loadCandidateIndex = nil
         context.itemNumber = 0
+        context.flightSources = {}
         -- Subscriptions belong to the panels that made them, so the registry is
         -- rebuilt with the dashboard rather than reused across a reload.
         context.serviceRuntime = nil

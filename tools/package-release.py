@@ -10,6 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = re.compile(r'(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:beta|rc)\.[1-9]\d*)?')
 LAYOUTS = {"Default.yaml", "Empty.yaml", "Diagnostics.yaml", "Palette.yaml"}
 ASSETS = {
+    *(f"aerogrid-{variant}-{size}.png" for variant in ("orange", "violet", "green", "slate") for size in (36, 45, 62)),
+    "aerogrid.svg",
     "editor-configure-light.png",
     "editor-configure-light.svg",
     "editor-configure.png",

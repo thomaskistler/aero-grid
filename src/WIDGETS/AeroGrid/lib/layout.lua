@@ -15,7 +15,7 @@
 
 local layout = { RUNTIME_API = 1 }
 
-layout.VERSION = 4
+layout.VERSION = 5
 
 function layout.normalizePanel(panel)
     if panel.type == "navigation" and type(panel.config) == "table" then
@@ -39,6 +39,15 @@ function layout.normalizePanel(panel)
 end
 
 local migrations = {
+    [4] = {
+        header = function() end,
+        panel = function(panel)
+            if panel.type == "flight-counter" then
+                panel.config = panel.config or {}
+                panel.config._legacyFlight = true
+            end
+        end,
+    },
     [3] = {
         header = function() end,
         panel = function(panel)

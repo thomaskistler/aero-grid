@@ -17,6 +17,7 @@ return {
             "getSwitchName",
             "getSwitchIndex",
             "getSwitchValue",
+            "setStickySwitch",
             "COLOR_THEME_ACTIVE",
             "COLOR_THEME_EDIT",
             "COLOR_THEME_FOCUS",

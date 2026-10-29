@@ -176,6 +176,15 @@ function module.new(dependencies)
         end
         context.panels = ordered
         context.document = document
+        context.flightSources = {}
+        for _, placement in ipairs(document.panels) do
+            if placement.type == "flight-counter" then
+                context.flightSources[#context.flightSources + 1] = placement
+            end
+        end
+        if context.configureFlight then
+            context.configureFlight(context)
+        end
         return true
     end
 
@@ -362,6 +371,21 @@ function module.new(dependencies)
                 return context.layoutStore.suggestName(context.path, info and info.name)
             end,
             startSave = function(document, name)
+                local owner = context.flightBroker
+                if owner and not (owner.document and owner.document.flight) then
+                    local legacy, remaining = false, false
+                    for _, placement in ipairs(context.flightSources or {}) do
+                        legacy = legacy or placement.config and placement.config._legacyFlight == true
+                    end
+                    for _, placement in ipairs(document.panels) do
+                        remaining = remaining or placement.config and placement.config._legacyFlight == true
+                    end
+                    if legacy and not remaining then
+                        return {
+                            flightMigrationError = "Save Model settings before removing the last legacy Flight counter",
+                        }
+                    end
+                end
                 name = name or context.layoutName
                 context.editorSavedDocument = document
                 local state = context.layoutStore.startSave(
@@ -376,6 +400,9 @@ function module.new(dependencies)
                 return state
             end,
             advanceSave = function(state)
+                if state.flightMigrationError then
+                    return true, false, state.flightMigrationError
+                end
                 local done, saved, saveError = context.layoutStore.advanceSave(state)
                 if saved and state.name == context.layoutName then
                     context.layoutPath = state.filename

@@ -13,11 +13,11 @@ A user layout with the selected name takes precedence over a bundled layout of t
 
 ## Document structure
 
-A new layout should use version 4 and exactly a 4 × 4 grid. `col` and `row` are zero-based; spans count grid cells. The cell at the upper left is `(0, 0)`.
+A new layout should use version 5 and exactly a 4 × 4 grid. `col` and `row` are zero-based; spans count grid cells. The cell at the upper left is `(0, 0)`.
 
 | Top-level key | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `version` | integer | yes | Layout schema version. Write `4`. |
+| `version` | integer | yes | Layout schema version. Write `5`. |
 | `grid` | mapping | yes | Must contain `columns: 4` and `rows: 4`. Other grid dimensions are rejected. |
 | `panels` | sequence of mappings | yes | Ordered panel placements. Use `[]` for an empty layout. |
 | `session` | mapping | no | Dashboard-wide flight-session options; see [Session](#session). |
@@ -57,7 +57,7 @@ widget Armed is cleared. Custom State conditions remain independent.
 
 ## Validation and errors
 
-The loader parses and validates a candidate before building panels. Unsupported YAML syntax, an unsupported schema version, a missing or non-4×4 grid, a non-sequence `panels` value, or the unsupported layout-level `theme` key makes the candidate invalid; AeroGrid reports the load problem and may recover using the next backup or bundled candidate. Versions 1–3 are migrated to version 4 in memory. Version 1 migrates the former `cell-battery` panel to `rx-battery` and normalizes its retired fields. Version 2 migrates the old Navigation presentation options; legacy RX-battery warning thresholds and source selectors are also normalized to the current keys. Version 3 preserves the old implicit Flight counter switch (`SF^`) and derives Navigation's `homeMode` from its old arm setting. Save writes version 4 without deleting legacy arm values. Write version 4 for new files.
+The loader parses and validates a candidate before building panels. Unsupported YAML syntax, an unsupported schema version, a missing or non-4×4 grid, a non-sequence `panels` value, or the unsupported layout-level `theme` key makes the candidate invalid; AeroGrid reports the load problem and may recover using the next backup or bundled candidate. Versions 1–4 are migrated to version 5 in memory. Existing panel, Navigation, and legacy arm settings are retained. Version 4 detection settings remain available for migration to Model settings. Save writes version 5 without deleting retained legacy arm conditions. Write version 5 for new files.
 
 An invalid panel entry is rejected without preventing other valid entries from loading. This includes a non-mapping entry, an unsafe or duplicate ID, an unknown panel type, invalid placement values, a placement outside the grid, an overlap, or a span the panel does not support. The failed panel is dropped and its reason is reported. When overlaps occur, the earlier accepted entry remains.
 
@@ -127,7 +127,7 @@ Recordings share history only when their armed switch, source, and recording
 options match.
 
 ```yaml
-version: 4
+version: 5
 grid:
   columns: 4
   rows: 4
@@ -163,18 +163,13 @@ Drawer title: **Flight counter** · [drawer settings and behavior](../panels/fli
 | --- | --- | --- | --- | --- | --- |
 | `label` | string | `FLT` | Any string | Label | Heading. |
 | `armSwitch` | string | `""` | Blank, physical switch position, or logical switch such as `L01` | Armed switch position | Legacy fallback only; new panels use widget Armed. Version-1–3 layouts retain the former `SF^` default when omitted. |
-| `motorSource` | string | `ch3` | Non-empty EdgeTX source name | Motor channel | Must name a source; the drawer filters to channels. |
-| `motorReversed` | boolean | `false` | `true` / `false` | Reversed motor channel | Invert the motor channel direction. |
-| `minMotorPercent` | number | `25` | `0 <= value < 100` | Minimum motor percent | Runtime validation enforces this range; not restricted to integer values by validation. |
-| `minFlightDuration` | number | `30` | `0 < value <= 3600` seconds | Qualification seconds | Must be positive and at most one hour. |
-| `disarmDuration` | number | `10` | `0 < value <= 3600` seconds | Disarm seconds | Must be positive and at most one hour. |
-| `announcements` | boolean | `false` | `true` / `false` | Announce flights | |
-| `history` | boolean | `true` | `true` / `false` | Write CSV history | |
 
-Cross-field and format rules:
-
-- An effective `armSwitch` must be a physical switch position (`S` + switch letter + `^`, `-` or `v`) or a logical switch such as `L01`; blank waits for widget Armed. `motorSource` must not be blank.
-- `minFlightDuration` and `disarmDuration` must each be in `(0, 3600]`; `minMotorPercent` must be in `[0, 100)`.
+Configure detection, announcements, CSV history, and the optional logical-switch
+output in **AeroGrid → Model settings**, not in new panel YAML. The old
+`motorSource`, `motorReversed`, `minMotorPercent`, `minFlightDuration`,
+`disarmDuration`, `announcements`, and `history` fields remain readable for
+legacy migration. Do not remove the last legacy counter before saving Model
+settings. Flight tracking then continues independently of counter placement.
 
 ```yaml
 - id: flights
@@ -600,7 +595,7 @@ No panel-specific `validateSettings` function is declared, so the schema layer e
 This version-4 layout places six panels without overlap on the 4 × 4 grid. It shows a legacy session fallback, nested list syntax and panel-specific settings together. Prefer configuring Armed in native widget settings. Replace source names with exact names available on the target radio/model.
 
 ```yaml
-version: 4
+version: 5
 session:
   armSource: SF^
 grid:
@@ -678,7 +673,7 @@ panels:
 
 ## Tips for AI agents
 
-- Emit `version: 4`, the exact 4 × 4 grid, and a `panels` sequence. Use the schema and keys on this page; cross-reference drawer descriptions via the linked panel page.
+- Emit `version: 5`, the exact 4 × 4 grid, and a `panels` sequence. Use the schema and keys on this page; cross-reference drawer descriptions via the linked panel page.
 - Place panels only at supported spans, within bounds, and without overlap. Give every panel a unique safe `id`.
 - Use the exact `type` and `config` key spellings. Omit optional keys to take defaults; don't invent aliases or include unknown keys.
 - Honor nested sequence constraints and all cross-field rules, especially source requirements and threshold ordering.

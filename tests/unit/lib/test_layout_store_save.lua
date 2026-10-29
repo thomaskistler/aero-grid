@@ -146,7 +146,7 @@ local function testExplicitSavePersistsMigratedBattery()
     local saved, saveError, filename = layoutStore.save("/widget", "upgraded", document, yaml, layout, grid, operations)
     assert(saved, saveError)
     local persisted = assert(yaml.parse(files[filename]))
-    assert(persisted.version == 4)
+    assert(persisted.version == 5)
     assert(persisted.panels[1].type == "rx-battery")
     assert(persisted.panels[1].config.reading == "cell")
     assert(persisted.panels[1].config.lowestSource == nil)
@@ -192,14 +192,16 @@ local function testStagedSaveMigratesLegacyBattery()
             assert(not done and state.header.version == 3, "second header step runs in its own save cycle")
         elseif calls == 4 then
             assert(not done and state.header.version == 4, "third header step runs in its own save cycle")
-        elseif calls == 6 then
+        elseif calls == 5 then
+            assert(not done and state.header.version == 5, "fourth header step runs in its own save cycle")
+        elseif calls == 7 then
             assert(not done and state.pendingPanel.type == "rx-battery", "one panel step runs in one save cycle")
         end
     until done
-    assert(calls == 10, "staged legacy save should use separate header, panel, validation and persistence cycles")
+    assert(calls == 12, "staged legacy save should use separate header, panel, validation and persistence cycles")
     assert(saved, saveError)
     local persisted = assert(yaml.parse(files[state.filename]))
-    assert(persisted.version == 4)
+    assert(persisted.version == 5)
     assert(persisted.panels[1].type == "rx-battery")
     assert(persisted.panels[1].config.reading == "cell")
     assert(persisted.panels[1].config.cells == nil)
@@ -220,14 +222,14 @@ local function testStagedSave()
         config = { future = { enabled = true } },
     }
     local state = layoutStore.startSave("/widget", "main", document, yaml, layout, grid, operations)
-    for _ = 1, 3 do
+    for _ = 1, 7 do
         local done = layoutStore.advanceSave(state)
         assert(not done and next(files) == nil, "staging must not write before validation finishes")
     end
     local done, saved, saveError = layoutStore.advanceSave(state)
     assert(done and saved, saveError)
     local parsed = assert(yaml.parse(files[state.filename]))
-    assert(parsed.version == 4, "staged save did not write the current layout schema")
+    assert(parsed.version == 5, "staged save did not write the current layout schema")
     assert(parsed.panels[2].config.future.enabled == true, "unknown keys must survive staged save")
     assert(not files[state.filename .. ".tmp"])
     local previousContent = files[state.filename]
@@ -236,7 +238,7 @@ local function testStagedSave()
     broken.version = 4
     broken.panels[2] = broken.panels[1]
     state = layoutStore.startSave("/widget", "main", broken, yaml, layout, grid, operations)
-    for _ = 1, 3 do
+    for _ = 1, 7 do
         done, saved, saveError = layoutStore.advanceSave(state)
         if done then
             break
@@ -296,7 +298,7 @@ local function testCurrentBatteryNormalization()
     )
     local persisted = assert(yaml.parse(files[filename]))
     local config = persisted.panels[1].config
-    assert(persisted.version == 4 and config.sourceType == nil)
+    assert(persisted.version == 5 and config.sourceType == nil)
     assert(config.source == "RxBt" and config.cells == 6 and config.visual == "none")
     assert(config.showDelta == true and config.showPack == false and config.showCount == true)
     assert(

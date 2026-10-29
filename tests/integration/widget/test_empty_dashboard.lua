@@ -27,7 +27,7 @@ assert(#context.panels == 0, "hint was instantiated as a panel")
 
 fixture.lvglMock.setFullScreen(true)
 fixture.pump(context, 3)
-assert(hint.instruction.properties.text == "Long-press to start editing")
+assert(hint.instruction.properties.text == "AeroGrid menu > UI setup")
 assert(hint.setupHint.properties.text == "")
 assertHorizontallyCentred({ "title", "instruction" })
 context.zone.w, context.zone.h = 320, 180
