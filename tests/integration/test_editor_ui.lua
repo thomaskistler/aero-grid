@@ -1891,7 +1891,7 @@ local function chartDrawerOrder()
 end
 equal(
     chartDrawerOrder(),
-    "Label,Armed switch position,Metrics,Alt,+,Time range,Series scales,Line smoothing,Accent,Remove panel",
+    "Label,Arm switch position,Metrics,Alt,+,Time range,Series scales,Line smoothing,Accent,Remove panel",
     "Growing chart drawer follows the guide, with add after entries and remove last"
 )
 equal(control("armSwitch").kind, "switch", "Chart must use the native switch-position picker")
@@ -1923,7 +1923,7 @@ control("timeRange").properties.set(2)
 settleDrawer()
 equal(
     chartDrawerOrder(),
-    "Label,Armed switch position,Metrics,Alt,+,Time range,Window duration,Series scales,Line smoothing,Accent,Remove panel",
+    "Label,Arm switch position,Metrics,Alt,+,Time range,Window duration,Series scales,Line smoothing,Accent,Remove panel",
     "Rolling keeps its window duration beside the time-range selector"
 )
 equal(drawerRow("duration").row.hidden, false, "Rolling must reveal its fixed window control")

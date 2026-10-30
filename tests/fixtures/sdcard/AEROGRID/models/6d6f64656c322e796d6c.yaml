@@ -1,0 +1,13 @@
+version: 1
+modelFilename: "model2.yml"
+revision: 1
+armed: "SFv"
+flight:
+  motorSource: "ch3"
+  motorReversed: false
+  minMotorPercent: 25
+  minFlightDuration: 10
+  smartDetection: true
+  disarmDuration: 10
+  history: true
+  flightSwitch: "L01"

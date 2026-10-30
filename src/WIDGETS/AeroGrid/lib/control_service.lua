@@ -302,6 +302,10 @@ local function firmwareSwitchName(name, env)
 end
 
 function controlService:switchIndex(name)
+    if string.match(name, "^!L%d%d$") then
+        local index = self.env.getSwitchIndex(string.sub(name, 2))
+        return type(index) == "number" and -index or index
+    end
     return self.env.getSwitchIndex(firmwareSwitchName(name, self.env))
 end
 

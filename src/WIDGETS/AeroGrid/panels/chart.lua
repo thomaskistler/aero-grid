@@ -8,7 +8,7 @@ local chart = {
     refreshCost = 6,
     settings = {
         { key = "label", label = "Label", type = "string", default = "" },
-        { key = "armSwitch", label = "Armed switch position", type = "string", default = "", legacyArm = true },
+        { key = "armSwitch", label = "Arm switch position", type = "string", default = "", legacyArm = true },
         {
             key = "metrics",
             label = "Metrics",
@@ -103,11 +103,11 @@ local function finite(value)
     return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
 end
 
-function chart.validateSettings(settings, _, _, nativeArmed)
+function chart.validateSettings(settings, _, _, modelArmed)
     local warnings = {}
     local arm = settings.armSwitch
     if
-        (nativeArmed or 0) == 0
+        modelArmed == nil
         and arm ~= nil
         and arm ~= ""
         and (type(arm) ~= "string" or not (string.match(arm, "^S[A-Z][%^v%-]$") or string.match(arm, "^L%d%d$")))
@@ -361,7 +361,7 @@ local function updateFlights(context)
         not session
         or not historyService
         or not historyService.flight
-        or (session.flightLast or 0) == 0 and not context.flightLines
+        or (session.flightLast or 0) == 0 and not context.flightBands
     then
         return false
     end
@@ -373,7 +373,7 @@ local function updateFlights(context)
     then
         return false
     end
-    context.flightLines = context.flightLines or {}
+    context.flightBands = context.flightBands or {}
     local first, last = session.flightFirst, session.flightLast
     if context.flightPassRevision ~= session.flightRevision or context.flightPassVersion ~= context.version then
         context.flightCursor = 1
@@ -381,30 +381,36 @@ local function updateFlights(context)
     end
     local slot = context.flightCursor or 1
     local index = first + (slot - 1 - (first - 1) % historyService.FLIGHT_CAPACITY) % historyService.FLIGHT_CAPACITY
-    local line = context.flightLines[slot]
-    local at, finish, startKnown, endKnown = historyService:flight(session, index)
+    local band = context.flightBands[slot]
+    local at, finish = historyService:flight(session, index)
     finish = finish or session.elapsed
     local area, start, window = context.area, context.start, context.window
-    local visible = at and finish >= start and at <= start + window
+    local visible = at and finish >= start and at < start + window
     if visible then
-        local left = area.x + math.floor(math.max(0, (at - start) / window) * area.w + 0.5)
+        local left = area.x + math.min(area.w - 1, math.floor(math.max(0, (at - start) / window) * area.w + 0.5))
         local right = area.x + math.floor(math.min(1, (finish - start) / window) * area.w + 0.5)
-        local y = area.y + 2
-        local startY = startKnown and at >= start and y + 5 or y
-        local endY = endKnown and finish <= start + window and y + 5 or y
-        if not line then
-            line = lvgl.line(context.gridRoot, { pts = { { 0, 0 }, { 0, 0 } }, color = context.theme.chartColor.green })
-            context.flightLines[slot] = line
+        if not band then
+            band = lvgl.rectangle(context.flightRoot, {
+                x = left,
+                y = area.y,
+                w = 1,
+                h = area.h,
+                color = context.theme.chartColor.green,
+                opacity = 32,
+                filled = true,
+                thickness = 0,
+            })
+            context.flightBands[slot] = band
             context.flightSlots = math.max(context.flightSlots or 0, slot)
         end
-        local key = table.concat({ left, right, y, startY, endY }, ":")
+        local key = table.concat({ left, right, area.y, area.h }, ":")
         if context.flightKeys[slot] ~= key then
-            line:set({ pts = { { left, startY }, { left, y }, { right, y }, { right, endY } } })
+            band:set({ x = left, y = area.y, w = math.max(1, right - left), h = area.h })
             context.flightKeys[slot] = key
         end
-        lvgl.show(line)
-    elseif line then
-        lvgl.hide(line)
+        lvgl.show(band)
+    elseif band then
+        lvgl.hide(band)
     end
     local slots = math.max(context.flightSlots or 0, math.min(historyService.FLIGHT_CAPACITY, last))
     context.flightCursor = slot < slots and slot + 1 or 1
@@ -568,8 +574,6 @@ function chart.geometry(context, rect)
         legendW = legend,
     }
     context.area = area
-    context.plotRoot:set({ w = rect.w, h = rect.h })
-    context.gridRoot:set({ w = rect.w, h = rect.h })
     context.baseline:set({ x = area.x, y = area.y + area.h, w = area.w, h = 1 })
     context.status:set({ x = area.x, y = area.y, w = area.w })
     local lineHeight = builder.fontHeight(font)
@@ -1040,7 +1044,10 @@ function chart.refresh(context, creating)
     end
     local version = context.version
     -- Stable readings also keep their ranges, leaving room for more projection.
-    local readingsChanged = chart.render(context)
+    -- Reserve the next non-overlay callback for projection after updating live
+    -- readings, so a continuous telemetry stream cannot starve the traces.
+    local readingsChanged = not context.projectionTurn and chart.render(context)
+    context.projectionTurn = false
     local projectionCap = readingsChanged and PROJECTION_CAP or 13
     if
         hasFlights
@@ -1094,6 +1101,7 @@ function chart.refresh(context, creating)
         context.rangesReady = true
     end
     if reflowed or readingsChanged and hasFlights then
+        context.projectionTurn = true
         return 5
     end
     if context.pending then
@@ -1132,7 +1140,7 @@ function chart.refresh(context, creating)
 end
 
 function chart.create(parent, rect, settings, services)
-    local warnings = chart.validateSettings(settings, nil, nil, services.host and services.host.nativeArmed)
+    local warnings = chart.validateSettings(settings, nil, nil, services.host and services.host.modelArmed)
     assert(#warnings == 0, table.concat(warnings, "; "))
     local context = {
         theme = services.theme,
@@ -1154,6 +1162,7 @@ function chart.create(parent, rect, settings, services)
     local presentation = services.state("normal", settings.accent or "cyan")
     context.panel = context.primitives.panel(parent, rect, context.theme, presentation)
     context.plotRoot = lvgl.box(context.panel.root, { x = 0, y = 0, w = rect.w, h = rect.h })
+    context.flightRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
     context.gridRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
     context.session = context.history and context.history:session(settings.armSwitch)
         or { elapsed = 0, configured = false, available = false, recording = false }
@@ -1218,6 +1227,9 @@ function chart.update(context, rect)
     context.rect = rect
     context.legendFont, context.legendIndex, context.legendWidth = nil, nil, nil
     context.primitives.resizePanel(context.panel, rect)
+    context.plotRoot:set({ w = rect.w, h = rect.h })
+    context.flightRoot:set({ w = rect.w, h = rect.h })
+    context.gridRoot:set({ w = rect.w, h = rect.h })
     chart.geometry(context, rect)
     chart.refresh(context)
 end

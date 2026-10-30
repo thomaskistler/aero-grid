@@ -10,7 +10,7 @@ local flightCounter = {
         { key = "label", label = "Label", type = "string", default = "FLT" },
         {
             key = "armSwitch",
-            label = "Armed switch position",
+            label = "Arm switch position",
             type = "string",
             default = "",
             legacyArm = true,
@@ -21,16 +21,15 @@ local flightCounter = {
         { key = "minMotorPercent", type = "number", default = 25, legacyFlight = true },
         { key = "minFlightDuration", type = "number", default = 30, legacyFlight = true },
         { key = "disarmDuration", type = "number", default = 10, legacyFlight = true },
-        { key = "announcements", type = "boolean", default = false, legacyFlight = true },
         { key = "history", type = "boolean", default = true, legacyFlight = true },
     },
 }
 
-function flightCounter.validateSettings(settings, _, _, nativeArmed)
+function flightCounter.validateSettings(settings, _, _, modelArmed)
     local errors = {}
     local arm = settings.armSwitch
     if
-        (nativeArmed or 0) == 0
+        modelArmed == nil
         and arm ~= nil
         and arm ~= ""
         and (type(arm) ~= "string" or not (string.match(arm, "^S[A-Z][%^v%-]$") or string.match(arm, "^L%d%d$")))
@@ -89,7 +88,7 @@ function flightCounter.apply(context, drawn)
 end
 
 function flightCounter.create(parent, rect, settings, services)
-    local errors = flightCounter.validateSettings(settings, nil, nil, services.host and services.host.nativeArmed)
+    local errors = flightCounter.validateSettings(settings, nil, nil, services.host and services.host.modelArmed)
     assert(#errors == 0, table.concat(errors, "; "))
     assert(
         services.control and services.flight and services.clock and services.armed,

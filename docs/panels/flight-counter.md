@@ -13,39 +13,49 @@ Flight counter.
 | Setting | Default | What it does |
 | --- | --- | --- |
 | **Label** | FLT | Panel heading. Clear it to restore the default. |
-| **Armed switch position** | none for new panels | Legacy panel switch, shown only when nonblank and widget **Armed switch** is unset. Older layouts retain their previous switch, including the former SF↑ default. |
+| **Arm switch position** | none for new panels | Legacy panel switch, shown only when nonblank and no model arming has been saved. Older layouts retain their previous switch, including the former SF↑ default. |
 
-Select **Armed switch** beside Layout and Theme in native widget settings.
-It remains separate for each widget; an unset selection uses that widget's
-retained legacy Flight counter arm condition. Dashboards participating in flight
-tracking must agree on this condition.
+Select **Arm switch** in **AeroGrid → Model settings**. Changes apply immediately
+to every dashboard for the model. Until model arming is set,
+retained legacy Flight counter arm conditions remain in use and must agree for
+shared flight tracking. Conflicts require an explicit model selection, not an
+automatic choice. Saving **None** disables arming, including legacy fallbacks.
 
 ### Model flight settings
 
 In fullscreen, tap the **AeroGrid icon → Model settings**. These settings are
-shared by this model's dashboards, including Empty dashboards. **Save** commits
-them separately from layout changes; **Cancel** leaves them unchanged.
+shared by this model's dashboards, including Empty dashboards. Each confirmed
+change saves automatically, separately from layout changes. Back closes the page.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
+| **Arm switch** | none | Model-wide physical switch position or logical switch (L01–L64, including inverted logical switches). This is a switch condition, not a numeric channel. |
 | **Motor channel** | CH3 | Motor channel used to check whether the motor is running. Select your model's actual throttle channel. The picker is restricted to channels. |
 | **Reversed motor channel** | off | Reverse the channel reading before calculating motor percentage. Enable it if the selected channel runs from high at idle to low at full power. |
-| **Minimum motor percent** | 25 | Motor percentage must be strictly above this value to qualify. Valid values are 0 up to, but not including, 100. Whole-number values change in steps of 1. |
-| **Qualification seconds** | 30 | How long armed, sufficient motor output, and live telemetry must hold continuously before a flight counts. Must be greater than 0 and at most 3600 seconds. Whole-number values change in steps of 1. |
+| **Motor threshold (%)** | 25 | Motor percentage must be strictly above this value to qualify. Valid values are 0 up to, but not including, 100. |
+| **Start detection window (s)** | 30 | Observation window during which armed state, sufficient motor output, and live telemetry must hold continuously to confirm flight start. |
+| **End detection window (s)** | 10 | Observation window of continuous disarming required to confirm flight end. Rearming within this window keeps the flight open. |
 | **Smart detection** | off | Allow supported altitude or GPS groundspeed sensors to qualify a flight earlier. Standard motor qualification remains available. |
-| **Disarm seconds** | 10 | Continuous disarming needed to confirm the end of a counted flight. Must be greater than 0 and at most 3600 seconds. Whole-number values change in steps of 1. |
-| **Announce flights** | off | Play a tone and speak the total when a flight qualifies and when its end is confirmed. No external sound files are needed. |
 | **Write CSV history** | on | Append confirmed completed flights to `/flights-history.csv` on the SD card. |
-| **Flight-active output** | none | Optional dedicated Sticky logical switch, true while a detected flight is active. |
+| **Flight status switch** | none | Native logical-switch picker for an optional dedicated Sticky logical switch, on while a detected flight is active. Inverted switches are not supported. |
 
-Existing layouts keep their detection settings until you save Model settings.
+**Model arming** applies to charts, navigation, and flight detection.
+**Flight detection** detects when a flight begins and ends using live telemetry data; it does not arm the model.
+Both detection windows accept values greater than 0 and at most 3600 seconds.
+They confirm the boundaries; the flight's start and end times remain the
+beginning of each observation window, not the later confirmation time.
+
+Use the **Flight status switch** with EdgeTX Special Functions to configure your
+own sounds or announcements.
+
+Existing layouts keep their detection settings until you change Model settings.
 If older counters disagree, choose the intended configuration explicitly.
-Save Model settings before removing the last legacy counter.
+Configure Model settings before removing the last legacy counter.
 
 ## Behavior
 
 A flight qualifies when the effective armed condition, **Minimum motor percent**,
-and live telemetry hold continuously for **Qualification seconds**. Any
+and live telemetry hold continuously for the **Start detection window**. Any
 interruption before qualification resets the attempt. Qualification increments
 the total once. Motor percentage maps the channel's normal low-to-high travel
 to 0–100%, after applying **Reversed motor channel**.
@@ -68,7 +78,7 @@ is bridging a normal interval between updates; stopped or unverifiable streams
 fall back to standard detection. Low flights and short hops are not guaranteed
 to qualify early.
 
-The widget's **Armed switch** overrides panel arm switches and also drives
+The model's **Arm switch** overrides panel arm switches and also drives
 Chart, first-arm Navigation, and flight-session minima in this widget.
 Custom State-panel conditions remain independent.
 An unavailable arm reading cannot confirm disarming.
@@ -100,8 +110,10 @@ wait until the configuration is consistent.
 
 ### Optional logical-switch output
 
-Select a dedicated **Sticky** logical switch with no configured inputs, AND
-condition, delay, or duration. It must not also be the flight's Armed input.
+First configure a dedicated **Sticky** logical switch in EdgeTX, with no inputs,
+AND condition, delay, or duration. Then select it in **Flight status switch**.
+The native picker lists only configured logical switches; an empty list means
+none have been configured. It must not also be the flight's Arm input.
 AeroGrid changes only its state, not its model configuration. Use the switch
 in your own Special Functions or sounds.
 

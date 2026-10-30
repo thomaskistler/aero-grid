@@ -154,7 +154,7 @@ function module.new(dependencies)
                     entry.module,
                     placement.config,
                     { colSpan = placement.colSpan, rowSpan = placement.rowSpan },
-                    context.nativeArmed
+                    context.modelArmed
                 )
                 if #warnings > 0 or not sameConfig(resolved, entry.settings) then
                     return false
@@ -338,7 +338,7 @@ function module.new(dependencies)
         end
 
         context.editorSession = session
-        session.nativeArmed = context.nativeArmed
+        session.modelArmed = context.modelArmed
         local handlers = {
             editor = context.editorModule,
             logError = function(operation, message)

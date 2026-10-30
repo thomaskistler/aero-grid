@@ -22,20 +22,20 @@ local env = {
         return values[index]
     end,
 }
-local function runtime(native)
+local function runtime(modelArm)
     local registry = support.runtime(env)
-    registry.nativeArmed, registry.armGeneration = native, 7
+    registry.modelArmed, registry.armGeneration = modelArm, 7
     registry.byId.control = controlModule.new(env, support)
     registry.byId.armed = armedModule.new(env, support, registry)
     return registry, registry.byId.armed, registry.byId.control
 end
-local registry, service, control = runtime(0)
+local registry, service, control = runtime()
 local empty = service:state()
 equal(empty.configured, false)
 equal(empty.fresh, false)
 equal(empty.status, "unconfigured")
 local first, second = service:state("SFv"), service:state("SAv")
-assert(first ~= second, "unset native Armed must preserve distinct legacy switches")
+assert(first ~= second, "unsaved model Armed must preserve distinct legacy switches")
 assert(service:state("SFv") == first)
 assert(control:switch("SFv") == control.switches.SFv)
 equal(control.count, 2, "conditions are polled once, including State subscriptions")
@@ -70,16 +70,18 @@ equal(first.fresh, false)
 equal(first.available, false)
 assert(not pcall(service.state, service, "ch5"), "legacy numeric sources need explicit replacement")
 
-local _, native, nativeControl = runtime(3)
+local _, native, nativeControl = runtime("L01")
 local selected = native:state()
 equal(selected.condition, "L01")
-equal(selected.origin, "native")
-assert(native:state("SFv") == selected and native:state("ch5") == selected, "native Armed overrides legacy")
+equal(selected.origin, "model")
+assert(native:state("SFv") == selected and native:state("ch5") == selected, "model Armed overrides legacy")
 equal(nativeControl.count, 1)
-local _, independent = runtime(1)
-equal(independent:state().condition, "SFv", "widget instances must remain independent")
-assert(not pcall(runtime, 999), "unsupported native switch kinds must be reported")
-equal(registry.nativeArmed, 0, "resolution must not mutate native options")
+equal(armedModule.name(1, control), "SFv")
+assert(not pcall(armedModule.name, 999, control), "unsupported switch kinds must be reported")
+equal(registry.modelArmed, nil, "legacy resolution must not save model settings")
+local _, disabled = runtime("")
+assert(disabled:state("SFv") == disabled:state("SAv"))
+equal(disabled:state("SFv").configured, false, "saved None disables every legacy condition")
 
 local extrema = load("lib/extrema_service.lua").new(env, support, registry)
 registry.byId.control.failed = nil
@@ -88,11 +90,11 @@ assert(a ~= b)
 local ta, tb = extrema:sessionExtrema("Alt", "SFv"), extrema:sessionExtrema("Alt", "SAv")
 assert(ta ~= tb, "legacy extrema consumers must not silently reconfigure one session")
 local nativeRegistry = support.runtime(env)
-nativeRegistry.nativeArmed = 3
+nativeRegistry.modelArmed = "L01"
 nativeRegistry.byId.control = nativeControl
 nativeRegistry.byId.armed = native
 local unified = load("lib/extrema_service.lua").new(env, support, nativeRegistry)
-assert(unified:flight("SFv") == unified:flight("SAv"), "native condition unifies extrema sessions")
+assert(unified:flight("SFv") == unified:flight("SAv"), "model condition unifies extrema sessions")
 
 local layout = load("lib/layout.lua")
 local counter = layout.migratePanel({ type = "flight-counter" }, 3)
@@ -102,7 +104,7 @@ equal(navigation.config.homeMode, "first-arm")
 local edge = layout.migratePanel({ type = "navigation", config = {} }, 3)
 equal(edge.config.homeMode, "edgetx")
 
-local trackingRegistry, _, trackingControl = runtime(0)
+local trackingRegistry, _, trackingControl = runtime()
 local reading = { value = 10, fresh = true }
 trackingRegistry.byId.telemetry = {
     subscribe = function()

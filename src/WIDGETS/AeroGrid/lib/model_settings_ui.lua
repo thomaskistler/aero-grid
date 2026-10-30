@@ -3,16 +3,48 @@
 local ui = { RUNTIME_API = 1 }
 
 local fields = {
-    { key = "motorSource", label = "Motor channel", kind = "source" },
+    {
+        key = "armed",
+        label = "Arm switch",
+        kind = "switch",
+        section = "Model arming",
+        description = "Used by charts, navigation and flight detection",
+    },
+    {
+        key = "motorSource",
+        label = "Motor channel",
+        kind = "source",
+        section = "Flight detection",
+        description = "Detects when a flight begins and ends using live telemetry data.",
+    },
     { key = "motorReversed", label = "Reverse motor", kind = "toggle" },
     { key = "minMotorPercent", label = "Motor threshold (%)", kind = "numberEdit", min = 0, max = 99.99 },
-    { key = "minFlightDuration", label = "Qualification (s)", kind = "numberEdit", min = 0.01, max = 3600 },
+    { key = "minFlightDuration", label = "Start detection window (s)", kind = "numberEdit", min = 0.01, max = 3600 },
+    {
+        key = "disarmDuration",
+        label = "End detection window (s)",
+        kind = "numberEdit",
+        min = 0.01,
+        max = 3600,
+    },
     { key = "smartDetection", label = "Smart detection", kind = "toggle" },
-    { key = "disarmDuration", label = "Disarm grace (s)", kind = "numberEdit", min = 0.01, max = 3600 },
-    { key = "announcements", label = "Announce flights", kind = "toggle" },
     { key = "history", label = "CSV history", kind = "toggle" },
-    { key = "flightSwitch", label = "Flight-active Sticky", kind = "numberEdit", min = 0, max = 64 },
+    {
+        key = "flightSwitch",
+        label = "Flight status switch",
+        kind = "choice",
+        section = "Flight status output",
+        description = "On during a detected flight. Use for your own special functions. Choose a dedicated Sticky logical switch, or None.",
+    },
 }
+
+local function outputAvailable(index)
+    if index == 1 then
+        return true
+    end
+    local definition = model.getLogicalSwitch(index - 2)
+    return definition ~= nil and definition.func ~= 0
+end
 
 local function active(context, state)
     return context.modelSettingsUi == state
@@ -62,7 +94,7 @@ local function dialog(context, state)
                 state.dialog:clear()
                 state.dialog = nil
                 retireHost(state)
-                state.pending = { action = "cancel" }
+                state.closing = true
             end
         end,
     }
@@ -95,7 +127,10 @@ function ui.open(context, document, handlers)
     local state = {
         modelFilename = document.modelFilename,
         revision = document.revision,
-        draft = config.resolve(document.flight or {}),
+        values = config.resolve(document.flight or {}),
+        armed = document.armed,
+        armedConfig = assert(handlers.armedConfig or context.armedConfig, "arming configuration helper unavailable"),
+        armControl = handlers.armControl or context.armControl,
         config = config,
         handlers = handlers,
         generation = 1,
@@ -105,12 +140,6 @@ function ui.open(context, document, handlers)
         height = lvgl.UI_ELEMENT_HEIGHT or 32,
         screen = lvgl.box(handlers.parent or context.root, { x = 0, y = 0, w = context.zone.w, h = context.zone.h }),
     }
-    if document.choices and #document.choices > 0 then
-        state.choices = {}
-        for _, choice in ipairs(document.choices) do
-            state.choices[#state.choices + 1] = { label = choice.label, flight = config.resolve(choice.flight or {}) }
-        end
-    end
     context.modelSettingsUi = state
     state.dialog = dialog(context, state)
     state.status = lvgl.label(state.dialog, {
@@ -118,32 +147,73 @@ function ui.open(context, document, handlers)
         y = 4,
         w = state.width,
         h = state.height * 2,
-        text = document.status
-            or "Armed is configured in native widget settings. Output: none or a dedicated Sticky L01-L64.",
+        text = document.status or "",
         font = function()
             return SMLSIZE
         end,
     })
+    lvgl.hide(state.status)
     state.smartStatus = lvgl.label(state.dialog, {
         x = 4,
-        y = state.height * 2 + 8,
+        y = 4,
         w = state.width,
         h = state.height * 3,
         text = function()
-            if not state.draft.smartDetection then
+            if not state.values.smartDetection then
                 return "Smart off: standard motor detection."
             end
-            return (handlers.smartStatus and handlers.smartStatus()) or "Save to enable Smart sensor detection."
+            return (handlers.smartStatus and handlers.smartStatus()) or "Checking Smart detection sensors."
         end,
         font = function()
             return SMLSIZE
         end,
     })
-    state.nextY = state.height * 5 + 16
+    lvgl.hide(state.smartStatus)
+    state.nextY = 4
     return state
 end
 
+local function description(state, text)
+    local lines, line = {}, ""
+    for word in string.gmatch(text, "%S+") do
+        local candidate = line == "" and word or line .. " " .. word
+        if line ~= "" and lcd.sizeText(candidate, SMLSIZE) > state.width - 4 then
+            lines[#lines + 1], line = line, word
+        else
+            line = candidate
+        end
+    end
+    lines[#lines + 1] = line
+    local _, lineHeight = lcd.sizeText("Ag", SMLSIZE)
+    local height = #lines * (lineHeight + 2)
+    lvgl.label(state.dialog, {
+        x = 4,
+        y = state.nextY,
+        w = state.width,
+        h = height,
+        text = table.concat(lines, "\n"),
+        font = function()
+            return SMLSIZE
+        end,
+    })
+    state.nextY = state.nextY + height + 4
+end
+
 local function buildField(context, state, field)
+    if field.section then
+        lvgl.label(state.dialog, {
+            x = 4,
+            y = state.nextY,
+            w = state.width,
+            h = state.height,
+            text = field.section,
+            font = function()
+                return _G.BOLD
+            end,
+        })
+        state.nextY = state.nextY + state.height
+        description(state, field.description)
+    end
     local scale = field.kind == "numberEdit" and field.key ~= "flightSwitch" and 100 or 1
     local row = lvgl.setting(state.dialog, {
         x = 4,
@@ -163,12 +233,15 @@ local function buildField(context, state, field)
             return active(context, state) and not state.build
         end,
         get = function()
-            local value = state.draft[field.key]
+            if field.key == "armed" then
+                return state.armed and state.armed ~= "" and state.armControl:switchIndex(state.armed) or 0
+            end
+            local value = state.values[field.key]
             if field.kind == "toggle" then
                 return value and 1 or 0
             end
             if field.key == "flightSwitch" then
-                return tonumber(string.match(value or "", "^L(%d%d)$")) or 0
+                return value ~= "" and tonumber(string.sub(value, 2)) + 1 or 1
             end
             if field.kind == "source" then
                 if type(value) == "number" then
@@ -183,10 +256,29 @@ local function buildField(context, state, field)
             if not active(context, state) then
                 return
             end
+            if field.key == "armed" then
+                local ok, name = pcall(state.armedConfig.name, value, state.armControl)
+                if ok then
+                    queue(context, state, { key = field.key, value = name })
+                else
+                    state.status:set({ text = "Choose a physical switch position or logical switch (L01-L64)" })
+                end
+                return
+            end
             if field.kind == "toggle" then
                 value = value ~= 0 and value ~= false
             elseif field.key == "flightSwitch" then
-                value = value == 0 and "" or string.format("L%02d", value)
+                if
+                    type(value) ~= "number"
+                    or value % 1 ~= 0
+                    or value < 1
+                    or value > 65
+                    or not outputAvailable(value)
+                then
+                    state.status:set({ text = "Choose a configured logical switch (L01-L64), or None" })
+                    return
+                end
+                value = value == 1 and "" or string.format("L%02d", value - 1)
             elseif field.kind == "source" then
                 local name
                 for channel = 1, 32 do
@@ -205,15 +297,19 @@ local function buildField(context, state, field)
             elseif scale ~= 1 then
                 value = value / scale
             end
-            state.draft[field.key] = value
+            queue(context, state, { key = field.key, value = value })
         end,
     }
     if field.kind == "source" then
         properties.filter = lvgl.SRC_CHANNEL
     elseif field.key == "flightSwitch" then
-        properties.display = function(value)
-            return value == 0 and "None" or string.format("L%02d", value)
+        -- EdgeTX's switch toolbar overlaps on short lists; outputs need no inversion.
+        properties.title = field.label
+        properties.values = { "None" }
+        for number = 1, 64 do
+            properties.values[number + 1] = string.format("L%02d", number)
         end
+        properties.filter = outputAvailable
     elseif scale ~= 1 then
         properties.display = function(value)
             return tostring(value / scale)
@@ -238,7 +334,7 @@ function ui.advance(context)
         end
         return true
     end
-    if state.pending and state.pending.action == "cancel" then
+    if state.closing and not state.pending then
         ui.close(context)
         if state.handlers.cancel then
             state.handlers.cancel()
@@ -246,68 +342,16 @@ function ui.advance(context)
         return true
     end
     if state.build then
-        if state.choices then
-            local choices = state.choices
-            local values = { "Defaults" }
-            for _, choice in ipairs(choices) do
-                values[#values + 1] = choice.label
-            end
-            state.choice = 1
-            local row = lvgl.setting(state.dialog, {
-                x = 4,
-                y = state.nextY,
-                w = state.width,
-                h = state.height + 4,
-                title = "Legacy detector",
-            })
-            state.legacyChoice = lvgl.choice(row, {
-                x = math.floor(state.width * 0.52),
-                y = 0,
-                w = math.floor(state.width * 0.48) - 4,
-                h = state.height,
-                title = "Legacy detector",
-                values = values,
-                get = function()
-                    return state.choice
-                end,
-                set = function(index)
-                    if active(context, state) then
-                        local choice = choices[index - 1]
-                        state.choice = index
-                        state.draft = state.config.resolve(choice and choice.flight or {})
-                    end
-                end,
-            })
-            state.nextY = state.nextY + state.height + 6
-            state.choices = nil
-            return true
-        end
         local field = fields[state.build]
         if field then
             buildField(context, state, field)
             state.build = state.build + 1
         else
-            local width = math.floor((state.width - 8) / 2)
-            state.save = lvgl.button(state.dialog, {
-                x = 4,
-                y = state.nextY,
-                w = width,
-                h = state.height,
-                text = "Save",
-                press = function()
-                    queue(context, state, { action = "save" })
-                end,
-            })
-            state.cancel = lvgl.button(state.dialog, {
-                x = width + 12,
-                y = state.nextY,
-                w = width,
-                h = state.height,
-                text = "Cancel",
-                press = function()
-                    queue(context, state, { action = "cancel" })
-                end,
-            })
+            state.smartStatus:set({ y = state.nextY })
+            lvgl.show(state.smartStatus)
+            state.nextY = state.nextY + state.height * 3 + 8
+            state.status:set({ y = state.nextY })
+            lvgl.show(state.status)
             state.build = nil
         end
         return true
@@ -317,30 +361,43 @@ function ui.advance(context)
         return false
     end
     state.pending = nil
-    if command.action == "cancel" then
-        ui.close(context)
-        if state.handlers.cancel then
-            state.handlers.cancel()
+    local values, armed = state.config.resolve(state.values), state.armed
+    if command.key == "armed" then
+        armed = command.value
+    else
+        values[command.key] = command.value
+    end
+    local errors = state.config.validate(values)
+    if #errors > 0 then
+        local message = table.concat(errors, "; ")
+        if state.dialog then
+            state.status:set({ text = message })
+        end
+        if state.handlers.error then
+            state.handlers.error(message)
         end
         return true
     end
-    local errors = state.config.validate(state.draft)
-    if #errors > 0 then
-        state.status:set({ text = table.concat(errors, "; ") })
-        return true
-    end
-    local ok, saved, result =
-        pcall(state.handlers.save, state.config.resolve(state.draft), state.revision, state.modelFilename)
+    local ok, saved, result = pcall(state.handlers.save, values, state.revision, state.modelFilename, armed)
     if not ok then
         saved, result = false, saved
     end
     if saved then
-        ui.close(context)
+        state.values, state.armed, state.revision =
+            state.config.resolve(result.flight or values), armed, result.revision
+        if state.dialog then
+            state.status:set({ text = "" })
+        end
         if state.handlers.saved then
             state.handlers.saved(result)
         end
     else
-        state.status:set({ text = tostring(result) })
+        if state.dialog then
+            state.status:set({ text = tostring(result) })
+        end
+        if state.handlers.error then
+            state.handlers.error(tostring(result))
+        end
     end
     return true
 end
@@ -352,7 +409,7 @@ function ui.handle(context, event)
     end
     for _, name in ipairs({ "EVT_VIRTUAL_EXIT", "EVT_EXIT_BREAK" }) do
         if _G[name] ~= nil and event == _G[name] then
-            queue(context, state, { action = "cancel" })
+            state.closing = true
         end
     end
     return true

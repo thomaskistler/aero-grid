@@ -333,13 +333,6 @@ function modelService:flightDate()
     return string.format("%04d-%02d-%02d %02d:%02d", date.year, date.mon, date.day, date.hour, date.min)
 end
 
---- Announce qualification/end without requiring external WAV files.
-function modelService:announceFlight(count, ended)
-    assert(self.env.playTone and self.env.playNumber, "flight announcements require playTone and playNumber")
-    self.env.playTone(ended and 800 or 1200, 150, 0, 0)
-    self.env.playNumber(count, 0)
-end
-
 local function csvText(value)
     if not string.find(value, '[,"\r\n]') then
         return value

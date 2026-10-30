@@ -352,8 +352,8 @@ function history:preview()
         last = 0,
     })
     local function condition(legacy)
-        local native = owner.runtime.byId.armed.condition
-        return native ~= "" and native or legacy or ""
+        local modelArm = owner.runtime.byId.armed.condition
+        return modelArm ~= nil and modelArm or legacy or ""
     end
     function facade:session(legacy)
         local key = condition(legacy)

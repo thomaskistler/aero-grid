@@ -197,7 +197,7 @@ function module.new(dependencies)
             panel,
             placement.config,
             { colSpan = placement.colSpan, rowSpan = placement.rowSpan },
-            context.nativeArmed
+            context.modelArmed
         )
         if preview and #warnings > 0 then
             return reject(table.concat(warnings, "; "))
@@ -566,7 +566,6 @@ function module.new(dependencies)
                 context.serviceRuntime.host = context
                 context.serviceRuntime.modules = {}
                 context.armGeneration = (context.armGeneration or 0) + 1
-                context.serviceRuntime.nativeArmed = context.nativeArmed
                 context.serviceRuntime.armGeneration = context.armGeneration
                 context.navigationHomes = context.navigationHomes or {}
                 context.serviceRuntime.navigationHomes = context.navigationHomes
@@ -591,6 +590,18 @@ function module.new(dependencies)
                     return fail("service runtime is missing")
                 end
                 runtime.modules[definition.id] = module
+                if definition.id == "armed" then
+                    local owner = context.flightFactory.broker
+                    context.modelArmed = owner and owner.document and owner.document.armed
+                    runtime.modelArmed = context.modelArmed
+                    if context.modelArmed == nil and (context.legacyWidgetArmed or 0) ~= 0 then
+                        addNotice(
+                            context,
+                            "warning",
+                            "Armed moved to Model settings; old widget selections are not imported. Choose the model switch and Save."
+                        )
+                    end
+                end
                 local ok, instance = pcall(constructor, runtime.env, context.servicesModule, runtime)
                 if ok and type(instance) == "table" then
                     context.servicesModule.register(runtime, instance, getTime())

@@ -38,6 +38,7 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
     env = env or {}
     local writer = env.verifiedFile or dependency(widgetPath, "verified_file")
     local config = env.flightConfig or dependency(widgetPath, "flight_config")
+    local armed = env.armedConfig or dependency(widgetPath, "armed_service")
     local operations = writer.operations(fileOps)
     local instance = {}
     local function identity(filename)
@@ -65,14 +66,24 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
             return nil, "Invalid model settings revision"
         end
         for key in pairs(document) do
-            if key ~= "version" and key ~= "modelFilename" and key ~= "revision" and key ~= "flight" then
+            if
+                key ~= "version"
+                and key ~= "modelFilename"
+                and key ~= "revision"
+                and key ~= "flight"
+                and key ~= "armed"
+            then
                 return nil, "Unknown model settings field: " .. tostring(key)
             end
+        end
+        if document.armed ~= nil and not armed.valid(document.armed) then
+            return nil, "Armed must be blank, a physical switch position, or a logical switch (L01-L64)"
         end
         if document.flight ~= nil then
             if type(document.flight) ~= "table" then
                 return nil, "flight must be a configuration table"
             end
+            document.flight.announcements = nil
             local defaults = config.defaults()
             for key in pairs(document.flight) do
                 if defaults[key] == nil then
@@ -131,7 +142,7 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
         end
         return document, info
     end
-    local function save(self, filename, baseRevision, flight)
+    local function save(self, filename, baseRevision, flight, armedCondition)
         local matches, identityError = identity(filename)
         if not matches then
             return false, identityError
@@ -144,13 +155,14 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
             return false, info
         end
         if previous.revision ~= baseRevision then
-            return false, "Model settings changed in another dashboard; cancel and reload"
+            return false, "Model settings changed in another dashboard; close and reopen Model settings"
         end
         local document, validationError = validate({
             version = 1,
             modelFilename = filename,
             revision = baseRevision + 1,
             flight = copy(flight),
+            armed = armedCondition == nil and previous.armed or armedCondition,
         }, filename)
         if not document then
             return false, validationError
@@ -198,8 +210,8 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
         end
         return true, copy(checked)
     end
-    function instance:save(filename, baseRevision, flight)
-        local ok, saved, result = pcall(save, self, filename, baseRevision, flight)
+    function instance:save(filename, baseRevision, flight, armedCondition)
+        local ok, saved, result = pcall(save, self, filename, baseRevision, flight, armedCondition)
         if not ok then
             return false, "Cannot save model settings: " .. tostring(saved)
         end

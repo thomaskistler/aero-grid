@@ -45,15 +45,17 @@ Panel IDs and types are case-sensitive. Unknown top-level keys and extra placeme
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `armSource` | string | unset | Legacy physical-position or logical-switch fallback for flight-session extrema when widget **Armed switch** is unset. Numeric sources such as `sa` or `ch5` are no longer supported: select a widget switch instead. Without either condition, extrema maintain an open-ended session. |
+| `armSource` | string | unset | Legacy physical-position or logical-switch fallback for flight-session extrema before model arming has been saved. Numeric sources such as `sa` or `ch5` are no longer supported: select a model switch instead. Without either condition, extrema maintain an open-ended session. |
 
-Configure **Armed switch** beside Layout and Theme in native widget settings,
-not in YAML. It is saved separately for each widget instance and overrides
-`session.armSource` and panel `armSwitch` values. When unset (`--`), each
-consumer retains its own nonblank legacy switch; different legacy settings
-are allowed. Existing panel arm fields are shown only while their fallback
-is active. Overridden values survive Save and become effective again if
-widget Armed is cleared. Custom State conditions remain independent.
+Configure **Arm switch** in **AeroGrid → Model settings**, not in layout YAML.
+It is saved once per model and overrides `session.armSource` and panel
+`armSwitch` values on every dashboard. Before model arming is saved, each
+consumer retains its own nonblank legacy switch; differing legacy settings
+are allowed, but conflicting flight detector proposals stop new flight detection.
+Existing panel arm fields are shown only while their fallback is active;
+overridden values survive layout Save. Saving **None** disables arming model-wide,
+not restoring fallbacks. Old widget Armed selections are not automatically
+imported or used to guess a model condition. Custom State conditions remain independent.
 
 ## Validation and errors
 
@@ -92,7 +94,7 @@ It supports 2x1, 3x1, 4x1, 2x2, 3x2, 4x2, 3x3, 4x3, and 4x4.
 | Key | Values and defaults |
 | --- | --- |
 | `label` | Optional title; omitted or empty hides the title and reclaims header space for the plot. |
-| `armSwitch` | Legacy physical-position or logical-switch fallback, blank by default. Used and shown only while widget **Armed switch** is unset. With neither condition, recording is disabled. |
+| `armSwitch` | Legacy physical-position or logical-switch fallback, blank by default. Used and shown only before model arming has been saved. With neither condition, recording is disabled. |
 | `metrics` | Contiguous list of zero to three numeric sources. Empty is valid for editor setup. |
 | `source`, `unit`, `precision` | Per-metric source name, optional unit override, and integer precision 0–3 (default sensor precision). |
 | `accent` | Per-metric trace color or panel stripe: cyan, green, orange, amber. Traces default to cyan, orange, green in order. Modern Light renders the cyan trace with blue ink. |
@@ -109,7 +111,7 @@ Automatic bounds use raw lifetime recorded extrema with padding and rounding.
 For example, `rangeMin: 0` with no `rangeMax` anchors the bottom at zero and
 automatically adjusts the top; omit both keys for a fully automatic range.
 
-Set **Armed switch** in native widget settings. A retained panel `armSwitch`
+Set **Arm switch** in **AeroGrid → Model settings**; changes save automatically. A retained panel `armSwitch`
 is used only when the widget setting is unset. A qualified shared flight with
 the same effective arm condition keeps recording through disarm grace until
 confirmed flight end. Otherwise disarming pauses immediately. Rearming during
@@ -166,14 +168,16 @@ Drawer title: **Flight counter** · [drawer settings and behavior](../panels/fli
 | Key | Type | Default | Allowed values | Drawer label | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `label` | string | `FLT` | Any string | Label | Heading. |
-| `armSwitch` | string | `""` | Blank, physical switch position, or logical switch such as `L01` | Armed switch position | Legacy fallback only; new panels use widget Armed. Version-1–3 layouts retain the former `SF^` default when omitted. |
+| `armSwitch` | string | `""` | Blank, physical switch position, or logical switch such as `L01` | Arm switch position | Legacy fallback only; new panels use model Armed. Version-1–3 layouts retain the former `SF^` default when omitted. |
 
-Configure detection, announcements, CSV history, and the optional logical-switch
+Configure detection, CSV history, and the optional logical-switch
 output and optional **Smart detection** in **AeroGrid → Model settings**, not in new panel YAML. The old
 `motorSource`, `motorReversed`, `minMotorPercent`, `minFlightDuration`,
-`disarmDuration`, `announcements`, and `history` fields remain readable for
+`disarmDuration`, and `history` fields remain readable for
 legacy migration. Do not remove the last legacy counter before saving Model
 settings. Flight tracking then continues independently of counter placement.
+The obsolete `announcements` field is ignored; configure sounds using the
+flight-active logical switch and EdgeTX Special Functions.
 
 ```yaml
 - id: flights
@@ -380,7 +384,7 @@ Drawer title: **Navigation** · [drawer settings and behavior](../panels/navigat
 | `label` | string | `NAV` | Any string | Label | |
 | `source` | string | `GPS` | EdgeTX GPS source name | GPS source | |
 | `homeMode` | string | `edgetx` | `edgetx`, `first-arm` | Home position | Choose EdgeTX home or capture using the effective Armed condition. |
-| `armSwitch` | string | `""` | Blank, physical switch position, or logical switch such as `L01` | Home arm switch | Legacy fallback when widget Armed is unset. Older layouts with a nonblank switch migrate to `first-arm`; other older layouts keep EdgeTX home. |
+| `armSwitch` | string | `""` | Blank, physical switch position, or logical switch such as `L01` | Home arm switch | Legacy fallback before model arming is saved. Older layouts with a nonblank switch migrate to `first-arm`; other older layouts keep EdgeTX home. |
 | `satelliteSource` | string | `""` | Any EdgeTX source name or blank | Satellite count source | |
 | `satelliteWarning` | number | `8` | Nonnegative integer | Warn below satellites | |
 | `satelliteCritical` | number | `4` | Nonnegative integer | Critical below satellites | |
@@ -596,7 +600,7 @@ No panel-specific `validateSettings` function is declared, so the schema layer e
 
 ## Complete example
 
-This version-4 layout places six panels without overlap on the 4 × 4 grid. It shows a legacy session fallback, nested list syntax and panel-specific settings together. Prefer configuring Armed in native widget settings. Replace source names with exact names available on the target radio/model.
+This version-4 layout places six panels without overlap on the 4 × 4 grid. It shows a legacy session fallback, nested list syntax and panel-specific settings together. Prefer configuring Armed in Model settings. Replace source names with exact names available on the target radio/model.
 
 ```yaml
 version: 5

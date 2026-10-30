@@ -31,7 +31,6 @@ function registration.configure(context)
         declarations[#declarations + 1] = {
             source = source,
             armKey = view.key,
-            armIndex = context.nativeArmed ~= 0 and context.nativeArmed or nil,
             settings = settingsBySource[source],
         }
     end
@@ -40,7 +39,6 @@ function registration.configure(context)
         declarations[1] = {
             source = "Armed",
             armKey = view.key,
-            armIndex = context.nativeArmed ~= 0 and context.nativeArmed or nil,
         }
     end
     member.declarations, member.pending, member.error = declarations, false, nil

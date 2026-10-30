@@ -47,6 +47,6 @@ panels:
     config:
       service: extrema
       label: Extrema
-      source: Alt
+      source: GAlt
       extra: SAv
       accent: cyan

@@ -17,7 +17,7 @@
 
 ---@class AeroGridNavigationSettings
 ---@field source? string GPS source name.
----@field armSwitch? string Armed switch position for first-arm home capture.
+---@field armSwitch? string Arm switch position for first-arm home capture.
 ---@field homeMode? "edgetx"|"first-arm"
 ---@field label? string
 ---@field showTape? boolean
@@ -77,11 +77,11 @@ local navigation = {
     },
 }
 
-function navigation.validateSettings(settings, _, _, nativeArmed)
+function navigation.validateSettings(settings, _, _, modelArmed)
     local errors = {}
     local arm = settings.armSwitch
     if
-        (nativeArmed or 0) == 0
+        modelArmed == nil
         and arm ~= nil
         and arm ~= ""
         and (type(arm) ~= "string" or not (string.match(arm, "^S[A-Z][%^v%-]$") or string.match(arm, "^L%d%d$")))

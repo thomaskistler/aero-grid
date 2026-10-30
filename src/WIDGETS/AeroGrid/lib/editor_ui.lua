@@ -274,7 +274,7 @@ function uiModule.advance(context)
                     grid = session.grid,
                     panelHost = session.panelHost,
                     loadPanel = session.loadPanel,
-                    nativeArmed = session.nativeArmed,
+                    modelArmed = session.modelArmed,
                 })
                 if not checked then
                     failed(table.concat(errors, "; "))

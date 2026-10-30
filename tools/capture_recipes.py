@@ -238,10 +238,9 @@ def load_recipe(path):
         integer(sample["count"], len(panels), 999, "sample.count")
         number(sample["rssi"], 1, 100, "sample.rssi")
         if (config.get("armSwitch") != "SFv" or config.get("motorSource") != "ch3"
-                or config.get("motorReversed", False) or config.get("history") is not False
-                or config.get("announcements") is not False):
+                or config.get("motorReversed", False) or config.get("history") is not False):
             raise ValueError("Flight counter capture requires SFv armSwitch, ch3 motor, "
-                             "non-reversed motor, and disabled history/announcements")
+                             "non-reversed motor, and disabled history")
         number(config.get("minFlightDuration"), 0.2, 2, "config.minFlightDuration")
     elif recipe["panel"] == "state":
         fields(sample, ("switches",))
@@ -338,8 +337,8 @@ def readiness(recipe):
         return """            local instance = entry.instance
             if not instance.session or instance.session.elapsed < 1500 or instance.session.recording
                 or instance.pending or instance.gridVersion ~= instance.version then return end
-            if instance.session.flightLast ~= 1 or not instance.flightLines
-                or not instance.flightLines[1]
+            if instance.session.flightLast ~= 1 or not instance.flightBands
+                or not instance.flightBands[1]
                 or instance.flightDrawnRevision ~= instance.session.flightRevision then return end
             local _, finish, _, confirmed = instance.history:flight(instance.session, 1)
             if not finish or not confirmed then return end

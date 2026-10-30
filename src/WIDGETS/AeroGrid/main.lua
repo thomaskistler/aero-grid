@@ -14,7 +14,6 @@
 ---@class AeroGridWidgetOptions
 ---@field Layout integer|string Position in the layout registry, or a layout name.
 ---@field Theme integer|string Position in the theme catalog; or a theme name.
----@field Armed? integer Physical-position or logical-switch ID; zero is unset.
 
 ---@class AeroGridContext
 ---@field zone AeroGridZone Live zone table maintained by EdgeTX.
@@ -230,7 +229,6 @@ end
 local options = {
     { "Layout", CHOICE, 1, layoutNames },
     { "Theme", CHOICE, 1, themeLabels },
-    { "Armed", SWITCH, 0 },
 }
 
 --- Resolve the Layout option to a name. A stale position selects Empty.
@@ -543,7 +541,7 @@ local function create(zone, widgetOptions, path)
         path = path,
         layoutName = layoutName(widgetOptions.Layout),
         themeMode = themeModeOf(widgetOptions.Theme),
-        nativeArmed = widgetOptions.Armed or 0,
+        legacyWidgetArmed = widgetOptions.Armed or 0,
         flightFactory = flightFactory,
         panels = {},
         rejected = {},
@@ -766,14 +764,13 @@ end
 local function update(context, widgetOptions)
     local name = layoutName(widgetOptions.Layout)
     local themeMode = themeModeOf(widgetOptions.Theme)
-    local nativeArmed = widgetOptions.Armed or 0
 
     -- Without a runtime there is nothing to rebuild, and restaging would fail.
     if context.runtimeFailed then
         return
     end
 
-    if name ~= context.layoutName or themeMode ~= context.themeMode or nativeArmed ~= context.nativeArmed then
+    if name ~= context.layoutName or themeMode ~= context.themeMode then
         local member = context.flightFactory.members[context]
         member.pending = true
         context.flightFactory.revision = (context.flightFactory.revision or 0) + 1
@@ -785,10 +782,6 @@ local function update(context, widgetOptions)
         end
         context.layoutName = name
         context.themeMode = themeMode
-        if nativeArmed ~= context.nativeArmed then
-            context.navigationHomes = {}
-        end
-        context.nativeArmed = nativeArmed
         context.reloadState = "clear"
     end
 end
@@ -801,9 +794,6 @@ local function translate(name)
     end
     if name == "Theme" then
         return "Theme"
-    end
-    if name == "Armed" then
-        return "Armed switch"
     end
     return name
 end
@@ -1000,9 +990,6 @@ pumpFlight = function(context, inputPending)
     if not owner then
         return false
     end
-    if (context.stage or context.reloadState) and not owner.session then
-        return false
-    end
     local identityOk, filename = pcall(owner.identity, owner)
     if not identityOk then
         local text = "flight: " .. tostring(filename)
@@ -1024,12 +1011,18 @@ pumpFlight = function(context, inputPending)
                 owner.loadError, owner.documentLoaded = storeError, true
                 return true
             end
-            owner.store = storeModule.new(context.path, context.yaml, {
+            local created, store = pcall(storeModule.new, context.path, context.yaml, {
                 modelFilename = function()
                     return owner:identity()
                 end,
                 flightConfig = context.flightConfig,
+                armedConfig = context.serviceRuntime.modules.armed,
             })
+            if not created then
+                owner.loadError, owner.documentLoaded = tostring(store), true
+                return true
+            end
+            owner.store = store
         end
         local document, info = owner.store:load(filename)
         if document then
@@ -1041,6 +1034,9 @@ pumpFlight = function(context, inputPending)
             owner.loadError, owner.documentLoaded = tostring(info), true
         end
         return true
+    end
+    if (context.stage or context.reloadState) and not owner.session then
+        return false
     end
     if not owner.session and owner.dormantRevision == context.flightFactory.revision then
         return false
@@ -1090,7 +1086,6 @@ pumpFlight = function(context, inputPending)
         "detectionError",
         "countError",
         "historyError",
-        "audioError",
         "outputError",
         "persistenceError",
     }) do
@@ -1128,27 +1123,35 @@ local function openModelSettings(context)
         end
         context.modelSettingsUiModule = module
     end
+    local latest, loadError = owner.store:load(owner.filename)
+    if not latest then
+        addError(context, "Model settings: " .. tostring(loadError))
+        showErrors(context)
+        return
+    end
+    owner:setDocument(latest)
     local document = {
         modelFilename = owner.filename,
         revision = owner.document and owner.document.revision or 0,
         flight = owner.document and owner.document.flight,
-        choices = {},
+        armed = owner.document and owner.document.armed,
     }
-    for _, member in pairs(owner.members) do
-        if member.modelFilename == owner.filename then
-            for _, declaration in ipairs(member.declarations or {}) do
-                if declaration.settings then
-                    document.choices[#document.choices + 1] = {
-                        label = member.layoutName .. "/" .. declaration.source,
-                        flight = declaration.settings,
-                    }
-                end
+    if document.armed == nil then
+        local selections = {}
+        for host in pairs(owner.members) do
+            if host.legacyWidgetArmed and host.legacyWidgetArmed ~= 0 then
+                selections[host.legacyWidgetArmed] = true
             end
         end
+        local count = 0
+        for _ in pairs(selections) do
+            count = count + 1
+        end
+        document.status = count > 1
+                and "Conflicting old widget Armed selections were not imported. Choose one model switch."
+            or count == 1 and "Old widget Armed was not imported. Choose the model switch."
+            or "No model Armed set. Legacy panel switches remain until changed; None disables arming model-wide."
     end
-    table.sort(document.choices, function(left, right)
-        return left.label < right.label
-    end)
     local suspended = context.editorUi ~= nil
     if suspended then
         context.editorStash = context.editorSession
@@ -1167,25 +1170,26 @@ local function openModelSettings(context)
         end,
         fullscreen = isFullScreen,
         flightConfig = context.flightConfig,
+        armedConfig = context.serviceRuntime.modules.armed,
+        armControl = context.serviceRuntime.byId.control,
         smartStatus = function()
             return owner.view.smartStatus
         end,
-        save = function(values, revision, modelFilename)
+        save = function(values, revision, modelFilename, armedCondition)
             local ok, message = pcall(function()
-                for _, member in pairs(owner.members) do
-                    for _, declaration in ipairs(member.declarations or {}) do
-                        owner:validateOutput(values.flightSwitch, declaration.armKey)
-                    end
-                end
+                owner:validateOutput(values.flightSwitch, armedCondition)
             end)
             if not ok then
                 return false, tostring(message)
             end
-            return owner.store:save(modelFilename, revision, values)
+            return owner.store:save(modelFilename, revision, values, armedCondition)
         end,
         saved = function(saved)
             owner:setDocument(saved)
-            resume()
+        end,
+        error = function(message)
+            addError(context, "Model settings: " .. message)
+            showErrors(context)
         end,
         cancel = resume,
     })
@@ -1275,6 +1279,23 @@ local function prepareAeroMenu(context)
     return false
 end
 
+local function suspendArmingEditor(context)
+    if context.modelArmingReload then
+        if context.editorUi and context.editorUi.saving then
+            context.editorController.advanceEditor(context)
+            return true
+        end
+        context.modelArmingReload = nil
+        if context.editorUi then
+            context.editorStash = context.editorSession
+            context.editorUiModule.close(context, false)
+            context.editorController.restorePreview(context)
+            context.editorSession = nil
+        end
+    end
+    return false
+end
+
 --- Advance the staged loader, then keep geometry and panels synchronized.
 --- At most one loading step runs per call, so the instruction budget is never
 --- exceeded no matter how large the layout is.
@@ -1283,6 +1304,9 @@ end
 ---@param touchState? table
 local function refresh(context, widgetEvent, touchState)
     if pumpFlight(context, widgetEvent ~= nil and widgetEvent ~= 0) then
+        return
+    end
+    if suspendArmingEditor(context) then
         return
     end
     if prepareAeroMenu(context) then
@@ -1511,6 +1535,9 @@ end
 ---@param context AeroGridContext
 local function background(context)
     if pumpFlight(context) then
+        return
+    end
+    if suspendArmingEditor(context) then
         return
     end
     if context.modelSettingsUi then

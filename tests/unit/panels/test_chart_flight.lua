@@ -42,54 +42,79 @@ local function settle()
     end
 end
 settle()
-equal(#panel.flightLines, 2, "three metrics share one set of flight intervals")
-local points = panel.flightLines[1].properties.pts
+equal(#panel.flightBands, 2, "three metrics share one set of flight intervals")
+local band = panel.flightBands[1].properties
 local area = panel.area
-equal(points[1][1], area.x + math.floor(100 / panel.window * area.w + 0.5))
-equal(points[3][1], area.x + math.floor(350 / panel.window * area.w + 0.5))
-equal(points[1][2], area.y + 7, "confirmed start has a short boundary tick")
-equal(points[2][2], area.y + 2, "flight band stays in the plot's thin upper lane")
-equal(points[4][2], area.y + 7, "confirmed end has a short boundary tick")
-local active = panel.flightLines[2].properties.pts
-equal(active[4][2], active[3][2], "an unconfirmed end must not have a boundary tick")
-equal(panel.flightLines[1].properties.color, panel.theme.chartColor.green)
+equal(band.x, area.x + math.floor(100 / panel.window * area.w + 0.5))
+equal(band.x + band.w, area.x + math.floor(350 / panel.window * area.w + 0.5))
+equal(band.y, area.y)
+equal(band.h, area.h, "flight shading must span the full plot height")
+equal(band.filled, true)
+equal(band.thickness, 0, "flight shading has no outline or boundary ticks")
+equal(band.opacity, 32, "flight shading must leave telemetry readable")
+equal(band.color, panel.theme.chartColor.green)
+equal(panel.flightBands[1].parent, panel.flightRoot)
+equal(panel.plotRoot.children[1], panel.flightRoot, "bands must sit behind grid and telemetry objects")
+equal(panel.plotRoot.children[2], panel.gridRoot)
+local active = panel.flightBands[2].properties
+equal(active.x + active.w, area.x + math.floor(session.elapsed / panel.window * area.w + 0.5))
+local previousWidth = active.w
+session.elapsed = 1100
+settle()
+assert(active.w > previousWidth, "active flight shading must grow as recording continues")
 
 session.elapsed, session.flightActive = 5000, false
 session.flightRevision = 2
 intervals[2] = { 500, 4000, true, true }
 settings.timeRange, settings.duration = "rolling", "30s"
 settle()
-assert(panel.flightLines[1].hidden, "expired flights leave the rolling window")
-local clipped = panel.flightLines[2].properties.pts
-equal(clipped[1][1], panel.area.x)
-equal(clipped[1][2], clipped[2][2], "clipping must not invent a start boundary")
-equal(clipped[4][2], panel.area.y + 7)
+assert(panel.flightBands[1].hidden, "expired flights leave the rolling window")
+local clipped = panel.flightBands[2].properties
+equal(clipped.x, panel.area.x)
+equal(clipped.x + clipped.w, panel.area.x + math.floor(2000 / 3000 * panel.area.w + 0.5))
+equal(clipped.y, panel.area.y)
+equal(clipped.h, panel.area.h)
 chart.update(panel, { x = 0, y = 0, w = 472, h = 196 })
 settle()
-clipped = panel.flightLines[2].properties.pts
-equal(clipped[3][1], panel.area.x + math.floor(2000 / 3000 * panel.area.w + 0.5))
-equal(clipped[4][2], panel.area.y + 7, "resize reprojects every flight object")
+clipped = panel.flightBands[2].properties
+equal(clipped.x + clipped.w, panel.area.x + math.floor(2000 / 3000 * panel.area.w + 0.5))
+equal(clipped.h, panel.area.h, "resize reprojects every flight object")
 
-session.flightLast, session.flightRevision = 0, 3
+intervals[2] = { 500, 6000, true, true }
+session.flightRevision = session.flightRevision + 1
 settle()
-assert(panel.flightLines[1].hidden and panel.flightLines[2].hidden, "epoch reset hides all old pooled objects")
-session.flightFirst, session.flightLast, session.flightRevision = 65, 66, 4
+equal(clipped.x + clipped.w, panel.area.x + panel.area.w, "shading must clip at the plot's right edge")
+
+intervals[2] = { 4999, 5000, true, true }
+session.flightRevision = session.flightRevision + 1
+settle()
+equal(clipped.w, 1, "subpixel flights still have a visible band")
+equal(clipped.x + clipped.w, panel.area.x + panel.area.w, "subpixel bands must stay inside the plot")
+intervals[2] = { 5000, 6000, true, true }
+session.flightRevision = session.flightRevision + 1
+settle()
+assert(panel.flightBands[2].hidden, "flights starting beyond the window must not spill into the legend")
+
+session.flightLast, session.flightRevision = 0, session.flightRevision + 1
+settle()
+assert(panel.flightBands[1].hidden and panel.flightBands[2].hidden, "epoch reset hides all old pooled objects")
+session.flightFirst, session.flightLast, session.flightRevision = 65, 66, session.flightRevision + 1
 intervals[65], intervals[66] = { 2500, 3000, false, true }, { 3500, 4500, true, true }
 settle()
-equal(#panel.flightLines, 2, "wrapped flight identities reuse the bounded native pool")
-assert(not panel.flightLines[1].hidden and not panel.flightLines[2].hidden)
-equal(panel.flightLines[1].properties.pts[1][2], panel.area.y + 2, "late attachment has no false start tick")
+equal(#panel.flightBands, 2, "wrapped flight identities reuse the bounded native pool")
+assert(not panel.flightBands[1].hidden and not panel.flightBands[2].hidden)
+equal(panel.flightBands[1].properties.x, panel.area.x + math.floor(500 / 3000 * panel.area.w + 0.5))
 
-session.flightFirst, session.flightLast, session.flightRevision = 128, 128, 5
+session.flightFirst, session.flightLast, session.flightRevision = 128, 128, session.flightRevision + 1
 intervals[128] = { 2500, 3500, true, true }
 settle()
-assert(not panel.flightLines[64].hidden)
-session.flightLast, session.flightRevision = 0, 6
+assert(not panel.flightBands[64].hidden)
+session.flightLast, session.flightRevision = 0, session.flightRevision + 1
 chart.refresh(panel)
-session.flightRevision = 7
+session.flightRevision = session.flightRevision + 1
 settle()
 assert(
-    panel.flightLines[64].hidden and panel.flightLines[1].hidden,
+    panel.flightBands[64].hidden and panel.flightBands[1].hidden,
     "epoch changes clear sparse pools and partial passes"
 )
 
@@ -123,3 +148,18 @@ services.history = nil
 local unavailablePreview = chart.create(host.page, { x = 0, y = 0, w = 238, h = 65 }, settings, services)
 chart.refresh(unavailablePreview)
 equal(unavailablePreview.status.properties.text, "HISTORY N/A", "a preview must not mask a missing history service")
+
+local lightHost = fixture.createLoaded(nil, { Layout = "Empty", Theme = "modern-light" })
+local lightServices = lightHost.dashboardLoader.buildServices(lightHost, placement)
+lightServices.history = fake
+session.flightFirst, session.flightLast, session.flightRevision = 1, 2, session.flightRevision + 1
+intervals[2] = { 500, 4000, true, true }
+local light = chart.create(lightHost.page, { x = 0, y = 0, w = 238, h = 65 }, settings, lightServices)
+for _ = 1, 150 do
+    chart.refresh(light)
+end
+local lightBand = light.flightBands[2].properties
+equal(lightBand.color, light.theme.chartColor.green, "flight shading must use the active theme's green")
+equal(lightBand.opacity, 32)
+equal(lightBand.y, light.area.y)
+equal(lightBand.h, light.area.h)

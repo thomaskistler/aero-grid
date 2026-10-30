@@ -38,11 +38,11 @@ services.DEFINITIONS = {
     { id = "telemetry", file = "lib/telemetry_service.lua" },
     { id = "model", file = "lib/model_service.lua" },
     { id = "control", file = "lib/control_service.lua" },
+    { id = "flight", file = "lib/flight_service.lua" },
     { id = "armed", file = "lib/armed_service.lua" },
     { id = "extrema", file = "lib/extrema_service.lua" },
     { id = "navigation", file = "lib/navigation_service.lua" },
     { id = "history", file = "lib/history_service.lua" },
-    { id = "flight", file = "lib/flight_service.lua" },
     { id = "smart", file = "lib/smart_flight.lua" },
 }
 
@@ -122,8 +122,6 @@ function services.environment(overrides)
         setGlobalVariable = callable(modelApi.setGlobalVariable),
         getGlobalVariableDetails = callable(modelApi.getGlobalVariableDetails),
         getDateTime = callable(overrides.getDateTime) or callable(getDateTime),
-        playNumber = callable(overrides.playNumber) or callable(playNumber),
-        playTone = callable(overrides.playTone) or callable(playTone),
         fileOpen = callable(overrides.fileOpen) or callable(io.open),
         fileWrite = callable(overrides.fileWrite) or callable(io.write),
         fileClose = callable(overrides.fileClose) or callable(io.close),

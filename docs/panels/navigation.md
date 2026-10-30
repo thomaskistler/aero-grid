@@ -17,7 +17,7 @@ heading, transmitter orientation, or a return-home instruction.
 | **Label** | NAV | Panel heading. |
 | **GPS source** | GPS | EdgeTX GPS source supplying the model's coordinates. It must return a coordinate table. |
 | **Home position** | edgetx | **edgetx** uses EdgeTX home; **first-arm** captures home using the effective armed condition. |
-| **Home arm switch** | none | Legacy panel switch, shown only when nonblank and widget **Armed switch** is unset. |
+| **Home arm switch** | none | Legacy panel switch, shown only when nonblank and no model arming has been saved. |
 | **Satellite count source** | none | Optional source reporting a plain nonnegative integer count of locked satellites, not a packed GPS-status value. |
 | **Warn below satellites** | 8 | Warns when the satellite count is strictly below this value. Nonnegative integers, steps of 1. Requires **Satellite count source**. |
 | **Critical below satellites** | 4 | Critical alarm when the satellite count is strictly below this value. Nonnegative integers, steps of 1; must not exceed **Warn below satellites**. Requires **Satellite count source**. |
@@ -50,8 +50,9 @@ control home capture, and distance never triggers an alarm.
 With **Home position** set to **edgetx**, home comes from EdgeTX.
 Selecting **first-arm** captures a separate AeroGrid home without
 changing EdgeTX home or the flight controller's return-home position.
-It uses **Armed switch** in the widget settings, falling back to an existing
-panel switch when the widget setting is unset. Older layouts with a home arm
+It uses **Arm switch** in **AeroGrid → Model settings**, falling back to an existing
+panel switch only before model arming has been saved. Saving **None** disables
+first-arm capture rather than restoring the fallback. Older layouts with a home arm
 switch retain first-arm behavior; those without one retain EdgeTX home.
 AeroGrid must observe disarmed, then armed; opening the widget already armed
 does not capture home.
@@ -66,7 +67,7 @@ GPS source and armed switch share the capture. A different pair has its own
 capture. Home is not saved to disk: restarting the radio, reloading the model,
 or removing and recreating the widget starts a new session. Separate widget
 instances have independent homes.
-Changing the widget's Armed switch clears its retained AeroGrid homes.
+Changing the model's Arm switch clears retained AeroGrid homes on every dashboard.
 
 To investigate `HOME NOT SET`, first add a **Host diagnostics** panel and
 select its **log** section on any AeroGrid screen. The shared in-memory log

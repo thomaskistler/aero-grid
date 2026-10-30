@@ -114,7 +114,7 @@ view: 0
         (settings / ("model1.yml".encode().hex() + ".yaml")).write_text(
             "version: 1\nmodelFilename: model1.yml\nrevision: 1\nflight:\n"
             "  minFlightDuration: 1\n  disarmDuration: 3\n"
-            "  history: false\n  announcements: false\n")
+            "  history: false\n")
     layout += "grid:\n  columns: 4\n  rows: 4\npanels:\n"
     for name, (col, row, cols, rows) in placements(recipe).items():
         layout += (f"  - id: subject-{name}\n    type: {panel}\n"

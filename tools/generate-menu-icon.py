@@ -14,8 +14,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SIZES = {"320x240": 36, "480x272": 45, "800x480": 62}
 # Runtime order matters: the menu picks the first background distinct from the
 # active EdgeTX theme's FOCUS color, which fills the native top-left icon.
-VARIANTS = {"orange": "#b94c14", "violet": "#6146c6", "green": "#13756f", "slate": "#3d4d65"}
-MASTER_BACKGROUND = "#b94c14"
+# Existing AeroGrid palette: Modern Dark activeBg/surface, Modern Light orange/green.
+VARIANTS = {"blue": "#365673", "orange": "#c65b12", "green": "#147642", "slate": "#212830"}
+MASTER_BACKGROUND = "#365673"
 
 
 def asset_name(variant, size):

@@ -119,14 +119,12 @@ context.motor.value = 0
 step(20)
 step(3020)
 equal(context.feed.raw, 40)
-equal(#context.sounds, 1)
-equal(context.sounds[1][2], false)
+equal(#context.sounds, 0, "legacy announcement settings must not play audio at qualification")
 context.arm.value = false
 step(4000)
 step(5000)
 equal(#context.logs, 0)
-equal(#context.sounds, 2)
-equal(context.sounds[2][2], true)
+equal(#context.sounds, 0, "legacy announcement settings must not play audio at completion")
 
 context, step = new()
 context.arm.value, context.motor.value = true, 0

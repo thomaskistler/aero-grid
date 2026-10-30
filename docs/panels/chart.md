@@ -7,9 +7,10 @@
 Records up to three numeric EdgeTX sources on one chart while armed or in flight.
 The legend shows each recorded value and its minimum and maximum.
 Use separate panels for separate charts.
-Select **Armed switch** beside Layout and Theme in the widget settings.
-With that option unset, an existing panel arm switch remains in use and
-visible; otherwise the widget switch overrides it.
+Select **Arm switch** in **AeroGrid → Model settings**; changes save automatically.
+Until model arming has been saved, an existing panel arm switch remains in use
+and visible. Saved model arming overrides it on every dashboard; saved **None**
+disables recording rather than restoring the fallback.
 
 ## Settings
 
@@ -18,7 +19,7 @@ visible; otherwise the widget switch overrides it.
 | Setting | Default | What it does |
 | --- | --- | --- |
 | **Label** | empty | Optional chart heading. Clear it to hide the heading. |
-| **Armed switch position** | none | Legacy panel switch, shown only when nonblank and the widget's **Armed switch** is unset. |
+| **Arm switch position** | none | Legacy panel switch, shown only when nonblank and model arming has never been saved. |
 | **Metrics** | none | Up to three readings. Tap **+** to add one, or tap an entry to edit it. |
 | **Time range** | growing | **growing** keeps the recording from the start; **rolling** shows the latest fixed window. |
 | **Window duration** | 1 minute | **30 seconds**, **1 minute**, **2 minutes**, **5 minutes**, or **10 minutes**. Shown only when **Time range** is **rolling**. |
@@ -50,12 +51,12 @@ disarm grace until flight end is confirmed, even while the chart is hidden.
 Rearming during grace keeps one uninterrupted flight. Without a qualified,
 matching flight, disarming pauses recording immediately.
 
-A thin green line across the top of the plot identifies each flight, with
-short ticks at its detected start and confirmed end. These use the actual
-flight times, not the later qualification or confirmation times. Grace-period
-samples remain on the chart beyond the end tick. No Flight counter panel or
-logical-switch output is required. A chart opened mid-flight shows only the
-recorded portion, without inventing a start tick.
+A lightly shaded green background band identifies each flight, behind the
+grid and telemetry traces. Its edges use the actual flight times, not the later
+qualification or confirmation times; an active flight's band grows with the
+recording. Grace-period samples remain on the chart beyond the band's end.
+No Flight counter panel or logical-switch output is required. A chart opened
+mid-flight shades only the recorded portion.
 
 Rearming resumes the same history; paused time takes no horizontal space.
 Dashed markers and trace breaks mark recording pauses and missing telemetry.
@@ -98,7 +99,7 @@ There is no separate reset control.
 
 | Message | Meaning |
 | --- | --- |
-| **SET ARM SOURCE** | Select **Armed switch** in the widget settings; recording is disabled without an effective switch. |
+| **SET ARM SOURCE** | Select **Arm switch** in Model settings; recording is disabled without an effective switch. |
 | **ARM N/A** | The selected armed switch condition is unavailable and no matching active flight is keeping recording running. |
 | **ADD METRICS** | Add a source in the panel settings. |
 | **WAITING FOR ARM** | No samples have been recorded yet. |

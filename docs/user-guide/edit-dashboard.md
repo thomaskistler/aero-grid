@@ -15,7 +15,7 @@
    icon appears in the top-right corner of each panel.
 
 **AeroGrid → Model settings** opens shared model flight settings without
-entering layout edit mode. Its **Save/Cancel** are independent of layout
+entering layout edit mode. Changes save automatically, independently of layout
 **Save/Save as...**. The host menu is hidden while editing so it does not
 cover panel resize corners.
 

@@ -27,6 +27,12 @@ class ReleaseTests(unittest.TestCase):
                 self.assertIn("LICENSE", names)
                 assets = {name.split("/")[-1] for name in names if "/assets/" in name}
                 self.assertEqual(assets, release.ASSETS)
+                self.assertEqual(
+                    {name for name in assets if name.startswith("menu-")},
+                    {f"menu-{icon}-{color}-{size}.png" for icon in ("model", "theme")
+                     for color in ("black", "white") for size in (36, 45, 62)}
+                    | {"menu-title.svg", *(f"menu-title-{size}.png" for size in (36, 45, 62))},
+                )
                 self.assertTrue({
                     "satellite.png", "satellite-light.png", "satellite.svg",
                     "satellite-light.svg", "material-symbols-LICENSE.txt",

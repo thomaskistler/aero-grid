@@ -47,9 +47,9 @@ local function event(kind, at, observed, id, key)
         table.remove(events, 1)
     end
 end
-local function harness(native)
+local function harness(modelArm)
     local runtime = support.runtime(env)
-    runtime.nativeArmed = native
+    runtime.modelArmed = modelArm
     runtime.byId.flight = flight
     local control = controlModule.new(env, support, runtime)
     runtime.byId.control = control
@@ -228,7 +228,7 @@ equal(late:flight(lateSession, 1), nil)
 
 -- Native Armed deliberately collapses legacy arms to the widget condition.
 state.armKey, state.active, state.startedAt, state.flightId = "L01", true, 10400, 201
-local native, nativeSession, _, nativePoll, nativeOther = harness(1)
+local native, nativeSession, _, nativePoll, nativeOther = harness("L01")
 equal(nativeSession, nativeOther)
 nativePoll(10400, false, 24, false)
 equal(nativeSession.recording, true)

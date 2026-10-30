@@ -169,20 +169,34 @@ first.aeroMenuHandlers.modelSettings()
 untilState(first, function()
     return first.modelSettingsUi and not first.modelSettingsUi.build
 end, second)
-local draft = first.modelSettingsUi.draft
-draft.flightSwitch, draft.minFlightDuration, draft.disarmDuration = "L20", 1, 1
-draft.history, draft.announcements = false, true
-local save = assert(findButton(first.modelSettingsUi, "Save"), "Model settings must expose Save")
-save.properties.press()
+local function changeModel(context, key, value, other)
+    local revision = owner.document.revision
+    context.modelSettingsUi.controls[key].properties.set(value)
+    untilState(context, function()
+        return owner.document.revision == revision + 1
+    end, other)
+end
+changeModel(first, "history", 0, second)
+changeModel(first, "flightSwitch", 21, second)
+assert(owner.document.armed == nil, "flight output can be selected before configuring model arming")
+changeModel(first, "armed", armed, second)
+changeModel(first, "minFlightDuration", 100, second)
+changeModel(first, "disarmDuration", 100, second)
+assert(not findButton(first.modelSettingsUi, "Save"), "Model settings must save without form buttons")
+definition.refresh(first, EVT_VIRTUAL_EXIT)
 untilState(first, function()
     return not first.modelSettingsUi
+        and not first.stage
+        and not first.reloadState
+        and not second.stage
+        and not second.reloadState
 end, second)
 assert(
-    owner.document.revision == 1 and owner.document.flight.flightSwitch == "L20",
-    "the native Save action must publish the durable model document"
+    owner.document.revision == 5 and owner.document.flight.flightSwitch == "L20",
+    "each native field change must publish the durable model document"
 )
 local persisted = assert(owner.store:load(owner.filename))
-assert(persisted.revision == 1 and persisted.flight.flightSwitch == "L20")
+assert(persisted.revision == 5 and persisted.flight.flightSwitch == "L20")
 first.editorController.openEditor(first)
 untilState(first, function()
     return first.editorUi and not first.editorUi.buildStage
@@ -202,8 +216,8 @@ untilState(first, function()
     return not first.stage and not first.reloadState and #first.panels == 0
 end, second)
 assert(
-    first.nativeArmed == 0 and first.document.legacyFlightArms.flights == "SFv",
-    "counter removal must persist the retained fallback without promoting it to native Armed"
+    first.modelArmed == "SFv" and first.document.legacyFlightArms.flights == "SFv",
+    "counter removal preserves the retained fallback separately from model Armed"
 )
 pump(first, 40, second)
 writes = {}
@@ -213,7 +227,7 @@ untilState(first, function()
     return owner.state.active
 end, second)
 pump(first, 10, second)
-assert(model.getGlobalVariable(8, 0) == 1 and #tones == 1, "two widgets must count and announce once")
+assert(model.getGlobalVariable(8, 0) == 1 and #tones == 0, "two widgets must count once without built-in audio")
 assert(#writes == 1 and writes[1] == true, "two widgets must publish one Sticky start")
 local journal = owner:boundaries(0, owner.epoch)
 assert(#journal == 1 and journal[1].kind == "start" and journal[1].reason == "standard")
@@ -226,10 +240,10 @@ collectgarbage("collect")
 local conflict = create("Empty", getSwitchIndex("L01"))
 fixture.radio.logicalSwitches[1] = true
 untilState(second, function()
-    return not conflict.stage and owner.state.status == "conflict"
+    return not conflict.stage and owner.state.status == "ready"
 end, conflict)
-assert(owner.session == pinned and owner.state.active, "an active conflict must retain the original flight")
-assert(fixture.radio.logicalSwitches[20], "conflicting proposals must not reset the pinned output")
+assert(owner.session == pinned and owner.state.active, "old widget options cannot replace model arming")
+assert(fixture.radio.logicalSwitches[20], "another widget must not reset the pinned output")
 full = true
 fixture.radio.values[305] = -1024
 untilState(second, function()
@@ -241,8 +255,8 @@ full = false
 untilState(second, function()
     return owner.output == nil
 end, conflict)
-assert(#writes == 2 and writes[2] == false, "the old output must clear despite a configuration conflict")
-assert(#tones == 2 and model.getGlobalVariable(8, 0) == 1)
+assert(#writes == 2 and writes[2] == false, "the output must clear with multiple widgets")
+assert(#tones == 0 and model.getGlobalVariable(8, 0) == 1)
 journal = owner:boundaries(0, owner.epoch)
 assert(#journal == 2 and journal[2].kind == "end" and journal[2].at < journal[2].observedAt)
 factory.members[conflict] = nil
@@ -266,7 +280,7 @@ untilState(second, function()
     return not owner.state.active and not owner.output
 end)
 
--- Model drafts neither replace nor save an independently suspended layout draft.
+-- Model changes neither replace nor save an independently suspended layout draft.
 second.editorController.openEditor(second)
 untilState(second, function()
     return second.editorUi and not second.editorUi.buildStage
@@ -278,18 +292,17 @@ assert(not second.editorUi and second.editorStash == layoutDraft)
 untilState(second, function()
     return second.modelSettingsUi and not second.modelSettingsUi.build
 end)
-second.modelSettingsUi.draft.minMotorPercent = 99
-second.modelSettingsUi.controls.smartDetection.properties.set(1)
-assert(not owner.document.flight.smartDetection, "unsaved Smart toggle has no live effects")
+changeModel(second, "minMotorPercent", 2600)
+assert(owner.document.flight.minMotorPercent == 26, "confirmed model changes apply before Exit")
 definition.refresh(second, EVT_VIRTUAL_EXIT)
 untilState(second, function()
     return second.editorUi and not second.editorUi.buildStage
 end)
-assert(second.editorSession == layoutDraft and layoutDraft.dirty, "Cancel must preserve the layout draft")
+assert(second.editorSession == layoutDraft and layoutDraft.dirty, "Back must preserve the layout draft")
 persisted = assert(owner.store:load(owner.filename))
-assert(persisted.revision == 1 and persisted.flight.minMotorPercent == 25, "Cancel must not persist the model draft")
+assert(persisted.revision == 6 and persisted.flight.minMotorPercent == 26, "Back retains saved model changes")
 assert(not persisted.flight.smartDetection and not owner.smartRuntime)
-assert(second.document.panels[1] == nil, "model Cancel must not save the layout draft")
+assert(second.document.panels[1] == nil, "model changes must not save the layout draft")
 second.editorUiModule.close(second, false)
 second.editorSession = nil
 second.editorController.restorePreview(second)
@@ -319,15 +332,15 @@ untilState(second, function()
     return second.modelSettingsUi and not second.modelSettingsUi.build
 end)
 local modelUi = second.modelSettingsUi
-modelUi.controls.smartDetection.properties.set(1)
-modelUi.controls.minFlightDuration.properties.set(3000)
-assert(not owner.document.flight.smartDetection and not owner.smartRuntime)
-modelUi.save.properties.press()
+changeModel(second, "minFlightDuration", 3000)
+changeModel(second, "smartDetection", 1)
+assert(owner.document.flight.smartDetection)
+definition.refresh(second, EVT_VIRTUAL_EXIT)
 untilState(second, function()
     return not second.modelSettingsUi and owner.session.smart and owner.session.smart.altitude.fresh
 end)
 persisted = assert(owner.store:load(owner.filename))
-assert(persisted.revision == 2 and persisted.flight.smartDetection)
+assert(persisted.revision == 8 and persisted.flight.smartDetection)
 assert(owner.view.smartStatus and string.find(owner.view.smartStatus, "baro ready", 1, true))
 local third = create("Empty", armed)
 untilState(second, function()
@@ -359,7 +372,7 @@ untilState(second, function()
     return owner.view.active
 end, third)
 assert(owner.view.reason == "smart-altitude" and owner.view.qualifiedAt - startedAt < 3000)
-assert(model.getGlobalVariable(8, 0) == 3 and #tones == 5)
+assert(model.getGlobalVariable(8, 0) == 3 and #tones == 0)
 journal = owner:boundaries(0, owner.epoch)
 assert(#journal == 5 and journal[5].reason == "smart-altitude" and journal[5].at == startedAt)
 second.aeroMenuHandlers.modelSettings()
@@ -369,13 +382,33 @@ end, third)
 second.modelSettingsUi.controls.smartDetection.properties.set(0)
 fixture.tick(10)
 definition.refresh(second, EVT_VIRTUAL_EXIT)
-assert(not second.modelSettingsUi, "pending input must not be dropped on a due Smart work slice")
-assert(owner.document.flight.smartDetection and owner.session.settings.smartDetection and owner.view.active)
+untilState(second, function()
+    return not second.modelSettingsUi
+end, third)
+assert(not owner.document.flight.smartDetection and owner.session.settings.smartDetection and owner.view.active)
 assert(owner.view.reason == "smart-altitude" and model.getGlobalVariable(8, 0) == 3)
 pump(second, 350, third)
-assert(model.getGlobalVariable(8, 0) == 3 and #tones == 5, "standard timeout must not requalify Smart flight")
+assert(model.getGlobalVariable(8, 0) == 3 and #tones == 0, "standard timeout must not requalify Smart flight")
 fixture.radio.values[305] = -1024
 untilState(second, function()
     return not owner.view.active and not owner.output
 end, third)
-assert(model.getGlobalVariable(8, 0) == 3 and #tones == 6 and writes[#writes] == false)
+assert(model.getGlobalVariable(8, 0) == 3 and #tones == 0 and writes[#writes] == false)
+
+local cachedRevision = owner.document.revision
+local external = second.flightConfig.resolve(owner.document.flight)
+external.minMotorPercent = 31
+local written, fresh = owner.store:save(owner.filename, cachedRevision, external, owner.document.armed)
+assert(written, fresh)
+assert(
+    owner.document.revision == cachedRevision,
+    "external save must leave the cached broker stale for this regression"
+)
+second.aeroMenuHandlers.modelSettings()
+untilState(second, function()
+    return second.modelSettingsUi and not second.modelSettingsUi.build
+end, third)
+assert(second.modelSettingsUi.revision == fresh.revision, "reopening must reload the persisted revision")
+assert(second.modelSettingsUi.values.minMotorPercent == 31, "reopening must show the latest persisted values")
+changeModel(second, "minMotorPercent", 3200, third)
+assert(owner.document.flight.minMotorPercent == 32, "saving after reopen must not report a false revision conflict")

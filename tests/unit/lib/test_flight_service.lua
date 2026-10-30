@@ -154,7 +154,7 @@ radio.arms[1] = true
 step(15)
 equal(owner.view.active, true)
 equal(radio.writes, 1, "two callers/widgets have one count effect")
-equal(radio.sounds, 1)
+equal(radio.sounds, 0)
 equal(radio.commands[1], true)
 local start = owner:boundaries(0)
 equal(#start, 1)
@@ -177,7 +177,7 @@ radio.arms[1] = false
 step(15)
 equal(owner.view.active, false)
 equal(radio.commands[#radio.commands], false, "pinned old-arm completion clears the old output")
-equal(radio.sounds, 2)
+equal(radio.sounds, 0)
 equal(#radio.lines, 2, "one header and one flight row")
 local boundaries = owner:boundaries(0)
 equal(#boundaries, 2)
@@ -337,7 +337,7 @@ equal(
     "equivalent channel spelling and numeric representations must reach consensus"
 )
 
--- A real Smart input service feeds the same shared count/audio/history/output
+-- A real Smart input service feeds the same shared count/history/output
 -- path and preserves the documented candidate/observation timestamp contract.
 owner, radio, step = fixture()
 radio.sensors = { [12] = { type = 0, id = 9, instance = 0, unit = 9, prec = 2, name = "High" } }
@@ -359,7 +359,7 @@ local candidateAt = owner.session.startedAt
 radio.samples[113].value = 4
 step(20)
 equal(radio.writes, 1)
-equal(radio.sounds, 1)
+equal(radio.sounds, 0)
 equal(radio.commands[#radio.commands], true)
 equal(owner.view.reason, "smart-altitude")
 local events = owner:boundaries(0)
@@ -375,7 +375,7 @@ step(15)
 events = owner:boundaries(0)
 equal(#events, 2)
 equal(events[2].reason, "smart-altitude")
-equal(radio.sounds, 2)
+equal(radio.sounds, 0)
 equal(#radio.lines, 2)
 equal(radio.commands[#radio.commands], false)
 
@@ -435,11 +435,11 @@ for _, path in ipairs({ "altitude", "speed" }) do
             end
             advance(100)
             equal(state.writes, 1)
-            equal(state.sounds, 1)
+            equal(state.sounds, 0)
             state.arms[1] = false
             advance(50)
             equal(#broker:boundaries(0), 2)
-            equal(state.sounds, 2)
+            equal(state.sounds, 0)
             equal(#state.lines, 2)
             equal(state.commands[#state.commands], false)
         end
@@ -519,7 +519,7 @@ step(20)
 equal(radio.writes, 1)
 equal(owner.view.reason, "smart-speed", "GPS without barometric altitude can qualify independently")
 equal(#owner:boundaries(0), 1)
-equal(radio.sounds, 1)
+equal(radio.sounds, 0)
 equal(radio.commands[#radio.commands], true)
 
 owner, radio, step = fixture()

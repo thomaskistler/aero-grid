@@ -151,10 +151,7 @@ for _, span in ipairs({ { 1, 1 }, { 2, 1 }, { 2, 2 }, { 4, 2 } }) do
     equal(model.getGlobalVariable(8, 0), 40)
     equal(#context.errors, 0)
     local _, sounds = recorded()
-    equal(sounds[1], 1200)
-    equal(sounds[2], 40)
-    equal(sounds[3], 800)
-    equal(sounds[4], 40)
+    equal(#sounds, 0, "legacy announcements must not play audio")
 end
 
 local context, panel = create({ 2, 2 }, true)
@@ -209,7 +206,7 @@ fixture.radio.values[305] = -1024
 fixture.pump(context, 30)
 local history, sounds = recorded()
 assert(history, "the committed tracker completes while its presentation is previewed")
-equal(#sounds, 4, "previewing must neither suppress nor duplicate committed announcements")
+equal(#sounds, 0, "previewing must not play flight audio")
 equal(panel.value.properties.text, "40", "preview displays the shared count")
 
 -- Exercise the unchanged callback ceiling with all Smart sensor categories
@@ -268,6 +265,6 @@ backgroundUntil(context, function()
 end)
 history, sounds = recorded()
 assert(history)
-equal(#sounds, 4)
+equal(#sounds, 0)
 equal(model.getGlobalVariable(8, 0), 40)
 print(string.format("Flight counter standard/Smart integration passed; worst callback: %d instructions", worstCallback))

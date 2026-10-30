@@ -78,7 +78,7 @@ local missing = switches:switch("MISSING")
 switches:update(140)
 assert(not missing.available and not missing.fresh, "unknown switch is unavailable, not disarmed")
 
-local content, tones, numbers = nil, {}, {}
+local content
 env = {
     getInfo = function()
         return { name = 'Model, "A"', filename = "model1.yml" }
@@ -98,12 +98,6 @@ env = {
     fileWrite = function(_, text)
         content = content .. text
     end,
-    playTone = function(frequency)
-        tones[#tones + 1] = frequency
-    end,
-    playNumber = function(count)
-        numbers[#numbers + 1] = count
-    end,
 }
 local model = modelService.new(env, support)
 equal(model:flightDate(), "2026-10-06 16:08")
@@ -115,12 +109,7 @@ model:logFlight(model:flightDate(), 70, 41)
 equal(string.sub(content, 1, #previous), previous)
 local _, headers = string.gsub(content, "flight_date", "")
 equal(headers, 1)
-model:announceFlight(40, false)
-model:announceFlight(40, true)
-equal(tones[1], 1200)
-equal(tones[2], 800)
-equal(numbers[1], 40)
-equal(numbers[2], 40)
+assert(model.announceFlight == nil, "model service must not expose built-in flight announcements")
 env.fileOpen = function()
     return nil, "card unavailable"
 end

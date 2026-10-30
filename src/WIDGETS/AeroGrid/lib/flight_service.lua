@@ -129,9 +129,6 @@ function flight.advance(context, now)
                 if context.settings.history then
                     context.model:logFlight(context.date, duration, context.flightCount)
                 end
-                if context.settings.announcements then
-                    context.model:announceFlight(context.flightCount, true)
-                end
             end
         end
         return
@@ -181,9 +178,6 @@ function flight.advance(context, now)
         context.phase = "active"
         if context.qualified then
             context:qualified(now)
-        end
-        if context.settings.announcements then
-            context.model:announceFlight(context.flightCount, false)
         end
     end
 end
@@ -247,6 +241,16 @@ function broker:setDocument(document)
         document.modelFilename == nil or document.modelFilename == self.filename,
         "Model changed; reopen model settings"
     )
+    if self.document and self.document.armed ~= document.armed then
+        for host, member in pairs(self.members) do
+            host.navigationHomes = {}
+            if host.modelFilename == nil or host.modelFilename == self.filename then
+                member.pending = true
+                host.modelArmingReload = true
+                host.reloadState = "clear"
+            end
+        end
+    end
     if self.document and (self.document.revision or 0) ~= (document.revision or 0) then
         self.readyAfterDisarm = true
         self.errors.count, self.errors.detection = nil, nil
@@ -307,20 +311,26 @@ function broker:resolveProposals()
             else
                 for _, declaration in ipairs(participant.declarations or {}) do
                     local settings = self.document and self.document.flight or declaration.settings
-                    if settings and declaration.armKey ~= "" then
-                        local key = self.config.key(settings) .. ":" .. declaration.armKey
+                    local modelArm = self.document and self.document.armed
+                    local armKey = modelArm ~= nil and modelArm or declaration.armKey
+                    if settings and armKey ~= "" then
+                        local key = self.config.key(settings) .. ":" .. armKey
                         candidates[#candidates + 1] = participant.layoutName
                             .. "/"
                             .. declaration.source
                             .. " ("
-                            .. declaration.armKey
+                            .. armKey
                             .. ")"
                         if signature and signature ~= key then
                             conflict = true
                         end
 
                         signature, selected =
-                            key, { settings = settings, armKey = declaration.armKey, armIndex = declaration.armIndex }
+                            key, {
+                                settings = settings,
+                                armKey = armKey,
+                                armIndex = modelArm == nil and declaration.armIndex or nil,
+                            }
                     end
                 end
             end
@@ -330,7 +340,7 @@ function broker:resolveProposals()
         table.sort(candidates)
         self.state.configurationError = "Conflicting flight conditions: "
             .. table.concat(candidates, ", ")
-            .. ". Use matching Armed settings and save one model flight configuration."
+            .. ". Choose Armed in Model settings and save one model flight configuration."
         return nil, nil, "conflict"
     end
     self.state.configurationError = nil
@@ -358,8 +368,8 @@ function broker:validateOutput(name, armKey)
     if not name or name == "" then
         return
     end
-    assert(self.env.setStickySwitch and self.env.getLogicalSwitch, "Flight-active output requires Sticky switch APIs")
-    assert(string.gsub(armKey, "^!", "") ~= name, "Flight-active output cannot be the Armed input")
+    assert(self.env.setStickySwitch and self.env.getLogicalSwitch, "Flight status switch requires Sticky switch APIs")
+    assert(string.gsub(armKey or "", "^!", "") ~= name, "Flight status switch cannot be the Arm input")
     local index = tonumber(string.sub(name, 2)) - 1
     local definition = self.env.getLogicalSwitch(index)
     assert(type(definition) == "table" and definition.func == 17, name .. " must be a dedicated Sticky logical switch")
@@ -425,9 +435,6 @@ function broker:attach(proposal, signature, now)
         end,
         logFlight = function(_, ...)
             owner:effect("history", modelService.logFlight, modelService, ...)
-        end,
-        announceFlight = function(_, ...)
-            owner:effect("audio", modelService.announceFlight, modelService, ...)
         end,
     }
     function session:qualified(stamp)

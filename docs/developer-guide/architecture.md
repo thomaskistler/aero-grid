@@ -98,10 +98,10 @@ does not consume scheduled work.
 | Service module | Responsibility |
 | --- | --- |
 | `telemetry_service.lua` | Source resolution, readings, units, precision, freshness, and link status. |
-| `model_service.lua` | Model identity/image, timers, flight mode, TX voltage, and flight history/audio support. |
+| `model_service.lua` | Model identity/image, timers, flight mode, TX voltage, and flight history. |
 | `control_service.lua` | Trims, final channel outputs and their trim associations, switch conditions, GV snapshots, and verified GV9 FM0 increments. |
-| `armed_service.lua` | Native widget Armed precedence, legacy switch fallback, and immutable effective arm views over shared Control polls. |
-| `flight_service.lua` | Shared model-flight detection, once-only count/history/audio, optional Sticky output, and timestamped boundaries. |
+| `armed_service.lua` | Saved model Armed precedence, legacy switch fallback, and immutable effective arm views over shared Control polls. |
+| `flight_service.lua` | Shared model-flight detection, once-only count/history, optional Sticky output, and timestamped boundaries. |
 | `smart_flight.lua` | Optional protocol-identified flight sensors with per-sensor receipt/freshness and SI units. |
 | `extrema_service.lua` | Sensor extrema and dashboard flight-session tracking. |
 | `navigation_service.lua` | GPS fix, pilot/home position, distance, and north-up bearing. |
@@ -130,8 +130,8 @@ Chart history observes completed telemetry polls rather than reading changed
 revisions during redraw: unchanged numeric samples still occupy recording time,
 and raw spikes must not be lost between frames. Observer failures are isolated
 from telemetry polling and reported through normal service failure handling.
-`services.armed:state()` describes the native widget condition;
-`:state(legacySwitch)` resolves native-over-legacy precedence for a consumer.
+`services.armed:state()` describes the saved model condition;
+`:state(legacySwitch)` resolves model-over-legacy precedence for a consumer.
 Snapshots expose `condition`, `key`, `origin`, `generation`, `configured`,
 `available`, `fresh`, `updatedAt`, Boolean `value`, `revision`, and `status`.
 An unavailable/stale reading is not disarmed. Reliability is evaluated on
@@ -141,10 +141,11 @@ changes; `generation` changes when the widget runtime is rebuilt.
 `status` is `unconfigured`, `ready`, or `unavailable`; invalid configuration
 is reported through normal host error isolation.
 The resolver owns no separate polling work: Control still reads each switch
-once. Native configuration and state are per widget, not model-wide.
+once per runtime. Configuration is model-wide; each dashboard publishes its
+own view over that same condition.
 
 History and extrema key sessions by the effective condition. A configured
-native Armed unifies their arm inputs; unset Armed retains independent legacy
+model Armed unifies their arm inputs; absent model arming retains independent legacy
 switches. Each chart arm configuration has its own cumulative session.
 It pauses on disarm unless a matching shared flight is still active, including
 its disarm grace, and resumes the same recording;
@@ -179,13 +180,14 @@ broker arm. Per effective arm, 128 recording spans map wall-clock `at` timestamp
 to the cumulative recording axis; qualification/confirmation receipt times do
 not place boundaries. Grace samples remain after the mapped end. A 64-interval
 ring supplies scalar `history:flight(sessionView, index)` reads, independent of
-metric subscriptions. Overlays are staged in a bounded native-object pool.
+metric subscriptions. Shaded flight bands are staged in a bounded native-object
+pool behind the grid and traces.
 Telemetry-sampling turns reserve projection headroom without lowering the
 existing callback or staged-drain limits.
 
 Journal loss sets the session's `flightLost` flag and closes an unmatched open
-band at its last observed recording time without inventing an end tick.
-Missing ends/starts outside retained spans have no fabricated boundary tick.
+band at its last observed recording time rather than extending it into later
+flights.
 Late attachment can recover the current active interval only from its recorded
 portion; old completed flights do not create new history. Model epochs clear
 intervals and mapping spans. Draft chart previews read compatible live views
@@ -199,7 +201,7 @@ The factory-scoped broker in `flight_service.lua` owns a separate non-UI
 Control/Telemetry/Model runtime and optional Smart sensor poller. Any live widget callback can pump it. Dashboard
 registrations are weakly held; rebuilds mark proposals pending before replacing
 them. Unanimous effective arm/configuration proposals are required, not the
-first caller's settings. Native Armed remains per widget. A qualified session
+first caller's settings. Saved model Armed overrides every declaration. A qualified session
 pins its arm, detector settings, and output until completion, including output
 cleanup when proposals change or conflict. Counter panels only render state.
 
@@ -264,14 +266,23 @@ holds without inventing disarm. Metadata changes and scheduling gaps invalidate
 the reference conservatively. Fixed shortcuts are strictly above +3 m or
 10 mph for at least 200 ticks, allowing only precision-scaled conversion
 roundoff (including float32 firmware). `smartStatus` explains fallback in the native Model settings dialog;
-drafts do not enable readers or change live detection.
+confirmed field changes persist and update live detection immediately.
 
 Model settings use their own schema/revision and losslessly encoded model
 filename under `/AEROGRID/models/`. Saves verify model identity and revision
 before verified file replacement. Layout saves and previews never write this
-document. Legacy detector declarations remain compatible until explicit model
-Save; retained arm metadata stays with its layout rather than becoming
-model-wide Armed. Model changes reset the flight epoch; dashboard rebuilds do not.
+document. Legacy detector declarations remain compatible until model settings
+are changed; retained arm metadata stays with its layout rather than becoming
+model-wide Armed. Schema version 1 has an optional top-level `armed` condition:
+missing preserves per-consumer legacy fallback, while `""` explicitly disables
+arming, including fallbacks. Nonempty values must be physical positions or
+logical switches L01–L64 (optionally inverted). Numeric channel IDs are rejected.
+The model document is loaded in a separate callback before Armed and panel
+construction. Saving a different arm condition rebuilds every registered
+dashboard and clears captured homes, preserving layout data and a pinned active
+flight's completion/cleanup. Previous per-widget Armed selections are never
+silently promoted; conflicting old selections require an explicit model choice.
+Model changes reset the flight epoch; dashboard rebuilds do not.
 
 ## Add or change a panel
 

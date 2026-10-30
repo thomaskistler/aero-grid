@@ -34,20 +34,25 @@ Choose **AeroGrid** in **Select widget**.
 In the AeroGrid settings, choose **Layout**. Select **Empty** to build your
 own dashboard, or **Default** to start with the bundled aircraft dashboard.
 Choose **Modern Dark** or **Modern Light** for **Theme**.
-Set **Armed switch** to the physical switch position or logical switch that
-means armed. It applies to Chart, Flight counter, first-arm Navigation, and
-flight-session minima in this widget. Configure it separately for each widget
-instance; EdgeTX saves each selection with the model.
-
-With **Armed switch** unset (`--`), existing panel arm settings remain in use
-and visible in their panel settings. Selecting a widget switch overrides and
-hides them without deleting them; clearing it restores those fallbacks.
-Old numeric extrema arm sources must be replaced with a widget switch.
 
 ![AeroGrid widget settings with Layout and Theme pickers](../assets/editor/widget-options.png)
 
 Press **RTN** to close the settings and leave setup. Your dashboard is now
 on the new screen. Repeat these steps to add another dashboard.
+
+In fullscreen, tap **AeroGrid icon → Model settings** and set **Arm switch**
+to the physical switch position or logical switch that means armed. Changes save automatically.
+This one model-wide condition applies to Chart, Flight counter, first-arm
+Navigation, and flight-session minima on every AeroGrid dashboard for the model.
+It is not a widget option beside Layout and Theme. **Cancel** changes nothing.
+
+Until model arming has been saved, existing panel arm settings remain in use
+and visible in their panel settings. Saving model arming overrides and hides
+those fallbacks without deleting them. Saving **None** explicitly disables
+arming across all dashboards; it does not restore legacy switches. Prior widget
+Armed selections are not automatically imported, because instances may disagree:
+choose the intended model condition explicitly. Numeric channels such as `ch5`
+and numeric switch sources such as `sa` are not armed conditions.
 
 ## Understand layouts
 

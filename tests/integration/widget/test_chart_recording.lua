@@ -58,6 +58,20 @@ end
 local file = assert(hostIo.open(root .. "/build/test-widget-fixture/layouts/chart-stress.yaml", "w"))
 file:write(table.concat(lines, "\n") .. "\n")
 file:close()
+if withFlights or smartEnabled then
+    local path = root .. "/build/test-widget-fixture/"
+    os.execute("mkdir -p '" .. path .. "AEROGRID/models'")
+    local filename = model.getInfo().filename
+    local modelPath = assert(fixture.module("lib/model_settings_store.lua").path(path, filename))
+    local modelFile = assert(hostIo.open(modelPath, "w"))
+    modelFile:write(assert(fixture.module("lib/yaml.lua").serialize({
+        version = 1,
+        revision = 0,
+        modelFilename = filename,
+        armed = "SAv",
+    })))
+    modelFile:close()
+end
 
 local worst, callbacks, context = 0, 0, nil
 local function measure(fn, ...)
@@ -84,7 +98,6 @@ end
 context = definition.create({ x = 0, y = 0, w = 480, h = 272 }, {
     Layout = "chart-stress",
     Theme = "modern-dark",
-    Armed = (withFlights or smartEnabled) and getSwitchIndex("SA" .. CHAR_DOWN) or 0,
 }, root .. "/build/test-widget-fixture/")
 local function pump(count, background)
     for _ = 1, count do
@@ -108,6 +121,7 @@ if withFlights then
     context.flightBroker:setDocument({
         modelFilename = context.flightBroker.filename,
         revision = 1,
+        armed = "SAv",
         flight = context.flightConfig.resolve({ minFlightDuration = 1, disarmDuration = 1, history = false }),
     })
     setArmed(0)
@@ -122,17 +136,44 @@ if smartEnabled then
     local owner = assert(context.flightBroker)
     owner:setDocument({
         revision = 1,
+        armed = "SAv",
         flight = context.flightConfig.resolve({ smartDetection = true, history = false }),
     })
     pump(100)
     assert(owner.session.smart.altitude.fresh and owner.session.smart.speed.fresh)
     setArmed(1024)
 end
+local liveRevisions = {}
+for _, entry in ipairs(context.panels) do
+    for _, item in ipairs(entry.instance.series) do
+        liveRevisions[item] = item.feed.plotRevision
+    end
+end
 for step = 1, 1000 do
     for id = 1, 24 do
-        fixture.radio.values[5000 + id] = id + step % 17
+        fixture.radio.values[5000 + id] = id + 1 + step % 17
     end
-    pump(1, step < 500)
+    pump(1, step < 100)
+end
+for _, entry in ipairs(context.panels) do
+    for _, item in ipairs(entry.instance.series) do
+        assert(item.feed.plotRevision > liveRevisions[item], "live telemetry must keep recording during a flight")
+        assert(
+            item.drawnRevision and item.drawnRevision > liveRevisions[item],
+            string.format(
+                "live charts must keep drawing changing telemetry before disarming: source=%s drawn=%s baseline=%s current=%s job=%s/%s geometry=%s/%s pending=%s",
+                tostring(item.settings.source),
+                tostring(item.drawnRevision),
+                tostring(liveRevisions[item]),
+                tostring(item.feed.plotRevision),
+                tostring(item.job and item.job.index),
+                tostring(item.job and item.job.last),
+                tostring(item.job and item.job.geometryVersion),
+                tostring(entry.instance.geometryVersion),
+                tostring(entry.instance.pending and entry.instance.pending.settings.source)
+            )
+        )
+    end
 end
 local history = context.serviceRuntime.byId.history
 assert(history.count == 24)
@@ -191,7 +232,7 @@ if withFlights then
             tostring(panel.session.flightLast)
         )
     )
-    assert(panel.flightLines and panel.flightLines[1], "completed flights must have interval overlays")
+    assert(panel.flightBands and panel.flightBands[1], "completed flights must have background bands")
 end
 
 for cycle = 1, 20 do

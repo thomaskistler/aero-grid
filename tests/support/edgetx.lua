@@ -1301,6 +1301,9 @@ function support.lvgl()
         assert(type(properties.title) == "string", "native popup needs a title")
     end
     lvgl = {
+        -- radio/src/dataconstants.h SwitchTypes, exported by api_colorlcd_lvgl.cpp.
+        SW_LOGICAL_SWITCH = 4,
+        SW_CLEAR = 1048576,
         clear = function()
             for _, object in ipairs(objects) do
                 if not object.parent and not object.registeredParent and not object.invalid then
@@ -1542,6 +1545,7 @@ function support.radio(hostIo)
             RxBt = { id = 100, name = "RxBt", desc = "Rx battery", unit = UNIT.VOLTS },
             Curr = { id = 103, name = "Curr", desc = "Current", unit = UNIT.AMPS },
             Alt = { id = 106, name = "Alt", desc = "Altitude", unit = UNIT.METERS },
+            GAlt = { id = 160, name = "GAlt", desc = "GPS altitude", unit = UNIT.METERS },
             ["Alt+"] = { id = 108, name = "Alt+", desc = "Altitude max", unit = UNIT.METERS },
             GPS = { id = 109, name = "GPS", desc = "GPS", unit = UNIT.GPS },
             GSpd = { id = 112, name = "GSpd", desc = "GPS speed", unit = UNIT.KMH },
@@ -1562,6 +1566,7 @@ function support.radio(hostIo)
             [100] = 24.0,
             [103] = 10,
             [106] = 100,
+            [160] = 100,
             [108] = 180,
             [109] = {
                 lat = scaffold.MODEL_LATITUDE,
@@ -2009,6 +2014,7 @@ function support.radio(hostIo)
         radio.values[100] = 24.0
         radio.values[103] = 10
         radio.values[106] = 100
+        radio.values[160] = 100
         -- Vertical speed was missing here, so a test that moved it left the next
         -- one reading its value. Found when one did.
         radio.values[120] = 2.5

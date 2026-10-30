@@ -600,8 +600,7 @@ local function testStatesCoverBothPalettes()
     assert(modern.alertRgb.warning ~= light.alertRgb.warning, "both palettes resolve the same warning tint")
 end
 
---- Every shipped layout is on a screen, and every review screen is on the
---- review model.
+--- Every registered layout is directly reachable on a categorized model.
 ---
 --- A layout only ships as a layout, and selecting one means setting the
 --- widget's Dashboard ID. In App mode that is not reachable from the main
@@ -612,8 +611,7 @@ end
 --- Setup and Screens once per layout, which is enough friction that nobody
 --- would look at it -- which is the whole point of it existing.
 ---
---- `MAX_CUSTOM_SCREENS` is 10 (`radio/src/dataconstants.h`). One model holds
---- standard layouts and diagnostics; two others cover the user-facing panels.
+--- `MAX_CUSTOM_SCREENS` is 10 (`radio/src/dataconstants.h`).
 local function testScreensReachEveryShippedLayout()
     -- The Layout setting is a CHOICE, which EdgeTX stores as a 1-based position
     -- in the list `layout_registry` builds from AEROGRID/layout-registry.txt. The
@@ -645,38 +643,50 @@ local function testScreensReachEveryShippedLayout()
     local models = {
         {
             filename = "model1.yml",
-            name = "AEROGRID STD",
-            layouts = { "Default", "Empty", "Diagnostics", "services", "services2", "Palette" },
+            name = "AG Overview",
+            layouts = { "Default", "sim", "sim2" },
         },
         {
             filename = "model2.yml",
-            name = "AEROGRID PANEL1",
+            name = "AG Flight",
             layouts = {
-                "review-rx-battery",
-                "review-flight-counter",
+                "review-model-identity",
                 "review-flight-mode",
                 "review-flight-timer",
+                "review-flight-counter",
+                "review-chart",
+            },
+        },
+        {
+            filename = "model3.yml",
+            name = "AG Power-Link",
+            layouts = {
+                "review-rx-battery",
+                "review-cell-sources",
+                "review-tx-battery",
                 "review-link-status",
                 "review-metric",
             },
         },
         {
-            filename = "model3.yml",
-            name = "AEROGRID PANEL2",
-            layouts = {
-                "review-model-identity",
-                "review-navigation",
-                "review-state",
-                "review-trim-panel",
-                "review-tx-battery",
-                "review-output",
-                "review-chart",
-            },
+            filename = "model4.yml",
+            name = "AG Navigation",
+            layouts = { "review-navigation" },
+        },
+        {
+            filename = "model5.yml",
+            name = "AG Controls",
+            layouts = { "review-output", "review-trim-panel" },
+        },
+        {
+            filename = "model6.yml",
+            name = "AG System",
+            layouts = { "Diagnostics", "services", "services2", "review-state", "states", "Palette", "Empty" },
         },
     }
     local selected = {}
     local panelReviews = {}
-    for index, model in ipairs(models) do
+    for _, model in ipairs(models) do
         assert(#model.name <= 15, model.filename .. " exceeds EdgeTX's LEN_MODEL_NAME")
         local text = readModel(model.filename)
         assert(string.find(text, 'name: "' .. model.name .. '"', 1, true), model.filename .. " has the wrong name")
@@ -693,9 +703,8 @@ local function testScreensReachEveryShippedLayout()
             assertEqual(layout, model.layouts[screen], model.filename .. " screen " .. screen)
             assert(not selected[layout], layout .. " is selected by more than one fixture screen")
             selected[layout] = true
-            if index > 1 then
-                local panelType =
-                    assert(string.match(layout, "^review%-(.+)$"), "review model selects a non-panel layout")
+            local panelType = string.match(layout, "^review%-(.+)$")
+            if panelType and panelType ~= "cell-sources" then
                 panelReviews[panelType] = true
                 local handle = assert(hostIo.open(developmentLayoutsPath .. layout .. ".yaml", "r"))
                 local yaml = handle:read("a")
@@ -716,10 +725,7 @@ local function testScreensReachEveryShippedLayout()
     local radioHandle = assert(hostIo.open(root .. "/tests/fixtures/sdcard/RADIO/radio.yml", "r"))
     local radioText = radioHandle:read("a")
     radioHandle:close()
-    assert(
-        string.find(radioText, 'currModelFilename: "model1.yml"', 1, true),
-        "fixture must start on the standard model"
-    )
+    assert(string.find(radioText, 'currModelFilename: "model1.yml"', 1, true), "fixture must start on AG Overview")
     assert(string.find(radioText, "manuallyEdited: 1", 1, true), "fixture radio settings must accept manual edits")
 
     local listingPath = root .. "/build/screen-layouts.txt"
@@ -757,9 +763,7 @@ local function testScreensReachEveryShippedLayout()
     fixtureListing:close()
     os.remove(listingPath)
 
-    -- The four product layouts are directly reachable; development fixtures
-    -- do not take dedicated screens away from standard layouts or panel reviews.
-    for _, stem in ipairs(shipped) do
+    for _, stem in ipairs(registered) do
         assert(selected[stem], stem .. " has no dedicated fixture screen")
     end
 
@@ -783,15 +787,13 @@ local function testScreensReachEveryShippedLayout()
     for name in listing:lines() do
         if string.match(name, "^model%d+%.yml$") then
             modelCount = modelCount + 1
-            assert(
-                name == "model1.yml" or name == "model2.yml" or name == "model3.yml",
-                "unexpected fixture model " .. name
-            )
+            local number = tonumber(string.match(name, "^model(%d+)%.yml$"))
+            assert(models[number] and models[number].filename == name, "unexpected fixture model " .. name)
         end
     end
     listing:close()
     os.remove(listingPath)
-    assertEqual(modelCount, 3, "fixture must contain exactly three models")
+    assertEqual(modelCount, 6, "fixture must contain exactly six models")
 end
 
 local function testShippedLayout()

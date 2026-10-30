@@ -18,6 +18,9 @@ local layout = { RUNTIME_API = 1 }
 layout.VERSION = 5
 
 function layout.normalizePanel(panel)
+    if panel.type == "flight-counter" and type(panel.config) == "table" then
+        panel.config.announcements = nil
+    end
     if panel.type == "navigation" and type(panel.config) == "table" then
         -- Former distance thresholds must never become satellite-count limits.
         panel.config.warning = nil

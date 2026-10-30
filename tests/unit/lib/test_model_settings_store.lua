@@ -17,6 +17,7 @@ local function fixture()
         end,
         flightConfig = config,
         verifiedFile = writer,
+        armedConfig = assert(loadfile(base .. "/lib/armed_service.lua"))(),
     }, operations)
     return store, files, operations, function(value)
         current = value
@@ -32,11 +33,12 @@ do
     local document, info = store:load("plane.yml")
     assert(info.missing and document.revision == 0 and document.flight == nil)
     assert(next(files) == nil, "opening a model draft must not create configuration")
-    local saved, result = store:save("plane.yml", 0, config.defaults())
+    local saved, result = store:save("plane.yml", 0, config.defaults(), "SFv")
     assert(saved, result)
     assert(result.revision == 1 and result.modelFilename == "plane.yml")
     assert(result.flight.motorSource == "ch3" and result.flight.history)
     assert(result.flight.smartDetection == false)
+    assert(result.armed == "SFv" and store:load("plane.yml").armed == "SFv")
     result.flight.motorSource = "ch1"
     assert(store:load("plane.yml").flight.motorSource == "ch3", "published tables must not mutate disk state")
     local draft = config.defaults()
@@ -44,12 +46,26 @@ do
     draft.smartDetection = true
     saved, result = store:save("plane.yml", 1, draft)
     assert(saved and result.revision == 2, result)
+    assert(result.armed == "SFv", "flight-only callers preserve saved model arming")
     assert(store:load("plane.yml").flight.smartDetection == true, "Smart survives verified save/reload")
     assert(yaml.parse(files[path() .. ".bak"]).flight.smartDetection == false)
     assert(yaml.parse(files[path() .. ".bak"]).revision == 1)
     saved, result = store:save("plane.yml", 1, draft)
-    assert(not saved and string.find(result, "reload", 1, true))
+    assert(not saved and string.find(result, "reopen", 1, true))
     assert(yaml.parse(files[path()]).revision == 2)
+end
+
+do
+    local store = fixture()
+    for _, value in ipairs({ 123, "ch5", "sa", "L00", "L65", "!ch3", "SF", true }) do
+        local saved = store:save("plane.yml", 0, config.defaults(), value)
+        assert(not saved, "non-switch arming must not be persisted: " .. tostring(value))
+    end
+    local saved, result = store:save("plane.yml", 0, config.defaults(), "!L64")
+    assert(saved and result.armed == "!L64", result)
+    saved, result = store:save("plane.yml", 1, config.defaults(), "")
+    assert(saved and result.armed == "", "explicit None must survive save/reload and suppress legacy switches")
+    assert(store:load("plane.yml").armed == "")
 end
 
 do
@@ -70,8 +86,14 @@ do
     local store, files = fixture()
     local legacy = config.defaults()
     legacy.smartDetection = nil
+    legacy.announcements = true
     files[path()] = assert(yaml.serialize({ version = 1, modelFilename = "plane.yml", revision = 3, flight = legacy }))
     assert(store:load("plane.yml").flight.smartDetection == false, "existing model files keep standard detection")
+    local loaded = store:load("plane.yml")
+    assert(loaded.flight.announcements == nil, "obsolete audio settings are ignored")
+    assert(config.key(loaded.flight) == config.key(config.defaults()), "obsolete audio settings cannot cause conflicts")
+    assert(store:save("plane.yml", 3, loaded.flight))
+    assert(yaml.parse(files[path()]).flight.announcements == nil, "obsolete audio settings are not persisted")
 end
 
 do

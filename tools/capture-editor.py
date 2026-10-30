@@ -29,8 +29,8 @@ SCENES = SCENES + PANEL_SETTINGS_SCENES
 STITCHED_SCENES = ("settings", "state-settings", "state-entry", "state-condition", "metric-entry", "chart-metric-entry") + PANEL_SETTINGS_SCENES
 THEME_SCENES = ("theme-modern-dark", "theme-modern-light", "theme-custom")
 DASHBOARD_SCENES = ("dashboard",)
-FLIGHT_SETTINGS_SCENES = ("aero-menu", "aero-ui-setup", "model-settings", "model-settings-bottom",
-                         "model-settings-save", "model-settings-cancel",
+FLIGHT_SETTINGS_SCENES = ("aero-menu", "aero-menu-selected", "aero-ui-setup", "model-settings", "model-settings-motor", "model-settings-bottom", "model-settings-switch", "model-settings-switch-select",
+                         "model-settings-autosave", "model-settings-exit",
                          "native-app-icon", "aero-fullscreen-icon")
 DASHBOARD_INPUTS = """model.setGlobalVariable(8, 0, 42)
 model.setGlobalVariable(0, 0, 30)
@@ -380,14 +380,30 @@ panels:
         refresh(context, widgetEvent, touchState)
         if #context.errors > 0 then error(table.concat(context.errors, "\\n")) end
         local scene = "SCENE"
+        if string.sub(scene, 1, 21) == "model-settings-switch" and not context.captureSwitchConfigured then
+            model.setLogicalSwitch(19, { func = 17, v1 = 0, v2 = 0, andSwitch = 0, delay = 0, duration = 0 })
+            context.captureSwitchConfigured = true
+        end
         local expectedFullscreen = scene ~= "native-app-icon"
         if isFullScreen() ~= expectedFullscreen or context.stage or context.reloadState or context.captureReady then return end
         if scene == "aero-fullscreen-icon" and not context.aerogridMenu then return end
-        if scene == "model-settings-save" or scene == "model-settings-cancel" then
-            if context.modelSettingsUi then context.captureDialogOpened = true; return end
-            if not context.captureDialogOpened then return end
-            local saved = context.flightBroker.document.flight ~= nil
-            assert(saved == (scene == "model-settings-save"), "unexpected Model settings persistence")
+        if scene == "aero-menu" or scene == "aero-menu-selected" then
+            if not context.aerogridMenu or not context.aerogridMenu.open then return end
+            if scene == "aero-menu-selected" and context.aerogridMenu.selected ~= 2 then return end
+        end
+        if scene == "model-settings-switch-select" then
+            local flight = context.flightBroker.document.flight
+            if not flight or flight.flightSwitch ~= "L20" then return end
+        end
+        if scene == "model-settings-autosave" or scene == "model-settings-exit" then
+            local flight = context.flightBroker.document.flight
+            if not flight or not flight.motorReversed then return end
+            if scene == "model-settings-autosave" then
+                assert(context.modelSettingsUi, "field save must leave Model settings open")
+            elseif context.modelSettingsUi then
+                context.modelSettingsUiModule.handle(context, EVT_VIRTUAL_EXIT)
+                return
+            end
         elseif string.sub(scene, 1, 14) == "model-settings" and not context.modelSettingsUi then
             return
         end
@@ -541,6 +557,31 @@ def verify_menu_icon_pair(native, fullscreen):
             "matching_rows": 45, "reserved_footprint": [47, 45]}
 
 
+def verify_menu_grid(rows, selected):
+    """Check the real TX16S frame, including inverse artwork and centered title."""
+    pixel = lambda x, y: rows[y][x * 3:x * 3 + 3]
+    black, white = b"\0\0\0", b"\xff\xff\xff"
+    if pixel(134, 53) != black or pixel(345, 172) != black:
+        raise RuntimeError("AeroGrid icon grid must have a black rectangular popup below the header")
+    if any(pixel(x, 50) != white for x in range(134, 346)):
+        raise RuntimeError("AeroGrid menu must use the native full-width title rule")
+    if pixel(183, 54) != white or pixel(296, 54) != white or pixel(239, 72) != white:
+        raise RuntimeError("AeroGrid menu must use the native tapered title tab")
+    title = [x for y in range(54, 78) for x in range(134, 346) if pixel(x, y) == white]
+    if not title or abs((min(title) + max(title)) / 2 - 239.5) > 2:
+        raise RuntimeError("AeroGrid menu title must be visibly centered")
+    for index, left in enumerate((146, 246), 1):
+        background, foreground = (white, black) if index == selected else (black, white)
+        if pixel(left + 3, 84) != background:
+            raise RuntimeError("AeroGrid selected tile must invert to white")
+        # A static :set(file=...) silently fails to reload StaticImage in 2.12.
+        # Require actual opposite-color glyph pixels, not just a valid PNG path.
+        icon = [pixel(x, y) for y in range(87, 117) for x in range(left + 29, left + 59)]
+        if icon.count(foreground) < 30 or icon.count(background) < 30:
+            raise RuntimeError("AeroGrid tile icon is missing or has the wrong selection color")
+    return {"popup": [134, 49, 212, 124], "selected": selected, "icons": ["model", "theme"]}
+
+
 def dialog_geometry(rows):
     """Locate the native dialog's title bar and scrolling body in one frame."""
     pixel = lambda x, y: rows[y][x * 3:x * 3 + 3]
@@ -611,18 +652,27 @@ def capture(executable, library, directory, scene, shift=0):
         elif scene == "aero-fullscreen-icon":
             script = "500 200 140 1\n600 200 140 0\n"
         if scene.startswith("model-settings"):
-            script += "1100 210 135 1\n1110 210 135 0\n"
+            script += "1100 190 100 1\n1120 190 100 0\n"
         elif scene == "aero-ui-setup":
-            script += "1100 210 170 1\n1110 210 170 0\n"
-        if scene in ("model-settings-bottom", "model-settings-save", "model-settings-cancel"):
-            for tick in (1450, 1750, 2050):
+            script += "1100 290 100 1\n1120 290 100 0\n"
+        elif scene == "aero-menu-selected":
+            # Move after pressing so the second tile is highlighted without
+            # activating UI setup when the gesture ends.
+            script += "1100 288 120 1\n1110 300 122 1\n1120 300 122 0\n"
+        if scene in ("model-settings-bottom", "model-settings-switch", "model-settings-switch-select"):
+            for tick in (1350, 1550, 1750, 1950, 2150, 2350):
                 script += (f"{tick} 390 220 1\n{tick + 20} 390 170 1\n"
                            f"{tick + 40} 390 110 1\n{tick + 60} 390 65 1\n"
                            f"{tick + 80} 390 65 0\n")
-        if scene in ("model-settings-save", "model-settings-cancel"):
-            script += "2250 270 150 1\n2260 270 150 0\n"
-            x = 140 if scene == "model-settings-save" else 330
-            script += f"2400 {x} 225 1\n2410 {x} 225 0\n"
+            if scene.startswith("model-settings-switch"):
+                script += "2600 320 62 1\n2620 320 62 0\n"
+            if scene == "model-settings-switch-select":
+                script += "2770 220 170 1\n2790 220 170 0\n"
+        if scene in ("model-settings-autosave", "model-settings-exit", "model-settings-motor"):
+            script += ("1450 390 220 1\n1470 390 170 1\n"
+                       "1490 390 110 1\n1510 390 65 1\n1530 390 65 0\n")
+            if scene != "model-settings-motor":
+                script += "1750 270 110 1\n1770 270 110 0\n"
         actions.write_text(script)
         mode = "actions=" + str(actions)
     if scene == "navigation-location":
@@ -646,13 +696,14 @@ def capture(executable, library, directory, scene, shift=0):
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
             raise RuntimeError(f"Capture failed; inspect {directory / 'simulator.log'}") from error
     pixels = frame.read_bytes()
-    if scene in ("model-settings-save", "model-settings-cancel"):
-        settings = list((sd / "AEROGRID/models").glob("*.yaml"))
-        if scene == "model-settings-save":
-            if len(settings) != 1 or "history: false" not in settings[0].read_text():
-                raise RuntimeError("Native Save did not persist the edited model draft")
-        elif settings:
-            raise RuntimeError("Native Cancel unexpectedly persisted a model draft")
+    if scene == "model-settings-switch-select":
+        settings = sd / "AEROGRID/models" / ("model1.yml".encode().hex() + ".yaml")
+        if not settings.is_file() or 'flightSwitch: "L20"' not in settings.read_text():
+            raise RuntimeError("Native logical switch selection was not persisted")
+    if scene in ("model-settings-autosave", "model-settings-exit"):
+        settings = sd / "AEROGRID/models" / ("model1.yml".encode().hex() + ".yaml")
+        if not settings.is_file() or "motorReversed: true" not in settings.read_text():
+            raise RuntimeError("Model field change was not persisted automatically")
     if len(pixels) != 480 * 272 * 2:
         raise RuntimeError("Unexpected framebuffer size")
     drawer = None
@@ -660,7 +711,11 @@ def capture(executable, library, directory, scene, shift=0):
         words = line.split()
         if words[:1] == ["drawer"]:
             drawer = dict(zip(words[1::2], map(int, words[2::2])))
-    return decode(pixels), drawer
+    rows = decode(pixels)
+    if scene in ("aero-menu", "aero-menu-selected"):
+        report = verify_menu_grid(rows, 1 if scene == "aero-menu" else 2)
+        (directory / "menu-grid.json").write_text(json.dumps(report, indent=2) + "\n")
+    return rows, drawer
 
 
 def main():
