@@ -83,6 +83,9 @@ screen.
 
 ### Upgrade
 
+If you changed or added files in `/WIDGETS/AeroGrid/`, back them up first:
+the update discards those changes.
+
 1. Remove the old `/WIDGETS/AeroGrid/` folder from the SD card rather than
    merging new files into the old installation. This also removes stale
    compiled Lua files.
