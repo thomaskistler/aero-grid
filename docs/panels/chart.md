@@ -7,7 +7,8 @@
 Records up to three numeric EdgeTX sources on one chart while armed or in flight.
 The legend shows each recorded value and its minimum and maximum.
 Wide layouts keep the legend on the right. Square and tall layouts put it above
-the full-width plot, with two or three metrics arranged left to right.
+the full-width plot, with two or three metrics arranged left to right. Each metric
+uses two lines: its name and value, then its minimum and maximum.
 Use separate panels for separate charts.
 Select **Arm switch** in **AeroGrid → Model settings**; changes save automatically.
 Until model arming has been saved, an existing panel arm switch remains in use
