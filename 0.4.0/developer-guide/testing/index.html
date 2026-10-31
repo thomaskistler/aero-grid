@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        <link rel="canonical" href="https://thomaskistler.github.io/aero-grid/0.4.0/developer-guide/testing/">
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>Test and debug - AeroGrid</title>
+        <link href="../../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../../css/brands.min.css" rel="stylesheet">
+        <link href="../../css/solid.min.css" rel="stylesheet">
+        <link href="../../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../../stylesheets/aerogrid.css" rel="stylesheet">
+        <link href="../../stylesheets/versions.css" rel="stylesheet">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-RMCKML1PKS"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+
+          gtag('config', "G-RMCKML1PKS");
+        </script> <meta name="aerogrid-site-root" content="/aero-grid/">
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-light bg-light">
+            <div class="container">
+                <a class="navbar-brand" href="../..">AeroGrid</a><div class="ag-docs-version">
+  <select aria-label="Documentation version"
+          data-docs-root="/aero-grid/"
+          data-docs-version="0.4.0"
+          disabled>
+    <option value="0.4.0">v0.4.0</option>
+  </select>
+  <span class="ag-docs-version-status" role="status"></span>
+</div>
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+                        <!-- Main navigation -->
+                        <ul class="nav navbar-nav">
+                            <li class="nav-item">
+                                <a href="../.." class="nav-link">Home</a>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown"  aria-expanded="false">User Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../user-guide/installation/" class="dropdown-item">Install and upgrade</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/add-dashboard/" class="dropdown-item">Add a dashboard</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/edit-dashboard/" class="dropdown-item">Edit a dashboard on the radio</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/customize-themes/" class="dropdown-item">Customize themes</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/troubleshooting/" class="dropdown-item">Troubleshoot and file bugs</a>
+</li>
+                                </ul>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown"  aria-expanded="false">Reference Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../reference-guide/" class="dropdown-item">Overview</a>
+</li>
+                                    
+  <li class="dropdown-submenu">
+    <a href="#" class="dropdown-item">Panels</a>
+    <ul class="dropdown-menu">
+            
+<li>
+    <a href="../../panels/output/" class="dropdown-item">Channel output</a>
+</li>
+            
+<li>
+    <a href="../../panels/flight-counter/" class="dropdown-item">Flight counter</a>
+</li>
+            
+<li>
+    <a href="../../panels/flight-mode/" class="dropdown-item">Flight mode</a>
+</li>
+            
+<li>
+    <a href="../../panels/flight-timer/" class="dropdown-item">Flight timer</a>
+</li>
+            
+<li>
+    <a href="../../panels/host-diagnostics/" class="dropdown-item">Host diagnostics</a>
+</li>
+            
+<li>
+    <a href="../../panels/link-status/" class="dropdown-item">Link status</a>
+</li>
+            
+<li>
+    <a href="../../panels/metric/" class="dropdown-item">Metric</a>
+</li>
+            
+<li>
+    <a href="../../panels/model-identity/" class="dropdown-item">Model identity</a>
+</li>
+            
+<li>
+    <a href="../../panels/navigation/" class="dropdown-item">Navigation</a>
+</li>
+            
+<li>
+    <a href="../../panels/rx-battery/" class="dropdown-item">RX battery</a>
+</li>
+            
+<li>
+    <a href="../../panels/service-probe/" class="dropdown-item">Service probe</a>
+</li>
+            
+<li>
+    <a href="../../panels/state/" class="dropdown-item">State</a>
+</li>
+            
+<li>
+    <a href="../../panels/trim-panel/" class="dropdown-item">Trim</a>
+</li>
+            
+<li>
+    <a href="../../panels/tx-battery/" class="dropdown-item">TX battery</a>
+</li>
+    </ul>
+  </li>
+                                    
+<li>
+    <a href="../../reference-guide/yaml/" class="dropdown-item">YAML reference</a>
+</li>
+                                </ul>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle active" aria-current="page" role="button" data-bs-toggle="dropdown"  aria-expanded="false">Developer Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../build/" class="dropdown-item">Check out and build</a>
+</li>
+                                    
+<li>
+    <a href="./" class="dropdown-item active" aria-current="page">Test and debug</a>
+</li>
+                                    
+<li>
+    <a href="../simulators/" class="dropdown-item">Run and test in simulators</a>
+</li>
+                                    
+<li>
+    <a href="../architecture/" class="dropdown-item">Repository and architecture</a>
+</li>
+                                    
+<li>
+    <a href="../tools/" class="dropdown-item">Project tools</a>
+</li>
+                                    
+<li>
+    <a href="../videos/" class="dropdown-item">Tutorial videos</a>
+</li>
+                                    
+<li>
+    <a href="../contributing/" class="dropdown-item">Issues, changes, and releases</a>
+</li>
+                                </ul>
+                            </li>
+                        </ul>
+
+                    <ul class="nav navbar-nav ms-md-auto">
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+                                <i class="fa fa-search"></i> Search
+                            </a>
+                        </li>
+                            <li class="nav-item">
+                                <a rel="prev" href="../build/" class="nav-link">
+                                    <i class="fa fa-arrow-left"></i> Previous
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a rel="next" href="../simulators/" class="nav-link">
+                                    Next <i class="fa fa-arrow-right"></i>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="https://github.com/thomaskistler/aero-grid" class="nav-link"><i class="fa-brands fa-github"></i> GitHub</a>
+                            </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+                    <div class="col-md-3">
+
+<nav class="navbar-expand-md bs-sidebar hidden-print affix" aria-label="Documentation">
+  <div class="navbar-header">
+    <button type="button" class="navbar-toggler collapsed" data-bs-toggle="collapse" data-bs-target="#toc-collapse" aria-controls="toc-collapse" aria-expanded="false" aria-label="Toggle documentation navigation">
+      <span class="fa fa-angle-down" aria-hidden="true"></span>
+    </button>
+  </div>
+  <div id="toc-collapse" class="navbar-collapse collapse card bg-body-tertiary">
+    <ul class="nav flex-column">
+      
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../..">Home</a>
+  </li>
+
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">User Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/installation/">Install and upgrade</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/add-dashboard/">Add a dashboard</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/edit-dashboard/">Edit a dashboard on the radio</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/customize-themes/">Customize themes</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/troubleshooting/">Troubleshoot and file bugs</a>
+  </li>
+
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Reference Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../reference-guide/">Overview</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/output/">Channel output</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/flight-counter/">Flight counter</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/flight-mode/">Flight mode</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/flight-timer/">Flight timer</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/host-diagnostics/">Host diagnostics</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/link-status/">Link status</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/metric/">Metric</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/model-identity/">Model identity</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/navigation/">Navigation</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/rx-battery/">RX battery</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/service-probe/">Service probe</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/state/">State</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/trim-panel/">Trim</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/tx-battery/">TX battery</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../reference-guide/yaml/">YAML reference</a>
+  </li>
+
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Developer Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../build/">Check out and build</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link current" href="./" aria-current="page">Test and debug</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../simulators/">Run and test in simulators</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../architecture/">Repository and architecture</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../tools/">Project tools</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../videos/">Tutorial videos</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../contributing/">Issues, changes, and releases</a>
+  </li>
+
+        </ul>
+      </li>
+    </ul>
+  </div>
+</nav></div>
+                    <div class="col-md-9" role="main">
+
+<h1 id="test-and-debug">Test and debug</h1>
+<p>Use the quickest test that exercises your change while iterating, then run the
+broader checks before submitting. Mock tests validate logic; simulators validate
+the actual firmware UI; a radio validates hardware behavior. None substitutes
+for all the others.</p>
+<h2 id="run-the-automated-lua-suites">Run the automated Lua suites</h2>
+<pre><code class="language-sh">make test
+make check
+</code></pre>
+<p><code>make test</code> checks the Python test runner, then executes every <code>test_*.lua</code>
+beneath <code>tests/</code>, excluding support modules. Each Lua suite gets a fresh
+<code>lupa.lua53.LuaRuntime</code> and the repository root as its chunk argument.</p>
+<p>The runner captures console lines beginning with <code>[AeroGrid] ERROR</code> so expected
+negative cases do not clutter successful runs. Other output, including progress
+and performance measurements, remains visible. If a suite fails, its captured
+logs and file path are printed to stderr before the original traceback, and the
+run stops with a non-zero exit status. Logs from earlier passing suites are
+discarded. This affects only <code>tests/run.py</code>; production logging is unchanged.
+Tests that replace <code>print</code> themselves still own the output they intercept.</p>
+<p>Every suite runs once with the string metatable removed to resemble EdgeTX.
+Runtime code should use
+<code>string.sub(value, ...)</code>, not assume <code>value:sub(...)</code> works on the radio.</p>
+<p><code>make check</code> runs those same tests and then parses all source/test Lua with
+the detected compiler. The runner explicitly selects Lua 5.3 to match EdgeTX,
+rather than <code>lupa</code>'s default runtime, which can change between releases.
+Mock behavior tests still do not replace firmware compiler validation. Install the
+<a href="../build/#install-the-validation-tools">compiler</a>, or specify it:</p>
+<pre><code class="language-sh">make check LUA_COMPILER=/absolute/path/to/edgetx-luac
+</code></pre>
+<h2 id="choose-the-right-test-layer">Choose the right test layer</h2>
+<table>
+<thead>
+<tr>
+<th>Change</th>
+<th>Start here</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>YAML, layout validation, geometry, or persistence</td>
+<td><code>tests/unit/lib/</code> and <code>tests/support/assertions.lua</code>.</td>
+</tr>
+<tr>
+<td>Source resolution, freshness, model/control/navigation data</td>
+<td>The corresponding service suite in <code>tests/unit/lib/</code>.</td>
+</tr>
+<tr>
+<td>Panel settings or presentation</td>
+<td><code>tests/unit/panels/</code>, then the relevant <code>tests/integration/widget/test_*_review.lua</code>.</td>
+</tr>
+<tr>
+<td>Host load/reload, failure isolation, scheduling, or callback budgets</td>
+<td><code>tests/integration/test_widget.lua</code>.</td>
+</tr>
+<tr>
+<td>Editor commands and settings dialogs</td>
+<td><code>tests/unit/lib/test_editor.lua</code> and <code>tests/integration/test_editor_ui.lua</code>.</td>
+</tr>
+<tr>
+<td>Installing panels from the editor</td>
+<td><code>tests/integration/test_panel_installation.lua</code>.</td>
+</tr>
+<tr>
+<td>Shared rendering or reflow</td>
+<td>Builder-matrix, panel-reflow, font-callback, and resource-stability integration suites.</td>
+</tr>
+</tbody>
+</table>
+<p>The runtime suite under <code>tests/unit/runtime/</code> is split into
+contracts/settings/documentation, palette/state, service behavior, and
+typography/geometry suites. <code>tests/support/runtime_fixture.lua</code> preserves the
+minimal constants/LCD surface: these tests deliberately do not install LVGL or
+radio APIs. The full-widget integration suite remains intact so budgeting,
+cross-panel agreement, and deferred cleanup are still exercised together.</p>
+<p><code>test_module_composition.lua</code> checks direct API references, per-instance state,
+and reading/unit reconciliation. <code>test_service_subscriptions.lua</code> checks stable
+subscription identity across domain services. <code>test_runtime_modules.lua</code> checks
+missing/incompatible coordination and visual dependencies, including error
+visibility after resizing.</p>
+<p>Reuse <code>tests/support/widget_fixture.lua</code> to load a host with mocked APIs.
+The installation suite iterates the production editor catalog (not a separate
+test registry). Each panel starts on an empty 4x4 grid, allowing the editor to
+choose a supported span, and passes through the native picker, configuration,
+live preview, Save/apply, and a fresh widget load of the persisted layout.
+Metric additionally appends its first blank entry, evaluates its summary, and
+selects a real source before saving. Display-property callbacks are evaluated
+alongside widget refreshes; retained failures and caught <code>[AeroGrid] ERROR</code> logs
+fail this positive-path suite without forbidding expected errors in other tests.
+This is desktop mock coverage, not a native LVGL or hardware installation test.</p>
+<p>Use <code>tests/support/edgetx.lua</code> for firmware behavior and LVGL object inspection
+instead of inventing another mock. That module separates <strong>firmware claims</strong>
+(with source-file/symbol citations) from invented test <strong>scaffold</strong> values.
+If a new regression depends on how EdgeTX behaves, verify and cite the firmware
+implementation; making the mock agree with an assumption can hide a real bug.</p>
+<h2 id="performance-and-resource-regressions">Performance and resource regressions</h2>
+<p><code>tests/integration/test_widget.lua</code> measures widget callbacks with instruction
+hooks, including dense sixteen-panel layouts, service work, loading, and reflow.
+It fails at <strong>15,000 instructions or more</strong>, reserving headroom against EdgeTX's 20,000-instruction
+callback budget. Read the printed <code>budget headroom</code> and <code>steady state</code> results
+when changing scheduling or rendering.</p>
+<p>The resource suites check reload collectibility, object counts, sustained
+updates, and font callback retention. They cannot measure native LVGL/bitmap
+memory, firmware GC cadence, or radio timing. A short green mock run is not
+evidence of long-term hardware stability.</p>
+<h2 id="python-tooling-tests">Python tooling tests</h2>
+<p>Release packaging uses only Python's standard library:</p>
+<pre><code class="language-sh">python3 -m unittest discover -s tools -p 'test_release_*.py'
+</code></pre>
+<p>Capture-recipe tests need the optional PyYAML environment, but not Companion
+or the native screenshot runner:</p>
+<pre><code class="language-sh">make capture-setup
+build/capture-venv/bin/python -m unittest discover -s tools -p 'test_capture_*.py'
+</code></pre>
+<p>Neither command is included in <code>make test</code>. CI runs the release-packaging
+tests; run capture-recipe tests locally when changing recipes or adapters.</p>
+<h2 id="lint-and-formatting">Lint and formatting</h2>
+<pre><code class="language-sh">make lint
+stylua --check src/WIDGETS tests
+</code></pre>
+<p><code>make lint</code> uses <code>lint-config.lua</code>, including the EdgeTX globals the runtime
+expects. <code>stylua.toml</code> defines repository formatting.
+<code>make format</code> <strong>changes files</strong>; inspect the diff afterwards.
+Use StyLua 2.5.2 to match CI.</p>
+<h2 id="debug-a-failure">Debug a failure</h2>
+<p>For a mock assertion, start with the failing file and traceback, reproduce it
+with <code>make test</code>, and minimize the fixture. Check whether the failure
+is in code, expected behavior, or an inaccurate mock before changing expectations.</p>
+<p>For a firmware error, use the simulator's logs and the <strong>Diagnostics</strong>
+layout. Record the loaded package identity, failing module/source, exact
+message, model, and layout. An unavailable sensor is not automatically a Lua
+failure: verify its binding and link state first.</p>
+<p>If the display ignores your code change, check the active SD path, saved layout
+override, and stale <code>.luac</code> before investigating rendering.</p>
+<h3 id="simulator-logs-and-caught-errors">Simulator logs and caught errors</h3>
+<p>In Companion 2.12's simulator, open <strong>View &gt; Debug Output</strong> (<strong>F6</strong>, or
+<strong>Fn+F6</strong> on some Macs). Disable its filter initially so it does not hide
+messages. Firmware Lua errors and Lua <code>print(...)</code> output go to this console.
+For a persistent log, enable <strong>Radio Firmware (in Simulator)</strong> in Companion's
+application preferences and choose an <strong>Output Logs Folder</strong> before starting
+the simulation. Files are named <code>FirmwareDebug_&lt;timestamp&gt;.log</code>.</p>
+<p>AeroGrid mirrors caught runtime, panel, and editor validation/save errors to
+Lua <code>print(...)</code>, prefixed with <code>[AeroGrid] ERROR</code>. Messages include the layout,
+model filename when known, operation, and panel/setting details when relevant.
+Identical messages are suppressed per widget instance across layout reloads.
+The last 64 distinct messages are retained for deduplication; an older message
+may be logged again after eviction or when a new widget instance is created.
+Disable console filters or include <code>AeroGrid</code> to see these messages.</p>
+<p>Logging does not replace the live host's retained failures, dashboard error
+overlay, or editor validation messages. Preview errors still appear in
+<strong>Panel preview failed</strong> messages; open the details to read the complete
+explanation. AeroGrid does not write a separate persistent error file; use
+Companion's firmware logging option above when persistence is needed.</p>
+<p>The <strong>Diagnostics</strong> layout shows the host it belongs to, not the errors of
+another dashboard. To inspect a failing dashboard's own panels, add a
+<strong>Host diagnostics</strong> panel there and select its <strong>panels</strong> section. It lists
+rejected and failed panels first, including their reasons. The other sections
+show package/layout identity, theme notices, and source bindings.</p>
+<p>For Navigation first-arm home failures, select <strong>log</strong> on a Host diagnostics
+panel before reproducing the problem. This enables a radio-wide, in-memory
+event buffer, including events from Navigation services on hidden screens.
+It is independent of the per-widget console-error deduplication above.
+Entries identify uptime, layout/host instance, panel, and captured/missed
+or switch unavailable. Each event records <code>now</code>, availability, freshness,
+stale state, value, <code>updatedAt</code>, reported delay, and coordinate validity,
+never coordinates. Inputs describe GPS for capture attempts or the arm
+switch for switch-unavailable events; inapplicable fields appear as <code>nil</code>.
+Timestamps are 10 ms ticks; delay is seconds.
+Calculate poll age as <code>now - updatedAt</code> and combined age as
+<code>delay * 100 + now - updatedAt</code>. Capture policy is not relaxed for diagnosis. <strong>Maximum log
+entries</strong> defaults to 64 (1–256); the largest active log panel setting wins.
+In widget fullscreen, tap the log panel and use drag/wheel scrolling to read
+a stable snapshot; Close/RTN dismisses it. Reopen for newer events. Removing
+all log panels stops recording. The buffer is never saved to the SD card
+and is lost when the radio restarts or the widget script unloads.</p>
+<p>The unit and widget-integration <code>test_diagnostics_log.lua</code> suites,
+<code>test_host_diagnostics.lua</code>, and the Navigation service suite cover
+retention, multi-host activation, hidden-screen capture
+logging, viewer interaction, wrapping, and the strict 15,000-instruction
+callback ceiling. These are mocked checks, not evidence of radio timing or
+native LVGL behavior; reproduce the original symptom on hardware with the
+log enabled to obtain that evidence.</p>
+<p>The native capture tools already redirect simulator output to
+<code>build/doc-capture/&lt;panel&gt;/simulator.log</code> or
+<code>build/editor-capture/&lt;scene&gt;/simulator.log</code>; these are separate from an
+interactive Companion session.</p>
+<h2 id="validate-on-a-radio-when-needed">Validate on a radio when needed</h2>
+<p>Hardware-sensitive work includes native
+resource lifetime, telemetry freshness/recovery, timer behavior, and flight
+count persistence. Record radio/firmware/package versions, layout, duration,
+memory/CPU observations, and receiver state; distinguish actual telemetry from
+synthetic inputs.</p>
+<p>Do not infer broader radio support from the TX16S fixture. Use the release
+package and <a href="../../user-guide/installation/">installation instructions</a> for a
+hardware check, with your custom layouts backed up before replacement.</p></div>
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+                <p>Copyright &copy; AeroGrid contributors. GPL-2.0-only.</p>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+        <script src="../../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../../js/base.js"></script>
+        <script src="../../javascripts/versions.mjs" type="module"></script>
+        <script src="../../search/main.js"></script>
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

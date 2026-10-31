@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        <link rel="canonical" href="https://thomaskistler.github.io/aero-grid/0.4.0/panels/navigation/">
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>Navigation - AeroGrid</title>
+        <link href="../../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../../css/brands.min.css" rel="stylesheet">
+        <link href="../../css/solid.min.css" rel="stylesheet">
+        <link href="../../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../../stylesheets/aerogrid.css" rel="stylesheet">
+        <link href="../../stylesheets/versions.css" rel="stylesheet">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-RMCKML1PKS"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+
+          gtag('config', "G-RMCKML1PKS");
+        </script> <meta name="aerogrid-site-root" content="/aero-grid/">
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-light bg-light">
+            <div class="container">
+                <a class="navbar-brand" href="../..">AeroGrid</a><div class="ag-docs-version">
+  <select aria-label="Documentation version"
+          data-docs-root="/aero-grid/"
+          data-docs-version="0.4.0"
+          disabled>
+    <option value="0.4.0">v0.4.0</option>
+  </select>
+  <span class="ag-docs-version-status" role="status"></span>
+</div>
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+                        <!-- Main navigation -->
+                        <ul class="nav navbar-nav">
+                            <li class="nav-item">
+                                <a href="../.." class="nav-link">Home</a>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown"  aria-expanded="false">User Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../user-guide/installation/" class="dropdown-item">Install and upgrade</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/add-dashboard/" class="dropdown-item">Add a dashboard</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/edit-dashboard/" class="dropdown-item">Edit a dashboard on the radio</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/customize-themes/" class="dropdown-item">Customize themes</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/troubleshooting/" class="dropdown-item">Troubleshoot and file bugs</a>
+</li>
+                                </ul>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle active" aria-current="page" role="button" data-bs-toggle="dropdown"  aria-expanded="false">Reference Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../reference-guide/" class="dropdown-item">Overview</a>
+</li>
+                                    
+  <li class="dropdown-submenu">
+    <a href="#" class="dropdown-item">Panels</a>
+    <ul class="dropdown-menu">
+            
+<li>
+    <a href="../output/" class="dropdown-item">Channel output</a>
+</li>
+            
+<li>
+    <a href="../flight-counter/" class="dropdown-item">Flight counter</a>
+</li>
+            
+<li>
+    <a href="../flight-mode/" class="dropdown-item">Flight mode</a>
+</li>
+            
+<li>
+    <a href="../flight-timer/" class="dropdown-item">Flight timer</a>
+</li>
+            
+<li>
+    <a href="../host-diagnostics/" class="dropdown-item">Host diagnostics</a>
+</li>
+            
+<li>
+    <a href="../link-status/" class="dropdown-item">Link status</a>
+</li>
+            
+<li>
+    <a href="../metric/" class="dropdown-item">Metric</a>
+</li>
+            
+<li>
+    <a href="../model-identity/" class="dropdown-item">Model identity</a>
+</li>
+            
+<li>
+    <a href="./" class="dropdown-item active" aria-current="page">Navigation</a>
+</li>
+            
+<li>
+    <a href="../rx-battery/" class="dropdown-item">RX battery</a>
+</li>
+            
+<li>
+    <a href="../service-probe/" class="dropdown-item">Service probe</a>
+</li>
+            
+<li>
+    <a href="../state/" class="dropdown-item">State</a>
+</li>
+            
+<li>
+    <a href="../trim-panel/" class="dropdown-item">Trim</a>
+</li>
+            
+<li>
+    <a href="../tx-battery/" class="dropdown-item">TX battery</a>
+</li>
+    </ul>
+  </li>
+                                    
+<li>
+    <a href="../../reference-guide/yaml/" class="dropdown-item">YAML reference</a>
+</li>
+                                </ul>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown"  aria-expanded="false">Developer Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../developer-guide/build/" class="dropdown-item">Check out and build</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/testing/" class="dropdown-item">Test and debug</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/simulators/" class="dropdown-item">Run and test in simulators</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/architecture/" class="dropdown-item">Repository and architecture</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/tools/" class="dropdown-item">Project tools</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/videos/" class="dropdown-item">Tutorial videos</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/contributing/" class="dropdown-item">Issues, changes, and releases</a>
+</li>
+                                </ul>
+                            </li>
+                        </ul>
+
+                    <ul class="nav navbar-nav ms-md-auto">
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+                                <i class="fa fa-search"></i> Search
+                            </a>
+                        </li>
+                            <li class="nav-item">
+                                <a rel="prev" href="../model-identity/" class="nav-link">
+                                    <i class="fa fa-arrow-left"></i> Previous
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a rel="next" href="../rx-battery/" class="nav-link">
+                                    Next <i class="fa fa-arrow-right"></i>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="https://github.com/thomaskistler/aero-grid" class="nav-link"><i class="fa-brands fa-github"></i> GitHub</a>
+                            </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+                    <div class="col-md-3">
+
+<nav class="navbar-expand-md bs-sidebar hidden-print affix" aria-label="Documentation">
+  <div class="navbar-header">
+    <button type="button" class="navbar-toggler collapsed" data-bs-toggle="collapse" data-bs-target="#toc-collapse" aria-controls="toc-collapse" aria-expanded="false" aria-label="Toggle documentation navigation">
+      <span class="fa fa-angle-down" aria-hidden="true"></span>
+    </button>
+  </div>
+  <div id="toc-collapse" class="navbar-collapse collapse card bg-body-tertiary">
+    <ul class="nav flex-column">
+      
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../..">Home</a>
+  </li>
+
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">User Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/installation/">Install and upgrade</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/add-dashboard/">Add a dashboard</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/edit-dashboard/">Edit a dashboard on the radio</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/customize-themes/">Customize themes</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/troubleshooting/">Troubleshoot and file bugs</a>
+  </li>
+
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Reference Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../reference-guide/">Overview</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../output/">Channel output</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../flight-counter/">Flight counter</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../flight-mode/">Flight mode</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../flight-timer/">Flight timer</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../host-diagnostics/">Host diagnostics</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../link-status/">Link status</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../metric/">Metric</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../model-identity/">Model identity</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link current" href="./" aria-current="page">Navigation</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../rx-battery/">RX battery</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../service-probe/">Service probe</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../state/">State</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../trim-panel/">Trim</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../tx-battery/">TX battery</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../reference-guide/yaml/">YAML reference</a>
+  </li>
+
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Developer Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/build/">Check out and build</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/testing/">Test and debug</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/simulators/">Run and test in simulators</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/architecture/">Repository and architecture</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/tools/">Project tools</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/videos/">Tutorial videos</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/contributing/">Issues, changes, and releases</a>
+  </li>
+
+        </ul>
+      </li>
+    </ul>
+  </div>
+</nav></div>
+                    <div class="col-md-9" role="main">
+
+<h1 id="navigation">Navigation</h1>
+<table>
+<thead>
+<tr>
+<th>1x2</th>
+<th>2x1</th>
+<th>2x2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><img alt="Navigation at 1x2" src="../../assets/panels/navigation/1x2.png" /></td>
+<td><img alt="Navigation at 2x1" src="../../assets/panels/navigation/2x1.png" /></td>
+<td><img alt="Navigation at 2x2" src="../../assets/panels/navigation/2x2.png" /></td>
+</tr>
+</tbody>
+</table>
+<p>Shows distance from home and the north-up bearing from home toward the model,
+with optional GPS coordinates and satellite count. Bearing is not aircraft
+heading, transmitter orientation, or a return-home instruction.</p>
+<h2 id="settings">Settings</h2>
+<p><img alt="Navigation panel settings" src="../../assets/editor/navigation-settings.png" /></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Label</strong></td>
+<td>NAV</td>
+<td>Panel heading.</td>
+</tr>
+<tr>
+<td><strong>GPS source</strong></td>
+<td>GPS</td>
+<td>EdgeTX GPS source supplying the model's coordinates. It must return a coordinate table.</td>
+</tr>
+<tr>
+<td><strong>Home arm switch</strong></td>
+<td>none</td>
+<td>With no switch selected, uses EdgeTX home. Selecting an armed physical switch position or logical switch enables first-arm home capture.</td>
+</tr>
+<tr>
+<td><strong>Satellite count source</strong></td>
+<td>none</td>
+<td>Optional source reporting a plain nonnegative integer count of locked satellites, not a packed GPS-status value.</td>
+</tr>
+<tr>
+<td><strong>Warn below satellites</strong></td>
+<td>8</td>
+<td>Warns when the satellite count is strictly below this value. Nonnegative integers, steps of 1. Requires <strong>Satellite count source</strong>.</td>
+</tr>
+<tr>
+<td><strong>Critical below satellites</strong></td>
+<td>4</td>
+<td>Critical alarm when the satellite count is strictly below this value. Nonnegative integers, steps of 1; must not exceed <strong>Warn below satellites</strong>. Requires <strong>Satellite count source</strong>.</td>
+</tr>
+<tr>
+<td><strong>Show tape</strong></td>
+<td>off</td>
+<td>Replaces bearing text with a scrolling direction tape where space permits.</td>
+</tr>
+<tr>
+<td><strong>Bearing format</strong></td>
+<td>degrees</td>
+<td><strong>degrees</strong> shows numeric azimuth; <strong>quadrant</strong> shows notation such as <code>N29°E</code>. Shown only when <strong>Show tape</strong> is off.</td>
+</tr>
+<tr>
+<td><strong>Show coordinates</strong></td>
+<td>off</td>
+<td>Shows the model's latitude and longitude where space permits, independently of <strong>Show tape</strong>.</td>
+</tr>
+<tr>
+<td><strong>Show satellites</strong></td>
+<td>on</td>
+<td>Shows the satellite icon and locked-satellite count in the header where space permits. Requires <strong>Satellite count source</strong>; turning it off does not disable satellite alerts.</td>
+</tr>
+<tr>
+<td><strong>Accent</strong></td>
+<td>cyan</td>
+<td>Color used for the normal state: <strong>cyan</strong>, <strong>green</strong>, <strong>amber</strong>, or <strong>orange</strong>. Alarm and stale states use the shared state colors instead.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="behavior">Behavior</h2>
+<p>Distance from home is always the main reading. It uses metres or kilometres
+according to distance. Zero latitude and longitude together mean no fix,
+matching EdgeTX's uninitialized GPS values. A valid <code>0m</code> reading means the
+model is at home, not that GPS is unavailable.</p>
+<h3 id="satellite-count-and-alerts">Satellite count and alerts</h3>
+<p>With <strong>Satellite count source</strong> selected, <strong>Show satellites</strong> controls the
+satellite icon and locked-satellite count in the header. It defaults to on,
+including for existing layouts without this setting. Turning it off hides
+both the icon and count, not the warning, critical, missing-source, or stale
+indications. The indicator is also hidden when it cannot fit; alerts remain active.
+With no source selected, neither the indicator nor satellite alerts appear.
+The defaults make 0 critical, 4 warning, and 8 normal. Thresholds do not
+control home capture, and distance never triggers an alarm.</p>
+<h3 id="first-arm-home">First-arm home</h3>
+<p>With <strong>Home arm switch</strong> unset, home comes from EdgeTX.
+Selecting an armed position captures a separate AeroGrid home without
+changing EdgeTX home or the flight controller's return-home position.
+AeroGrid must observe disarmed, then armed; opening the widget already armed
+does not capture home.</p>
+<p>With a configured <strong>Home arm switch</strong>, AeroGrid captures the home position when
+the model is first armed. If that capture fails, each later disarm and re-arm
+tries again until home is set.</p>
+<p>A captured home or failed attempt survives telemetry loss, panel recreation,
+and layout or theme reloads in this widget instance. Panels using the same
+GPS source and armed switch share the capture. A different pair has its own
+capture. Home is not saved to disk: restarting the radio, reloading the model,
+or removing and recreating the widget starts a new session. Separate widget
+instances have independent homes.</p>
+<p>To investigate <code>HOME NOT SET</code>, first add a <strong>Host diagnostics</strong> panel and
+select its <strong>log</strong> section on any AeroGrid screen. The shared in-memory log
+records captured/missed or switch unavailable, together with the inputs used
+for the decision: current time, availability, freshness, stale state, value,
+update time, reported delay, and coordinate validity. These are GPS inputs
+for capture attempts, or switch inputs for switch-unavailable events.
+Times are 10 ms ticks; GPS delay is seconds. Poll age is
+<code>now - updatedAt</code>; combined age is <code>delay * 100 + now - updatedAt</code>.
+Missing values appear as <code>nil</code>. No coordinates are logged.
+The capture gates and first-transition-only timing are unchanged. The log
+cannot recover an attempt made before logging was enabled; reproduce it in a
+new widget session. See <a href="../host-diagnostics/#shared-log">Host diagnostics</a> for
+retention settings and the fullscreen history viewer.</p>
+<h3 id="bearing-display">Bearing display</h3>
+<p><strong>Show tape</strong> places the tape below distance in square and tall panels, and
+beside it in wide panels. Resizing updates this arrangement. It spans 210
+degrees beneath a fixed pointer, with <code>N</code>, <code>E</code>, <code>S</code>, and <code>W</code> labels, major
+ticks every 30 degrees, and minor ticks every 10 degrees. Its tint follows
+the panel state. When bearing is unavailable, the tape shows the reason
+instead of a pointer and scale that could imply due north.</p>
+<p>With <strong>Show tape</strong> off, <strong>Bearing format</strong> selects numeric azimuth or
+quadrant notation. Bearing text and <strong>Show coordinates</strong> are displayed only
+where they fit; a tape that cannot fit yields to distance. Stale data retains
+the last bearing with the panel's <code>STALE</code> indication.</p>
+<h3 id="location-details">Location details</h3>
+<p>In fullscreen, tap the panel to open a QR code linking to Google Maps at the
+model's GPS coordinates, not home. The code and coordinates are frozen when
+opened; close and reopen for a newer position. A stale fix is marked
+<code>LAST KNOWN POSITION</code>. Without a valid position, tapping does nothing.</p>
+<p>Tap anywhere or press <strong>RTN/Back/Exit</strong> to return. Location details are
+unavailable outside fullscreen and while editing. The radio generates the
+QR code without a network connection; following it on a phone uses Google Maps.</p>
+<h2 id="states">States</h2>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Presentation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Valid fix and home</td>
+<td>Distance, live bearing, and requested coordinates.</td>
+</tr>
+<tr>
+<td>GPS source not recognized</td>
+<td><code>--</code>, <code>N/A</code> badge, and <code>NO GPS SOURCE</code> or a shorter form where supporting text fits.</td>
+</tr>
+<tr>
+<td>Source present but no fix</td>
+<td><code>--</code>, <code>N/A</code> badge, and <code>NO FIX</code> where supporting text fits, unless a satellite alarm takes precedence.</td>
+</tr>
+<tr>
+<td>Valid fix but no EdgeTX home</td>
+<td>No distance or bearing; requested coordinates remain available. <code>NO HOME POSITION</code> or a shorter form, without a failure badge.</td>
+</tr>
+<tr>
+<td>Waiting for the first arm with a valid fix</td>
+<td>No distance or bearing; <code>WAITING FOR ARM</code> or a shorter form.</td>
+</tr>
+<tr>
+<td>First-arm capture missed with a valid fix</td>
+<td>No distance or bearing; <code>HOME NOT SET</code> or a shorter form.</td>
+</tr>
+<tr>
+<td>Home arm switch unreadable with a valid fix before capture</td>
+<td>No distance or bearing; <code>ARM SWITCH UNAVAILABLE</code> or a shorter form.</td>
+</tr>
+<tr>
+<td>Stale position</td>
+<td>Last reading retained, <code>STALE</code> badge, and <code>LAST KNOWN</code> or a shorter form where supporting text fits.</td>
+</tr>
+<tr>
+<td>Configured satellite count below a threshold</td>
+<td><code>WARN</code> or <code>CRIT</code> badge and state color, even while waiting for a fix or home.</td>
+</tr>
+<tr>
+<td>Configured satellite source missing or invalid</td>
+<td><code>N/A</code> badge and satellite count <code>--</code> when <strong>Show satellites</strong> is on and it fits. GPS readings remain available.</td>
+</tr>
+<tr>
+<td>Configured satellite count stale</td>
+<td>Last count retained and <code>STALE</code> badge.</td>
+</tr>
+</tbody>
+</table>
+<p>Satellite critical is checked before warning, using strict less-than
+comparisons. An unrecognized GPS source, stale position, or missing, invalid,
+or stale satellite count takes priority over satellite threshold alarms.</p></div>
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+                <p>Copyright &copy; AeroGrid contributors. GPL-2.0-only.</p>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+        <script src="../../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../../js/base.js"></script>
+        <script src="../../javascripts/versions.mjs" type="module"></script>
+        <script src="../../search/main.js"></script>
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>
