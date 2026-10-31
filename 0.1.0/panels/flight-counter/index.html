@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        <link rel="canonical" href="https://thomaskistler.github.io/aero-grid/0.1.0/panels/flight-counter/">
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>Flight counter - AeroGrid</title>
+        <link href="../../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../../css/brands.min.css" rel="stylesheet">
+        <link href="../../css/solid.min.css" rel="stylesheet">
+        <link href="../../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../../stylesheets/aerogrid.css" rel="stylesheet">
+        <link href="../../stylesheets/versions.css" rel="stylesheet">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-RMCKML1PKS"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+
+          gtag('config', "G-RMCKML1PKS");
+        </script> <meta name="aerogrid-site-root" content="/aero-grid/">
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-light bg-light">
+            <div class="container">
+                <a class="navbar-brand" href="../..">AeroGrid</a><div class="ag-docs-version">
+  <select aria-label="Documentation version"
+          data-docs-root="/aero-grid/"
+          data-docs-version="0.1.0"
+          disabled>
+    <option value="0.1.0">v0.1.0</option>
+  </select>
+  <span class="ag-docs-version-status" role="status"></span>
+</div>
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+                        <!-- Main navigation -->
+                        <ul class="nav navbar-nav">
+                            <li class="nav-item">
+                                <a href="../.." class="nav-link">Home</a>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown"  aria-expanded="false">User Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../user-guide/installation/" class="dropdown-item">Install and upgrade</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/add-dashboard/" class="dropdown-item">Add a dashboard</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/edit-dashboard/" class="dropdown-item">Edit a dashboard on the radio</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/customize-themes/" class="dropdown-item">Customize themes</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/troubleshooting/" class="dropdown-item">Troubleshoot and file bugs</a>
+</li>
+                                </ul>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle active" aria-current="page" role="button" data-bs-toggle="dropdown"  aria-expanded="false">Reference Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../reference-guide/" class="dropdown-item">Overview</a>
+</li>
+                                    
+  <li class="dropdown-submenu">
+    <a href="#" class="dropdown-item">Panels</a>
+    <ul class="dropdown-menu">
+            
+<li>
+    <a href="../metric/" class="dropdown-item">Metric</a>
+</li>
+            
+<li>
+    <a href="../state/" class="dropdown-item">State</a>
+</li>
+            
+<li>
+    <a href="../flight-timer/" class="dropdown-item">Flight timer</a>
+</li>
+            
+<li>
+    <a href="./" class="dropdown-item active" aria-current="page">Flight counter</a>
+</li>
+            
+<li>
+    <a href="../flight-mode/" class="dropdown-item">Flight mode</a>
+</li>
+            
+<li>
+    <a href="../tx-battery/" class="dropdown-item">TX battery</a>
+</li>
+            
+<li>
+    <a href="../cell-battery/" class="dropdown-item">Cell battery</a>
+</li>
+            
+<li>
+    <a href="../link-status/" class="dropdown-item">Link status</a>
+</li>
+            
+<li>
+    <a href="../trim-panel/" class="dropdown-item">Trim panel</a>
+</li>
+            
+<li>
+    <a href="../model-identity/" class="dropdown-item">Model identity</a>
+</li>
+            
+<li>
+    <a href="../navigation/" class="dropdown-item">Navigation</a>
+</li>
+    </ul>
+  </li>
+                                </ul>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown"  aria-expanded="false">Developer Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../developer-guide/build/" class="dropdown-item">Check out and build</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/testing/" class="dropdown-item">Test and debug</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/simulators/" class="dropdown-item">Run and test in simulators</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/architecture/" class="dropdown-item">Repository and architecture</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/tools/" class="dropdown-item">Project tools</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/contributing/" class="dropdown-item">Issues, changes, and releases</a>
+</li>
+                                </ul>
+                            </li>
+                        </ul>
+
+                    <ul class="nav navbar-nav ms-md-auto">
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+                                <i class="fa fa-search"></i> Search
+                            </a>
+                        </li>
+                            <li class="nav-item">
+                                <a rel="prev" href="../flight-timer/" class="nav-link">
+                                    <i class="fa fa-arrow-left"></i> Previous
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a rel="next" href="../flight-mode/" class="nav-link">
+                                    Next <i class="fa fa-arrow-right"></i>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="https://github.com/thomaskistler/aero-grid" class="nav-link"><i class="fa-brands fa-github"></i> GitHub</a>
+                            </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+                    <div class="col-md-3">
+
+<nav class="navbar-expand-md bs-sidebar hidden-print affix" aria-label="Documentation">
+  <div class="navbar-header">
+    <button type="button" class="navbar-toggler collapsed" data-bs-toggle="collapse" data-bs-target="#toc-collapse" aria-controls="toc-collapse" aria-expanded="false" aria-label="Toggle documentation navigation">
+      <span class="fa fa-angle-down" aria-hidden="true"></span>
+    </button>
+  </div>
+  <div id="toc-collapse" class="navbar-collapse collapse card bg-body-tertiary">
+    <ul class="nav flex-column">
+      
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../..">Home</a>
+  </li>
+
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">User Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/installation/">Install and upgrade</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/add-dashboard/">Add a dashboard</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/edit-dashboard/">Edit a dashboard on the radio</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/customize-themes/">Customize themes</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/troubleshooting/">Troubleshoot and file bugs</a>
+  </li>
+
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Reference Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../reference-guide/">Overview</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../metric/">Metric</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../state/">State</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../flight-timer/">Flight timer</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link current" href="./" aria-current="page">Flight counter</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../flight-mode/">Flight mode</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../tx-battery/">TX battery</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../cell-battery/">Cell battery</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../link-status/">Link status</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../trim-panel/">Trim panel</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../model-identity/">Model identity</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../navigation/">Navigation</a>
+  </li>
+
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Developer Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/build/">Check out and build</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/testing/">Test and debug</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/simulators/">Run and test in simulators</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/architecture/">Repository and architecture</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/tools/">Project tools</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/contributing/">Issues, changes, and releases</a>
+  </li>
+
+        </ul>
+      </li>
+    </ul>
+  </div>
+</nav></div>
+                    <div class="col-md-9" role="main">
+
+<h1 id="flight-counter"><code>flight-counter</code></h1>
+<table>
+<thead>
+<tr>
+<th>1x2</th>
+<th>2x1</th>
+<th>2x2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><img alt="Active flight counter at 1x2" src="../../assets/panels/flight-counter/1x2.png" /></td>
+<td><img alt="Active flight counter at 2x1" src="../../assets/panels/flight-counter/2x1.png" /></td>
+<td><img alt="Active flight counter at 2x2" src="../../assets/panels/flight-counter/2x2.png" /></td>
+</tr>
+</tbody>
+</table>
+<p>Counts qualifying flights, stores the total in GV9, and highlights an active flight.</p>
+<h2 id="settings">Settings</h2>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>label</code></td>
+<td><code>FLT</code></td>
+<td>Panel heading.</td>
+</tr>
+<tr>
+<td><code>armSwitch</code></td>
+<td><code>SF^</code></td>
+<td>Armed switch position: <code>^</code> up, <code>-</code> middle, <code>v</code> down; or a logical switch such as <code>L01</code>.</td>
+</tr>
+<tr>
+<td><code>motorSource</code></td>
+<td><code>ch3</code></td>
+<td>Motor output source. Set this to your model's actual throttle channel.</td>
+</tr>
+<tr>
+<td><code>motorReversed</code></td>
+<td><code>false</code></td>
+<td>Reverse the motor source before measuring throttle percentage.</td>
+</tr>
+<tr>
+<td><code>minMotorPercent</code></td>
+<td><code>25</code></td>
+<td>Motor must be strictly above this percentage of full travel, in <code>0..&lt;100</code>.</td>
+</tr>
+<tr>
+<td><code>minFlightDuration</code></td>
+<td><code>30</code></td>
+<td>Continuous qualification seconds, greater than 0 and at most 3600.</td>
+</tr>
+<tr>
+<td><code>disarmDuration</code></td>
+<td><code>10</code></td>
+<td>Continuous disarming seconds to confirm the end, greater than 0 and at most 3600.</td>
+</tr>
+<tr>
+<td><code>announcements</code></td>
+<td><code>false</code></td>
+<td>Play a start/end tone and speak the count. No external WAV files are needed.</td>
+</tr>
+<tr>
+<td><code>history</code></td>
+<td><code>true</code></td>
+<td>Append confirmed completed flights to <code>/flights-history.csv</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>The armed condition is configured on this panel only, independently of
+<code>session.armSource</code>. For example, <code>armSwitch: "SA-"</code> arms in SA's middle position,
+<code>"SF^"</code> in SF's up position, and <code>"SFv"</code> in its down position. <code>"L01"</code> arms while
+logical switch 1 is true. Names are case-sensitive and resolved by EdgeTX;
+nonexistent switches or positions produce a panel error.
+If using session extrema or a separate Mode state panel, configure their armed
+conditions to agree with this panel.
+The motor source must also be radio-local, not a telemetry sensor.</p>
+<h2 id="behavior">Behavior</h2>
+<p>A flight qualifies when the configured armed position, motor threshold, and
+live telemetry hold continuously for <code>minFlightDuration</code>. Any interruption
+before qualification resets the attempt. Qualification increments the total once.</p>
+<p>After qualification, telemetry or motor changes <strong>do not end the flight</strong>.
+Continuous disarming starts the end timeout. Re-arming before its expiry cancels
+the pending end without incrementing again. An unavailable arm reading cannot
+confirm disarming. A callback gap of more than one second restarts qualification
+or a pending end timeout rather than assuming the condition held while unobserved.
+Tracking continues while this dashboard is hidden, once the panel has loaded.</p>
+<p>Reserve <strong>GV9, flight mode 0</strong>, with precision 0 and limits allowing <code>0..999</code>.
+The existing total is kept, including one previously written by EdgeTX Flights.
+Invalid, full, or unsavable counts produce a panel error rather than wrapping.</p>
+<p>Use <strong>one tracking panel across all dashboards for a model</strong>, and do not
+also run EdgeTX Flights. To show the total elsewhere, use a read-only <code>metric</code>
+with source <code>gvar9</code>; configure other flight modes to inherit GV9 from FM0.</p>
+<p>History is appended only after the end timeout confirms completion. It uses the
+same five columns as the EdgeTX Flights history: <code>flight_date</code>, <code>model_name</code>,
+<code>flight_count</code>, <code>duration</code>, and <code>model_id</code>, with CSV quoting for model names.
+Duration runs from the start of qualification to the final disarming; the
+disarm grace period is excluded. History does not restore or calculate GV9.
+SD-card failures are shown as panel errors; the already saved count is retained.</p>
+<p>GV9 persists through model saving and transmitter restarts, but in-flight
+detection state does not. Changing model, reloading the dashboard, or restarting
+the transmitter during a flight can lose its history and qualify it again.
+Do not reload the tracking dashboard during flight.</p>
+<h2 id="states">States</h2>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Presentation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Resting or qualifying</td>
+<td>Count, normal styling, no badge.</td>
+</tr>
+<tr>
+<td>Qualified flight or pending disarm timeout</td>
+<td>Count, mist blue surface, blue accent, <code>IN-FLIGHT</code> badge.</td>
+</tr>
+<tr>
+<td>Confirmed completion</td>
+<td>Count retained, normal styling restored.</td>
+</tr>
+<tr>
+<td>GV9 unavailable</td>
+<td><code>--</code> and <code>N/A</code> badge.</td>
+</tr>
+<tr>
+<td>Invalid configuration, persistence, or history failure</td>
+<td>Panel error; tracking is disabled.</td>
+</tr>
+</tbody>
+</table>
+<p>If the selected theme cannot support a legible blue surface, the accent and
+badge remain blue and the surface retains its normal color.</p>
+<h2 id="examples">Examples</h2>
+<p>Arms on SF's down position and counts flights once the motor and
+telemetry have qualified for 30 seconds. Disarming for 10 seconds completes a flight.</p>
+<pre><code class="language-yaml">- id: flights
+  type: flight-counter
+  col: 0
+  row: 0
+  colSpan: 2
+  rowSpan: 2
+  config:
+    label: Flights
+    armSwitch: &quot;SFv&quot;
+    motorSource: ch3
+    minMotorPercent: 25
+    minFlightDuration: 30
+    disarmDuration: 10
+    announcements: true
+    history: true
+</code></pre>
+<p>The screenshots show count <code>42</code> in the active state using real EdgeTX rendering
+with synthetic inputs. See <a href="../../developer-guide/tools/#panel-screenshots">Panel screenshots</a>
+for the capture recipe and setup.</p></div>
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+                <p>Copyright &copy; AeroGrid contributors. GPL-2.0-only.</p>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+        <script src="../../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../../js/base.js"></script>
+        <script src="../../javascripts/versions.mjs" type="module"></script>
+        <script src="../../search/main.js"></script>
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

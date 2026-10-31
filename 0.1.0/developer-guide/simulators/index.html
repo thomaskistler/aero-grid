@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        <link rel="canonical" href="https://thomaskistler.github.io/aero-grid/0.1.0/developer-guide/simulators/">
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>Run and test in simulators - AeroGrid</title>
+        <link href="../../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../../css/brands.min.css" rel="stylesheet">
+        <link href="../../css/solid.min.css" rel="stylesheet">
+        <link href="../../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../../stylesheets/aerogrid.css" rel="stylesheet">
+        <link href="../../stylesheets/versions.css" rel="stylesheet">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-RMCKML1PKS"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+
+          gtag('config', "G-RMCKML1PKS");
+        </script> <meta name="aerogrid-site-root" content="/aero-grid/">
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-light bg-light">
+            <div class="container">
+                <a class="navbar-brand" href="../..">AeroGrid</a><div class="ag-docs-version">
+  <select aria-label="Documentation version"
+          data-docs-root="/aero-grid/"
+          data-docs-version="0.1.0"
+          disabled>
+    <option value="0.1.0">v0.1.0</option>
+  </select>
+  <span class="ag-docs-version-status" role="status"></span>
+</div>
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+                        <!-- Main navigation -->
+                        <ul class="nav navbar-nav">
+                            <li class="nav-item">
+                                <a href="../.." class="nav-link">Home</a>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown"  aria-expanded="false">User Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../user-guide/installation/" class="dropdown-item">Install and upgrade</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/add-dashboard/" class="dropdown-item">Add a dashboard</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/edit-dashboard/" class="dropdown-item">Edit a dashboard on the radio</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/customize-themes/" class="dropdown-item">Customize themes</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/troubleshooting/" class="dropdown-item">Troubleshoot and file bugs</a>
+</li>
+                                </ul>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown"  aria-expanded="false">Reference Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../reference-guide/" class="dropdown-item">Overview</a>
+</li>
+                                    
+  <li class="dropdown-submenu">
+    <a href="#" class="dropdown-item">Panels</a>
+    <ul class="dropdown-menu">
+            
+<li>
+    <a href="../../panels/metric/" class="dropdown-item">Metric</a>
+</li>
+            
+<li>
+    <a href="../../panels/state/" class="dropdown-item">State</a>
+</li>
+            
+<li>
+    <a href="../../panels/flight-timer/" class="dropdown-item">Flight timer</a>
+</li>
+            
+<li>
+    <a href="../../panels/flight-counter/" class="dropdown-item">Flight counter</a>
+</li>
+            
+<li>
+    <a href="../../panels/flight-mode/" class="dropdown-item">Flight mode</a>
+</li>
+            
+<li>
+    <a href="../../panels/tx-battery/" class="dropdown-item">TX battery</a>
+</li>
+            
+<li>
+    <a href="../../panels/cell-battery/" class="dropdown-item">Cell battery</a>
+</li>
+            
+<li>
+    <a href="../../panels/link-status/" class="dropdown-item">Link status</a>
+</li>
+            
+<li>
+    <a href="../../panels/trim-panel/" class="dropdown-item">Trim panel</a>
+</li>
+            
+<li>
+    <a href="../../panels/model-identity/" class="dropdown-item">Model identity</a>
+</li>
+            
+<li>
+    <a href="../../panels/navigation/" class="dropdown-item">Navigation</a>
+</li>
+    </ul>
+  </li>
+                                </ul>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle active" aria-current="page" role="button" data-bs-toggle="dropdown"  aria-expanded="false">Developer Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../build/" class="dropdown-item">Check out and build</a>
+</li>
+                                    
+<li>
+    <a href="../testing/" class="dropdown-item">Test and debug</a>
+</li>
+                                    
+<li>
+    <a href="./" class="dropdown-item active" aria-current="page">Run and test in simulators</a>
+</li>
+                                    
+<li>
+    <a href="../architecture/" class="dropdown-item">Repository and architecture</a>
+</li>
+                                    
+<li>
+    <a href="../tools/" class="dropdown-item">Project tools</a>
+</li>
+                                    
+<li>
+    <a href="../contributing/" class="dropdown-item">Issues, changes, and releases</a>
+</li>
+                                </ul>
+                            </li>
+                        </ul>
+
+                    <ul class="nav navbar-nav ms-md-auto">
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+                                <i class="fa fa-search"></i> Search
+                            </a>
+                        </li>
+                            <li class="nav-item">
+                                <a rel="prev" href="../testing/" class="nav-link">
+                                    <i class="fa fa-arrow-left"></i> Previous
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a rel="next" href="../architecture/" class="nav-link">
+                                    Next <i class="fa fa-arrow-right"></i>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="https://github.com/thomaskistler/aero-grid" class="nav-link"><i class="fa-brands fa-github"></i> GitHub</a>
+                            </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+                    <div class="col-md-3">
+
+<nav class="navbar-expand-md bs-sidebar hidden-print affix" aria-label="Documentation">
+  <div class="navbar-header">
+    <button type="button" class="navbar-toggler collapsed" data-bs-toggle="collapse" data-bs-target="#toc-collapse" aria-controls="toc-collapse" aria-expanded="false" aria-label="Toggle documentation navigation">
+      <span class="fa fa-angle-down" aria-hidden="true"></span>
+    </button>
+  </div>
+  <div id="toc-collapse" class="navbar-collapse collapse card bg-body-tertiary">
+    <ul class="nav flex-column">
+      
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../..">Home</a>
+  </li>
+
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">User Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/installation/">Install and upgrade</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/add-dashboard/">Add a dashboard</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/edit-dashboard/">Edit a dashboard on the radio</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/customize-themes/">Customize themes</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/troubleshooting/">Troubleshoot and file bugs</a>
+  </li>
+
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Reference Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../reference-guide/">Overview</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/metric/">Metric</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/state/">State</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/flight-timer/">Flight timer</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/flight-counter/">Flight counter</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/flight-mode/">Flight mode</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/tx-battery/">TX battery</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/cell-battery/">Cell battery</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/link-status/">Link status</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/trim-panel/">Trim panel</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/model-identity/">Model identity</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/navigation/">Navigation</a>
+  </li>
+
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Developer Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../build/">Check out and build</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../testing/">Test and debug</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link current" href="./" aria-current="page">Run and test in simulators</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../architecture/">Repository and architecture</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../tools/">Project tools</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../contributing/">Issues, changes, and releases</a>
+  </li>
+
+        </ul>
+      </li>
+    </ul>
+  </div>
+</nav></div>
+                    <div class="col-md-9" role="main">
+
+<h1 id="run-and-test-in-simulators">Run and test in simulators</h1>
+<p>Both simulators run EdgeTX firmware, but use different builds and interfaces.
+Use VS Code for a tight edit/run loop and Companion for native firmware UI,
+radio controls, and screenshot tooling. Record which one you used when
+reporting a result.</p>
+<table>
+<thead>
+<tr>
+<th>Simulator</th>
+<th>What you need</th>
+<th>Best use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>VS Code EdgeTX Dev Kit</td>
+<td>VS Code and the Dev Kit extension; first launch downloads WASM firmware.</td>
+<td>Editor-integrated runs, watch mode, controls, synthetic telemetry, and logs.</td>
+</tr>
+<tr>
+<td>EdgeTX Simulator supplied with Companion</td>
+<td>EdgeTX Companion 2.12 with the TX16S simulator.</td>
+<td>Native UI/control checks, telemetry simulation, and debugging without VS Code.</td>
+</tr>
+</tbody>
+</table>
+<p>Neither proves receiver behavior, native radio memory stability, or support
+for every color radio.</p>
+<h2 id="prepare-a-disposable-sd-image">Prepare a disposable SD image</h2>
+<pre><code class="language-sh">make build
+</code></pre>
+<p>Use the <strong>absolute path to <code>build/sdcard/</code></strong>, not <code>src/</code>, <code>WIDGETS/</code>, or
+<code>tests/fixtures/sdcard/</code>, as the simulator SD-card root. It contains <code>RADIO/</code>,
+<code>MODELS/</code>, <code>IMAGES/</code>, <code>AEROGRID/</code>, and <code>WIDGETS/</code>.
+Run <code>pwd</code> at the repository root to find the checkout's absolute path.</p>
+<p><strong>Do not run both simulators against the same image at the same time.</strong>
+They can write files on the simulated SD card. Stop the simulator before rebuilding,
+back up experiments elsewhere, and remember that <code>make build</code> resets them.
+Use <code>make build BUILD_DIR=build/companion</code> and point Companion at
+<code>build/companion/sdcard/</code> if you want separate state.</p>
+<h2 id="vs-code-edgetx-dev-kit">VS Code: EdgeTX Dev Kit</h2>
+<p>Install <a href="https://marketplace.visualstudio.com/items?itemName=jeffreychix.edgetx-dev-kit">EdgeTX Dev Kit</a>
+(<code>jeffreychix.edgetx-dev-kit</code>) from VS Code's Extensions view.
+The steps here use the extension's 2.x simulator commands; Companion is not
+required.</p>
+<ol>
+<li>Open the repository <strong>folder</strong> in VS Code. Open
+    <code>src/WIDGETS/AeroGrid/main.lua</code>.</li>
+<li>In the Command Palette, run <strong>EdgeTX: Toggle EdgeTX Mode</strong> if it is not
+    already active. Confirm the profile is <strong>tx16s</strong>, <strong>2.12</strong>, <strong>color</strong>,
+    <strong>480 x 272</strong>, as recorded in <code>.vscode/edgetx.json</code>. If the profile is
+    missing or stale, run <strong>EdgeTX: Set Radio Profile</strong>.</li>
+<li>In workspace settings, set <strong>EdgeTX: SD Card Path</strong> (<code>edgetx.sdCardPath</code>)
+    to the absolute generated image path.</li>
+<li>Run <strong>Tasks: Run Task &gt; AeroGrid: Build Simulator SD</strong>, or <code>make build</code>
+    in a terminal. The other supplied task, <strong>AeroGrid: Test</strong>, runs
+    <code>make test</code>.</li>
+<li>Run <strong>EdgeTX: Open Simulator</strong> to boot the fixture and inspect its
+    configured models/screens. Allow the initial firmware download to finish.
+    Use <strong>Show Controls</strong> for switches, sticks, trims, and radio buttons.</li>
+</ol>
+<p>To launch the active entry point directly, use <strong>EdgeTX: Simulate Script</strong>.
+<code>main.lua</code> includes the App-mode simulation annotation
+<code>---@simulate Layout1x1AM zone=0</code>. For the fixture's existing model/screen
+configuration, prefer <strong>Open Simulator</strong> rather than relying on script
+auto-placement.</p>
+<h2 id="companion-native-edgetx-simulator">Companion: native EdgeTX Simulator</h2>
+<p>Install <a href="https://github.com/EdgeTX/edgetx/releases">EdgeTX Companion 2.12</a>
+for your OS, including the TX16S simulator. There are two launch paths:
+Companion's embedded simulator, available on macOS too, and the standalone
+EdgeTX Simulator distributed on Windows/Linux.</p>
+<h3 id="launch-from-companion">Launch from Companion</h3>
+<ol>
+<li>Open Companion and create/select a radio profile for <strong>RadioMaster TX16S</strong>.
+   In <strong>Edit Settings...</strong>, set that profile's <strong>SD Structure path</strong> to the
+   absolute generated <code>build/sdcard/</code> directory.</li>
+<li>Choose <strong>File &gt; Read Models and Settings from SD Path</strong>. This opens the
+   fixture's radio settings and models in a Companion document without a
+   connected radio. Confirm that the AeroGrid fixture models are present.</li>
+<li>Use the document's <strong>Simulate Radio</strong> action (<code>Alt+Shift+S</code>) to boot the
+   complete radio. Use <strong>Simulate Model</strong> (<code>Alt+S</code>) if you intentionally want
+   only the selected model.</li>
+</ol>
+<p>The embedded simulator uses the profile's SD path for widget/layout/image
+files, but a <strong>temporary copy</strong> of the document's radio/model data.
+Do not expect model changes made during this simulation to be written back
+to the fixture or Companion document. AeroGrid's user layouts are separate
+SD-card files; treat that SD path as writable.</p>
+<p>After rebuilding the image, close the simulation and read models/settings
+from SD Path again before simulating, so an older open document cannot
+reintroduce stale model configuration.</p>
+<h3 id="launch-the-standalone-simulator">Launch the standalone simulator</h3>
+<p>On Windows/Linux, open the EdgeTX Simulator installed with Companion
+(<code>simulator.exe</code> on Windows; packaged executable naming can vary on Linux).
+Create the TX16S radio profile in Companion first, then configure the
+standalone simulator's <strong>Startup Options</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Radio Profile</td>
+<td>Your TX16S profile.</td>
+</tr>
+<tr>
+<td>Radio Type</td>
+<td>RadioMaster TX16S.</td>
+</tr>
+<tr>
+<td>Simulator</td>
+<td>The available TX16S simulator matching that profile.</td>
+</tr>
+<tr>
+<td>Data Source</td>
+<td><strong>SD Path</strong>.</td>
+</tr>
+<tr>
+<td>SD Image Path</td>
+<td>The absolute path to the generated <code>build/sdcard/</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>Click <strong>OK</strong>. <strong>SD Path</strong> makes the simulator load radio/model data from the
+same image that contains the widget. Do not select a default/new <code>.etx</code> data
+file: that boots a different model configuration.
+If using <strong>Folder</strong> instead, set <strong>Data Folder</strong> and <strong>SD Image Path</strong> to
+that same SD-card root, not its <code>MODELS/</code> subdirectory.</p>
+<p>The image contains <code>RADIO/radio.yml</code> and <code>MODELS/model*.yml</code>; the standalone
+simulator loads these directly and persists radio/model changes.
+You do not need to import them individually or read a connected radio.
+If no simulator is listed, check the installed Companion package and profile
+before modifying the fixture.</p>
+<h2 id="use-the-fixture-models">Use the fixture models</h2>
+<p>A clean build selects <strong>AEROGRID STD</strong>, with Default on its first screen.
+Change models with the simulated
+radio's model-selection UI, just as on a radio.</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>What to exercise</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>AEROGRID STD</strong> (<code>model1.yml</code>)</td>
+<td>Six screens: Default, Empty, Diagnostics, services, services2, and Palette. All four shipped layouts, plus both diagnostic panel types.</td>
+</tr>
+<tr>
+<td><strong>AEROGRID PANEL1</strong> (<code>model2.yml</code>)</td>
+<td>Six screens: cell battery, flight counter, flight mode, flight timer, link status, and metric.</td>
+</tr>
+<tr>
+<td><strong>AEROGRID PANEL2</strong> (<code>model3.yml</code>)</td>
+<td>Five screens: model identity, navigation, state, trim panel, and TX battery.</td>
+</tr>
+</tbody>
+</table>
+<p>Review and simulator-only layouts live in
+<code>tests/fixtures/layouts/development/</code>; <code>make build</code> adds them to the disposable
+simulator image without including them in the widget source or release ZIP.
+The two panel models contain exactly one dashboard per user-facing panel type.
+All screens use App mode and the Modern Dark theme. On the State dashboard, SF
+changes MODE, SA changes RATE, and SB changes FLAP; NO MIDDLE deliberately
+leaves SA's middle position unmapped.</p>
+<p>The last screen of <strong>AEROGRID STD</strong> is the telemetry-free <strong>Palette</strong> layout. Its
+fixed samples show token swatches, text levels, accents, a dial, bars, and
+the six dashboard panel states. Change the widget's Theme option to compare
+Modern Dark and Modern Light, or add a <code>.yml</code> theme file as described in
+<a href="../../user-guide/customize-themes/">Customize themes</a>.</p>
+<p><strong>Diagnostics</strong> reports loading, package identity, and service errors; <code>services</code>
+and <code>services2</code> exercise the service-probe panel across all five services.
+Auxiliary layouts (<code>sim</code>, <code>sim2</code>, <code>states</code>, and <code>review-cell-sources</code>) are
+available in the development simulator image through the widget's <strong>Layout</strong>
+option in UI Setup rather than occupying dedicated fixture screens.
+<code>sim</code> and <code>sim2</code> are complementary live-data dashboards: the first focuses on
+telemetry, while the second focuses on radio-local values and metric modes.
+Development layouts are not included in the release ZIP.</p>
+<p>The flight-counter review installs only one tracker. Arm with SF down, raise
+CH3 above 25%, and supply a live telemetry link; qualification and disarm
+timeouts are shortened to three seconds for review. History and announcements
+are disabled. Resize the single panel in the editor to inspect other spans
+without installing multiple trackers.</p></div>
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+                <p>Copyright &copy; AeroGrid contributors. GPL-2.0-only.</p>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+        <script src="../../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../../js/base.js"></script>
+        <script src="../../javascripts/versions.mjs" type="module"></script>
+        <script src="../../search/main.js"></script>
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>
