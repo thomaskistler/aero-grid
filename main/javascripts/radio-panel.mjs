@@ -21,6 +21,7 @@ if (panel) {
   const confirmClose = element("confirm-close");
   const releaseDialog = element("release-dialog");
   const supported = window.isSecureContext && typeof window.showDirectoryPicker === "function";
+  const developerWarning = "DEVELOPER BUILD: changes may not be fully tested and may be unstable. Use at your own risk.";
   let manifest = null;
   let latestManifest = null;
   let catalog = null;
@@ -30,11 +31,12 @@ if (panel) {
   let checking = false;
   let checkingRelease = false;
   let incomplete = false;
+  let verificationMessage = null;
   let confirmation = null;
   let operationFinished = false;
 
   function shownVersion(version) {
-    return isDeveloperVersion(version) ? version.replace(/\+g([a-f0-9]{40})$/, (_, commit) => `+g${commit.slice(0, 7)}`) : version;
+    return isDeveloperVersion(version) ? version.replace(/\+g([a-f0-9]{40})$/, (_, commit) => `+${commit.slice(0, 8)}`) : version;
   }
 
   function message(text, error = false, success = false) {
@@ -42,6 +44,12 @@ if (panel) {
     target.textContent = text;
     target.classList.toggle("ag-radio-error", error);
     target.classList.toggle("ag-radio-success", success);
+  }
+
+  function clearVerification() {
+    if (verificationMessage && status.textContent === verificationMessage) message("");
+    verificationMessage = null;
+    incomplete = false;
   }
 
   function render() {
@@ -67,6 +75,8 @@ if (panel) {
     element("latest").textContent = displayedVersion
       ? `v${shownVersion(displayedVersion)}${isDeveloperVersion(displayedVersion) ? " - developer build"
         : displayedVersion === catalog?.latest ? " - latest" : ""}` : "Unavailable";
+    element("developer-warning").hidden = !isDeveloperVersion(displayedVersion);
+    element("developer-warning").textContent = isDeveloperVersion(displayedVersion) ? developerWarning : "";
     const releaseDisabled = busy || checking || checkingRelease || !!confirmation || !catalog;
     element("release-picker").disabled = releaseDisabled;
     element("release-open").disabled = releaseDisabled;
@@ -97,6 +107,7 @@ if (panel) {
 
   async function inspect() {
     details = await radioStorage.inspect();
+    clearVerification();
     if (details.widget.present && details.widget.version === manifest?.version) {
       try {
         await verifyInstalled(radioStorage.root, manifest, () => {}, true);
@@ -105,7 +116,8 @@ if (panel) {
         if (!(error instanceof ContentMismatchError)) throw error;
         console.error("[AeroGrid installer] Installed file verification failed.", error, error.differences);
         incomplete = true;
-        message(`${error.message} A full replacement is available.`, true);
+        verificationMessage = `${error.message} A full replacement is available.`;
+        message(verificationMessage, true);
       }
     }
   }
@@ -141,6 +153,7 @@ if (panel) {
   }
 
   async function refreshRelease() {
+    clearVerification();
     checkingRelease = true;
     manifest = null;
     releaseStatus.textContent = "Checking the latest stable release...";
@@ -181,7 +194,7 @@ if (panel) {
   async function selectRelease(version) {
     selectedVersion = version;
     manifest = null;
-    incomplete = false;
+    clearVerification();
     checkingRelease = true;
     releaseStatus.textContent = `Checking AeroGrid v${shownVersion(selectedVersion)}...`;
     render();
@@ -254,7 +267,7 @@ if (panel) {
     const downgrade = details.widget.version && compareVersions(details.widget.version, version) > 0;
     const compatibility = radioCompatibility(details.radio);
     const warning = `Install AeroGrid v${shownVersion(version)} on ${details.radio.name}?\n\n`
-      + (isDeveloperVersion(version) ? "DEVELOPER BUILD: unreleased changes may be unstable. Install at your own risk.\n\n" : "")
+      + (isDeveloperVersion(version) ? `${developerWarning}\n\n` : "")
       + (!compatibility.supported ? `${compatibility.message}\n\n` : "")
       + (downgrade ? `DOWNGRADE from v${shownVersion(details.widget.version)} to v${shownVersion(version)}. Older releases may not support your current layouts or settings. User data will not be converted.\n\n` : "")
       + (details.widget.present
@@ -369,6 +382,7 @@ if (panel) {
       const current = await radioStorage.inspect();
       if (busy || radioStorage.root !== root || details !== previous) return;
       if (JSON.stringify(current) !== JSON.stringify(details)) {
+        if (JSON.stringify(current.widget) !== JSON.stringify(details?.widget)) clearVerification();
         details = current;
         if (confirmation) {
           confirmation = null;
