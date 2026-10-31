@@ -1254,7 +1254,7 @@ do
         end
         return originalRead(filename)
     end
-    local instructions = 0
+    local instructions, worstDiscovery = 0, 0
     fixture.lvglMock.setPropertyValidation(false)
     fixture.lvglMock.setCallCounting(false)
     fixture.lcdMock.setTextMeasurement(false)
@@ -1268,12 +1268,15 @@ do
         { label = "MAP", source = "GPS" },
         services
     )
+    worstDiscovery = instructions
     assert(okNine, nine)
     nine.feed = { known = true, fix = true, state = "normal", latitude = 0, longitude = 179.9999 }
     nine.nextTileLoad = getTime() + 100000
     local loaded, loadError = true, nil
     for scanIndex = 1, 5 do
+        instructions = 0
         loaded, loadError = pcall(map.refresh, nine)
+        worstDiscovery = math.max(worstDiscovery, instructions)
         if not loaded or nine.pack then
             break
         end
@@ -1284,9 +1287,10 @@ do
     fixture.lvglMock.setPropertyValidation(true)
     assert(loaded, loadError)
     assert(
-        instructions < 30000,
-        "nine-level map discovery exceeded EdgeTX's 30,000-instruction budget: " .. instructions
+        worstDiscovery < 30000,
+        "nine-level map discovery exceeded EdgeTX's 30,000-instruction callback budget: " .. worstDiscovery
     )
+    print("Nine-level discovery worst panel callback: " .. worstDiscovery .. " instructions (mock)")
     a.assertEqual(#nine.pack.levels, 9)
     a.assertContains(nine.directory, "/tiles/synthetic-v1-jpeg-q90/")
     local sample = captured.pack.levels[1]

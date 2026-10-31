@@ -2895,12 +2895,12 @@ local function drawnBoxes(entry)
         end
         for _, plate in pairs(entry.instance.headerBackplates) do
             if type(plate) == "table" and plate.object then
-                tapeBackground[plate.object] = true
+                backgrounds[plate.object] = true
             end
         end
-        tapeBackground[entry.instance.statusBackground] = true
+        backgrounds[entry.instance.statusBackground] = true
         if entry.instance.coordinatesBackground then
-            tapeBackground[entry.instance.coordinatesBackground] = true
+            backgrounds[entry.instance.coordinatesBackground] = true
         end
     end
     local tape = entry.instance.tape
