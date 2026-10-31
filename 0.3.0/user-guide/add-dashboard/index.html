@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        <link rel="canonical" href="https://thomaskistler.github.io/aero-grid/0.3.0/user-guide/add-dashboard/">
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>Add a dashboard - AeroGrid</title>
+        <link href="../../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../../css/brands.min.css" rel="stylesheet">
+        <link href="../../css/solid.min.css" rel="stylesheet">
+        <link href="../../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../../stylesheets/aerogrid.css" rel="stylesheet">
+        <link href="../../stylesheets/versions.css" rel="stylesheet">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-RMCKML1PKS"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+
+          gtag('config', "G-RMCKML1PKS");
+        </script> <meta name="aerogrid-site-root" content="/aero-grid/">
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-light bg-light">
+            <div class="container">
+                <a class="navbar-brand" href="../..">AeroGrid</a><div class="ag-docs-version">
+  <select aria-label="Documentation version"
+          data-docs-root="/aero-grid/"
+          data-docs-version="0.3.0"
+          disabled>
+    <option value="0.3.0">v0.3.0</option>
+  </select>
+  <span class="ag-docs-version-status" role="status"></span>
+</div>
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+                        <!-- Main navigation -->
+                        <ul class="nav navbar-nav">
+                            <li class="nav-item">
+                                <a href="../.." class="nav-link">Home</a>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle active" aria-current="page" role="button" data-bs-toggle="dropdown"  aria-expanded="false">User Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../installation/" class="dropdown-item">Install and upgrade</a>
+</li>
+                                    
+<li>
+    <a href="./" class="dropdown-item active" aria-current="page">Add a dashboard</a>
+</li>
+                                    
+<li>
+    <a href="../edit-dashboard/" class="dropdown-item">Edit a dashboard on the radio</a>
+</li>
+                                    
+<li>
+    <a href="../customize-themes/" class="dropdown-item">Customize themes</a>
+</li>
+                                    
+<li>
+    <a href="../troubleshooting/" class="dropdown-item">Troubleshoot and file bugs</a>
+</li>
+                                </ul>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown"  aria-expanded="false">Reference Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../reference-guide/" class="dropdown-item">Overview</a>
+</li>
+                                    
+  <li class="dropdown-submenu">
+    <a href="#" class="dropdown-item">Panels</a>
+    <ul class="dropdown-menu">
+            
+<li>
+    <a href="../../panels/output/" class="dropdown-item">Channel output</a>
+</li>
+            
+<li>
+    <a href="../../panels/flight-counter/" class="dropdown-item">Flight counter</a>
+</li>
+            
+<li>
+    <a href="../../panels/flight-mode/" class="dropdown-item">Flight mode</a>
+</li>
+            
+<li>
+    <a href="../../panels/flight-timer/" class="dropdown-item">Flight timer</a>
+</li>
+            
+<li>
+    <a href="../../panels/host-diagnostics/" class="dropdown-item">Host diagnostics</a>
+</li>
+            
+<li>
+    <a href="../../panels/link-status/" class="dropdown-item">Link status</a>
+</li>
+            
+<li>
+    <a href="../../panels/metric/" class="dropdown-item">Metric</a>
+</li>
+            
+<li>
+    <a href="../../panels/model-identity/" class="dropdown-item">Model identity</a>
+</li>
+            
+<li>
+    <a href="../../panels/navigation/" class="dropdown-item">Navigation</a>
+</li>
+            
+<li>
+    <a href="../../panels/rx-battery/" class="dropdown-item">RX battery</a>
+</li>
+            
+<li>
+    <a href="../../panels/service-probe/" class="dropdown-item">Service probe</a>
+</li>
+            
+<li>
+    <a href="../../panels/state/" class="dropdown-item">State</a>
+</li>
+            
+<li>
+    <a href="../../panels/trim-panel/" class="dropdown-item">Trim</a>
+</li>
+            
+<li>
+    <a href="../../panels/tx-battery/" class="dropdown-item">TX battery</a>
+</li>
+    </ul>
+  </li>
+                                    
+<li>
+    <a href="../../reference-guide/yaml/" class="dropdown-item">YAML reference</a>
+</li>
+                                </ul>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown"  aria-expanded="false">Developer Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../developer-guide/build/" class="dropdown-item">Check out and build</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/testing/" class="dropdown-item">Test and debug</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/simulators/" class="dropdown-item">Run and test in simulators</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/architecture/" class="dropdown-item">Repository and architecture</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/tools/" class="dropdown-item">Project tools</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/videos/" class="dropdown-item">Tutorial videos</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/contributing/" class="dropdown-item">Issues, changes, and releases</a>
+</li>
+                                </ul>
+                            </li>
+                        </ul>
+
+                    <ul class="nav navbar-nav ms-md-auto">
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+                                <i class="fa fa-search"></i> Search
+                            </a>
+                        </li>
+                            <li class="nav-item">
+                                <a rel="prev" href="../installation/" class="nav-link">
+                                    <i class="fa fa-arrow-left"></i> Previous
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a rel="next" href="../edit-dashboard/" class="nav-link">
+                                    Next <i class="fa fa-arrow-right"></i>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="https://github.com/thomaskistler/aero-grid" class="nav-link"><i class="fa-brands fa-github"></i> GitHub</a>
+                            </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+                    <div class="col-md-3">
+
+<nav class="navbar-expand-md bs-sidebar hidden-print affix" aria-label="Documentation">
+  <div class="navbar-header">
+    <button type="button" class="navbar-toggler collapsed" data-bs-toggle="collapse" data-bs-target="#toc-collapse" aria-controls="toc-collapse" aria-expanded="false" aria-label="Toggle documentation navigation">
+      <span class="fa fa-angle-down" aria-hidden="true"></span>
+    </button>
+  </div>
+  <div id="toc-collapse" class="navbar-collapse collapse card bg-body-tertiary">
+    <ul class="nav flex-column">
+      
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../..">Home</a>
+  </li>
+
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">User Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../installation/">Install and upgrade</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link current" href="./" aria-current="page">Add a dashboard</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../edit-dashboard/">Edit a dashboard on the radio</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../customize-themes/">Customize themes</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../troubleshooting/">Troubleshoot and file bugs</a>
+  </li>
+
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Reference Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../reference-guide/">Overview</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/output/">Channel output</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/flight-counter/">Flight counter</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/flight-mode/">Flight mode</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/flight-timer/">Flight timer</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/host-diagnostics/">Host diagnostics</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/link-status/">Link status</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/metric/">Metric</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/model-identity/">Model identity</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/navigation/">Navigation</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/rx-battery/">RX battery</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/service-probe/">Service probe</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/state/">State</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/trim-panel/">Trim</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/tx-battery/">TX battery</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../reference-guide/yaml/">YAML reference</a>
+  </li>
+
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Developer Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/build/">Check out and build</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/testing/">Test and debug</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/simulators/">Run and test in simulators</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/architecture/">Repository and architecture</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/tools/">Project tools</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/videos/">Tutorial videos</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/contributing/">Issues, changes, and releases</a>
+  </li>
+
+        </ul>
+      </li>
+    </ul>
+  </div>
+</nav></div>
+                    <div class="col-md-9" role="main">
+
+<h1 id="add-a-dashboard">Add a dashboard</h1>
+<div class="ag-video">
+  <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/Z-_Z-rtot8U" title="Create an Empty AeroGrid dashboard" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+  <p><a href="https://www.youtube.com/watch?v=Z-_Z-rtot8U">Watch the dashboard setup walkthrough on YouTube</a>.</p>
+</div>
+
+<p>Add AeroGrid to a radio screen and choose a layout.
+Install <a href="../installation/">AeroGrid</a> first and select the model you want to use.</p>
+<h2 id="add-a-screen">Add a screen</h2>
+<p>Open the main screen's top-left menu and choose <strong>UI Setup</strong>.</p>
+<p><img alt="EdgeTX main menu with UI Setup at the right" src="../../assets/editor/screen-menu.png" /></p>
+<p>Select the <strong>+</strong> tab, then tap <strong>Add Screen</strong>.</p>
+<p><img alt="Add Screen tab and button in EdgeTX UI Setup" src="../../assets/editor/add-screen.png" /></p>
+<p>On the new screen, tap the <strong>Layout</strong> thumbnail and choose <strong>App mode</strong>.
+This makes one widget fill the screen.</p>
+<p><img alt="Screen layout picker with App mode highlighted" src="../../assets/editor/screen-layout.png" /></p>
+<p>Tap <strong>Setup widgets</strong>, then tap the empty widget area.</p>
+<p><img alt="App mode screen with Setup widgets button" src="../../assets/editor/app-screen.png" /></p>
+<p>Choose <strong>AeroGrid</strong> in <strong>Select widget</strong>.</p>
+<p><img alt="Select widget menu with AeroGrid highlighted" src="../../assets/editor/select-widget.png" /></p>
+<p>In the AeroGrid settings, choose <strong>Layout</strong>. Select <strong>Empty</strong> to build your
+own dashboard, or <strong>Default</strong> to start with the bundled aircraft dashboard.
+Choose <strong>Modern Dark</strong> or <strong>Modern Light</strong> for <strong>Theme</strong>.</p>
+<p><img alt="AeroGrid widget settings with Layout and Theme pickers" src="../../assets/editor/widget-options.png" /></p>
+<p>Press <strong>RTN</strong> to close the settings and leave setup. Your dashboard is now
+on the new screen. Repeat these steps to add another dashboard.</p>
+<h2 id="understand-layouts">Understand layouts</h2>
+<p>A <strong>dashboard</strong> is AeroGrid on a radio screen. A <strong>layout</strong> defines its panels,
+their positions and sizes, and their settings, including sources and alarms.
+Choose a layout to decide what that dashboard displays.</p>
+<table>
+<thead>
+<tr>
+<th>Layout</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Empty</strong></td>
+<td>A blank starting point for your own dashboard. Shows instructions until you start editing.</td>
+</tr>
+<tr>
+<td><strong>Default</strong></td>
+<td>A ready-made aircraft dashboard. Configure its sources, switches, battery cell count, and alarms for your model before using it.</td>
+</tr>
+<tr>
+<td><strong>Diagnostics</strong></td>
+<td>A diagnostics dashboard for checking loaded components and errors.</td>
+</tr>
+<tr>
+<td><strong>Palette</strong></td>
+<td>Fixed theme samples: color tokens, text, bars, a dial, and every panel state. Not flight data.</td>
+</tr>
+</tbody>
+</table>
+<p>Bundled layouts are stored in <code>/WIDGETS/AeroGrid/layouts/</code>. Your saved layouts
+are stored separately in <code>/AEROGRID/layouts/</code>, so upgrading AeroGrid leaves
+them untouched.</p>
+<p><strong>Save</strong> updates the current layout. For a bundled layout it creates your
+copy in <code>/AEROGRID/layouts/</code> under the same name, leaving the bundled original
+untouched.
+<strong>Save as...</strong> creates a separately named layout.</p>
+<p>Several dashboards, even on different models, can select the same layout.
+They share all panel settings, so check that the sources and switches suit
+each model. Saving changes under that name affects all dashboards using it
+when they next reload.</p>
+<p>Restart the radio after saving a new name so it appears in the <strong>Layout</strong>
+picker. A missing layout falls back to <strong>Default</strong>.</p>
+<h2 id="app-mode-and-full-screen">App mode and Full screen</h2>
+<table>
+<thead>
+<tr>
+<th>Layout</th>
+<th>What you see</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>App mode</strong></td>
+<td>A dashboard covering the display, without the EdgeTX top bar, flight-mode label, sliders, or trims. The menu button remains in the top-left corner.</td>
+</tr>
+<tr>
+<td><strong>Full screen (<code>1 x 1</code>)</strong></td>
+<td>One dashboard widget, with the option to keep EdgeTX's top bar, flight-mode label, sliders, and trims.</td>
+</tr>
+</tbody>
+</table>
+<p>Use App mode for a clean dashboard, or Full screen to keep the radio's
+standard information alongside it. In App mode, a wider top-left panel
+leaves more room beside the menu button.</p>
+<p>To arrange and configure panels, continue with
+<a href="../edit-dashboard/">Edit a dashboard on the radio</a>. For palette settings, see
+<a href="../customize-themes/">Customize themes</a>.</p></div>
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+                <p>Copyright &copy; AeroGrid contributors. GPL-2.0-only.</p>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+        <script src="../../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../../js/base.js"></script>
+        <script src="../../javascripts/versions.mjs" type="module"></script>
+        <script src="../../search/main.js"></script>
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

@@ -1,0 +1,2072 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        <link rel="canonical" href="https://thomaskistler.github.io/aero-grid/0.3.0/reference-guide/yaml/">
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>YAML reference - AeroGrid</title>
+        <link href="../../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../../css/brands.min.css" rel="stylesheet">
+        <link href="../../css/solid.min.css" rel="stylesheet">
+        <link href="../../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../../stylesheets/aerogrid.css" rel="stylesheet">
+        <link href="../../stylesheets/versions.css" rel="stylesheet">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-RMCKML1PKS"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+
+          gtag('config', "G-RMCKML1PKS");
+        </script> <meta name="aerogrid-site-root" content="/aero-grid/">
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-light bg-light">
+            <div class="container">
+                <a class="navbar-brand" href="../..">AeroGrid</a><div class="ag-docs-version">
+  <select aria-label="Documentation version"
+          data-docs-root="/aero-grid/"
+          data-docs-version="0.3.0"
+          disabled>
+    <option value="0.3.0">v0.3.0</option>
+  </select>
+  <span class="ag-docs-version-status" role="status"></span>
+</div>
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+                        <!-- Main navigation -->
+                        <ul class="nav navbar-nav">
+                            <li class="nav-item">
+                                <a href="../.." class="nav-link">Home</a>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown"  aria-expanded="false">User Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../user-guide/installation/" class="dropdown-item">Install and upgrade</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/add-dashboard/" class="dropdown-item">Add a dashboard</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/edit-dashboard/" class="dropdown-item">Edit a dashboard on the radio</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/customize-themes/" class="dropdown-item">Customize themes</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/troubleshooting/" class="dropdown-item">Troubleshoot and file bugs</a>
+</li>
+                                </ul>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle active" aria-current="page" role="button" data-bs-toggle="dropdown"  aria-expanded="false">Reference Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../" class="dropdown-item">Overview</a>
+</li>
+                                    
+  <li class="dropdown-submenu">
+    <a href="#" class="dropdown-item">Panels</a>
+    <ul class="dropdown-menu">
+            
+<li>
+    <a href="../../panels/output/" class="dropdown-item">Channel output</a>
+</li>
+            
+<li>
+    <a href="../../panels/flight-counter/" class="dropdown-item">Flight counter</a>
+</li>
+            
+<li>
+    <a href="../../panels/flight-mode/" class="dropdown-item">Flight mode</a>
+</li>
+            
+<li>
+    <a href="../../panels/flight-timer/" class="dropdown-item">Flight timer</a>
+</li>
+            
+<li>
+    <a href="../../panels/host-diagnostics/" class="dropdown-item">Host diagnostics</a>
+</li>
+            
+<li>
+    <a href="../../panels/link-status/" class="dropdown-item">Link status</a>
+</li>
+            
+<li>
+    <a href="../../panels/metric/" class="dropdown-item">Metric</a>
+</li>
+            
+<li>
+    <a href="../../panels/model-identity/" class="dropdown-item">Model identity</a>
+</li>
+            
+<li>
+    <a href="../../panels/navigation/" class="dropdown-item">Navigation</a>
+</li>
+            
+<li>
+    <a href="../../panels/rx-battery/" class="dropdown-item">RX battery</a>
+</li>
+            
+<li>
+    <a href="../../panels/service-probe/" class="dropdown-item">Service probe</a>
+</li>
+            
+<li>
+    <a href="../../panels/state/" class="dropdown-item">State</a>
+</li>
+            
+<li>
+    <a href="../../panels/trim-panel/" class="dropdown-item">Trim</a>
+</li>
+            
+<li>
+    <a href="../../panels/tx-battery/" class="dropdown-item">TX battery</a>
+</li>
+    </ul>
+  </li>
+                                    
+<li>
+    <a href="./" class="dropdown-item active" aria-current="page">YAML reference</a>
+</li>
+                                </ul>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown"  aria-expanded="false">Developer Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../developer-guide/build/" class="dropdown-item">Check out and build</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/testing/" class="dropdown-item">Test and debug</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/simulators/" class="dropdown-item">Run and test in simulators</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/architecture/" class="dropdown-item">Repository and architecture</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/tools/" class="dropdown-item">Project tools</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/videos/" class="dropdown-item">Tutorial videos</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/contributing/" class="dropdown-item">Issues, changes, and releases</a>
+</li>
+                                </ul>
+                            </li>
+                        </ul>
+
+                    <ul class="nav navbar-nav ms-md-auto">
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+                                <i class="fa fa-search"></i> Search
+                            </a>
+                        </li>
+                            <li class="nav-item">
+                                <a rel="prev" href="../../panels/tx-battery/" class="nav-link">
+                                    <i class="fa fa-arrow-left"></i> Previous
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a rel="next" href="../../developer-guide/build/" class="nav-link">
+                                    Next <i class="fa fa-arrow-right"></i>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="https://github.com/thomaskistler/aero-grid" class="nav-link"><i class="fa-brands fa-github"></i> GitHub</a>
+                            </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+                    <div class="col-md-3">
+
+<nav class="navbar-expand-md bs-sidebar hidden-print affix" aria-label="Documentation">
+  <div class="navbar-header">
+    <button type="button" class="navbar-toggler collapsed" data-bs-toggle="collapse" data-bs-target="#toc-collapse" aria-controls="toc-collapse" aria-expanded="false" aria-label="Toggle documentation navigation">
+      <span class="fa fa-angle-down" aria-hidden="true"></span>
+    </button>
+  </div>
+  <div id="toc-collapse" class="navbar-collapse collapse card bg-body-tertiary">
+    <ul class="nav flex-column">
+      
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../..">Home</a>
+  </li>
+
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">User Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/installation/">Install and upgrade</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/add-dashboard/">Add a dashboard</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/edit-dashboard/">Edit a dashboard on the radio</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/customize-themes/">Customize themes</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/troubleshooting/">Troubleshoot and file bugs</a>
+  </li>
+
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Reference Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../">Overview</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/output/">Channel output</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/flight-counter/">Flight counter</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/flight-mode/">Flight mode</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/flight-timer/">Flight timer</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/host-diagnostics/">Host diagnostics</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/link-status/">Link status</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/metric/">Metric</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/model-identity/">Model identity</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/navigation/">Navigation</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/rx-battery/">RX battery</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/service-probe/">Service probe</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/state/">State</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/trim-panel/">Trim</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/tx-battery/">TX battery</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link current" href="./" aria-current="page">YAML reference</a>
+  </li>
+
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Developer Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/build/">Check out and build</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/testing/">Test and debug</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/simulators/">Run and test in simulators</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/architecture/">Repository and architecture</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/tools/">Project tools</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/videos/">Tutorial videos</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/contributing/">Issues, changes, and releases</a>
+  </li>
+
+        </ul>
+      </li>
+    </ul>
+  </div>
+</nav></div>
+                    <div class="col-md-9" role="main">
+
+<h1 id="yaml-reference">YAML reference</h1>
+<p>This page is the complete layout-file reference for people writing AeroGrid layouts by hand, often with an AI agent. Use it to produce a file that the widget can load; for what each option means in the on-radio settings drawer, see the relevant <a href="../../panels/metric/">panel page</a> (each panel section below links to its own page). Panel setting keys are documented here only.</p>
+<h2 id="file-locations">File locations</h2>
+<p>AeroGrid reads YAML layout files from two places:</p>
+<ul>
+<li>Bundled layouts: <code>/WIDGETS/AeroGrid/layouts/&lt;name&gt;.yaml</code>.</li>
+<li>User layouts: <code>/AEROGRID/layouts/&lt;name&gt;.yaml</code> (on the SD card).</li>
+</ul>
+<p>A user layout with the selected name takes precedence over a bundled layout of the same name. The user folder is outside the widget folder, so a widget update does not replace user layouts. The editor accepts names of 1–24 letters, digits, <code>_</code> or <code>-</code>; <code>Empty</code> is reserved for the blank screen. Use that name as the filename stem. If loading a candidate fails, AeroGrid can try its backup, the bundled file of that name, then the bundled default and its backup.</p>
+<h2 id="document-structure">Document structure</h2>
+<p>A new layout should use version 3 and exactly a 4 × 4 grid. <code>col</code> and <code>row</code> are zero-based; spans count grid cells. The cell at the upper left is <code>(0, 0)</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Top-level key</th>
+<th>Type</th>
+<th>Required</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>version</code></td>
+<td>integer</td>
+<td>yes</td>
+<td>Layout schema version. Write <code>3</code>.</td>
+</tr>
+<tr>
+<td><code>grid</code></td>
+<td>mapping</td>
+<td>yes</td>
+<td>Must contain <code>columns: 4</code> and <code>rows: 4</code>. Other grid dimensions are rejected.</td>
+</tr>
+<tr>
+<td><code>panels</code></td>
+<td>sequence of mappings</td>
+<td>yes</td>
+<td>Ordered panel placements. Use <code>[]</code> for an empty layout.</td>
+</tr>
+<tr>
+<td><code>session</code></td>
+<td>mapping</td>
+<td>no</td>
+<td>Dashboard-wide flight-session options; see <a href="#session">Session</a>.</td>
+</tr>
+<tr>
+<td><code>theme</code></td>
+<td>mapping</td>
+<td>no</td>
+<td><strong>Not supported.</strong> A layout that has this key is reported as invalid. Choose a theme in widget settings instead.</td>
+</tr>
+</tbody>
+</table>
+<p>Each <code>panels</code> entry has these placement keys:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Required</th>
+<th>Rule</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>string</td>
+<td>yes</td>
+<td>Unique within the layout; letters, digits, <code>_</code> and <code>-</code> only (<code>^[A-Za-z0-9_-]+$</code>).</td>
+</tr>
+<tr>
+<td><code>type</code></td>
+<td>string</td>
+<td>yes</td>
+<td>Panel kind, using the exact names in the Panels sections below. It must also contain only letters, digits, <code>_</code> and <code>-</code>.</td>
+</tr>
+<tr>
+<td><code>col</code></td>
+<td>integer</td>
+<td>yes</td>
+<td>Starting column, 0–3.</td>
+</tr>
+<tr>
+<td><code>row</code></td>
+<td>integer</td>
+<td>yes</td>
+<td>Starting row, 0–3.</td>
+</tr>
+<tr>
+<td><code>colSpan</code></td>
+<td>integer</td>
+<td>yes</td>
+<td>Positive width in cells; must fit within column 4 and be supported by the panel.</td>
+</tr>
+<tr>
+<td><code>rowSpan</code></td>
+<td>integer</td>
+<td>yes</td>
+<td>Positive height in cells; must fit within row 4 and be supported by the panel.</td>
+</tr>
+<tr>
+<td><code>config</code></td>
+<td>mapping</td>
+<td>no</td>
+<td>Panel-specific settings. Omit it to use panel defaults; otherwise write a mapping, not a sequence or scalar.</td>
+</tr>
+</tbody>
+</table>
+<p>A placement must fit the 4 × 4 grid: <code>col + colSpan &lt;= 4</code> and <code>row + rowSpan &lt;= 4</code>. Placements may touch edges but may not occupy the same cell. If two placements overlap, the first valid placement in the sequence wins and the later one is dropped. A panel must also support its exact span, written as <code>&lt;colSpan&gt;x&lt;rowSpan&gt;</code> (for example, <code>2x1</code>); the word <code>any</code> in a panel's span list accepts every in-bounds span.</p>
+<p>Panel IDs and types are case-sensitive. Unknown top-level keys and extra placement keys are preserved rather than rejected. In contrast, a key inside <code>config</code> that the panel does not declare is reported as an unknown setting; spelling and case must match exactly.</p>
+<h2 id="session">Session</h2>
+<p><code>session</code> is optional and must be a mapping when present. Its only declared key is <code>armSource</code>; unknown session keys are not reported and are not retained in the normalized session:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>armSource</code></td>
+<td>string</td>
+<td>unset</td>
+<td>EdgeTX switch or source name that marks the model armed for AeroGrid flight-session extrema, used when a panel selects <strong>Minimum tracked: flight</strong>. A positive source value starts a flight; a non-positive value ends it. If omitted or blank, the service has no arm boundary and maintains an open-ended session.</td>
+</tr>
+</tbody>
+</table>
+<p>The first panel that requests the shared flight-session service configures its source; later requests do not replace it. Keep the arm source in this one layout-level location rather than attempting to set different sources on individual panels. <code>session.armSource</code> is separate from panel settings such as a flight counter's armed switch or Navigation's home arm switch.</p>
+<h2 id="validation-and-errors">Validation and errors</h2>
+<p>The loader parses and validates a candidate before building panels. Unsupported YAML syntax, an unsupported schema version, a missing or non-4×4 grid, a non-sequence <code>panels</code> value, or the unsupported layout-level <code>theme</code> key makes the candidate invalid; AeroGrid reports the load problem and may recover using the next backup or bundled candidate. Versions 1 and 2 are migrated to version 3 in memory. Version 1 migrates the former <code>cell-battery</code> panel to <code>rx-battery</code> and normalizes its retired fields. Version 2 migrates the old Navigation presentation options; legacy RX-battery warning thresholds and source selectors are also normalized to the current keys. Write version 3 for new files.</p>
+<p>An invalid panel entry is rejected without preventing other valid entries from loading. This includes a non-mapping entry, an unsafe or duplicate ID, an unknown panel type, invalid placement values, a placement outside the grid, an overlap, or a span the panel does not support. The failed panel is dropped and its reason is reported. When overlaps occur, the earlier accepted entry remains.</p>
+<p>For a top-level setting, a missing or wrong-typed value falls back to its declared default (or remains unset if it has no default). A string outside a setting's declared choice list also falls back to its default. These issues are reported with the panel ID; they do not by themselves drop the panel. Nested list-entry fields are not generically defaulted or type-checked by the settings resolver: panel-specific validation reports malformed nested values instead. Panel-specific cross-field checks may also report warnings. During normal display these are reported while loading and the host attempts to build the panel; if the panel rejects the settings during construction, that panel is dropped. An editor preview rejects a panel as soon as any warning is found. Ranges and steps listed in the panel tables are checked only by the on-radio editor: an out-of-range or off-step value loads and displays, but the editor refuses to save the layout until it is corrected. For reliable authoring, correct every warning rather than relying on fallback behavior.</p>
+<p>Unknown <code>config</code> keys are kept in the resolved configuration but reported as “is not a setting of this panel”; they are not silently discarded. This catches typos. A non-mapping <code>config</code> is normalized to an empty mapping, so always use the mapping form. Unknown top-level keys and extra panel-entry keys are retained without a setting warning; do not rely on them having meaning to this version of AeroGrid.</p>
+<p>YAML parsing and structural validation do not prove that an EdgeTX source exists on a particular model or radio. Use exact source names as the radio reports them. A missing live source can still render as unavailable even when the layout structure is valid.</p>
+<h2 id="yaml-syntax-supported">YAML syntax supported</h2>
+<p>The widget uses a deliberately small YAML parser, not a general YAML implementation. Emit only these forms:</p>
+<ul>
+<li>Indented block mappings (<code>key: value</code>) and sequences (<code>- item</code>), using <strong>two spaces per indentation level</strong>. Tabs and odd-space indentation are errors.</li>
+<li>Strings, numbers, lowercase <code>true</code> and <code>false</code>, and <code>null</code> or <code>~</code> scalars. To force a string that looks like a number, boolean, or null, quote it.</li>
+<li>Single-quoted strings; represent an apostrophe inside one as <code>''</code>. Double-quoted strings support <code>\\</code>, <code>\"</code>, <code>\n</code>, <code>\r</code> and <code>\t</code> escapes.</li>
+<li>Comments beginning with <code>#</code> at the start of a line or after whitespace. A <code>#</code> inside a quoted string is preserved.</li>
+<li>Empty flow collections only: <code>[]</code> and <code>{}</code>. They are useful for empty sequences and mappings; non-empty inline collections are unsupported.</li>
+<li>Empty mapping values with indented children, including nested mappings and lists.</li>
+</ul>
+<p>Do <strong>not</strong> use anchors or aliases, tags, block scalars (<code>|</code> or <code>&gt;</code>), flow-style non-empty lists or maps, merge keys, directives, or other general YAML features. Duplicate mapping keys are rejected. Mapping keys must begin with an ASCII letter or <code>_</code>, and may then contain letters, digits, <code>_</code> or <code>-</code>. Quote text that could otherwise be parsed as a boolean, number or null. Prefer double-quoting source names, labels and other strings when uncertain.</p>
+<h2 id="panels">Panels</h2>
+<p>Omitted settings use their listed defaults. “Unset” means the setting has no schema default and stays unset unless specified. Numeric constraints in the tables are the drawer's declared bounds/steps or, when explicitly noted, the panel's runtime validation. All choice values are the YAML values, even if the drawer displays a friendlier choice label.</p>
+<h3 id="flight-counter"><code>flight-counter</code></h3>
+<p>Drawer title: <strong>Flight counter</strong> · <a href="../../panels/flight-counter/">drawer settings and behavior</a> · Supported spans: <code>1x1</code>, <code>2x1</code>, <code>3x1</code>, <code>4x1</code>, <code>1x2</code>, <code>2x2</code>, <code>3x2</code>, <code>4x2</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Allowed values</th>
+<th>Drawer label</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>label</code></td>
+<td>string</td>
+<td><code>FLT</code></td>
+<td>Any string</td>
+<td>Label</td>
+<td>Heading.</td>
+</tr>
+<tr>
+<td><code>armSwitch</code></td>
+<td>string</td>
+<td><code>SF^</code></td>
+<td>Switch position such as <code>SF^</code>, <code>SA-</code>, <code>SFv</code>, or logical switch <code>L01</code></td>
+<td>Armed switch position</td>
+<td>Required by panel validation; must match the switch-position pattern.</td>
+</tr>
+<tr>
+<td><code>motorSource</code></td>
+<td>string</td>
+<td><code>ch3</code></td>
+<td>Non-empty EdgeTX source name</td>
+<td>Motor channel</td>
+<td>Must name a source; the drawer filters to channels.</td>
+</tr>
+<tr>
+<td><code>motorReversed</code></td>
+<td>boolean</td>
+<td><code>false</code></td>
+<td><code>true</code> / <code>false</code></td>
+<td>Reversed motor channel</td>
+<td>Invert the motor channel direction.</td>
+</tr>
+<tr>
+<td><code>minMotorPercent</code></td>
+<td>number</td>
+<td><code>25</code></td>
+<td><code>0 &lt;= value &lt; 100</code></td>
+<td>Minimum motor percent</td>
+<td>Runtime validation enforces this range; not restricted to integer values by validation.</td>
+</tr>
+<tr>
+<td><code>minFlightDuration</code></td>
+<td>number</td>
+<td><code>30</code></td>
+<td><code>0 &lt; value &lt;= 3600</code> seconds</td>
+<td>Qualification seconds</td>
+<td>Must be positive and at most one hour.</td>
+</tr>
+<tr>
+<td><code>disarmDuration</code></td>
+<td>number</td>
+<td><code>10</code></td>
+<td><code>0 &lt; value &lt;= 3600</code> seconds</td>
+<td>Disarm seconds</td>
+<td>Must be positive and at most one hour.</td>
+</tr>
+<tr>
+<td><code>announcements</code></td>
+<td>boolean</td>
+<td><code>false</code></td>
+<td><code>true</code> / <code>false</code></td>
+<td>Announce flights</td>
+<td></td>
+</tr>
+<tr>
+<td><code>history</code></td>
+<td>boolean</td>
+<td><code>true</code></td>
+<td><code>true</code> / <code>false</code></td>
+<td>Write CSV history</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Cross-field and format rules:</p>
+<ul>
+<li><code>armSwitch</code> must be a physical switch position (<code>S</code> + switch letter + <code>^</code>, <code>-</code> or <code>v</code>) or a logical switch such as <code>L01</code>; <code>motorSource</code> must not be blank.</li>
+<li><code>minFlightDuration</code> and <code>disarmDuration</code> must each be in <code>(0, 3600]</code>; <code>minMotorPercent</code> must be in <code>[0, 100)</code>.</li>
+</ul>
+<pre><code class="language-yaml">- id: flights
+  type: flight-counter
+  col: 0
+  row: 0
+  colSpan: 1
+  rowSpan: 1
+  config:
+    armSwitch: SF^
+    motorSource: ch3
+</code></pre>
+<h3 id="flight-mode"><code>flight-mode</code></h3>
+<p>Drawer title: <strong>Flight mode</strong> · <a href="../../panels/flight-mode/">drawer settings and behavior</a> · Supported spans: <code>1x1</code>, <code>2x1</code>, <code>3x1</code>, <code>4x1</code>, <code>1x2</code>, <code>2x2</code>, <code>3x2</code>, <code>4x2</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Allowed values</th>
+<th>Drawer label</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>label</code></td>
+<td>string</td>
+<td><code>MODE</code></td>
+<td>Any string</td>
+<td>Label</td>
+<td>Heading.</td>
+</tr>
+<tr>
+<td><code>showIndex</code></td>
+<td>boolean</td>
+<td><code>false</code></td>
+<td><code>true</code> / <code>false</code></td>
+<td>Show mode number</td>
+<td></td>
+</tr>
+<tr>
+<td><code>accent</code></td>
+<td>string</td>
+<td><code>green</code></td>
+<td><code>cyan</code>, <code>green</code>, <code>amber</code>, <code>orange</code></td>
+<td>Accent</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>No panel-specific cross-field validation is declared.</p>
+<pre><code class="language-yaml">- id: mode
+  type: flight-mode
+  col: 0
+  row: 0
+  colSpan: 1
+  rowSpan: 1
+  config:
+    showIndex: true
+</code></pre>
+<h3 id="flight-timer"><code>flight-timer</code></h3>
+<p>Drawer title: <strong>Flight timer</strong> · <a href="../../panels/flight-timer/">drawer settings and behavior</a> · Supported spans: <code>1x1</code>, <code>2x1</code>, <code>3x1</code>, <code>4x1</code>, <code>1x2</code>, <code>2x2</code>, <code>3x2</code>, <code>4x2</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Allowed values</th>
+<th>Drawer label</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>timer</code></td>
+<td>number</td>
+<td><code>0</code></td>
+<td>Integer <code>0</code>, <code>1</code> or <code>2</code></td>
+<td>Model timer</td>
+<td>Must identify one of the radio's three model timers when explicitly present.</td>
+</tr>
+<tr>
+<td><code>label</code></td>
+<td>string</td>
+<td><code>""</code></td>
+<td>Any string</td>
+<td>Label</td>
+<td>Empty means derive the heading from the timer's name or number.</td>
+</tr>
+<tr>
+<td><code>warning</code></td>
+<td>number</td>
+<td>Unset (drawer: <code>Off</code>)</td>
+<td><code>0</code> or more whole seconds; omit for Off</td>
+<td>Warning seconds</td>
+<td>Threshold is interpreted according to the timer's count-up/countdown direction.</td>
+</tr>
+<tr>
+<td><code>critical</code></td>
+<td>number</td>
+<td>Unset (drawer: <code>Off</code>)</td>
+<td><code>0</code> or more whole seconds; omit for Off</td>
+<td>Critical seconds</td>
+<td>Critical takes precedence if both conditions apply; expired countdowns are critical.</td>
+</tr>
+<tr>
+<td><code>accent</code></td>
+<td>string</td>
+<td><code>cyan</code></td>
+<td><code>cyan</code>, <code>green</code>, <code>amber</code>, <code>orange</code></td>
+<td>Accent</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Cross-field rules: no threshold ordering or numeric range is enforced by the panel validator. An explicitly supplied <code>timer</code> must be an integer from 0 through 2; an absent value gets the valid default <code>0</code>.</p>
+<pre><code class="language-yaml">- id: timer
+  type: flight-timer
+  col: 0
+  row: 0
+  colSpan: 1
+  rowSpan: 1
+  config:
+    timer: 0
+    warning: 300
+    critical: 60
+</code></pre>
+<h3 id="host-diagnostics"><code>host-diagnostics</code></h3>
+<p>Drawer title: <strong>Host diagnostics</strong> · <a href="../../panels/host-diagnostics/">drawer settings and behavior</a> · Supported spans: <code>2x2</code>, <code>3x2</code>, <code>4x2</code>, <code>2x3</code>, <code>3x3</code>, <code>4x3</code>, <code>2x4</code>, <code>3x4</code>, <code>4x4</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Allowed values</th>
+<th>Drawer label</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>label</code></td>
+<td>string</td>
+<td><code>""</code></td>
+<td>Any string</td>
+<td>Label</td>
+<td>Blank derives the heading from the selected section.</td>
+</tr>
+<tr>
+<td><code>section</code></td>
+<td>string</td>
+<td><code>identity</code></td>
+<td><code>identity</code>, <code>theme</code>, <code>panels</code>, <code>sources</code>, <code>log</code></td>
+<td>Section</td>
+<td>Selects which host diagnostics to show.</td>
+</tr>
+<tr>
+<td><code>maxEntries</code></td>
+<td>number</td>
+<td><code>64</code></td>
+<td>Integer 1–256</td>
+<td>Maximum log entries</td>
+<td>Shown for <code>log</code>. Largest live log panel setting determines shared retention.</td>
+</tr>
+<tr>
+<td><code>accent</code></td>
+<td>string</td>
+<td><code>cyan</code></td>
+<td><code>cyan</code>, <code>green</code>, <code>amber</code>, <code>orange</code></td>
+<td>Accent</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><code>maxEntries</code> must be an integer from 1 to 256.</p>
+<pre><code class="language-yaml">- id: diagnostics
+  type: host-diagnostics
+  col: 0
+  row: 0
+  colSpan: 2
+  rowSpan: 2
+  config:
+    section: panels
+</code></pre>
+<h3 id="link-status"><code>link-status</code></h3>
+<p>Drawer title: <strong>Link status</strong> · <a href="../../panels/link-status/">drawer settings and behavior</a> · Supported spans: <code>1x1</code>, <code>2x1</code>, <code>3x1</code>, <code>4x1</code>, <code>1x2</code>, <code>2x2</code>, <code>3x2</code>, <code>4x2</code>, <code>2x3</code>, <code>3x3</code>, <code>4x3</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Allowed values</th>
+<th>Drawer label</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>label</code></td>
+<td>string</td>
+<td><code>LINK</code></td>
+<td>Any string</td>
+<td>Label</td>
+<td>Heading.</td>
+</tr>
+<tr>
+<td><code>rssiSource</code></td>
+<td>string</td>
+<td><code>RSSI</code></td>
+<td>EdgeTX source name, or blank when no RSSI threshold is configured</td>
+<td>RSSI source</td>
+<td>Used by RSSI readings and thresholds.</td>
+</tr>
+<tr>
+<td><code>qualitySource</code></td>
+<td>string</td>
+<td><code>""</code></td>
+<td>Any EdgeTX source name or blank</td>
+<td>Link quality source</td>
+<td>Link quality is not inferred when absent.</td>
+</tr>
+<tr>
+<td><code>modeSource</code></td>
+<td>string</td>
+<td><code>""</code></td>
+<td>Any EdgeTX source name or blank</td>
+<td>RF mode source</td>
+<td>Required for RSSI-margin thresholds.</td>
+</tr>
+<tr>
+<td><code>snrSource</code></td>
+<td>string</td>
+<td><code>""</code></td>
+<td>Any EdgeTX source name or blank</td>
+<td>SNR source</td>
+<td></td>
+</tr>
+<tr>
+<td><code>powerSource</code></td>
+<td>string</td>
+<td><code>""</code></td>
+<td>Any EdgeTX source name or blank</td>
+<td>Transmit power source</td>
+<td></td>
+</tr>
+<tr>
+<td><code>protocol</code></td>
+<td>string</td>
+<td><code>generic</code></td>
+<td><code>generic</code>, <code>elrs4</code></td>
+<td>Protocol mapping</td>
+<td>ELRS 4 mapping is needed for margin thresholds.</td>
+</tr>
+<tr>
+<td><code>reading</code></td>
+<td>string</td>
+<td><code>auto</code></td>
+<td><code>auto</code>, <code>rssi</code>, <code>quality</code></td>
+<td>Primary reading</td>
+<td><code>auto</code> chooses the best available primary reading.</td>
+</tr>
+<tr>
+<td><code>extrema</code></td>
+<td>string</td>
+<td><code>none</code></td>
+<td><code>none</code>, <code>source</code>, <code>flight</code></td>
+<td>Minimum tracked</td>
+<td>Source-tracked or session-tracked minimum.</td>
+</tr>
+<tr>
+<td><code>extremaSource</code></td>
+<td>string</td>
+<td><code>""</code></td>
+<td>Any EdgeTX source name or blank</td>
+<td>Minimum source</td>
+<td>Used with source tracking; blank falls back to the primary reading source.</td>
+</tr>
+<tr>
+<td><code>qualityWarning</code></td>
+<td>number</td>
+<td>Unset (drawer: <code>Off</code>)</td>
+<td><code>0</code>–<code>100</code> percent; step <code>1</code></td>
+<td>Warning quality %</td>
+<td>Requires <code>qualitySource</code>.</td>
+</tr>
+<tr>
+<td><code>qualityCritical</code></td>
+<td>number</td>
+<td>Unset (drawer: <code>Off</code>)</td>
+<td><code>0</code>–<code>100</code> percent; step <code>1</code></td>
+<td>Critical quality %</td>
+<td>Requires <code>qualitySource</code>.</td>
+</tr>
+<tr>
+<td><code>marginWarning</code></td>
+<td>number</td>
+<td>Unset (drawer: <code>Off</code>)</td>
+<td><code>0</code>–<code>60</code> dB; step <code>1</code></td>
+<td>Warning RSSI margin dB</td>
+<td>Requires <code>protocol: elrs4</code>, <code>modeSource</code> and <code>rssiSource</code>.</td>
+</tr>
+<tr>
+<td><code>marginCritical</code></td>
+<td>number</td>
+<td>Unset (drawer: <code>Off</code>)</td>
+<td><code>0</code>–<code>60</code> dB; step <code>1</code></td>
+<td>Critical RSSI margin dB</td>
+<td>Requires <code>protocol: elrs4</code>, <code>modeSource</code> and <code>rssiSource</code>.</td>
+</tr>
+<tr>
+<td><code>rssiWarning</code></td>
+<td>number</td>
+<td>Unset (drawer: <code>Off</code>)</td>
+<td><code>-130</code>–<code>100</code> in source units; step <code>1</code></td>
+<td>Warning RSSI</td>
+<td>Requires <code>rssiSource</code>.</td>
+</tr>
+<tr>
+<td><code>rssiCritical</code></td>
+<td>number</td>
+<td>Unset (drawer: <code>Off</code>)</td>
+<td><code>-130</code>–<code>100</code> in source units; step <code>1</code></td>
+<td>Critical RSSI</td>
+<td>Requires <code>rssiSource</code>.</td>
+</tr>
+<tr>
+<td><code>barMin</code></td>
+<td>number</td>
+<td><code>0</code></td>
+<td>Any number</td>
+<td>Bar minimum</td>
+<td>Bar scale lower bound, in the primary reading's units.</td>
+</tr>
+<tr>
+<td><code>barMax</code></td>
+<td>number</td>
+<td><code>100</code></td>
+<td>Any number</td>
+<td>Bar maximum</td>
+<td>Bar scale upper bound, in the primary reading's units.</td>
+</tr>
+<tr>
+<td><code>visual</code></td>
+<td>string</td>
+<td><code>bar</code></td>
+<td><code>bar</code>, <code>none</code></td>
+<td>Visualization</td>
+<td></td>
+</tr>
+<tr>
+<td><code>accent</code></td>
+<td>string</td>
+<td><code>green</code></td>
+<td><code>cyan</code>, <code>green</code>, <code>amber</code>, <code>orange</code></td>
+<td>Accent</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Cross-field rules:</p>
+<ul>
+<li>RSSI thresholds (<code>rssiWarning</code> or <code>rssiCritical</code>) require a nonblank <code>rssiSource</code>; quality thresholds require a nonblank <code>qualitySource</code>.</li>
+<li>Quality thresholds must be within <code>0</code>–<code>100</code>. RSSI-margin thresholds require <code>protocol: elrs4</code> plus nonblank <code>modeSource</code> and <code>rssiSource</code>.</li>
+<li>For each threshold family (RSSI, quality, margin), when both values are set, <code>Critical</code> must be less than or equal to <code>Warning</code> (the panel alarms as the link degrades downward). There are no declared threshold bounds for RSSI or margin.</li>
+</ul>
+<pre><code class="language-yaml">- id: link
+  type: link-status
+  col: 0
+  row: 0
+  colSpan: 1
+  rowSpan: 1
+  config:
+    rssiSource: RSSI
+    qualitySource: RQly
+    reading: auto
+</code></pre>
+<h3 id="metric"><code>metric</code></h3>
+<p>Drawer title: <strong>Metric</strong> · <a href="../../panels/metric/">drawer settings and behavior</a> · Supported spans: <code>1x1</code>, <code>2x1</code>, <code>3x1</code>, <code>4x1</code>, <code>1x2</code>, <code>2x2</code>, <code>3x2</code>, <code>4x2</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Allowed values</th>
+<th>Drawer label</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>metrics</code></td>
+<td>sequence</td>
+<td><code>[]</code></td>
+<td>0–3 entries</td>
+<td>Metrics</td>
+<td>Ordered readings: first is primary, remaining readings are supporting. Each item is a mapping; its fields follow.</td>
+</tr>
+<tr>
+<td><code>source</code></td>
+<td>string</td>
+<td>Unset</td>
+<td>EdgeTX numeric source name</td>
+<td>Source</td>
+<td>Nested in <code>metrics[]</code>; required by the drawer for a configured entry. An omitted or blank source renders unavailable rather than causing YAML validation to fail.</td>
+</tr>
+<tr>
+<td><code>label</code></td>
+<td>string</td>
+<td>Unset</td>
+<td>Any string</td>
+<td>Label</td>
+<td>Nested in <code>metrics[]</code>; fallback caption is the source name, or “Metric” if no source.</td>
+</tr>
+<tr>
+<td><code>unit</code></td>
+<td>string</td>
+<td>Unset</td>
+<td>Any string</td>
+<td>Unit</td>
+<td>Nested in <code>metrics[]</code>; unset follows the sensor unit, while <code>""</code> suppresses the unit.</td>
+</tr>
+<tr>
+<td><code>precision</code></td>
+<td>number</td>
+<td>Unset</td>
+<td>Integer <code>0</code>–<code>3</code>, or drawer's empty value <code>Sensor</code></td>
+<td>Precision</td>
+<td>Nested in <code>metrics[]</code>; unset/empty follows sensor precision.</td>
+</tr>
+<tr>
+<td><code>direction</code></td>
+<td>string</td>
+<td><code>auto</code></td>
+<td><code>auto</code>, <code>rising</code>, <code>falling</code></td>
+<td>Direction</td>
+<td>Nested in <code>metrics[]</code>; <code>auto</code> infers falling only when both thresholds are active and Critical is below Warning; otherwise it is rising.</td>
+</tr>
+<tr>
+<td><code>rangeMin</code></td>
+<td>number</td>
+<td><code>0</code></td>
+<td>Finite number; drawer step <code>0.1</code></td>
+<td>Range min</td>
+<td>Nested in <code>metrics[]</code>; scale minimum, not a clamp on the displayed value.</td>
+</tr>
+<tr>
+<td><code>rangeMax</code></td>
+<td>number</td>
+<td><code>100</code></td>
+<td>Finite number; drawer step <code>0.1</code></td>
+<td>Range max</td>
+<td>Nested in <code>metrics[]</code>; scale maximum.</td>
+</tr>
+<tr>
+<td><code>warning</code></td>
+<td>number</td>
+<td>Unset</td>
+<td>Finite number; drawer step <code>0.1</code>; Off when outside the range</td>
+<td>Warning</td>
+<td>Nested in <code>metrics[]</code>; a threshold outside <code>rangeMin</code>–<code>rangeMax</code> is ignored as Off.</td>
+</tr>
+<tr>
+<td><code>critical</code></td>
+<td>number</td>
+<td>Unset</td>
+<td>Finite number; drawer step <code>0.1</code>; Off when outside the range</td>
+<td>Critical</td>
+<td>Nested in <code>metrics[]</code>; a threshold outside <code>rangeMin</code>–<code>rangeMax</code> is ignored as Off.</td>
+</tr>
+<tr>
+<td><code>visual</code></td>
+<td>string</td>
+<td><code>none</code></td>
+<td><code>bar</code>, <code>radial</code>, <code>none</code></td>
+<td>Visualization</td>
+<td>Draws the primary reading's visual only when it fits.</td>
+</tr>
+<tr>
+<td><code>accent</code></td>
+<td>string</td>
+<td><code>cyan</code></td>
+<td><code>cyan</code>, <code>green</code>, <code>amber</code>, <code>orange</code></td>
+<td>Accent</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Cross-field and list rules:</p>
+<ul>
+<li><code>metrics</code> must be a contiguous sequence with zero to three items. The list may be empty; each item must be a mapping and only the listed entry keys are accepted.</li>
+<li>If present, <code>source</code> must be a string; <code>label</code> and <code>unit</code> must be strings; <code>precision</code> must be an integer from 0 to 3; numeric range/threshold values must be finite; and <code>direction</code> must be one of its three choices.</li>
+<li>Thresholds outside the inclusive range are treated as Off, not reported as an error. A reversed range is allowed; threshold containment uses the lower and upper endpoints after ordering them. The primary metric alone controls the alarm state; supporting metrics' thresholds do not.</li>
+</ul>
+<pre><code class="language-yaml">- id: altitude
+  type: metric
+  col: 0
+  row: 0
+  colSpan: 1
+  rowSpan: 1
+  config:
+    metrics:
+      - source: Alt
+        label: Altitude
+        precision: 1
+    visual: none
+</code></pre>
+<h3 id="model-identity"><code>model-identity</code></h3>
+<p>Drawer title: <strong>Model identity</strong> · <a href="../../panels/model-identity/">drawer settings and behavior</a> · Supported spans: <code>1x1</code>, <code>2x1</code>, <code>3x1</code>, <code>4x1</code>, <code>1x2</code>, <code>2x2</code>, <code>3x2</code>, <code>4x2</code>, <code>2x3</code>, <code>3x3</code>, <code>4x3</code>, <code>2x4</code>, <code>3x4</code>, <code>4x4</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Allowed values</th>
+<th>Drawer label</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>presentation</code></td>
+<td>string</td>
+<td><code>auto</code></td>
+<td><code>auto</code>, <code>name</code>, <code>image</code>, <code>both</code></td>
+<td>Show</td>
+<td><code>auto</code> shows the name alone in small panels and both name and picture when there is room.</td>
+</tr>
+<tr>
+<td><code>label</code></td>
+<td>string</td>
+<td><code>MODEL</code></td>
+<td>Any string</td>
+<td>Label</td>
+<td>A custom label conflicts with an explicit <code>image</code> or <code>both</code> presentation because the model name takes the heading.</td>
+</tr>
+<tr>
+<td><code>showLabels</code></td>
+<td>boolean</td>
+<td><code>false</code></td>
+<td><code>true</code> / <code>false</code></td>
+<td>Show model labels</td>
+<td></td>
+</tr>
+<tr>
+<td><code>accent</code></td>
+<td>string</td>
+<td><code>cyan</code></td>
+<td><code>cyan</code>, <code>green</code>, <code>amber</code>, <code>orange</code></td>
+<td>Accent</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Cross-field rule: when <code>presentation</code> is explicitly <code>image</code> or <code>both</code>, a custom <code>label</code> other than the default <code>MODEL</code> produces a warning. <code>auto</code> and <code>name</code> do not trigger it.</p>
+<pre><code class="language-yaml">- id: identity
+  type: model-identity
+  col: 0
+  row: 0
+  colSpan: 1
+  rowSpan: 1
+  config:
+    presentation: auto
+</code></pre>
+<h3 id="navigation"><code>navigation</code></h3>
+<p>Drawer title: <strong>Navigation</strong> · <a href="../../panels/navigation/">drawer settings and behavior</a> · Supported spans: <code>1x1</code>, <code>2x1</code>, <code>3x1</code>, <code>4x1</code>, <code>1x2</code>, <code>2x2</code>, <code>3x2</code>, <code>4x2</code>, <code>2x3</code>, <code>3x3</code>, <code>4x3</code>, <code>2x4</code>, <code>3x4</code>, <code>4x4</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Allowed values</th>
+<th>Drawer label</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>label</code></td>
+<td>string</td>
+<td><code>NAV</code></td>
+<td>Any string</td>
+<td>Label</td>
+<td></td>
+</tr>
+<tr>
+<td><code>source</code></td>
+<td>string</td>
+<td><code>GPS</code></td>
+<td>EdgeTX GPS source name</td>
+<td>GPS source</td>
+<td></td>
+</tr>
+<tr>
+<td><code>armSwitch</code></td>
+<td>string</td>
+<td><code>""</code></td>
+<td>Blank, switch position such as <code>SF^</code>, <code>SA-</code>, <code>SFv</code>, or logical switch <code>L01</code></td>
+<td>Home arm switch</td>
+<td>Separate from layout-level <code>session.armSource</code>; blank uses EdgeTX's home behavior.</td>
+</tr>
+<tr>
+<td><code>satelliteSource</code></td>
+<td>string</td>
+<td><code>""</code></td>
+<td>Any EdgeTX source name or blank</td>
+<td>Satellite count source</td>
+<td></td>
+</tr>
+<tr>
+<td><code>satelliteWarning</code></td>
+<td>number</td>
+<td><code>8</code></td>
+<td>Nonnegative integer</td>
+<td>Warn below satellites</td>
+<td></td>
+</tr>
+<tr>
+<td><code>satelliteCritical</code></td>
+<td>number</td>
+<td><code>4</code></td>
+<td>Nonnegative integer</td>
+<td>Critical below satellites</td>
+<td></td>
+</tr>
+<tr>
+<td><code>showTape</code></td>
+<td>boolean</td>
+<td><code>false</code></td>
+<td><code>true</code> / <code>false</code></td>
+<td>Show tape</td>
+<td>When true, the tape is shown instead of the alternate bearing text.</td>
+</tr>
+<tr>
+<td><code>bearingFormat</code></td>
+<td>string</td>
+<td><code>degrees</code></td>
+<td><code>degrees</code>, <code>quadrant</code></td>
+<td>Bearing format</td>
+<td>Drawer hides this while <code>showTape</code> is true; it remains a valid YAML setting.</td>
+</tr>
+<tr>
+<td><code>showCoordinates</code></td>
+<td>boolean</td>
+<td><code>false</code></td>
+<td><code>true</code> / <code>false</code></td>
+<td>Show coordinates</td>
+<td></td>
+</tr>
+<tr>
+<td><code>showSatellites</code></td>
+<td>boolean</td>
+<td><code>true</code></td>
+<td><code>true</code> / <code>false</code></td>
+<td>Show satellites</td>
+<td>Controls the header icon and locked count when <code>satelliteSource</code> is set and space permits; satellite alerts remain active when false. Omitted values preserve the enabled default.</td>
+</tr>
+<tr>
+<td><code>accent</code></td>
+<td>string</td>
+<td><code>cyan</code></td>
+<td><code>cyan</code>, <code>green</code>, <code>amber</code>, <code>orange</code></td>
+<td>Accent</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Cross-field and format rules:</p>
+<ul>
+<li>A nonblank <code>armSwitch</code> must be a valid physical switch position or logical switch name in the same format as Flight counter.</li>
+<li><code>satelliteWarning</code> and <code>satelliteCritical</code> must be nonnegative integers. Critical must not exceed Warning; defaults are used for either omitted threshold during this comparison.</li>
+</ul>
+<pre><code class="language-yaml">- id: nav
+  type: navigation
+  col: 0
+  row: 0
+  colSpan: 1
+  rowSpan: 1
+  config:
+    source: GPS
+    showTape: true
+    bearingFormat: quadrant
+</code></pre>
+<h3 id="output"><code>output</code></h3>
+<p>Drawer title: <strong>Channel output</strong> · <a href="../../panels/output/">drawer settings and behavior</a> · Supported spans: <code>any</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Allowed values</th>
+<th>Drawer label</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>label</code></td>
+<td>string</td>
+<td><code>CHANNEL OUTPUT</code></td>
+<td>Any string</td>
+<td>Label</td>
+<td></td>
+</tr>
+<tr>
+<td><code>firstChannel</code></td>
+<td>number</td>
+<td><code>1</code></td>
+<td>Integer <code>1</code>–<code>32</code>; step <code>1</code></td>
+<td>First channel</td>
+<td></td>
+</tr>
+<tr>
+<td><code>channelCount</code></td>
+<td>number</td>
+<td>Unset (drawer: <code>Auto</code>)</td>
+<td>Integer <code>1</code>–<code>32</code>; step <code>1</code>; omit for Auto</td>
+<td>Channel count</td>
+<td></td>
+</tr>
+<tr>
+<td><code>showNames</code></td>
+<td>boolean</td>
+<td><code>true</code></td>
+<td><code>true</code> / <code>false</code></td>
+<td>Show channel names</td>
+<td></td>
+</tr>
+<tr>
+<td><code>showTrim</code></td>
+<td>boolean</td>
+<td><code>true</code></td>
+<td><code>true</code> / <code>false</code></td>
+<td>Show trim</td>
+<td></td>
+</tr>
+<tr>
+<td><code>accent</code></td>
+<td>string</td>
+<td><code>cyan</code></td>
+<td><code>cyan</code>, <code>green</code>, <code>amber</code>, <code>orange</code></td>
+<td>Accent</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Panel validation requires supplied channel numbers to be whole values from 1 to 32. If invalid, it reports the setting and resets <code>firstChannel</code> to 1 or clears <code>channelCount</code> so the latter returns to Auto.</p>
+<pre><code class="language-yaml">- id: outputs
+  type: output
+  col: 0
+  row: 0
+  colSpan: 1
+  rowSpan: 1
+  config:
+    firstChannel: 1
+    channelCount: 8
+</code></pre>
+<h3 id="rx-battery"><code>rx-battery</code></h3>
+<p>Drawer title: <strong>RX battery</strong> · <a href="../../panels/rx-battery/">drawer settings and behavior</a> · Supported spans: <code>1x1</code>, <code>2x1</code>, <code>3x1</code>, <code>4x1</code>, <code>1x2</code>, <code>2x2</code>, <code>3x2</code>, <code>4x2</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Allowed values</th>
+<th>Drawer label</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>label</code></td>
+<td>string</td>
+<td><code>PACK</code></td>
+<td>Any string</td>
+<td>Label</td>
+<td></td>
+</tr>
+<tr>
+<td><code>source</code></td>
+<td>string</td>
+<td><code>Cels</code></td>
+<td>EdgeTX voltage source name</td>
+<td>Voltage source</td>
+<td></td>
+</tr>
+<tr>
+<td><code>cells</code></td>
+<td>number</td>
+<td><code>0</code></td>
+<td>Integer <code>0</code>–<code>16</code>; step <code>1</code></td>
+<td>Cell count (0 = auto)</td>
+<td><code>0</code> enables automatic cell-count detection.</td>
+</tr>
+<tr>
+<td><code>reading</code></td>
+<td>string</td>
+<td><code>cell</code></td>
+<td><code>cell</code>, <code>pack</code></td>
+<td>Primary reading</td>
+<td></td>
+</tr>
+<tr>
+<td><code>cellFull</code></td>
+<td>number</td>
+<td><code>4.2</code></td>
+<td><code>0</code>–<code>10</code>; step <code>0.01</code></td>
+<td>Full (V/cell)</td>
+<td>This starts the drawer's Voltage levels section.</td>
+</tr>
+<tr>
+<td><code>cellWarning</code></td>
+<td>number</td>
+<td><code>3.6</code></td>
+<td><code>0</code>–<code>10</code>; step <code>0.01</code></td>
+<td>Warning (V/cell)</td>
+<td></td>
+</tr>
+<tr>
+<td><code>cellCritical</code></td>
+<td>number</td>
+<td><code>3.4</code></td>
+<td><code>0</code>–<code>10</code>; step <code>0.01</code></td>
+<td>Critical (V/cell)</td>
+<td></td>
+</tr>
+<tr>
+<td><code>cellEmpty</code></td>
+<td>number</td>
+<td><code>3.2</code></td>
+<td><code>0</code>–<code>10</code>; step <code>0.01</code></td>
+<td>Empty (V/cell)</td>
+<td></td>
+</tr>
+<tr>
+<td><code>visual</code></td>
+<td>string</td>
+<td><code>battery</code></td>
+<td><code>battery</code>, <code>bar</code>, <code>none</code></td>
+<td>Visualization</td>
+<td>The drawer labels the <code>none</code> choice as “details”.</td>
+</tr>
+<tr>
+<td><code>showPack</code></td>
+<td>boolean</td>
+<td><code>true</code></td>
+<td><code>true</code> / <code>false</code></td>
+<td>Show alt reading</td>
+<td>Preference for optional detail.</td>
+</tr>
+<tr>
+<td><code>showCount</code></td>
+<td>boolean</td>
+<td><code>true</code></td>
+<td><code>true</code> / <code>false</code></td>
+<td>Show cell count</td>
+<td>Preference for optional detail.</td>
+</tr>
+<tr>
+<td><code>showDelta</code></td>
+<td>boolean</td>
+<td><code>false</code></td>
+<td><code>true</code> / <code>false</code></td>
+<td>Show cell delta</td>
+<td>Preference for optional detail.</td>
+</tr>
+<tr>
+<td><code>accent</code></td>
+<td>string</td>
+<td><code>cyan</code></td>
+<td><code>cyan</code>, <code>green</code>, <code>amber</code>, <code>orange</code></td>
+<td>Accent</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Cross-field rules:</p>
+<ul>
+<li><code>cells</code> must be <code>0</code> or an integer from 1 through 16. Voltage settings must be finite and ordered <code>cellFull &gt; cellWarning &gt;= cellCritical &gt;= cellEmpty</code>.</li>
+<li><code>cellFull</code> and <code>cellEmpty</code> are hidden in the drawer when <code>visual</code> is <code>none</code>. Detail preferences are hidden when <code>visual</code> is <code>battery</code>; their values may still be in YAML, but content is best-effort and may not fit.</li>
+</ul>
+<pre><code class="language-yaml">- id: receiver
+  type: rx-battery
+  col: 0
+  row: 0
+  colSpan: 1
+  rowSpan: 1
+  config:
+    source: Cels
+    cells: 2
+</code></pre>
+<h3 id="service-probe"><code>service-probe</code></h3>
+<p>Drawer title: <strong>Service probe</strong> · <a href="../../panels/service-probe/">drawer settings and behavior</a> · Supported spans: <code>2x2</code>, <code>3x2</code>, <code>4x2</code>, <code>2x3</code>, <code>3x3</code>, <code>4x3</code>, <code>2x4</code>, <code>3x4</code>, <code>4x4</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Allowed values</th>
+<th>Drawer label</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>service</code></td>
+<td>string</td>
+<td><code>telemetry</code></td>
+<td><code>telemetry</code>, <code>model</code>, <code>control</code>, <code>extrema</code>, <code>navigation</code></td>
+<td>Service</td>
+<td>Selects the host service under inspection.</td>
+</tr>
+<tr>
+<td><code>source</code></td>
+<td>string</td>
+<td><code>""</code></td>
+<td>Any service/source name or blank</td>
+<td>Source</td>
+<td></td>
+</tr>
+<tr>
+<td><code>extra</code></td>
+<td>string</td>
+<td><code>""</code></td>
+<td>Any service/source name or blank</td>
+<td>Second source</td>
+<td></td>
+</tr>
+<tr>
+<td><code>index</code></td>
+<td>number</td>
+<td><code>0</code></td>
+<td>Any number</td>
+<td>Index</td>
+<td>Service-specific lookup/index.</td>
+</tr>
+<tr>
+<td><code>label</code></td>
+<td>string</td>
+<td><code>""</code></td>
+<td>Any string</td>
+<td>Label</td>
+<td>Blank derives the heading from the selected service.</td>
+</tr>
+<tr>
+<td><code>accent</code></td>
+<td>string</td>
+<td><code>cyan</code></td>
+<td><code>cyan</code>, <code>green</code>, <code>amber</code>, <code>orange</code></td>
+<td>Accent</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>No panel-specific cross-field validation is declared.</p>
+<pre><code class="language-yaml">- id: probe
+  type: service-probe
+  col: 0
+  row: 0
+  colSpan: 2
+  rowSpan: 2
+  config:
+    service: telemetry
+    source: RSSI
+</code></pre>
+<h3 id="state"><code>state</code></h3>
+<p>Drawer title: <strong>State</strong> · <a href="../../panels/state/">drawer settings and behavior</a> · Supported spans: <code>1x1</code>, <code>2x1</code>, <code>3x1</code>, <code>4x1</code>, <code>1x2</code>, <code>2x2</code>, <code>3x2</code>, <code>4x2</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Allowed values</th>
+<th>Drawer label</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>entries</code></td>
+<td>sequence</td>
+<td>One default entry</td>
+<td>1–3 contiguous entries</td>
+<td>Entries</td>
+<td>Each entry is a mapping with a label and an ordered state-condition list.</td>
+</tr>
+<tr>
+<td><code>label</code></td>
+<td>string</td>
+<td><code>SW1</code></td>
+<td>Nonempty, single-line string</td>
+<td>Label</td>
+<td>Nested in <code>entries[]</code>; required.</td>
+</tr>
+<tr>
+<td><code>states</code></td>
+<td>sequence</td>
+<td>Three default conditions</td>
+<td>1–3 contiguous conditions</td>
+<td>States</td>
+<td>Nested in <code>entries[]</code>; evaluated in order and the first active condition wins.</td>
+</tr>
+<tr>
+<td><code>switch</code></td>
+<td>string</td>
+<td><code>SA^</code> in default example; required otherwise</td>
+<td>Switch position such as <code>SF^</code>, <code>SA-</code>, <code>SFv</code>, or logical switch <code>L01</code></td>
+<td>When</td>
+<td>Nested in <code>entries[].states[]</code>; required.</td>
+</tr>
+<tr>
+<td><code>text</code></td>
+<td>string</td>
+<td><code>UP</code> in default example; required otherwise</td>
+<td>Nonempty, single-line string</td>
+<td>Text</td>
+<td>Nested in <code>entries[].states[]</code>; displayed when the condition matches.</td>
+</tr>
+<tr>
+<td><code>background</code></td>
+<td>string</td>
+<td><code>normal</code></td>
+<td><code>normal</code>, <code>active</code>, <code>warning</code>, <code>critical</code></td>
+<td>Background</td>
+<td>Nested in <code>entries[].states[]</code>; omitted uses <code>normal</code>.</td>
+</tr>
+<tr>
+<td><code>accent</code></td>
+<td>string</td>
+<td><code>cyan</code></td>
+<td><code>cyan</code>, <code>green</code>, <code>amber</code>, <code>orange</code></td>
+<td>Accent</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Cross-field and list rules:</p>
+<ul>
+<li><code>entries</code> and each entry's <code>states</code> must be contiguous sequences with 1–3 items. Each entry and condition must be a mapping; unrecognized keys inside either mapping are reported as invalid state settings.</li>
+<li>Every entry needs a nonempty, single-line <code>label</code>; every condition needs a valid <code>switch</code> and nonempty, single-line <code>text</code>. <code>background</code>, if present, must be one of its four choices.</li>
+</ul>
+<pre><code class="language-yaml">- id: switches
+  type: state
+  col: 0
+  row: 0
+  colSpan: 1
+  rowSpan: 1
+  config:
+    entries:
+      - label: Gear
+        states:
+          - switch: SA^
+            text: DOWN
+            background: active
+          - switch: SAv
+            text: UP
+            background: warning
+</code></pre>
+<h3 id="trim-panel"><code>trim-panel</code></h3>
+<p>Drawer title: <strong>Trim</strong> · <a href="../../panels/trim-panel/">drawer settings and behavior</a> · Supported spans: <code>1x1</code>, <code>2x1</code>, <code>3x1</code>, <code>4x1</code>, <code>1x2</code>, <code>2x2</code>, <code>3x2</code>, <code>4x2</code>, <code>2x3</code>, <code>3x3</code>, <code>4x3</code>, <code>2x4</code>, <code>3x4</code>, <code>4x4</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Allowed values</th>
+<th>Drawer label</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>trim1</code></td>
+<td>string</td>
+<td><code>trim-ail</code></td>
+<td>EdgeTX trim source name</td>
+<td>Trim 1</td>
+<td></td>
+</tr>
+<tr>
+<td><code>trim2</code></td>
+<td>string</td>
+<td><code>trim-ele</code></td>
+<td>EdgeTX trim source name</td>
+<td>Trim 2</td>
+<td></td>
+</tr>
+<tr>
+<td><code>trim4</code></td>
+<td>string</td>
+<td><code>trim-rud</code></td>
+<td>EdgeTX trim source name</td>
+<td>Trim 4</td>
+<td>Corresponds to rudder trim.</td>
+</tr>
+<tr>
+<td><code>scale</code></td>
+<td>string</td>
+<td><code>auto</code></td>
+<td><code>auto</code>, <code>standard</code>, <code>extended</code></td>
+<td>Scale</td>
+<td></td>
+</tr>
+<tr>
+<td><code>readout</code></td>
+<td>string</td>
+<td><code>percent</code></td>
+<td><code>percent</code>, <code>raw</code>, <code>none</code></td>
+<td>Readout</td>
+<td></td>
+</tr>
+<tr>
+<td><code>label</code></td>
+<td>string</td>
+<td><code>TRIM</code></td>
+<td>Any string</td>
+<td>Label</td>
+<td></td>
+</tr>
+<tr>
+<td><code>accent</code></td>
+<td>string</td>
+<td><code>cyan</code></td>
+<td><code>cyan</code>, <code>green</code>, <code>amber</code>, <code>orange</code></td>
+<td>Accent</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>No panel-specific cross-field validation is declared.</p>
+<pre><code class="language-yaml">- id: trims
+  type: trim-panel
+  col: 0
+  row: 0
+  colSpan: 1
+  rowSpan: 1
+  config:
+    scale: auto
+    readout: percent
+</code></pre>
+<h3 id="tx-battery"><code>tx-battery</code></h3>
+<p>Drawer title: <strong>TX battery</strong> · <a href="../../panels/tx-battery/">drawer settings and behavior</a> · Supported spans: <code>1x1</code>, <code>2x1</code>, <code>3x1</code>, <code>4x1</code>, <code>1x2</code>, <code>2x2</code>, <code>3x2</code>, <code>4x2</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Allowed values</th>
+<th>Drawer label</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>label</code></td>
+<td>string</td>
+<td><code>TX</code></td>
+<td>Any string</td>
+<td>Label</td>
+<td></td>
+</tr>
+<tr>
+<td><code>packEmpty</code></td>
+<td>number</td>
+<td>Unset (drawer: <code>Radio</code>)</td>
+<td><code>3</code>–<code>20</code> V; step <code>0.01</code></td>
+<td>Empty volts, whole pack</td>
+<td>Optional lower voltage endpoint for the estimate.</td>
+</tr>
+<tr>
+<td><code>packFull</code></td>
+<td>number</td>
+<td>Unset (drawer: <code>Radio</code>)</td>
+<td><code>3</code>–<code>20</code> V; step <code>0.01</code></td>
+<td>Full volts, whole pack</td>
+<td>Optional upper voltage endpoint for the estimate.</td>
+</tr>
+<tr>
+<td><code>warning</code></td>
+<td>number</td>
+<td>Unset (drawer: <code>Off</code>)</td>
+<td><code>3</code>–<code>20</code> V; step <code>0.01</code></td>
+<td>Warning volts</td>
+<td></td>
+</tr>
+<tr>
+<td><code>critical</code></td>
+<td>number</td>
+<td>Unset (drawer: <code>Off</code>)</td>
+<td><code>3</code>–<code>20</code> V; step <code>0.01</code></td>
+<td>Critical volts</td>
+<td></td>
+</tr>
+<tr>
+<td><code>visual</code></td>
+<td>string</td>
+<td><code>battery</code></td>
+<td><code>battery</code>, <code>bar</code>, <code>none</code></td>
+<td>Visualization</td>
+<td></td>
+</tr>
+<tr>
+<td><code>showPercent</code></td>
+<td>boolean</td>
+<td><code>false</code></td>
+<td><code>true</code> / <code>false</code></td>
+<td>Show estimate</td>
+<td>The estimate needs a usable voltage range; otherwise it is unavailable.</td>
+</tr>
+<tr>
+<td><code>accent</code></td>
+<td>string</td>
+<td><code>cyan</code></td>
+<td><code>cyan</code>, <code>green</code>, <code>amber</code>, <code>orange</code></td>
+<td>Accent</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>No panel-specific <code>validateSettings</code> function is declared, so the schema layer enforces only setting types and <code>visual</code> choices. When both <code>packEmpty</code> and <code>packFull</code> are numbers and Full is greater than Empty, they define the estimate range; otherwise the panel falls back to the radio battery-meter range. Warning and Critical are downward voltage thresholds, with Critical taking priority, and the panel does not validate their ordering.</p>
+<pre><code class="language-yaml">- id: transmitter
+  type: tx-battery
+  col: 0
+  row: 0
+  colSpan: 1
+  rowSpan: 1
+  config:
+    visual: battery
+    showPercent: true
+</code></pre>
+<h2 id="complete-example">Complete example</h2>
+<p>This version-3 layout places six panels without overlap on the 4 × 4 grid. It shows the shared session source, nested list syntax and panel-specific settings together. Replace source names with exact names available on the target radio/model.</p>
+<pre><code class="language-yaml">version: 3
+session:
+  armSource: SF^
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: flight
+    type: flight-timer
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      timer: 0
+      label: Flight
+      warning: 300
+      critical: 60
+  - id: link
+    type: link-status
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      rssiSource: RSSI
+      qualitySource: RQly
+      reading: auto
+      extrema: flight
+  - id: altitude
+    type: metric
+    col: 0
+    row: 1
+    colSpan: 2
+    rowSpan: 1
+    config:
+      metrics:
+        - source: Alt
+          label: Altitude
+          precision: 1
+      visual: bar
+  - id: receiver
+    type: rx-battery
+    col: 2
+    row: 1
+    colSpan: 2
+    rowSpan: 1
+    config:
+      source: Cels
+      cells: 2
+      reading: cell
+  - id: mode
+    type: state
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 1
+    config:
+      entries:
+        - label: Flight mode
+          states:
+            - switch: SF^
+              text: Disarmed
+            - switch: SFv
+              text: Armed
+              background: active
+  - id: identity
+    type: model-identity
+    col: 2
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      presentation: auto
+</code></pre>
+<h2 id="tips-for-ai-agents">Tips for AI agents</h2>
+<ul>
+<li>Emit <code>version: 3</code>, the exact 4 × 4 grid, and a <code>panels</code> sequence. Use the schema and keys on this page; cross-reference drawer descriptions via the linked panel page.</li>
+<li>Place panels only at supported spans, within bounds, and without overlap. Give every panel a unique safe <code>id</code>.</li>
+<li>Use the exact <code>type</code> and <code>config</code> key spellings. Omit optional keys to take defaults; don't invent aliases or include unknown keys.</li>
+<li>Honor nested sequence constraints and all cross-field rules, especially source requirements and threshold ordering.</li>
+<li>Verify EdgeTX source/switch names on the target radio. A syntactically valid name may still be unavailable on that model.</li>
+<li>Stick to the supported YAML subset: two-space indentation, no tabs, anchors, tags or non-empty flow collections.</li>
+</ul></div>
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+                <p>Copyright &copy; AeroGrid contributors. GPL-2.0-only.</p>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+        <script src="../../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../../js/base.js"></script>
+        <script src="../../javascripts/versions.mjs" type="module"></script>
+        <script src="../../search/main.js"></script>
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        <link rel="canonical" href="https://thomaskistler.github.io/aero-grid/0.3.0/developer-guide/videos/">
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>Tutorial videos - AeroGrid</title>
+        <link href="../../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../../css/brands.min.css" rel="stylesheet">
+        <link href="../../css/solid.min.css" rel="stylesheet">
+        <link href="../../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../../stylesheets/aerogrid.css" rel="stylesheet">
+        <link href="../../stylesheets/versions.css" rel="stylesheet">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-RMCKML1PKS"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+
+          gtag('config', "G-RMCKML1PKS");
+        </script> <meta name="aerogrid-site-root" content="/aero-grid/">
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-light bg-light">
+            <div class="container">
+                <a class="navbar-brand" href="../..">AeroGrid</a><div class="ag-docs-version">
+  <select aria-label="Documentation version"
+          data-docs-root="/aero-grid/"
+          data-docs-version="0.3.0"
+          disabled>
+    <option value="0.3.0">v0.3.0</option>
+  </select>
+  <span class="ag-docs-version-status" role="status"></span>
+</div>
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+                        <!-- Main navigation -->
+                        <ul class="nav navbar-nav">
+                            <li class="nav-item">
+                                <a href="../.." class="nav-link">Home</a>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown"  aria-expanded="false">User Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../user-guide/installation/" class="dropdown-item">Install and upgrade</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/add-dashboard/" class="dropdown-item">Add a dashboard</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/edit-dashboard/" class="dropdown-item">Edit a dashboard on the radio</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/customize-themes/" class="dropdown-item">Customize themes</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/troubleshooting/" class="dropdown-item">Troubleshoot and file bugs</a>
+</li>
+                                </ul>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown"  aria-expanded="false">Reference Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../reference-guide/" class="dropdown-item">Overview</a>
+</li>
+                                    
+  <li class="dropdown-submenu">
+    <a href="#" class="dropdown-item">Panels</a>
+    <ul class="dropdown-menu">
+            
+<li>
+    <a href="../../panels/output/" class="dropdown-item">Channel output</a>
+</li>
+            
+<li>
+    <a href="../../panels/flight-counter/" class="dropdown-item">Flight counter</a>
+</li>
+            
+<li>
+    <a href="../../panels/flight-mode/" class="dropdown-item">Flight mode</a>
+</li>
+            
+<li>
+    <a href="../../panels/flight-timer/" class="dropdown-item">Flight timer</a>
+</li>
+            
+<li>
+    <a href="../../panels/host-diagnostics/" class="dropdown-item">Host diagnostics</a>
+</li>
+            
+<li>
+    <a href="../../panels/link-status/" class="dropdown-item">Link status</a>
+</li>
+            
+<li>
+    <a href="../../panels/metric/" class="dropdown-item">Metric</a>
+</li>
+            
+<li>
+    <a href="../../panels/model-identity/" class="dropdown-item">Model identity</a>
+</li>
+            
+<li>
+    <a href="../../panels/navigation/" class="dropdown-item">Navigation</a>
+</li>
+            
+<li>
+    <a href="../../panels/rx-battery/" class="dropdown-item">RX battery</a>
+</li>
+            
+<li>
+    <a href="../../panels/service-probe/" class="dropdown-item">Service probe</a>
+</li>
+            
+<li>
+    <a href="../../panels/state/" class="dropdown-item">State</a>
+</li>
+            
+<li>
+    <a href="../../panels/trim-panel/" class="dropdown-item">Trim</a>
+</li>
+            
+<li>
+    <a href="../../panels/tx-battery/" class="dropdown-item">TX battery</a>
+</li>
+    </ul>
+  </li>
+                                    
+<li>
+    <a href="../../reference-guide/yaml/" class="dropdown-item">YAML reference</a>
+</li>
+                                </ul>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle active" aria-current="page" role="button" data-bs-toggle="dropdown"  aria-expanded="false">Developer Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../build/" class="dropdown-item">Check out and build</a>
+</li>
+                                    
+<li>
+    <a href="../testing/" class="dropdown-item">Test and debug</a>
+</li>
+                                    
+<li>
+    <a href="../simulators/" class="dropdown-item">Run and test in simulators</a>
+</li>
+                                    
+<li>
+    <a href="../architecture/" class="dropdown-item">Repository and architecture</a>
+</li>
+                                    
+<li>
+    <a href="../tools/" class="dropdown-item">Project tools</a>
+</li>
+                                    
+<li>
+    <a href="./" class="dropdown-item active" aria-current="page">Tutorial videos</a>
+</li>
+                                    
+<li>
+    <a href="../contributing/" class="dropdown-item">Issues, changes, and releases</a>
+</li>
+                                </ul>
+                            </li>
+                        </ul>
+
+                    <ul class="nav navbar-nav ms-md-auto">
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+                                <i class="fa fa-search"></i> Search
+                            </a>
+                        </li>
+                            <li class="nav-item">
+                                <a rel="prev" href="../tools/" class="nav-link">
+                                    <i class="fa fa-arrow-left"></i> Previous
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a rel="next" href="../contributing/" class="nav-link">
+                                    Next <i class="fa fa-arrow-right"></i>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="https://github.com/thomaskistler/aero-grid" class="nav-link"><i class="fa-brands fa-github"></i> GitHub</a>
+                            </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+                    <div class="col-md-3">
+
+<nav class="navbar-expand-md bs-sidebar hidden-print affix" aria-label="Documentation">
+  <div class="navbar-header">
+    <button type="button" class="navbar-toggler collapsed" data-bs-toggle="collapse" data-bs-target="#toc-collapse" aria-controls="toc-collapse" aria-expanded="false" aria-label="Toggle documentation navigation">
+      <span class="fa fa-angle-down" aria-hidden="true"></span>
+    </button>
+  </div>
+  <div id="toc-collapse" class="navbar-collapse collapse card bg-body-tertiary">
+    <ul class="nav flex-column">
+      
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../..">Home</a>
+  </li>
+
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">User Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/installation/">Install and upgrade</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/add-dashboard/">Add a dashboard</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/edit-dashboard/">Edit a dashboard on the radio</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/customize-themes/">Customize themes</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/troubleshooting/">Troubleshoot and file bugs</a>
+  </li>
+
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Reference Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../reference-guide/">Overview</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/output/">Channel output</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/flight-counter/">Flight counter</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/flight-mode/">Flight mode</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/flight-timer/">Flight timer</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/host-diagnostics/">Host diagnostics</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/link-status/">Link status</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/metric/">Metric</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/model-identity/">Model identity</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/navigation/">Navigation</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/rx-battery/">RX battery</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/service-probe/">Service probe</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/state/">State</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/trim-panel/">Trim</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/tx-battery/">TX battery</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../reference-guide/yaml/">YAML reference</a>
+  </li>
+
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Developer Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../build/">Check out and build</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../testing/">Test and debug</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../simulators/">Run and test in simulators</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../architecture/">Repository and architecture</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../tools/">Project tools</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link current" href="./" aria-current="page">Tutorial videos</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../contributing/">Issues, changes, and releases</a>
+  </li>
+
+        </ul>
+      </li>
+    </ul>
+  </div>
+</nav></div>
+                    <div class="col-md-9" role="main">
+
+<h1 id="record-and-recreate-tutorial-videos">Record and recreate tutorial videos</h1>
+<p><code>tools/video.py</code> provides reusable <strong>local</strong> native TX16S recording, Microsoft
+Cora narration, and FFmpeg compositing. It does not upload to YouTube.
+Recipes and real input scripts are versioned in <code>tools/video-recipes/</code>.
+Generated SD cards, recordings, caches, and provenance belong in ignored
+<code>build/video/</code>. No product photograph, credentials, or video is distributed
+with the repository.</p>
+<h2 id="install-and-run">Install and run</h2>
+<p>Use Python 3.9+ and <code>make video-setup</code> to install pinned
+<code>imageio-ffmpeg==0.6.0</code> (including its encoder) into <code>build/video-venv</code>.
+Capture additionally requires macOS, Xcode command-line tools, and EdgeTX
+Companion 2.12. The default simulator library is:</p>
+<pre><code class="language-text">/Applications/EdgeTX Companion 2.12.app/Contents/Resources/libedgetx-tx16s-simulator.dylib
+</code></pre>
+<p>Override with <code>--library /path/to/libedgetx-tx16s-simulator.dylib</code>.
+Compilation selects the library's architecture; for a universal library use
+<code>--architecture arm64</code> or <code>--architecture x86_64</code>. Running Intel firmware on
+Apple Silicon requires Rosetta. The symbol ABI and geometry are TX16S-specific.
+Rendering and speech caching do not require Companion.</p>
+<pre><code class="language-sh">make video-setup
+build/video-venv/bin/python tools/video.py --help
+build/video-venv/bin/python tools/video.py validate
+build/video-venv/bin/python tools/video.py capture
+</code></pre>
+<p>The default recipe is <code>add-move-resize-panel.json</code>. Select the other tutorial
+with <code>--recipe tools/video-recipes/create-empty-dashboard.json</code> on <strong>each</strong>
+command. <code>--output build/video/my-run</code> selects a different working directory.
+<code>compile</code> only builds the recorder; <code>prepare</code> only creates an SD card.
+<code>capture</code> does both, then records. Preparation refuses an existing SD card:
+use a new output directory for another capture. It never replaces your
+development SD image.</p>
+<p>Capture uses <code>capture-editor.py</code>'s SD preparation and the current checkout's
+widget source, including uncommitted changes. All editor interactions go
+through genuine simulator touch/key input. No panel code is rewritten.
+The editing recipe explicitly injects demonstration telemetry <strong>only in its
+isolated widget copy</strong>: registered <code>GSpd</code>/maximum sensor, values 48/72, RSSI
+85. Those values demonstrate the UI, not receiver telemetry accuracy.</p>
+<h2 id="narration-without-storing-credentials">Narration without storing credentials</h2>
+<p><code>speech</code> is <strong>offline by default</strong>. Cache files are addressed by SHA-256 of
+text, voice, rate, and PCM format. Text/rate changes require new speech;
+timing changes reuse a clip if it still fits. Each WAV must be 48 kHz,
+16-bit mono PCM, nonempty, intact, and at least 0.3 seconds shorter than its
+slot. Oversized clips fail rather than silently speeding up or truncating
+the voice. Increase a recipe's <code>rate</code> percentage or shorten text and retry.</p>
+<p>Paid synthesis requires an explicit opt-in:</p>
+<pre><code class="language-sh"># Set AZURE_SPEECH_KEY securely in your terminal/environment, not in a file,
+# command argument, recipe, shell history, or checked-in configuration.
+export AZURE_SPEECH_REGION=westus2
+build/video-venv/bin/python tools/video.py speech --online
+unset AZURE_SPEECH_KEY AZURE_SPEECH_REGION
+</code></pre>
+<p>The REST request uses <code>en-US-CoraMultilingualNeural</code>; existing clips are not
+resynthesized. The tool never writes keys or logs request headers. Synthesis
+can incur Azure charges and sends narration text to Azure. A failed later
+clip leaves previously successful cache entries for retry.</p>
+<p>To reuse privately retained prototype clips without synthesis:</p>
+<pre><code class="language-sh">build/video-venv/bin/python tools/video.py speech --cache-source /path/to/private/clips
+</code></pre>
+<p>This trusts recipe <code>legacy_cache</code> filenames as matching the text. WAV
+format and duration are checked, but spoken content and synthesis rate cannot
+be inferred from audio: listen before importing. Import provenance records this
+uncertainty. No imported media is required or included. <code>--cache</code> selects an alternate cache directory; keep it ignored.</p>
+<h2 id="render-and-inspect">Render and inspect</h2>
+<pre><code class="language-sh"># Screen-only preview, no network or speech needed:
+build/video-venv/bin/python tools/video.py render --silent --limit 12
+
+# Final photo composite with previously cached narration:
+build/video-venv/bin/python tools/video.py render --photo /path/to/private/tx16s-upscaled.webp
+
+# Render a retained raw recording instead of capturing again:
+build/video-venv/bin/python tools/video.py render --raw /path/to/recording.rgb565 \
+  --photo /path/to/private/tx16s-upscaled.webp
+</code></pre>
+<p><code>render</code> never synthesizes speech. Omit <code>--photo</code> for a 480×272 screen-only
+video (physical button feedback is then omitted). <code>--silent</code> bypasses all
+speech cache requirements. <code>--limit</code> renders an initial excerpt, not a new
+capture. Re-rendering replaces outputs in that directory.</p>
+<p>The supplied photograph must match the recipe geometry. Original source:
+<a href="https://radiomasterrc.com/cdn/shop/files/478937e8d66c767632b986b2cb0362f5_1800x1800.jpg?v=1755743144">RadioMaster TX16S product photograph</a>.
+The original retrieved image was 1000×1000; the prototypes used a
+<strong>user-supplied 4000×4000 upscale</strong>. The tool does not download or upscale
+it. Confirm usage rights and retain attribution to RadioMaster when
+publishing; the repository's GPL does not license that photograph.</p>
+<p>For that upscale, recipes crop <code>[width,height,x,y] = [2080,1000,960,2700]</code>,
+scale to 1560×750, place the 930×532 simulator screen at (317,80), and place
+RTN feedback at (147,507). The generated bezel mask keeps dark irregular
+screen edges: inside the screen rectangle, average RGB brightness 80–120
+ramps from opaque photo to transparent opening. Inspect the result; a
+different photo requires different geometry/thresholds.</p>
+<p>Feedback is a 15%-opacity ring with transparent interior, expanding and
+fading over 1.2 seconds. Its color adapts to the local framebuffer luminance;
+drag contacts follow their scripted points. RTN uses a white ring on the
+dark physical key; other keys have no invented photo coordinates.
+No titles or subtitle track are burned in.</p>
+<p>Outputs include:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>frames.rgb565</code>, <code>last-frame.png</code>, <code>simulator.log</code></td>
+<td>Recorder evidence and diagnostics.</td>
+</tr>
+<tr>
+<td><code>frame-*.png</code>, <code>frames-sheet.png</code></td>
+<td>Frames exported by the <code>frames</code> command for review.</td>
+</tr>
+<tr>
+<td><code>sdcard/</code>, <code>video-native</code></td>
+<td>Isolated firmware fixture and compiled recorder.</td>
+</tr>
+<tr>
+<td><code>feedback.mov</code>, <code>radio.png</code>, <code>bezel.png</code></td>
+<td>Regenerable render intermediates.</td>
+</tr>
+<tr>
+<td><code>&lt;recipe-id&gt;.mp4</code>, <code>transcript.txt</code></td>
+<td>H.264/AAC deliverable and narration text.</td>
+</tr>
+<tr>
+<td><code>capture-provenance.json</code>, <code>render-provenance.json</code></td>
+<td>Recipe, source/input digests, disclosures, tail holds, verification limits.</td>
+</tr>
+</tbody>
+</table>
+<p>Capture fails if any touch press in the rendered timeline (after warmup and
+<code>trim_start</code>) has no matching firmware <code>TE_PRESSED</code> entry in
+<code>simulator.log</code>, and records <code>unaccepted_touch_ticks</code> in capture provenance.
+This catches dropped input, not wrong navigation. Export frames to check
+key states:</p>
+<pre><code class="language-sh">build/video-venv/bin/python tools/video.py frames --times 0,7.3,21.3,42.1,54.65
+</code></pre>
+<p><code>--times</code> uses rendered-timeline seconds. PNGs and a tiled
+<code>frames-sheet.png</code> are written to the output directory.</p>
+<p>Raw capture is RGB565 little-endian, 480×272, 20 fps. The recorder uses
+10 ms ticks, drops the warmup interval, and samples every five ticks.
+Rendering trims <code>trim_start</code> seconds from that recording and holds the
+final frame if narration extends past it; the hold duration is recorded.
+Capture hashes all current widget sources, not just the Git revision.
+External recordings have no automatically reconstructed capture provenance.
+FFmpeg decoding and frame counts prove media integrity, <strong>not UI success</strong>.
+Review the whole video for correct navigation, drag, save behavior, voice
+alignment, source units, and photo placement before publishing.</p>
+<h2 id="recipe-format-and-reproducibility">Recipe format and reproducibility</h2>
+<p>Version 1 is validated before execution; unknown fields are rejected.
+Recipes require <code>id</code>, <code>initial</code> (<code>fresh-model</code> or <code>empty-dashboard</code>), <code>ticks</code>,
+<code>warmup_ticks</code>, <code>trim_start</code>, <code>duration</code>, recipe-relative <code>actions</code>,
+<code>narration</code>, <code>radio</code>, and <code>provenance</code>. Optional <code>sample_telemetry: true</code>
+is supported only for the editing fixture. Tick totals/warmup are multiples
+of five. Action rows contain <code>tick x y down</code>; <code>down</code> is 1 or 0. Negative
+<code>x</code> encodes key <code>-x-1</code> (<code>-2</code> is RTN). Consecutive touch-down positions are
+a drag, terminated by a release. Contacts cannot overlap.</p>
+<p>Narration entries have ordered, nonoverlapping <code>start</code>/<code>end</code> seconds,
+<code>text</code>, and nonnegative <code>rate</code> (percentage); <code>legacy_cache</code> is optional.
+Radio entries contain <code>crop</code>, even-sized <code>canvas</code>, <code>[x,y,width,height]</code>
+<code>screen</code>, <code>[x,y]</code> <code>return_button</code>, <code>[low,high]</code> <code>mask_threshold</code>, and <code>source</code>.
+Provenance requires <code>status</code> and <code>notes</code>.</p>
+<p><strong>Create Empty dashboard:</strong> a clean native replay starting from a fresh
+model with no configured screens. It replaces the default screen with an
+App-mode AeroGrid widget using the Empty layout (tapped at (220,85)) and
+Modern Dark, then presses RTN three times. No recorded frames are edited.
+The firmware dropped the first scripted touch of a fresh simulator session
+in earlier attempts, desynchronizing every later step. The action script
+therefore primes input before recorded frames start: a center tap opens the
+EdgeTX menu and RTN closes it (ticks 100–220), so the video begins on the
+unchanged main view. Two consecutive Companion 2.12 captures were visually
+verified before rendering the published 54.7-second video.</p>
+<p><strong>Add/move/resize panel:</strong> the recipe preserves the prototype's real touch
+script, current/maximum speed configuration, movement, resizing, and save
+interaction. Nine seconds are trimmed from the raw capture, including most
+of its first long-press; check intro timing. The last second is a held frame.
+Radio restart and selecting the new layout after Save as are <strong>narrated
+instructions</strong>, not automated or demonstrated steps. Panel unit appearance
+comes from production source, never simulator-only rendering patches.</p>
+<p>Fixed-coordinate/realtime scripts can change behavior with firmware,
+machine load, or widget changes. There is no UI-state assertion or automatic
+recovery. Keep the approved published videos separately; recipes are
+maintainable starting points, not a guarantee of identical recreation.</p>
+<h2 id="validate-changes">Validate changes</h2>
+<pre><code class="language-sh">build/video-venv/bin/python -m unittest discover -s tools -p test_video.py
+</code></pre>
+<p>Tests cover recipe/action validation, isolated source preservation, cache
+behavior, request escaping via a mocked Azure response, and offline
+screen/photo render-and-decode smoke checks. Real native capture is local
+and must be checked separately. Never require paid speech in tests.</p></div>
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+                <p>Copyright &copy; AeroGrid contributors. GPL-2.0-only.</p>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+        <script src="../../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../../js/base.js"></script>
+        <script src="../../javascripts/versions.mjs" type="module"></script>
+        <script src="../../search/main.js"></script>
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>
