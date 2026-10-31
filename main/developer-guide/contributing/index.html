@@ -357,14 +357,16 @@ The native screenshot tools are local macOS tools, not CI jobs.</p>
    and package validation against the exact selected commit, creates
    <code>v&lt;version&gt;</code>, uploads the ZIP and checksum to a draft, then publishes.</li>
 </ol>
-<p>There is no automatic release on every merge, and no need to create a release
-manually in the Releases UI. Release notes include installation links and
-hardware coverage.</p>
+<p>Successful CI builds on <code>main</code> update a single <a href="https://github.com/thomaskistler/aero-grid/releases/tag/dev">developer prerelease</a>,
+replacing its ZIP and checksum. Select <strong>Show developer releases</strong> in the USB
+installer to try it. Developer builds may be unstable; stable and beta/RC
+releases still use the manual workflow above.</p>
 <p>If validation fails, fix it in a PR, merge, and run again. If publication fails
 after creating a tag/draft, rerun the <strong>same workflow run</strong> at the same commit:
 it can resume a matching draft and replace incomplete assets. A tag pointing
 to another commit or an already-public release is rejected. Never move a
-published tag; use a new version for fixes. Abandoning an unpublished attempt
+published version tag; use a new version for fixes. The rolling <code>dev</code> tag is the exception.
+Abandoning an unpublished attempt
 requires deliberately removing its draft and tag before reusing that version.</p>
 <p>Documentation defaults to the latest stable release. The header's
 <strong>Documentation version</strong> menu also offers previous releases, prereleases, and
@@ -374,7 +376,7 @@ and updates <code>main</code> separately. Existing releases are backfilled on th
 deployment; subsequent deployments preserve those snapshots. To publish again,
 run <strong>Actions &gt; Documentation &gt; Run workflow</strong> on <strong>main</strong>.</p>
 <p>Released content and layouts stay version-specific; all builds share the current
-version navigation and Google Analytics configuration.</p>
+version navigation, installer UI, and Google Analytics configuration.</p>
 <p>Generated snapshots are stored on <code>gh-pages</code>; do not edit that branch manually.
 Repository <strong>Settings &gt; Pages &gt; Source</strong> must remain <strong>GitHub Actions</strong>.</p>
       </article>
