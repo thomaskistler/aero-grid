@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        <link rel="canonical" href="https://thomaskistler.github.io/aero-grid/0.2.0/panels/rx-battery/">
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>RX battery - AeroGrid</title>
+        <link href="../../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../../css/brands.min.css" rel="stylesheet">
+        <link href="../../css/solid.min.css" rel="stylesheet">
+        <link href="../../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../../stylesheets/aerogrid.css" rel="stylesheet">
+        <link href="../../stylesheets/versions.css" rel="stylesheet">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-RMCKML1PKS"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+
+          gtag('config', "G-RMCKML1PKS");
+        </script> <meta name="aerogrid-site-root" content="/aero-grid/">
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-light bg-light">
+            <div class="container">
+                <a class="navbar-brand" href="../..">AeroGrid</a><div class="ag-docs-version">
+  <select aria-label="Documentation version"
+          data-docs-root="/aero-grid/"
+          data-docs-version="0.2.0"
+          disabled>
+    <option value="0.2.0">v0.2.0</option>
+  </select>
+  <span class="ag-docs-version-status" role="status"></span>
+</div>
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+                        <!-- Main navigation -->
+                        <ul class="nav navbar-nav">
+                            <li class="nav-item">
+                                <a href="../.." class="nav-link">Home</a>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown"  aria-expanded="false">User Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../user-guide/installation/" class="dropdown-item">Install and upgrade</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/add-dashboard/" class="dropdown-item">Add a dashboard</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/edit-dashboard/" class="dropdown-item">Edit a dashboard on the radio</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/customize-themes/" class="dropdown-item">Customize themes</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/troubleshooting/" class="dropdown-item">Troubleshoot and file bugs</a>
+</li>
+                                </ul>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle active" aria-current="page" role="button" data-bs-toggle="dropdown"  aria-expanded="false">Reference Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../reference-guide/" class="dropdown-item">Overview</a>
+</li>
+                                    
+  <li class="dropdown-submenu">
+    <a href="#" class="dropdown-item">Panels</a>
+    <ul class="dropdown-menu">
+            
+<li>
+    <a href="../flight-counter/" class="dropdown-item">Flight counter</a>
+</li>
+            
+<li>
+    <a href="../flight-mode/" class="dropdown-item">Flight mode</a>
+</li>
+            
+<li>
+    <a href="../flight-timer/" class="dropdown-item">Flight timer</a>
+</li>
+            
+<li>
+    <a href="../link-status/" class="dropdown-item">Link status</a>
+</li>
+            
+<li>
+    <a href="../metric/" class="dropdown-item">Metric</a>
+</li>
+            
+<li>
+    <a href="../model-identity/" class="dropdown-item">Model identity</a>
+</li>
+            
+<li>
+    <a href="../navigation/" class="dropdown-item">Navigation</a>
+</li>
+            
+<li>
+    <a href="./" class="dropdown-item active" aria-current="page">RX battery</a>
+</li>
+            
+<li>
+    <a href="../state/" class="dropdown-item">State</a>
+</li>
+            
+<li>
+    <a href="../trim-panel/" class="dropdown-item">Trim panel</a>
+</li>
+            
+<li>
+    <a href="../tx-battery/" class="dropdown-item">TX battery</a>
+</li>
+    </ul>
+  </li>
+                                </ul>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown"  aria-expanded="false">Developer Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../developer-guide/build/" class="dropdown-item">Check out and build</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/testing/" class="dropdown-item">Test and debug</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/simulators/" class="dropdown-item">Run and test in simulators</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/architecture/" class="dropdown-item">Repository and architecture</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/tools/" class="dropdown-item">Project tools</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/videos/" class="dropdown-item">Tutorial videos</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/contributing/" class="dropdown-item">Issues, changes, and releases</a>
+</li>
+                                </ul>
+                            </li>
+                        </ul>
+
+                    <ul class="nav navbar-nav ms-md-auto">
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+                                <i class="fa fa-search"></i> Search
+                            </a>
+                        </li>
+                            <li class="nav-item">
+                                <a rel="prev" href="../navigation/" class="nav-link">
+                                    <i class="fa fa-arrow-left"></i> Previous
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a rel="next" href="../state/" class="nav-link">
+                                    Next <i class="fa fa-arrow-right"></i>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="https://github.com/thomaskistler/aero-grid" class="nav-link"><i class="fa-brands fa-github"></i> GitHub</a>
+                            </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+                    <div class="col-md-3">
+
+<nav class="navbar-expand-md bs-sidebar hidden-print affix" aria-label="Documentation">
+  <div class="navbar-header">
+    <button type="button" class="navbar-toggler collapsed" data-bs-toggle="collapse" data-bs-target="#toc-collapse" aria-controls="toc-collapse" aria-expanded="false" aria-label="Toggle documentation navigation">
+      <span class="fa fa-angle-down" aria-hidden="true"></span>
+    </button>
+  </div>
+  <div id="toc-collapse" class="navbar-collapse collapse card bg-body-tertiary">
+    <ul class="nav flex-column">
+      
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../..">Home</a>
+  </li>
+
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">User Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/installation/">Install and upgrade</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/add-dashboard/">Add a dashboard</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/edit-dashboard/">Edit a dashboard on the radio</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/customize-themes/">Customize themes</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/troubleshooting/">Troubleshoot and file bugs</a>
+  </li>
+
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Reference Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../reference-guide/">Overview</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../flight-counter/">Flight counter</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../flight-mode/">Flight mode</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../flight-timer/">Flight timer</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../link-status/">Link status</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../metric/">Metric</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../model-identity/">Model identity</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../navigation/">Navigation</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link current" href="./" aria-current="page">RX battery</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../state/">State</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../trim-panel/">Trim panel</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../tx-battery/">TX battery</a>
+  </li>
+
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Developer Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/build/">Check out and build</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/testing/">Test and debug</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/simulators/">Run and test in simulators</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/architecture/">Repository and architecture</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/tools/">Project tools</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/contributing/">Issues, changes, and releases</a>
+  </li>
+
+        </ul>
+      </li>
+    </ul>
+  </div>
+</nav></div>
+                    <div class="col-md-9" role="main">
+
+<h1 id="rx-battery"><code>rx-battery</code></h1>
+<table>
+<thead>
+<tr>
+<th>1x2</th>
+<th>2x1</th>
+<th>2x2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><img alt="RX battery at 1x2" src="../../assets/panels/rx-battery/1x2.png" /></td>
+<td><img alt="RX battery at 2x1" src="../../assets/panels/rx-battery/2x1.png" /></td>
+<td><img alt="RX battery at 2x2" src="../../assets/panels/rx-battery/2x2.png" /></td>
+</tr>
+</tbody>
+</table>
+<p>Displays aircraft-battery voltage from either an EdgeTX <strong>cells monitor</strong> or
+a numeric <strong>pack-voltage sensor</strong>, such as <code>RxBt</code>. The source must actually
+measure the flight battery; regulated receiver supply voltage does not reveal
+pack voltage.</p>
+<p>The headline always shows two decimals. This is display precision, not a
+promise of sensor accuracy or resolution. The panel does not infer remaining
+capacity from voltage.</p>
+<h2 id="settings">Settings</h2>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>label</code></td>
+<td><code>PACK</code></td>
+<td>Panel heading.</td>
+</tr>
+<tr>
+<td><code>source</code></td>
+<td><code>Cels</code></td>
+<td>Exact EdgeTX source name; tables are individual cells, numbers are pack voltage.</td>
+</tr>
+<tr>
+<td><code>reading</code></td>
+<td><code>cell</code></td>
+<td><code>cell</code> or <code>pack</code>. A cell reading is the table's lowest cell in cells mode and the calculated average in pack mode.</td>
+</tr>
+<tr>
+<td><code>showPack</code></td>
+<td><code>true</code></td>
+<td><strong>Show alt reading</strong>: show pack voltage when cell voltage is primary, or average cell voltage when pack voltage is primary. A preference, shown only when it fits; ignored by the <code>battery</code> visualization.</td>
+</tr>
+<tr>
+<td><code>showCount</code></td>
+<td><code>true</code></td>
+<td>Show the cells-monitor count or the pack's configured/estimated series count. A preference, shown only when it fits; ignored by the <code>battery</code> visualization.</td>
+</tr>
+<tr>
+<td><code>showDelta</code></td>
+<td><code>false</code></td>
+<td><strong>Show cell delta</strong>: highest minus lowest individual cell voltage, formatted <code>Δ 0.01v</code>. Only valid cells tables can supply it; numeric voltage reserves no delta slot.</td>
+</tr>
+<tr>
+<td><code>cells</code></td>
+<td><code>0</code></td>
+<td>Numeric sources only: <code>0</code> estimates series count; 1–16 sets it explicitly. Tables supply their own count and ignore this setting.</td>
+</tr>
+<tr>
+<td><code>cellFull</code></td>
+<td><code>4.2</code></td>
+<td>Full usable-range voltage, in V/cell.</td>
+</tr>
+<tr>
+<td><code>cellWarning</code></td>
+<td><code>3.6</code></td>
+<td>Warning threshold, in V/cell.</td>
+</tr>
+<tr>
+<td><code>cellCritical</code></td>
+<td><code>3.4</code></td>
+<td>Critical threshold, in V/cell.</td>
+</tr>
+<tr>
+<td><code>cellEmpty</code></td>
+<td><code>3.2</code></td>
+<td>Empty usable-range voltage, in V/cell.</td>
+</tr>
+<tr>
+<td><code>visual</code></td>
+<td><code>battery</code></td>
+<td><strong>Visualization</strong>: <code>battery</code>, <code>bar</code>, or <strong>details</strong> (stored as <code>none</code>). The battery and bar measure voltage against the usable per-cell range, not remaining charge.</td>
+</tr>
+<tr>
+<td><code>accent</code></td>
+<td><code>cyan</code></td>
+<td>Semantic accent: <code>cyan</code>, <code>green</code>, <code>amber</code>, or <code>orange</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>The flat editor drawer presents <strong>Label</strong>, <strong>Voltage source</strong>, <strong>Cell count
+(0 = auto)</strong>, <strong>Primary reading</strong>, <strong>Visualization</strong>, <strong>Show alt reading</strong>,
+<strong>Show cell count</strong>, and <strong>Show cell delta</strong>, in that order. Series count remains
+editable without telemetry and is ignored when the source returns a table. Voltage levels
+are grouped under <strong>Voltage levels</strong>, in Full, Warning, Critical, Empty order,
+with V/cell shown in each label. Full and Empty are hidden while visualization is
+<strong>details</strong>. All three supporting-detail toggles are hidden
+while visualization is <strong>battery</strong>, because that visualization never shows
+them; their stored values are kept.</p>
+<p>Voltage levels must be coherent: <strong>Full &gt; Warning &gt;= Critical &gt;= Empty</strong>.
+Unknown settings and invalid threshold ordering are rejected. Panel size never
+makes the alternate-reading or cell-count toggles invalid: details that do not
+fit are dropped quietly (see <a href="#visualization-and-details">Visualization and details</a>).</p>
+<h3 id="layout-schema-and-migration">Layout schema and migration</h3>
+<p>Current layout files use schema version 2. For example:</p>
+<pre><code class="language-yaml">version: 2
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: flight-pack
+    type: rx-battery
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+    config:
+      label: RX battery
+      source: RxBt
+      cells: 0
+      reading: cell
+</code></pre>
+<p>Layouts are upgraded <strong>in memory</strong> before panel validation/loading.
+Explicit voltage levels are preserved; omitted values use the defaults above.
+A brief upgrade notice explains
+that the migrated layout is not yet saved. Loading never overwrites a layout:
+use the editor's explicit <strong>Save</strong> action to persist it as version 2. Newer or
+malformed layout versions are rejected rather than interpreted with older
+assumptions.</p>
+<p>The central migration registry has one adjacent helper per layout version for
+both headers and panels. Runtime loading and staged Save apply at most one
+transition per callback, so future upgrades do not require an unbounded pass
+through the migration chain in a single callback.</p>
+<h2 id="behavior">Behavior</h2>
+<p>Source shape is detected automatically, never guessed from voltage magnitude.
+A <strong>cells table</strong> supplies
+the cell count and pack sum. A <code>cell</code> headline uses the lowest valid cell;
+alarms always judge that lowest cell, even when <code>reading: pack</code> is selected.</p>
+<p>A <strong>numeric source</strong> supplies total pack voltage. With
+<code>cells: 1</code>–<code>16</code>, the panel calculates average cell voltage from pack voltage
+and series count. With <code>cells: 0</code>, it estimates count by dividing the first
+fresh, valid pack voltage by <code>cellFull</code> and rounding to the nearest integer.
+The count is held for that telemetry connection rather than recalculated as
+voltage falls; after a disconnect, the next fresh reading starts a new
+estimate. An estimated count is marked <code>EST</code>. Estimation assumes the first
+reading is near full, so starting the radio mid-flight, a partly charged pack,
+load sag, or an unusual chemistry can produce the wrong count. Configure the
+known series count when possible. Pack voltage cannot reveal a weak or
+unbalanced cell, so alarms judge only its calculated average.</p>
+<p>All four voltage levels are in <strong>volts per cell</strong>. The battery/bar spans
+<code>cellEmpty</code> to <code>cellFull</code>; alarm thresholds are separate. <code>cellCritical</code> is checked
+before <code>cellWarning</code>. A pack headline is total voltage, while its fill is still
+normalized using average volts per cell.</p>
+<h3 id="visualization-and-details">Visualization and details</h3>
+<p>The cell count, cell delta and secondary reading are supporting details. They are shown
+only when they fit beside or below the headline without crowding it, and are
+dropped otherwise rather than reported as a settings problem.</p>
+<ul>
+<li><strong>battery</strong> draws the battery glyph and never shows any supporting
+  reading, at any panel size, so the glyph and headline get the space.</li>
+<li><strong>bar</strong> draws the usage bar and adds details that fit, in priority order:
+  count, then cell delta, then secondary reading. Secondary is shed first,
+  then delta, and count last. Both footer and side stack are tried before
+  dropping the next lowest-priority detail.
+  If delta cannot fit alongside the count in either placement, a shorter
+  secondary reading can still use the remaining room.</li>
+<li><strong>details</strong> (<code>none</code>) draws no glyph or bar. It shows the alternate
+  enabled available details as text, with the same priority, either in a footer
+  row or, on short wide panels, stacked beside the headline.</li>
+</ul>
+<p>The delta glyph uses EdgeTX's native <code>CHAR_DELTA</code> character (the font's custom
+U+0088 mapping). The firmware fonts do not require a Unicode Greek-block glyph.</p>
+<p>Small panels usually retain only the headline; fit is measured, not span-gated.
+Count-row wordings such as <code>NO CELLS</code>,
+<code>CELLS ERR</code>, and <code>VOLT ERR</code> use the count slot, so they appear in <strong>bar</strong> and
+<strong>details</strong> whenever that slot fits, even with <code>showCount</code> off.</p>
+<h2 id="states">States</h2>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>Condition</th>
+<th>Presentation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>normal</code></td>
+<td>Valid, fresh judged voltage above <code>cellWarning</code></td>
+<td>Reading and visual in their normal colors.</td>
+</tr>
+<tr>
+<td><code>warning</code></td>
+<td>Judged voltage at or below <code>cellWarning</code></td>
+<td>Amber state color, tinted panel, <code>WARN</code> badge.</td>
+</tr>
+<tr>
+<td><code>critical</code></td>
+<td>Judged voltage at or below <code>cellCritical</code></td>
+<td>Red state color, tinted panel, <code>CRIT</code> badge.</td>
+</tr>
+<tr>
+<td><code>stale</code></td>
+<td>Retained reading whose source is stale</td>
+<td>Last voltage retained, muted presentation, <code>STALE</code> badge.</td>
+</tr>
+<tr>
+<td><code>unavailable</code></td>
+<td>No usable headline</td>
+<td><code>--</code>, no unit or battery glyph, <code>N/A</code> badge.</td>
+</tr>
+</tbody>
+</table>
+<p>An empty table shows <code>NO CELLS</code>; an unusable table shows <code>CELLS ERR</code>. Invalid numeric voltage
+shows <code>VOLT ERR</code> (in the count slot, when shown). Before any reading arrives,
+the count row is blank.</p>
+<h2 id="examples">Examples</h2>
+<p>Cells monitor:</p>
+<pre><code class="language-yaml">- id: monitored-pack
+  type: rx-battery
+  col: 0
+  row: 0
+  colSpan: 2
+  rowSpan: 2
+  config:
+    source: Cels
+    reading: cell
+    visual: bar
+    showDelta: true
+</code></pre>
+<p>Pack-voltage source with an explicit series count:</p>
+<pre><code class="language-yaml">- id: flight-pack
+  type: rx-battery
+  col: 0
+  row: 0
+  colSpan: 2
+  rowSpan: 2
+  config:
+    source: RxBt
+    cells: 4
+    reading: cell
+</code></pre></div>
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+                <p>Copyright &copy; AeroGrid contributors. GPL-2.0-only.</p>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+        <script src="../../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../../js/base.js"></script>
+        <script src="../../javascripts/versions.mjs" type="module"></script>
+        <script src="../../search/main.js"></script>
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

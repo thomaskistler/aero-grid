@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        <link rel="canonical" href="https://thomaskistler.github.io/aero-grid/0.2.0/panels/tx-battery/">
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>TX battery - AeroGrid</title>
+        <link href="../../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../../css/brands.min.css" rel="stylesheet">
+        <link href="../../css/solid.min.css" rel="stylesheet">
+        <link href="../../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../../stylesheets/aerogrid.css" rel="stylesheet">
+        <link href="../../stylesheets/versions.css" rel="stylesheet">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-RMCKML1PKS"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+
+          gtag('config', "G-RMCKML1PKS");
+        </script> <meta name="aerogrid-site-root" content="/aero-grid/">
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-light bg-light">
+            <div class="container">
+                <a class="navbar-brand" href="../..">AeroGrid</a><div class="ag-docs-version">
+  <select aria-label="Documentation version"
+          data-docs-root="/aero-grid/"
+          data-docs-version="0.2.0"
+          disabled>
+    <option value="0.2.0">v0.2.0</option>
+  </select>
+  <span class="ag-docs-version-status" role="status"></span>
+</div>
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+                        <!-- Main navigation -->
+                        <ul class="nav navbar-nav">
+                            <li class="nav-item">
+                                <a href="../.." class="nav-link">Home</a>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown"  aria-expanded="false">User Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../user-guide/installation/" class="dropdown-item">Install and upgrade</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/add-dashboard/" class="dropdown-item">Add a dashboard</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/edit-dashboard/" class="dropdown-item">Edit a dashboard on the radio</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/customize-themes/" class="dropdown-item">Customize themes</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/troubleshooting/" class="dropdown-item">Troubleshoot and file bugs</a>
+</li>
+                                </ul>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle active" aria-current="page" role="button" data-bs-toggle="dropdown"  aria-expanded="false">Reference Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../reference-guide/" class="dropdown-item">Overview</a>
+</li>
+                                    
+  <li class="dropdown-submenu">
+    <a href="#" class="dropdown-item">Panels</a>
+    <ul class="dropdown-menu">
+            
+<li>
+    <a href="../flight-counter/" class="dropdown-item">Flight counter</a>
+</li>
+            
+<li>
+    <a href="../flight-mode/" class="dropdown-item">Flight mode</a>
+</li>
+            
+<li>
+    <a href="../flight-timer/" class="dropdown-item">Flight timer</a>
+</li>
+            
+<li>
+    <a href="../link-status/" class="dropdown-item">Link status</a>
+</li>
+            
+<li>
+    <a href="../metric/" class="dropdown-item">Metric</a>
+</li>
+            
+<li>
+    <a href="../model-identity/" class="dropdown-item">Model identity</a>
+</li>
+            
+<li>
+    <a href="../navigation/" class="dropdown-item">Navigation</a>
+</li>
+            
+<li>
+    <a href="../rx-battery/" class="dropdown-item">RX battery</a>
+</li>
+            
+<li>
+    <a href="../state/" class="dropdown-item">State</a>
+</li>
+            
+<li>
+    <a href="../trim-panel/" class="dropdown-item">Trim panel</a>
+</li>
+            
+<li>
+    <a href="./" class="dropdown-item active" aria-current="page">TX battery</a>
+</li>
+    </ul>
+  </li>
+                                </ul>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown"  aria-expanded="false">Developer Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../developer-guide/build/" class="dropdown-item">Check out and build</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/testing/" class="dropdown-item">Test and debug</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/simulators/" class="dropdown-item">Run and test in simulators</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/architecture/" class="dropdown-item">Repository and architecture</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/tools/" class="dropdown-item">Project tools</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/videos/" class="dropdown-item">Tutorial videos</a>
+</li>
+                                    
+<li>
+    <a href="../../developer-guide/contributing/" class="dropdown-item">Issues, changes, and releases</a>
+</li>
+                                </ul>
+                            </li>
+                        </ul>
+
+                    <ul class="nav navbar-nav ms-md-auto">
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+                                <i class="fa fa-search"></i> Search
+                            </a>
+                        </li>
+                            <li class="nav-item">
+                                <a rel="prev" href="../trim-panel/" class="nav-link">
+                                    <i class="fa fa-arrow-left"></i> Previous
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a rel="next" href="../../developer-guide/build/" class="nav-link">
+                                    Next <i class="fa fa-arrow-right"></i>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="https://github.com/thomaskistler/aero-grid" class="nav-link"><i class="fa-brands fa-github"></i> GitHub</a>
+                            </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+                    <div class="col-md-3">
+
+<nav class="navbar-expand-md bs-sidebar hidden-print affix" aria-label="Documentation">
+  <div class="navbar-header">
+    <button type="button" class="navbar-toggler collapsed" data-bs-toggle="collapse" data-bs-target="#toc-collapse" aria-controls="toc-collapse" aria-expanded="false" aria-label="Toggle documentation navigation">
+      <span class="fa fa-angle-down" aria-hidden="true"></span>
+    </button>
+  </div>
+  <div id="toc-collapse" class="navbar-collapse collapse card bg-body-tertiary">
+    <ul class="nav flex-column">
+      
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../..">Home</a>
+  </li>
+
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">User Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/installation/">Install and upgrade</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/add-dashboard/">Add a dashboard</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/edit-dashboard/">Edit a dashboard on the radio</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/customize-themes/">Customize themes</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/troubleshooting/">Troubleshoot and file bugs</a>
+  </li>
+
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Reference Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../reference-guide/">Overview</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../flight-counter/">Flight counter</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../flight-mode/">Flight mode</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../flight-timer/">Flight timer</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../link-status/">Link status</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../metric/">Metric</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../model-identity/">Model identity</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../navigation/">Navigation</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../rx-battery/">RX battery</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../state/">State</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../trim-panel/">Trim panel</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link current" href="./" aria-current="page">TX battery</a>
+  </li>
+
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Developer Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/build/">Check out and build</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/testing/">Test and debug</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/simulators/">Run and test in simulators</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/architecture/">Repository and architecture</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/tools/">Project tools</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../developer-guide/contributing/">Issues, changes, and releases</a>
+  </li>
+
+        </ul>
+      </li>
+    </ul>
+  </div>
+</nav></div>
+                    <div class="col-md-9" role="main">
+
+<h1 id="tx-battery"><code>tx-battery</code></h1>
+<table>
+<thead>
+<tr>
+<th>1x2</th>
+<th>2x1</th>
+<th>2x2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><img alt="TX battery at 1x2" src="../../assets/panels/tx-battery/1x2.png" /></td>
+<td><img alt="TX battery at 2x1" src="../../assets/panels/tx-battery/2x1.png" /></td>
+<td><img alt="TX battery at 2x2" src="../../assets/panels/tx-battery/2x2.png" /></td>
+</tr>
+</tbody>
+</table>
+<p>Shows the <strong>transmitter's own</strong> battery voltage — the pack inside the radio in
+your hands, not anything on the aircraft.</p>
+<h2 id="settings">Settings</h2>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Values</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>label</code></td>
+<td>string</td>
+<td><code>TX</code></td>
+<td>any text</td>
+<td>The panel's heading. The default is <code>TX</code>; a single-cell header has room for about five characters, so <code>TX BATTERY</code> needs a wider panel.</td>
+</tr>
+<tr>
+<td><code>accent</code></td>
+<td>string</td>
+<td><code>cyan</code></td>
+<td><code>cyan</code>, <code>green</code>, <code>amber</code>, <code>orange</code></td>
+<td>The stripe down the left edge. Cyan because the palette reserves it for electrical data, and this is a battery.</td>
+</tr>
+<tr>
+<td><code>packEmpty</code></td>
+<td>number</td>
+<td><em>the radio's</em></td>
+<td>volts</td>
+<td>Overrides the empty end of the radio's battery meter range.</td>
+</tr>
+<tr>
+<td><code>packFull</code></td>
+<td>number</td>
+<td><em>the radio's</em></td>
+<td>volts</td>
+<td>Overrides the full end.</td>
+</tr>
+<tr>
+<td><code>warning</code></td>
+<td>number</td>
+<td><em>none</em></td>
+<td>volts</td>
+<td>At or below this, the panel goes <code>warning</code>.</td>
+</tr>
+<tr>
+<td><code>critical</code></td>
+<td>number</td>
+<td><em>none</em></td>
+<td>volts</td>
+<td>At or below this, the panel goes <code>critical</code>.</td>
+</tr>
+<tr>
+<td><code>visual</code></td>
+<td>string</td>
+<td><code>battery</code></td>
+<td><code>battery</code>, <code>bar</code>, <code>none</code></td>
+<td>How the estimate is drawn. See below.</td>
+</tr>
+<tr>
+<td><code>showPercent</code></td>
+<td>boolean</td>
+<td><code>false</code></td>
+<td><code>true</code>, <code>false</code></td>
+<td>Whether the estimate is also written as a percentage.</td>
+</tr>
+</tbody>
+</table>
+<p>Anything else is rejected at load with the layout, panel and key named.</p>
+<h2 id="behavior">Behavior</h2>
+<p>The battery fill and optional <code>EST</code> percentage use the range set in
+<strong>SYS → Hardware → Battery meter range</strong>. To override it, set both <code>packEmpty</code>
+and <code>packFull</code>, with full above empty. Incomplete or invalid overrides use
+the radio's range. If no range is available, only voltage is shown.</p>
+<p>The fill and percentage estimate voltage headroom, not remaining charge.
+Choose <code>visual: battery</code>, <code>bar</code>, or <code>none</code>; enable <code>showPercent</code> to display
+the estimate as text.</p>
+<p>Set <code>warning</code> and <code>critical</code> to voltages appropriate for your pack, with
+critical below warning. The panel changes color at or below each threshold,
+with critical taking priority. No thresholds are set by default.</p>
+<h2 id="states">States</h2>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>When</th>
+<th>What you see</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>normal</code></td>
+<td>A voltage above <code>warning</code>, or no thresholds stated</td>
+<td>The voltage in the reading colour, the whole cell in the accent, no badge</td>
+</tr>
+<tr>
+<td><code>warning</code></td>
+<td>Voltage at or below <code>warning</code></td>
+<td>Amber accent, tinted panel, amber cell, <code>WARN</code> badge</td>
+</tr>
+<tr>
+<td><code>critical</code></td>
+<td>Voltage at or below <code>critical</code></td>
+<td>Red accent, tinted panel, red cell throughout, <code>CRIT</code> badge</td>
+</tr>
+<tr>
+<td><code>stale</code></td>
+<td>The radio stopped answering; the last voltage is kept</td>
+<td>Muted reading, <code>STALE</code> badge</td>
+</tr>
+<tr>
+<td><code>unavailable</code></td>
+<td>No voltage has ever been read</td>
+<td><code>--</code> and an <code>N/A</code> badge</td>
+</tr>
+</tbody>
+</table>
+<h2 id="examples">Examples</h2>
+<pre><code class="language-yaml">- id: tx
+  type: tx-battery
+  col: 0
+  row: 0
+  colSpan: 2
+  rowSpan: 2
+  config:
+    label: TX
+    accent: cyan
+    warning: 6.7
+    critical: 6.5
+    visual: battery
+    showPercent: true
+</code></pre>
+<p>The voltage appears beside an upright battery, with the percentage beneath
+the voltage. No range is stated, so it uses whatever your radio's
+battery meter is set to — which is the normal case. Add <code>packEmpty</code> and
+<code>packFull</code> only if you want to override that.</p></div>
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+                <p>Copyright &copy; AeroGrid contributors. GPL-2.0-only.</p>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+        <script src="../../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../../js/base.js"></script>
+        <script src="../../javascripts/versions.mjs" type="module"></script>
+        <script src="../../search/main.js"></script>
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

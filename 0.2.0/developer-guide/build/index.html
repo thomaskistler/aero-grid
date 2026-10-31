@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        <link rel="canonical" href="https://thomaskistler.github.io/aero-grid/0.2.0/developer-guide/build/">
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>Check out and build - AeroGrid</title>
+        <link href="../../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../../css/brands.min.css" rel="stylesheet">
+        <link href="../../css/solid.min.css" rel="stylesheet">
+        <link href="../../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../../stylesheets/aerogrid.css" rel="stylesheet">
+        <link href="../../stylesheets/versions.css" rel="stylesheet">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-RMCKML1PKS"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+
+          gtag('config', "G-RMCKML1PKS");
+        </script> <meta name="aerogrid-site-root" content="/aero-grid/">
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-light bg-light">
+            <div class="container">
+                <a class="navbar-brand" href="../..">AeroGrid</a><div class="ag-docs-version">
+  <select aria-label="Documentation version"
+          data-docs-root="/aero-grid/"
+          data-docs-version="0.2.0"
+          disabled>
+    <option value="0.2.0">v0.2.0</option>
+  </select>
+  <span class="ag-docs-version-status" role="status"></span>
+</div>
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+                        <!-- Main navigation -->
+                        <ul class="nav navbar-nav">
+                            <li class="nav-item">
+                                <a href="../.." class="nav-link">Home</a>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown"  aria-expanded="false">User Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../user-guide/installation/" class="dropdown-item">Install and upgrade</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/add-dashboard/" class="dropdown-item">Add a dashboard</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/edit-dashboard/" class="dropdown-item">Edit a dashboard on the radio</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/customize-themes/" class="dropdown-item">Customize themes</a>
+</li>
+                                    
+<li>
+    <a href="../../user-guide/troubleshooting/" class="dropdown-item">Troubleshoot and file bugs</a>
+</li>
+                                </ul>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown"  aria-expanded="false">Reference Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="../../reference-guide/" class="dropdown-item">Overview</a>
+</li>
+                                    
+  <li class="dropdown-submenu">
+    <a href="#" class="dropdown-item">Panels</a>
+    <ul class="dropdown-menu">
+            
+<li>
+    <a href="../../panels/flight-counter/" class="dropdown-item">Flight counter</a>
+</li>
+            
+<li>
+    <a href="../../panels/flight-mode/" class="dropdown-item">Flight mode</a>
+</li>
+            
+<li>
+    <a href="../../panels/flight-timer/" class="dropdown-item">Flight timer</a>
+</li>
+            
+<li>
+    <a href="../../panels/link-status/" class="dropdown-item">Link status</a>
+</li>
+            
+<li>
+    <a href="../../panels/metric/" class="dropdown-item">Metric</a>
+</li>
+            
+<li>
+    <a href="../../panels/model-identity/" class="dropdown-item">Model identity</a>
+</li>
+            
+<li>
+    <a href="../../panels/navigation/" class="dropdown-item">Navigation</a>
+</li>
+            
+<li>
+    <a href="../../panels/rx-battery/" class="dropdown-item">RX battery</a>
+</li>
+            
+<li>
+    <a href="../../panels/state/" class="dropdown-item">State</a>
+</li>
+            
+<li>
+    <a href="../../panels/trim-panel/" class="dropdown-item">Trim panel</a>
+</li>
+            
+<li>
+    <a href="../../panels/tx-battery/" class="dropdown-item">TX battery</a>
+</li>
+    </ul>
+  </li>
+                                </ul>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a href="#" class="nav-link dropdown-toggle active" aria-current="page" role="button" data-bs-toggle="dropdown"  aria-expanded="false">Developer Guide</a>
+                                <ul class="dropdown-menu">
+                                    
+<li>
+    <a href="./" class="dropdown-item active" aria-current="page">Check out and build</a>
+</li>
+                                    
+<li>
+    <a href="../testing/" class="dropdown-item">Test and debug</a>
+</li>
+                                    
+<li>
+    <a href="../simulators/" class="dropdown-item">Run and test in simulators</a>
+</li>
+                                    
+<li>
+    <a href="../architecture/" class="dropdown-item">Repository and architecture</a>
+</li>
+                                    
+<li>
+    <a href="../tools/" class="dropdown-item">Project tools</a>
+</li>
+                                    
+<li>
+    <a href="../videos/" class="dropdown-item">Tutorial videos</a>
+</li>
+                                    
+<li>
+    <a href="../contributing/" class="dropdown-item">Issues, changes, and releases</a>
+</li>
+                                </ul>
+                            </li>
+                        </ul>
+
+                    <ul class="nav navbar-nav ms-md-auto">
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+                                <i class="fa fa-search"></i> Search
+                            </a>
+                        </li>
+                            <li class="nav-item">
+                                <a rel="prev" href="../../panels/tx-battery/" class="nav-link">
+                                    <i class="fa fa-arrow-left"></i> Previous
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a rel="next" href="../testing/" class="nav-link">
+                                    Next <i class="fa fa-arrow-right"></i>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="https://github.com/thomaskistler/aero-grid" class="nav-link"><i class="fa-brands fa-github"></i> GitHub</a>
+                            </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+                    <div class="col-md-3">
+
+<nav class="navbar-expand-md bs-sidebar hidden-print affix" aria-label="Documentation">
+  <div class="navbar-header">
+    <button type="button" class="navbar-toggler collapsed" data-bs-toggle="collapse" data-bs-target="#toc-collapse" aria-controls="toc-collapse" aria-expanded="false" aria-label="Toggle documentation navigation">
+      <span class="fa fa-angle-down" aria-hidden="true"></span>
+    </button>
+  </div>
+  <div id="toc-collapse" class="navbar-collapse collapse card bg-body-tertiary">
+    <ul class="nav flex-column">
+      
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../..">Home</a>
+  </li>
+
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">User Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/installation/">Install and upgrade</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/add-dashboard/">Add a dashboard</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/edit-dashboard/">Edit a dashboard on the radio</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/customize-themes/">Customize themes</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../user-guide/troubleshooting/">Troubleshoot and file bugs</a>
+  </li>
+
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Reference Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../reference-guide/">Overview</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/flight-counter/">Flight counter</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/flight-mode/">Flight mode</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/flight-timer/">Flight timer</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/link-status/">Link status</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/metric/">Metric</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/model-identity/">Model identity</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/navigation/">Navigation</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/rx-battery/">RX battery</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/state/">State</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/trim-panel/">Trim panel</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../../panels/tx-battery/">TX battery</a>
+  </li>
+
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Developer Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link current" href="./" aria-current="page">Check out and build</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../testing/">Test and debug</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../simulators/">Run and test in simulators</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../architecture/">Repository and architecture</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../tools/">Project tools</a>
+  </li>
+
+          
+  
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link" href="../contributing/">Issues, changes, and releases</a>
+  </li>
+
+        </ul>
+      </li>
+    </ul>
+  </div>
+</nav></div>
+                    <div class="col-md-9" role="main">
+
+<h1 id="check-out-and-build">Check out and build</h1>
+<p>AeroGrid is a Lua widget, not a firmware fork. You do not need to build EdgeTX
+or connect a radio to get started. The development build assembles an SD-card
+directory that either simulator can boot; the release build creates the ZIP
+that users install.</p>
+<h2 id="get-the-code">Get the code</h2>
+<p>With Git installed, clone the repository and create a branch for your change:</p>
+<pre><code class="language-sh">git clone https://github.com/thomaskistler/aero-grid.git
+cd aero-grid
+git switch -c my-change
+</code></pre>
+<p>If you do not have repository write access, fork it on GitHub and clone your
+fork instead. Run all commands in this guide from the repository root.</p>
+<h2 id="prerequisites">Prerequisites</h2>
+<p>Install Python 3 with virtual-environment support, Make, and rsync.
+Python 3.11 is the version used in CI. The Makefile uses a Unix shell and
+<code>bin/</code> virtual-environment paths: use macOS, Linux, or WSL for these commands.
+On Windows, Companion can run natively, but must be pointed at a directory
+accessible from Windows.</p>
+<h3 id="set-up-the-development-environment">Set up the development environment</h3>
+<pre><code class="language-sh">make setup
+make test
+</code></pre>
+<p><code>make setup</code> creates <code>build/venv/</code> and installs the pinned <code>lupa</code> dependency.
+There is no need to activate the environment: Make invokes its Python directly.
+<code>make test</code> also sets up this environment automatically when needed.</p>
+<h3 id="install-the-validation-tools">Install the validation tools</h3>
+<p>Behavior tests need only the Python environment, but runtime changes also need
+these tools on <code>PATH</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Used for</th>
+<th>Version guidance</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>edgetx-luac</code> or Lua 5.3 <code>luac</code></td>
+<td>Parse source and test Lua in <code>make check</code>.</td>
+<td>Prefer EdgeTX's compiler when available; otherwise use Lua <strong>5.3</strong>, not a different Lua version.</td>
+</tr>
+<tr>
+<td><code>lua-language-server</code></td>
+<td>Static diagnostics in <code>make lint</code>.</td>
+<td>CI uses 3.19.1; install the appropriate binary from <a href="https://github.com/LuaLS/lua-language-server/releases">LuaLS releases</a>.</td>
+</tr>
+<tr>
+<td><code>stylua</code></td>
+<td>Format Lua and check formatting.</td>
+<td>CI pins 2.5.2; use <a href="https://github.com/JohnnyMorganz/StyLua/releases">StyLua releases</a>.</td>
+</tr>
+</tbody>
+</table>
+<p>For example, on Debian/Ubuntu:</p>
+<pre><code class="language-sh">sudo apt-get install git make rsync python3 python3-venv lua5.3
+make check LUA_COMPILER=luac5.3
+</code></pre>
+<p>On macOS with Homebrew, the basic dependencies and Lua compiler can be installed
+with:</p>
+<pre><code class="language-sh">brew install python rsync lua@5.3
+make check LUA_COMPILER=&quot;$(brew --prefix lua@5.3)/bin/luac&quot;
+</code></pre>
+<p>Install LuaLS and StyLua separately and ensure their executables are on <code>PATH</code>.
+The VS Code Lua extension is useful in the editor, but does not by itself make
+the LuaLS command-line binary available to Make.</p>
+<p><code>make check</code> searches for <code>edgetx-luac</code>, <code>luac5.3</code>, then <code>luac</code>.
+If the last one is a different version, pass <code>LUA_COMPILER</code> explicitly.
+See <a href="../testing/">Test and debug</a> for the complete validation workflow.</p>
+<h2 id="build">Build</h2>
+<pre><code class="language-sh">make build
+</code></pre>
+<p>This creates the SD image at <code>build/sdcard/</code>. To see the dashboard, follow
+<a href="../simulators/">Run and test in simulators</a>.</p>
+<h3 id="what-the-build-does">What the build does</h3>
+<pre><code class="language-text">tests/fixtures/sdcard/        radio, models, registry, and model image
+            +
+src/WIDGETS/AeroGrid/         current widget, panels, libraries, and layouts
+            |
+            v
+build/sdcard/                disposable simulator SD-card root
+</code></pre>
+<p><code>make build</code> copies the fixture first, then overlays the whole widget package.
+It removes compiled <code>.luac</code> files and updates Lua source timestamps so EdgeTX
+recompiles the current sources. There is no transpilation or native compilation
+of AeroGrid itself.</p>
+<p><strong>Stop the simulator before rebuilding.</strong> The build recreates the image from
+the baseline, deleting simulator-created models, saved layouts, registry changes,
+and other files not present in the fixture. Back up experiments outside that
+directory first. Never point a build at a real SD card or personal model backup.</p>
+<p>Use a separate image when you want an independent experiment:</p>
+<pre><code class="language-sh">make build BUILD_DIR=build/experiment
+</code></pre>
+<p>Its SD-card root is <code>build/experiment/sdcard/</code>; change the simulator path to match.
+Changing <code>BUILD_DIR</code> also relocates Make-managed environments and output.
+The screenshot tools have their own fixed output paths, described in
+<a href="../tools/">Project tools</a>.</p>
+<h2 id="build-an-installable-package">Build an installable package</h2>
+<pre><code class="language-sh">make release-package
+</code></pre>
+<p>This writes <code>AeroGrid-&lt;version&gt;.zip</code> and its <code>.sha256</code> file to <code>build/release/</code>,
+using the version in <code>src/WIDGETS/AeroGrid/lib/package.lua</code>. The archive contains
+runtime Lua, the editor assets, the <code>Default</code>, <code>Empty</code>, <code>Diagnostics</code>, and <code>Palette</code> layouts, and
+the license. Review layouts, fixture models, simulator state, and bytecode are
+not included.</p>
+<p>Use this ZIP, rather than the development SD image, to check the actual
+<a href="../../user-guide/installation/">installation and upgrade procedure</a>.
+Publishing a release is a separate <a href="../contributing/#publish-a-release">maintainer workflow</a>.</p>
+<h2 id="build-and-preview-the-documentation">Build and preview the documentation</h2>
+<pre><code class="language-sh">make docs
+make docs-serve
+</code></pre>
+<p>The first command installs the pinned MkDocs dependency into
+<code>build/docs-venv/</code> and strictly builds the site at <code>build/docs/</code>.
+The second serves a live-reloading preview at <code>http://127.0.0.1:8000</code>;
+stop it with Ctrl-C.</p>
+<p>Markdown lives in <code>docs/</code>. When adding or renaming a page, update <strong>both</strong>
+<code>mkdocs.yml</code> and the explicit sidebar in <code>docs/overrides/toc.html</code>.
+Site styling is in <code>docs/stylesheets/aerogrid.css</code>. Checked-in screenshots are
+used as-is; building the site never launches a simulator.</p>
+<h2 id="command-reference">Command reference</h2>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>make help</code></td>
+<td>List supported targets.</td>
+</tr>
+<tr>
+<td><code>make setup</code></td>
+<td>Install development Python dependencies.</td>
+</tr>
+<tr>
+<td><code>make test</code></td>
+<td>Run every Lua behavior suite once with firmware-like string behavior.</td>
+</tr>
+<tr>
+<td><code>make check</code></td>
+<td>Run behavior tests, then parse source/test Lua.</td>
+</tr>
+<tr>
+<td><code>make lint</code></td>
+<td>Run LuaLS diagnostics.</td>
+</tr>
+<tr>
+<td><code>make format</code></td>
+<td>Rewrite source/test Lua using StyLua.</td>
+</tr>
+<tr>
+<td><code>make build</code></td>
+<td>Reset and assemble the development SD image.</td>
+</tr>
+<tr>
+<td><code>make capture-setup</code></td>
+<td>Install optional panel screenshot dependencies.</td>
+</tr>
+<tr>
+<td><code>make release-package</code></td>
+<td>Generate the installation ZIP and checksum.</td>
+</tr>
+<tr>
+<td><code>make docs</code> / <code>make docs-serve</code></td>
+<td>Build / preview the website.</td>
+</tr>
+<tr>
+<td><code>make clean</code></td>
+<td>Delete the configured build directory, including environments and simulator state.</td>
+</tr>
+</tbody>
+</table></div>
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+                <p>Copyright &copy; AeroGrid contributors. GPL-2.0-only.</p>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+        <script src="../../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../../js/base.js"></script>
+        <script src="../../javascripts/versions.mjs" type="module"></script>
+        <script src="../../search/main.js"></script>
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

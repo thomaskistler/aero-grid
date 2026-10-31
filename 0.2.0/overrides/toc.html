@@ -1,0 +1,57 @@
+{% macro sidebar_page(source, target, title) %}
+  {% set current = page.file.src_uri == source %}
+  <li class="nav-item sidebar-page">
+    <a class="sidebar-page-link{% if current %} current{% endif %}" href="{{ target | url }}"{% if current %} aria-current="page"{% endif %}>{{ title }}</a>
+  </li>
+{% endmacro %}
+
+<nav class="navbar-expand-md bs-sidebar hidden-print affix" aria-label="Documentation">
+  <div class="navbar-header">
+    <button type="button" class="navbar-toggler collapsed" data-bs-toggle="collapse" data-bs-target="#toc-collapse" aria-controls="toc-collapse" aria-expanded="false" aria-label="Toggle documentation navigation">
+      <span class="fa fa-angle-down" aria-hidden="true"></span>
+    </button>
+  </div>
+  <div id="toc-collapse" class="navbar-collapse collapse card bg-body-tertiary">
+    <ul class="nav flex-column">
+      {{ sidebar_page("index.md", ".", "Home") }}
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">User Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          {{ sidebar_page("user-guide/installation.md", "user-guide/installation/", "Install and upgrade") }}
+          {{ sidebar_page("user-guide/add-dashboard.md", "user-guide/add-dashboard/", "Add a dashboard") }}
+          {{ sidebar_page("user-guide/edit-dashboard.md", "user-guide/edit-dashboard/", "Edit a dashboard on the radio") }}
+          {{ sidebar_page("user-guide/customize-themes.md", "user-guide/customize-themes/", "Customize themes") }}
+          {{ sidebar_page("user-guide/troubleshooting.md", "user-guide/troubleshooting/", "Troubleshoot and file bugs") }}
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Reference Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          {{ sidebar_page("reference-guide/index.md", "reference-guide/", "Overview") }}
+          {{ sidebar_page("panels/flight-counter.md", "panels/flight-counter/", "Flight counter") }}
+          {{ sidebar_page("panels/flight-mode.md", "panels/flight-mode/", "Flight mode") }}
+          {{ sidebar_page("panels/flight-timer.md", "panels/flight-timer/", "Flight timer") }}
+          {{ sidebar_page("panels/link-status.md", "panels/link-status/", "Link status") }}
+          {{ sidebar_page("panels/metric.md", "panels/metric/", "Metric") }}
+          {{ sidebar_page("panels/model-identity.md", "panels/model-identity/", "Model identity") }}
+          {{ sidebar_page("panels/navigation.md", "panels/navigation/", "Navigation") }}
+          {{ sidebar_page("panels/rx-battery.md", "panels/rx-battery/", "RX battery") }}
+          {{ sidebar_page("panels/state.md", "panels/state/", "State") }}
+          {{ sidebar_page("panels/trim-panel.md", "panels/trim-panel/", "Trim panel") }}
+          {{ sidebar_page("panels/tx-battery.md", "panels/tx-battery/", "TX battery") }}
+        </ul>
+      </li>
+      <li class="sidebar-group">
+        <span class="sidebar-group-title">Developer Guide</span>
+        <ul class="nav flex-column sidebar-pages">
+          {{ sidebar_page("developer-guide/build.md", "developer-guide/build/", "Check out and build") }}
+          {{ sidebar_page("developer-guide/testing.md", "developer-guide/testing/", "Test and debug") }}
+          {{ sidebar_page("developer-guide/simulators.md", "developer-guide/simulators/", "Run and test in simulators") }}
+          {{ sidebar_page("developer-guide/architecture.md", "developer-guide/architecture/", "Repository and architecture") }}
+          {{ sidebar_page("developer-guide/tools.md", "developer-guide/tools/", "Project tools") }}
+          {{ sidebar_page("developer-guide/contributing.md", "developer-guide/contributing/", "Issues, changes, and releases") }}
+        </ul>
+      </li>
+    </ul>
+  </div>
+</nav>
