@@ -44,6 +44,39 @@ def checksum(data):
 
 
 class InstallerAssetsTests(unittest.TestCase):
+    def test_developer_build_is_mirrored_under_dev_without_changing_latest_stable(self):
+        responses = self.catalog_fixture()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = release.package(release.ROOT / "src/WIDGETS/AeroGrid", root / "package", "12." + "a" * 40)
+            version = release.version(release.ROOT / "src/WIDGETS/AeroGrid").split("-")[0] + "-dev.12+g" + "a" * 40
+            developer = {
+                "tag_name": "dev", "name": f"AeroGrid {version} (developer build)",
+                "draft": False, "prerelease": True,
+                "assets": [
+                    {"name": name, "browser_download_url":
+                     f"https://github.com/{installer.REPOSITORY}/releases/download/dev/{name}"}
+                    for name in ("AeroGrid-dev.zip", "AeroGrid-dev.zip.sha256")
+                ],
+            }
+            page = f"{installer.RELEASES_URL}?per_page=100&page=1"
+            responses[page] = json.dumps([developer, *json.loads(responses[page])]).encode()
+            _, urls = installer.release_assets(developer)
+            responses[urls[0]] = path.read_bytes()
+            responses[urls[1]] = path.with_name(path.name + ".sha256").read_bytes()
+            output = root / "site"
+            catalog = installer.publish_catalog(output, lambda url, limit, api=False: responses[url])
+            self.assertEqual(catalog["latest"], "1.2.3")
+            self.assertEqual(catalog["releases"][-1]["version"], version)
+            manifest = json.loads((output / "releases/dev/manifest.json").read_text())
+            self.assertEqual(manifest["version"], version)
+            self.assertTrue(manifest["release"].endswith("/tag/dev"))
+            self.assertEqual(json.loads((output / "latest.json").read_text())["version"], "1.2.3")
+            self.assertFalse((output / "releases" / version).exists())
+            developer["name"] = "AeroGrid 1.2.3 (developer build)"
+            with self.assertRaises(ValueError):
+                installer.release_assets(developer)
+
     def catalog_fixture(self):
         latest = release_metadata()
         older = release_metadata("1.0.0")

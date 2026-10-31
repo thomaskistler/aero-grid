@@ -135,6 +135,8 @@ def release_versions(releases, latest):
         if release["draft"]:
             continue
         tag = release["tag_name"]
+        if tag == "dev" and release["prerelease"] is True:
+            continue
         version = tag.removeprefix("v")
         if tag != f"v{version}" or not VERSION.fullmatch(version):
             raise ValueError(f"Unsupported published release tag: {tag}")
@@ -150,12 +152,36 @@ def release_versions(releases, latest):
     return versions, latest_version
 
 
+def update_installers(output, versions):
+    main = output / "main/user-guide/installation/index.html"
+    if not main.exists() or "data-radio-installer" not in main.read_text():
+        return
+    dialog_pattern = r'<dialog\b[^>]*\bdata-release-dialog\b[^>]*>.*?</dialog>'
+    dialog = re.search(dialog_pattern, main.read_text(), re.DOTALL)
+    if not dialog:
+        raise ValueError("Current installer is missing its release dialog")
+    for entry in versions:
+        if entry["version"] == "main":
+            continue
+        root = output / entry["version"]
+        page = root / "user-guide/installation/index.html"
+        if not page.exists() or "data-radio-installer" not in page.read_text():
+            continue
+        html, count = re.subn(dialog_pattern, lambda _: dialog[0], page.read_text(), flags=re.DOTALL)
+        if count != 1:
+            raise ValueError(f"Expected one release dialog in {page}")
+        page.write_text(html)
+        for name in ("radio-installer.mjs", "radio-panel.mjs", "radio-storage.mjs"):
+            shutil.copyfile(output / "main/javascripts" / name, root / "javascripts" / name)
+
+
 def export_site(repo, branch, output, latest_version):
     if output.exists():
         raise ValueError(f"Pages output already exists: {output}")
     extract_revision(repo, branch, output)
     latest_pages = json.loads((output / latest_version / "pages.json").read_text())
     versions = json.loads((output / "versions.json").read_text())
+    update_installers(output, versions)
     paths = set()
     reserved = {"latest", "installer", *(entry["version"] for entry in versions)}
     for entry in versions:
