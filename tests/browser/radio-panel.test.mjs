@@ -10,7 +10,7 @@ const source = (await readFile(new URL("../../docs/javascripts/radio-panel.mjs",
   .replace(/^import .*;\n/gm, "")
   .replaceAll("import.meta.url", JSON.stringify(new URL("../../docs/javascripts/radio-panel.mjs", import.meta.url).href));
 
-async function panel() {
+async function panel({ gtag, allowInstallation = false, downloadError, writeError } = {}) {
   const elements = new Map();
   const document = { hidden: false, activeElement: null };
   function element(name) {
@@ -59,17 +59,29 @@ async function panel() {
       return structuredClone(details);
     },
     disconnect() { this.root = null; },
-    requestWritePermission() { assert.fail("Invalidated confirmation must not request write access"); },
+    requestWritePermission() {
+      assert.ok(allowInstallation, "Invalidated confirmation must not request write access");
+    },
+    exclusive: async (operation) => operation(radioStorage.root),
   };
   let poll;
   vm.runInNewContext(source, {
-    document, window: { isSecureContext: true, showDirectoryPicker() {}, addEventListener() {} },
+    document, window: { isSecureContext: true, showDirectoryPicker() {}, addEventListener() {}, gtag },
     radioStorage, actionFor, compareVersions, radioCompatibility, radioHardware,
     structuredClone, URL, console, queueMicrotask,
     loadCatalog: async () => ({
       latest: "1.0.0", releases: [{ version: "1.0.0", available: true, name: "Test release" }],
     }),
     loadRelease: async () => ({ version: "1.0.0" }),
+    preparePackage: async (manifest) => {
+      if (downloadError) throw downloadError;
+      return { version: manifest.version, files: [] };
+    },
+    replaceWidget: async () => {
+      if (writeError) throw writeError;
+      details.widget.version = "1.0.0";
+    },
+    verifyInstalled: async () => {},
     setInterval(callback, interval) { assert.equal(interval, 5000); poll = callback; },
   }, { filename: "radio-panel.mjs" });
   await new Promise((resolve) => setImmediate(resolve));
@@ -83,6 +95,58 @@ async function panel() {
     loseAccess(name) { failure = new DOMException("Drive unavailable", name); },
   };
 }
+
+test("each verified release download emits one analytics event with its version", async () => {
+  const events = [];
+  const ui = await panel({
+    allowInstallation: true,
+    gtag: (command, event, parameters) => events.push([command, event, { ...parameters }]),
+  });
+  for (let count = 1; count <= 2; count++) {
+    await ui.element("confirm-start").dispatch("click");
+    assert.deepEqual(events, Array.from({ length: count }, () =>
+      ["event", "release_download", { version: "1.0.0" }]));
+    assert.match(ui.element("operation-status").textContent, /installed successfully/);
+    await ui.element("confirm-close").dispatch("click");
+    ui.change((details) => {
+      details.widget.version = "0.0.1";
+      return details;
+    });
+    await ui.poll();
+    await ui.element("install").dispatch("click");
+  }
+});
+
+test("failed downloads do not emit analytics events", async () => {
+  const events = [];
+  const ui = await panel({
+    allowInstallation: true,
+    downloadError: new Error("Download content verification failed"),
+    gtag: (...event) => events.push(event),
+  });
+  await ui.element("confirm-start").dispatch("click");
+  assert.deepEqual(events, []);
+  assert.match(ui.element("operation-status").textContent, /Download content verification failed/);
+});
+
+test("a successful download counts even if writing to the radio later fails", async () => {
+  const events = [];
+  const ui = await panel({
+    allowInstallation: true,
+    writeError: new Error("Radio disconnected"),
+    gtag: (...event) => events.push(event),
+  });
+  await ui.element("confirm-start").dispatch("click");
+  assert.equal(events.length, 1);
+  assert.equal(events[0][1], "release_download");
+  assert.match(ui.element("operation-status").textContent, /Radio disconnected/);
+});
+
+test("installation succeeds when analytics is unavailable", async () => {
+  const ui = await panel({ allowInstallation: true });
+  await ui.element("confirm-start").dispatch("click");
+  assert.match(ui.element("operation-status").textContent, /installed successfully/);
+});
 
 for (const changed of ["radio", "widget"]) {
   test(`${changed} metadata change dismisses confirmation and permits a fresh confirmation`, async () => {
