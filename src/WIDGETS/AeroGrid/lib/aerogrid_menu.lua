@@ -2,15 +2,13 @@
 
 local menu = { RUNTIME_API = 1 }
 
--- Same order and colors as tools/generate-menu-icon.py.
-local VARIANTS = {
-    { name = "blue", 54, 86, 115 },
-    { name = "orange", 198, 91, 18 },
-    { name = "green", 20, 118, 66 },
-    { name = "slate", 33, 40, 48 },
+-- BEGIN GENERATED ICON MASKS (tools/generate-menu-icon.py)
+local ICON_MASKS = {
+    [36] = "\0\0\29\3\255\29\0\1\1\41\29\1\1\1\137\29\2\1\1\232\30\2\1\1\5\0\3\30\3\255\30\3\1\1\82\30\4\1\1\182\30\5\1\1\253\31\5\1\1\31\0\6\31\2\255\31\6\1\1\127\31\7\1\1\226\32\7\1\1\3\0\8\32\3\255\32\8\1\1\71\32\9\1\1\171\32\10\1\1\249\33\10\1\1\22\0\11\33\2\255\33\11\1\1\116\33\12\1\1\216\34\12\1\1\1\0\13\34\3\255\34\13\1\1\61\34\14\1\1\160\34\15\1\1\246\35\15\1\1\16\0\16\35\4\255\35\16\1\1\105\35\17\1\1\209\35\18\1\1\204\35\19\1\1\105\0\20\34\3\255\34\20\1\1\246\35\20\1\1\16\34\21\1\1\160\34\22\1\1\60\0\23\33\2\255\33\23\1\1\216\34\23\1\1\1\33\24\1\1\116\0\25\32\3\255\32\25\1\1\249\33\25\1\1\22\32\26\1\1\171\32\27\1\1\71\0\28\31\2\255\31\28\1\1\226\32\28\1\1\3\31\29\1\1\127\0\30\30\3\255\30\30\1\1\253\31\30\1\1\31\30\31\1\1\182\30\32\1\1\82\0\33\29\3\255\29\33\1\1\232\30\33\1\1\5\29\34\1\1\137\29\35\1\1\41",
+    [45] = "\0\0\36\2\255\36\0\1\1\99\36\1\1\1\198\0\2\37\3\255\37\2\1\1\46\37\3\1\1\142\37\4\1\1\236\38\4\1\1\8\0\5\38\3\255\38\5\1\1\88\38\6\1\1\187\38\7\1\1\254\39\7\1\1\35\0\8\39\2\255\39\8\1\1\132\39\9\1\1\231\40\9\1\1\4\0\10\40\3\255\40\10\1\1\77\40\11\1\1\176\40\12\1\1\251\41\12\1\1\26\0\13\41\2\255\41\13\1\1\122\41\14\1\1\222\42\14\1\1\2\0\15\42\3\255\42\15\1\1\66\42\16\1\1\166\42\17\1\1\249\43\17\1\1\20\0\18\43\2\255\43\18\1\1\111\43\19\1\1\211\0\20\44\5\255\44\20\1\1\55\44\21\1\1\155\44\22\1\1\230\44\23\1\1\154\44\24\1\1\55\0\25\43\2\255\43\25\1\1\210\43\26\1\1\110\0\27\42\3\255\42\27\1\1\248\43\27\1\1\20\42\28\1\1\165\42\29\1\1\66\0\30\41\2\255\41\30\1\1\221\42\30\1\1\2\41\31\1\1\121\0\32\40\3\255\40\32\1\1\251\41\32\1\1\26\40\33\1\1\176\40\34\1\1\77\0\35\39\2\255\39\35\1\1\230\40\35\1\1\4\39\36\1\1\131\0\37\38\3\255\38\37\1\1\254\39\37\1\1\35\38\38\1\1\187\38\39\1\1\88\0\40\37\3\255\37\40\1\1\236\38\40\1\1\8\37\41\1\1\142\37\42\1\1\46\0\43\36\2\255\36\43\1\1\198\36\44\1\1\99",
+    [62] = "\0\0\49\1\255\49\0\1\1\249\50\0\1\1\22\0\1\50\2\255\50\1\1\1\115\50\2\1\1\216\51\2\1\1\1\0\3\51\3\255\51\3\1\1\59\51\4\1\1\159\51\5\1\1\246\52\5\1\1\16\0\6\52\2\255\52\6\1\1\104\52\7\1\1\204\0\8\53\3\255\53\8\1\1\49\53\9\1\1\148\53\10\1\1\240\54\10\1\1\10\0\11\54\2\255\54\11\1\1\93\54\12\1\1\193\0\13\55\3\255\55\13\1\1\41\55\14\1\1\137\55\15\1\1\232\56\15\1\1\5\0\16\56\3\255\56\16\1\1\83\56\17\1\1\182\56\18\1\1\253\57\18\1\1\31\0\19\57\2\255\57\19\1\1\127\57\20\1\1\227\58\20\1\1\3\0\21\58\3\255\58\21\1\1\72\58\22\1\1\171\58\23\1\1\250\59\23\1\1\24\0\24\59\2\255\59\24\1\1\117\59\25\1\1\217\60\25\1\1\1\0\26\60\3\255\60\26\1\1\61\60\27\1\1\161\60\28\1\1\246\61\28\1\1\17\0\29\61\4\255\61\29\1\1\106\61\30\1\1\209\61\31\1\1\204\61\32\1\1\104\0\33\60\3\255\60\33\1\1\246\61\33\1\1\16\60\34\1\1\159\60\35\1\1\60\0\36\59\2\255\59\36\1\1\216\60\36\1\1\1\59\37\1\1\115\0\38\58\3\255\58\38\1\1\249\59\38\1\1\22\58\39\1\1\170\58\40\1\1\71\0\41\57\2\255\57\41\1\1\226\58\41\1\1\3\57\42\1\1\126\0\43\56\3\255\56\43\1\1\253\57\43\1\1\30\56\44\1\1\181\56\45\1\1\82\0\46\55\3\255\55\46\1\1\232\56\46\1\1\5\55\47\1\1\137\55\48\1\1\40\0\49\54\2\255\54\49\1\1\192\54\50\1\1\93\0\51\53\3\255\53\51\1\1\240\54\51\1\1\10\53\52\1\1\148\53\53\1\1\49\0\54\52\2\255\52\54\1\1\203\52\55\1\1\104\0\56\51\3\255\51\56\1\1\246\52\56\1\1\16\51\57\1\1\159\51\58\1\1\59\0\59\50\2\255\50\59\1\1\216\51\59\1\1\1\50\60\1\1\115\0\61\49\1\255\49\61\1\1\249\50\61\1\1\22",
 }
--- Squared RGB distance: clearly different from EdgeTX's own icon background.
-local MIN_DISTANCE = 120 * 120
+-- END GENERATED ICON MASKS
 
 -- EdgeTX v2.12 QuickMenu/QuickMenuGroup is C++ only; lvgl.menu is a list.
 -- Reproduce its monochrome icon tiles with Lua's supported drawing objects,
@@ -21,26 +19,28 @@ local TILES = {
 }
 
 --- EdgeTX fills its native top-left icon with the theme's FOCUS color.
-function menu.variant()
+local function backgroundColor()
     local focus = lcd and lcd.getColor and COLOR_THEME_FOCUS and lcd.getColor(COLOR_THEME_FOCUS)
-    if type(focus) ~= "number" then
-        return VARIANTS[1].name
+    return type(focus) == "number" and focus or lcd.RGB(54, 86, 115)
+end
+
+local function createBackground(root, size, color)
+    local mask = assert(ICON_MASKS[size], "Unsupported AeroGrid menu icon size")
+    local rectangles = {}
+    local byte, rectangle = string.byte, lvgl.rectangle
+    for index = 1, #mask, 5 do
+        local x, y, w, h, opacity = byte(mask, index, index + 4)
+        rectangles[(index + 4) / 5] = rectangle(root, {
+            x = x,
+            y = y,
+            w = w,
+            h = h,
+            filled = true,
+            color = color,
+            opacity = opacity,
+        })
     end
-    local value = math.floor(focus / 65536) % 65536
-    local red = math.floor(value / 2048) % 32 * 255 / 31
-    local green = math.floor(value / 32) % 64 * 255 / 63
-    local blue = value % 32 * 255 / 31
-    local best, bestDistance
-    for _, variant in ipairs(VARIANTS) do
-        local distance = (variant[1] - red) ^ 2 + (variant[2] - green) ^ 2 + (variant[3] - blue) ^ 2
-        if distance >= MIN_DISTANCE then
-            return variant.name
-        end
-        if not bestDistance or distance > bestDistance then
-            best, bestDistance = variant.name, distance
-        end
-    end
-    return best
+    return rectangles
 end
 
 local function matches(event, name)
@@ -222,11 +222,13 @@ end
 --- Dimensions are supplied by the host's native button footprint calculation.
 function menu.ensure(context, dimensions, handlers)
     local size = dimensions.h
-    local name = "aerogrid-" .. menu.variant() .. "-" .. size .. ".png"
+    local name = "aerogrid-mark-" .. size .. ".png"
     local path = handlers.iconPath or ((context.path or "/WIDGETS/AeroGrid/") .. "assets/" .. name)
+    local color = backgroundColor()
     local state = context.aerogridMenu
+    local created = false
     local parent = handlers.parent or context.root
-    if state and state.parent ~= parent then
+    if state and (state.parent ~= parent or state.backgroundSize ~= size) then
         menu.close(context)
         state.root:clear()
         if state.screen then
@@ -235,13 +237,21 @@ function menu.ensure(context, dimensions, handlers)
         state, context.aerogridMenu = nil, nil
     end
     if not state then
+        created = true
         local root = lvgl.box(parent, {
             x = 0,
             y = 0,
             w = dimensions.w,
             h = dimensions.h,
         })
-        state = { root = root, generation = 1, iconPath = path }
+        state = {
+            root = root,
+            generation = 1,
+            iconPath = path,
+            backgroundColor = color,
+            backgroundSize = size,
+            background = createBackground(root, size, color),
+        }
         context.aerogridMenu = state
         state.image = lvgl.image(root, {
             x = 0,
@@ -273,6 +283,12 @@ function menu.ensure(context, dimensions, handlers)
     state.dashboardRoot = context.root
     state.zoneWidth, state.zoneHeight = context.zone.w, context.zone.h
     state.iconPath = path
+    if state.backgroundColor ~= color then
+        for _, rectangle in ipairs(state.background) do
+            rectangle:set({ color = color })
+        end
+        state.backgroundColor = color
+    end
     state.w, state.h = dimensions.w, dimensions.h
     state.root:set({ w = dimensions.w, h = dimensions.h })
     state.image:set({
@@ -291,7 +307,7 @@ function menu.ensure(context, dimensions, handlers)
     else
         lvgl.hide(state.root)
     end
-    return state
+    return state, created
 end
 
 function menu.handle(context, event, touch)

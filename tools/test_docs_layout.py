@@ -13,7 +13,9 @@ from playwright.sync_api import sync_playwright
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PAGES = ("developer-guide/build/", "panels/metric/", "reference-guide/yaml/")
+PAGES = ("developer-guide/build/", "panels/metric/", "reference-guide/yaml/",
+         "user-guide/model-settings/", "panels/chart/", "panels/flight-counter/",
+         "panels/navigation/", "panels/service-probe/")
 
 
 class DocumentationLayoutTests(unittest.TestCase):
@@ -41,11 +43,35 @@ class DocumentationLayoutTests(unittest.TestCase):
         cls.browser = cls.playwright.chromium.launch()
         cls.addClassCleanup(cls.browser.close)
 
+    def test_every_page_image_loads(self):
+        page = self.browser.new_page()
+        try:
+            for source in sorted((ROOT / "docs").rglob("*.md")):
+                relative = source.relative_to(ROOT / "docs")
+                path = relative.parent if relative.stem == "index" else relative.with_suffix("")
+                route = "" if path == Path(".") else path.as_posix() + "/"
+                with self.subTest(page=str(relative)):
+                    response = page.goto(f"{self.url}/{route}")
+                    self.assertEqual(response.status, 200)
+                    if relative.parts[0] == "panels":
+                        self.assertGreater(page.locator('.ag-article img[src*="/assets/editor/"]').count(), 0,
+                                           "every panel reference needs a settings-drawer capture")
+                    failed = page.locator(".ag-article img").evaluate_all(
+                        """images => Promise.all(images.map(async image => {
+                            try { await image.decode(); return null; }
+                            catch { return image.getAttribute('src'); }
+                        })).then(results => results.filter(Boolean))"""
+                    )
+                    self.assertEqual(failed, [])
+        finally:
+            page.close()
+
     def test_rail_contains_only_available_guides(self):
         labels = ["Install / Upgrade", "User Guide", "Reference Guide", "Developer Guide"]
         for path, active in (
             ("user-guide/installation/", "Install / Upgrade"),
             ("user-guide/add-dashboard/", "User Guide"),
+            ("user-guide/model-settings/", "User Guide"),
             ("reference-guide/", "Reference Guide"),
             ("panels/metric/", "Reference Guide"),
             ("developer-guide/build/", "Developer Guide"),

@@ -57,6 +57,9 @@ overridden values survive layout Save. Saving **None** disables arming model-wid
 not restoring fallbacks. Old widget Armed selections are not automatically
 imported or used to guess a model condition. Custom State conditions remain independent.
 
+**Session reset switch** and flight detection/output are also
+[Model settings](../user-guide/model-settings.md), not layout keys.
+
 ## Validation and errors
 
 The loader parses and validates a candidate before building panels. Unsupported YAML syntax, an unsupported schema version, a missing or non-4×4 grid, a non-sequence `panels` value, or the unsupported layout-level `theme` key makes the candidate invalid; AeroGrid reports the load problem and may recover using the next backup or bundled candidate. Versions 1–4 are migrated to version 5 in memory. Existing panel, Navigation, and legacy arm settings are retained. Version 4 detection settings remain available for migration to Model settings. Save writes version 5 without deleting retained legacy arm conditions. Write version 5 for new files.
@@ -112,7 +115,7 @@ For example, `rangeMin: 0` with no `rangeMax` anchors the bottom at zero and
 automatically adjusts the top; omit both keys for a fully automatic range.
 
 Set **Arm switch** in **AeroGrid → Model settings**; changes save automatically. A retained panel `armSwitch`
-is used only when the widget setting is unset. A qualified shared flight with
+is used only before model arming has been saved. A qualified shared flight with
 the same effective arm condition keeps recording through disarm grace until
 confirmed flight end. Otherwise disarming pauses immediately. Rearming during
 grace does not break or duplicate a flight; rearming after a pause resumes the
@@ -147,7 +150,6 @@ panels:
     rowSpan: 2
     config:
       label: Power
-      armSwitch: SFv
       timeRange: growing
       scaling: independent
       smoothing: light
@@ -169,7 +171,7 @@ Drawer title: **Flight counter** · [drawer settings and behavior](../panels/fli
 | Key | Type | Default | Allowed values | Drawer label | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `label` | string | `FLT` | Any string | Label | Heading. |
-| `armSwitch` | string | `""` | Blank, physical switch position, or logical switch such as `L01` | Arm switch position | Legacy fallback only; new panels use model Armed. Version-1–3 layouts retain the former `SF^` default when omitted. |
+| `armSwitch` | string | `""` | Blank, physical switch position, or logical switch such as `L01` | Arm switch position (legacy only) | New panels use model arming. Version-1–3 layouts retain the former `SF^` default when omitted. |
 
 Configure flight detection, optional **Smart detection**, and the optional
 logical-switch output in **AeroGrid → Model settings**, not in new panel YAML. The old
@@ -188,8 +190,7 @@ flight-active logical switch and EdgeTX Special Functions.
   colSpan: 1
   rowSpan: 1
   config:
-    armSwitch: SF^
-    motorSource: ch3
+    label: FLT
 ```
 
 ### `flight-mode`
@@ -485,7 +486,7 @@ Drawer title: **Service probe** · [drawer settings and behavior](../panels/serv
 | --- | --- | --- | --- | --- | --- |
 | `service` | string | `telemetry` | `telemetry`, `model`, `control`, `extrema`, `navigation` | Service | Selects the host service under inspection. |
 | `source` | string | `""` | Any service/source name or blank | Source | |
-| `extra` | string | `""` | Any service/source name or blank | Second source | |
+| `extra` | string | `""` | Physical-position/logical-switch name or blank | Second source | Legacy Extrema arm condition, overridden by saved model arming; unused by other services. |
 | `index` | number | `0` | Any number | Index | Service-specific lookup/index. |
 | `label` | string | `""` | Any string | Label | Blank derives the heading from the selected service. |
 | `accent` | string | `cyan` | `cyan`, `green`, `amber`, `orange` | Accent | |
@@ -601,12 +602,12 @@ No panel-specific `validateSettings` function is declared, so the schema layer e
 
 ## Complete example
 
-This version-4 layout places six panels without overlap on the 4 × 4 grid. It shows a legacy session fallback, nested list syntax and panel-specific settings together. Prefer configuring Armed in Model settings. Replace source names with exact names available on the target radio/model.
+This version-5 layout places six panels without overlap on the 4 × 4 grid.
+Set the Arm switch in Model settings separately. Replace source names with
+exact names available on the target radio/model.
 
 ```yaml
 version: 5
-session:
-  armSource: SF^
 grid:
   columns: 4
   rows: 4

@@ -182,7 +182,7 @@ a radio's SD card.
 | --- | --- |
 | `make help` | List supported targets. |
 | `make setup` | Install development Python dependencies. |
-| `make test` | Run every Lua behavior suite once with firmware-like string behavior. |
+| `make test` | Check the Python runner, then run every Lua behavior suite with firmware-like string behavior. |
 | `make test-installer` | Test the browser installer with Node.js 22 and Python. |
 | `make check` | Run behavior tests, then parse source/test Lua. |
 | `make lint` | Run LuaLS diagnostics. |

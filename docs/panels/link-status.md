@@ -69,6 +69,9 @@ The tracked source is **RSSI source** when **Primary reading** is **rssi**;
 otherwise it is **Link quality source**, falling back to **RSSI source** when
 no quality source is selected. It does not switch with the automatic headline.
 
+The [Session reset switch](../user-guide/model-settings.md#session-reset) clears
+AeroGrid's flight-session minima on every dashboard, not EdgeTX's source minima.
+
 ## States
 
 | Condition | Presentation |

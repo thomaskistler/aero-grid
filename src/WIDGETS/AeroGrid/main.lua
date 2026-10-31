@@ -1219,7 +1219,7 @@ local function openModelSettings(context)
     end
 end
 
-local function prepareAeroMenu(context)
+local function prepareAeroMenu(context, widgetEvent)
     if context.editorUi and context.aeroMenuModal == true and isFullScreen() then
         return false
     end
@@ -1281,7 +1281,7 @@ local function prepareAeroMenu(context)
         or context.aeroMenuFullscreen ~= fullscreen
         or context.aeroMenuModal ~= modal
     then
-        context.aeroMenuModule.ensure(
+        local _, created = context.aeroMenuModule.ensure(
             context,
             { w = math.floor(height * BUTTON_WIDTH_RATIO + 0.5), h = height },
             context.aeroMenuHandlers
@@ -1290,6 +1290,10 @@ local function prepareAeroMenu(context)
         context.aeroMenuWidth, context.aeroMenuZoneHeight = context.zone.w, context.zone.h
         context.aeroMenuFullscreen, context.aeroMenuModal = fullscreen, modal
         context.chromeRoot:set({ w = context.zone.w, h = context.zone.h })
+        -- Keep mask construction separate from idle reload work without dropping input.
+        if created and (not widgetEvent or widgetEvent == 0) then
+            return true
+        end
     end
     context.aeroMenuModule.advance(context)
     if not fullscreen then
@@ -1352,7 +1356,7 @@ local function refresh(context, widgetEvent, touchState)
     if pumpSessionReset(context) then
         return
     end
-    if prepareAeroMenu(context) then
+    if prepareAeroMenu(context, widgetEvent) then
         return
     end
     if context.modelSettingsUi then

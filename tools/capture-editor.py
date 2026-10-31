@@ -16,7 +16,7 @@ SCENES = ("overview", "settings", "state-settings", "state-entry", "state-condit
 # Configuration drawers captured as full-height images rather than one screen.
 # Settings drawers of the remaining panels, one per panel page.
 PANEL_DRAWER_CONFIG = {
-    "chart": {"label": "CHART", "armSwitch": "SFv", "timeRange": "rolling",
+    "chart": {"label": "CHART", "timeRange": "rolling",
               "metrics": [{"source": "gvar1", "label": "Reading"}]},
     "host-diagnostics": {"label": "Host", "section": "identity"},
     "service-probe": {"service": "telemetry", "source": "RxBt", "label": "Probe"},
@@ -26,7 +26,7 @@ PANEL_DRAWER_KINDS = ("chart", "flight-counter", "flight-mode", "flight-timer", 
                       "tx-battery")
 PANEL_SETTINGS_SCENES = tuple(f"{kind}-settings" for kind in PANEL_DRAWER_KINDS)
 SCENES = SCENES + PANEL_SETTINGS_SCENES
-STITCHED_SCENES = ("settings", "state-settings", "state-entry", "state-condition", "metric-entry", "chart-metric-entry") + PANEL_SETTINGS_SCENES
+STITCHED_SCENES = ("model-settings", "settings", "state-settings", "state-entry", "state-condition", "metric-entry", "chart-metric-entry") + PANEL_SETTINGS_SCENES
 THEME_SCENES = ("theme-modern-dark", "theme-modern-light", "theme-custom")
 DASHBOARD_SCENES = ("dashboard",)
 FLIGHT_SETTINGS_SCENES = ("aero-menu", "aero-menu-selected", "aero-ui-setup", "model-settings", "model-settings-motor", "model-settings-reset", "model-settings-bottom", "model-settings-switch", "model-settings-switch-select",
@@ -249,6 +249,10 @@ screenData:
         kind = "chart" if scene == "chart-metric-entry" else scene.removesuffix("-settings")
         recipe = ROOT / f"tools/capture-recipes/{kind}.yaml"
         config = PANEL_DRAWER_CONFIG.get(kind) or load_recipe(recipe)["config"]
+        settings = sd / "AEROGRID/models"
+        settings.mkdir(parents=True, exist_ok=True)
+        (settings / ("model1.yml".encode().hex() + ".yaml")).write_text(
+            'version: 1\nmodelFilename: "model1.yml"\nrevision: 1\narmed: "SFv"\n')
         layout = f"""version: 3
 grid:
   columns: 4
@@ -375,6 +379,48 @@ panels:
         main.write_text(source)
         return
     if scene in FLIGHT_SETTINGS_SCENES:
+        if scene == "model-settings":
+            settings_ui = sd / "WIDGETS/AeroGrid/lib/model_settings_ui.lua"
+            settings_source = settings_ui.read_text()
+            settings_source = settings_source.replace(
+                "function ui.open(context, document, handlers)",
+                """local function captureNode(state, kind, properties)
+    local node = lvgl[kind](state.dialog, properties)
+    state.captureNodes[#state.captureNodes + 1] = { node = node, y = properties.y }
+    return node
+end
+
+function ui.open(context, document, handlers)""")
+            settings_source = settings_source.replace(
+                "lvgl.label(state.dialog, {", 'captureNode(state, "label", {')
+            settings_source = settings_source.replace(
+                "lvgl.setting(state.dialog, {", 'captureNode(state, "setting", {')
+            settings_source = settings_source.replace(
+                "state.dialog = dialog(context, state)",
+                "state.dialog = dialog(context, state)\n    state.captureNodes = {}")
+            settings_source = settings_source.replace(
+                "local function buildField(context, state, field)",
+                """local function buildField(context, state, field)
+    state.captureNodes = {}""")
+            settings_source = settings_source.replace(
+                "state.nextY = state.nextY + state.height + 6\nend",
+                """state.nextY = state.nextY + state.height + 6
+    if state.nextY <= CAPTURE_SHIFT then
+        state.captureShift = state.nextY - 4
+        for _, item in ipairs(state.captureNodes) do lvgl.hide(item.node) end
+    else
+        for _, item in ipairs(state.captureNodes) do
+            item.node:set({ y = item.y - (state.captureShift or 0) })
+        end
+    end
+end""".replace("CAPTURE_SHIFT", str(shift)))
+            settings_source = settings_source.replace(
+                "state.smartStatus:set({ y = state.nextY })",
+                "state.smartStatus:set({ y = state.nextY - (state.captureShift or 0) })")
+            settings_source = settings_source.replace(
+                "state.status:set({ y = state.nextY })",
+                "state.status:set({ y = state.nextY - (state.captureShift or 0) })")
+            settings_ui.write_text(settings_source)
         source = source.replace(needle, """
     refresh = function(context, widgetEvent, touchState)
         refresh(context, widgetEvent, touchState)
@@ -412,6 +458,11 @@ panels:
         assert(#context.panels == 0, "flight settings capture must use an Empty dashboard")
         local file = assert(io.open("/capture-ready.txt", "w"))
         io.write(file, "production Empty dashboard and AeroGrid menu ready")
+        if scene == "model-settings" then
+            local state = context.modelSettingsUi
+            io.write(file, string.format("\\ndrawer shift %d total %d row 0\\n",
+                state.captureShift or 0, state.nextY + state.height * 2))
+        end
         io.close(file)
         context.captureReady = true
     end,
@@ -661,6 +712,8 @@ def capture(executable, library, directory, scene, shift=0):
             script += "1100 288 120 1\n1110 300 122 1\n1120 300 122 0\n"
         if scene in ("model-settings-reset", "model-settings-bottom", "model-settings-switch", "model-settings-switch-select"):
             ticks = (1350, 1550) if scene == "model-settings-reset" else (1350, 1550, 1750, 1950, 2150, 2350)
+            if scene == "model-settings-bottom":
+                ticks = (1350, 1550, 1750)
             for tick in ticks:
                 script += (f"{tick} 390 220 1\n{tick + 20} 390 170 1\n"
                            f"{tick + 40} 390 110 1\n{tick + 60} 390 65 1\n"
@@ -749,7 +802,8 @@ def main():
             guard = drawer["row"] + 24
             frames = [(rows, 0)]
             # 24 px allows for the dialog's own top padding around the rows.
-            while frames[-1][1] + height < drawer["total"] + 24:
+            padding = 0 if scene == "model-settings" else 24
+            while frames[-1][1] + height < drawer["total"] + padding:
                 page, report = capture(executable, library,
                                        directory.with_name(f"{scene}-page{len(frames)}"),
                                        scene, frames[-1][1] + height - guard)

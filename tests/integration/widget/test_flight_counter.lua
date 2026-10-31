@@ -88,7 +88,7 @@ local function backgroundUntil(context, predicate, limit)
     local owner = context.flightBroker
     error(
         "flight tracking did not reach the expected state: "
-            .. tostring(fixture.instanceOf(context, "flights").phase)
+            .. tostring(fixture.instanceOf(context, "flights").flight.phase)
             .. " status="
             .. tostring(owner and owner.state.status)
             .. " error="
@@ -104,7 +104,7 @@ for _, span in ipairs({ { 1, 1 }, { 2, 1 }, { 2, 2 }, { 4, 2 } }) do
     equal(panel.text, "39")
     fixture.radio.values[305], fixture.radio.values[306] = 1024, 0
     backgroundUntil(context, function()
-        return panel.phase == "active"
+        return panel.flight.phase == "active"
     end)
     equal(model.getGlobalVariable(8, 0), 40)
     equal(panel.value.properties.text, "40")
@@ -121,15 +121,15 @@ for _, span in ipairs({ { 1, 1 }, { 2, 1 }, { 2, 2 }, { 4, 2 } }) do
     equal(#fixture.lvglMock.objects, objects, "reflow must not allocate new objects")
     fixture.radio.rssi = 0
     fixture.pump(context, 60)
-    equal(panel.phase, "active", "telemetry loss must not finish the flight")
+    equal(panel.flight.phase, "active", "telemetry loss must not finish the flight")
     fixture.radio.values[305] = -1024
     backgroundUntil(context, function()
-        return panel.phase == "ending"
+        return panel.flight.phase == "ending"
     end)
     equal(recorded(), 0, "flight detection must not access CSV files")
     equal(panel.stateName, "active", "the pending end retains active styling")
     backgroundUntil(context, function()
-        return panel.phase == "ground"
+        return panel.flight.phase == "ground"
     end)
     equal(recorded(), 0, "completed flights must not access CSV files")
     equal(panel.stateName, "normal")
@@ -143,23 +143,23 @@ end
 local context, panel = create({ 2, 2 })
 fixture.radio.values[305], fixture.radio.values[306] = 1024, 0
 backgroundUntil(context, function()
-    return panel.phase == "starting"
+    return panel.flight.phase == "starting"
 end)
 fixture.tick(200)
 definition.background(context)
-assert(panel.phase ~= "active", "a scheduling gap must restart qualification")
+assert(panel.flight.phase ~= "active", "a scheduling gap must restart qualification")
 backgroundUntil(context, function()
-    return panel.phase == "active"
+    return panel.flight.phase == "active"
 end)
 fixture.radio.values[305] = -1024
 backgroundUntil(context, function()
-    return panel.phase == "ending"
+    return panel.flight.phase == "ending"
 end)
 fixture.tick(300)
 definition.background(context)
-assert(panel.phase ~= "ground", "a scheduling gap must restart the disarm timeout")
+assert(panel.flight.phase ~= "ground", "a scheduling gap must restart the disarm timeout")
 backgroundUntil(context, function()
-    return panel.phase == "ground"
+    return panel.flight.phase == "ground"
 end)
 assert(worstCallback > 0, "the flight counter budget was not measured")
 
@@ -172,12 +172,12 @@ for _ = 1, 100 do
     measured(definition.background, context)
 end
 equal(model.getGlobalVariable(8, 0), 40, "a presentation preview cannot stop the committed flight tracker")
-equal(panel.phase, "active", "the shared tracker is independent of presentation flags")
+equal(panel.flight.phase, "active", "the shared tracker is independent of presentation flags")
 fixture.radio.values[305] = -1024
 fixture.pump(context, 30)
 local fileAccesses, sounds = recorded()
 equal(fileAccesses, 0, "the committed tracker must not write CSV history while previewed")
-equal(panel.phase, "ground", "the committed tracker completes while its presentation is previewed")
+equal(panel.flight.phase, "ground", "the committed tracker completes while its presentation is previewed")
 equal(#sounds, 0, "previewing must not play flight audio")
 equal(panel.value.properties.text, "40", "preview displays the shared count")
 
@@ -223,17 +223,17 @@ backgroundUntil(context, function()
 end)
 fixture.radio.values[305], fixture.radio.values[306] = 1024, 0
 backgroundUntil(context, function()
-    return panel.phase == "starting"
+    return panel.flight.phase == "starting"
 end)
 values[12], values[49] = 4, 11
 backgroundUntil(context, function()
-    return panel.phase == "active"
+    return panel.flight.phase == "active"
 end)
 equal(owner.view.reason, "smart-altitude")
 equal(panel.value.properties.text, "40")
 fixture.radio.values[305] = -1024
 backgroundUntil(context, function()
-    return panel.phase == "ground"
+    return panel.flight.phase == "ground"
 end)
 fileAccesses, sounds = recorded()
 equal(fileAccesses, 0)

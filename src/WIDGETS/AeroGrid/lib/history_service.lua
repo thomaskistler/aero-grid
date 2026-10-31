@@ -325,7 +325,6 @@ function history:boundaries()
     -- Drain one record per service turn, even after journal loss.
     local event = records[1]
     if event then
-        self.boundaryAt = self.now
         self.flightSequence = event.sequence
         local session = self.sessionNames[event.armKey]
         if session and session.epoch == event.epoch then
@@ -621,7 +620,6 @@ function history:sample(reading, now)
                 and finite(reading.value)
                 and reading.kind == "number"
             if valid then
-                self.sampledAt = now
                 local value = reading.value
                 if entry.segment ~= session.segment or entry.gap or not entry.filtered then
                     entry.filtered = value

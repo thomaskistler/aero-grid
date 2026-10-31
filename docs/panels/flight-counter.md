@@ -10,10 +10,11 @@ Flight counter.
 
 ## Settings
 
+![Flight counter panel settings](../assets/editor/flight-counter-settings.png)
+
 | Setting | Default | What it does |
 | --- | --- | --- |
 | **Label** | FLT | Panel heading. Clear it to restore the default. |
-| **Arm switch position** | none for new panels | Legacy panel switch, shown only when nonblank and no model arming has been saved. Older layouts retain their previous switch, including the former SF↑ default. |
 
 Select **Arm switch** in **AeroGrid → Model settings**. Changes apply immediately
 to every dashboard for the model. Until model arming is set,
@@ -23,29 +24,11 @@ automatic choice. Saving **None** disables arming, including legacy fallbacks.
 
 ### Model flight settings
 
-In fullscreen, tap the **AeroGrid icon → Model settings**. These settings are
-shared by this model's dashboards, including Empty dashboards. Each confirmed
-change saves automatically, separately from layout changes. Back closes the page.
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Arm switch** | none | Model-wide physical switch position or logical switch (L01–L64, including inverted logical switches). This is a switch condition, not a numeric channel. |
-| **Motor channel** | CH3 | Motor channel used to check whether the motor is running. Select your model's actual throttle channel. The picker is restricted to channels. |
-| **Reversed motor channel** | off | Reverse the channel reading before calculating motor percentage. Enable it if the selected channel runs from high at idle to low at full power. |
-| **Motor threshold (%)** | 25 | Motor percentage must be strictly above this value to qualify. Valid values are 0 up to, but not including, 100. |
-| **Start detection window (s)** | 30 | Observation window during which armed state, sufficient motor output, and live telemetry must hold continuously to confirm flight start. |
-| **End detection window (s)** | 10 | Observation window of continuous disarming required to confirm flight end. Rearming within this window keeps the flight open. |
-| **Smart detection** | off | Allow supported altitude or GPS groundspeed sensors to qualify a flight earlier. Standard motor qualification remains available. |
-| **Flight status switch** | none | Native logical-switch picker for an optional dedicated Sticky logical switch, on while a detected flight is active. Inverted switches are not supported. |
-
-**Model arming** applies to charts, navigation, and flight detection.
-**Flight detection** detects when a flight begins and ends using live telemetry data; it does not arm the model.
-Both detection windows accept values greater than 0 and at most 3600 seconds.
-They confirm the boundaries; the flight's start and end times remain the
-beginning of each observation window, not the later confirmation time.
-
-Use the **Flight status switch** with EdgeTX Special Functions to configure your
-own sounds or announcements.
+Configure motor output, start/end detection windows, Smart detection,
+Session reset switch, and Flight status switch in
+[Model settings](../user-guide/model-settings.md).
+These settings save automatically and apply to the model's dashboards,
+including Empty dashboards. The panel drawer only configures its label.
 
 Existing layouts keep their detection settings until you change Model settings.
 If older counters disagree, choose the intended configuration explicitly.
@@ -53,11 +36,11 @@ Configure Model settings before removing the last legacy counter.
 
 ## Behavior
 
-A flight qualifies when the effective armed condition, **Minimum motor percent**,
+A flight qualifies when the effective armed condition, **Motor threshold (%)**,
 and live telemetry hold continuously for the **Start detection window**. Any
 interruption before qualification resets the attempt. Qualification increments
 the total once. Motor percentage maps the channel's normal low-to-high travel
-to 0–100%, after applying **Reversed motor channel**.
+to 0–100%, after applying **Reverse motor**.
 
 With **Smart detection** on, a flight can also qualify when trustworthy
 barometric altitude is **more than 3 metres above its arming reference for
@@ -83,7 +66,7 @@ Custom State-panel conditions remain independent.
 An unavailable arm reading cannot confirm disarming.
 
 After qualification, telemetry or motor changes do not end the flight.
-Continuous disarming starts the **Disarm seconds** timeout. Re-arming before
+Continuous disarming starts the **End detection window (s)**. Re-arming before
 it expires cancels the pending end without counting again. A callback gap of
 more than one second restarts qualification or a pending end timeout rather
 than assuming the condition held while unobserved. Tracking continues through
@@ -104,8 +87,8 @@ wait until the configuration is consistent.
 
 First configure a dedicated **Sticky** logical switch in EdgeTX, with no inputs,
 AND condition, delay, or duration. Then select it in **Flight status switch**.
-The native picker lists only configured logical switches; an empty list means
-none have been configured. It must not also be the flight's Arm input.
+The list shows configured logical switches plus **None**. The output must not
+also be the flight's Arm or Session reset input.
 AeroGrid changes only its state, not its model configuration. Use the switch
 in your own Special Functions or sounds.
 
@@ -114,6 +97,10 @@ including the disarm grace period. A full command buffer is reported and retried
 Do not share this output with another script. It is not a safety interlock:
 stopped Lua execution, model changes, or transmitter restarts cannot guarantee
 output cleanup.
+
+The [Session reset switch](../user-guide/model-settings.md#session-reset)
+cancels detection and clears its output without changing GV9.
+Disarm before another flight can be counted. AeroGrid does not write flight CSV files.
 
 GV9 persists through model saving and transmitter restarts, but in-flight
 detection state does not. Changing model or restarting during a flight can

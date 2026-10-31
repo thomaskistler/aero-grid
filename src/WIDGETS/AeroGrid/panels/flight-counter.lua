@@ -108,7 +108,6 @@ function flightCounter.create(parent, rect, settings, services)
         arm = services.armed:state(settings.armSwitch),
         flight = services.flight:state(),
         area = area,
-        phase = "ground",
     }
     context.panel, context.label, context.badge = services.primitives.panelWithHeader(
         parent,
@@ -139,7 +138,6 @@ local function tick(context)
         return
     end
     context.lastTick = now
-    context.phase = context.flight.phase
     local changed, drawn = context.primitives.changed(context, flightCounter.render)
     if changed then
         flightCounter.apply(context, drawn)

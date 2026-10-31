@@ -19,15 +19,9 @@ entering layout edit mode. Changes save automatically, independently of layout
 **Save/Save as...**. The host menu is hidden while editing so it does not
 cover panel resize corners.
 
-**Session reset switch** in Model settings clears chart recordings and markers,
-flight-session link minima, first-arm navigation homes, and automatic RX battery
-cell estimates across all dashboards, including hidden screens. It runs once
-per activation; release the switch before using it again. A switch already on
-when the model loads or the setting changes does not reset anything.
-During a detected flight, reset clears detection and turns off its status
-output; disarm before another flight can be counted. Flight totals, radio
-timers, radio telemetry minima/maxima, EdgeTX home and saved settings are kept.
-Choose **None** to disable it.
+See [Model settings](model-settings.md) for shared arming, flight detection,
+flight-status output, and the Session reset switch. Session reset preserves
+unsaved layout edits and does not close an open Model settings page.
 
 ![Editor showing panel gears and the add-panel tile](../assets/editor/overview.png)
 
@@ -70,7 +64,7 @@ its priority. Background choices are **normal**, **active**, **warning**, and
 including its background, sidebar, text colors, and badge. Supporting entries
 never change the panel mode.
 
-![State panel settings with summary rows and an add-entry button](../assets/editor/text-settings.png)
+![State panel settings with summary rows and an add-entry button](../assets/editor/state-settings.png)
 
 ![Metric-entry dialog with GV1 selected as Source](../assets/editor/metric-entry.png)
 

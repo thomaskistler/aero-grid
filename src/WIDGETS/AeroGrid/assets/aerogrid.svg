@@ -4,8 +4,7 @@
       <path d="M6 6H32.104086L38.557419 22.5 32.104086 39H6Z"/>
     </clipPath>
   </defs>
-  <path d="M0 0H36.2L45 22.5 36.2 45H0Z" fill="#365673"/>
-  <g fill="#70D6F3" clip-path="url(#grid-inset)">
+  <g fill="#DCEAF0" clip-path="url(#grid-inset)">
     <rect x="6" y="6" width="10" height="10" rx="0.7"/>
     <rect x="17.5" y="6" width="10" height="10" rx="0.7"/>
     <rect x="29" y="6" width="10" height="10" rx="0.7"/>

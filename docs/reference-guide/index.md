@@ -51,3 +51,6 @@ stay in your draft until you save the layout.
 
 To add a screen, see [Add a dashboard](../user-guide/add-dashboard.md).
 To arrange panels, see [Edit a dashboard on the radio](../user-guide/edit-dashboard.md).
+Arming, flight detection, session reset, and flight-status output are
+[Model settings](../user-guide/model-settings.md), not normal panel settings.
+Legacy panel arm controls may still appear on older layouts until model arming is saved.

@@ -93,7 +93,12 @@ do
         local c, state, control, handlers, dimensions = fixture(table.unpack(display))
         local image = state.image.properties
         assert(image.x == 0 and image.y == 0 and image.w == display[3] and image.h == display[3])
-        assert(string.find(image.file(), "aerogrid-blue-" .. display[3] .. ".png", 1, true))
+        assert(string.find(image.file(), "aerogrid-mark-" .. display[3] .. ".png", 1, true))
+        for _, rectangle in ipairs(state.background) do
+            assert(rectangle.properties.filled and rectangle.properties.color == state.backgroundColor)
+            assert(rectangle.properties.x + rectangle.properties.w <= display[3])
+            assert(rectangle.properties.y + rectangle.properties.h <= display[3])
+        end
         assert(state.button == nil, "no rectangular button may cover the pilot-wings silhouette")
         open(c)
         local b = state.bounds
@@ -126,19 +131,30 @@ end
 
 do
     local getColor = lcd.getColor
-    assert(menu.variant() == "blue")
+    local c, state, _, handlers, dimensions = fixture()
+    local existing, created = menu.ensure(c, dimensions, handlers)
+    assert(existing == state and not created, "existing icon must not consume another initialization callback")
+    local focus = lcd.RGB(243, 17, 89)
     lcd.getColor = function()
-        return lcd.RGB(54, 86, 115)
+        return focus
     end
-    assert(menu.variant() == "orange", "keep AeroGrid's existing alternate palette")
-    lcd.getColor = function()
-        return lcd.RGB(120, 120, 120)
+    menu.ensure(c, dimensions, handlers)
+    for _, rectangle in ipairs(state.background) do
+        assert(rectangle.properties.color == focus)
     end
-    assert(menu.variant() == "orange")
+    local updatedFocus = lcd.RGB(17, 217, 101)
+    focus = updatedFocus
+    menu.ensure(c, dimensions, handlers)
+    for _, rectangle in ipairs(state.background) do
+        assert(rectangle.properties.color == updatedFocus)
+    end
     lcd.getColor = function()
         return nil
     end
-    assert(menu.variant() == "blue")
+    menu.ensure(c, dimensions, handlers)
+    for _, rectangle in ipairs(state.background) do
+        assert(rectangle.properties.color == lcd.RGB(54, 86, 115))
+    end
     lcd.getColor = getColor
 end
 

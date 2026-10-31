@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Native header geometry regression tests, independent of simulator availability."""
-import hashlib
 import importlib.util
+import hashlib
+import re
 from pathlib import Path
 import unittest
 import xml.etree.ElementTree as ET
@@ -21,11 +22,32 @@ capture = load("menu_capture", "capture-editor.py")
 
 
 class MenuIconTests(unittest.TestCase):
+    def test_exact_native_background_masks(self):
+        hashes = {
+            36: "6318abc1e8fd52d4925d2997fde890487611fd3724b49a5905f16ec65e1e7738",
+            45: "73017f6acf9a91ea2589e205afef84b83ec9465e40eba776bd1b6fdc9294b7e2",
+            62: "f47a410f20c0d3cd2ff208ac1858cfa72dd91084ff09d3aab49d18a5292ec39a",
+        }
+        source = (ROOT / "src/WIDGETS/AeroGrid/lib/aerogrid_menu.lua").read_text()
+        for size, expected in hashes.items():
+            packed = re.search(rf'\[{size}\] = "([^"]+)"', source).group(1)
+            values = [int(value) for value in re.findall(r"\\(\d+)", packed)]
+            self.assertEqual(len(values) % 5, 0)
+            pixels = bytearray(size * size)
+            for index in range(0, len(values), 5):
+                x, y, width, height, alpha = values[index:index + 5]
+                for row in range(y, y + height):
+                    for column in range(x, x + width):
+                        self.assertEqual(pixels[row * size + column], 0, "mask runs must not overlap")
+                        pixels[row * size + column] = alpha
+            self.assertEqual(hashlib.sha256(pixels).hexdigest(), expected)
+
     def test_selected_straight_grid_design(self):
         svg = ET.parse(ROOT / "src/WIDGETS/AeroGrid/assets/aerogrid.svg").getroot()
         ns = {"svg": "http://www.w3.org/2000/svg"}
+        self.assertIsNone(svg.find("svg:path", ns))
         grid = svg.find("svg:g", ns)
-        self.assertEqual(grid.get("fill"), "#70D6F3")
+        self.assertEqual(grid.get("fill"), "#DCEAF0")
         self.assertEqual(grid.get("clip-path"), "url(#grid-inset)")
         tiles = grid.findall("svg:rect", ns)
         self.assertEqual(len(tiles), 9)
@@ -37,36 +59,22 @@ class MenuIconTests(unittest.TestCase):
         self.assertEqual(plane.get("y"), "1")
         self.assertIsNone(plane.get("transform"))
 
-    def test_exact_native_mask_at_every_display_size(self):
-        # SHA256 of 255 - grayscale for every pixel of the official v2.12.0
-        # radio/src/bitmaps/<display>/default_theme/mask_topleft.png.
-        alpha_hashes = {
-            36: "6318abc1e8fd52d4925d2997fde890487611fd3724b49a5905f16ec65e1e7738",
-            45: "73017f6acf9a91ea2589e205afef84b83ec9465e40eba776bd1b6fdc9294b7e2",
-            62: "f47a410f20c0d3cd2ff208ac1858cfa72dd91084ff09d3aab49d18a5292ec39a",
-        }
-        for variant in icons.VARIANTS:
-            for size, expected in alpha_hashes.items():
-                rows = icons.read_png(ROOT / "src/WIDGETS/AeroGrid/assets" / icons.asset_name(variant, size))
-                self.assertEqual(len(rows), size)
-                self.assertTrue(all(len(row) == size for row in rows))
-                self.assertEqual(hashlib.sha256(bytes(pixel[3] for row in rows for pixel in row)).hexdigest(),
-                                 expected)
-                self.assertEqual(rows[0][-1][3], 0, "angled corner must remain transparent")
-                self.assertGreater(rows[size // 2][-1][3], 0, "native antialiased tip reaches the final column")
-
-    def test_runtime_variants_match_generated_backgrounds(self):
-        source = (ROOT / "src/WIDGETS/AeroGrid/lib/aerogrid_menu.lua").read_text()
-        for variant, color in icons.VARIANTS.items():
-            red, green, blue = (int(color[i:i + 2], 16) for i in (1, 3, 5))
-            self.assertIn(f'{{ name = "{variant}", {red}, {green}, {blue} }}', source)
-        self.assertLess(source.index('"blue"'), source.index('"orange"'))
-
-    def test_backgrounds_are_existing_aerogrid_palette_colors(self):
-        palette = "\n".join(path.read_text().lower() for path in
-                            (ROOT / "src/WIDGETS/AeroGrid/themes").glob("*.yml"))
-        for color in icons.VARIANTS.values():
-            self.assertIn("0x" + color[1:], palette)
+    def test_transparent_artwork_assets_at_every_display_size(self):
+        for size in (36, 45, 62):
+            rows = icons.read_png(ROOT / "src/WIDGETS/AeroGrid/assets" / icons.asset_name(size))
+            self.assertEqual(len(rows), size)
+            self.assertTrue(all(len(row) == size for row in rows))
+            self.assertEqual(rows[0][0][3], 0)
+            self.assertEqual(rows[0][-1][3], 0)
+            self.assertGreater(sum(pixel[3] > 0 for row in rows for pixel in row), 0)
+            opaque_colors = {
+                pixel[:3]
+                for row in rows
+                for pixel in row
+                if pixel[3] == 255
+            }
+            self.assertIn((220, 234, 240), opaque_colors)
+            self.assertTrue(any(min(pixel[:3]) >= 250 for pixel in opaque_colors))
 
     def test_capture_comparison_rejects_hitbox_only_parity(self):
         black = bytes(480 * 3)

@@ -12,15 +12,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SIZES = {"320x240": 36, "480x272": 45, "800x480": 62}
-# Runtime order matters: the menu picks the first background distinct from the
-# active EdgeTX theme's FOCUS color, which fills the native top-left icon.
-# Existing AeroGrid palette: Modern Dark activeBg/surface, Modern Light orange/green.
-VARIANTS = {"blue": "#365673", "orange": "#c65b12", "green": "#147642", "slate": "#212830"}
-MASTER_BACKGROUND = "#365673"
 
 
-def asset_name(variant, size):
-    return f"aerogrid-{variant}-{size}.png"
+def asset_name(size):
+    return f"aerogrid-mark-{size}.png"
+
+
 SOURCE = "https://raw.githubusercontent.com/EdgeTX/edgetx/v2.12.0/radio/src/bitmaps"
 
 
@@ -70,37 +67,68 @@ def write_png(path, rows):
                      + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
 
 
+def mask_rectangles(mask):
+    """Merge equal-alpha row runs without changing native edge coverage."""
+    rectangles, previous = [], {}
+    for y, row in enumerate(mask):
+        current, x = {}, 0
+        while x < len(row):
+            alpha = 255 - row[x][0]
+            end = x + 1
+            while end < len(row) and 255 - row[end][0] == alpha:
+                end += 1
+            if alpha:
+                key = (x, end - x, alpha)
+                if key in previous:
+                    index = previous[key]
+                    rectangles[index][3] += 1
+                else:
+                    index = len(rectangles)
+                    rectangles.append([x, y, end - x, 1, alpha])
+                current[key] = index
+            x = end
+        previous = current
+    return rectangles
+
+
 def generate():
     output = ROOT / "build/native-logo"
     output.mkdir(parents=True, exist_ok=True)
     assets = ROOT / "src/WIDGETS/AeroGrid/assets"
-    master = (assets / "aerogrid.svg").read_text()
-    assert master.count(MASTER_BACKGROUND) == 1
+    masks = []
     for display, size in SIZES.items():
         mask_path = output / f"{display}.png"
         urllib.request.urlretrieve(f"{SOURCE}/{display}/default_theme/mask_topleft.png", mask_path)
         mask = read_png(mask_path)
         assert len(mask) == size and len(mask[0]) == size
-        for variant, color in VARIANTS.items():
-            source, rendered = output / f"{variant}.svg", output / f"{variant}-{size}.png"
-            source.write_text(master.replace(MASTER_BACKGROUND, color))
-            subprocess.run(["sips", "-s", "format", "png", "-z", str(size), str(size),
-                            str(source), "--out", str(rendered)], check=True,
-                           stdout=subprocess.DEVNULL)
-            branding = read_png(rendered)
-            background = tuple(int(color[i:i + 2], 16) for i in (1, 3, 5))
-            rows = []
-            for y in range(size):
-                row = []
-                for x in range(size):
-                    # Native encode-bitmap.py encode_8bits uses 255 - grayscale.
-                    alpha = 255 - mask[y][x][0]
-                    pixel = branding[y][x]
-                    # SVG coverage must not multiply the native edge's alpha.
-                    rgb = pixel[:3] if len(pixel) == 3 or pixel[3] == 255 else background
-                    row.append((*rgb, alpha))
-                rows.append(row)
-            write_png(assets / asset_name(variant, size), rows)
+        packed = "".join("\\" + str(value) for rectangle in mask_rectangles(mask) for value in rectangle)
+        masks.append(f'    [{size}] = "{packed}",')
+        rendered = output / f"mark-{size}.png"
+        subprocess.run(["sips", "-s", "format", "png", "-z", str(size), str(size),
+                        str(assets / "aerogrid.svg"), "--out", str(rendered)], check=True,
+                       stdout=subprocess.DEVNULL)
+        artwork = read_png(rendered)
+        rows = []
+        for y in range(size):
+            row = []
+            for x in range(size):
+                # Native encode-bitmap.py encode_8bits uses 255 - grayscale.
+                silhouette = 255 - mask[y][x][0]
+                pixel = artwork[y][x]
+                coverage = pixel[3] if len(pixel) == 4 else 255
+                row.append((*pixel[:3], (coverage * silhouette + 127) // 255))
+            rows.append(row)
+        write_png(assets / asset_name(size), rows)
+    runtime = ROOT / "src/WIDGETS/AeroGrid/lib/aerogrid_menu.lua"
+    source = runtime.read_text()
+    start = source.index("-- BEGIN GENERATED ICON MASKS")
+    end = source.index("-- END GENERATED ICON MASKS", start) + len("-- END GENERATED ICON MASKS")
+    source = source[:start] + (
+        "-- BEGIN GENERATED ICON MASKS (tools/generate-menu-icon.py)\n"
+        "local ICON_MASKS = {\n" + "\n".join(masks) + "\n}\n"
+        "-- END GENERATED ICON MASKS"
+    ) + source[end:]
+    runtime.write_text(source)
 
 
 if __name__ == "__main__":

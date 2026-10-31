@@ -17,7 +17,6 @@ heading, transmitter orientation, or a return-home instruction.
 | **Label** | NAV | Panel heading. |
 | **GPS source** | GPS | EdgeTX GPS source supplying the model's coordinates. It must return a coordinate table. |
 | **Home position** | edgetx | **edgetx** uses EdgeTX home; **first-arm** captures home using the effective armed condition. |
-| **Home arm switch** | none | Legacy panel switch, shown only when nonblank and no model arming has been saved. |
 | **Satellite count source** | none | Optional source reporting a plain nonnegative integer count of locked satellites, not a packed GPS-status value. |
 | **Warn below satellites** | 8 | Warns when the satellite count is strictly below this value. Nonnegative integers, steps of 1. Requires **Satellite count source**. |
 | **Critical below satellites** | 4 | Critical alarm when the satellite count is strictly below this value. Nonnegative integers, steps of 1; must not exceed **Warn below satellites**. Requires **Satellite count source**. |
@@ -68,6 +67,8 @@ capture. Home is not saved to disk: restarting the radio, reloading the model,
 or removing and recreating the widget starts a new session. Separate widget
 instances have independent homes.
 Changing the model's Arm switch clears retained AeroGrid homes on every dashboard.
+The [Session reset switch](../user-guide/model-settings.md#session-reset) also clears
+these homes; observe a new disarm/arm transition to capture again. EdgeTX home is unchanged.
 
 To investigate `HOME NOT SET`, first add a **Host diagnostics** panel and
 select its **log** section on any AeroGrid screen. The shared in-memory log

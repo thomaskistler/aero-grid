@@ -5,7 +5,7 @@ border:
   pixels: 10
   rgb: [0, 0, 0]
 panels:
-  2x1: {col: 0, row: 0, colSpan: 2, rowSpan: 1}
+  2x1: {col: 2, row: 0, colSpan: 2, rowSpan: 1}
   2x2: {col: 0, row: 1, colSpan: 2, rowSpan: 2}
 config:
   label: TEMPERATURE

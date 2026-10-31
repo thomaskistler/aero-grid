@@ -19,7 +19,6 @@ disables recording rather than restoring the fallback.
 | Setting | Default | What it does |
 | --- | --- | --- |
 | **Label** | empty | Optional chart heading. Clear it to hide the heading. |
-| **Arm switch position** | none | Legacy panel switch, shown only when nonblank and model arming has never been saved. |
 | **Metrics** | none | Up to three readings. Tap **+** to add one, or tap an entry to edit it. |
 | **Time range** | growing | **growing** keeps the recording from the start; **rolling** shows the latest fixed window. |
 | **Window duration** | 1 minute | **30 seconds**, **1 minute**, **2 minutes**, **5 minutes**, or **10 minutes**. Shown only when **Time range** is **rolling**. |
@@ -99,7 +98,9 @@ Editor previews reuse compatible recorded history without starting new recording
 New sources show an explicit no-data preview until saved.
 Flight overlays retain the latest 64 intervals; missing earlier boundaries are
 not guessed.
-There is no separate reset control.
+Use **Session reset switch** in
+[Model settings](../user-guide/model-settings.md#session-reset) to clear recordings,
+extrema, and markers across all dashboards.
 
 ## States
 

@@ -337,10 +337,10 @@ def readiness(recipe):
         return """            local instance = entry.instance
             if not instance.session or instance.session.elapsed < 1500 or instance.session.recording
                 or instance.pending or instance.framePhase or instance.gridVersion ~= instance.version then return end
-            if instance.session.flightLast ~= 1 or not instance.flightBands
+            if instance.session.flightLast ~= 2 or not instance.flightBands
                 or not instance.flightBands[1]
                 or instance.flightDrawnRevision ~= instance.session.flightRevision then return end
-            local _, finish, _, confirmed = instance.history:flight(instance.session, 1)
+            local _, finish, _, confirmed = instance.history:flight(instance.session, 2)
             if not finish or not confirmed then return end
             for _, item in ipairs(instance.series) do
                 if not item.feed.available or not item.runs[1] or not item.runs[1].line
@@ -361,7 +361,7 @@ def readiness(recipe):
         return f"""            local feed = entry.instance.feed
             if not feed or not feed.available or feed.raw ~= {sample['count']}
                 or feed.precision ~= 0 or entry.instance.text ~= "{sample['count']}"
-                or entry.instance.phase ~= "active" or entry.instance.stateName ~= "active"
+                or not entry.instance.flight.active or entry.instance.stateName ~= "active"
                 or entry.instance.badgeText ~= "IN-FLIGHT" then return end
 """
     if recipe["panel"] == "state":
@@ -465,7 +465,7 @@ def fixture_inputs(recipe):
     if recipe["panel"] not in SYNTHETIC_PANELS:
         return None
     if recipe["panel"] == "chart":
-        # One real shared flight: the brief disarm is shorter than its grace.
+        # Two flights separated by a recording pause, exposing resume connectors.
         rows = []
         for index, (name, source) in enumerate(recipe["sample"]["sources"].items(), 1):
             rows.append(f"    {{name = {json.dumps(name)}, id = {30000 + index}, "
@@ -498,7 +498,7 @@ return {
     getSwitchValue = function(index)
         if index == armIndex then
             local elapsed = getTime() - started
-            return elapsed < 1000 or elapsed >= 1100 and elapsed < 2200
+            return elapsed < 1000 or elapsed >= 1500 and elapsed < 2200
         end
         return getSwitchValue(index)
     end,

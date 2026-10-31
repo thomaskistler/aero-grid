@@ -170,7 +170,7 @@ Development layouts are not included in the release ZIP.
 **AG Flight** uses SF down for model-wide arming, ten-second start and end
 detection windows, and Smart detection enabled. Raise CH3
 above 25% and supply live telemetry to exercise flight detection. Its
-flight-counter screen installs only one tracker; resize it in the editor to
+flight-counter screen displays the shared model count; resize it in the editor to
 inspect other spans.
 
 Rebuild and re-import models/settings into Companion to replace the former
