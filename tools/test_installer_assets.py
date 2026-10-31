@@ -44,12 +44,20 @@ def checksum(data):
 
 
 class InstallerAssetsTests(unittest.TestCase):
+    def test_developer_version_accepts_eight_hex_digits_and_legacy_releases(self):
+        for suffix in ("0fe9d3d9", "g" + "a" * 40):
+            with self.subTest(suffix=suffix):
+                self.assertIsNotNone(installer.DEVELOPER_VERSION.fullmatch(f"1.2.3-dev.12+{suffix}"))
+        for suffix in ("0fe9d3d", "0fe9d3d98", "0FE9D3D9", "g0fe9d3d9", "a" * 40):
+            with self.subTest(suffix=suffix):
+                self.assertIsNone(installer.DEVELOPER_VERSION.fullmatch(f"1.2.3-dev.12+{suffix}"))
+
     def test_developer_build_is_mirrored_under_dev_without_changing_latest_stable(self):
         responses = self.catalog_fixture()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             path = release.package(release.ROOT / "src/WIDGETS/AeroGrid", root / "package", "12." + "a" * 40)
-            version = release.version(release.ROOT / "src/WIDGETS/AeroGrid").split("-")[0] + "-dev.12+g" + "a" * 40
+            version = release.version(release.ROOT / "src/WIDGETS/AeroGrid").split("-")[0] + "-dev.12+aaaaaaaa"
             developer = {
                 "tag_name": "dev", "name": f"AeroGrid {version} (developer build)",
                 "draft": False, "prerelease": True,

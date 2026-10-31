@@ -10,7 +10,7 @@ const MAX_FILE = 2 * 1024 * 1024;
 const preparedPackages = new WeakSet();
 
 export function isDeveloperVersion(version) {
-  return typeof version === "string" && /^\d+\.\d+\.\d+-dev\.[1-9]\d*\+g[a-f0-9]{40}$/.test(version);
+  return typeof version === "string" && /^\d+\.\d+\.\d+-dev\.[1-9]\d*\+(?:[a-f0-9]{8}|g[a-f0-9]{40})$/.test(version);
 }
 
 function releaseTag(version) {

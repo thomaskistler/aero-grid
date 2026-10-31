@@ -21,7 +21,7 @@ PAGES = ("developer-guide/build/", "panels/metric/", "reference-guide/yaml/",
 class DocumentationLayoutTests(unittest.TestCase):
     def test_installer_developer_release_checkbox_is_opt_in_and_keyboard_accessible(self):
         release_root = "https://github.com/thomaskistler/aero-grid/releases"
-        developer_version = "0.4.0-dev.12+g" + "a" * 40
+        developer_version = "0.4.0-dev.12+aaaaaaaa"
         stable_version = "0.4.0"
         versions = (stable_version, developer_version)
         catalog = {"schema": 1, "latest": stable_version, "releases": [
@@ -77,6 +77,7 @@ class DocumentationLayoutTests(unittest.TestCase):
                     page.locator("[data-release-open]").click()
                     checkbox = page.get_by_role("checkbox", name="Show developer releases")
                     self.assertFalse(checkbox.is_checked())
+                    self.assertTrue(page.locator("[data-developer-warning]").is_hidden())
                     self.assertEqual(page.locator("[data-releases] input").count(), 1)
                     checkbox.focus()
                     page.keyboard.press("Space")
@@ -84,11 +85,14 @@ class DocumentationLayoutTests(unittest.TestCase):
                     self.assertEqual(page.locator("[data-releases] input").count(), 2)
                     page.locator(f'input[value="{developer_version}"]').check()
                     page.wait_for_function("document.querySelector('[data-latest]').textContent.includes('developer build')")
+                    self.assertTrue(page.locator("[data-developer-warning]").is_visible())
+                    self.assertIn("Use at your own risk", page.locator("[data-developer-warning]").inner_text())
                     page.wait_for_function("document.querySelector('[data-release-open]').disabled === false")
                     self.assertLessEqual(page.evaluate("document.documentElement.scrollWidth"), width)
                     page.locator("[data-release-open]").click()
                     checkbox.uncheck()
                     page.wait_for_function("document.querySelector('[data-latest]').textContent === 'v0.4.0 - latest'")
+                    self.assertTrue(page.locator("[data-developer-warning]").is_hidden())
                     page.wait_for_function("document.querySelectorAll('[data-releases] input').length === 1")
                     self.assertEqual(page.locator("[data-releases] input").count(), 1)
                     self.assertLessEqual(page.evaluate("document.documentElement.scrollWidth"), width)

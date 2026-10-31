@@ -53,7 +53,7 @@ jobs:
           set -euo pipefail
           python3 tools/package-release.py --developer-build "$BUILD_NUMBER.$COMMIT"
           base_version="$(python3 tools/package-release.py --version-only)"
-          version="${base_version%%-*}-dev.$BUILD_NUMBER+g$COMMIT"
+          version="${base_version%%-*}-dev.$BUILD_NUMBER+${COMMIT:0:8}"
           releases="$(gh api --paginate "repos/$GH_REPO/releases" --jq '.[].tag_name')"
           if printf '%s\n' "$releases" | grep -qx dev; then
             gh release edit dev --draft=true
@@ -66,7 +66,7 @@ jobs:
           gh release upload dev build/release/AeroGrid-dev.zip \
             build/release/AeroGrid-dev.zip.sha256 --clobber
           cat > build/release/dev-notes.md <<EOF
-          Developer build from main. Unreleased changes may be unstable.
+          Developer build from main. Changes may not be fully tested and may be unstable. Use at your own risk.
 
           Version: $version
           Commit: $COMMIT

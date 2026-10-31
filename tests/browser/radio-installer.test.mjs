@@ -13,9 +13,18 @@ import {
 const encoder = new TextEncoder();
 const base = new URL("https://example.test/aero-grid/installer/");
 
+test("developer versions accept eight hex digits and existing legacy releases", () => {
+  for (const suffix of ["0fe9d3d9", "g" + "a".repeat(40)]) {
+    assert.equal(isDeveloperVersion(`1.2.3-dev.12+${suffix}`), true);
+  }
+  for (const suffix of ["0fe9d3d", "0fe9d3d98", "0FE9D3D9", "g0fe9d3d9", "a".repeat(40)]) {
+    assert.equal(isDeveloperVersion(`1.2.3-dev.12+${suffix}`), false);
+  }
+});
+
 test("developer releases stay separate from latest stable and verify their pinned build before installation", async () => {
   const fixtureRelease = await releaseFixture();
-  const version = "0.4.0-dev.12+g" + "a".repeat(40);
+  const version = "0.4.0-dev.12+aaaaaaaa";
   const manifest = structuredClone(fixtureRelease.manifest);
   manifest.version = version;
   manifest.release = "https://github.com/thomaskistler/aero-grid/releases/tag/dev";

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import vm from "node:vm";
-import { actionFor, isDeveloperVersion } from "../../docs/javascripts/radio-installer.mjs";
+import { actionFor, ContentMismatchError, isDeveloperVersion } from "../../docs/javascripts/radio-installer.mjs";
 import { compareVersions, radioCompatibility, radioHardware } from "../../docs/javascripts/radio-storage.mjs";
 
 const source = (await readFile(new URL("../../docs/javascripts/radio-panel.mjs", import.meta.url), "utf8"))
@@ -12,6 +12,7 @@ const source = (await readFile(new URL("../../docs/javascripts/radio-panel.mjs",
 
 async function panel({ gtag, allowInstallation = false, downloadError, writeError,
   siteRoot, extraReleases = [], openConfirmation = true,
+  installedVersion = "0.0.1", verifyInstalled = async () => {},
   docsURL = "https://thomaskistler.github.io/aero-grid/main/user-guide/installation/" } = {}) {
   class HTMLInputElement {}
   const elements = new Map();
@@ -58,7 +59,7 @@ async function panel({ gtag, allowInstallation = false, downloadError, writeErro
   };
   let details = {
     radio: { name: "Test SD", board: "tx16s", version: "2.12.4" },
-    widget: { present: true, version: "0.0.1" },
+    widget: { present: true, version: installedVersion },
   };
   let failure = null;
   const radioStorage = {
@@ -78,7 +79,7 @@ async function panel({ gtag, allowInstallation = false, downloadError, writeErro
   const requestedBases = [];
   vm.runInNewContext(source, {
     document, window: { isSecureContext: true, showDirectoryPicker() {}, addEventListener() {}, gtag },
-    radioStorage, actionFor, isDeveloperVersion, compareVersions, radioCompatibility, radioHardware, HTMLInputElement,
+    radioStorage, actionFor, ContentMismatchError, isDeveloperVersion, compareVersions, radioCompatibility, radioHardware, HTMLInputElement,
     structuredClone, URL, console, queueMicrotask, location: { href: docsURL },
     loadCatalog: async (base) => {
       requestedBases.push(base.href);
@@ -96,7 +97,7 @@ async function panel({ gtag, allowInstallation = false, downloadError, writeErro
       if (writeError) throw writeError;
       details.widget.version = prepared.version;
     },
-    verifyInstalled: async () => {},
+    verifyInstalled,
     setInterval(callback, interval) { assert.equal(interval, 5000); poll = callback; },
   }, { filename: "radio-panel.mjs" });
   await new Promise((resolve) => setImmediate(resolve));
@@ -114,7 +115,7 @@ async function panel({ gtag, allowInstallation = false, downloadError, writeErro
 }
 
 test("developer builds require checkbox opt-in, warn before installation, and reset to stable when hidden", async () => {
-  const version = "1.0.0-dev.12+g" + "a".repeat(40);
+  const version = "1.0.0-dev.12+aaaaaaaa";
   const ui = await panel({
     openConfirmation: false, allowInstallation: true,
     extraReleases: [{ version, available: true, name: "Developer build" }],
@@ -122,6 +123,7 @@ test("developer builds require checkbox opt-in, warn before installation, and re
   const rows = () => ui.element("releases").children;
   assert.equal(rows().length, 1);
   assert.equal(ui.element("developer-releases").checked, false);
+  assert.equal(ui.element("developer-warning").hidden, true);
   ui.element("developer-releases").checked = true;
   await ui.element("developer-releases").dispatch("change");
   assert.equal(rows().length, 2);
@@ -129,15 +131,80 @@ test("developer builds require checkbox opt-in, warn before installation, and re
   assert.equal(developer.value, version);
   await ui.element("releases").dispatch("change", { target: developer });
   assert.match(ui.element("latest").textContent, /developer build/);
+  assert.ok(ui.element("latest").textContent.includes(version));
+  assert.equal(ui.element("developer-warning").hidden, false);
+  assert.match(ui.element("developer-warning").textContent, /DEVELOPER BUILD.*not be fully tested.*unstable.*Use at your own risk/);
   await ui.element("install").dispatch("click");
   assert.match(ui.element("confirm-description").textContent, /DEVELOPER BUILD.*unstable/);
+  assert.ok(ui.element("confirm-description").textContent.includes(ui.element("developer-warning").textContent));
   await ui.element("confirm-cancel").dispatch("click");
   ui.element("developer-releases").checked = false;
   await ui.element("developer-releases").dispatch("change");
   assert.equal(rows().length, 1);
   assert.equal(ui.element("latest").textContent, "v1.0.0 - latest");
+  assert.equal(ui.element("developer-warning").hidden, true);
+  assert.equal(ui.element("developer-warning").textContent, "");
   await ui.element("releases").dispatch("change", { target: developer });
   assert.equal(ui.element("latest").textContent, "v1.0.0 - latest");
+});
+
+test("switching releases clears stale verification errors and rechecks when returning", async () => {
+  const version = "1.1.0-dev.12+0fe9d3d9";
+  let damaged = true;
+  const ui = await panel({
+    installedVersion: "1.0.0", openConfirmation: false,
+    extraReleases: [{ version, available: true, name: "Developer build" }],
+    verifyInstalled: async () => {
+      if (damaged) throw new ContentMismatchError("Unexpected files (119).");
+    },
+  });
+  assert.match(ui.element("status").textContent, /Unexpected files.*full replacement/);
+  assert.equal(ui.element("status").classList.contains("ag-radio-error"), true);
+  ui.element("developer-releases").checked = true;
+  await ui.element("developer-releases").dispatch("change");
+  const developer = ui.element("releases").children[1].children[0].children[0];
+  await ui.element("releases").dispatch("change", { target: developer });
+  assert.equal(ui.element("status").textContent, "");
+  assert.equal(ui.element("status").classList.contains("ag-radio-error"), false);
+  assert.equal(ui.element("downgrade").hidden, true);
+  assert.equal(ui.element("install").textContent, "Update to AeroGrid developer build");
+  ui.element("developer-releases").checked = false;
+  await ui.element("developer-releases").dispatch("change");
+  assert.match(ui.element("status").textContent, /Unexpected files/);
+  assert.equal(ui.element("install").disabled, false);
+  damaged = false;
+  const stable = ui.element("releases").children[0].children[0].children[0];
+  await ui.element("releases").dispatch("change", { target: stable });
+  assert.equal(ui.element("status").textContent, "");
+  assert.equal(ui.element("status").classList.contains("ag-radio-error"), false);
+  assert.equal(ui.element("install").disabled, true);
+  assert.equal(ui.element("install").textContent, "Up to date");
+});
+
+test("release selection preserves unrelated status errors", async () => {
+  const ui = await panel({ openConfirmation: false });
+  ui.element("status").textContent = "SD-card write failed.";
+  ui.element("status").classList.toggle("ag-radio-error", true);
+  const stable = ui.element("releases").children[0].children[0].children[0];
+  await ui.element("releases").dispatch("change", { target: stable });
+  assert.equal(ui.element("status").textContent, "SD-card write failed.");
+  assert.equal(ui.element("status").classList.contains("ag-radio-error"), true);
+});
+
+test("changed widget metadata clears verification results for the previous installation", async () => {
+  const ui = await panel({
+    installedVersion: "1.0.0", openConfirmation: false,
+    verifyInstalled: async () => { throw new ContentMismatchError("Unexpected files (119)."); },
+  });
+  assert.match(ui.element("status").textContent, /Unexpected files/);
+  ui.change((details) => {
+    details.widget.version = "0.4.0";
+    return details;
+  });
+  await ui.poll();
+  assert.equal(ui.element("status").textContent, "");
+  assert.equal(ui.element("status").classList.contains("ag-radio-error"), false);
+  assert.equal(ui.element("install").textContent, "Update to AeroGrid v1.0.0");
 });
 
 for (const version of ["main", "0.1.0", "0.4.0"]) {
