@@ -15,7 +15,7 @@ class ReleaseTests(unittest.TestCase):
     def test_developer_package_has_fixed_name_and_unique_metadata_without_editing_source(self):
         source = release.ROOT / "src/WIDGETS/AeroGrid"
         original = (source / "lib/package.lua").read_bytes()
-        commit = "a" * 40
+        commit = "0fe9d3d98b7dfc010d056673daad1c2b06bb8845"
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             path = release.package(source, output, f"12.{commit}")
@@ -24,7 +24,7 @@ class ReleaseTests(unittest.TestCase):
             with zipfile.ZipFile(path) as bundle:
                 metadata = bundle.read("WIDGETS/AeroGrid/lib/package.lua").decode()
                 base = release.version(source).split("-")[0]
-                self.assertIn(f'version = "{base}-dev.12+g{commit}"', metadata)
+                self.assertIn(f'version = "{base}-dev.12+0fe9d3d9"', metadata)
             self.assertEqual(release.package(source, output, f"12.{commit}").read_bytes(), first)
             release.package(source, output, f"13.{commit}")
             self.assertNotEqual(path.read_bytes(), first)

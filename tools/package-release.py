@@ -44,7 +44,7 @@ def package(source, output, developer_build=None):
         if not re.fullmatch(r"[1-9]\d*\.[a-f0-9]{40}", developer_build):
             raise ValueError("Developer build must be RUN_NUMBER.COMMIT_SHA (40 lowercase hex digits)")
         run, commit = developer_build.split(".")
-        release = f"{release.split('-')[0]}-dev.{run}+g{commit}"
+        release = f"{release.split('-')[0]}-dev.{run}+{commit[:8]}"
     for name in LAYOUTS:
         if not (source / "layouts" / name).is_file():
             raise ValueError(f"Missing bundled layout: {name}")
