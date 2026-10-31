@@ -6,6 +6,8 @@
 
 Records up to three numeric EdgeTX sources on one chart while armed or in flight.
 The legend shows each recorded value and its minimum and maximum.
+Wide layouts keep the legend on the right. Square and tall layouts put it above
+the full-width plot, with two or three metrics arranged left to right.
 Use separate panels for separate charts.
 Select **Arm switch** in **AeroGrid → Model settings**; changes save automatically.
 Until model arming has been saved, an existing panel arm switch remains in use
@@ -50,7 +52,7 @@ disarm grace until flight end is confirmed, even while the chart is hidden.
 Rearming during grace keeps one uninterrupted flight. Without a qualified,
 matching flight, disarming pauses recording immediately.
 
-A subtle background band identifies each flight behind the grid and telemetry
+A neutral background band identifies each flight behind the grid and telemetry
 traces: lighter in dark themes, darker in light themes.
 Its edges use the actual flight times, not the later
 qualification or confirmation times; an active flight's band grows with the

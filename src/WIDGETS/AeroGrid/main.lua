@@ -1025,7 +1025,7 @@ pumpFlight = function(context, inputPending)
                     return owner:identity()
                 end,
                 flightConfig = context.flightConfig,
-                armedConfig = context.serviceRuntime.modules.armed,
+                armedConfig = owner.modules.armed,
             })
             if not created then
                 owner.loadError, owner.documentLoaded = tostring(store), true

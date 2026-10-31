@@ -187,32 +187,47 @@ equal(power.series[1].runs[1].line.properties.thickness, 1)
 equal(power.series[2].runs[1].line.properties.thickness, 1)
 local function alignedReadouts(panel)
     for _, item in ipairs(panel.series) do
+        local legendX, legendW = item.legendX or panel.area.legendX, item.legendW or panel.area.legendW
+        local alignment = item.legendAlignment or 1
         equal(
             item.value.properties.x + item.value.properties.w,
             item.unit.properties.x,
             "units must sit directly beside their value"
         )
         equal(
-            item.unit.properties.x + item.unit.properties.w,
-            panel.area.legendX + panel.area.legendW,
-            "each complete main reading must end at the legend's right edge"
-        )
-        equal(
-            item.name.properties.x + item.name.properties.w + 4,
             item.value.properties.x,
-            "captions must sit a fixed distance before their value"
+            legendX + math.floor((legendW - item.value.properties.w - item.unit.properties.w) * alignment),
+            "each complete main reading must follow its metric group's alignment"
         )
+        if panel.stackedLegend then
+            equal(
+                item.name.properties.x,
+                legendX + math.floor((legendW - item.name.properties.w) * alignment),
+                "metric captions must follow the same alignment as the reading"
+            )
+            equal(
+                item.name.properties.y + panel.themeBuilder.fontHeight(panel.legendFont),
+                item.value.properties.y,
+                "horizontal metric groups must put the caption above the value"
+            )
+        else
+            equal(
+                item.name.properties.x + item.name.properties.w + 4,
+                item.value.properties.x,
+                "captions must sit a fixed distance before their value"
+            )
+        end
         equal(
             item.name.properties.w,
             math.min(
-                math.max(0, item.value.properties.x - panel.area.legendX - 4),
+                panel.stackedLegend and legendW or math.max(0, item.value.properties.x - legendX - 4),
                 panel.themeBuilder.measureText(panel.legendFont, item.nameText)
             ),
             "captions must hug their text instead of stretching across the legend"
         )
         equal(item.unit.properties.y, item.value.properties.y, "numbers and units must share a baseline")
         local size = math.max(4, math.floor(panel.themeBuilder.fontHeight(panel.extremaFont) / 3))
-        local available = math.max(0, panel.area.legendW - 2 * size - 14)
+        local available = math.max(0, legendW - 2 * size - 14)
         equal(
             item.extrema.properties.w,
             math.min(
@@ -232,9 +247,9 @@ local function alignedReadouts(panel)
         local left = item.minSymbol.properties.pts[1][1]
         local right = item.maximum.properties.x + item.maximum.properties.w
         equal(
-            right,
-            panel.area.legendX + panel.area.legendW,
-            "the compact extrema pair must share the main reading's right edge"
+            left,
+            legendX + math.floor((legendW - (right - left)) * alignment),
+            "the compact extrema pair must follow the same alignment as the reading"
         )
         equal(item.extrema.properties.x, left + size + 3, "minimum arrow must stay beside its value")
         equal(
@@ -258,6 +273,23 @@ local function separatedReadouts(panel)
         return
     end
     local builder = panel.themeBuilder
+    if panel.topLegend then
+        equal(panel.area.w, panel.area.frame.content, "top legends must leave the full plot width")
+        local first = panel.series[1].name.properties.y
+        for index, item in ipairs(panel.series) do
+            equal(item.name.properties.y, first, "top metrics must share one horizontal row")
+            assert(item.name.properties.y + builder.fontHeight(panel.legendFont) <= panel.area.y)
+            assert(item.value.properties.y + builder.fontAscent(panel.legendFont) <= panel.area.y)
+            if panel.showExtrema then
+                assert(item.extrema.properties.y + builder.fontAscent(panel.extremaFont) <= panel.area.y)
+            end
+            if index > 1 then
+                local previous = panel.series[index - 1]
+                assert(previous.legendX + previous.legendW <= item.legendX, "metric groups must not overlap")
+            end
+        end
+        return
+    end
     local height = builder.fontHeight(panel.legendFont)
         + (panel.showExtrema and builder.fontAscent(panel.extremaFont) or 0)
     local first = panel.series[1].name.properties.y
@@ -348,7 +380,7 @@ for _, size in ipairs({ { 320, 240 }, { 800, 480 }, { 480, 272 } }) do
         local panel = entry.instance
         chart.refresh(panel)
         assert(panel.area.w > 0 and panel.area.h > 0)
-        assert(panel.area.legendX >= panel.area.x + panel.area.w)
+        assert(panel.topLegend or panel.area.legendX >= panel.area.x + panel.area.w)
         for _, item in ipairs(panel.series) do
             equal(item.name.properties.font(), panel.legendFont, "metric names must follow the legend font")
             equal(item.value.properties.font(), panel.legendFont, "recorded values must follow the legend font")
@@ -369,7 +401,10 @@ for _, size in ipairs({ { 320, 240 }, { 800, 480 }, { 480, 272 } }) do
                         >= item.value.properties.y + panel.themeBuilder.fontHeight(panel.legendFont)
                 )
                 assert(item.extrema.properties.y + panel.themeBuilder.fontAscent(panel.extremaFont) <= panel.rect.h)
-                assert(item.maximum.properties.x + item.maximum.properties.w <= panel.area.legendX + panel.area.legendW)
+                assert(
+                    item.maximum.properties.x + item.maximum.properties.w
+                        <= (item.legendX or panel.area.legendX) + (item.legendW or panel.area.legendW)
+                )
             end
             alignedReadouts(panel)
             separatedReadouts(panel)
@@ -426,7 +461,7 @@ reading.settings.unit, reading.feed = originalUnit, originalFeed
 chart.render(power)
 alignedReadouts(power)
 
-local function typographyPanel(count)
+local function typographyPanel(count, top)
     local metrics = {}
     for index = 1, count do
         metrics[index] = { source = "Alt", label = "A", precision = 0, unit = "" }
@@ -436,7 +471,7 @@ local function typographyPanel(count)
         type = "chart",
         col = 0,
         row = 0,
-        colSpan = 2,
+        colSpan = top and 2 or 4,
         rowSpan = 2,
         config = { metrics = metrics, armSwitch = "SAv" },
     })
@@ -559,6 +594,86 @@ equal(single.series[1].maximum.properties.font(), single.extremaFont)
 fixture.radio.values[altitudeId] = altitude
 assert(fixture.lvglMock.replacedFontRefCount() == 0, "font resizing must reuse native callbacks")
 
+for count = 1, 3 do
+    local panel = typographyPanel(count, true)
+    local feeds = {}
+    for index, item in ipairs(panel.series) do
+        feeds[index] = item.feed
+        item.caption = ({ "ALT", "VSPD", "GSPD" })[index]
+        item.settings.unit = ({ "m", "m/s", "km/h" })[index]
+        item.settings.precision = 1
+        item.feed = { value = 42.3, min = -1.2, max = 68.4, revision = 1 }
+    end
+    for _, size in ipairs({ { 232, 132 }, { 156, 112 }, { 392, 232 }, { 232, 232 } }) do
+        chart.update(panel, { x = 0, y = 0, w = size[1], h = size[2] })
+        assert(panel.topLegend, "square spans must use top legends even on wide radio displays")
+        equal(panel.stackedLegend, count > 1)
+        alignedReadouts(panel)
+        separatedReadouts(panel)
+        assert(panel.area.h > 0)
+        if size[1] >= 232 then
+            assert(panel.showExtrema, "standard square charts must retain min/max for all three metrics")
+            for _, item in ipairs(panel.series) do
+                assert(not item.name.hidden, "horizontal groups must retain metric names")
+                equal(item.name.properties.text, item.caption)
+                assert(not item.extrema.hidden and not item.maximum.hidden)
+                assert(item.value.properties.w >= panel.themeBuilder.measureText(panel.legendFont, item.valueText))
+            end
+        end
+        local first, last = panel.series[1], panel.series[count]
+        if count > 1 then
+            equal(first.legendX, panel.area.x, "the first group must align left")
+            equal(first.name.properties.x, panel.area.x, "the left caption must start at the plot's left edge")
+            equal(first.value.properties.x, panel.area.x, "the left reading must start at the plot's left edge")
+            equal(
+                first.minSymbol.properties.pts[1][1],
+                panel.area.x,
+                "the left extrema must start at the plot's left edge"
+            )
+            equal(last.legendX + last.legendW, panel.area.x + panel.area.w, "the last group must align right")
+            equal(last.name.properties.x + last.name.properties.w, panel.area.x + panel.area.w)
+            equal(last.unit.properties.x + last.unit.properties.w, panel.area.x + panel.area.w)
+            equal(last.maximum.properties.x + last.maximum.properties.w, panel.area.x + panel.area.w)
+        end
+        if count == 3 then
+            local middle = panel.series[2]
+            local center = panel.area.x + panel.area.w / 2
+            local extremaLeft = middle.minSymbol.properties.pts[1][1]
+            local extremaRight = middle.maximum.properties.x + middle.maximum.properties.w
+            assert(math.abs(middle.name.properties.x + middle.name.properties.w / 2 - center) <= 1)
+            assert(
+                math.abs((middle.value.properties.x + middle.unit.properties.x + middle.unit.properties.w) / 2 - center)
+                    <= 1,
+                "the complete middle reading must be centered, including its unit"
+            )
+            assert(math.abs((extremaLeft + extremaRight) / 2 - center) <= 1, "middle extrema must also be centered")
+        end
+    end
+    panel.settings.label = "Flight"
+    chart.update(panel, { x = 0, y = 0, w = 232, h = 132 })
+    assert(
+        panel.series[1].name.properties.y >= panel.title.properties.y + panel.themeBuilder.fontHeight(SMLSIZE),
+        "top metric groups must not overlap the optional chart heading"
+    )
+    local width = panel.area.w
+    panel.series[1].feed.value = -123456.7
+    panel.series[1].feed.min = -123456.7
+    panel.series[1].feed.revision = 2
+    assert(chart.render(panel))
+    equal(panel.area.w, width, "readout growth must never take width away from a top-layout plot")
+    alignedReadouts(panel)
+    separatedReadouts(panel)
+    equal(chart.render(panel), false, "top readout geometry must converge without repeated reflow")
+    panel.span = { colSpan = 4, rowSpan = 2 }
+    chart.update(panel, { x = 0, y = 0, w = 472, h = 132 })
+    assert(not panel.topLegend and not panel.stackedLegend, "wide spans must restore the existing side legend")
+    alignedReadouts(panel)
+    separatedReadouts(panel)
+    for index, item in ipairs(panel.series) do
+        item.feed = feeds[index]
+    end
+end
+
 local function recordingPanel(id, range)
     local entry, errorMessage = context.dashboardLoader.buildPanel(context, {
         id = id,
@@ -605,7 +720,7 @@ assert(gridPanel.title.hidden, "empty labels must hide the title instead of deri
 assert(not gridPanel.durationBackground.hidden, "titleless charts need a readable duration annotation")
 equal(gridPanel.duration.properties.text, "10m")
 checkDurationCorner(gridPanel)
-equal(gridPanel.area.y, gridPanel.area.frame.labelY, "titleless charts must reclaim the header")
+assert(gridPanel.area.y > gridPanel.area.frame.labelY, "titleless square charts must retain only the metric header")
 equal(gridPanel.area.y + gridPanel.area.h, gridPanel.rect.h - 3, "bottom labels must not reserve plot height")
 equal(#gridPanel.grid, 12, "grid objects must use a bounded reusable pool")
 local function checkGrid(panel)

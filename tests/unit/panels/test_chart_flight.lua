@@ -51,7 +51,7 @@ equal(band.y, area.y)
 equal(band.h, area.h, "flight shading must span the full plot height")
 equal(band.filled, true)
 equal(band.thickness, 0, "flight shading has no outline or boundary ticks")
-equal(band.opacity, 16, "flight shading must remain faint behind telemetry")
+equal(band.opacity, 48, "flight shading must be visible without obscuring telemetry")
 equal(band.color, lcd.RGB(0xFFFFFF), "dark themes lighten the panel background without an accent tint")
 equal(panel.flightBands[1].parent, panel.flightRoot)
 equal(panel.plotRoot.children[1], panel.flightRoot, "bands must sit behind grid and telemetry objects")
@@ -171,7 +171,7 @@ for _ = 1, 150 do
 end
 local lightBand = light.flightBands[2].properties
 equal(lightBand.color, lcd.RGB(0x000000), "light themes darken the panel background without an accent tint")
-equal(lightBand.opacity, 16)
+equal(lightBand.opacity, 48, "light and dark themes must use the same flight shading contrast")
 equal(lightBand.y, light.area.y)
 equal(lightBand.h, light.area.h)
 
