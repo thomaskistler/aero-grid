@@ -633,9 +633,6 @@ local function recordPath(context)
         context.pathBreak = true
         return
     end
-    if not context.pack then
-        return
-    end
     if context.pathLastTime and now - context.pathLastTime < 100 then
         return
     end
@@ -1622,6 +1619,10 @@ local function selectArea(context)
     local x, y = map.project(level, feed.latitude, feed.longitude)
     context.viewX, context.viewY =
         map.clampView(level, context.area.w, context.area.h, x - context.area.w / 2, y - context.area.h / 2)
+end
+
+function map.background(context)
+    recordPath(context)
 end
 
 function map.refresh(context)

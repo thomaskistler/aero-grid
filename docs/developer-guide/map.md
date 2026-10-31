@@ -212,6 +212,8 @@ six-decimal latitude/longitude when GPS is valid. `flightPath` accepts `off`,
 `trail` or `full`: samples require at least five metres of movement and one
 second between accepted fixes. The trail retains the last 30 seconds, capped at
 31 timestamped points; old points expire even while stationary or GPS is unavailable.
+Recording continues while the widget is hidden, without loading or rendering maps,
+and does not require a selected map area. GPS outages break the path on recovery.
 Full mode keeps up to 1,024 timestamped fixes independently of a 63-segment drawing
 budget. At capacity, a bounded search compares 32 interior samples by their
 distance from the line between their neighbours, removing the least significant

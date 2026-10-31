@@ -1618,4 +1618,70 @@ do
     services.host.layoutStore.readCandidate = originalRead
     dir = originalDir
 end
+do
+    fixture.lvglMock.setFullScreen(true)
+    fixture.radio.values[109].lat, fixture.radio.values[109].lon = 25.9973, -97.1572
+    local hiddenHost = fixture.createLoaded(nil, { Layout = "review-map", Theme = "modern-dark" })
+    fixture.pump(hiddenHost, 160, 25)
+    local hiddenEntry = assert(fixture.entryById(hiddenHost, "map"))
+    local hidden = hiddenEntry.instance
+    assert(
+        hidden.pack and hidden.feed.fix and hidden.feed.state == "normal",
+        "hidden test requires a live selected map: "
+            .. tostring(hidden.statusText)
+            .. "/"
+            .. tostring(hidden.feed.state)
+    )
+    hidden.pathPoints, hidden.pathLastTime = {}, nil
+    local function uiWork(object)
+        local writes, visibility, count = object.writes or 0, object.visibilityCalls or 0, 1
+        for _, child in ipairs(object.children) do
+            local childWrites, childVisibility, childCount = uiWork(child)
+            writes, visibility, count = writes + childWrites, visibility + childVisibility, count + childCount
+        end
+        return writes, visibility, count
+    end
+    local writes, visibility, count = uiWork(hiddenEntry.container)
+    local loads, moves, views = hidden.tileLoads, hidden.markerMoves, hidden.viewChanges
+    local originalOpen, mapReads = io.open, 0
+    io.open = function(filename, ...)
+        if string.find(filename, "/AEROGRID/maps/", 1, true) then
+            mapReads = mapReads + 1
+        end
+        return originalOpen(filename, ...)
+    end
+    local gps = fixture.radio.values[109]
+    local latitude, longitude = gps.lat, gps.lon
+    for index = 1, 12 do
+        gps.lon = longitude + index * 0.0001
+        for _ = 1, 8 do
+            fixture.tick(25)
+            definition.background(hiddenHost)
+        end
+    end
+    io.open = originalOpen
+    a.assertEqual(#hiddenHost.errors, 0, table.concat(hiddenHost.errors, "\n"))
+    assert(#hidden.pathPoints >= 10, "host background must sample moving GPS without visible refreshes")
+    local latest = hidden.pathPoints[#hidden.pathPoints]
+    a.assertEqual(latest.longitude, gps.lon, "hidden history must use current shared-service GPS")
+    a.assertEqual(latest.latitude, latitude)
+    a.assertEqual(mapReads, 0, "hidden sampling must not read map manifests or JPEG tiles")
+    local afterWrites, afterVisibility, afterCount = uiWork(hiddenEntry.container)
+    a.assertEqual(afterWrites, writes, "hidden sampling must not update UI properties")
+    a.assertEqual(afterVisibility, visibility, "hidden sampling must not show or hide UI objects")
+    a.assertEqual(afterCount, count, "hidden sampling must not allocate UI objects")
+    a.assertEqual(hidden.tileLoads, loads)
+    a.assertEqual(hidden.markerMoves, moves)
+    a.assertEqual(hidden.viewChanges, views)
+    fixture.pump(hiddenHost, 16, 2)
+    a.assertEqual(hidden.pathPoints[#hidden.pathPoints], latest, "returning visible must not duplicate the last fix")
+    assert(hidden.markerMoves > moves, "returning visible must move the marker to the current GPS")
+    local visible = false
+    for _, line in ipairs(hidden.pathLines) do
+        visible = visible or not line.hidden
+    end
+    assert(visible, "returning visible must render the path sampled in the background")
+    a.assertEqual(hidden.settings.flightPath, "trail", "background sampling must not change the configured path mode")
+    a.assertEqual(#hiddenHost.errors, 0, table.concat(hiddenHost.errors, "\n"))
+end
 print("Map worst host callback: " .. worst .. " instructions (mock; not native draw/decode time)")
