@@ -107,8 +107,6 @@ assert(first.serviceRuntime.byId.armed == armed, "closing unchanged settings doe
 
 local function save(context, index)
     local dialog = open(context)
-    dialog.controls.history.properties.set(0)
-    measured(definition.refresh, context)
     dialog.controls.armed.properties.set(index)
     measured(definition.refresh, context)
     if index ~= 0 then

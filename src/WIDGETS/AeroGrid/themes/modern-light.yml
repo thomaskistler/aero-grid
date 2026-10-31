@@ -47,7 +47,7 @@ colors:
   chartAmber: 0x9D6A00
   chartOrange: 0xC04A00
   # Neutral, quieter chart gridlines and time baseline.
-  chartGrid: 0xD4D4D4
+  chartGrid: 0xC2C2C2
   # Critical-state foreground accent.
   critical: 0xC92D2D
   # Warning-state panel background; otherwise derived from amber.

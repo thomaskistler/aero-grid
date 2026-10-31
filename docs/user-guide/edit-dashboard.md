@@ -14,10 +14,20 @@
    **Enter** also starts editing. A **gear**
    icon appears in the top-right corner of each panel.
 
-**AeroGrid → Model settings** opens shared model flight settings without
+**AeroGrid → Model settings** opens shared model settings without
 entering layout edit mode. Changes save automatically, independently of layout
 **Save/Save as...**. The host menu is hidden while editing so it does not
 cover panel resize corners.
+
+**Session reset switch** in Model settings clears chart recordings and markers,
+flight-session link minima, first-arm navigation homes, and automatic RX battery
+cell estimates across all dashboards, including hidden screens. It runs once
+per activation; release the switch before using it again. A switch already on
+when the model loads or the setting changes does not reset anything.
+During a detected flight, reset clears detection and turns off its status
+output; disarm before another flight can be counted. Flight totals, radio
+timers, radio telemetry minima/maxima, EdgeTX home and saved settings are kept.
+Choose **None** to disable it.
 
 ![Editor showing panel gears and the add-panel tile](../assets/editor/overview.png)
 

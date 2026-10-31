@@ -74,12 +74,11 @@ step(12999)
 equal(#context.logs, 0)
 step(13000)
 equal(context.phase, "ground")
-equal(#context.logs, 1)
-equal(context.logs[1][1], "2026-10-06 16:00")
-equal(context.logs[1][2], 119.9, "duration excludes final disarm grace")
-equal(context.logs[1][3], 40)
+equal(#context.logs, 0, "completed flights must not write CSV history")
+equal(context.feed.raw, 40, "removing CSV history must preserve the counted flight")
 step(15000)
-equal(#context.logs, 1, "completed flights must not log twice")
+equal(#context.logs, 0)
+equal(context.feed.raw, 40, "completed flights must not count twice")
 
 context, step = new()
 context.arm.value, context.motor.value = true, 0
@@ -108,7 +107,7 @@ equal(context.phase, "ground")
 context, step = new()
 context.settings.motorReversed = true
 context.settings.announcements = true
-context.settings.history = false
+context.settings.history = true
 context.arm.value, context.motor.value = true, 1024
 step(0)
 equal(context.phase, "ground")
@@ -124,6 +123,7 @@ context.arm.value = false
 step(4000)
 step(5000)
 equal(#context.logs, 0)
+equal(context.phase, "ground", "legacy CSV settings must not affect completion")
 equal(#context.sounds, 0, "legacy announcement settings must not play audio at completion")
 
 context, step = new()

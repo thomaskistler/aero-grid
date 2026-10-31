@@ -69,6 +69,7 @@ if withFlights or smartEnabled then
         revision = 0,
         modelFilename = filename,
         armed = "SAv",
+        sessionReset = smartEnabled and "L64" or nil,
     })))
     modelFile:close()
 end
@@ -122,7 +123,7 @@ if withFlights then
         modelFilename = context.flightBroker.filename,
         revision = 1,
         armed = "SAv",
-        flight = context.flightConfig.resolve({ minFlightDuration = 1, disarmDuration = 1, history = false }),
+        flight = context.flightConfig.resolve({ minFlightDuration = 1, disarmDuration = 1 }),
     })
     setArmed(0)
     pump(20)
@@ -137,7 +138,8 @@ if smartEnabled then
     owner:setDocument({
         revision = 1,
         armed = "SAv",
-        flight = context.flightConfig.resolve({ smartDetection = true, history = false }),
+        sessionReset = "L64",
+        flight = context.flightConfig.resolve({ smartDetection = true }),
     })
     pump(100)
     assert(owner.session.smart.altitude.fresh and owner.session.smart.speed.fresh)
@@ -272,7 +274,7 @@ local drain = 0
 for step = 1, 3000 do
     settled = true
     for _, entry in ipairs(context.panels) do
-        if entry.instance.pending then
+        if entry.instance.pending or entry.instance.framePhase then
             settled = false
         end
         for _, item in ipairs(entry.instance.series) do
@@ -289,6 +291,11 @@ for step = 1, 3000 do
 end
 assert(settled, "retained multi-flight histories must finish their staged redraws within 3000 callbacks")
 for _, entry in ipairs(context.panels) do
+    assert(entry.instance.status.properties.text == "", "stopped recordings must not show a pause label")
+    assert(
+        #entry.instance.resumeMarkers.markerKeys <= entry.instance.rect.w + 1,
+        "recording seams must share a bounded chart-wide screen-column pool"
+    )
     for _, item in ipairs(entry.instance.series) do
         assert(
             item.drawnRevision == item.feed.plotRevision and not entry.instance.pending,

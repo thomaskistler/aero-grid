@@ -21,7 +21,6 @@ panels:
       armSwitch: SFv
       minFlightDuration: 1
       disarmDuration: 1
-      history: false
 ]])
 file:close()
 os.execute("mkdir -p '" .. path .. "AEROGRID/models'")
@@ -176,7 +175,7 @@ local function changeModel(context, key, value, other)
         return owner.document.revision == revision + 1
     end, other)
 end
-changeModel(first, "history", 0, second)
+changeModel(first, "minMotorPercent", 3000, second)
 changeModel(first, "flightSwitch", 21, second)
 assert(owner.document.armed == nil, "flight output can be selected before configuring model arming")
 changeModel(first, "armed", armed, second)

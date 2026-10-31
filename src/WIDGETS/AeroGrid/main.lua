@@ -932,7 +932,9 @@ local function dispatchDue(context)
         local entry = panels[cursor]
         examined = examined + 1
 
-        if entry and not entry.failed and now >= (entry.nextRefresh or 0) then
+        local owner = context.refreshOwner
+        local waiting = owner and entry ~= owner and entry.module.id == owner.module.id
+        if entry and not entry.failed and not waiting and now >= (entry.nextRefresh or 0) then
             local cost = rawget(entry.module, "refreshCost") or 1
             if work + cost > REFRESH_CAP then
                 break
@@ -940,12 +942,19 @@ local function dispatchDue(context)
             work = work + cost
             dispatched = dispatched + 1
 
-            local ok, dispatchError = context.panelHost.dispatch(entry, "refresh")
+            local ok, dispatchError, _, unfinished = context.panelHost.dispatch(entry, "refresh")
             -- Advance from now, without accumulating missed deadlines.
             entry.nextRefresh = now + entry.interval
             if not ok and dispatchError then
                 addError(context, entry.placement.id .. ": refresh: " .. dispatchError)
                 failures = true
+            end
+            -- Serialize staged panels of the same type, without starving
+            -- unrelated panels or the data services between their turns.
+            if ok and unfinished then
+                context.refreshOwner = entry
+            elseif context.refreshOwner == entry then
+                context.refreshOwner = nil
             end
         end
 
@@ -1035,13 +1044,22 @@ pumpFlight = function(context, inputPending)
         end
         return true
     end
-    if (context.stage or context.reloadState) and not owner.session then
-        return false
-    end
-    if not owner.session and owner.dormantRevision == context.flightFactory.revision then
+    local resetConfigured = owner.document and owner.document.sessionReset and owner.document.sessionReset ~= ""
+    if (context.stage or context.reloadState) and not owner.session and not resetConfigured then
         return false
     end
     local now = getTime()
+    if resetConfigured or owner.resetRuntime or owner.errors.reset then
+        local resetOk, resetError = pcall(owner.pollReset, owner, now)
+        if not resetOk then
+            owner:error("reset", resetError)
+        end
+    end
+    if not owner.session and owner.dormantRevision == context.flightFactory.revision then
+        if not owner.state.resetError and not context.flightErrorText then
+            return false
+        end
+    end
     if owner.smartRuntime then
         if inputPending or context.flightDashboardDue then
             context.flightDashboardDue = nil
@@ -1085,9 +1103,9 @@ pumpFlight = function(context, inputPending)
         "configurationError",
         "detectionError",
         "countError",
-        "historyError",
         "outputError",
         "persistenceError",
+        "resetError",
     }) do
         if state[key] then
             messages[#messages + 1] = "flight: " .. state[key]
@@ -1135,6 +1153,7 @@ local function openModelSettings(context)
         revision = owner.document and owner.document.revision or 0,
         flight = owner.document and owner.document.flight,
         armed = owner.document and owner.document.armed,
+        sessionReset = owner.document and owner.document.sessionReset,
     }
     if document.armed == nil then
         local selections = {}
@@ -1175,14 +1194,14 @@ local function openModelSettings(context)
         smartStatus = function()
             return owner.view.smartStatus
         end,
-        save = function(values, revision, modelFilename, armedCondition)
+        save = function(values, revision, modelFilename, armedCondition, sessionReset)
             local ok, message = pcall(function()
-                owner:validateOutput(values.flightSwitch, armedCondition)
+                owner:validateOutput(values.flightSwitch, armedCondition, sessionReset)
             end)
             if not ok then
                 return false, tostring(message)
             end
-            return owner.store:save(modelFilename, revision, values, armedCondition)
+            return owner.store:save(modelFilename, revision, values, armedCondition, sessionReset)
         end,
         saved = function(saved)
             owner:setDocument(saved)
@@ -1280,7 +1299,7 @@ local function prepareAeroMenu(context)
 end
 
 local function suspendArmingEditor(context)
-    if context.modelArmingReload then
+    if context.modelArmingReload or context.sessionResetPending then
         if context.editorUi and context.editorUi.saving then
             context.editorController.advanceEditor(context)
             return true
@@ -1296,6 +1315,27 @@ local function suspendArmingEditor(context)
     return false
 end
 
+local function pumpSessionReset(context)
+    if not context.sessionResetPending then
+        return false
+    end
+    if context.reloadState == "clear" then
+        if context.modelSettingsUi and not isFullScreen() then
+            context.modelSettingsUiModule.advance(context)
+        end
+        context.dashboardLifecycle.retirePage(context)
+    elseif context.reloadState == "rebuild" then
+        context.dashboardLifecycle.rebuildPage(context)
+        context.dashboardLoader.beginLoad(context)
+    elseif context.stage then
+        context.dashboardLoader.advanceLoad(context)
+    else
+        context.sessionResetPending = nil
+        return false
+    end
+    return true
+end
+
 --- Advance the staged loader, then keep geometry and panels synchronized.
 --- At most one loading step runs per call, so the instruction budget is never
 --- exceeded no matter how large the layout is.
@@ -1307,6 +1347,9 @@ local function refresh(context, widgetEvent, touchState)
         return
     end
     if suspendArmingEditor(context) then
+        return
+    end
+    if pumpSessionReset(context) then
         return
     end
     if prepareAeroMenu(context) then
@@ -1538,6 +1581,9 @@ local function background(context)
         return
     end
     if suspendArmingEditor(context) then
+        return
+    end
+    if pumpSessionReset(context) then
         return
     end
     if context.modelSettingsUi then

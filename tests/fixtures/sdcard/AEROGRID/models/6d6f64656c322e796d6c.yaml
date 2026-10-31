@@ -9,5 +9,4 @@ flight:
   minFlightDuration: 10
   smartDetection: true
   disarmDuration: 10
-  history: true
   flightSwitch: "L01"

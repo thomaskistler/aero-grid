@@ -29,7 +29,7 @@ SCENES = SCENES + PANEL_SETTINGS_SCENES
 STITCHED_SCENES = ("settings", "state-settings", "state-entry", "state-condition", "metric-entry", "chart-metric-entry") + PANEL_SETTINGS_SCENES
 THEME_SCENES = ("theme-modern-dark", "theme-modern-light", "theme-custom")
 DASHBOARD_SCENES = ("dashboard",)
-FLIGHT_SETTINGS_SCENES = ("aero-menu", "aero-menu-selected", "aero-ui-setup", "model-settings", "model-settings-motor", "model-settings-bottom", "model-settings-switch", "model-settings-switch-select",
+FLIGHT_SETTINGS_SCENES = ("aero-menu", "aero-menu-selected", "aero-ui-setup", "model-settings", "model-settings-motor", "model-settings-reset", "model-settings-bottom", "model-settings-switch", "model-settings-switch-select",
                          "model-settings-autosave", "model-settings-exit",
                          "native-app-icon", "aero-fullscreen-icon")
 DASHBOARD_INPUTS = """model.setGlobalVariable(8, 0, 42)
@@ -659,11 +659,14 @@ def capture(executable, library, directory, scene, shift=0):
             # Move after pressing so the second tile is highlighted without
             # activating UI setup when the gesture ends.
             script += "1100 288 120 1\n1110 300 122 1\n1120 300 122 0\n"
-        if scene in ("model-settings-bottom", "model-settings-switch", "model-settings-switch-select"):
-            for tick in (1350, 1550, 1750, 1950, 2150, 2350):
+        if scene in ("model-settings-reset", "model-settings-bottom", "model-settings-switch", "model-settings-switch-select"):
+            ticks = (1350, 1550) if scene == "model-settings-reset" else (1350, 1550, 1750, 1950, 2150, 2350)
+            for tick in ticks:
                 script += (f"{tick} 390 220 1\n{tick + 20} 390 170 1\n"
                            f"{tick + 40} 390 110 1\n{tick + 60} 390 65 1\n"
                            f"{tick + 80} 390 65 0\n")
+            if scene == "model-settings-reset":
+                script += "1750 390 220 1\n1770 390 200 1\n1790 390 180 1\n1810 390 160 1\n1830 390 160 0\n"
             if scene.startswith("model-settings-switch"):
                 script += "2600 320 62 1\n2620 320 62 0\n"
             if scene == "model-settings-switch-select":

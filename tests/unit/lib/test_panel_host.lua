@@ -57,6 +57,14 @@ local function run()
         assert(panelHost.dispatch(entry, "refresh"))
         assertions.assertEqual(entry.interval, interval)
     end
+    entry.module.refresh = function()
+        return 1, true
+    end
+    local ok, message, interval, unfinished = panelHost.dispatch(entry, "refresh")
+    assert(ok and not message and interval == 1 and unfinished == true)
+    entry.module.refresh = function()
+        return result
+    end
     for _, interval in ipairs({ 0, -1, 1.5, 6001, math.huge, 0 / 0 }) do
         result = interval
         entry.failed = false

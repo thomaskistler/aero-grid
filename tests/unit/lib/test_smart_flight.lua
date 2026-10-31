@@ -230,11 +230,6 @@ local function detectorFixture(options, engine)
         motor = { available = true, fresh = true, value = 0 },
         link = { live = true },
         smart = { generation = 1, altitude = {}, speed = {} },
-        model = {
-            flightDate = function()
-                return "synthetic"
-            end,
-        },
         control = {
             incrementFlightCount = function()
                 writes = writes + 1
@@ -373,7 +368,7 @@ do
 end
 
 do
-    local c, step = detectorFixture({ smartDetection = true, history = false, disarmDuration = 1 })
+    local c, step = detectorFixture({ smartDetection = true, disarmDuration = 1 })
     step(0, 0)
     c.arm.value = true
     step(20, 0)

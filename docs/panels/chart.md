@@ -51,15 +51,21 @@ disarm grace until flight end is confirmed, even while the chart is hidden.
 Rearming during grace keeps one uninterrupted flight. Without a qualified,
 matching flight, disarming pauses recording immediately.
 
-A lightly shaded green background band identifies each flight, behind the
-grid and telemetry traces. Its edges use the actual flight times, not the later
+A subtle background band identifies each flight behind the grid and telemetry
+traces: lighter in dark themes, darker in light themes.
+Its edges use the actual flight times, not the later
 qualification or confirmation times; an active flight's band grows with the
 recording. Grace-period samples remain on the chart beyond the band's end.
 No Flight counter panel or logical-switch output is required. A chart opened
 mid-flight shades only the recorded portion.
 
-Rearming resumes the same history; paused time takes no horizontal space.
-Dashed markers and trace breaks mark recording pauses and missing telemetry.
+Upward triangles on the bottom axis mark arming; downward triangles mark disarming.
+The first arming that starts recording is not marked.
+Pausing simply stops the traces, without a label or stop marker.
+Resuming inserts a gap; dotted lines
+connect the last recorded values to the resumed values.
+The gap indicates omitted time, not the length of the pause.
+Missing telemetry breaks the traces without adding a pause gap or connector.
 Readouts freeze when recording pauses. Minimum and maximum cover all recorded
 periods, even in rolling mode.
 
@@ -67,7 +73,7 @@ periods, even in rolling mode.
 cumulative recording time increases. **Rolling** drops plot history outside
 **Window duration**, but keeps the recorded minimum and maximum.
 Faint solid grid lines mark recording-time intervals; the bottom-right label shows
-the visible duration.
+the recording-time window. Very dense pause gaps can push older points out of view.
 
 Each vertical bound can be fixed independently: set only **Range min** to
 anchor the bottom, only **Range max** to fix the top, or both for a fixed

@@ -78,53 +78,10 @@ local missing = switches:switch("MISSING")
 switches:update(140)
 assert(not missing.available and not missing.fresh, "unknown switch is unavailable, not disarmed")
 
-local content
-env = {
+local model = modelService.new({
     getInfo = function()
-        return { name = 'Model, "A"', filename = "model1.yml" }
+        return { name = "Model A", filename = "model1.yml" }
     end,
-    getDateTime = function()
-        return { year = 2026, mon = 10, day = 6, hour = 16, min = 8 }
-    end,
-    fileOpen = function(filename, access)
-        equal(filename, "/flights-history.csv")
-        if access == "r" then
-            return content and {} or nil
-        end
-        content = content or ""
-        return {}
-    end,
-    fileClose = function() end,
-    fileWrite = function(_, text)
-        content = content .. text
-    end,
-}
-local model = modelService.new(env, support)
-equal(model:flightDate(), "2026-10-06 16:08")
-model:logFlight(model:flightDate(), 62.5, 40)
-assertions.assertContains(content, "flight_date,model_name,flight_count,duration,model_id\n# api_ver=1\n")
-assertions.assertContains(content, '2026-10-06 16:08,"Model, ""A""",40,62,model1.yml\n')
-local previous = content
-model:logFlight(model:flightDate(), 70, 41)
-equal(string.sub(content, 1, #previous), previous)
-local _, headers = string.gsub(content, "flight_date", "")
-equal(headers, 1)
+}, support)
+assert(model.logFlight == nil and model.flightDate == nil, "model service must not expose CSV history")
 assert(model.announceFlight == nil, "model service must not expose built-in flight announcements")
-env.fileOpen = function()
-    return nil, "card unavailable"
-end
-ok, err = pcall(model.logFlight, model, model:flightDate(), 70, 41)
-assert(not ok and string.find(err, "card unavailable", 1, true))
-local closed = false
-env.fileOpen = function()
-    return {}
-end
-env.fileClose = function()
-    closed = true
-end
-env.fileWrite = function()
-    error("card full")
-end
-ok, err = pcall(model.logFlight, model, model:flightDate(), 70, 41)
-assert(not ok and string.find(err, "card full", 1, true))
-assert(closed, "a failed write must still close the file")

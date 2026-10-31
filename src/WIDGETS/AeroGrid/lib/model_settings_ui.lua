@@ -28,7 +28,13 @@ local fields = {
         max = 3600,
     },
     { key = "smartDetection", label = "Smart detection", kind = "toggle" },
-    { key = "history", label = "CSV history", kind = "toggle" },
+    {
+        key = "sessionReset",
+        label = "Session reset switch",
+        kind = "switch",
+        section = "Session reset",
+        description = "Clears session data across all dashboards. Keeps flight totals and radio data.",
+    },
     {
         key = "flightSwitch",
         label = "Flight status switch",
@@ -129,6 +135,7 @@ function ui.open(context, document, handlers)
         revision = document.revision,
         values = config.resolve(document.flight or {}),
         armed = document.armed,
+        sessionReset = document.sessionReset,
         armedConfig = assert(handlers.armedConfig or context.armedConfig, "arming configuration helper unavailable"),
         armControl = handlers.armControl or context.armControl,
         config = config,
@@ -201,6 +208,9 @@ end
 
 local function buildField(context, state, field)
     if field.section then
+        if state.build > 1 then
+            state.nextY = state.nextY + 12
+        end
         lvgl.label(state.dialog, {
             x = 4,
             y = state.nextY,
@@ -233,8 +243,9 @@ local function buildField(context, state, field)
             return active(context, state) and not state.build
         end,
         get = function()
-            if field.key == "armed" then
-                return state.armed and state.armed ~= "" and state.armControl:switchIndex(state.armed) or 0
+            if field.kind == "switch" then
+                local condition = state[field.key]
+                return condition and condition ~= "" and state.armControl:switchIndex(condition) or 0
             end
             local value = state.values[field.key]
             if field.kind == "toggle" then
@@ -256,7 +267,7 @@ local function buildField(context, state, field)
             if not active(context, state) then
                 return
             end
-            if field.key == "armed" then
+            if field.kind == "switch" then
                 local ok, name = pcall(state.armedConfig.name, value, state.armControl)
                 if ok then
                     queue(context, state, { key = field.key, value = name })
@@ -361,8 +372,10 @@ function ui.advance(context)
         return false
     end
     state.pending = nil
-    local values, armed = state.config.resolve(state.values), state.armed
-    if command.key == "armed" then
+    local values, armed, sessionReset = state.config.resolve(state.values), state.armed, state.sessionReset
+    if command.key == "sessionReset" then
+        sessionReset = command.value
+    elseif command.key == "armed" then
         armed = command.value
     else
         values[command.key] = command.value
@@ -378,13 +391,15 @@ function ui.advance(context)
         end
         return true
     end
-    local ok, saved, result = pcall(state.handlers.save, values, state.revision, state.modelFilename, armed)
+    local ok, saved, result =
+        pcall(state.handlers.save, values, state.revision, state.modelFilename, armed, sessionReset)
     if not ok then
         saved, result = false, saved
     end
     if saved then
         state.values, state.armed, state.revision =
             state.config.resolve(result.flight or values), armed, result.revision
+        state.sessionReset = sessionReset
         if state.dialog then
             state.status:set({ text = "" })
         end

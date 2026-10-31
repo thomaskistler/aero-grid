@@ -46,7 +46,7 @@ local function fixture(width)
         modelFilename = function()
             return control.filename
         end,
-        save = function(values, revision, filename, armed)
+        save = function(values, revision, filename, armed, sessionReset)
             control.attempts = control.attempts + 1
             assert(revision == document.revision and filename == document.modelFilename)
             if control.failure then
@@ -55,7 +55,13 @@ local function fixture(width)
             if control.exception then
                 error("filesystem exception")
             end
-            document = { flight = values, armed = armed, revision = revision + 1, modelFilename = filename }
+            document = {
+                flight = values,
+                armed = armed,
+                sessionReset = sessionReset,
+                revision = revision + 1,
+                modelFilename = filename,
+            }
             return true, document
         end,
         saved = function(saved)
@@ -92,6 +98,20 @@ local function fixture(width)
         end
     end
     assert(headings["Model arming"] < state.controls.armed.parent.properties.y)
+    assert(headings["Model arming"] == 4, "the first section must not gain leading space")
+    for _, section in ipairs({
+        { "Flight detection", "armed" },
+        { "Session reset", "smartDetection" },
+        { "Flight status output", "sessionReset" },
+    }) do
+        local previous = state.controls[section[2]].parent.properties
+        assert(headings[section[1]] - previous.y - previous.h == 14, "sections must have extra separation")
+    end
+    local motor = state.controls.motorSource.parent.properties
+    assert(
+        state.controls.motorReversed.parent.properties.y - motor.y - motor.h == 2,
+        "fields within a section must retain their compact spacing"
+    )
     local descriptions = {}
     for text in pairs(headings) do
         if type(text) == "string" then
@@ -107,7 +127,8 @@ local function fixture(width)
         descriptions["On during a detected flight. Use for your own special functions. Choose a dedicated Sticky logical switch, or None."]
     )
     assert(state.controls.armed.parent.properties.title == "Arm switch")
-    assert(headings["Flight status output"] > state.controls.history.parent.properties.y)
+    assert(headings["Flight status output"] > state.controls.smartDetection.parent.properties.y)
+    assert(state.controls.history == nil, "CSV history must not be offered")
     assert(state.controls.minFlightDuration.parent.properties.title == "Start detection window (s)")
     assert(state.controls.disarmDuration.parent.properties.title == "End detection window (s)")
     assert(state.controls.minFlightDuration.parent.properties.y < state.controls.disarmDuration.parent.properties.y)
@@ -135,12 +156,14 @@ do
         assert(c.modelSettingsUi == state, "saving a field keeps the page open")
         assert(state.revision == document().revision, "each field uses the latest saved revision")
     end
-    change("history", 0)
-    assert(document().flight.history == false and document().armed == nil, "unrelated edits preserve legacy arming")
+    change("motorReversed", 1)
+    assert(document().flight.motorReversed and document().armed == nil, "unrelated edits preserve legacy arming")
     change("armed", 1064)
     assert(document().armed == "L64")
+    assert(state.controls.sessionReset.kind == "switch")
+    change("sessionReset", -1064)
+    assert(document().sessionReset == "!L64" and state.controls.sessionReset.properties.get() == -1064)
     change("motorSource", 105)
-    change("motorReversed", 1)
     change("smartDetection", 1)
     assert(state.controls.flightSwitch.kind == "choice")
     local output = state.controls.flightSwitch.properties
@@ -153,6 +176,9 @@ do
     assert(document().flight.motorSource == "ch5" and document().flight.motorReversed)
     assert(document().flight.smartDetection and document().flight.flightSwitch == "L63")
     assert(document().flight.minFlightDuration == 2.25)
+    assert(document().sessionReset == "!L64", "unrelated edits preserve the reset input")
+    change("sessionReset", 0)
+    assert(document().sessionReset == "" and state.controls.sessionReset.properties.get() == 0)
     change("armed", 0)
     assert(document().armed == "", "explicit None disables model arming")
     local attempts = control.attempts
@@ -177,7 +203,7 @@ do
     mock.settle()
     assert(not c.modelSettingsUi and control.closed == 1)
     assert(document().flight.smartDetection and c.editorUi == layout and layout.dirty)
-    state.controls.history.properties.set(1)
+    state.controls.motorReversed.properties.set(0)
     assert(control.attempts == attempts, "retired controls cannot save")
 end
 
@@ -199,7 +225,7 @@ do
     ui.advance(c)
     assert(control.attempts == 2 and state.values.minMotorPercent < 100 and control.errors == 2)
     control.exception = true
-    state.controls.history.properties.set(0)
+    state.controls.motorReversed.properties.set(1)
     ui.advance(c)
     assert(string.find(state.status.properties.text, "filesystem exception") and control.errors == 3)
     ui.close(c)
@@ -208,7 +234,7 @@ end
 
 do
     local c, state, control = fixture()
-    state.controls.history.properties.set(0)
+    state.controls.motorReversed.properties.set(1)
     control.filename = "other.yml"
     ui.advance(c)
     assert(not c.modelSettingsUi and control.attempts == 0 and control.closed == 1)
@@ -216,11 +242,11 @@ end
 
 do
     local c, state, control, document = fixture()
-    state.controls.history.properties.set(0)
+    state.controls.motorReversed.properties.set(1)
     state.dialog.properties.close()
     ui.advance(c)
     ui.advance(c)
     mock.settle()
-    assert(not c.modelSettingsUi and document().flight.history == false)
+    assert(not c.modelSettingsUi and document().flight.motorReversed)
     assert(control.published == 1 and control.closed == 1, "Back preserves a queued confirmed change")
 end

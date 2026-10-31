@@ -2,7 +2,26 @@
 
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
-local chart = fixture.module("panels/chart.lua")
+local chartModule = fixture.module("panels/chart.lua")
+local function refresh(panel)
+    local interval, unfinished
+    for _ = 1, 2000 do
+        interval, unfinished = chartModule.refresh(panel)
+        if not unfinished then
+            return interval
+        end
+    end
+    error("chart frame did not finish")
+end
+local chart = {}
+for key, value in pairs(chartModule) do
+    chart[key] = value
+end
+chart.refresh = refresh
+chart.update = function(panel, rect)
+    chartModule.update(panel, rect)
+    refresh(panel)
+end
 local host = fixture.module("lib/panel_host.lua")
 local equal = assert(loadfile(root .. "/tests/support/assertions.lua"))().assertEqual
 
@@ -120,7 +139,7 @@ equal(scales.series[2].high, 30)
 fixture.reset()
 fixture.radio.values[300] = 0
 local context = fixture.createLoaded(nil, { Layout = "review-chart", Theme = "modern-dark" })
-fixture.pump(context, 40)
+fixture.pump(context, 120)
 equal(#context.errors, 0, table.concat(context.errors, "\n"))
 equal(#context.panels, 4)
 local power = fixture.instanceOf(context, "power")
@@ -150,10 +169,14 @@ checkDurationCorner(power)
 equal(power.indicator, nil, "charts must not create a recording dot")
 equal(power.series[1].feed.available, false)
 equal(power.status.properties.text, "WAITING FOR ARM")
-equal(power.pauseMarker, nil, "no disarm boundary may be created before the first recording")
+equal(#power.armMarkers.markerKeys, 0, "no arm boundary may be created before the first recording")
 fixture.radio.values[300] = 1024
 fixture.pump(context, 40)
+assert(fixture.pumpUntil(context, function()
+    return not power.framePhase and power.series[1].snapshot.available
+end, 500))
 equal(power.status.properties.text, "")
+equal(#power.armMarkers.markerKeys, 0, "the initial arming must not draw a vertical boundary")
 assert(power.session.recording)
 assert(power.series[1].low < 24 and power.series[1].high > 24)
 equal(power.series[1].feed.value, 24)
@@ -265,26 +288,33 @@ assert(power.showExtrema, "two sources must retain their extrema in a standard s
 assert(fixture.instanceOf(context, "recording").showExtrema, "a tall panel must fit three enlarged legend entries")
 equal(power.series[1].runs[1].line.kind, power.series[2].runs[1].line.kind)
 local fixed = fixture.instanceOf(context, "fixed")
+assert(fixture.pumpUntil(context, function()
+    return fixed.series[1].low ~= nil
+end, 500))
 equal(fixed.series[1].low, 0)
 equal(fixed.series[1].high, 200)
 local elapsed = power.session.elapsed
 fixture.radio.values[300] = 0
 fixture.pump(context, 40)
+assert(fixture.pumpUntil(context, function()
+    return not power.framePhase and not power.session.recording
+end, 500))
 local paused = power.session.elapsed
 assert(paused >= elapsed)
-assert(not power.pauseMarker.hidden, "disarming must mark the boundary before any rearmed sample exists")
-equal(
-    power.pauseMarker.properties.x,
-    power.area.x + math.floor((paused - power.start) / power.window * power.area.w + 0.5),
-    "the disarm marker must use the exact stopped armed time"
-)
-equal(power.pauseMarker.properties.y, power.area.y)
-equal(power.pauseMarker.properties.h, power.area.h)
-equal(power.pauseMarker.properties.dashGap, 3)
-local pauseMarker, pausedRevision = power.pauseMarker, power.series[1].feed.plotRevision
+equal(#power.resumeMarkers.markerKeys, 0, "pausing must not add a band or an axis break")
+equal(power.status.properties.text, "", "pausing must not print a status")
+local disarmColumn = math.floor((paused - power.start) / power.window * power.area.w + 0.5) + 1
+local disarmMarker = power.armMarkers.markers[-disarmColumn]
+assert(disarmMarker and disarmMarker.active)
+equal(disarmMarker.object.kind, "triangle")
+assert(disarmMarker.object.properties.pts[3][2] > disarmMarker.object.properties.pts[1][2])
+local pausedRevision = power.series[1].feed.plotRevision
 chart.update(power, power.rect)
-equal(power.pauseMarker, pauseMarker, "reflow must reuse the disarm marker")
-assert(not power.pauseMarker.hidden)
+assert(
+    power.armMarkers.markers[-disarmColumn] == disarmMarker
+        or power.backPlot.armMarkers.markers[-disarmColumn] == disarmMarker,
+    "reflow must reuse pooled markers"
+)
 fixture.radio.values[100] = 3
 fixture.pump(context, 40)
 equal(power.session.elapsed, paused)
@@ -292,18 +322,31 @@ equal(power.series[1].feed.value, 24, "the legend must freeze while disarmed")
 equal(power.series[1].feed.plotRevision, pausedRevision, "showing a disarm marker must not add fake telemetry samples")
 fixture.radio.values[300] = 1024
 fixture.pump(context, 40)
+assert(fixture.pumpUntil(context, function()
+    return not power.framePhase and power.series[1].snapshot.value == 3
+end, 500))
 equal(power.series[1].feed.value, 3)
 equal(power.series[1].feed.min, 3)
 equal(power.series[1].feed.max, 24)
-assert(power.series[1].runCount >= 2, "rearm must not connect separate recording segments")
-assert(#power.series[1].markerKeys > 0, "rearm boundary must be marked")
-assert(power.pauseMarker.hidden, "rearming must hand the boundary back to the recorded gap markers without an overlay")
+assert(power.series[1].runCount >= 3, "rearm adds a dotted connector between separate solid segments")
+assert(power.series[1].runs[2].dotted and power.series[1].runs[2].connector)
+equal(power.status.properties.text, "")
+equal(#power.series[1].markerKeys, 0, "a recording pause must not add a full-height telemetry-gap marker")
+local seam = power.resumeMarkers.markers[power.resumeMarkers.markerKeys[#power.resumeMarkers.markerKeys]]
+assert(seam and seam.active, "resuming must mark the inserted gap")
+assert(not seam.object.hidden)
+equal(seam.object.properties.w, 24, "the inserted gap must retain the wider spacing")
+equal(seam.object.properties.color, power.theme.color.surface, "the gap must not darken the chart")
+equal(seam.object.parent, power.gapRoot, "the gap only masks flight shading, below grid and telemetry")
+equal(seam.object.kind, "rectangle")
+equal(seam.slashes, nil, "there must be no pause icon")
 for _, size in ipairs({ { 320, 240 }, { 800, 480 }, { 480, 272 } }) do
     context.zone.w, context.zone.h = size[1], size[2]
     fixture.pump(context, 60)
     equal(#context.errors, 0, table.concat(context.errors, "\n"))
     for _, entry in ipairs(context.panels) do
         local panel = entry.instance
+        chart.refresh(panel)
         assert(panel.area.w > 0 and panel.area.h > 0)
         assert(panel.area.legendX >= panel.area.x + panel.area.w)
         for _, item in ipairs(panel.series) do
@@ -345,7 +388,9 @@ assert(fixture.lvglMock.replacedFontRefCount() == 0, "chart reflow must reuse fo
 
 fixture.radio.values[getFieldInfo("RxBt").id] = 6.1
 fixture.radio.values[getFieldInfo("Curr").id] = 2.0
-fixture.pump(context, 60)
+assert(fixture.pumpUntil(context, function()
+    return power.series[1].value.properties.text == "6.1" and power.series[2].value.properties.text == "2.0"
+end, 500))
 equal(power.series[1].value.properties.text, "6.1")
 equal(power.series[2].value.properties.text, "2.0")
 equal(power.series[1].unit.properties.text, "V")
@@ -539,6 +584,7 @@ local function finishDrawing(panel)
         local item = panel.series[1]
         if
             not panel.pending
+            and not panel.framePhase
             and item.drawnRevision == item.feed.plotRevision
             and item.drawnVersion == panel.version
             and panel.gridVersion == panel.version
@@ -781,7 +827,7 @@ equal(lightPower.baseline.properties.color, lightPower.theme.color.chartGrid, "b
 
 finishDrawing(dense)
 local originalRanges, rangeUpdates = chart.ranges, 0
-chart.ranges = function(panel)
+chartModule.ranges = function(panel)
     rangeUpdates = rangeUpdates + 1
     originalRanges(panel)
 end
@@ -791,7 +837,7 @@ equal(rangeUpdates, 0, "unchanged recordings must reuse their vertical ranges")
 denseItem.readingRevision = nil
 chart.refresh(dense)
 equal(rangeUpdates, 1, "a changed reading revision must recompute vertical ranges")
-chart.ranges = originalRanges
+chartModule.ranges = originalRanges
 
 local historyService = light.serviceRuntime.byId.history
 local telemetryService = light.serviceRuntime.byId.telemetry

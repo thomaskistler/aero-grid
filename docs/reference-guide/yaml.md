@@ -116,13 +116,14 @@ is used only when the widget setting is unset. A qualified shared flight with
 the same effective arm condition keeps recording through disarm grace until
 confirmed flight end. Otherwise disarming pauses immediately. Rearming during
 grace does not break or duplicate a flight; rearming after a pause resumes the
-same history with a marked break. The horizontal axis counts cumulative
-recording time, including retained grace samples. A thin green top-of-plot
-line and boundary ticks show actual flight start/end times; no logical-switch
+same history with a gap and dotted connectors. The horizontal axis counts cumulative
+recording time, including retained grace samples. Neutral background bands
+show actual flight times; bottom-axis triangles mark arming and disarming
+except the first arming. No logical-switch
 output or Flight counter panel is needed. Growing starts at one minute and expands to
 the next whole minute when exceeded; its duration is not configurable. Rolling
 keeps only the latest plot window but retains raw lifetime min/max. History is
-RAM-only and clears on dashboard reload. Connected linear compression bounds
+RAM-only and clears on dashboard reload or model-wide session reset. Connected linear compression bounds
 error to half a step of each metric's `precision` (sensor precision when omitted);
 with smoothing, this bound applies to the filtered signal. Each distinct
 source/options recording holds 6,144 knots, covering at least 10 minutes at 10 Hz
@@ -170,13 +171,13 @@ Drawer title: **Flight counter** · [drawer settings and behavior](../panels/fli
 | `label` | string | `FLT` | Any string | Label | Heading. |
 | `armSwitch` | string | `""` | Blank, physical switch position, or logical switch such as `L01` | Arm switch position | Legacy fallback only; new panels use model Armed. Version-1–3 layouts retain the former `SF^` default when omitted. |
 
-Configure detection, CSV history, and the optional logical-switch
-output and optional **Smart detection** in **AeroGrid → Model settings**, not in new panel YAML. The old
+Configure flight detection, optional **Smart detection**, and the optional
+logical-switch output in **AeroGrid → Model settings**, not in new panel YAML. The old
 `motorSource`, `motorReversed`, `minMotorPercent`, `minFlightDuration`,
-`disarmDuration`, and `history` fields remain readable for
+and `disarmDuration` fields remain readable for
 legacy migration. Do not remove the last legacy counter before saving Model
 settings. Flight tracking then continues independently of counter placement.
-The obsolete `announcements` field is ignored; configure sounds using the
+The obsolete `announcements` and `history` fields are ignored; configure sounds using the
 flight-active logical switch and EdgeTX Special Functions.
 
 ```yaml

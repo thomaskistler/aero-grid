@@ -717,6 +717,7 @@ function module.new(dependencies)
             end
         end
         context.panels = {}
+        context.refreshOwner = nil
         context.rejected = {}
         context.errors = {}
         context.notices = {}

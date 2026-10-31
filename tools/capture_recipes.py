@@ -235,12 +235,12 @@ def load_recipe(path):
                 raise ValueError("sample.bitmap must be an existing PNG with a firmware-safe filename")
     elif recipe["panel"] == "flight-counter":
         fields(sample, ("count", "rssi"))
-        integer(sample["count"], len(panels), 999, "sample.count")
+        integer(sample["count"], 1, 999, "sample.count")
         number(sample["rssi"], 1, 100, "sample.rssi")
         if (config.get("armSwitch") != "SFv" or config.get("motorSource") != "ch3"
-                or config.get("motorReversed", False) or config.get("history") is not False):
+                or config.get("motorReversed", False)):
             raise ValueError("Flight counter capture requires SFv armSwitch, ch3 motor, "
-                             "non-reversed motor, and disabled history")
+                             "and non-reversed motor")
         number(config.get("minFlightDuration"), 0.2, 2, "config.minFlightDuration")
     elif recipe["panel"] == "state":
         fields(sample, ("switches",))
@@ -336,7 +336,7 @@ def readiness(recipe):
     if recipe["panel"] == "chart":
         return """            local instance = entry.instance
             if not instance.session or instance.session.elapsed < 1500 or instance.session.recording
-                or instance.pending or instance.gridVersion ~= instance.version then return end
+                or instance.pending or instance.framePhase or instance.gridVersion ~= instance.version then return end
             if instance.session.flightLast ~= 1 or not instance.flightBands
                 or not instance.flightBands[1]
                 or instance.flightDrawnRevision ~= instance.session.flightRevision then return end
@@ -535,8 +535,8 @@ return {
 }
 """
     if recipe["panel"] == "flight-counter":
-        # Each gallery instance qualifies once against the isolated real GV9.
-        initial = recipe["sample"]["count"] - len(recipe["panels"])
+        # All gallery instances share one qualification against the isolated GV9.
+        initial = recipe["sample"]["count"] - 1
         return f"""model.setGlobalVariable(8, 0, {initial})
 assert(model.getGlobalVariable(8, 0) == {initial}, "capture could not initialize GV9")
 local armIndex = assert(getSwitchIndex("SF" .. CHAR_DOWN))

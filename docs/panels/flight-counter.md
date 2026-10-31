@@ -36,7 +36,6 @@ change saves automatically, separately from layout changes. Back closes the page
 | **Start detection window (s)** | 30 | Observation window during which armed state, sufficient motor output, and live telemetry must hold continuously to confirm flight start. |
 | **End detection window (s)** | 10 | Observation window of continuous disarming required to confirm flight end. Rearming within this window keeps the flight open. |
 | **Smart detection** | off | Allow supported altitude or GPS groundspeed sensors to qualify a flight earlier. Standard motor qualification remains available. |
-| **Write CSV history** | on | Append confirmed completed flights to `/flights-history.csv` on the SD card. |
 | **Flight status switch** | none | Native logical-switch picker for an optional dedicated Sticky logical switch, on while a detected flight is active. Inverted switches are not supported. |
 
 **Model arming** applies to charts, navigation, and flight detection.
@@ -96,13 +95,6 @@ The existing total is kept, including one previously written by EdgeTX
 Flights. Invalid or unsavable counts produce an error rather than wrapping.
 Do not also run EdgeTX Flights or another GV9 flight counter. Configure other
 flight modes to inherit GV9 from flight mode 0.
-
-**Write CSV history** records only confirmed completions. It uses the same
-five columns as EdgeTX Flights: flight date, model name, flight count,
-duration, and model identifier. Model names are CSV-quoted when needed.
-Duration runs from the start of qualification to the final disarming; the
-disarm grace period is excluded. History does not restore or calculate GV9.
-SD-card failures are reported without discarding the already saved count.
 
 If dashboard arm conditions conflict or settings change during a flight, the
 current flight finishes using its original condition and output. New flights

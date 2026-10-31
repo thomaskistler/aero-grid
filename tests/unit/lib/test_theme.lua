@@ -17,6 +17,13 @@ local themes = assert(loadfile(root .. "/tests/support/theme_catalog.lua"))()(ro
 assert(theme.setCatalog(themes))
 local customIndex = 0
 
+local function quantized(rgb)
+    local r = math.floor(rgb / 65536) % 256
+    local g = math.floor(rgb / 256) % 256
+    local b = rgb % 256
+    return theme.fromRgb565(math.floor(r / 8) * 2048 + math.floor(g / 4) * 32 + math.floor(b / 8))
+end
+
 local function buildCustomTheme(overrides)
     customIndex = customIndex + 1
     local base = themes.themes[1]
@@ -55,6 +62,8 @@ end
 
 local function testModernThemeBuilds()
     local resolved = theme.build("modern-dark")
+    assertions.assertEqual(resolved.chartColor.flightBand, 0xFFFFFF)
+    assertions.assertEqual(theme.build("modern-light").chartColor.flightBand, 0x000000)
     assertions.assertEqual(resolved.rgb.text, 0xF4F6F7)
     assertions.assertEqual(resolved.rgb.textMuted, 0xDCE2E6)
     assertions.assertEqual(resolved.rgb.textFaint, 0xC4CDD3)
@@ -65,7 +74,7 @@ local function testModernThemeBuilds()
         chartGreen = "green",
         chartAmber = "amber",
         chartOrange = "orange",
-        chartGrid = "border",
+        chartGrid = "track",
     }) do
         assertions.assertEqual(resolved.rgb[key], resolved.rgb[fallback], "dark charts retain their existing palette")
         assertions.assertEqual(resolved.color[key], resolved.color[fallback])
@@ -138,12 +147,6 @@ local function testModernLightTheme()
         assert(theme.contrast(tokens.surface, tokens[key]) >= minimum, key .. " fails light surface contrast")
     end
     -- The TX16S framebuffer quantizes colors; check the pixels, not only RGB24.
-    local function quantized(rgb)
-        local r = math.floor(rgb / 65536) % 256
-        local g = math.floor(rgb / 256) % 256
-        local b = rgb % 256
-        return theme.fromRgb565(math.floor(r / 8) * 2048 + math.floor(g / 4) * 32 + math.floor(b / 8))
-    end
     for key, accent in pairs({
         chartCyan = "cyan",
         chartGreen = "green",
@@ -198,7 +201,28 @@ local function testOptionalChartColors()
     assert(not validated and string.find(err, "chartCyan must be a 24-bit color", 1, true))
 end
 
+local function testGridContrastInsideFlightBands()
+    for _, name in ipairs({ "modern-dark", "modern-light" }) do
+        local resolved = theme.build(name)
+        local surface = quantized(resolved.rgb.surface)
+        local tint = resolved.light and 0 or 255
+        local function channel(value)
+            return math.floor(value + (tint - value) * 16 / 255 + 0.5)
+        end
+        local band = channel(math.floor(surface / 65536) % 256) * 65536
+            + channel(math.floor(surface / 256) % 256) * 256
+            + channel(surface % 256)
+        local grid = quantized(resolved.rgb.chartGrid)
+        assert(theme.contrast(surface, grid) >= 1.5, name .. " minute lines must remain visible outside flight bands")
+        assert(
+            theme.contrast(quantized(band), grid) >= 1.5,
+            name .. " minute lines must remain visible inside flight bands at RGB565 precision"
+        )
+    end
+end
+
 local function run()
+    testGridContrastInsideFlightBands()
     testThemeVersionIsRequiredAndSupported()
     testModernThemeBuilds()
     testModernLightTheme()

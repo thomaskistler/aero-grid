@@ -23,6 +23,7 @@
 ---@field update? fun(instance: any, rect: table, settings: table)
 ---@field refresh? fun(instance: any)
 --- A numeric refresh result selects the next interval in 10ms ticks.
+--- A second result of true requests consecutive turns until this update finishes.
 ---@field background? fun(instance: any)
 ---@field event? fun(instance: any, event: any): boolean
 ---@field destroy? fun(instance: any)
@@ -275,6 +276,7 @@ end
 ---@return boolean ok
 ---@return string? error Set only on the call that first fails.
 ---@return any result First value returned by the callback.
+---@return boolean? unfinished Whether this staged refresh needs another turn.
 function panelHost.dispatch(entry, event, ...)
     if type(entry) ~= "table" or entry.failed then
         return false
@@ -285,7 +287,7 @@ function panelHost.dispatch(entry, event, ...)
         return true
     end
 
-    local ok, resultOrError = pcall(callback, entry.instance, ...)
+    local ok, resultOrError, unfinished = pcall(callback, entry.instance, ...)
     if ok and event == "refresh" and type(resultOrError) == "number" then
         if resultOrError < 1 or resultOrError > 6000 or resultOrError ~= math.floor(resultOrError) then
             ok, resultOrError = false, "refresh interval must be a whole number from 1 to 6000 ticks"
@@ -294,7 +296,7 @@ function panelHost.dispatch(entry, event, ...)
         end
     end
     if ok then
-        return true, nil, resultOrError
+        return true, nil, resultOrError, unfinished
     end
 
     entry.failed = true

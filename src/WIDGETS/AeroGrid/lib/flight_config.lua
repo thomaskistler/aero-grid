@@ -8,7 +8,6 @@ local defaults = {
     minMotorPercent = 25,
     minFlightDuration = 30,
     disarmDuration = 10,
-    history = true,
     flightSwitch = "",
 }
 
@@ -43,7 +42,7 @@ function config.validate(values)
     if not channel or tonumber(channel) < 1 or tonumber(channel) > 32 then
         errors[#errors + 1] = "Motor channel must be CH1-CH32"
     end
-    for _, key in ipairs({ "motorReversed", "smartDetection", "history" }) do
+    for _, key in ipairs({ "motorReversed", "smartDetection" }) do
         if type(values[key]) ~= "boolean" then
             errors[#errors + 1] = key .. " must be a boolean"
         end
@@ -75,7 +74,6 @@ function config.key(values)
         "minMotorPercent",
         "minFlightDuration",
         "disarmDuration",
-        "history",
         "flightSwitch",
     }) do
         local value = values[key]

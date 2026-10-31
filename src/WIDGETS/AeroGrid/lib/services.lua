@@ -121,10 +121,6 @@ function services.environment(overrides)
         getGlobalVariable = callable(modelApi.getGlobalVariable),
         setGlobalVariable = callable(modelApi.setGlobalVariable),
         getGlobalVariableDetails = callable(modelApi.getGlobalVariableDetails),
-        getDateTime = callable(overrides.getDateTime) or callable(getDateTime),
-        fileOpen = callable(overrides.fileOpen) or callable(io.open),
-        fileWrite = callable(overrides.fileWrite) or callable(io.write),
-        fileClose = callable(overrides.fileClose) or callable(io.close),
     }
 end
 

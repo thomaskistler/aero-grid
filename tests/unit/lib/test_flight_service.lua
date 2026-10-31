@@ -8,7 +8,6 @@ local equal = assert(loadfile(root .. "/tests/support/assertions.lua"))().assert
 local modules = {
     telemetry = load("lib/telemetry_service.lua"),
     control = load("lib/control_service.lua"),
-    model = load("lib/model_service.lua"),
     smart = load("lib/smart_flight.lua"),
 }
 
@@ -22,6 +21,8 @@ local function fixture(cadence)
         writes = 0,
         sounds = 0,
         lines = {},
+        fileAccesses = 0,
+        dateReads = 0,
         sticky = false,
         commands = {},
         full = false,
@@ -98,6 +99,7 @@ local function fixture(cadence)
             return { min = 0, max = 999, prec = 0 }
         end,
         getDateTime = function()
+            radio.dateReads = radio.dateReads + 1
             return { year = 2026, mon = 10, day = 28, hour = 1, min = 0 }
         end,
         playTone = function()
@@ -105,6 +107,7 @@ local function fixture(cadence)
         end,
         playNumber = function() end,
         fileOpen = function(_, access)
+            radio.fileAccesses = radio.fileAccesses + 1
             return access ~= "r" and {} or nil
         end,
         fileWrite = function(_, line)
@@ -149,6 +152,75 @@ local function fixture(cadence)
     return owner, radio, step, first, second, participant
 end
 
+do
+    local owner, radio, step, first, second = fixture()
+    radio.arms[3] = true
+    owner:setDocument({ revision = 2, flight = owner.document.flight, sessionReset = "L03" })
+    local function pump(count)
+        for _ = 1, count do
+            step()
+            owner:pollReset(radio.now)
+            owner:pollReset(radio.now)
+        end
+    end
+    local epoch = owner.epoch
+    pump(10)
+    equal(owner.epoch, epoch, "booting with reset held is not an activation")
+    radio.arms[1] = true
+    pump(15)
+    equal(radio.writes, 1)
+    equal(owner.view.active, true)
+    owner.session.altitudeReference, owner.session.referenceCandidate, owner.session.referencePending = 100, 99, 101
+    first.dashboardLifecycle, second.dashboardLifecycle = {}, {}
+    first.navigationHomes, second.navigationHomes = { saved = true }, { saved = true }
+    radio.arms[3] = false
+    pump(3)
+    radio.arms[3], radio.full = true, true
+    pump(3)
+    equal(owner.epoch, epoch + 1)
+    equal(owner.view.active, false)
+    equal(owner.view.startedAt, nil)
+    equal(owner.session.altitudeReference, nil)
+    equal(owner.session.referenceCandidate, nil)
+    equal(owner.session.referencePending, nil)
+    equal(#owner.events, 0, "reset does not manufacture a completed flight")
+    equal(radio.writes, 1, "reset must not write the durable total")
+    assert(first.sessionResetPending and second.sessionResetPending, "all matching dashboards are invalidated")
+    assert(next(first.navigationHomes) == nil and next(second.navigationHomes) == nil)
+    assert(owner.output and not owner.output.desired, "a full output queue must retain the release request")
+    radio.full = false
+    owner.members[first].pending, owner.members[second].pending = false, false
+    pump(20)
+    equal(owner.epoch, epoch + 1, "holding reset cannot repeatedly clear data")
+    equal(radio.sticky, false, "the dedicated flight output is released with retry")
+    equal(radio.writes, 1, "an already armed flight cannot qualify twice")
+    radio.arms[1] = false
+    pump(4)
+    radio.arms[1] = true
+    pump(15)
+    equal(radio.writes, 2, "a new arm after a fresh disarm can qualify normally")
+    radio.arms[3] = false
+    pump(3)
+    radio.arms[3] = nil
+    pump(3)
+    assert(owner.view.resetError, "unavailable reset input must be reported")
+    radio.arms[3] = true
+    pump(3)
+    equal(owner.epoch, epoch + 1, "recovery while held is not a reset edge")
+    equal(owner.view.resetError, nil)
+    assert(not pcall(owner.validateOutput, owner, "L03", "L01", "!L03"))
+end
+
+do
+    local owner, radio, step = fixture()
+    radio.arms[1] = true
+    step(2)
+    equal(owner.session.phase, "starting")
+    owner:resetSession(radio.now)
+    step(20)
+    equal(radio.writes, 0, "reset cancels an unqualified start without counting it later")
+end
+
 local owner, radio, step, first, second, participant = fixture()
 radio.arms[1] = true
 step(15)
@@ -178,7 +250,9 @@ step(15)
 equal(owner.view.active, false)
 equal(radio.commands[#radio.commands], false, "pinned old-arm completion clears the old output")
 equal(radio.sounds, 0)
-equal(#radio.lines, 2, "one header and one flight row")
+equal(#radio.lines, 0, "completed flights must not write CSV rows")
+equal(radio.fileAccesses, 0, "flight detection must not access CSV files")
+equal(radio.dateReads, 0, "flight detection must not read the wall clock for CSV timestamps")
 local boundaries = owner:boundaries(0)
 equal(#boundaries, 2)
 equal(boundaries[2].kind, "end")
@@ -337,7 +411,7 @@ equal(
     "equivalent channel spelling and numeric representations must reach consensus"
 )
 
--- A real Smart input service feeds the same shared count/history/output
+-- A real Smart input service feeds the same shared count/output
 -- path and preserves the documented candidate/observation timestamp contract.
 owner, radio, step = fixture()
 radio.sensors = { [12] = { type = 0, id = 9, instance = 0, unit = 9, prec = 2, name = "High" } }
@@ -376,7 +450,9 @@ events = owner:boundaries(0)
 equal(#events, 2)
 equal(events[2].reason, "smart-altitude")
 equal(radio.sounds, 0)
-equal(#radio.lines, 2)
+equal(#radio.lines, 0)
+equal(radio.fileAccesses, 0)
+equal(radio.dateReads, 0)
 equal(radio.commands[#radio.commands], false)
 
 owner, radio, step = fixture()
@@ -440,7 +516,8 @@ for _, path in ipairs({ "altitude", "speed" }) do
             advance(50)
             equal(#broker:boundaries(0), 2)
             equal(state.sounds, 0)
-            equal(#state.lines, 2)
+            equal(#state.lines, 0)
+            equal(state.fileAccesses, 0)
             equal(state.commands[#state.commands], false)
         end
     end

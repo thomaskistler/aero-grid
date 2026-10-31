@@ -72,6 +72,7 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
                 and key ~= "revision"
                 and key ~= "flight"
                 and key ~= "armed"
+                and key ~= "sessionReset"
             then
                 return nil, "Unknown model settings field: " .. tostring(key)
             end
@@ -79,11 +80,15 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
         if document.armed ~= nil and not armed.valid(document.armed) then
             return nil, "Armed must be blank, a physical switch position, or a logical switch (L01-L64)"
         end
+        if document.sessionReset ~= nil and not armed.valid(document.sessionReset) then
+            return nil, "Session reset must be blank, a physical switch position, or a logical switch (L01-L64)"
+        end
         if document.flight ~= nil then
             if type(document.flight) ~= "table" then
                 return nil, "flight must be a configuration table"
             end
             document.flight.announcements = nil
+            document.flight.history = nil
             local defaults = config.defaults()
             for key in pairs(document.flight) do
                 if defaults[key] == nil then
@@ -96,6 +101,14 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
                 return nil, table.concat(errors, "; ")
             end
             document.flight = resolved
+            if
+                document.sessionReset ~= nil
+                and document.sessionReset ~= ""
+                and resolved.flightSwitch ~= ""
+                and string.gsub(document.sessionReset or "", "^!", "") == resolved.flightSwitch
+            then
+                return nil, "Flight status switch cannot be the Session reset input"
+            end
         end
         return copy(document)
     end
@@ -142,7 +155,7 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
         end
         return document, info
     end
-    local function save(self, filename, baseRevision, flight, armedCondition)
+    local function save(self, filename, baseRevision, flight, armedCondition, sessionReset)
         local matches, identityError = identity(filename)
         if not matches then
             return false, identityError
@@ -163,6 +176,7 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
             revision = baseRevision + 1,
             flight = copy(flight),
             armed = armedCondition == nil and previous.armed or armedCondition,
+            sessionReset = sessionReset == nil and previous.sessionReset or sessionReset,
         }, filename)
         if not document then
             return false, validationError
@@ -210,8 +224,8 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
         end
         return true, copy(checked)
     end
-    function instance:save(filename, baseRevision, flight, armedCondition)
-        local ok, saved, result = pcall(save, self, filename, baseRevision, flight, armedCondition)
+    function instance:save(filename, baseRevision, flight, armedCondition, sessionReset)
+        local ok, saved, result = pcall(save, self, filename, baseRevision, flight, armedCondition, sessionReset)
         if not ok then
             return false, "Cannot save model settings: " .. tostring(saved)
         end

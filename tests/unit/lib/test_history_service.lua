@@ -104,6 +104,8 @@ local history, session, feed, poll = harness()
 poll(0, 0, 12)
 equal(feed.available, false, "disarmed readings must not enter the recording")
 poll(100, 1, 12)
+equal(session.resumeLast, 0, "the first recording must not invent a pause")
+equal(session.armLast, 0, "initial arming starts the recording without a boundary line")
 poll(200, 1, 10)
 poll(300, 1, 13)
 equal(feed.min, 10)
@@ -112,7 +114,9 @@ equal(feed.value, 13)
 equal(session.elapsed, 200)
 poll(400, 0, 1)
 local paused = session.elapsed
+equal(session.stoppedAt, paused, "recording stop is available immediately, before any resume")
 poll(10000, 0, 30)
+equal(session.resumeLast, 0, "pausing must not mark a seam before recording resumes")
 equal(session.elapsed, paused, "disarmed wall time must not consume the chart")
 equal(feed.value, 13)
 poll(11000, 1, 11)
@@ -120,10 +124,18 @@ equal(feed.min, 10, "rearming must retain extrema")
 equal(feed.max, 13)
 equal(session.elapsed, paused)
 equal(session.segment, 2)
-local at, value, broken = history:point(feed, feed.last)
+equal(session.stoppedAt, nil, "resuming moves the pending stop into the retained boundary journal")
+local at, value, broken, resumed = history:point(feed, feed.last)
 equal(at, paused)
 equal(value, 11)
 equal(broken, true)
+equal(resumed, true, "resumed samples retain their break reason separately from telemetry gaps")
+equal(session.resumeLast, 1)
+equal(history:recordingBreak(session, 1), paused, "resume boundaries use cumulative time, excluding the pause")
+equal(history:preview():recordingBreak(session, 1), paused, "previews expose the same read-only resume journal")
+equal(history:recordingBreak(session, 0), nil)
+equal(history:recordingBreak(session, 2), nil)
+equal(history:recordingBreak({}, 1), nil)
 equal(history:subscribe("V", { armSwitch = "L01" }), feed, "matching histories share storage")
 equal(
     history:subscribe("V", { armSwitch = "L01", windowSeconds = 30 }),
@@ -172,8 +184,10 @@ equal(feed.value, 11)
 poll(11200, 1, 0)
 equal(feed.value, 0, "live zero is a valid sample")
 equal(feed.min, 0)
-at, value, broken = history:point(feed, feed.last)
+at, value, broken, resumed = history:point(feed, feed.last)
 equal(broken, true, "dropouts break the trace")
+equal(resumed, false, "a dropout immediately after a resumed sample is still a telemetry gap")
+equal(session.resumeLast, 1, "telemetry loss must not create a compressed-time recording seam")
 poll(11300, 1, 0 / 0)
 equal(feed.value, 0, "non-finite samples must not enter history")
 
@@ -231,6 +245,57 @@ equal(firstSession.available, true)
 equal(firstSession.segment, previousSegment + 1, "switch recovery must start a disconnected segment")
 equal(firstFeed.value, 50)
 equal(firstSession.elapsed, unavailableElapsed, "unavailable time must not consume the chart")
+equal(
+    independent:recordingBreak(firstSession, firstSession.resumeLast),
+    unavailableElapsed,
+    "recovering an unavailable arm source also leaves a recording seam"
+)
+
+local bounded, boundedSession, boundedFeed, boundedPoll = harness({ timeRange = "rolling", windowSeconds = 30 })
+boundedPoll(0, 1, 12)
+for index = 1, historyModule.CAPACITY + 2 do
+    boundedPoll(index * 20, 0, 12)
+    boundedPoll(index * 20 + 10, 1, 12)
+end
+equal(boundedSession.resumeLast - boundedSession.resumeFirst + 1, historyModule.CAPACITY)
+equal(bounded:recordingBreak(boundedSession, boundedSession.resumeFirst - 1), nil)
+equal(bounded:recordingBreak(boundedSession, boundedSession.resumeLast), boundedSession.elapsed)
+equal(#bounded.sessions[1].resumes, historyModule.CAPACITY, "the recording seam journal must stay bounded")
+equal(#bounded.sessions[1].armValues, historyModule.CAPACITY, "arm directions use the same bounded ring")
+equal(select(2, bounded:armBoundary(boundedSession, boundedSession.armLast)), true)
+equal(select(2, bounded:armBoundary(boundedSession, boundedSession.armLast - 1)), false)
+equal(select(2, bounded:preview():armBoundary(boundedSession, boundedSession.armLast)), true)
+assert(#bounded.entries[1].resumeBits <= historyModule.CAPACITY // 32, "break reasons must use a bounded bitset")
+equal(select(4, bounded:point(boundedFeed, boundedFeed.last)), true, "resume bits survive physical ring reuse")
+
+local summarized, _, summaryFeed, summaryPoll = harness()
+for _, sample in ipairs({
+    { 0, 1, 5 },
+    { 10, 1, 5 },
+    { 20, 0, 5 },
+    { 30, 1, 5 },
+    { 40, 1, 5 },
+    { 50, 0, 5 },
+    { 60, 1, 5 },
+    { 70, 1 },
+    { 80, 1, 5 },
+    { 90, 1, 5 },
+    { 100, 0, 5 },
+    { 110, 1, 5 },
+    { 120, 1, 5 },
+    { 130, 0, 5 },
+    { 140, 1, 5 },
+}) do
+    summaryPoll(sample[1], sample[2], sample[3])
+end
+local last, _, _, interrupted, resumesOnly = summarized:block(summaryFeed, 1, 4, math.huge)
+equal(last, 4)
+equal(interrupted, true)
+equal(resumesOnly, true, "same-pixel block summaries distinguish recording pauses")
+last, _, _, interrupted, resumesOnly = summarized:block(summaryFeed, 5, 8, math.huge)
+equal(last, 8)
+equal(interrupted, true)
+equal(resumesOnly, false, "a mixed block must preserve a real telemetry-gap marker")
 
 local smoothed, _, smoothFeed, smoothPoll = harness({ smoothing = "medium", windowSeconds = 30 })
 smoothPoll(0, 1, 0)

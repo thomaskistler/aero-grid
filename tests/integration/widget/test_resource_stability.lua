@@ -34,9 +34,23 @@ local function finish()
         assert(output.rows[1].feed.available, "output service was not exercised")
     end
     if fixture.instanceOf(context, "power") then
-        for _ = 1, 100 do
+        local ready = false
+        for _ = 1, 500 do
             refresh()
+            ready = true
+            for _, entry in ipairs(context.panels) do
+                local panel = entry.instance
+                ready = ready and #panel.grid == 12 and panel.backPlot and #panel.backPlot.grid == 12
+                for index, item in ipairs(panel.series or {}) do
+                    local back = panel.backPlot and panel.backPlot.series[index]
+                    ready = ready and item.runs[1] and item.runs[1].line and back and back.runs[1] and back.runs[1].line
+                end
+            end
+            if ready then
+                break
+            end
         end
+        assert(ready, "both reusable chart buffers must finish mounting before resource measurement")
         for _, entry in ipairs(context.panels) do
             for _, item in ipairs(entry.instance.series or {}) do
                 assert(item.runs[1] and item.runs[1].line, "chart traces did not finish mounting")

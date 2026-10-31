@@ -98,10 +98,10 @@ does not consume scheduled work.
 | Service module | Responsibility |
 | --- | --- |
 | `telemetry_service.lua` | Source resolution, readings, units, precision, freshness, and link status. |
-| `model_service.lua` | Model identity/image, timers, flight mode, TX voltage, and flight history. |
+| `model_service.lua` | Model identity/image, timers, flight mode, and TX voltage. |
 | `control_service.lua` | Trims, final channel outputs and their trim associations, switch conditions, GV snapshots, and verified GV9 FM0 increments. |
 | `armed_service.lua` | Saved model Armed precedence, legacy switch fallback, and immutable effective arm views over shared Control polls. |
-| `flight_service.lua` | Shared model-flight detection, once-only count/history, optional Sticky output, and timestamped boundaries. |
+| `flight_service.lua` | Shared model-flight detection, once-only count, optional Sticky output, and timestamped boundaries. |
 | `smart_flight.lua` | Optional protocol-identified flight sensors with per-sensor receipt/freshness and SI units. |
 | `extrema_service.lua` | Sensor extrema and dashboard flight-session tracking. |
 | `navigation_service.lua` | GPS fix, pilot/home position, distance, and north-up bearing. |
@@ -181,7 +181,13 @@ to the cumulative recording axis; qualification/confirmation receipt times do
 not place boundaries. Grace samples remain after the mapped end. A 64-interval
 ring supplies scalar `history:flight(sessionView, index)` reads, independent of
 metric subscriptions. Shaded flight bands are staged in a bounded native-object
-pool behind the grid and traces.
+pool behind the grid and traces. Each chart snapshots its inputs and stages a
+complete plot in a second reusable buffer before swapping it on screen.
+Arm/disarm triangles use a bounded directional transition journal.
+A separate resume journal drives fixed-width axis gaps and dotted trace connectors;
+the same projection maps traces, flight bands, grid lines, and axis markers.
+Crowded gaps evict the oldest visible section rather than narrowing the gaps.
+During normal sampling, flight bands clip to the recorded telemetry horizon.
 Telemetry-sampling turns reserve projection headroom without lowering the
 existing callback or staged-drain limits.
 
@@ -198,7 +204,7 @@ subscriptions require a post-save rebuild.
 ## Shared flight tracking
 
 The factory-scoped broker in `flight_service.lua` owns a separate non-UI
-Control/Telemetry/Model runtime and optional Smart sensor poller. Any live widget callback can pump it. Dashboard
+Control/Telemetry runtime and optional Smart sensor poller. Any live widget callback can pump it. Dashboard
 registrations are weakly held; rebuilds mark proposals pending before replacing
 them. Unanimous effective arm/configuration proposals are required, not the
 first caller's settings. Saved model Armed overrides every declaration. A qualified session
@@ -282,7 +288,13 @@ construction. Saving a different arm condition rebuilds every registered
 dashboard and clears captured homes, preserving layout data and a pinned active
 flight's completion/cleanup. Previous per-widget Armed selections are never
 silently promoted; conflicting old selections require an explicit model choice.
-Model changes reset the flight epoch; dashboard rebuilds do not.
+The optional top-level `sessionReset` uses the same switch syntax; missing or
+`""` disables it. A shared control poller detects false-to-true transitions
+independently of flight detection. Activation advances the flight epoch,
+cancels detection, releases its owned output, and stages every dashboard's
+reload with captured homes cleared and editor drafts retained. Counting waits
+for a fresh disarm observation. Model changes also reset the flight epoch;
+ordinary dashboard rebuilds do not.
 
 ## Add or change a panel
 
@@ -296,7 +308,7 @@ Use `panels/flight-mode.lua` as a small working example and
 | `refreshInterval` | Desired foreground interval in 10 ms ticks; work still shares the host budget. |
 | `refreshCost` | Whole-number share of the six host refresh slots (default 1). Chart uses all six so dense layouts cannot batch expensive redraws into one callback. |
 | `create(parent, rect, settings, services)` | Build LVGL objects, subscribe to data, and return private instance state. |
-| `refresh(context)` | Optional callback to update existing objects from snapshots. May return a whole-number interval of 1–6000 ticks to adapt subsequent scheduling; nil preserves the current interval. |
+| `refresh(context)` | Optional callback to update existing objects from snapshots. May return a whole-number interval of 1–6000 ticks; nil preserves the current interval. A second result of `true` reserves subsequent turns among panels of the same type until the update completes; other panel types and services continue running. |
 | `update(context, rect, settings, detailsOnly, placement)` | Optional geometry/configuration update. Host reflows and editor resizes pass the current grid placement as the fifth argument, leaving the internal `detailsOnly` argument unset. |
 | `background(context)` | Optional work when the dashboard is not visible. |
 | `event(context, event)` | Optional event handling; return true when consumed. |

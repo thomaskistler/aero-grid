@@ -21,7 +21,6 @@ local flightCounter = {
         { key = "minMotorPercent", type = "number", default = 25, legacyFlight = true },
         { key = "minFlightDuration", type = "number", default = 30, legacyFlight = true },
         { key = "disarmDuration", type = "number", default = 10, legacyFlight = true },
-        { key = "history", type = "boolean", default = true, legacyFlight = true },
     },
 }
 

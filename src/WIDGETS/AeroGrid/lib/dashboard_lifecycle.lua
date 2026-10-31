@@ -194,6 +194,9 @@ function module.new(dependencies)
             end
             for index, current in ipairs(context.panels) do
                 if current == entry then
+                    if context.refreshOwner == entry then
+                        context.refreshOwner = nil
+                    end
                     table.remove(context.panels, index)
                     job.index = index
                     break
@@ -250,6 +253,7 @@ function module.new(dependencies)
         context.canvas = nil
         context.emptyHint = nil
         context.panels = {}
+        context.refreshOwner = nil
         context.rejected = {}
         context.errors = {}
         context.notices = {}

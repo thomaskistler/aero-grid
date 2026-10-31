@@ -20,6 +20,7 @@ layout.VERSION = 5
 function layout.normalizePanel(panel)
     if panel.type == "flight-counter" and type(panel.config) == "table" then
         panel.config.announcements = nil
+        panel.config.history = nil
     end
     if panel.type == "navigation" and type(panel.config) == "table" then
         -- Former distance thresholds must never become satellite-count limits.

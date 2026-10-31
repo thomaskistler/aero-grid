@@ -18,7 +18,7 @@ local function measured(callback, context)
     worstCallback = math.max(worstCallback, instructions)
 end
 
-local function create(span, failWrite)
+local function create(span)
     fixture.reset()
     definition = fixture.module("main.lua")
     local radio = fixture.radio
@@ -60,32 +60,20 @@ local function create(span, failWrite)
     equal(#context.errors, 0, table.concat(context.errors, "\n"))
     local panel = assert(fixture.instanceOf(context, "flights"))
     local env = context.serviceRuntime.env
-    local history, sounds = nil, {}
-    env.getDateTime = function()
-        return { year = 2026, mon = 10, day = 6, hour = 16, min = 0 }
-    end
+    local fileAccesses, sounds = 0, {}
     env.playTone = function(frequency)
         sounds[#sounds + 1] = frequency
     end
     env.playNumber = function(count)
         sounds[#sounds + 1] = count
     end
-    env.fileOpen = function(_, access)
-        if access == "r" then
-            return history and {} or nil
-        end
-        history = history or ""
-        return {}
+    local function fileAccess()
+        fileAccesses = fileAccesses + 1
+        error("flight detection must not access CSV files")
     end
-    env.fileClose = function() end
-    env.fileWrite = function(_, text)
-        if failWrite then
-            error("SD card full")
-        end
-        history = history .. text
-    end
+    env.fileOpen, env.fileWrite, env.fileClose = fileAccess, fileAccess, fileAccess
     return context, panel, function()
-        return history, sounds
+        return fileAccesses, sounds
     end
 end
 
@@ -138,14 +126,12 @@ for _, span in ipairs({ { 1, 1 }, { 2, 1 }, { 2, 2 }, { 4, 2 } }) do
     backgroundUntil(context, function()
         return panel.phase == "ending"
     end)
-    local log = recorded()
-    equal(log, nil, "history is written only at confirmed end")
+    equal(recorded(), 0, "flight detection must not access CSV files")
     equal(panel.stateName, "active", "the pending end retains active styling")
     backgroundUntil(context, function()
         return panel.phase == "ground"
     end)
-    log = recorded()
-    assert(string.find(log, ",Test Model,40,", 1, true), log)
+    equal(recorded(), 0, "completed flights must not access CSV files")
     equal(panel.stateName, "normal")
     equal(panel.panel.background.properties.color, context.theme.color.surface)
     equal(model.getGlobalVariable(8, 0), 40)
@@ -154,22 +140,7 @@ for _, span in ipairs({ { 1, 1 }, { 2, 1 }, { 2, 2 }, { 4, 2 } }) do
     equal(#sounds, 0, "legacy announcements must not play audio")
 end
 
-local context, panel = create({ 2, 2 }, true)
-fixture.radio.values[305], fixture.radio.values[306] = 1024, 0
-backgroundUntil(context, function()
-    return panel.phase == "active"
-end)
-fixture.radio.values[305] = -1024
-backgroundUntil(context, function()
-    return context.flightBroker.state.historyError ~= nil
-end)
-assert(string.find(context.flightErrorText, "SD card full", 1, true), context.flightErrorText)
-assert(not fixture.entryById(context, "flights").failed, "history errors must not retire a counter presentation")
-equal(model.getGlobalVariable(8, 0), 40, "a history failure must not discard the persistent count")
-fixture.pump(context, 10)
-equal(#context.errors, 0, "flight failures use recoverable service diagnostics")
-
-context, panel = create({ 2, 2 })
+local context, panel = create({ 2, 2 })
 fixture.radio.values[305], fixture.radio.values[306] = 1024, 0
 backgroundUntil(context, function()
     return panel.phase == "starting"
@@ -204,8 +175,9 @@ equal(model.getGlobalVariable(8, 0), 40, "a presentation preview cannot stop the
 equal(panel.phase, "active", "the shared tracker is independent of presentation flags")
 fixture.radio.values[305] = -1024
 fixture.pump(context, 30)
-local history, sounds = recorded()
-assert(history, "the committed tracker completes while its presentation is previewed")
+local fileAccesses, sounds = recorded()
+equal(fileAccesses, 0, "the committed tracker must not write CSV history while previewed")
+equal(panel.phase, "ground", "the committed tracker completes while its presentation is previewed")
 equal(#sounds, 0, "previewing must not play flight audio")
 equal(panel.value.properties.text, "40", "preview displays the shared count")
 
@@ -263,8 +235,8 @@ fixture.radio.values[305] = -1024
 backgroundUntil(context, function()
     return panel.phase == "ground"
 end)
-history, sounds = recorded()
-assert(history)
+fileAccesses, sounds = recorded()
+equal(fileAccesses, 0)
 equal(#sounds, 0)
 equal(model.getGlobalVariable(8, 0), 40)
 print(string.format("Flight counter standard/Smart integration passed; worst callback: %d instructions", worstCallback))

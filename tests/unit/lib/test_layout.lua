@@ -295,9 +295,10 @@ local function testNavigationMigration()
 end
 
 local function run()
-    local panel = { type = "flight-counter", config = { announcements = true, motorSource = "ch7" } }
+    local panel = { type = "flight-counter", config = { announcements = true, history = true, motorSource = "ch7" } }
     layout.normalizePanel(panel)
     assertions.assertEqual(panel.config.announcements, nil, "obsolete audio settings must not reject older panels")
+    assertions.assertEqual(panel.config.history, nil, "obsolete CSV settings must not reject older panels")
     assertions.assertEqual(panel.config.motorSource, "ch7")
     testValidation()
     testOverlapIsRejected()
