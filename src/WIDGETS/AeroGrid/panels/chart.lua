@@ -593,29 +593,52 @@ end
 local function readingWidths(context, font)
     local builder = context.themeBuilder
     local nameLimit = math.floor(builder.fontHeight(font) * 2.5)
-    local value, unit, name = 0, 0, 0
+    local value, unit, name, row = 0, 0, 0, 0
     for _, item in ipairs(context.series) do
-        value = math.max(value, builder.measureText(font, item.valueText or "--"))
-        unit = math.max(unit, builder.measureText(font, item.unitText or ""))
-        name = math.max(name, math.min(nameLimit, builder.measureText(font, item.caption)))
+        local valueWidth = builder.measureText(font, item.valueText or "--")
+        local unitWidth = builder.measureText(font, item.unitText or "")
+        local nameWidth = math.min(nameLimit, builder.measureText(font, item.caption))
+        value = math.max(value, valueWidth)
+        unit = math.max(unit, unitWidth)
+        name = math.max(name, nameWidth)
+        row = math.max(row, valueWidth + unitWidth + nameWidth + 4)
     end
-    return value, unit, name
+    return value, unit, name, row
 end
 
 local function positionReading(context, item, y)
     local area, builder, font = context.area, context.themeBuilder, context.legendFont
     local legendX, legendW = item.legendX or area.legendX, item.legendW or area.legendW
-    local unitWidth = math.min(context.unitWidth, builder.measureText(font, item.unitText or ""))
-    local width = math.min(context.valueWidth, builder.measureText(font, item.valueText or "--"))
+    local width = builder.measureText(font, item.valueText or "--")
+    local unitWidth = math.min(
+        context.topLegend and math.max(0, legendW - math.min(width, legendW)) or context.unitWidth,
+        builder.measureText(font, item.unitText or "")
+    )
+    width = math.min(context.topLegend and legendW - unitWidth or context.valueWidth, width)
     local alignment = item.legendAlignment or 1
     local x = legendX + math.floor((legendW - width - unitWidth) * alignment)
+    local nameBudget = math.max(0, context.topLegend and legendW - width - unitWidth - 4 or x - legendX - 4)
+    if context.topLegend and item.nameBudget ~= nameBudget then
+        local name = builder.fitHeading(item.caption, nameBudget, font, font)
+        if name ~= item.nameText then
+            item.nameText = name
+            item.name:set({ text = name })
+        end
+        item.nameBudget = nameBudget
+        if nameBudget < 8 then
+            lvgl.hide(item.name)
+        else
+            lvgl.show(item.name)
+        end
+    end
+    local nameWidth = math.min(nameBudget, builder.measureText(font, item.nameText or ""))
+    local nameX = x - 4 - nameWidth
+    if context.topLegend then
+        local gap = nameWidth > 0 and 4 or 0
+        nameX = legendX + math.floor((legendW - nameWidth - gap - width - unitWidth) * alignment)
+        x = nameX + nameWidth + gap
+    end
     local finish = x + width
-    local nameWidth = math.min(
-        context.stackedLegend and legendW or math.max(0, x - legendX - 4),
-        builder.measureText(font, item.nameText or "")
-    )
-    local nameX = context.stackedLegend and legendX + math.floor((legendW - nameWidth) * alignment) or x - 4 - nameWidth
-    local nameY = context.stackedLegend and y - builder.fontHeight(font) or y
     if item.valueX ~= x or item.valueY ~= y or item.valueWidth ~= width then
         item.value:set({ x = x, y = y, w = width })
         item.valueX, item.valueY, item.valueWidth = x, y, width
@@ -624,15 +647,15 @@ local function positionReading(context, item, y)
         item.unit:set({ x = finish, y = y, w = unitWidth })
         item.unitX, item.unitY, item.unitWidth = finish, y, unitWidth
     end
-    if item.nameX ~= nameX or item.nameY ~= nameY or item.nameWidth ~= nameWidth then
-        item.name:set({ x = nameX, y = nameY, w = nameWidth })
-        item.nameX, item.nameY, item.nameWidth = nameX, nameY, nameWidth
+    if item.nameX ~= nameX or item.nameY ~= y or item.nameWidth ~= nameWidth then
+        item.name:set({ x = nameX, y = y, w = nameWidth })
+        item.nameX, item.nameY, item.nameWidth = nameX, y, nameWidth
     end
 end
 
 local function legendWidth(context, font, showExtrema)
-    local value, unit, name = readingWidths(context, font)
-    local width = math.max(64, context.stackedLegend and math.max(value + unit, name) or value + unit + name + 4)
+    local value, unit, name, row = readingWidths(context, font)
+    local width = math.max(64, context.topLegend and row or value + unit + name + 4)
     for _, item in ipairs(context.series) do
         width = math.max(width, showExtrema and extremaWidth(context, item, extremaFont(font)) or 0)
     end
@@ -648,19 +671,20 @@ function chart.geometry(context, rect)
     local span = context.span
     -- Square grid spans are still physically wide on a landscape radio.
     context.topLegend = span and span.rowSpan >= span.colSpan or not span and rect.w <= 2 * rect.h
-    context.stackedLegend = context.topLegend and count > 1
     local gap = 6
-    local cellWidth = math.max(1, math.floor((content - gap * math.max(0, count - 1)) / math.max(1, count)))
     local first = frame.labelY
     local top = first + (heading(context) ~= "" and builder.fontHeight(SMLSIZE) + 2 or 0)
-    if frame.reserved and not frame.reserved.side then
-        top = math.max(top, frame.reserved.h)
-    end
     if context.topLegend then
         first = top
     end
+    local legendX = frame.pad
+    if context.topLegend and frame.reserved and first < frame.reserved.h then
+        legendX = math.max(legendX, frame.reserved.w + 4)
+    end
+    local legendContent = math.max(1, content - (legendX - frame.pad))
+    local cellWidth = math.max(1, math.floor((legendContent - gap * math.max(0, count - 1)) / math.max(1, count)))
     local available = math.max(1, rect.h - first)
-    local rows = context.topLegend and (context.stackedLegend and 2 or 1) or count
+    local rows = context.topLegend and 1 or count
     -- Preserve extrema whenever they fit at the readability floor.
     local showExtrema = available
         >= rows * builder.fontHeight(SMLSIZE)
@@ -675,7 +699,7 @@ function chart.geometry(context, rect)
     -- Readout growth can step down the font; resizing restarts the ladder.
     for index = count == 0 and #LEGEND_FONTS or context.legendIndex or 1, #LEGEND_FONTS do
         local candidate = LEGEND_FONTS[index]
-        local rowHeight = (context.stackedLegend and 2 or 1) * builder.fontHeight(candidate)
+        local rowHeight = builder.fontHeight(candidate)
             + (showExtrema and builder.fontAscent(extremaFont(candidate)) or 0)
         local groups = context.topLegend and 1 or count
         if
@@ -698,18 +722,16 @@ function chart.geometry(context, rect)
     local legend = math.min(required, context.topLegend and cellWidth or math.max(24, content - 28))
     local valueWidth, unitWidth = readingWidths(context, font)
     context.requiredValueWidth, context.requiredUnitWidth = valueWidth, unitWidth
-    context.unitWidth = math.min(unitWidth, math.max(0, legend - (context.stackedLegend and 8 or 27)))
-    context.valueWidth =
-        math.min(valueWidth, math.max(0, legend - context.unitWidth - (context.stackedLegend and 0 or 4)))
-    local nameWidth = context.stackedLegend and legend
-        or math.max(0, legend - context.valueWidth - context.unitWidth - 4)
+    context.unitWidth = math.min(unitWidth, math.max(0, legend - 27))
+    context.valueWidth = math.min(valueWidth, math.max(0, legend - context.unitWidth - 4))
+    local nameWidth = math.max(0, legend - context.valueWidth - context.unitWidth - 4)
     local width = context.topLegend and content or math.max(1, content - legend - gap)
     local lineHeight = builder.fontHeight(font)
     if context.topLegend and count > 0 then
-        top = first
-            + (context.stackedLegend and 2 or 1) * lineHeight
-            + (showExtrema and builder.fontAscent(context.extremaFont) or 0)
-            + gap
+        top = first + lineHeight + (showExtrema and builder.fontAscent(context.extremaFont) or 0) + gap
+    end
+    if frame.reserved and not frame.reserved.side then
+        top = math.max(top, frame.reserved.h)
     end
     local bottom = math.max(top + 1, rect.h - 3)
     local area = {
@@ -718,7 +740,7 @@ function chart.geometry(context, rect)
         y = top,
         w = width,
         h = math.max(1, bottom - top),
-        legendX = context.topLegend and frame.pad or frame.pad + width + gap,
+        legendX = context.topLegend and legendX or frame.pad + width + gap,
         legendW = legend,
     }
     context.area = area
@@ -745,20 +767,24 @@ function chart.geometry(context, rect)
     for index, item in ipairs(context.series) do
         item.legendX, item.legendW, item.legendAlignment = nil, nil, nil
         local y = first + (index - 1) * step
+        local itemNameWidth = nameWidth
         if context.topLegend then
             local alignment = count == 1 and 1 or (index - 1) / (count - 1)
             item.legendAlignment = alignment
             item.legendW = legend
-            item.legendX = frame.pad + math.floor((content - legend) * alignment)
-            y = first + (context.stackedLegend and lineHeight or 0)
+            item.legendX = legendX + math.floor((legendContent - legend) * alignment)
+            y = first
+            local value = math.min(builder.measureText(font, item.valueText or "--"), legend)
+            local unit = math.min(builder.measureText(font, item.unitText or ""), math.max(0, legend - value))
+            itemNameWidth = math.max(0, legend - value - unit - 4)
         end
-        local name = builder.fitHeading(item.caption, nameWidth, font, font)
+        local name = builder.fitHeading(item.caption, itemNameWidth, font, font)
         context.primitives.setFont(item.name, font)
         context.primitives.setFont(item.value, font)
         context.primitives.setFont(item.unit, font)
         context.primitives.setFont(item.extrema, context.extremaFont)
         context.primitives.setFont(item.maximum, context.extremaFont)
-        item.nameText = name
+        item.nameText, item.nameBudget = name, itemNameWidth
         item.name:set({ text = name })
         positionReading(context, item, y)
         positionExtrema(context, item, y + lineHeight)
@@ -773,7 +799,7 @@ function chart.geometry(context, rect)
             lvgl.hide(item.minSymbol)
             lvgl.hide(item.maxSymbol)
         end
-        if nameWidth < 8 then
+        if itemNameWidth < 8 then
             lvgl.hide(item.name)
         else
             lvgl.show(item.name)
@@ -1345,11 +1371,8 @@ function chart.render(context)
             text(item.maximum, maximumText, context.theme.color.textFaint)
         end
     end
-    local valueWidth, unitWidth, nameWidth = readingWidths(context, font)
-    width = math.max(
-        width,
-        context.stackedLegend and math.max(valueWidth + unitWidth, nameWidth) or valueWidth + unitWidth + nameWidth + 4
-    )
+    local valueWidth, unitWidth, nameWidth, rowWidth = readingWidths(context, font)
+    width = math.max(width, context.topLegend and rowWidth or valueWidth + unitWidth + nameWidth + 4)
     if
         width > (context.legendWidth or 0)
         or valueWidth > context.requiredValueWidth
