@@ -55,10 +55,47 @@ local function testTransmitterLocalSourceIsNotLinkEvidence()
     assertions.assertEqual(link.live, true, "receiver data can contradict the missing RSSI indicator")
 end
 
+local function testHostPollingBudgetKeepsRoundRobinProgress()
+    local reads = {}
+    local service = telemetryService.new(
+        services.environment({
+            getRSSI = function()
+                return 42
+            end,
+            getFieldInfo = function(name)
+                return { id = tonumber(name), name = name, unit = 0 }
+            end,
+            getValue = function(id)
+                reads[id] = (reads[id] or 0) + 1
+                return id
+            end,
+        }),
+        services
+    )
+    for index = 1, 24 do
+        service:subscribe(tostring(index))
+    end
+    service.pollCap = 4
+    for step = 1, 6 do
+        service:update(step * 10)
+        assertions.assertEqual(service.cursor, step * 4 % 24 + 1)
+    end
+    for index = 1, 24 do
+        assertions.assertEqual(reads[index], 1, "a reduced budget must still visit every source")
+    end
+    service.pollCap = nil
+    service:update(70)
+    assertions.assertEqual(service.cursor, 9, "normal polling capacity returns when Smart work is absent")
+    service.pollCap = 100
+    service:update(80)
+    assertions.assertEqual(service.cursor, 17, "a host cannot raise the service's existing cap")
+end
+
 local function run()
     testSubscribeReturnsLiveView()
     testLinkSubscriptionExists()
     testTransmitterLocalSourceIsNotLinkEvidence()
+    testHostPollingBudgetKeepsRoundRobinProgress()
 end
 
 run()

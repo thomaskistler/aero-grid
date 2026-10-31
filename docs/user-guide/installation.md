@@ -87,8 +87,8 @@ screen.
 2. Copy the complete new `AeroGrid` folder into `/WIDGETS/`.
 3. Restart the radio and check your dashboards.
 
-Your layouts and layout list live in `/AEROGRID/`, outside the widget folder.
-Leave that folder untouched: there is no need to back up and restore layouts
+Your layouts, themes, model settings, and layout list live in `/AEROGRID/`,
+outside the widget folder. Leave that folder untouched: there is no need to back up and restore layouts
 as part of an upgrade.
 
 <details class="ag-install-details">

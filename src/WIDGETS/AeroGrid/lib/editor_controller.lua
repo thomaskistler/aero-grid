@@ -119,7 +119,11 @@ function module.new(dependencies)
         end
         local entries = {}
         for _, entry in ipairs(context.panels) do
-            if entry.failed or entry.editorVisible == false then
+            if
+                entry.failed
+                or entry.editorVisible == false
+                or entry.module.id == "chart" and entry.instance.preview and entry.instance.previewMissing
+            then
                 return false
             end
             entries[entry.placement.id] = entry
@@ -149,7 +153,8 @@ function module.new(dependencies)
                 local resolved, warnings = context.panelHost.resolveSettings(
                     entry.module,
                     placement.config,
-                    { colSpan = placement.colSpan, rowSpan = placement.rowSpan }
+                    { colSpan = placement.colSpan, rowSpan = placement.rowSpan },
+                    context.modelArmed
                 )
                 if #warnings > 0 or not sameConfig(resolved, entry.settings) then
                     return false
@@ -172,9 +177,22 @@ function module.new(dependencies)
             document.panels[index] = placement
             entry.editorPlacement = nil
             entry.editorVisible = nil
+            if entry.module.id == "chart" and entry.instance.preview then
+                entry.instance.history = context.serviceRuntime.byId.history
+                entry.instance.preview = false
+            end
         end
         context.panels = ordered
         context.document = document
+        context.flightSources = {}
+        for _, placement in ipairs(document.panels) do
+            if placement.type == "flight-counter" then
+                context.flightSources[#context.flightSources + 1] = placement
+            end
+        end
+        if context.configureFlight then
+            context.configureFlight(context)
+        end
         return true
     end
 
@@ -320,6 +338,7 @@ function module.new(dependencies)
         end
 
         context.editorSession = session
+        session.modelArmed = context.modelArmed
         local handlers = {
             editor = context.editorModule,
             logError = function(operation, message)
@@ -360,6 +379,21 @@ function module.new(dependencies)
                 return context.layoutStore.suggestName(context.path, info and info.name)
             end,
             startSave = function(document, name)
+                local owner = context.flightBroker
+                if owner and not (owner.document and owner.document.flight) then
+                    local legacy, remaining = false, false
+                    for _, placement in ipairs(context.flightSources or {}) do
+                        legacy = legacy or placement.config and placement.config._legacyFlight == true
+                    end
+                    for _, placement in ipairs(document.panels) do
+                        remaining = remaining or placement.config and placement.config._legacyFlight == true
+                    end
+                    if legacy and not remaining then
+                        return {
+                            flightMigrationError = "Save Model settings before removing the last legacy Flight counter",
+                        }
+                    end
+                end
                 name = name or context.layoutName
                 context.editorSavedDocument = document
                 local state = context.layoutStore.startSave(
@@ -374,6 +408,9 @@ function module.new(dependencies)
                 return state
             end,
             advanceSave = function(state)
+                if state.flightMigrationError then
+                    return true, false, state.flightMigrationError
+                end
                 local done, saved, saveError = context.layoutStore.advanceSave(state)
                 if saved and state.name == context.layoutName then
                     context.layoutPath = state.filename

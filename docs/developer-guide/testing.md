@@ -47,6 +47,7 @@ make check LUA_COMPILER=/absolute/path/to/edgetx-luac
 | Panel settings or presentation | `tests/unit/panels/`, then the relevant `tests/integration/widget/test_*_review.lua`. |
 | Host load/reload, failure isolation, scheduling, or callback budgets | `tests/integration/test_widget.lua`. |
 | Editor commands and settings dialogs | `tests/unit/lib/test_editor.lua` and `tests/integration/test_editor_ui.lua`. |
+| Model settings, arming, or session reset | Model-settings unit suites, shared-arming/shared-flight integration suites, and `tests/integration/widget/test_session_reset.lua`. |
 | Installing panels from the editor | `tests/integration/test_panel_installation.lua`. |
 | Shared rendering or reflow | Builder-matrix, panel-reflow, font-callback, and resource-stability integration suites. |
 

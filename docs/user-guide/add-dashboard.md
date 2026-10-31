@@ -21,7 +21,7 @@ Select the **+** tab, then tap **Add Screen**.
 On the new screen, tap the **Layout** thumbnail and choose **App mode**.
 This makes one widget fill the screen.
 
-![Screen layout picker with App mode highlighted](../assets/editor/screen-layout.png)
+![Screen layout picker with App mode highlighted](../assets/editor/app-mode-choice.png)
 
 Tap **Setup widgets**, then tap the empty widget area.
 
@@ -39,6 +39,14 @@ Choose **Modern Dark** or **Modern Light** for **Theme**.
 
 Press **RTN** to close the settings and leave setup. Your dashboard is now
 on the new screen. Repeat these steps to add another dashboard.
+
+In fullscreen, tap **AeroGrid → Model settings** and set **Arm switch**
+to the physical position or logical switch that means armed. Changes save
+automatically across the model's dashboards. Arming is not a widget option
+beside Layout and Theme.
+
+See [Model settings](model-settings.md) for shared arming, flight detection,
+session reset, and the flight-status output used with your own sounds.
 
 ## Understand layouts
 

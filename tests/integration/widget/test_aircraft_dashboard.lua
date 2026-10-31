@@ -42,7 +42,7 @@ assertions.assertEqual(fixture.entryById(context, "flight-count").placement.type
 local flights = fixture.instanceOf(context, "flight-count")
 assertions.assertEqual(flights.settings.armSwitch, "SFv")
 assertions.assertEqual(flights.settings.motorSource, "ch3")
-assertions.assertEqual(flights.settings.history, true)
+assertions.assertEqual(flights.settings.history, nil)
 assertions.assertEqual(flights.settings.minFlightDuration, 30)
 assertions.assertEqual(flights.settings.disarmDuration, 10)
 assertions.assertEqual(fixture.instanceOf(context, "expo").text, "70")

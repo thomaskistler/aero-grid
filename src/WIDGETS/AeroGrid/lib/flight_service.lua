@@ -1,0 +1,767 @@
+-- SPDX-License-Identifier: GPL-2.0-only
+
+local flight = { RUNTIME_API = 1 }
+local broker = {}
+broker.__index = broker
+
+local ROUNDING = string.packsize("n") == 4 and 0.0000005 or 0.000000000000001
+
+local function above(value, threshold)
+    -- Unit conversion must not turn equality into "above", including on the
+    -- firmware's float32 Lua build and at nonzero altitude references.
+    return value - threshold > ROUNDING * math.max(1, math.abs(value), math.abs(threshold))
+end
+
+local function reliable(reading, now)
+    return reading
+        and reading.available ~= false
+        and reading.fresh == true
+        and type(reading.updatedAt) == "number"
+        and now >= reading.updatedAt
+        and now - reading.updatedAt <= 100
+end
+
+local function smartReference(context, now, armLive, armed)
+    if not context.settings.smartDetection then
+        return
+    end
+    local sensors = context.smart
+    if sensors and context.sensorGeneration ~= sensors.generation then
+        context.altitudeReference = nil
+        context.referenceCandidate, context.referenceCandidateAt = nil, nil
+        context.referencePending, context.referencePendingAt = nil, nil
+        context.altitudeSince, context.speedSince = nil, nil
+        context.sensorGeneration = sensors.generation
+    end
+    if not armLive then
+        context.wasArmed = nil
+        context.referenceCandidate, context.referenceCandidateAt = nil, nil
+        context.referencePending, context.referencePendingAt = nil, nil
+        context.altitudeSince, context.speedSince = nil, nil
+    elseif not armed then
+        context.wasArmed, context.altitudeReference = false, nil
+        context.altitudeSince, context.speedSince = nil, nil
+        local altitude = sensors and sensors.altitude
+        if context.smartAvailable ~= false and reliable(altitude, now) then
+            -- The arm and sensor pollers are independent. Confirm the sample
+            -- against a false-arm observation at or after its receipt evidence.
+            if context.referencePendingAt and context.referencePendingAt <= context.arm.updatedAt then
+                context.referenceCandidate, context.referenceCandidateAt =
+                    context.referencePending, context.referencePendingAt
+            end
+            if altitude.evidenceAt and altitude.evidenceAt <= context.arm.updatedAt then
+                context.referenceCandidate, context.referenceCandidateAt = altitude.value, altitude.evidenceAt
+            end
+            context.referencePending, context.referencePendingAt = altitude.value, altitude.evidenceAt
+        else
+            context.referenceCandidate, context.referenceCandidateAt = nil, nil
+            context.referencePending, context.referencePendingAt = nil, nil
+        end
+    elseif context.wasArmed == false then
+        local altitude = sensors and sensors.altitude
+        if context.smartAvailable ~= false and reliable(altitude, now) then
+            if
+                context.referenceCandidateAt
+                and now >= context.referenceCandidateAt
+                and now - context.referenceCandidateAt <= 120
+            then
+                context.altitudeReference = context.referenceCandidate
+            elseif altitude.sampleFresh then
+                context.altitudeReference = altitude.value
+            end
+        end
+        context.referenceCandidate, context.referenceCandidateAt = nil, nil
+        context.referencePending, context.referencePendingAt = nil, nil
+        context.wasArmed = true
+    else
+        context.wasArmed = true
+    end
+end
+
+local function smartReason(context, now)
+    if not context.settings.smartDetection then
+        return nil
+    end
+    local sensors = context.smart
+    local altitude, speed = sensors and sensors.altitude, sensors and sensors.speed
+    if altitude and altitude.continuity ~= context.altitudeContinuity then
+        context.altitudeSince, context.altitudeContinuity = nil, altitude.continuity
+    end
+    if speed and speed.continuity ~= context.speedContinuity then
+        context.speedSince, context.speedContinuity = nil, speed.continuity
+    end
+    local baro = context.smartAvailable ~= false
+        and context.altitudeReference ~= nil
+        and reliable(altitude, now)
+        and above(altitude.value, context.altitudeReference + 3)
+    local moving = context.smartAvailable ~= false and reliable(speed, now) and above(speed.value, 4.4704)
+    context.altitudeSince = baro and (context.altitudeSince or now) or nil
+    context.speedSince = moving and (context.speedSince or now) or nil
+    if context.altitudeSince and altitude.confirmedAt and altitude.confirmedAt - context.altitudeSince >= 200 then
+        return "smart-altitude"
+    elseif context.speedSince and speed.confirmedAt and speed.confirmedAt - context.speedSince >= 200 then
+        return "smart-speed"
+    end
+end
+
+--- The broker supplies once-only side-effect adapters for every qualification.
+function flight.advance(context, now)
+    local armLive = context.controlAvailable ~= false
+        and reliable(context.arm, now)
+        and type(context.arm.value) == "boolean"
+    local armed = armLive and context.arm.value
+    if context.phase == "active" or context.phase == "ending" then
+        if not armLive or armed then
+            context.disarmedAt, context.phase = nil, "active"
+        else
+            context.disarmedAt = context.disarmedAt or now
+            context.phase = "ending"
+            if now - context.disarmedAt >= context.settings.disarmDuration * 100 then
+                if context.completed then
+                    context:completed(now)
+                end
+                context.phase = "ground"
+                context.startedAt, context.disarmedAt = nil, nil
+                context.wasArmed, context.altitudeReference = false, nil
+                context.altitudeSince, context.speedSince = nil, nil
+                smartReference(context, now, true, false)
+            end
+        end
+        return
+    end
+    smartReference(context, now, armLive, armed)
+    if context.detectionAvailable == false or not context.feed.available then
+        context.phase, context.startedAt = "ground", nil
+        context.altitudeSince, context.speedSince = nil, nil
+        return
+    end
+    assert(
+        context.feed.precision == 0
+            and context.feed.raw >= 0
+            and context.feed.raw <= 999
+            and context.feed.raw == math.floor(context.feed.raw),
+        "flight counter requires integer GV9 FM0 in the range 0..999, with precision 0"
+    )
+    assert(not context.motor.telemetry, "flight counter motorSource must be a radio-local motor channel")
+    local motorLive = reliable(context.motor, now)
+        and type(context.motor.value) == "number"
+        and context.motor.value == context.motor.value
+        and math.abs(context.motor.value) < math.huge
+    local motor = motorLive and context.motor.value or -1024
+    if context.settings.motorReversed then
+        motor = -motor
+    end
+    local link = context.link
+    local live = link.updatedAt and now >= link.updatedAt and now - link.updatedAt <= 100 and link.live
+    if not (armed and motorLive and (motor + 1024) * 100 / 2048 > context.settings.minMotorPercent and live) then
+        context.phase, context.startedAt = "ground", nil
+        context.altitudeSince, context.speedSince = nil, nil
+        return
+    end
+    if not context.startedAt then
+        context.startedAt, context.phase = now, "starting"
+    end
+    local reason = smartReason(context, now)
+    if now - context.startedAt >= context.settings.minFlightDuration * 100 then
+        reason = "standard"
+    end
+    if reason then
+        context.reason = reason
+        context.flightCount = context.control:incrementFlightCount()
+        context.phase = "active"
+        if context.qualified then
+            context:qualified(now)
+        end
+    end
+end
+
+function flight.newBroker(env, support, modules, config, members)
+    local self = setmetatable({
+        env = env,
+        support = support,
+        modules = modules,
+        config = config,
+        members = members or setmetatable({}, { __mode = "k" }),
+        epoch = 0,
+        sequence = 0,
+        serial = 0,
+        events = {},
+        errors = {},
+        state = { phase = "ground", active = false, status = "unconfigured", revision = 0 },
+    }, broker)
+    self.view = support.snapshot(self.state)
+    return self
+end
+
+function broker:error(kind, message)
+    message = tostring(message)
+    if self.errors[kind] ~= message then
+        self.state.diagnosticRevision = (self.state.diagnosticRevision or 0) + 1
+    end
+    self.errors[kind] = message
+    self.state[kind .. "Error"] = message
+end
+
+function broker:identity()
+    local info = self.env.getInfo and self.env.getInfo()
+    assert(
+        type(info) == "table" and type(info.filename) == "string" and info.filename ~= "",
+        "Flight detection requires model filename"
+    )
+    return info.filename
+end
+
+function broker:reset(filename)
+    self.filename, self.epoch = filename, self.epoch + 1
+    self.session, self.runtime, self.smartRuntime, self.signature, self.output = nil, nil, nil, nil, nil
+    self.document, self.loadError = nil, nil
+    self.events, self.errors = {}, {}
+    self.lastTick, self.readyAfterDisarm = nil, nil
+    self.readyAfterDisarmAt = nil
+    self.resetCondition, self.resetRuntime, self.resetFeed, self.resetValue, self.resetPolledAt =
+        nil, nil, nil, nil, nil
+    self.nextPumpAt = nil
+    for key in pairs(self.state) do
+        self.state[key] = nil
+    end
+    self.state.modelFilename, self.state.epoch = filename, self.epoch
+    self.state.phase, self.state.active, self.state.status = "ground", false, "unconfigured"
+    self.state.revision = 0
+    self.documentLoaded = false
+    self.dormantRevision = nil
+    self.cachedRevision, self.cachedProposal, self.cachedSignature, self.cachedStatus = nil, nil, nil, nil
+end
+
+function broker:setDocument(document)
+    assert(
+        document.modelFilename == nil or document.modelFilename == self.filename,
+        "Model changed; reopen model settings"
+    )
+    if self.document and self.document.armed ~= document.armed then
+        for host, member in pairs(self.members) do
+            host.navigationHomes = {}
+            if host.modelFilename == nil or host.modelFilename == self.filename then
+                member.pending = true
+                host.modelArmingReload = true
+                host.reloadState = "clear"
+            end
+        end
+    end
+    if self.document and (self.document.revision or 0) ~= (document.revision or 0) then
+        self.readyAfterDisarm = true
+        self.errors.count, self.errors.detection = nil, nil
+        self.state.countError, self.state.detectionError = nil, nil
+        self.state.diagnosticRevision = (self.state.diagnosticRevision or 0) + 1
+    end
+    self.document = document
+    self.loadError, self.state.persistenceError = nil, nil
+    self.state.configurationRevision = document.revision or 0
+    self.documentLoaded = true
+    if self.factory then
+        self.factory.revision = (self.factory.revision or 0) + 1
+    end
+end
+
+function broker:boundary(kind, at, observedAt)
+    self.sequence = self.sequence + 1
+    local record = self.support.snapshot({
+        epoch = self.epoch,
+        sequence = self.sequence,
+        flightId = self.session.flightId,
+        armKey = self.session.armKey,
+        count = self.session.flightCount,
+        kind = kind,
+        at = at,
+        observedAt = observedAt,
+        reason = self.session.reason or "standard",
+    })
+    self.events[#self.events + 1] = record
+    if #self.events > 64 then
+        table.remove(self.events, 1)
+    end
+end
+
+function broker:boundaries(afterSequence, epoch)
+    local result = {}
+    local oldest = self.events[1] and self.events[1].sequence or self.sequence + 1
+    for _, record in ipairs(self.events) do
+        if record.sequence > (afterSequence or self.sequence) then
+            result[#result + 1] = record
+        end
+    end
+    return result,
+        oldest,
+        (epoch ~= nil and epoch ~= self.epoch) or (afterSequence ~= nil and afterSequence < oldest - 1)
+end
+
+function broker:resolveProposals()
+    local selected, signature, pending, conflict
+    local candidates = {}
+    for _, participant in pairs(self.members) do
+        if participant.modelFilename == self.filename then
+            if participant.error then
+                self.state.configurationError = participant.error
+                return nil, nil, "error"
+            elseif participant.pending then
+                pending = true
+            else
+                for _, declaration in ipairs(participant.declarations or {}) do
+                    local settings = self.document and self.document.flight or declaration.settings
+                    local modelArm = self.document and self.document.armed
+                    local armKey = modelArm ~= nil and modelArm or declaration.armKey
+                    if settings and armKey ~= "" then
+                        local key = self.config.key(settings) .. ":" .. armKey
+                        candidates[#candidates + 1] = participant.layoutName
+                            .. "/"
+                            .. declaration.source
+                            .. " ("
+                            .. armKey
+                            .. ")"
+                        if signature and signature ~= key then
+                            conflict = true
+                        end
+
+                        signature, selected =
+                            key, {
+                                settings = settings,
+                                armKey = armKey,
+                                armIndex = modelArm == nil and declaration.armIndex or nil,
+                            }
+                    end
+                end
+            end
+        end
+    end
+    if conflict then
+        table.sort(candidates)
+        self.state.configurationError = "Conflicting flight conditions: "
+            .. table.concat(candidates, ", ")
+            .. ". Choose Armed in Model settings and save one model flight configuration."
+        return nil, nil, "conflict"
+    end
+    self.state.configurationError = nil
+    if pending then
+        return nil, nil, "loading"
+    end
+    return selected, signature, selected and "ready" or "unconfigured"
+end
+
+function broker:proposals(now)
+    if self.factory and self.cachedRevision == self.factory.revision and now < (self.proposalsDue or 0) then
+        return self.cachedProposal, self.cachedSignature, self.cachedStatus
+    end
+    local previous = self.state.configurationError
+    local proposal, signature, status = self:resolveProposals()
+    if previous ~= self.state.configurationError then
+        self.state.diagnosticRevision = (self.state.diagnosticRevision or 0) + 1
+    end
+    self.cachedProposal, self.cachedSignature, self.cachedStatus = proposal, signature, status
+    self.cachedRevision, self.proposalsDue = self.factory and self.factory.revision, now + 100
+    return proposal, signature, status
+end
+
+function broker:validateOutput(name, armKey, resetCondition)
+    if not name or name == "" then
+        return
+    end
+    assert(self.env.setStickySwitch and self.env.getLogicalSwitch, "Flight status switch requires Sticky switch APIs")
+    assert(string.gsub(armKey or "", "^!", "") ~= name, "Flight status switch cannot be the Arm input")
+    resetCondition = resetCondition == nil and self.document and self.document.sessionReset or resetCondition
+    if resetCondition and resetCondition ~= "" then
+        assert(string.gsub(resetCondition, "^!", "") ~= name, "Flight status switch cannot be the Session reset input")
+    end
+    local index = tonumber(string.sub(name, 2)) - 1
+    local definition = self.env.getLogicalSwitch(index)
+    assert(type(definition) == "table" and definition.func == 17, name .. " must be a dedicated Sticky logical switch")
+    for _, key in ipairs({ "v1", "v2", "v3", "and", "delay", "duration" }) do
+        assert((definition[key] or 0) == 0, name .. " must have no inputs, AND, delay or duration")
+    end
+    return index
+end
+
+function broker:resetSession(now)
+    self.epoch = self.epoch + 1
+    self.events = {}
+    self.state.epoch = self.epoch
+    self.readyAfterDisarm, self.readyAfterDisarmAt = true, now
+    local session = self.session
+    if session then
+        if session.settings.flightSwitch ~= "" then
+            self.output = {
+                name = session.settings.flightSwitch,
+                armKey = session.armKey,
+                desired = false,
+                flightId = session.flightId or 0,
+            }
+        end
+        for _, key in ipairs({
+            "startedAt",
+            "disarmedAt",
+            "groundAt",
+            "flightId",
+            "flightCount",
+            "qualifiedAt",
+            "reason",
+            "wasArmed",
+            "altitudeReference",
+            "altitudeSince",
+            "speedSince",
+            "referenceCandidate",
+            "referenceCandidateAt",
+            "referencePending",
+            "referencePendingAt",
+        }) do
+            session[key] = nil
+        end
+        session.phase, session.outputInitialized = "ground", true
+    end
+    for _, key in ipairs({ "startedAt", "disarmedAt", "qualifiedAt", "endedAt", "completedAt", "flightId", "reason" }) do
+        self.state[key] = nil
+    end
+    self.state.phase, self.state.active = "ground", false
+    self.state.revision = (self.state.revision or 0) + 1
+    for host, member in pairs(self.members) do
+        if member.modelFilename == self.filename and host.dashboardLifecycle then
+            host.navigationHomes = {}
+            host.sessionResetPending, host.reloadState = true, "clear"
+            member.pending = true
+        end
+    end
+    if self.factory then
+        self.factory.revision = (self.factory.revision or 0) + 1
+    end
+end
+
+--- The reset input has its own poller, including when flight detection is dormant.
+function broker:pollReset(now)
+    local condition = self.document and self.document.sessionReset or ""
+    if condition ~= self.resetCondition then
+        self.resetCondition, self.resetRuntime, self.resetFeed, self.resetValue = condition, nil, nil, nil
+        self.resetPolledAt = nil
+    end
+    if condition == "" then
+        if self.errors.reset then
+            self.errors.reset, self.state.resetError = nil, nil
+            self.state.diagnosticRevision = (self.state.diagnosticRevision or 0) + 1
+        end
+        return
+    end
+    if self.resetPolledAt == now then
+        return
+    end
+    self.resetPolledAt = now
+    if not self.resetRuntime then
+        local runtime = self.support.runtime(self.env)
+        local control = self.modules.control.new(self.env, self.support, runtime)
+        self.support.register(runtime, control, now)
+        self.resetFeed = control:switch(condition)
+        self.resetRuntime = runtime
+    end
+    local id, message = self.support.update(self.resetRuntime, now)
+    if message then
+        self.resetValue = nil
+        error(tostring(id) .. ": " .. message)
+    end
+    local feed = self.resetFeed
+    if self.resetRuntime.byId.control.failed or not reliable(feed, now) then
+        self.resetValue = nil
+        self:error("reset", "Session reset switch unavailable: " .. condition)
+        return
+    end
+    if self.errors.reset then
+        self.errors.reset, self.state.resetError = nil, nil
+        self.state.diagnosticRevision = (self.state.diagnosticRevision or 0) + 1
+    end
+    local previous = self.resetValue
+    self.resetValue = feed.value
+    -- Booting, changing the selection, or recovering while held is not an edge.
+    if previous == false and feed.value == true then
+        self:resetSession(now)
+    end
+end
+
+function broker:effect(kind, operation, ...)
+    if self:identity() ~= self.filename then
+        error("Model changed during flight operation")
+    end
+    local ok, result = pcall(operation, ...)
+    if not ok then
+        self:error(kind, result)
+    elseif kind ~= "output" and self.errors[kind] then
+        self.errors[kind], self.state[kind .. "Error"] = nil, nil
+        self.state.diagnosticRevision = (self.state.diagnosticRevision or 0) + 1
+    end
+    return ok, result
+end
+
+function broker:attach(proposal, signature, now)
+    local settings = self.config.resolve(proposal.settings)
+    local errors = self.config.validate(settings)
+    assert(#errors == 0, table.concat(errors, "; "))
+    self:validateOutput(settings.flightSwitch, proposal.armKey)
+    local runtime = self.support.runtime(self.env)
+    for _, id in ipairs({ "telemetry", "control" }) do
+        local instance = self.modules[id].new(self.env, self.support, runtime)
+        self.support.register(runtime, instance, now)
+    end
+    local control, telemetry = runtime.byId.control, runtime.byId.telemetry
+    local smartSensors, smartRuntime
+    if settings.smartDetection then
+        smartRuntime = self.support.runtime(self.env)
+        local instance = self.modules.smart.new(self.env, self.support, smartRuntime)
+        self.support.register(smartRuntime, instance, now)
+        smartSensors = instance:enable()
+    end
+    local session = {
+        settings = settings,
+        phase = "ground",
+        feed = control:globalVariable(8, 0),
+        arm = control:switch(proposal.armKey, proposal.armIndex),
+        motor = telemetry:subscribe(settings.motorSource, false),
+        link = telemetry:link(),
+        armKey = proposal.armKey,
+        smart = smartSensors,
+    }
+    local owner = self
+    session.control = {
+        incrementFlightCount = function()
+            local ok, count = owner:effect("count", control.incrementFlightCount, control)
+            assert(ok, count)
+            return count
+        end,
+    }
+    function session:qualified(stamp)
+        self.outputInitialized = true
+        owner.serial = owner.serial + 1
+        self.flightId, self.qualifiedAt = owner.serial, stamp
+        owner:boundary("start", self.startedAt, stamp)
+        owner.state.qualifiedAt = stamp
+        if settings.flightSwitch ~= "" then
+            owner.output =
+                { name = settings.flightSwitch, armKey = self.armKey, desired = true, flightId = self.flightId }
+        end
+    end
+    function session:completed(stamp)
+        owner:boundary("end", self.disarmedAt, stamp)
+        owner.state.endedAt, owner.state.completedAt = self.disarmedAt, stamp
+        if owner.output then
+            owner.output.desired, owner.output.queued = false, nil
+        end
+    end
+    if self.signature and self.signature ~= signature then
+        self.readyAfterDisarm = true
+    end
+    self.runtime, self.smartRuntime, self.session, self.signature = runtime, smartRuntime, session, signature
+    if self.errors.detection then
+        self.errors.detection, self.state.detectionError = nil, nil
+        self.state.diagnosticRevision = (self.state.diagnosticRevision or 0) + 1
+    end
+    self.state.armKey = proposal.armKey
+    self.state.startedAt, self.state.qualifiedAt, self.state.endedAt, self.state.completedAt = nil, nil, nil, nil
+    self.state.reason, self.state.smartStatus = nil, nil
+end
+
+function broker:flushOutput(now)
+    local output = self.output
+    if not output or output.queuedAt == now then
+        return
+    end
+    local ok, index = pcall(self.validateOutput, self, output.name, output.armKey)
+    if not ok then
+        self:error("output", index)
+        return
+    end
+    local condition = self.env.getSwitchIndex and self.env.getSwitchIndex(output.name)
+    local observed = condition and self.env.getSwitchValue and self.env.getSwitchValue(condition)
+    if output.queued then
+        if observed == output.desired then
+            self.state.outputStatus = "applied"
+            if self.state.outputError then
+                self.state.diagnosticRevision = (self.state.diagnosticRevision or 0) + 1
+            end
+            self.state.outputError, self.errors.output = nil, nil
+            if not output.desired then
+                self.output = nil
+            end
+        elseif now - output.queuedAt > 100 then
+            self:error("output", output.name .. " did not retain the requested state; check other writers")
+        end
+        return
+    end
+    local succeeded, full = self:effect("output", self.env.setStickySwitch, index, output.desired)
+    if succeeded then
+        if full == false then
+            output.queued, output.queuedAt = true, now
+            self.state.outputStatus = "queued"
+        elseif full == true then
+            self.state.outputStatus = "pending"
+            self:error("output", "Sticky command buffer full; retrying " .. output.name)
+        else
+            self:error("output", "Sticky API returned an invalid queue result")
+        end
+    end
+end
+
+function broker:tick(now, filename)
+    filename = filename or self:identity()
+    if filename ~= self.filename then
+        self:reset(filename)
+    end
+    if self.pumpedAt == now then
+        return
+    end
+    self.pumpedAt = now
+    local proposal, signature, status = self:proposals(now)
+    self.state.status = self.loadError and "error" or status
+    self.state.persistenceError = self.loadError
+    local active = self.session and (self.session.phase == "active" or self.session.phase == "ending")
+    if self.output and not self.output.flightId and (not proposal or signature ~= self.signature or self.loadError) then
+        self.output = nil
+        if self.session then
+            self.session.outputInitialized = false
+        end
+        self.state.outputStatus = "inhibited"
+        if self.errors.output then
+            self.errors.output, self.state.outputError = nil, nil
+            self.state.diagnosticRevision = (self.state.diagnosticRevision or 0) + 1
+        end
+    end
+    if not active and not self.output and proposal and not self.loadError and signature ~= self.signature then
+        local ok, message = pcall(self.attach, self, proposal, signature, now)
+        if not ok then
+            self:error("detection", message)
+            self.state.status = "error"
+            return
+        end
+    end
+    local session = self.session
+    if not session then
+        if self.factory and status == "unconfigured" then
+            self.dormantRevision = self.factory.revision
+        end
+        return
+    end
+    local id, message = self.support.update(self.runtime, now)
+    if message then
+        self:error("detection", tostring(id) .. ": " .. message)
+    end
+    if self.smartRuntime then
+        id, message = self.support.update(self.smartRuntime, now)
+        if message then
+            self:error("detection", tostring(id) .. ": " .. message)
+        end
+    end
+    session.controlAvailable = not self.runtime.byId.control.failed
+    session.smartAvailable = not (self.smartRuntime and self.smartRuntime.byId.smart.failed)
+    session.detectionAvailable = session.controlAvailable and not self.runtime.byId.telemetry.failed
+    if self.lastTick and now >= self.lastTick and now - self.lastTick < 20 then
+        self:flushOutput(now)
+        return
+    end
+    if self.lastTick and (now < self.lastTick or now - self.lastTick > 100) then
+        session.groundAt = nil
+        session.altitudeSince, session.speedSince, session.wasArmed = nil, nil, nil
+        session.altitudeReference = nil
+        if session.phase == "starting" then
+            session.phase, session.startedAt = "ground", nil
+        elseif session.phase == "ending" then
+            session.phase, session.disarmedAt = "active", nil
+        end
+    end
+    self.lastTick = now
+    active = session.phase == "active" or session.phase == "ending"
+    if
+        self.readyAfterDisarm
+        and reliable(session.arm, now)
+        and session.arm.value == false
+        and (not self.readyAfterDisarmAt or session.arm.updatedAt >= self.readyAfterDisarmAt)
+    then
+        self.readyAfterDisarm, self.readyAfterDisarmAt = nil, nil
+    end
+    if
+        active
+        or (
+            proposal
+            and signature == self.signature
+            and not self.loadError
+            and not self.errors.count
+            and not self.readyAfterDisarm
+            and (not self.output or self.output.desired)
+        )
+    then
+        local ok, failure = pcall(flight.advance, session, now)
+        if not ok then
+            self:error("detection", failure)
+            self.errors.count = self.errors.count or failure
+        end
+    elseif not active then
+        session.phase, session.startedAt = "ground", nil
+        session.altitudeSince, session.speedSince, session.wasArmed = nil, nil, nil
+        session.altitudeReference = nil
+    end
+    if
+        not self.output
+        and proposal
+        and signature == self.signature
+        and not self.loadError
+        and session.controlAvailable
+        and session.settings.flightSwitch ~= ""
+        and session.phase == "ground"
+        and reliable(session.arm, now)
+        and session.arm.value == false
+    then
+        session.groundAt = session.groundAt or now
+        if not session.outputInitialized and now - session.groundAt >= session.settings.disarmDuration * 100 then
+            session.outputInitialized = true
+            self.output = { name = session.settings.flightSwitch, armKey = session.armKey, desired = false }
+        end
+    else
+        session.groundAt = nil
+    end
+    self:flushOutput(now)
+    self.state.phase, self.state.active = session.phase, session.phase == "active" or session.phase == "ending"
+    self.state.startedAt, self.state.disarmedAt = session.startedAt, session.disarmedAt
+    self.state.reason = session.reason
+    if session.smart then
+        self.state.smartStatus = session.smartAvailable and session.smart.status
+            or "Smart unavailable: sensor reader failed; standard only."
+        if session.smartAvailable and session.altitudeReference == nil then
+            self.state.smartStatus = self.state.smartStatus .. " Baro needs a live arming reference."
+        end
+    end
+    self.state.flightId, self.state.count = session.flightId, session.feed.raw
+    self.state.revision = self.state.revision + 1
+end
+
+function flight.new(env, support, runtime)
+    if not runtime.host or not runtime.host.flightFactory then
+        local view = support.snapshot({ phase = "ground", active = false, status = "unconfigured" })
+        return {
+            id = "flight",
+            count = 0,
+            interval = 20,
+            due = 0,
+            revision = 0,
+            state = function()
+                return view
+            end,
+        }
+    end
+    local host, factory = runtime.host, runtime.host.flightFactory
+    if not factory.broker then
+        factory.broker = flight.newBroker(env, support, runtime.modules, host.flightConfig, factory.members)
+    end
+    local owner = factory.broker
+    owner.factory = factory
+    host.flightBroker = owner
+    local facade = { id = "flight", count = 0, interval = 20, due = 0, revision = 0, broker = owner }
+    function facade:state()
+        return owner.view
+    end
+    function facade:boundaries(sequence, epoch)
+        return owner:boundaries(sequence, epoch)
+    end
+    return facade
+end
+
+return flight

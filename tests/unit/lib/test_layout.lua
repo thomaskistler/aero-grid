@@ -113,7 +113,7 @@ panels:
 ]]))
     local normalized, errors = layout.validate(document, grid)
     assertions.assertEqual(#errors, 0)
-    assertions.assertEqual(normalized.version, 3)
+    assertions.assertEqual(normalized.version, 5)
     local cells = normalized.panels[1]
     assertions.assertEqual(cells.type, "rx-battery")
     assertions.assertEqual(cells.config.reading, "cell")
@@ -180,9 +180,17 @@ local function testAdjacentMigrationSteps()
     migrated, nextVersion = layout.migrateHeaderStep(validated)
     assert(migrated)
     assertions.assertEqual(nextVersion, 3)
+    assertions.assertEqual(layout.finalizeHeader(validated), nil, "the version-4 step is required")
+    migrated, nextVersion = layout.migrateHeaderStep(validated)
+    assert(migrated)
+    assertions.assertEqual(nextVersion, 4)
+    assertions.assertEqual(layout.finalizeHeader(validated), nil, "the version-5 step is required")
+    migrated, nextVersion = layout.migrateHeaderStep(validated)
+    assert(migrated)
+    assertions.assertEqual(nextVersion, 5)
     local finalized, finalizeErrors = layout.finalizeHeader(validated)
     assertions.assertEqual(#finalizeErrors, 0)
-    assertions.assertEqual(finalized.version, 3)
+    assertions.assertEqual(finalized.version, 5)
 
     local panel = {
         type = "cell-battery",
@@ -197,12 +205,12 @@ local function testAdjacentMigrationSteps()
     migrated, nextVersion = layout.migratePanelStep(panel, 2)
     assert(migrated)
     assertions.assertEqual(nextVersion, 3)
-    assertions.assertEqual(layout.supportsVersion(4), false, "future versions require registered adjacent helpers")
+    assertions.assertEqual(layout.supportsVersion(6), false, "future versions require registered adjacent helpers")
 end
 
 local function testUnsupportedFutureVersion()
     local document = {
-        version = 4,
+        version = layout.VERSION + 1,
         grid = { columns = 4, rows = 4 },
         panels = {},
     }
@@ -287,6 +295,11 @@ local function testNavigationMigration()
 end
 
 local function run()
+    local panel = { type = "flight-counter", config = { announcements = true, history = true, motorSource = "ch7" } }
+    layout.normalizePanel(panel)
+    assertions.assertEqual(panel.config.announcements, nil, "obsolete audio settings must not reject older panels")
+    assertions.assertEqual(panel.config.history, nil, "obsolete CSV settings must not reject older panels")
+    assertions.assertEqual(panel.config.motorSource, "ch7")
     testValidation()
     testOverlapIsRejected()
     testVersionOneBatteryMigration()

@@ -127,11 +127,11 @@ local function settingsFor(module, config)
     return values, knownConfig, errors
 end
 
-local function validatePanelSettings(module, settings, knownConfig, span)
+local function validatePanelSettings(module, settings, knownConfig, span, modelArmed)
     if type(module.validateSettings) ~= "function" then
         return true
     end
-    local ok, reported = pcall(module.validateSettings, settings, span, knownConfig)
+    local ok, reported = pcall(module.validateSettings, settings, span, knownConfig, modelArmed)
     if not ok then
         return false, "validateSettings raised: " .. tostring(reported)
     end
@@ -249,12 +249,32 @@ local function candidateSpans(module)
 end
 
 function editor.availablePositions(session, colSpan, rowSpan, excluded)
-    local positions = {}
+    local positions, occupied = {}, {}
+    for index, panel in ipairs(session.draft.panels) do
+        if index ~= excluded then
+            for row = panel.row, panel.row + panel.rowSpan - 1 do
+                for col = panel.col, panel.col + panel.colSpan - 1 do
+                    occupied[row * 4 + col] = true
+                end
+            end
+        end
+    end
     for row = 0, 4 - rowSpan do
         for col = 0, 4 - colSpan do
-            local placement = { col = col, row = row, colSpan = colSpan, rowSpan = rowSpan }
-            if not overlapsAny(session.grid, session.draft.panels, placement, excluded) then
-                positions[#positions + 1] = placement
+            local clear = true
+            for y = row, row + rowSpan - 1 do
+                for x = col, col + colSpan - 1 do
+                    if occupied[y * 4 + x] then
+                        clear = false
+                        break
+                    end
+                end
+                if not clear then
+                    break
+                end
+            end
+            if clear then
+                positions[#positions + 1] = { col = col, row = row, colSpan = colSpan, rowSpan = rowSpan }
             end
         end
     end
@@ -285,7 +305,7 @@ function editor.sizes(session)
                 and placement.col + colSpan <= 4
                 and placement.row + rowSpan <= 4
                 and not overlapsAny(session.grid, session.draft.panels, candidate, session.selected)
-                and validatePanelSettings(module, settings, knownConfig, candidate)
+                and validatePanelSettings(module, settings, knownConfig, candidate, session.modelArmed)
             then
                 sizes[#sizes + 1] = tostring(colSpan) .. "x" .. tostring(rowSpan)
             end
@@ -329,6 +349,7 @@ function editor.add(session, typeName)
             and type(setting.key) == "string"
             and setting.default ~= nil
             and not setting.drawerField
+            and not setting.legacyFlight
         then
             config[setting.key] = copy(setting.default)
         end
@@ -366,15 +387,25 @@ local function findSelected(session)
     return placement, index
 end
 
-local function moveTarget(session, placement, index, col, row)
+local function moveTarget(session, placement, index, col, row, bounded)
     local moved = { col = col, row = row, colSpan = placement.colSpan, rowSpan = placement.rowSpan }
-    local valid, placementError = session.grid.validatePlacement(moved, 4, 4)
-    if not valid then
-        return nil, placementError
+    if not bounded then
+        local valid, placementError = session.grid.validatePlacement(moved, 4, 4)
+        if not valid then
+            return nil, placementError
+        end
     end
     local conflict, conflictIndex
     for otherIndex, other in ipairs(session.draft.panels) do
         if otherIndex ~= index and session.grid.overlaps(other, moved) then
+            if
+                other.col == col
+                and other.row == row
+                and other.colSpan == placement.colSpan
+                and other.rowSpan == placement.rowSpan
+            then
+                return moved, nil, other, placement
+            end
             if conflict then
                 return nil, "overlaps panel " .. other.id
             end
@@ -382,14 +413,6 @@ local function moveTarget(session, placement, index, col, row)
         end
     end
     if conflict then
-        if
-            conflict.col == col
-            and conflict.row == row
-            and conflict.colSpan == placement.colSpan
-            and conflict.rowSpan == placement.rowSpan
-        then
-            return moved, nil, conflict, placement
-        end
         local displaced = {
             col = placement.col,
             row = placement.row,
@@ -452,7 +475,7 @@ function editor.movePositions(session)
     local positions, seen = {}, {}
     for row = 0, 4 - placement.rowSpan do
         for col = 0, 4 - placement.colSpan do
-            local moved = moveTarget(session, placement, index, col, row)
+            local moved = moveTarget(session, placement, index, col, row, true)
             if moved then
                 local key = moved.row * 4 + moved.col
                 if not seen[key] then
@@ -508,7 +531,7 @@ function editor.resize(session, colDelta, rowDelta, col, row)
         return false, "panel does not support span " .. tostring(resized.colSpan) .. "x" .. tostring(resized.rowSpan)
     end
     local settings, knownConfig = settingsFor(module, placement.config or {})
-    local compatible, settingError = validatePanelSettings(module, settings, knownConfig, resized)
+    local compatible, settingError = validatePanelSettings(module, settings, knownConfig, resized, session.modelArmed)
     if not compatible then
         return false, settingError
     end
@@ -545,7 +568,7 @@ function editor.resizePositions(session, left, top)
                 session.grid.validatePlacement(candidate, 4, 4)
                 and supportsSpan(module, width, height)
                 and not overlapsAny(session.grid, session.draft.panels, candidate, index)
-                and validatePanelSettings(module, settings, knownConfig, candidate)
+                and validatePanelSettings(module, settings, knownConfig, candidate, session.modelArmed)
             then
                 positions[#positions + 1] = candidate
             end
@@ -979,7 +1002,16 @@ function editor.settings(session)
             config[setting.key] = copy(setting.default)
         end
     end
-    return module.settings or {}, config, module
+    local fields = {}
+    for _, setting in ipairs(module.settings or {}) do
+        if
+            not setting.legacyFlight
+            and (not setting.legacyArm or (session.modelArmed == nil and config[setting.key] ~= ""))
+        then
+            fields[#fields + 1] = setting
+        end
+    end
+    return fields, config, module
 end
 
 function editor.restoreDefault(session, document)
@@ -1043,7 +1075,8 @@ function editor.validate(session)
                         module.validateSettings,
                         settings,
                         { colSpan = placement.colSpan, rowSpan = placement.rowSpan },
-                        knownConfig
+                        knownConfig,
+                        session.modelArmed
                     )
                     if not ok then
                         errors[#errors + 1] = "panel "

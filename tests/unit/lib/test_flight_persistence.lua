@@ -56,7 +56,8 @@ for _, pair in ipairs({
     { "SBv", "SB" .. string.char(193) },
     { "L01", "L01" },
 }) do
-    local arm = switches:armSwitch(pair[1])
+    local arm = switches:switch(pair[1])
+    switches:update(100)
     equal(selected, pair[2])
     enabled = true
     switches:update(100)
@@ -64,75 +65,23 @@ for _, pair in ipairs({
     for _, entry in ipairs(switches.entries) do
         entry.read(switches, entry, 100)
     end
-    equal(arm.value, 1)
+    equal(arm.value, true)
     equal(arm.updatedAt, 100)
     enabled = false
     for _, entry in ipairs(switches.entries) do
         entry.read(switches, entry, 120)
     end
-    equal(arm.value, 0)
+    equal(arm.value, false)
     equal(arm.fresh, true)
 end
-assert(not pcall(switches.armSwitch, switches, "MISSING"))
+local missing = switches:switch("MISSING")
+switches:update(140)
+assert(not missing.available and not missing.fresh, "unknown switch is unavailable, not disarmed")
 
-local content, tones, numbers = nil, {}, {}
-env = {
+local model = modelService.new({
     getInfo = function()
-        return { name = 'Model, "A"', filename = "model1.yml" }
+        return { name = "Model A", filename = "model1.yml" }
     end,
-    getDateTime = function()
-        return { year = 2026, mon = 10, day = 6, hour = 16, min = 8 }
-    end,
-    fileOpen = function(filename, access)
-        equal(filename, "/flights-history.csv")
-        if access == "r" then
-            return content and {} or nil
-        end
-        content = content or ""
-        return {}
-    end,
-    fileClose = function() end,
-    fileWrite = function(_, text)
-        content = content .. text
-    end,
-    playTone = function(frequency)
-        tones[#tones + 1] = frequency
-    end,
-    playNumber = function(count)
-        numbers[#numbers + 1] = count
-    end,
-}
-local model = modelService.new(env, support)
-equal(model:flightDate(), "2026-10-06 16:08")
-model:logFlight(model:flightDate(), 62.5, 40)
-assertions.assertContains(content, "flight_date,model_name,flight_count,duration,model_id\n# api_ver=1\n")
-assertions.assertContains(content, '2026-10-06 16:08,"Model, ""A""",40,62,model1.yml\n')
-local previous = content
-model:logFlight(model:flightDate(), 70, 41)
-equal(string.sub(content, 1, #previous), previous)
-local _, headers = string.gsub(content, "flight_date", "")
-equal(headers, 1)
-model:announceFlight(40, false)
-model:announceFlight(40, true)
-equal(tones[1], 1200)
-equal(tones[2], 800)
-equal(numbers[1], 40)
-equal(numbers[2], 40)
-env.fileOpen = function()
-    return nil, "card unavailable"
-end
-ok, err = pcall(model.logFlight, model, model:flightDate(), 70, 41)
-assert(not ok and string.find(err, "card unavailable", 1, true))
-local closed = false
-env.fileOpen = function()
-    return {}
-end
-env.fileClose = function()
-    closed = true
-end
-env.fileWrite = function()
-    error("card full")
-end
-ok, err = pcall(model.logFlight, model, model:flightDate(), 70, 41)
-assert(not ok and string.find(err, "card full", 1, true))
-assert(closed, "a failed write must still close the file")
+}, support)
+assert(model.logFlight == nil and model.flightDate == nil, "model service must not expose CSV history")
+assert(model.announceFlight == nil, "model service must not expose built-in flight announcements")

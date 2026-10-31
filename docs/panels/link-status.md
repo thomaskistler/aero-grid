@@ -60,13 +60,17 @@ Link-quality thresholds only apply to a source reporting percent.
 
 **Minimum tracked** set to **source** reads EdgeTX's own minimum, which EdgeTX
 resets on its own schedule. **Minimum source** overrides the automatic source.
-**flight** resets the minimum when the dashboard's arm switch becomes active,
+**flight** resets the minimum when the model's armed condition becomes active,
 tracks fresh readings while armed, and retains the result after disarming.
-That switch is set in the layout file; see the YAML reference. With no arm
+Set **Arm switch** in **AeroGrid → Model settings**. Changes save automatically. Before model
+arming is saved, a legacy layout session switch remains in use. With no arm
 switch configured, it tracks one open-ended dashboard session instead.
 The tracked source is **RSSI source** when **Primary reading** is **rssi**;
 otherwise it is **Link quality source**, falling back to **RSSI source** when
 no quality source is selected. It does not switch with the automatic headline.
+
+The [Session reset switch](../user-guide/model-settings.md#session-reset) clears
+AeroGrid's flight-session minima on every dashboard, not EdgeTX's source minima.
 
 ## States
 

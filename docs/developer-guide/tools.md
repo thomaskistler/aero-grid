@@ -54,9 +54,11 @@ gives output dimensions of 137 x 154, 258 x 85, and 258 x 154 respectively.
 Recipes can override the border.
 Chart omits the unsupported 1x2 placement. Its adapter generates varying
 synthetic readings through the real telemetry/history services, records for
-approximately 20 seconds with a brief disarm/rearm gap, and disarms before
-capturing a stable frame. Its recipe requires `armSwitch: SFv`; the adapter
-supplies that condition through the real control service.
+two flights separated by a recording pause, and waits for confirmed completion
+and finished projection before capturing. This shows neutral flight bands,
+arm/disarm triangles, and a resume gap with dotted connectors.
+Its recipe requires `armSwitch: SFv`; the adapter supplies that condition and
+a motor channel through the real services, with isolated model flight settings.
 
 The runner waits for recipe-specific readiness, not just a fixed delay.
 Timer, trim, flight-mode, and model-image samples use isolated firmware model
@@ -99,9 +101,8 @@ Be explicit about capture-only differences:
   a supported production setting.
 - Metric/link-status examples can omit visuals through `config.visual: none`.
   This is a production setting, not evidence that all presentations were tested.
-- The flight-counter gallery uses three isolated trackers to reach its sample
-  count through real GV9 FM0 persistence. This is screenshot scaffolding,
-  **not a supported multi-tracker installation**.
+- The flight-counter gallery panels share one detector and reach their sample
+  count through one real GV9 FM0 increment in the isolated model.
 
 Model images resolve relative to the recipe and need a firmware-safe PNG name.
 Establish redistribution permission before publishing a replacement image;
@@ -131,16 +132,19 @@ The `navigation-location` scene enters fullscreen and taps the navigation
 panel using native touch input. It closes and reopens the location overlay
 twice before capturing the frozen Google Maps QR code.
 
-This tool uses only Python's standard library plus the same native capture
-runner. It covers setup/widget/layout choices, editor overview, Metric/State
-settings, entry dialogs, exit, and Save As. Every other panel has a
+This tool uses the same native capture runner; panel-drawer scenes also need
+PyYAML from `make capture-setup`. It covers setup/widget/layout choices,
+editor overview, Metric/State settings, entry dialogs, exit, and Save As. Every other panel has a
 `<panel>-settings` scene (for example `--scene flight-timer-settings`) that
 captures its full settings drawer from the panel's capture recipe config, for
 the panel reference pages. Use `--help` for supported scene names.
-The Chart scenes use a native GV1 source labeled **Reading** and **SFv**
-as the panel's armed switch position.
+Panel drawer scenes save **SFv** as the model-wide Arm switch, so obsolete
+panel arm controls are not shown. The Chart scenes use a native GV1 source
+labeled **Reading**.
 `chart-settings` selects **rolling** to include **Window duration**;
 `chart-metric-entry` opens Chart's own entry drawer, not Metric's.
+The `aero-menu`, `model-settings`, `model-settings-reset`, and
+`model-settings-bottom` scenes show the shared model menu and settings.
 
 It also captures the telemetry-free **Palette** layout with real production
 primitives. These scenes are opt-in and do not open the editor:
@@ -204,7 +208,7 @@ hashes, and unmodified production source hashes.
 
 Panel reference images live in `docs/assets/panels/<panel>/`.
 After reviewing the full frame, crops, and provenance, copy only the intended
-gallery PNGs there. Update the reference-page captions if samples,
+gallery PNGs and matching `provenance.json` there. Update the reference-page captions if samples,
 synthetic inputs, or presentation overrides changed.
 
 Editor images live in `docs/assets/editor/`. Copy the selected PNGs and the

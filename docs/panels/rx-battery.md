@@ -42,6 +42,8 @@ A numeric source supplies total pack voltage. The panel divides it by
 count, the first fresh, valid voltage is divided by **Full (V/cell)** and
 rounded to the nearest integer. That estimate is held as voltage falls;
 after stale or missing data, the next fresh reading starts a new estimate.
+The [Session reset switch](../user-guide/model-settings.md#session-reset) also
+clears the estimate, which is then recalculated from fresh voltage.
 The count is marked `EST`, shortened to `~` or omitted when space is tight.
 Estimation assumes the first reading is near full. A partly charged pack,
 load sag, starting mid-flight, or a different chemistry can give the wrong

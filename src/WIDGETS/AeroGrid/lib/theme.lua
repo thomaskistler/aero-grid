@@ -29,7 +29,7 @@
 ---@field mode string
 ---@field rgb AeroGridThemeTokens 24-bit values, kept for contrast math and tests.
 ---@field color table<string, integer> Display values produced by lcd.RGB.
----@field chartColor table<string, integer> Chart inks by accent name, plus the time grid.
+---@field chartColor table<string, integer> Chart inks, time grid, and neutral flight shading.
 ---@field spacing table
 ---@field accent string Default semantic accent token name.
 ---@field light boolean Whether the theme uses a light palette.
@@ -761,6 +761,7 @@ function theme.build(mode)
             amber = colors.chartAmber,
             orange = colors.chartOrange,
             grid = colors.chartGrid,
+            flightBand = lcd.RGB(definition.light and 0x000000 or 0xFFFFFF),
         },
         -- Kept apart from `color` because these are per state rather than per
         -- token, and mirrored in 24-bit so contrast arithmetic has values it can

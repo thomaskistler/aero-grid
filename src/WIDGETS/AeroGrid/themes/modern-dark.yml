@@ -21,6 +21,8 @@ colors:
   border: 0x3A434B
   # Unfilled tracks behind bars and other meters.
   track: 0x545F6A
+  # Keep minute lines visible over the neutral flight band.
+  chartGrid: 0x545F6A
   # Primary readings and prominent text.
   text: 0xF4F6F7
   # Secondary labels and supporting text.

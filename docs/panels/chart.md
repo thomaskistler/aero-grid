@@ -4,9 +4,13 @@
 | --- | --- |
 | ![Chart at 2x1](../assets/panels/chart/2x1.png) | ![Chart at 2x2](../assets/panels/chart/2x2.png) |
 
-Records up to three numeric EdgeTX sources on one chart while armed.
+Records up to three numeric EdgeTX sources on one chart while armed or in flight.
 The legend shows each recorded value and its minimum and maximum.
 Use separate panels for separate charts.
+Select **Arm switch** in **AeroGrid → Model settings**; changes save automatically.
+Until model arming has been saved, an existing panel arm switch remains in use
+and visible. Saved model arming overrides it on every dashboard; saved **None**
+disables recording rather than restoring the fallback.
 
 ## Settings
 
@@ -15,7 +19,6 @@ Use separate panels for separate charts.
 | Setting | Default | What it does |
 | --- | --- | --- |
 | **Label** | empty | Optional chart heading. Clear it to hide the heading. |
-| **Armed switch position** | none | Physical switch position such as **SA^** or **SFv**, or logical switch **L01**, that means armed. Recording is disabled until selected. |
 | **Metrics** | none | Up to three readings. Tap **+** to add one, or tap an entry to edit it. |
 | **Time range** | growing | **growing** keeps the recording from the start; **rolling** shows the latest fixed window. |
 | **Window duration** | 1 minute | **30 seconds**, **1 minute**, **2 minutes**, **5 minutes**, or **10 minutes**. Shown only when **Time range** is **rolling**. |
@@ -41,18 +44,35 @@ Tap a reading under **Metrics** to open its settings.
 
 ## Behavior
 
-Recording starts when **Armed switch position** is active, pauses when it is
-inactive, and resumes the same recording on rearm. Disarmed time takes no
-horizontal space. Dashed markers and breaks in the line mark disarm/rearm
-boundaries and missing telemetry.
-Readouts freeze while disarmed. Minimum and maximum cover all recorded armed
+Recording starts when the effective armed condition is active. When shared
+flight detection uses that same condition, recording continues through the
+disarm grace until flight end is confirmed, even while the chart is hidden.
+Rearming during grace keeps one uninterrupted flight. Without a qualified,
+matching flight, disarming pauses recording immediately.
+
+A subtle background band identifies each flight behind the grid and telemetry
+traces: lighter in dark themes, darker in light themes.
+Its edges use the actual flight times, not the later
+qualification or confirmation times; an active flight's band grows with the
+recording. Grace-period samples remain on the chart beyond the band's end.
+No Flight counter panel or logical-switch output is required. A chart opened
+mid-flight shades only the recorded portion.
+
+Upward triangles on the bottom axis mark arming; downward triangles mark disarming.
+The first arming that starts recording is not marked.
+Pausing simply stops the traces, without a label or stop marker.
+Resuming inserts a gap; dotted lines
+connect the last recorded values to the resumed values.
+The gap indicates omitted time, not the length of the pause.
+Missing telemetry breaks the traces without adding a pause gap or connector.
+Readouts freeze when recording pauses. Minimum and maximum cover all recorded
 periods, even in rolling mode.
 
 **Growing** starts at one minute and expands in whole-minute steps as
-cumulative armed time increases. **Rolling** drops plot history outside
+cumulative recording time increases. **Rolling** drops plot history outside
 **Window duration**, but keeps the recorded minimum and maximum.
-Faint solid lines mark armed-time intervals; the bottom-right label shows
-the visible duration.
+Faint solid grid lines mark recording-time intervals; the bottom-right label shows
+the recording-time window. Very dense pause gaps can push older points out of view.
 
 Each vertical bound can be fixed independently: set only **Range min** to
 anchor the bottom, only **Range max** to fix the top, or both for a fixed
@@ -68,22 +88,30 @@ Missing or stale readings leave gaps and dim the last value rather than
 recording a false zero; a fresh numeric zero is valid.
 
 If **HISTORY FULL** appears, existing plot history is preserved and new plot
-samples stop for the full series. Armed readouts and extrema continue
+samples stop for the full series. Readouts and extrema continue
 updating. Rolling mode frees space as old history leaves the window.
 
 History is held in RAM, not saved to the SD card. It continues while the
 dashboard receives background updates. Reloading or restarting the dashboard,
 including applying editor changes that rebuild it, clears history.
-There is no separate reset control.
+Editor previews reuse compatible recorded history without starting new recordings.
+New sources show an explicit no-data preview until saved.
+Flight overlays retain the latest 64 intervals; missing earlier boundaries are
+not guessed.
+Use **Session reset switch** in
+[Model settings](../user-guide/model-settings.md#session-reset) to clear recordings,
+extrema, and markers across all dashboards.
 
 ## States
 
 | Message | Meaning |
 | --- | --- |
-| **SET ARM SOURCE** | Select **Armed switch position** in the panel settings; recording is disabled without it. |
-| **ARM N/A** | The selected armed switch condition is unavailable; recording is paused. |
+| **SET ARM SOURCE** | Select **Arm switch** in Model settings; recording is disabled without an effective switch. |
+| **ARM N/A** | The selected armed switch condition is unavailable and no matching active flight is keeping recording running. |
 | **ADD METRICS** | Add a source in the panel settings. |
 | **WAITING FOR ARM** | No samples have been recorded yet. |
-| **NO DATA** | Armed, but no configured source has supplied a valid numeric sample. |
+| **NO DATA** | Recording, but no configured source has supplied a valid numeric sample. |
 | **HISTORY N/A** | History is unavailable; consult [Host diagnostics](host-diagnostics.md). |
-| **HISTORY FULL** | A series has stopped adding plot samples to preserve its recording; armed readouts and extrema still update. |
+| **HISTORY FULL** | A series has stopped adding plot samples to preserve its recording; readouts and extrema still update. |
+| **PREVIEW** | An edited chart displaying compatible existing history without changing recording. |
+| **PREVIEW: NO DATA** | A new or incompatible recording configuration; sampling starts after saving. |

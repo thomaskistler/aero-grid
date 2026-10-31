@@ -4,7 +4,9 @@
 | --- | --- | --- |
 | ![Flight counter at 1x2](../assets/panels/flight-counter/1x2.png) | ![Flight counter at 2x1](../assets/panels/flight-counter/2x1.png) | ![Flight counter at 2x2](../assets/panels/flight-counter/2x2.png) |
 
-Counts qualifying flights, stores the total in GV9, and highlights an active flight.
+Displays the model's GV9 flight total and highlights a detected active flight.
+Flight tracking is shared by AeroGrid dashboards and does not require a visible
+Flight counter.
 
 ## Settings
 
@@ -13,53 +15,96 @@ Counts qualifying flights, stores the total in GV9, and highlights an active fli
 | Setting | Default | What it does |
 | --- | --- | --- |
 | **Label** | FLT | Panel heading. Clear it to restore the default. |
-| **Armed switch position** | SF↑ | Switch position that means armed. Choose a physical switch position or a logical switch that is true while armed. |
-| **Motor channel** | CH3 | Motor channel used to check whether the motor is running. Select your model's actual throttle channel. The picker is restricted to channels. |
-| **Reversed motor channel** | off | Reverse the channel reading before calculating motor percentage. Enable it if the selected channel runs from high at idle to low at full power. |
-| **Minimum motor percent** | 25 | Motor percentage must be strictly above this value to qualify. Valid values are 0 up to, but not including, 100. Whole-number values change in steps of 1. |
-| **Qualification seconds** | 30 | How long armed, sufficient motor output, and live telemetry must hold continuously before a flight counts. Must be greater than 0 and at most 3600 seconds. Whole-number values change in steps of 1. |
-| **Disarm seconds** | 10 | Continuous disarming needed to confirm the end of a counted flight. Must be greater than 0 and at most 3600 seconds. Whole-number values change in steps of 1. |
-| **Announce flights** | off | Play a tone and speak the total when a flight qualifies and when its end is confirmed. No external sound files are needed. |
-| **Write CSV history** | on | Append confirmed completed flights to `/flights-history.csv` on the SD card. |
+
+Select **Arm switch** in **AeroGrid → Model settings**. Changes apply immediately
+to every dashboard for the model. Until model arming is set,
+retained legacy Flight counter arm conditions remain in use and must agree for
+shared flight tracking. Conflicts require an explicit model selection, not an
+automatic choice. Saving **None** disables arming, including legacy fallbacks.
+
+### Model flight settings
+
+Configure motor output, start/end detection windows, Smart detection,
+Session reset switch, and Flight status switch in
+[Model settings](../user-guide/model-settings.md).
+These settings save automatically and apply to the model's dashboards,
+including Empty dashboards. The panel drawer only configures its label.
+
+Existing layouts keep their detection settings until you change Model settings.
+If older counters disagree, choose the intended configuration explicitly.
+Configure Model settings before removing the last legacy counter.
 
 ## Behavior
 
-A flight qualifies when **Armed switch position**, **Minimum motor percent**,
-and live telemetry hold continuously for **Qualification seconds**. Any
+A flight qualifies when the effective armed condition, **Motor threshold (%)**,
+and live telemetry hold continuously for the **Start detection window**. Any
 interruption before qualification resets the attempt. Qualification increments
 the total once. Motor percentage maps the channel's normal low-to-high travel
-to 0–100%, after applying **Reversed motor channel**.
+to 0–100%, after applying **Reverse motor**.
 
-**Armed switch position** belongs to this panel only. If using session extrema
-or a separate State panel, configure their armed conditions to agree with it.
+With **Smart detection** on, a flight can also qualify when trustworthy
+barometric altitude is **more than 3 metres above its arming reference for
+2 continuous seconds**, **or** valid GPS groundspeed is **more than 10 mph for
+2 continuous seconds**. Both shortcuts still require armed state, motor above
+the configured threshold, and live telemetry. The fixed speed rule is a
+provisional heuristic, not a guaranteed taxi/flight discriminator.
+
+Smart discovers supported CRSF/ELRS and FrSky S.Port sensors automatically.
+Open **Model settings** to see sensor readiness or why standard detection is
+being used. Missing, ambiguous, stale, or unsupported sensors never block
+standard qualification. Altitude needs a trustworthy recent reading seen while
+disarmed or freshly received at the observed arm transition; starting AeroGrid
+already armed or receiving altitude late does not establish that reference.
+Healthy half-second and one-second updates are supported. `Current` means Smart
+is bridging a normal interval between updates; stopped or unverifiable streams
+fall back to standard detection. Low flights and short hops are not guaranteed
+to qualify early.
+
+The model's **Arm switch** overrides panel arm switches and also drives
+Chart, first-arm Navigation, and flight-session minima in this widget.
+Custom State-panel conditions remain independent.
 An unavailable arm reading cannot confirm disarming.
 
 After qualification, telemetry or motor changes do not end the flight.
-Continuous disarming starts the **Disarm seconds** timeout. Re-arming before
+Continuous disarming starts the **End detection window (s)**. Re-arming before
 it expires cancels the pending end without counting again. A callback gap of
 more than one second restarts qualification or a pending end timeout rather
-than assuming the condition held while unobserved. Tracking continues while
-this dashboard is hidden, once the panel has loaded.
+than assuming the condition held while unobserved. Tracking continues through
+hidden dashboards, layout/theme rebuilds, and panel previews while AeroGrid
+callbacks are running. Adding counters does not create another detector.
 
 Reserve GV9 in flight mode 0, with precision 0 and limits allowing 0–999.
 The existing total is kept, including one previously written by EdgeTX
-Flights. Invalid, full, or unsavable counts cause a panel error rather than
-wrapping. Use one tracking panel across all dashboards for a model, and do
-not also run EdgeTX Flights. To show the total elsewhere, use a read-only
-Metric panel with source GV9; configure other flight modes to inherit GV9
-from flight mode 0.
+Flights. Invalid or unsavable counts produce an error rather than wrapping.
+Do not also run EdgeTX Flights or another GV9 flight counter. Configure other
+flight modes to inherit GV9 from flight mode 0.
 
-**Write CSV history** records only confirmed completions. It uses the same
-five columns as EdgeTX Flights: flight date, model name, flight count,
-duration, and model identifier. Model names are CSV-quoted when needed.
-Duration runs from the start of qualification to the final disarming; the
-disarm grace period is excluded. History does not restore or calculate GV9.
-SD-card failures cause panel errors; the already saved count is retained.
+If dashboard arm conditions conflict or settings change during a flight, the
+current flight finishes using its original condition and output. New flights
+wait until the configuration is consistent.
+
+### Optional logical-switch output
+
+First configure a dedicated **Sticky** logical switch in EdgeTX, with no inputs,
+AND condition, delay, or duration. Then select it in **Flight status switch**.
+The list shows configured logical switches plus **None**. The output must not
+also be the flight's Arm or Session reset input.
+AeroGrid changes only its state, not its model configuration. Use the switch
+in your own Special Functions or sounds.
+
+The output turns true at qualification and false after confirmed completion,
+including the disarm grace period. A full command buffer is reported and retried.
+Do not share this output with another script. It is not a safety interlock:
+stopped Lua execution, model changes, or transmitter restarts cannot guarantee
+output cleanup.
+
+The [Session reset switch](../user-guide/model-settings.md#session-reset)
+cancels detection and clears its output without changing GV9.
+Disarm before another flight can be counted. AeroGrid does not write flight CSV files.
 
 GV9 persists through model saving and transmitter restarts, but in-flight
-detection state does not. Changing model, reloading the dashboard, or
-restarting during a flight can lose its history and qualify it again.
-Do not reload the tracking dashboard during flight.
+detection state does not. Changing model or restarting during a flight can
+lose its history and qualify it again.
 
 ## States
 
@@ -69,4 +114,4 @@ Do not reload the tracking dashboard during flight.
 | Qualified flight or pending disarm timeout | Count, mist blue surface, blue accent, and `IN-FLIGHT` badge. If the blue surface would be illegible, the surface keeps its normal color. |
 | Confirmed completion | Count retained and normal styling restored. |
 | GV9 unavailable | `--` and an `N/A` badge. |
-| Invalid configuration, persistence, or history failure | Panel error; tracking is disabled. |
+| Configuration or persistence failure | Actionable service error; resolve it before relying on tracking. |

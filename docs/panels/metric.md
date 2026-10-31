@@ -8,6 +8,7 @@ Displays up to three independently configured numeric EdgeTX sources.
 The first reading is the headline; the other two are supporting readings.
 Sensor minimum and maximum readings are ordinary sources, such as `GAlt-`
 and `GAlt+`. The panel does not derive measurements or convert units.
+AeroGrid's Session reset switch does not clear these EdgeTX-owned minima or maxima.
 
 ## Settings
 

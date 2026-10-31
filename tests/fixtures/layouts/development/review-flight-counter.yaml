@@ -18,5 +18,3 @@ panels:
       minMotorPercent: 25
       minFlightDuration: 3
       disarmDuration: 3
-      announcements: false
-      history: false

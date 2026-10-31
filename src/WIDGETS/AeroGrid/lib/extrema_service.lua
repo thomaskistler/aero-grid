@@ -55,7 +55,8 @@ function extremaService.new(env, support, runtime)
         runtime = runtime,
         tracks = {},
         cursor = 1,
-        session = 0,
+        sessions = {},
+        sessionOrder = {},
     }, extremaService)
 end
 
@@ -80,44 +81,34 @@ function extremaService:sourceExtreme(name, mode)
     return telemetry:subscribe(name .. (mode == "min" and "-" or "+"))
 end
 
---- Configure the arm source and subscribe to the flight session.
---- One dashboard has one flight, so the source comes from the layout's
---- `session` block rather than from a panel. It used to be a per-panel
---- setting, which let two panels name two switches and left the second one
---- silently ignored by the first-caller-wins rule below.
----@param armSource? string Switch or source name that marks the model armed.
+--- Subscribe to the effective widget/legacy arm condition's session.
+---@param armSource? string Retained legacy switch condition.
 ---@return AeroGridFlightSession
 function extremaService:flight(armSource)
-    if not self.flightView then
-        self.flightState = {
+    local arm = assert(self.runtime.byId.armed, "extrema requires Armed service"):state(armSource)
+    local session = self.sessions[arm.key]
+    if not session then
+        local state = {
             armed = false,
             active = false,
-            configured = false,
+            configured = arm.configured,
             count = 0,
             startedAt = nil,
             duration = 0,
             state = "unavailable",
         }
-        self.flightView = self.support.snapshot(self.flightState)
+        session = { state = state, arm = arm, tracks = {}, view = self.support.snapshot(state) }
+        self.sessions[arm.key] = session
+        self.sessionOrder[#self.sessionOrder + 1] = session
         self.count = self.count + 1
     end
-
-    if type(armSource) == "string" and armSource ~= "" and not self.armSource then
-        self.armSource = armSource
-        self.flightState.configured = true
-        local telemetry = self:telemetry()
-        if telemetry then
-            self.armReading = telemetry:subscribe(armSource)
-        end
-    end
-
-    return self.flightView
+    return session.view
 end
 
 --- Subscribe to flight-session extrema for one source.
 ---@param name any Source name whose extremes should be tracked.
 ---@return AeroGridSessionExtrema
-function extremaService:sessionExtrema(name)
+function extremaService:sessionExtrema(name, armSource)
     if type(name) ~= "string" or name == "" then
         if not self.noneTrack then
             self.noneTrack = self.support.snapshot({
@@ -132,7 +123,11 @@ function extremaService:sessionExtrema(name)
         return self.noneTrack
     end
 
-    local existing = self.tracks[name]
+    local flight = self:flight(armSource)
+    local arm = self.runtime.byId.armed:state(armSource)
+    local session = self.sessions[arm.key]
+    local key = arm.key .. "\0" .. name
+    local existing = self.tracks[key]
     if existing then
         return existing.view
     end
@@ -145,13 +140,16 @@ function extremaService:sessionExtrema(name)
             min = nil,
             max = nil,
             samples = 0,
-            session = self.session,
+            session = flight.count,
         },
         reading = telemetry and telemetry:subscribe(name) or nil,
+        flight = flight,
+        session = session,
     }
     self.trackOrder = self.trackOrder or {}
     self.support.addSubscription(self, self.trackOrder, track)
-    self.tracks[name] = track
+    self.tracks[key] = track
+    session.tracks[#session.tracks + 1] = track
     return track.view
 end
 
@@ -159,25 +157,27 @@ end
 --- This is the manual reset policy, and it is also what an arm transition
 --- calls, so both policies leave the service in exactly the same state.
 ---@param now? integer
-function extremaService:reset(now)
-    self.session = self.session + 1
-
-    for _, track in ipairs(self.trackOrder or {}) do
+local function resetSession(session, now)
+    local flight = session.state
+    flight.count = flight.count + 1
+    for _, track in ipairs(session.tracks) do
         local state = track.state
         state.min = nil
         state.max = nil
         state.samples = 0
         state.available = false
-        state.session = self.session
+        state.session = flight.count
     end
 
-    local flight = self.flightState
-    if flight then
-        flight.count = self.session
-        flight.startedAt = now
-        flight.duration = 0
-        flight.active = true
-        flight.state = "normal"
+    flight.startedAt = now
+    flight.duration = 0
+    flight.active = true
+    flight.state = "normal"
+end
+
+function extremaService:reset(now)
+    for _, session in ipairs(self.sessionOrder) do
+        resetSession(session, now)
     end
 end
 
@@ -210,48 +210,42 @@ local function sample(track)
     state.samples = state.samples + 1
 end
 
---- Sample one tracked value.
-local function sampleEntry(_, track)
-    sample(track)
+local function advanceSession(service, session, now)
+    local flight, arm = session.state, session.arm
+    if flight.configured then
+        local live = arm.fresh and now >= arm.updatedAt and now - arm.updatedAt <= 100
+        if not live then
+            flight.active = false
+            flight.state = "unavailable"
+            return
+        end
+        if arm.value and not flight.armed then
+            resetSession(session, now)
+        end
+        flight.armed, flight.active = arm.value, arm.value
+        flight.state = "normal"
+    elseif not flight.active then
+        resetSession(session, now)
+    end
+    if flight.active and flight.startedAt then
+        flight.duration = service.support.age(now, flight.startedAt) or 0
+    end
 end
 
---- Advance the flight session and a bounded slice of the trackers.
----@param now integer
-function extremaService:update(now)
-    local flight = self.flightState
-
-    if flight then
-        if self.armReading then
-            -- Switch sources report full deflection, so any positive value is armed.
-            local value = self.armReading.value
-            local armed = type(value) == "number" and value > 0
-            if armed ~= flight.armed then
-                flight.armed = armed
-                if armed then
-                    self:reset(now)
-                else
-                    flight.active = false
-                end
-            end
-        elseif not flight.configured and not flight.active then
-            -- Without an arm source the dashboard tracks one open-ended session, so
-            -- extrema still mean something on a radio with no arm switch.
-            self:reset(now)
-        end
-
-        if flight.active and flight.startedAt then
-            flight.duration = self.support.age(now, flight.startedAt) or 0
-        end
+local function sampleEntry(service, track, now)
+    -- A track may be visited before its session's round-robin turn.
+    advanceSession(service, track.session, now)
+    if track.flight.active then
+        sample(track)
     end
+end
 
+--- Advance a bounded slice of sessions and trackers.
+function extremaService:update(now)
+    self.sessionCursor =
+        self.support.roundRobin(self.sessionOrder, self.sessionCursor or 1, TRACK_CAP, advanceSession, self, now)
     local order = self.trackOrder or {}
     if #order == 0 then
-        return
-    end
-
-    -- Flight extrema belong to a flight. Sampling while the model is disarmed
-    -- would fold ground handling into the numbers the pilot reads afterwards.
-    if flight and not flight.active then
         return
     end
 
@@ -264,9 +258,8 @@ end
 function extremaService:describe(rows)
     local row = self.support.row
     local index = 1
-    local flight = self.flightState
-
-    if flight then
+    for _, session in ipairs(self.sessionOrder) do
+        local flight = session.state
         index = row(
             rows,
             index,

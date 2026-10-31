@@ -829,8 +829,7 @@ function linkStatus.create(parent, rect, settings, services)
         end
     elseif extrema and settings.extrema == "flight" then
         local arm = services.session and services.session.armSource
-        extrema:flight(arm ~= "" and arm or nil)
-        context.sessionExtrema = extrema:sessionExtrema(leading)
+        context.sessionExtrema = extrema:sessionExtrema(leading, arm)
     end
 
     -- A dBm reading is the widest thing this panel prints, and the sample comes

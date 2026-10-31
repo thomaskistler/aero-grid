@@ -11,7 +11,7 @@ EdgeTX widgets.
 | --- | --- |
 | `src/WIDGETS/AeroGrid/main.lua` | EdgeTX entry points, native options, event routing, and callback scheduling. |
 | `src/WIDGETS/AeroGrid/lib/` | Layout parsing/storage, grid geometry, panel hosting, shared services, rendering primitives, themes, and editor modules. |
-| `src/WIDGETS/AeroGrid/panels/` | Twelve user-facing panel types plus `host-diagnostics`, `service-probe`, and the fixed-data `theme-showcase`. |
+| `src/WIDGETS/AeroGrid/panels/` | Thirteen user-facing panel types plus `host-diagnostics`, `service-probe`, and the fixed-data `theme-showcase`. |
 | `src/WIDGETS/AeroGrid/layouts/` | Shipped layouts. |
 | `tests/fixtures/layouts/development/` | Simulator and review layouts used by tests and disposable SD images. |
 | `src/WIDGETS/AeroGrid/assets/` | Runtime editor icon and its license. |
@@ -65,12 +65,12 @@ Page retirement and replacement run in separate callbacks so deferred cleanup
 cannot invalidate objects belonging to the replacement page.
 
 Panels use container-local coordinates. They must not draw at absolute screen
-coordinates or assume the TX16S's dimensions. In App mode the host accounts
-for the top-left EdgeTX menu button; fullscreen removes that reservation.
+coordinates or assume the TX16S's dimensions. The host reserves the same
+top-left footprint for the native App-mode menu and fullscreen AeroGrid menu.
 Use the shared geometry instead of adding panel-specific menu offsets.
 
 `lib/package.lua` records package, runtime API, panel API, and layout versions.
-The current layout schema is version 3. The central layout module keeps an
+The current layout schema is version 5. The central layout module keeps an
 adjacent migration registry: each source version provides a header step and a
 panel step for that version-to-next-version transition. A future version must
 add every intervening step; a layout is rejected if its source version is newer
@@ -98,11 +98,14 @@ does not consume scheduled work.
 | Service module | Responsibility |
 | --- | --- |
 | `telemetry_service.lua` | Source resolution, readings, units, precision, freshness, and link status. |
-| `model_service.lua` | Model identity/image, timers, flight mode, TX voltage, and flight history/audio support. |
+| `model_service.lua` | Model identity/image, timers, flight mode, and TX voltage. |
 | `control_service.lua` | Trims, final channel outputs and their trim associations, switch conditions, GV snapshots, and verified GV9 FM0 increments. |
+| `armed_service.lua` | Saved model Armed precedence, legacy switch fallback, and immutable effective arm views over shared Control polls. |
+| `flight_service.lua` | Shared model-flight detection, once-only count, optional Sticky output, and timestamped boundaries. |
+| `smart_flight.lua` | Optional protocol-identified flight sensors with per-sensor receipt/freshness and SI units. |
 | `extrema_service.lua` | Sensor extrema and dashboard flight-session tracking. |
 | `navigation_service.lua` | GPS fix, pilot/home position, distance, and north-up bearing. |
-| `history_service.lua` | Error-bounded chart recordings, cumulative armed time, raw extrema, line-only smoothing, and bounded rolling expiration. |
+| `history_service.lua` | Error-bounded chart recordings, cumulative recording time, flight boundaries, raw extrema, line-only smoothing, and bounded rolling expiration. |
 | `services.lua` | Environment/snapshots, subscription registration, and bounded scheduling/update dispatch. |
 
 Snapshots are read-only views over service-owned state, mutated in place by
@@ -124,13 +127,28 @@ appear as valid zero on a live link. Local switch values remain usable
 without a receiver.
 
 Chart history observes completed telemetry polls rather than reading changed
-revisions during redraw: unchanged numeric samples still occupy armed time,
+revisions during redraw: unchanged numeric samples still occupy recording time,
 and raw spikes must not be lost between frames. Observer failures are isolated
 from telemetry polling and reported through normal service failure handling.
-History tracks each Chart panel's `armSwitch` through the control service,
-independently of extrema's `session.armSource` and reset-on-arm lifecycle.
-Each armed-switch configuration has its own cumulative session.
-It pauses on disarm and resumes the same recording;
+`services.armed:state()` describes the saved model condition;
+`:state(legacySwitch)` resolves model-over-legacy precedence for a consumer.
+Snapshots expose `condition`, `key`, `origin`, `generation`, `configured`,
+`available`, `fresh`, `updatedAt`, Boolean `value`, `revision`, and `status`.
+An unavailable/stale reading is not disarmed. Reliability is evaluated on
+access with a one-second maximum sample age, so a failed poller cannot leave a
+permanently fresh reading. `revision` changes on observed sample/reliability
+changes; `generation` changes when the widget runtime is rebuilt.
+`status` is `unconfigured`, `ready`, or `unavailable`; invalid configuration
+is reported through normal host error isolation.
+The resolver owns no separate polling work: Control still reads each switch
+once per runtime. Configuration is model-wide; each dashboard publishes its
+own view over that same condition.
+
+History and extrema key sessions by the effective condition. A configured
+model Armed unifies their arm inputs; absent model arming retains independent legacy
+switches. Each chart arm configuration has its own cumulative session.
+It pauses on disarm unless a matching shared flight is still active, including
+its disarm grace, and resumes the same recording;
 geometry reflow keeps it, while rebuilding the service runtime clears it.
 Each source/options subscription stores at most 6,144 connected linear knots.
 A fixed-anchor slope corridor chooses synthesized shared endpoints within half
@@ -139,7 +157,7 @@ enabled). Numerical margin is reserved before accepting a segment; when that
 margin consumes the tolerance, exact native values are retained. Unknown sensor
 precision uses the strictest supported tolerance until discovery completes.
 
-Knots use chunked `<I4n` / `<I4j` packing: cumulative armed ticks with gap/type
+Knots use chunked `<I4n` / `<I4j` packing: cumulative recording ticks with gap/type
 bits and a lossless native Lua float or integer. Payload is 48 KiB per full recording on float32
 firmware, or 72 KiB on double-precision hosts, excluding string/table/index and
 rendering overhead. Matching armed-switch/source/options subscriptions share storage.
@@ -156,13 +174,127 @@ endpoints coincide on screen; marker objects are pooled by pixel column.
 Unchanged readouts are cached so their callback budget can process a larger
 bounded projection batch; same-pixel extrema do not add redundant geometry.
 
-The `flight-counter` panel is deliberately stateful: it owns qualification
-and disarm-timeout transitions, requests verified count updates, and asks
-the model service for history/audio side effects. Its `armSwitch` is distinct
-from the extrema session's `armSource`. Each dashboard has independent
-services, so install **only one flight tracker per model**; other dashboards
-can display GV9 through `metric`. Detection state resets on dashboard reload;
-the persisted GV count does not.
+History consumes at most one flight journal record per service turn, keyed by
+the event's pinned `armKey`, never by the optional Sticky output or the current
+broker arm. Per effective arm, 128 recording spans map wall-clock `at` timestamps
+to the cumulative recording axis; qualification/confirmation receipt times do
+not place boundaries. Grace samples remain after the mapped end. A 64-interval
+ring supplies scalar `history:flight(sessionView, index)` reads, independent of
+metric subscriptions. Shaded flight bands are staged in a bounded native-object
+pool behind the grid and traces. Each chart snapshots its inputs and stages a
+complete plot in a second reusable buffer before swapping it on screen.
+Arm/disarm triangles use a bounded directional transition journal.
+A separate resume journal drives fixed-width axis gaps and dotted trace connectors;
+the same projection maps traces, flight bands, grid lines, and axis markers.
+Crowded gaps evict the oldest visible section rather than narrowing the gaps.
+During normal sampling, flight bands clip to the recorded telemetry horizon.
+Telemetry-sampling turns reserve projection headroom without lowering the
+existing callback or staged-drain limits.
+
+Journal loss sets the session's `flightLost` flag and closes an unmatched open
+band at its last observed recording time rather than extending it into later
+flights.
+Late attachment can recover the current active interval only from its recorded
+portion; old completed flights do not create new history. Model epochs clear
+intervals and mapping spans. Draft chart previews read compatible live views
+through a read-only facade and make no live subscriptions. Compatible previews
+can become live panels after saving without losing history; new or incompatible
+subscriptions require a post-save rebuild.
+
+## Shared flight tracking
+
+The factory-scoped broker in `flight_service.lua` owns a separate non-UI
+Control/Telemetry runtime and optional Smart sensor poller. Any live widget callback can pump it. Dashboard
+registrations are weakly held; rebuilds mark proposals pending before replacing
+them. Unanimous effective arm/configuration proposals are required, not the
+first caller's settings. Saved model Armed overrides every declaration. A qualified session
+pins its arm, detector settings, and output until completion, including output
+cleanup when proposals change or conflict. Counter panels only render state.
+
+`services.flight:state()` is an immutable live view. It exposes model/epoch,
+configuration revision/status, phase (`ground`, `starting`, `active`, `ending`),
+`active`, flight ID/count, candidate/qualification/disarm/completion timestamps,
+qualification `reason` and `smartStatus`, and actionable diagnostics. `ready` describes configuration, not telemetry
+validity. Unknown/stale arm observations never confirm disarm.
+
+`services.flight:boundaries(afterSequence, epoch)` returns immutable records,
+the oldest retained sequence, and a gap flag. The journal retains 64 start/end
+records with epoch, sequence, flight ID/count, pinned `armKey`, `kind`, `at`, `observedAt`, and
+qualification `reason` (`standard`, `smart-altitude`, or `smart-speed`).
+Start `at` is the motor candidate start; end `at` is the final disarm start.
+`observedAt` is qualification or
+completion, so duration excludes the disarm grace. Consumers must reconcile a
+gap or changed epoch; they must never read Sticky output as their event bus.
+Smart shortcuts use the same qualification/effect path; they do not move the
+candidate timestamp. The standard timer remains an independent OR path.
+
+Model `flight.smartDetection` defaults false. Smart requires EdgeTX
+[`getSourceValue`](https://github.com/EdgeTX/edgetx/blob/2.11/radio/src/lua/api_general.cpp)
+receipt/current/fresh flags, not `getValue` zeros or link-wide freshness.
+Firmware `isFresh` spans roughly 160-320 ms; `isCurrent` only means the sensor
+is not marked old and may remain true for seconds after updates stop.
+Numeric receipt timestamps are not exposed. Smart bridges current finite
+readings for at most 1.2 seconds after positive per-sensor `isFresh` evidence;
+polling a cached value never renews that evidence. Never-received, old,
+unavailable, invalid, or expired data invalidate immediately. A shortcut can
+finish only once renewed evidence from every required source spans the full
+two-second hold; a cached value alone cannot finish it. Continuity counters
+preserve invalidations between detector ticks. This supports healthy 500ms/1s
+streams without treating the short fresh flag as a minimum update rate.
+Receipt age remains bounded evidence, not an exact timestamp or instant
+stopped-stream detector. Callbacks too infrequent to observe fresh flags
+conservatively fall back to standard detection.
+
+The Smart poller is due every 100ms. Ordinary chart callbacks continue on
+Smart polling callbacks: the host reduces that callback's dashboard telemetry
+batch from eight sources to four, reserving room for Smart's four sensor
+categories. Both pollers retain round-robin progress; Smart does not skip
+whole chart callbacks. Selected metadata is compared directly rather than
+rebuilding identity strings on every poll. Expensive loading/editor work
+still gets separate, per-widget fair slices, and pending input takes priority.
+Discovery uses numeric `telemN` sources and custom
+sensor metadata from `model.getSensor`, never names or units alone. Supported
+single-module families are CRSF (including ELRS) and native FrSky S.Port;
+unknown/MULTI or multiple active modules fall back rather than guessing.
+CRSF barometric altitude is ID `0x09`/instance 0; GPS position, groundspeed,
+and satellite count are ID `0x02`/instances 0, 2, and 5. S.Port uses the firmware
+barometric/GPS position/groundspeed ID ranges, with matching GPS/speed instances.
+Calculated sensors and GPS altitude are excluded. Ambiguous categories are
+disabled independently. GPS requires fresh valid coordinates/delay and, on CRSF,
+at least four fresh satellites. Numeric inputs reject nonfinite values and
+normalize metres/feet and knots/m/s/ft/s/km/h/mph.
+
+Altitude references require an observed disarmed-to-armed transition using
+a recent sample explicitly witnessed while disarmed, or fresh evidence at
+that transition. Merely current late readings never rebase an armed session.
+Motor interruptions preserve the reference but reset holds; unknown arm resets
+holds without inventing disarm. Metadata changes and scheduling gaps invalidate
+the reference conservatively. Fixed shortcuts are strictly above +3 m or
+10 mph for at least 200 ticks, allowing only precision-scaled conversion
+roundoff (including float32 firmware). `smartStatus` explains fallback in the native Model settings dialog;
+confirmed field changes persist and update live detection immediately.
+
+Model settings use their own schema/revision and losslessly encoded model
+filename under `/AEROGRID/models/`. Saves verify model identity and revision
+before verified file replacement. Layout saves and previews never write this
+document. Legacy detector declarations remain compatible until model settings
+are changed; retained arm metadata stays with its layout rather than becoming
+model-wide Armed. Schema version 1 has an optional top-level `armed` condition:
+missing preserves per-consumer legacy fallback, while `""` explicitly disables
+arming, including fallbacks. Nonempty values must be physical positions or
+logical switches L01–L64 (optionally inverted). Numeric channel IDs are rejected.
+The model document is loaded in a separate callback before Armed and panel
+construction. Saving a different arm condition rebuilds every registered
+dashboard and clears captured homes, preserving layout data and a pinned active
+flight's completion/cleanup. Previous per-widget Armed selections are never
+silently promoted; conflicting old selections require an explicit model choice.
+The optional top-level `sessionReset` uses the same switch syntax; missing or
+`""` disables it. A shared control poller detects false-to-true transitions
+independently of flight detection. Activation advances the flight epoch,
+cancels detection, releases its owned output, and stages every dashboard's
+reload with captured homes cleared and editor drafts retained. Counting waits
+for a fresh disarm observation. Model changes also reset the flight epoch;
+ordinary dashboard rebuilds do not.
 
 ## Add or change a panel
 
@@ -176,7 +308,7 @@ Use `panels/flight-mode.lua` as a small working example and
 | `refreshInterval` | Desired foreground interval in 10 ms ticks; work still shares the host budget. |
 | `refreshCost` | Whole-number share of the six host refresh slots (default 1). Chart uses all six so dense layouts cannot batch expensive redraws into one callback. |
 | `create(parent, rect, settings, services)` | Build LVGL objects, subscribe to data, and return private instance state. |
-| `refresh(context)` | Optional callback to update existing objects from snapshots. May return a whole-number interval of 1–6000 ticks to adapt subsequent scheduling; nil preserves the current interval. |
+| `refresh(context)` | Optional callback to update existing objects from snapshots. May return a whole-number interval of 1–6000 ticks; nil preserves the current interval. A second result of `true` reserves subsequent turns among panels of the same type until the update completes; other panel types and services continue running. |
 | `update(context, rect, settings, detailsOnly, placement)` | Optional geometry/configuration update. Host reflows and editor resizes pass the current grid placement as the fifth argument, leaving the internal `detailsOnly` argument unset. |
 | `background(context)` | Optional work when the dashboard is not visible. |
 | `event(context, event)` | Optional event handling; return true when consumed. |

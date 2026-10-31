@@ -16,7 +16,7 @@ SCENES = ("overview", "settings", "state-settings", "state-entry", "state-condit
 # Configuration drawers captured as full-height images rather than one screen.
 # Settings drawers of the remaining panels, one per panel page.
 PANEL_DRAWER_CONFIG = {
-    "chart": {"label": "CHART", "armSwitch": "SFv", "timeRange": "rolling",
+    "chart": {"label": "CHART", "timeRange": "rolling",
               "metrics": [{"source": "gvar1", "label": "Reading"}]},
     "host-diagnostics": {"label": "Host", "section": "identity"},
     "service-probe": {"service": "telemetry", "source": "RxBt", "label": "Probe"},
@@ -26,9 +26,12 @@ PANEL_DRAWER_KINDS = ("chart", "flight-counter", "flight-mode", "flight-timer", 
                       "tx-battery")
 PANEL_SETTINGS_SCENES = tuple(f"{kind}-settings" for kind in PANEL_DRAWER_KINDS)
 SCENES = SCENES + PANEL_SETTINGS_SCENES
-STITCHED_SCENES = ("settings", "state-settings", "state-entry", "state-condition", "metric-entry", "chart-metric-entry") + PANEL_SETTINGS_SCENES
+STITCHED_SCENES = ("model-settings", "settings", "state-settings", "state-entry", "state-condition", "metric-entry", "chart-metric-entry") + PANEL_SETTINGS_SCENES
 THEME_SCENES = ("theme-modern-dark", "theme-modern-light", "theme-custom")
 DASHBOARD_SCENES = ("dashboard",)
+FLIGHT_SETTINGS_SCENES = ("aero-menu", "aero-menu-selected", "aero-ui-setup", "model-settings", "model-settings-motor", "model-settings-reset", "model-settings-bottom", "model-settings-switch", "model-settings-switch-select",
+                         "model-settings-autosave", "model-settings-exit",
+                         "native-app-icon", "aero-fullscreen-icon")
 DASHBOARD_INPUTS = """model.setGlobalVariable(8, 0, 42)
 model.setGlobalVariable(0, 0, 30)
 assert(model.getGlobalVariable(8, 0) == 42, "capture could not initialize GV9")
@@ -237,6 +240,8 @@ screenData:
             user_themes.mkdir(parents=True, exist_ok=True)
             (user_themes / "custom.yml").write_text(custom)
             (sd / "AEROGRID/theme-registry.txt").write_text("modern-dark\nmodern-light\ncustom\n")
+    elif scene in FLIGHT_SETTINGS_SCENES:
+        layout = "version: 5\ngrid:\n  columns: 4\n  rows: 4\npanels: []\n"
     elif scene in DASHBOARD_SCENES:
         layout = (ROOT / "src/WIDGETS/AeroGrid/layouts/Default.yaml").read_text()
     elif scene in PANEL_SETTINGS_SCENES or scene == "chart-metric-entry":
@@ -244,6 +249,10 @@ screenData:
         kind = "chart" if scene == "chart-metric-entry" else scene.removesuffix("-settings")
         recipe = ROOT / f"tools/capture-recipes/{kind}.yaml"
         config = PANEL_DRAWER_CONFIG.get(kind) or load_recipe(recipe)["config"]
+        settings = sd / "AEROGRID/models"
+        settings.mkdir(parents=True, exist_ok=True)
+        (settings / ("model1.yml".encode().hex() + ".yaml")).write_text(
+            'version: 1\nmodelFilename: "model1.yml"\nrevision: 1\narmed: "SFv"\n')
         layout = f"""version: 3
 grid:
   columns: 4
@@ -369,6 +378,97 @@ panels:
 """.replace("EXPECTED", mode))
         main.write_text(source)
         return
+    if scene in FLIGHT_SETTINGS_SCENES:
+        if scene == "model-settings":
+            settings_ui = sd / "WIDGETS/AeroGrid/lib/model_settings_ui.lua"
+            settings_source = settings_ui.read_text()
+            settings_source = settings_source.replace(
+                "function ui.open(context, document, handlers)",
+                """local function captureNode(state, kind, properties)
+    local node = lvgl[kind](state.dialog, properties)
+    state.captureNodes[#state.captureNodes + 1] = { node = node, y = properties.y }
+    return node
+end
+
+function ui.open(context, document, handlers)""")
+            settings_source = settings_source.replace(
+                "lvgl.label(state.dialog, {", 'captureNode(state, "label", {')
+            settings_source = settings_source.replace(
+                "lvgl.setting(state.dialog, {", 'captureNode(state, "setting", {')
+            settings_source = settings_source.replace(
+                "state.dialog = dialog(context, state)",
+                "state.dialog = dialog(context, state)\n    state.captureNodes = {}")
+            settings_source = settings_source.replace(
+                "local function buildField(context, state, field)",
+                """local function buildField(context, state, field)
+    state.captureNodes = {}""")
+            settings_source = settings_source.replace(
+                "state.nextY = state.nextY + state.height + 6\nend",
+                """state.nextY = state.nextY + state.height + 6
+    if state.nextY <= CAPTURE_SHIFT then
+        state.captureShift = state.nextY - 4
+        for _, item in ipairs(state.captureNodes) do lvgl.hide(item.node) end
+    else
+        for _, item in ipairs(state.captureNodes) do
+            item.node:set({ y = item.y - (state.captureShift or 0) })
+        end
+    end
+end""".replace("CAPTURE_SHIFT", str(shift)))
+            settings_source = settings_source.replace(
+                "state.smartStatus:set({ y = state.nextY })",
+                "state.smartStatus:set({ y = state.nextY - (state.captureShift or 0) })")
+            settings_source = settings_source.replace(
+                "state.status:set({ y = state.nextY })",
+                "state.status:set({ y = state.nextY - (state.captureShift or 0) })")
+            settings_ui.write_text(settings_source)
+        source = source.replace(needle, """
+    refresh = function(context, widgetEvent, touchState)
+        refresh(context, widgetEvent, touchState)
+        if #context.errors > 0 then error(table.concat(context.errors, "\\n")) end
+        local scene = "SCENE"
+        if string.sub(scene, 1, 21) == "model-settings-switch" and not context.captureSwitchConfigured then
+            model.setLogicalSwitch(19, { func = 17, v1 = 0, v2 = 0, andSwitch = 0, delay = 0, duration = 0 })
+            context.captureSwitchConfigured = true
+        end
+        local expectedFullscreen = scene ~= "native-app-icon"
+        if isFullScreen() ~= expectedFullscreen or context.stage or context.reloadState or context.captureReady then return end
+        if scene == "aero-fullscreen-icon" and not context.aerogridMenu then return end
+        if scene == "aero-menu" or scene == "aero-menu-selected" then
+            if not context.aerogridMenu or not context.aerogridMenu.open then return end
+            if scene == "aero-menu-selected" and context.aerogridMenu.selected ~= 2 then return end
+        end
+        if scene == "model-settings-switch-select" then
+            local flight = context.flightBroker.document.flight
+            if not flight or flight.flightSwitch ~= "L20" then return end
+        end
+        if scene == "model-settings-autosave" or scene == "model-settings-exit" then
+            local flight = context.flightBroker.document.flight
+            if not flight or not flight.motorReversed then return end
+            if scene == "model-settings-autosave" then
+                assert(context.modelSettingsUi, "field save must leave Model settings open")
+            elseif context.modelSettingsUi then
+                context.modelSettingsUiModule.handle(context, EVT_VIRTUAL_EXIT)
+                return
+            end
+        elseif string.sub(scene, 1, 14) == "model-settings" and not context.modelSettingsUi then
+            return
+        end
+        if context.modelSettingsUi and context.modelSettingsUi.build then return end
+        if "SCENE" == "aero-ui-setup" and (not context.editorUi or context.editorUi.buildStage) then return end
+        assert(#context.panels == 0, "flight settings capture must use an Empty dashboard")
+        local file = assert(io.open("/capture-ready.txt", "w"))
+        io.write(file, "production Empty dashboard and AeroGrid menu ready")
+        if scene == "model-settings" then
+            local state = context.modelSettingsUi
+            io.write(file, string.format("\\ndrawer shift %d total %d row 0\\n",
+                state.captureShift or 0, state.nextY + state.height * 2))
+        end
+        io.close(file)
+        context.captureReady = true
+    end,
+""".replace("SCENE", scene))
+        main.write_text(source)
+        return
     # Only the isolated copy is instrumented. Fullscreen is entered with a real
     # simulator long-press; these commands open the production editor/dialogs.
     source = source.replace(needle, """
@@ -490,6 +590,49 @@ def write_png(path, rows):
                      + chunk(b"IEND", b""))
 
 
+def verify_menu_icon_pair(native, fullscreen):
+    """Compare visible silhouette pixels, not merely the reserved hitboxes."""
+    masks = []
+    for rows in (native, fullscreen):
+        background = rows[50][150:153]
+        masks.append([[rows[y][x * 3:x * 3 + 3] != background for x in range(64)]
+                      for y in range(64)])
+    if masks[0] != masks[1]:
+        raise RuntimeError("Native App and fullscreen AeroGrid icon silhouettes differ")
+    points = [(x, y) for y, row in enumerate(masks[0]) for x, visible in enumerate(row) if visible]
+    bounds = (min(x for x, _ in points), min(y for _, y in points),
+              max(x for x, _ in points) + 1, max(y for _, y in points) + 1)
+    if bounds != (0, 0, 45, 45):
+        raise RuntimeError(f"Unexpected native TX16S icon bounds: {bounds}")
+    return {"display": [480, 272], "bounds": list(bounds), "visible_pixels": len(points),
+            "matching_rows": 45, "reserved_footprint": [47, 45]}
+
+
+def verify_menu_grid(rows, selected):
+    """Check the real TX16S frame, including inverse artwork and centered title."""
+    pixel = lambda x, y: rows[y][x * 3:x * 3 + 3]
+    black, white = b"\0\0\0", b"\xff\xff\xff"
+    if pixel(134, 53) != black or pixel(345, 172) != black:
+        raise RuntimeError("AeroGrid icon grid must have a black rectangular popup below the header")
+    if any(pixel(x, 50) != white for x in range(134, 346)):
+        raise RuntimeError("AeroGrid menu must use the native full-width title rule")
+    if pixel(183, 54) != white or pixel(296, 54) != white or pixel(239, 72) != white:
+        raise RuntimeError("AeroGrid menu must use the native tapered title tab")
+    title = [x for y in range(54, 78) for x in range(134, 346) if pixel(x, y) == white]
+    if not title or abs((min(title) + max(title)) / 2 - 239.5) > 2:
+        raise RuntimeError("AeroGrid menu title must be visibly centered")
+    for index, left in enumerate((146, 246), 1):
+        background, foreground = (white, black) if index == selected else (black, white)
+        if pixel(left + 3, 84) != background:
+            raise RuntimeError("AeroGrid selected tile must invert to white")
+        # A static :set(file=...) silently fails to reload StaticImage in 2.12.
+        # Require actual opposite-color glyph pixels, not just a valid PNG path.
+        icon = [pixel(x, y) for y in range(87, 117) for x in range(left + 29, left + 59)]
+        if icon.count(foreground) < 30 or icon.count(background) < 30:
+            raise RuntimeError("AeroGrid tile icon is missing or has the wrong selection color")
+    return {"popup": [134, 49, 212, 124], "selected": selected, "icons": ["model", "theme"]}
+
+
 def dialog_geometry(rows):
     """Locate the native dialog's title bar and scrolling body in one frame."""
     pixel = lambda x, y: rows[y][x * 3:x * 3 + 3]
@@ -552,6 +695,42 @@ def capture(executable, library, directory, scene, shift=0):
     regions.write_text("0 0 480 272\n")
     frame = directory / "frame.rgb565"
     mode = "fullscreen"
+    if scene in FLIGHT_SETTINGS_SCENES:
+        actions = directory / "actions.txt"
+        script = "500 200 140 1\n600 200 140 0\n850 18 18 1\n860 18 18 0\n"
+        if scene == "native-app-icon":
+            script = "500 479 271 0\n"
+        elif scene == "aero-fullscreen-icon":
+            script = "500 200 140 1\n600 200 140 0\n"
+        if scene.startswith("model-settings"):
+            script += "1100 190 100 1\n1120 190 100 0\n"
+        elif scene == "aero-ui-setup":
+            script += "1100 290 100 1\n1120 290 100 0\n"
+        elif scene == "aero-menu-selected":
+            # Move after pressing so the second tile is highlighted without
+            # activating UI setup when the gesture ends.
+            script += "1100 288 120 1\n1110 300 122 1\n1120 300 122 0\n"
+        if scene in ("model-settings-reset", "model-settings-bottom", "model-settings-switch", "model-settings-switch-select"):
+            ticks = (1350, 1550) if scene == "model-settings-reset" else (1350, 1550, 1750, 1950, 2150, 2350)
+            if scene == "model-settings-bottom":
+                ticks = (1350, 1550, 1750)
+            for tick in ticks:
+                script += (f"{tick} 390 220 1\n{tick + 20} 390 170 1\n"
+                           f"{tick + 40} 390 110 1\n{tick + 60} 390 65 1\n"
+                           f"{tick + 80} 390 65 0\n")
+            if scene == "model-settings-reset":
+                script += "1750 390 220 1\n1770 390 200 1\n1790 390 180 1\n1810 390 160 1\n1830 390 160 0\n"
+            if scene.startswith("model-settings-switch"):
+                script += "2600 320 62 1\n2620 320 62 0\n"
+            if scene == "model-settings-switch-select":
+                script += "2770 220 170 1\n2790 220 170 0\n"
+        if scene in ("model-settings-autosave", "model-settings-exit", "model-settings-motor"):
+            script += ("1450 390 220 1\n1470 390 170 1\n"
+                       "1490 390 110 1\n1510 390 65 1\n1530 390 65 0\n")
+            if scene != "model-settings-motor":
+                script += "1750 270 110 1\n1770 270 110 0\n"
+        actions.write_text(script)
+        mode = "actions=" + str(actions)
     if scene == "navigation-location":
         actions = directory / "actions.txt"
         actions.write_text(
@@ -573,6 +752,14 @@ def capture(executable, library, directory, scene, shift=0):
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
             raise RuntimeError(f"Capture failed; inspect {directory / 'simulator.log'}") from error
     pixels = frame.read_bytes()
+    if scene == "model-settings-switch-select":
+        settings = sd / "AEROGRID/models" / ("model1.yml".encode().hex() + ".yaml")
+        if not settings.is_file() or 'flightSwitch: "L20"' not in settings.read_text():
+            raise RuntimeError("Native logical switch selection was not persisted")
+    if scene in ("model-settings-autosave", "model-settings-exit"):
+        settings = sd / "AEROGRID/models" / ("model1.yml".encode().hex() + ".yaml")
+        if not settings.is_file() or "motorReversed: true" not in settings.read_text():
+            raise RuntimeError("Model field change was not persisted automatically")
     if len(pixels) != 480 * 272 * 2:
         raise RuntimeError("Unexpected framebuffer size")
     drawer = None
@@ -580,13 +767,17 @@ def capture(executable, library, directory, scene, shift=0):
         words = line.split()
         if words[:1] == ["drawer"]:
             drawer = dict(zip(words[1::2], map(int, words[2::2])))
-    return decode(pixels), drawer
+    rows = decode(pixels)
+    if scene in ("aero-menu", "aero-menu-selected"):
+        report = verify_menu_grid(rows, 1 if scene == "aero-menu" else 2)
+        (directory / "menu-grid.json").write_text(json.dumps(report, indent=2) + "\n")
+    return rows, drawer
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--companion", type=Path, default=Path("/Applications/EdgeTX Companion 2.12.app"))
-    parser.add_argument("--scene", choices=SCENES + tuple(SETUP_SCENES) + THEME_SCENES + DASHBOARD_SCENES)
+    parser.add_argument("--scene", choices=SCENES + tuple(SETUP_SCENES) + THEME_SCENES + DASHBOARD_SCENES + FLIGHT_SETTINGS_SCENES)
     args = parser.parse_args()
     library = args.companion / "Contents/Resources/libedgetx-tx16s-simulator.dylib"
     if not library.is_file():
@@ -611,7 +802,8 @@ def main():
             guard = drawer["row"] + 24
             frames = [(rows, 0)]
             # 24 px allows for the dialog's own top padding around the rows.
-            while frames[-1][1] + height < drawer["total"] + 24:
+            padding = 0 if scene == "model-settings" else 24
+            while frames[-1][1] + height < drawer["total"] + padding:
                 page, report = capture(executable, library,
                                        directory.with_name(f"{scene}-page{len(frames)}"),
                                        scene, frames[-1][1] + height - guard)
@@ -621,6 +813,11 @@ def main():
             rows = stitch(frames, guard)
         write_png(directory / f"{scene}.png", rows)
         print(directory / f"{scene}.png")
+        if scene in ("native-app-icon", "aero-fullscreen-icon"):
+            pair = [OUTPUT / name / "frame.rgb565" for name in ("native-app-icon", "aero-fullscreen-icon")]
+            if all(path.is_file() for path in pair):
+                report = verify_menu_icon_pair(*(decode(path.read_bytes()) for path in pair))
+                (OUTPUT / "icon-parity.json").write_text(json.dumps(report, indent=2) + "\n")
     (OUTPUT / "provenance.json").write_text(json.dumps({
         "revision": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
         "simulator": str(library),

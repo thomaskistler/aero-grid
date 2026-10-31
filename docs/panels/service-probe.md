@@ -18,7 +18,7 @@ The panel needs at least 2x2 cells to fit its rows.
 | **Label** | service name | Panel heading. Clear it to use the selected **Service**. |
 | **Service** | telemetry | Service to inspect: **telemetry**, **model**, **control**, **extrema**, or **navigation**. |
 | **Source** | none | EdgeTX source picker. Select the reading for **telemetry**, GPS source for **navigation**, trim source for **control**, or reading to track for **extrema**. Unused by **model**. |
-| **Second source** | none | Arming source name for **extrema** flight-session tracking. Enter the source name as text, not through a picker; positive numeric values mean armed. Unused by the other services. |
+| **Second source** | none | Legacy arm switch condition for **extrema**, used only before model arming is saved. Enter a physical position or logical switch name, not a numeric source. Unused by the other services. |
 | **Index** | 0 | Zero-based timer index for **model** (0 to 2) or global variable index for **control** (0 to 8). Unused by the other services. The number control steps by 1 from -100000 to 100000, not just the useful index range, and has no empty option. |
 | **Accent** | cyan | Panel accent: **cyan**, **green**, **amber**, or **orange**. Reported service states do not change the panel color. |
 | **Remove panel** | | Deletes the panel from the screen. |
@@ -39,10 +39,12 @@ empty, and the selected global variable in the current flight mode.
 empty, session minimum and maximum values for that source. These three services
 report shared subscriptions, so rows requested by other panels can appear too.
 
-For **extrema**, the first nonempty arming source configured for the shared
-service wins. **Second source** cannot override an already configured source.
-Without one, the service tracks an open-ended session. This is diagnostic
-shared-session tracking, not the flight counter panel's own flight detection.
+For **extrema**, the **Arm switch** in
+[Model settings](../user-guide/model-settings.md) takes precedence over
+**Second source**. Consumers with the same effective switch share session data;
+without an arm condition, tracking is open-ended.
+The model's Session reset switch clears these session extrema and timing.
+This is diagnostic session tracking, not shared flight detection.
 
 Rows are left-aligned in two columns and refresh about twice per second.
 Only the rows that fit are shown, up to eight. Enlarge the panel to reveal

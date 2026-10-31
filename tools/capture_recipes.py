@@ -235,13 +235,12 @@ def load_recipe(path):
                 raise ValueError("sample.bitmap must be an existing PNG with a firmware-safe filename")
     elif recipe["panel"] == "flight-counter":
         fields(sample, ("count", "rssi"))
-        integer(sample["count"], len(panels), 999, "sample.count")
+        integer(sample["count"], 1, 999, "sample.count")
         number(sample["rssi"], 1, 100, "sample.rssi")
         if (config.get("armSwitch") != "SFv" or config.get("motorSource") != "ch3"
-                or config.get("motorReversed", False) or config.get("history") is not False
-                or config.get("announcements") is not False):
+                or config.get("motorReversed", False)):
             raise ValueError("Flight counter capture requires SFv armSwitch, ch3 motor, "
-                             "non-reversed motor, and disabled history/announcements")
+                             "and non-reversed motor")
         number(config.get("minFlightDuration"), 0.2, 2, "config.minFlightDuration")
     elif recipe["panel"] == "state":
         fields(sample, ("switches",))
@@ -337,7 +336,12 @@ def readiness(recipe):
     if recipe["panel"] == "chart":
         return """            local instance = entry.instance
             if not instance.session or instance.session.elapsed < 1500 or instance.session.recording
-                or instance.pending or instance.gridVersion ~= instance.version then return end
+                or instance.pending or instance.framePhase or instance.gridVersion ~= instance.version then return end
+            if instance.session.flightLast ~= 2 or not instance.flightBands
+                or not instance.flightBands[1]
+                or instance.flightDrawnRevision ~= instance.session.flightRevision then return end
+            local _, finish, _, confirmed = instance.history:flight(instance.session, 2)
+            if not finish or not confirmed then return end
             for _, item in ipairs(instance.series) do
                 if not item.feed.available or not item.runs[1] or not item.runs[1].line
                     or item.drawnRevision ~= item.feed.plotRevision
@@ -357,7 +361,7 @@ def readiness(recipe):
         return f"""            local feed = entry.instance.feed
             if not feed or not feed.available or feed.raw ~= {sample['count']}
                 or feed.precision ~= 0 or entry.instance.text ~= "{sample['count']}"
-                or entry.instance.phase ~= "active" or entry.instance.stateName ~= "active"
+                or not entry.instance.flight.active or entry.instance.stateName ~= "active"
                 or entry.instance.badgeText ~= "IN-FLIGHT" then return end
 """
     if recipe["panel"] == "state":
@@ -461,13 +465,14 @@ def fixture_inputs(recipe):
     if recipe["panel"] not in SYNTHETIC_PANELS:
         return None
     if recipe["panel"] == "chart":
-        # Synthetic telemetry flows through production polling/history, then disarms.
+        # Two flights separated by a recording pause, exposing resume connectors.
         rows = []
         for index, (name, source) in enumerate(recipe["sample"]["sources"].items(), 1):
             rows.append(f"    {{name = {json.dumps(name)}, id = {30000 + index}, "
                         f"unit = {source['unit']}, prec = {source['precision']}, "
                         f"value = {lua_value(source['value'])}}}")
-        return """local started = getTime()
+        return """model.setGlobalVariable(8, 0, 0)
+local started = getTime()
 local armIndex = assert(getSwitchIndex("SF" .. CHAR_DOWN))
 local function clock() return math.min(getTime() - started, 2200) end
 local sources = {
@@ -475,12 +480,14 @@ local sources = {
 }
 return {
     getFieldInfo = function(name)
+        if name == "ch3" then return { id = 30010, name = "ch3" } end
         for _, source in ipairs(sources) do
             if source.name == name then return source end
         end
         return getFieldInfo(name)
     end,
     getValue = function(id)
+        if id == 30010 then return 1024 end
         for index, source in ipairs(sources) do
             if source.id == id or source.name == id then
                 return source.value * (1 + 0.2 * math.sin(clock() / (180 + index * 70) + index))
@@ -491,7 +498,7 @@ return {
     getSwitchValue = function(index)
         if index == armIndex then
             local elapsed = getTime() - started
-            return elapsed < 1000 or elapsed >= 1100 and elapsed < 2200
+            return elapsed < 1000 or elapsed >= 1500 and elapsed < 2200
         end
         return getSwitchValue(index)
     end,
@@ -528,8 +535,8 @@ return {
 }
 """
     if recipe["panel"] == "flight-counter":
-        # Each gallery instance qualifies once against the isolated real GV9.
-        initial = recipe["sample"]["count"] - len(recipe["panels"])
+        # All gallery instances share one qualification against the isolated GV9.
+        initial = recipe["sample"]["count"] - 1
         return f"""model.setGlobalVariable(8, 0, {initial})
 assert(model.getGlobalVariable(8, 0) == {initial}, "capture could not initialize GV9")
 local armIndex = assert(getSwitchIndex("SF" .. CHAR_DOWN))

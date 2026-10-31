@@ -19,16 +19,16 @@
 --- transmitter voltage, timers, trims, and global variables do not depend on
 --- the link and are always live once resolved.
 ---
---- The link indicator is `getRSSI() > 0`, which is the only liveness signal
---- the Lua API offers, and it is not reliable everywhere: a protocol that
+--- The link indicator is `getRSSI() > 0`, the legacy reader's liveness signal,
+--- and it is not reliable everywhere: a protocol that
 --- never populates an RSSI sensor reads zero on a perfectly live link. The
 --- service detects that case and stops trusting the indicator, because a
 --- telemetry source cannot return a non-zero value when EdgeTX has nothing.
 ---
---- What remains unsolvable from Lua: a sensor that is configured but has never
---- been received reads as a valid zero while the link is up, because EdgeTX
---- exposes no per-sensor availability. GPS is the exception; it carries its
---- own age, which `navigationService` uses.
+--- This legacy `getValue` path cannot distinguish never-received sensors from
+--- genuine zeros while the link is up. GPS carries its own age, which
+--- `navigationService` uses. Smart flight inputs instead require the optional
+--- `getSourceValue` API's per-sensor receipt/current/fresh flags.
 
 ---@class AeroGridReading
 ---@field name string Source name as configured in the layout.
@@ -444,7 +444,14 @@ function telemetryService:update(now)
     if #entries == 0 then
         return
     end
-    self.cursor = self.support.roundRobin(entries, self.cursor, telemetryService.POLL_CAP, pollEntry, self, now)
+    self.cursor = self.support.roundRobin(
+        entries,
+        self.cursor,
+        math.min(self.pollCap or telemetryService.POLL_CAP, telemetryService.POLL_CAP),
+        pollEntry,
+        self,
+        now
+    )
 
     -- Republished after the polls, because a live reading can prove the
     -- indicator wrong part way through this very update.

@@ -106,7 +106,17 @@ local function refresh(event, touch)
     widget.lcdMock.setTextMeasurement(true)
     assert(ok, tostring(err))
     worst = math.max(worst, ticks * 200)
-    assert(ticks * 200 <= 15000, "editor callback exceeded budget: " .. tostring(ticks * 200))
+    assert(
+        ticks * 200 <= 15000,
+        "editor callback exceeded budget: "
+            .. tostring(ticks * 200)
+            .. " at line "
+            .. tostring(debug.getinfo(2, "l").currentline)
+            .. " caller="
+            .. tostring((debug.getinfo(3, "l") or {}).currentline)
+            .. " stage="
+            .. tostring(context.stage)
+    )
     widget.lvglMock.settle()
 end
 local function settle()
@@ -1584,14 +1594,16 @@ for index = 1, #context.editorSession.draft.panels do
         equal(control("label").properties.value, "Elapsed", "text input reflects accepted draft value")
     elseif panelType == "flight-counter" then
         equal(control("armSwitch").kind, "switch", "arm position uses native switch selection")
-        equal(control("motorSource").kind, "source", "motor channel uses source selection")
-        equal(control("announcements").kind, "toggle", "booleans use native toggles")
-        equal(control("announcements").properties.get(), 0, "toggle getter returns native integer false")
-        control("announcements").properties.set(1)
+        control("label").properties.set("Trips")
         settleDrawer()
-        equal(context.editorSession.draft.panels[index].config.announcements, true, "toggle stores boolean")
-        equal(control("announcements").properties.get(), 1, "toggle getter returns native integer true")
-        equal(control("minFlightDuration").kind, "numberEdit", "numbers use native bounded inputs")
+        for _, row in ipairs(context.editorUi.drawerControls) do
+            assert(
+                row.field.key ~= "motorSource"
+                    and row.field.key ~= "announcements"
+                    and row.field.key ~= "minFlightDuration",
+                "detector settings belong in Model settings"
+            )
+        end
     end
     back()
     if panelType == "flight-timer" then
@@ -1609,7 +1621,7 @@ for index = 1, #context.editorSession.draft.panels do
                 preview = panel
             end
         end
-        equal(preview.instance.preview, true, "unsaved counter preview cannot track or write flights")
+        equal(preview.instance.preview, true, "counter label edits use a presentation-only preview")
     end
 end
 context.editorSession.dirty = true
@@ -1779,7 +1791,7 @@ panels:
   - id: nav
     type: navigation
     col: 0
-    row: 0
+    row: 1
     colSpan: 2
     rowSpan: 2
     config:
@@ -1855,6 +1867,7 @@ panels:
     colSpan: 2
     rowSpan: 2
     config:
+      armSwitch: SAv
       duration: 5m
       metrics:
         - source: Alt
@@ -1878,20 +1891,17 @@ local function chartDrawerOrder()
 end
 equal(
     chartDrawerOrder(),
-    "Label,Armed switch position,Metrics,Alt,+,Time range,Series scales,Line smoothing,Accent,Remove panel",
+    "Label,Arm switch position,Metrics,Alt,+,Time range,Series scales,Line smoothing,Accent,Remove panel",
     "Growing chart drawer follows the guide, with add after entries and remove last"
 )
 equal(control("armSwitch").kind, "switch", "Chart must use the native switch-position picker")
-equal(control("armSwitch").properties.get(), 0, "new Chart panels must not guess an arm condition")
+equal(control("armSwitch").properties.get(), getSwitchIndex("SA" .. CHAR_DOWN), "legacy Chart switch remains visible")
 control("armSwitch").properties.set(getSwitchIndex("SA" .. CHAR_DOWN))
 settleDrawer()
 equal(context.editorSession.draft.panels[1].config.armSwitch, "SAv", "physical positions must be stored on the panel")
 control("armSwitch").properties.set(getSwitchIndex("L01"))
 settleDrawer()
 equal(context.editorSession.draft.panels[1].config.armSwitch, "L01", "logical arm conditions must also be selectable")
-control("armSwitch").properties.set(0)
-settleDrawer()
-equal(context.editorSession.draft.panels[1].config.armSwitch, "", "clearing the switch must disable recording")
 control("armSwitch").properties.set(getSwitchIndex("SA" .. CHAR_DOWN))
 settleDrawer()
 action("item", "metrics").properties.press()
@@ -1913,7 +1923,7 @@ control("timeRange").properties.set(2)
 settleDrawer()
 equal(
     chartDrawerOrder(),
-    "Label,Armed switch position,Metrics,Alt,+,Time range,Window duration,Series scales,Line smoothing,Accent,Remove panel",
+    "Label,Arm switch position,Metrics,Alt,+,Time range,Window duration,Series scales,Line smoothing,Accent,Remove panel",
     "Rolling keeps its window duration beside the time-range selector"
 )
 equal(drawerRow("duration").row.hidden, false, "Rolling must reveal its fixed window control")

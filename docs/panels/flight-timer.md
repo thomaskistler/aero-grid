@@ -25,6 +25,7 @@ Configure the timer's name, start value, activation mode or switch, and
 elapsed or remaining display in **Model Setup → Timers** on the radio.
 **Model timer** chooses which one the panel reads. The timer keeps running
 under EdgeTX's control even when this dashboard is hidden.
+AeroGrid's Session reset switch does not reset this radio-owned timer.
 
 **Warning seconds** and **Critical seconds** follow the timer's direction.
 A countdown reaches a threshold at or below it; a count-up timer reaches

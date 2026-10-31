@@ -5,8 +5,7 @@
 # the spans where it presents differently, so the ladder steps, the shed rows
 # and the clipping are all on one page.
 #
-# Screen 3 on AEROGRID PANEL1. Panel reviews are split across two models
-# to stay below EdgeTX's ten-screen limit.
+# Screen 2 on AG Flight.
 #
 # Eight declared spans do not fit on a 4 x 4 grid: they would need thirty
 # cells. These six are the ones that present differently. `3x1` is omitted

@@ -346,7 +346,7 @@ end
 ---@param name any GPS source name.
 ---@param armSwitch? string Empty or omitted uses EdgeTX home.
 ---@return AeroGridNavigation
-function navigationService:subscribe(name, armSwitch)
+function navigationService:subscribe(name, armSwitch, homeMode)
     if type(name) ~= "string" or name == "" then
         if not self.noneView then
             self.noneView = self.support.snapshot({
@@ -361,8 +361,10 @@ function navigationService:subscribe(name, armSwitch)
         return self.noneView
     end
 
-    local customHome = type(armSwitch) == "string" and armSwitch ~= ""
-    local key = customHome and (name .. "\0" .. armSwitch) or name
+    local customHome = homeMode == "first-arm" or homeMode == nil and type(armSwitch) == "string" and armSwitch ~= ""
+    local arm = customHome and assert(self.runtime.byId.armed, "navigation requires Armed service"):state(armSwitch)
+        or nil
+    local key = arm and (name .. "\0" .. arm.key) or name
     local existing = self.sources[key]
     if existing then
         return existing
@@ -388,9 +390,7 @@ function navigationService:subscribe(name, armSwitch)
         reading = telemetry and telemetry:subscribe(name) or nil,
     }
     if customHome then
-        local control = self.runtime.byId.control
-        assert(control, "navigation home capture requires control service")
-        entry.arm = control:switch(armSwitch)
+        entry.arm = arm
         self.homes[key] = self.homes[key] or {}
         entry.capture = self.homes[key]
         entry.state.homeStatus = entry.capture.latitude and "captured"

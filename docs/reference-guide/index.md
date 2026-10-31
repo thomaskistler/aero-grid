@@ -12,7 +12,7 @@ remain active.
 | --- | --- |
 | [Channel output](../panels/output.md) | Channel outputs with automatically matched stick-trim arrows. |
 | [Chart](../panels/chart.md) | Armed-time history with up to three overlaid traces and raw recorded extrema. |
-| [Flight counter](../panels/flight-counter.md) | Panel-owned flight detection, GV9 count, and completed-flight history. |
+| [Flight counter](../panels/flight-counter.md) | Shared flight detection and GV9 count. |
 | [Flight mode](../panels/flight-mode.md) | The active EdgeTX flight mode. |
 | [Flight timer](../panels/flight-timer.md) | An EdgeTX model timer. |
 | [Host diagnostics](../panels/host-diagnostics.md) | Troubleshooting report on the widget, theme, panels, and sources. |
@@ -51,3 +51,6 @@ stay in your draft until you save the layout.
 
 To add a screen, see [Add a dashboard](../user-guide/add-dashboard.md).
 To arrange panels, see [Edit a dashboard on the radio](../user-guide/edit-dashboard.md).
+Arming, flight detection, session reset, and flight-status output are
+[Model settings](../user-guide/model-settings.md), not normal panel settings.
+Legacy panel arm controls may still appear on older layouts until model arming is saved.

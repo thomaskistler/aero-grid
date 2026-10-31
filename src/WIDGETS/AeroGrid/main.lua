@@ -46,7 +46,7 @@
 ---@field errorLabel? any
 ---@field page any Container holding one generation of the dashboard.
 ---@field reloadState? "clear"|"rebuild"
----@field stage? "theme-read"|"theme-validate"|"read"|"tokenize"|"header"|"header-migrate"|"header-finalize"|"services"|"panels"|"panel-migrate"|"panel-validate" Staged loader position.
+---@field stage? "theme-read"|"theme-validate"|"read"|"tokenize"|"header"|"header-migrate"|"header-finalize"|"services"|"panels"|"panel-migrate"|"panel-validate"|"panel-build" Staged loader position.
 ---@field servicesModule? table Loaded lib/services.lua registry module.
 ---@field packageInfo? table Package identity and compatibility versions.
 ---@field serviceRuntime? table Registry holding every constructed service.
@@ -416,26 +416,8 @@ end
 --- widget zone at MENU_HEADER_HEIGHT whenever the bar is shown. A layout with
 --- neither hides the button altogether.
 ---
---- **And the button goes away when the widget goes fullscreen**, which this
---- used to reserve for anyway. `ViewMain::onLongPress` calls
---- `setFullscreen(true)` on an App-mode screen
---- (radio/src/gui/colorlcd/mainview/view_main.cpp:313), `Widget::setFullscreen`
---- runs `ViewMain::instance()->show(!enable)`
---- (radio/src/gui/colorlcd/mainview/widget.cpp:224), and `ViewMain::show`
---- passes that straight to `setEdgeTxButtonVisible(visible and ...)`
---- (view_main.cpp:327). So in fullscreen there is no button, and a corner
---- reserved for one costs that panel a font size for nothing.
----
---- `lvgl.isAppMode` cannot see it: `LayoutAppMode::isAppMode` returns a
---- constant `true` (layout1x1AppMode.cpp:40) and the screen is still that
---- layout. `lvgl.isFullScreen` can, and is asked here.
----
---- **The name is `isFullScreen`, with a capital S.** The C function is
---- `luaLvglIsFullscreen` (api_colorlcd_lvgl.cpp:402) but the name it is
---- registered under is `isFullScreen` (api_colorlcd_lvgl.cpp:447) -- and a
---- misspelling would not fail here, it would read as nil, take the
---- `type(...) == "function"` branch away, and silently keep reserving the
---- corner. Which is the defect, unchanged.
+--- Fullscreen hides the native button. AeroGrid replaces it with its own menu
+--- using the same button dimensions, so the reservation remains unchanged.
 ---@param zone AeroGridZone
 ---@return table? reserved Width and height of the covered corner.
 local function reservedCorner(zone)
@@ -444,10 +426,7 @@ local function reservedCorner(zone)
         local ok, value = pcall(lvgl.isAppMode)
         appMode = ok and value == true
     end
-    if not appMode then
-        return nil
-    end
-    if isFullScreen() then
+    if not appMode and not isFullScreen() then
         return nil
     end
 
@@ -487,11 +466,17 @@ end
 --- fail and the radio would show nothing at all.
 ---@param context AeroGridContext
 local function showErrors(context)
-    if #context.errors == 0 then
+    if #context.errors == 0 and not context.flightErrorText then
+        if context.errorLabel then
+            context.errorLabel:set({ text = "" })
+        end
         return
     end
 
     local text = table.concat(context.errors, "\n")
+    if context.flightErrorText then
+        text = text == "" and context.flightErrorText or text .. "\n" .. context.flightErrorText
+    end
     if context.errorLabel then
         context.errorLabel:set({ text = text })
         return
@@ -537,6 +522,8 @@ local function dispatchAll(context, event, ...)
 end
 
 local sharedDiagnosticsLog
+local flightFactories = {}
+local pumpFlight
 
 --- Create one AeroGrid host instance for an EdgeTX custom-screen zone.
 ---@param zone AeroGridZone
@@ -544,11 +531,18 @@ local sharedDiagnosticsLog
 ---@param path string Absolute widget directory supplied by EdgeTX.
 ---@return AeroGridContext
 local function create(zone, widgetOptions, path)
+    local flightFactory = flightFactories[path or WIDGET_PATH]
+    if not flightFactory then
+        flightFactory = { members = setmetatable({}, { __mode = "k" }) }
+        flightFactories[path or WIDGET_PATH] = flightFactory
+    end
     local context = {
         zone = zone,
         path = path,
         layoutName = layoutName(widgetOptions.Layout),
         themeMode = themeModeOf(widgetOptions.Theme),
+        legacyWidgetArmed = widgetOptions.Armed or 0,
+        flightFactory = flightFactory,
         panels = {},
         rejected = {},
         errors = {},
@@ -575,7 +569,7 @@ local function create(zone, widgetOptions, path)
             or package.version == ""
             or package.runtimeApi ~= 1
             or package.panelApi ~= 1
-            or package.layoutVersion ~= 3
+            or package.layoutVersion ~= 5
         )
     then
         package = nil
@@ -606,6 +600,22 @@ local function create(zone, widgetOptions, path)
         context.yaml = runtimeModule("lib/yaml.lua")
         context.layoutValidator = runtimeModule("lib/layout.lua")
         context.layoutStore = runtimeModule("lib/layout_store.lua")
+        context.flightConfig = runtimeModule("lib/flight_config.lua")
+        context.aeroMenuModule = runtimeModule("lib/aerogrid_menu.lua")
+        local flightRegistration = runtimeModule("lib/flight_registration.lua")
+        if flightRegistration then
+            context.configureFlight = function(host)
+                local ok, message = pcall(flightRegistration.configure, host)
+                if not ok then
+                    local member = host.flightFactory.members[host]
+                    member.pending, member.error = false, tostring(message)
+                    host.flightFactory.revision = (host.flightFactory.revision or 0) + 1
+                    addError(host, "flight: " .. tostring(message))
+                else
+                    pumpFlight(host)
+                end
+            end
+        end
         context.panelHost = runtimeModule("lib/panel_host.lua")
         local typography = runtimeModule("lib/typography.lua")
         local panelLayout = runtimeModule("lib/panel_layout.lua")
@@ -691,6 +701,13 @@ local function create(zone, widgetOptions, path)
         h = zone.h,
     })
     context.rootBuiltFullscreen = isFullScreen()
+    local info = model and model.getInfo and model.getInfo()
+    flightFactory.members[context] = {
+        modelFilename = info and info.filename,
+        layoutName = context.layoutName,
+        pending = true,
+    }
+    flightFactory.revision = (flightFactory.revision or 0) + 1
 
     -- The canvas must be a filled rectangle. A box ignores `color`, leaving the
     -- radio's own screen background, including its logo, visible behind us.
@@ -715,6 +732,9 @@ local function create(zone, widgetOptions, path)
         or not context.yaml
         or not context.layoutValidator
         or not context.layoutStore
+        or not context.flightConfig
+        or not context.configureFlight
+        or not context.aeroMenuModule
         or not context.panelHost
         or not context.themeBuilder
         or not context.primitives
@@ -726,6 +746,9 @@ local function create(zone, widgetOptions, path)
         -- Nothing can be loaded without the runtime, and an option change must not
         -- be able to restage a load that would then index a missing module.
         context.runtimeFailed = true
+        local member = context.flightFactory.members[context]
+        member.pending, member.error = false, "Flight configuration unavailable: restore the complete AeroGrid package"
+        context.flightFactory.revision = (context.flightFactory.revision or 0) + 1
         addError(context, "AeroGrid runtime module failed to load")
         showErrors(context)
     else
@@ -748,6 +771,9 @@ local function update(context, widgetOptions)
     end
 
     if name ~= context.layoutName or themeMode ~= context.themeMode then
+        local member = context.flightFactory.members[context]
+        member.pending = true
+        context.flightFactory.revision = (context.flightFactory.revision or 0) + 1
         context.editorStash = nil
         if context.editorUi then
             context.editorUiModule.close(context, true)
@@ -779,6 +805,12 @@ end
 local function event(context, widgetEvent, touchState)
     if context.runtimeFailed then
         return false
+    end
+    if context.modelSettingsUi then
+        return context.modelSettingsUiModule.handle(context, widgetEvent, touchState)
+    end
+    if context.aeroMenuModule and context.aeroMenuModule.handle(context, widgetEvent, touchState) then
+        return true
     end
     if context.editorUi then
         return context.editorUiModule.handle(context, widgetEvent, touchState)
@@ -900,7 +932,9 @@ local function dispatchDue(context)
         local entry = panels[cursor]
         examined = examined + 1
 
-        if entry and not entry.failed and now >= (entry.nextRefresh or 0) then
+        local owner = context.refreshOwner
+        local waiting = owner and entry ~= owner and entry.module.id == owner.module.id
+        if entry and not entry.failed and not waiting and now >= (entry.nextRefresh or 0) then
             local cost = rawget(entry.module, "refreshCost") or 1
             if work + cost > REFRESH_CAP then
                 break
@@ -908,12 +942,19 @@ local function dispatchDue(context)
             work = work + cost
             dispatched = dispatched + 1
 
-            local ok, dispatchError = context.panelHost.dispatch(entry, "refresh")
+            local ok, dispatchError, _, unfinished = context.panelHost.dispatch(entry, "refresh")
             -- Advance from now, without accumulating missed deadlines.
             entry.nextRefresh = now + entry.interval
             if not ok and dispatchError then
                 addError(context, entry.placement.id .. ": refresh: " .. dispatchError)
                 failures = true
+            end
+            -- Serialize staged panels of the same type, without starving
+            -- unrelated panels or the data services between their turns.
+            if ok and unfinished then
+                context.refreshOwner = entry
+            elseif context.refreshOwner == entry then
+                context.refreshOwner = nil
             end
         end
 
@@ -942,6 +983,7 @@ local function updateServices(context)
         return nil
     end
 
+    registry.byId.telemetry.pollCap = context.flightPolled and 4 or nil
     local id, serviceError = context.servicesModule.update(registry, getTime())
     if serviceError then
         addError(context, id .. ": " .. serviceError)
@@ -951,6 +993,353 @@ local function updateServices(context)
     return id
 end
 
+pumpFlight = function(context, inputPending)
+    context.flightPolled = nil
+    local owner = context.flightFactory and context.flightFactory.broker
+    if not owner then
+        return false
+    end
+    local identityOk, filename = pcall(owner.identity, owner)
+    if not identityOk then
+        local text = "flight: " .. tostring(filename)
+        if context.flightErrorText ~= text then
+            context.flightErrorText = text
+            logError(context, text)
+            showErrors(context)
+        end
+        context.flightReportedRevision = nil
+        return false
+    end
+    if filename ~= owner.filename then
+        owner:reset(filename)
+    end
+    if not owner.documentLoaded then
+        if not owner.store then
+            local storeModule, storeError = loadModule(context.path, "lib/model_settings_store.lua", 1)
+            if not storeModule then
+                owner.loadError, owner.documentLoaded = storeError, true
+                return true
+            end
+            local created, store = pcall(storeModule.new, context.path, context.yaml, {
+                modelFilename = function()
+                    return owner:identity()
+                end,
+                flightConfig = context.flightConfig,
+                armedConfig = context.serviceRuntime.modules.armed,
+            })
+            if not created then
+                owner.loadError, owner.documentLoaded = tostring(store), true
+                return true
+            end
+            owner.store = store
+        end
+        local document, info = owner.store:load(filename)
+        if document then
+            owner:setDocument(document)
+            if type(info) == "table" and info.recovered then
+                addNotice(context, "warning", "Recovered previous model settings; review and save Model settings.")
+            end
+        else
+            owner.loadError, owner.documentLoaded = tostring(info), true
+        end
+        return true
+    end
+    local resetConfigured = owner.document and owner.document.sessionReset and owner.document.sessionReset ~= ""
+    if (context.stage or context.reloadState) and not owner.session and not resetConfigured then
+        return false
+    end
+    local now = getTime()
+    if resetConfigured or owner.resetRuntime or owner.errors.reset then
+        local resetOk, resetError = pcall(owner.pollReset, owner, now)
+        if not resetOk then
+            owner:error("reset", resetError)
+        end
+    end
+    if not owner.session and owner.dormantRevision == context.flightFactory.revision then
+        if not owner.state.resetError and not context.flightErrorText then
+            return false
+        end
+    end
+    if owner.smartRuntime then
+        if inputPending or context.flightDashboardDue then
+            context.flightDashboardDue = nil
+            return false
+        end
+        if owner.lastTick and now >= owner.lastTick and now < (owner.nextPumpAt or 0) then
+            return false
+        end
+    end
+    local ok, message = pcall(owner.tick, owner, now, filename)
+    if not ok then
+        owner:error("detection", message)
+    end
+    -- Share ordinary polling capacity, not whole chart callbacks. Construction
+    -- still needs its own slice, with a fair turn for each widget's UI work.
+    local reserved = false
+    if owner.smartRuntime then
+        context.flightPolled = true
+        owner.nextPumpAt = now + 10
+        reserved = not not (
+            context.stage
+            or context.reloadState
+            or context.editorUi
+            or context.modelSettingsUi
+            or context.logViewer
+            or context.appRebuild
+            or context.reflowIndex
+        )
+        context.flightDashboardDue = reserved or nil
+    end
+    local state = owner.view
+    if
+        context.flightReportedRevision == (state.diagnosticRevision or 0)
+        and context.flightReportedEpoch == state.epoch
+    then
+        return reserved
+    end
+    context.flightReportedRevision, context.flightReportedEpoch = state.diagnosticRevision or 0, state.epoch
+    local messages = {}
+    for _, key in ipairs({
+        "configurationError",
+        "detectionError",
+        "countError",
+        "outputError",
+        "persistenceError",
+        "resetError",
+    }) do
+        if state[key] then
+            messages[#messages + 1] = "flight: " .. state[key]
+        end
+    end
+    local text = #messages > 0 and table.concat(messages, "\n") or nil
+    if text ~= context.flightErrorText then
+        context.flightErrorText = text
+        if text then
+            logError(context, text)
+        end
+        showErrors(context)
+    end
+    return reserved
+end
+
+local function openModelSettings(context)
+    local owner = context.flightFactory.broker
+    if not owner or not owner.documentLoaded or owner.loadError then
+        addError(
+            context,
+            "Model settings are unavailable: " .. tostring(owner and owner.loadError or "flight service is loading")
+        )
+        showErrors(context)
+        return
+    end
+    if not context.modelSettingsUiModule then
+        local module, message = loadModule(context.path, "lib/model_settings_ui.lua", 1)
+        if not module then
+            addError(context, "Model settings: " .. tostring(message))
+            showErrors(context)
+            return
+        end
+        context.modelSettingsUiModule = module
+    end
+    local latest, loadError = owner.store:load(owner.filename)
+    if not latest then
+        addError(context, "Model settings: " .. tostring(loadError))
+        showErrors(context)
+        return
+    end
+    owner:setDocument(latest)
+    local document = {
+        modelFilename = owner.filename,
+        revision = owner.document and owner.document.revision or 0,
+        flight = owner.document and owner.document.flight,
+        armed = owner.document and owner.document.armed,
+        sessionReset = owner.document and owner.document.sessionReset,
+    }
+    if document.armed == nil then
+        local selections = {}
+        for host in pairs(owner.members) do
+            if host.legacyWidgetArmed and host.legacyWidgetArmed ~= 0 then
+                selections[host.legacyWidgetArmed] = true
+            end
+        end
+        local count = 0
+        for _ in pairs(selections) do
+            count = count + 1
+        end
+        document.status = count > 1
+                and "Conflicting old widget Armed selections were not imported. Choose one model switch."
+            or count == 1 and "Old widget Armed was not imported. Choose the model switch."
+            or "No model Armed set. Legacy panel switches remain until changed; None disables arming model-wide."
+    end
+    local suspended = context.editorUi ~= nil
+    if suspended then
+        context.editorStash = context.editorSession
+        context.editorUiModule.close(context, false)
+        context.editorController.restorePreview(context)
+        context.editorSession = nil
+    end
+    local function resume()
+        if suspended and owner:identity() ~= document.modelFilename then
+            context.editorStash = nil
+        end
+    end
+    local opened, message = pcall(context.modelSettingsUiModule.open, context, document, {
+        modelFilename = function()
+            return owner:identity()
+        end,
+        fullscreen = isFullScreen,
+        flightConfig = context.flightConfig,
+        armedConfig = context.serviceRuntime.modules.armed,
+        armControl = context.serviceRuntime.byId.control,
+        smartStatus = function()
+            return owner.view.smartStatus
+        end,
+        save = function(values, revision, modelFilename, armedCondition, sessionReset)
+            local ok, message = pcall(function()
+                owner:validateOutput(values.flightSwitch, armedCondition, sessionReset)
+            end)
+            if not ok then
+                return false, tostring(message)
+            end
+            return owner.store:save(modelFilename, revision, values, armedCondition, sessionReset)
+        end,
+        saved = function(saved)
+            owner:setDocument(saved)
+        end,
+        error = function(message)
+            addError(context, "Model settings: " .. message)
+            showErrors(context)
+        end,
+        cancel = resume,
+    })
+    if not opened then
+        resume()
+        addError(context, "Model settings: " .. tostring(message))
+        showErrors(context)
+    end
+end
+
+local function prepareAeroMenu(context, widgetEvent)
+    if context.editorUi and context.aeroMenuModal == true and isFullScreen() then
+        return false
+    end
+    if context.chromeRoot then
+        if isFullScreen() then
+            lvgl.show(context.chromeRoot)
+        else
+            lvgl.hide(context.chromeRoot)
+        end
+    end
+    if not context.theme or context.runtimeFailed or context.stage or context.reloadState then
+        return false
+    end
+    if not context.aeroMenuModule then
+        local module, message = loadModule(context.path, "lib/aerogrid_menu.lua", 1)
+        if not module then
+            addError(context, "AeroGrid menu: " .. tostring(message))
+            return
+        end
+        context.aeroMenuModule = module
+        return true
+    end
+    if not isFullScreen() and not context.chromeRoot then
+        return false
+    end
+    local height = buttonHeight()
+    if not context.aeroMenuHandlers then
+        context.aeroMenuHandlers = {
+            fullscreen = isFullScreen,
+            modelFilename = function()
+                local info = model and model.getInfo and model.getInfo()
+                return info and info.filename
+            end,
+            modelSettings = function()
+                openModelSettings(context)
+            end,
+            uiSetup = function()
+                context.editorController.openEditor(context)
+            end,
+            modal = function()
+                return context.modelSettingsUi ~= nil
+                    or context.locationDetails ~= nil
+                    or context.logViewer ~= nil
+                    or context.editorUi ~= nil
+            end,
+        }
+    end
+    if not context.chromeRoot then
+        context.chromeRoot = lvgl.box({ x = 0, y = 0, w = context.zone.w, h = context.zone.h })
+        context.aeroMenuParent = nil
+    end
+    context.aeroMenuHandlers.parent = context.chromeRoot
+    local fullscreen, modal = isFullScreen(), context.aeroMenuHandlers.modal()
+    if
+        context.aeroMenuParent ~= context.root
+        or context.aeroMenuHeight ~= height
+        or context.aeroMenuWidth ~= context.zone.w
+        or context.aeroMenuZoneHeight ~= context.zone.h
+        or context.aeroMenuFullscreen ~= fullscreen
+        or context.aeroMenuModal ~= modal
+    then
+        local _, created = context.aeroMenuModule.ensure(
+            context,
+            { w = math.floor(height * BUTTON_WIDTH_RATIO + 0.5), h = height },
+            context.aeroMenuHandlers
+        )
+        context.aeroMenuParent, context.aeroMenuHeight = context.root, height
+        context.aeroMenuWidth, context.aeroMenuZoneHeight = context.zone.w, context.zone.h
+        context.aeroMenuFullscreen, context.aeroMenuModal = fullscreen, modal
+        context.chromeRoot:set({ w = context.zone.w, h = context.zone.h })
+        -- Keep mask construction separate from idle reload work without dropping input.
+        if created and (not widgetEvent or widgetEvent == 0) then
+            return true
+        end
+    end
+    context.aeroMenuModule.advance(context)
+    if not fullscreen then
+        lvgl.hide(context.chromeRoot)
+    end
+    return false
+end
+
+local function suspendArmingEditor(context)
+    if context.modelArmingReload or context.sessionResetPending then
+        if context.editorUi and context.editorUi.saving then
+            context.editorController.advanceEditor(context)
+            return true
+        end
+        context.modelArmingReload = nil
+        if context.editorUi then
+            context.editorStash = context.editorSession
+            context.editorUiModule.close(context, false)
+            context.editorController.restorePreview(context)
+            context.editorSession = nil
+        end
+    end
+    return false
+end
+
+local function pumpSessionReset(context)
+    if not context.sessionResetPending then
+        return false
+    end
+    if context.reloadState == "clear" then
+        if context.modelSettingsUi and not isFullScreen() then
+            context.modelSettingsUiModule.advance(context)
+        end
+        context.dashboardLifecycle.retirePage(context)
+    elseif context.reloadState == "rebuild" then
+        context.dashboardLifecycle.rebuildPage(context)
+        context.dashboardLoader.beginLoad(context)
+    elseif context.stage then
+        context.dashboardLoader.advanceLoad(context)
+    else
+        context.sessionResetPending = nil
+        return false
+    end
+    return true
+end
+
 --- Advance the staged loader, then keep geometry and panels synchronized.
 --- At most one loading step runs per call, so the instruction budget is never
 --- exceeded no matter how large the layout is.
@@ -958,6 +1347,28 @@ end
 ---@param widgetEvent? number Fullscreen input supplied by EdgeTX.
 ---@param touchState? table
 local function refresh(context, widgetEvent, touchState)
+    if pumpFlight(context, widgetEvent ~= nil and widgetEvent ~= 0) then
+        return
+    end
+    if suspendArmingEditor(context) then
+        return
+    end
+    if pumpSessionReset(context) then
+        return
+    end
+    if prepareAeroMenu(context, widgetEvent) then
+        return
+    end
+    if context.modelSettingsUi then
+        context.modelSettingsUiModule.handle(context, widgetEvent, touchState)
+        context.modelSettingsUiModule.advance(context)
+        updateServices(context)
+        return
+    end
+    if context.aeroMenuModule and context.aeroMenuModule.handle(context, widgetEvent, touchState) then
+        context.editorPress = nil
+        return
+    end
     if context.runtimeFailed then
         context.root:set({ w = context.zone.w, h = context.zone.h })
         context.page:set({ w = context.zone.w, h = context.zone.h })
@@ -1124,12 +1535,8 @@ local function refresh(context, widgetEvent, touchState)
     -- position matters as well as the size, because it decides whether the
     -- EdgeTX menu button reaches into us.
     --
-    -- **And so does going fullscreen, which moves nothing.** On the App-mode
-    -- layout this dashboard ships on, the widget's zone is already the whole
-    -- screen, so `Widget::setFullscreen` changes none of the four numbers
-    -- above -- it hides `ViewMain` and the menu button with it. A reflow keyed
-    -- on geometry alone therefore never fires, and the panel in the corner
-    -- keeps a reservation for a button that is no longer drawn.
+    -- Fullscreen can change without changing geometry. Reflow still updates
+    -- the corner reservation when AeroGrid replaces the native menu button.
     --
     -- It is a poll rather than an event, because there is no event to have:
     -- entering fullscreen calls the widget's `update` (widget.cpp:265) and
@@ -1174,11 +1581,34 @@ end
 --- a hole whenever the pilot looks at another screen.
 ---@param context AeroGridContext
 local function background(context)
+    if pumpFlight(context) then
+        return
+    end
+    if suspendArmingEditor(context) then
+        return
+    end
+    if pumpSessionReset(context) then
+        return
+    end
+    if context.modelSettingsUi then
+        context.modelSettingsUiModule.advance(context)
+        return
+    end
     if context.editorUi and context.editorUi.saving then
         context.editorController.advanceEditor(context)
         return
     end
-    if context.stage or context.reloadState or context.reflowIndex then
+    if context.reloadState == "clear" then
+        context.dashboardLifecycle.retirePage(context)
+        return
+    elseif context.reloadState == "rebuild" then
+        context.dashboardLifecycle.rebuildPage(context)
+        context.dashboardLoader.beginLoad(context)
+        return
+    elseif context.stage then
+        context.dashboardLoader.advanceLoad(context)
+        return
+    elseif context.reflowIndex then
         return
     end
     updateServices(context)

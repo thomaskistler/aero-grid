@@ -33,7 +33,7 @@ panels:
       scaling: independent
       smoothing: light
       metrics:
-        - source: Alt
+        - source: GAlt
           label: ALT
         - source: Curr
           label: A
@@ -50,7 +50,7 @@ panels:
       timeRange: rolling
       duration: 30s
       metrics:
-        - source: Alt
+        - source: GAlt
   - id: fixed
     type: chart
     col: 0
@@ -61,6 +61,6 @@ panels:
       label: Fixed scale
       armSwitch: SAv
       metrics:
-        - source: Alt
+        - source: GAlt
           rangeMin: 0
           rangeMax: 200

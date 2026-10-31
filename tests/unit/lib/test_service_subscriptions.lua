@@ -34,6 +34,7 @@ assert(navigation:subscribe("GPS") == position and navigation.count == 1)
 assert(#navigation.entries == 1 and navigation.entries[1].view == position)
 
 local extrema = loadModule("lib/extrema_service.lua").new(env, services, runtime)
+runtime.byId.armed = loadModule("lib/armed_service.lua").new(env, services, runtime)
 local track = extrema:sessionExtrema("Alt")
-assert(extrema:sessionExtrema("Alt") == track and extrema.count == 1)
+assert(extrema:sessionExtrema("Alt") == track and extrema.count == 2)
 assert(#extrema.trackOrder == 1 and extrema.trackOrder[1].view == track)

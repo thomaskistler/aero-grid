@@ -667,7 +667,9 @@ end
 local function declaredKeys(settings, out)
     out = out or {}
     for _, setting in ipairs(settings or {}) do
-        out[#out + 1] = setting.key
+        if not setting.legacyFlight then
+            out[#out + 1] = setting.key
+        end
         if setting.fields then
             declaredKeys(setting.fields, out)
         end

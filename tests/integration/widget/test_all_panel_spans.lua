@@ -7,7 +7,7 @@ local editor = fixture.module("lib/editor.lua")
 
 local variants = {
     ["flight-mode"] = { { showIndex = true } },
-    ["flight-counter"] = { { history = false } },
+    ["flight-counter"] = { {} },
     ["model-identity"] = { { presentation = "name", showLabels = true }, { presentation = "both" } },
     navigation = { { showCoordinates = true, showSatellites = true }, { showTape = true } },
     metric = {

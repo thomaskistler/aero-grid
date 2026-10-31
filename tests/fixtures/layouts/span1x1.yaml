@@ -137,7 +137,6 @@ panels:
     rowSpan: 1
     config:
       label: FLT
-      history: false
 
   - id: g-trim
     type: trim-panel

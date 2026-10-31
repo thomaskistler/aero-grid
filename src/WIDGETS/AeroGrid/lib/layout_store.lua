@@ -3,6 +3,17 @@
 --- Layout path resolution and validated, recoverable persistence.
 
 local layoutStore = { RUNTIME_API = 1 }
+local verifiedFile = ...
+
+local function writer(widgetPath)
+    if not verifiedFile then
+        local base = string.sub(widgetPath, -1) == "/" and widgetPath or widgetPath .. "/"
+        local filename = type(loadScript) == "function" and (base .. "lib/verified_file.lua")
+            or "src/WIDGETS/AeroGrid/lib/verified_file.lua"
+        verifiedFile = assert((loadScript or loadfile)(filename))()
+    end
+    return verifiedFile
+end
 
 --- Produce a stable four-hex-digit suffix for normalized identifiers.
 ---@param value string
@@ -301,96 +312,8 @@ function layoutStore.loadDefault(widgetPath, yaml, layout, grid)
 end
 
 --- Install prevalidated content only after a byte-for-byte readback check.
-local function persistSerialized(filename, serialized, fileOps)
-    local function radioOperation(operation)
-        if type(operation) ~= "function" then
-            return nil
-        end
-        return function(...)
-            local result = operation(...)
-            if result == 0 then
-                return true
-            end
-            return false, "filesystem error " .. tostring(result)
-        end
-    end
-    local operations = fileOps
-        or {
-            open = io.open,
-            read = io.read,
-            write = io.write,
-            close = io.close,
-            rename = radioOperation(_G.rename) or (os and os.rename),
-            remove = radioOperation(_G.del) or (os and os.remove),
-            stat = fstat,
-            mkdir = _G.mkdir,
-        }
-    for _, name in ipairs({ "open", "read", "write", "close", "rename", "remove", "stat" }) do
-        if type(operations[name]) ~= "function" then
-            return false, "file operation unavailable: " .. name, filename
-        end
-    end
-
-    -- The user directory does not exist on a fresh card. `mkdir` reports an
-    -- existing directory as an error, so the result is ignored and the open
-    -- below decides.
-    if type(operations.mkdir) == "function" then
-        local parent = ""
-        for segment in string.gmatch(string.match(filename, "^(.*)/[^/]*$") or "", "[^/]+") do
-            parent = parent .. "/" .. segment
-            if not operations.stat(parent) then
-                operations.mkdir(parent)
-            end
-        end
-    end
-
-    local temporary = filename .. ".tmp"
-    local backup = filename .. ".bak"
-    local handle, openError = operations.open(temporary, "w")
-    if not handle then
-        return false, openError or ("cannot open temporary layout: " .. temporary), filename
-    end
-    local writeOk, writeError = operations.write(handle, serialized)
-    local closeOk, closeError = operations.close(handle)
-    if not writeOk or writeError then
-        operations.remove(temporary)
-        return false, writeError or "cannot write temporary layout", filename
-    end
-    if closeOk == false or closeError then
-        operations.remove(temporary)
-        return false, closeError or "cannot close temporary layout", filename
-    end
-
-    local temporaryContent, temporaryError = readFile(temporary, operations)
-    if not temporaryContent then
-        operations.remove(temporary)
-        return false, temporaryError or "cannot verify temporary layout", filename
-    end
-    if temporaryContent ~= serialized then
-        operations.remove(temporary)
-        return false, "temporary layout differs from validated content", filename
-    end
-
-    if operations.stat(filename) then
-        if operations.stat(backup) then
-            local removed, removeError = operations.remove(backup)
-            if not removed then
-                operations.remove(temporary)
-                return false, removeError or "cannot replace layout backup", filename
-            end
-        end
-        local rotated, rotateError = operations.rename(filename, backup)
-        if not rotated then
-            operations.remove(temporary)
-            return false, rotateError or "cannot preserve previous layout", filename
-        end
-    end
-
-    local committed, commitError = operations.rename(temporary, filename)
-    if not committed then
-        return false, commitError or "cannot install validated layout", filename
-    end
-    return true, nil, filename
+local function persistSerialized(filename, serialized, fileOps, widgetPath)
+    return writer(widgetPath).write(filename, serialized, fileOps)
 end
 
 --- Synchronous save for callers that do not need staged callback budgets.
@@ -414,12 +337,14 @@ function layoutStore.save(widgetPath, name, document, yaml, layout, grid, fileOp
     if not validated or #validationErrors > 0 then
         return false, "serialized layout failed validation: " .. table.concat(validationErrors, "; "), filename
     end
-    return persistSerialized(filename, serialized, fileOps)
+    return persistSerialized(filename, serialized, fileOps, widgetPath)
 end
 
 --- Build and verify one panel per callback before atomically installing the file.
 function layoutStore.startSave(widgetPath, name, document, yaml, layout, grid, fileOps)
+    writer(widgetPath)
     return {
+        widgetPath = widgetPath,
         filename = layoutStore.path(widgetPath, name),
         document = document,
         yaml = yaml,
@@ -536,7 +461,8 @@ function layoutStore.advanceSave(state)
         return false
     end
     if state.phase == "panels" then
-        local saved, saveError = persistSerialized(state.filename, table.concat(state.parts), state.operations)
+        local saved, saveError =
+            persistSerialized(state.filename, table.concat(state.parts), state.operations, state.widgetPath)
         return true, saved, saveError
     end
     return false

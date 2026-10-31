@@ -38,9 +38,12 @@ services.DEFINITIONS = {
     { id = "telemetry", file = "lib/telemetry_service.lua" },
     { id = "model", file = "lib/model_service.lua" },
     { id = "control", file = "lib/control_service.lua" },
+    { id = "flight", file = "lib/flight_service.lua" },
+    { id = "armed", file = "lib/armed_service.lua" },
     { id = "extrema", file = "lib/extrema_service.lua" },
     { id = "navigation", file = "lib/navigation_service.lua" },
     { id = "history", file = "lib/history_service.lua" },
+    { id = "smart", file = "lib/smart_flight.lua" },
 }
 
 --- Refuse writes to a published snapshot.
@@ -92,6 +95,7 @@ function services.environment(overrides)
 
     return {
         getValue = callable(overrides.getValue) or callable(getValue),
+        getSourceValue = callable(overrides.getSourceValue) or callable(getSourceValue),
         getOutputValue = callable(overrides.getOutputValue) or callable(getOutputValue),
         getFieldInfo = callable(overrides.getFieldInfo) or callable(getFieldInfo),
         getRSSI = callable(overrides.getRSSI) or callable(getRSSI),
@@ -99,6 +103,8 @@ function services.environment(overrides)
         getTime = callable(overrides.getTime) or callable(getTime),
         getSwitchIndex = callable(overrides.getSwitchIndex) or callable(getSwitchIndex),
         getSwitchValue = callable(overrides.getSwitchValue) or callable(getSwitchValue),
+        setStickySwitch = callable(overrides.setStickySwitch) or callable(setStickySwitch),
+        getLogicalSwitch = callable(modelApi.getLogicalSwitch),
         charUp = CHAR_UP,
         charDown = CHAR_DOWN,
         -- A global like `getValue`, not part of the model API: `etxlib` is in
@@ -108,18 +114,13 @@ function services.environment(overrides)
         getInfo = callable(modelApi.getInfo),
         getTimer = callable(modelApi.getTimer),
         getSensor = callable(modelApi.getSensor),
+        getModule = callable(modelApi.getModule),
         getOutput = callable(modelApi.getOutput),
         getMix = callable(modelApi.getMix),
         getInput = callable(modelApi.getInput),
         getGlobalVariable = callable(modelApi.getGlobalVariable),
         setGlobalVariable = callable(modelApi.setGlobalVariable),
         getGlobalVariableDetails = callable(modelApi.getGlobalVariableDetails),
-        getDateTime = callable(overrides.getDateTime) or callable(getDateTime),
-        playNumber = callable(overrides.playNumber) or callable(playNumber),
-        playTone = callable(overrides.playTone) or callable(playTone),
-        fileOpen = callable(overrides.fileOpen) or callable(io.open),
-        fileWrite = callable(overrides.fileWrite) or callable(io.write),
-        fileClose = callable(overrides.fileClose) or callable(io.close),
     }
 end
 

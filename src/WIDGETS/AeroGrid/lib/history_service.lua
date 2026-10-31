@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
---- Connected, error-bounded recordings of cumulative armed time.
-local history = { RUNTIME_API = 1, CAPACITY = 6144 }
+--- Connected, error-bounded recordings of cumulative recording time.
+local history = { RUNTIME_API = 1, CAPACITY = 6144, FLIGHT_CAPACITY = 64 }
 history.__index = history
 
 local TAU = { off = 0, light = 50, medium = 100, strong = 200 }
@@ -28,7 +28,10 @@ local function read(entry, index)
     local stamp = string.unpack("<I4", entry.chunks[chunk], offset)
     local format = stamp & INTEGER ~= 0 and INTEGER_FORMAT or NUMBER_FORMAT
     local _, value = string.unpack(format, entry.chunks[chunk], offset)
-    return stamp & 0x3fffffff, value, stamp & BROKEN ~= 0
+    local broken = stamp & BROKEN ~= 0
+    local slot = (index - 1) % history.CAPACITY
+    local resumed = broken and (entry.resumeBits[slot // 32 + 1] or 0) & (1 << (slot % 32)) ~= 0
+    return stamp & 0x3fffffff, value, broken, resumed
 end
 
 local function publish(entry)
@@ -38,7 +41,7 @@ local function publish(entry)
     state.plotRevision = state.plotRevision + 1
 end
 
-local function write(entry, at, value, broken)
+local function write(entry, at, value, broken, resumed)
     local index = entry.last + 1
     local chunk, offset = location(index)
     -- Preserve native integers too: float32 cannot represent every int32.
@@ -49,6 +52,13 @@ local function write(entry, at, value, broken)
     local previous = entry.chunks[chunk] or ""
     entry.chunks[chunk] = string.sub(previous, 1, offset - 1) .. packed .. string.sub(previous, offset + BYTES)
     entry.last = index
+    if broken then
+        -- Only broken knots need a reason; one bit per ring slot stays bounded.
+        local slot = (index - 1) % history.CAPACITY
+        local bucket, bit = slot // 32 + 1, 1 << (slot % 32)
+        local flags = entry.resumeBits[bucket] or 0
+        entry.resumeBits[bucket] = resumed and flags | bit or flags & ~bit
+    end
     for level, size in ipairs(SIZES) do
         local relative = (index - 1) % size
         if relative == 0 then
@@ -57,13 +67,16 @@ local function write(entry, at, value, broken)
         end
         local bounds = entry.bounds[level]
         if value < entry.lows[level] then
-            entry.lows[level], bounds = value, bounds & 0x1ff00 | relative
+            entry.lows[level], bounds = value, bounds & 0x3ff00 | relative
         end
         if value > entry.highs[level] then
-            entry.highs[level], bounds = value, bounds & 0x100ff | relative << 8
+            entry.highs[level], bounds = value, bounds & 0x300ff | relative << 8
         end
-        if broken then
+        if broken and index > 1 then
             bounds = bounds | 0x10000
+            if not resumed then
+                bounds = bounds | 0x20000
+            end
         end
         entry.bounds[level] = bounds
         local block = math.floor(((index - 1) % history.CAPACITY) / size) + 1
@@ -110,30 +123,46 @@ function history.new(env, support, runtime)
         cursor = 1,
         sessions = {},
         sessionNames = {},
+        sessionViews = {},
     }, history)
 end
 
 local function sessionFor(service, armSwitch)
-    armSwitch = armSwitch or ""
-    local session = service.sessionNames[armSwitch]
+    local armed = assert(service.runtime.byId.armed, "history requires Armed service"):state(armSwitch)
+    local session = service.sessionNames[armed.key]
     if not session then
         local state = {
-            configured = armSwitch ~= "",
+            configured = armed.configured,
             available = false,
             recording = false,
             elapsed = 0,
             segment = 0,
             revision = 0,
+            flightFirst = 1,
+            flightLast = 0,
+            flightRevision = 0,
+            armFirst = 1,
+            armLast = 0,
+            armRevision = 0,
+            resumeFirst = 1,
+            resumeLast = 0,
+            resumeRevision = 0,
         }
-        local control = service.runtime.byId.control
         session = {
-            name = armSwitch,
+            name = armed.key,
             state = state,
             view = service.support.snapshot(state),
-            arm = armSwitch ~= "" and control and control:switch(armSwitch) or nil,
+            arm = armed,
+            spans = {},
+            spanLast = 0,
+            flights = {},
+            arms = {},
+            armValues = {},
+            resumes = {},
         }
         service.sessions[#service.sessions + 1] = session
-        service.sessionNames[armSwitch] = session
+        service.sessionNames[armed.key] = session
+        service.sessionViews[session.view] = session
     end
     return session
 end
@@ -142,33 +171,201 @@ function history:session(armSwitch)
     return sessionFor(self, armSwitch).view
 end
 
-local function advance(session, now)
+local function advance(session, now, flight)
+    if session.lastTime == now and (not flight or not flight.epoch or session.epoch == flight.epoch) then
+        return
+    end
     local state = session.state
+    session.attachedAt = session.attachedAt or now
+    if flight and flight.epoch and flight.epoch ~= session.epoch then
+        session.epoch = flight.epoch
+        session.spans, session.spanLast, session.span = {}, 0, nil
+        session.flights, session.openFlight = {}, nil
+        state.flightFirst, state.flightLast, state.flightLost, state.flightActive = 1, 0, false, false
+        state.flightRevision = state.flightRevision + 1
+    end
     local lastTime = session.lastTime
     if lastTime and state.recording and now > lastTime then
         state.elapsed = state.elapsed + now - lastTime
     end
     session.lastTime = now
     local arm = session.arm
-    local available = arm ~= nil and arm.fresh == true and type(arm.value) == "boolean"
-    local recording = available and arm.value == true or false
+    local value, updatedAt = arm.value, arm.updatedAt
+    local available = arm.fresh == true
+        and type(value) == "boolean"
+        and type(updatedAt) == "number"
+        and now >= updatedAt
+        and now - updatedAt <= 100
+    local associated = flight and flight.armKey == session.name
+    local recording = associated and flight.active or available and value == true or false
+    if available then
+        if session.armed ~= nil and session.armed ~= value and state.segment > 0 then
+            state.armLast = state.armLast + 1
+            state.armFirst = math.max(1, state.armLast - history.CAPACITY + 1)
+            session.arms[(state.armLast - 1) % history.CAPACITY + 1] = state.elapsed
+            session.armValues[(state.armLast - 1) % history.CAPACITY + 1] = value
+            state.armRevision = state.armRevision + 1
+        end
+        session.armed = value
+    end
+    if associated then
+        -- Wall-clock spans map delayed boundaries to the cumulative recording
+        -- axis, including pauses. The ring also bounds pathological arm chatter.
+        if state.recording and session.span then
+            session.span.to = now
+        end
+        if recording and not session.span then
+            session.spanLast = session.spanLast + 1
+            session.span = { from = now, to = now, at = state.elapsed }
+            session.spans[(session.spanLast - 1) % 128 + 1] = session.span
+        elseif not recording then
+            session.span = nil
+        end
+    elseif session.span then
+        session.span.to, session.span = now, nil
+    end
     if state.recording ~= recording or state.available ~= available then
+        if state.recording and not recording then
+            state.stoppedAt = state.elapsed
+        end
         if recording and not state.recording then
+            if state.segment > 0 then
+                state.resumeLast = state.resumeLast + 1
+                state.resumeFirst = math.max(1, state.resumeLast - history.CAPACITY + 1)
+                session.resumes[(state.resumeLast - 1) % history.CAPACITY + 1] = state.elapsed
+                state.resumeRevision = state.resumeRevision + 1
+            end
             state.segment = state.segment + 1
+            state.stoppedAt = nil
         end
         state.recording, state.available = recording, available == true
         state.revision = state.revision + 1
     end
 end
 
-function history:advance(now)
-    for _, session in ipairs(self.sessions) do
-        advance(session, now)
+local function mapped(session, stamp, clipStart)
+    if type(stamp) ~= "number" then
+        return nil
+    end
+    local clipped
+    for index = session.spanLast, math.max(1, session.spanLast - 127), -1 do
+        local span = session.spans[(index - 1) % 128 + 1]
+        if stamp >= span.from and stamp <= span.to then
+            return span.at + stamp - span.from, true
+        elseif clipStart and stamp < span.from then
+            clipped = span.at
+        end
+    end
+    return clipped, false
+end
+
+local function addFlight(session, id, at, known)
+    local state = session.state
+    local index = state.flightLast + 1
+    local interval = { id = id, start = at, startKnown = known }
+    session.flights[(index - 1) % history.FLIGHT_CAPACITY + 1] = interval
+    state.flightLast = index
+    state.flightFirst = math.max(state.flightFirst, index - history.FLIGHT_CAPACITY + 1)
+    state.flightRevision = state.flightRevision + 1
+    state.flightActive = true
+    session.openFlight = interval
+end
+
+--- Scalar reads keep the bounded flight ring separate from telemetry series.
+function history:flight(view, index)
+    local session = self.sessionViews and self.sessionViews[view]
+    if not session or index < session.state.flightFirst or index > session.state.flightLast then
+        return nil
+    end
+
+    local interval = session.flights[(index - 1) % history.FLIGHT_CAPACITY + 1]
+    if interval.empty then
+        return nil
+    end
+    return interval.start, interval.finish, interval.startKnown, interval.endKnown
+end
+
+function history:armBoundary(view, index)
+    local session = self.sessionViews[view]
+    if not session or index < session.state.armFirst or index > session.state.armLast then
+        return nil
+    end
+    local slot = (index - 1) % history.CAPACITY + 1
+    return session.arms[slot], session.armValues[slot]
+end
+
+function history:recordingBreak(view, index)
+    local session = self.sessionViews[view]
+    if not session or index < session.state.resumeFirst or index > session.state.resumeLast then
+        return nil
+    end
+    return session.resumes[(index - 1) % history.CAPACITY + 1]
+end
+
+function history:boundaries()
+    local service, flight = self.runtime.byId.flight, self.flightState
+    if not flight or not service.boundaries or not flight.epoch or #self.sessions == 0 then
+        return
+    end
+    local records, _, lost = service:boundaries(self.flightSequence or 0, self.flightEpoch)
+    if lost then
+        for _, session in ipairs(self.sessions) do
+            -- An unobserved end must not turn a previous flight into a band
+            -- stretching across later flights.
+            if session.openFlight then
+                session.openFlight.finish = session.openFlight.observed or session.state.elapsed
+                session.openFlight = nil
+                session.state.flightActive = false
+            end
+            session.state.flightLost = true
+            session.state.flightRevision = session.state.flightRevision + 1
+        end
+    end
+    self.flightEpoch = flight.epoch
+    -- Drain one record per service turn, even after journal loss.
+    local event = records[1]
+    if event then
+        self.flightSequence = event.sequence
+        local session = self.sessionNames[event.armKey]
+        if session and session.epoch == event.epoch then
+            local at, known = mapped(session, event.at, event.kind == "start")
+            if event.kind == "start" and at and event.observedAt >= session.attachedAt then
+                addFlight(session, event.flightId, at, known)
+            elseif event.kind == "end" then
+                local interval = session.openFlight
+                if interval and interval.id == event.flightId then
+                    interval.finish, interval.endKnown = at or interval.observed or session.state.elapsed, at ~= nil
+                    local earliest = session.spans[(math.max(1, session.spanLast - 127) - 1) % 128 + 1]
+                    interval.empty = not at and earliest and event.at < earliest.from
+                    session.openFlight = nil
+                    session.state.flightActive = false
+                    session.state.flightRevision = session.state.flightRevision + 1
+                end
+            end
+        end
+    end
+    local session = #records <= 1 and flight.active and self.sessionNames[flight.armKey]
+    if session then
+        if not session.openFlight or session.openFlight.id ~= flight.flightId then
+            local at, known = mapped(session, flight.startedAt, true)
+            -- Late attachment shows only the portion this runtime recorded,
+            -- never a fabricated start marker or pre-attachment samples.
+            addFlight(session, flight.flightId, at or session.state.elapsed, known)
+        end
+        session.openFlight.observed = session.state.elapsed
     end
 end
 
-function history:subscribe(source, options)
-    options = options or {}
+function history:advance(now)
+    self.now = now
+    local flight = self.runtime.byId.flight
+    self.flightState = flight and flight:state()
+    for _, session in ipairs(self.sessions) do
+        advance(session, now, self.flightState)
+    end
+end
+
+local function recordingOptions(options)
     local window = options.windowSeconds or 60
     local mode = options.timeRange or "growing"
     local smoothing, precision = options.smoothing or "off", options.precision
@@ -182,9 +379,11 @@ function history:subscribe(source, options)
     if mode == "growing" then
         window = 60
     end
-    local session = sessionFor(self, options.armSwitch)
-    source = type(source) == "string" and source or ""
-    local key = session.name
+    return window, mode, smoothing, precision
+end
+
+local function recordingKey(name, source, window, mode, smoothing, precision)
+    return name
         .. "\0"
         .. source
         .. "\0"
@@ -195,6 +394,72 @@ function history:subscribe(source, options)
         .. smoothing
         .. "\0"
         .. tostring(precision or "sensor")
+end
+
+--- Drafts can read compatible live recordings, but cannot create pollers,
+--- sessions, subscriptions, or journal cursors.
+function history:preview()
+    local owner = self
+    local facade = { FLIGHT_CAPACITY = history.FLIGHT_CAPACITY }
+    local empty = self.support.snapshot({
+        previewMissing = true,
+        available = false,
+        revision = 0,
+        plotRevision = 0,
+        count = 0,
+        first = 1,
+        last = 0,
+    })
+    local function condition(legacy)
+        local modelArm = owner.runtime.byId.armed.condition
+        return modelArm ~= nil and modelArm or legacy or ""
+    end
+    function facade:session(legacy)
+        local key = condition(legacy)
+        local session = owner.sessionNames[key]
+        return session and session.view
+            or owner.support.snapshot({
+                previewMissing = true,
+                configured = key ~= "",
+                available = false,
+                recording = false,
+                elapsed = 0,
+                segment = 0,
+                flightFirst = 1,
+                flightLast = 0,
+            })
+    end
+    function facade:subscribe(source, options)
+        options = options or {}
+        local window, mode, smoothing, precision = recordingOptions(options)
+        source = type(source) == "string" and source or ""
+        local key = recordingKey(condition(options.armSwitch), source, window, mode, smoothing, precision)
+        return owner.names[key] and owner.names[key].view or empty
+    end
+    function facade:point(view, index, retainedFirst)
+        return owner:point(view, index, retainedFirst)
+    end
+    function facade:block(view, index, finish, before)
+        return owner:block(view, index, finish, before)
+    end
+    function facade:flight(view, index)
+        return owner:flight(view, index)
+    end
+    function facade:armBoundary(view, index)
+        return owner:armBoundary(view, index)
+    end
+    function facade:recordingBreak(view, index)
+        return owner:recordingBreak(view, index)
+    end
+    return facade
+end
+
+function history:subscribe(source, options)
+    options = options or {}
+    local window, mode, smoothing, precision = recordingOptions(options)
+    local session = sessionFor(self, options.armSwitch)
+    source = type(source) == "string" and source or ""
+    local key = recordingKey(session.name, source, window, mode, smoothing, precision)
     if self.names[key] then
         return self.names[key].view
     end
@@ -216,6 +481,7 @@ function history:subscribe(source, options)
         state = state,
         view = self.support.snapshot(state),
         chunks = {},
+        resumeBits = {},
         blocks = { {}, {}, {}, {} },
         lows = {},
         highs = {},
@@ -248,13 +514,16 @@ function history:subscribe(source, options)
 end
 
 --- Absolute sequence numbers remain stable as a rolling history expires.
-function history:point(view, index)
+--- A staged frame may retain expired knots until the physical ring overwrites them.
+function history:point(view, index, retainedFirst)
     local entry = self.views[view]
-    if not entry or index < entry.state.first or index > entry.state.last then
+    local first = entry
+        and (retainedFirst and math.max(retainedFirst, entry.last - history.CAPACITY + 1) or entry.state.first)
+    if not entry or index < first or index > entry.state.last then
         return nil
     end
     if index > entry.last then
-        return entry.lastAt, entry.endpoint, false
+        return entry.lastAt, entry.endpoint, false, false
     end
     return read(entry, index)
 end
@@ -262,6 +531,9 @@ end
 --- Skip sealed blocks only when they fit in one screen column. These summaries
 --- accelerate projection; they never replace or recompress the stored knots.
 function history:block(view, index, finish, before)
+    if (index - 1) % 4 ~= 0 then
+        return nil
+    end
     local entry = self.views[view]
     if not entry or index < entry.state.first then
         return nil
@@ -272,7 +544,7 @@ function history:block(view, index, finish, before)
             local bounds = entry.blocks[level][math.floor(((index - 1) % history.CAPACITY) / size) + 1]
             if read(entry, last) < before then
                 local low, high = index + (bounds & 0xff), index + (bounds >> 8 & 0xff)
-                return last, math.min(low, high), math.max(low, high), bounds & 0x10000 ~= 0
+                return last, math.min(low, high), math.max(low, high), bounds & 0x10000 ~= 0, bounds & 0x20000 == 0
             end
         end
     end
@@ -297,7 +569,7 @@ local function record(entry, value, at, epsilon, segment)
         return
     end
     if broken then
-        write(entry, at, value, true)
+        write(entry, at, value, true, entry.segment ~= nil and entry.segment ~= segment)
         entry.anchorAt, entry.anchor = at, value
         entry.lastAt, entry.endpoint = at, value
         entry.low, entry.high = -math.huge, math.huge
@@ -339,7 +611,7 @@ function history:sample(reading, now)
         return
     end
     for _, entry in ipairs(entries) do
-        advance(entry.session, now)
+        advance(entry.session, now, self.flightState)
         local session = entry.session.state
         if session.recording then
             local state = entry.state
@@ -398,6 +670,7 @@ function history:update(now)
         error(self.failure)
     end
     self:advance(now)
+    self:boundaries()
     self.cursor = self.support.roundRobin(self.entries, self.cursor, 1, updateEntry, self, now)
 end
 

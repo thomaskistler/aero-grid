@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
---- One panel owns detection; other dashboards may display GV9 without tracking.
+--- Presentation only; the shared flight service owns tracking and effects.
 local flightCounter = {
     id = "flight-counter",
     apiVersion = 1,
@@ -10,25 +10,30 @@ local flightCounter = {
         { key = "label", label = "Label", type = "string", default = "FLT" },
         {
             key = "armSwitch",
-            label = "Armed switch position",
+            label = "Arm switch position",
             type = "string",
-            default = "SF^",
+            default = "",
+            legacyArm = true,
         },
-        { key = "motorSource", label = "Motor channel", type = "string", default = "ch3" },
-        { key = "motorReversed", label = "Reversed motor channel", type = "boolean", default = false },
-        { key = "minMotorPercent", label = "Minimum motor percent", type = "number", default = 25 },
-        { key = "minFlightDuration", label = "Qualification seconds", type = "number", default = 30 },
-        { key = "disarmDuration", label = "Disarm seconds", type = "number", default = 10 },
-        { key = "announcements", label = "Announce flights", type = "boolean", default = false },
-        { key = "history", label = "Write CSV history", type = "boolean", default = true },
+        { key = "_legacyFlight", type = "boolean", default = false, legacyFlight = true },
+        { key = "motorSource", type = "string", default = "ch3", legacyFlight = true },
+        { key = "motorReversed", type = "boolean", default = false, legacyFlight = true },
+        { key = "minMotorPercent", type = "number", default = 25, legacyFlight = true },
+        { key = "minFlightDuration", type = "number", default = 30, legacyFlight = true },
+        { key = "disarmDuration", type = "number", default = 10, legacyFlight = true },
     },
 }
 
-function flightCounter.validateSettings(settings)
+function flightCounter.validateSettings(settings, _, _, modelArmed)
     local errors = {}
     local arm = settings.armSwitch
-    if type(arm) ~= "string" or not (string.match(arm, "^S[A-Z][%^v%-]$") or string.match(arm, "^L%d%d$")) then
-        errors[#errors + 1] = "armSwitch must be a position such as SF^, SA-, SFv, or a logical switch such as L01"
+    if
+        modelArmed == nil
+        and arm ~= nil
+        and arm ~= ""
+        and (type(arm) ~= "string" or not (string.match(arm, "^S[A-Z][%^v%-]$") or string.match(arm, "^L%d%d$")))
+    then
+        errors[#errors + 1] = "armSwitch must be blank, a physical switch position, or a logical switch"
     end
     if type(settings.motorSource) ~= "string" or settings.motorSource == "" then
         errors[#errors + 1] = "motorSource must name a radio source"
@@ -46,88 +51,6 @@ function flightCounter.validateSettings(settings)
     return errors
 end
 
-local function isLive(reading, now)
-    return reading
-        and reading.fresh
-        and type(reading.value) == "number"
-        and reading.value == reading.value
-        and type(reading.updatedAt) == "number"
-        and now >= reading.updatedAt
-        and now - reading.updatedAt <= 100
-end
-
---- Qualification requires all inputs; ending needs only a reliable arm reading.
-function flightCounter.advance(context, now)
-    local count = context.feed
-    if not count.available then
-        return
-    end
-    assert(
-        count.precision == 0 and count.raw >= 0 and count.raw <= 999 and count.raw == math.floor(count.raw),
-        "flight counter requires integer GV9 FM0 in the range 0..999, with precision 0"
-    )
-    local armLive = isLive(context.arm, now)
-    assert(not context.motor.telemetry, "flight counter motorSource must be a radio-local motor channel")
-    local armed = armLive and context.arm.value > 0
-
-    if context.phase == "active" or context.phase == "ending" then
-        if not armLive then
-            -- Unknown is not disarmed, and cannot confirm an uninterrupted timeout.
-            context.disarmedAt = nil
-            context.phase = "active"
-        elseif armed then
-            context.disarmedAt = nil
-            context.phase = "active"
-        else
-            if not context.disarmedAt then
-                context.disarmedAt = now
-                context.phase = "ending"
-            end
-            if now - context.disarmedAt >= context.settings.disarmDuration * 100 then
-                local duration = (context.disarmedAt - context.startedAt) / 100
-                context.phase = "ground"
-                context.startedAt, context.disarmedAt = nil, nil
-                if context.settings.history then
-                    context.model:logFlight(context.date, duration, context.flightCount)
-                end
-                if context.settings.announcements then
-                    context.model:announceFlight(context.flightCount, true)
-                end
-            end
-        end
-        return
-    end
-
-    local motorLive = isLive(context.motor, now)
-    local motor = motorLive and context.motor.value or -1024
-    if context.settings.motorReversed then
-        motor = -motor
-    end
-    local motorPercent = (motor + 1024) * 100 / 2048
-    local link = context.link
-    local telemetryLive = link.updatedAt and now >= link.updatedAt and now - link.updatedAt <= 100 and link.live
-    local qualifying = armed and motorLive and motorPercent > context.settings.minMotorPercent and telemetryLive
-    if not qualifying then
-        context.phase = "ground"
-        context.startedAt = nil
-        return
-    end
-    if not context.startedAt then
-        context.startedAt = now
-        context.phase = "starting"
-        if context.settings.history then
-            context.date = context.model:flightDate()
-        end
-    end
-    if now - context.startedAt >= context.settings.minFlightDuration * 100 then
-        context.flightCount = context.control:incrementFlightCount()
-        context.phase = "active"
-        if context.settings.announcements then
-            context.model:announceFlight(context.flightCount, false)
-        end
-    end
-end
-
 function flightCounter.regionsFor(theme, builder, rect, fonts)
     return builder.panel(theme, rect, fonts, {
         frame = builder.frame(theme, rect, fonts, nil, "IN-FLIGHT"),
@@ -138,7 +61,7 @@ end
 
 function flightCounter.render(context, out)
     out.text = context.feed.available and tostring(context.feed.raw) or "--"
-    if context.phase == "active" or context.phase == "ending" then
+    if context.flight.active then
         out.state = "active"
     else
         out.state = context.feed.available and "normal" or "unavailable"
@@ -164,13 +87,12 @@ function flightCounter.apply(context, drawn)
 end
 
 function flightCounter.create(parent, rect, settings, services)
-    local errors = flightCounter.validateSettings(settings)
+    local errors = flightCounter.validateSettings(settings, nil, nil, services.host and services.host.modelArmed)
     assert(#errors == 0, table.concat(errors, "; "))
     assert(
-        services.telemetry and services.control and services.model and services.clock,
+        services.control and services.flight and services.clock and services.armed,
         "flight counter services unavailable"
     )
-    assert(services.control.env.setGlobalVariable, "flight counter requires model.setGlobalVariable")
     local area = flightCounter.regionsFor(services.theme, services.themeBuilder, rect, services.fonts)
     local presentation = services.state("unavailable", "green")
     local context = {
@@ -182,14 +104,10 @@ function flightCounter.create(parent, rect, settings, services)
         fonts = services.fonts,
         clock = services.clock,
         preview = services.preview == true,
-        control = services.control,
-        model = services.model,
         feed = services.control:globalVariable(8, 0),
-        arm = services.control:armSwitch(settings.armSwitch),
-        motor = services.telemetry:subscribe(settings.motorSource, false),
-        link = services.telemetry:link(),
+        arm = services.armed:state(settings.armSwitch),
+        flight = services.flight:state(),
         area = area,
-        phase = "ground",
     }
     context.panel, context.label, context.badge = services.primitives.panelWithHeader(
         parent,
@@ -219,20 +137,7 @@ local function tick(context)
     if context.lastTick and now - context.lastTick < flightCounter.refreshInterval then
         return
     end
-    -- A scheduling gap cannot prove that a timed condition stayed true.
-    if context.lastTick and now - context.lastTick > 100 then
-        if context.phase == "starting" then
-            context.startedAt = nil
-            context.phase = "ground"
-        elseif context.phase == "ending" then
-            context.disarmedAt = nil
-            context.phase = "active"
-        end
-    end
     context.lastTick = now
-    if not context.preview then
-        flightCounter.advance(context, now)
-    end
     local changed, drawn = context.primitives.changed(context, flightCounter.render)
     if changed then
         flightCounter.apply(context, drawn)

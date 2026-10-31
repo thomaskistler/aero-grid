@@ -50,6 +50,15 @@ class CaptureRecipeTests(unittest.TestCase):
                 if recipe["panel"] == "chart":
                     self.assertNotIn("session", layout)
                     self.assertTrue(all(entry["config"]["armSwitch"] == "SFv" for entry in layout["panels"]))
+                    self.assertEqual(layout["legacyFlightArms"], {"capture": "SFv"})
+                    settings = sd / "AEROGRID/models" / ("model1.yml".encode().hex() + ".yaml")
+                    document = yaml.safe_load(settings.read_text())
+                    self.assertEqual(document["modelFilename"], "model1.yml")
+                    self.assertEqual(document["flight"]["disarmDuration"], 3)
+                    self.assertNotIn("history", document["flight"])
+                    self.assertIn("confirmed", readiness(recipe))
+                    self.assertIn("instance.framePhase", readiness(recipe))
+                    self.assertIn('if name == "ch3"', fixture_inputs(recipe))
                 self.assertTrue((widget / "panels" / f"{recipe['panel']}.lua").is_file())
                 self.assertTrue((widget / "lib/panel_host.lua").is_file())
                 self.assertIn("ipairs(context.panels)", (widget / "main.lua").read_text())
@@ -66,7 +75,7 @@ class CaptureRecipeTests(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("capture_editor", path)
         capture = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(capture)
-        for scene in capture.SCENES + tuple(capture.SETUP_SCENES):
+        for scene in capture.SCENES + tuple(capture.SETUP_SCENES) + ("model-settings",):
             with self.subTest(scene=scene), tempfile.TemporaryDirectory() as directory:
                 sd = Path(directory) / "sdcard"
                 capture.prepare(sd, scene)
@@ -80,7 +89,20 @@ class CaptureRecipeTests(unittest.TestCase):
                 names = (sd / "AEROGRID/layout-registry.txt").read_text().splitlines()
                 self.assertEqual(names[options[0]["value"]["unsignedValue"] - 1], "Default")
                 self.assertEqual(options[1]["value"]["unsignedValue"], 1)
-                self.assertFalse((sd / "MODELS/model4.yml").exists())
+                if scene in capture.PANEL_SETTINGS_SCENES or scene == "chart-metric-entry":
+                    settings = sd / "AEROGRID/models" / ("model1.yml".encode().hex() + ".yaml")
+                    document = yaml.safe_load(settings.read_text())
+                    self.assertEqual(document["armed"], "SFv", "drawer examples must use model-wide arming")
+                if scene == "model-settings":
+                    self.assertIn(scene, capture.STITCHED_SCENES)
+                    source = (sd / "WIDGETS/AeroGrid/lib/model_settings_ui.lua").read_text()
+                    self.assertIn("state.captureNodes = {}", source)
+                    self.assertNotIn("CAPTURE_SHIFT", source)
+                for number in range(2, 7):
+                    self.assertEqual(
+                        (sd / f"MODELS/model{number}.yml").read_bytes(),
+                        (capture.ROOT / f"tests/fixtures/sdcard/MODELS/model{number}.yml").read_bytes(),
+                    )
 
     def test_chart_drawers_use_chart_settings_and_native_source(self):
         path = Path(__file__).with_name("capture-editor.py")
@@ -100,7 +122,7 @@ class CaptureRecipeTests(unittest.TestCase):
                 self.assertEqual(panel["type"], "chart")
                 self.assertEqual(panel["config"], capture.PANEL_DRAWER_CONFIG["chart"])
                 self.assertEqual(panel["config"]["timeRange"], "rolling")
-                self.assertEqual(panel["config"]["armSwitch"], "SFv")
+                self.assertNotIn("armSwitch", panel["config"])
                 self.assertNotIn("session", layout)
                 self.assertEqual(panel["config"]["metrics"][0]["source"], "gvar1")
                 main = (widget / "main.lua").read_text()
@@ -165,13 +187,18 @@ class CaptureRecipeTests(unittest.TestCase):
 
     def test_chart_recording_capture(self):
         recipe = load_recipe(RECIPE_DIR / "chart.yaml")
+        for placement in recipe["panels"].values():
+            self.assertTrue(placement["col"] > 0 or placement["row"] > 0,
+                            "gallery crops must avoid the native top-left menu")
         self.assertEqual(yaml.safe_load(config_yaml(recipe["config"])), recipe["config"])
         inputs = fixture_inputs(recipe)
         self.assertEqual(recipe["config"]["armSwitch"], "SFv")
         self.assertIn('getSwitchIndex("SF" .. CHAR_DOWN)', inputs)
         self.assertIn("getSwitchValue = function(index)", inputs)
         self.assertNotIn("capture-arm", inputs)
-        self.assertIn("elapsed >= 1100 and elapsed < 2200", inputs)
+        self.assertIn("elapsed >= 1500 and elapsed < 2200", inputs)
+        self.assertIn("instance.session.flightLast ~= 2", readiness(recipe))
+        self.assertIn("instance.history:flight(instance.session, 2)", readiness(recipe))
         self.assertIn("math.sin", inputs)
         for arm_switch in ("", "SA^", "L01"):
             with self.subTest(armSwitch=arm_switch):
@@ -250,16 +277,16 @@ class CaptureRecipeTests(unittest.TestCase):
 
     def test_flight_counter_samples(self):
         recipe = load_recipe(RECIPE_DIR / "flight-counter.yaml")
-        self.assertIn("model.setGlobalVariable(8, 0, 39)", fixture_inputs(recipe))
+        self.assertIn("model.setGlobalVariable(8, 0, 41)", fixture_inputs(recipe))
         self.assertIn("feed.raw ~= 42", readiness(recipe))
         self.assertIn('entry.instance.badgeText ~= "IN-FLIGHT"', readiness(recipe))
         recipe["sample"]["count"] = 72
-        self.assertIn("model.setGlobalVariable(8, 0, 69)", fixture_inputs(self.load(recipe)))
+        self.assertIn("model.setGlobalVariable(8, 0, 71)", fixture_inputs(self.load(recipe)))
         for mutate in (
             lambda r: r["sample"].update(count=1000),
-            lambda r: r["sample"].update(count=2),
+            lambda r: r["sample"].update(count=0),
             lambda r: r["sample"].update(rssi=0),
-            lambda r: r["config"].update(history=True),
+            lambda r: r["config"].update(armSwitch="SAv"),
             lambda r: r["config"].update(motorReversed=True),
             lambda r: r["config"].update(minFlightDuration=30),
         ):

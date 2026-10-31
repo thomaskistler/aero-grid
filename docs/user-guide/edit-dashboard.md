@@ -7,11 +7,21 @@
 
 [Add a dashboard](add-dashboard.md) first, then customize its panels on the radio.
 
-1. Long-press the dashboard to enter fullscreen. The EdgeTX logo in the
-   top-left corner disappears.
-2. In fullscreen, long-press a panel again to start editing.
+1. Long-press the dashboard to enter fullscreen. The native EdgeTX menu stays
+   unchanged in App mode; fullscreen shows a same-sized AeroGrid icon instead.
+2. Tap **AeroGrid → UI setup** to start editing, even on an Empty dashboard.
+   You can also long-press a panel again.
    **Enter** also starts editing. A **gear**
    icon appears in the top-right corner of each panel.
+
+**AeroGrid → Model settings** opens shared model settings without
+entering layout edit mode. Changes save automatically, independently of layout
+**Save/Save as...**. The host menu is hidden while editing so it does not
+cover panel resize corners.
+
+See [Model settings](model-settings.md) for shared arming, flight detection,
+flight-status output, and the Session reset switch. Session reset preserves
+unsaved layout edits and does not close an open Model settings page.
 
 ![Editor showing panel gears and the add-panel tile](../assets/editor/overview.png)
 
@@ -54,7 +64,7 @@ its priority. Background choices are **normal**, **active**, **warning**, and
 including its background, sidebar, text colors, and badge. Supporting entries
 never change the panel mode.
 
-![State panel settings with summary rows and an add-entry button](../assets/editor/text-settings.png)
+![State panel settings with summary rows and an add-entry button](../assets/editor/state-settings.png)
 
 ![Metric-entry dialog with GV1 selected as Source](../assets/editor/metric-entry.png)
 

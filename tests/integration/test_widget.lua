@@ -452,12 +452,12 @@ local function testSessionArmsTheFlight()
         local registry = context.serviceRuntime
         local extrema = registry and registry.byId and registry.byId.extrema
         assert(extrema, "the dashboard built no extrema service")
-        return extrema:flight()
+        return extrema:flight(context.session.armSource)
     end
 
     -- Configured is the service's own word for "an arm source was supplied",
     -- so it is the value the contract names rather than a proxy for it.
-    local armed = flightOf(dashboard("session:\n  armSource: sf"))
+    local armed = flightOf(dashboard("session:\n  armSource: SFv"))
     assertEqual(armed.configured, true, "the layout named an arm switch and the flight session did not see it")
 
     local unarmed = flightOf(dashboard("# no session block"))
@@ -600,8 +600,7 @@ local function testStatesCoverBothPalettes()
     assert(modern.alertRgb.warning ~= light.alertRgb.warning, "both palettes resolve the same warning tint")
 end
 
---- Every shipped layout is on a screen, and every review screen is on the
---- review model.
+--- Every registered layout is directly reachable on a categorized model.
 ---
 --- A layout only ships as a layout, and selecting one means setting the
 --- widget's Dashboard ID. In App mode that is not reachable from the main
@@ -612,8 +611,7 @@ end
 --- Setup and Screens once per layout, which is enough friction that nobody
 --- would look at it -- which is the whole point of it existing.
 ---
---- `MAX_CUSTOM_SCREENS` is 10 (`radio/src/dataconstants.h`). One model holds
---- standard layouts and diagnostics; two others cover the user-facing panels.
+--- `MAX_CUSTOM_SCREENS` is 10 (`radio/src/dataconstants.h`).
 local function testScreensReachEveryShippedLayout()
     -- The Layout setting is a CHOICE, which EdgeTX stores as a 1-based position
     -- in the list `layout_registry` builds from AEROGRID/layout-registry.txt. The
@@ -645,38 +643,50 @@ local function testScreensReachEveryShippedLayout()
     local models = {
         {
             filename = "model1.yml",
-            name = "AEROGRID STD",
-            layouts = { "Default", "Empty", "Diagnostics", "services", "services2", "Palette" },
+            name = "AG Overview",
+            layouts = { "Default", "sim", "sim2" },
         },
         {
             filename = "model2.yml",
-            name = "AEROGRID PANEL1",
+            name = "AG Flight",
             layouts = {
-                "review-rx-battery",
-                "review-flight-counter",
+                "review-model-identity",
                 "review-flight-mode",
                 "review-flight-timer",
+                "review-flight-counter",
+                "review-chart",
+            },
+        },
+        {
+            filename = "model3.yml",
+            name = "AG Power-Link",
+            layouts = {
+                "review-rx-battery",
+                "review-cell-sources",
+                "review-tx-battery",
                 "review-link-status",
                 "review-metric",
             },
         },
         {
-            filename = "model3.yml",
-            name = "AEROGRID PANEL2",
-            layouts = {
-                "review-model-identity",
-                "review-navigation",
-                "review-state",
-                "review-trim-panel",
-                "review-tx-battery",
-                "review-output",
-                "review-chart",
-            },
+            filename = "model4.yml",
+            name = "AG Navigation",
+            layouts = { "review-navigation" },
+        },
+        {
+            filename = "model5.yml",
+            name = "AG Controls",
+            layouts = { "review-output", "review-trim-panel" },
+        },
+        {
+            filename = "model6.yml",
+            name = "AG System",
+            layouts = { "Diagnostics", "services", "services2", "review-state", "states", "Palette", "Empty" },
         },
     }
     local selected = {}
     local panelReviews = {}
-    for index, model in ipairs(models) do
+    for _, model in ipairs(models) do
         assert(#model.name <= 15, model.filename .. " exceeds EdgeTX's LEN_MODEL_NAME")
         local text = readModel(model.filename)
         assert(string.find(text, 'name: "' .. model.name .. '"', 1, true), model.filename .. " has the wrong name")
@@ -693,9 +703,8 @@ local function testScreensReachEveryShippedLayout()
             assertEqual(layout, model.layouts[screen], model.filename .. " screen " .. screen)
             assert(not selected[layout], layout .. " is selected by more than one fixture screen")
             selected[layout] = true
-            if index > 1 then
-                local panelType =
-                    assert(string.match(layout, "^review%-(.+)$"), "review model selects a non-panel layout")
+            local panelType = string.match(layout, "^review%-(.+)$")
+            if panelType and panelType ~= "cell-sources" then
                 panelReviews[panelType] = true
                 local handle = assert(hostIo.open(developmentLayoutsPath .. layout .. ".yaml", "r"))
                 local yaml = handle:read("a")
@@ -716,10 +725,7 @@ local function testScreensReachEveryShippedLayout()
     local radioHandle = assert(hostIo.open(root .. "/tests/fixtures/sdcard/RADIO/radio.yml", "r"))
     local radioText = radioHandle:read("a")
     radioHandle:close()
-    assert(
-        string.find(radioText, 'currModelFilename: "model1.yml"', 1, true),
-        "fixture must start on the standard model"
-    )
+    assert(string.find(radioText, 'currModelFilename: "model1.yml"', 1, true), "fixture must start on AG Overview")
     assert(string.find(radioText, "manuallyEdited: 1", 1, true), "fixture radio settings must accept manual edits")
 
     local listingPath = root .. "/build/screen-layouts.txt"
@@ -757,9 +763,7 @@ local function testScreensReachEveryShippedLayout()
     fixtureListing:close()
     os.remove(listingPath)
 
-    -- The four product layouts are directly reachable; development fixtures
-    -- do not take dedicated screens away from standard layouts or panel reviews.
-    for _, stem in ipairs(shipped) do
+    for _, stem in ipairs(registered) do
         assert(selected[stem], stem .. " has no dedicated fixture screen")
     end
 
@@ -783,15 +787,13 @@ local function testScreensReachEveryShippedLayout()
     for name in listing:lines() do
         if string.match(name, "^model%d+%.yml$") then
             modelCount = modelCount + 1
-            assert(
-                name == "model1.yml" or name == "model2.yml" or name == "model3.yml",
-                "unexpected fixture model " .. name
-            )
+            local number = tonumber(string.match(name, "^model(%d+)%.yml$"))
+            assert(models[number] and models[number].filename == name, "unexpected fixture model " .. name)
         end
     end
     listing:close()
     os.remove(listingPath)
-    assertEqual(modelCount, 3, "fixture must contain exactly three models")
+    assertEqual(modelCount, 6, "fixture must contain exactly six models")
 end
 
 local function testShippedLayout()
@@ -4262,20 +4264,9 @@ panels:
     -- the firmware does -- so the only thing that changes is the flag.
     lvglMock.setFullScreen(true)
 
-    -- **One callback, and the reservation is gone.** `context.reserved` is
-    -- rewritten only by `beginReflow`, so this is the trigger firing rather
-    -- than a side effect of anything else -- and it fires on the very next
-    -- refresh, which is one MENU_TASK_PERIOD of 50 ms
-    -- (radio/src/tasks.cpp:50). It is a poll because there is no event to
-    -- have: entering fullscreen calls the widget's `update`
-    -- (widget.cpp:265) and leaving it does not, that call being guarded by
-    -- `if (fullscreen)`.
+    -- Fullscreen replaces the native button with the same-sized AeroGrid button.
     definition.refresh(context)
-    assertEqual(
-        context.reserved,
-        nil,
-        "one refresh after going fullscreen, a corner was still reserved for a" .. " button that is not drawn"
-    )
+    assert(context.reserved, "fullscreen must reserve the AeroGrid button footprint")
 
     local passes = 0
     while context.reflowIndex do
@@ -4284,17 +4275,8 @@ panels:
         assert(passes < 100, "reflow never finished")
     end
     pump(context, 10)
-    assertEqual(
-        corner.area.ladder.room,
-        clear.area.ladder.room,
-        "the corner panel did not follow every other panel once the button went"
-    )
-    assertEqual(
-        corner.area.valueY,
-        clear.area.valueY,
-        "the corner panel's reading did not come back to the panel's centre"
-    )
-    assert(corner.area.valueCentre < buttoned, "the reading did not move left when the button stopped taking room")
+    assert(corner.area.content < clear.area.content, "fullscreen must retain the corner reservation")
+    assertEqual(corner.area.valueCentre, buttoned, "fullscreen and native buttons must reserve the same width")
 
     -- And back, because a pilot leaves fullscreen as often as they enter it
     -- and the firmware raises nothing at all on the way out.
@@ -4335,7 +4317,7 @@ local function testReadingsAreCentredOnTheirPanel()
         ["metric"] = { "      metrics:", "        - source: Alt", "          label: ALT", "          unit: m" },
         ["flight-timer"] = { "      label: TIMER", "      timer: 0" },
         ["flight-mode"] = { "      label: MODE" },
-        ["flight-counter"] = { "      label: FLT", "      history: false" },
+        ["flight-counter"] = { "      label: FLT" },
         ["tx-battery"] = { "      label: TX" },
         ["trim-panel"] = { "      label: TRIM", "      trim1: trim-ail" },
         ["model-identity"] = { "      label: MODEL" },
@@ -4814,7 +4796,7 @@ panels:
         ["metric"] = { "      metrics:", "        - source: RxBt", "          label: Probe" },
         ["flight-timer"] = { "      label: Probe", "      timer: 0" },
         ["flight-mode"] = { "      label: Probe" },
-        ["flight-counter"] = { "      label: FLT", "      history: false" },
+        ["flight-counter"] = { "      label: FLT" },
         ["tx-battery"] = { "      label: Probe" },
         ["trim-panel"] = { "      label: Probe", "      trim1: trim-ail" },
         ["model-identity"] = { "      label: Probe" },
@@ -5401,7 +5383,7 @@ local function testPackageCompatibility()
         {
             name = "future-layout-contract",
             file = "lib/package.lua",
-            text = 'return {version="next",runtimeApi=1,panelApi=1,layoutVersion=4}',
+            text = 'return {version="next",runtimeApi=1,panelApi=1,layoutVersion=6}',
             error = "incompatible package contract",
         },
         { name = "missing-core", file = "lib/yaml.lua", error = "lib/yaml.lua:" },
@@ -5475,9 +5457,9 @@ panels:
         assert(steps < 200, "legacy migration load did not finish")
     end
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-    assertEqual(stageCounts["header-migrate"], 2, "each adjacent header step runs in its own loader callback")
-    assertEqual(stageCounts["panel-migrate"], 2, "each adjacent panel step runs in its own loader callback")
-    assertEqual(context.document.version, 3)
+    assertEqual(stageCounts["header-migrate"], 4, "each adjacent header step runs in its own loader callback")
+    assertEqual(stageCounts["panel-migrate"], 4, "each adjacent panel step runs in its own loader callback")
+    assertEqual(context.document.version, 5)
     local placement = context.document.panels[1]
     assertEqual(placement.type, "rx-battery")
     assertEqual(placement.config.reading, "cell")
@@ -5615,7 +5597,7 @@ local function testInstructionBudget()
         { service = "navigation", source = "GPS", extra = "Dist" },
         { service = "model", index = 0 },
         { service = "control", source = "trim-ail", index = 0 },
-        { service = "extrema", source = "S4", extra = "sa" },
+        { service = "extrema", source = "S4", extra = "SAv" },
     }
 
     --- Build a layout that fills the grid with service diagnostic panels.

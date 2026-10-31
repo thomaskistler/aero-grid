@@ -14,8 +14,6 @@ config:
   motorSource: ch3
   minFlightDuration: 1
   disarmDuration: 10
-  announcements: false
-  history: false
 sample:
   count: 42
   rssi: 80
